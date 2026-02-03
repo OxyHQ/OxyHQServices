@@ -13,19 +13,22 @@ export default function DrawerLayout() {
   const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
   const isDesktop = Platform.OS === 'web' && width >= 900;
   const { isAuthenticated, oxyServices } = useOxy();
-  const { loadMailboxes, mailboxesLoaded, currentMailbox, loadMessages } = useEmailStore();
+  const { _initApi, loadMailboxes, mailboxesLoaded, currentMailbox, loadMessages } = useEmailStore();
+
+  // Initialize email API with httpService
+  useEffect(() => {
+    if (isAuthenticated) {
+      _initApi(oxyServices.httpService);
+    }
+  }, [isAuthenticated, oxyServices, _initApi]);
 
   // Load mailboxes on auth
   const initEmail = useCallback(async () => {
     if (!isAuthenticated) return;
-    try {
-      const token = oxyServices.httpService.getAccessToken();
-      if (!token) return;
-      if (!mailboxesLoaded) {
-        await loadMailboxes(token);
-      }
-    } catch {}
-  }, [isAuthenticated, mailboxesLoaded, oxyServices, loadMailboxes]);
+    if (!mailboxesLoaded) {
+      await loadMailboxes();
+    }
+  }, [isAuthenticated, mailboxesLoaded, loadMailboxes]);
 
   useEffect(() => {
     initEmail();
@@ -34,16 +37,8 @@ export default function DrawerLayout() {
   // Load messages when mailbox is set
   useEffect(() => {
     if (!currentMailbox || !isAuthenticated) return;
-    const load = async () => {
-      try {
-        const token = oxyServices.httpService.getAccessToken();
-        if (token) {
-          await loadMessages(token, currentMailbox._id);
-        }
-      } catch {}
-    };
-    load();
-  }, [currentMailbox?._id, isAuthenticated]);
+    loadMessages(currentMailbox._id);
+  }, [currentMailbox?._id, isAuthenticated, loadMessages]);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>

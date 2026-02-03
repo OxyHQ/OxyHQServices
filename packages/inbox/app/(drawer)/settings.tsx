@@ -20,7 +20,7 @@ import { useOxy } from '@oxyhq/services';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
-import { emailApi, type EmailSettings, type QuotaUsage } from '@/services/emailApi';
+import { createEmailApi, type QuotaUsage } from '@/services/emailApi';
 import { useThemeContext } from '@/contexts/theme-context';
 
 function formatBytes(bytes: number): string {
@@ -37,9 +37,9 @@ export default function SettingsScreen() {
   const colorScheme = useColorScheme();
   const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
   const { user, oxyServices } = useOxy();
+  const emailApi = useMemo(() => createEmailApi(oxyServices.httpService), [oxyServices]);
   const { toggleColorScheme } = useThemeContext();
 
-  const [settings, setSettings] = useState<EmailSettings | null>(null);
   const [quota, setQuota] = useState<QuotaUsage | null>(null);
   const [signature, setSignature] = useState('');
   const [autoReplyEnabled, setAutoReplyEnabled] = useState(false);
@@ -50,10 +50,7 @@ export default function SettingsScreen() {
   useEffect(() => {
     const load = async () => {
       try {
-        const token = oxyServices.httpService.getAccessToken();
-        if (!token) return;
-        const [s, q] = await Promise.all([emailApi.getSettings(token), emailApi.getQuota(token)]);
-        setSettings(s);
+        const [s, q] = await Promise.all([emailApi.getSettings(), emailApi.getQuota()]);
         setQuota(q);
         setSignature(s.signature);
         setAutoReplyEnabled(s.autoReply.enabled);
@@ -62,14 +59,12 @@ export default function SettingsScreen() {
       } catch {}
     };
     load();
-  }, [oxyServices]);
+  }, [emailApi]);
 
   const handleSave = useCallback(async () => {
     setSaving(true);
     try {
-      const token = oxyServices.httpService.getAccessToken();
-      if (!token) return;
-      await emailApi.updateSettings(token, {
+      await emailApi.updateSettings({
         signature,
         autoReply: {
           enabled: autoReplyEnabled,
@@ -83,7 +78,7 @@ export default function SettingsScreen() {
     } finally {
       setSaving(false);
     }
-  }, [signature, autoReplyEnabled, autoReplySubject, autoReplyBody, oxyServices]);
+  }, [signature, autoReplyEnabled, autoReplySubject, autoReplyBody, emailApi]);
 
   const emailAddress = user?.username ? `${user.username}@oxy.so` : '';
 

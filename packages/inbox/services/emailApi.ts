@@ -2,10 +2,12 @@
  * Email API client
  *
  * Wraps the Oxy email REST API for use in the Inbox app.
- * Uses OxyServices from @oxyhq/core under the hood.
+ * Uses OxyServices.httpService for automatic auth and CSRF handling.
  */
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'https://api.oxy.so';
+import type { OxyServices } from '@oxyhq/core';
+
+type HttpService = OxyServices['httpService'];
 
 export interface EmailAddress {
   name?: string;
@@ -89,123 +91,62 @@ export interface EmailSettings {
   };
 }
 
-class EmailApi {
-  private getHeaders(token: string): Record<string, string> {
-    return {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    };
-  }
+export function createEmailApi(http: HttpService) {
+  return {
+    // ─── Mailboxes ──────────────────────────────────────────────────
 
-  private async request<T>(
-    path: string,
-    token: string,
-    options: RequestInit = {},
-  ): Promise<T> {
-    const res = await fetch(`${API_URL}/api/email${path}`, {
-      ...options,
-      headers: {
-        ...this.getHeaders(token),
-        ...(options.headers || {}),
-      },
-    });
+    async listMailboxes(): Promise<Mailbox[]> {
+      const res = await http.get<{ data: Mailbox[] }>('/api/email/mailboxes');
+      return res.data.data;
+    },
 
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      throw new Error(body.message || `Request failed: ${res.status}`);
-    }
+    async createMailbox(name: string, parentPath?: string): Promise<Mailbox> {
+      const res = await http.post<{ data: Mailbox }>('/api/email/mailboxes', { name, parentPath });
+      return res.data.data;
+    },
 
-    const json = await res.json();
-    return json.data;
-  }
+    async deleteMailbox(mailboxId: string): Promise<void> {
+      await http.delete(`/api/email/mailboxes/${mailboxId}`);
+    },
 
-  // ─── Mailboxes ──────────────────────────────────────────────────
+    // ─── Messages ───────────────────────────────────────────────────
 
-  async listMailboxes(token: string): Promise<Mailbox[]> {
-    return this.request<Mailbox[]>('/mailboxes', token);
-  }
+    async listMessages(
+      mailboxId: string,
+      options: { limit?: number; offset?: number; unseenOnly?: boolean } = {},
+    ): Promise<{ data: Message[]; pagination: Pagination }> {
+      const params: Record<string, string> = { mailbox: mailboxId };
+      if (options.limit) params.limit = String(options.limit);
+      if (options.offset) params.offset = String(options.offset);
+      if (options.unseenOnly) params.unseen = 'true';
 
-  async createMailbox(
-    token: string,
-    name: string,
-    parentPath?: string,
-  ): Promise<Mailbox> {
-    return this.request<Mailbox>('/mailboxes', token, {
-      method: 'POST',
-      body: JSON.stringify({ name, parentPath }),
-    });
-  }
+      const res = await http.get<{ data: Message[]; pagination: Pagination }>('/api/email/messages', { params });
+      return res.data;
+    },
 
-  async deleteMailbox(token: string, mailboxId: string): Promise<void> {
-    await this.request(`/mailboxes/${mailboxId}`, token, { method: 'DELETE' });
-  }
+    async getMessage(messageId: string): Promise<Message> {
+      const res = await http.get<{ data: Message }>(`/api/email/messages/${messageId}`);
+      return res.data.data;
+    },
 
-  // ─── Messages ───────────────────────────────────────────────────
+    async updateFlags(messageId: string, flags: Partial<MessageFlags>): Promise<Message> {
+      const res = await http.put<{ data: Message }>(`/api/email/messages/${messageId}/flags`, { flags });
+      return res.data.data;
+    },
 
-  async listMessages(
-    token: string,
-    mailboxId: string,
-    options: { limit?: number; offset?: number; unseenOnly?: boolean } = {},
-  ): Promise<{ data: Message[]; pagination: Pagination }> {
-    const params = new URLSearchParams({ mailbox: mailboxId });
-    if (options.limit) params.set('limit', String(options.limit));
-    if (options.offset) params.set('offset', String(options.offset));
-    if (options.unseenOnly) params.set('unseen', 'true');
+    async moveMessage(messageId: string, mailboxId: string): Promise<Message> {
+      const res = await http.post<{ data: Message }>(`/api/email/messages/${messageId}/move`, { mailboxId });
+      return res.data.data;
+    },
 
-    const res = await fetch(`${API_URL}/api/email/messages?${params}`, {
-      headers: this.getHeaders(token),
-    });
+    async deleteMessage(messageId: string, permanent = false): Promise<void> {
+      const params = permanent ? '?permanent=true' : '';
+      await http.delete(`/api/email/messages/${messageId}${params}`);
+    },
 
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      throw new Error(body.message || `Request failed: ${res.status}`);
-    }
+    // ─── Compose ────────────────────────────────────────────────────
 
-    return res.json();
-  }
-
-  async getMessage(token: string, messageId: string): Promise<Message> {
-    return this.request<Message>(`/messages/${messageId}`, token);
-  }
-
-  async updateFlags(
-    token: string,
-    messageId: string,
-    flags: Partial<MessageFlags>,
-  ): Promise<Message> {
-    return this.request<Message>(`/messages/${messageId}/flags`, token, {
-      method: 'PUT',
-      body: JSON.stringify({ flags }),
-    });
-  }
-
-  async moveMessage(
-    token: string,
-    messageId: string,
-    mailboxId: string,
-  ): Promise<Message> {
-    return this.request<Message>(`/messages/${messageId}/move`, token, {
-      method: 'POST',
-      body: JSON.stringify({ mailboxId }),
-    });
-  }
-
-  async deleteMessage(
-    token: string,
-    messageId: string,
-    permanent = false,
-  ): Promise<void> {
-    const params = permanent ? '?permanent=true' : '';
-    await this.request(`/messages/${messageId}${params}`, token, {
-      method: 'DELETE',
-    });
-  }
-
-  // ─── Compose ────────────────────────────────────────────────────
-
-  async sendMessage(
-    token: string,
-    message: {
+    async sendMessage(message: {
       to: EmailAddress[];
       cc?: EmailAddress[];
       bcc?: EmailAddress[];
@@ -215,17 +156,12 @@ class EmailApi {
       inReplyTo?: string;
       references?: string[];
       attachments?: string[];
+    }): Promise<{ messageId: string; queued: boolean; message: string }> {
+      const res = await http.post<{ data: { messageId: string; queued: boolean; message: string } }>('/api/email/messages', message);
+      return res.data.data;
     },
-  ): Promise<{ messageId: string; queued: boolean; message: string }> {
-    return this.request('/messages', token, {
-      method: 'POST',
-      body: JSON.stringify(message),
-    });
-  }
 
-  async saveDraft(
-    token: string,
-    draft: {
+    async saveDraft(draft: {
       to?: EmailAddress[];
       cc?: EmailAddress[];
       bcc?: EmailAddress[];
@@ -235,69 +171,55 @@ class EmailApi {
       inReplyTo?: string;
       references?: string[];
       existingDraftId?: string;
+    }): Promise<Message> {
+      const res = await http.post<{ data: Message }>('/api/email/drafts', draft);
+      return res.data.data;
     },
-  ): Promise<Message> {
-    return this.request<Message>('/drafts', token, {
-      method: 'POST',
-      body: JSON.stringify(draft),
-    });
-  }
 
-  // ─── Search ─────────────────────────────────────────────────────
+    // ─── Search ─────────────────────────────────────────────────────
 
-  async search(
-    token: string,
-    query: string,
-    options: { limit?: number; offset?: number; mailbox?: string } = {},
-  ): Promise<{ data: Message[]; pagination: Pagination }> {
-    const params = new URLSearchParams({ q: query });
-    if (options.limit) params.set('limit', String(options.limit));
-    if (options.offset) params.set('offset', String(options.offset));
-    if (options.mailbox) params.set('mailbox', options.mailbox);
+    async search(
+      query: string,
+      options: { limit?: number; offset?: number; mailbox?: string } = {},
+    ): Promise<{ data: Message[]; pagination: Pagination }> {
+      const params: Record<string, string> = { q: query };
+      if (options.limit) params.limit = String(options.limit);
+      if (options.offset) params.offset = String(options.offset);
+      if (options.mailbox) params.mailbox = options.mailbox;
 
-    const res = await fetch(`${API_URL}/api/email/search?${params}`, {
-      headers: this.getHeaders(token),
-    });
+      const res = await http.get<{ data: Message[]; pagination: Pagination }>('/api/email/search', { params });
+      return res.data;
+    },
 
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      throw new Error(body.message || `Request failed: ${res.status}`);
-    }
+    // ─── Quota ──────────────────────────────────────────────────────
 
-    return res.json();
-  }
+    async getQuota(): Promise<QuotaUsage> {
+      const res = await http.get<{ data: QuotaUsage }>('/api/email/quota');
+      return res.data.data;
+    },
 
-  // ─── Quota ──────────────────────────────────────────────────────
+    // ─── Attachments ────────────────────────────────────────────────
 
-  async getQuota(token: string): Promise<QuotaUsage> {
-    return this.request<QuotaUsage>('/quota', token);
-  }
+    async getAttachmentUrl(s3Key: string): Promise<string> {
+      const res = await http.get<{ data: { url: string } }>(
+        `/api/email/attachments/${encodeURIComponent(s3Key)}`,
+      );
+      return res.data.data.url;
+    },
 
-  // ─── Attachments ────────────────────────────────────────────────
+    // ─── Settings ───────────────────────────────────────────────────
 
-  async getAttachmentUrl(token: string, s3Key: string): Promise<string> {
-    const result = await this.request<{ url: string }>(
-      `/attachments/${encodeURIComponent(s3Key)}`,
-      token,
-    );
-    return result.url;
-  }
+    async getSettings(): Promise<EmailSettings> {
+      const res = await http.get<{ data: EmailSettings }>('/api/email/settings');
+      return res.data.data;
+    },
 
-  // ─── Settings ───────────────────────────────────────────────────
-
-  async getSettings(token: string): Promise<EmailSettings> {
-    return this.request<EmailSettings>('/settings', token);
-  }
-
-  async updateSettings(
-    token: string,
-    settings: { signature?: string; autoReply?: Partial<EmailSettings['autoReply']> },
-  ): Promise<void> {
-    await this.request('/settings', token, {
-      method: 'PUT',
-      body: JSON.stringify(settings),
-    });
-  }
+    async updateSettings(
+      settings: { signature?: string; autoReply?: Partial<EmailSettings['autoReply']> },
+    ): Promise<void> {
+      await http.put('/api/email/settings', settings);
+    },
+  };
 }
 
-export const emailApi = new EmailApi();
+export type EmailApiInstance = ReturnType<typeof createEmailApi>;

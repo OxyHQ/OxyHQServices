@@ -65,7 +65,7 @@ export default function MessageScreen() {
     };
     load();
     return () => clearCurrentMessage();
-  }, [id]);
+  }, [id, oxyServices, loadMessage, clearCurrentMessage]);
 
   const handleBack = useCallback(() => {
     router.back();

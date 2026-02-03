@@ -31,7 +31,7 @@ export default function InboxScreen() {
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
   const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
-  const { isAuthenticated, oxyServices } = useOxy();
+  const { isAuthenticated } = useOxy();
 
   const {
     messages,
@@ -46,27 +46,24 @@ export default function InboxScreen() {
 
   const handleRefresh = useCallback(async () => {
     try {
-      const token = oxyServices.httpService.getAccessToken();
-      if (token) await refreshMessages(token);
+      await refreshMessages();
     } catch {}
-  }, [oxyServices, refreshMessages]);
+  }, [refreshMessages]);
 
   const handleLoadMore = useCallback(async () => {
     if (loadingMore) return;
     try {
-      const token = oxyServices.httpService.getAccessToken();
-      if (token) await loadMoreMessages(token);
+      await loadMoreMessages();
     } catch {}
-  }, [oxyServices, loadMoreMessages, loadingMore]);
+  }, [loadMoreMessages, loadingMore]);
 
   const handleStar = useCallback(
     async (messageId: string) => {
       try {
-        const token = oxyServices.httpService.getAccessToken();
-        if (token) await toggleStar(token, messageId);
+        await toggleStar(messageId);
       } catch {}
     },
-    [oxyServices, toggleStar],
+    [toggleStar],
   );
 
   const handleOpenDrawer = useCallback(() => {

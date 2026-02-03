@@ -23,7 +23,7 @@ import { useOxy } from '@oxyhq/services';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
-import { emailApi } from '@/services/emailApi';
+import { createEmailApi } from '@/services/emailApi';
 
 export default function ComposeScreen() {
   const router = useRouter();
@@ -39,6 +39,7 @@ export default function ComposeScreen() {
   const colorScheme = useColorScheme();
   const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
   const { user, oxyServices } = useOxy();
+  const emailApi = useMemo(() => createEmailApi(oxyServices.httpService), [oxyServices]);
   const bodyRef = useRef<TextInput>(null);
 
   const [to, setTo] = useState(params.to || '');
@@ -67,10 +68,7 @@ export default function ComposeScreen() {
 
     setSending(true);
     try {
-      const token = oxyServices.httpService.getAccessToken();
-      if (!token) throw new Error('Not authenticated');
-
-      await emailApi.sendMessage(token, {
+      await emailApi.sendMessage({
         to: parseAddresses(to),
         cc: cc.trim() ? parseAddresses(cc) : undefined,
         bcc: bcc.trim() ? parseAddresses(bcc) : undefined,
@@ -85,14 +83,11 @@ export default function ComposeScreen() {
     } finally {
       setSending(false);
     }
-  }, [to, cc, bcc, subject, body, params.replyTo, oxyServices, router]);
+  }, [to, cc, bcc, subject, body, params.replyTo, emailApi, router]);
 
   const handleSaveDraft = useCallback(async () => {
     try {
-      const token = oxyServices.httpService.getAccessToken();
-      if (!token) return;
-
-      await emailApi.saveDraft(token, {
+      await emailApi.saveDraft({
         to: to.trim() ? parseAddresses(to) : undefined,
         cc: cc.trim() ? parseAddresses(cc) : undefined,
         bcc: bcc.trim() ? parseAddresses(bcc) : undefined,
@@ -102,7 +97,7 @@ export default function ComposeScreen() {
       });
     } catch {}
     router.back();
-  }, [to, cc, bcc, subject, body, params.replyTo, oxyServices, router]);
+  }, [to, cc, bcc, subject, body, params.replyTo, emailApi, router]);
 
   const handleClose = useCallback(() => {
     if (to.trim() || subject.trim() || body.trim()) {

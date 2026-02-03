@@ -19,7 +19,7 @@ import { useOxy } from '@oxyhq/services';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
-import { emailApi, type Message } from '@/services/emailApi';
+import { createEmailApi, type Message } from '@/services/emailApi';
 import { MessageRow } from '@/components/MessageRow';
 import { useEmailStore } from '@/hooks/useEmail';
 
@@ -29,6 +29,7 @@ export default function SearchScreen() {
   const colorScheme = useColorScheme();
   const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
   const { oxyServices } = useOxy();
+  const emailApi = useMemo(() => createEmailApi(oxyServices.httpService), [oxyServices]);
   const inputRef = useRef<TextInput>(null);
   const { toggleStar } = useEmailStore();
 
@@ -42,25 +43,22 @@ export default function SearchScreen() {
     setSearching(true);
     setHasSearched(true);
     try {
-      const token = oxyServices.httpService.getAccessToken();
-      if (!token) return;
-      const res = await emailApi.search(token, query.trim());
+      const res = await emailApi.search(query.trim());
       setResults(res.data);
     } catch {
       setResults([]);
     } finally {
       setSearching(false);
     }
-  }, [query, oxyServices]);
+  }, [query, emailApi]);
 
   const handleStar = useCallback(
     async (messageId: string) => {
       try {
-        const token = oxyServices.httpService.getAccessToken();
-        if (token) await toggleStar(token, messageId);
+        await toggleStar(messageId);
       } catch {}
     },
-    [oxyServices, toggleStar],
+    [toggleStar],
   );
 
   const handleBack = useCallback(() => {
