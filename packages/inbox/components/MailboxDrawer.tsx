@@ -2,14 +2,24 @@
  * Gmail-style drawer sidebar listing mailboxes.
  */
 
-import React, { useMemo, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
+import React, { useMemo, useEffect, useState, useCallback } from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  ScrollView,
+  Pressable,
+  Platform,
+} from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useOxy } from '@oxyhq/services';
+import { useRouter } from 'expo-router';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { useEmailStore } from '@/hooks/useEmail';
 import { useMailboxes } from '@/hooks/queries/useMailboxes';
+import { Avatar } from '@/components/Avatar';
 import type { Mailbox } from '@/services/emailApi';
 
 const MAILBOX_ICONS: Record<string, keyof typeof MaterialCommunityIcons.glyphMap> = {
@@ -32,7 +42,30 @@ function getMailboxIcon(mailbox: Mailbox): keyof typeof MaterialCommunityIcons.g
 export function MailboxDrawer({ onClose }: { onClose?: () => void }) {
   const colorScheme = useColorScheme();
   const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
-  const { user } = useOxy();
+  const { user, logout } = useOxy();
+  const router = useRouter();
+  const [menuVisible, setMenuVisible] = useState(false);
+
+  const handleOpenMenu = useCallback(() => {
+    setMenuVisible((v) => !v);
+  }, []);
+
+  const handleMenuItem = useCallback(
+    (action: string) => {
+      setMenuVisible(false);
+      switch (action) {
+        case 'settings':
+          router.push('/settings');
+          onClose?.();
+          break;
+        case 'logout':
+          logout();
+          break;
+      }
+    },
+    [router, logout, onClose],
+  );
+
   const currentMailbox = useEmailStore((s) => s.currentMailbox);
   const selectMailbox = useEmailStore((s) => s.selectMailbox);
   const { data: mailboxes = [] } = useMailboxes();
@@ -54,6 +87,9 @@ export function MailboxDrawer({ onClose }: { onClose?: () => void }) {
   };
 
   const emailAddress = user?.username ? `${user.username}@oxy.so` : '';
+  const displayName = user?.name?.first
+    ? `${user.name.first}${user.name.last ? ` ${user.name.last}` : ''}`
+    : user?.username || 'Account';
 
   return (
     <View style={[styles.container, { backgroundColor: colors.sidebarBackground }]}>
@@ -143,6 +179,75 @@ export function MailboxDrawer({ onClose }: { onClose?: () => void }) {
           </>
         )}
       </ScrollView>
+
+      {/* Account section at bottom — wrapper for button + inline popover */}
+      <View style={styles.footerWrapper}>
+        {/* Popover menu — rendered inline, positioned above the button */}
+        {menuVisible && (
+          <>
+            <Pressable style={styles.menuBackdrop} onPress={() => setMenuVisible(false)} />
+            <View
+              style={[
+                styles.menuContainer,
+                {
+                  backgroundColor: colors.surface,
+                  borderColor: colors.border,
+                  ...Platform.select({
+                    web: { boxShadow: '0 4px 24px rgba(0,0,0,0.18)' } as any,
+                    default: {},
+                  }),
+                },
+              ]}
+            >
+              {/* User info header */}
+              <View style={[styles.menuHeader, { borderBottomColor: colors.border }]}>
+                <Avatar name={user?.name?.first || user?.username || '?'} size={36} />
+                <View style={styles.menuHeaderInfo}>
+                  <Text style={[styles.menuHeaderName, { color: colors.text }]} numberOfLines={1}>
+                    {displayName}
+                  </Text>
+                  <Text style={[styles.menuHeaderEmail, { color: colors.secondaryText }]} numberOfLines={1}>
+                    {emailAddress}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Menu items */}
+              <View style={styles.menuItems}>
+                <TouchableOpacity style={styles.menuItem} onPress={() => handleMenuItem('settings')} activeOpacity={0.6}>
+                  <MaterialCommunityIcons name="cog-outline" size={18} color={colors.icon} />
+                  <Text style={[styles.menuItemText, { color: colors.text }]}>Settings</Text>
+                </TouchableOpacity>
+                <View style={[styles.menuDivider, { backgroundColor: colors.border }]} />
+                <TouchableOpacity style={styles.menuItem} onPress={() => handleMenuItem('logout')} activeOpacity={0.6}>
+                  <MaterialCommunityIcons name="logout" size={18} color={colors.icon} />
+                  <Text style={[styles.menuItemText, { color: colors.text }]}>Log out</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </>
+        )}
+
+        {/* Account button */}
+        <View style={[styles.footer, { borderTopColor: colors.border }]}>
+          <TouchableOpacity
+            style={styles.accountButton}
+            onPress={handleOpenMenu}
+            activeOpacity={0.7}
+          >
+            <Avatar name={user?.name?.first || user?.username || '?'} size={32} />
+            <View style={styles.accountInfo}>
+              <Text style={[styles.accountName, { color: colors.text }]} numberOfLines={1}>
+                {displayName}
+              </Text>
+              <Text style={[styles.accountEmail, { color: colors.secondaryText }]} numberOfLines={1}>
+                {emailAddress}
+              </Text>
+            </View>
+            <MaterialCommunityIcons name="unfold-more-horizontal" size={18} color={colors.secondaryText} />
+          </TouchableOpacity>
+        </View>
+      </View>
     </View>
   );
 }
@@ -203,5 +308,90 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 8,
     letterSpacing: 0.5,
+  },
+  footerWrapper: {
+    position: 'relative',
+  },
+  footer: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+  },
+  accountButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    gap: 10,
+  },
+  accountInfo: {
+    flex: 1,
+    minWidth: 0,
+  },
+  accountName: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  accountEmail: {
+    fontSize: 11,
+    marginTop: 1,
+  },
+  menuBackdrop: {
+    position: 'fixed' as any,
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 99,
+  },
+  menuContainer: {
+    position: 'absolute',
+    bottom: '100%',
+    left: 8,
+    right: 8,
+    marginBottom: 4,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    overflow: 'hidden',
+    zIndex: 100,
+  },
+  menuHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: 10,
+  },
+  menuHeaderInfo: {
+    flex: 1,
+    minWidth: 0,
+  },
+  menuHeaderName: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  menuHeaderEmail: {
+    fontSize: 11,
+    marginTop: 1,
+  },
+  menuItems: {
+    paddingVertical: 4,
+  },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    gap: 10,
+  },
+  menuItemText: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  menuDivider: {
+    height: StyleSheet.hairlineWidth,
+    marginHorizontal: 14,
+    marginVertical: 2,
   },
 });
