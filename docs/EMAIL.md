@@ -515,88 +515,111 @@ packages/api/src/
 
 ## Deployment Architecture
 
-The email system runs as **two separate components** that share the same MongoDB:
+Everything runs on a **single DigitalOcean Droplet** — the API, SMTP server, spam filter, and reverse proxy:
 
 ```
-┌──────────────────────────────────────┐    ┌───────────────────────────────────┐
-│  DigitalOcean App Platform           │    │  DigitalOcean Droplet             │
-│                                      │    │  (mail.oxy.so)                    │
-│  Oxy API (Express)                   │    │                                   │
-│  - /api/email/* REST endpoints       │    │  Email Worker (email-worker.ts)   │
-│  - All other API routes              │    │  - SMTP inbound (port 25)         │
-│  - SMTP_ENABLED=false                │    │  - SMTP outbound (nodemailer)     │
-│                                      │    │  - Rspamd (Docker sidecar)        │
-│  Port: 443 (HTTPS only)             │    │                                   │
-└──────────────┬───────────────────────┘    │  Ports: 25, 587                   │
-               │                            └──────────────┬────────────────────┘
-               │                                           │
-               └────────── same MongoDB ───────────────────┘
+                        Internet
+                           │
+              ┌────────────┼────────────┐
+              │            │            │
+         HTTPS (443)   SMTP (25)   SMTP (587)
+              │            │            │
+              ▼            │            │
+        ┌──────────┐       │            │
+        │  Caddy   │       │            │
+        │  (auto   │       │            │
+        │   TLS)   │       │            │
+        └────┬─────┘       │            │
+             │ proxy       │            │
+             ▼             ▼            ▼
+        ┌─────────────────────────────────┐
+        │         Oxy API Container       │
+        │                                 │
+        │  Express.js (:8080)             │
+        │  + SMTP Inbound (:25)           │
+        │  + SMTP Outbound (nodemailer)   │
+        │                                 │
+        │  SMTP_ENABLED=true              │
+        └──────────┬──────────────────────┘
+                   │ spam check
+                   ▼
+        ┌──────────────────┐
+        │  Rspamd          │
+        │  (spam filter)   │
+        └──────────────────┘
+                   │
+                   ▼
+              MongoDB
+         (managed cluster)
 ```
 
-**Why two components?**
+**Key points:**
 
-- **App Platform** only exposes HTTP/HTTPS ports — it cannot receive SMTP traffic on port 25
-- The **API** handles REST endpoints for your Expo client (list messages, send, search, etc.)
-- The **Email Worker** handles the SMTP protocol (receiving mail from the internet, sending with DKIM)
-- Both read/write the same `messages` and `mailboxes` collections in MongoDB
+- **Caddy** handles HTTPS with automatic Let's Encrypt certificates and reverse proxies to the API
+- **SMTP ports 25/587** are exposed directly (not through Caddy — SMTP is not HTTP)
+- **Rspamd** runs as a Docker sidecar for spam filtering
+- **MongoDB** is a managed cluster (e.g., DigitalOcean Managed MongoDB) — not on the Droplet
+- **Auto-deploy**: Push to `main` → GitHub Actions SSHs into the Droplet → pulls → rebuilds → restarts
 
-### Quick Start (Droplet)
+### Quick Start
 
 ```bash
-# 1. Create a $6/mo Ubuntu droplet, name it "mail.oxy.so"
+# 1. Create an Ubuntu 22.04+ Droplet and name it "mail.oxy.so" (sets PTR/rDNS)
 
-# 2. Run the setup script on the droplet
+# 2. Run the setup script on the Droplet
 ssh root@YOUR_DROPLET_IP
-curl -sL https://raw.githubusercontent.com/OxyHQ/OxyHQServices/main/scripts/setup-email-droplet.sh | bash
+bash <(curl -sL https://raw.githubusercontent.com/OxyHQ/OxyHQServices/main/scripts/setup-droplet.sh)
 
 # 3. Configure your environment
-cd /opt/oxy-email
-cp .env.email.example .env.email
-nano .env.email    # Fill in MongoDB URI, DKIM key, S3 creds
+cd /opt/oxy
+nano .env    # Fill in MongoDB URI, DKIM key, S3 creds, etc.
 
 # 4. Generate DKIM keys
 docker run --rm -v $(pwd):/app -w /app node:20-alpine node packages/api/scripts/generate-dkim.js
+# Copy the private key into .env (DKIM_PRIVATE_KEY)
+# Add the DNS TXT record shown in the output
 
-# 5. Get TLS certificate
-certbot certonly --standalone -d mail.oxy.so
+# 5. Update the Caddyfile with your domain
+nano Caddyfile
 
-# 6. Mount certs in docker-compose.email.yml (add under email-worker > volumes):
-#    - /etc/letsencrypt/live/mail.oxy.so:/certs:ro
+# 6. Add DNS records (see DNS Records section above)
 
-# 7. Start
-docker compose -f docker-compose.email.yml up -d
+# 7. Request port 25 unblock from DigitalOcean
+#    https://cloud.digitalocean.com/support
 
-# 8. Verify
-docker compose -f docker-compose.email.yml logs -f email-worker
+# 8. Start everything
+docker compose up -d
+
+# 9. Verify
+docker compose logs -f
 ```
 
 ### Auto-Deploy (GitHub Actions)
 
-Push to `main` → GitHub Actions SSHs into the droplet → pulls → rebuilds → restarts.
+Push to `main` → GitHub Actions SSHs into the Droplet → pulls → rebuilds → restarts. Same push-to-deploy experience as App Platform.
 
 Add these **GitHub Secrets**:
 
 | Secret | Value |
 |--------|-------|
-| `EMAIL_DROPLET_HOST` | Your droplet IP or `mail.oxy.so` |
-| `EMAIL_DROPLET_USER` | `deploy` |
-| `EMAIL_DROPLET_SSH_KEY` | SSH private key for the deploy user |
+| `DROPLET_HOST` | Your Droplet IP or `api.oxy.so` |
+| `DROPLET_USER` | `deploy` |
+| `DROPLET_SSH_KEY` | SSH private key for the deploy user |
 
-The workflow (`.github/workflows/deploy-email.yml`) only triggers when email-related files change, so regular API pushes don't redeploy the email worker.
-
-You can also trigger a deploy manually from the GitHub Actions tab → "Deploy Email Worker" → "Run workflow".
+You can also trigger a deploy manually from the GitHub Actions tab → "Deploy to Droplet" → "Run workflow".
 
 ### Deployment Files
 
 ```
 OxyHQServices/
-├── Dockerfile.email              # Multi-stage Docker build for email worker
-├── docker-compose.email.yml      # Email worker + Rspamd services
-├── .env.email.example            # Template for email worker env vars
+├── Dockerfile                    # Multi-stage Docker build (API + SMTP)
+├── docker-compose.yml            # API + Rspamd + Caddy
+├── Caddyfile                     # Reverse proxy config (auto HTTPS)
+├── .env.example                  # Template for all env vars
 ├── scripts/
-│   └── setup-email-droplet.sh    # One-time droplet provisioning
+│   └── setup-droplet.sh          # One-time Droplet provisioning
 ├── .github/workflows/
-│   └── deploy-email.yml          # Auto-deploy on push to main
-└── packages/api/src/
-    └── email-worker.ts           # Standalone SMTP entry point
+│   └── deploy.yml                # Auto-deploy on push to main
+└── packages/api/scripts/
+    └── generate-dkim.js          # DKIM key generation utility
 ```

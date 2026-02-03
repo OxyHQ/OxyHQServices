@@ -1,11 +1,11 @@
 ##
-## Dockerfile for the Oxy Email Worker
+## Dockerfile for the Oxy API Server (with built-in email worker)
 ##
-## Runs only the SMTP inbound/outbound services (no Express HTTP server).
-## Deploy on a Droplet or any VPS where port 25 is accessible.
+## Runs the full Express API + SMTP inbound/outbound on a single process.
+## Set SMTP_ENABLED=true to activate the email server.
 ##
-## Build:  docker build -f Dockerfile.email -t oxy-email-worker .
-## Run:    docker run --env-file .env.email -p 25:25 -p 587:587 oxy-email-worker
+## Build:  docker build -t oxy-api .
+## Run:    docker run --env-file .env -p 8080:8080 -p 25:25 -p 587:587 oxy-api
 ##
 
 FROM node:20-alpine AS builder
@@ -15,7 +15,7 @@ WORKDIR /app
 # Copy workspace root files
 COPY package.json package-lock.json ./
 
-# Copy the packages needed by the API (core is a dependency)
+# Copy all package.json files for dependency resolution
 COPY packages/api/package.json packages/api/
 COPY packages/core/package.json packages/core/
 
@@ -47,8 +47,8 @@ RUN npm ci --ignore-scripts --omit=dev
 COPY --from=builder /app/packages/api/dist packages/api/dist
 COPY --from=builder /app/packages/core/dist packages/core/dist
 
-# The email worker entry point
-CMD ["node", "packages/api/dist/email-worker.js"]
+# Main API entry point (includes SMTP when SMTP_ENABLED=true)
+CMD ["node", "packages/api/dist/server.js"]
 
-# SMTP ports
-EXPOSE 25 587
+# HTTP API + SMTP ports
+EXPOSE 8080 25 587
