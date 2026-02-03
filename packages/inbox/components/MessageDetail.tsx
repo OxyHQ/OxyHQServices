@@ -307,7 +307,11 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
           onPress={handleForward}
           activeOpacity={0.7}
         >
-          <MaterialCommunityIcons name="share" size={18} color={colors.icon} />
+          {Platform.OS === 'web' ? (
+            <HugeiconsIcon icon={Forward01Icon as unknown as IconSvgElement} size={18} color={colors.icon} />
+          ) : (
+            <MaterialCommunityIcons name="share" size={18} color={colors.icon} />
+          )}
           <Text style={[styles.replyButtonText, { color: colors.text }]}>Forward</Text>
         </TouchableOpacity>
       </View>
