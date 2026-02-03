@@ -1,7 +1,9 @@
 /**
- * Email detail / reader screen.
+ * Reusable message detail view.
  *
- * Shows full email content with actions (reply, archive, delete, star).
+ * Supports two modes:
+ * - standalone: full-screen route with back button (mobile)
+ * - embedded: inline panel without back button (desktop split-view)
  */
 
 import React, { useEffect, useCallback, useMemo, useState } from 'react';
@@ -15,7 +17,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -40,8 +42,12 @@ function formatRecipients(addresses: EmailAddress[]): string {
   return addresses.map((a) => a.name || a.address).join(', ');
 }
 
-export default function MessageScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+interface MessageDetailProps {
+  mode: 'standalone' | 'embedded';
+  messageId: string;
+}
+
+export function MessageDetail({ mode, messageId }: MessageDetailProps) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
@@ -54,36 +60,43 @@ export default function MessageScreen() {
   const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
-    if (id) loadMessage(id);
-    return () => clearCurrentMessage();
-  }, [id, loadMessage, clearCurrentMessage]);
+    if (messageId) loadMessage(messageId);
+    return () => {
+      if (mode === 'standalone') clearCurrentMessage();
+    };
+  }, [messageId, loadMessage, clearCurrentMessage, mode]);
+
+  // Reset expanded state when message changes
+  useEffect(() => {
+    setExpanded(false);
+  }, [messageId]);
 
   const handleBack = useCallback(() => {
     router.back();
   }, [router]);
 
   const handleStar = useCallback(async () => {
-    if (!id) return;
+    if (!messageId) return;
     try {
-      await toggleStar(id);
+      await toggleStar(messageId);
     } catch {}
-  }, [id, toggleStar]);
+  }, [messageId, toggleStar]);
 
   const handleArchive = useCallback(async () => {
-    if (!id) return;
+    if (!messageId) return;
     try {
-      await archiveMessage(id);
-      router.back();
+      await archiveMessage(messageId);
+      if (mode === 'standalone') router.back();
     } catch {}
-  }, [id, archiveMessage, router]);
+  }, [messageId, archiveMessage, router, mode]);
 
   const handleDelete = useCallback(async () => {
-    if (!id) return;
+    if (!messageId) return;
     try {
-      await deleteMessage(id);
-      router.back();
+      await deleteMessage(messageId);
+      if (mode === 'standalone') router.back();
     } catch {}
-  }, [id, deleteMessage, router]);
+  }, [messageId, deleteMessage, router, mode]);
 
   const handleReply = useCallback(() => {
     if (!currentMessage) return;
@@ -114,14 +127,22 @@ export default function MessageScreen() {
     });
   }, [router, currentMessage]);
 
-  if (!currentMessage) {
+  if (!currentMessage || currentMessage._id !== messageId) {
     return (
-      <View style={[styles.container, { backgroundColor: colors.background, paddingTop: insets.top }]}>
-        <View style={styles.toolbar}>
-          <TouchableOpacity onPress={handleBack} style={styles.iconButton}>
-            <MaterialCommunityIcons name="arrow-left" size={24} color={colors.icon} />
-          </TouchableOpacity>
-        </View>
+      <View
+        style={[
+          styles.container,
+          { backgroundColor: colors.background },
+          mode === 'standalone' && { paddingTop: insets.top },
+        ]}
+      >
+        {mode === 'standalone' && (
+          <View style={styles.toolbar}>
+            <TouchableOpacity onPress={handleBack} style={styles.iconButton}>
+              <MaterialCommunityIcons name="arrow-left" size={24} color={colors.icon} />
+            </TouchableOpacity>
+          </View>
+        )}
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
@@ -130,15 +151,23 @@ export default function MessageScreen() {
   }
 
   const senderName = currentMessage.from.name || currentMessage.from.address.split('@')[0];
-  const maxContentWidth = Math.min(width, 720);
+  const maxContentWidth = mode === 'standalone' ? Math.min(width, 720) : undefined;
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background, paddingTop: insets.top }]}>
+    <View
+      style={[
+        styles.container,
+        { backgroundColor: colors.background },
+        mode === 'standalone' && { paddingTop: insets.top },
+      ]}
+    >
       {/* Toolbar */}
       <View style={[styles.toolbar, { borderBottomColor: colors.border }]}>
-        <TouchableOpacity onPress={handleBack} style={styles.iconButton}>
-          <MaterialCommunityIcons name="arrow-left" size={24} color={colors.icon} />
-        </TouchableOpacity>
+        {mode === 'standalone' && (
+          <TouchableOpacity onPress={handleBack} style={styles.iconButton}>
+            <MaterialCommunityIcons name="arrow-left" size={24} color={colors.icon} />
+          </TouchableOpacity>
+        )}
         <View style={styles.toolbarSpacer} />
         <TouchableOpacity onPress={handleArchive} style={styles.iconButton}>
           <MaterialCommunityIcons name="archive-outline" size={22} color={colors.icon} />
@@ -157,7 +186,10 @@ export default function MessageScreen() {
 
       <ScrollView
         style={styles.body}
-        contentContainerStyle={[styles.bodyContent, { maxWidth: maxContentWidth, alignSelf: 'center', width: '100%' }]}
+        contentContainerStyle={[
+          styles.bodyContent,
+          maxContentWidth ? { maxWidth: maxContentWidth, alignSelf: 'center' as const, width: '100%' } : undefined,
+        ]}
         showsVerticalScrollIndicator={false}
       >
         {/* Subject */}
@@ -213,7 +245,7 @@ export default function MessageScreen() {
           {
             backgroundColor: colors.background,
             borderTopColor: colors.border,
-            paddingBottom: insets.bottom + 8,
+            paddingBottom: mode === 'standalone' ? insets.bottom + 8 : 8,
           },
         ]}
       >

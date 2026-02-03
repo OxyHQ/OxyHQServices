@@ -7,6 +7,7 @@
 import { create } from 'zustand';
 import { createEmailApi, type EmailApiInstance, type Mailbox, type Message, type Pagination } from '@/services/emailApi';
 import type { OxyServices } from '@oxyhq/core';
+import { MOCK_MAILBOXES, MOCK_MESSAGES } from '@/constants/mockData';
 
 type HttpService = OxyServices['httpService'];
 
@@ -20,6 +21,9 @@ interface EmailState {
   messages: Message[];
   pagination: Pagination | null;
   currentMessage: Message | null;
+
+  // Selection (split-view)
+  selectedMessageId: string | null;
 
   // Loading
   loading: boolean;
@@ -52,6 +56,7 @@ export const useEmailStore = create<EmailState>((set, get) => ({
   messages: [],
   pagination: null,
   currentMessage: null,
+  selectedMessageId: null,
   loading: false,
   refreshing: false,
   loadingMore: false,
@@ -68,7 +73,13 @@ export const useEmailStore = create<EmailState>((set, get) => ({
 
   loadMailboxes: async () => {
     const api = get()._api;
-    if (!api) return;
+    if (!api) {
+      if (__DEV__) {
+        const inbox = MOCK_MAILBOXES.find((m) => m.specialUse === 'Inbox') ?? MOCK_MAILBOXES[0];
+        set({ mailboxes: MOCK_MAILBOXES, mailboxesLoaded: true, currentMailbox: inbox });
+      }
+      return;
+    }
     try {
       const mailboxes = await api.listMailboxes();
       const inbox = mailboxes.find((m) => m.specialUse === 'Inbox') ?? mailboxes[0] ?? null;
@@ -85,7 +96,17 @@ export const useEmailStore = create<EmailState>((set, get) => ({
 
   loadMessages: async (mailboxId, offset = 0) => {
     const api = get()._api;
-    if (!api) return;
+    if (!api) {
+      if (__DEV__) {
+        const filtered = MOCK_MESSAGES.filter((m) => m.mailboxId === mailboxId);
+        set({
+          messages: filtered,
+          pagination: { offset: 0, limit: 50, total: filtered.length, hasMore: false },
+          loading: false,
+        });
+      }
+      return;
+    }
     set({ loading: true, error: null });
     try {
       const result = await api.listMessages(mailboxId, { limit: 50, offset });
@@ -119,9 +140,22 @@ export const useEmailStore = create<EmailState>((set, get) => ({
 
   refreshMessages: async () => {
     const api = get()._api;
-    if (!api) return;
     const { currentMailbox } = get();
     if (!currentMailbox) return;
+
+    if (!api) {
+      if (__DEV__) {
+        set({ refreshing: true });
+        const filtered = MOCK_MESSAGES.filter((m) => m.mailboxId === currentMailbox._id);
+        set({
+          messages: filtered,
+          pagination: { offset: 0, limit: 50, total: filtered.length, hasMore: false },
+          mailboxes: MOCK_MAILBOXES,
+          refreshing: false,
+        });
+      }
+      return;
+    }
 
     set({ refreshing: true });
     try {
@@ -142,7 +176,20 @@ export const useEmailStore = create<EmailState>((set, get) => ({
 
   loadMessage: async (messageId) => {
     const api = get()._api;
-    if (!api) return;
+    if (!api) {
+      if (__DEV__) {
+        const message = MOCK_MESSAGES.find((m) => m._id === messageId);
+        if (message) {
+          set({ currentMessage: message });
+          set((state) => ({
+            messages: state.messages.map((m) =>
+              m._id === messageId ? { ...m, flags: { ...m.flags, seen: true } } : m,
+            ),
+          }));
+        }
+      }
+      return;
+    }
     try {
       const message = await api.getMessage(messageId);
       set({ currentMessage: message });
@@ -158,7 +205,6 @@ export const useEmailStore = create<EmailState>((set, get) => ({
 
   toggleStar: async (messageId) => {
     const api = get()._api;
-    if (!api) return;
     const msg = get().messages.find((m) => m._id === messageId);
     if (!msg) return;
     const starred = !msg.flags.starred;
@@ -168,64 +214,95 @@ export const useEmailStore = create<EmailState>((set, get) => ({
         m._id === messageId ? { ...m, flags: { ...m.flags, starred } } : m,
       ),
     }));
-    try {
-      await api.updateFlags(messageId, { starred });
-    } catch {
-      // Revert on error
-      set((state) => ({
-        messages: state.messages.map((m) =>
-          m._id === messageId ? { ...m, flags: { ...m.flags, starred: !starred } } : m,
-        ),
-      }));
+    if (api) {
+      try {
+        await api.updateFlags(messageId, { starred });
+      } catch {
+        // Revert on error
+        set((state) => ({
+          messages: state.messages.map((m) =>
+            m._id === messageId ? { ...m, flags: { ...m.flags, starred: !starred } } : m,
+          ),
+        }));
+      }
     }
   },
 
   toggleRead: async (messageId, seen) => {
     const api = get()._api;
-    if (!api) return;
     set((state) => ({
       messages: state.messages.map((m) =>
         m._id === messageId ? { ...m, flags: { ...m.flags, seen } } : m,
       ),
     }));
-    try {
-      await api.updateFlags(messageId, { seen });
-    } catch {}
+    if (api) {
+      try {
+        await api.updateFlags(messageId, { seen });
+      } catch {}
+    }
   },
 
   archiveMessage: async (messageId) => {
     const api = get()._api;
-    if (!api) return;
-    const { mailboxes } = get();
+    const { mailboxes, selectedMessageId, messages } = get();
     const archive = mailboxes.find((m) => m.specialUse === 'Archive');
     if (!archive) return;
+
+    // Auto-select next message if the archived one is selected
+    let nextId: string | null = null;
+    if (selectedMessageId === messageId) {
+      const idx = messages.findIndex((m) => m._id === messageId);
+      if (idx < messages.length - 1) nextId = messages[idx + 1]._id;
+      else if (idx > 0) nextId = messages[idx - 1]._id;
+    }
+
     set((state) => ({
       messages: state.messages.filter((m) => m._id !== messageId),
+      ...(selectedMessageId === messageId
+        ? { selectedMessageId: nextId, currentMessage: null }
+        : {}),
     }));
-    try {
-      await api.moveMessage(messageId, archive._id);
-    } catch {}
+    if (nextId) get().loadMessage(nextId);
+
+    if (api) {
+      try {
+        await api.moveMessage(messageId, archive._id);
+      } catch {}
+    }
   },
 
   deleteMessage: async (messageId) => {
     const api = get()._api;
-    if (!api) return;
-    const { mailboxes, currentMailbox } = get();
+    const { mailboxes, currentMailbox, selectedMessageId, messages } = get();
     const trash = mailboxes.find((m) => m.specialUse === 'Trash');
+
+    // Auto-select next message if the deleted one is selected
+    let nextId: string | null = null;
+    if (selectedMessageId === messageId) {
+      const idx = messages.findIndex((m) => m._id === messageId);
+      if (idx < messages.length - 1) nextId = messages[idx + 1]._id;
+      else if (idx > 0) nextId = messages[idx - 1]._id;
+    }
 
     set((state) => ({
       messages: state.messages.filter((m) => m._id !== messageId),
+      ...(selectedMessageId === messageId
+        ? { selectedMessageId: nextId, currentMessage: null }
+        : {}),
     }));
+    if (nextId) get().loadMessage(nextId);
 
-    try {
-      if (currentMailbox?.specialUse === 'Trash') {
-        await api.deleteMessage(messageId, true);
-      } else if (trash) {
-        await api.moveMessage(messageId, trash._id);
-      } else {
-        await api.deleteMessage(messageId);
-      }
-    } catch {}
+    if (api) {
+      try {
+        if (currentMailbox?.specialUse === 'Trash') {
+          await api.deleteMessage(messageId, true);
+        } else if (trash) {
+          await api.moveMessage(messageId, trash._id);
+        } else {
+          await api.deleteMessage(messageId);
+        }
+      } catch {}
+    }
   },
 
   clearCurrentMessage: () => set({ currentMessage: null }),

@@ -39,6 +39,7 @@ export const Colors = {
     // Swipe
     swipeArchive: '#1E8E3E',
     swipeDelete: '#D93025',
+    selectedRow: '#E8F0FE',
   },
   dark: {
     text: '#E8EAED',
@@ -71,6 +72,7 @@ export const Colors = {
     warning: '#FDD663',
     swipeArchive: '#81C995',
     swipeDelete: '#F28B82',
+    selectedRow: '#1A3A5C',
   },
 };
 

@@ -22,9 +22,9 @@ export default function DrawerLayout() {
     }
   }, [isAuthenticated, oxyServices, _initApi]);
 
-  // Load mailboxes on auth
+  // Load mailboxes on auth (or with mock data in __DEV__)
   const initEmail = useCallback(async () => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated && !__DEV__) return;
     if (!mailboxesLoaded) {
       await loadMailboxes();
     }
@@ -36,7 +36,8 @@ export default function DrawerLayout() {
 
   // Load messages when mailbox is set
   useEffect(() => {
-    if (!currentMailbox || !isAuthenticated) return;
+    if (!currentMailbox) return;
+    if (!isAuthenticated && !__DEV__) return;
     loadMessages(currentMailbox._id);
   }, [currentMailbox?._id, isAuthenticated, loadMessages]);
 
@@ -68,9 +69,8 @@ export default function DrawerLayout() {
           swipeEnabled: Platform.OS !== 'web',
         }}
       >
-        <Drawer.Screen name="index" options={{ title: 'Inbox' }} />
+        <Drawer.Screen name="(inbox)" options={{ title: 'Inbox' }} />
         <Drawer.Screen name="search" options={{ title: 'Search', drawerItemStyle: { display: 'none' } }} />
-        <Drawer.Screen name="message/[id]" options={{ title: 'Message', drawerItemStyle: { display: 'none' } }} />
         <Drawer.Screen name="settings" options={{ title: 'Settings', drawerItemStyle: { display: 'none' } }} />
       </Drawer>
     </View>

@@ -1,15 +1,16 @@
 /**
  * Gmail-style message row for the inbox list.
+ *
+ * Shows sender, subject, preview, and mini-card previews for attachments.
  */
 
 import React, { useCallback, useMemo } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
 import { Avatar } from './Avatar';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
-import type { Message } from '@/services/emailApi';
+import type { Message, Attachment } from '@/services/emailApi';
 
 function formatDate(dateStr: string): string {
   const date = new Date(dateStr);
@@ -42,21 +43,47 @@ function getPreview(message: Message): string {
   return text.replace(/\s+/g, ' ').trim().substring(0, 120);
 }
 
+type AttachmentInfo = {
+  icon: keyof typeof MaterialCommunityIcons.glyphMap;
+  label: string;
+  color: string;
+};
+
+function getAttachmentInfo(att: Attachment): AttachmentInfo {
+  const ct = att.contentType.toLowerCase();
+  if (ct.startsWith('image/')) return { icon: 'image-outline', label: att.filename, color: '#34A853' };
+  if (ct.startsWith('video/')) return { icon: 'play-circle-outline', label: att.filename, color: '#EA4335' };
+  if (ct.startsWith('audio/')) return { icon: 'music-note-outline', label: att.filename, color: '#9334E6' };
+  if (ct.includes('pdf')) return { icon: 'file-pdf-box', label: att.filename, color: '#EA4335' };
+  if (ct.includes('spreadsheet') || ct.includes('excel') || ct.includes('csv'))
+    return { icon: 'file-excel-outline', label: att.filename, color: '#34A853' };
+  if (ct.includes('presentation') || ct.includes('powerpoint'))
+    return { icon: 'file-powerpoint-outline', label: att.filename, color: '#E8710A' };
+  if (ct.includes('document') || ct.includes('word') || ct.includes('msword'))
+    return { icon: 'file-word-outline', label: att.filename, color: '#1A73E8' };
+  if (ct.includes('zip') || ct.includes('rar') || ct.includes('tar') || ct.includes('gz'))
+    return { icon: 'zip-box-outline', label: att.filename, color: '#5F6368' };
+  return { icon: 'file-outline', label: att.filename, color: '#5F6368' };
+}
+
 export function MessageRow({
   message,
   onStar,
+  onSelect,
+  isSelected,
 }: {
   message: Message;
   onStar: (id: string) => void;
+  onSelect: (id: string) => void;
+  isSelected?: boolean;
 }) {
-  const router = useRouter();
   const colorScheme = useColorScheme();
   const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
   const isUnread = !message.flags.seen;
 
   const handlePress = useCallback(() => {
-    router.push(`/message/${message._id}`);
-  }, [router, message._id]);
+    onSelect(message._id);
+  }, [message._id, onSelect]);
 
   const handleStar = useCallback(() => {
     onStar(message._id);
@@ -71,7 +98,7 @@ export function MessageRow({
     <TouchableOpacity
       style={[
         styles.container,
-        { backgroundColor: isUnread ? colors.surface : colors.background },
+        { backgroundColor: isSelected ? colors.selectedRow : isUnread ? colors.surface : colors.background },
       ]}
       onPress={handlePress}
       activeOpacity={0.7}
@@ -116,15 +143,32 @@ export function MessageRow({
           <Text style={[styles.preview, { color: colors.secondaryText }]} numberOfLines={1}>
             {preview}
           </Text>
-          {hasAttachments && (
-            <MaterialCommunityIcons
-              name="paperclip"
-              size={14}
-              color={colors.secondaryText}
-              style={styles.attachmentIcon}
-            />
-          )}
         </View>
+
+        {/* Attachment mini-cards */}
+        {hasAttachments && (
+          <View style={styles.attachmentRow}>
+            {message.attachments.slice(0, 3).map((att, i) => {
+              const info = getAttachmentInfo(att);
+              return (
+                <View
+                  key={i}
+                  style={[styles.attachmentCard, { borderColor: colors.border }]}
+                >
+                  <MaterialCommunityIcons name={info.icon as any} size={14} color={info.color} />
+                  <Text style={[styles.attachmentLabel, { color: colors.text }]} numberOfLines={1}>
+                    {info.label}
+                  </Text>
+                </View>
+              );
+            })}
+            {message.attachments.length > 3 && (
+              <Text style={[styles.moreAttachments, { color: colors.secondaryText }]}>
+                +{message.attachments.length - 3}
+              </Text>
+            )}
+          </View>
+        )}
       </View>
 
       <TouchableOpacity onPress={handleStar} hitSlop={8} style={styles.starButton}>
@@ -141,7 +185,7 @@ export function MessageRow({
 const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     paddingVertical: 12,
     paddingHorizontal: 16,
     gap: 12,
@@ -183,10 +227,33 @@ const styles = StyleSheet.create({
     fontSize: 13,
     flex: 1,
   },
-  attachmentIcon: {
-    marginLeft: 4,
+  attachmentRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 6,
+  },
+  attachmentCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+    maxWidth: 140,
+  },
+  attachmentLabel: {
+    fontSize: 11,
+    flex: 1,
+  },
+  moreAttachments: {
+    fontSize: 11,
+    alignSelf: 'center',
+    paddingHorizontal: 4,
   },
   starButton: {
     padding: 4,
+    marginTop: 2,
   },
 });

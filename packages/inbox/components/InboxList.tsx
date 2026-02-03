@@ -1,5 +1,6 @@
 /**
- * Inbox screen — Gmail-style email list with search bar, FAB compose, and pull-to-refresh.
+ * Inbox message list with search bar, FAB compose, and pull-to-refresh.
+ * Used by the (inbox) layout on desktop (always visible) and by the index route on mobile.
  */
 
 import React, { useCallback, useMemo } from 'react';
@@ -27,7 +28,12 @@ import { SearchHeader } from '@/components/SearchHeader';
 import { EmptyIllustration } from '@/components/EmptyIllustration';
 import type { Message } from '@/services/emailApi';
 
-export default function InboxScreen() {
+interface InboxListProps {
+  /** When true, uses router.replace for message navigation (desktop split-view) */
+  replaceNavigation?: boolean;
+}
+
+export function InboxList({ replaceNavigation }: InboxListProps) {
   const router = useRouter();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
@@ -41,6 +47,7 @@ export default function InboxScreen() {
     refreshing,
     loadingMore,
     currentMailbox,
+    selectedMessageId,
     refreshMessages,
     loadMoreMessages,
     toggleStar,
@@ -68,6 +75,17 @@ export default function InboxScreen() {
     [toggleStar],
   );
 
+  const handleMessagePress = useCallback(
+    (messageId: string) => {
+      if (replaceNavigation) {
+        router.replace(`/conversation/${messageId}`);
+      } else {
+        router.push(`/conversation/${messageId}`);
+      }
+    },
+    [router, replaceNavigation],
+  );
+
   const handleOpenDrawer = useCallback(() => {
     navigation.dispatch(DrawerActions.openDrawer());
   }, [navigation]);
@@ -83,8 +101,15 @@ export default function InboxScreen() {
   const mailboxTitle = currentMailbox?.specialUse || currentMailbox?.name || 'Inbox';
 
   const renderItem = useCallback(
-    ({ item }: { item: Message }) => <MessageRow message={item} onStar={handleStar} />,
-    [handleStar],
+    ({ item }: { item: Message }) => (
+      <MessageRow
+        message={item}
+        onStar={handleStar}
+        onSelect={handleMessagePress}
+        isSelected={item._id === selectedMessageId}
+      />
+    ),
+    [handleStar, handleMessagePress, selectedMessageId],
   );
 
   const keyExtractor = useCallback((item: Message) => item._id, []);
@@ -123,7 +148,6 @@ export default function InboxScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Search Bar / App Bar */}
       <SearchHeader
         onLeftIcon={handleOpenDrawer}
         leftIcon="menu"
@@ -131,14 +155,12 @@ export default function InboxScreen() {
         onPress={handleSearch}
       />
 
-      {/* Loading */}
       {loading && messages.length === 0 && (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
       )}
 
-      {/* Message List */}
       <FlatList
         data={messages}
         renderItem={renderItem}
@@ -160,7 +182,6 @@ export default function InboxScreen() {
         showsVerticalScrollIndicator={false}
       />
 
-      {/* FAB Compose */}
       <TouchableOpacity
         style={[
           styles.fab,
