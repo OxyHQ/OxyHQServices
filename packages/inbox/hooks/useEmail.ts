@@ -14,14 +14,17 @@ type HttpService = OxyServices['httpService'];
 interface EmailState {
   currentMailbox: Mailbox | null;
   selectedMessageId: string | null;
+  sidebarCollapsed: boolean;
   _api: EmailApiInstance | null;
   _initApi: (http: HttpService) => EmailApiInstance;
   selectMailbox: (mailbox: Mailbox) => void;
+  toggleSidebar: () => void;
 }
 
 export const useEmailStore = create<EmailState>((set, get) => ({
   currentMailbox: null,
   selectedMessageId: null,
+  sidebarCollapsed: false,
   _api: null,
 
   _initApi: (http: HttpService) => {
@@ -34,5 +37,9 @@ export const useEmailStore = create<EmailState>((set, get) => ({
 
   selectMailbox: (mailbox) => {
     set({ currentMailbox: mailbox });
+  },
+
+  toggleSidebar: () => {
+    set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed }));
   },
 }));

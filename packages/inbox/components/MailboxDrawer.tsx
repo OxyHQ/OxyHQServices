@@ -30,6 +30,8 @@ import {
   LabelIcon,
   Settings01Icon,
   Logout01Icon,
+  SidebarLeft01Icon,
+  SidebarRight01Icon,
 } from '@hugeicons/core-free-icons';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
@@ -79,6 +81,7 @@ function NavItem({
   isActive,
   colors,
   badge,
+  collapsed,
   onPress,
 }: {
   icon: keyof typeof MaterialCommunityIcons.glyphMap;
@@ -87,6 +90,7 @@ function NavItem({
   isActive: boolean;
   colors: (typeof Colors)['light'];
   badge?: number;
+  collapsed?: boolean;
   onPress: () => void;
 }) {
   const iconColor = isActive ? colors.sidebarItemActiveText : colors.icon;
@@ -95,6 +99,7 @@ function NavItem({
       style={[
         styles.item,
         isActive && { backgroundColor: colors.sidebarItemActive },
+        collapsed && styles.itemCollapsed,
       ]}
       onPress={onPress}
       activeOpacity={0.7}
@@ -104,31 +109,35 @@ function NavItem({
       ) : (
         <MaterialCommunityIcons name={icon} size={20} color={iconColor} />
       )}
-      <Text
-        style={[
-          styles.itemLabel,
-          { color: isActive ? colors.sidebarItemActiveText : colors.sidebarText },
-          isActive && styles.itemLabelActive,
-        ]}
-        numberOfLines={1}
-      >
-        {label}
-      </Text>
-      {badge != null && badge > 0 && (
-        <Text
-          style={[
-            styles.badge,
-            { color: isActive ? colors.sidebarItemActiveText : colors.secondaryText },
-          ]}
-        >
-          {badge}
-        </Text>
+      {!collapsed && (
+        <>
+          <Text
+            style={[
+              styles.itemLabel,
+              { color: isActive ? colors.sidebarItemActiveText : colors.sidebarText },
+              isActive && styles.itemLabelActive,
+            ]}
+            numberOfLines={1}
+          >
+            {label}
+          </Text>
+          {badge != null && badge > 0 && (
+            <Text
+              style={[
+                styles.badge,
+                { color: isActive ? colors.sidebarItemActiveText : colors.secondaryText },
+              ]}
+            >
+              {badge}
+            </Text>
+          )}
+        </>
       )}
     </TouchableOpacity>
   );
 }
 
-export function MailboxDrawer({ onClose }: { onClose?: () => void }) {
+export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () => void; onToggle?: () => void; collapsed?: boolean }) {
   const colorScheme = useColorScheme();
   const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
   const { user, logout } = useOxy();
@@ -198,16 +207,39 @@ export function MailboxDrawer({ onClose }: { onClose?: () => void }) {
     : user?.username || 'Account';
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.sidebarBackground }]}>
+    <View style={[styles.container, { backgroundColor: colors.sidebarBackground }, collapsed && styles.containerCollapsed]}>
       {/* Header */}
-      <View style={[styles.header, { borderBottomColor: colors.border }]}>
-        <Text style={[styles.appTitle, { color: colors.primary }]}>Inbox</Text>
-        <Text style={[styles.email, { color: colors.secondaryText }]}>{emailAddress}</Text>
+      <View style={[styles.header, { borderBottomColor: colors.border }, collapsed && styles.headerCollapsed]}>
+        {collapsed ? (
+          <TouchableOpacity onPress={onToggle} style={styles.collapseButtonCenter} activeOpacity={0.7}>
+            {Platform.OS === 'web' ? (
+              <HugeiconsIcon icon={SidebarRight01Icon as unknown as IconSvgElement} size={20} color={colors.icon} />
+            ) : (
+              <MaterialCommunityIcons name="dock-right" size={20} color={colors.icon} />
+            )}
+          </TouchableOpacity>
+        ) : (
+          <>
+            <View style={styles.headerRow}>
+              <Text style={[styles.appTitle, { color: colors.primary }]}>Inbox</Text>
+              {onToggle && (
+                <TouchableOpacity onPress={onToggle} style={styles.collapseButton} activeOpacity={0.7}>
+                  {Platform.OS === 'web' ? (
+                    <HugeiconsIcon icon={SidebarLeft01Icon as unknown as IconSvgElement} size={20} color={colors.icon} />
+                  ) : (
+                    <MaterialCommunityIcons name="dock-left" size={20} color={colors.icon} />
+                  )}
+                </TouchableOpacity>
+              )}
+            </View>
+            <Text style={[styles.email, { color: colors.secondaryText }]}>{emailAddress}</Text>
+          </>
+        )}
       </View>
 
-      <ScrollView style={styles.list} showsVerticalScrollIndicator={false}>
-        <NavItem icon="home-outline" hugeIcon={Home01Icon as unknown as IconSvgElement} label="Home" isActive={isHomeActive} colors={colors} onPress={handleHome} />
-        <NavItem icon="cards-heart-outline" hugeIcon={FavouriteIcon as unknown as IconSvgElement} label="For You" isActive={isForYouActive} colors={colors} onPress={handleForYou} />
+      <ScrollView style={[styles.list, collapsed && styles.listCollapsed]} showsVerticalScrollIndicator={false}>
+        <NavItem icon="home-outline" hugeIcon={Home01Icon as unknown as IconSvgElement} label="Home" isActive={isHomeActive} colors={colors} collapsed={collapsed} onPress={handleHome} />
+        <NavItem icon="cards-heart-outline" hugeIcon={FavouriteIcon as unknown as IconSvgElement} label="For You" isActive={isForYouActive} colors={colors} collapsed={collapsed} onPress={handleForYou} />
 
         {/* System Mailboxes */}
         {systemMailboxes.map((mailbox) => (
@@ -219,12 +251,13 @@ export function MailboxDrawer({ onClose }: { onClose?: () => void }) {
             isActive={!isSpecialPage && currentMailbox?._id === mailbox._id}
             colors={colors}
             badge={mailbox.unseenMessages}
+            collapsed={collapsed}
             onPress={() => handleSelect(mailbox)}
           />
         ))}
 
         {/* Custom Labels */}
-        {customMailboxes.length > 0 && (
+        {!collapsed && customMailboxes.length > 0 && (
           <>
             <View style={[styles.divider, { backgroundColor: colors.border }]} />
             <Text style={[styles.sectionTitle, { color: colors.secondaryText }]}>Labels</Text>
@@ -241,84 +274,116 @@ export function MailboxDrawer({ onClose }: { onClose?: () => void }) {
             ))}
           </>
         )}
-      </ScrollView>
-
-      {/* Account section at bottom — wrapper for button + inline popover */}
-      <View style={styles.footerWrapper}>
-        {/* Popover menu — rendered inline, positioned above the button */}
-        {menuVisible && (
+        {collapsed && customMailboxes.length > 0 && (
           <>
-            <Pressable style={styles.menuBackdrop} onPress={() => setMenuVisible(false)} />
-            <View
-              style={[
-                styles.menuContainer,
-                {
-                  backgroundColor: colors.surface,
-                  borderColor: colors.border,
-                  ...Platform.select({
-                    web: { boxShadow: '0 4px 24px rgba(0,0,0,0.18)' } as any,
-                    default: {},
-                  }),
-                },
-              ]}
-            >
-              {/* User info header */}
-              <View style={[styles.menuHeader, { borderBottomColor: colors.border }]}>
-                <Avatar name={user?.name?.first || user?.username || '?'} size={36} />
-                <View style={styles.menuHeaderInfo}>
-                  <Text style={[styles.menuHeaderName, { color: colors.text }]} numberOfLines={1}>
-                    {displayName}
-                  </Text>
-                  <Text style={[styles.menuHeaderEmail, { color: colors.secondaryText }]} numberOfLines={1}>
-                    {emailAddress}
-                  </Text>
-                </View>
-              </View>
-
-              {/* Menu items */}
-              <View style={styles.menuItems}>
-                <TouchableOpacity style={styles.menuItem} onPress={() => handleMenuItem('settings')} activeOpacity={0.6}>
-                  {Platform.OS === 'web' ? (
-                    <HugeiconsIcon icon={Settings01Icon as unknown as IconSvgElement} size={18} color={colors.icon} />
-                  ) : (
-                    <MaterialCommunityIcons name="cog-outline" size={18} color={colors.icon} />
-                  )}
-                  <Text style={[styles.menuItemText, { color: colors.text }]}>Settings</Text>
-                </TouchableOpacity>
-                <View style={[styles.menuDivider, { backgroundColor: colors.border }]} />
-                <TouchableOpacity style={styles.menuItem} onPress={() => handleMenuItem('logout')} activeOpacity={0.6}>
-                  {Platform.OS === 'web' ? (
-                    <HugeiconsIcon icon={Logout01Icon as unknown as IconSvgElement} size={18} color={colors.icon} />
-                  ) : (
-                    <MaterialCommunityIcons name="logout" size={18} color={colors.icon} />
-                  )}
-                  <Text style={[styles.menuItemText, { color: colors.text }]}>Log out</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
+            <View style={[styles.divider, { backgroundColor: colors.border }]} />
+            {customMailboxes.map((mailbox) => (
+              <NavItem
+                key={mailbox._id}
+                icon="label-outline"
+                hugeIcon={LabelIcon as unknown as IconSvgElement}
+                label={mailbox.name}
+                isActive={!isSpecialPage && currentMailbox?._id === mailbox._id}
+                colors={colors}
+                collapsed
+                onPress={() => handleSelect(mailbox)}
+              />
+            ))}
           </>
         )}
+      </ScrollView>
 
-        {/* Account button */}
+      {/* Account section at bottom */}
+      {!collapsed && (
+        <View style={styles.footerWrapper}>
+          {/* Popover menu */}
+          {menuVisible && (
+            <>
+              <Pressable style={styles.menuBackdrop} onPress={() => setMenuVisible(false)} />
+              <View
+                style={[
+                  styles.menuContainer,
+                  {
+                    backgroundColor: colors.surface,
+                    borderColor: colors.border,
+                    ...Platform.select({
+                      web: { boxShadow: '0 4px 24px rgba(0,0,0,0.18)' } as any,
+                      default: {},
+                    }),
+                  },
+                ]}
+              >
+                {/* User info header */}
+                <View style={[styles.menuHeader, { borderBottomColor: colors.border }]}>
+                  <Avatar name={user?.name?.first || user?.username || '?'} size={36} />
+                  <View style={styles.menuHeaderInfo}>
+                    <Text style={[styles.menuHeaderName, { color: colors.text }]} numberOfLines={1}>
+                      {displayName}
+                    </Text>
+                    <Text style={[styles.menuHeaderEmail, { color: colors.secondaryText }]} numberOfLines={1}>
+                      {emailAddress}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Menu items */}
+                <View style={styles.menuItems}>
+                  <TouchableOpacity style={styles.menuItem} onPress={() => handleMenuItem('settings')} activeOpacity={0.6}>
+                    {Platform.OS === 'web' ? (
+                      <HugeiconsIcon icon={Settings01Icon as unknown as IconSvgElement} size={18} color={colors.icon} />
+                    ) : (
+                      <MaterialCommunityIcons name="cog-outline" size={18} color={colors.icon} />
+                    )}
+                    <Text style={[styles.menuItemText, { color: colors.text }]}>Settings</Text>
+                  </TouchableOpacity>
+                  <View style={[styles.menuDivider, { backgroundColor: colors.border }]} />
+                  <TouchableOpacity style={styles.menuItem} onPress={() => handleMenuItem('logout')} activeOpacity={0.6}>
+                    {Platform.OS === 'web' ? (
+                      <HugeiconsIcon icon={Logout01Icon as unknown as IconSvgElement} size={18} color={colors.icon} />
+                    ) : (
+                      <MaterialCommunityIcons name="logout" size={18} color={colors.icon} />
+                    )}
+                    <Text style={[styles.menuItemText, { color: colors.text }]}>Log out</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </>
+          )}
+
+          {/* Account button */}
+          <View style={[styles.footer, { borderTopColor: colors.border }]}>
+            <TouchableOpacity
+              style={styles.accountButton}
+              onPress={handleOpenMenu}
+              activeOpacity={0.7}
+            >
+              <Avatar name={user?.name?.first || user?.username || '?'} size={32} />
+              <View style={styles.accountInfo}>
+                <Text style={[styles.accountName, { color: colors.text }]} numberOfLines={1}>
+                  {displayName}
+                </Text>
+                <Text style={[styles.accountEmail, { color: colors.secondaryText }]} numberOfLines={1}>
+                  {emailAddress}
+                </Text>
+              </View>
+              <MaterialCommunityIcons name="unfold-more-horizontal" size={18} color={colors.secondaryText} />
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {/* Collapsed footer — just avatar */}
+      {collapsed && (
         <View style={[styles.footer, { borderTopColor: colors.border }]}>
           <TouchableOpacity
-            style={styles.accountButton}
+            style={styles.collapsedAccountButton}
             onPress={handleOpenMenu}
             activeOpacity={0.7}
           >
             <Avatar name={user?.name?.first || user?.username || '?'} size={32} />
-            <View style={styles.accountInfo}>
-              <Text style={[styles.accountName, { color: colors.text }]} numberOfLines={1}>
-                {displayName}
-              </Text>
-              <Text style={[styles.accountEmail, { color: colors.secondaryText }]} numberOfLines={1}>
-                {emailAddress}
-              </Text>
-            </View>
-            <MaterialCommunityIcons name="unfold-more-horizontal" size={18} color={colors.secondaryText} />
           </TouchableOpacity>
         </View>
-      </View>
+      )}
     </View>
   );
 }
@@ -328,16 +393,43 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingTop: 48,
   },
+  containerCollapsed: {
+    alignItems: 'center',
+  },
   header: {
     paddingHorizontal: 20,
     paddingBottom: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
     marginBottom: 4,
   },
+  headerCollapsed: {
+    paddingHorizontal: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
   appTitle: {
     fontSize: 28,
     fontWeight: '900',
     marginBottom: 2,
+  },
+  collapseButton: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+  },
+  collapseButtonCenter: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
   },
   email: {
     fontSize: 12,
@@ -346,6 +438,9 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 8,
   },
+  listCollapsed: {
+    paddingHorizontal: 4,
+  },
   item: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -353,6 +448,12 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     marginVertical: 1,
     gap: 12,
+  },
+  itemCollapsed: {
+    justifyContent: 'center',
+    padding: 10,
+    borderRadius: 12,
+    gap: 0,
   },
   itemLabel: {
     flex: 1,
@@ -394,6 +495,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderRadius: 8,
     gap: 10,
+  },
+  collapsedAccountButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
   },
   accountInfo: {
     flex: 1,

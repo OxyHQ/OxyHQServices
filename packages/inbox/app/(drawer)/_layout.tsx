@@ -14,6 +14,7 @@ export default function DrawerLayout() {
   const isDesktop = Platform.OS === 'web' && width >= 900;
   const { isAuthenticated, oxyServices } = useOxy();
   const _initApi = useEmailStore((s) => s._initApi);
+  const sidebarCollapsed = useEmailStore((s) => s.sidebarCollapsed);
 
   // Initialize email API with httpService when authenticated
   useEffect(() => {
@@ -22,11 +23,15 @@ export default function DrawerLayout() {
     }
   }, [isAuthenticated, oxyServices, _initApi]);
 
+  const drawerWidth = isDesktop ? (sidebarCollapsed ? 64 : 280) : 300;
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <Drawer
         drawerContent={(props) => (
           <MailboxDrawer
+            collapsed={isDesktop && sidebarCollapsed}
+            onToggle={() => useEmailStore.getState().toggleSidebar()}
             onClose={() => {
               (props.navigation as any).closeDrawer();
             }}
@@ -36,7 +41,7 @@ export default function DrawerLayout() {
           headerShown: false,
           drawerType: isDesktop ? 'permanent' : 'front',
           drawerStyle: {
-            width: isDesktop ? 280 : 300,
+            width: drawerWidth,
             backgroundColor: colors.sidebarBackground,
             borderRightWidth: isDesktop ? StyleSheet.hairlineWidth : 0,
             borderRightColor: colors.border,

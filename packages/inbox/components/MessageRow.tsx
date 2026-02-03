@@ -194,7 +194,7 @@ export function MessageRow({
         {Platform.OS === 'web' ? (
           <HugeiconsIcon
             icon={StarIcon as unknown as IconSvgElement}
-            size={22}
+            size={18}
             color={message.flags.starred ? colors.starred : colors.icon}
             strokeWidth={message.flags.starred ? 2.5 : 1.5}
           />
