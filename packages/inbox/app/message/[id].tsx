@@ -49,7 +49,7 @@ export default function MessageScreen() {
   const { width } = useWindowDimensions();
   const colorScheme = useColorScheme();
   const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
-  const { getToken } = useOxy() as any;
+  const { oxyServices } = useOxy();
 
   const { currentMessage, loadMessage, clearCurrentMessage, toggleStar, archiveMessage, deleteMessage } =
     useEmailStore();
@@ -59,7 +59,7 @@ export default function MessageScreen() {
   useEffect(() => {
     const load = async () => {
       try {
-        const token = await getToken?.();
+        const token = oxyServices.httpService.getAccessToken();
         if (token && id) await loadMessage(token, id);
       } catch {}
     };
@@ -74,28 +74,28 @@ export default function MessageScreen() {
   const handleStar = useCallback(async () => {
     if (!id) return;
     try {
-      const token = await getToken?.();
+      const token = oxyServices.httpService.getAccessToken();
       if (token) await toggleStar(token, id);
     } catch {}
-  }, [id, getToken, toggleStar]);
+  }, [id, oxyServices, toggleStar]);
 
   const handleArchive = useCallback(async () => {
     if (!id) return;
     try {
-      const token = await getToken?.();
+      const token = oxyServices.httpService.getAccessToken();
       if (token) await archiveMessage(token, id);
       router.back();
     } catch {}
-  }, [id, getToken, archiveMessage, router]);
+  }, [id, oxyServices, archiveMessage, router]);
 
   const handleDelete = useCallback(async () => {
     if (!id) return;
     try {
-      const token = await getToken?.();
+      const token = oxyServices.httpService.getAccessToken();
       if (token) await deleteMessage(token, id);
       router.back();
     } catch {}
-  }, [id, getToken, deleteMessage, router]);
+  }, [id, oxyServices, deleteMessage, router]);
 
   const handleReply = useCallback(() => {
     if (!currentMessage) return;

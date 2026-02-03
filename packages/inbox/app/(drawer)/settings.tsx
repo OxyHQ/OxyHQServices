@@ -36,8 +36,7 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
   const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
-  const { user } = useOxy();
-  const { getToken } = useOxy() as any;
+  const { user, oxyServices } = useOxy();
   const { toggleColorScheme } = useThemeContext();
 
   const [settings, setSettings] = useState<EmailSettings | null>(null);
@@ -51,7 +50,7 @@ export default function SettingsScreen() {
   useEffect(() => {
     const load = async () => {
       try {
-        const token = await getToken?.();
+        const token = oxyServices.httpService.getAccessToken();
         if (!token) return;
         const [s, q] = await Promise.all([emailApi.getSettings(token), emailApi.getQuota(token)]);
         setSettings(s);
@@ -63,12 +62,12 @@ export default function SettingsScreen() {
       } catch {}
     };
     load();
-  }, [getToken]);
+  }, [oxyServices]);
 
   const handleSave = useCallback(async () => {
     setSaving(true);
     try {
-      const token = await getToken?.();
+      const token = oxyServices.httpService.getAccessToken();
       if (!token) return;
       await emailApi.updateSettings(token, {
         signature,
@@ -84,7 +83,7 @@ export default function SettingsScreen() {
     } finally {
       setSaving(false);
     }
-  }, [signature, autoReplyEnabled, autoReplySubject, autoReplyBody, getToken]);
+  }, [signature, autoReplyEnabled, autoReplySubject, autoReplyBody, oxyServices]);
 
   const emailAddress = user?.username ? `${user.username}@oxy.so` : '';
 

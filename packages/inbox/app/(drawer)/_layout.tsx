@@ -12,21 +12,20 @@ export default function DrawerLayout() {
   const { width } = useWindowDimensions();
   const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
   const isDesktop = Platform.OS === 'web' && width >= 900;
-  const { isAuthenticated } = useOxy();
-  const { getToken } = useOxy() as any;
+  const { isAuthenticated, oxyServices } = useOxy();
   const { loadMailboxes, mailboxesLoaded, currentMailbox, loadMessages } = useEmailStore();
 
   // Load mailboxes on auth
   const initEmail = useCallback(async () => {
     if (!isAuthenticated) return;
     try {
-      const token = await getToken?.();
+      const token = oxyServices.httpService.getAccessToken();
       if (!token) return;
       if (!mailboxesLoaded) {
         await loadMailboxes(token);
       }
     } catch {}
-  }, [isAuthenticated, mailboxesLoaded, getToken, loadMailboxes]);
+  }, [isAuthenticated, mailboxesLoaded, oxyServices, loadMailboxes]);
 
   useEffect(() => {
     initEmail();
@@ -37,7 +36,7 @@ export default function DrawerLayout() {
     if (!currentMailbox || !isAuthenticated) return;
     const load = async () => {
       try {
-        const token = await getToken?.();
+        const token = oxyServices.httpService.getAccessToken();
         if (token) {
           await loadMessages(token, currentMailbox._id);
         }

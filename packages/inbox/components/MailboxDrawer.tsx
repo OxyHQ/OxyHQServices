@@ -31,16 +31,15 @@ function getMailboxIcon(mailbox: Mailbox): keyof typeof MaterialCommunityIcons.g
 export function MailboxDrawer({ onClose }: { onClose?: () => void }) {
   const colorScheme = useColorScheme();
   const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
-  const { user } = useOxy();
+  const { user, oxyServices } = useOxy();
   const { mailboxes, currentMailbox, selectMailbox } = useEmailStore();
-  const { getToken } = useOxy() as any;
 
   const systemMailboxes = mailboxes.filter((m) => m.specialUse);
   const customMailboxes = mailboxes.filter((m) => !m.specialUse);
 
   const handleSelect = async (mailbox: Mailbox) => {
     try {
-      const token = await getToken?.();
+      const token = oxyServices.httpService.getAccessToken();
       if (token) {
         await selectMailbox(mailbox, token);
       }

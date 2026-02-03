@@ -38,8 +38,7 @@ export default function ComposeScreen() {
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
   const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
-  const { user } = useOxy();
-  const { getToken } = useOxy() as any;
+  const { user, oxyServices } = useOxy();
   const bodyRef = useRef<TextInput>(null);
 
   const [to, setTo] = useState(params.to || '');
@@ -68,7 +67,7 @@ export default function ComposeScreen() {
 
     setSending(true);
     try {
-      const token = await getToken?.();
+      const token = oxyServices.httpService.getAccessToken();
       if (!token) throw new Error('Not authenticated');
 
       await emailApi.sendMessage(token, {
@@ -86,11 +85,11 @@ export default function ComposeScreen() {
     } finally {
       setSending(false);
     }
-  }, [to, cc, bcc, subject, body, params.replyTo, getToken, router]);
+  }, [to, cc, bcc, subject, body, params.replyTo, oxyServices, router]);
 
   const handleSaveDraft = useCallback(async () => {
     try {
-      const token = await getToken?.();
+      const token = oxyServices.httpService.getAccessToken();
       if (!token) return;
 
       await emailApi.saveDraft(token, {
@@ -103,7 +102,7 @@ export default function ComposeScreen() {
       });
     } catch {}
     router.back();
-  }, [to, cc, bcc, subject, body, params.replyTo, getToken, router]);
+  }, [to, cc, bcc, subject, body, params.replyTo, oxyServices, router]);
 
   const handleClose = useCallback(() => {
     if (to.trim() || subject.trim() || body.trim()) {

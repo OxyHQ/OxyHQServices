@@ -28,7 +28,7 @@ export default function SearchScreen() {
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
   const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
-  const { getToken } = useOxy() as any;
+  const { oxyServices } = useOxy();
   const inputRef = useRef<TextInput>(null);
   const { toggleStar } = useEmailStore();
 
@@ -42,7 +42,7 @@ export default function SearchScreen() {
     setSearching(true);
     setHasSearched(true);
     try {
-      const token = await getToken?.();
+      const token = oxyServices.httpService.getAccessToken();
       if (!token) return;
       const res = await emailApi.search(token, query.trim());
       setResults(res.data);
@@ -51,16 +51,16 @@ export default function SearchScreen() {
     } finally {
       setSearching(false);
     }
-  }, [query, getToken]);
+  }, [query, oxyServices]);
 
   const handleStar = useCallback(
     async (messageId: string) => {
       try {
-        const token = await getToken?.();
+        const token = oxyServices.httpService.getAccessToken();
         if (token) await toggleStar(token, messageId);
       } catch {}
     },
-    [getToken, toggleStar],
+    [oxyServices, toggleStar],
   );
 
   const handleBack = useCallback(() => {
