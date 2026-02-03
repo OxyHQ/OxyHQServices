@@ -38,7 +38,8 @@ export default function DrawerLayout() {
           drawerStyle: {
             width: isDesktop ? 280 : 300,
             backgroundColor: colors.sidebarBackground,
-            borderRightWidth: 0,
+            borderRightWidth: isDesktop ? StyleSheet.hairlineWidth : 0,
+            borderRightColor: colors.border,
             ...Platform.select({
               web: {
                 boxShadow: isDesktop ? 'none' : '2px 0 8px rgba(0,0,0,0.15)',
