@@ -37,9 +37,15 @@ export const useEmailStore = create<EmailState>((set, get) => ({
 
   _initApi: (http: HttpService) => {
     const existing = get()._api;
-    if (existing) return existing;
+    console.log('[useEmailStore._initApi] Called, existing:', !!existing, 'httpService:', !!http);
+    if (existing) {
+      console.log('[useEmailStore._initApi] API already exists, returning');
+      return existing;
+    }
+    console.log('[useEmailStore._initApi] Creating new EmailApi instance');
     const api = createEmailApi(http);
     set({ _api: api });
+    console.log('[useEmailStore._initApi] API created and stored');
     return api;
   },
 
