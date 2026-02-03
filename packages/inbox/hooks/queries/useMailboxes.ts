@@ -9,23 +9,12 @@ export function useMailboxes() {
   return useQuery<Mailbox[]>({
     queryKey: ['mailboxes'],
     queryFn: async () => {
-      console.log('[useMailboxes] Running query, api:', !!api, '__DEV__:', __DEV__);
       if (api) {
-        console.log('[useMailboxes] Calling real API...');
-        try {
-          const result = await api.listMailboxes();
-          console.log('[useMailboxes] Got mailboxes:', result.length);
-          return result;
-        } catch (error) {
-          console.error('[useMailboxes] API call failed:', error);
-          throw error;
-        }
+        return await api.listMailboxes();
       }
       if (__DEV__) {
-        console.log('[useMailboxes] Using mock data');
         return MOCK_MAILBOXES;
       }
-      console.error('[useMailboxes] No API and not dev mode - throwing');
       throw new Error('Email API not initialized');
     },
     enabled: !!api || __DEV__,

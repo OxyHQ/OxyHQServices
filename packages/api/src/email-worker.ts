@@ -12,7 +12,7 @@
  *   node dist/email-worker.js
  *
  * Both this worker and the API share the same MongoDB — messages stored
- * by the SMTP worker are immediately visible via the /api/email/* REST endpoints.
+ * by the SMTP worker are immediately visible via the /email/* REST endpoints.
  */
 
 import dotenv from 'dotenv';

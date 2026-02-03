@@ -1,7 +1,7 @@
 /**
  * Email Controller
  *
- * Request handlers for all /api/email routes.
+ * Request handlers for all /email routes.
  * Delegates to emailService for business logic and smtpOutbound for sending.
  */
 

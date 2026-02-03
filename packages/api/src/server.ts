@@ -360,7 +360,7 @@ app.use('/api/devices', userRateLimiter, csrfProtection, devicesRouter);
 app.use('/api/security', userRateLimiter, csrfProtection, securityRoutes);
 app.use('/api/subscription', userRateLimiter, csrfProtection, subscriptionRoutes);
 app.use('/api/fedcm', fedcmRoutes);
-app.use('/api/email', userRateLimiter, csrfProtection, emailRoutes);
+app.use('/email', userRateLimiter, csrfProtection, emailRoutes);
 
 // Add a protected route for testing
 app.get('/api/protected-server-route', authMiddleware, (req: any, res: Response) => {

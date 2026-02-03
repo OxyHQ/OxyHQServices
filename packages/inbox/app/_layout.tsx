@@ -18,8 +18,6 @@ SplashScreen.preventAutoHideAsync();
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'https://api.oxy.so';
 
-console.log('[RootLayout] API_URL:', API_URL, 'EXPO_PUBLIC_API_URL:', process.env.EXPO_PUBLIC_API_URL);
-
 export default function RootLayout() {
   return (
     <ErrorBoundary>

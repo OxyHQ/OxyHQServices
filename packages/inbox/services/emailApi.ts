@@ -113,17 +113,17 @@ export function createEmailApi(http: HttpService) {
     // ─── Mailboxes ──────────────────────────────────────────────────
 
     async listMailboxes(): Promise<Mailbox[]> {
-      const res = await http.get<{ data: Mailbox[] }>('/api/email/mailboxes');
+      const res = await http.get<{ data: Mailbox[] }>('/email/mailboxes');
       return z.array(MailboxSchema).parse(res.data.data);
     },
 
     async createMailbox(name: string, parentPath?: string): Promise<Mailbox> {
-      const res = await http.post<{ data: Mailbox }>('/api/email/mailboxes', { name, parentPath });
+      const res = await http.post<{ data: Mailbox }>('/email/mailboxes', { name, parentPath });
       return MailboxSchema.parse(res.data.data);
     },
 
     async deleteMailbox(mailboxId: string): Promise<void> {
-      await http.delete(`/api/email/mailboxes/${mailboxId}`);
+      await http.delete(`/email/mailboxes/${mailboxId}`);
     },
 
     // ─── Messages ───────────────────────────────────────────────────
@@ -137,7 +137,7 @@ export function createEmailApi(http: HttpService) {
       if (options.offset) params.offset = String(options.offset);
       if (options.unseenOnly) params.unseen = 'true';
 
-      const res = await http.get<{ data: Message[]; pagination: Pagination }>('/api/email/messages', { params });
+      const res = await http.get<{ data: Message[]; pagination: Pagination }>('/email/messages', { params });
       return {
         data: z.array(MessageSchema).parse(res.data.data),
         pagination: PaginationSchema.parse(res.data.pagination),
@@ -145,23 +145,23 @@ export function createEmailApi(http: HttpService) {
     },
 
     async getMessage(messageId: string): Promise<Message> {
-      const res = await http.get<{ data: Message }>(`/api/email/messages/${messageId}`);
+      const res = await http.get<{ data: Message }>(`/email/messages/${messageId}`);
       return MessageSchema.parse(res.data.data);
     },
 
     async updateFlags(messageId: string, flags: Partial<MessageFlags>): Promise<Message> {
-      const res = await http.put<{ data: Message }>(`/api/email/messages/${messageId}/flags`, { flags });
+      const res = await http.put<{ data: Message }>(`/email/messages/${messageId}/flags`, { flags });
       return MessageSchema.parse(res.data.data);
     },
 
     async moveMessage(messageId: string, mailboxId: string): Promise<Message> {
-      const res = await http.post<{ data: Message }>(`/api/email/messages/${messageId}/move`, { mailboxId });
+      const res = await http.post<{ data: Message }>(`/email/messages/${messageId}/move`, { mailboxId });
       return MessageSchema.parse(res.data.data);
     },
 
     async deleteMessage(messageId: string, permanent = false): Promise<void> {
       const params = permanent ? '?permanent=true' : '';
-      await http.delete(`/api/email/messages/${messageId}${params}`);
+      await http.delete(`/email/messages/${messageId}${params}`);
     },
 
     // ─── Compose ────────────────────────────────────────────────────
@@ -177,7 +177,7 @@ export function createEmailApi(http: HttpService) {
       references?: string[];
       attachments?: string[];
     }): Promise<{ messageId: string; queued: boolean; message: string }> {
-      const res = await http.post<{ data: { messageId: string; queued: boolean; message: string } }>('/api/email/messages', message);
+      const res = await http.post<{ data: { messageId: string; queued: boolean; message: string } }>('/email/messages', message);
       return z.object({
         messageId: z.string(),
         queued: z.boolean(),
@@ -196,7 +196,7 @@ export function createEmailApi(http: HttpService) {
       references?: string[];
       existingDraftId?: string;
     }): Promise<Message> {
-      const res = await http.post<{ data: Message }>('/api/email/drafts', draft);
+      const res = await http.post<{ data: Message }>('/email/drafts', draft);
       return MessageSchema.parse(res.data.data);
     },
 
@@ -211,7 +211,7 @@ export function createEmailApi(http: HttpService) {
       if (options.offset) params.offset = String(options.offset);
       if (options.mailbox) params.mailbox = options.mailbox;
 
-      const res = await http.get<{ data: Message[]; pagination: Pagination }>('/api/email/search', { params });
+      const res = await http.get<{ data: Message[]; pagination: Pagination }>('/email/search', { params });
       return {
         data: z.array(MessageSchema).parse(res.data.data),
         pagination: PaginationSchema.parse(res.data.pagination),
@@ -221,7 +221,7 @@ export function createEmailApi(http: HttpService) {
     // ─── Quota ──────────────────────────────────────────────────────
 
     async getQuota(): Promise<QuotaUsage> {
-      const res = await http.get<{ data: QuotaUsage }>('/api/email/quota');
+      const res = await http.get<{ data: QuotaUsage }>('/email/quota');
       return QuotaUsageSchema.parse(res.data.data);
     },
 
@@ -229,7 +229,7 @@ export function createEmailApi(http: HttpService) {
 
     async getAttachmentUrl(s3Key: string): Promise<string> {
       const res = await http.get<{ data: { url: string } }>(
-        `/api/email/attachments/${encodeURIComponent(s3Key)}`,
+        `/email/attachments/${encodeURIComponent(s3Key)}`,
       );
       return z.object({ url: z.string() }).parse(res.data.data).url;
     },
@@ -237,14 +237,14 @@ export function createEmailApi(http: HttpService) {
     // ─── Settings ───────────────────────────────────────────────────
 
     async getSettings(): Promise<EmailSettings> {
-      const res = await http.get<{ data: EmailSettings }>('/api/email/settings');
+      const res = await http.get<{ data: EmailSettings }>('/email/settings');
       return EmailSettingsSchema.parse(res.data.data);
     },
 
     async updateSettings(
       settings: { signature?: string; autoReply?: Partial<EmailSettings['autoReply']> },
     ): Promise<void> {
-      await http.put('/api/email/settings', settings);
+      await http.put('/email/settings', settings);
     },
   };
 }

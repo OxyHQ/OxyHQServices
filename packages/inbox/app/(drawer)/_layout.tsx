@@ -18,11 +18,8 @@ export default function DrawerLayout() {
 
   // Initialize email API with httpService when authenticated
   useEffect(() => {
-    console.log('[DrawerLayout] Auth state:', { isAuthenticated, hasHttpService: !!oxyServices?.httpService });
     if (isAuthenticated) {
-      console.log('[DrawerLayout] Initializing email API...');
-      const result = _initApi(oxyServices.httpService);
-      console.log('[DrawerLayout] Email API initialized:', !!result);
+      _initApi(oxyServices.httpService);
     }
   }, [isAuthenticated, oxyServices, _initApi]);
 
