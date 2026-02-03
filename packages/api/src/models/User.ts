@@ -102,6 +102,15 @@ export interface IUser extends Document {
     image?: string;
   }>;
   accountExpiresAfterInactivityDays?: number | null; // Days of inactivity before account expires (null = never expire)
+  // Email settings
+  emailSignature?: string;
+  autoReply?: {
+    enabled: boolean;
+    subject?: string;
+    body?: string;
+    startDate?: Date;
+    endDate?: Date;
+  };
   _id: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
@@ -302,8 +311,8 @@ const UserSchema: Schema = new Schema(
       description: { type: String, required: true },
       image: { type: String }
     }],
-    accountExpiresAfterInactivityDays: { 
-      type: mongoose.Schema.Types.Mixed, 
+    accountExpiresAfterInactivityDays: {
+      type: mongoose.Schema.Types.Mixed,
       default: null,
       validate: {
         validator: function(value: number | null) {
@@ -313,6 +322,19 @@ const UserSchema: Schema = new Schema(
         },
         message: 'accountExpiresAfterInactivityDays must be 30, 90, 180, 365, or null'
       }
+    },
+    // Email settings
+    emailSignature: {
+      type: String,
+      default: '',
+      select: false,
+    },
+    autoReply: {
+      enabled: { type: Boolean, default: false },
+      subject: { type: String, default: '' },
+      body: { type: String, default: '' },
+      startDate: { type: Date, default: null },
+      endDate: { type: Date, default: null },
     },
   },
   {

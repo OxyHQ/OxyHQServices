@@ -28,6 +28,7 @@ import { UsersController } from '../controllers/users.controller';
 import { PaginationParams, UserStatistics } from '../types/user.types';
 import { resolveUserIdToObjectId } from '../utils/validation';
 import SignatureService from '../services/signature.service';
+import { emailService } from '../services/email.service';
 
 // Types
 interface AuthRequest extends Request {
@@ -700,6 +701,9 @@ router.delete(
     if (confirmText !== user.username) {
       throw new BadRequestError('Confirmation text does not match username');
     }
+
+    // Delete all email data (mailboxes, messages, S3 attachments)
+    await emailService.deleteAllUserData(userId);
 
     // Delete the user account
     await User.findByIdAndDelete(userId);
