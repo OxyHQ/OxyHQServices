@@ -2,10 +2,10 @@
  * "For You" screen — curated highlights using the full content width.
  *
  * Shows starred messages, unread highlights, and recent attachments
- * in a card-based layout that spans both columns.
+ * in horizontally scrollable rows with navigation arrows.
  */
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -15,6 +15,8 @@ import {
   Platform,
   useWindowDimensions,
   ActivityIndicator,
+  type NativeSyntheticEvent,
+  type NativeScrollEvent,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -26,30 +28,115 @@ import { Colors } from '@/constants/theme';
 import { useMessages } from '@/hooks/queries/useMessages';
 import { useMailboxes } from '@/hooks/queries/useMailboxes';
 import { useEmailStore } from '@/hooks/useEmail';
-import { Avatar } from '@/components/Avatar';
+import { useToggleStar } from '@/hooks/mutations/useMessageMutations';
+import { MessageRow } from '@/components/MessageRow';
 import type { Message } from '@/services/emailApi';
 
-function formatRelativeDate(dateStr: string): string {
-  const date = new Date(dateStr);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMins = Math.floor(diffMs / 60000);
-  const diffHours = Math.floor(diffMs / 3600000);
-  const diffDays = Math.floor(diffMs / 86400000);
+const CARD_WIDTH = 320;
+const CARD_GAP = 12;
+const SCROLL_AMOUNT = CARD_WIDTH + CARD_GAP;
 
-  if (diffMins < 1) return 'Just now';
-  if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  if (diffDays < 7) return `${diffDays}d ago`;
-  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-}
+function HorizontalSection({
+  title,
+  icon,
+  items,
+  iconColor,
+  colors,
+  onMessagePress,
+  onStar,
+}: {
+  title: string;
+  icon: keyof typeof MaterialCommunityIcons.glyphMap;
+  items: Message[];
+  iconColor: string;
+  colors: ReturnType<typeof Colors['light'] & typeof Colors['dark']>;
+  onMessagePress: (id: string) => void;
+  onStar: (id: string) => void;
+}) {
+  const scrollRef = useRef<ScrollView>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(true);
+  const scrollXRef = useRef(0);
+  const contentWidthRef = useRef(0);
+  const containerWidthRef = useRef(0);
 
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+  const updateArrows = useCallback(() => {
+    const x = scrollXRef.current;
+    const maxScroll = contentWidthRef.current - containerWidthRef.current;
+    setCanScrollLeft(x > 0);
+    setCanScrollRight(maxScroll > 0 && x < maxScroll - 1);
+  }, []);
+
+  const handleScroll = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      scrollXRef.current = e.nativeEvent.contentOffset.x;
+      containerWidthRef.current = e.nativeEvent.layoutMeasurement.width;
+      contentWidthRef.current = e.nativeEvent.contentSize.width;
+      updateArrows();
+    },
+    [updateArrows],
+  );
+
+  const scrollBy = useCallback((direction: number) => {
+    const target = scrollXRef.current + direction * SCROLL_AMOUNT;
+    scrollRef.current?.scrollTo({ x: Math.max(0, target), animated: true });
+  }, []);
+
+  if (items.length === 0) return null;
+
+  return (
+    <View style={styles.section}>
+      <View style={styles.sectionHeader}>
+        <MaterialCommunityIcons name={icon} size={20} color={iconColor} />
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>{title}</Text>
+        <Text style={[styles.sectionCount, { color: colors.secondaryText }]}>{items.length}</Text>
+      </View>
+
+      <View style={styles.scrollContainer}>
+        {canScrollLeft && (
+          <TouchableOpacity
+            style={[styles.arrowButton, styles.arrowLeft, { backgroundColor: colors.surface }]}
+            onPress={() => scrollBy(-1)}
+            activeOpacity={0.7}
+          >
+            <MaterialCommunityIcons name="chevron-left" size={24} color={colors.text} />
+          </TouchableOpacity>
+        )}
+
+        <ScrollView
+          ref={scrollRef}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          onScroll={handleScroll}
+          scrollEventThrottle={16}
+          contentContainerStyle={styles.scrollContent}
+        >
+          {items.map((message) => (
+            <View
+              key={message._id}
+              style={[styles.cardWrapper, { backgroundColor: colors.surface }]}
+            >
+              <MessageRow
+                message={message}
+                onSelect={onMessagePress}
+                onStar={onStar}
+              />
+            </View>
+          ))}
+        </ScrollView>
+
+        {canScrollRight && (
+          <TouchableOpacity
+            style={[styles.arrowButton, styles.arrowRight, { backgroundColor: colors.surface }]}
+            onPress={() => scrollBy(1)}
+            activeOpacity={0.7}
+          >
+            <MaterialCommunityIcons name="chevron-right" size={24} color={colors.text} />
+          </TouchableOpacity>
+        )}
+      </View>
+    </View>
+  );
 }
 
 export function ForYouScreen() {
@@ -64,11 +151,15 @@ export function ForYouScreen() {
   const { data: mailboxes = [] } = useMailboxes();
   const inboxId = mailboxes.find((m) => m.specialUse === 'Inbox')?._id;
   const { data, isLoading } = useMessages(inboxId);
+  const toggleStar = useToggleStar();
 
   const messages = useMemo(() => data?.pages.flatMap((p) => p.data) ?? [], [data]);
 
   const starred = useMemo(() => messages.filter((m) => m.flags.starred).slice(0, 6), [messages]);
-  const unread = useMemo(() => messages.filter((m) => !m.flags.seen && !m.flags.starred).slice(0, 6), [messages]);
+  const unread = useMemo(
+    () => messages.filter((m) => !m.flags.seen && !m.flags.starred).slice(0, 6),
+    [messages],
+  );
   const withAttachments = useMemo(
     () => messages.filter((m) => m.attachments.length > 0).slice(0, 6),
     [messages],
@@ -76,83 +167,21 @@ export function ForYouScreen() {
 
   const handleOpenDrawer = () => navigation.dispatch(DrawerActions.openDrawer());
 
-  const handleMessagePress = (messageId: string) => {
-    useEmailStore.setState({ selectedMessageId: messageId });
-    router.push(`/conversation/${messageId}`);
-  };
+  const handleMessagePress = useCallback(
+    (messageId: string) => {
+      useEmailStore.setState({ selectedMessageId: messageId });
+      router.push(`/conversation/${messageId}`);
+    },
+    [router],
+  );
 
-  // Responsive grid: 1 col on narrow, 2 on medium, 3 on wide
-  const contentWidth = isDesktop ? width - 280 : width;
-  const numColumns = contentWidth >= 900 ? 3 : contentWidth >= 600 ? 2 : 1;
-
-  const renderMessageCard = (message: Message) => {
-    const senderName = message.from.name || message.from.address.split('@')[0];
-    return (
-      <TouchableOpacity
-        key={message._id}
-        style={[
-          styles.card,
-          {
-            backgroundColor: colors.surface,
-            width: numColumns > 1 ? `${Math.floor(100 / numColumns) - 2}%` as any : '100%',
-          },
-        ]}
-        onPress={() => handleMessagePress(message._id)}
-        activeOpacity={0.7}
-      >
-        <View style={styles.cardHeader}>
-          <Avatar name={senderName} size={32} />
-          <View style={styles.cardHeaderText}>
-            <Text style={[styles.cardSender, { color: colors.text }]} numberOfLines={1}>
-              {senderName}
-            </Text>
-            <Text style={[styles.cardTime, { color: colors.secondaryText }]}>
-              {formatRelativeDate(message.date)}
-            </Text>
-          </View>
-        </View>
-        <Text style={[styles.cardSubject, { color: colors.text }]} numberOfLines={1}>
-          {message.subject || '(no subject)'}
-        </Text>
-        <Text style={[styles.cardPreview, { color: colors.secondaryText }]} numberOfLines={2}>
-          {message.text || ''}
-        </Text>
-        {message.attachments.length > 0 && (
-          <View style={styles.cardAttachments}>
-            {message.attachments.slice(0, 2).map((att, i) => (
-              <View key={i} style={[styles.attachmentChip, { backgroundColor: colors.surfaceVariant }]}>
-                <MaterialCommunityIcons name="paperclip" size={12} color={colors.secondaryText} />
-                <Text style={[styles.attachmentText, { color: colors.secondaryText }]} numberOfLines={1}>
-                  {att.filename}
-                </Text>
-              </View>
-            ))}
-          </View>
-        )}
-      </TouchableOpacity>
-    );
-  };
-
-  const renderSection = (
-    title: string,
-    icon: keyof typeof MaterialCommunityIcons.glyphMap,
-    items: Message[],
-    iconColor: string,
-  ) => {
-    if (items.length === 0) return null;
-    return (
-      <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <MaterialCommunityIcons name={icon} size={20} color={iconColor} />
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>{title}</Text>
-          <Text style={[styles.sectionCount, { color: colors.secondaryText }]}>{items.length}</Text>
-        </View>
-        <View style={styles.cardGrid}>
-          {items.map(renderMessageCard)}
-        </View>
-      </View>
-    );
-  };
+  const handleStar = useCallback(
+    (messageId: string) => {
+      const msg = messages.find((m) => m._id === messageId);
+      if (msg) toggleStar.mutate({ messageId, starred: !msg.flags.starred });
+    },
+    [messages, toggleStar],
+  );
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -179,15 +208,36 @@ export function ForYouScreen() {
       ) : (
         <ScrollView
           style={styles.body}
-          contentContainerStyle={[
-            styles.bodyContent,
-            { maxWidth: 1200, alignSelf: 'center' as const, width: '100%' },
-          ]}
+          contentContainerStyle={styles.bodyContent}
           showsVerticalScrollIndicator={false}
         >
-          {renderSection('Starred', 'star', starred, colors.starred)}
-          {renderSection('Unread', 'email-outline', unread, colors.primary)}
-          {renderSection('Attachments', 'paperclip', withAttachments, colors.icon)}
+          <HorizontalSection
+            title="Starred"
+            icon="star"
+            items={starred}
+            iconColor={colors.starred}
+            colors={colors}
+            onMessagePress={handleMessagePress}
+            onStar={handleStar}
+          />
+          <HorizontalSection
+            title="Unread"
+            icon="email-outline"
+            items={unread}
+            iconColor={colors.primary}
+            colors={colors}
+            onMessagePress={handleMessagePress}
+            onStar={handleStar}
+          />
+          <HorizontalSection
+            title="Attachments"
+            icon="paperclip"
+            items={withAttachments}
+            iconColor={colors.icon}
+            colors={colors}
+            onMessagePress={handleMessagePress}
+            onStar={handleStar}
+          />
 
           {starred.length === 0 && unread.length === 0 && withAttachments.length === 0 && (
             <View style={styles.emptyContainer}>
@@ -236,7 +286,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   bodyContent: {
-    padding: 16,
+    paddingVertical: 16,
     paddingBottom: 40,
   },
   section: {
@@ -247,6 +297,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     marginBottom: 12,
+    paddingHorizontal: 16,
   },
   sectionTitle: {
     fontSize: 16,
@@ -257,65 +308,45 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '500',
   },
-  cardGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
+  scrollContainer: {
+    position: 'relative',
   },
-  card: {
+  scrollContent: {
+    gap: CARD_GAP,
+    paddingHorizontal: 16,
+  },
+  cardWrapper: {
+    width: CARD_WIDTH,
     borderRadius: 12,
-    padding: 14,
-    gap: 8,
+    overflow: 'hidden',
   },
-  cardHeader: {
-    flexDirection: 'row',
+  arrowButton: {
+    position: 'absolute',
+    top: '50%',
+    marginTop: -18,
+    zIndex: 10,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
-    gap: 10,
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 4,
   },
-  cardHeaderText: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+  arrowLeft: {
+    left: 8,
   },
-  cardSender: {
-    fontSize: 13,
-    fontWeight: '600',
-    flex: 1,
-  },
-  cardTime: {
-    fontSize: 11,
-  },
-  cardSubject: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  cardPreview: {
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  cardAttachments: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    marginTop: 2,
-  },
-  attachmentChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  attachmentText: {
-    fontSize: 11,
-    maxWidth: 120,
+  arrowRight: {
+    right: 8,
   },
   emptyContainer: {
     alignItems: 'center',
     justifyContent: 'center',
     paddingTop: 80,
+    paddingHorizontal: 16,
     gap: 12,
   },
   emptyTitle: {
