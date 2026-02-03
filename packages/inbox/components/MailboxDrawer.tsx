@@ -15,6 +15,22 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useOxy } from '@oxyhq/services';
 import { useRouter, usePathname } from 'expo-router';
+import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
+import {
+  Home01Icon,
+  FavouriteIcon,
+  InboxIcon,
+  SentIcon,
+  NoteEditIcon,
+  Delete01Icon,
+  SpamIcon,
+  Archive01Icon,
+  StarIcon as HugeStarIcon,
+  Folder01Icon,
+  LabelIcon,
+  Settings01Icon,
+  Logout01Icon,
+} from '@hugeicons/core-free-icons';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { useEmailStore } from '@/hooks/useEmail';
@@ -22,7 +38,7 @@ import { useMailboxes } from '@/hooks/queries/useMailboxes';
 import { Avatar } from '@/components/Avatar';
 import type { Mailbox } from '@/services/emailApi';
 
-const MAILBOX_ICONS: Record<string, keyof typeof MaterialCommunityIcons.glyphMap> = {
+const MAILBOX_ICONS_FALLBACK: Record<string, keyof typeof MaterialCommunityIcons.glyphMap> = {
   Inbox: 'inbox',
   Sent: 'send',
   Drafts: 'file-document-edit-outline',
@@ -32,11 +48,84 @@ const MAILBOX_ICONS: Record<string, keyof typeof MaterialCommunityIcons.glyphMap
   Starred: 'star-outline',
 };
 
-function getMailboxIcon(mailbox: Mailbox): keyof typeof MaterialCommunityIcons.glyphMap {
-  if (mailbox.specialUse && MAILBOX_ICONS[mailbox.specialUse]) {
-    return MAILBOX_ICONS[mailbox.specialUse];
+const MAILBOX_HUGE_ICONS: Record<string, IconSvgElement> = {
+  Inbox: InboxIcon as unknown as IconSvgElement,
+  Sent: SentIcon as unknown as IconSvgElement,
+  Drafts: NoteEditIcon as unknown as IconSvgElement,
+  Trash: Delete01Icon as unknown as IconSvgElement,
+  Spam: SpamIcon as unknown as IconSvgElement,
+  Archive: Archive01Icon as unknown as IconSvgElement,
+  Starred: HugeStarIcon as unknown as IconSvgElement,
+};
+
+function getMailboxFallbackIcon(mailbox: Mailbox): keyof typeof MaterialCommunityIcons.glyphMap {
+  if (mailbox.specialUse && MAILBOX_ICONS_FALLBACK[mailbox.specialUse]) {
+    return MAILBOX_ICONS_FALLBACK[mailbox.specialUse];
   }
   return 'folder-outline';
+}
+
+function getMailboxHugeIcon(mailbox: Mailbox): IconSvgElement {
+  if (mailbox.specialUse && MAILBOX_HUGE_ICONS[mailbox.specialUse]) {
+    return MAILBOX_HUGE_ICONS[mailbox.specialUse];
+  }
+  return Folder01Icon as unknown as IconSvgElement;
+}
+
+function NavItem({
+  icon,
+  hugeIcon,
+  label,
+  isActive,
+  colors,
+  badge,
+  onPress,
+}: {
+  icon: keyof typeof MaterialCommunityIcons.glyphMap;
+  hugeIcon: IconSvgElement;
+  label: string;
+  isActive: boolean;
+  colors: (typeof Colors)['light'];
+  badge?: number;
+  onPress: () => void;
+}) {
+  const iconColor = isActive ? colors.sidebarItemActiveText : colors.icon;
+  return (
+    <TouchableOpacity
+      style={[
+        styles.item,
+        isActive && { backgroundColor: colors.sidebarItemActive },
+      ]}
+      onPress={onPress}
+      activeOpacity={0.7}
+    >
+      {Platform.OS === 'web' ? (
+        <HugeiconsIcon icon={hugeIcon} size={22} color={iconColor} strokeWidth={2} />
+      ) : (
+        <MaterialCommunityIcons name={icon} size={22} color={iconColor} />
+      )}
+      <Text
+        style={[
+          styles.itemLabel,
+          { color: isActive ? colors.sidebarItemActiveText : colors.sidebarText },
+          isActive && styles.itemLabelActive,
+        ]}
+        numberOfLines={1}
+      >
+        {label}
+      </Text>
+      {badge != null && badge > 0 && (
+        <Text
+          style={[
+            styles.badge,
+            { color: isActive ? colors.sidebarItemActiveText : colors.secondaryText },
+          ]}
+        >
+          {badge}
+        </Text>
+      )}
+    </TouchableOpacity>
+  );
 }
 
 export function MailboxDrawer({ onClose }: { onClose?: () => void }) {
@@ -70,7 +159,9 @@ export function MailboxDrawer({ onClose }: { onClose?: () => void }) {
   const currentMailbox = useEmailStore((s) => s.currentMailbox);
   const selectMailbox = useEmailStore((s) => s.selectMailbox);
   const { data: mailboxes = [] } = useMailboxes();
+  const isHomeActive = pathname === '/home';
   const isForYouActive = pathname === '/for-you';
+  const isSpecialPage = isHomeActive || isForYouActive;
 
   // Auto-select inbox on first load
   useEffect(() => {
@@ -85,9 +176,14 @@ export function MailboxDrawer({ onClose }: { onClose?: () => void }) {
 
   const handleSelect = (mailbox: Mailbox) => {
     selectMailbox(mailbox);
-    if (isForYouActive) {
+    if (isSpecialPage) {
       router.replace('/');
     }
+    onClose?.();
+  };
+
+  const handleHome = () => {
+    router.push('/home');
     onClose?.();
   };
 
@@ -110,108 +206,39 @@ export function MailboxDrawer({ onClose }: { onClose?: () => void }) {
       </View>
 
       <ScrollView style={styles.list} showsVerticalScrollIndicator={false}>
-        {/* For You */}
-        <TouchableOpacity
-          style={[
-            styles.item,
-            isForYouActive && { backgroundColor: colors.sidebarItemActive },
-          ]}
-          onPress={handleForYou}
-          activeOpacity={0.7}
-        >
-          <MaterialCommunityIcons
-            name="cards-heart-outline"
-            size={22}
-            color={isForYouActive ? colors.sidebarItemActiveText : colors.icon}
-          />
-          <Text
-            style={[
-              styles.itemLabel,
-              { color: isForYouActive ? colors.sidebarItemActiveText : colors.sidebarText },
-              isForYouActive && styles.itemLabelActive,
-            ]}
-            numberOfLines={1}
-          >
-            For You
-          </Text>
-        </TouchableOpacity>
+        <NavItem icon="home-outline" hugeIcon={Home01Icon as unknown as IconSvgElement} label="Home" isActive={isHomeActive} colors={colors} onPress={handleHome} />
+        <NavItem icon="cards-heart-outline" hugeIcon={FavouriteIcon as unknown as IconSvgElement} label="For You" isActive={isForYouActive} colors={colors} onPress={handleForYou} />
 
         {/* System Mailboxes */}
-        {systemMailboxes.map((mailbox) => {
-          const isActive = !isForYouActive && currentMailbox?._id === mailbox._id;
-          return (
-            <TouchableOpacity
-              key={mailbox._id}
-              style={[
-                styles.item,
-                isActive && { backgroundColor: colors.sidebarItemActive },
-              ]}
-              onPress={() => handleSelect(mailbox)}
-              activeOpacity={0.7}
-            >
-              <MaterialCommunityIcons
-                name={getMailboxIcon(mailbox)}
-                size={22}
-                color={isActive ? colors.sidebarItemActiveText : colors.icon}
-              />
-              <Text
-                style={[
-                  styles.itemLabel,
-                  { color: isActive ? colors.sidebarItemActiveText : colors.sidebarText },
-                  isActive && styles.itemLabelActive,
-                ]}
-                numberOfLines={1}
-              >
-                {mailbox.specialUse || mailbox.name}
-              </Text>
-              {mailbox.unseenMessages > 0 && (
-                <Text
-                  style={[
-                    styles.badge,
-                    { color: isActive ? colors.sidebarItemActiveText : colors.secondaryText },
-                  ]}
-                >
-                  {mailbox.unseenMessages}
-                </Text>
-              )}
-            </TouchableOpacity>
-          );
-        })}
+        {systemMailboxes.map((mailbox) => (
+          <NavItem
+            key={mailbox._id}
+            icon={getMailboxFallbackIcon(mailbox)}
+            hugeIcon={getMailboxHugeIcon(mailbox)}
+            label={mailbox.specialUse || mailbox.name}
+            isActive={!isSpecialPage && currentMailbox?._id === mailbox._id}
+            colors={colors}
+            badge={mailbox.unseenMessages}
+            onPress={() => handleSelect(mailbox)}
+          />
+        ))}
 
-        {/* Divider */}
+        {/* Custom Labels */}
         {customMailboxes.length > 0 && (
           <>
             <View style={[styles.divider, { backgroundColor: colors.border }]} />
             <Text style={[styles.sectionTitle, { color: colors.secondaryText }]}>Labels</Text>
-            {customMailboxes.map((mailbox) => {
-              const isActive = !isForYouActive && currentMailbox?._id === mailbox._id;
-              return (
-                <TouchableOpacity
-                  key={mailbox._id}
-                  style={[
-                    styles.item,
-                    isActive && { backgroundColor: colors.sidebarItemActive },
-                  ]}
-                  onPress={() => handleSelect(mailbox)}
-                  activeOpacity={0.7}
-                >
-                  <MaterialCommunityIcons
-                    name="label-outline"
-                    size={22}
-                    color={isActive ? colors.sidebarItemActiveText : colors.icon}
-                  />
-                  <Text
-                    style={[
-                      styles.itemLabel,
-                      { color: isActive ? colors.sidebarItemActiveText : colors.sidebarText },
-                    ]}
-                    numberOfLines={1}
-                  >
-                    {mailbox.name}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
+            {customMailboxes.map((mailbox) => (
+              <NavItem
+                key={mailbox._id}
+                icon="label-outline"
+                hugeIcon={LabelIcon as unknown as IconSvgElement}
+                label={mailbox.name}
+                isActive={!isSpecialPage && currentMailbox?._id === mailbox._id}
+                colors={colors}
+                onPress={() => handleSelect(mailbox)}
+              />
+            ))}
           </>
         )}
       </ScrollView>
@@ -251,12 +278,20 @@ export function MailboxDrawer({ onClose }: { onClose?: () => void }) {
               {/* Menu items */}
               <View style={styles.menuItems}>
                 <TouchableOpacity style={styles.menuItem} onPress={() => handleMenuItem('settings')} activeOpacity={0.6}>
-                  <MaterialCommunityIcons name="cog-outline" size={18} color={colors.icon} />
+                  {Platform.OS === 'web' ? (
+                    <HugeiconsIcon icon={Settings01Icon as unknown as IconSvgElement} size={18} color={colors.icon} />
+                  ) : (
+                    <MaterialCommunityIcons name="cog-outline" size={18} color={colors.icon} />
+                  )}
                   <Text style={[styles.menuItemText, { color: colors.text }]}>Settings</Text>
                 </TouchableOpacity>
                 <View style={[styles.menuDivider, { backgroundColor: colors.border }]} />
                 <TouchableOpacity style={styles.menuItem} onPress={() => handleMenuItem('logout')} activeOpacity={0.6}>
-                  <MaterialCommunityIcons name="logout" size={18} color={colors.icon} />
+                  {Platform.OS === 'web' ? (
+                    <HugeiconsIcon icon={Logout01Icon as unknown as IconSvgElement} size={18} color={colors.icon} />
+                  ) : (
+                    <MaterialCommunityIcons name="logout" size={18} color={colors.icon} />
+                  )}
                   <Text style={[styles.menuItemText, { color: colors.text }]}>Log out</Text>
                 </TouchableOpacity>
               </View>

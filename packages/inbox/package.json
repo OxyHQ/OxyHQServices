@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
+    "@hugeicons/react": "^1.1.4",
     "@oxyhq/core": "*",
     "@oxyhq/services": "*",
     "@react-native-async-storage/async-storage": "^2.2.0",
