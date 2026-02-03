@@ -61,15 +61,23 @@ const MAILBOX_HUGE_ICONS: Record<string, IconSvgElement> = {
 };
 
 function getMailboxFallbackIcon(mailbox: Mailbox): keyof typeof MaterialCommunityIcons.glyphMap {
-  if (mailbox.specialUse && MAILBOX_ICONS_FALLBACK[mailbox.specialUse]) {
-    return MAILBOX_ICONS_FALLBACK[mailbox.specialUse];
+  if (mailbox.specialUse) {
+    // Remove backslash prefix from IMAP special use flags (e.g., \\Inbox -> Inbox)
+    const normalized = mailbox.specialUse.replace(/^\\+/, '');
+    if (MAILBOX_ICONS_FALLBACK[normalized]) {
+      return MAILBOX_ICONS_FALLBACK[normalized];
+    }
   }
   return 'folder-outline';
 }
 
 function getMailboxHugeIcon(mailbox: Mailbox): IconSvgElement {
-  if (mailbox.specialUse && MAILBOX_HUGE_ICONS[mailbox.specialUse]) {
-    return MAILBOX_HUGE_ICONS[mailbox.specialUse];
+  if (mailbox.specialUse) {
+    // Remove backslash prefix from IMAP special use flags (e.g., \\Inbox -> Inbox)
+    const normalized = mailbox.specialUse.replace(/^\\+/, '');
+    if (MAILBOX_HUGE_ICONS[normalized]) {
+      return MAILBOX_HUGE_ICONS[normalized];
+    }
   }
   return Folder01Icon as unknown as IconSvgElement;
 }
