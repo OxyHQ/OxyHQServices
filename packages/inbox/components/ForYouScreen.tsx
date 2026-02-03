@@ -36,6 +36,30 @@ const CARD_WIDTH = 320;
 const CARD_GAP = 12;
 const SCROLL_AMOUNT = CARD_WIDTH + CARD_GAP;
 
+function summarizeSection(items: Message[]): string {
+  const senders = [...new Set(items.map((m) => m.from.name || m.from.address.split('@')[0]))];
+  const subjects = items
+    .map((m) => m.subject)
+    .filter(Boolean)
+    .slice(0, 3);
+
+  if (senders.length === 0) return '';
+
+  const senderPart =
+    senders.length === 1
+      ? `From ${senders[0]}`
+      : senders.length === 2
+        ? `From ${senders[0]} and ${senders[1]}`
+        : `From ${senders[0]}, ${senders[1]} and ${senders.length - 2} other${senders.length - 2 > 1 ? 's' : ''}`;
+
+  const topicPart =
+    subjects.length > 0
+      ? ` — about ${subjects.slice(0, 2).join(', ')}${subjects.length > 2 ? ' and more' : ''}`
+      : '';
+
+  return senderPart + topicPart;
+}
+
 function HorizontalSection({
   title,
   description,
@@ -93,6 +117,9 @@ function HorizontalSection({
         <Text style={[styles.sectionTitle, { color: colors.text }]}>{title}</Text>
         <Text style={[styles.sectionCount, { color: colors.secondaryText }]}>{items.length}</Text>
       </View>
+      <Text style={[styles.sectionDescription, { color: colors.secondaryText }]}>
+        {description}
+      </Text>
 
       <View style={styles.scrollContainer}>
         {canScrollLeft && (
@@ -215,6 +242,7 @@ export function ForYouScreen() {
         >
           <HorizontalSection
             title="Starred"
+            description={summarizeSection(starred)}
             icon="star"
             items={starred}
             iconColor={colors.starred}
@@ -224,6 +252,7 @@ export function ForYouScreen() {
           />
           <HorizontalSection
             title="Unread"
+            description={summarizeSection(unread)}
             icon="email-outline"
             items={unread}
             iconColor={colors.primary}
@@ -233,6 +262,7 @@ export function ForYouScreen() {
           />
           <HorizontalSection
             title="Attachments"
+            description={summarizeSection(withAttachments)}
             icon="paperclip"
             items={withAttachments}
             iconColor={colors.icon}
@@ -309,6 +339,12 @@ const styles = StyleSheet.create({
   sectionCount: {
     fontSize: 13,
     fontWeight: '500',
+  },
+  sectionDescription: {
+    fontSize: 13,
+    paddingHorizontal: 16,
+    marginBottom: 12,
+    marginTop: -4,
   },
   scrollContainer: {
     position: 'relative',
