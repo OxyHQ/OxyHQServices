@@ -194,14 +194,14 @@ export function MessageRow({
         {Platform.OS === 'web' ? (
           <HugeiconsIcon
             icon={StarIcon as unknown as IconSvgElement}
-            size={18}
+            size={16}
             color={message.flags.starred ? colors.starred : colors.icon}
             strokeWidth={message.flags.starred ? 2.5 : 1.5}
           />
         ) : (
           <MaterialCommunityIcons
             name={message.flags.starred ? 'star' : 'star-outline'}
-            size={22}
+            size={20}
             color={message.flags.starred ? colors.starred : colors.icon}
           />
         )}
@@ -282,6 +282,6 @@ const styles = StyleSheet.create({
   },
   starButton: {
     padding: 4,
-    marginTop: 2,
+    marginTop: 0,
   },
 });
