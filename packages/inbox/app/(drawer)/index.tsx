@@ -17,7 +17,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useNavigation, DrawerActions } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useOxy } from '@oxyhq/services';
+import { useOxy, OxySignInButton } from '@oxyhq/services';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
@@ -111,6 +111,9 @@ export default function InboxScreen() {
             ? "You're all caught up."
             : 'Sign in to access your mail.'}
         </Text>
+        {!isAuthenticated && (
+          <OxySignInButton variant="contained" style={{ marginTop: 8 }} />
+        )}
       </View>
     );
   }, [loading, colors, isAuthenticated]);
