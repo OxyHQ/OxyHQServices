@@ -59,7 +59,7 @@ export function Avatar({
           ]}
         >
           {Platform.OS === 'web' ? (
-            <HugeiconsIcon icon={Tick02Icon as unknown as IconSvgElement} size={size * 0.5} color="#FFFFFF" />
+            <HugeiconsIcon icon={Tick02Icon as unknown as IconSvgElement} size={size * 0.5} color="#FFFFFF" strokeWidth={3} />
           ) : (
             <MaterialCommunityIcons name="check" size={size * 0.5} color="#FFFFFF" />
           )}
