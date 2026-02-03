@@ -114,12 +114,12 @@ export function createEmailApi(http: HttpService) {
 
     async listMailboxes(): Promise<Mailbox[]> {
       const res = await http.get<{ data: Mailbox[] }>('/email/mailboxes');
-      return z.array(MailboxSchema).parse(res.data.data);
+      return z.array(MailboxSchema).parse(res.data);
     },
 
     async createMailbox(name: string, parentPath?: string): Promise<Mailbox> {
       const res = await http.post<{ data: Mailbox }>('/email/mailboxes', { name, parentPath });
-      return MailboxSchema.parse(res.data.data);
+      return MailboxSchema.parse(res.data);
     },
 
     async deleteMailbox(mailboxId: string): Promise<void> {
@@ -139,24 +139,24 @@ export function createEmailApi(http: HttpService) {
 
       const res = await http.get<{ data: Message[]; pagination: Pagination }>('/email/messages', { params });
       return {
-        data: z.array(MessageSchema).parse(res.data.data),
-        pagination: PaginationSchema.parse(res.data.pagination),
+        data: z.array(MessageSchema).parse(res.data),
+        pagination: PaginationSchema.parse(res.pagination),
       };
     },
 
     async getMessage(messageId: string): Promise<Message> {
       const res = await http.get<{ data: Message }>(`/email/messages/${messageId}`);
-      return MessageSchema.parse(res.data.data);
+      return MessageSchema.parse(res.data);
     },
 
     async updateFlags(messageId: string, flags: Partial<MessageFlags>): Promise<Message> {
       const res = await http.put<{ data: Message }>(`/email/messages/${messageId}/flags`, { flags });
-      return MessageSchema.parse(res.data.data);
+      return MessageSchema.parse(res.data);
     },
 
     async moveMessage(messageId: string, mailboxId: string): Promise<Message> {
       const res = await http.post<{ data: Message }>(`/email/messages/${messageId}/move`, { mailboxId });
-      return MessageSchema.parse(res.data.data);
+      return MessageSchema.parse(res.data);
     },
 
     async deleteMessage(messageId: string, permanent = false): Promise<void> {
@@ -182,7 +182,7 @@ export function createEmailApi(http: HttpService) {
         messageId: z.string(),
         queued: z.boolean(),
         message: z.string(),
-      }).parse(res.data.data);
+      }).parse(res.data);
     },
 
     async saveDraft(draft: {
@@ -197,7 +197,7 @@ export function createEmailApi(http: HttpService) {
       existingDraftId?: string;
     }): Promise<Message> {
       const res = await http.post<{ data: Message }>('/email/drafts', draft);
-      return MessageSchema.parse(res.data.data);
+      return MessageSchema.parse(res.data);
     },
 
     // ─── Search ─────────────────────────────────────────────────────
@@ -213,8 +213,8 @@ export function createEmailApi(http: HttpService) {
 
       const res = await http.get<{ data: Message[]; pagination: Pagination }>('/email/search', { params });
       return {
-        data: z.array(MessageSchema).parse(res.data.data),
-        pagination: PaginationSchema.parse(res.data.pagination),
+        data: z.array(MessageSchema).parse(res.data),
+        pagination: PaginationSchema.parse(res.pagination),
       };
     },
 
@@ -222,7 +222,7 @@ export function createEmailApi(http: HttpService) {
 
     async getQuota(): Promise<QuotaUsage> {
       const res = await http.get<{ data: QuotaUsage }>('/email/quota');
-      return QuotaUsageSchema.parse(res.data.data);
+      return QuotaUsageSchema.parse(res.data);
     },
 
     // ─── Attachments ────────────────────────────────────────────────
@@ -231,14 +231,14 @@ export function createEmailApi(http: HttpService) {
       const res = await http.get<{ data: { url: string } }>(
         `/email/attachments/${encodeURIComponent(s3Key)}`,
       );
-      return z.object({ url: z.string() }).parse(res.data.data).url;
+      return z.object({ url: z.string() }).parse(res.data).url;
     },
 
     // ─── Settings ───────────────────────────────────────────────────
 
     async getSettings(): Promise<EmailSettings> {
       const res = await http.get<{ data: EmailSettings }>('/email/settings');
-      return EmailSettingsSchema.parse(res.data.data);
+      return EmailSettingsSchema.parse(res.data);
     },
 
     async updateSettings(
