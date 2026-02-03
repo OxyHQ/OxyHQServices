@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useOxy } from '@oxyhq/services';
-import { useRouter } from 'expo-router';
+import { useRouter, usePathname } from 'expo-router';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { useEmailStore } from '@/hooks/useEmail';
@@ -66,9 +66,11 @@ export function MailboxDrawer({ onClose }: { onClose?: () => void }) {
     [router, logout, onClose],
   );
 
+  const pathname = usePathname();
   const currentMailbox = useEmailStore((s) => s.currentMailbox);
   const selectMailbox = useEmailStore((s) => s.selectMailbox);
   const { data: mailboxes = [] } = useMailboxes();
+  const isForYouActive = pathname === '/for-you';
 
   // Auto-select inbox on first load
   useEffect(() => {
@@ -83,6 +85,14 @@ export function MailboxDrawer({ onClose }: { onClose?: () => void }) {
 
   const handleSelect = (mailbox: Mailbox) => {
     selectMailbox(mailbox);
+    if (isForYouActive) {
+      router.replace('/');
+    }
+    onClose?.();
+  };
+
+  const handleForYou = () => {
+    router.push('/for-you');
     onClose?.();
   };
 
@@ -100,9 +110,35 @@ export function MailboxDrawer({ onClose }: { onClose?: () => void }) {
       </View>
 
       <ScrollView style={styles.list} showsVerticalScrollIndicator={false}>
+        {/* For You */}
+        <TouchableOpacity
+          style={[
+            styles.item,
+            isForYouActive && { backgroundColor: colors.sidebarItemActive },
+          ]}
+          onPress={handleForYou}
+          activeOpacity={0.7}
+        >
+          <MaterialCommunityIcons
+            name="cards-heart-outline"
+            size={22}
+            color={isForYouActive ? colors.sidebarItemActiveText : colors.icon}
+          />
+          <Text
+            style={[
+              styles.itemLabel,
+              { color: isForYouActive ? colors.sidebarItemActiveText : colors.sidebarText },
+              isForYouActive && styles.itemLabelActive,
+            ]}
+            numberOfLines={1}
+          >
+            For You
+          </Text>
+        </TouchableOpacity>
+
         {/* System Mailboxes */}
         {systemMailboxes.map((mailbox) => {
-          const isActive = currentMailbox?._id === mailbox._id;
+          const isActive = !isForYouActive && currentMailbox?._id === mailbox._id;
           return (
             <TouchableOpacity
               key={mailbox._id}
@@ -148,7 +184,7 @@ export function MailboxDrawer({ onClose }: { onClose?: () => void }) {
             <View style={[styles.divider, { backgroundColor: colors.border }]} />
             <Text style={[styles.sectionTitle, { color: colors.secondaryText }]}>Labels</Text>
             {customMailboxes.map((mailbox) => {
-              const isActive = currentMailbox?._id === mailbox._id;
+              const isActive = !isForYouActive && currentMailbox?._id === mailbox._id;
               return (
                 <TouchableOpacity
                   key={mailbox._id}

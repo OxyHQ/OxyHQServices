@@ -52,6 +52,7 @@ export default function DrawerLayout() {
         }}
       >
         <Drawer.Screen name="(inbox)" options={{ title: 'Inbox' }} />
+        <Drawer.Screen name="for-you" options={{ title: 'For You', drawerItemStyle: { display: 'none' } }} />
         <Drawer.Screen name="search" options={{ title: 'Search', drawerItemStyle: { display: 'none' } }} />
         <Drawer.Screen name="settings" options={{ title: 'Settings', drawerItemStyle: { display: 'none' } }} />
       </Drawer>
