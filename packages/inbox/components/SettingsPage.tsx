@@ -19,6 +19,8 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
+import { ArrowLeft01Icon, Moon01Icon, Sun01Icon } from '@hugeicons/core-free-icons';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useOxy } from '@oxyhq/services';
@@ -106,7 +108,11 @@ export function SettingsPage({ section }: SettingsPageProps) {
       {!isDesktop && (
         <View style={[styles.header, { borderBottomColor: colors.border }]}>
           <TouchableOpacity onPress={() => router.back()} style={styles.iconButton}>
-            <MaterialCommunityIcons name="arrow-left" size={24} color={colors.icon} />
+            {Platform.OS === 'web' ? (
+              <HugeiconsIcon icon={ArrowLeft01Icon as unknown as IconSvgElement} size={24} color={colors.icon} />
+            ) : (
+              <MaterialCommunityIcons name="arrow-left" size={24} color={colors.icon} />
+            )}
           </TouchableOpacity>
           <Text style={[styles.headerTitle, { color: colors.text }]}>Settings</Text>
           <View style={styles.headerSpacer} />
@@ -247,11 +253,19 @@ export function SettingsPage({ section }: SettingsPageProps) {
             <View style={[styles.card, { backgroundColor: colors.surface }]}>
               <TouchableOpacity style={styles.switchRow} onPress={toggleColorScheme}>
                 <Text style={[styles.cardLabel, { color: colors.text }]}>Dark mode</Text>
-                <MaterialCommunityIcons
-                  name={colorScheme === 'dark' ? 'weather-night' : 'weather-sunny'}
-                  size={22}
-                  color={colors.icon}
-                />
+                {Platform.OS === 'web' ? (
+                  <HugeiconsIcon
+                    icon={(colorScheme === 'dark' ? Moon01Icon : Sun01Icon) as unknown as IconSvgElement}
+                    size={22}
+                    color={colors.icon}
+                  />
+                ) : (
+                  <MaterialCommunityIcons
+                    name={colorScheme === 'dark' ? 'weather-night' : 'weather-sunny'}
+                    size={22}
+                    color={colors.icon}
+                  />
+                )}
               </TouchableOpacity>
             </View>
           </>

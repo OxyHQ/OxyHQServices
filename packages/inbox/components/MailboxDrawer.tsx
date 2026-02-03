@@ -335,8 +335,8 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   appTitle: {
-    fontSize: 24,
-    fontWeight: '700',
+    fontSize: 28,
+    fontWeight: '900',
     marginBottom: 2,
   },
   email: {

@@ -42,7 +42,7 @@ export default function DrawerLayout() {
             borderRightColor: colors.border,
             ...Platform.select({
               web: {
-                boxShadow: isDesktop ? 'none' : '2px 0 8px rgba(0,0,0,0.15)',
+                boxShadow: 'none',
               },
               default: {},
             }),

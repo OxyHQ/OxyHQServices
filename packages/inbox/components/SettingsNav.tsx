@@ -4,8 +4,16 @@
  */
 
 import React, { useCallback, useMemo } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
+import {
+  Settings01Icon,
+  SignatureIcon,
+  Beach02Icon,
+  PaintBrush01Icon,
+  ArrowLeft01Icon,
+} from '@hugeicons/core-free-icons';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -13,10 +21,10 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 
 const SECTIONS = [
-  { key: 'general', label: 'General', icon: 'cog-outline' as const },
-  { key: 'signature', label: 'Signature', icon: 'signature-text' as const },
-  { key: 'vacation', label: 'Vacation Responder', icon: 'beach' as const },
-  { key: 'appearance', label: 'Appearance', icon: 'palette-outline' as const },
+  { key: 'general', label: 'General', icon: 'cog-outline' as const, hugeIcon: Settings01Icon },
+  { key: 'signature', label: 'Signature', icon: 'signature-text' as const, hugeIcon: SignatureIcon },
+  { key: 'vacation', label: 'Vacation Responder', icon: 'beach' as const, hugeIcon: Beach02Icon },
+  { key: 'appearance', label: 'Appearance', icon: 'palette-outline' as const, hugeIcon: PaintBrush01Icon },
 ];
 
 interface SettingsNavProps {
@@ -44,7 +52,11 @@ export function SettingsNav({ activeSection }: SettingsNavProps) {
     <View style={[styles.container, { backgroundColor: colors.background, paddingTop: insets.top }]}>
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
         <TouchableOpacity onPress={handleBack} style={styles.iconButton}>
-          <MaterialCommunityIcons name="arrow-left" size={24} color={colors.icon} />
+          {Platform.OS === 'web' ? (
+            <HugeiconsIcon icon={ArrowLeft01Icon as unknown as IconSvgElement} size={24} color={colors.icon} />
+          ) : (
+            <MaterialCommunityIcons name="arrow-left" size={24} color={colors.icon} />
+          )}
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Settings</Text>
       </View>
@@ -62,11 +74,19 @@ export function SettingsNav({ activeSection }: SettingsNavProps) {
               onPress={() => handleSelect(section.key)}
               activeOpacity={0.7}
             >
-              <MaterialCommunityIcons
-                name={section.icon as any}
-                size={20}
-                color={isActive ? colors.primary : colors.icon}
-              />
+              {Platform.OS === 'web' ? (
+                <HugeiconsIcon
+                  icon={section.hugeIcon as unknown as IconSvgElement}
+                  size={20}
+                  color={isActive ? colors.primary : colors.icon}
+                />
+              ) : (
+                <MaterialCommunityIcons
+                  name={section.icon as any}
+                  size={20}
+                  color={isActive ? colors.primary : colors.icon}
+                />
+              )}
               <Text
                 style={[
                   styles.sectionLabel,

@@ -11,9 +11,17 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
+  Platform,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
+import { Menu01Icon, ArrowLeft01Icon, Cancel01Icon, Search01Icon } from '@hugeicons/core-free-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+const HUGE_ICON_MAP: Record<string, IconSvgElement> = {
+  menu: Menu01Icon as unknown as IconSvgElement,
+  'arrow-left': ArrowLeft01Icon as unknown as IconSvgElement,
+};
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
@@ -65,7 +73,11 @@ export const SearchHeader = forwardRef<TextInput, SearchHeaderProps>(function Se
         {isInputMode ? (
           <>
             <TouchableOpacity onPress={onLeftIcon} style={styles.iconButton}>
-              <MaterialCommunityIcons name={leftIcon} size={24} color={colors.icon} />
+              {Platform.OS === 'web' && HUGE_ICON_MAP[leftIcon] ? (
+                <HugeiconsIcon icon={HUGE_ICON_MAP[leftIcon]} size={24} color={colors.icon} />
+              ) : (
+                <MaterialCommunityIcons name={leftIcon} size={24} color={colors.icon} />
+              )}
             </TouchableOpacity>
             <TextInput
               ref={ref}
@@ -82,7 +94,11 @@ export const SearchHeader = forwardRef<TextInput, SearchHeaderProps>(function Se
             />
             {value && value.length > 0 && onClear && (
               <TouchableOpacity onPress={onClear} style={styles.iconButton}>
-                <MaterialCommunityIcons name="close" size={20} color={colors.icon} />
+                {Platform.OS === 'web' ? (
+                  <HugeiconsIcon icon={Cancel01Icon as unknown as IconSvgElement} size={20} color={colors.icon} />
+                ) : (
+                  <MaterialCommunityIcons name="close" size={20} color={colors.icon} />
+                )}
               </TouchableOpacity>
             )}
           </>
@@ -93,7 +109,11 @@ export const SearchHeader = forwardRef<TextInput, SearchHeaderProps>(function Se
             activeOpacity={0.8}
           >
             <TouchableOpacity onPress={onLeftIcon} activeOpacity={0.7}>
-              <MaterialCommunityIcons name={leftIcon} size={24} color={colors.icon} />
+              {Platform.OS === 'web' && HUGE_ICON_MAP[leftIcon] ? (
+                <HugeiconsIcon icon={HUGE_ICON_MAP[leftIcon]} size={24} color={colors.icon} />
+              ) : (
+                <MaterialCommunityIcons name={leftIcon} size={24} color={colors.icon} />
+              )}
             </TouchableOpacity>
             <Text style={[styles.placeholderText, { color: colors.searchPlaceholder }]}>
               {placeholder}

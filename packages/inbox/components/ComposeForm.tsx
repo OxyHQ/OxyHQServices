@@ -19,6 +19,13 @@ import {
   Alert,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
+import {
+  Cancel01Icon,
+  FloppyDiskIcon,
+  MailSend01Icon,
+  ArrowDown01Icon,
+} from '@hugeicons/core-free-icons';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useOxy } from '@oxyhq/services';
@@ -123,7 +130,11 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, subject: in
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
         {mode === 'standalone' && (
           <TouchableOpacity onPress={handleClose} style={styles.iconButton}>
-            <MaterialCommunityIcons name="close" size={24} color={colors.icon} />
+            {Platform.OS === 'web' ? (
+              <HugeiconsIcon icon={Cancel01Icon as unknown as IconSvgElement} size={24} color={colors.icon} />
+            ) : (
+              <MaterialCommunityIcons name="close" size={24} color={colors.icon} />
+            )}
           </TouchableOpacity>
         )}
         <Text style={[styles.headerTitle, { color: colors.text }]}>
@@ -131,14 +142,22 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, subject: in
         </Text>
         <View style={styles.headerSpacer} />
         <TouchableOpacity onPress={handleSaveDraft} style={styles.iconButton}>
-          <MaterialCommunityIcons name="content-save-outline" size={22} color={colors.icon} />
+          {Platform.OS === 'web' ? (
+            <HugeiconsIcon icon={FloppyDiskIcon as unknown as IconSvgElement} size={22} color={colors.icon} />
+          ) : (
+            <MaterialCommunityIcons name="content-save-outline" size={22} color={colors.icon} />
+          )}
         </TouchableOpacity>
         <TouchableOpacity
           onPress={handleSend}
           style={[styles.sendButton, { backgroundColor: colors.primary, opacity: sending ? 0.5 : 1 }]}
           disabled={sending}
         >
-          <MaterialCommunityIcons name="send" size={20} color="#FFFFFF" />
+          {Platform.OS === 'web' ? (
+            <HugeiconsIcon icon={MailSend01Icon as unknown as IconSvgElement} size={20} color="#FFFFFF" />
+          ) : (
+            <MaterialCommunityIcons name="send" size={20} color="#FFFFFF" />
+          )}
         </TouchableOpacity>
       </View>
 
@@ -164,7 +183,11 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, subject: in
           />
           {!showCcBcc && (
             <TouchableOpacity onPress={() => setShowCcBcc(true)}>
-              <MaterialCommunityIcons name="chevron-down" size={20} color={colors.secondaryText} />
+              {Platform.OS === 'web' ? (
+                <HugeiconsIcon icon={ArrowDown01Icon as unknown as IconSvgElement} size={20} color={colors.secondaryText} />
+              ) : (
+                <MaterialCommunityIcons name="chevron-down" size={20} color={colors.secondaryText} />
+              )}
             </TouchableOpacity>
           )}
         </View>

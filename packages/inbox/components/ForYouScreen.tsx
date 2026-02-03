@@ -19,6 +19,16 @@ import {
   type NativeScrollEvent,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
+import {
+  StarIcon,
+  Mail01Icon,
+  Attachment01Icon,
+  ArrowLeft01Icon,
+  ArrowRight01Icon,
+  Menu01Icon,
+  InboxIcon,
+} from '@hugeicons/core-free-icons';
 import { useRouter } from 'expo-router';
 import { useNavigation, DrawerActions } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -35,6 +45,12 @@ import type { Message } from '@/services/emailApi';
 const CARD_WIDTH = 320;
 const CARD_GAP = 12;
 const SCROLL_AMOUNT = CARD_WIDTH + CARD_GAP;
+
+const SECTION_ICONS: Record<string, { huge: IconSvgElement; fallback: keyof typeof MaterialCommunityIcons.glyphMap }> = {
+  star: { huge: StarIcon as unknown as IconSvgElement, fallback: 'star' },
+  'email-outline': { huge: Mail01Icon as unknown as IconSvgElement, fallback: 'email-outline' },
+  paperclip: { huge: Attachment01Icon as unknown as IconSvgElement, fallback: 'paperclip' },
+};
 
 function summarizeSection(items: Message[]): string {
   const senders = [...new Set(items.map((m) => m.from.name || m.from.address.split('@')[0]))];
@@ -110,10 +126,16 @@ function HorizontalSection({
 
   if (items.length === 0) return null;
 
+  const sectionIcon = SECTION_ICONS[icon];
+
   return (
     <View style={styles.section}>
       <View style={styles.sectionHeader}>
-        <MaterialCommunityIcons name={icon} size={20} color={iconColor} />
+        {Platform.OS === 'web' && sectionIcon ? (
+          <HugeiconsIcon icon={sectionIcon.huge} size={20} color={iconColor} />
+        ) : (
+          <MaterialCommunityIcons name={icon} size={20} color={iconColor} />
+        )}
         <Text style={[styles.sectionTitle, { color: colors.text }]}>{title}</Text>
         <Text style={[styles.sectionCount, { color: colors.secondaryText }]}>{items.length}</Text>
       </View>
@@ -128,7 +150,11 @@ function HorizontalSection({
             onPress={() => scrollBy(-1)}
             activeOpacity={0.7}
           >
-            <MaterialCommunityIcons name="chevron-left" size={24} color={colors.text} />
+            {Platform.OS === 'web' ? (
+              <HugeiconsIcon icon={ArrowLeft01Icon as unknown as IconSvgElement} size={24} color={colors.text} />
+            ) : (
+              <MaterialCommunityIcons name="chevron-left" size={24} color={colors.text} />
+            )}
           </TouchableOpacity>
         )}
 
@@ -160,7 +186,11 @@ function HorizontalSection({
             onPress={() => scrollBy(1)}
             activeOpacity={0.7}
           >
-            <MaterialCommunityIcons name="chevron-right" size={24} color={colors.text} />
+            {Platform.OS === 'web' ? (
+              <HugeiconsIcon icon={ArrowRight01Icon as unknown as IconSvgElement} size={24} color={colors.text} />
+            ) : (
+              <MaterialCommunityIcons name="chevron-right" size={24} color={colors.text} />
+            )}
           </TouchableOpacity>
         )}
       </View>
@@ -224,7 +254,11 @@ export function ForYouScreen() {
       >
         {!isDesktop && (
           <TouchableOpacity onPress={handleOpenDrawer} style={styles.iconButton}>
-            <MaterialCommunityIcons name="menu" size={24} color={colors.icon} />
+            {Platform.OS === 'web' ? (
+              <HugeiconsIcon icon={Menu01Icon as unknown as IconSvgElement} size={24} color={colors.icon} />
+            ) : (
+              <MaterialCommunityIcons name="menu" size={24} color={colors.icon} />
+            )}
           </TouchableOpacity>
         )}
         <Text style={[styles.headerTitle, { color: colors.text }]}>For You</Text>
@@ -273,7 +307,11 @@ export function ForYouScreen() {
 
           {starred.length === 0 && unread.length === 0 && withAttachments.length === 0 && (
             <View style={styles.emptyContainer}>
-              <MaterialCommunityIcons name="inbox-outline" size={64} color={colors.border} />
+              {Platform.OS === 'web' ? (
+                <HugeiconsIcon icon={InboxIcon as unknown as IconSvgElement} size={64} color={colors.border} />
+              ) : (
+                <MaterialCommunityIcons name="inbox-outline" size={64} color={colors.border} />
+              )}
               <Text style={[styles.emptyTitle, { color: colors.text }]}>All caught up</Text>
               <Text style={[styles.emptySubtitle, { color: colors.secondaryText }]}>
                 Nothing highlighted for you right now.

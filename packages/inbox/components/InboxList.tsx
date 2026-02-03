@@ -15,6 +15,8 @@ import {
   RefreshControl,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
+import { PencilEdit01Icon } from '@hugeicons/core-free-icons';
 import { useRouter } from 'expo-router';
 import { useNavigation, DrawerActions } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -207,7 +209,11 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
         onPress={handleCompose}
         activeOpacity={0.8}
       >
-        <MaterialCommunityIcons name="pencil" size={24} color={colors.composeFabIcon} />
+        {Platform.OS === 'web' ? (
+          <HugeiconsIcon icon={PencilEdit01Icon as unknown as IconSvgElement} size={24} color={colors.composeFabIcon} />
+        ) : (
+          <MaterialCommunityIcons name="pencil" size={24} color={colors.composeFabIcon} />
+        )}
         {Platform.OS === 'web' && (
           <Text style={[styles.fabLabel, { color: colors.composeFabText }]}>Compose</Text>
         )}

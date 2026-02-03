@@ -15,8 +15,19 @@ import {
   StyleSheet,
   ActivityIndicator,
   useWindowDimensions,
+  Platform,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
+import {
+  ArrowLeft01Icon,
+  Archive01Icon,
+  Delete01Icon,
+  StarIcon,
+  Attachment01Icon,
+  MailReply01Icon,
+  Forward01Icon,
+} from '@hugeicons/core-free-icons';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -140,7 +151,11 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
         {mode === 'standalone' && (
           <View style={styles.toolbar}>
             <TouchableOpacity onPress={handleBack} style={styles.iconButton}>
-              <MaterialCommunityIcons name="arrow-left" size={24} color={colors.icon} />
+              {Platform.OS === 'web' ? (
+                <HugeiconsIcon icon={ArrowLeft01Icon as unknown as IconSvgElement} size={24} color={colors.icon} />
+              ) : (
+                <MaterialCommunityIcons name="arrow-left" size={24} color={colors.icon} />
+              )}
             </TouchableOpacity>
           </View>
         )}
@@ -166,22 +181,43 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
       <View style={[styles.toolbar, { borderBottomColor: colors.border }]}>
         {mode === 'standalone' && (
           <TouchableOpacity onPress={handleBack} style={styles.iconButton}>
-            <MaterialCommunityIcons name="arrow-left" size={24} color={colors.icon} />
+            {Platform.OS === 'web' ? (
+              <HugeiconsIcon icon={ArrowLeft01Icon as unknown as IconSvgElement} size={24} color={colors.icon} />
+            ) : (
+              <MaterialCommunityIcons name="arrow-left" size={24} color={colors.icon} />
+            )}
           </TouchableOpacity>
         )}
         <View style={styles.toolbarSpacer} />
         <TouchableOpacity onPress={handleArchive} style={styles.iconButton}>
-          <MaterialCommunityIcons name="archive-outline" size={22} color={colors.icon} />
+          {Platform.OS === 'web' ? (
+            <HugeiconsIcon icon={Archive01Icon as unknown as IconSvgElement} size={22} color={colors.icon} />
+          ) : (
+            <MaterialCommunityIcons name="archive-outline" size={22} color={colors.icon} />
+          )}
         </TouchableOpacity>
         <TouchableOpacity onPress={handleDelete} style={styles.iconButton}>
-          <MaterialCommunityIcons name="delete-outline" size={22} color={colors.icon} />
+          {Platform.OS === 'web' ? (
+            <HugeiconsIcon icon={Delete01Icon as unknown as IconSvgElement} size={22} color={colors.icon} />
+          ) : (
+            <MaterialCommunityIcons name="delete-outline" size={22} color={colors.icon} />
+          )}
         </TouchableOpacity>
         <TouchableOpacity onPress={handleStar} style={styles.iconButton}>
-          <MaterialCommunityIcons
-            name={currentMessage.flags.starred ? 'star' : 'star-outline'}
-            size={22}
-            color={currentMessage.flags.starred ? colors.starred : colors.icon}
-          />
+          {Platform.OS === 'web' ? (
+            <HugeiconsIcon
+              icon={StarIcon as unknown as IconSvgElement}
+              size={22}
+              color={currentMessage.flags.starred ? colors.starred : colors.icon}
+              strokeWidth={currentMessage.flags.starred ? 2.5 : 1.5}
+            />
+          ) : (
+            <MaterialCommunityIcons
+              name={currentMessage.flags.starred ? 'star' : 'star-outline'}
+              size={22}
+              color={currentMessage.flags.starred ? colors.starred : colors.icon}
+            />
+          )}
         </TouchableOpacity>
       </View>
 

@@ -5,8 +5,22 @@
  */
 
 import React, { useCallback, useMemo } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
+import {
+  StarIcon,
+  Image01Icon,
+  PlayCircle02Icon,
+  MusicNote01Icon,
+  Pdf01Icon,
+  Xls01Icon,
+  Ppt01Icon,
+  Doc01Icon,
+  FileZipIcon,
+  File01Icon,
+  Attachment01Icon,
+} from '@hugeicons/core-free-icons';
 import { Avatar } from './Avatar';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
@@ -45,25 +59,26 @@ function getPreview(message: Message): string {
 
 type AttachmentInfo = {
   icon: keyof typeof MaterialCommunityIcons.glyphMap;
+  hugeIcon: IconSvgElement;
   label: string;
   color: string;
 };
 
 function getAttachmentInfo(att: Attachment): AttachmentInfo {
   const ct = att.contentType.toLowerCase();
-  if (ct.startsWith('image/')) return { icon: 'image-outline', label: att.filename, color: '#34A853' };
-  if (ct.startsWith('video/')) return { icon: 'play-circle-outline', label: att.filename, color: '#EA4335' };
-  if (ct.startsWith('audio/')) return { icon: 'music-note-outline', label: att.filename, color: '#9334E6' };
-  if (ct.includes('pdf')) return { icon: 'file-pdf-box', label: att.filename, color: '#EA4335' };
+  if (ct.startsWith('image/')) return { icon: 'image-outline', hugeIcon: Image01Icon as unknown as IconSvgElement, label: att.filename, color: '#34A853' };
+  if (ct.startsWith('video/')) return { icon: 'play-circle-outline', hugeIcon: PlayCircle02Icon as unknown as IconSvgElement, label: att.filename, color: '#EA4335' };
+  if (ct.startsWith('audio/')) return { icon: 'music-note-outline', hugeIcon: MusicNote01Icon as unknown as IconSvgElement, label: att.filename, color: '#9334E6' };
+  if (ct.includes('pdf')) return { icon: 'file-pdf-box', hugeIcon: Pdf01Icon as unknown as IconSvgElement, label: att.filename, color: '#EA4335' };
   if (ct.includes('spreadsheet') || ct.includes('excel') || ct.includes('csv'))
-    return { icon: 'file-excel-outline', label: att.filename, color: '#34A853' };
+    return { icon: 'file-excel-outline', hugeIcon: Xls01Icon as unknown as IconSvgElement, label: att.filename, color: '#34A853' };
   if (ct.includes('presentation') || ct.includes('powerpoint'))
-    return { icon: 'file-powerpoint-outline', label: att.filename, color: '#E8710A' };
+    return { icon: 'file-powerpoint-outline', hugeIcon: Ppt01Icon as unknown as IconSvgElement, label: att.filename, color: '#E8710A' };
   if (ct.includes('document') || ct.includes('word') || ct.includes('msword'))
-    return { icon: 'file-word-outline', label: att.filename, color: '#1A73E8' };
+    return { icon: 'file-word-outline', hugeIcon: Doc01Icon as unknown as IconSvgElement, label: att.filename, color: '#1A73E8' };
   if (ct.includes('zip') || ct.includes('rar') || ct.includes('tar') || ct.includes('gz'))
-    return { icon: 'zip-box-outline', label: att.filename, color: '#5F6368' };
-  return { icon: 'file-outline', label: att.filename, color: '#5F6368' };
+    return { icon: 'zip-box-outline', hugeIcon: FileZipIcon as unknown as IconSvgElement, label: att.filename, color: '#5F6368' };
+  return { icon: 'file-outline', hugeIcon: File01Icon as unknown as IconSvgElement, label: att.filename, color: '#5F6368' };
 }
 
 export function MessageRow({
@@ -155,7 +170,11 @@ export function MessageRow({
                   key={i}
                   style={[styles.attachmentCard, { borderColor: colors.border }]}
                 >
-                  <MaterialCommunityIcons name={info.icon as any} size={14} color={info.color} />
+                  {Platform.OS === 'web' ? (
+                    <HugeiconsIcon icon={info.hugeIcon} size={14} color={info.color} />
+                  ) : (
+                    <MaterialCommunityIcons name={info.icon as any} size={14} color={info.color} />
+                  )}
                   <Text style={[styles.attachmentLabel, { color: colors.text }]} numberOfLines={1}>
                     {info.label}
                   </Text>
@@ -172,11 +191,20 @@ export function MessageRow({
       </View>
 
       <TouchableOpacity onPress={handleStar} hitSlop={8} style={styles.starButton}>
-        <MaterialCommunityIcons
-          name={message.flags.starred ? 'star' : 'star-outline'}
-          size={22}
-          color={message.flags.starred ? colors.starred : colors.icon}
-        />
+        {Platform.OS === 'web' ? (
+          <HugeiconsIcon
+            icon={StarIcon as unknown as IconSvgElement}
+            size={22}
+            color={message.flags.starred ? colors.starred : colors.icon}
+            strokeWidth={message.flags.starred ? 2.5 : 1.5}
+          />
+        ) : (
+          <MaterialCommunityIcons
+            name={message.flags.starred ? 'star' : 'star-outline'}
+            size={22}
+            color={message.flags.starred ? colors.starred : colors.icon}
+          />
+        )}
       </TouchableOpacity>
     </TouchableOpacity>
   );
