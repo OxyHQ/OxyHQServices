@@ -24,6 +24,7 @@ import { Colors } from '@/constants/theme';
 import { useEmailStore } from '@/hooks/useEmail';
 import { MessageRow } from '@/components/MessageRow';
 import { SearchHeader } from '@/components/SearchHeader';
+import { EmptyIllustration } from '@/components/EmptyIllustration';
 import type { Message } from '@/services/emailApi';
 
 export default function InboxScreen() {
@@ -97,11 +98,7 @@ export default function InboxScreen() {
     if (loading) return null;
     return (
       <View style={styles.emptyContainer}>
-        <MaterialCommunityIcons
-          name="email-open-outline"
-          size={64}
-          color={colors.secondaryText}
-        />
+        <EmptyIllustration size={180} />
         <Text style={[styles.emptyTitle, { color: colors.text }]}>Nothing here</Text>
         <Text style={[styles.emptySubtitle, { color: colors.secondaryText }]}>
           {isAuthenticated

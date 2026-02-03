@@ -11,7 +11,6 @@ import {
   StyleSheet,
   ActivityIndicator,
 } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useOxy } from '@oxyhq/services';
 
@@ -20,6 +19,7 @@ import { Colors } from '@/constants/theme';
 import { createEmailApi, type Message } from '@/services/emailApi';
 import { MessageRow } from '@/components/MessageRow';
 import { SearchHeader } from '@/components/SearchHeader';
+import { EmptyIllustration } from '@/components/EmptyIllustration';
 import { useEmailStore } from '@/hooks/useEmail';
 
 export default function SearchScreen() {
@@ -80,7 +80,7 @@ export default function SearchScreen() {
     if (!hasSearched) {
       return (
         <View style={styles.emptyContainer}>
-          <MaterialCommunityIcons name="magnify" size={64} color={colors.secondaryText} />
+          <EmptyIllustration size={180} />
           <Text style={[styles.emptyText, { color: colors.secondaryText }]}>
             Search your emails
           </Text>
@@ -89,7 +89,7 @@ export default function SearchScreen() {
     }
     return (
       <View style={styles.emptyContainer}>
-        <MaterialCommunityIcons name="email-search-outline" size={64} color={colors.secondaryText} />
+        <EmptyIllustration size={180} />
         <Text style={[styles.emptyText, { color: colors.secondaryText }]}>No results found</Text>
       </View>
     );
