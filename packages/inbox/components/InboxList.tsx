@@ -20,7 +20,7 @@ import { PencilEdit01Icon } from '@hugeicons/core-free-icons';
 import { useRouter } from 'expo-router';
 import { useNavigation, DrawerActions } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useOxy, OxySignInButton } from '@oxyhq/services';
+import { useOxy, OxySignInButton, toast } from '@oxyhq/services';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
@@ -36,6 +36,7 @@ import {
 import { MessageRow } from '@/components/MessageRow';
 import { SearchHeader } from '@/components/SearchHeader';
 import { SelectionToolbar } from '@/components/SelectionToolbar';
+import { SwipeableRow } from '@/components/SwipeableRow';
 import { EmptyIllustration } from '@/components/EmptyIllustration';
 import type { Message } from '@/services/emailApi';
 
@@ -172,20 +173,42 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
 
   const mailboxTitle = currentMailbox?.specialUse || currentMailbox?.name || 'Inbox';
 
+  const handleSwipeArchive = useCallback(
+    (messageId: string) => {
+      const archiveBox = mailboxes.find((m) => m.specialUse === 'Archive');
+      if (archiveBox) archiveMutation.mutate({ messageId, archiveMailboxId: archiveBox._id });
+    },
+    [mailboxes, archiveMutation],
+  );
+
+  const handleSwipeDelete = useCallback(
+    (messageId: string) => {
+      const trashBox = mailboxes.find((m) => m.specialUse === 'Trash');
+      const isInTrash = currentMailbox?.specialUse === 'Trash';
+      deleteMutation.mutate({ messageId, trashMailboxId: trashBox?._id, isInTrash });
+    },
+    [mailboxes, currentMailbox, deleteMutation],
+  );
+
   const renderItem = useCallback(
     ({ item }: { item: Message }) => (
-      <MessageRow
-        message={item}
-        onStar={handleStar}
-        onSelect={handleMessagePress}
-        isSelected={item._id === selectedMessageId}
-        isSelectionMode={isSelectionMode}
-        isMultiSelected={selectedMessageIds.has(item._id)}
-        onToggleSelect={toggleMessageSelection}
-        onLongPress={handleLongPress}
-      />
+      <SwipeableRow
+        onArchive={() => handleSwipeArchive(item._id)}
+        onDelete={() => handleSwipeDelete(item._id)}
+      >
+        <MessageRow
+          message={item}
+          onStar={handleStar}
+          onSelect={handleMessagePress}
+          isSelected={item._id === selectedMessageId}
+          isSelectionMode={isSelectionMode}
+          isMultiSelected={selectedMessageIds.has(item._id)}
+          onToggleSelect={toggleMessageSelection}
+          onLongPress={handleLongPress}
+        />
+      </SwipeableRow>
     ),
-    [handleStar, handleMessagePress, selectedMessageId, isSelectionMode, selectedMessageIds, toggleMessageSelection, handleLongPress],
+    [handleStar, handleMessagePress, selectedMessageId, isSelectionMode, selectedMessageIds, toggleMessageSelection, handleLongPress, handleSwipeArchive, handleSwipeDelete],
   );
 
   const keyExtractor = useCallback((item: Message) => item._id, []);

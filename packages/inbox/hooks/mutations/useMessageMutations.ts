@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient, type InfiniteData } from '@tanstack/react-query';
+import { toast } from '@oxyhq/services';
 import { useEmailStore } from '@/hooks/useEmail';
 import type { Message, Pagination } from '@/services/emailApi';
 
@@ -124,6 +125,12 @@ export function useArchiveMessage() {
         removeMessageFromPages(old, messageId),
       );
     },
+    onSuccess: () => {
+      toast.success('Conversation archived.');
+    },
+    onError: () => {
+      toast.error('Failed to archive conversation.');
+    },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['messages'] });
       queryClient.invalidateQueries({ queryKey: ['mailboxes'] });
@@ -171,6 +178,12 @@ export function useDeleteMessage() {
         removeMessageFromPages(old, messageId),
       );
     },
+    onSuccess: (_data, { isInTrash }) => {
+      toast.success(isInTrash ? 'Conversation permanently deleted.' : 'Conversation moved to Trash.');
+    },
+    onError: () => {
+      toast.error('Failed to delete conversation.');
+    },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['messages'] });
       queryClient.invalidateQueries({ queryKey: ['mailboxes'] });
@@ -185,6 +198,12 @@ export function useSendMessage() {
   return useMutation({
     mutationFn: async (params: Parameters<NonNullable<typeof api>['sendMessage']>[0]) => {
       if (api) await api.sendMessage(params);
+    },
+    onSuccess: () => {
+      toast.success('Message sent.');
+    },
+    onError: () => {
+      toast.error('Failed to send message.');
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['messages'] });
@@ -201,6 +220,9 @@ export function useSaveDraft() {
     mutationFn: async (params: Parameters<NonNullable<typeof api>['saveDraft']>[0]) => {
       if (api) return api.saveDraft(params);
       return undefined;
+    },
+    onSuccess: () => {
+      toast('Draft saved.');
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['messages'] });

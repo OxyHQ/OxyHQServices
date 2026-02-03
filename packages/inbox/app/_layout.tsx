@@ -11,6 +11,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { queryClient } from '@/hooks/queries/queryClient';
 import { ThemeProvider as AppThemeProvider } from '@/contexts/theme-context';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 import * as SplashScreen from 'expo-splash-screen';
 
 SplashScreen.preventAutoHideAsync();
@@ -19,9 +20,11 @@ const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'https://api.oxy.so';
 
 export default function RootLayout() {
   return (
-    <AppThemeProvider>
-      <RootLayoutContent />
-    </AppThemeProvider>
+    <ErrorBoundary>
+      <AppThemeProvider>
+        <RootLayoutContent />
+      </AppThemeProvider>
+    </ErrorBoundary>
   );
 }
 

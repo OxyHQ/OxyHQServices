@@ -16,6 +16,7 @@ import {
   ActivityIndicator,
   useWindowDimensions,
   Platform,
+  Linking,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
@@ -36,8 +37,9 @@ import { Colors } from '@/constants/theme';
 import { useEmailStore } from '@/hooks/useEmail';
 import { useMessage } from '@/hooks/queries/useMessage';
 import { useMailboxes } from '@/hooks/queries/useMailboxes';
-import { useToggleStar, useArchiveMessage, useDeleteMessage } from '@/hooks/mutations/useMessageMutations';
+import { useToggleStar, useToggleRead, useArchiveMessage, useDeleteMessage } from '@/hooks/mutations/useMessageMutations';
 import { Avatar } from '@/components/Avatar';
+import { HtmlBody } from '@/components/HtmlBody';
 import type { EmailAddress } from '@/services/emailApi';
 
 function formatFullDate(dateStr: string): string {
@@ -71,7 +73,9 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
   const { data: currentMessage, isLoading } = useMessage(messageId);
   const { data: mailboxes = [] } = useMailboxes();
   const currentMailbox = useEmailStore((s) => s.currentMailbox);
+  const api = useEmailStore((s) => s._api);
   const toggleStar = useToggleStar();
+  const toggleRead = useToggleRead();
   const archiveMutation = useArchiveMessage();
   const deleteMutation = useDeleteMessage();
 
@@ -81,6 +85,13 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
   useEffect(() => {
     setExpanded(false);
   }, [messageId]);
+
+  // Auto-mark message as read when opened
+  useEffect(() => {
+    if (currentMessage && !currentMessage.flags.seen) {
+      toggleRead.mutate({ messageId, seen: true });
+    }
+  }, [messageId, currentMessage?.flags.seen]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleBack = useCallback(() => {
     router.back();
@@ -117,7 +128,6 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
       params: {
         replyTo: currentMessage._id,
         to: currentMessage.from.address,
-        toName: currentMessage.from.name || '',
         subject: currentMessage.subject.startsWith('Re:')
           ? currentMessage.subject
           : `Re: ${currentMessage.subject}`,
@@ -138,6 +148,32 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
       },
     });
   }, [navigate, currentMessage]);
+
+  const handleAttachment = useCallback(async (s3Key: string, filename: string) => {
+    if (!api) return;
+    try {
+      const url = await api.getAttachmentUrl(s3Key);
+      if (Platform.OS === 'web') {
+        window.open(url, '_blank');
+      } else {
+        const FileSystem = require('expo-file-system');
+        const Sharing = require('expo-sharing');
+        const localUri = FileSystem.documentDirectory + filename;
+        const { uri } = await FileSystem.downloadAsync(url, localUri);
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(uri);
+        } else {
+          await Linking.openURL(url);
+        }
+      }
+    } catch {
+      // Fallback: try opening URL directly
+      try {
+        const url = await api.getAttachmentUrl(s3Key);
+        await Linking.openURL(url);
+      } catch {}
+    }
+  }, [api]);
 
   if (isLoading || !currentMessage) {
     return (
@@ -258,7 +294,12 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
         {currentMessage.attachments.length > 0 && (
           <View style={[styles.attachmentsBar, { borderColor: colors.border }]}>
             {currentMessage.attachments.map((att, i) => (
-              <View key={i} style={[styles.attachmentChip, { backgroundColor: colors.surfaceVariant }]}>
+              <TouchableOpacity
+                key={i}
+                style={[styles.attachmentChip, { backgroundColor: colors.surfaceVariant }]}
+                onPress={() => handleAttachment(att.s3Key, att.filename)}
+                activeOpacity={0.7}
+              >
                 {Platform.OS === 'web' ? (
                   <HugeiconsIcon icon={Attachment01Icon as unknown as IconSvgElement} size={14} color={colors.secondaryText} />
                 ) : (
@@ -267,16 +308,20 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
                 <Text style={[styles.attachmentName, { color: colors.text }]} numberOfLines={1}>
                   {att.filename}
                 </Text>
-              </View>
+              </TouchableOpacity>
             ))}
           </View>
         )}
 
         {/* Body */}
         <View style={styles.messageBody}>
-          <Text style={[styles.bodyText, { color: colors.text }]}>
-            {currentMessage.text || '(empty message)'}
-          </Text>
+          {currentMessage.html ? (
+            <HtmlBody html={currentMessage.html} />
+          ) : (
+            <Text style={[styles.bodyText, { color: colors.text }]}>
+              {currentMessage.text || '(empty message)'}
+            </Text>
+          )}
         </View>
       </ScrollView>
 

@@ -16,7 +16,6 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
-  Alert,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
@@ -28,7 +27,7 @@ import {
 } from '@hugeicons/core-free-icons';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useOxy } from '@oxyhq/services';
+import { useOxy, toast } from '@oxyhq/services';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
@@ -39,7 +38,6 @@ interface ComposeFormProps {
   replyTo?: string;
   forward?: string;
   to?: string;
-  toName?: string;
   subject?: string;
   body?: string;
 }
@@ -64,23 +62,32 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, subject: in
   const fromAddress = user?.username ? `${user.username}@oxy.so` : '';
   const sending = sendMessage.isPending;
 
+  const isValidEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+
   const parseAddresses = (input: string) => {
     return input
       .split(',')
       .map((s) => s.trim())
       .filter(Boolean)
+      .filter((addr) => isValidEmail(addr))
       .map((addr) => ({ address: addr }));
   };
 
   const handleSend = useCallback(() => {
     if (!to.trim()) {
-      Alert.alert('Error', 'Please add at least one recipient.');
+      toast.error('Please add at least one recipient.');
+      return;
+    }
+
+    const toAddresses = parseAddresses(to);
+    if (toAddresses.length === 0) {
+      toast.error('Please enter a valid email address.');
       return;
     }
 
     sendMessage.mutate(
       {
-        to: parseAddresses(to),
+        to: toAddresses,
         cc: cc.trim() ? parseAddresses(cc) : undefined,
         bcc: bcc.trim() ? parseAddresses(bcc) : undefined,
         subject,
@@ -90,7 +97,7 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, subject: in
       {
         onSuccess: () => router.back(),
         onError: (err: any) =>
-          Alert.alert('Send failed', err.message || 'Unable to send email. Please try again.'),
+          toast.error(err.message || 'Unable to send email. Please try again.'),
       },
     );
   }, [to, cc, bcc, subject, body, replyTo, sendMessage, router]);

@@ -14,7 +14,6 @@ import {
   StyleSheet,
   ScrollView,
   Switch,
-  Alert,
   Platform,
   useWindowDimensions,
 } from 'react-native';
@@ -23,7 +22,7 @@ import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import { ArrowLeft01Icon, Moon01Icon, Sun01Icon } from '@hugeicons/core-free-icons';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useOxy } from '@oxyhq/services';
+import { useOxy, toast } from '@oxyhq/services';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
@@ -88,8 +87,8 @@ export function SettingsPage({ section }: SettingsPageProps) {
         },
       },
       {
-        onSuccess: () => Alert.alert('Saved', 'Settings updated.'),
-        onError: (err: any) => Alert.alert('Error', err.message || 'Failed to save settings.'),
+        onSuccess: () => toast.success('Settings updated.'),
+        onError: (err: any) => toast.error(err.message || 'Failed to save settings.'),
       },
     );
   }, [signature, autoReplyEnabled, autoReplySubject, autoReplyBody, updateSettings]);

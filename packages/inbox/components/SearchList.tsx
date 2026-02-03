@@ -57,9 +57,7 @@ export function SearchList({ replaceNavigation }: SearchListProps) {
 
   const handleMessagePress = useCallback(
     (messageId: string) => {
-      const path = replaceNavigation
-        ? `/search/conversation/${messageId}`
-        : `/search/conversation/${messageId}`;
+      const path = `/search/conversation/${messageId}`;
       if (replaceNavigation) {
         router.replace(path);
       } else {

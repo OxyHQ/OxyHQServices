@@ -108,3 +108,6 @@ export type { RouteName } from './ui/navigation/routes';
 
 // Sign-in modal
 export { showSignInModal, hideSignInModal } from './ui/components/SignInModal';
+
+// Toast notifications
+export { toast } from './lib/sonner';

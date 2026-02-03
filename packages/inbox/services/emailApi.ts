@@ -3,93 +3,110 @@
  *
  * Wraps the Oxy email REST API for use in the Inbox app.
  * Uses OxyServices.httpService for automatic auth and CSRF handling.
+ * All responses validated with zod schemas at runtime.
  */
 
+import { z } from 'zod';
 import type { OxyServices } from '@oxyhq/core';
 
 type HttpService = OxyServices['httpService'];
 
-export interface EmailAddress {
-  name?: string;
-  address: string;
-}
+// ─── Zod Schemas ───────────────────────────────────────────────────
 
-export interface Attachment {
-  filename: string;
-  contentType: string;
-  size: number;
-  s3Key: string;
-}
+export const EmailAddressSchema = z.object({
+  name: z.string().optional(),
+  address: z.string(),
+});
 
-export interface MessageFlags {
-  seen: boolean;
-  starred: boolean;
-  answered: boolean;
-  forwarded: boolean;
-  draft: boolean;
-}
+export const AttachmentSchema = z.object({
+  filename: z.string(),
+  contentType: z.string(),
+  size: z.number(),
+  s3Key: z.string(),
+});
 
-export interface Message {
-  _id: string;
-  userId: string;
-  mailboxId: string;
-  messageId: string;
-  from: EmailAddress;
-  to: EmailAddress[];
-  cc?: EmailAddress[];
-  bcc?: EmailAddress[];
-  subject: string;
-  text?: string;
-  html?: string;
-  headers?: Record<string, string>;
-  attachments: Attachment[];
-  flags: MessageFlags;
-  labels: string[];
-  spamScore?: number;
-  size: number;
-  inReplyTo?: string;
-  references?: string[];
-  aliasTag?: string;
-  date: string;
-  receivedAt: string;
-}
+export const MessageFlagsSchema = z.object({
+  seen: z.boolean(),
+  starred: z.boolean(),
+  answered: z.boolean(),
+  forwarded: z.boolean(),
+  draft: z.boolean(),
+});
 
-export interface Mailbox {
-  _id: string;
-  userId: string;
-  name: string;
-  path: string;
-  specialUse?: string;
-  totalMessages: number;
-  unseenMessages: number;
-  size: number;
-}
+export const MessageSchema = z.object({
+  _id: z.string(),
+  userId: z.string(),
+  mailboxId: z.string(),
+  messageId: z.string(),
+  from: EmailAddressSchema,
+  to: z.array(EmailAddressSchema),
+  cc: z.array(EmailAddressSchema).optional(),
+  bcc: z.array(EmailAddressSchema).optional(),
+  subject: z.string(),
+  text: z.string().optional(),
+  html: z.string().optional(),
+  headers: z.record(z.string(), z.string()).optional(),
+  attachments: z.array(AttachmentSchema),
+  flags: MessageFlagsSchema,
+  labels: z.array(z.string()),
+  spamScore: z.number().optional(),
+  size: z.number(),
+  inReplyTo: z.string().optional(),
+  references: z.array(z.string()).optional(),
+  aliasTag: z.string().optional(),
+  date: z.string(),
+  receivedAt: z.string(),
+});
 
-export interface Pagination {
-  total: number;
-  limit: number;
-  offset: number;
-  hasMore: boolean;
-}
+export const MailboxSchema = z.object({
+  _id: z.string(),
+  userId: z.string(),
+  name: z.string(),
+  path: z.string(),
+  specialUse: z.string().optional(),
+  totalMessages: z.number(),
+  unseenMessages: z.number(),
+  size: z.number(),
+});
 
-export interface QuotaUsage {
-  used: number;
-  limit: number;
-  percentage: number;
-  dailySendCount: number;
-  dailySendLimit: number;
-}
+export const PaginationSchema = z.object({
+  total: z.number(),
+  limit: z.number(),
+  offset: z.number(),
+  hasMore: z.boolean(),
+});
 
-export interface EmailSettings {
-  signature: string;
-  autoReply: {
-    enabled: boolean;
-    subject: string;
-    body: string;
-    startDate: string | null;
-    endDate: string | null;
-  };
-}
+export const QuotaUsageSchema = z.object({
+  used: z.number(),
+  limit: z.number(),
+  percentage: z.number(),
+  dailySendCount: z.number(),
+  dailySendLimit: z.number(),
+});
+
+export const EmailSettingsSchema = z.object({
+  signature: z.string(),
+  autoReply: z.object({
+    enabled: z.boolean(),
+    subject: z.string(),
+    body: z.string(),
+    startDate: z.string().nullable(),
+    endDate: z.string().nullable(),
+  }),
+});
+
+// ─── Inferred Types ────────────────────────────────────────────────
+
+export type EmailAddress = z.infer<typeof EmailAddressSchema>;
+export type Attachment = z.infer<typeof AttachmentSchema>;
+export type MessageFlags = z.infer<typeof MessageFlagsSchema>;
+export type Message = z.infer<typeof MessageSchema>;
+export type Mailbox = z.infer<typeof MailboxSchema>;
+export type Pagination = z.infer<typeof PaginationSchema>;
+export type QuotaUsage = z.infer<typeof QuotaUsageSchema>;
+export type EmailSettings = z.infer<typeof EmailSettingsSchema>;
+
+// ─── API Client ────────────────────────────────────────────────────
 
 export function createEmailApi(http: HttpService) {
   return {
@@ -97,12 +114,12 @@ export function createEmailApi(http: HttpService) {
 
     async listMailboxes(): Promise<Mailbox[]> {
       const res = await http.get<{ data: Mailbox[] }>('/api/email/mailboxes');
-      return res.data.data;
+      return z.array(MailboxSchema).parse(res.data.data);
     },
 
     async createMailbox(name: string, parentPath?: string): Promise<Mailbox> {
       const res = await http.post<{ data: Mailbox }>('/api/email/mailboxes', { name, parentPath });
-      return res.data.data;
+      return MailboxSchema.parse(res.data.data);
     },
 
     async deleteMailbox(mailboxId: string): Promise<void> {
@@ -121,22 +138,25 @@ export function createEmailApi(http: HttpService) {
       if (options.unseenOnly) params.unseen = 'true';
 
       const res = await http.get<{ data: Message[]; pagination: Pagination }>('/api/email/messages', { params });
-      return res.data;
+      return {
+        data: z.array(MessageSchema).parse(res.data.data),
+        pagination: PaginationSchema.parse(res.data.pagination),
+      };
     },
 
     async getMessage(messageId: string): Promise<Message> {
       const res = await http.get<{ data: Message }>(`/api/email/messages/${messageId}`);
-      return res.data.data;
+      return MessageSchema.parse(res.data.data);
     },
 
     async updateFlags(messageId: string, flags: Partial<MessageFlags>): Promise<Message> {
       const res = await http.put<{ data: Message }>(`/api/email/messages/${messageId}/flags`, { flags });
-      return res.data.data;
+      return MessageSchema.parse(res.data.data);
     },
 
     async moveMessage(messageId: string, mailboxId: string): Promise<Message> {
       const res = await http.post<{ data: Message }>(`/api/email/messages/${messageId}/move`, { mailboxId });
-      return res.data.data;
+      return MessageSchema.parse(res.data.data);
     },
 
     async deleteMessage(messageId: string, permanent = false): Promise<void> {
@@ -158,7 +178,11 @@ export function createEmailApi(http: HttpService) {
       attachments?: string[];
     }): Promise<{ messageId: string; queued: boolean; message: string }> {
       const res = await http.post<{ data: { messageId: string; queued: boolean; message: string } }>('/api/email/messages', message);
-      return res.data.data;
+      return z.object({
+        messageId: z.string(),
+        queued: z.boolean(),
+        message: z.string(),
+      }).parse(res.data.data);
     },
 
     async saveDraft(draft: {
@@ -173,7 +197,7 @@ export function createEmailApi(http: HttpService) {
       existingDraftId?: string;
     }): Promise<Message> {
       const res = await http.post<{ data: Message }>('/api/email/drafts', draft);
-      return res.data.data;
+      return MessageSchema.parse(res.data.data);
     },
 
     // ─── Search ─────────────────────────────────────────────────────
@@ -188,14 +212,17 @@ export function createEmailApi(http: HttpService) {
       if (options.mailbox) params.mailbox = options.mailbox;
 
       const res = await http.get<{ data: Message[]; pagination: Pagination }>('/api/email/search', { params });
-      return res.data;
+      return {
+        data: z.array(MessageSchema).parse(res.data.data),
+        pagination: PaginationSchema.parse(res.data.pagination),
+      };
     },
 
     // ─── Quota ──────────────────────────────────────────────────────
 
     async getQuota(): Promise<QuotaUsage> {
       const res = await http.get<{ data: QuotaUsage }>('/api/email/quota');
-      return res.data.data;
+      return QuotaUsageSchema.parse(res.data.data);
     },
 
     // ─── Attachments ────────────────────────────────────────────────
@@ -204,14 +231,14 @@ export function createEmailApi(http: HttpService) {
       const res = await http.get<{ data: { url: string } }>(
         `/api/email/attachments/${encodeURIComponent(s3Key)}`,
       );
-      return res.data.data.url;
+      return z.object({ url: z.string() }).parse(res.data.data).url;
     },
 
     // ─── Settings ───────────────────────────────────────────────────
 
     async getSettings(): Promise<EmailSettings> {
       const res = await http.get<{ data: EmailSettings }>('/api/email/settings');
-      return res.data.data;
+      return EmailSettingsSchema.parse(res.data.data);
     },
 
     async updateSettings(
