@@ -33,6 +33,8 @@ RUN npm run build -w @oxyhq/api
 # ── Production image ──────────────────────────────────────────────
 FROM node:20-alpine
 
+RUN apk add --no-cache python3 make g++
+
 WORKDIR /app
 
 # Copy workspace root
@@ -40,8 +42,8 @@ COPY package.json package-lock.json ./
 COPY packages/api/package.json packages/api/
 COPY packages/core/package.json packages/core/
 
-# Install production dependencies only
-RUN npm ci --ignore-scripts --omit=dev
+# Install production dependencies and build native addons
+RUN npm ci --omit=dev
 
 # Copy built artifacts
 COPY --from=builder /app/packages/api/dist packages/api/dist
