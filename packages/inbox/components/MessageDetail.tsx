@@ -258,7 +258,11 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
           <View style={[styles.attachmentsBar, { borderColor: colors.border }]}>
             {currentMessage.attachments.map((att, i) => (
               <View key={i} style={[styles.attachmentChip, { backgroundColor: colors.surfaceVariant }]}>
-                <MaterialCommunityIcons name="paperclip" size={14} color={colors.secondaryText} />
+                {Platform.OS === 'web' ? (
+                  <HugeiconsIcon icon={Attachment01Icon as unknown as IconSvgElement} size={14} color={colors.secondaryText} />
+                ) : (
+                  <MaterialCommunityIcons name="paperclip" size={14} color={colors.secondaryText} />
+                )}
                 <Text style={[styles.attachmentName, { color: colors.text }]} numberOfLines={1}>
                   {att.filename}
                 </Text>
@@ -291,7 +295,11 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
           onPress={handleReply}
           activeOpacity={0.7}
         >
-          <MaterialCommunityIcons name="reply" size={18} color={colors.icon} />
+          {Platform.OS === 'web' ? (
+            <HugeiconsIcon icon={MailReply01Icon as unknown as IconSvgElement} size={18} color={colors.icon} />
+          ) : (
+            <MaterialCommunityIcons name="reply" size={18} color={colors.icon} />
+          )}
           <Text style={[styles.replyButtonText, { color: colors.text }]}>Reply</Text>
         </TouchableOpacity>
         <TouchableOpacity
