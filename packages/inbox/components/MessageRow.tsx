@@ -141,6 +141,22 @@ export function MessageRow({
           >
             {dateStr}
           </Text>
+          <TouchableOpacity onPress={handleStar} hitSlop={8} style={styles.starButton}>
+            {Platform.OS === 'web' ? (
+              <HugeiconsIcon
+                icon={StarIcon as unknown as IconSvgElement}
+                size={16}
+                color={message.flags.starred ? colors.starred : colors.icon}
+                strokeWidth={message.flags.starred ? 2.5 : 1.5}
+              />
+            ) : (
+              <MaterialCommunityIcons
+                name={message.flags.starred ? 'star' : 'star-outline'}
+                size={20}
+                color={message.flags.starred ? colors.starred : colors.icon}
+              />
+            )}
+          </TouchableOpacity>
         </View>
 
         <Text
@@ -189,23 +205,6 @@ export function MessageRow({
           </View>
         )}
       </View>
-
-      <TouchableOpacity onPress={handleStar} hitSlop={8} style={styles.starButton}>
-        {Platform.OS === 'web' ? (
-          <HugeiconsIcon
-            icon={StarIcon as unknown as IconSvgElement}
-            size={16}
-            color={message.flags.starred ? colors.starred : colors.icon}
-            strokeWidth={message.flags.starred ? 2.5 : 1.5}
-          />
-        ) : (
-          <MaterialCommunityIcons
-            name={message.flags.starred ? 'star' : 'star-outline'}
-            size={20}
-            color={message.flags.starred ? colors.starred : colors.icon}
-          />
-        )}
-      </TouchableOpacity>
     </TouchableOpacity>
   );
 }
@@ -225,12 +224,11 @@ const styles = StyleSheet.create({
   topRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    gap: 8,
   },
   sender: {
     fontSize: 14,
     flex: 1,
-    marginRight: 8,
   },
   senderUnread: {
     fontWeight: '700',
@@ -281,7 +279,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
   starButton: {
-    padding: 4,
-    marginTop: 0,
+    padding: 2,
   },
 });
