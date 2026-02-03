@@ -12,9 +12,14 @@ export function useMailboxes() {
       console.log('[useMailboxes] Running query, api:', !!api, '__DEV__:', __DEV__);
       if (api) {
         console.log('[useMailboxes] Calling real API...');
-        const result = await api.listMailboxes();
-        console.log('[useMailboxes] Got mailboxes:', result.length);
-        return result;
+        try {
+          const result = await api.listMailboxes();
+          console.log('[useMailboxes] Got mailboxes:', result.length);
+          return result;
+        } catch (error) {
+          console.error('[useMailboxes] API call failed:', error);
+          throw error;
+        }
       }
       if (__DEV__) {
         console.log('[useMailboxes] Using mock data');
