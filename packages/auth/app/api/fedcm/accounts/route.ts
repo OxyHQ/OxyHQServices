@@ -116,7 +116,10 @@ export async function GET(request: NextRequest) {
     }
 
     // Approved clients for auto sign-in (no UI prompt)
-    // Configurable via FEDCM_APPROVED_CLIENTS env var (comma-separated origins)
+    // To allow ALL domains: dynamically include the requesting origin
+    const requestingOrigin = request.headers.get('origin');
+
+    // Build approved clients list
     const defaultClients = [
       'https://homiio.com',
       'https://mention.earth',
@@ -132,7 +135,18 @@ export async function GET(request: NextRequest) {
     const devClients = process.env.NODE_ENV === 'development'
       ? ['http://localhost:3000', 'http://localhost:8081', 'http://localhost:5173']
       : [];
-    const APPROVED_CLIENTS = [...defaultClients, ...envClients, ...devClients];
+
+    // Allow all domains by including the requesting origin
+    const approvedClients = [
+      ...defaultClients,
+      ...envClients,
+      ...devClients,
+    ];
+
+    // Add requesting origin if not already in list (allows any domain)
+    if (requestingOrigin && !approvedClients.includes(requestingOrigin)) {
+      approvedClients.push(requestingOrigin);
+    }
 
     // Return account information
     const accounts = [
@@ -142,7 +156,7 @@ export async function GET(request: NextRequest) {
         email: user.email,
         picture: user.avatar ? getAvatarUrl(user.avatar) : undefined,
         // List of origins approved for auto sign-in (no UI prompt)
-        approved_clients: APPROVED_CLIENTS,
+        approved_clients: approvedClients,
       },
     ];
 
