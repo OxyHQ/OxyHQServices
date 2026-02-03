@@ -160,7 +160,13 @@ export async function GET(request: NextRequest) {
       },
     ];
 
-    if (isDev) console.log('[FedCM Accounts] Returning account for user:', user.id);
+    if (isDev) {
+      console.log('[FedCM Accounts] Returning account for user:', user.id);
+      console.log('[FedCM Accounts] Requesting origin:', requestingOrigin);
+      console.log('[FedCM Accounts] Is origin approved:', requestingOrigin ? approvedClients.includes(requestingOrigin) : 'N/A');
+      console.log('[FedCM Accounts] Total approved clients:', approvedClients.length);
+      console.log('[FedCM Accounts] Accounts count:', accounts.length, '(should always be 1)');
+    }
     return createFedCMResponse({ accounts }, request, { loggedIn: true });
   } catch (error) {
     // IMPORTANT: Return 200 with empty accounts instead of 500

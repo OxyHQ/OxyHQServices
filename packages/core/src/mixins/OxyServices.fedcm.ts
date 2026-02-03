@@ -131,11 +131,20 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
       return session;
     } catch (error) {
       debug.log('Interactive sign-in failed:', error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+
       if ((error as any).name === 'AbortError') {
         throw new OxyAuthenticationError('Sign-in was cancelled by user');
       }
       if ((error as any).name === 'NetworkError') {
         throw new OxyAuthenticationError('Network error during sign-in. Please check your connection.');
+      }
+      if (errorMessage.includes('multiple accounts')) {
+        throw new OxyAuthenticationError('Please sign out and sign in again to use FedCM with a single account');
+      }
+      if (errorMessage.includes('retrieving a token') || errorMessage.includes('Error retrieving')) {
+        debug.error('FedCM token retrieval error - this may be a browser or IdP configuration issue');
+        throw new OxyAuthenticationError('Authentication failed. Please try again or use an alternative sign-in method.');
       }
       throw error;
     }
@@ -201,7 +210,17 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
     } catch (silentError) {
       const errorName = silentError instanceof Error ? silentError.name : 'Unknown';
       const errorMessage = silentError instanceof Error ? silentError.message : String(silentError);
-      debug.log('Silent SSO: Silent mediation failed:', { name: errorName, message: errorMessage });
+
+      // Handle specific FedCM errors with better logging
+      if (errorMessage.includes('multiple accounts')) {
+        debug.log('Silent SSO: User has used multiple accounts - silent mediation not available');
+        debug.log('Silent SSO: User needs to explicitly sign in to choose account');
+      } else if (errorMessage.includes('conditions')) {
+        debug.log('Silent SSO: Conditions not met (user may not be logged in at IdP or not in approved_clients)');
+      } else {
+        debug.log('Silent SSO: Silent mediation failed:', { name: errorName, message: errorMessage });
+      }
+
       return null;
     }
 

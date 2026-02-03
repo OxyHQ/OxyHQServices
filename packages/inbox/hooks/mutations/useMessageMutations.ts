@@ -69,6 +69,7 @@ export function useToggleStar() {
     },
     onError: (_err, _vars, context) => {
       context?.prev.forEach(([key, data]) => queryClient.setQueryData(key, data));
+      toast.error('Failed to update star.');
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['messages'] });
@@ -92,6 +93,9 @@ export function useToggleRead() {
       queryClient.setQueryData<Message | null>(['message', messageId], (old) =>
         old ? { ...old, flags: { ...old.flags, seen } } : old,
       );
+    },
+    onError: () => {
+      toast.error('Failed to update read status.');
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['messages'] });

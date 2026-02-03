@@ -38,6 +38,7 @@ import { useEmailStore } from '@/hooks/useEmail';
 import { useMessage } from '@/hooks/queries/useMessage';
 import { useMailboxes } from '@/hooks/queries/useMailboxes';
 import { useToggleStar, useToggleRead, useArchiveMessage, useDeleteMessage } from '@/hooks/mutations/useMessageMutations';
+import { toast } from '@oxyhq/services';
 import { Avatar } from '@/components/Avatar';
 import { HtmlBody } from '@/components/HtmlBody';
 import type { EmailAddress } from '@/services/emailApi';
@@ -171,7 +172,9 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
       try {
         const url = await api.getAttachmentUrl(s3Key);
         await Linking.openURL(url);
-      } catch {}
+      } catch {
+        toast.error('Failed to download attachment.');
+      }
     }
   }, [api]);
 
