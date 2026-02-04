@@ -51,8 +51,8 @@ export function SwipeableRow({ children, onArchive, onDelete }: SwipeableRowProp
   return (
     <Swipeable
       ref={swipeableRef}
-      renderLeftActions={LeftAction}
-      renderRightActions={RightAction}
+      renderLeftActions={() => <LeftAction />}
+      renderRightActions={() => <RightAction />}
       onSwipeableOpen={(direction) => {
         if (direction === 'left') handleSwipeRight();
         else handleSwipeLeft();
