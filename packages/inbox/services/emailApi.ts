@@ -106,6 +106,15 @@ export type Pagination = z.infer<typeof PaginationSchema>;
 export type QuotaUsage = z.infer<typeof QuotaUsageSchema>;
 export type EmailSettings = z.infer<typeof EmailSettingsSchema>;
 
+// ─── Response Wrappers ─────────────────────────────────────────────
+
+interface PaginatedResponse<T> {
+  data: {
+    data: T[];
+    pagination: Pagination;
+  };
+}
+
 // ─── API Client ────────────────────────────────────────────────────
 
 export function createEmailApi(http: HttpService) {
@@ -113,12 +122,12 @@ export function createEmailApi(http: HttpService) {
     // ─── Mailboxes ──────────────────────────────────────────────────
 
     async listMailboxes(): Promise<Mailbox[]> {
-      const res = await http.get<{ data: Mailbox[] }>('/email/mailboxes');
+      const res = (await http.get('/email/mailboxes')) as { data: Mailbox[] };
       return z.array(MailboxSchema).parse(res.data);
     },
 
     async createMailbox(name: string, parentPath?: string): Promise<Mailbox> {
-      const res = await http.post<{ data: Mailbox }>('/email/mailboxes', { name, parentPath });
+      const res = (await http.post('/email/mailboxes', { name, parentPath })) as { data: Mailbox };
       return MailboxSchema.parse(res.data);
     },
 
@@ -137,7 +146,7 @@ export function createEmailApi(http: HttpService) {
       if (options.offset !== undefined) params.offset = String(options.offset);
       if (options.unseenOnly) params.unseen = 'true';
 
-      const res: any = await http.get('/email/messages', { params });
+      const res = (await http.get('/email/messages', { params })) as PaginatedResponse<Message>;
       return {
         data: z.array(MessageSchema).parse(res.data.data),
         pagination: PaginationSchema.parse(res.data.pagination),
@@ -145,17 +154,17 @@ export function createEmailApi(http: HttpService) {
     },
 
     async getMessage(messageId: string): Promise<Message> {
-      const res = await http.get<{ data: Message }>(`/email/messages/${messageId}`);
+      const res = (await http.get(`/email/messages/${messageId}`)) as { data: Message };
       return MessageSchema.parse(res.data);
     },
 
     async updateFlags(messageId: string, flags: Partial<MessageFlags>): Promise<Message> {
-      const res = await http.put<{ data: Message }>(`/email/messages/${messageId}/flags`, { flags });
+      const res = (await http.put(`/email/messages/${messageId}/flags`, { flags })) as { data: Message };
       return MessageSchema.parse(res.data);
     },
 
     async moveMessage(messageId: string, mailboxId: string): Promise<Message> {
-      const res = await http.post<{ data: Message }>(`/email/messages/${messageId}/move`, { mailboxId });
+      const res = (await http.post(`/email/messages/${messageId}/move`, { mailboxId })) as { data: Message };
       return MessageSchema.parse(res.data);
     },
 
@@ -177,7 +186,7 @@ export function createEmailApi(http: HttpService) {
       references?: string[];
       attachments?: string[];
     }): Promise<{ messageId: string; queued: boolean; message: string }> {
-      const res = await http.post<{ data: { messageId: string; queued: boolean; message: string } }>('/email/messages', message);
+      const res = (await http.post('/email/messages', message)) as { data: { messageId: string; queued: boolean; message: string } };
       return z.object({
         messageId: z.string(),
         queued: z.boolean(),
@@ -196,7 +205,7 @@ export function createEmailApi(http: HttpService) {
       references?: string[];
       existingDraftId?: string;
     }): Promise<Message> {
-      const res = await http.post<{ data: Message }>('/email/drafts', draft);
+      const res = (await http.post('/email/drafts', draft)) as { data: Message };
       return MessageSchema.parse(res.data);
     },
 
@@ -211,7 +220,7 @@ export function createEmailApi(http: HttpService) {
       if (options.offset !== undefined) params.offset = String(options.offset);
       if (options.mailbox) params.mailbox = options.mailbox;
 
-      const res: any = await http.get('/email/search', { params });
+      const res = (await http.get('/email/search', { params })) as PaginatedResponse<Message>;
       return {
         data: z.array(MessageSchema).parse(res.data.data),
         pagination: PaginationSchema.parse(res.data.pagination),
@@ -221,23 +230,23 @@ export function createEmailApi(http: HttpService) {
     // ─── Quota ──────────────────────────────────────────────────────
 
     async getQuota(): Promise<QuotaUsage> {
-      const res = await http.get<{ data: QuotaUsage }>('/email/quota');
+      const res = (await http.get('/email/quota')) as { data: QuotaUsage };
       return QuotaUsageSchema.parse(res.data);
     },
 
     // ─── Attachments ────────────────────────────────────────────────
 
     async getAttachmentUrl(s3Key: string): Promise<string> {
-      const res = await http.get<{ data: { url: string } }>(
+      const res = (await http.get(
         `/email/attachments/${encodeURIComponent(s3Key)}`,
-      );
+      )) as { data: { url: string } };
       return z.object({ url: z.string() }).parse(res.data).url;
     },
 
     // ─── Settings ───────────────────────────────────────────────────
 
     async getSettings(): Promise<EmailSettings> {
-      const res = await http.get<{ data: EmailSettings }>('/email/settings');
+      const res = (await http.get('/email/settings')) as { data: EmailSettings };
       return EmailSettingsSchema.parse(res.data);
     },
 
