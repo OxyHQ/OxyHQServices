@@ -40,6 +40,7 @@ import { useToggleStar } from '@/hooks/mutations/useMessageMutations';
 import { useEmailStore } from '@/hooks/useEmail';
 import { MessageRow } from '@/components/MessageRow';
 import { LogoIcon } from '@/assets/logo';
+import { useDailyBrief } from '@/hooks/queries/useDailyBrief';
 
 const DAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 const MONTHS = [
@@ -75,9 +76,6 @@ function isSameDay(a: Date, b: Date) {
   );
 }
 
-/** Mock AI digest */
-const AI_DIGEST = `You have 5 emails that need attention. Sarah shared dashboard mockups (v3) and needs your feedback before engineering handoff. Alex's Q1 roadmap is in — your estimates are due Friday. Marcus opened a PR fixing the auth token refresh race condition that needs code review. There's also a failed Vercel deployment on main (auth module) and Emma is waiting on your approval for staging API keys.`;
-
 /** Max number of recent emails to show on home */
 const HOME_EMAIL_LIMIT = 10;
 
@@ -104,7 +102,7 @@ export function HomeScreen() {
   const weekDays = useMemo(() => getWeekDays(selectedDate), [selectedDate]);
 
   const { data: mailboxes = [] } = useMailboxes();
-  const inboxId = mailboxes.find((m) => m.specialUse === 'Inbox')?._id;
+  const inboxId = mailboxes.find((m) => m.specialUse === '\\Inbox')?._id;
   const { data, isLoading } = useMessages(inboxId ? { mailboxId: inboxId } : {});
   const toggleStar = useToggleStar();
 
@@ -146,6 +144,10 @@ export function HomeScreen() {
   );
 
   const firstName = user?.name?.first || user?.username || '';
+
+  // AI daily brief
+  const { briefText, isStreaming: briefStreaming, isLoading: briefLoading, error: briefError, regenerate } = useDailyBrief(allMessages, firstName);
+
   const greeting = getGreeting();
   const today = selectedDate;
   const dateString = `${MONTHS[today.getMonth()]} ${today.getDate()}, ${today.getFullYear()}`;
@@ -318,9 +320,30 @@ export function HomeScreen() {
                 </View>
               </View>
 
-              <Text style={[styles.digestText, { color: colors.secondaryText }]}>
-                {AI_DIGEST}
-              </Text>
+              {briefLoading ? (
+                <View style={styles.briefLoadingRow}>
+                  <ActivityIndicator size="small" color={colors.primary} />
+                  <Text style={[styles.digestText, { color: colors.secondaryText }]}>
+                    Alia is analyzing your inbox...
+                  </Text>
+                </View>
+              ) : briefError && !briefText ? (
+                <Text style={[styles.digestText, { color: colors.secondaryText }]}>
+                  Unable to generate brief right now.
+                </Text>
+              ) : briefText ? (
+                <Text style={[styles.digestText, { color: colors.secondaryText }]}>
+                  {briefText}
+                  {briefStreaming && <Text style={{ color: colors.primary }}>|</Text>}
+                </Text>
+              ) : (
+                <Text style={[styles.digestText, { color: colors.secondaryText }]}>
+                  No emails to summarize yet.
+                </Text>
+              )}
+              <TouchableOpacity onPress={regenerate} style={styles.refreshButton} activeOpacity={0.7}>
+                <MaterialCommunityIcons name="refresh" size={16} color={colors.secondaryText} />
+              </TouchableOpacity>
             </View>
 
             {/* Important Information */}
@@ -597,6 +620,16 @@ const styles = StyleSheet.create({
   statText: {
     fontSize: 12,
     fontWeight: '600',
+  },
+  briefLoadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  refreshButton: {
+    alignSelf: 'flex-end',
+    padding: 4,
+    marginTop: 8,
   },
   digestText: {
     fontSize: 14,
