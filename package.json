@@ -12,7 +12,8 @@
     "packages/accounts",
     "packages/inbox",
     "packages/test-app",
-    "packages/test-app-vite"
+    "packages/test-app-vite",
+    "packages/console"
   ],
   "scripts": {
     "build:all": "npm run core:build && npm run auth:build && npm run services:build && npm run build --workspaces --if-present",
@@ -35,7 +36,9 @@
     "accounts:start": "npm run start -w accounts",
     "inbox:build": "npm run build -w inbox",
     "inbox:dev": "npm run start -w inbox",
-    "inbox:start": "npm run start -w inbox"
+    "inbox:start": "npm run start -w inbox",
+    "console:dev": "npm run dev -w oxy-console",
+    "console:build": "npm run build -w oxy-console"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",

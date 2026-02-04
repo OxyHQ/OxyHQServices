@@ -29,6 +29,9 @@ import authLinkingRoutes from './routes/authLinking';
 import fedcmService from './services/fedcm.service';
 import emailRoutes from './routes/email';
 import aliaRoutes from './routes/alia';
+import creditsRoutes from './routes/credits';
+import billingRoutes from './routes/billing';
+import modelsStatsRoutes from './routes/models-stats';
 import { startSmtpInbound, stopSmtpInbound } from './services/smtp.inbound';
 import { smtpOutbound } from './services/smtp.outbound';
 import { getEnvBoolean } from './config/env';
@@ -70,6 +73,8 @@ app.use(securityHeaders);
 app.use(cookieParser());
 
 // Body parsing middleware - IMPORTANT: Add this before any routes
+// Stripe webhook needs raw body for signature verification (must be before express.json)
+app.use('/api/billing/webhook', express.raw({ type: 'application/json' }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -363,6 +368,9 @@ app.use('/api/subscription', userRateLimiter, csrfProtection, subscriptionRoutes
 app.use('/api/fedcm', fedcmRoutes);
 app.use('/email', userRateLimiter, csrfProtection, emailRoutes);
 app.use('/api/alia', userRateLimiter, aliaRoutes);
+app.use('/api/credits', userRateLimiter, csrfProtection, creditsRoutes);
+app.use('/api/billing', billingRoutes);
+app.use('/api/models', modelsStatsRoutes);
 
 // Add a protected route for testing
 app.get('/api/protected-server-route', authMiddleware, (req: any, res: Response) => {

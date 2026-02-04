@@ -7,9 +7,12 @@ export interface IDeveloperApp extends Omit<Document, '_id'> {
   developerUserId: string;
   apiKey: string;
   apiSecret: string;
-  webhookUrl: string;
+  webhookUrl?: string;
   webhookSecret?: string;
   devWebhookUrl?: string;
+  websiteUrl?: string;
+  redirectUrls: string[];
+  icon?: string;
   status: 'active' | 'suspended' | 'deleted';
   scopes: string[];
   createdAt: Date;
@@ -47,7 +50,6 @@ const DeveloperAppSchema = new Schema<IDeveloperApp>({
   },
   webhookUrl: {
     type: String,
-    required: true,
     trim: true
   },
   webhookSecret: {
@@ -57,6 +59,17 @@ const DeveloperAppSchema = new Schema<IDeveloperApp>({
     type: String,
     trim: true
   },
+  websiteUrl: {
+    type: String,
+    trim: true
+  },
+  redirectUrls: [{
+    type: String,
+    trim: true
+  }],
+  icon: {
+    type: String
+  },
   status: { 
     type: String, 
     enum: ['active', 'suspended', 'deleted'], 
@@ -65,7 +78,7 @@ const DeveloperAppSchema = new Schema<IDeveloperApp>({
   },
   scopes: [{
     type: String,
-    enum: ['files:read', 'files:write', 'files:delete', 'user:read', 'webhooks:receive']
+    enum: ['files:read', 'files:write', 'files:delete', 'user:read', 'webhooks:receive', 'chat:completions', 'models:read']
   }],
   lastUsedAt: { type: Date },
   isInternal: {
