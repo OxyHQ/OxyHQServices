@@ -114,14 +114,6 @@ export function createEmailApi(http: HttpService) {
 
     async listMailboxes(): Promise<Mailbox[]> {
       const res = await http.get<{ data: Mailbox[] }>('/email/mailboxes');
-      console.log('[emailApi.listMailboxes] Response structure:', {
-        hasRes: !!res,
-        hasResData: !!res?.data,
-        resDataType: typeof res?.data,
-        resDataIsArray: Array.isArray(res?.data),
-        resKeys: res ? Object.keys(res) : [],
-        resDataKeys: res?.data ? Object.keys(res.data).slice(0, 5) : [],
-      });
       return z.array(MailboxSchema).parse(res.data);
     },
 
@@ -145,7 +137,15 @@ export function createEmailApi(http: HttpService) {
       if (options.offset) params.offset = String(options.offset);
       if (options.unseenOnly) params.unseen = 'true';
 
+      console.log('[emailApi.listMessages] Request:', { mailboxId, params });
       const res = await http.get<{ data: Message[]; pagination: Pagination }>('/email/messages', { params });
+      console.log('[emailApi.listMessages] Response structure:', {
+        hasRes: !!res,
+        hasResData: !!res?.data,
+        hasResPagination: !!res?.pagination,
+        resKeys: res ? Object.keys(res) : [],
+        dataLength: Array.isArray(res?.data) ? res.data.length : 'not array',
+      });
       return {
         data: z.array(MessageSchema).parse(res.data),
         pagination: PaginationSchema.parse(res.pagination),
