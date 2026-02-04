@@ -28,6 +28,7 @@ import fedcmRoutes from './routes/fedcm';
 import authLinkingRoutes from './routes/authLinking';
 import fedcmService from './services/fedcm.service';
 import emailRoutes from './routes/email';
+import aliaRoutes from './routes/alia';
 import { startSmtpInbound, stopSmtpInbound } from './services/smtp.inbound';
 import { smtpOutbound } from './services/smtp.outbound';
 import { getEnvBoolean } from './config/env';
@@ -361,6 +362,7 @@ app.use('/api/security', userRateLimiter, csrfProtection, securityRoutes);
 app.use('/api/subscription', userRateLimiter, csrfProtection, subscriptionRoutes);
 app.use('/api/fedcm', fedcmRoutes);
 app.use('/email', userRateLimiter, csrfProtection, emailRoutes);
+app.use('/api/alia', userRateLimiter, aliaRoutes);
 
 // Add a protected route for testing
 app.get('/api/protected-server-route', authMiddleware, (req: any, res: Response) => {
