@@ -18,6 +18,7 @@ import {
     Dimensions,
     ActivityIndicator,
     Platform,
+    Linking,
 } from 'react-native';
 import Animated, {
     useSharedValue,
@@ -299,17 +300,24 @@ const SignInModal: React.FC = () => {
         const webUrl = new URL('/authorize', authWebUrl);
         webUrl.searchParams.set('token', authSession.sessionToken);
 
-        // Open popup window
-        const width = 500;
-        const height = 650;
-        const left = (window.screen.width - width) / 2;
-        const top = (window.screen.height - height) / 2;
+        if (Platform.OS === 'web') {
+            // Open popup window on web
+            const width = 500;
+            const height = 650;
+            const screenWidth = window.screen?.width ?? width;
+            const screenHeight = window.screen?.height ?? height;
+            const left = (screenWidth - width) / 2;
+            const top = (screenHeight - height) / 2;
 
-        window.open(
-            webUrl.toString(),
-            'oxy-auth-popup',
-            `width=${width},height=${height},left=${left},top=${top},popup=1`
-        );
+            window.open(
+                webUrl.toString(),
+                'oxy-auth-popup',
+                `width=${width},height=${height},left=${left},top=${top},popup=1`
+            );
+        } else {
+            // Open in browser on native
+            Linking.openURL(webUrl.toString());
+        }
     }, [authSession, oxyServices]);
 
     // Refresh session
