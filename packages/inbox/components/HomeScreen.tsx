@@ -27,6 +27,9 @@ import {
   ArrowUp01Icon,
   ArrowDown01Icon,
   Menu01Icon,
+  Mail01Icon,
+  StarIcon,
+  Attachment01Icon,
 } from '@hugeicons/core-free-icons';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -37,7 +40,6 @@ import { useToggleStar } from '@/hooks/mutations/useMessageMutations';
 import { useEmailStore } from '@/hooks/useEmail';
 import { MessageRow } from '@/components/MessageRow';
 import { LogoIcon } from '@/assets/logo';
-import type { Message } from '@/services/emailApi';
 
 const DAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 const MONTHS = [
@@ -65,6 +67,14 @@ function getWeekDays(selectedDate: Date) {
   return days;
 }
 
+function isSameDay(a: Date, b: Date) {
+  return (
+    a.getDate() === b.getDate() &&
+    a.getMonth() === b.getMonth() &&
+    a.getFullYear() === b.getFullYear()
+  );
+}
+
 /** Mock AI digest */
 const AI_DIGEST = `You have 5 emails that need attention. Sarah shared dashboard mockups (v3) and needs your feedback before engineering handoff. Alex's Q1 roadmap is in — your estimates are due Friday. Marcus opened a PR fixing the auth token refresh race condition that needs code review. There's also a failed Vercel deployment on main (auth module) and Emma is waiting on your approval for staging API keys.`;
 
@@ -77,6 +87,7 @@ export function HomeScreen() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
   const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
   const isDesktop = Platform.OS === 'web' && width >= 900;
   const { user } = useOxy();
@@ -87,6 +98,9 @@ export function HomeScreen() {
   );
   const [importantExpanded, setImportantExpanded] = useState(true);
 
+  const realToday = useMemo(() => new Date(), []);
+  const isOnToday = isSameDay(selectedDate, realToday);
+
   const weekDays = useMemo(() => getWeekDays(selectedDate), [selectedDate]);
 
   const { data: mailboxes = [] } = useMailboxes();
@@ -96,7 +110,20 @@ export function HomeScreen() {
 
   const allMessages = useMemo(() => data?.pages.flatMap((p) => p.data) ?? [], [data]);
 
-  const recentMessages = useMemo(() => allMessages.slice(0, HOME_EMAIL_LIMIT), [allMessages]);
+  // Filter by time of day: morning = received before 12pm, afternoon = 12pm+
+  const recentMessages = useMemo(() => {
+    const filtered = allMessages.filter((msg) => {
+      const msgDate = new Date(msg.date);
+      const hour = msgDate.getHours();
+      return timeOfDay === 'morning' ? hour < 12 : hour >= 12;
+    });
+    return filtered.slice(0, HOME_EMAIL_LIMIT);
+  }, [allMessages, timeOfDay]);
+
+  // Stats
+  const unreadCount = useMemo(() => allMessages.filter((m) => !m.flags.seen).length, [allMessages]);
+  const starredCount = useMemo(() => allMessages.filter((m) => m.flags.starred).length, [allMessages]);
+  const attachmentCount = useMemo(() => allMessages.filter((m) => m.attachments.length > 0).length, [allMessages]);
 
   const handleOpenDrawer = useCallback(() => {
     navigation.dispatch(DrawerActions.openDrawer());
@@ -129,8 +156,8 @@ export function HomeScreen() {
       style={styles.container}
       resizeMode="cover"
     >
-      {/* Dark overlay for readability */}
-      <View style={styles.overlay} />
+      {/* Overlay — darker for dark mode */}
+      <View style={[styles.overlay, isDark && styles.overlayDark]} />
 
       {/* Header bar */}
       <View style={[styles.header, { paddingTop: isDesktop ? 16 : insets.top + 8 }]}>
@@ -167,10 +194,7 @@ export function HomeScreen() {
           </TouchableOpacity>
           <View style={styles.weekStrip}>
             {weekDays.map((d, i) => {
-              const isSelected =
-                d.getDate() === today.getDate() &&
-                d.getMonth() === today.getMonth() &&
-                d.getFullYear() === today.getFullYear();
+              const isSelected = isSameDay(d, selectedDate);
               return (
                 <TouchableOpacity
                   key={i}
@@ -200,6 +224,20 @@ export function HomeScreen() {
             <MaterialCommunityIcons name="chevron-right" size={20} color="rgba(255,255,255,0.7)" />
           </TouchableOpacity>
         </View>
+
+        {/* "Go to today" chip */}
+        {!isOnToday && (
+          <View style={styles.todayChipRow}>
+            <TouchableOpacity
+              style={styles.todayChip}
+              onPress={() => setSelectedDate(new Date())}
+              activeOpacity={0.7}
+            >
+              <MaterialCommunityIcons name="calendar-today" size={14} color="#FFFFFF" />
+              <Text style={styles.todayChipText}>Today</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* Today's Brief Title */}
         <Text style={styles.briefTitle}>
@@ -245,6 +283,41 @@ export function HomeScreen() {
               <Text style={[styles.greetingText, { color: colors.text }]}>
                 {greeting}, {firstName}
               </Text>
+
+              {/* Stats row */}
+              <View style={styles.statsRow}>
+                <View style={[styles.statPill, { backgroundColor: colors.primaryContainer }]}>
+                  {Platform.OS === 'web' ? (
+                    <HugeiconsIcon icon={Mail01Icon as unknown as IconSvgElement} size={14} color={colors.primary} />
+                  ) : (
+                    <MaterialCommunityIcons name="email-outline" size={14} color={colors.primary} />
+                  )}
+                  <Text style={[styles.statText, { color: colors.primary }]}>
+                    {unreadCount} unread
+                  </Text>
+                </View>
+                <View style={[styles.statPill, { backgroundColor: isDark ? '#3D3000' : '#FFF8E1' }]}>
+                  {Platform.OS === 'web' ? (
+                    <HugeiconsIcon icon={StarIcon as unknown as IconSvgElement} size={14} color={colors.starred} />
+                  ) : (
+                    <MaterialCommunityIcons name="star" size={14} color={colors.starred} />
+                  )}
+                  <Text style={[styles.statText, { color: colors.starred }]}>
+                    {starredCount} starred
+                  </Text>
+                </View>
+                <View style={[styles.statPill, { backgroundColor: colors.surfaceVariant }]}>
+                  {Platform.OS === 'web' ? (
+                    <HugeiconsIcon icon={Attachment01Icon as unknown as IconSvgElement} size={14} color={colors.secondaryText} />
+                  ) : (
+                    <MaterialCommunityIcons name="paperclip" size={14} color={colors.secondaryText} />
+                  )}
+                  <Text style={[styles.statText, { color: colors.secondaryText }]}>
+                    {attachmentCount}
+                  </Text>
+                </View>
+              </View>
+
               <Text style={[styles.digestText, { color: colors.secondaryText }]}>
                 {AI_DIGEST}
               </Text>
@@ -321,6 +394,9 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0,0,0,0.25)',
   },
+  overlayDark: {
+    backgroundColor: 'rgba(0,0,0,0.55)',
+  },
   // Header
   header: {
     flexDirection: 'row',
@@ -360,7 +436,7 @@ const styles = StyleSheet.create({
   weekStripRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 12,
     gap: 4,
   },
   weekArrow: {
@@ -405,6 +481,25 @@ const styles = StyleSheet.create({
   },
   dayNumberActive: {
     color: '#1A73E8',
+  },
+  // Today chip
+  todayChipRow: {
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  todayChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    borderRadius: 16,
+    gap: 6,
+  },
+  todayChipText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '600',
   },
   // Brief title
   briefTitle: {
@@ -482,6 +577,26 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginBottom: 12,
     textAlign: 'center',
+  },
+  // Stats
+  statsRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
+    marginBottom: 16,
+    flexWrap: 'wrap',
+  },
+  statPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+    gap: 5,
+  },
+  statText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   digestText: {
     fontSize: 14,
