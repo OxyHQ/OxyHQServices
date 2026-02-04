@@ -49,11 +49,11 @@ export const MessageSchema = z.object({
   attachments: z.array(AttachmentSchema),
   flags: MessageFlagsSchema,
   labels: z.array(z.string()),
-  spamScore: z.number().optional(),
+  spamScore: z.number().nullable().optional(),
   size: z.number(),
-  inReplyTo: z.string().optional(),
+  inReplyTo: z.string().nullable().optional(),
   references: z.array(z.string()).optional(),
-  aliasTag: z.string().optional(),
+  aliasTag: z.string().nullable().optional(),
   date: z.string(),
   receivedAt: z.string(),
 });
@@ -63,7 +63,7 @@ export const MailboxSchema = z.object({
   userId: z.string(),
   name: z.string(),
   path: z.string(),
-  specialUse: z.string().optional(),
+  specialUse: z.string().nullable().optional(),
   totalMessages: z.number(),
   unseenMessages: z.number(),
   size: z.number(),
@@ -80,19 +80,18 @@ export const QuotaUsageSchema = z.object({
   used: z.number(),
   limit: z.number(),
   percentage: z.number(),
-  dailySendCount: z.number(),
-  dailySendLimit: z.number(),
 });
 
 export const EmailSettingsSchema = z.object({
   signature: z.string(),
   autoReply: z.object({
     enabled: z.boolean(),
-    subject: z.string(),
-    body: z.string(),
-    startDate: z.string().nullable(),
-    endDate: z.string().nullable(),
+    subject: z.string().optional(),
+    body: z.string().optional(),
+    startDate: z.string().nullable().optional(),
+    endDate: z.string().nullable().optional(),
   }),
+  address: z.string().optional(),
 });
 
 // ─── Inferred Types ────────────────────────────────────────────────
