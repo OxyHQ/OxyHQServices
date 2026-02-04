@@ -43,6 +43,7 @@ import { useMailboxes } from '@/hooks/queries/useMailboxes';
 import { useLabels } from '@/hooks/queries/useLabels';
 import { Avatar } from '@/components/Avatar';
 import type { Mailbox } from '@/services/emailApi';
+import { LogoIcon } from '@/assets/logo';
 
 const MAILBOX_ICONS_FALLBACK: Record<string, keyof typeof MaterialCommunityIcons.glyphMap> = {
   Inbox: 'inbox',
@@ -284,7 +285,7 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
         ) : (
           <>
             <View style={styles.headerRow}>
-              <Text style={[styles.appTitle, { color: colors.primary }]}>Inbox</Text>
+              <LogoIcon height={28} color={colors.text} />
               {onToggle && (
                 <TouchableOpacity onPress={onToggle} style={styles.collapseButton} activeOpacity={0.7}>
                   {Platform.OS === 'web' ? (
@@ -587,9 +588,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  appTitle: {
-    fontSize: 28,
-    fontWeight: '900',
+  appLogo: {
     marginBottom: 2,
   },
   collapseButton: {
