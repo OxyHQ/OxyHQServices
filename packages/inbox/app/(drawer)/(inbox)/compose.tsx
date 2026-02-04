@@ -10,6 +10,7 @@ export default function ComposeRoute() {
     replyTo?: string;
     forward?: string;
     to?: string;
+    cc?: string;
     toName?: string;
     subject?: string;
     body?: string;
@@ -21,7 +22,7 @@ export default function ComposeRoute() {
       replyTo={params.replyTo}
       forward={params.forward}
       to={params.to}
-      toName={params.toName}
+      cc={params.cc}
       subject={params.subject}
       body={params.body}
     />

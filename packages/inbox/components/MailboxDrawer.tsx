@@ -1,5 +1,5 @@
 /**
- * Gmail-style drawer sidebar listing mailboxes.
+ * Gmail-style drawer sidebar listing mailboxes, starred, labels, and compose.
  */
 
 import React, { useMemo, useEffect, useState, useCallback } from 'react';
@@ -32,11 +32,15 @@ import {
   Logout01Icon,
   SidebarLeft01Icon,
   SidebarRight01Icon,
+  PencilEdit01Icon,
+  ArrowDown01Icon,
+  ArrowUp01Icon,
 } from '@hugeicons/core-free-icons';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { useEmailStore } from '@/hooks/useEmail';
 import { useMailboxes } from '@/hooks/queries/useMailboxes';
+import { useLabels } from '@/hooks/queries/useLabels';
 import { Avatar } from '@/components/Avatar';
 import type { Mailbox } from '@/services/emailApi';
 
@@ -60,9 +64,11 @@ const MAILBOX_HUGE_ICONS: Record<string, IconSvgElement> = {
   Starred: HugeStarIcon as unknown as IconSvgElement,
 };
 
+// Primary mailboxes shown by default; the rest go behind "More"
+const PRIMARY_SPECIAL_USE = new Set(['\\Inbox', '\\Sent', '\\Drafts']);
+
 function getMailboxFallbackIcon(mailbox: Mailbox): keyof typeof MaterialCommunityIcons.glyphMap {
   if (mailbox.specialUse) {
-    // Remove backslash prefix from IMAP special use flags (e.g., \\Inbox -> Inbox)
     const normalized = mailbox.specialUse.replace(/^\\+/, '');
     if (MAILBOX_ICONS_FALLBACK[normalized]) {
       return MAILBOX_ICONS_FALLBACK[normalized];
@@ -73,7 +79,6 @@ function getMailboxFallbackIcon(mailbox: Mailbox): keyof typeof MaterialCommunit
 
 function getMailboxHugeIcon(mailbox: Mailbox): IconSvgElement {
   if (mailbox.specialUse) {
-    // Remove backslash prefix from IMAP special use flags (e.g., \\Inbox -> Inbox)
     const normalized = mailbox.specialUse.replace(/^\\+/, '');
     if (MAILBOX_HUGE_ICONS[normalized]) {
       return MAILBOX_HUGE_ICONS[normalized];
@@ -90,6 +95,8 @@ function NavItem({
   colors,
   badge,
   collapsed,
+  bold,
+  colorDot,
   onPress,
 }: {
   icon: keyof typeof MaterialCommunityIcons.glyphMap;
@@ -99,6 +106,8 @@ function NavItem({
   colors: (typeof Colors)['light'];
   badge?: number;
   collapsed?: boolean;
+  bold?: boolean;
+  colorDot?: string;
   onPress: () => void;
 }) {
   const iconColor = isActive ? colors.sidebarItemActiveText : colors.icon;
@@ -112,7 +121,9 @@ function NavItem({
       onPress={onPress}
       activeOpacity={0.7}
     >
-      {Platform.OS === 'web' ? (
+      {colorDot ? (
+        <View style={[styles.colorDot, { backgroundColor: colorDot }]} />
+      ) : Platform.OS === 'web' ? (
         <HugeiconsIcon icon={hugeIcon} size={20} color={iconColor} strokeWidth={2} />
       ) : (
         <MaterialCommunityIcons name={icon} size={20} color={iconColor} />
@@ -123,7 +134,7 @@ function NavItem({
             style={[
               styles.itemLabel,
               { color: isActive ? colors.sidebarItemActiveText : colors.sidebarText },
-              isActive && styles.itemLabelActive,
+              (isActive || bold) && styles.itemLabelActive,
             ]}
             numberOfLines={1}
           >
@@ -134,6 +145,7 @@ function NavItem({
               style={[
                 styles.badge,
                 { color: isActive ? colors.sidebarItemActiveText : colors.secondaryText },
+                bold && { fontWeight: '700' },
               ]}
             >
               {badge}
@@ -174,38 +186,61 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
 
   const pathname = usePathname();
   const currentMailbox = useEmailStore((s) => s.currentMailbox);
+  const viewMode = useEmailStore((s) => s.viewMode);
   const selectMailbox = useEmailStore((s) => s.selectMailbox);
+  const selectStarred = useEmailStore((s) => s.selectStarred);
+  const selectLabel = useEmailStore((s) => s.selectLabel);
+  const moreExpanded = useEmailStore((s) => s.moreExpanded);
+  const toggleMore = useEmailStore((s) => s.toggleMore);
   const { data: mailboxes = [] } = useMailboxes();
+  const { data: labels = [] } = useLabels();
   const isHomeActive = pathname === '/home';
   const isForYouActive = pathname === '/for-you';
   const isSpecialPage = isHomeActive || isForYouActive;
 
   // Auto-select inbox on first load
   useEffect(() => {
-    if (mailboxes.length > 0 && !currentMailbox) {
-      // specialUse comes from backend with backslash prefix like \\Inbox, \\Sent, etc.
+    if (mailboxes.length > 0 && !currentMailbox && !viewMode) {
       const inbox = mailboxes.find((m) => m.specialUse === '\\Inbox') ?? mailboxes[0];
       selectMailbox(inbox);
     }
-  }, [mailboxes, currentMailbox, selectMailbox]);
+  }, [mailboxes, currentMailbox, viewMode, selectMailbox]);
 
-  const systemMailboxes = useMemo(() => {
+  const { primaryMailboxes, secondaryMailboxes } = useMemo(() => {
     const order: Record<string, number> = {
-      '\\Inbox': 0,
-      '\\Sent': 1,
-      '\\Drafts': 2,
-      '\\Junk': 3,
-      '\\Trash': 4,
-      '\\Archive': 5,
+      '\\Inbox': 0, '\\Sent': 1, '\\Drafts': 2,
+      '\\Junk': 3, '\\Trash': 4, '\\Archive': 5,
     };
-    return mailboxes
+    const sorted = mailboxes
       .filter((m) => m.specialUse)
       .sort((a, b) => (order[a.specialUse!] ?? 99) - (order[b.specialUse!] ?? 99));
+
+    return {
+      primaryMailboxes: sorted.filter((m) => PRIMARY_SPECIAL_USE.has(m.specialUse!)),
+      secondaryMailboxes: sorted.filter((m) => !PRIMARY_SPECIAL_USE.has(m.specialUse!)),
+    };
   }, [mailboxes]);
+
   const customMailboxes = useMemo(() => mailboxes.filter((m) => !m.specialUse), [mailboxes]);
 
   const handleSelect = (mailbox: Mailbox) => {
     selectMailbox(mailbox);
+    if (isSpecialPage) {
+      router.replace('/');
+    }
+    onClose?.();
+  };
+
+  const handleStarred = () => {
+    selectStarred();
+    if (isSpecialPage) {
+      router.replace('/');
+    }
+    onClose?.();
+  };
+
+  const handleLabelSelect = (labelId: string, labelName: string) => {
+    selectLabel(labelId, labelName);
     if (isSpecialPage) {
       router.replace('/');
     }
@@ -222,10 +257,17 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
     onClose?.();
   };
 
+  const handleCompose = () => {
+    router.push('/compose');
+    onClose?.();
+  };
+
   const emailAddress = user?.username ? `${user.username}@oxy.so` : '';
   const displayName = user?.name?.first
     ? `${user.name.first}${user.name.last ? ` ${user.name.last}` : ''}`
     : user?.username || 'Account';
+
+  const isStarredActive = !isSpecialPage && viewMode?.type === 'starred';
 
   return (
     <View style={[styles.container, { backgroundColor: colors.sidebarBackground }, collapsed && styles.containerCollapsed]}>
@@ -258,13 +300,98 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
         )}
       </View>
 
+      {/* Compose button */}
+      {!collapsed && (
+        <View style={styles.composeWrapper}>
+          <TouchableOpacity
+            style={[styles.composeButton, { backgroundColor: colors.composeFab }]}
+            onPress={handleCompose}
+            activeOpacity={0.8}
+          >
+            {Platform.OS === 'web' ? (
+              <HugeiconsIcon icon={PencilEdit01Icon as unknown as IconSvgElement} size={20} color={colors.composeFabIcon} />
+            ) : (
+              <MaterialCommunityIcons name="pencil" size={20} color={colors.composeFabIcon} />
+            )}
+            <Text style={[styles.composeLabel, { color: colors.composeFabText }]}>Compose</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+      {collapsed && (
+        <View style={styles.composeWrapperCollapsed}>
+          <TouchableOpacity
+            style={[styles.composeButtonCollapsed, { backgroundColor: colors.composeFab }]}
+            onPress={handleCompose}
+            activeOpacity={0.8}
+          >
+            {Platform.OS === 'web' ? (
+              <HugeiconsIcon icon={PencilEdit01Icon as unknown as IconSvgElement} size={20} color={colors.composeFabIcon} />
+            ) : (
+              <MaterialCommunityIcons name="pencil" size={20} color={colors.composeFabIcon} />
+            )}
+          </TouchableOpacity>
+        </View>
+      )}
+
       <ScrollView style={[styles.list, collapsed && styles.listCollapsed]} showsVerticalScrollIndicator={false}>
         <NavItem icon="home-outline" hugeIcon={Home01Icon as unknown as IconSvgElement} label="Home" isActive={isHomeActive} colors={colors} collapsed={collapsed} onPress={handleHome} />
         <NavItem icon="cards-heart-outline" hugeIcon={FavouriteIcon as unknown as IconSvgElement} label="For You" isActive={isForYouActive} colors={colors} collapsed={collapsed} onPress={handleForYou} />
 
-        {/* System Mailboxes */}
-        {systemMailboxes.map((mailbox) => {
-          // Normalize special use flag for display (remove backslash prefix)
+        {/* Primary Mailboxes (Inbox, Sent, Drafts) */}
+        {primaryMailboxes.map((mailbox) => {
+          const label = mailbox.specialUse ? mailbox.specialUse.replace(/^\\+/, '') : mailbox.name;
+          const hasUnseen = mailbox.unseenMessages > 0;
+          return (
+            <NavItem
+              key={mailbox._id}
+              icon={getMailboxFallbackIcon(mailbox)}
+              hugeIcon={getMailboxHugeIcon(mailbox)}
+              label={label}
+              isActive={!isSpecialPage && viewMode?.type === 'mailbox' && currentMailbox?._id === mailbox._id}
+              colors={colors}
+              badge={mailbox.unseenMessages}
+              bold={hasUnseen}
+              collapsed={collapsed}
+              onPress={() => handleSelect(mailbox)}
+            />
+          );
+        })}
+
+        {/* Starred */}
+        <NavItem
+          icon="star-outline"
+          hugeIcon={HugeStarIcon as unknown as IconSvgElement}
+          label="Starred"
+          isActive={isStarredActive}
+          colors={colors}
+          collapsed={collapsed}
+          onPress={handleStarred}
+        />
+
+        {/* More toggle for secondary mailboxes */}
+        {secondaryMailboxes.length > 0 && !collapsed && (
+          <TouchableOpacity style={styles.moreToggle} onPress={toggleMore} activeOpacity={0.7}>
+            {Platform.OS === 'web' ? (
+              <HugeiconsIcon
+                icon={(moreExpanded ? ArrowUp01Icon : ArrowDown01Icon) as unknown as IconSvgElement}
+                size={16}
+                color={colors.secondaryText}
+              />
+            ) : (
+              <MaterialCommunityIcons
+                name={moreExpanded ? 'chevron-up' : 'chevron-down'}
+                size={16}
+                color={colors.secondaryText}
+              />
+            )}
+            <Text style={[styles.moreToggleText, { color: colors.secondaryText }]}>
+              {moreExpanded ? 'Less' : 'More'}
+            </Text>
+          </TouchableOpacity>
+        )}
+
+        {/* Secondary Mailboxes (Spam, Trash, Archive) - behind "More" */}
+        {(moreExpanded || collapsed) && secondaryMailboxes.map((mailbox) => {
           const label = mailbox.specialUse ? mailbox.specialUse.replace(/^\\+/, '') : mailbox.name;
           return (
             <NavItem
@@ -272,7 +399,7 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
               icon={getMailboxFallbackIcon(mailbox)}
               hugeIcon={getMailboxHugeIcon(mailbox)}
               label={label}
-              isActive={!isSpecialPage && currentMailbox?._id === mailbox._id}
+              isActive={!isSpecialPage && viewMode?.type === 'mailbox' && currentMailbox?._id === mailbox._id}
               colors={colors}
               badge={mailbox.unseenMessages}
               collapsed={collapsed}
@@ -281,36 +408,59 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
           );
         })}
 
-        {/* Custom Labels */}
-        {!collapsed && customMailboxes.length > 0 && (
+        {/* Labels (from Label model, not custom mailboxes) */}
+        {!collapsed && labels.length > 0 && (
           <>
             <View style={[styles.divider, { backgroundColor: colors.border }]} />
             <Text style={[styles.sectionTitle, { color: colors.secondaryText }]}>Labels</Text>
-            {customMailboxes.map((mailbox) => (
+            {labels.map((lbl) => (
               <NavItem
-                key={mailbox._id}
+                key={lbl._id}
                 icon="label-outline"
                 hugeIcon={LabelIcon as unknown as IconSvgElement}
-                label={mailbox.name}
-                isActive={!isSpecialPage && currentMailbox?._id === mailbox._id}
+                label={lbl.name}
+                isActive={!isSpecialPage && viewMode?.type === 'label' && viewMode.labelId === lbl._id}
                 colors={colors}
-                onPress={() => handleSelect(mailbox)}
+                colorDot={lbl.color}
+                collapsed={collapsed}
+                onPress={() => handleLabelSelect(lbl._id, lbl.name)}
               />
             ))}
           </>
         )}
-        {collapsed && customMailboxes.length > 0 && (
+        {collapsed && labels.length > 0 && (
           <>
             <View style={[styles.divider, { backgroundColor: colors.border }]} />
+            {labels.map((lbl) => (
+              <NavItem
+                key={lbl._id}
+                icon="label-outline"
+                hugeIcon={LabelIcon as unknown as IconSvgElement}
+                label={lbl.name}
+                isActive={!isSpecialPage && viewMode?.type === 'label' && viewMode.labelId === lbl._id}
+                colors={colors}
+                colorDot={lbl.color}
+                collapsed
+                onPress={() => handleLabelSelect(lbl._id, lbl.name)}
+              />
+            ))}
+          </>
+        )}
+
+        {/* Custom mailboxes (non-system, non-label) */}
+        {!collapsed && customMailboxes.length > 0 && (
+          <>
+            <View style={[styles.divider, { backgroundColor: colors.border }]} />
+            <Text style={[styles.sectionTitle, { color: colors.secondaryText }]}>Folders</Text>
             {customMailboxes.map((mailbox) => (
               <NavItem
                 key={mailbox._id}
-                icon="label-outline"
-                hugeIcon={LabelIcon as unknown as IconSvgElement}
+                icon="folder-outline"
+                hugeIcon={Folder01Icon as unknown as IconSvgElement}
                 label={mailbox.name}
-                isActive={!isSpecialPage && currentMailbox?._id === mailbox._id}
+                isActive={!isSpecialPage && viewMode?.type === 'mailbox' && currentMailbox?._id === mailbox._id}
                 colors={colors}
-                collapsed
+                collapsed={collapsed}
                 onPress={() => handleSelect(mailbox)}
               />
             ))}
@@ -459,6 +609,34 @@ const styles = StyleSheet.create({
   email: {
     fontSize: 12,
   },
+  composeWrapper: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  composeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    gap: 10,
+  },
+  composeLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  composeWrapperCollapsed: {
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  composeButtonCollapsed: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   list: {
     flex: 1,
     paddingHorizontal: 8,
@@ -490,6 +668,21 @@ const styles = StyleSheet.create({
   },
   badge: {
     fontSize: 11,
+    fontWeight: '600',
+  },
+  colorDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  moreToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 10,
+    gap: 8,
+  },
+  moreToggleText: {
+    fontSize: 12,
     fontWeight: '600',
   },
   divider: {

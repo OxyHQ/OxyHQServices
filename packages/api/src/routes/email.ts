@@ -15,9 +15,15 @@ import {
   deleteMailbox,
   listMessages,
   getMessage,
+  getThread,
   updateMessageFlags,
+  updateMessageLabels,
   moveMessage,
   deleteMessage,
+  listLabels,
+  createLabel,
+  updateLabel,
+  deleteLabel,
   sendMessage,
   saveDraft,
   searchMessages,
@@ -49,9 +55,18 @@ router.delete('/mailboxes/:mailboxId', asyncHandler(deleteMailbox));
 
 router.get('/messages', asyncHandler(listMessages));
 router.get('/messages/:messageId', asyncHandler(getMessage));
+router.get('/messages/:messageId/thread', asyncHandler(getThread));
 router.put('/messages/:messageId/flags', asyncHandler(updateMessageFlags));
+router.put('/messages/:messageId/labels', asyncHandler(updateMessageLabels));
 router.post('/messages/:messageId/move', asyncHandler(moveMessage));
 router.delete('/messages/:messageId', asyncHandler(deleteMessage));
+
+// ─── Labels ──────────────────────────────────────────────────────
+
+router.get('/labels', asyncHandler(listLabels));
+router.post('/labels', asyncHandler(createLabel));
+router.put('/labels/:labelId', asyncHandler(updateLabel));
+router.delete('/labels/:labelId', asyncHandler(deleteLabel));
 
 // ─── Compose ──────────────────────────────────────────────────────
 

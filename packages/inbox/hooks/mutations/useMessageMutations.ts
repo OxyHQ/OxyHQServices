@@ -216,6 +216,39 @@ export function useSendMessage() {
   });
 }
 
+export function useUpdateMessageLabels() {
+  const api = useEmailStore((s) => s._api);
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ messageId, add, remove }: { messageId: string; add: string[]; remove: string[] }) => {
+      if (!api) throw new Error('Email API not initialized');
+      return await api.updateLabels(messageId, add, remove);
+    },
+    onMutate: async ({ messageId, add, remove }) => {
+      await queryClient.cancelQueries({ queryKey: ['message', messageId] });
+      queryClient.setQueryData<Message | null>(['message', messageId], (old) => {
+        if (!old) return old;
+        const labels = [...old.labels.filter((l) => !remove.includes(l)), ...add.filter((l) => !old.labels.includes(l))];
+        return { ...old, labels };
+      });
+      queryClient.setQueriesData<MessagesInfinite>({ queryKey: ['messages'] }, (old) =>
+        updateMessageInPages(old, messageId, (m) => {
+          const labels = [...m.labels.filter((l) => !remove.includes(l)), ...add.filter((l) => !m.labels.includes(l))];
+          return { ...m, labels };
+        }),
+      );
+    },
+    onError: () => {
+      toast.error('Failed to update labels.');
+    },
+    onSettled: (_data, _err, { messageId }) => {
+      queryClient.invalidateQueries({ queryKey: ['message', messageId] });
+      queryClient.invalidateQueries({ queryKey: ['messages'] });
+    },
+  });
+}
+
 export function useSaveDraft() {
   const api = useEmailStore((s) => s._api);
   const queryClient = useQueryClient();

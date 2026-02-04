@@ -1,9 +1,7 @@
 /**
  * Reusable compose / reply / forward form.
  *
- * Supports two modes:
- * - standalone: full-screen route with close/back button (mobile)
- * - embedded: inline panel without safe area padding (desktop split-view)
+ * Supports attachments, Cc/Bcc toggle, and discard confirmation.
  */
 
 import React, { useState, useCallback, useMemo, useRef } from 'react';
@@ -16,6 +14,7 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  Alert,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
@@ -24,6 +23,7 @@ import {
   FloppyDiskIcon,
   MailSend01Icon,
   ArrowDown01Icon,
+  Attachment01Icon,
 } from '@hugeicons/core-free-icons';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -31,36 +31,43 @@ import { useOxy, toast } from '@oxyhq/services';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
+import { useEmailStore } from '@/hooks/useEmail';
 import { useSendMessage, useSaveDraft } from '@/hooks/mutations/useMessageMutations';
+import type { Attachment } from '@/services/emailApi';
 
 interface ComposeFormProps {
   mode: 'standalone' | 'embedded';
   replyTo?: string;
   forward?: string;
   to?: string;
+  cc?: string;
   subject?: string;
   body?: string;
 }
 
-export function ComposeForm({ mode, replyTo, forward, to: initialTo, subject: initialSubject, body: initialBody }: ComposeFormProps) {
+export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initialCc, subject: initialSubject, body: initialBody }: ComposeFormProps) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
   const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
   const { user } = useOxy();
+  const api = useEmailStore((s) => s._api);
   const sendMessage = useSendMessage();
   const saveDraftMutation = useSaveDraft();
   const bodyRef = useRef<TextInput>(null);
 
   const [to, setTo] = useState(initialTo || '');
-  const [cc, setCc] = useState('');
+  const [cc, setCc] = useState(initialCc || '');
   const [bcc, setBcc] = useState('');
   const [subject, setSubject] = useState(initialSubject || '');
   const [body, setBody] = useState(initialBody || '');
-  const [showCcBcc, setShowCcBcc] = useState(false);
+  const [showCcBcc, setShowCcBcc] = useState(!!(initialCc));
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [uploading, setUploading] = useState(false);
 
   const fromAddress = user?.username ? `${user.username}@oxy.so` : '';
   const sending = sendMessage.isPending;
+  const hasContent = to.trim() || subject.trim() || body.trim() || attachments.length > 0;
 
   const isValidEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
@@ -72,6 +79,49 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, subject: in
       .filter((addr) => isValidEmail(addr))
       .map((addr) => ({ address: addr }));
   };
+
+  const handleAttachFile = useCallback(async () => {
+    if (!api) return;
+    if (Platform.OS === 'web') {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.multiple = true;
+      input.onchange = async () => {
+        if (!input.files) return;
+        setUploading(true);
+        try {
+          for (const file of Array.from(input.files)) {
+            const attachment = await api.uploadAttachment(file, file.name);
+            setAttachments((prev) => [...prev, attachment]);
+          }
+        } catch {
+          toast.error('Failed to upload attachment.');
+        }
+        setUploading(false);
+      };
+      input.click();
+    } else {
+      try {
+        const DocumentPicker = require('expo-document-picker');
+        const result = await DocumentPicker.getDocumentAsync({ multiple: true });
+        if (result.canceled) return;
+        setUploading(true);
+        for (const asset of result.assets) {
+          const response = await fetch(asset.uri);
+          const blob = await response.blob();
+          const attachment = await api.uploadAttachment(blob, asset.name);
+          setAttachments((prev) => [...prev, attachment]);
+        }
+      } catch {
+        toast.error('Failed to upload attachment.');
+      }
+      setUploading(false);
+    }
+  }, [api]);
+
+  const handleRemoveAttachment = useCallback((index: number) => {
+    setAttachments((prev) => prev.filter((_, i) => i !== index));
+  }, []);
 
   const handleSend = useCallback(() => {
     if (!to.trim()) {
@@ -93,6 +143,7 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, subject: in
         subject,
         text: body,
         inReplyTo: replyTo,
+        attachments: attachments.length > 0 ? attachments.map((a) => a.s3Key) : undefined,
       },
       {
         onSuccess: () => router.back(),
@@ -100,7 +151,7 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, subject: in
           toast.error(err.message || 'Unable to send email. Please try again.'),
       },
     );
-  }, [to, cc, bcc, subject, body, replyTo, sendMessage, router]);
+  }, [to, cc, bcc, subject, body, replyTo, attachments, sendMessage, router]);
 
   const handleSaveDraft = useCallback(() => {
     saveDraftMutation.mutate(
@@ -117,12 +168,34 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, subject: in
   }, [to, cc, bcc, subject, body, replyTo, saveDraftMutation, router]);
 
   const handleClose = useCallback(() => {
-    if (to.trim() || subject.trim() || body.trim()) {
-      handleSaveDraft();
+    if (hasContent) {
+      if (Platform.OS === 'web') {
+        if (window.confirm('Save as draft?')) {
+          handleSaveDraft();
+        } else {
+          router.back();
+        }
+      } else {
+        Alert.alert(
+          'Save draft?',
+          'Do you want to save this message as a draft?',
+          [
+            { text: 'Discard', style: 'destructive', onPress: () => router.back() },
+            { text: 'Save', onPress: handleSaveDraft },
+          ],
+          { cancelable: true },
+        );
+      }
     } else {
       router.back();
     }
-  }, [to, subject, body, handleSaveDraft, router]);
+  }, [hasContent, handleSaveDraft, router]);
+
+  const formatSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
 
   return (
     <KeyboardAvoidingView
@@ -148,6 +221,13 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, subject: in
           {replyTo ? 'Reply' : forward ? 'Forward' : 'Compose'}
         </Text>
         <View style={styles.headerSpacer} />
+        <TouchableOpacity onPress={handleAttachFile} style={styles.iconButton} disabled={uploading}>
+          {Platform.OS === 'web' ? (
+            <HugeiconsIcon icon={Attachment01Icon as unknown as IconSvgElement} size={22} color={uploading ? colors.secondaryText : colors.icon} />
+          ) : (
+            <MaterialCommunityIcons name="paperclip" size={22} color={uploading ? colors.secondaryText : colors.icon} />
+          )}
+        </TouchableOpacity>
         <TouchableOpacity onPress={handleSaveDraft} style={styles.iconButton}>
           {Platform.OS === 'web' ? (
             <HugeiconsIcon icon={FloppyDiskIcon as unknown as IconSvgElement} size={22} color={colors.icon} />
@@ -242,6 +322,26 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, subject: in
           />
         </View>
 
+        {/* Attachments */}
+        {attachments.length > 0 && (
+          <View style={[styles.attachmentsSection, { borderBottomColor: colors.border }]}>
+            {attachments.map((att, i) => (
+              <View key={i} style={[styles.attachmentChip, { backgroundColor: colors.surfaceVariant }]}>
+                <MaterialCommunityIcons name="paperclip" size={14} color={colors.secondaryText} />
+                <Text style={[styles.attachmentName, { color: colors.text }]} numberOfLines={1}>
+                  {att.filename}
+                </Text>
+                <Text style={[styles.attachmentSize, { color: colors.secondaryText }]}>
+                  {formatSize(att.size)}
+                </Text>
+                <TouchableOpacity onPress={() => handleRemoveAttachment(i)} hitSlop={4}>
+                  <MaterialCommunityIcons name="close-circle" size={16} color={colors.secondaryText} />
+                </TouchableOpacity>
+              </View>
+            ))}
+          </View>
+        )}
+
         {/* Body */}
         <TextInput
           ref={bodyRef}
@@ -321,6 +421,27 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     paddingVertical: 0,
+  },
+  attachmentsSection: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    gap: 6,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  attachmentChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  attachmentName: {
+    fontSize: 13,
+    flex: 1,
+  },
+  attachmentSize: {
+    fontSize: 11,
   },
   bodyInput: {
     flex: 1,

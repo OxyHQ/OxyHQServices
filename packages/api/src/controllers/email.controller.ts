@@ -54,20 +54,27 @@ export async function deleteMailbox(req: AuthRequest, res: Response): Promise<vo
 
 export async function listMessages(req: AuthRequest, res: Response): Promise<void> {
   const userId = req.user!.id;
-  const mailboxId = req.query.mailbox as string;
+  const mailboxId = req.query.mailbox as string | undefined;
+  const starred = req.query.starred === 'true';
+  const label = req.query.label as string | undefined;
   const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
   const offset = parseInt(req.query.offset as string) || 0;
   const unseenOnly = req.query.unseen === 'true';
 
-  if (!mailboxId) {
-    throw new BadRequestError('mailbox query parameter is required');
+  // Must have at least one filter: mailbox, starred, or label
+  if (!mailboxId && !starred && !label) {
+    throw new BadRequestError('mailbox, starred, or label query parameter is required');
   }
 
-  // Verify the mailbox belongs to this user
-  const mailbox = await emailService.getMailboxById(userId, mailboxId);
-  if (!mailbox) throw new NotFoundError('Mailbox not found');
+  // Verify the mailbox belongs to this user (if provided)
+  if (mailboxId) {
+    const mailbox = await emailService.getMailboxById(userId, mailboxId);
+    if (!mailbox) throw new NotFoundError('Mailbox not found');
+  }
 
-  const result = await emailService.listMessages(userId, mailboxId, { limit, offset, unseenOnly });
+  const result = await emailService.listMessages(userId, mailboxId || null, {
+    limit, offset, unseenOnly, starred, label,
+  });
   res.json({
     data: result.data,
     pagination: {
@@ -95,6 +102,14 @@ export async function getMessage(req: AuthRequest, res: Response): Promise<void>
   res.json({ data: message });
 }
 
+export async function getThread(req: AuthRequest, res: Response): Promise<void> {
+  const userId = req.user!.id;
+  const { messageId } = req.params;
+
+  const thread = await emailService.getThread(userId, messageId);
+  res.json({ data: thread });
+}
+
 export async function updateMessageFlags(req: AuthRequest, res: Response): Promise<void> {
   const userId = req.user!.id;
   const { messageId } = req.params;
@@ -113,6 +128,19 @@ export async function updateMessageFlags(req: AuthRequest, res: Response): Promi
   }
 
   const message = await emailService.updateMessageFlags(userId, messageId, filtered);
+  res.json({ data: message });
+}
+
+export async function updateMessageLabels(req: AuthRequest, res: Response): Promise<void> {
+  const userId = req.user!.id;
+  const { messageId } = req.params;
+  const { add = [], remove = [] } = req.body;
+
+  if (!Array.isArray(add) || !Array.isArray(remove)) {
+    throw new BadRequestError('add and remove must be arrays');
+  }
+
+  const message = await emailService.updateMessageLabels(userId, messageId, add, remove);
   res.json({ data: message });
 }
 
@@ -136,6 +164,47 @@ export async function deleteMessage(req: AuthRequest, res: Response): Promise<vo
 
   await emailService.deleteMessage(userId, messageId, permanent);
   res.json({ data: { message: 'Message deleted' } });
+}
+
+// ─── Labels ──────────────────────────────────────────────────────
+
+export async function listLabels(req: AuthRequest, res: Response): Promise<void> {
+  const userId = req.user!.id;
+  const labels = await emailService.listLabels(userId);
+  res.json({ data: labels });
+}
+
+export async function createLabel(req: AuthRequest, res: Response): Promise<void> {
+  const userId = req.user!.id;
+  const { name, color } = req.body;
+
+  if (!name || typeof name !== 'string') {
+    throw new BadRequestError('Label name is required');
+  }
+
+  const label = await emailService.createLabel(userId, name.trim(), color || '#4285f4');
+  res.status(201).json({ data: label });
+}
+
+export async function updateLabel(req: AuthRequest, res: Response): Promise<void> {
+  const userId = req.user!.id;
+  const { labelId } = req.params;
+  const { name, color } = req.body;
+
+  const updates: { name?: string; color?: string } = {};
+  if (name) updates.name = name.trim();
+  if (color) updates.color = color;
+
+  const label = await emailService.updateLabel(userId, labelId, updates);
+  res.json({ data: label });
+}
+
+export async function deleteLabel(req: AuthRequest, res: Response): Promise<void> {
+  const userId = req.user!.id;
+  const { labelId } = req.params;
+
+  await emailService.deleteLabel(userId, labelId);
+  res.json({ data: { message: 'Label deleted' } });
 }
 
 // ─── Compose & Send ─────────────────────────────────────────────
@@ -214,16 +283,27 @@ export async function saveDraft(req: AuthRequest, res: Response): Promise<void> 
 
 export async function searchMessages(req: AuthRequest, res: Response): Promise<void> {
   const userId = req.user!.id;
-  const q = req.query.q as string;
+  const q = req.query.q as string | undefined;
   const mailboxId = req.query.mailbox as string | undefined;
+  const from = req.query.from as string | undefined;
+  const to = req.query.to as string | undefined;
+  const subject = req.query.subject as string | undefined;
+  const hasAttachment = req.query.hasAttachment === 'true';
+  const dateAfter = req.query.dateAfter as string | undefined;
+  const dateBefore = req.query.dateBefore as string | undefined;
   const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
   const offset = parseInt(req.query.offset as string) || 0;
 
-  if (!q || q.trim().length === 0) {
-    throw new BadRequestError('Search query (q) is required');
+  // At least one search criterion required
+  if (!q && !from && !to && !subject && !hasAttachment && !dateAfter && !dateBefore) {
+    throw new BadRequestError('At least one search parameter is required');
   }
 
-  const result = await emailService.searchMessages(userId, q, { limit, offset, mailboxId });
+  const result = await emailService.searchMessages(userId, q || '', {
+    limit, offset, mailboxId, from, to, subject,
+    hasAttachment: hasAttachment || undefined,
+    dateAfter, dateBefore,
+  });
   res.json({
     data: result.data,
     pagination: {

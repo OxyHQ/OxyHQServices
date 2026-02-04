@@ -10,6 +10,7 @@
 import mongoose from 'mongoose';
 import { Mailbox, IMailbox } from '../models/Mailbox';
 import { Message, IMessage, IEmailAddress, IAttachment } from '../models/Message';
+import { Label } from '../models/Label';
 import User, { IUser } from '../models/User';
 import {
   DEFAULT_MAILBOXES,
@@ -121,14 +122,23 @@ class EmailService {
 
   async listMessages(
     userId: string,
-    mailboxId: string,
-    options: { limit?: number; offset?: number; unseenOnly?: boolean } = {}
+    mailboxId: string | null,
+    options: { limit?: number; offset?: number; unseenOnly?: boolean; starred?: boolean; label?: string } = {}
   ): Promise<{ data: any[]; total: number; limit: number; offset: number }> {
-    const { limit = 50, offset = 0, unseenOnly = false } = options;
+    const { limit = 50, offset = 0, unseenOnly = false, starred = false, label } = options;
 
-    const filter: Record<string, unknown> = { userId, mailboxId };
+    const filter: Record<string, unknown> = { userId };
+    if (mailboxId) {
+      filter.mailboxId = mailboxId;
+    }
+    if (starred) {
+      filter['flags.starred'] = true;
+    }
     if (unseenOnly) {
       filter['flags.seen'] = false;
+    }
+    if (label) {
+      filter.labels = label;
     }
 
     const [data, total] = await Promise.all([
@@ -476,26 +486,176 @@ class EmailService {
     return message.toJSON() as any;
   }
 
+  // ─── Thread / Conversation ─────────────────────────────────────────
+
+  async getThread(userId: string, messageId: string): Promise<any[]> {
+    const anchor = await Message.findOne({ _id: messageId, userId })
+      .select('+text +html +headers')
+      .lean({ virtuals: true });
+    if (!anchor) throw new NotFoundError('Message not found');
+
+    const threadIds: string[] = [];
+    if (anchor.messageId) threadIds.push(anchor.messageId);
+    if (anchor.inReplyTo) threadIds.push(anchor.inReplyTo);
+    if (anchor.references?.length) threadIds.push(...anchor.references);
+
+    if (threadIds.length === 0) return [anchor];
+
+    const related = await Message.find({
+      userId,
+      $or: [
+        { messageId: { $in: threadIds } },
+        { inReplyTo: { $in: threadIds } },
+        { references: { $in: threadIds } },
+      ],
+    })
+      .select('+text +html +headers')
+      .sort({ date: 1 })
+      .lean({ virtuals: true });
+
+    // Deduplicate (anchor may appear in results)
+    const seen = new Set<string>();
+    const thread: any[] = [];
+    for (const msg of related) {
+      const id = msg._id.toString();
+      if (!seen.has(id)) {
+        seen.add(id);
+        thread.push(msg);
+      }
+    }
+    if (!seen.has(anchor._id.toString())) {
+      thread.push(anchor);
+      thread.sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    }
+
+    return thread;
+  }
+
+  // ─── Labels ──────────────────────────────────────────────────────────
+
+  async listLabels(userId: string): Promise<any[]> {
+    return Label.find({ userId }).sort({ order: 1, name: 1 }).lean({ virtuals: true });
+  }
+
+  async createLabel(userId: string, name: string, color: string): Promise<any> {
+    const existing = await Label.findOne({ userId, name });
+    if (existing) throw new BadRequestError(`Label "${name}" already exists`);
+
+    const count = await Label.countDocuments({ userId });
+    const label = await Label.create({
+      userId: new mongoose.Types.ObjectId(userId),
+      name: name.trim(),
+      color,
+      order: count,
+    });
+    return label.toJSON() as any;
+  }
+
+  async updateLabel(userId: string, labelId: string, updates: { name?: string; color?: string }): Promise<any> {
+    const label = await Label.findOneAndUpdate(
+      { _id: labelId, userId },
+      { $set: updates },
+      { new: true }
+    ).lean({ virtuals: true });
+    if (!label) throw new NotFoundError('Label not found');
+    return label;
+  }
+
+  async deleteLabel(userId: string, labelId: string): Promise<void> {
+    const label = await Label.findOne({ _id: labelId, userId });
+    if (!label) throw new NotFoundError('Label not found');
+
+    // Remove label from all messages
+    await Message.updateMany(
+      { userId, labels: label.name },
+      { $pull: { labels: label.name } }
+    );
+    await Label.findByIdAndDelete(labelId);
+  }
+
+  async updateMessageLabels(userId: string, messageId: string, add: string[], remove: string[]): Promise<any> {
+    const update: Record<string, unknown> = {};
+    if (add.length > 0) {
+      update.$addToSet = { labels: { $each: add } };
+    }
+    if (remove.length > 0) {
+      update.$pull = { labels: { $in: remove } };
+    }
+
+    // Need two operations if both add and remove (can't $addToSet and $pull same field)
+    let message;
+    if (add.length > 0) {
+      message = await Message.findOneAndUpdate(
+        { _id: messageId, userId },
+        { $addToSet: { labels: { $each: add } } },
+        { new: true }
+      ).lean({ virtuals: true });
+    }
+    if (remove.length > 0) {
+      message = await Message.findOneAndUpdate(
+        { _id: messageId, userId },
+        { $pull: { labels: { $in: remove } } },
+        { new: true }
+      ).lean({ virtuals: true });
+    }
+    if (!message) throw new NotFoundError('Message not found');
+    return message;
+  }
+
   // ─── Search ───────────────────────────────────────────────────────
 
   async searchMessages(
     userId: string,
     query: string,
-    options: { limit?: number; offset?: number; mailboxId?: string } = {}
+    options: {
+      limit?: number;
+      offset?: number;
+      mailboxId?: string;
+      from?: string;
+      to?: string;
+      subject?: string;
+      hasAttachment?: boolean;
+      dateAfter?: string;
+      dateBefore?: string;
+    } = {}
   ): Promise<{ data: any[]; total: number; limit: number; offset: number }> {
-    const { limit = 50, offset = 0, mailboxId } = options;
+    const { limit = 50, offset = 0, mailboxId, from, to, subject, hasAttachment, dateAfter, dateBefore } = options;
 
     const filter: Record<string, unknown> = {
       userId: new mongoose.Types.ObjectId(userId),
-      $text: { $search: query },
     };
+
+    if (query) {
+      filter.$text = { $search: query };
+    }
     if (mailboxId) {
       filter.mailboxId = new mongoose.Types.ObjectId(mailboxId);
     }
+    if (from) {
+      filter['from.address'] = { $regex: from, $options: 'i' };
+    }
+    if (to) {
+      filter['to.address'] = { $regex: to, $options: 'i' };
+    }
+    if (subject) {
+      filter.subject = { $regex: subject, $options: 'i' };
+    }
+    if (hasAttachment) {
+      filter['attachments.0'] = { $exists: true };
+    }
+    if (dateAfter || dateBefore) {
+      const dateFilter: Record<string, Date> = {};
+      if (dateAfter) dateFilter.$gte = new Date(dateAfter);
+      if (dateBefore) dateFilter.$lte = new Date(dateBefore);
+      filter.date = dateFilter;
+    }
+
+    const projection = query ? { score: { $meta: 'textScore' } } : {};
+    const sort = query ? { score: { $meta: 'textScore' } } : { date: -1 as const };
 
     const [data, total] = await Promise.all([
-      Message.find(filter, { score: { $meta: 'textScore' } })
-        .sort({ score: { $meta: 'textScore' } })
+      Message.find(filter, projection)
+        .sort(sort as any)
         .skip(offset)
         .limit(limit)
         .lean({ virtuals: true }),

@@ -6,8 +6,6 @@ const MOCK_QUOTA: QuotaUsage = {
   used: 524288000,
   limit: 1073741824,
   percentage: 49,
-  dailySendCount: 12,
-  dailySendLimit: 500,
 };
 
 export function useQuota() {

@@ -54,12 +54,25 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
   const { isAuthenticated } = useOxy();
 
   const currentMailbox = useEmailStore((s) => s.currentMailbox);
+  const viewMode = useEmailStore((s) => s.viewMode);
   const selectedMessageId = useEmailStore((s) => s.selectedMessageId);
   const isSelectionMode = useEmailStore((s) => s.isSelectionMode);
   const selectedMessageIds = useEmailStore((s) => s.selectedMessageIds);
   const toggleMessageSelection = useEmailStore((s) => s.toggleMessageSelection);
   const enterSelectionMode = useEmailStore((s) => s.enterSelectionMode);
   const clearSelection = useEmailStore((s) => s.clearSelection);
+
+  const messagesOptions = useMemo(() => {
+    if (!viewMode) return { mailboxId: currentMailbox?._id };
+    switch (viewMode.type) {
+      case 'mailbox':
+        return { mailboxId: viewMode.mailbox._id };
+      case 'starred':
+        return { starred: true };
+      case 'label':
+        return { label: viewMode.labelId };
+    }
+  }, [viewMode, currentMailbox]);
 
   const {
     data,
@@ -69,7 +82,7 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
     refetch,
     fetchNextPage,
     hasNextPage,
-  } = useMessages(currentMailbox?._id);
+  } = useMessages(messagesOptions);
   const { data: mailboxes = [] } = useMailboxes();
   const toggleStar = useToggleStar();
   const toggleRead = useToggleRead();
@@ -78,10 +91,10 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
 
   const messages = useMemo(() => data?.pages.flatMap((p) => p.data) ?? [], [data]);
 
-  // Clear selection when mailbox changes
+  // Clear selection when view changes
   useEffect(() => {
     clearSelection();
-  }, [currentMailbox?._id, clearSelection]);
+  }, [viewMode, clearSelection]);
 
   const handleRefresh = useCallback(() => {
     refetch();
@@ -171,10 +184,13 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
     clearSelection();
   }, [selectedMessageIds, messages, toggleRead, clearSelection]);
 
-  // Normalize special use flag for display (remove backslash prefix from IMAP format)
-  const mailboxTitle = currentMailbox?.specialUse
-    ? currentMailbox.specialUse.replace(/^\\+/, '')
-    : currentMailbox?.name || 'Inbox';
+  // Derive title from view mode
+  const mailboxTitle = useMemo(() => {
+    if (viewMode?.type === 'starred') return 'Starred';
+    if (viewMode?.type === 'label') return viewMode.labelName;
+    if (currentMailbox?.specialUse) return currentMailbox.specialUse.replace(/^\\+/, '');
+    return currentMailbox?.name || 'Inbox';
+  }, [viewMode, currentMailbox]);
 
   const handleSwipeArchive = useCallback(
     (messageId: string) => {
@@ -266,6 +282,15 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
           placeholder={`Search in ${mailboxTitle.toLowerCase()}`}
           onPress={handleSearch}
         />
+      )}
+
+      {/* Pagination info */}
+      {messages.length > 0 && data?.pages?.[0]?.pagination && (
+        <View style={styles.paginationBar}>
+          <Text style={[styles.paginationText, { color: colors.secondaryText }]}>
+            1–{messages.length} of {data.pages[0].pagination.total}
+          </Text>
+        </View>
       )}
 
       {isLoading && messages.length === 0 && (
@@ -382,5 +407,14 @@ const styles = StyleSheet.create({
   fabLabel: {
     fontSize: 15,
     fontWeight: '600',
+  },
+  paginationBar: {
+    paddingHorizontal: 16,
+    paddingVertical: 4,
+    alignItems: 'flex-end',
+  },
+  paginationText: {
+    fontSize: 11,
+    fontWeight: '500',
   },
 });

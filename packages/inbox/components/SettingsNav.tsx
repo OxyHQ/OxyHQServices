@@ -13,6 +13,7 @@ import {
   Beach02Icon,
   PaintBrush01Icon,
   ArrowLeft01Icon,
+  LabelIcon,
 } from '@hugeicons/core-free-icons';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -24,6 +25,7 @@ const SECTIONS = [
   { key: 'general', label: 'General', icon: 'cog-outline' as const, hugeIcon: Settings01Icon },
   { key: 'signature', label: 'Signature', icon: 'signature-text' as const, hugeIcon: SignatureIcon },
   { key: 'vacation', label: 'Vacation Responder', icon: 'beach' as const, hugeIcon: Beach02Icon },
+  { key: 'labels', label: 'Labels', icon: 'label-outline' as const, hugeIcon: LabelIcon },
   { key: 'appearance', label: 'Appearance', icon: 'palette-outline' as const, hugeIcon: PaintBrush01Icon },
 ];
 

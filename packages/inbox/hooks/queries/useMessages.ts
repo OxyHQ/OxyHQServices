@@ -10,17 +10,34 @@ interface MessagesPage {
   pagination: Pagination;
 }
 
-export function useMessages(mailboxId: string | undefined) {
+interface UseMessagesOptions {
+  mailboxId?: string;
+  starred?: boolean;
+  label?: string;
+}
+
+export function useMessages(options: UseMessagesOptions = {}) {
+  const { mailboxId, starred, label } = options;
   const api = useEmailStore((s) => s._api);
 
+  const hasFilter = !!mailboxId || !!starred || !!label;
+
   return useInfiniteQuery<MessagesPage>({
-    queryKey: ['messages', mailboxId],
+    queryKey: ['messages', mailboxId ?? null, starred ?? false, label ?? null],
     queryFn: async ({ pageParam = 0 }) => {
       if (api) {
-        return await api.listMessages(mailboxId!, { limit: PAGE_SIZE, offset: pageParam as number });
+        return await api.listMessages({
+          mailboxId,
+          starred,
+          label,
+          limit: PAGE_SIZE,
+          offset: pageParam as number,
+        });
       }
       if (__DEV__) {
-        const filtered = MOCK_MESSAGES.filter((m) => m.mailboxId === mailboxId);
+        const filtered = mailboxId
+          ? MOCK_MESSAGES.filter((m) => m.mailboxId === mailboxId)
+          : MOCK_MESSAGES;
         return {
           data: filtered,
           pagination: { offset: 0, limit: PAGE_SIZE, total: filtered.length, hasMore: false },
@@ -31,6 +48,6 @@ export function useMessages(mailboxId: string | undefined) {
     initialPageParam: 0,
     getNextPageParam: (lastPage) =>
       lastPage.pagination.hasMore ? lastPage.pagination.offset + lastPage.pagination.limit : undefined,
-    enabled: !!mailboxId && (!!api || __DEV__),
+    enabled: hasFilter && (!!api || __DEV__),
   });
 }

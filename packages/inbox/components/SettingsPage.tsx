@@ -28,6 +28,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { useSettings, useUpdateSettings } from '@/hooks/queries/useSettings';
 import { useQuota } from '@/hooks/queries/useQuota';
+import { useLabels, useCreateLabel, useUpdateLabel, useDeleteLabel } from '@/hooks/queries/useLabels';
 import { useThemeContext } from '@/contexts/theme-context';
 
 function formatBytes(bytes: number): string {
@@ -55,13 +56,27 @@ export function SettingsPage({ section }: SettingsPageProps) {
 
   const { data: settingsData } = useSettings();
   const { data: quota } = useQuota();
+  const { data: labels = [] } = useLabels();
   const updateSettings = useUpdateSettings();
+  const createLabel = useCreateLabel();
+  const updateLabelMutation = useUpdateLabel();
+  const deleteLabel = useDeleteLabel();
 
   const [signature, setSignature] = useState('');
   const [autoReplyEnabled, setAutoReplyEnabled] = useState(false);
   const [autoReplySubject, setAutoReplySubject] = useState('');
   const [autoReplyBody, setAutoReplyBody] = useState('');
+  const [newLabelName, setNewLabelName] = useState('');
+  const [newLabelColor, setNewLabelColor] = useState('#4285f4');
+  const [editingLabelId, setEditingLabelId] = useState<string | null>(null);
+  const [editingLabelName, setEditingLabelName] = useState('');
   const initialized = useRef(false);
+
+  const LABEL_COLORS = [
+    '#4285f4', '#ea4335', '#fbbc04', '#34a853',
+    '#ff6d01', '#46bdc6', '#7b1fa2', '#c2185b',
+    '#795548', '#607d8b',
+  ];
 
   // Sync local form state from query data (once)
   useEffect(() => {
@@ -69,8 +84,8 @@ export function SettingsPage({ section }: SettingsPageProps) {
       initialized.current = true;
       setSignature(settingsData.signature);
       setAutoReplyEnabled(settingsData.autoReply.enabled);
-      setAutoReplySubject(settingsData.autoReply.subject);
-      setAutoReplyBody(settingsData.autoReply.body);
+      setAutoReplySubject(settingsData.autoReply.subject ?? '');
+      setAutoReplyBody(settingsData.autoReply.body ?? '');
     }
   }, [settingsData]);
 
@@ -95,10 +110,54 @@ export function SettingsPage({ section }: SettingsPageProps) {
 
   const emailAddress = user?.username ? `${user.username}@oxy.so` : '';
 
+  const handleCreateLabel = useCallback(() => {
+    if (!newLabelName.trim()) return;
+    createLabel.mutate(
+      { name: newLabelName.trim(), color: newLabelColor },
+      {
+        onSuccess: () => {
+          setNewLabelName('');
+          setNewLabelColor('#4285f4');
+          toast.success('Label created.');
+        },
+        onError: (err: any) => toast.error(err.message || 'Failed to create label.'),
+      },
+    );
+  }, [newLabelName, newLabelColor, createLabel]);
+
+  const handleDeleteLabel = useCallback((labelId: string) => {
+    deleteLabel.mutate(labelId, {
+      onSuccess: () => toast.success('Label deleted.'),
+      onError: (err: any) => toast.error(err.message || 'Failed to delete label.'),
+    });
+  }, [deleteLabel]);
+
+  const handleUpdateLabel = useCallback((labelId: string) => {
+    if (!editingLabelName.trim()) return;
+    updateLabelMutation.mutate(
+      { labelId, updates: { name: editingLabelName.trim() } },
+      {
+        onSuccess: () => {
+          setEditingLabelId(null);
+          setEditingLabelName('');
+        },
+        onError: (err: any) => toast.error(err.message || 'Failed to update label.'),
+      },
+    );
+  }, [editingLabelName, updateLabelMutation]);
+
+  const handleUpdateLabelColor = useCallback((labelId: string, color: string) => {
+    updateLabelMutation.mutate(
+      { labelId, updates: { color } },
+      { onError: (err: any) => toast.error(err.message || 'Failed to update label.') },
+    );
+  }, [updateLabelMutation]);
+
   const showAll = !section;
   const showGeneral = showAll || section === 'general';
   const showSignature = showAll || section === 'signature';
   const showVacation = showAll || section === 'vacation';
+  const showLabels = showAll || section === 'labels';
   const showAppearance = showAll || section === 'appearance';
 
   return (
@@ -129,7 +188,7 @@ export function SettingsPage({ section }: SettingsPageProps) {
       {isDesktop && (
         <View style={[styles.desktopHeader, { borderBottomColor: colors.border }]}>
           <Text style={[styles.sectionPageTitle, { color: colors.text }]}>
-            {section === 'general' ? 'General' : section === 'signature' ? 'Signature' : section === 'vacation' ? 'Vacation Responder' : section === 'appearance' ? 'Appearance' : 'Settings'}
+            {section === 'general' ? 'General' : section === 'signature' ? 'Signature' : section === 'vacation' ? 'Vacation Responder' : section === 'labels' ? 'Labels' : section === 'appearance' ? 'Appearance' : 'Settings'}
           </Text>
           <View style={styles.headerSpacer} />
           <TouchableOpacity
@@ -176,9 +235,9 @@ export function SettingsPage({ section }: SettingsPageProps) {
                     />
                   </View>
                   <View style={styles.cardRow}>
-                    <Text style={[styles.cardLabel, { color: colors.secondaryText }]}>Emails sent today</Text>
+                    <Text style={[styles.cardLabel, { color: colors.secondaryText }]}>Usage</Text>
                     <Text style={[styles.cardValue, { color: colors.text }]}>
-                      {quota.dailySendCount} / {quota.dailySendLimit}
+                      {quota.percentage}%
                     </Text>
                   </View>
                 </View>
@@ -241,6 +300,95 @@ export function SettingsPage({ section }: SettingsPageProps) {
                   />
                 </>
               )}
+            </View>
+          </>
+        )}
+
+        {/* Labels */}
+        {showLabels && (
+          <>
+            <Text style={[styles.sectionTitle, { color: colors.primary }]}>Labels</Text>
+            <View style={[styles.card, { backgroundColor: colors.surface }]}>
+              {/* Existing labels */}
+              {labels.map((lbl) => (
+                <View key={lbl._id} style={styles.labelRow}>
+                  {editingLabelId === lbl._id ? (
+                    <>
+                      <TextInput
+                        style={[styles.labelEditInput, { color: colors.text, borderColor: colors.border }]}
+                        value={editingLabelName}
+                        onChangeText={setEditingLabelName}
+                        autoFocus
+                        onSubmitEditing={() => handleUpdateLabel(lbl._id)}
+                        returnKeyType="done"
+                      />
+                      <TouchableOpacity onPress={() => handleUpdateLabel(lbl._id)}>
+                        <MaterialCommunityIcons name="check" size={20} color={colors.primary} />
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={() => setEditingLabelId(null)}>
+                        <MaterialCommunityIcons name="close" size={20} color={colors.icon} />
+                      </TouchableOpacity>
+                    </>
+                  ) : (
+                    <>
+                      <View style={[styles.labelColorDot, { backgroundColor: lbl.color }]} />
+                      <Text style={[styles.labelName, { color: colors.text }]}>{lbl.name}</Text>
+                      <View style={styles.labelActions}>
+                        <TouchableOpacity
+                          onPress={() => {
+                            setEditingLabelId(lbl._id);
+                            setEditingLabelName(lbl.name);
+                          }}
+                        >
+                          <MaterialCommunityIcons name="pencil-outline" size={18} color={colors.icon} />
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={() => handleDeleteLabel(lbl._id)}>
+                          <MaterialCommunityIcons name="delete-outline" size={18} color={colors.icon} />
+                        </TouchableOpacity>
+                      </View>
+                    </>
+                  )}
+                </View>
+              ))}
+              {labels.length === 0 && (
+                <Text style={[styles.emptyLabel, { color: colors.secondaryText }]}>No labels yet</Text>
+              )}
+
+              {/* Create new label */}
+              <View style={[styles.newLabelRow, { borderTopColor: colors.border }]}>
+                <View style={styles.colorPalette}>
+                  {LABEL_COLORS.map((c) => (
+                    <TouchableOpacity
+                      key={c}
+                      style={[
+                        styles.colorSwatch,
+                        { backgroundColor: c },
+                        newLabelColor === c && styles.colorSwatchActive,
+                      ]}
+                      onPress={() => setNewLabelColor(c)}
+                    />
+                  ))}
+                </View>
+                <View style={styles.newLabelInputRow}>
+                  <TextInput
+                    style={[styles.newLabelInput, { color: colors.text, borderColor: colors.border }]}
+                    value={newLabelName}
+                    onChangeText={setNewLabelName}
+                    placeholder="New label name"
+                    placeholderTextColor={colors.searchPlaceholder}
+                    onSubmitEditing={handleCreateLabel}
+                    returnKeyType="done"
+                  />
+                  <TouchableOpacity
+                    style={[styles.addLabelButton, { backgroundColor: colors.primary, opacity: newLabelName.trim() ? 1 : 0.4 }]}
+                    onPress={handleCreateLabel}
+                    disabled={!newLabelName.trim()}
+                  >
+                    <MaterialCommunityIcons name="plus" size={18} color="#FFFFFF" />
+                    <Text style={styles.addLabelText}>Add</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
             </View>
           </>
         )}
@@ -387,5 +535,81 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     fontSize: 14,
     minHeight: 80,
+  },
+  labelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 8,
+  },
+  labelColorDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+  },
+  labelName: {
+    fontSize: 14,
+    flex: 1,
+  },
+  labelActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  labelEditInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    fontSize: 14,
+  },
+  emptyLabel: {
+    fontSize: 13,
+    paddingVertical: 8,
+  },
+  newLabelRow: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingTop: 12,
+    gap: 8,
+  },
+  colorPalette: {
+    flexDirection: 'row',
+    gap: 6,
+    flexWrap: 'wrap',
+  },
+  colorSwatch: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+  },
+  colorSwatchActive: {
+    borderWidth: 2,
+    borderColor: '#000',
+  },
+  newLabelInputRow: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+  },
+  newLabelInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 14,
+  },
+  addLabelButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  addLabelText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '600',
   },
 });

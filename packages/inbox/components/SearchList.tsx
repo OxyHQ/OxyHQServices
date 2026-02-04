@@ -1,6 +1,5 @@
 /**
- * Search emails list with Gmail-style search bar.
- * Used by the (search) layout on desktop (always visible) and by the index route on mobile.
+ * Search emails list with Gmail-style search bar and filter chips.
  */
 
 import React, { useState, useCallback, useMemo, useRef } from 'react';
@@ -9,9 +8,11 @@ import {
   Text,
   TextInput,
   FlatList,
+  TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
 } from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -25,7 +26,6 @@ import { useSearchMessages } from '@/hooks/queries/useSearchMessages';
 import { useToggleStar } from '@/hooks/mutations/useMessageMutations';
 
 interface SearchListProps {
-  /** When true, uses router.replace for message navigation (desktop split-view) */
   replaceNavigation?: boolean;
 }
 
@@ -39,8 +39,21 @@ export function SearchList({ replaceNavigation }: SearchListProps) {
 
   const [query, setQuery] = useState('');
   const [submittedQuery, setSubmittedQuery] = useState('');
-  const { data: results = [], isLoading: searching } = useSearchMessages(submittedQuery);
-  const hasSearched = submittedQuery.trim().length > 0;
+  const [filterFrom, setFilterFrom] = useState('');
+  const [filterHasAttachment, setFilterHasAttachment] = useState(false);
+  const [editingFilter, setEditingFilter] = useState<string | null>(null);
+  const [filterInput, setFilterInput] = useState('');
+
+  const searchOptions = useMemo(() => ({
+    q: submittedQuery || undefined,
+    from: filterFrom || undefined,
+    hasAttachment: filterHasAttachment || undefined,
+  }), [submittedQuery, filterFrom, filterHasAttachment]);
+
+  const { data: searchResult, isLoading: searching } = useSearchMessages(searchOptions);
+  const results = searchResult?.data ?? [];
+  const total = searchResult?.pagination?.total ?? 0;
+  const hasSearched = !!(submittedQuery.trim() || filterFrom || filterHasAttachment);
 
   const handleSearch = useCallback(() => {
     if (!query.trim()) return;
@@ -74,8 +87,27 @@ export function SearchList({ replaceNavigation }: SearchListProps) {
   const handleClear = useCallback(() => {
     setQuery('');
     setSubmittedQuery('');
+    setFilterFrom('');
+    setFilterHasAttachment(false);
     inputRef.current?.focus();
   }, []);
+
+  const handleFilterChipPress = useCallback((filter: string) => {
+    if (filter === 'attachment') {
+      setFilterHasAttachment((v) => !v);
+    } else {
+      setEditingFilter(filter);
+      setFilterInput(filter === 'from' ? filterFrom : '');
+    }
+  }, [filterFrom]);
+
+  const handleFilterSubmit = useCallback(() => {
+    if (editingFilter === 'from') {
+      setFilterFrom(filterInput.trim());
+    }
+    setEditingFilter(null);
+    setFilterInput('');
+  }, [editingFilter, filterInput]);
 
   const renderItem = useCallback(
     ({ item }: { item: Message }) => (
@@ -123,6 +155,78 @@ export function SearchList({ replaceNavigation }: SearchListProps) {
         autoFocus
       />
 
+      {/* Filter chips */}
+      <View style={styles.filterBar}>
+        <TouchableOpacity
+          style={[
+            styles.filterChip,
+            { borderColor: colors.border },
+            filterFrom ? { backgroundColor: colors.primary + '15', borderColor: colors.primary } : undefined,
+          ]}
+          onPress={() => handleFilterChipPress('from')}
+          activeOpacity={0.7}
+        >
+          <Text style={[styles.filterChipText, { color: filterFrom ? colors.primary : colors.secondaryText }]}>
+            {filterFrom ? `From: ${filterFrom}` : 'From'}
+          </Text>
+          {filterFrom ? (
+            <TouchableOpacity onPress={() => setFilterFrom('')} hitSlop={4}>
+              <MaterialCommunityIcons name="close-circle" size={14} color={colors.primary} />
+            </TouchableOpacity>
+          ) : null}
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[
+            styles.filterChip,
+            { borderColor: colors.border },
+            filterHasAttachment ? { backgroundColor: colors.primary + '15', borderColor: colors.primary } : undefined,
+          ]}
+          onPress={() => handleFilterChipPress('attachment')}
+          activeOpacity={0.7}
+        >
+          <MaterialCommunityIcons
+            name="paperclip"
+            size={14}
+            color={filterHasAttachment ? colors.primary : colors.secondaryText}
+          />
+          <Text style={[styles.filterChipText, { color: filterHasAttachment ? colors.primary : colors.secondaryText }]}>
+            Has attachment
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Filter input overlay */}
+      {editingFilter && (
+        <View style={[styles.filterInputRow, { backgroundColor: colors.surfaceVariant }]}>
+          <Text style={[styles.filterInputLabel, { color: colors.secondaryText }]}>
+            {editingFilter === 'from' ? 'From:' : editingFilter}
+          </Text>
+          <TextInput
+            style={[styles.filterInputField, { color: colors.text }]}
+            value={filterInput}
+            onChangeText={setFilterInput}
+            autoFocus
+            onSubmitEditing={handleFilterSubmit}
+            returnKeyType="done"
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          <TouchableOpacity onPress={() => setEditingFilter(null)}>
+            <MaterialCommunityIcons name="close" size={20} color={colors.icon} />
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Result count */}
+      {hasSearched && !searching && results.length > 0 && (
+        <View style={styles.resultCount}>
+          <Text style={[styles.resultCountText, { color: colors.secondaryText }]}>
+            {total} {total === 1 ? 'result' : 'results'}
+          </Text>
+        </View>
+      )}
+
       {searching && (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
@@ -147,6 +251,50 @@ export function SearchList({ replaceNavigation }: SearchListProps) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  filterBar: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  filterChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  filterChipText: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  filterInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    gap: 8,
+  },
+  filterInputLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  filterInputField: {
+    flex: 1,
+    fontSize: 14,
+    paddingVertical: 4,
+  },
+  resultCount: {
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+  },
+  resultCountText: {
+    fontSize: 12,
+    fontWeight: '500',
   },
   loadingContainer: {
     paddingTop: 40,
