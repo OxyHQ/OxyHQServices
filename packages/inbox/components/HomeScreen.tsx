@@ -37,7 +37,6 @@ import { useToggleStar } from '@/hooks/mutations/useMessageMutations';
 import { useEmailStore } from '@/hooks/useEmail';
 import { MessageRow } from '@/components/MessageRow';
 import { LogoIcon } from '@/assets/logo';
-import { Avatar } from '@/components/Avatar';
 import type { Message } from '@/services/emailApi';
 
 const DAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
@@ -155,11 +154,15 @@ export function HomeScreen() {
         {/* Date & Week Strip */}
         <Text style={styles.monthYear}>{MONTHS[today.getMonth()]} {today.getFullYear()}</Text>
         <View style={styles.weekStripRow}>
-          <TouchableOpacity onPress={() => {
-            const prev = new Date(selectedDate);
-            prev.setDate(prev.getDate() - 7);
-            setSelectedDate(prev);
-          }} style={styles.weekArrow} activeOpacity={0.7}>
+          <TouchableOpacity
+            onPress={() => setSelectedDate((d) => {
+              const prev = new Date(d);
+              prev.setDate(prev.getDate() - 7);
+              return prev;
+            })}
+            style={styles.weekArrow}
+            activeOpacity={0.7}
+          >
             <MaterialCommunityIcons name="chevron-left" size={20} color="rgba(255,255,255,0.7)" />
           </TouchableOpacity>
           <View style={styles.weekStrip}>
@@ -185,11 +188,15 @@ export function HomeScreen() {
               );
             })}
           </View>
-          <TouchableOpacity onPress={() => {
-            const next = new Date(selectedDate);
-            next.setDate(next.getDate() + 7);
-            setSelectedDate(next);
-          }} style={styles.weekArrow} activeOpacity={0.7}>
+          <TouchableOpacity
+            onPress={() => setSelectedDate((d) => {
+              const next = new Date(d);
+              next.setDate(next.getDate() + 7);
+              return next;
+            })}
+            style={styles.weekArrow}
+            activeOpacity={0.7}
+          >
             <MaterialCommunityIcons name="chevron-right" size={20} color="rgba(255,255,255,0.7)" />
           </TouchableOpacity>
         </View>
