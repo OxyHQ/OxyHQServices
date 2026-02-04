@@ -189,8 +189,20 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
     }
   }, [mailboxes, currentMailbox, selectMailbox]);
 
-  const systemMailboxes = mailboxes.filter((m) => m.specialUse);
-  const customMailboxes = mailboxes.filter((m) => !m.specialUse);
+  const systemMailboxes = useMemo(() => {
+    const order: Record<string, number> = {
+      '\\Inbox': 0,
+      '\\Sent': 1,
+      '\\Drafts': 2,
+      '\\Junk': 3,
+      '\\Trash': 4,
+      '\\Archive': 5,
+    };
+    return mailboxes
+      .filter((m) => m.specialUse)
+      .sort((a, b) => (order[a.specialUse!] ?? 99) - (order[b.specialUse!] ?? 99));
+  }, [mailboxes]);
+  const customMailboxes = useMemo(() => mailboxes.filter((m) => !m.specialUse), [mailboxes]);
 
   const handleSelect = (mailbox: Mailbox) => {
     selectMailbox(mailbox);
