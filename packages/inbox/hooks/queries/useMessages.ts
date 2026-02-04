@@ -13,24 +13,11 @@ interface MessagesPage {
 export function useMessages(mailboxId: string | undefined) {
   const api = useEmailStore((s) => s._api);
 
-  console.log('[useMessages] Hook called:', {
-    mailboxId,
-    hasApi: !!api,
-    isDev: __DEV__,
-    enabled: !!mailboxId && (!!api || __DEV__),
-  });
-
   return useInfiniteQuery<MessagesPage>({
     queryKey: ['messages', mailboxId],
     queryFn: async ({ pageParam = 0 }) => {
-      console.log('[useMessages] queryFn called:', { mailboxId, pageParam, hasApi: !!api });
       if (api) {
-        const result = await api.listMessages(mailboxId!, { limit: PAGE_SIZE, offset: pageParam as number });
-        console.log('[useMessages] API result:', {
-          messageCount: result.data.length,
-          pagination: result.pagination,
-        });
-        return result;
+        return await api.listMessages(mailboxId!, { limit: PAGE_SIZE, offset: pageParam as number });
       }
       if (__DEV__) {
         const filtered = MOCK_MESSAGES.filter((m) => m.mailboxId === mailboxId);
