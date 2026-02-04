@@ -101,11 +101,12 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
   }, [messageId]);
 
   // Auto-mark message as read when opened
+  const toggleReadMutate = toggleRead.mutate;
   useEffect(() => {
     if (currentMessage && !currentMessage.flags.seen) {
-      toggleRead.mutate({ messageId, seen: true });
+      toggleReadMutate({ messageId, seen: true });
     }
-  }, [messageId, currentMessage?.flags.seen]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [messageId, currentMessage?.flags.seen, toggleReadMutate]);
 
   const handleBack = useCallback(() => {
     router.back();
@@ -150,7 +151,16 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
     if (mode === 'standalone') router.back();
   }, [messageId, mailboxes, archiveMutation, router, mode]);
 
-  const navigate = mode === 'embedded' ? router.replace : router.push;
+  const navigate = useCallback(
+    (href: { pathname: string; params?: Record<string, string> }) => {
+      if (mode === 'embedded') {
+        router.replace(href as any);
+      } else {
+        router.push(href as any);
+      }
+    },
+    [mode, router],
+  );
 
   const handleReply = useCallback(() => {
     if (!currentMessage) return;
@@ -225,20 +235,20 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
     }
   }, [api]);
 
-  const handleToggleLabel = useCallback((labelId: string) => {
+  const handleToggleLabel = useCallback((labelName: string) => {
     if (!currentMessage) return;
-    const hasLabel = currentMessage.labels.includes(labelId);
+    const hasLabel = currentMessage.labels.includes(labelName);
     updateLabels.mutate({
       messageId,
-      add: hasLabel ? [] : [labelId],
-      remove: hasLabel ? [labelId] : [],
+      add: hasLabel ? [] : [labelName],
+      remove: hasLabel ? [labelName] : [],
     });
   }, [currentMessage, messageId, updateLabels]);
 
-  // Label data for assigned labels
+  // Label data for assigned labels (backend stores label names, not IDs)
   const assignedLabels = useMemo(() => {
     if (!currentMessage) return [];
-    return labels.filter((l) => currentMessage.labels.includes(l._id));
+    return labels.filter((l) => currentMessage.labels.includes(l.name));
   }, [currentMessage, labels]);
 
   if (isLoading || !currentMessage) {
@@ -383,12 +393,12 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
               <Text style={[styles.labelPickerEmpty, { color: colors.secondaryText }]}>No labels yet</Text>
             )}
             {labels.map((lbl) => {
-              const isAssigned = currentMessage.labels.includes(lbl._id);
+              const isAssigned = currentMessage.labels.includes(lbl.name);
               return (
                 <TouchableOpacity
                   key={lbl._id}
                   style={styles.labelPickerItem}
-                  onPress={() => handleToggleLabel(lbl._id)}
+                  onPress={() => handleToggleLabel(lbl.name)}
                   activeOpacity={0.6}
                 >
                   <View style={[styles.labelDot, { backgroundColor: lbl.color }]} />
@@ -421,7 +431,7 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
               <View key={lbl._id} style={[styles.labelChip, { backgroundColor: lbl.color + '20', borderColor: lbl.color + '40' }]}>
                 <View style={[styles.labelChipDot, { backgroundColor: lbl.color }]} />
                 <Text style={[styles.labelChipText, { color: colors.text }]}>{lbl.name}</Text>
-                <TouchableOpacity onPress={() => handleToggleLabel(lbl._id)} hitSlop={4}>
+                <TouchableOpacity onPress={() => handleToggleLabel(lbl.name)} hitSlop={4}>
                   <MaterialCommunityIcons name="close" size={12} color={colors.secondaryText} />
                 </TouchableOpacity>
               </View>

@@ -10,12 +10,12 @@ const hours = (h: number) => new Date(now.getTime() - h * 60 * 60 * 1000).toISOS
 const days = (d: number) => new Date(now.getTime() - d * 24 * 60 * 60 * 1000).toISOString();
 
 export const MOCK_MAILBOXES: Mailbox[] = [
-  { _id: 'mb-inbox', name: 'Inbox', path: 'INBOX', specialUse: 'Inbox', totalMessages: 18, unseenMessages: 6 },
-  { _id: 'mb-sent', name: 'Sent', path: 'Sent', specialUse: 'Sent', totalMessages: 42, unseenMessages: 0 },
-  { _id: 'mb-drafts', name: 'Drafts', path: 'Drafts', specialUse: 'Drafts', totalMessages: 3, unseenMessages: 0 },
-  { _id: 'mb-archive', name: 'Archive', path: 'Archive', specialUse: 'Archive', totalMessages: 156, unseenMessages: 0 },
-  { _id: 'mb-trash', name: 'Trash', path: 'Trash', specialUse: 'Trash', totalMessages: 8, unseenMessages: 0 },
-  { _id: 'mb-spam', name: 'Spam', path: 'Spam', specialUse: 'Junk', totalMessages: 12, unseenMessages: 12 },
+  { _id: 'mb-inbox', userId: 'user-1', name: 'Inbox', path: 'INBOX', specialUse: 'Inbox', totalMessages: 18, unseenMessages: 6, size: 0 },
+  { _id: 'mb-sent', userId: 'user-1', name: 'Sent', path: 'Sent', specialUse: 'Sent', totalMessages: 42, unseenMessages: 0, size: 0 },
+  { _id: 'mb-drafts', userId: 'user-1', name: 'Drafts', path: 'Drafts', specialUse: 'Drafts', totalMessages: 3, unseenMessages: 0, size: 0 },
+  { _id: 'mb-archive', userId: 'user-1', name: 'Archive', path: 'Archive', specialUse: 'Archive', totalMessages: 156, unseenMessages: 0, size: 0 },
+  { _id: 'mb-trash', userId: 'user-1', name: 'Trash', path: 'Trash', specialUse: 'Trash', totalMessages: 8, unseenMessages: 0, size: 0 },
+  { _id: 'mb-spam', userId: 'user-1', name: 'Spam', path: 'Spam', specialUse: 'Junk', totalMessages: 12, unseenMessages: 12, size: 0 },
 ];
 
 export const MOCK_MESSAGES: Message[] = [

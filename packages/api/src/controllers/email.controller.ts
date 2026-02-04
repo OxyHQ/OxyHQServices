@@ -10,6 +10,7 @@ import { emailService } from '../services/email.service';
 import { smtpOutbound } from '../services/smtp.outbound';
 import { resolveEmailAddress, EMAIL_DOMAIN } from '../config/email.config';
 import User from '../models/User';
+import { Message } from '../models/Message';
 import {
   BadRequestError,
   UnauthorizedError,
@@ -245,10 +246,16 @@ export async function sendMessage(req: AuthRequest, res: Response): Promise<void
     attachments,
   });
 
-  // If replying, mark original as answered
+  // If replying, mark original message as answered (best-effort)
   if (inReplyTo) {
-    const original = await emailService.searchMessages(userId, '', { limit: 1 });
-    // Best-effort: don't fail if we can't find the original
+    try {
+      const original = await Message.findOne({ userId, messageId: inReplyTo });
+      if (original) {
+        await emailService.updateMessageFlags(userId, original._id.toString(), { answered: true });
+      }
+    } catch {
+      // Best-effort: don't fail the send if we can't update the original
+    }
   }
 
   res.status(202).json({
@@ -347,8 +354,16 @@ export async function getAttachmentUrl(req: AuthRequest, res: Response): Promise
   const { s3Key } = req.params;
 
   // Verify the attachment belongs to a message owned by this user
-  // s3Key format: userId/uuid/filename — verify the userId prefix
+  // Check both the S3 key prefix and that a message with this attachment exists
   if (!s3Key.startsWith(`${userId}/`)) {
+    throw new UnauthorizedError('Not authorized to access this attachment');
+  }
+
+  const ownsAttachment = await Message.exists({
+    userId,
+    'attachments.s3Key': s3Key,
+  });
+  if (!ownsAttachment) {
     throw new UnauthorizedError('Not authorized to access this attachment');
   }
 

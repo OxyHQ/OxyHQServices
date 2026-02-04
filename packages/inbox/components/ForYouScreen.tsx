@@ -91,7 +91,7 @@ function HorizontalSection({
   icon: keyof typeof MaterialCommunityIcons.glyphMap;
   items: Message[];
   iconColor: string;
-  colors: ReturnType<typeof Colors['light'] & typeof Colors['dark']>;
+  colors: typeof Colors['light'];
   onMessagePress: (id: string) => void;
   onStar: (id: string) => void;
 }) {
@@ -209,7 +209,7 @@ export function ForYouScreen() {
 
   const { data: mailboxes = [] } = useMailboxes();
   const inboxId = mailboxes.find((m) => m.specialUse === 'Inbox')?._id;
-  const { data, isLoading } = useMessages(inboxId);
+  const { data, isLoading } = useMessages(inboxId ? { mailboxId: inboxId } : {});
   const toggleStar = useToggleStar();
 
   const messages = useMemo(() => data?.pages.flatMap((p) => p.data) ?? [], [data]);

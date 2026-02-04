@@ -38,7 +38,7 @@ const LabelSchema = new Schema(
   }
 );
 
-LabelSchema.index({ userId: 1, name: 1 }, { unique: true });
+LabelSchema.index({ userId: 1, name: 1 }, { unique: true, collation: { locale: 'en', strength: 2 } });
 
 LabelSchema.set('toJSON', {
   virtuals: true,

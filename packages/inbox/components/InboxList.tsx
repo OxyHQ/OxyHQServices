@@ -70,7 +70,7 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
       case 'starred':
         return { starred: true };
       case 'label':
-        return { label: viewMode.labelId };
+        return { label: viewMode.labelName };
     }
   }, [viewMode, currentMailbox]);
 

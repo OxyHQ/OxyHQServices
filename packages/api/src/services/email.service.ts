@@ -538,7 +538,7 @@ class EmailService {
   }
 
   async createLabel(userId: string, name: string, color: string): Promise<any> {
-    const existing = await Label.findOne({ userId, name });
+    const existing = await Label.findOne({ userId, name }).collation({ locale: 'en', strength: 2 });
     if (existing) throw new BadRequestError(`Label "${name}" already exists`);
 
     const count = await Label.countDocuments({ userId });
@@ -574,31 +574,33 @@ class EmailService {
   }
 
   async updateMessageLabels(userId: string, messageId: string, add: string[], remove: string[]): Promise<any> {
-    const update: Record<string, unknown> = {};
+    // Validate that labels being added actually exist for this user
     if (add.length > 0) {
-      update.$addToSet = { labels: { $each: add } };
-    }
-    if (remove.length > 0) {
-      update.$pull = { labels: { $in: remove } };
+      const existingLabels = await Label.find({ userId, name: { $in: add } }).select('name').lean();
+      const existingNames = new Set(existingLabels.map((l) => l.name));
+      const missing = add.filter((name) => !existingNames.has(name));
+      if (missing.length > 0) {
+        throw new BadRequestError(`Labels not found: ${missing.join(', ')}`);
+      }
     }
 
-    // Need two operations if both add and remove (can't $addToSet and $pull same field)
-    let message;
+    // MongoDB cannot $addToSet and $pull on the same field in one operation,
+    // so we run them sequentially with the final one returning the result.
+    const filter = { _id: messageId, userId };
+
+    // Verify message exists first
+    const exists = await Message.findOne(filter).select('_id').lean();
+    if (!exists) throw new NotFoundError('Message not found');
+
     if (add.length > 0) {
-      message = await Message.findOneAndUpdate(
-        { _id: messageId, userId },
-        { $addToSet: { labels: { $each: add } } },
-        { new: true }
-      ).lean({ virtuals: true });
+      await Message.updateOne(filter, { $addToSet: { labels: { $each: add } } });
     }
     if (remove.length > 0) {
-      message = await Message.findOneAndUpdate(
-        { _id: messageId, userId },
-        { $pull: { labels: { $in: remove } } },
-        { new: true }
-      ).lean({ virtuals: true });
+      await Message.updateOne(filter, { $pull: { labels: { $in: remove } } });
     }
-    if (!message) throw new NotFoundError('Message not found');
+
+    // Return the final state
+    const message = await Message.findOne(filter).lean({ virtuals: true });
     return message;
   }
 

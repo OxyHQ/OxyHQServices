@@ -57,7 +57,7 @@ export function HomeScreen() {
 
   const { data: mailboxes = [] } = useMailboxes();
   const inboxId = mailboxes.find((m) => m.specialUse === 'Inbox')?._id;
-  const { data, isLoading } = useMessages(inboxId);
+  const { data, isLoading } = useMessages(inboxId ? { mailboxId: inboxId } : {});
   const toggleStar = useToggleStar();
 
   const allMessages = useMemo(() => data?.pages.flatMap((p) => p.data) ?? [], [data]);

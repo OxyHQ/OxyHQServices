@@ -53,7 +53,8 @@ export function useToggleStar() {
 
   return useMutation({
     mutationFn: async ({ messageId, starred }: { messageId: string; starred: boolean }) => {
-      if (api) await api.updateFlags(messageId, { starred });
+      if (!api) throw new Error('Email API not initialized');
+      await api.updateFlags(messageId, { starred });
     },
     onMutate: async ({ messageId, starred }) => {
       await queryClient.cancelQueries({ queryKey: ['messages'] });
@@ -83,7 +84,8 @@ export function useToggleRead() {
 
   return useMutation({
     mutationFn: async ({ messageId, seen }: { messageId: string; seen: boolean }) => {
-      if (api) await api.updateFlags(messageId, { seen });
+      if (!api) throw new Error('Email API not initialized');
+      await api.updateFlags(messageId, { seen });
     },
     onMutate: async ({ messageId, seen }) => {
       await queryClient.cancelQueries({ queryKey: ['messages'] });
@@ -110,7 +112,8 @@ export function useArchiveMessage() {
 
   return useMutation({
     mutationFn: async ({ messageId, archiveMailboxId }: { messageId: string; archiveMailboxId: string }) => {
-      if (api) await api.moveMessage(messageId, archiveMailboxId);
+      if (!api) throw new Error('Email API not initialized');
+      await api.moveMessage(messageId, archiveMailboxId);
     },
     onMutate: async ({ messageId }) => {
       await queryClient.cancelQueries({ queryKey: ['messages'] });
@@ -156,7 +159,7 @@ export function useDeleteMessage() {
       trashMailboxId?: string;
       isInTrash: boolean;
     }) => {
-      if (!api) return;
+      if (!api) throw new Error('Email API not initialized');
       if (isInTrash) {
         await api.deleteMessage(messageId, true);
       } else if (trashMailboxId) {
@@ -201,7 +204,8 @@ export function useSendMessage() {
 
   return useMutation({
     mutationFn: async (params: Parameters<NonNullable<typeof api>['sendMessage']>[0]) => {
-      if (api) await api.sendMessage(params);
+      if (!api) throw new Error('Email API not initialized');
+      await api.sendMessage(params);
     },
     onSuccess: () => {
       toast.success('Message sent.');
@@ -255,8 +259,8 @@ export function useSaveDraft() {
 
   return useMutation({
     mutationFn: async (params: Parameters<NonNullable<typeof api>['saveDraft']>[0]) => {
-      if (api) return api.saveDraft(params);
-      return undefined;
+      if (!api) throw new Error('Email API not initialized');
+      return api.saveDraft(params);
     },
     onSuccess: () => {
       toast('Draft saved.');

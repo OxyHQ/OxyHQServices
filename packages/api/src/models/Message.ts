@@ -231,6 +231,8 @@ MessageSchema.index(
   { subject: 'text', text: 'text' },
   { default_language: 'en', weights: { subject: 10, text: 1 } }
 );
+// Label-based queries
+MessageSchema.index({ userId: 1, labels: 1 });
 // Alias tag filtering
 MessageSchema.index({ userId: 1, aliasTag: 1 });
 // Retention / cleanup
