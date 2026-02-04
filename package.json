@@ -65,6 +65,7 @@
     "react-dom": "19.2.3"
   },
   "dependencies": {
+    "@expo/metro-runtime": "~6.1.2",
     "expo-contacts": "~15.0.11",
     "is-arrayish": "^0.3.2"
   }
