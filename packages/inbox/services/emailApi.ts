@@ -137,25 +137,10 @@ export function createEmailApi(http: HttpService) {
       if (options.offset !== undefined) params.offset = String(options.offset);
       if (options.unseenOnly) params.unseen = 'true';
 
-      console.log('[emailApi.listMessages] Request:', {
-        mailboxId,
-        options,
-        params: JSON.parse(JSON.stringify(params)),
-        url: '/email/messages'
-      });
-      const res = await http.get('/email/messages', { params });
-      console.log('[emailApi.listMessages] Full response:', JSON.parse(JSON.stringify(res)));
-      console.log('[emailApi.listMessages] Response structure:', {
-        resType: typeof res,
-        resKeys: res ? Object.keys(res) : [],
-        hasData: 'data' in (res || {}),
-        hasPagination: 'pagination' in (res || {}),
-        dataType: res?.data ? typeof res.data : 'undefined',
-        dataIsArray: Array.isArray(res?.data),
-      });
+      const res: any = await http.get('/email/messages', { params });
       return {
-        data: z.array(MessageSchema).parse(res.data),
-        pagination: PaginationSchema.parse(res.pagination),
+        data: z.array(MessageSchema).parse(res.data.data),
+        pagination: PaginationSchema.parse(res.data.pagination),
       };
     },
 
