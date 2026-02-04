@@ -1,6 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
 import { useEmailStore } from '@/hooks/useEmail';
-import { MOCK_MAILBOXES } from '@/constants/mockData';
 import type { Mailbox } from '@/services/emailApi';
 
 export function useMailboxes() {
@@ -9,14 +8,9 @@ export function useMailboxes() {
   return useQuery<Mailbox[]>({
     queryKey: ['mailboxes'],
     queryFn: async () => {
-      if (api) {
-        return await api.listMailboxes();
-      }
-      if (__DEV__) {
-        return MOCK_MAILBOXES;
-      }
-      throw new Error('Email API not initialized');
+      if (!api) throw new Error('Email API not initialized');
+      return await api.listMailboxes();
     },
-    enabled: !!api || __DEV__,
+    enabled: !!api,
   });
 }

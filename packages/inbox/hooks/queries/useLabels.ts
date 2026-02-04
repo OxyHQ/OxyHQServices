@@ -8,15 +8,10 @@ export function useLabels() {
   return useQuery<Label[]>({
     queryKey: ['labels'],
     queryFn: async () => {
-      if (api) {
-        return await api.listLabels();
-      }
-      if (__DEV__) {
-        return [];
-      }
-      throw new Error('Email API not initialized');
+      if (!api) throw new Error('Email API not initialized');
+      return await api.listLabels();
     },
-    enabled: !!api || __DEV__,
+    enabled: !!api,
   });
 }
 
