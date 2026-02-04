@@ -285,7 +285,10 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
         ) : (
           <>
             <View style={styles.headerRow}>
-              <LogoIcon height={28} color={colors.text} />
+              <View style={styles.logoRow}>
+                <LogoIcon height={44} color={colors.primary} />
+                <Text style={[styles.appTitle, { color: colors.primary }]}>Inbox</Text>
+              </View>
               {onToggle && (
                 <TouchableOpacity onPress={onToggle} style={styles.collapseButton} activeOpacity={0.7}>
                   {Platform.OS === 'web' ? (
@@ -588,8 +591,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  appLogo: {
-    marginBottom: 2,
+  logoRow: {
+    alignItems: 'flex-start',
+    gap: 4,
+  },
+  appTitle: {
+    fontSize: 24,
+    fontWeight: '800',
   },
   collapseButton: {
     width: 32,
