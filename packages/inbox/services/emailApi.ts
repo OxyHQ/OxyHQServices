@@ -133,18 +133,25 @@ export function createEmailApi(http: HttpService) {
       options: { limit?: number; offset?: number; unseenOnly?: boolean } = {},
     ): Promise<{ data: Message[]; pagination: Pagination }> {
       const params: Record<string, string> = { mailbox: mailboxId };
-      if (options.limit) params.limit = String(options.limit);
-      if (options.offset) params.offset = String(options.offset);
+      if (options.limit !== undefined) params.limit = String(options.limit);
+      if (options.offset !== undefined) params.offset = String(options.offset);
       if (options.unseenOnly) params.unseen = 'true';
 
-      console.log('[emailApi.listMessages] Request:', { mailboxId, params });
-      const res = await http.get<{ data: Message[]; pagination: Pagination }>('/email/messages', { params });
+      console.log('[emailApi.listMessages] Request:', {
+        mailboxId,
+        options,
+        params: JSON.parse(JSON.stringify(params)),
+        url: '/email/messages'
+      });
+      const res = await http.get('/email/messages', { params });
+      console.log('[emailApi.listMessages] Full response:', JSON.parse(JSON.stringify(res)));
       console.log('[emailApi.listMessages] Response structure:', {
-        hasRes: !!res,
-        hasResData: !!res?.data,
-        hasResPagination: !!res?.pagination,
+        resType: typeof res,
         resKeys: res ? Object.keys(res) : [],
-        dataLength: Array.isArray(res?.data) ? res.data.length : 'not array',
+        hasData: 'data' in (res || {}),
+        hasPagination: 'pagination' in (res || {}),
+        dataType: res?.data ? typeof res.data : 'undefined',
+        dataIsArray: Array.isArray(res?.data),
       });
       return {
         data: z.array(MessageSchema).parse(res.data),
