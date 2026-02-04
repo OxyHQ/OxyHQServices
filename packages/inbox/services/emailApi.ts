@@ -207,14 +207,14 @@ export function createEmailApi(http: HttpService) {
       options: { limit?: number; offset?: number; mailbox?: string } = {},
     ): Promise<{ data: Message[]; pagination: Pagination }> {
       const params: Record<string, string> = { q: query };
-      if (options.limit) params.limit = String(options.limit);
-      if (options.offset) params.offset = String(options.offset);
+      if (options.limit !== undefined) params.limit = String(options.limit);
+      if (options.offset !== undefined) params.offset = String(options.offset);
       if (options.mailbox) params.mailbox = options.mailbox;
 
-      const res = await http.get<{ data: Message[]; pagination: Pagination }>('/email/search', { params });
+      const res: any = await http.get('/email/search', { params });
       return {
-        data: z.array(MessageSchema).parse(res.data),
-        pagination: PaginationSchema.parse(res.pagination),
+        data: z.array(MessageSchema).parse(res.data.data),
+        pagination: PaginationSchema.parse(res.data.pagination),
       };
     },
 
