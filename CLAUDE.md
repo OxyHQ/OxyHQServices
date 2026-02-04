@@ -88,6 +88,42 @@ When splitting imports: use `import type` for type-only imports, regular `import
 - `packages/services/src/ui/context/OxyContext.tsx` — React Native auth context
 - `packages/services/src/ui/components/OxyProvider.tsx` — RN provider component
 
+## Service Tokens (Internal Service-to-Service Auth)
+
+Internal Oxy ecosystem apps authenticate via short-lived service JWTs (OAuth2 Client Credentials pattern).
+
+**Flow:**
+1. Register a `DeveloperApp` with `isInternal: true` (DB-only, not via API)
+2. Service exchanges `apiKey` + `apiSecret` → `POST /api/auth/service-token` → 1h JWT
+3. Service uses JWT as `Authorization: Bearer <token>` + `X-Oxy-User-Id: <userId>` for delegation
+4. `@oxyhq/core` `auth()` middleware recognizes `type: 'service'` JWTs (stateless, no session DB lookup)
+
+**Key files:**
+- `packages/api/src/routes/auth.ts` — `POST /auth/service-token` endpoint
+- `packages/api/src/models/DeveloperApp.ts` — `isInternal` field
+- `packages/core/src/mixins/OxyServices.utility.ts` — `auth()` service token handling, `serviceAuth()` middleware
+- `packages/core/src/mixins/OxyServices.auth.ts` — `getServiceToken()`, `makeServiceRequest()`, `configureServiceAuth()`
+
+**Usage in consuming services:**
+```typescript
+import { OxyServices } from '@oxyhq/core';
+
+const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
+oxy.configureServiceAuth('oxy_dk_...', 'secret...');
+
+// Auto-cached, auto-refreshed service token
+const token = await oxy.getServiceToken();
+
+// Or use makeServiceRequest for delegation
+const result = await oxy.makeServiceRequest('POST', '/some/endpoint', data, userId);
+```
+
+**Middleware for protecting internal endpoints:**
+```typescript
+// Only allows service tokens (rejects user JWTs and API keys)
+app.use('/internal', oxy.serviceAuth());
+```
+
 ## Terminology
 
 - **OxyServices** — main API client class (in core)

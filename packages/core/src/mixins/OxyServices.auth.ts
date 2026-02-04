@@ -35,10 +35,97 @@ export interface PublicKeyCheckResponse {
   message: string;
 }
 
+export interface ServiceTokenResponse {
+  token: string;
+  expiresIn: number;
+  appName: string;
+}
+
 export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) {
   return class extends Base {
+    /** @internal */ _serviceToken: string | null = null;
+    /** @internal */ _serviceTokenExp: number = 0;
+    /** @internal */ _serviceApiKey: string | null = null;
+    /** @internal */ _serviceApiSecret: string | null = null;
+
     constructor(...args: any[]) {
       super(...(args as [any]));
+    }
+
+    /**
+     * Configure service credentials for internal service-to-service communication.
+     * Call this once at startup so that getServiceToken() and makeServiceRequest()
+     * can automatically obtain and refresh tokens.
+     *
+     * @param apiKey - DeveloperApp API key (oxy_dk_*)
+     * @param apiSecret - DeveloperApp API secret
+     */
+    configureServiceAuth(apiKey: string, apiSecret: string): void {
+      this._serviceApiKey = apiKey;
+      this._serviceApiSecret = apiSecret;
+      // Invalidate any cached token
+      this._serviceToken = null;
+      this._serviceTokenExp = 0;
+    }
+
+    /**
+     * Get a service token for internal service-to-service communication.
+     * Tokens are short-lived (1h) and automatically cached/refreshed.
+     *
+     * @param apiKey - DeveloperApp API key (optional if configureServiceAuth was called)
+     * @param apiSecret - DeveloperApp API secret (optional if configureServiceAuth was called)
+     */
+    async getServiceToken(apiKey?: string, apiSecret?: string): Promise<string> {
+      const key = apiKey || this._serviceApiKey;
+      const secret = apiSecret || this._serviceApiSecret;
+
+      if (!key || !secret) {
+        throw new Error('Service credentials not provided. Call configureServiceAuth() or pass apiKey and apiSecret.');
+      }
+
+      // Return cached token if still valid (with 60s buffer)
+      if (this._serviceToken && this._serviceTokenExp > Date.now() + 60_000) {
+        return this._serviceToken;
+      }
+
+      const response = await this.makeRequest<ServiceTokenResponse>(
+        'POST',
+        '/api/auth/service-token',
+        { apiKey: key, apiSecret: secret },
+        { cache: false, retry: false }
+      );
+
+      this._serviceToken = response.token;
+      this._serviceTokenExp = Date.now() + response.expiresIn * 1000;
+
+      return this._serviceToken;
+    }
+
+    /**
+     * Make an authenticated request on behalf of a user using a service token.
+     * Automatically obtains/refreshes the service token.
+     *
+     * @param method - HTTP method
+     * @param url - API endpoint URL
+     * @param data - Request body or query params
+     * @param userId - Optional user ID to act on behalf of (sent as X-Oxy-User-Id)
+     */
+    async makeServiceRequest<R = any>(
+      method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
+      url: string,
+      data?: any,
+      userId?: string
+    ): Promise<R> {
+      const token = await this.getServiceToken();
+
+      const headers: Record<string, string> = {
+        Authorization: `Bearer ${token}`,
+      };
+      if (userId) {
+        headers['X-Oxy-User-Id'] = userId;
+      }
+
+      return this.makeRequest<R>(method, url, data, { headers, cache: false });
     }
 
     /**

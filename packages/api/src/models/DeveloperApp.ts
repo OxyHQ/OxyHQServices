@@ -15,6 +15,7 @@ export interface IDeveloperApp extends Omit<Document, '_id'> {
   createdAt: Date;
   updatedAt: Date;
   lastUsedAt?: Date;
+  isInternal: boolean;
 }
 
 const DeveloperAppSchema = new Schema<IDeveloperApp>({
@@ -66,7 +67,12 @@ const DeveloperAppSchema = new Schema<IDeveloperApp>({
     type: String,
     enum: ['files:read', 'files:write', 'files:delete', 'user:read', 'webhooks:receive']
   }],
-  lastUsedAt: { type: Date }
+  lastUsedAt: { type: Date },
+  isInternal: {
+    type: Boolean,
+    default: false,
+    index: true
+  }
 }, {
   timestamps: true
 });

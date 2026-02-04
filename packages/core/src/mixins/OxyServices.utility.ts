@@ -14,7 +14,18 @@ interface JwtPayload {
   userId?: string;
   id?: string;
   sessionId?: string;
+  type?: string;
+  appId?: string;
+  appName?: string;
   [key: string]: any;
+}
+
+/**
+ * Service app metadata attached to requests authenticated with service tokens
+ */
+export interface ServiceApp {
+  appId: string;
+  appName: string;
 }
 
 /**
@@ -147,6 +158,39 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
             };
             if (onError) return onError(error);
             return res.status(401).json(error);
+          }
+
+          // Handle service tokens (internal service-to-service auth)
+          // Service tokens are stateless JWTs with type: 'service' — no session validation needed
+          if (decoded.type === 'service') {
+            // Check expiration
+            if (decoded.exp && decoded.exp < Math.floor(Date.now() / 1000)) {
+              if (optional) {
+                req.userId = null;
+                req.user = null;
+                return next();
+              }
+              const error = { message: 'Service token expired', code: 'TOKEN_EXPIRED', status: 401 };
+              if (onError) return onError(error);
+              return res.status(401).json(error);
+            }
+
+            // Read delegated user ID from header
+            const oxyUserId = req.headers['x-oxy-user-id'] as string;
+
+            req.userId = oxyUserId || null;
+            req.user = oxyUserId ? ({ id: oxyUserId } as User) : null;
+            req.accessToken = token;
+            req.serviceApp = {
+              appId: decoded.appId || '',
+              appName: decoded.appName || 'unknown',
+            };
+
+            if (debug) {
+              console.log(`[oxy.auth] Service token OK app=${decoded.appName} delegateUser=${oxyUserId || '(none)'}`);
+            }
+
+            return next();
           }
 
           const userId = decoded.userId || decoded.id;
@@ -376,6 +420,38 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
           }
           next(new Error('Authentication error'));
         }
+      };
+    }
+    /**
+     * Express.js middleware that only allows service tokens.
+     * Use this for internal-only endpoints that should not be accessible
+     * to regular users or API key consumers.
+     *
+     * @example
+     * ```typescript
+     * // Protect internal endpoints
+     * app.use('/internal', oxy.serviceAuth());
+     *
+     * app.post('/internal/trigger', (req, res) => {
+     *   console.log('Service app:', req.serviceApp);
+     *   console.log('Acting on behalf of user:', req.userId);
+     * });
+     * ```
+     */
+    serviceAuth(options: { debug?: boolean } = {}) {
+      const innerAuth = this.auth({ ...options });
+
+      return async (req: any, res: any, next: any) => {
+        await innerAuth(req, res, () => {
+          if (!req.serviceApp) {
+            return res.status(403).json({
+              error: 'Service token required',
+              message: 'This endpoint is only accessible to internal services',
+              code: 'SERVICE_TOKEN_REQUIRED',
+            });
+          }
+          next();
+        });
       };
     }
   };

@@ -116,7 +116,7 @@ router.post('/apps', async (req: AuthenticatedRequest, res: express.Response) =>
     // Generate credentials
     const { apiKey, apiSecret, webhookSecret } = generateCredentials();
 
-    // Create app
+    // Create app (isInternal is never set via API — only via direct DB/script)
     const app = new DeveloperApp({
       name: validatedData.name,
       description: validatedData.description,
@@ -127,7 +127,8 @@ router.post('/apps', async (req: AuthenticatedRequest, res: express.Response) =>
       devWebhookUrl: validatedData.devWebhookUrl,
       webhookSecret: webhookSecret,
       scopes: validatedData.scopes,
-      status: 'active'
+      status: 'active',
+      isInternal: false,
     });
 
     await app.save();

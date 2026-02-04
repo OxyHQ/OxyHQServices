@@ -30,6 +30,8 @@ export type { CrossDomainAuthOptions } from './CrossDomainAuth';
 export type { FedCMAuthOptions, FedCMConfig } from './mixins/OxyServices.fedcm';
 export type { PopupAuthOptions } from './mixins/OxyServices.popup';
 export type { RedirectAuthOptions } from './mixins/OxyServices.redirect';
+export type { ServiceTokenResponse } from './mixins/OxyServices.auth';
+export type { ServiceApp } from './mixins/OxyServices.utility';
 
 // --- Crypto / Identity ---
 export { KeyManager, SignatureService, RecoveryPhraseService } from './crypto';

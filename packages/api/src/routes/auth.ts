@@ -6,11 +6,14 @@
  */
 
 import express from 'express';
+import crypto from 'crypto';
+import jwt from 'jsonwebtoken';
 import { SessionController } from '../controllers/session.controller';
 import { User } from '../models/User';
+import { DeveloperApp } from '../models/DeveloperApp';
 import { rateLimit } from '../middleware/rateLimiter';
 import { asyncHandler, sendSuccess } from '../utils/asyncHandler';
-import { BadRequestError, NotFoundError } from '../utils/error';
+import { BadRequestError, NotFoundError, UnauthorizedError, ForbiddenError } from '../utils/error';
 import { logger } from '../utils/logger';
 import SignatureService from '../services/signature.service';
 import { emitAuthSessionUpdate } from '../utils/authSessionSocket';
@@ -365,6 +368,96 @@ router.post('/session/cancel/:sessionToken', asyncHandler(async (req, res) => {
   });
 
   sendSuccess(res, { success: true });
+}));
+
+// ============================================
+// Service Token Authentication (Internal Services)
+// ============================================
+
+const SERVICE_TOKEN_EXPIRY = 3600; // 1 hour in seconds
+
+const serviceTokenLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: process.env.NODE_ENV === 'development' ? 100 : 5 // 5 per minute (100 in dev)
+});
+
+/**
+ * POST /auth/service-token
+ * Exchange DeveloperApp credentials for a short-lived service JWT.
+ * Only available to internal apps (isInternal: true).
+ *
+ * Body: { apiKey, apiSecret }
+ * Response: { token, expiresIn, appName }
+ */
+router.post('/service-token', serviceTokenLimiter, asyncHandler(async (req, res) => {
+  const { apiKey, apiSecret } = req.body;
+
+  if (!apiKey || !apiSecret) {
+    throw new BadRequestError('apiKey and apiSecret are required');
+  }
+
+  if (!process.env.ACCESS_TOKEN_SECRET) {
+    logger.error('[ServiceToken] ACCESS_TOKEN_SECRET not configured');
+    throw new Error('Server configuration error');
+  }
+
+  // Find app by apiKey
+  const app = await DeveloperApp.findOne({ apiKey, status: 'active' });
+
+  if (!app) {
+    logger.warn('[ServiceToken] Invalid apiKey attempt', { apiKey: apiKey.substring(0, 12) + '...' });
+    throw new UnauthorizedError('Invalid credentials');
+  }
+
+  // Verify this is an internal app
+  if (!app.isInternal) {
+    logger.warn('[ServiceToken] Non-internal app attempted service token', {
+      appId: app._id,
+      appName: app.name,
+    });
+    throw new ForbiddenError('Service tokens are only available to internal apps');
+  }
+
+  // Validate apiSecret with timing-safe comparison
+  const expectedBuffer = Buffer.from(app.apiSecret);
+  const providedBuffer = Buffer.from(apiSecret);
+
+  if (expectedBuffer.length !== providedBuffer.length ||
+      !crypto.timingSafeEqual(expectedBuffer, providedBuffer)) {
+    logger.warn('[ServiceToken] Invalid apiSecret attempt', {
+      appId: app._id,
+      appName: app.name,
+    });
+    throw new UnauthorizedError('Invalid credentials');
+  }
+
+  // Generate stateless service JWT
+  const token = jwt.sign(
+    {
+      type: 'service',
+      appId: app._id.toString(),
+      appName: app.name,
+    },
+    process.env.ACCESS_TOKEN_SECRET,
+    { expiresIn: SERVICE_TOKEN_EXPIRY }
+  );
+
+  // Update lastUsedAt
+  app.lastUsedAt = new Date();
+  await app.save();
+
+  logger.info('[ServiceToken] Service token issued', {
+    appId: app._id,
+    appName: app.name,
+    expiresIn: SERVICE_TOKEN_EXPIRY,
+    ip: req.ip,
+  });
+
+  sendSuccess(res, {
+    token,
+    expiresIn: SERVICE_TOKEN_EXPIRY,
+    appName: app.name,
+  });
 }));
 
 export default router;
