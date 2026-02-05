@@ -24,6 +24,7 @@ import { useOxy, OxySignInButton, toast } from '@oxyhq/services';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
+import { SPECIAL_USE } from '@/constants/mailbox';
 import { useEmailStore } from '@/hooks/useEmail';
 import { useMessages } from '@/hooks/queries/useMessages';
 import { useMailboxes } from '@/hooks/queries/useMailboxes';
@@ -150,7 +151,7 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
 
   // Bulk actions
   const handleBulkArchive = useCallback(() => {
-    const archiveBox = mailboxes.find((m) => m.specialUse === '\\Archive');
+    const archiveBox = mailboxes.find((m) => m.specialUse === SPECIAL_USE.ARCHIVE);
     if (!archiveBox) {
       toast.error('Archive folder not available.');
       return;
@@ -162,8 +163,8 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
   }, [selectedMessageIds, mailboxes, archiveMutation, clearSelection]);
 
   const handleBulkDelete = useCallback(() => {
-    const trashBox = mailboxes.find((m) => m.specialUse === '\\Trash');
-    const isInTrash = currentMailbox?.specialUse === '\\Trash';
+    const trashBox = mailboxes.find((m) => m.specialUse === SPECIAL_USE.TRASH);
+    const isInTrash = currentMailbox?.specialUse === SPECIAL_USE.TRASH;
     selectedMessageIds.forEach((id) => {
       deleteMutation.mutate({ messageId: id, trashMailboxId: trashBox?._id, isInTrash });
     });
@@ -198,7 +199,7 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
 
   const handleSwipeArchive = useCallback(
     (messageId: string) => {
-      const archiveBox = mailboxes.find((m) => m.specialUse === '\\Archive');
+      const archiveBox = mailboxes.find((m) => m.specialUse === SPECIAL_USE.ARCHIVE);
       if (!archiveBox) {
         toast.error('Archive folder not available.');
         return;
@@ -210,8 +211,8 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
 
   const handleSwipeDelete = useCallback(
     (messageId: string) => {
-      const trashBox = mailboxes.find((m) => m.specialUse === '\\Trash');
-      const isInTrash = currentMailbox?.specialUse === '\\Trash';
+      const trashBox = mailboxes.find((m) => m.specialUse === SPECIAL_USE.TRASH);
+      const isInTrash = currentMailbox?.specialUse === SPECIAL_USE.TRASH;
       deleteMutation.mutate({ messageId, trashMailboxId: trashBox?._id, isInTrash });
     },
     [mailboxes, currentMailbox, deleteMutation],

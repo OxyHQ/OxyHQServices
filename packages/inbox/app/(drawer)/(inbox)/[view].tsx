@@ -17,14 +17,15 @@ import { MessageDetailEmpty } from '@/components/MessageDetailEmpty';
 import { useEmailStore } from '@/hooks/useEmail';
 import { useMailboxes } from '@/hooks/queries/useMailboxes';
 import { useLabels } from '@/hooks/queries/useLabels';
+import { SPECIAL_USE } from '@/constants/mailbox';
 
 const VIEW_TO_SPECIAL_USE: Record<string, string> = {
-  inbox: '\\Inbox',
-  sent: '\\Sent',
-  drafts: '\\Drafts',
-  trash: '\\Trash',
-  spam: '\\Junk',
-  archive: '\\Archive',
+  inbox: SPECIAL_USE.INBOX,
+  sent: SPECIAL_USE.SENT,
+  drafts: SPECIAL_USE.DRAFTS,
+  trash: SPECIAL_USE.TRASH,
+  spam: SPECIAL_USE.SPAM,
+  archive: SPECIAL_USE.ARCHIVE,
 };
 
 export default function MailboxViewRoute() {

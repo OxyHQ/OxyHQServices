@@ -17,6 +17,7 @@ import { useRouter } from 'expo-router';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
+import { SPECIAL_USE } from '@/constants/mailbox';
 import type { Message } from '@/services/emailApi';
 import { MessageRow } from '@/components/MessageRow';
 import { SearchHeader } from '@/components/SearchHeader';
@@ -110,13 +111,13 @@ export function SearchList({ replaceNavigation }: SearchListProps) {
   const mailboxIdFromName = useMemo(() => {
     if (!parsedQuery.mailbox) return undefined;
     const specialUseMap: Record<string, string> = {
-      inbox: '\\Inbox',
-      sent: '\\Sent',
-      drafts: '\\Drafts',
-      trash: '\\Trash',
-      spam: '\\Junk',
-      junk: '\\Junk',
-      archive: '\\Archive',
+      inbox: SPECIAL_USE.INBOX,
+      sent: SPECIAL_USE.SENT,
+      drafts: SPECIAL_USE.DRAFTS,
+      trash: SPECIAL_USE.TRASH,
+      spam: SPECIAL_USE.SPAM,
+      junk: SPECIAL_USE.SPAM,
+      archive: SPECIAL_USE.ARCHIVE,
     };
     const specialUse = specialUseMap[parsedQuery.mailbox];
     if (specialUse) {

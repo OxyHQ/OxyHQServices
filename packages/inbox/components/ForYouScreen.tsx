@@ -35,6 +35,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
+import { SPECIAL_USE } from '@/constants/mailbox';
 import { useMessages } from '@/hooks/queries/useMessages';
 import { useMailboxes } from '@/hooks/queries/useMailboxes';
 import { useEmailStore } from '@/hooks/useEmail';
@@ -208,7 +209,7 @@ export function ForYouScreen() {
   const isDesktop = Platform.OS === 'web' && width >= 900;
 
   const { data: mailboxes = [] } = useMailboxes();
-  const inboxId = mailboxes.find((m) => m.specialUse === '\\Inbox')?._id;
+  const inboxId = mailboxes.find((m) => m.specialUse === SPECIAL_USE.INBOX)?._id;
   const { data, isLoading } = useMessages(inboxId ? { mailboxId: inboxId } : {});
   const toggleStar = useToggleStar();
 
