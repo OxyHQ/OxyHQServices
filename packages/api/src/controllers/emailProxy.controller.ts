@@ -10,14 +10,11 @@ import { BadRequestError } from '../utils/error';
 import { logger } from '../utils/logger';
 import crypto from 'crypto';
 
-interface AuthRequest extends Request {
-  user?: { id: string };
-}
-
 // ─── Configuration ────────────────────────────────────────────────
 
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10 MB
 const FETCH_TIMEOUT = 10000; // 10 seconds
+const TRACKING_PIXEL_THRESHOLD = 100; // bytes
 
 // Transparent 1x1 GIF for blocked tracking pixels
 const TRANSPARENT_GIF = Buffer.from(
@@ -27,9 +24,6 @@ const TRANSPARENT_GIF = Buffer.from(
 
 // ─── SSRF Protection ──────────────────────────────────────────────
 
-const BLOCKED_PROTOCOLS = ['javascript:', 'data:', 'file:', 'ftp:', 'blob:'];
-
-// Private IP ranges that should never be accessed
 const PRIVATE_IP_PATTERNS = [
   /^127\./,                          // Loopback
   /^0\./,                            // Current network
@@ -40,12 +34,8 @@ const PRIVATE_IP_PATTERNS = [
   /^fc00:/i,                         // IPv6 private
   /^fe80:/i,                         // IPv6 link-local
   /^::1$/,                           // IPv6 loopback
-  /^localhost$/i,                    // Localhost hostname
+  /^localhost$/i,
 ];
-
-function isPrivateHost(hostname: string): boolean {
-  return PRIVATE_IP_PATTERNS.some((pattern) => pattern.test(hostname));
-}
 
 function validateProxyUrl(urlString: string): URL {
   let url: URL;
@@ -55,19 +45,11 @@ function validateProxyUrl(urlString: string): URL {
     throw new BadRequestError('Invalid URL format');
   }
 
-  // Only allow http and https
-  if (!['http:', 'https:'].includes(url.protocol)) {
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
     throw new BadRequestError('Only HTTP(S) URLs are allowed');
   }
 
-  // Check for blocked protocols in the URL string itself
-  const lowerUrl = urlString.toLowerCase();
-  if (BLOCKED_PROTOCOLS.some((p) => lowerUrl.includes(p))) {
-    throw new BadRequestError('Blocked URL protocol');
-  }
-
-  // Block private/internal IPs
-  if (isPrivateHost(url.hostname)) {
+  if (PRIVATE_IP_PATTERNS.some((p) => p.test(url.hostname))) {
     throw new BadRequestError('Private network URLs are not allowed');
   }
 
@@ -76,56 +58,23 @@ function validateProxyUrl(urlString: string): URL {
 
 // ─── Tracking Protection ──────────────────────────────────────────
 
-const TRACKING_DOMAINS = [
+const TRACKING_PATTERNS = [
   /mailtrack\./i,
   /getnotify\./i,
   /readnotify\./i,
   /yesware\./i,
   /bananatag\./i,
-  /mailchimp\.com.*\/track/i,
-  /list-manage\.com.*\/track/i,
-  /sendgrid\.net.*\/wf\//i,
   /\.doubleclick\./i,
-  /pixel\./i,
-  /beacon\./i,
-];
-
-const TRACKING_PATH_PATTERNS = [
   /\/track(ing)?[\/\?]/i,
   /\/pixel[\/\?]/i,
   /\/beacon[\/\?]/i,
-  /\/open[\/\?]/i,
   /\/wf\/open/i,
-  /\/t\.gif/i,
-  /\/o\.gif/i,
+  /\/[to]\.gif$/i,
 ];
 
 function isTrackingUrl(url: URL): boolean {
   const fullUrl = url.href;
-
-  // Check domain patterns
-  if (TRACKING_DOMAINS.some((pattern) => pattern.test(fullUrl))) {
-    return true;
-  }
-
-  // Check path patterns
-  if (TRACKING_PATH_PATTERNS.some((pattern) => pattern.test(url.pathname + url.search))) {
-    return true;
-  }
-
-  return false;
-}
-
-// Detect tracking pixels by content (small images)
-function isTrackingPixel(
-  contentType: string,
-  contentLength: number | undefined
-): boolean {
-  // Very small images (< 100 bytes) are likely tracking pixels
-  if (contentLength !== undefined && contentLength < 100) {
-    return true;
-  }
-  return false;
+  return TRACKING_PATTERNS.some((p) => p.test(fullUrl));
 }
 
 // ─── Caching ──────────────────────────────────────────────────────
@@ -149,7 +98,6 @@ function getFromCache(key: string): CacheEntry | undefined {
   const entry = cache.get(key);
   if (!entry) return undefined;
 
-  // Check if expired
   if (Date.now() - entry.timestamp > CACHE_TTL) {
     currentCacheSize -= entry.buffer.length;
     cache.delete(key);
@@ -160,10 +108,8 @@ function getFromCache(key: string): CacheEntry | undefined {
 }
 
 function addToCache(key: string, buffer: Buffer, contentType: string): void {
-  // Don't cache if it would exceed max size
-  if (buffer.length > MAX_CACHE_SIZE / 10) return; // Single item max 10% of cache
+  if (buffer.length > MAX_CACHE_SIZE / 10) return;
 
-  // Evict old entries if needed
   while (currentCacheSize + buffer.length > MAX_CACHE_SIZE && cache.size > 0) {
     const oldestKey = cache.keys().next().value;
     if (oldestKey) {
@@ -175,11 +121,7 @@ function addToCache(key: string, buffer: Buffer, contentType: string): void {
     }
   }
 
-  cache.set(key, {
-    buffer,
-    contentType,
-    timestamp: Date.now(),
-  });
+  cache.set(key, { buffer, contentType, timestamp: Date.now() });
   currentCacheSize += buffer.length;
 }
 
@@ -192,14 +134,34 @@ setInterval(() => {
       cache.delete(key);
     }
   }
-}, 60 * 60 * 1000).unref(); // Run every hour
+}, 60 * 60 * 1000).unref();
+
+// ─── Response Helpers ─────────────────────────────────────────────
+
+function sendTransparentGif(res: Response, cacheTime = 86400): void {
+  res.setHeader('Content-Type', 'image/gif');
+  res.setHeader('Cache-Control', `public, max-age=${cacheTime}`);
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  res.send(TRANSPARENT_GIF);
+}
+
+function sendProxiedResponse(
+  res: Response,
+  buffer: Buffer,
+  contentType: string,
+  cacheHit: boolean
+): void {
+  res.setHeader('Content-Type', contentType);
+  res.setHeader('Content-Length', buffer.length);
+  res.setHeader('Cache-Control', 'public, max-age=86400, immutable');
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  res.setHeader('X-Cache', cacheHit ? 'HIT' : 'MISS');
+  res.send(buffer);
+}
 
 // ─── Controller ───────────────────────────────────────────────────
 
-export async function proxyResource(
-  req: AuthRequest,
-  res: Response
-): Promise<void> {
+export async function proxyResource(req: Request, res: Response): Promise<void> {
   const { url: encodedUrl } = req.query;
 
   if (!encodedUrl || typeof encodedUrl !== 'string') {
@@ -209,40 +171,25 @@ export async function proxyResource(
   // Decode URL (support both base64 and URI encoding)
   let decodedUrl: string;
   try {
-    // Try base64 first
     const base64Decoded = Buffer.from(encodedUrl, 'base64').toString('utf-8');
-    // Check if it looks like a valid URL
-    if (base64Decoded.startsWith('http://') || base64Decoded.startsWith('https://')) {
-      decodedUrl = base64Decoded;
-    } else {
-      // Fall back to URI decoding
-      decodedUrl = decodeURIComponent(encodedUrl);
-    }
+    decodedUrl = base64Decoded.startsWith('http') ? base64Decoded : decodeURIComponent(encodedUrl);
   } catch {
     decodedUrl = decodeURIComponent(encodedUrl);
   }
 
-  // Validate URL and check for SSRF
   const url = validateProxyUrl(decodedUrl);
 
-  // Check for tracking URLs - return transparent GIF
+  // Block tracking URLs
   if (isTrackingUrl(url)) {
-    logger.debug('Blocked tracking URL', { url: decodedUrl, userId: req.user?.id });
-    res.setHeader('Content-Type', 'image/gif');
-    res.setHeader('Cache-Control', 'public, max-age=86400');
-    res.send(TRANSPARENT_GIF);
-    return;
+    logger.debug('Blocked tracking URL', { url: decodedUrl });
+    return sendTransparentGif(res);
   }
 
   // Check cache
   const cacheKey = getCacheKey(decodedUrl);
   const cached = getFromCache(cacheKey);
   if (cached) {
-    res.setHeader('Content-Type', cached.contentType);
-    res.setHeader('Cache-Control', 'public, max-age=86400');
-    res.setHeader('X-Cache', 'HIT');
-    res.send(cached.buffer);
-    return;
+    return sendProxiedResponse(res, cached.buffer, cached.contentType, true);
   }
 
   // Fetch the resource
@@ -262,72 +209,42 @@ export async function proxyResource(
     clearTimeout(timeoutId);
 
     if (!response.ok) {
-      // Return transparent GIF for failed requests
-      res.setHeader('Content-Type', 'image/gif');
-      res.setHeader('Cache-Control', 'public, max-age=3600');
-      res.send(TRANSPARENT_GIF);
-      return;
+      return sendTransparentGif(res, 3600);
     }
 
     const contentType = response.headers.get('content-type') || 'application/octet-stream';
-    const contentLength = response.headers.get('content-length');
-    const parsedLength = contentLength ? parseInt(contentLength, 10) : undefined;
 
-    // Validate content type - only allow images and fonts
-    const allowedTypes = /^(image\/|font\/|application\/font|application\/x-font)/i;
-    if (!allowedTypes.test(contentType)) {
-      throw new BadRequestError('Invalid content type - only images and fonts allowed');
+    // Validate content type
+    if (!/^(image\/|font\/|application\/(font|x-font))/i.test(contentType)) {
+      throw new BadRequestError('Only images and fonts allowed');
     }
 
-    // Check for tracking pixels by size
-    if (parsedLength !== undefined && isTrackingPixel(contentType, parsedLength)) {
-      logger.debug('Blocked tracking pixel by size', { url: decodedUrl, size: parsedLength });
-      res.setHeader('Content-Type', 'image/gif');
-      res.setHeader('Cache-Control', 'public, max-age=86400');
-      res.send(TRANSPARENT_GIF);
-      return;
-    }
-
-    // Read the response body
     const arrayBuffer = await response.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    // Check size limit
     if (buffer.length > MAX_IMAGE_SIZE) {
       throw new BadRequestError('Resource too large');
     }
 
-    // Double-check for tracking pixel after receiving content
-    if (isTrackingPixel(contentType, buffer.length)) {
-      logger.debug('Blocked tracking pixel by actual size', { url: decodedUrl, size: buffer.length });
-      res.setHeader('Content-Type', 'image/gif');
-      res.setHeader('Cache-Control', 'public, max-age=86400');
-      res.send(TRANSPARENT_GIF);
-      return;
+    // Block tracking pixels (very small images)
+    if (buffer.length < TRACKING_PIXEL_THRESHOLD) {
+      logger.debug('Blocked tracking pixel', { url: decodedUrl, size: buffer.length });
+      return sendTransparentGif(res);
     }
 
-    // Cache the response
     addToCache(cacheKey, buffer, contentType);
-
-    // Send response
-    res.setHeader('Content-Type', contentType);
-    res.setHeader('Content-Length', buffer.length);
-    res.setHeader('Cache-Control', 'public, max-age=86400, immutable');
-    res.setHeader('X-Cache', 'MISS');
-    res.send(buffer);
+    sendProxiedResponse(res, buffer, contentType, false);
   } catch (error) {
     clearTimeout(timeoutId);
 
+    if (error instanceof BadRequestError) throw error;
+
     if (error instanceof Error && error.name === 'AbortError') {
       logger.warn('Proxy request timeout', { url: decodedUrl });
-      res.setHeader('Content-Type', 'image/gif');
-      res.send(TRANSPARENT_GIF);
-      return;
+    } else {
+      logger.error('Proxy request failed', { url: decodedUrl, error });
     }
 
-    // For other errors, return transparent GIF to avoid breaking email display
-    logger.error('Proxy request failed', { url: decodedUrl, error });
-    res.setHeader('Content-Type', 'image/gif');
-    res.send(TRANSPARENT_GIF);
+    sendTransparentGif(res);
   }
 }
