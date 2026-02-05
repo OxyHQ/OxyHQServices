@@ -1,19 +1,29 @@
 /**
  * Cross-platform HTML email body renderer.
  * Web: sandboxed iframe with auto-height. Native: react-native-webview with auto-height.
+ *
+ * External images and fonts are routed through our proxy to:
+ * - Bypass CORS/CORP restrictions
+ * - Protect user privacy (hide IP from email senders)
+ * - Block tracking pixels
  */
 
 import React, { useCallback, useRef, useState, useEffect, useMemo } from 'react';
 import { Platform, StyleSheet, useColorScheme } from 'react-native';
+import { proxyExternalImages, getProxyBaseUrl } from '../utils/htmlTransform';
 
 interface HtmlBodyProps {
   html: string;
 }
 
-// Wrap HTML with basic styling for better rendering
+// Wrap HTML with basic styling and proxy external resources
 function wrapHtml(html: string, isDark: boolean): string {
   const bgColor = isDark ? '#1a1a1a' : '#ffffff';
   const textColor = isDark ? '#e8eaed' : '#202124';
+
+  // Transform external image/font URLs to go through our proxy
+  const proxyBaseUrl = getProxyBaseUrl();
+  const proxiedHtml = proxyExternalImages(html, proxyBaseUrl);
 
   return `
     <!DOCTYPE html>
@@ -46,7 +56,7 @@ function wrapHtml(html: string, isDark: boolean): string {
         }
       </style>
     </head>
-    <body>${html}</body>
+    <body>${proxiedHtml}</body>
     </html>
   `;
 }
