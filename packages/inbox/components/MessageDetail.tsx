@@ -52,6 +52,8 @@ import { Avatar } from '@/components/Avatar';
 import { HtmlBody } from '@/components/HtmlBody';
 import { InlineReply } from '@/components/InlineReply';
 import { ThreadSummary } from '@/components/ThreadSummary';
+import { SentimentIndicator } from '@/components/SentimentIndicator';
+import { useSentimentAnalysis } from '@/hooks/queries/useSentimentAnalysis';
 import type { EmailAddress } from '@/services/emailApi';
 
 function formatFullDate(dateStr: string): string {
@@ -121,6 +123,9 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
   const [replyTargetId, setReplyTargetId] = useState<string | null>(null);
   const [expandedMessages, setExpandedMessages] = useState<Set<string>>(new Set([messageId]));
   const [messageMenuId, setMessageMenuId] = useState<string | null>(null);
+
+  // Sentiment analysis for the current message
+  const sentiment = useSentimentAnalysis(currentMessage);
 
   // Reset state when message changes
   useEffect(() => {
@@ -450,7 +455,10 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
       >
         {/* Subject and metadata - with horizontal padding */}
         <View style={styles.contentPadded}>
-          <Text style={[styles.subject, { color: colors.text }]}>{currentMessage.subject || '(no subject)'}</Text>
+          <View style={styles.subjectRow}>
+            <Text style={[styles.subject, { color: colors.text }]}>{currentMessage.subject || '(no subject)'}</Text>
+            {sentiment && <SentimentIndicator sentiment={sentiment} size="medium" showLabel />}
+          </View>
 
           {/* Label chips */}
           {assignedLabels.length > 0 && (
@@ -835,11 +843,18 @@ const styles = StyleSheet.create({
   contentPadded: {
     paddingHorizontal: 16,
   },
+  subjectRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginBottom: 8,
+  },
   subject: {
     fontSize: 22,
     fontWeight: '400',
     lineHeight: 30,
-    marginBottom: 8,
+    flex: 1,
   },
   labelChips: {
     flexDirection: 'row',

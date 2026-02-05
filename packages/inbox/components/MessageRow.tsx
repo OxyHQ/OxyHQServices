@@ -24,7 +24,9 @@ import {
 } from '@hugeicons/core-free-icons';
 import { Avatar } from './Avatar';
 import { ImportanceBadge } from './ImportanceBadge';
+import { SentimentIndicator } from './SentimentIndicator';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useSentimentAnalysis } from '@/hooks/queries/useSentimentAnalysis';
 import { Colors } from '@/constants/theme';
 import type { Message, Attachment } from '@/services/emailApi';
 
@@ -108,6 +110,7 @@ export function MessageRow({
   const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
   const isUnread = !message.flags.seen;
   const [avatarHovered, setAvatarHovered] = useState(false);
+  const sentiment = useSentimentAnalysis(message);
 
   const showCheckbox = isSelectionMode || (Platform.OS === 'web' && avatarHovered);
 
@@ -236,6 +239,7 @@ export function MessageRow({
             {message.subject || '(no subject)'}
           </Text>
           <ImportanceBadge message={message} />
+          <SentimentIndicator sentiment={sentiment} size="small" />
         </View>
 
         <View style={styles.bottomRow}>
