@@ -73,11 +73,6 @@ export function proxyExternalImages(html: string, proxyBaseUrl: string): string 
  * Get the proxy base URL based on the current environment
  */
 export function getProxyBaseUrl(): string {
-  if (typeof window !== 'undefined') {
-    const { hostname } = window.location;
-    if (hostname === 'localhost' || hostname === '127.0.0.1') {
-      return 'http://localhost:3001/email/proxy';
-    }
-  }
-  return 'https://api.oxy.so/email/proxy';
+  const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? 'https://api.oxy.so';
+  return `${apiUrl}/email/proxy`;
 }
