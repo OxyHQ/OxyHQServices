@@ -10,7 +10,7 @@
  */
 
 import { Router, Response } from 'express';
-import bcrypt from 'bcrypt';
+import { hashPassword, validatePasswordStrength } from '../utils/password.js';
 import { User } from '../models/User.js';
 import type { AuthMethod } from '../models/User.js';
 import { authMiddleware, AuthRequest } from '../middleware/auth.js';
@@ -92,7 +92,7 @@ router.post('/link', asyncHandler(async (req: AuthRequest, res: Response) => {
     throw new BadRequestError('User not authenticated');
   }
 
-  const { type, publicKey, signature, timestamp, email, password, providerId, providerToken } = req.body;
+  const { type, publicKey, signature, timestamp, email, password, providerId } = req.body;
 
   // Validate type is a non-empty string to prevent NoSQL injection
   if (typeof type !== 'string' || !type.trim()) {
@@ -182,12 +182,13 @@ router.post('/link', asyncHandler(async (req: AuthRequest, res: Response) => {
       }
 
       // Validate password strength
-      if (password.length < 8) {
-        throw new BadRequestError('Password must be at least 8 characters');
+      const passwordValidation = validatePasswordStrength(password);
+      if (!passwordValidation.valid) {
+        throw new BadRequestError(passwordValidation.errors[0] || 'Password does not meet security requirements');
       }
 
       // Hash password and update user
-      const hashedPassword = await bcrypt.hash(password, 10);
+      const hashedPassword = await hashPassword(password);
       user.email = safeEmail;
       user.password = hashedPassword;
 

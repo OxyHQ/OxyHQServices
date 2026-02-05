@@ -55,7 +55,7 @@ export async function getApprovedClients(req: Request, res: Response) {
 }
 
 /**
- * Add a new approved client (admin only)
+ * Add a new approved client (internal service only)
  */
 export async function addApprovedClient(req: Request, res: Response) {
   try {
@@ -103,7 +103,7 @@ export async function addApprovedClient(req: Request, res: Response) {
 }
 
 /**
- * Remove an approved client (admin only)
+ * Remove an approved client (internal service only)
  */
 export async function removeApprovedClient(req: Request, res: Response) {
   try {

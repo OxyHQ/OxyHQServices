@@ -75,11 +75,21 @@ export function sanitizeProfileUpdate(updates: Record<string, unknown>): Record<
 }
 
 /**
+ * Escape regex metacharacters to prevent ReDoS and injection
+ * when using user input in MongoDB $regex queries.
+ */
+export function escapeRegex(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
  * Sanitize a search query string.
  *
- * Trims, limits length, and escapes HTML.
+ * Trims, limits length, escapes HTML, and escapes regex metacharacters
+ * so the result is safe for use in MongoDB $regex queries.
  */
 export function sanitizeSearchQuery(query: string, maxLength = 100): string {
   const trimmed = query.trim().slice(0, maxLength);
-  return sanitizeHtml(trimmed);
+  const htmlSafe = sanitizeHtml(trimmed);
+  return escapeRegex(htmlSafe);
 }

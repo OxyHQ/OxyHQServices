@@ -87,6 +87,31 @@ export function validateRequiredEnvVars(): void {
     warnings.push('AWS_S3_BUCKET should be just the bucket name, not a full path');
   }
 
+  // Reject default/placeholder JWT secrets in production
+  const WEAK_SECRETS = [
+    'your-access-token-secret-here',
+    'your-refresh-token-secret-here',
+    'secret',
+    'changeme',
+    'password',
+  ];
+  if (isProduction()) {
+    for (const key of ['ACCESS_TOKEN_SECRET', 'REFRESH_TOKEN_SECRET', 'FEDCM_TOKEN_SECRET'] as const) {
+      const val = process.env[key];
+      if (val && (WEAK_SECRETS.includes(val) || val.length < 32)) {
+        missing.push(`${key} (insecure: must be at least 32 characters and not a default placeholder)`);
+      }
+    }
+  } else {
+    // Warn in development too
+    for (const key of ['ACCESS_TOKEN_SECRET', 'REFRESH_TOKEN_SECRET'] as const) {
+      const val = process.env[key];
+      if (val && WEAK_SECRETS.includes(val)) {
+        warnings.push(`${key} is set to a default placeholder — generate a strong secret with: openssl rand -base64 64`);
+      }
+    }
+  }
+
   // Log warnings
   if (warnings.length > 0) {
     logger.warn('Environment configuration warnings:', { warnings });

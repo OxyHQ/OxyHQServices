@@ -40,6 +40,12 @@ interface AuthMiddlewareOptions {
   loadUser?: boolean;
   /** Optional auth - attach user if token present but don't block (default: false) */
   optional?: boolean;
+  /**
+   * JWT secret for verifying service token signatures locally.
+   * When provided, service tokens will be cryptographically verified.
+   * When omitted, service tokens will be rejected (secure default).
+   */
+  jwtSecret?: string;
 }
 
 export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: T) {
@@ -102,7 +108,7 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
      * @returns Express middleware function
      */
     auth(options: AuthMiddlewareOptions = {}) {
-      const { debug = false, onError, loadUser = false, optional = false } = options;
+      const { debug = false, onError, loadUser = false, optional = false, jwtSecret } = options;
       // Cast to any for cross-mixin method access (Auth mixin methods available at runtime)
       const oxyInstance = this as any;
 
@@ -161,8 +167,56 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
           }
 
           // Handle service tokens (internal service-to-service auth)
-          // Service tokens are stateless JWTs with type: 'service' — no session validation needed
+          // Service tokens are stateless JWTs with type: 'service' — requires signature verification
           if (decoded.type === 'service') {
+            // Service tokens MUST be cryptographically verified — reject if no secret provided
+            if (!jwtSecret) {
+              if (optional) {
+                req.userId = null;
+                req.user = null;
+                return next();
+              }
+              const error = {
+                message: 'Service token verification not configured',
+                code: 'SERVICE_TOKEN_NOT_CONFIGURED',
+                status: 403
+              };
+              if (onError) return onError(error);
+              return res.status(403).json(error);
+            }
+
+            // Verify JWT signature (not just decode)
+            try {
+              const { createHmac } = await import('crypto');
+              const [headerB64, payloadB64, signatureB64] = token.split('.');
+              if (!headerB64 || !payloadB64 || !signatureB64) {
+                throw new Error('Invalid token structure');
+              }
+              const expectedSig = createHmac('sha256', jwtSecret)
+                .update(`${headerB64}.${payloadB64}`)
+                .digest('base64')
+                .replace(/\+/g, '-')
+                .replace(/\//g, '_')
+                .replace(/=/g, '');
+
+              // Timing-safe comparison
+              const sigBuf = Buffer.from(signatureB64);
+              const expectedBuf = Buffer.from(expectedSig);
+              const { timingSafeEqual } = await import('crypto');
+              if (sigBuf.length !== expectedBuf.length || !timingSafeEqual(sigBuf, expectedBuf)) {
+                throw new Error('Invalid signature');
+              }
+            } catch {
+              if (optional) {
+                req.userId = null;
+                req.user = null;
+                return next();
+              }
+              const error = { message: 'Invalid service token signature', code: 'INVALID_SERVICE_TOKEN', status: 401 };
+              if (onError) return onError(error);
+              return res.status(401).json(error);
+            }
+
             // Check expiration
             if (decoded.exp && decoded.exp < Math.floor(Date.now() / 1000)) {
               if (optional) {
@@ -171,6 +225,18 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
                 return next();
               }
               const error = { message: 'Service token expired', code: 'TOKEN_EXPIRED', status: 401 };
+              if (onError) return onError(error);
+              return res.status(401).json(error);
+            }
+
+            // Validate required service token fields
+            if (!decoded.appId) {
+              if (optional) {
+                req.userId = null;
+                req.user = null;
+                return next();
+              }
+              const error = { message: 'Invalid service token: missing appId', code: 'INVALID_SERVICE_TOKEN', status: 401 };
               if (onError) return onError(error);
               return res.status(401).json(error);
             }

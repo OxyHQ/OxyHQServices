@@ -377,8 +377,8 @@ router.post('/session/cancel/:sessionToken', asyncHandler(async (req, res) => {
 const SERVICE_TOKEN_EXPIRY = 3600; // 1 hour in seconds
 
 const serviceTokenLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: process.env.NODE_ENV === 'development' ? 100 : 5 // 5 per minute (100 in dev)
+  windowMs: 5 * 60 * 1000, // 5-minute window
+  max: process.env.NODE_ENV === 'development' ? 100 : 10 // 10 per 5 minutes (2/min avg)
 });
 
 /**

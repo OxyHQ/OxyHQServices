@@ -4,13 +4,11 @@ import Svg, { Path } from 'react-native-svg';
 interface HighFiveProps {
     width?: number;
     height?: number;
-    color?: string;
 }
 
 const HighFive: React.FC<HighFiveProps> = ({
     width = 240,
     height = 240,
-    color
 }) => {
     return (
         <Svg width={width} height={height} viewBox="0 0 120 120">

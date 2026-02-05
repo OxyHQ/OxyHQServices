@@ -18,9 +18,9 @@ export const dynamic = 'force-dynamic';
 
 // Shared secret for signing FedCM tokens - must match api.oxy.so
 function getFedCMTokenSecret(): string {
-  const secret = process.env.FEDCM_TOKEN_SECRET || process.env.ACCESS_TOKEN_SECRET;
+  const secret = process.env.FEDCM_TOKEN_SECRET;
   if (!secret) {
-    throw new Error('FEDCM_TOKEN_SECRET or ACCESS_TOKEN_SECRET environment variable is required');
+    throw new Error('FEDCM_TOKEN_SECRET environment variable is required');
   }
   return secret;
 }

@@ -238,65 +238,58 @@ class FedCMService {
     user: { id: string; username?: string; email?: string; avatar?: string; name?: string };
   } | null> {
     logger.info('FedCM: exchangeIdToken called');
-    logger.info(`FedCM: Token length: ${idToken?.length}, preview: ${idToken?.substring(0, 50)}...`);
 
     try {
       // Verify and decode the ID token (includes signature verification)
       let tokenPayload: FedCMTokenPayload;
       try {
         tokenPayload = verifyIdToken(idToken);
-        logger.info(`FedCM: Token verified successfully. sub=${tokenPayload.sub}, aud=${tokenPayload.aud}, iss=${tokenPayload.iss}`);
+        logger.debug('FedCM: Token verified successfully');
       } catch (error) {
-        logger.error('FedCM: Token verification failed', error);
+        logger.warn('FedCM: Token verification failed');
         return null;
       }
 
       // Validate required fields
       if (!tokenPayload.sub || !tokenPayload.aud) {
-        logger.error('FedCM: Invalid token payload - missing sub or aud');
+        logger.warn('FedCM: Invalid token payload - missing sub or aud');
         return null;
       }
 
       // Verify issuer
       if (tokenPayload.iss !== FEDCM_ISSUER) {
-        logger.error(`FedCM: Invalid issuer. Expected ${FEDCM_ISSUER}, got ${tokenPayload.iss}`);
+        logger.warn('FedCM: Invalid issuer');
         return null;
       }
 
       // Check expiration
       if (tokenPayload.exp && tokenPayload.exp < Math.floor(Date.now() / 1000)) {
-        logger.error('FedCM: Token expired');
+        logger.warn('FedCM: Token expired');
         return null;
       }
 
       // Verify the client origin is approved (optional but recommended)
       const clientOrigin = tokenPayload.aud;
       const isApproved = await this.isClientApproved(clientOrigin);
-      logger.info(`FedCM: Client origin ${clientOrigin} approved: ${isApproved}`);
       if (!isApproved) {
-        // Log but don't reject - we might want to allow any client
-        logger.warn(`FedCM: Client origin not in approved list: ${clientOrigin}`);
+        logger.warn('FedCM: Client origin not in approved list');
       }
 
       // Get user by ID (with virtuals to get name.full)
       const userId = tokenPayload.sub;
-      logger.info(`FedCM: Looking up user ${userId}`);
       const user = await User.findById(userId).select('-password').lean({ virtuals: true });
 
       if (!user) {
-        logger.error(`FedCM: User not found: ${userId}`);
+        logger.warn('FedCM: User not found for token exchange');
         return null;
       }
-      logger.info(`FedCM: User found: ${(user as any).username || (user as any).email}`);
 
       // Create a new session for this user
-      logger.info(`FedCM: Creating session for user ${userId}`);
       const session = await sessionService.createSession(userId, req, {
         deviceName: 'FedCM Sign-In',
       });
 
-      logger.info(`FedCM: Session created successfully. sessionId=${session.sessionId}, hasAccessToken=${!!session.accessToken}`);
-      logger.info(`FedCM: Created session for user ${userId} from ${clientOrigin}`);
+      logger.info('FedCM: Session created via token exchange', { clientOrigin });
 
       const userDoc = user as any;
       const response = {
@@ -312,7 +305,6 @@ class FedCMService {
           name: userDoc.name?.full || userDoc.name,
         },
       };
-      logger.info(`FedCM: Returning response with sessionId=${response.sessionId}, userId=${response.user.id}, hasAccessToken=${!!response.accessToken}`);
       return response;
     } catch (error) {
       logger.error('FedCM: Token exchange failed', error);

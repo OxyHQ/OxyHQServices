@@ -4,7 +4,6 @@ import { User } from '../models/User';
 import Session from '../models/Session';
 import AuthChallenge from '../models/AuthChallenge';
 import RecoveryCode from '../models/RecoveryCode';
-import crypto from 'crypto';
 import { SessionAuthResponse, ClientSession } from '../types/session';
 import { 
   getDeviceActiveSessions,
@@ -17,16 +16,16 @@ import sessionService from '../services/session.service';
 import sessionCache from '../utils/sessionCache';
 import { logger } from '../utils/logger';
 import { formatUserResponse } from '../utils/userTransform';
-import { generateNumericCode, generateAlphanumericCode, hashPassword, verifyPassword, validatePasswordStrength, PASSWORD_MIN_LENGTH } from '../utils/password';
+import { generateAlphanumericCode, hashPassword, verifyPassword, validatePasswordStrength } from '../utils/password';
 import securityActivityService from '../services/securityActivityService';
 import anomalyDetectionService from '../services/anomalyDetection.service';
 
 // Challenge expiration time (5 minutes)
 const CHALLENGE_TTL_MS = 5 * 60 * 1000;
-const RECOVERY_CODE_LENGTH = 8;
+const RECOVERY_CODE_LENGTH = 10;
 const RECOVERY_CODE_TTL_MS = 10 * 60 * 1000;
 const RECOVERY_TOKEN_TTL_MS = 15 * 60 * 1000;
-const MAX_RECOVERY_ATTEMPTS = 5;
+const MAX_RECOVERY_ATTEMPTS = 3;
 
 // More robust email validation regex (RFC 5322 compliant)
 // Validates: local-part@domain with proper character restrictions
@@ -484,7 +483,6 @@ export class SessionController {
       }
 
       // Create session
-      const sessionBeforeCreate = Date.now();
       const session = await sessionService.createSession(
         user._id.toString(),
         req,

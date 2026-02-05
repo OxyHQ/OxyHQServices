@@ -139,9 +139,10 @@ export function createCorsMiddleware(options: CorsOptions = {}) {
     const isDevelopment = process.env.NODE_ENV !== 'production';
 
     // Set Access-Control-Allow-Origin
-    if (isDevelopment && allowAllOriginsInDev) {
+    if (isDevelopment && allowAllOriginsInDev && origin) {
       // In development, allow all origins for easier testing
-      res.setHeader('Access-Control-Allow-Origin', origin || '*');
+      // Never use '*' with credentials — always reflect the specific origin
+      res.setHeader('Access-Control-Allow-Origin', origin);
     } else if (origin && isOriginAllowed(origin)) {
       // In production, only allow explicitly allowed origins
       res.setHeader('Access-Control-Allow-Origin', origin);
