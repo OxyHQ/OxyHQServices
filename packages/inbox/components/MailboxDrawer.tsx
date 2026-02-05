@@ -619,16 +619,6 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 24,
     gap: 10,
-    ...Platform.select({
-      web: { boxShadow: '0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.08)' } as any,
-      default: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.12,
-        shadowRadius: 3,
-        elevation: 2,
-      },
-    }),
   },
   composeLabel: {
     fontSize: 14,
@@ -644,16 +634,6 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
-    ...Platform.select({
-      web: { boxShadow: '0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.08)' } as any,
-      default: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.12,
-        shadowRadius: 3,
-        elevation: 2,
-      },
-    }),
   },
   list: {
     flex: 1,
