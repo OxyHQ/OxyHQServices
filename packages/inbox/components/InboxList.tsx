@@ -107,6 +107,7 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
 
   const handleStar = useCallback(
     (messageId: string) => {
+      if (toggleStar.isPending) return;
       const msg = messages.find((m) => m._id === messageId);
       if (msg) toggleStar.mutate({ messageId, starred: !msg.flags.starred });
     },

@@ -54,34 +54,56 @@ export function useToggleStar() {
   return useMutation({
     mutationFn: async ({ messageId, starred }: { messageId: string; starred: boolean }) => {
       if (!api) throw new Error('Email API not initialized');
-      await api.updateFlags(messageId, { starred });
+      return await api.updateFlags(messageId, { starred });
     },
     onMutate: async ({ messageId, starred }) => {
+      // Cancel outgoing refetches to prevent race conditions
       await queryClient.cancelQueries({ queryKey: ['messages'] });
       await queryClient.cancelQueries({ queryKey: ['message', messageId] });
-      await queryClient.cancelQueries({ queryKey: ['thread', messageId] });
-      const prev = queryClient.getQueriesData<MessagesInfinite>({ queryKey: ['messages'] });
+      await queryClient.cancelQueries({ queryKey: ['thread'] });
+
+      // Snapshot for rollback
+      const prevMessages = queryClient.getQueriesData<MessagesInfinite>({ queryKey: ['messages'] });
+      const prevMessage = queryClient.getQueryData<Message | null>(['message', messageId]);
+      const prevThreads = queryClient.getQueriesData<Message[]>({ queryKey: ['thread'] });
+
+      // Optimistically update all message list caches
       queryClient.setQueriesData<MessagesInfinite>({ queryKey: ['messages'] }, (old) =>
         updateMessageInPages(old, messageId, (m) => ({ ...m, flags: { ...m.flags, starred } })),
       );
-      // Also update single message cache
+
+      // Update single message cache
       queryClient.setQueryData<Message | null>(['message', messageId], (old) =>
         old ? { ...old, flags: { ...old.flags, starred } } : old,
       );
-      // Update thread cache
+
+      // Update thread caches
       queryClient.setQueriesData<Message[]>({ queryKey: ['thread'] }, (old) =>
         old?.map((m) => (m._id === messageId ? { ...m, flags: { ...m.flags, starred } } : m)),
       );
-      return { prev };
+
+      return { prevMessages, prevMessage, prevThreads };
     },
-    onError: (_err, _vars, context) => {
-      context?.prev.forEach(([key, data]) => queryClient.setQueryData(key, data));
+    onError: (_err, { messageId }, context) => {
+      // Rollback on error
+      if (context) {
+        context.prevMessages.forEach(([key, data]) => queryClient.setQueryData(key, data));
+        queryClient.setQueryData(['message', messageId], context.prevMessage);
+        context.prevThreads.forEach(([key, data]) => queryClient.setQueryData(key, data));
+      }
       toast.error('Failed to update star.');
     },
-    onSettled: (_data, _err, { messageId }) => {
-      queryClient.invalidateQueries({ queryKey: ['messages'] });
-      queryClient.invalidateQueries({ queryKey: ['message', messageId] });
-      queryClient.invalidateQueries({ queryKey: ['thread'] });
+    onSuccess: (updatedMessage, { messageId }) => {
+      // Sync with server response (no refetch to avoid flickering)
+      if (updatedMessage) {
+        queryClient.setQueryData<Message | null>(['message', messageId], updatedMessage);
+        queryClient.setQueriesData<MessagesInfinite>({ queryKey: ['messages'] }, (old) =>
+          updateMessageInPages(old, messageId, () => updatedMessage),
+        );
+        queryClient.setQueriesData<Message[]>({ queryKey: ['thread'] }, (old) =>
+          old?.map((m) => (m._id === messageId ? updatedMessage : m)),
+        );
+      }
     },
   });
 }
@@ -93,12 +115,20 @@ export function useToggleRead() {
   return useMutation({
     mutationFn: async ({ messageId, seen }: { messageId: string; seen: boolean }) => {
       if (!api) throw new Error('Email API not initialized');
-      await api.updateFlags(messageId, { seen });
+      return await api.updateFlags(messageId, { seen });
     },
     onMutate: async ({ messageId, seen }) => {
+      // Cancel outgoing refetches
       await queryClient.cancelQueries({ queryKey: ['messages'] });
       await queryClient.cancelQueries({ queryKey: ['message', messageId] });
-      await queryClient.cancelQueries({ queryKey: ['thread', messageId] });
+      await queryClient.cancelQueries({ queryKey: ['thread'] });
+
+      // Snapshot all caches for rollback
+      const prevMessages = queryClient.getQueriesData<MessagesInfinite>({ queryKey: ['messages'] });
+      const prevMessage = queryClient.getQueryData<Message | null>(['message', messageId]);
+      const prevThreads = queryClient.getQueriesData<Message[]>({ queryKey: ['thread'] });
+
+      // Optimistically update all caches
       queryClient.setQueriesData<MessagesInfinite>({ queryKey: ['messages'] }, (old) =>
         updateMessageInPages(old, messageId, (m) => ({ ...m, flags: { ...m.flags, seen } })),
       );
@@ -108,11 +138,32 @@ export function useToggleRead() {
       queryClient.setQueriesData<Message[]>({ queryKey: ['thread'] }, (old) =>
         old?.map((m) => (m._id === messageId ? { ...m, flags: { ...m.flags, seen } } : m)),
       );
+
+      return { prevMessages, prevMessage, prevThreads, messageId };
     },
-    onError: () => {
+    onError: (_err, { messageId }, context) => {
+      // Rollback all caches on error
+      if (context) {
+        context.prevMessages.forEach(([key, data]) => queryClient.setQueryData(key, data));
+        queryClient.setQueryData(['message', messageId], context.prevMessage);
+        context.prevThreads.forEach(([key, data]) => queryClient.setQueryData(key, data));
+      }
       toast.error('Failed to update read status.');
     },
+    onSuccess: (updatedMessage, { messageId }) => {
+      // Update caches with server response
+      if (updatedMessage) {
+        queryClient.setQueryData<Message | null>(['message', messageId], updatedMessage);
+        queryClient.setQueriesData<MessagesInfinite>({ queryKey: ['messages'] }, (old) =>
+          updateMessageInPages(old, messageId, () => updatedMessage),
+        );
+        queryClient.setQueriesData<Message[]>({ queryKey: ['thread'] }, (old) =>
+          old?.map((m) => (m._id === messageId ? updatedMessage : m)),
+        );
+      }
+    },
     onSettled: (_data, _err, { messageId }) => {
+      // Refetch to ensure consistency
       queryClient.invalidateQueries({ queryKey: ['messages'] });
       queryClient.invalidateQueries({ queryKey: ['mailboxes'] });
       queryClient.invalidateQueries({ queryKey: ['message', messageId] });

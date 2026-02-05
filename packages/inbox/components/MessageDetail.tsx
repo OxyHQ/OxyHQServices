@@ -143,7 +143,7 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
   }, [router]);
 
   const handleStar = useCallback(() => {
-    if (!messageId || !currentMessage) return;
+    if (!messageId || !currentMessage || toggleStar.isPending) return;
     toggleStar.mutate({ messageId, starred: !currentMessage.flags.starred });
   }, [messageId, currentMessage, toggleStar]);
 
