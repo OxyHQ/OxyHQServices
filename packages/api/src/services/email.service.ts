@@ -66,11 +66,29 @@ class EmailService {
 
   /**
    * Ensure mailboxes exist for a user, provisioning if needed.
+   * Also syncs any missing default mailboxes for existing users.
    */
   async ensureMailboxes(userId: string): Promise<void> {
-    const count = await Mailbox.countDocuments({ userId });
-    if (count === 0) {
+    const existing = await Mailbox.find({ userId });
+    if (existing.length === 0) {
       await this.provisionMailboxes(userId);
+      return;
+    }
+
+    // Sync missing default mailboxes (e.g., Archive added after user created)
+    const existingSpecialUse = new Set(existing.map((m) => m.specialUse).filter(Boolean));
+    const missing = DEFAULT_MAILBOXES.filter((mb) => mb.specialUse && !existingSpecialUse.has(mb.specialUse));
+
+    if (missing.length > 0) {
+      const docs = missing.map((mb) => ({
+        userId: new mongoose.Types.ObjectId(userId),
+        name: mb.name,
+        path: mb.path,
+        specialUse: mb.specialUse,
+        retentionDays: 'retentionDays' in mb ? mb.retentionDays : null,
+      }));
+      await Mailbox.insertMany(docs);
+      logger.info('Synced missing default mailboxes', { userId, count: missing.length });
     }
   }
 
