@@ -152,8 +152,8 @@ export function HomeScreen() {
 
   const firstName = user?.name?.first || user?.username || '';
 
-  // AI daily brief
-  const { briefText, isStreaming: briefStreaming, isLoading: briefLoading, error: briefError, regenerate } = useDailyBrief(allMessages, firstName);
+  // AI daily brief — uses messages from selected date
+  const { briefText, isStreaming: briefStreaming, isLoading: briefLoading, error: briefError, regenerate } = useDailyBrief(dayMessages, firstName);
 
   const greeting = getGreeting();
   const today = selectedDate;
