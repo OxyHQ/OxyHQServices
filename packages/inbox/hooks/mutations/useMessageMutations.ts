@@ -58,6 +58,8 @@ export function useToggleStar() {
     },
     onMutate: async ({ messageId, starred }) => {
       await queryClient.cancelQueries({ queryKey: ['messages'] });
+      await queryClient.cancelQueries({ queryKey: ['message', messageId] });
+      await queryClient.cancelQueries({ queryKey: ['thread', messageId] });
       const prev = queryClient.getQueriesData<MessagesInfinite>({ queryKey: ['messages'] });
       queryClient.setQueriesData<MessagesInfinite>({ queryKey: ['messages'] }, (old) =>
         updateMessageInPages(old, messageId, (m) => ({ ...m, flags: { ...m.flags, starred } })),
@@ -66,14 +68,20 @@ export function useToggleStar() {
       queryClient.setQueryData<Message | null>(['message', messageId], (old) =>
         old ? { ...old, flags: { ...old.flags, starred } } : old,
       );
+      // Update thread cache
+      queryClient.setQueriesData<Message[]>({ queryKey: ['thread'] }, (old) =>
+        old?.map((m) => (m._id === messageId ? { ...m, flags: { ...m.flags, starred } } : m)),
+      );
       return { prev };
     },
     onError: (_err, _vars, context) => {
       context?.prev.forEach(([key, data]) => queryClient.setQueryData(key, data));
       toast.error('Failed to update star.');
     },
-    onSettled: () => {
+    onSettled: (_data, _err, { messageId }) => {
       queryClient.invalidateQueries({ queryKey: ['messages'] });
+      queryClient.invalidateQueries({ queryKey: ['message', messageId] });
+      queryClient.invalidateQueries({ queryKey: ['thread'] });
     },
   });
 }
@@ -89,19 +97,26 @@ export function useToggleRead() {
     },
     onMutate: async ({ messageId, seen }) => {
       await queryClient.cancelQueries({ queryKey: ['messages'] });
+      await queryClient.cancelQueries({ queryKey: ['message', messageId] });
+      await queryClient.cancelQueries({ queryKey: ['thread', messageId] });
       queryClient.setQueriesData<MessagesInfinite>({ queryKey: ['messages'] }, (old) =>
         updateMessageInPages(old, messageId, (m) => ({ ...m, flags: { ...m.flags, seen } })),
       );
       queryClient.setQueryData<Message | null>(['message', messageId], (old) =>
         old ? { ...old, flags: { ...old.flags, seen } } : old,
       );
+      queryClient.setQueriesData<Message[]>({ queryKey: ['thread'] }, (old) =>
+        old?.map((m) => (m._id === messageId ? { ...m, flags: { ...m.flags, seen } } : m)),
+      );
     },
     onError: () => {
       toast.error('Failed to update read status.');
     },
-    onSettled: () => {
+    onSettled: (_data, _err, { messageId }) => {
       queryClient.invalidateQueries({ queryKey: ['messages'] });
       queryClient.invalidateQueries({ queryKey: ['mailboxes'] });
+      queryClient.invalidateQueries({ queryKey: ['message', messageId] });
+      queryClient.invalidateQueries({ queryKey: ['thread'] });
     },
   });
 }

@@ -363,40 +363,6 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
           </View>
         )}
 
-        {/* Formatting toolbar */}
-        <View style={[styles.formattingToolbar, { borderBottomColor: colors.border }]}>
-          <TouchableOpacity
-            onPress={() => setBody((prev) => prev + '**bold**')}
-            style={styles.formatButton}
-          >
-            <MaterialCommunityIcons name="format-bold" size={20} color={colors.icon} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => setBody((prev) => prev + '*italic*')}
-            style={styles.formatButton}
-          >
-            <MaterialCommunityIcons name="format-italic" size={20} color={colors.icon} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => setBody((prev) => prev + '[link text](https://)')}
-            style={styles.formatButton}
-          >
-            <MaterialCommunityIcons name="link" size={20} color={colors.icon} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => setBody((prev) => prev + '\n- ')}
-            style={styles.formatButton}
-          >
-            <MaterialCommunityIcons name="format-list-bulleted" size={20} color={colors.icon} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => setBody((prev) => prev + '\n1. ')}
-            style={styles.formatButton}
-          >
-            <MaterialCommunityIcons name="format-list-numbered" size={20} color={colors.icon} />
-          </TouchableOpacity>
-        </View>
-
         {/* Body */}
         <TextInput
           ref={bodyRef}
@@ -504,20 +470,5 @@ const styles = StyleSheet.create({
     lineHeight: 24,
     padding: 16,
     minHeight: 300,
-  },
-  formattingToolbar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    gap: 2,
-  },
-  formatButton: {
-    width: 36,
-    height: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 18,
   },
 });

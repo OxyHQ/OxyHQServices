@@ -494,20 +494,38 @@ class EmailService {
       .lean({ virtuals: true });
     if (!anchor) throw new NotFoundError('Message not found');
 
+    // Collect all Message-IDs related to this thread
     const threadIds: string[] = [];
     if (anchor.messageId) threadIds.push(anchor.messageId);
     if (anchor.inReplyTo) threadIds.push(anchor.inReplyTo);
     if (anchor.references?.length) threadIds.push(...anchor.references);
 
-    if (threadIds.length === 0) return [anchor];
+    // Build query to find all related messages
+    // This finds: messages this one references AND messages that reference this one
+    const orConditions: any[] = [];
+
+    if (threadIds.length > 0) {
+      orConditions.push(
+        { messageId: { $in: threadIds } },
+        { inReplyTo: { $in: threadIds } },
+        { references: { $in: threadIds } }
+      );
+    }
+
+    // Also find messages that reply to THIS message (for when opening first message in thread)
+    if (anchor.messageId) {
+      orConditions.push(
+        { inReplyTo: anchor.messageId },
+        { references: anchor.messageId }
+      );
+    }
+
+    // If no thread relations exist, return just the anchor
+    if (orConditions.length === 0) return [anchor];
 
     const related = await Message.find({
       userId,
-      $or: [
-        { messageId: { $in: threadIds } },
-        { inReplyTo: { $in: threadIds } },
-        { references: { $in: threadIds } },
-      ],
+      $or: orConditions,
     })
       .select('+text +html +headers')
       .sort({ date: 1 })

@@ -286,7 +286,7 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
     );
   }
 
-  const maxContentWidth = mode === 'standalone' ? Math.min(width, 720) : undefined;
+  // No maxContentWidth - use full available width like Gmail
 
   return (
     <View
@@ -424,36 +424,39 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
         style={styles.body}
         contentContainerStyle={[
           styles.bodyContent,
-          maxContentWidth ? { maxWidth: maxContentWidth, alignSelf: 'center' as const, width: '100%' } : undefined,
+          { paddingBottom: mode === 'standalone' ? insets.bottom + 16 : 16 },
         ]}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
-        {/* Subject */}
-        <Text style={[styles.subject, { color: colors.text }]}>{currentMessage.subject || '(no subject)'}</Text>
+        {/* Subject and metadata - with horizontal padding */}
+        <View style={styles.contentPadded}>
+          <Text style={[styles.subject, { color: colors.text }]}>{currentMessage.subject || '(no subject)'}</Text>
 
-        {/* Label chips */}
-        {assignedLabels.length > 0 && (
-          <View style={styles.labelChips}>
-            {assignedLabels.map((lbl) => (
-              <View key={lbl._id} style={[styles.labelChip, { backgroundColor: lbl.color + '20', borderColor: lbl.color + '40' }]}>
-                <View style={[styles.labelChipDot, { backgroundColor: lbl.color }]} />
-                <Text style={[styles.labelChipText, { color: colors.text }]}>{lbl.name}</Text>
-                <TouchableOpacity onPress={() => handleToggleLabel(lbl.name)} hitSlop={4}>
-                  <MaterialCommunityIcons name="close" size={12} color={colors.secondaryText} />
-                </TouchableOpacity>
-              </View>
-            ))}
-          </View>
-        )}
+          {/* Label chips */}
+          {assignedLabels.length > 0 && (
+            <View style={styles.labelChips}>
+              {assignedLabels.map((lbl) => (
+                <View key={lbl._id} style={[styles.labelChip, { backgroundColor: lbl.color + '20', borderColor: lbl.color + '40' }]}>
+                  <View style={[styles.labelChipDot, { backgroundColor: lbl.color }]} />
+                  <Text style={[styles.labelChipText, { color: colors.text }]}>{lbl.name}</Text>
+                  <TouchableOpacity onPress={() => handleToggleLabel(lbl.name)} hitSlop={4}>
+                    <MaterialCommunityIcons name="close" size={12} color={colors.secondaryText} />
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          )}
 
-        {/* Thread count indicator */}
-        {sortedThread.length > 1 && (
-          <View style={[styles.threadCount, { backgroundColor: colors.surfaceVariant }]}>
-            <Text style={[styles.threadCountText, { color: colors.secondaryText }]}>
-              {sortedThread.length} messages in this conversation
-            </Text>
-          </View>
-        )}
+          {/* Thread count indicator */}
+          {sortedThread.length > 1 && (
+            <View style={[styles.threadCount, { backgroundColor: colors.surfaceVariant }]}>
+              <Text style={[styles.threadCountText, { color: colors.secondaryText }]}>
+                {sortedThread.length} messages in this conversation
+              </Text>
+            </View>
+          )}
+        </View>
 
         {/* Thread messages */}
         {sortedThread.map((msg, index) => {
@@ -464,34 +467,35 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
           if (!isExpanded) {
             // Collapsed thread message
             return (
-              <TouchableOpacity
-                key={msg._id}
-                style={[
-                  styles.collapsedMessage,
-                  { borderBottomColor: colors.border },
-                  isLast && { borderBottomWidth: 0 },
-                ]}
-                onPress={() => toggleMessageExpanded(msg._id)}
-                activeOpacity={0.7}
-              >
-                <Avatar name={msgSenderName} size={36} />
-                <View style={styles.collapsedMessageContent}>
-                  <View style={styles.collapsedMessageHeader}>
-                    <Text style={[styles.collapsedSenderName, { color: colors.text }]} numberOfLines={1}>
-                      {msgSenderName}
-                    </Text>
-                    <Text style={[styles.collapsedDate, { color: colors.secondaryText }]}>
-                      {formatShortDate(msg.date)}
+              <View key={msg._id} style={styles.contentPadded}>
+                <TouchableOpacity
+                  style={[
+                    styles.collapsedMessage,
+                    { borderBottomColor: colors.border },
+                    isLast && { borderBottomWidth: 0 },
+                  ]}
+                  onPress={() => toggleMessageExpanded(msg._id)}
+                  activeOpacity={0.7}
+                >
+                  <Avatar name={msgSenderName} size={36} />
+                  <View style={styles.collapsedMessageContent}>
+                    <View style={styles.collapsedMessageHeader}>
+                      <Text style={[styles.collapsedSenderName, { color: colors.text }]} numberOfLines={1}>
+                        {msgSenderName}
+                      </Text>
+                      <Text style={[styles.collapsedDate, { color: colors.secondaryText }]}>
+                        {formatShortDate(msg.date)}
+                      </Text>
+                    </View>
+                    <Text style={[styles.collapsedSnippet, { color: colors.secondaryText }]} numberOfLines={1}>
+                      {getSnippet(msg.text)}
                     </Text>
                   </View>
-                  <Text style={[styles.collapsedSnippet, { color: colors.secondaryText }]} numberOfLines={1}>
-                    {getSnippet(msg.text)}
-                  </Text>
-                </View>
-                {msg.attachments.length > 0 && (
-                  <MaterialCommunityIcons name="paperclip" size={14} color={colors.secondaryText} />
-                )}
-              </TouchableOpacity>
+                  {msg.attachments.length > 0 && (
+                    <MaterialCommunityIcons name="paperclip" size={14} color={colors.secondaryText} />
+                  )}
+                </TouchableOpacity>
+              </View>
             );
           }
 
@@ -505,123 +509,121 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
                 isLast && { borderBottomWidth: 0 },
               ]}
             >
-              {/* Sender header */}
-              <TouchableOpacity
-                style={styles.senderRow}
-                onPress={() => sortedThread.length > 1 ? toggleMessageExpanded(msg._id) : undefined}
-                activeOpacity={sortedThread.length > 1 ? 0.7 : 1}
-              >
-                <Avatar name={msgSenderName} size={40} />
-                <View style={styles.senderInfo}>
-                  <View style={styles.senderNameRow}>
-                    <Text style={[styles.senderName, { color: colors.text }]}>{msgSenderName}</Text>
-                    <Text style={[styles.messageDate, { color: colors.secondaryText }]}>
-                      {formatFullDate(msg.date)}
+              {/* Sender header - with padding */}
+              <View style={styles.contentPadded}>
+                <TouchableOpacity
+                  style={styles.senderRow}
+                  onPress={() => sortedThread.length > 1 ? toggleMessageExpanded(msg._id) : undefined}
+                  activeOpacity={sortedThread.length > 1 ? 0.7 : 1}
+                >
+                  <Avatar name={msgSenderName} size={40} />
+                  <View style={styles.senderInfo}>
+                    <View style={styles.senderNameRow}>
+                      <Text style={[styles.senderName, { color: colors.text }]}>{msgSenderName}</Text>
+                      <Text style={[styles.messageDate, { color: colors.secondaryText }]}>
+                        {formatFullDate(msg.date)}
+                      </Text>
+                    </View>
+                    <Text style={[styles.toLine, { color: colors.secondaryText }]} numberOfLines={1}>
+                      to {formatRecipients(msg.to)}
+                      {msg.cc && msg.cc.length > 0 ? `, cc: ${formatRecipients(msg.cc)}` : ''}
                     </Text>
                   </View>
-                  <Text style={[styles.toLine, { color: colors.secondaryText }]} numberOfLines={1}>
-                    to {formatRecipients(msg.to)}
-                    {msg.cc && msg.cc.length > 0 ? `, cc: ${formatRecipients(msg.cc)}` : ''}
-                  </Text>
-                </View>
-              </TouchableOpacity>
+                </TouchableOpacity>
 
-              {/* Attachments */}
-              {msg.attachments.length > 0 && (
-                <View style={[styles.attachmentsBar, { borderColor: colors.border }]}>
-                  {msg.attachments.map((att, i) => (
-                    <TouchableOpacity
-                      key={i}
-                      style={[styles.attachmentChip, { backgroundColor: colors.surfaceVariant }]}
-                      onPress={() => handleAttachment(att.s3Key, att.filename)}
-                      activeOpacity={0.7}
-                    >
-                      {Platform.OS === 'web' ? (
-                        <HugeiconsIcon icon={Attachment01Icon as unknown as IconSvgElement} size={14} color={colors.secondaryText} />
-                      ) : (
-                        <MaterialCommunityIcons name="paperclip" size={14} color={colors.secondaryText} />
-                      )}
-                      <Text style={[styles.attachmentName, { color: colors.text }]} numberOfLines={1}>
-                        {att.filename}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
+                {/* Attachments */}
+                {msg.attachments.length > 0 && (
+                  <View style={[styles.attachmentsBar, { borderColor: colors.border }]}>
+                    {msg.attachments.map((att, i) => (
+                      <TouchableOpacity
+                        key={i}
+                        style={[styles.attachmentChip, { backgroundColor: colors.surfaceVariant }]}
+                        onPress={() => handleAttachment(att.s3Key, att.filename)}
+                        activeOpacity={0.7}
+                      >
+                        {Platform.OS === 'web' ? (
+                          <HugeiconsIcon icon={Attachment01Icon as unknown as IconSvgElement} size={14} color={colors.secondaryText} />
+                        ) : (
+                          <MaterialCommunityIcons name="paperclip" size={14} color={colors.secondaryText} />
+                        )}
+                        <Text style={[styles.attachmentName, { color: colors.text }]} numberOfLines={1}>
+                          {att.filename}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+              </View>
 
-              {/* Body */}
+              {/* Body - full width for HTML emails */}
               <View style={styles.messageBody}>
                 {msg.html ? (
                   <HtmlBody html={msg.html} />
                 ) : (
-                  <Text style={[styles.bodyText, { color: colors.text }]}>
-                    {msg.text || '(empty message)'}
-                  </Text>
+                  <View style={styles.contentPadded}>
+                    <Text style={[styles.bodyText, { color: colors.text }]}>
+                      {msg.text || '(empty message)'}
+                    </Text>
+                  </View>
                 )}
               </View>
             </View>
           );
         })}
-      </ScrollView>
 
-      {/* Inline reply or bottom reply bar */}
-      {replyMode ? (
-        <View style={{ paddingBottom: mode === 'standalone' ? insets.bottom : 0 }}>
-          <InlineReply
-            message={currentMessage}
-            mode={replyMode}
-            onClose={handleCloseReply}
-          />
-        </View>
-      ) : (
-        <View
-          style={[
-            styles.replyBar,
-            {
-              backgroundColor: colors.background,
-              borderTopColor: colors.border,
-              paddingBottom: mode === 'standalone' ? insets.bottom + 8 : 8,
-            },
-          ]}
-        >
-          <TouchableOpacity
-            style={[styles.replyButton, { borderColor: colors.border }]}
-            onPress={handleReply}
-            activeOpacity={0.7}
-          >
-            {Platform.OS === 'web' ? (
-              <HugeiconsIcon icon={MailReply01Icon as unknown as IconSvgElement} size={18} color={colors.icon} />
-            ) : (
-              <MaterialCommunityIcons name="reply" size={18} color={colors.icon} />
-            )}
-            <Text style={[styles.replyButtonText, { color: colors.text }]}>Reply</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.replyButton, { borderColor: colors.border }]}
-            onPress={handleReplyAll}
-            activeOpacity={0.7}
-          >
-            {Platform.OS === 'web' ? (
-              <HugeiconsIcon icon={MailReplyAll01Icon as unknown as IconSvgElement} size={18} color={colors.icon} />
-            ) : (
-              <MaterialCommunityIcons name="reply-all" size={18} color={colors.icon} />
-            )}
-            <Text style={[styles.replyButtonText, { color: colors.text }]}>Reply All</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.replyButton, { borderColor: colors.border }]}
-            onPress={handleForward}
-            activeOpacity={0.7}
-          >
-            {Platform.OS === 'web' ? (
-              <HugeiconsIcon icon={Forward01Icon as unknown as IconSvgElement} size={18} color={colors.icon} />
-            ) : (
-              <MaterialCommunityIcons name="share" size={18} color={colors.icon} />
-            )}
-            <Text style={[styles.replyButtonText, { color: colors.text }]}>Forward</Text>
-          </TouchableOpacity>
-        </View>
-      )}
+        {/* Inline reply - appears at bottom of thread, inside scroll area */}
+        {replyMode && (
+          <View style={[styles.inlineReplyWrapper, { marginTop: 16 }]}>
+            <InlineReply
+              message={currentMessage}
+              mode={replyMode}
+              onClose={handleCloseReply}
+            />
+          </View>
+        )}
+
+        {/* Reply buttons - inside scroll area when not replying */}
+        {!replyMode && (
+          <View style={[styles.contentPadded, styles.replyButtonsContainer]}>
+            <TouchableOpacity
+              style={[styles.replyButton, { borderColor: colors.border }]}
+              onPress={handleReply}
+              activeOpacity={0.7}
+            >
+              {Platform.OS === 'web' ? (
+                <HugeiconsIcon icon={MailReply01Icon as unknown as IconSvgElement} size={18} color={colors.icon} />
+              ) : (
+                <MaterialCommunityIcons name="reply" size={18} color={colors.icon} />
+              )}
+              <Text style={[styles.replyButtonText, { color: colors.text }]}>Reply</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.replyButton, { borderColor: colors.border }]}
+              onPress={handleReplyAll}
+              activeOpacity={0.7}
+            >
+              {Platform.OS === 'web' ? (
+                <HugeiconsIcon icon={MailReplyAll01Icon as unknown as IconSvgElement} size={18} color={colors.icon} />
+              ) : (
+                <MaterialCommunityIcons name="reply-all" size={18} color={colors.icon} />
+              )}
+              <Text style={[styles.replyButtonText, { color: colors.text }]}>Reply All</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.replyButton, { borderColor: colors.border }]}
+              onPress={handleForward}
+              activeOpacity={0.7}
+            >
+              {Platform.OS === 'web' ? (
+                <HugeiconsIcon icon={Forward01Icon as unknown as IconSvgElement} size={18} color={colors.icon} />
+              ) : (
+                <MaterialCommunityIcons name="share" size={18} color={colors.icon} />
+              )}
+              <Text style={[styles.replyButtonText, { color: colors.text }]}>Forward</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </ScrollView>
     </View>
   );
 }
@@ -734,8 +736,10 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   bodyContent: {
-    padding: 16,
-    paddingBottom: 32,
+    paddingTop: 16,
+  },
+  contentPadded: {
+    paddingHorizontal: 16,
   },
   subject: {
     fontSize: 22,
@@ -838,12 +842,11 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 24,
   },
-  replyBar: {
+  replyButtonsContainer: {
     flexDirection: 'row',
     gap: 8,
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    borderTopWidth: StyleSheet.hairlineWidth,
+    marginTop: 24,
+    marginBottom: 16,
   },
   replyButton: {
     flex: 1,
@@ -901,5 +904,8 @@ const styles = StyleSheet.create({
   expandedMessage: {
     paddingVertical: 16,
     borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  inlineReplyWrapper: {
+    width: '100%',
   },
 });

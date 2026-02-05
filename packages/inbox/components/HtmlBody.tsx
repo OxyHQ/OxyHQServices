@@ -3,55 +3,125 @@
  * Web: sandboxed iframe with auto-height. Native: react-native-webview with auto-height.
  */
 
-import React, { useCallback, useRef, useState } from 'react';
-import { Platform, StyleSheet } from 'react-native';
+import React, { useCallback, useRef, useState, useEffect, useMemo } from 'react';
+import { Platform, StyleSheet, useColorScheme } from 'react-native';
 
 interface HtmlBodyProps {
   html: string;
 }
 
+// Wrap HTML with basic styling for better rendering
+function wrapHtml(html: string, isDark: boolean): string {
+  const bgColor = isDark ? '#1a1a1a' : '#ffffff';
+  const textColor = isDark ? '#e8eaed' : '#202124';
+
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+      <style>
+        * { box-sizing: border-box; }
+        html, body {
+          margin: 0;
+          padding: 0;
+          background: ${bgColor};
+          color: ${textColor};
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+          font-size: 15px;
+          line-height: 1.5;
+          word-wrap: break-word;
+          overflow-wrap: break-word;
+        }
+        img { max-width: 100%; height: auto; }
+        a { color: #1a73e8; }
+        pre, code { white-space: pre-wrap; word-wrap: break-word; }
+        table { max-width: 100%; }
+        blockquote {
+          margin: 0 0 0 8px;
+          padding-left: 12px;
+          border-left: 3px solid ${isDark ? '#5f6368' : '#dadce0'};
+          color: ${isDark ? '#9aa0a6' : '#5f6368'};
+        }
+      </style>
+    </head>
+    <body>${html}</body>
+    </html>
+  `;
+}
+
 function HtmlBodyWeb({ html }: HtmlBodyProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const [height, setHeight] = useState(200);
+  const [height, setHeight] = useState<number | null>(null);
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
 
-  const handleLoad = useCallback(() => {
+  const wrappedHtml = useMemo(() => wrapHtml(html, isDark), [html, isDark]);
+
+  useEffect(() => {
     const iframe = iframeRef.current;
-    if (!iframe?.contentDocument?.body) return;
+    if (!iframe) return;
 
     const updateHeight = () => {
-      const h = iframe.contentDocument?.body.scrollHeight;
-      if (h && h > 0) setHeight(h);
+      const doc = iframe.contentDocument;
+      if (!doc?.body) return;
+      const h = doc.body.scrollHeight;
+      if (h > 0) setHeight(h);
     };
 
-    updateHeight();
+    const handleLoad = () => {
+      updateHeight();
+      // Observe for dynamic content (images, etc.)
+      const doc = iframe.contentDocument;
+      if (doc?.body) {
+        const observer = new ResizeObserver(updateHeight);
+        observer.observe(doc.body);
+        return () => observer.disconnect();
+      }
+    };
 
-    // Observe content size changes (images loading, etc.)
-    const observer = new ResizeObserver(updateHeight);
-    observer.observe(iframe.contentDocument.body);
-    return () => observer.disconnect();
-  }, []);
+    iframe.addEventListener('load', handleLoad);
+    return () => iframe.removeEventListener('load', handleLoad);
+  }, [wrappedHtml]);
 
   return (
     <iframe
       ref={iframeRef}
-      srcDoc={html}
-      style={{ border: 'none', width: '100%', height }}
+      srcDoc={wrappedHtml}
+      style={{
+        border: 'none',
+        width: '100%',
+        height: height ?? 'auto',
+        minHeight: height ? undefined : 100,
+        display: 'block',
+        overflow: 'hidden',
+      }}
       sandbox="allow-same-origin"
       title="Email content"
-      onLoad={handleLoad}
+      scrolling="no"
     />
   );
 }
 
 const HEIGHT_SCRIPT = `
   <script>
-    function postHeight() {
-      var h = document.body.scrollHeight;
-      if (h > 0) window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'height', value: h }));
-    }
-    window.addEventListener('load', function() { setTimeout(postHeight, 50); });
-    new MutationObserver(postHeight).observe(document.body, { childList: true, subtree: true, attributes: true });
-    postHeight();
+    (function() {
+      function postHeight() {
+        var h = document.body.scrollHeight;
+        if (h > 0) window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'height', value: h }));
+      }
+      // Post height immediately and on load
+      postHeight();
+      document.addEventListener('DOMContentLoaded', postHeight);
+      window.addEventListener('load', postHeight);
+      // Watch for images loading
+      document.querySelectorAll('img').forEach(function(img) {
+        img.addEventListener('load', postHeight);
+      });
+      // Observe mutations
+      new MutationObserver(postHeight).observe(document.body, { childList: true, subtree: true, attributes: true });
+    })();
   </script>
 `;
 
@@ -62,7 +132,11 @@ if (Platform.OS !== 'web') {
   const { WebView } = require('react-native-webview');
 
   HtmlBodyNative = function HtmlBodyNativeComponent({ html }: HtmlBodyProps) {
-    const [height, setHeight] = useState(200);
+    const [height, setHeight] = useState<number | null>(null);
+    const colorScheme = useColorScheme();
+    const isDark = colorScheme === 'dark';
+
+    const wrappedHtml = useMemo(() => wrapHtml(html, isDark) + HEIGHT_SCRIPT, [html, isDark]);
 
     const handleMessage = useCallback((event: { nativeEvent: { data: string } }) => {
       try {
@@ -78,12 +152,17 @@ if (Platform.OS !== 'web') {
     return (
       <WebView
         originWhitelist={['*']}
-        source={{ html: html + HEIGHT_SCRIPT }}
-        style={[styles.webView, { height }]}
+        source={{ html: wrappedHtml }}
+        style={[styles.webView, height ? { height } : { minHeight: 100 }]}
         scalesPageToFit={false}
         scrollEnabled={false}
-        nestedScrollEnabled
+        showsVerticalScrollIndicator={false}
+        showsHorizontalScrollIndicator={false}
         onMessage={handleMessage}
+        javaScriptEnabled
+        domStorageEnabled={false}
+        startInLoadingState={false}
+        cacheEnabled
       />
     );
   };

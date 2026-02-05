@@ -13,16 +13,8 @@ import {
   TouchableOpacity,
   StyleSheet,
   Platform,
-  KeyboardAvoidingView,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
-import {
-  MailSend01Icon,
-  Cancel01Icon,
-  Attachment01Icon,
-  ArrowDown01Icon,
-} from '@hugeicons/core-free-icons';
 import { useOxy, toast } from '@oxyhq/services';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -30,7 +22,7 @@ import { Colors } from '@/constants/theme';
 import { useEmailStore } from '@/hooks/useEmail';
 import { useSendMessageWithUndo } from '@/hooks/mutations/useMessageMutations';
 import { Avatar } from '@/components/Avatar';
-import type { Message, Attachment, EmailAddress } from '@/services/emailApi';
+import type { Message, EmailAddress } from '@/services/emailApi';
 
 function formatQuoteDate(dateStr: string): string {
   const date = new Date(dateStr);
@@ -99,11 +91,7 @@ export function InlineReply({ message, mode, onClose, onSent }: InlineReplyProps
   const [body, setBody] = useState('');
   const [quotedText, setQuotedText] = useState('');
   const [showCcBcc, setShowCcBcc] = useState(!!initialCc);
-  const [showRecipients, setShowRecipients] = useState(mode === 'forward');
-  const [attachments, setAttachments] = useState<Attachment[]>([]);
-  const [uploading, setUploading] = useState(false);
   const [signatureLoaded, setSignatureLoaded] = useState(false);
-  const [expanded, setExpanded] = useState(false);
 
   // Load signature and quoted text on mount
   useEffect(() => {
@@ -127,7 +115,6 @@ export function InlineReply({ message, mode, onClose, onSent }: InlineReplyProps
         setQuotedText(formatQuotedText(message));
       }
 
-      // Place signature after body placeholder, before quoted text
       setBody(signature);
       setSignatureLoaded(true);
     };
@@ -135,9 +122,8 @@ export function InlineReply({ message, mode, onClose, onSent }: InlineReplyProps
     setup();
   }, [api, signatureLoaded, message, mode]);
 
-  const fromAddress = user?.username ? `${user.username}@oxy.so` : '';
-  const sending = sendPending;
   const userName = typeof user?.name === 'string' ? user.name : user?.username || 'Me';
+  const sending = sendPending;
 
   const isValidEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
@@ -149,49 +135,6 @@ export function InlineReply({ message, mode, onClose, onSent }: InlineReplyProps
       .filter((addr) => isValidEmail(addr))
       .map((addr) => ({ address: addr }));
   };
-
-  const handleAttachFile = useCallback(async () => {
-    if (!api) return;
-    if (Platform.OS === 'web') {
-      const input = document.createElement('input');
-      input.type = 'file';
-      input.multiple = true;
-      input.onchange = async () => {
-        if (!input.files) return;
-        setUploading(true);
-        try {
-          for (const file of Array.from(input.files)) {
-            const attachment = await api.uploadAttachment(file, file.name);
-            setAttachments((prev) => [...prev, attachment]);
-          }
-        } catch {
-          toast.error('Failed to upload attachment.');
-        }
-        setUploading(false);
-      };
-      input.click();
-    } else {
-      try {
-        const DocumentPicker = require('expo-document-picker');
-        const result = await DocumentPicker.getDocumentAsync({ multiple: true });
-        if (result.canceled) return;
-        setUploading(true);
-        for (const asset of result.assets) {
-          const response = await fetch(asset.uri);
-          const blob = await response.blob();
-          const attachment = await api.uploadAttachment(blob, asset.name);
-          setAttachments((prev) => [...prev, attachment]);
-        }
-      } catch {
-        toast.error('Failed to upload attachment.');
-      }
-      setUploading(false);
-    }
-  }, [api]);
-
-  const handleRemoveAttachment = useCallback((index: number) => {
-    setAttachments((prev) => prev.filter((_, i) => i !== index));
-  }, []);
 
   const handleSend = useCallback(() => {
     if (!to.trim()) {
@@ -216,7 +159,6 @@ export function InlineReply({ message, mode, onClose, onSent }: InlineReplyProps
         text: fullBody,
         inReplyTo: mode !== 'forward' ? message._id : undefined,
         references: mode !== 'forward' && message.references ? [...message.references, message.messageId] : undefined,
-        attachments: attachments.length > 0 ? attachments.map((a) => a.s3Key) : undefined,
       },
       {
         onSuccess: () => {
@@ -227,103 +169,42 @@ export function InlineReply({ message, mode, onClose, onSent }: InlineReplyProps
           toast.error(err.message || 'Unable to send email. Please try again.'),
       },
     );
-  }, [to, cc, bcc, body, quotedText, initialSubject, message, mode, attachments, sendWithUndo, onClose, onSent]);
-
-  const handleDiscard = useCallback(() => {
-    onClose();
-  }, [onClose]);
-
-  const handleExpand = useCallback(() => {
-    setExpanded(true);
-    setTimeout(() => bodyRef.current?.focus(), 100);
-  }, []);
+  }, [to, cc, bcc, body, quotedText, initialSubject, message, mode, sendWithUndo, onClose, onSent]);
 
   const senderName = message.from.name || message.from.address.split('@')[0];
 
-  // Collapsed state - just shows click to expand
-  if (!expanded) {
-    return (
-      <TouchableOpacity
-        style={[styles.collapsedContainer, { backgroundColor: colors.surface, borderColor: colors.border }]}
-        onPress={handleExpand}
-        activeOpacity={0.8}
-      >
-        <Avatar name={userName} size={32} />
-        <Text style={[styles.collapsedPlaceholder, { color: colors.secondaryText }]}>
-          {mode === 'forward' ? 'Forward this message...' : `Reply to ${senderName}...`}
-        </Text>
-      </TouchableOpacity>
-    );
-  }
-
   return (
-    <KeyboardAvoidingView
-      style={[styles.container, { backgroundColor: colors.surface, borderColor: colors.border }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      {/* Header */}
-      <View style={[styles.header, { borderBottomColor: colors.border }]}>
-        <Avatar name={userName} size={32} />
-        <View style={styles.headerInfo}>
-          <Text style={[styles.headerTitle, { color: colors.text }]}>
-            {mode === 'forward' ? 'Forward' : mode === 'reply-all' ? 'Reply All' : 'Reply'}
-          </Text>
-          <Text style={[styles.headerFrom, { color: colors.secondaryText }]} numberOfLines={1}>
-            {fromAddress}
-          </Text>
-        </View>
-        <TouchableOpacity onPress={handleDiscard} style={styles.closeButton}>
-          {Platform.OS === 'web' ? (
-            <HugeiconsIcon icon={Cancel01Icon as unknown as IconSvgElement} size={20} color={colors.icon} />
-          ) : (
-            <MaterialCommunityIcons name="close" size={20} color={colors.icon} />
-          )}
-        </TouchableOpacity>
-      </View>
-
-      {/* Recipients - collapsible */}
-      <TouchableOpacity
-        style={[styles.recipientRow, { borderBottomColor: colors.border }]}
-        onPress={() => setShowRecipients(!showRecipients)}
-        activeOpacity={0.7}
-      >
-        <Text style={[styles.recipientLabel, { color: colors.secondaryText }]}>To:</Text>
-        <Text style={[styles.recipientValue, { color: colors.text }]} numberOfLines={1}>
-          {to || 'Add recipients'}
-        </Text>
-        <MaterialCommunityIcons
-          name={showRecipients ? 'chevron-up' : 'chevron-down'}
-          size={16}
-          color={colors.secondaryText}
-        />
-      </TouchableOpacity>
-
-      {showRecipients && (
-        <View style={[styles.recipientsExpanded, { borderBottomColor: colors.border }]}>
-          <View style={styles.recipientInputRow}>
-            <Text style={[styles.recipientInputLabel, { color: colors.secondaryText }]}>To</Text>
+    <View style={[styles.container, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+      {/* Header row with avatar and close */}
+      <View style={styles.header}>
+        <Avatar name={userName} size={36} />
+        <View style={styles.headerContent}>
+          <View style={styles.toRow}>
+            <Text style={[styles.toLabel, { color: colors.secondaryText }]}>
+              {mode === 'forward' ? 'Forward to:' : mode === 'reply-all' ? 'Reply all to:' : 'Reply to:'}
+            </Text>
             <TextInput
-              style={[styles.recipientInput, { color: colors.text }]}
+              style={[styles.toInput, { color: colors.text }]}
               value={to}
               onChangeText={setTo}
-              placeholder="Recipients"
+              placeholder={mode === 'forward' ? 'Add recipients' : senderName}
               placeholderTextColor={colors.searchPlaceholder}
               keyboardType="email-address"
               autoCapitalize="none"
               autoCorrect={false}
             />
             {!showCcBcc && (
-              <TouchableOpacity onPress={() => setShowCcBcc(true)}>
-                <Text style={[styles.ccBccToggle, { color: colors.primary }]}>Cc/Bcc</Text>
+              <TouchableOpacity onPress={() => setShowCcBcc(true)} style={styles.ccBccButton}>
+                <Text style={[styles.ccBccText, { color: colors.primary }]}>Cc/Bcc</Text>
               </TouchableOpacity>
             )}
           </View>
           {showCcBcc && (
             <>
-              <View style={styles.recipientInputRow}>
-                <Text style={[styles.recipientInputLabel, { color: colors.secondaryText }]}>Cc</Text>
+              <View style={styles.toRow}>
+                <Text style={[styles.toLabel, { color: colors.secondaryText }]}>Cc:</Text>
                 <TextInput
-                  style={[styles.recipientInput, { color: colors.text }]}
+                  style={[styles.toInput, { color: colors.text }]}
                   value={cc}
                   onChangeText={setCc}
                   placeholder=""
@@ -333,10 +214,10 @@ export function InlineReply({ message, mode, onClose, onSent }: InlineReplyProps
                   autoCorrect={false}
                 />
               </View>
-              <View style={styles.recipientInputRow}>
-                <Text style={[styles.recipientInputLabel, { color: colors.secondaryText }]}>Bcc</Text>
+              <View style={styles.toRow}>
+                <Text style={[styles.toLabel, { color: colors.secondaryText }]}>Bcc:</Text>
                 <TextInput
-                  style={[styles.recipientInput, { color: colors.text }]}
+                  style={[styles.toInput, { color: colors.text }]}
                   value={bcc}
                   onChangeText={setBcc}
                   placeholder=""
@@ -349,12 +230,15 @@ export function InlineReply({ message, mode, onClose, onSent }: InlineReplyProps
             </>
           )}
         </View>
-      )}
+        <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+          <MaterialCommunityIcons name="close" size={20} color={colors.icon} />
+        </TouchableOpacity>
+      </View>
 
-      {/* Body */}
+      {/* Body textarea */}
       <TextInput
         ref={bodyRef}
-        style={[styles.bodyInput, { color: colors.text }]}
+        style={[styles.bodyInput, { color: colors.text, borderTopColor: colors.border }]}
         value={body}
         onChangeText={setBody}
         placeholder="Write your reply..."
@@ -364,228 +248,106 @@ export function InlineReply({ message, mode, onClose, onSent }: InlineReplyProps
         autoFocus
       />
 
-      {/* Quoted text preview */}
-      <TouchableOpacity
-        style={[styles.quotedPreview, { backgroundColor: colors.surfaceVariant }]}
-        activeOpacity={0.8}
-      >
-        <View style={[styles.quotedLine, { backgroundColor: colors.primary }]} />
-        <Text style={[styles.quotedText, { color: colors.secondaryText }]} numberOfLines={3}>
-          {quotedText.slice(0, 200)}...
+      {/* Quoted text indicator */}
+      <TouchableOpacity style={[styles.quotedIndicator, { borderTopColor: colors.border }]} activeOpacity={0.7}>
+        <View style={[styles.quotedDots, { backgroundColor: colors.secondaryText }]} />
+        <Text style={[styles.quotedLabel, { color: colors.secondaryText }]} numberOfLines={1}>
+          {quotedText.slice(0, 60).replace(/\n/g, ' ')}...
         </Text>
       </TouchableOpacity>
 
-      {/* Attachments */}
-      {attachments.length > 0 && (
-        <View style={styles.attachmentsSection}>
-          {attachments.map((att, i) => (
-            <View key={i} style={[styles.attachmentChip, { backgroundColor: colors.surfaceVariant }]}>
-              <MaterialCommunityIcons name="paperclip" size={12} color={colors.secondaryText} />
-              <Text style={[styles.attachmentName, { color: colors.text }]} numberOfLines={1}>
-                {att.filename}
-              </Text>
-              <TouchableOpacity onPress={() => handleRemoveAttachment(i)} hitSlop={4}>
-                <MaterialCommunityIcons name="close-circle" size={14} color={colors.secondaryText} />
-              </TouchableOpacity>
-            </View>
-          ))}
-        </View>
-      )}
-
-      {/* Footer actions */}
+      {/* Footer with send button */}
       <View style={[styles.footer, { borderTopColor: colors.border }]}>
-        <TouchableOpacity onPress={handleAttachFile} style={styles.footerButton} disabled={uploading}>
-          {Platform.OS === 'web' ? (
-            <HugeiconsIcon
-              icon={Attachment01Icon as unknown as IconSvgElement}
-              size={20}
-              color={uploading ? colors.secondaryText : colors.icon}
-            />
-          ) : (
-            <MaterialCommunityIcons
-              name="paperclip"
-              size={20}
-              color={uploading ? colors.secondaryText : colors.icon}
-            />
-          )}
-        </TouchableOpacity>
-
-        {/* Formatting toolbar */}
-        <View style={styles.formattingToolbar}>
-          <TouchableOpacity
-            onPress={() => setBody((prev) => prev + '**bold**')}
-            style={styles.formatButton}
-          >
-            <MaterialCommunityIcons name="format-bold" size={18} color={colors.icon} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => setBody((prev) => prev + '*italic*')}
-            style={styles.formatButton}
-          >
-            <MaterialCommunityIcons name="format-italic" size={18} color={colors.icon} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => setBody((prev) => prev + '[link text](https://)')}
-            style={styles.formatButton}
-          >
-            <MaterialCommunityIcons name="link" size={18} color={colors.icon} />
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.footerSpacer} />
-
-        <TouchableOpacity
-          onPress={handleDiscard}
-          style={[styles.discardButton, { borderColor: colors.border }]}
-        >
-          <Text style={[styles.discardButtonText, { color: colors.text }]}>Discard</Text>
-        </TouchableOpacity>
-
         <TouchableOpacity
           onPress={handleSend}
-          style={[styles.sendButton, { backgroundColor: colors.primary, opacity: sending ? 0.5 : 1 }]}
+          style={[styles.sendButton, { backgroundColor: colors.primary, opacity: sending ? 0.6 : 1 }]}
           disabled={sending}
         >
-          {Platform.OS === 'web' ? (
-            <HugeiconsIcon icon={MailSend01Icon as unknown as IconSvgElement} size={18} color="#FFFFFF" />
-          ) : (
-            <MaterialCommunityIcons name="send" size={18} color="#FFFFFF" />
-          )}
           <Text style={styles.sendButtonText}>Send</Text>
+          <MaterialCommunityIcons name="send" size={16} color="#FFFFFF" />
+        </TouchableOpacity>
+
+        <View style={styles.footerActions} />
+
+        <TouchableOpacity onPress={onClose} style={styles.footerAction}>
+          <MaterialCommunityIcons name="delete-outline" size={20} color={colors.icon} />
         </TouchableOpacity>
       </View>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  collapsedContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    padding: 12,
-    marginHorizontal: 16,
-    marginVertical: 8,
-    borderRadius: 12,
-    borderWidth: 1,
-  },
-  collapsedPlaceholder: {
-    fontSize: 14,
-    flex: 1,
-  },
   container: {
     marginHorizontal: 16,
-    marginVertical: 8,
-    borderRadius: 12,
+    marginBottom: 8,
+    borderRadius: 8,
     borderWidth: 1,
-    overflow: 'hidden',
+    ...Platform.select({
+      web: { boxShadow: '0 1px 3px rgba(0,0,0,0.12)' } as any,
+      default: { elevation: 2 },
+    }),
   },
   header: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    alignItems: 'flex-start',
+    padding: 12,
+    gap: 12,
   },
-  headerInfo: {
+  headerContent: {
     flex: 1,
+    gap: 4,
   },
-  headerTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  headerFrom: {
-    fontSize: 12,
-    marginTop: 1,
-  },
-  closeButton: {
-    width: 32,
-    height: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 16,
-  },
-  recipientRow: {
+  toRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    gap: 6,
+    gap: 4,
   },
-  recipientLabel: {
+  toLabel: {
     fontSize: 13,
+    minWidth: 70,
   },
-  recipientValue: {
-    fontSize: 13,
-    flex: 1,
-  },
-  recipientsExpanded: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    gap: 8,
-  },
-  recipientInputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  recipientInputLabel: {
-    fontSize: 13,
-    width: 28,
-  },
-  recipientInput: {
+  toInput: {
     flex: 1,
     fontSize: 14,
-    paddingVertical: 4,
+    paddingVertical: 2,
   },
-  ccBccToggle: {
+  ccBccButton: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  ccBccText: {
     fontSize: 13,
     fontWeight: '500',
+  },
+  closeButton: {
+    padding: 4,
   },
   bodyInput: {
     fontSize: 14,
     lineHeight: 22,
-    padding: 12,
-    minHeight: 100,
-    maxHeight: 200,
-  },
-  quotedPreview: {
-    flexDirection: 'row',
-    marginHorizontal: 12,
-    marginBottom: 8,
-    borderRadius: 6,
-    overflow: 'hidden',
-  },
-  quotedLine: {
-    width: 3,
-  },
-  quotedText: {
-    flex: 1,
-    fontSize: 12,
-    lineHeight: 18,
-    padding: 8,
-  },
-  attachmentsSection: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
     paddingHorizontal: 12,
-    marginBottom: 8,
+    paddingVertical: 12,
+    minHeight: 120,
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
-  attachmentChip: {
+  quotedIndicator: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
-  attachmentName: {
-    fontSize: 11,
-    maxWidth: 100,
+  quotedDots: {
+    width: 16,
+    height: 4,
+    borderRadius: 2,
+    opacity: 0.5,
+  },
+  quotedLabel: {
+    flex: 1,
+    fontSize: 12,
   },
   footer: {
     flexDirection: 'row',
@@ -593,51 +355,34 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 8,
     borderTopWidth: StyleSheet.hairlineWidth,
-    gap: 8,
+    gap: 4,
   },
-  footerButton: {
+  sendButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
+  },
+  sendButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  footerActions: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    marginLeft: 8,
+    gap: 4,
+  },
+  footerAction: {
     width: 36,
     height: 36,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 18,
-  },
-  footerSpacer: {
-    flex: 1,
-  },
-  discardButton: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 18,
-    borderWidth: 1,
-  },
-  discardButtonText: {
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  sendButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 18,
-  },
-  sendButtonText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  formattingToolbar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-  },
-  formatButton: {
-    width: 32,
-    height: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 16,
   },
 });
