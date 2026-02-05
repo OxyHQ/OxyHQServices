@@ -243,6 +243,9 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
     );
   }, [threadMessages, currentMessage]);
 
+  // Detect stale threads that need a response
+  const staleInfo = useStaleThread(sortedThread, userEmail);
+
   const handleAttachment = useCallback(async (s3Key: string, filename: string) => {
     if (!api) return;
     try {
