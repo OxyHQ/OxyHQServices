@@ -32,7 +32,7 @@ import { useOxy, toast } from '@oxyhq/services';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { useEmailStore } from '@/hooks/useEmail';
-import { useSendMessage, useSaveDraft } from '@/hooks/mutations/useMessageMutations';
+import { useSendMessageWithUndo, useSaveDraft } from '@/hooks/mutations/useMessageMutations';
 import type { Attachment } from '@/services/emailApi';
 
 interface ComposeFormProps {
@@ -52,7 +52,7 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
   const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
   const { user } = useOxy();
   const api = useEmailStore((s) => s._api);
-  const sendMessage = useSendMessage();
+  const { sendWithUndo, isPending: sendPending } = useSendMessageWithUndo();
   const saveDraftMutation = useSaveDraft();
   const bodyRef = useRef<TextInput>(null);
 
@@ -87,7 +87,7 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
   }, [api, signatureLoaded, initialBody]);
 
   const fromAddress = user?.username ? `${user.username}@oxy.so` : '';
-  const sending = sendMessage.isPending;
+  const sending = sendPending;
   const hasContent = to.trim() || subject.trim() || body.trim() || attachments.length > 0;
 
   const isValidEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -156,7 +156,7 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
       return;
     }
 
-    sendMessage.mutate(
+    sendWithUndo(
       {
         to: toAddresses,
         cc: cc.trim() ? parseAddresses(cc) : undefined,
@@ -172,7 +172,7 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
           toast.error(err.message || 'Unable to send email. Please try again.'),
       },
     );
-  }, [to, cc, bcc, subject, body, replyTo, attachments, sendMessage, router]);
+  }, [to, cc, bcc, subject, body, replyTo, attachments, sendWithUndo, router]);
 
   const handleSaveDraft = useCallback(() => {
     saveDraftMutation.mutate(
@@ -363,6 +363,40 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
           </View>
         )}
 
+        {/* Formatting toolbar */}
+        <View style={[styles.formattingToolbar, { borderBottomColor: colors.border }]}>
+          <TouchableOpacity
+            onPress={() => setBody((prev) => prev + '**bold**')}
+            style={styles.formatButton}
+          >
+            <MaterialCommunityIcons name="format-bold" size={20} color={colors.icon} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => setBody((prev) => prev + '*italic*')}
+            style={styles.formatButton}
+          >
+            <MaterialCommunityIcons name="format-italic" size={20} color={colors.icon} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => setBody((prev) => prev + '[link text](https://)')}
+            style={styles.formatButton}
+          >
+            <MaterialCommunityIcons name="link" size={20} color={colors.icon} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => setBody((prev) => prev + '\n- ')}
+            style={styles.formatButton}
+          >
+            <MaterialCommunityIcons name="format-list-bulleted" size={20} color={colors.icon} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => setBody((prev) => prev + '\n1. ')}
+            style={styles.formatButton}
+          >
+            <MaterialCommunityIcons name="format-list-numbered" size={20} color={colors.icon} />
+          </TouchableOpacity>
+        </View>
+
         {/* Body */}
         <TextInput
           ref={bodyRef}
@@ -470,5 +504,20 @@ const styles = StyleSheet.create({
     lineHeight: 24,
     padding: 16,
     minHeight: 300,
+  },
+  formattingToolbar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: 2,
+  },
+  formatButton: {
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 18,
   },
 });

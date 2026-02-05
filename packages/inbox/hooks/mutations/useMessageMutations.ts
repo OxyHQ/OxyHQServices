@@ -220,6 +220,78 @@ export function useSendMessage() {
   });
 }
 
+const UNDO_SEND_DELAY_MS = 5000;
+
+interface UndoSendState {
+  pending: boolean;
+  cancelled: boolean;
+}
+
+export function useSendMessageWithUndo() {
+  const api = useEmailStore((s) => s._api);
+  const queryClient = useQueryClient();
+  const stateRef = { current: { pending: false, cancelled: false } as UndoSendState };
+  const timeoutRef = { current: null as ReturnType<typeof setTimeout> | null };
+
+  const sendWithUndo = async (
+    params: Parameters<NonNullable<typeof api>['sendMessage']>[0],
+    options?: { onSuccess?: () => void; onError?: (err: any) => void },
+  ) => {
+    if (!api) {
+      options?.onError?.(new Error('Email API not initialized'));
+      return;
+    }
+
+    // Reset state
+    stateRef.current = { pending: true, cancelled: false };
+
+    // Clear any existing timeout
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+    }
+
+    // Show toast with undo action
+    toast('Sending message...', {
+      duration: UNDO_SEND_DELAY_MS,
+      action: {
+        label: 'Undo',
+        onClick: () => {
+          stateRef.current.cancelled = true;
+          if (timeoutRef.current) {
+            clearTimeout(timeoutRef.current);
+          }
+          toast('Message cancelled.');
+        },
+      },
+    } as Record<string, unknown>);
+
+    // Set timeout to actually send
+    timeoutRef.current = setTimeout(async () => {
+      if (stateRef.current.cancelled) {
+        return;
+      }
+
+      try {
+        await api.sendMessage(params);
+        toast.success('Message sent.');
+        queryClient.invalidateQueries({ queryKey: ['messages'] });
+        queryClient.invalidateQueries({ queryKey: ['mailboxes'] });
+        options?.onSuccess?.();
+      } catch (err: any) {
+        toast.error(err.message || 'Failed to send message.');
+        options?.onError?.(err);
+      } finally {
+        stateRef.current.pending = false;
+      }
+    }, UNDO_SEND_DELAY_MS);
+  };
+
+  return {
+    sendWithUndo,
+    isPending: stateRef.current.pending,
+  };
+}
+
 export function useUpdateMessageLabels() {
   const api = useEmailStore((s) => s._api);
   const queryClient = useQueryClient();

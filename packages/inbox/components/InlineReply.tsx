@@ -28,7 +28,7 @@ import { useOxy, toast } from '@oxyhq/services';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { useEmailStore } from '@/hooks/useEmail';
-import { useSendMessage } from '@/hooks/mutations/useMessageMutations';
+import { useSendMessageWithUndo } from '@/hooks/mutations/useMessageMutations';
 import { Avatar } from '@/components/Avatar';
 import type { Message, Attachment, EmailAddress } from '@/services/emailApi';
 
@@ -66,7 +66,7 @@ export function InlineReply({ message, mode, onClose, onSent }: InlineReplyProps
   const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
   const { user } = useOxy();
   const api = useEmailStore((s) => s._api);
-  const sendMessage = useSendMessage();
+  const { sendWithUndo, isPending: sendPending } = useSendMessageWithUndo();
   const bodyRef = useRef<TextInput>(null);
 
   // Compute initial recipients based on mode
@@ -136,7 +136,7 @@ export function InlineReply({ message, mode, onClose, onSent }: InlineReplyProps
   }, [api, signatureLoaded, message, mode]);
 
   const fromAddress = user?.username ? `${user.username}@oxy.so` : '';
-  const sending = sendMessage.isPending;
+  const sending = sendPending;
   const userName = typeof user?.name === 'string' ? user.name : user?.username || 'Me';
 
   const isValidEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -207,7 +207,7 @@ export function InlineReply({ message, mode, onClose, onSent }: InlineReplyProps
 
     const fullBody = body + quotedText;
 
-    sendMessage.mutate(
+    sendWithUndo(
       {
         to: toAddresses,
         cc: cc.trim() ? parseAddresses(cc) : undefined,
@@ -227,7 +227,7 @@ export function InlineReply({ message, mode, onClose, onSent }: InlineReplyProps
           toast.error(err.message || 'Unable to send email. Please try again.'),
       },
     );
-  }, [to, cc, bcc, body, quotedText, initialSubject, message, mode, attachments, sendMessage, onClose, onSent]);
+  }, [to, cc, bcc, body, quotedText, initialSubject, message, mode, attachments, sendWithUndo, onClose, onSent]);
 
   const handleDiscard = useCallback(() => {
     onClose();
