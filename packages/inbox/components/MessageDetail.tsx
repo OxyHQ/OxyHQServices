@@ -37,6 +37,7 @@ import {
 } from '@hugeicons/core-free-icons';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useOxy } from '@oxyhq/services';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
@@ -53,7 +54,9 @@ import { HtmlBody } from '@/components/HtmlBody';
 import { InlineReply } from '@/components/InlineReply';
 import { ThreadSummary } from '@/components/ThreadSummary';
 import { SentimentIndicator } from '@/components/SentimentIndicator';
+import { StaleThreadBanner } from '@/components/StaleThreadBanner';
 import { useSentimentAnalysis } from '@/hooks/queries/useSentimentAnalysis';
+import { useStaleThread } from '@/hooks/queries/useStaleThread';
 import type { EmailAddress } from '@/services/emailApi';
 
 function formatFullDate(dateStr: string): string {
@@ -126,6 +129,10 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
 
   // Sentiment analysis for the current message
   const sentiment = useSentimentAnalysis(currentMessage);
+
+  // Get current user for stale thread detection
+  const { user } = useOxy();
+  const userEmail = user?.email || user?.emails?.[0]?.address;
 
   // Reset state when message changes
   useEffect(() => {
