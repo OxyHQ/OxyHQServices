@@ -116,14 +116,18 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
   const [moreMenuVisible, setMoreMenuVisible] = useState(false);
   const [labelMenuVisible, setLabelMenuVisible] = useState(false);
   const [replyMode, setReplyMode] = useState<'reply' | 'reply-all' | 'forward' | null>(null);
+  const [replyTargetId, setReplyTargetId] = useState<string | null>(null);
   const [expandedMessages, setExpandedMessages] = useState<Set<string>>(new Set([messageId]));
+  const [messageMenuId, setMessageMenuId] = useState<string | null>(null);
 
   // Reset state when message changes
   useEffect(() => {
     setMoreMenuVisible(false);
     setLabelMenuVisible(false);
     setReplyMode(null);
+    setReplyTargetId(null);
     setExpandedMessages(new Set([messageId]));
+    setMessageMenuId(null);
   }, [messageId]);
 
   // Auto-mark message as read when opened
@@ -177,23 +181,30 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
     if (mode === 'standalone') router.back();
   }, [messageId, mailboxes, archiveMutation, router, mode]);
 
-  const handleReply = useCallback(() => {
+  const handleReply = useCallback((targetMsgId?: string) => {
     if (!currentMessage) return;
+    setReplyTargetId(targetMsgId || null);
     setReplyMode('reply');
+    setMessageMenuId(null);
   }, [currentMessage]);
 
-  const handleReplyAll = useCallback(() => {
+  const handleReplyAll = useCallback((targetMsgId?: string) => {
     if (!currentMessage) return;
+    setReplyTargetId(targetMsgId || null);
     setReplyMode('reply-all');
+    setMessageMenuId(null);
   }, [currentMessage]);
 
-  const handleForward = useCallback(() => {
+  const handleForward = useCallback((targetMsgId?: string) => {
     if (!currentMessage) return;
+    setReplyTargetId(targetMsgId || null);
     setReplyMode('forward');
+    setMessageMenuId(null);
   }, [currentMessage]);
 
   const handleCloseReply = useCallback(() => {
     setReplyMode(null);
+    setReplyTargetId(null);
   }, []);
 
   const toggleMessageExpanded = useCallback((msgId: string) => {
@@ -424,7 +435,7 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
         style={styles.body}
         contentContainerStyle={[
           styles.bodyContent,
-          { paddingBottom: mode === 'standalone' ? insets.bottom + 16 : 16 },
+          { paddingBottom: replyMode ? (mode === 'standalone' ? insets.bottom + 16 : 16) : 16 },
         ]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
@@ -511,25 +522,86 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
             >
               {/* Sender header - with padding */}
               <View style={styles.contentPadded}>
-                <TouchableOpacity
-                  style={styles.senderRow}
-                  onPress={() => sortedThread.length > 1 ? toggleMessageExpanded(msg._id) : undefined}
-                  activeOpacity={sortedThread.length > 1 ? 0.7 : 1}
-                >
-                  <Avatar name={msgSenderName} size={40} />
-                  <View style={styles.senderInfo}>
-                    <View style={styles.senderNameRow}>
-                      <Text style={[styles.senderName, { color: colors.text }]}>{msgSenderName}</Text>
-                      <Text style={[styles.messageDate, { color: colors.secondaryText }]}>
-                        {formatFullDate(msg.date)}
+                <View style={styles.senderRow}>
+                  <TouchableOpacity
+                    onPress={() => sortedThread.length > 1 ? toggleMessageExpanded(msg._id) : undefined}
+                    activeOpacity={sortedThread.length > 1 ? 0.7 : 1}
+                    style={styles.senderRowMain}
+                  >
+                    <Avatar name={msgSenderName} size={40} />
+                    <View style={styles.senderInfo}>
+                      <View style={styles.senderNameRow}>
+                        <Text style={[styles.senderName, { color: colors.text }]}>{msgSenderName}</Text>
+                        <Text style={[styles.messageDate, { color: colors.secondaryText }]}>
+                          {formatShortDate(msg.date)}
+                        </Text>
+                      </View>
+                      <Text style={[styles.toLine, { color: colors.secondaryText }]} numberOfLines={1}>
+                        to {formatRecipients(msg.to)}
+                        {msg.cc && msg.cc.length > 0 ? `, cc: ${formatRecipients(msg.cc)}` : ''}
                       </Text>
                     </View>
-                    <Text style={[styles.toLine, { color: colors.secondaryText }]} numberOfLines={1}>
-                      to {formatRecipients(msg.to)}
-                      {msg.cc && msg.cc.length > 0 ? `, cc: ${formatRecipients(msg.cc)}` : ''}
-                    </Text>
+                  </TouchableOpacity>
+
+                  {/* Message action icons - like Gmail */}
+                  <View style={styles.messageActions}>
+                    <TouchableOpacity
+                      style={styles.messageActionButton}
+                      onPress={() => handleReply(msg._id)}
+                      activeOpacity={0.7}
+                    >
+                      {Platform.OS === 'web' ? (
+                        <HugeiconsIcon icon={MailReply01Icon as unknown as IconSvgElement} size={18} color={colors.icon} />
+                      ) : (
+                        <MaterialCommunityIcons name="reply" size={18} color={colors.icon} />
+                      )}
+                    </TouchableOpacity>
+                    <View style={styles.messageMenuAnchor}>
+                      <TouchableOpacity
+                        style={styles.messageActionButton}
+                        onPress={() => setMessageMenuId(messageMenuId === msg._id ? null : msg._id)}
+                        activeOpacity={0.7}
+                      >
+                        {Platform.OS === 'web' ? (
+                          <HugeiconsIcon icon={MoreHorizontalIcon as unknown as IconSvgElement} size={18} color={colors.icon} />
+                        ) : (
+                          <MaterialCommunityIcons name="dots-vertical" size={18} color={colors.icon} />
+                        )}
+                      </TouchableOpacity>
+                      {messageMenuId === msg._id && (
+                        <>
+                          <Pressable style={styles.menuBackdrop} onPress={() => setMessageMenuId(null)} />
+                          <View style={[styles.messageMenu, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                            <TouchableOpacity style={styles.menuItem} onPress={() => handleReply(msg._id)} activeOpacity={0.6}>
+                              {Platform.OS === 'web' ? (
+                                <HugeiconsIcon icon={MailReply01Icon as unknown as IconSvgElement} size={16} color={colors.icon} />
+                              ) : (
+                                <MaterialCommunityIcons name="reply" size={16} color={colors.icon} />
+                              )}
+                              <Text style={[styles.menuItemText, { color: colors.text }]}>Reply</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={styles.menuItem} onPress={() => handleReplyAll(msg._id)} activeOpacity={0.6}>
+                              {Platform.OS === 'web' ? (
+                                <HugeiconsIcon icon={MailReplyAll01Icon as unknown as IconSvgElement} size={16} color={colors.icon} />
+                              ) : (
+                                <MaterialCommunityIcons name="reply-all" size={16} color={colors.icon} />
+                              )}
+                              <Text style={[styles.menuItemText, { color: colors.text }]}>Reply all</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={styles.menuItem} onPress={() => handleForward(msg._id)} activeOpacity={0.6}>
+                              {Platform.OS === 'web' ? (
+                                <HugeiconsIcon icon={Forward01Icon as unknown as IconSvgElement} size={16} color={colors.icon} />
+                              ) : (
+                                <MaterialCommunityIcons name="share" size={16} color={colors.icon} />
+                              )}
+                              <Text style={[styles.menuItemText, { color: colors.text }]}>Forward</Text>
+                            </TouchableOpacity>
+                          </View>
+                        </>
+                      )}
+                    </View>
                   </View>
-                </TouchableOpacity>
+                </View>
 
                 {/* Attachments */}
                 {msg.attachments.length > 0 && (
@@ -575,55 +647,64 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
         {replyMode && (
           <View style={[styles.inlineReplyWrapper, { marginTop: 16 }]}>
             <InlineReply
-              message={currentMessage}
+              message={replyTargetId ? (sortedThread.find(m => m._id === replyTargetId) || currentMessage) : currentMessage}
               mode={replyMode}
               onClose={handleCloseReply}
             />
           </View>
         )}
-
-        {/* Reply buttons - inside scroll area when not replying */}
-        {!replyMode && (
-          <View style={[styles.contentPadded, styles.replyButtonsContainer]}>
-            <TouchableOpacity
-              style={[styles.replyButton, { borderColor: colors.border }]}
-              onPress={handleReply}
-              activeOpacity={0.7}
-            >
-              {Platform.OS === 'web' ? (
-                <HugeiconsIcon icon={MailReply01Icon as unknown as IconSvgElement} size={18} color={colors.icon} />
-              ) : (
-                <MaterialCommunityIcons name="reply" size={18} color={colors.icon} />
-              )}
-              <Text style={[styles.replyButtonText, { color: colors.text }]}>Reply</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.replyButton, { borderColor: colors.border }]}
-              onPress={handleReplyAll}
-              activeOpacity={0.7}
-            >
-              {Platform.OS === 'web' ? (
-                <HugeiconsIcon icon={MailReplyAll01Icon as unknown as IconSvgElement} size={18} color={colors.icon} />
-              ) : (
-                <MaterialCommunityIcons name="reply-all" size={18} color={colors.icon} />
-              )}
-              <Text style={[styles.replyButtonText, { color: colors.text }]}>Reply All</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.replyButton, { borderColor: colors.border }]}
-              onPress={handleForward}
-              activeOpacity={0.7}
-            >
-              {Platform.OS === 'web' ? (
-                <HugeiconsIcon icon={Forward01Icon as unknown as IconSvgElement} size={18} color={colors.icon} />
-              ) : (
-                <MaterialCommunityIcons name="share" size={18} color={colors.icon} />
-              )}
-              <Text style={[styles.replyButtonText, { color: colors.text }]}>Forward</Text>
-            </TouchableOpacity>
-          </View>
-        )}
       </ScrollView>
+
+      {/* Sticky reply buttons at bottom */}
+      {!replyMode && (
+        <View
+          style={[
+            styles.stickyReplyBar,
+            {
+              backgroundColor: colors.background,
+              borderTopColor: colors.border,
+              paddingBottom: mode === 'standalone' ? insets.bottom + 8 : 8,
+            },
+          ]}
+        >
+          <TouchableOpacity
+            style={[styles.replyButton, { borderColor: colors.border }]}
+            onPress={() => handleReply()}
+            activeOpacity={0.7}
+          >
+            {Platform.OS === 'web' ? (
+              <HugeiconsIcon icon={MailReply01Icon as unknown as IconSvgElement} size={18} color={colors.icon} />
+            ) : (
+              <MaterialCommunityIcons name="reply" size={18} color={colors.icon} />
+            )}
+            <Text style={[styles.replyButtonText, { color: colors.text }]}>Reply</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.replyButton, { borderColor: colors.border }]}
+            onPress={() => handleReplyAll()}
+            activeOpacity={0.7}
+          >
+            {Platform.OS === 'web' ? (
+              <HugeiconsIcon icon={MailReplyAll01Icon as unknown as IconSvgElement} size={18} color={colors.icon} />
+            ) : (
+              <MaterialCommunityIcons name="reply-all" size={18} color={colors.icon} />
+            )}
+            <Text style={[styles.replyButtonText, { color: colors.text }]}>Reply All</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.replyButton, { borderColor: colors.border }]}
+            onPress={() => handleForward()}
+            activeOpacity={0.7}
+          >
+            {Platform.OS === 'web' ? (
+              <HugeiconsIcon icon={Forward01Icon as unknown as IconSvgElement} size={18} color={colors.icon} />
+            ) : (
+              <MaterialCommunityIcons name="share" size={18} color={colors.icon} />
+            )}
+            <Text style={[styles.replyButtonText, { color: colors.text }]}>Forward</Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </View>
   );
 }
@@ -773,11 +854,47 @@ const styles = StyleSheet.create({
   },
   senderRow: {
     flexDirection: 'row',
-    gap: 12,
+    alignItems: 'flex-start',
+    gap: 8,
     marginBottom: 16,
+  },
+  senderRowMain: {
+    flexDirection: 'row',
+    flex: 1,
+    gap: 12,
   },
   senderInfo: {
     flex: 1,
+  },
+  messageActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 0,
+    marginTop: 4,
+  },
+  messageActionButton: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 16,
+  },
+  messageMenuAnchor: {
+    position: 'relative',
+  },
+  messageMenu: {
+    position: 'absolute',
+    top: 32,
+    right: 0,
+    minWidth: 160,
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingVertical: 4,
+    zIndex: 100,
+    ...Platform.select({
+      web: { boxShadow: '0 4px 16px rgba(0,0,0,0.15)' } as any,
+      default: { elevation: 8 },
+    }),
   },
   senderNameRow: {
     flexDirection: 'row',
@@ -842,11 +959,12 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 24,
   },
-  replyButtonsContainer: {
+  stickyReplyBar: {
     flexDirection: 'row',
     gap: 8,
-    marginTop: 24,
-    marginBottom: 16,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
   replyButton: {
     flex: 1,
