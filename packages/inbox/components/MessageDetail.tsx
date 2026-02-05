@@ -42,12 +42,14 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { useEmailStore } from '@/hooks/useEmail';
 import { useMessage } from '@/hooks/queries/useMessage';
+import { useThread } from '@/hooks/queries/useThread';
 import { useMailboxes } from '@/hooks/queries/useMailboxes';
 import { useLabels } from '@/hooks/queries/useLabels';
 import { useToggleStar, useToggleRead, useArchiveMessage, useDeleteMessage, useUpdateMessageLabels } from '@/hooks/mutations/useMessageMutations';
 import { toast } from '@oxyhq/services';
 import { Avatar } from '@/components/Avatar';
 import { HtmlBody } from '@/components/HtmlBody';
+import { InlineReply } from '@/components/InlineReply';
 import type { EmailAddress } from '@/services/emailApi';
 
 function formatFullDate(dateStr: string): string {
@@ -66,6 +68,27 @@ function formatRecipients(addresses: EmailAddress[]): string {
   return addresses.map((a) => a.name || a.address).join(', ');
 }
 
+function formatShortDate(dateStr: string): string {
+  const date = new Date(dateStr);
+  const now = new Date();
+  const isToday = date.toDateString() === now.toDateString();
+  const isThisYear = date.getFullYear() === now.getFullYear();
+
+  if (isToday) {
+    return date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  }
+  if (isThisYear) {
+    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  }
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function getSnippet(text: string | null | undefined, maxLength = 100): string {
+  if (!text) return '';
+  const clean = text.replace(/\s+/g, ' ').trim();
+  return clean.length > maxLength ? clean.slice(0, maxLength) + '...' : clean;
+}
+
 interface MessageDetailProps {
   mode: 'standalone' | 'embedded';
   messageId: string;
@@ -79,6 +102,7 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
   const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
 
   const { data: currentMessage, isLoading } = useMessage(messageId);
+  const { data: threadMessages = [] } = useThread(messageId);
   const { data: mailboxes = [] } = useMailboxes();
   const { data: labels = [] } = useLabels();
   const currentMailbox = useEmailStore((s) => s.currentMailbox);
@@ -89,15 +113,17 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
   const deleteMutation = useDeleteMessage();
   const updateLabels = useUpdateMessageLabels();
 
-  const [detailsExpanded, setDetailsExpanded] = useState(false);
   const [moreMenuVisible, setMoreMenuVisible] = useState(false);
   const [labelMenuVisible, setLabelMenuVisible] = useState(false);
+  const [replyMode, setReplyMode] = useState<'reply' | 'reply-all' | 'forward' | null>(null);
+  const [expandedMessages, setExpandedMessages] = useState<Set<string>>(new Set([messageId]));
 
   // Reset state when message changes
   useEffect(() => {
-    setDetailsExpanded(false);
     setMoreMenuVisible(false);
     setLabelMenuVisible(false);
+    setReplyMode(null);
+    setExpandedMessages(new Set([messageId]));
   }, [messageId]);
 
   // Auto-mark message as read when opened
@@ -151,62 +177,44 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
     if (mode === 'standalone') router.back();
   }, [messageId, mailboxes, archiveMutation, router, mode]);
 
-  const navigate = useCallback(
-    (href: { pathname: string; params?: Record<string, string> }) => {
-      if (mode === 'embedded') {
-        router.replace(href as any);
-      } else {
-        router.push(href as any);
-      }
-    },
-    [mode, router],
-  );
-
   const handleReply = useCallback(() => {
     if (!currentMessage) return;
-    navigate({
-      pathname: '/compose',
-      params: {
-        replyTo: currentMessage._id,
-        to: currentMessage.from.address,
-        subject: currentMessage.subject.startsWith('Re:')
-          ? currentMessage.subject
-          : `Re: ${currentMessage.subject}`,
-      },
-    });
-  }, [navigate, currentMessage]);
+    setReplyMode('reply');
+  }, [currentMessage]);
 
   const handleReplyAll = useCallback(() => {
     if (!currentMessage) return;
-    // Include all To/CC recipients minus self
-    const allTo = [currentMessage.from, ...(currentMessage.to || [])];
-    const allCc = currentMessage.cc || [];
-    navigate({
-      pathname: '/compose',
-      params: {
-        replyTo: currentMessage._id,
-        to: allTo.map((a) => a.address).join(','),
-        cc: allCc.map((a) => a.address).join(','),
-        subject: currentMessage.subject.startsWith('Re:')
-          ? currentMessage.subject
-          : `Re: ${currentMessage.subject}`,
-      },
-    });
-  }, [navigate, currentMessage]);
+    setReplyMode('reply-all');
+  }, [currentMessage]);
 
   const handleForward = useCallback(() => {
     if (!currentMessage) return;
-    navigate({
-      pathname: '/compose',
-      params: {
-        forward: currentMessage._id,
-        subject: currentMessage.subject.startsWith('Fwd:')
-          ? currentMessage.subject
-          : `Fwd: ${currentMessage.subject}`,
-        body: `\n\n---------- Forwarded message ----------\nFrom: ${currentMessage.from.name || currentMessage.from.address}\nDate: ${formatFullDate(currentMessage.date)}\nSubject: ${currentMessage.subject}\nTo: ${formatRecipients(currentMessage.to)}\n\n${currentMessage.text || ''}`,
-      },
+    setReplyMode('forward');
+  }, [currentMessage]);
+
+  const handleCloseReply = useCallback(() => {
+    setReplyMode(null);
+  }, []);
+
+  const toggleMessageExpanded = useCallback((msgId: string) => {
+    setExpandedMessages((prev) => {
+      const next = new Set(prev);
+      if (next.has(msgId)) {
+        next.delete(msgId);
+      } else {
+        next.add(msgId);
+      }
+      return next;
     });
-  }, [navigate, currentMessage]);
+  }, []);
+
+  // Sort thread messages by date (oldest first for conversation view)
+  const sortedThread = useMemo(() => {
+    if (threadMessages.length === 0) return currentMessage ? [currentMessage] : [];
+    return [...threadMessages].sort(
+      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+    );
+  }, [threadMessages, currentMessage]);
 
   const handleAttachment = useCallback(async (s3Key: string, filename: string) => {
     if (!api) return;
@@ -278,7 +286,6 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
     );
   }
 
-  const senderName = currentMessage.from.name || currentMessage.from.address.split('@')[0];
   const maxContentWidth = mode === 'standalone' ? Math.min(width, 720) : undefined;
 
   return (
@@ -439,140 +446,182 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
           </View>
         )}
 
-        {/* Sender header */}
-        <View style={styles.senderRow}>
-          <Avatar name={senderName} size={40} />
-          <View style={styles.senderInfo}>
-            <View style={styles.senderNameRow}>
-              <Text style={[styles.senderName, { color: colors.text }]}>{senderName}</Text>
-              <Text style={[styles.messageDate, { color: colors.secondaryText }]}>
-                {formatFullDate(currentMessage.date)}
-              </Text>
-            </View>
-            <TouchableOpacity onPress={() => setDetailsExpanded(!detailsExpanded)}>
-              <Text style={[styles.toLine, { color: colors.secondaryText }]} numberOfLines={detailsExpanded ? 10 : 1}>
-                to {formatRecipients(currentMessage.to)}
-                {currentMessage.cc && currentMessage.cc.length > 0
-                  ? `, cc: ${formatRecipients(currentMessage.cc)}`
-                  : ''}
-              </Text>
-            </TouchableOpacity>
-
-            {/* Expanded sender details */}
-            {detailsExpanded && (
-              <View style={[styles.senderDetails, { borderTopColor: colors.border }]}>
-                <View style={styles.detailRow}>
-                  <Text style={[styles.detailLabel, { color: colors.secondaryText }]}>From</Text>
-                  <Text style={[styles.detailValue, { color: colors.text }]}>
-                    {currentMessage.from.name ? `${currentMessage.from.name} <${currentMessage.from.address}>` : currentMessage.from.address}
-                  </Text>
-                </View>
-                <View style={styles.detailRow}>
-                  <Text style={[styles.detailLabel, { color: colors.secondaryText }]}>To</Text>
-                  <Text style={[styles.detailValue, { color: colors.text }]}>
-                    {currentMessage.to.map((a) => a.name ? `${a.name} <${a.address}>` : a.address).join(', ')}
-                  </Text>
-                </View>
-                {currentMessage.cc && currentMessage.cc.length > 0 && (
-                  <View style={styles.detailRow}>
-                    <Text style={[styles.detailLabel, { color: colors.secondaryText }]}>Cc</Text>
-                    <Text style={[styles.detailValue, { color: colors.text }]}>
-                      {currentMessage.cc.map((a) => a.name ? `${a.name} <${a.address}>` : a.address).join(', ')}
-                    </Text>
-                  </View>
-                )}
-                <View style={styles.detailRow}>
-                  <Text style={[styles.detailLabel, { color: colors.secondaryText }]}>Date</Text>
-                  <Text style={[styles.detailValue, { color: colors.text }]}>{formatFullDate(currentMessage.date)}</Text>
-                </View>
-              </View>
-            )}
-          </View>
-        </View>
-
-        {/* Attachments */}
-        {currentMessage.attachments.length > 0 && (
-          <View style={[styles.attachmentsBar, { borderColor: colors.border }]}>
-            {currentMessage.attachments.map((att, i) => (
-              <TouchableOpacity
-                key={i}
-                style={[styles.attachmentChip, { backgroundColor: colors.surfaceVariant }]}
-                onPress={() => handleAttachment(att.s3Key, att.filename)}
-                activeOpacity={0.7}
-              >
-                {Platform.OS === 'web' ? (
-                  <HugeiconsIcon icon={Attachment01Icon as unknown as IconSvgElement} size={14} color={colors.secondaryText} />
-                ) : (
-                  <MaterialCommunityIcons name="paperclip" size={14} color={colors.secondaryText} />
-                )}
-                <Text style={[styles.attachmentName, { color: colors.text }]} numberOfLines={1}>
-                  {att.filename}
-                </Text>
-              </TouchableOpacity>
-            ))}
+        {/* Thread count indicator */}
+        {sortedThread.length > 1 && (
+          <View style={[styles.threadCount, { backgroundColor: colors.surfaceVariant }]}>
+            <Text style={[styles.threadCountText, { color: colors.secondaryText }]}>
+              {sortedThread.length} messages in this conversation
+            </Text>
           </View>
         )}
 
-        {/* Body */}
-        <View style={styles.messageBody}>
-          {currentMessage.html ? (
-            <HtmlBody html={currentMessage.html} />
-          ) : (
-            <Text style={[styles.bodyText, { color: colors.text }]}>
-              {currentMessage.text || '(empty message)'}
-            </Text>
-          )}
-        </View>
+        {/* Thread messages */}
+        {sortedThread.map((msg, index) => {
+          const isExpanded = expandedMessages.has(msg._id);
+          const msgSenderName = msg.from.name || msg.from.address.split('@')[0];
+          const isLast = index === sortedThread.length - 1;
+
+          if (!isExpanded) {
+            // Collapsed thread message
+            return (
+              <TouchableOpacity
+                key={msg._id}
+                style={[
+                  styles.collapsedMessage,
+                  { borderBottomColor: colors.border },
+                  isLast && { borderBottomWidth: 0 },
+                ]}
+                onPress={() => toggleMessageExpanded(msg._id)}
+                activeOpacity={0.7}
+              >
+                <Avatar name={msgSenderName} size={36} />
+                <View style={styles.collapsedMessageContent}>
+                  <View style={styles.collapsedMessageHeader}>
+                    <Text style={[styles.collapsedSenderName, { color: colors.text }]} numberOfLines={1}>
+                      {msgSenderName}
+                    </Text>
+                    <Text style={[styles.collapsedDate, { color: colors.secondaryText }]}>
+                      {formatShortDate(msg.date)}
+                    </Text>
+                  </View>
+                  <Text style={[styles.collapsedSnippet, { color: colors.secondaryText }]} numberOfLines={1}>
+                    {getSnippet(msg.text)}
+                  </Text>
+                </View>
+                {msg.attachments.length > 0 && (
+                  <MaterialCommunityIcons name="paperclip" size={14} color={colors.secondaryText} />
+                )}
+              </TouchableOpacity>
+            );
+          }
+
+          // Expanded thread message
+          return (
+            <View
+              key={msg._id}
+              style={[
+                styles.expandedMessage,
+                { borderBottomColor: colors.border },
+                isLast && { borderBottomWidth: 0 },
+              ]}
+            >
+              {/* Sender header */}
+              <TouchableOpacity
+                style={styles.senderRow}
+                onPress={() => sortedThread.length > 1 ? toggleMessageExpanded(msg._id) : undefined}
+                activeOpacity={sortedThread.length > 1 ? 0.7 : 1}
+              >
+                <Avatar name={msgSenderName} size={40} />
+                <View style={styles.senderInfo}>
+                  <View style={styles.senderNameRow}>
+                    <Text style={[styles.senderName, { color: colors.text }]}>{msgSenderName}</Text>
+                    <Text style={[styles.messageDate, { color: colors.secondaryText }]}>
+                      {formatFullDate(msg.date)}
+                    </Text>
+                  </View>
+                  <Text style={[styles.toLine, { color: colors.secondaryText }]} numberOfLines={1}>
+                    to {formatRecipients(msg.to)}
+                    {msg.cc && msg.cc.length > 0 ? `, cc: ${formatRecipients(msg.cc)}` : ''}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+
+              {/* Attachments */}
+              {msg.attachments.length > 0 && (
+                <View style={[styles.attachmentsBar, { borderColor: colors.border }]}>
+                  {msg.attachments.map((att, i) => (
+                    <TouchableOpacity
+                      key={i}
+                      style={[styles.attachmentChip, { backgroundColor: colors.surfaceVariant }]}
+                      onPress={() => handleAttachment(att.s3Key, att.filename)}
+                      activeOpacity={0.7}
+                    >
+                      {Platform.OS === 'web' ? (
+                        <HugeiconsIcon icon={Attachment01Icon as unknown as IconSvgElement} size={14} color={colors.secondaryText} />
+                      ) : (
+                        <MaterialCommunityIcons name="paperclip" size={14} color={colors.secondaryText} />
+                      )}
+                      <Text style={[styles.attachmentName, { color: colors.text }]} numberOfLines={1}>
+                        {att.filename}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+
+              {/* Body */}
+              <View style={styles.messageBody}>
+                {msg.html ? (
+                  <HtmlBody html={msg.html} />
+                ) : (
+                  <Text style={[styles.bodyText, { color: colors.text }]}>
+                    {msg.text || '(empty message)'}
+                  </Text>
+                )}
+              </View>
+            </View>
+          );
+        })}
       </ScrollView>
 
-      {/* Bottom reply bar */}
-      <View
-        style={[
-          styles.replyBar,
-          {
-            backgroundColor: colors.background,
-            borderTopColor: colors.border,
-            paddingBottom: mode === 'standalone' ? insets.bottom + 8 : 8,
-          },
-        ]}
-      >
-        <TouchableOpacity
-          style={[styles.replyButton, { borderColor: colors.border }]}
-          onPress={handleReply}
-          activeOpacity={0.7}
+      {/* Inline reply or bottom reply bar */}
+      {replyMode ? (
+        <View style={{ paddingBottom: mode === 'standalone' ? insets.bottom : 0 }}>
+          <InlineReply
+            message={currentMessage}
+            mode={replyMode}
+            onClose={handleCloseReply}
+          />
+        </View>
+      ) : (
+        <View
+          style={[
+            styles.replyBar,
+            {
+              backgroundColor: colors.background,
+              borderTopColor: colors.border,
+              paddingBottom: mode === 'standalone' ? insets.bottom + 8 : 8,
+            },
+          ]}
         >
-          {Platform.OS === 'web' ? (
-            <HugeiconsIcon icon={MailReply01Icon as unknown as IconSvgElement} size={18} color={colors.icon} />
-          ) : (
-            <MaterialCommunityIcons name="reply" size={18} color={colors.icon} />
-          )}
-          <Text style={[styles.replyButtonText, { color: colors.text }]}>Reply</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.replyButton, { borderColor: colors.border }]}
-          onPress={handleReplyAll}
-          activeOpacity={0.7}
-        >
-          {Platform.OS === 'web' ? (
-            <HugeiconsIcon icon={MailReplyAll01Icon as unknown as IconSvgElement} size={18} color={colors.icon} />
-          ) : (
-            <MaterialCommunityIcons name="reply-all" size={18} color={colors.icon} />
-          )}
-          <Text style={[styles.replyButtonText, { color: colors.text }]}>Reply All</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.replyButton, { borderColor: colors.border }]}
-          onPress={handleForward}
-          activeOpacity={0.7}
-        >
-          {Platform.OS === 'web' ? (
-            <HugeiconsIcon icon={Forward01Icon as unknown as IconSvgElement} size={18} color={colors.icon} />
-          ) : (
-            <MaterialCommunityIcons name="share" size={18} color={colors.icon} />
-          )}
-          <Text style={[styles.replyButtonText, { color: colors.text }]}>Forward</Text>
-        </TouchableOpacity>
-      </View>
+          <TouchableOpacity
+            style={[styles.replyButton, { borderColor: colors.border }]}
+            onPress={handleReply}
+            activeOpacity={0.7}
+          >
+            {Platform.OS === 'web' ? (
+              <HugeiconsIcon icon={MailReply01Icon as unknown as IconSvgElement} size={18} color={colors.icon} />
+            ) : (
+              <MaterialCommunityIcons name="reply" size={18} color={colors.icon} />
+            )}
+            <Text style={[styles.replyButtonText, { color: colors.text }]}>Reply</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.replyButton, { borderColor: colors.border }]}
+            onPress={handleReplyAll}
+            activeOpacity={0.7}
+          >
+            {Platform.OS === 'web' ? (
+              <HugeiconsIcon icon={MailReplyAll01Icon as unknown as IconSvgElement} size={18} color={colors.icon} />
+            ) : (
+              <MaterialCommunityIcons name="reply-all" size={18} color={colors.icon} />
+            )}
+            <Text style={[styles.replyButtonText, { color: colors.text }]}>Reply All</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.replyButton, { borderColor: colors.border }]}
+            onPress={handleForward}
+            activeOpacity={0.7}
+          >
+            {Platform.OS === 'web' ? (
+              <HugeiconsIcon icon={Forward01Icon as unknown as IconSvgElement} size={18} color={colors.icon} />
+            ) : (
+              <MaterialCommunityIcons name="share" size={18} color={colors.icon} />
+            )}
+            <Text style={[styles.replyButtonText, { color: colors.text }]}>Forward</Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </View>
   );
 }
@@ -809,5 +858,48 @@ const styles = StyleSheet.create({
   replyButtonText: {
     fontSize: 13,
     fontWeight: '500',
+  },
+  // Thread view styles
+  threadCount: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    alignSelf: 'flex-start',
+    marginBottom: 16,
+  },
+  threadCountText: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  collapsedMessage: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    gap: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  collapsedMessageContent: {
+    flex: 1,
+  },
+  collapsedMessageHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  collapsedSenderName: {
+    fontSize: 14,
+    fontWeight: '600',
+    flex: 1,
+  },
+  collapsedDate: {
+    fontSize: 12,
+  },
+  collapsedSnippet: {
+    fontSize: 13,
+    marginTop: 2,
+  },
+  expandedMessage: {
+    paddingVertical: 16,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
 });

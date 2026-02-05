@@ -4,7 +4,7 @@
  * Supports attachments, Cc/Bcc toggle, and discard confirmation.
  */
 
-import React, { useState, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -64,6 +64,27 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
   const [showCcBcc, setShowCcBcc] = useState(!!(initialCc));
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [signatureLoaded, setSignatureLoaded] = useState(false);
+
+  // Auto-insert signature from settings
+  useEffect(() => {
+    if (!api || signatureLoaded) return;
+
+    const loadSignature = async () => {
+      try {
+        const settings = await api.getSettings();
+        if (settings.signature && !initialBody) {
+          // Add signature with separator
+          setBody(`\n\n--\n${settings.signature}`);
+        }
+      } catch {
+        // Silently fail - signature is optional
+      }
+      setSignatureLoaded(true);
+    };
+
+    loadSignature();
+  }, [api, signatureLoaded, initialBody]);
 
   const fromAddress = user?.username ? `${user.username}@oxy.so` : '';
   const sending = sendMessage.isPending;

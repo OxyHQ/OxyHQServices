@@ -432,24 +432,7 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
             ))}
           </>
         )}
-        {collapsed && labels.length > 0 && (
-          <>
-            <View style={[styles.divider, { backgroundColor: colors.border }]} />
-            {labels.map((lbl) => (
-              <NavItem
-                key={lbl._id}
-                icon="label-outline"
-                hugeIcon={LabelIcon as unknown as IconSvgElement}
-                label={lbl.name}
-                isActive={!isSpecialPage && viewMode?.type === 'label' && viewMode.labelId === lbl._id}
-                colors={colors}
-                colorDot={lbl.color}
-                collapsed
-                onPress={() => handleLabelSelect(lbl._id, lbl.name)}
-              />
-            ))}
-          </>
-        )}
+        {/* Labels hidden when collapsed for cleaner UI */}
 
         {/* Custom mailboxes (non-system, non-label) */}
         {!collapsed && customMailboxes.length > 0 && (
@@ -624,10 +607,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 16,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
+    borderRadius: 24,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
     gap: 10,
+    ...Platform.select({
+      web: { boxShadow: '0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.08)' } as any,
+      default: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.12,
+        shadowRadius: 3,
+        elevation: 2,
+      },
+    }),
   },
   composeLabel: {
     fontSize: 14,
@@ -638,11 +631,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   composeButtonCollapsed: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
+    ...Platform.select({
+      web: { boxShadow: '0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.08)' } as any,
+      default: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.12,
+        shadowRadius: 3,
+        elevation: 2,
+      },
+    }),
   },
   list: {
     flex: 1,
