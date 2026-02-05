@@ -132,19 +132,17 @@ export function SearchList({ replaceNavigation }: SearchListProps) {
     q: parsedQuery.text || undefined,
     from: parsedQuery.from || filterFrom || undefined,
     hasAttachment: parsedQuery.hasAttachment || filterHasAttachment || undefined,
-    starred: parsedQuery.starred || undefined,
-    mailboxId: mailboxIdFromName,
-    label: parsedQuery.label,
-    // Note: unread filter would need backend support
+    mailbox: mailboxIdFromName,
+    // Note: starred/label/unread filters would need backend support
   }), [parsedQuery, filterFrom, filterHasAttachment, mailboxIdFromName]);
 
   const { data: searchResult, isLoading: searching } = useSearchMessages(searchOptions);
   const results = searchResult?.data ?? [];
   const total = searchResult?.pagination?.total ?? 0;
-  const hasSearched = !!(submittedQuery.trim() || filterFrom || filterHasAttachment);
+  const hasSearched = !!(submittedQuery.trim() || filterFrom || filterHasAttachment || mailboxIdFromName);
 
   const handleSearch = useCallback(() => {
-    if (!query.trim()) return;
+    // Allow submitting with just operators (e.g., "in:spam") even if no plain text
     setSubmittedQuery(query);
   }, [query]);
 
