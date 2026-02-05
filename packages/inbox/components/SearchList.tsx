@@ -85,6 +85,25 @@ function parseSearchQuery(query: string): ParsedQuery {
   return result;
 }
 
+interface NLParsedOptions {
+  q?: string;
+  from?: string;
+  to?: string;
+  subject?: string;
+  hasAttachment?: boolean;
+}
+
+/** Format NL search interpretation for display */
+function formatInterpretation(opts: NLParsedOptions): string {
+  const parts: string[] = [];
+  if (opts.q) parts.push(`"${opts.q}"`);
+  if (opts.from) parts.push(`from ${opts.from}`);
+  if (opts.to) parts.push(`to ${opts.to}`);
+  if (opts.subject) parts.push(`subject contains "${opts.subject}"`);
+  if (opts.hasAttachment) parts.push('with attachments');
+  return parts.join(', ') || 'all emails';
+}
+
 interface SearchListProps {
   replaceNavigation?: boolean;
 }
@@ -105,13 +124,7 @@ export function SearchList({ replaceNavigation }: SearchListProps) {
   const [editingFilter, setEditingFilter] = useState<string | null>(null);
   const [filterInput, setFilterInput] = useState('');
   const [nlInterpretation, setNlInterpretation] = useState('');
-  const [nlParsedOptions, setNlParsedOptions] = useState<{
-    q?: string;
-    from?: string;
-    to?: string;
-    subject?: string;
-    hasAttachment?: boolean;
-  } | null>(null);
+  const [nlParsedOptions, setNlParsedOptions] = useState<NLParsedOptions | null>(null);
 
   // Natural language search hook
   const { parseQuery: parseNL, isLoading: nlParsing } = useNaturalLanguageSearch();
@@ -204,17 +217,6 @@ export function SearchList({ replaceNavigation }: SearchListProps) {
       }
     }
   }, [query, parseNL]);
-
-  // Format interpretation from parsed options
-  const formatInterpretation = (opts: NonNullable<typeof nlParsedOptions>): string => {
-    const parts: string[] = [];
-    if (opts.q) parts.push(`"${opts.q}"`);
-    if (opts.from) parts.push(`from ${opts.from}`);
-    if (opts.to) parts.push(`to ${opts.to}`);
-    if (opts.subject) parts.push(`subject contains "${opts.subject}"`);
-    if (opts.hasAttachment) parts.push('with attachments');
-    return parts.join(', ') || 'all emails';
-  };
 
   const handleStar = useCallback(
     (messageId: string) => {

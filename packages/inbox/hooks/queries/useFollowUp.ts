@@ -2,6 +2,7 @@
  * Hook to identify sent emails that may need follow-up.
  *
  * Tracks emails you sent that haven't received a reply after a certain period.
+ * Also detects commitments/promises made that may be due soon.
  */
 
 import { useMemo } from 'react';
@@ -9,9 +10,18 @@ import { useMessages } from '@/hooks/queries/useMessages';
 import { useMailboxes } from '@/hooks/queries/useMailboxes';
 import { SPECIAL_USE } from '@/constants/mailbox';
 import type { Message } from '@/services/emailApi';
+import type { Commitment } from './useCommitmentDetection';
+
+// Re-export commitment detection for use with follow-up messages
+export { useCommitmentReminders } from './useCommitmentDetection';
+export type { Commitment };
+
+export interface FollowUpMessage extends Message {
+  commitments?: Commitment[];
+}
 
 interface UseFollowUpResult {
-  messages: Message[];
+  messages: FollowUpMessage[];
   count: number;
   isLoading: boolean;
 }
