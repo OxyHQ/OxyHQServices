@@ -130,22 +130,22 @@ export default function InboxLayout() {
   const handleNextMessage = useCallback(() => {
     if (currentIndex < messages.length - 1) {
       const nextMessage = messages[currentIndex + 1];
-      setSelectedMessageId(nextMessage._id);
+      useEmailStore.setState({ selectedMessageId: nextMessage._id });
       if (isDesktop) {
         router.replace(`/conversation/${nextMessage._id}` as any);
       }
     }
-  }, [currentIndex, messages, setSelectedMessageId, router, isDesktop]);
+  }, [currentIndex, messages, router, isDesktop]);
 
   const handlePrevMessage = useCallback(() => {
     if (currentIndex > 0) {
       const prevMessage = messages[currentIndex - 1];
-      setSelectedMessageId(prevMessage._id);
+      useEmailStore.setState({ selectedMessageId: prevMessage._id });
       if (isDesktop) {
         router.replace(`/conversation/${prevMessage._id}` as any);
       }
     }
-  }, [currentIndex, messages, setSelectedMessageId, router, isDesktop]);
+  }, [currentIndex, messages, router, isDesktop]);
 
   const handleToggleStar = useCallback(() => {
     if (selectedMessageId && currentMessage) {
