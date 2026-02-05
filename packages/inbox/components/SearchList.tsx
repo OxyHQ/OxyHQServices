@@ -26,6 +26,7 @@ import { useEmailStore } from '@/hooks/useEmail';
 import { useSearchMessages } from '@/hooks/queries/useSearchMessages';
 import { useToggleStar } from '@/hooks/mutations/useMessageMutations';
 import { useMailboxes } from '@/hooks/queries/useMailboxes';
+import { useNaturalLanguageSearch, quickParseSearch } from '@/hooks/queries/useNaturalLanguageSearch';
 
 /**
  * Parse Gmail-style search operators from query string.
@@ -103,6 +104,17 @@ export function SearchList({ replaceNavigation }: SearchListProps) {
   const [filterHasAttachment, setFilterHasAttachment] = useState(false);
   const [editingFilter, setEditingFilter] = useState<string | null>(null);
   const [filterInput, setFilterInput] = useState('');
+  const [nlInterpretation, setNlInterpretation] = useState('');
+  const [nlParsedOptions, setNlParsedOptions] = useState<{
+    q?: string;
+    from?: string;
+    to?: string;
+    subject?: string;
+    hasAttachment?: boolean;
+  } | null>(null);
+
+  // Natural language search hook
+  const { parseQuery: parseNL, isLoading: nlParsing } = useNaturalLanguageSearch();
 
   // Parse the submitted query for Gmail-style operators
   const parsedQuery = useMemo(() => parseSearchQuery(submittedQuery), [submittedQuery]);
@@ -130,22 +142,79 @@ export function SearchList({ replaceNavigation }: SearchListProps) {
   }, [parsedQuery.mailbox, mailboxes]);
 
   const searchOptions = useMemo(() => ({
-    q: parsedQuery.text || undefined,
-    from: parsedQuery.from || filterFrom || undefined,
-    hasAttachment: parsedQuery.hasAttachment || filterHasAttachment || undefined,
+    // NL parsed options take precedence, then Gmail-style operators, then filter chips
+    q: nlParsedOptions?.q || parsedQuery.text || undefined,
+    from: nlParsedOptions?.from || parsedQuery.from || filterFrom || undefined,
+    to: nlParsedOptions?.to || undefined,
+    subject: nlParsedOptions?.subject || undefined,
+    hasAttachment: nlParsedOptions?.hasAttachment || parsedQuery.hasAttachment || filterHasAttachment || undefined,
     mailbox: mailboxIdFromName,
     // Note: starred/label/unread filters would need backend support
-  }), [parsedQuery, filterFrom, filterHasAttachment, mailboxIdFromName]);
+  }), [nlParsedOptions, parsedQuery, filterFrom, filterHasAttachment, mailboxIdFromName]);
 
   const { data: searchResult, isLoading: searching } = useSearchMessages(searchOptions);
   const results = searchResult?.data ?? [];
   const total = searchResult?.pagination?.total ?? 0;
-  const hasSearched = !!(submittedQuery.trim() || filterFrom || filterHasAttachment || mailboxIdFromName);
+  const hasSearched = !!(submittedQuery.trim() || nlParsedOptions || filterFrom || filterHasAttachment || mailboxIdFromName);
 
-  const handleSearch = useCallback(() => {
-    // Allow submitting with just operators (e.g., "in:spam") even if no plain text
-    setSubmittedQuery(query);
-  }, [query]);
+  const handleSearch = useCallback(async () => {
+    const trimmed = query.trim();
+    if (!trimmed) {
+      setSubmittedQuery('');
+      setNlInterpretation('');
+      setNlParsedOptions(null);
+      return;
+    }
+
+    // Check if query contains Gmail-style operators
+    const hasOperators = /\b(in:|is:|from:|to:|has:|label:|subject:)/i.test(trimmed);
+
+    if (hasOperators) {
+      // Use traditional operator parsing
+      setSubmittedQuery(trimmed);
+      setNlInterpretation('');
+      setNlParsedOptions(null);
+    } else {
+      // Try quick parse first (simple patterns like "from Sarah" or "emails last week")
+      const quickResult = quickParseSearch(trimmed);
+      if (quickResult) {
+        setNlParsedOptions(quickResult);
+        setNlInterpretation(`Searching: ${formatInterpretation(quickResult)}`);
+        setSubmittedQuery(''); // Clear so Gmail parser doesn't interfere
+      } else {
+        // Use AI for complex natural language queries
+        try {
+          const result = await parseNL(trimmed);
+          if (result) {
+            setNlParsedOptions(result.searchOptions);
+            setNlInterpretation(result.interpretation || `Searching: ${formatInterpretation(result.searchOptions)}`);
+            setSubmittedQuery('');
+          } else {
+            // Fall back to text search
+            setSubmittedQuery(trimmed);
+            setNlInterpretation('');
+            setNlParsedOptions(null);
+          }
+        } catch {
+          // On error, fall back to text search
+          setSubmittedQuery(trimmed);
+          setNlInterpretation('');
+          setNlParsedOptions(null);
+        }
+      }
+    }
+  }, [query, parseNL]);
+
+  // Format interpretation from parsed options
+  const formatInterpretation = (opts: NonNullable<typeof nlParsedOptions>): string => {
+    const parts: string[] = [];
+    if (opts.q) parts.push(`"${opts.q}"`);
+    if (opts.from) parts.push(`from ${opts.from}`);
+    if (opts.to) parts.push(`to ${opts.to}`);
+    if (opts.subject) parts.push(`subject contains "${opts.subject}"`);
+    if (opts.hasAttachment) parts.push('with attachments');
+    return parts.join(', ') || 'all emails';
+  };
 
   const handleStar = useCallback(
     (messageId: string) => {
@@ -176,6 +245,8 @@ export function SearchList({ replaceNavigation }: SearchListProps) {
     setSubmittedQuery('');
     setFilterFrom('');
     setFilterHasAttachment(false);
+    setNlInterpretation('');
+    setNlParsedOptions(null);
     inputRef.current?.focus();
   }, []);
 
@@ -283,6 +354,41 @@ export function SearchList({ replaceNavigation }: SearchListProps) {
           </Text>
         </TouchableOpacity>
       </View>
+
+      {/* NL interpretation display */}
+      {(nlInterpretation || nlParsing) && (
+        <View style={[styles.nlInterpretation, { backgroundColor: colors.surfaceVariant }]}>
+          <MaterialCommunityIcons
+            name="robot-outline"
+            size={14}
+            color={colors.primary}
+            style={styles.nlIcon}
+          />
+          {nlParsing ? (
+            <View style={styles.nlParsingRow}>
+              <ActivityIndicator size="small" color={colors.primary} />
+              <Text style={[styles.nlText, { color: colors.secondaryText }]}>
+                Understanding your search...
+              </Text>
+            </View>
+          ) : (
+            <Text style={[styles.nlText, { color: colors.text }]}>
+              {nlInterpretation}
+            </Text>
+          )}
+          {nlInterpretation && !nlParsing && (
+            <TouchableOpacity
+              onPress={() => {
+                setNlInterpretation('');
+                setNlParsedOptions(null);
+              }}
+              hitSlop={8}
+            >
+              <MaterialCommunityIcons name="close" size={16} color={colors.icon} />
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
 
       {/* Filter input overlay */}
       {editingFilter && (
@@ -403,5 +509,28 @@ const styles = StyleSheet.create({
   separator: {
     height: StyleSheet.hairlineWidth,
     marginLeft: 68,
+  },
+  nlInterpretation: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 16,
+    marginBottom: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    gap: 8,
+  },
+  nlIcon: {
+    marginRight: 4,
+  },
+  nlText: {
+    flex: 1,
+    fontSize: 13,
+  },
+  nlParsingRow: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
 });

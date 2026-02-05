@@ -39,6 +39,7 @@ import { SearchHeader } from '@/components/SearchHeader';
 import { SelectionToolbar } from '@/components/SelectionToolbar';
 import { SwipeableRow } from '@/components/SwipeableRow';
 import { EmptyIllustration } from '@/components/EmptyIllustration';
+import { AskAlia } from '@/components/AskAlia';
 import type { Message } from '@/services/emailApi';
 
 interface InboxListProps {
@@ -362,6 +363,21 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
             <Text style={[styles.fabLabel, { color: colors.composeFabText }]}>Compose</Text>
           )}
         </TouchableOpacity>
+      )}
+
+      {/* Ask Alia - AI chat assistant */}
+      {isAuthenticated && !isSelectionMode && (
+        <AskAlia
+          messages={messages}
+          onNavigateToMessage={(msgId) => {
+            const path = `/conversation/${msgId}` as any;
+            if (replaceNavigation) {
+              router.replace(path);
+            } else {
+              router.push(path);
+            }
+          }}
+        />
       )}
     </View>
   );

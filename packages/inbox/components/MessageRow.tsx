@@ -23,6 +23,7 @@ import {
   Attachment01Icon,
 } from '@hugeicons/core-free-icons';
 import { Avatar } from './Avatar';
+import { ImportanceBadge } from './ImportanceBadge';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import type { Message, Attachment } from '@/services/emailApi';
@@ -223,16 +224,19 @@ export function MessageRow({
           </TouchableOpacity>
         </View>
 
-        <Text
-          style={[
-            styles.subject,
-            { color: isUnread ? colors.unread : colors.read },
-            isUnread && styles.subjectUnread,
-          ]}
-          numberOfLines={1}
-        >
-          {message.subject || '(no subject)'}
-        </Text>
+        <View style={styles.subjectRow}>
+          <Text
+            style={[
+              styles.subject,
+              { color: isUnread ? colors.unread : colors.read },
+              isUnread && styles.subjectUnread,
+            ]}
+            numberOfLines={1}
+          >
+            {message.subject || '(no subject)'}
+          </Text>
+          <ImportanceBadge message={message} />
+        </View>
 
         <View style={styles.bottomRow}>
           <Text style={[styles.preview, { color: colors.secondaryText }]} numberOfLines={1}>
@@ -303,8 +307,14 @@ const styles = StyleSheet.create({
   dateUnread: {
     fontWeight: '600',
   },
+  subjectRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
   subject: {
     fontSize: 14,
+    flex: 1,
   },
   subjectUnread: {
     fontWeight: '600',
