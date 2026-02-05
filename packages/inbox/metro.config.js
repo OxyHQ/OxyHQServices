@@ -34,10 +34,15 @@ config.resolver.sourceExts = [
   'tsx',
 ];
 
+// Resolve packages from root node_modules for monorepo compatibility
+const rootNodeModules = path.resolve(monorepoRoot, 'node_modules');
+
 config.resolver.extraNodeModules = {
   '@oxyhq/core': path.resolve(coreRoot, 'src', 'index.ts'),
   '@oxyhq/services': path.resolve(servicesRoot, 'src', 'index.ts'),
   '@oxyhq/services/ui': path.resolve(servicesRoot, 'src', 'ui'),
+  // Explicitly resolve @expo/metro-runtime from root to avoid monorepo hoisting issues
+  '@expo/metro-runtime': path.resolve(rootNodeModules, '@expo', 'metro-runtime'),
 };
 
 config.resolver.platforms = ['native', 'android', 'ios', 'tsx', 'ts', 'web'];
