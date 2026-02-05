@@ -2,7 +2,7 @@
  * Gmail-style drawer sidebar listing mailboxes, starred, labels, and compose.
  */
 
-import React, { useMemo, useEffect, useState, useCallback } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -186,26 +186,15 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
   );
 
   const pathname = usePathname();
-  const currentMailbox = useEmailStore((s) => s.currentMailbox);
-  const viewMode = useEmailStore((s) => s.viewMode);
-  const selectMailbox = useEmailStore((s) => s.selectMailbox);
-  const selectStarred = useEmailStore((s) => s.selectStarred);
-  const selectLabel = useEmailStore((s) => s.selectLabel);
   const moreExpanded = useEmailStore((s) => s.moreExpanded);
   const toggleMore = useEmailStore((s) => s.toggleMore);
   const { data: mailboxes = [] } = useMailboxes();
   const { data: labels = [] } = useLabels();
+
+  // Determine active state from URL pathname
   const isHomeActive = pathname === '/home';
   const isForYouActive = pathname === '/for-you';
-  const isSpecialPage = isHomeActive || isForYouActive;
-
-  // Auto-select inbox on first load
-  useEffect(() => {
-    if (mailboxes.length > 0 && !currentMailbox && !viewMode) {
-      const inbox = mailboxes.find((m) => m.specialUse === '\\Inbox') ?? mailboxes[0];
-      selectMailbox(inbox);
-    }
-  }, [mailboxes, currentMailbox, viewMode, selectMailbox]);
+  const currentView = pathname.split('/')[1]?.toLowerCase() || 'inbox';
 
   const { primaryMailboxes, secondaryMailboxes } = useMemo(() => {
     const order: Record<string, number> = {
@@ -224,27 +213,32 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
 
   const customMailboxes = useMemo(() => mailboxes.filter((m) => !m.specialUse), [mailboxes]);
 
+  // Map specialUse to URL route
+  const getMailboxRoute = (mailbox: Mailbox): string => {
+    if (!mailbox.specialUse) return `/folder-${mailbox.name.toLowerCase()}`;
+    const routeMap: Record<string, string> = {
+      '\\Inbox': '/inbox',
+      '\\Sent': '/sent',
+      '\\Drafts': '/drafts',
+      '\\Trash': '/trash',
+      '\\Junk': '/spam',
+      '\\Archive': '/archive',
+    };
+    return routeMap[mailbox.specialUse] || `/folder-${mailbox.name.toLowerCase()}`;
+  };
+
   const handleSelect = (mailbox: Mailbox) => {
-    selectMailbox(mailbox);
-    if (isSpecialPage) {
-      router.replace('/');
-    }
+    router.push(getMailboxRoute(mailbox) as any);
     onClose?.();
   };
 
   const handleStarred = () => {
-    selectStarred();
-    if (isSpecialPage) {
-      router.replace('/');
-    }
+    router.push('/starred' as any);
     onClose?.();
   };
 
   const handleLabelSelect = (labelId: string, labelName: string) => {
-    selectLabel(labelId, labelName);
-    if (isSpecialPage) {
-      router.replace('/');
-    }
+    router.push(`/label-${labelName.toLowerCase()}` as any);
     onClose?.();
   };
 
@@ -268,7 +262,21 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
     ? `${user.name.first}${user.name.last ? ` ${user.name.last}` : ''}`
     : user?.username || 'Account';
 
-  const isStarredActive = !isSpecialPage && viewMode?.type === 'starred';
+  // Check if a mailbox route is active
+  const isMailboxActive = (mailbox: Mailbox): boolean => {
+    if (!mailbox.specialUse) return currentView === `folder-${mailbox.name.toLowerCase()}`;
+    const routeMap: Record<string, string> = {
+      '\\Inbox': 'inbox',
+      '\\Sent': 'sent',
+      '\\Drafts': 'drafts',
+      '\\Trash': 'trash',
+      '\\Junk': 'spam',
+      '\\Archive': 'archive',
+    };
+    return currentView === routeMap[mailbox.specialUse];
+  };
+
+  const isStarredActive = currentView === 'starred';
 
   return (
     <View style={[styles.container, { backgroundColor: colors.sidebarBackground }, collapsed && styles.containerCollapsed]}>
@@ -351,7 +359,7 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
               icon={getMailboxFallbackIcon(mailbox)}
               hugeIcon={getMailboxHugeIcon(mailbox)}
               label={label}
-              isActive={!isSpecialPage && viewMode?.type === 'mailbox' && currentMailbox?._id === mailbox._id}
+              isActive={isMailboxActive(mailbox)}
               colors={colors}
               badge={mailbox.unseenMessages}
               bold={hasUnseen}
@@ -403,7 +411,7 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
               icon={getMailboxFallbackIcon(mailbox)}
               hugeIcon={getMailboxHugeIcon(mailbox)}
               label={label}
-              isActive={!isSpecialPage && viewMode?.type === 'mailbox' && currentMailbox?._id === mailbox._id}
+              isActive={isMailboxActive(mailbox)}
               colors={colors}
               badge={mailbox.unseenMessages}
               collapsed={collapsed}
@@ -423,7 +431,7 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
                 icon="label-outline"
                 hugeIcon={LabelIcon as unknown as IconSvgElement}
                 label={lbl.name}
-                isActive={!isSpecialPage && viewMode?.type === 'label' && viewMode.labelId === lbl._id}
+                isActive={currentView === `label-${lbl.name.toLowerCase()}`}
                 colors={colors}
                 colorDot={lbl.color}
                 collapsed={collapsed}
@@ -445,7 +453,7 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
                 icon="folder-outline"
                 hugeIcon={Folder01Icon as unknown as IconSvgElement}
                 label={mailbox.name}
-                isActive={!isSpecialPage && viewMode?.type === 'mailbox' && currentMailbox?._id === mailbox._id}
+                isActive={isMailboxActive(mailbox)}
                 colors={colors}
                 collapsed={collapsed}
                 onPress={() => handleSelect(mailbox)}

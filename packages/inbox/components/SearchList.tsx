@@ -24,6 +24,64 @@ import { EmptyIllustration } from '@/components/EmptyIllustration';
 import { useEmailStore } from '@/hooks/useEmail';
 import { useSearchMessages } from '@/hooks/queries/useSearchMessages';
 import { useToggleStar } from '@/hooks/mutations/useMessageMutations';
+import { useMailboxes } from '@/hooks/queries/useMailboxes';
+
+/**
+ * Parse Gmail-style search operators from query string.
+ * Supported operators:
+ * - in:inbox, in:sent, in:spam, in:trash, in:drafts, in:archive, in:starred
+ * - is:starred, is:unread, is:read
+ * - from:address
+ * - has:attachment
+ * - label:name
+ */
+interface ParsedQuery {
+  text: string;
+  mailbox?: string;
+  starred?: boolean;
+  unread?: boolean;
+  from?: string;
+  hasAttachment?: boolean;
+  label?: string;
+}
+
+function parseSearchQuery(query: string): ParsedQuery {
+  const result: ParsedQuery = { text: '' };
+  const textParts: string[] = [];
+
+  // Split by spaces but keep quoted strings together
+  const tokens = query.match(/(?:[^\s"]+|"[^"]*")+/g) || [];
+
+  for (const token of tokens) {
+    const lower = token.toLowerCase();
+
+    if (lower.startsWith('in:')) {
+      const value = token.slice(3).toLowerCase();
+      if (value === 'starred') {
+        result.starred = true;
+      } else {
+        result.mailbox = value;
+      }
+    } else if (lower.startsWith('is:')) {
+      const value = token.slice(3).toLowerCase();
+      if (value === 'starred') result.starred = true;
+      else if (value === 'unread') result.unread = true;
+      else if (value === 'read') result.unread = false;
+    } else if (lower.startsWith('from:')) {
+      result.from = token.slice(5).replace(/^"|"$/g, '');
+    } else if (lower === 'has:attachment') {
+      result.hasAttachment = true;
+    } else if (lower.startsWith('label:')) {
+      result.label = token.slice(6).replace(/^"|"$/g, '');
+    } else {
+      // Regular search text
+      textParts.push(token.replace(/^"|"$/g, ''));
+    }
+  }
+
+  result.text = textParts.join(' ');
+  return result;
+}
 
 interface SearchListProps {
   replaceNavigation?: boolean;
@@ -36,6 +94,7 @@ export function SearchList({ replaceNavigation }: SearchListProps) {
   const inputRef = useRef<TextInput>(null);
   const selectedMessageId = useEmailStore((s) => s.selectedMessageId);
   const toggleStar = useToggleStar();
+  const { data: mailboxes = [] } = useMailboxes();
 
   const [query, setQuery] = useState('');
   const [submittedQuery, setSubmittedQuery] = useState('');
@@ -44,11 +103,40 @@ export function SearchList({ replaceNavigation }: SearchListProps) {
   const [editingFilter, setEditingFilter] = useState<string | null>(null);
   const [filterInput, setFilterInput] = useState('');
 
+  // Parse the submitted query for Gmail-style operators
+  const parsedQuery = useMemo(() => parseSearchQuery(submittedQuery), [submittedQuery]);
+
+  // Map mailbox name to mailbox ID
+  const mailboxIdFromName = useMemo(() => {
+    if (!parsedQuery.mailbox) return undefined;
+    const specialUseMap: Record<string, string> = {
+      inbox: '\\Inbox',
+      sent: '\\Sent',
+      drafts: '\\Drafts',
+      trash: '\\Trash',
+      spam: '\\Junk',
+      junk: '\\Junk',
+      archive: '\\Archive',
+    };
+    const specialUse = specialUseMap[parsedQuery.mailbox];
+    if (specialUse) {
+      const mailbox = mailboxes.find((m) => m.specialUse === specialUse);
+      return mailbox?._id;
+    }
+    // Try to match by name
+    const mailbox = mailboxes.find((m) => m.name.toLowerCase() === parsedQuery.mailbox);
+    return mailbox?._id;
+  }, [parsedQuery.mailbox, mailboxes]);
+
   const searchOptions = useMemo(() => ({
-    q: submittedQuery || undefined,
-    from: filterFrom || undefined,
-    hasAttachment: filterHasAttachment || undefined,
-  }), [submittedQuery, filterFrom, filterHasAttachment]);
+    q: parsedQuery.text || undefined,
+    from: parsedQuery.from || filterFrom || undefined,
+    hasAttachment: parsedQuery.hasAttachment || filterHasAttachment || undefined,
+    starred: parsedQuery.starred || undefined,
+    mailboxId: mailboxIdFromName,
+    label: parsedQuery.label,
+    // Note: unread filter would need backend support
+  }), [parsedQuery, filterFrom, filterHasAttachment, mailboxIdFromName]);
 
   const { data: searchResult, isLoading: searching } = useSearchMessages(searchOptions);
   const results = searchResult?.data ?? [];

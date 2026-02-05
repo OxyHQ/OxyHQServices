@@ -28,7 +28,8 @@ export function useSearchMessages(options: SearchOptions) {
     options.subject?.trim() ||
     options.hasAttachment ||
     options.dateAfter ||
-    options.dateBefore
+    options.dateBefore ||
+    options.mailbox?.trim()
   );
 
   return useQuery<SearchResult>({
