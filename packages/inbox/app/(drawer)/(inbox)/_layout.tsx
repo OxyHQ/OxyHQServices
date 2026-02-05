@@ -112,7 +112,7 @@ export default function InboxLayout() {
 
   const handleArchive = useCallback(() => {
     if (selectedMessageId) {
-      const archiveBox = mailboxes.find((m) => m.specialUse === 'Archive');
+      const archiveBox = mailboxes.find((m) => m.specialUse === '\\Archive');
       if (archiveBox) {
         archiveMutation.mutate({ messageId: selectedMessageId, archiveMailboxId: archiveBox._id });
       }
@@ -121,8 +121,8 @@ export default function InboxLayout() {
 
   const handleDelete = useCallback(() => {
     if (selectedMessageId) {
-      const trashBox = mailboxes.find((m) => m.specialUse === 'Trash');
-      const isInTrash = currentMailbox?.specialUse === 'Trash';
+      const trashBox = mailboxes.find((m) => m.specialUse === '\\Trash');
+      const isInTrash = currentMailbox?.specialUse === '\\Trash';
       deleteMutation.mutate({ messageId: selectedMessageId, trashMailboxId: trashBox?._id, isInTrash });
     }
   }, [selectedMessageId, mailboxes, currentMailbox, deleteMutation]);

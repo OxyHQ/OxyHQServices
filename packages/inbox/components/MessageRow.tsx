@@ -91,6 +91,7 @@ export function MessageRow({
   isMultiSelected,
   onToggleSelect,
   onLongPress,
+  isStarPending,
 }: {
   message: Message;
   onStar: (id: string) => void;
@@ -100,6 +101,7 @@ export function MessageRow({
   isMultiSelected?: boolean;
   onToggleSelect?: (id: string) => void;
   onLongPress?: (id: string) => void;
+  isStarPending?: boolean;
 }) {
   const colorScheme = useColorScheme();
   const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
@@ -197,7 +199,12 @@ export function MessageRow({
           >
             {dateStr}
           </Text>
-          <TouchableOpacity onPress={handleStar} hitSlop={8} style={styles.starButton}>
+          <TouchableOpacity
+            onPress={handleStar}
+            hitSlop={8}
+            style={[styles.starButton, isStarPending && { opacity: 0.5 }]}
+            disabled={isStarPending}
+          >
             {Platform.OS === 'web' ? (
               <HugeiconsIcon
                 icon={StarIcon as unknown as IconSvgElement}

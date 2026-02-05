@@ -67,17 +67,26 @@ export function useToggleStar() {
       const prevMessage = queryClient.getQueryData<Message | null>(['message', messageId]);
       const prevThreads = queryClient.getQueriesData<Message[]>({ queryKey: ['thread'] });
 
-      // Optimistically update all message list caches
-      queryClient.setQueriesData<MessagesInfinite>({ queryKey: ['messages'] }, (old) =>
-        updateMessageInPages(old, messageId, (m) => ({ ...m, flags: { ...m.flags, starred } })),
-      );
+      // VIEW-AWARE UPDATE: If in starred view and unstarring, REMOVE from list
+      const viewMode = useEmailStore.getState().viewMode;
+      if (viewMode?.type === 'starred' && !starred) {
+        // Removing star while in starred view - remove message from list
+        queryClient.setQueriesData<MessagesInfinite>({ queryKey: ['messages'] }, (old) =>
+          removeMessageFromPages(old, messageId),
+        );
+      } else {
+        // Normal case: just update the starred flag
+        queryClient.setQueriesData<MessagesInfinite>({ queryKey: ['messages'] }, (old) =>
+          updateMessageInPages(old, messageId, (m) => ({ ...m, flags: { ...m.flags, starred } })),
+        );
+      }
 
-      // Update single message cache
+      // Update single message cache (always update flags)
       queryClient.setQueryData<Message | null>(['message', messageId], (old) =>
         old ? { ...old, flags: { ...old.flags, starred } } : old,
       );
 
-      // Update thread caches
+      // Update thread caches (always update flags)
       queryClient.setQueriesData<Message[]>({ queryKey: ['thread'] }, (old) =>
         old?.map((m) => (m._id === messageId ? { ...m, flags: { ...m.flags, starred } } : m)),
       );
@@ -94,16 +103,27 @@ export function useToggleStar() {
       toast.error('Failed to update star.');
     },
     onSuccess: (updatedMessage, { messageId }) => {
-      // Sync with server response (no refetch to avoid flickering)
+      // Sync with server response
       if (updatedMessage) {
         queryClient.setQueryData<Message | null>(['message', messageId], updatedMessage);
-        queryClient.setQueriesData<MessagesInfinite>({ queryKey: ['messages'] }, (old) =>
-          updateMessageInPages(old, messageId, () => updatedMessage),
-        );
+        // Don't restore message to list if it was removed from starred view
+        const viewMode = useEmailStore.getState().viewMode;
+        if (!(viewMode?.type === 'starred' && !updatedMessage.flags.starred)) {
+          queryClient.setQueriesData<MessagesInfinite>({ queryKey: ['messages'] }, (old) =>
+            updateMessageInPages(old, messageId, () => updatedMessage),
+          );
+        }
         queryClient.setQueriesData<Message[]>({ queryKey: ['thread'] }, (old) =>
           old?.map((m) => (m._id === messageId ? updatedMessage : m)),
         );
       }
+    },
+    onSettled: (_data, _err, { messageId }) => {
+      // Refetch to ensure consistency (matches useToggleRead behavior)
+      queryClient.invalidateQueries({ queryKey: ['messages'] });
+      queryClient.invalidateQueries({ queryKey: ['mailboxes'] });
+      queryClient.invalidateQueries({ queryKey: ['message', messageId] });
+      queryClient.invalidateQueries({ queryKey: ['thread'] });
     },
   });
 }

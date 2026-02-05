@@ -208,7 +208,7 @@ export function ForYouScreen() {
   const isDesktop = Platform.OS === 'web' && width >= 900;
 
   const { data: mailboxes = [] } = useMailboxes();
-  const inboxId = mailboxes.find((m) => m.specialUse === 'Inbox')?._id;
+  const inboxId = mailboxes.find((m) => m.specialUse === '\\Inbox')?._id;
   const { data, isLoading } = useMessages(inboxId ? { mailboxId: inboxId } : {});
   const toggleStar = useToggleStar();
 

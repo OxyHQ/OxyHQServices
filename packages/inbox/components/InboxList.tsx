@@ -150,8 +150,11 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
 
   // Bulk actions
   const handleBulkArchive = useCallback(() => {
-    const archiveBox = mailboxes.find((m) => m.specialUse === 'Archive');
-    if (!archiveBox) return;
+    const archiveBox = mailboxes.find((m) => m.specialUse === '\\Archive');
+    if (!archiveBox) {
+      toast.error('Archive folder not available.');
+      return;
+    }
     selectedMessageIds.forEach((id) => {
       archiveMutation.mutate({ messageId: id, archiveMailboxId: archiveBox._id });
     });
@@ -159,8 +162,8 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
   }, [selectedMessageIds, mailboxes, archiveMutation, clearSelection]);
 
   const handleBulkDelete = useCallback(() => {
-    const trashBox = mailboxes.find((m) => m.specialUse === 'Trash');
-    const isInTrash = currentMailbox?.specialUse === 'Trash';
+    const trashBox = mailboxes.find((m) => m.specialUse === '\\Trash');
+    const isInTrash = currentMailbox?.specialUse === '\\Trash';
     selectedMessageIds.forEach((id) => {
       deleteMutation.mutate({ messageId: id, trashMailboxId: trashBox?._id, isInTrash });
     });
@@ -195,16 +198,20 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
 
   const handleSwipeArchive = useCallback(
     (messageId: string) => {
-      const archiveBox = mailboxes.find((m) => m.specialUse === 'Archive');
-      if (archiveBox) archiveMutation.mutate({ messageId, archiveMailboxId: archiveBox._id });
+      const archiveBox = mailboxes.find((m) => m.specialUse === '\\Archive');
+      if (!archiveBox) {
+        toast.error('Archive folder not available.');
+        return;
+      }
+      archiveMutation.mutate({ messageId, archiveMailboxId: archiveBox._id });
     },
     [mailboxes, archiveMutation],
   );
 
   const handleSwipeDelete = useCallback(
     (messageId: string) => {
-      const trashBox = mailboxes.find((m) => m.specialUse === 'Trash');
-      const isInTrash = currentMailbox?.specialUse === 'Trash';
+      const trashBox = mailboxes.find((m) => m.specialUse === '\\Trash');
+      const isInTrash = currentMailbox?.specialUse === '\\Trash';
       deleteMutation.mutate({ messageId, trashMailboxId: trashBox?._id, isInTrash });
     },
     [mailboxes, currentMailbox, deleteMutation],
@@ -225,10 +232,11 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
           isMultiSelected={selectedMessageIds.has(item._id)}
           onToggleSelect={toggleMessageSelection}
           onLongPress={handleLongPress}
+          isStarPending={toggleStar.isPending && toggleStar.variables?.messageId === item._id}
         />
       </SwipeableRow>
     ),
-    [handleStar, handleMessagePress, selectedMessageId, isSelectionMode, selectedMessageIds, toggleMessageSelection, handleLongPress, handleSwipeArchive, handleSwipeDelete],
+    [handleStar, handleMessagePress, selectedMessageId, isSelectionMode, selectedMessageIds, toggleMessageSelection, handleLongPress, handleSwipeArchive, handleSwipeDelete, toggleStar.isPending, toggleStar.variables?.messageId],
   );
 
   const keyExtractor = useCallback((item: Message) => item._id, []);

@@ -149,17 +149,19 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
 
   const handleArchive = useCallback(() => {
     if (!messageId) return;
-    const archiveBox = mailboxes.find((m) => m.specialUse === 'Archive');
-    if (archiveBox) {
-      archiveMutation.mutate({ messageId, archiveMailboxId: archiveBox._id });
+    const archiveBox = mailboxes.find((m) => m.specialUse === '\\Archive');
+    if (!archiveBox) {
+      toast.error('Archive folder not available.');
+      return;
     }
+    archiveMutation.mutate({ messageId, archiveMailboxId: archiveBox._id });
     if (mode === 'standalone') router.back();
   }, [messageId, mailboxes, archiveMutation, router, mode]);
 
   const handleDelete = useCallback(() => {
     if (!messageId) return;
-    const trashBox = mailboxes.find((m) => m.specialUse === 'Trash');
-    const isInTrash = currentMailbox?.specialUse === 'Trash';
+    const trashBox = mailboxes.find((m) => m.specialUse === '\\Trash');
+    const isInTrash = currentMailbox?.specialUse === '\\Trash';
     deleteMutation.mutate({ messageId, trashMailboxId: trashBox?._id, isInTrash });
     if (mode === 'standalone') router.back();
   }, [messageId, mailboxes, currentMailbox, deleteMutation, router, mode]);
@@ -340,7 +342,11 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
             <MaterialCommunityIcons name="email-mark-as-unread" size={22} color={colors.icon} />
           )}
         </TouchableOpacity>
-        <TouchableOpacity onPress={handleStar} style={styles.iconButton}>
+        <TouchableOpacity
+          onPress={handleStar}
+          style={[styles.iconButton, toggleStar.isPending && { opacity: 0.5 }]}
+          disabled={toggleStar.isPending}
+        >
           {Platform.OS === 'web' ? (
             <HugeiconsIcon
               icon={StarIcon as unknown as IconSvgElement}

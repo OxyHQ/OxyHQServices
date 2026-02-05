@@ -202,9 +202,10 @@ export function SearchList({ replaceNavigation }: SearchListProps) {
         onStar={handleStar}
         onSelect={handleMessagePress}
         isSelected={item._id === selectedMessageId}
+        isStarPending={toggleStar.isPending && toggleStar.variables?.messageId === item._id}
       />
     ),
-    [handleStar, handleMessagePress, selectedMessageId],
+    [handleStar, handleMessagePress, selectedMessageId, toggleStar.isPending, toggleStar.variables?.messageId],
   );
 
   const renderEmpty = useCallback(() => {
