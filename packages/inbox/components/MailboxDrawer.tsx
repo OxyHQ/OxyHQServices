@@ -38,6 +38,7 @@ import {
 } from '@hugeicons/core-free-icons';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
+import { SPECIAL_USE } from '@/constants/mailbox';
 import { useEmailStore } from '@/hooks/useEmail';
 import { useMailboxes } from '@/hooks/queries/useMailboxes';
 import { useLabels } from '@/hooks/queries/useLabels';
@@ -66,7 +67,7 @@ const MAILBOX_HUGE_ICONS: Record<string, IconSvgElement> = {
 };
 
 // Primary mailboxes shown by default; the rest go behind "More"
-const PRIMARY_SPECIAL_USE = new Set(['\\Inbox', '\\Sent', '\\Drafts']);
+const PRIMARY_SPECIAL_USE = new Set([SPECIAL_USE.INBOX, SPECIAL_USE.SENT, SPECIAL_USE.DRAFTS]);
 
 function getMailboxFallbackIcon(mailbox: Mailbox): keyof typeof MaterialCommunityIcons.glyphMap {
   if (mailbox.specialUse) {
@@ -198,8 +199,8 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
 
   const { primaryMailboxes, secondaryMailboxes } = useMemo(() => {
     const order: Record<string, number> = {
-      '\\Inbox': 0, '\\Sent': 1, '\\Drafts': 2,
-      '\\Junk': 3, '\\Trash': 4, '\\Archive': 5,
+      [SPECIAL_USE.INBOX]: 0, [SPECIAL_USE.SENT]: 1, [SPECIAL_USE.DRAFTS]: 2,
+      [SPECIAL_USE.SPAM]: 3, [SPECIAL_USE.TRASH]: 4, [SPECIAL_USE.ARCHIVE]: 5,
     };
     const sorted = mailboxes
       .filter((m) => m.specialUse)
@@ -217,12 +218,12 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
   const getMailboxRoute = (mailbox: Mailbox): string => {
     if (!mailbox.specialUse) return `/folder-${mailbox.name.toLowerCase()}`;
     const routeMap: Record<string, string> = {
-      '\\Inbox': '/inbox',
-      '\\Sent': '/sent',
-      '\\Drafts': '/drafts',
-      '\\Trash': '/trash',
-      '\\Junk': '/spam',
-      '\\Archive': '/archive',
+      [SPECIAL_USE.INBOX]: '/inbox',
+      [SPECIAL_USE.SENT]: '/sent',
+      [SPECIAL_USE.DRAFTS]: '/drafts',
+      [SPECIAL_USE.TRASH]: '/trash',
+      [SPECIAL_USE.SPAM]: '/spam',
+      [SPECIAL_USE.ARCHIVE]: '/archive',
     };
     return routeMap[mailbox.specialUse] || `/folder-${mailbox.name.toLowerCase()}`;
   };
@@ -266,12 +267,12 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
   const isMailboxActive = (mailbox: Mailbox): boolean => {
     if (!mailbox.specialUse) return currentView === `folder-${mailbox.name.toLowerCase()}`;
     const routeMap: Record<string, string> = {
-      '\\Inbox': 'inbox',
-      '\\Sent': 'sent',
-      '\\Drafts': 'drafts',
-      '\\Trash': 'trash',
-      '\\Junk': 'spam',
-      '\\Archive': 'archive',
+      [SPECIAL_USE.INBOX]: 'inbox',
+      [SPECIAL_USE.SENT]: 'sent',
+      [SPECIAL_USE.DRAFTS]: 'drafts',
+      [SPECIAL_USE.TRASH]: 'trash',
+      [SPECIAL_USE.SPAM]: 'spam',
+      [SPECIAL_USE.ARCHIVE]: 'archive',
     };
     return currentView === routeMap[mailbox.specialUse];
   };
