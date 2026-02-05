@@ -500,6 +500,12 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
           )}
         </View>
 
+        {/* Stale thread banner - gentle nudge to reply */}
+        <StaleThreadBanner
+          staleInfo={staleInfo}
+          onReply={() => handleReply()}
+        />
+
         {/* Thread messages */}
         {sortedThread.map((msg, index) => {
           const isExpanded = expandedMessages.has(msg._id);
