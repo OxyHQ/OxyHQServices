@@ -108,20 +108,27 @@ export function HomeScreen() {
 
   const allMessages = useMemo(() => data?.pages.flatMap((p) => p.data) ?? [], [data]);
 
-  // Filter by time of day: morning = received before 12pm, afternoon = 12pm+
+  // Filter by selected date AND time of day: morning = received before 12pm, afternoon = 12pm+
   const recentMessages = useMemo(() => {
     const filtered = allMessages.filter((msg) => {
       const msgDate = new Date(msg.date);
+      // Must be same day as selected date
+      if (!isSameDay(msgDate, selectedDate)) return false;
+      // Filter by time of day
       const hour = msgDate.getHours();
       return timeOfDay === 'morning' ? hour < 12 : hour >= 12;
     });
     return filtered.slice(0, HOME_EMAIL_LIMIT);
-  }, [allMessages, timeOfDay]);
+  }, [allMessages, timeOfDay, selectedDate]);
 
-  // Stats
-  const unreadCount = useMemo(() => allMessages.filter((m) => !m.flags.seen).length, [allMessages]);
-  const starredCount = useMemo(() => allMessages.filter((m) => m.flags.starred).length, [allMessages]);
-  const attachmentCount = useMemo(() => allMessages.filter((m) => m.attachments.length > 0).length, [allMessages]);
+  // Stats — filtered by selected date
+  const dayMessages = useMemo(
+    () => allMessages.filter((m) => isSameDay(new Date(m.date), selectedDate)),
+    [allMessages, selectedDate]
+  );
+  const unreadCount = useMemo(() => dayMessages.filter((m) => !m.flags.seen).length, [dayMessages]);
+  const starredCount = useMemo(() => dayMessages.filter((m) => m.flags.starred).length, [dayMessages]);
+  const attachmentCount = useMemo(() => dayMessages.filter((m) => m.attachments.length > 0).length, [dayMessages]);
 
   const handleOpenDrawer = useCallback(() => {
     navigation.dispatch(DrawerActions.openDrawer());
