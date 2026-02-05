@@ -33,6 +33,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { useEmailStore } from '@/hooks/useEmail';
 import { useSendMessageWithUndo, useSaveDraft } from '@/hooks/mutations/useMessageMutations';
+import { AiComposeToolbar } from '@/components/AiComposeToolbar';
 import type { Attachment } from '@/services/emailApi';
 
 interface ComposeFormProps {
@@ -218,6 +219,11 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
+  // Handle AI-suggested subject line
+  const handleSubjectSuggested = useCallback((suggestedSubject: string) => {
+    setSubject(suggestedSubject);
+  }, []);
+
   return (
     <KeyboardAvoidingView
       style={[
@@ -362,6 +368,13 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
             ))}
           </View>
         )}
+
+        {/* AI Compose Toolbar */}
+        <AiComposeToolbar
+          body={body}
+          onBodyChange={setBody}
+          onSubjectSuggested={!subject.trim() ? handleSubjectSuggested : undefined}
+        />
 
         {/* Body */}
         <TextInput

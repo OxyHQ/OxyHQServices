@@ -22,6 +22,7 @@ import { Colors } from '@/constants/theme';
 import { useEmailStore } from '@/hooks/useEmail';
 import { useSendMessageWithUndo } from '@/hooks/mutations/useMessageMutations';
 import { Avatar } from '@/components/Avatar';
+import { SmartReplyChips } from '@/components/SmartReplyChips';
 import type { Message, EmailAddress } from '@/services/emailApi';
 
 function formatQuoteDate(dateStr: string): string {
@@ -173,6 +174,22 @@ export function InlineReply({ message, mode, onClose, onSent }: InlineReplyProps
 
   const senderName = message.from.name || message.from.address.split('@')[0];
 
+  // Handle smart reply selection - insert the text into the body
+  const handleSmartReplySelect = useCallback((text: string) => {
+    setBody((prev) => {
+      // If there's already content, add a newline before the smart reply
+      if (prev.trim()) {
+        return text + '\n\n' + prev;
+      }
+      return text + prev;
+    });
+    // Focus the body input after selection
+    bodyRef.current?.focus();
+  }, []);
+
+  // Only show smart replies for reply/reply-all, not forward
+  const showSmartReplies = mode !== 'forward';
+
   return (
     <View style={[styles.container, { backgroundColor: colors.surface, borderColor: colors.border }]}>
       {/* Header row with avatar and close */}
@@ -234,6 +251,11 @@ export function InlineReply({ message, mode, onClose, onSent }: InlineReplyProps
           <MaterialCommunityIcons name="close" size={20} color={colors.icon} />
         </TouchableOpacity>
       </View>
+
+      {/* Smart reply suggestions */}
+      {showSmartReplies && (
+        <SmartReplyChips message={message} onSelectReply={handleSmartReplySelect} />
+      )}
 
       {/* Body textarea */}
       <TextInput
