@@ -42,6 +42,8 @@ import { useEmailStore } from '@/hooks/useEmail';
 import { MessageRow } from '@/components/MessageRow';
 import { LogoIcon } from '@/assets/logo';
 import { useDailyBrief } from '@/hooks/queries/useDailyBrief';
+import { useNeedsResponse } from '@/hooks/queries/useNeedsResponse';
+import { useFollowUp } from '@/hooks/queries/useFollowUp';
 
 const DAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 const MONTHS = [
@@ -96,6 +98,8 @@ export function HomeScreen() {
     new Date().getHours() < 12 ? 'morning' : 'afternoon',
   );
   const [importantExpanded, setImportantExpanded] = useState(true);
+  const [needsResponseExpanded, setNeedsResponseExpanded] = useState(true);
+  const [followUpExpanded, setFollowUpExpanded] = useState(true);
 
   const realToday = useMemo(() => new Date(), []);
   const isOnToday = isSameDay(selectedDate, realToday);
@@ -155,6 +159,10 @@ export function HomeScreen() {
 
   // AI daily brief — uses messages from selected date
   const { briefText, isStreaming: briefStreaming, isLoading: briefLoading, error: briefError, regenerate } = useDailyBrief(dayMessages, firstName);
+
+  // AI-powered sections: emails needing response and follow-up
+  const { messages: needsResponseMessages, count: needsResponseCount } = useNeedsResponse(allMessages, 5);
+  const { messages: followUpMessages, count: followUpCount, isLoading: followUpLoading } = useFollowUp(5);
 
   const greeting = getGreeting();
   const today = selectedDate;
@@ -353,6 +361,108 @@ export function HomeScreen() {
                 <MaterialCommunityIcons name="refresh" size={16} color={colors.secondaryText} />
               </TouchableOpacity>
             </View>
+
+            {/* Needs Response - AI-detected emails requiring reply */}
+            {needsResponseMessages.length > 0 && (
+              <View style={[styles.card, { backgroundColor: colors.background }]}>
+                <TouchableOpacity
+                  style={styles.sectionHeader}
+                  onPress={() => setNeedsResponseExpanded((v) => !v)}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.sectionHeaderLeft}>
+                    <MaterialCommunityIcons name="message-reply-text-outline" size={18} color={colors.primary} />
+                    <Text style={[styles.sectionTitle, { color: colors.text }]}>
+                      Needs Response
+                    </Text>
+                    <View style={[styles.countBadge, { backgroundColor: colors.primary + '20' }]}>
+                      <Text style={[styles.countBadgeText, { color: colors.primary }]}>{needsResponseCount}</Text>
+                    </View>
+                  </View>
+                  {Platform.OS === 'web' ? (
+                    <HugeiconsIcon
+                      icon={(needsResponseExpanded ? ArrowUp01Icon : ArrowDown01Icon) as unknown as IconSvgElement}
+                      size={20}
+                      color={colors.secondaryText}
+                    />
+                  ) : (
+                    <MaterialCommunityIcons
+                      name={needsResponseExpanded ? 'chevron-up' : 'chevron-down'}
+                      size={20}
+                      color={colors.secondaryText}
+                    />
+                  )}
+                </TouchableOpacity>
+
+                {needsResponseExpanded && (
+                  <>
+                    {needsResponseMessages.map((msg, index) => (
+                      <React.Fragment key={msg._id}>
+                        {index > 0 && (
+                          <View style={[styles.separator, { backgroundColor: colors.border }]} />
+                        )}
+                        <MessageRow
+                          message={msg}
+                          onStar={handleStar}
+                          onSelect={handleMessagePress}
+                        />
+                      </React.Fragment>
+                    ))}
+                  </>
+                )}
+              </View>
+            )}
+
+            {/* Follow Up - Sent emails awaiting reply */}
+            {followUpMessages.length > 0 && (
+              <View style={[styles.card, { backgroundColor: colors.background }]}>
+                <TouchableOpacity
+                  style={styles.sectionHeader}
+                  onPress={() => setFollowUpExpanded((v) => !v)}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.sectionHeaderLeft}>
+                    <MaterialCommunityIcons name="clock-outline" size={18} color={colors.starred} />
+                    <Text style={[styles.sectionTitle, { color: colors.text }]}>
+                      Follow Up
+                    </Text>
+                    <View style={[styles.countBadge, { backgroundColor: colors.starred + '20' }]}>
+                      <Text style={[styles.countBadgeText, { color: colors.starred }]}>{followUpCount}</Text>
+                    </View>
+                  </View>
+                  {Platform.OS === 'web' ? (
+                    <HugeiconsIcon
+                      icon={(followUpExpanded ? ArrowUp01Icon : ArrowDown01Icon) as unknown as IconSvgElement}
+                      size={20}
+                      color={colors.secondaryText}
+                    />
+                  ) : (
+                    <MaterialCommunityIcons
+                      name={followUpExpanded ? 'chevron-up' : 'chevron-down'}
+                      size={20}
+                      color={colors.secondaryText}
+                    />
+                  )}
+                </TouchableOpacity>
+
+                {followUpExpanded && (
+                  <>
+                    {followUpMessages.map((msg, index) => (
+                      <React.Fragment key={msg._id}>
+                        {index > 0 && (
+                          <View style={[styles.separator, { backgroundColor: colors.border }]} />
+                        )}
+                        <MessageRow
+                          message={msg}
+                          onStar={handleStar}
+                          onSelect={handleMessagePress}
+                        />
+                      </React.Fragment>
+                    ))}
+                  </>
+                )}
+              </View>
+            )}
 
             {/* Important Information */}
             <View style={[styles.card, { backgroundColor: colors.background }]}>
@@ -653,6 +763,22 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: '600',
+  },
+  sectionHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  countBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+    minWidth: 24,
+    alignItems: 'center',
+  },
+  countBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
   },
   separator: {
     height: StyleSheet.hairlineWidth,

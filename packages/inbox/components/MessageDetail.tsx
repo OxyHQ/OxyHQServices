@@ -51,6 +51,7 @@ import { toast } from '@oxyhq/services';
 import { Avatar } from '@/components/Avatar';
 import { HtmlBody } from '@/components/HtmlBody';
 import { InlineReply } from '@/components/InlineReply';
+import { ThreadSummary } from '@/components/ThreadSummary';
 import type { EmailAddress } from '@/services/emailApi';
 
 function formatFullDate(dateStr: string): string {
@@ -473,6 +474,11 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
                 {sortedThread.length} messages in this conversation
               </Text>
             </View>
+          )}
+
+          {/* AI Thread Summary - shows for 4+ messages */}
+          {sortedThread.length >= 4 && (
+            <ThreadSummary messages={sortedThread} minMessages={4} />
           )}
         </View>
 
