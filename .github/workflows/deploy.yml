@@ -34,6 +34,7 @@ jobs:
           username: ${{ secrets.DROPLET_USER }}
           key: ${{ secrets.DROPLET_SSH_KEY }}
           script_stop: true
+          envs: REDIS_URL
           script: |
             set -e
             cd /opt/oxy
@@ -41,6 +42,13 @@ jobs:
             echo "=== Pulling latest code ==="
             git fetch origin main
             git reset --hard origin/main
+
+            # Inject REDIS_URL into .env if the secret is set and not already present
+            if [ -n "$REDIS_URL" ] && ! grep -q '^REDIS_URL=' .env 2>/dev/null; then
+              echo "" >> .env
+              echo "REDIS_URL=$REDIS_URL" >> .env
+              echo "=== Added REDIS_URL to .env ==="
+            fi
 
             echo "=== Building ==="
             docker compose build api
@@ -58,3 +66,5 @@ jobs:
             docker compose logs --tail=20 api
 
             echo "Deploy complete!"
+        env:
+          REDIS_URL: ${{ secrets.REDIS_URL }}
