@@ -206,7 +206,17 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
               if (sigBuf.length !== expectedBuf.length || !timingSafeEqual(sigBuf, expectedBuf)) {
                 throw new Error('Invalid signature');
               }
-            } catch {
+            } catch (verifyError) {
+              const isSignatureError = verifyError instanceof Error &&
+                (verifyError.message === 'Invalid signature' || verifyError.message === 'Invalid token structure');
+
+              if (!isSignatureError) {
+                console.error('[oxy.auth] Unexpected error during service token verification:', verifyError);
+                const error = { message: 'Internal authentication error', code: 'AUTH_INTERNAL_ERROR', status: 500 };
+                if (onError) return onError(error);
+                return res.status(500).json(error);
+              }
+
               if (optional) {
                 req.userId = null;
                 req.user = null;
