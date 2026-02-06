@@ -204,7 +204,12 @@ export function emitSessionUpdate(userId: string, payload: any) {
 
 // MongoDB Connection with optimized connection pooling for scale
 const APP_NAME = "oxy";
-const dbName = `${APP_NAME}-${process.env.NODE_ENV || 'development'}`;
+const ENV_DB_MAP: Record<string, string> = {
+  production: 'prod',
+  development: 'dev',
+};
+const envSuffix = ENV_DB_MAP[process.env.NODE_ENV || 'development'] || process.env.NODE_ENV || 'dev';
+const dbName = `${APP_NAME}-${envSuffix}`;
 const mongoOptions = {
   dbName,
   autoIndex: true,
