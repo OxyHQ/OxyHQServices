@@ -8,6 +8,7 @@ import { handleAuthError, isInvalidSessionError } from '../../utils/errorHandler
 import type { StorageInterface } from '../../utils/storageHelpers';
 import type { OxyServices } from '@oxyhq/core';
 import { SignatureService } from '@oxyhq/core';
+import * as Crypto from 'expo-crypto';
 
 export interface UseAuthOperationsOptions {
   oxyServices: OxyServices;
@@ -126,9 +127,9 @@ export const useAuthOperations = ({
           logger('Creating offline session');
         }
 
-        // Generate a local session ID
-        const localSessionId = `offline_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        const localDeviceId = `device_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        // Generate a local session ID using cryptographically secure randomness
+        const localSessionId = `offline_${Crypto.randomUUID()}`;
+        const localDeviceId = `device_${Crypto.randomUUID()}`;
         const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(); // 7 days
 
         // Create minimal user object with publicKey as id
