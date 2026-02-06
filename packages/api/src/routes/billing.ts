@@ -6,6 +6,7 @@ import BillingSubscription from '../models/BillingSubscription';
 import BillingTransaction from '../models/BillingTransaction';
 import { getOrCreateUserCredits } from './credits';
 import { logger } from '../utils/logger';
+import { isValidObjectId } from '../utils/validation';
 import { z } from 'zod';
 
 const router = Router();
@@ -289,8 +290,30 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
   const metadata = session.metadata;
   if (!metadata?.userId || metadata.type !== 'credit_purchase') return;
 
-  const credits = parseInt(metadata.credits || '0');
-  if (credits <= 0) return;
+  if (!isValidObjectId(metadata.userId)) {
+    logger.warn('Webhook checkout: invalid userId in metadata', { userId: metadata.userId, sessionId: session.id });
+    return;
+  }
+
+  // Re-validate credits against known packages to prevent metadata manipulation
+  const pkg = CREDIT_PACKAGES.find((p) => p.id === metadata.packageId);
+  if (!pkg) {
+    logger.warn('Webhook checkout: unrecognized packageId in metadata', { packageId: metadata.packageId, sessionId: session.id });
+    return;
+  }
+
+  const metadataCredits = parseInt(metadata.credits || '0');
+  if (metadataCredits !== pkg.credits) {
+    logger.warn('Webhook checkout: credits mismatch between metadata and package', {
+      metadataCredits,
+      packageCredits: pkg.credits,
+      packageId: metadata.packageId,
+      sessionId: session.id,
+    });
+    return;
+  }
+
+  const credits = pkg.credits;
 
   const userCredits = await getOrCreateUserCredits(metadata.userId);
   await userCredits.addCredits(credits, 'paid');
