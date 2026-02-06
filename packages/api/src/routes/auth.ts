@@ -126,8 +126,8 @@ router.get('/check-username/:username', asyncHandler(async (req, res) => {
     throw new BadRequestError('Username can only contain letters and numbers');
   }
 
-  const existingUser = await User.findOne({ username });
-  
+  const existingUser = await User.findOne({ username }).select('_id').lean();
+
   logger.debug('GET /auth/check-username', { username, available: !existingUser });
   
   sendSuccess(res, { 
@@ -148,8 +148,8 @@ router.get('/check-email/:email', asyncHandler(async (req, res) => {
   }
 
   const normalizedEmail = email.trim().toLowerCase();
-  const existingUser = await User.findOne({ email: normalizedEmail });
-  
+  const existingUser = await User.findOne({ email: normalizedEmail }).select('_id').lean();
+
   logger.debug('GET /auth/check-email', { email: normalizedEmail, available: !existingUser });
   
   sendSuccess(res, { 
@@ -173,8 +173,8 @@ router.get('/check-publickey/:publicKey', asyncHandler(async (req, res) => {
     throw new BadRequestError('Invalid public key format');
   }
 
-  const existingUser = await User.findOne({ publicKey });
-  
+  const existingUser = await User.findOne({ publicKey }).select('_id').lean();
+
   logger.debug('GET /auth/check-publickey', { 
     publicKey: SignatureService.shortenPublicKey(publicKey), 
     registered: !!existingUser 

@@ -222,12 +222,16 @@ export function useSessionSocket({ userId, activeSessionId, currentDeviceId, ref
     return () => {
       socket.off('connect', handleConnect);
       socket.off('session_update', handleSessionUpdate);
-      
+
       // Only leave on unmount if we're still in this room
       if (joinedRoomRef.current === roomId) {
         socket.emit('leave', { userId: roomId });
         joinedRoomRef.current = null;
       }
+
+      // Disconnect the socket to prevent leaked connections
+      socket.disconnect();
+      socketRef.current = null;
     };
   }, [userId, baseURL]); // Only depend on userId and baseURL - callbacks are in refs
 } 

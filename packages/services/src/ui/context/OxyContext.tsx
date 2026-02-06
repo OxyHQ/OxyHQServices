@@ -485,6 +485,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   // When user returns to tab, verify auth.oxy.so still has their session
   // If session is gone (cleared/logged out), clear local session too
   const lastIdPCheckRef = useRef<number>(0);
+  const pendingIdPCleanupRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     if (!isWebBrowser() || !user || !initialized) return;
@@ -494,6 +495,9 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       const now = Date.now();
       if (now - lastIdPCheckRef.current < 30000) return;
       lastIdPCheckRef.current = now;
+
+      // Clean up any in-flight check before starting a new one
+      pendingIdPCleanupRef.current?.();
 
       // Load hidden iframe to check IdP session via postMessage
       const iframe = document.createElement('iframe');
@@ -505,6 +509,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       const cleanup = () => {
         if (cleaned) return;
         cleaned = true;
+        pendingIdPCleanupRef.current = null;
         window.removeEventListener('message', handleMessage);
         iframe.remove();
       };
@@ -523,6 +528,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       window.addEventListener('message', handleMessage);
       document.body.appendChild(iframe);
       setTimeout(cleanup, 5000); // Timeout after 5s
+      pendingIdPCleanupRef.current = cleanup;
     };
 
     const handleVisibilityChange = () => {
@@ -532,7 +538,10 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     };
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      pendingIdPCleanupRef.current?.();
+    };
   }, [user, initialized, clearSessionState]);
 
   const activeSession = activeSessionId

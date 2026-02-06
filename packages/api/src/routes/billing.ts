@@ -243,17 +243,17 @@ router.post('/portal', authMiddleware, async (req: Request, res: Response) => {
 // Stripe webhook (no auth, uses signature verification)
 router.post('/webhook', async (req: Request, res: Response) => {
   const sig = req.headers['stripe-signature'] as string;
-  if (!sig) return res.status(400).send('Missing stripe-signature');
+  if (!sig) return res.status(400).json({ error: 'Missing stripe-signature' });
 
   const webhookSecret = getWebhookSecret();
-  if (!webhookSecret) return res.status(500).send('Webhook secret not configured');
+  if (!webhookSecret) return res.status(500).json({ error: 'Webhook secret not configured' });
 
   let event: Stripe.Event;
   try {
     event = getStripe().webhooks.constructEvent(req.body, sig, webhookSecret);
   } catch (err: any) {
     logger.error('Webhook verification failed:', err.message);
-    return res.status(400).send(`Webhook Error: ${err.message}`);
+    return res.status(400).json({ error: `Webhook Error: ${err.message}` });
   }
 
   try {

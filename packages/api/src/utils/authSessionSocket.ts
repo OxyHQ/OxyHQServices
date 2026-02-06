@@ -6,6 +6,7 @@
  */
 
 import { Namespace } from 'socket.io';
+import { logger } from './logger';
 
 let authSessionNamespace: Namespace | null = null;
 
@@ -29,7 +30,7 @@ export function emitAuthSessionUpdate(sessionToken: string, payload: {
   username?: string;
 }): void {
   if (!authSessionNamespace) {
-    console.warn('Auth session namespace not initialized');
+    logger.warn('Auth session namespace not initialized');
     return;
   }
   

@@ -103,8 +103,7 @@ export function debounceAsync<T extends (...args: any[]) => Promise<any>>(
   delay: number
 ): (...args: Parameters<T>) => Promise<ReturnType<T>> {
   let timeoutId: ReturnType<typeof setTimeout>;
-  const lastPromise: Promise<ReturnType<T>> | null = null;
-  
+
   return (...args: Parameters<T>): Promise<ReturnType<T>> => {
     return new Promise((resolve, reject) => {
       clearTimeout(timeoutId);

@@ -46,7 +46,7 @@ const getPrivacySettings = async (req: Request, res: Response) => {
     const { id } = req.params;
     // Resolve user ID (ObjectId or publicKey) to MongoDB ObjectId
     const objectId = await resolveUserIdToObjectId(id);
-    const user = await User.findById(objectId).select('privacySettings');
+    const user = await User.findById(objectId).select('privacySettings').lean();
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }

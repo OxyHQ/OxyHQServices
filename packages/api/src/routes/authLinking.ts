@@ -33,7 +33,7 @@ router.get('/methods', asyncHandler(async (req: AuthRequest, res: Response) => {
     throw new BadRequestError('User not authenticated');
   }
 
-  const user = await User.findById(userId).select('authMethods publicKey email createdAt');
+  const user = await User.findById(userId).select('authMethods publicKey email createdAt').lean();
   if (!user) {
     throw new BadRequestError('User not found');
   }
@@ -56,7 +56,7 @@ router.get('/methods', asyncHandler(async (req: AuthRequest, res: Response) => {
   }
 
   // Check for password method
-  const hasPassword = await User.findById(userId).select('+password').then(u => !!u?.password);
+  const hasPassword = await User.findById(userId).select('+password').lean().then(u => !!u?.password);
   if (hasPassword && user.email) {
     const passwordMethod = user.authMethods?.find(m => m.type === 'password');
     methods.push({
@@ -119,7 +119,7 @@ router.post('/link', asyncHandler(async (req: AuthRequest, res: Response) => {
       const safePublicKey = publicKey.trim();
 
       // Check if publicKey is already used by another user
-      const existingUser = await User.findOne({ publicKey: safePublicKey });
+      const existingUser = await User.findOne({ publicKey: safePublicKey }).select('_id').lean();
       if (existingUser && existingUser._id.toString() !== userId.toString()) {
         throw new ConflictError('This identity is already linked to another account');
       }
@@ -176,7 +176,7 @@ router.post('/link', asyncHandler(async (req: AuthRequest, res: Response) => {
       const safeEmail = email.trim().toLowerCase();
 
       // Check if email is already used by another user
-      const existingUser = await User.findOne({ email: safeEmail });
+      const existingUser = await User.findOne({ email: safeEmail }).select('_id').lean();
       if (existingUser && existingUser._id.toString() !== userId.toString()) {
         throw new ConflictError('This email is already linked to another account');
       }
@@ -229,7 +229,7 @@ router.post('/link', asyncHandler(async (req: AuthRequest, res: Response) => {
       const existingUser = await User.findOne({
         'authMethods.type': safeType,
         'authMethods.metadata.providerId': safeProviderId,
-      });
+      }).select('_id').lean();
       if (existingUser && existingUser._id.toString() !== userId.toString()) {
         throw new ConflictError(`This ${safeType} account is already linked to another user`);
       }

@@ -358,7 +358,7 @@ app.use("/api/profiles", csrfProtection, profilesRouter);
 app.use("/api/users", userRateLimiter, csrfProtection, usersRouter); // Per-user rate limiting for authenticated routes
 app.use("/api/session", userRateLimiter, sessionRouter); // No CSRF on session routes (auth flow)
 app.use("/api/privacy", userRateLimiter, csrfProtection, privacyRoutes);
-app.use("/api/analytics", userRateLimiter, analyticsRoutes);
+app.use("/api/analytics", userRateLimiter, authMiddleware, analyticsRoutes);
 app.use('/api/payments', userRateLimiter, csrfProtection, paymentRoutes);
 app.use('/api/notifications', userRateLimiter, csrfProtection, notificationsRouter);
 app.use('/api/karma', csrfProtection, karmaRoutes);

@@ -238,7 +238,14 @@ router.post('/upload', upload.single('file'), asyncHandler(async (req: Authentic
   }
 
   const visibility = (req.body.visibility as FileVisibility) || 'private';
-  const metadata = req.body.metadata ? JSON.parse(req.body.metadata) : undefined;
+  let metadata: Record<string, unknown> | undefined;
+  if (req.body.metadata) {
+    try {
+      metadata = JSON.parse(req.body.metadata);
+    } catch {
+      throw new BadRequestError('Invalid metadata JSON');
+    }
+  }
 
   const file = await assetService.uploadFileDirect(
     user._id,

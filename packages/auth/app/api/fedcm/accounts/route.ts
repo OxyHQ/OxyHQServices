@@ -136,17 +136,11 @@ export async function GET(request: NextRequest) {
       ? ['http://localhost:3000', 'http://localhost:8081', 'http://localhost:5173']
       : [];
 
-    // Allow all domains by including the requesting origin
     const approvedClients = [
       ...defaultClients,
       ...envClients,
       ...devClients,
     ];
-
-    // Add requesting origin if not already in list (allows any domain)
-    if (requestingOrigin && !approvedClients.includes(requestingOrigin)) {
-      approvedClients.push(requestingOrigin);
-    }
 
     // Return account information
     const accounts = [
