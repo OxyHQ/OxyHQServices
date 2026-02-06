@@ -44,6 +44,8 @@ import cookieParser from 'cookie-parser';
 import { csrfProtection, getCsrfToken } from './middleware/csrf';
 import { createCorsMiddleware, SOCKET_IO_CORS_CONFIG } from './config/cors';
 import { validateRequiredEnvVars, getSanitizedConfig, getEnvNumber } from './config/env';
+import { createAdapter } from '@socket.io/redis-adapter';
+import { getRedisClient, closeRedis } from './config/redis';
 import performanceMiddleware, { getMemoryStats, getConnectionPoolStats } from './middleware/performance';
 import { performanceMonitor } from './utils/performanceMonitor';
 import { waitForMongoConnection } from './utils/dbConnection';
@@ -92,6 +94,15 @@ const server = http.createServer(app);
 const io = new SocketIOServer(server, {
   cors: SOCKET_IO_CORS_CONFIG as any,
 });
+
+// Attach Redis adapter for multi-instance broadcast (if Redis available)
+const redis = getRedisClient();
+if (redis) {
+  const pubClient = redis.duplicate();
+  const subClient = redis.duplicate();
+  io.adapter(createAdapter(pubClient, subClient));
+  logger.info('Socket.IO Redis adapter enabled');
+}
 
 // Store io instance in app for use in controllers
 app.set('io', io);
@@ -261,8 +272,9 @@ mongoose.connection.on('reconnected', () => {
 process.on('SIGINT', async () => {
   await stopSmtpInbound();
   smtpOutbound.shutdown();
+  await closeRedis();
   await mongoose.connection.close();
-  logger.info('MongoDB connection closed through app termination');
+  logger.info('Connections closed through app termination');
   process.exit(0);
 });
 
@@ -285,18 +297,22 @@ app.get("/health", async (req, res) => {
   try {
     // Check MongoDB connection
     const isMongoConnected = mongoose.connection.readyState === 1;
-    
+    const redisClient = getRedisClient();
+    const isRedisConnected = redisClient?.status === 'ready';
+
     if (isMongoConnected) {
       res.status(200).json({
         status: "operational",
         timestamp: new Date().toISOString(),
-        database: "connected"
+        database: "connected",
+        redis: redisClient ? (isRedisConnected ? "connected" : "disconnected") : "not configured",
       });
     } else {
       res.status(503).json({
         status: "degraded",
         timestamp: new Date().toISOString(),
-        database: "disconnected"
+        database: "disconnected",
+        redis: redisClient ? (isRedisConnected ? "connected" : "disconnected") : "not configured",
       });
     }
   } catch (error) {
