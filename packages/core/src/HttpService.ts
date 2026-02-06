@@ -54,6 +54,8 @@ interface RequestConfig extends RequestOptions {
   params?: Record<string, unknown>;
   /** @internal Used to prevent infinite auth retry loops */
   _isAuthRetry?: boolean;
+  /** @internal Used to prevent infinite CSRF retry loops */
+  _isCsrfRetry?: boolean;
 }
 
 /**
@@ -344,6 +346,20 @@ export class HttpService {
             }
             // Refresh failed or no token — clear tokens
             this.tokenStore.clearTokens();
+          }
+
+          // On 403 with CSRF error, clear cached token and retry once
+          if (response.status === 403 && !config._isCsrfRetry) {
+            try {
+              const clonedResponse = response.clone();
+              const errBody = await clonedResponse.json() as { code?: string } | null;
+              if (errBody?.code === 'CSRF_TOKEN_INVALID' || errBody?.code === 'CSRF_TOKEN_MISSING') {
+                this.clearCsrfToken();
+                return this.request<T>({ ...config, _isCsrfRetry: true, retry: false });
+              }
+            } catch {
+              // Failed to parse error body — not a CSRF error
+            }
           }
 
           // Try to parse error response (handle empty/malformed JSON)
