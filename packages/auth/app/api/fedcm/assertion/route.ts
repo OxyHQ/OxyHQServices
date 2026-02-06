@@ -48,7 +48,7 @@ function generateIdToken(userId: string, clientId: string, nonce?: string): stri
     aud: clientId, // Audience (client app)
     exp: Math.floor(Date.now() / 1000) + 300, // Expires in 5 minutes (short-lived for exchange)
     iat: Math.floor(Date.now() / 1000), // Issued at
-    nonce: nonce || '', // Nonce for replay protection
+    ...(nonce ? { nonce } : {}), // Only include nonce if provided
   };
 
   const base64UrlEncodeJson = (obj: any) => {
@@ -133,6 +133,14 @@ export async function POST(request: NextRequest) {
     if (!account_id || !client_id) {
       return NextResponse.json(
         { error: 'account_id and client_id are required' },
+        { status: 400, headers: corsHeaders }
+      );
+    }
+
+    // Require nonce in production for replay protection
+    if (!nonce && process.env.NODE_ENV === 'production') {
+      return NextResponse.json(
+        { error: 'nonce is required' },
         { status: 400, headers: corsHeaders }
       );
     }
