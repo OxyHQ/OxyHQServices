@@ -1,15 +1,17 @@
 import { createSocketRateLimiter } from '../socketRateLimit';
 
 // Minimal Socket mock
+type AnyFn = (...args: any[]) => any;
+
 function createMockSocket(id = 'socket-1') {
-  const listeners: Record<string, Function[]> = {};
-  const middlewares: Function[] = [];
+  const listeners: Record<string, AnyFn[]> = {};
+  const middlewares: AnyFn[] = [];
   return {
     id,
-    use: jest.fn((fn: Function) => {
+    use: jest.fn((fn: AnyFn) => {
       middlewares.push(fn);
     }),
-    on: jest.fn((event: string, fn: Function) => {
+    on: jest.fn((event: string, fn: AnyFn) => {
       (listeners[event] ??= []).push(fn);
     }),
     emit: jest.fn(),
