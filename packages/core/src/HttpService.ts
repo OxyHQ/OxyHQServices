@@ -354,7 +354,7 @@ export class HttpService {
               const clonedResponse = response.clone();
               const errBody = await clonedResponse.json() as { code?: string } | null;
               if (errBody?.code === 'CSRF_TOKEN_INVALID' || errBody?.code === 'CSRF_TOKEN_MISSING') {
-                this.clearCsrfToken();
+                this.tokenStore.clearCsrfToken();
                 return this.request<T>({ ...config, _isCsrfRetry: true, retry: false });
               }
             } catch {
