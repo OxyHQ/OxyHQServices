@@ -22,9 +22,10 @@ export async function exchangeIdToken(req: Request, res: Response) {
 
     const result = await fedcmService.exchangeIdToken(id_token, req);
 
-    if (!result) {
+    if ('error' in result) {
       return res.status(401).json({
         message: 'Invalid or expired ID token',
+        reason: result.error,
       });
     }
 

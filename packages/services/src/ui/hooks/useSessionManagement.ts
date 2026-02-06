@@ -63,6 +63,12 @@ export const useSessionManagement = ({
   const [sessions, setSessions] = useState<ClientSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
 
+  // Refs to avoid recreating callbacks when sessions/activeSessionId change
+  const sessionsRef = useRef(sessions);
+  sessionsRef.current = sessions;
+  const activeSessionIdRef = useRef(activeSessionId);
+  activeSessionIdRef.current = activeSessionId;
+
   const refreshInFlightRef = useRef<Promise<void> | null>(null);
   const removedSessionsRef = useRef<Set<string>>(new Set());
   const lastRefreshRef = useRef<number>(0);
@@ -90,8 +96,8 @@ export const useSessionManagement = ({
     (incoming: ClientSession[], options: { merge?: boolean } = {}): void => {
       setSessions((prevSessions) => {
         const processed = options.merge
-          ? mergeSessions(prevSessions, incoming, activeSessionId, false)
-          : normalizeAndSortSessions(incoming, activeSessionId, false);
+          ? mergeSessions(prevSessions, incoming, activeSessionIdRef.current, false)
+          : normalizeAndSortSessions(incoming, activeSessionIdRef.current, false);
 
         if (storage) {
           void saveSessionIds(processed.map((session) => session.sessionId));
@@ -103,7 +109,7 @@ export const useSessionManagement = ({
         return processed;
       });
     },
-    [activeSessionId, saveSessionIds, storage],
+    [saveSessionIds, storage],
   );
 
   const saveActiveSessionId = useCallback(
@@ -270,11 +276,11 @@ export const useSessionManagement = ({
         const invalidSession = isInvalidSessionError(error);
 
         if (invalidSession) {
-          updateSessions(sessions.filter((session) => session.sessionId !== sessionId), {
+          updateSessions(sessionsRef.current.filter((session) => session.sessionId !== sessionId), {
             merge: false,
           });
-          if (sessionId === activeSessionId) {
-            const otherSessionIds = sessions
+          if (sessionId === activeSessionIdRef.current) {
+            const otherSessionIds = sessionsRef.current
               .filter(
                 (session) =>
                   session.sessionId !== sessionId && !removedSessionsRef.current.has(session.sessionId),
@@ -300,13 +306,10 @@ export const useSessionManagement = ({
     },
     [
       activateSession,
-      activeSessionId,
       findReplacementSession,
       logger,
-      loginSuccess,
       onError,
       oxyServices,
-      sessions,
       setAuthError,
       updateSessions,
     ],
@@ -314,7 +317,7 @@ export const useSessionManagement = ({
 
   const refreshSessions = useCallback(
     async (activeUserId?: string): Promise<void> => {
-      if (!activeSessionId) return;
+      if (!activeSessionIdRef.current) return;
 
       if (refreshInFlightRef.current) {
         await refreshInFlightRef.current;
@@ -329,17 +332,17 @@ export const useSessionManagement = ({
 
       const refreshPromise = (async () => {
         try {
-          const deviceSessions = await fetchSessionsWithFallback(oxyServices, activeSessionId, {
+          const deviceSessions = await fetchSessionsWithFallback(oxyServices, activeSessionIdRef.current!, {
             fallbackUserId: activeUserId,
             logger,
           });
           updateSessions(deviceSessions, { merge: true });
         } catch (error) {
           if (isInvalidSessionError(error)) {
-            const otherSessions = sessions
+            const otherSessions = sessionsRef.current
               .filter(
                 (session) =>
-                  session.sessionId !== activeSessionId &&
+                  session.sessionId !== activeSessionIdRef.current &&
                   !removedSessionsRef.current.has(session.sessionId),
               )
               .map((session) => session.sessionId);
@@ -368,13 +371,11 @@ export const useSessionManagement = ({
       await refreshPromise;
     },
     [
-      activeSessionId,
       clearSessionState,
       findReplacementSession,
       logger,
       onError,
       oxyServices,
-      sessions,
       setAuthError,
       updateSessions,
     ],

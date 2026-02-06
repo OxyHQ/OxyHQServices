@@ -1,7 +1,8 @@
 import type React from 'react';
 import { useCallback, useState, useEffect } from 'react';
 import { TouchableOpacity, Text, View, StyleSheet, type ViewStyle, type TextStyle, type StyleProp, Platform } from 'react-native';
-import { useAuth } from '../hooks/useAuth';
+import { useAuthStore } from '../stores/authStore';
+import { useShallow } from 'zustand/react/shallow';
 import { fontFamilies } from '../styles/fonts';
 import OxyLogo from './OxyLogo';
 import { showSignInModal, subscribeToSignInModal } from './SignInModal';
@@ -82,7 +83,9 @@ export const OxySignInButton: React.FC<OxySignInButtonProps> = ({
     disabled = false,
     showWhenAuthenticated = false,
 }) => {
-    const { isAuthenticated, isLoading } = useAuth();
+    const { isAuthenticated, isLoading } = useAuthStore(
+        useShallow((state) => ({ isAuthenticated: state.isAuthenticated, isLoading: state.isLoading }))
+    );
     const [isModalOpen, setIsModalOpen] = useState(false);
 
     // Subscribe to modal close events
@@ -100,14 +103,11 @@ export const OxySignInButton: React.FC<OxySignInButtonProps> = ({
             return;
         }
 
-        // Set state immediately before showing modal
-        console.log('[OxySignInButton] Setting isModalOpen to true');
         setIsModalOpen(true);
         // Show the full-screen sign-in modal on all platforms
         showSignInModal();
     }, [onPress]);
 
-    console.log('[OxySignInButton] render - isModalOpen:', isModalOpen);
     const isButtonDisabled = disabled || isLoading || isModalOpen;
 
     // Determine the button style based on the variant

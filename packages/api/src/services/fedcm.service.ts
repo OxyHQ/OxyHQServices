@@ -5,8 +5,8 @@ import sessionService from './session.service';
 import { Request } from 'express';
 import * as crypto from 'crypto';
 
-// FedCM ID token issuer
-const FEDCM_ISSUER = 'https://auth.oxy.so';
+// FedCM ID token issuer - must match auth server's NEXT_PUBLIC_OXY_AUTH_URL
+const FEDCM_ISSUER = (process.env.FEDCM_ISSUER || 'https://auth.oxy.so').replace(/\/+$/, '');
 
 // Shared secret for verifying FedCM tokens - must match auth.oxy.so
 if (!process.env.FEDCM_TOKEN_SECRET) {
@@ -46,7 +46,9 @@ function verifyIdToken(token: string): FedCMTokenPayload {
     .replace(/=/g, '');
 
   // Use timing-safe comparison to prevent timing attacks
-  if (!crypto.timingSafeEqual(Buffer.from(signatureB64), Buffer.from(expectedSignature))) {
+  const sigBuf = Buffer.from(signatureB64);
+  const expectedBuf = Buffer.from(expectedSignature);
+  if (sigBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(sigBuf, expectedBuf)) {
     throw new Error('Invalid token signature');
   }
 
@@ -236,7 +238,8 @@ class FedCMService {
     expiresAt: string;
     accessToken: string;
     user: { id: string; username?: string; email?: string; avatar?: string; name?: string };
-  } | null> {
+    error?: never;
+  } | { error: string }> {
     logger.info('FedCM: exchangeIdToken called');
 
     try {
@@ -246,33 +249,33 @@ class FedCMService {
         tokenPayload = verifyIdToken(idToken);
         logger.debug('FedCM: Token verified successfully');
       } catch (error) {
-        logger.warn('FedCM: Token verification failed');
-        return null;
+        logger.warn('FedCM: Token verification failed', { reason: error instanceof Error ? error.message : String(error) });
+        return { error: 'token_verification_failed' };
       }
 
       // Validate required fields
       if (!tokenPayload.sub || !tokenPayload.aud) {
         logger.warn('FedCM: Invalid token payload - missing sub or aud');
-        return null;
+        return { error: 'missing_required_fields' };
       }
 
-      // Verify issuer
-      if (tokenPayload.iss !== FEDCM_ISSUER) {
-        logger.warn('FedCM: Invalid issuer');
-        return null;
+      // Verify issuer (normalize trailing slashes for comparison)
+      if (tokenPayload.iss?.replace(/\/+$/, '') !== FEDCM_ISSUER) {
+        logger.warn('FedCM: Invalid issuer', { expected: FEDCM_ISSUER, got: tokenPayload.iss });
+        return { error: 'invalid_issuer' };
       }
 
       // Check expiration
       if (tokenPayload.exp && tokenPayload.exp < Math.floor(Date.now() / 1000)) {
         logger.warn('FedCM: Token expired');
-        return null;
+        return { error: 'token_expired' };
       }
 
       // Verify the client origin is approved (optional but recommended)
       const clientOrigin = tokenPayload.aud;
       const isApproved = await this.isClientApproved(clientOrigin);
       if (!isApproved) {
-        logger.warn('FedCM: Client origin not in approved list');
+        logger.warn('FedCM: Client origin not in approved list', { clientOrigin });
       }
 
       // Get user by ID (with virtuals to get name.full)
@@ -280,8 +283,8 @@ class FedCMService {
       const user = await User.findById(userId).select('-password').lean({ virtuals: true });
 
       if (!user) {
-        logger.warn('FedCM: User not found for token exchange');
-        return null;
+        logger.warn('FedCM: User not found for token exchange', { userId });
+        return { error: 'user_not_found' };
       }
 
       // Create a new session for this user
@@ -292,7 +295,7 @@ class FedCMService {
       logger.info('FedCM: Session created via token exchange', { clientOrigin });
 
       const userDoc = user as any;
-      const response = {
+      return {
         sessionId: session.sessionId,
         deviceId: session.deviceId,
         expiresAt: session.expiresAt.toISOString(),
@@ -305,10 +308,9 @@ class FedCMService {
           name: userDoc.name?.full || userDoc.name,
         },
       };
-      return response;
     } catch (error) {
       logger.error('FedCM: Token exchange failed', error);
-      return null;
+      return { error: 'internal_error' };
     }
   }
 }

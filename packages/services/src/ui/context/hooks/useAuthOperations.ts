@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import type { ApiError, User } from '@oxyhq/core';
 import type { AuthState } from '../../stores/authStore';
 import type { ClientSession, SessionLoginResponse } from '@oxyhq/core';
@@ -65,7 +65,10 @@ export const useAuthOperations = ({
   setAuthState,
   logger,
 }: UseAuthOperationsOptions): UseAuthOperationsResult => {
-  
+  // Ref to avoid recreating callbacks when sessions change
+  const sessionsRef = useRef(sessions);
+  sessionsRef.current = sessions;
+
   /**
    * Internal function to perform challenge-response sign in (works offline)
    */
@@ -297,7 +300,7 @@ export const useAuthOperations = ({
         const sessionToLogout = targetSessionId || activeSessionId;
         await oxyServices.logoutSession(activeSessionId, sessionToLogout);
 
-        const filteredSessions = sessions.filter((session) => session.sessionId !== sessionToLogout);
+        const filteredSessions = sessionsRef.current.filter((session) => session.sessionId !== sessionToLogout);
         updateSessions(filteredSessions, { merge: false });
 
         if (sessionToLogout === activeSessionId) {
@@ -332,7 +335,6 @@ export const useAuthOperations = ({
       logger,
       onError,
       oxyServices,
-      sessions,
       setAuthState,
       switchSession,
       updateSessions,

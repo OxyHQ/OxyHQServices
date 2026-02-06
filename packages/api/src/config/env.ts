@@ -20,6 +20,7 @@ export interface RequiredEnvVars {
   ACCESS_TOKEN_SECRET: string;
   REFRESH_TOKEN_SECRET: string;
   FEDCM_TOKEN_SECRET: string;
+  FEDCM_ISSUER?: string;
 
   // AWS/S3 Configuration
   AWS_REGION: string;
