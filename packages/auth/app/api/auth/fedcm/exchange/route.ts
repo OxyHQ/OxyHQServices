@@ -10,6 +10,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { apiPost, getForwardHeaders } from '@/lib/oxy-api';
+import { getFedCMCorsHeaders, getFedCMPreflightHeaders } from '@/lib/fedcm-cors';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -27,19 +28,9 @@ interface SessionLoginResponse {
   };
 }
 
-/**
- * Get CORS headers for FedCM responses
- * IMPORTANT: When Access-Control-Allow-Credentials is true,
- * Access-Control-Allow-Origin CANNOT be '*' - must be specific origin
- */
+/** Get validated CORS headers for FedCM responses */
 function getCorsHeaders(request: NextRequest): Record<string, string> {
-  const origin = request.headers.get('origin');
-  const allowOrigin = origin || 'https://oxy.so';
-
-  return {
-    'Access-Control-Allow-Origin': allowOrigin,
-    'Access-Control-Allow-Credentials': 'true',
-  };
+  return getFedCMCorsHeaders(request);
 }
 
 export async function POST(request: NextRequest) {
@@ -84,17 +75,6 @@ export async function POST(request: NextRequest) {
 }
 
 export async function OPTIONS(request: NextRequest) {
-  const origin = request.headers.get('origin');
-  const allowOrigin = origin || 'https://oxy.so';
-
-  return new NextResponse(null, {
-    status: 204,
-    headers: {
-      'Access-Control-Allow-Origin': allowOrigin,
-      'Access-Control-Allow-Methods': 'POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type',
-      'Access-Control-Allow-Credentials': 'true',
-      'Access-Control-Max-Age': '86400',
-    },
-  });
+  const headers = getFedCMPreflightHeaders(request, 'POST, OPTIONS', 'Content-Type');
+  return new NextResponse(null, { status: 204, headers });
 }

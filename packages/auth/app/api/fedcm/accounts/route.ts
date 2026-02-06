@@ -11,6 +11,7 @@ import { cookies } from 'next/headers';
 import { NextRequest, NextResponse } from 'next/server';
 import { apiGet } from '@/lib/oxy-api';
 import { SESSION_COOKIE_NAME } from '@/lib/oxy-api';
+import { getFedCMCorsHeaders, getFedCMPreflightHeaders } from '@/lib/fedcm-cors';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -37,21 +38,9 @@ function getDisplayName(user: User): string {
   return user.username;
 }
 
-/**
- * Get CORS headers for FedCM responses
- * IMPORTANT: When Access-Control-Allow-Credentials is true,
- * Access-Control-Allow-Origin CANNOT be '*' - must be specific origin
- */
+/** Get validated CORS headers for FedCM responses */
 function getCorsHeaders(request: NextRequest): Record<string, string> {
-  const origin = request.headers.get('origin');
-  // FedCM requests always include an origin header
-  // If no origin, use a safe default (won't work with credentials but prevents errors)
-  const allowOrigin = origin || 'https://oxy.so';
-
-  return {
-    'Access-Control-Allow-Origin': allowOrigin,
-    'Access-Control-Allow-Credentials': 'true',
-  };
+  return getFedCMCorsHeaders(request);
 }
 
 /**
@@ -172,17 +161,6 @@ export async function GET(request: NextRequest) {
 
 // Handle CORS preflight
 export async function OPTIONS(request: NextRequest) {
-  const origin = request.headers.get('origin');
-  const allowOrigin = origin || 'https://oxy.so';
-
-  return new NextResponse(null, {
-    status: 204,
-    headers: {
-      'Access-Control-Allow-Origin': allowOrigin,
-      'Access-Control-Allow-Methods': 'GET, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Sec-Fetch-Dest',
-      'Access-Control-Allow-Credentials': 'true',
-      'Access-Control-Max-Age': '86400',
-    },
-  });
+  const headers = getFedCMPreflightHeaders(request, 'GET, OPTIONS', 'Content-Type, Sec-Fetch-Dest');
+  return new NextResponse(null, { status: 204, headers });
 }
