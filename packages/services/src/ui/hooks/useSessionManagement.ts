@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ApiError, User } from '@oxyhq/core';
 import type { ClientSession } from '@oxyhq/core';
 import { mergeSessions, normalizeAndSortSessions, sessionsArraysEqual } from '@oxyhq/core';
@@ -207,11 +207,21 @@ export const useSessionManagement = ({
     ],
   );
 
+  const removalTimerIdsRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
+
   const trackRemovedSession = useCallback((sessionId: string) => {
     removedSessionsRef.current.add(sessionId);
-    setTimeout(() => {
+    const timerId = setTimeout(() => {
       removedSessionsRef.current.delete(sessionId);
+      removalTimerIdsRef.current.delete(timerId);
     }, 5000);
+    removalTimerIdsRef.current.add(timerId);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      removalTimerIdsRef.current.forEach(clearTimeout);
+    };
   }, []);
 
   const findReplacementSession = useCallback(
