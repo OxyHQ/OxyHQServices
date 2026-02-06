@@ -425,8 +425,12 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     }
 
     setInitialized(true);
-    void restoreSessionsFromStorage();
-  }, [restoreSessionsFromStorage, storage, initialized]);
+    restoreSessionsFromStorage().catch((error) => {
+      if (__DEV__) {
+        logger('Failed to restore sessions from storage', error);
+      }
+    });
+  }, [restoreSessionsFromStorage, storage, initialized, logger]);
 
   // Web SSO: Automatically check for cross-domain session on web platforms
   // Also used for popup auth - updates all state and persists session
