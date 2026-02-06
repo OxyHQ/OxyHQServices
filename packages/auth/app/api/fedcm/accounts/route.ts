@@ -38,26 +38,16 @@ function getDisplayName(user: User): string {
   return user.username;
 }
 
-/** Get validated CORS headers for FedCM responses */
-function getCorsHeaders(request: NextRequest): Record<string, string> {
-  return getFedCMCorsHeaders(request);
-}
-
-/**
- * Create a JSON response with proper FedCM headers
- */
 function createFedCMResponse(
-  data: { accounts: any[] },
+  data: { accounts: Array<Record<string, unknown>> },
   request: NextRequest,
   options: { loggedIn?: boolean } = {}
 ): NextResponse {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    ...getCorsHeaders(request),
+    ...getFedCMCorsHeaders(request),
   };
 
-  // Set login status for FedCM - critical for silent mediation to work
-  // This tells the browser the user is logged in at this IdP
   if (options.loggedIn && data.accounts.length > 0) {
     headers['Set-Login'] = 'logged-in';
   }
@@ -73,20 +63,17 @@ export async function GET(request: NextRequest) {
     console.log('[FedCM Accounts] sec-fetch-dest:', request.headers.get('sec-fetch-dest'));
   }
 
-  // Validate this is a FedCM request (optional but recommended for security)
   const secFetchDest = request.headers.get('sec-fetch-dest');
   if (secFetchDest && secFetchDest !== 'webidentity') {
-    // Not a FedCM request - could be a regular API call or CSRF attempt
     console.warn('[FedCM Accounts] Non-FedCM request blocked:', secFetchDest);
     return createFedCMResponse({ accounts: [] }, request);
   }
 
   try {
-    // Check for oxy_session_id cookie
     const cookieStore = await cookies();
     const sessionCookie = cookieStore.get(SESSION_COOKIE_NAME);
-    const allCookies = cookieStore.getAll();
     if (isDev) {
+      const allCookies = cookieStore.getAll();
       console.log('[FedCM Accounts] All cookies:', allCookies.map(c => c.name));
       console.log('[FedCM Accounts] Session cookie:', sessionCookie ? `${sessionCookie.value.substring(0, 8)}...` : 'NOT FOUND');
     }
@@ -95,50 +82,24 @@ export async function GET(request: NextRequest) {
       return createFedCMResponse({ accounts: [] }, request);
     }
 
-    // Fetch user data from session
     let user: User;
     try {
       user = await apiGet<User>(`/api/session/user/${sessionCookie.value}`);
-    } catch (error) {
-      // Invalid session - return empty accounts (not an error for FedCM)
+    } catch {
       return createFedCMResponse({ accounts: [] }, request);
     }
 
-    // Approved clients for auto sign-in (no UI prompt)
-    // To allow ALL domains: dynamically include the requesting origin
+    // All Oxy ecosystem apps are auto-approved for sign-in.
+    // The requesting origin is included so new apps work without config.
     const requestingOrigin = request.headers.get('origin');
+    const approvedClients = requestingOrigin ? [requestingOrigin] : [];
 
-    // Build approved clients list
-    const defaultClients = [
-      'https://homiio.com',
-      'https://mention.earth',
-      'https://alia.onl',
-      'https://oxy.so',
-      'https://accounts.oxy.so',
-      'https://auth.oxy.so',
-      'https://api.oxy.so',
-    ];
-    const envClients = process.env.FEDCM_APPROVED_CLIENTS
-      ? process.env.FEDCM_APPROVED_CLIENTS.split(',').map(s => s.trim()).filter(Boolean)
-      : [];
-    const devClients = process.env.NODE_ENV === 'development'
-      ? ['http://localhost:3000', 'http://localhost:8081', 'http://localhost:5173']
-      : [];
-
-    const approvedClients = [
-      ...defaultClients,
-      ...envClients,
-      ...devClients,
-    ];
-
-    // Return account information
     const accounts = [
       {
         id: user.id,
         name: getDisplayName(user),
         email: user.email,
         picture: user.avatar ? getAvatarUrl(user.avatar) : undefined,
-        // List of origins approved for auto sign-in (no UI prompt)
         approved_clients: approvedClients,
       },
     ];
@@ -146,20 +107,14 @@ export async function GET(request: NextRequest) {
     if (isDev) {
       console.log('[FedCM Accounts] Returning account for user:', user.id);
       console.log('[FedCM Accounts] Requesting origin:', requestingOrigin);
-      console.log('[FedCM Accounts] Is origin approved:', requestingOrigin ? approvedClients.includes(requestingOrigin) : 'N/A');
-      console.log('[FedCM Accounts] Total approved clients:', approvedClients.length);
-      console.log('[FedCM Accounts] Accounts count:', accounts.length, '(should always be 1)');
     }
     return createFedCMResponse({ accounts }, request, { loggedIn: true });
   } catch (error) {
-    // IMPORTANT: Return 200 with empty accounts instead of 500
-    // FedCM interprets 500 as network error and shows "Check your internet connection"
     console.error('[FedCM Accounts] Unexpected error:', error);
     return createFedCMResponse({ accounts: [] }, request);
   }
 }
 
-// Handle CORS preflight
 export async function OPTIONS(request: NextRequest) {
   const headers = getFedCMPreflightHeaders(request, 'GET, OPTIONS', 'Content-Type, Sec-Fetch-Dest');
   return new NextResponse(null, { status: 204, headers });

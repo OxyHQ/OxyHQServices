@@ -26,11 +26,6 @@ function getFedCMTokenSecret(): string {
   return secret;
 }
 
-/** Get validated CORS headers for FedCM responses */
-function getCorsHeaders(request: NextRequest): Record<string, string> {
-  return getFedCMCorsHeaders(request);
-}
-
 interface User {
   id: string;
   username: string;
@@ -83,7 +78,7 @@ function generateIdToken(userId: string, clientId: string, nonce?: string): stri
 const isDev = process.env.NODE_ENV === 'development';
 
 export async function POST(request: NextRequest) {
-  const corsHeaders = getCorsHeaders(request);
+  const corsHeaders = getFedCMCorsHeaders(request);
   if (isDev) console.log('[FedCM Assertion] Request received from:', request.headers.get('origin'));
 
   // Validate this is a FedCM request (optional but recommended for security)

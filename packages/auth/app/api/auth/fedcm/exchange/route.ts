@@ -28,13 +28,8 @@ interface SessionLoginResponse {
   };
 }
 
-/** Get validated CORS headers for FedCM responses */
-function getCorsHeaders(request: NextRequest): Record<string, string> {
-  return getFedCMCorsHeaders(request);
-}
-
 export async function POST(request: NextRequest) {
-  const corsHeaders = getCorsHeaders(request);
+  const corsHeaders = getFedCMCorsHeaders(request);
 
   try {
     const body = await request.json();
