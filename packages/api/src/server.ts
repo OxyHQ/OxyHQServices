@@ -298,23 +298,18 @@ app.get("/health", async (req, res) => {
     // Check MongoDB connection
     const isMongoConnected = mongoose.connection.readyState === 1;
     const redisClient = getRedisClient();
-    const isRedisConnected = redisClient?.status === 'ready';
+    const redisStatus = redisClient ? (redisClient.status === 'ready' ? "connected" : "disconnected") : "not configured";
 
-    if (isMongoConnected) {
-      res.status(200).json({
-        status: "operational",
-        timestamp: new Date().toISOString(),
-        database: "connected",
-        redis: redisClient ? (isRedisConnected ? "connected" : "disconnected") : "not configured",
-      });
-    } else {
-      res.status(503).json({
-        status: "degraded",
-        timestamp: new Date().toISOString(),
-        database: "disconnected",
-        redis: redisClient ? (isRedisConnected ? "connected" : "disconnected") : "not configured",
-      });
-    }
+    // Degraded if MongoDB OR Redis (when configured) is down
+    const isRedisDown = redisClient && redisClient.status !== 'ready';
+    const isHealthy = isMongoConnected && !isRedisDown;
+
+    res.status(isHealthy ? 200 : 503).json({
+      status: isMongoConnected ? (isRedisDown ? "degraded" : "operational") : "down",
+      timestamp: new Date().toISOString(),
+      database: isMongoConnected ? "connected" : "disconnected",
+      redis: redisStatus,
+    });
   } catch (error) {
     logger.error("Health check error:", error);
     res.status(503).json({
