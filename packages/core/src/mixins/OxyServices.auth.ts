@@ -341,25 +341,27 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
      * Validate session
      */
     async validateSession(
-      sessionId: string, 
+      sessionId: string,
       options: {
         deviceFingerprint?: string;
         useHeaderValidation?: boolean;
       } = {}
-    ): Promise<{ 
-      valid: boolean; 
-      expiresAt: string; 
-      lastActivity: string; 
+    ): Promise<{
+      valid: boolean;
+      expiresAt: string;
+      lastActivity: string;
       user: User;
       sessionId?: string;
       source?: string;
     }> {
       try {
-        const urlParams: any = {};
+        const urlParams: Record<string, string> = {};
         if (options.deviceFingerprint) urlParams.deviceFingerprint = options.deviceFingerprint;
         if (options.useHeaderValidation) urlParams.useHeaderValidation = 'true';
         return await this.makeRequest('GET', `/api/session/validate/${sessionId}`, urlParams, { cache: false });
       } catch (error) {
+        // Session is invalid — clear any cached user data for this session (#196)
+        this.clearCacheEntry(`GET:/api/session/user/${sessionId}`);
         throw this.handleError(error);
       }
     }
