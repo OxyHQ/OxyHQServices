@@ -12,6 +12,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
@@ -112,6 +113,9 @@ export function WebOxyProvider({
 
   const isAuthenticated = !!user;
 
+  // Mutex: prevents concurrent sign-in attempts (FedCM + popup + redirect)
+  const signingInRef = useRef(false);
+
   const handleAuthSuccess = useCallback(async (
     session: SessionLoginResponse,
     method: 'fedcm' | 'popup' | 'redirect' | 'credentials' = 'credentials'
@@ -201,6 +205,8 @@ export function WebOxyProvider({
   }, [user, onAuthStateChange]);
 
   const signIn = useCallback(async () => {
+    if (signingInRef.current) return;
+    signingInRef.current = true;
     setError(null);
     setIsLoading(true);
 
@@ -221,10 +227,14 @@ export function WebOxyProvider({
       }
     } catch (err) {
       handleAuthError(err);
+    } finally {
+      signingInRef.current = false;
     }
   }, [crossDomainAuth, preferredAuthMethod, handleAuthSuccess, handleAuthError]);
 
   const signInWithFedCM = useCallback(async () => {
+    if (signingInRef.current) return;
+    signingInRef.current = true;
     setError(null);
     setIsLoading(true);
     try {
@@ -232,10 +242,14 @@ export function WebOxyProvider({
       await handleAuthSuccess(session, 'fedcm');
     } catch (err) {
       handleAuthError(err);
+    } finally {
+      signingInRef.current = false;
     }
   }, [crossDomainAuth, handleAuthSuccess, handleAuthError]);
 
   const signInWithPopup = useCallback(async () => {
+    if (signingInRef.current) return;
+    signingInRef.current = true;
     setError(null);
     setIsLoading(true);
     try {
@@ -243,6 +257,8 @@ export function WebOxyProvider({
       await handleAuthSuccess(session, 'popup');
     } catch (err) {
       handleAuthError(err);
+    } finally {
+      signingInRef.current = false;
     }
   }, [crossDomainAuth, handleAuthSuccess, handleAuthError]);
 
