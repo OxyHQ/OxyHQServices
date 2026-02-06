@@ -80,10 +80,22 @@ export function verifyCsrfToken(req: Request, res: Response, next: NextFunction)
 
   if (isNativeApp) {
     // Native app mode: Only require header token (no cookie matching)
-    // This is safe because:
-    // 1. Native apps don't have the same-origin policy vulnerabilities that CSRF protects against
-    // 2. A malicious website cannot make a native app send requests on its behalf
-    // 3. Native apps already use JWT authentication for request authorization
+    // Require a Bearer token to prevent browser-based attackers from
+    // bypassing CSRF by simply setting X-Native-App: true.
+    const authHeader = req.headers.authorization;
+    if (!authHeader?.startsWith('Bearer ')) {
+      logger.warn('Native app CSRF bypass without auth', {
+        method: req.method,
+        path: req.path,
+        ip: req.ip,
+      });
+
+      return res.status(403).json({
+        message: 'Native app CSRF bypass requires authentication',
+        code: 'CSRF_AUTH_REQUIRED',
+      });
+    }
+
     if (!headerToken) {
       logger.warn('CSRF token missing (native app)', {
         method: req.method,
