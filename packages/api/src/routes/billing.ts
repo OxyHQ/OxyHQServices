@@ -210,11 +210,12 @@ router.get('/transactions', authMiddleware, async (req: Request, res: Response) 
     const userId = (req as any).user?._id?.toString();
     if (!userId) return res.status(401).json({ error: 'Authentication required' });
 
-    const { limit = '20', offset = '0' } = req.query;
+    const limit = Math.min(Math.max(Number(req.query.limit) || 20, 1), 100);
+    const offset = Math.max(Number(req.query.offset) || 0, 0);
     const transactions = await BillingTransaction.find({ userId })
       .sort({ createdAt: -1 })
-      .limit(Number(limit))
-      .skip(Number(offset));
+      .limit(limit)
+      .skip(offset);
     const total = await BillingTransaction.countDocuments({ userId });
 
     res.json({ transactions, total });
