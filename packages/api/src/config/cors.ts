@@ -1,45 +1,13 @@
 /**
  * CORS (Cross-Origin Resource Sharing) Configuration
- * 
- * Centralizes CORS settings for consistent security policies across the API.
- * Follows the principle of secure defaults with explicit allow-lists.
+ *
+ * Reflects the request origin in Access-Control-Allow-Origin.
+ * The Oxy ecosystem has many apps — maintaining a whitelist creates
+ * friction for new apps. Authentication and authorization are handled
+ * by session/token validation, not by CORS origin checks.
  */
 
 import { Request, Response, NextFunction } from 'express';
-
-/**
- * Allowed origins for CORS requests
- * Production origins are explicitly allow-listed for security
- */
-export const ALLOWED_ORIGINS = [
-  // Oxy ecosystem domains (root + subdomains not matched by pattern)
-  'https://oxy.so',
-  'https://accounts.oxy.so',
-  'https://api.oxy.so',
-  'https://auth.oxy.so',
-  'https://authenticator.oxy.so',
-  'https://noted.oxy.so',
-  // Partner domains
-  'https://mention.earth',
-  'https://homiio.com',
-  'https://alia.onl',
-  // Development
-  'http://localhost:3000',
-  'http://localhost:5173',
-  'http://localhost:8081',
-  'http://localhost:8082',
-  'http://localhost:19006',
-] as const;
-
-/**
- * Allowed origin patterns (regex) for subdomain matching
- */
-export const ALLOWED_ORIGIN_PATTERNS = [
-  /\.homiio\.com$/,
-  /\.mention\.earth$/,
-  /\.oxy\.so$/,
-  /\.alia\.onl$/,
-] as const;
 
 /**
  * Standard HTTP methods allowed for CORS
@@ -87,7 +55,7 @@ export const EXPOSED_HEADERS = [
   'Last-Modified',
   'ETag',
   'Cache-Control',
-  'X-CSRF-Token', // Allow client to read CSRF token from responses
+  'X-CSRF-Token',
 ] as const;
 
 /**
@@ -96,68 +64,26 @@ export const EXPOSED_HEADERS = [
 export const PREFLIGHT_MAX_AGE = 86400;
 
 /**
- * Check if an origin is allowed based on allow-list and patterns
- */
-export function isOriginAllowed(origin: string | undefined): boolean {
-  if (!origin) {
-    return false;
-  }
-
-  // Check exact matches
-  if (ALLOWED_ORIGINS.includes(origin as any)) {
-    return true;
-  }
-
-  // Check pattern matches
-  return ALLOWED_ORIGIN_PATTERNS.some(pattern => pattern.test(origin));
-}
-
-/**
  * CORS middleware factory
- * Creates a middleware that applies CORS headers based on configuration
- * 
- * @param options - Optional configuration overrides
- * @returns Express middleware function
+ * Reflects the request origin with credentials support.
  */
-export interface CorsOptions {
-  allowAllOriginsInDev?: boolean;
-  credentials?: boolean;
-}
-
-export function createCorsMiddleware(options: CorsOptions = {}) {
-  const {
-    allowAllOriginsInDev = true,
-    credentials = true,
-  } = options;
-
+export function createCorsMiddleware() {
   const allowedMethodsStr = ALLOWED_METHODS.join(', ');
   const allowedHeadersStr = ALLOWED_HEADERS.join(', ');
   const exposedHeadersStr = EXPOSED_HEADERS.join(', ');
 
   return (req: Request, res: Response, next: NextFunction): void => {
     const origin = req.headers.origin;
-    const isDevelopment = process.env.NODE_ENV !== 'production';
 
-    // Set Access-Control-Allow-Origin
-    if (isDevelopment && allowAllOriginsInDev && origin) {
-      // In development, allow all origins for easier testing
-      // Never use '*' with credentials — always reflect the specific origin
-      res.setHeader('Access-Control-Allow-Origin', origin);
-    } else if (origin && isOriginAllowed(origin)) {
-      // In production, only allow explicitly allowed origins
+    if (origin) {
       res.setHeader('Access-Control-Allow-Origin', origin);
     }
 
-    // Set other CORS headers
     res.setHeader('Access-Control-Allow-Methods', allowedMethodsStr);
     res.setHeader('Access-Control-Allow-Headers', allowedHeadersStr);
     res.setHeader('Access-Control-Expose-Headers', exposedHeadersStr);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
 
-    if (credentials) {
-      res.setHeader('Access-Control-Allow-Credentials', 'true');
-    }
-
-    // Handle preflight OPTIONS requests
     if (req.method === 'OPTIONS') {
       res.setHeader('Cache-Control', `public, max-age=${PREFLIGHT_MAX_AGE}`);
       res.setHeader('Vary', 'Origin');
@@ -170,13 +96,10 @@ export function createCorsMiddleware(options: CorsOptions = {}) {
 }
 
 /**
- * Socket.IO CORS configuration
+ * Socket.IO CORS configuration — allows all origins with credentials
  */
 export const SOCKET_IO_CORS_CONFIG = {
-  origin: [
-    ...ALLOWED_ORIGINS,
-    ...ALLOWED_ORIGIN_PATTERNS,
-  ] as const,
+  origin: true,
   methods: ['GET', 'POST'] as const,
   credentials: true,
 } as const;

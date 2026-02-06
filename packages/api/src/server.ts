@@ -82,11 +82,8 @@ app.use(express.urlencoded({ extended: true }));
 // Performance monitoring middleware (before routes)
 app.use(performanceMiddleware);
 
-// CORS middleware - centralized configuration
-app.use(createCorsMiddleware({
-  allowAllOriginsInDev: true,
-  credentials: true,
-}));
+// CORS middleware - reflects request origin with credentials
+app.use(createCorsMiddleware());
 
 // Create server for local development and testing
 const server = http.createServer(app);

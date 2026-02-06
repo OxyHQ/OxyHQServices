@@ -168,8 +168,6 @@ MAX_FILE_SIZE=52428800  # 50MB in bytes
 RATE_LIMIT_WINDOW_MS=900000  # 15 minutes
 RATE_LIMIT_MAX_REQUESTS=100
 
-# CORS (comma-separated)
-ALLOWED_ORIGINS=https://mention.earth,https://homiio.com,https://api.oxy.so
 EMAIL_PROVIDER=smtp
 SMTP_HOST=smtp.example.com
 SMTP_PORT=587
@@ -258,7 +256,7 @@ Response:
 
 - **Rate Limiting**: Configurable rate limits per endpoint
 - **Brute Force Protection**: Automatic blocking of suspicious activity
-- **CORS Protection**: Configurable cross-origin resource sharing
+- **CORS**: Origin-reflecting CORS with credentials support
 - **JWT Token Security**: Secure token generation and validation
 - **File Upload Security**: File type validation and size limits
 - **Session Isolation**: Device-based session management
