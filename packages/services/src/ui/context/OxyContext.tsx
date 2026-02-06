@@ -326,6 +326,14 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
   const useFollowHook = loadUseFollowHook();
 
+  // Refs for mutable callbacks to avoid stale closures in restoreSessionsFromStorage (#187)
+  const switchSessionRef = useRef(switchSession);
+  switchSessionRef.current = switchSession;
+  const updateSessionsRef = useRef(updateSessions);
+  updateSessionsRef.current = updateSessions;
+  const clearSessionStateRef = useRef(clearSessionState);
+  clearSessionStateRef.current = clearSessionState;
+
   const restoreSessionsFromStorage = useCallback(async (): Promise<void> => {
     if (!storage) {
       return;
@@ -368,18 +376,18 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         }
 
         if (validSessions.length > 0) {
-          updateSessions(validSessions, { merge: false });
+          updateSessionsRef.current(validSessions, { merge: false });
         }
       }
 
       if (storedActiveSessionId) {
         try {
-          await switchSession(storedActiveSessionId);
+          await switchSessionRef.current(storedActiveSessionId);
         } catch (switchError) {
           // Silently handle expected errors (invalid sessions, timeouts, network issues)
           if (isInvalidSessionError(switchError)) {
             await storage.removeItem(storageKeys.activeSessionId);
-            updateSessions(
+            updateSessionsRef.current(
               validSessions.filter((session) => session.sessionId !== storedActiveSessionId),
               { merge: false },
             );
@@ -399,19 +407,16 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       if (__DEV__) {
         loggerUtil.error('Auth init error', error instanceof Error ? error : new Error(String(error)), { component: 'OxyContext', method: 'restoreSessionsFromStorage' });
       }
-      await clearSessionState();
+      await clearSessionStateRef.current();
     } finally {
       setTokenReady(true);
     }
   }, [
-    clearSessionState,
     logger,
     oxyServices,
     storage,
     storageKeys.activeSessionId,
     storageKeys.sessionIds,
-    switchSession,
-    updateSessions,
   ]);
 
   useEffect(() => {
@@ -509,7 +514,6 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       const cleanup = () => {
         if (cleaned) return;
         cleaned = true;
-        pendingIdPCleanupRef.current = null;
         window.removeEventListener('message', handleMessage);
         iframe.remove();
       };
@@ -541,6 +545,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       pendingIdPCleanupRef.current?.();
+      pendingIdPCleanupRef.current = null;
     };
   }, [user, initialized, clearSessionState]);
 
