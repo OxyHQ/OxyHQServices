@@ -23,7 +23,11 @@ function getStripe(): Stripe {
 }
 
 function getWebhookSecret(): string {
-  return process.env.STRIPE_WEBHOOK_SECRET || '';
+  const secret = process.env.STRIPE_WEBHOOK_SECRET;
+  if (!secret) {
+    throw new Error('STRIPE_WEBHOOK_SECRET is required but not configured');
+  }
+  return secret;
 }
 
 // Helper to get or create Stripe customer
@@ -245,8 +249,13 @@ router.post('/webhook', async (req: Request, res: Response) => {
   const sig = req.headers['stripe-signature'] as string;
   if (!sig) return res.status(400).json({ error: 'Missing stripe-signature' });
 
-  const webhookSecret = getWebhookSecret();
-  if (!webhookSecret) return res.status(500).json({ error: 'Webhook secret not configured' });
+  let webhookSecret: string;
+  try {
+    webhookSecret = getWebhookSecret();
+  } catch {
+    logger.error('STRIPE_WEBHOOK_SECRET is not configured');
+    return res.status(500).json({ error: 'Webhook not configured' });
+  }
 
   let event: Stripe.Event;
   try {
