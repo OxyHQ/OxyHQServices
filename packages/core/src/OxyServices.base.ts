@@ -41,9 +41,10 @@ export class OxyServicesBase {
     this.httpService = new HttpService(config);
   }
 
-  // Test-only utility to reset global tokens between jest tests
-  static __resetTokensForTests(): void {
-    HttpService.__resetTokensForTests();
+  // Test-only utility to reset tokens on this instance between jest tests
+  // Note: tokens are now per-instance, so create new instances in tests for isolation
+  __resetTokensForTests(): void {
+    this.httpService.__resetTokensForTests();
   }
 
   /**

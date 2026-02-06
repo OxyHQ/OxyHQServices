@@ -83,10 +83,10 @@ export function createCorsMiddleware() {
     res.setHeader('Access-Control-Allow-Headers', allowedHeadersStr);
     res.setHeader('Access-Control-Expose-Headers', exposedHeadersStr);
     res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Vary', 'Origin');
 
     if (req.method === 'OPTIONS') {
       res.setHeader('Cache-Control', `public, max-age=${PREFLIGHT_MAX_AGE}`);
-      res.setHeader('Vary', 'Origin');
       res.status(204).end();
       return;
     }

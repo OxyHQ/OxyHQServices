@@ -59,23 +59,15 @@ interface RequestConfig extends RequestOptions {
 }
 
 /**
- * Token store for authentication (singleton)
+ * Token store for authentication (instance-based)
+ * Each HttpService gets its own TokenStore to prevent conflicts
+ * when multiple OxyServices instances coexist server-side.
  */
 class TokenStore {
-  private static instance: TokenStore;
   private accessToken: string | null = null;
   private refreshToken: string | null = null;
   private csrfToken: string | null = null;
   private csrfTokenFetchPromise: Promise<string | null> | null = null;
-
-  private constructor() {}
-
-  static getInstance(): TokenStore {
-    if (!TokenStore.instance) {
-      TokenStore.instance = new TokenStore();
-    }
-    return TokenStore.instance;
-  }
 
   setTokens(accessToken: string, refreshToken = ''): void {
     this.accessToken = accessToken;
@@ -152,7 +144,7 @@ export class HttpService {
   constructor(config: OxyConfig) {
     this.config = config;
     this.baseURL = config.baseURL;
-    this.tokenStore = TokenStore.getInstance();
+    this.tokenStore = new TokenStore();
     
     this.logger = new SimpleLogger(
       config.enableLogging || false,
@@ -808,14 +800,10 @@ export class HttpService {
     return { ...this.requestMetrics };
   }
 
-  // Test-only utility
-  static __resetTokensForTests(): void {
-    try {
-      TokenStore.getInstance().clearTokens();
-    } catch (error) {
-      // Silently fail in test cleanup - this is expected behavior
-      // TokenStore might not be initialized in some test scenarios
-    }
+  // Test-only utility — clears tokens on this instance
+  __resetTokensForTests(): void {
+    this.tokenStore.clearTokens();
+    this.tokenStore.clearCsrfToken();
   }
 }
 

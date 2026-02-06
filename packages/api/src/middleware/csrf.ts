@@ -71,6 +71,24 @@ export function verifyCsrfToken(req: Request, res: Response, next: NextFunction)
     return next();
   }
 
+  // Skip CSRF for service tokens — bearer-only, not vulnerable to CSRF
+  // (CSRF protects against ambient cookies; service tokens are explicit Bearer headers)
+  const authHeader = req.headers.authorization;
+  if (authHeader?.startsWith('Bearer ')) {
+    try {
+      const token = authHeader.split(' ')[1];
+      const parts = token.split('.');
+      if (parts.length === 3 && parts[1]) {
+        const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString());
+        if (payload.type === 'service') {
+          return next();
+        }
+      }
+    } catch {
+      // Not a valid JWT — fall through to normal CSRF verification
+    }
+  }
+
   // Get token from header
   const headerToken = req.headers[CSRF_HEADER_NAME] as string;
 

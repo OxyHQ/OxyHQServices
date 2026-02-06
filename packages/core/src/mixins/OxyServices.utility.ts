@@ -514,7 +514,7 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
      * });
      * ```
      */
-    serviceAuth(options: { debug?: boolean } = {}) {
+    serviceAuth(options: { debug?: boolean; jwtSecret?: string } = {}) {
       const innerAuth = this.auth({ ...options });
 
       return async (req: any, res: any, next: any) => {
