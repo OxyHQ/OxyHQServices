@@ -337,10 +337,16 @@ async function handleSubscriptionUpdate(stripeSubscription: Stripe.Subscription)
   const userCredits = await UserCredits.findOne({ stripeCustomerId: customerId });
   if (!userCredits) return;
 
-  const plan = SUBSCRIPTION_PLANS.find(
-    (p) => p.stripePriceId === stripeSubscription.items.data[0].price.id
-  );
-  if (!plan) return;
+  const priceId = stripeSubscription.items.data[0].price.id;
+  const plan = SUBSCRIPTION_PLANS.find((p) => p.stripePriceId === priceId);
+  if (!plan) {
+    logger.warn('Unrecognized subscription price ID', {
+      priceId,
+      subscriptionId: stripeSubscription.id,
+      customerId,
+    });
+    return;
+  }
 
   const sub = stripeSubscription as any;
 
