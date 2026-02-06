@@ -584,16 +584,15 @@ export class HttpService {
 
       // If token expires in less than 60 seconds, refresh it
       if (decoded.exp && decoded.exp - currentTime < 60 && decoded.sessionId) {
-        // Deduplicate concurrent refresh attempts
+        // Deduplicate concurrent refresh attempts. The promise is shared
+        // across all concurrent callers and cleared only after it settles,
+        // so every awaiter receives the same result.
         if (!this.tokenRefreshPromise) {
-          this.tokenRefreshPromise = this._refreshTokenFromSession(decoded.sessionId);
+          this.tokenRefreshPromise = this._refreshTokenFromSession(decoded.sessionId)
+            .finally(() => { this.tokenRefreshPromise = null; });
         }
-        try {
-          const result = await this.tokenRefreshPromise;
-          if (result) return result;
-        } finally {
-          this.tokenRefreshPromise = null;
-        }
+        const result = await this.tokenRefreshPromise;
+        if (result) return result;
       }
 
       return `Bearer ${accessToken}`;
