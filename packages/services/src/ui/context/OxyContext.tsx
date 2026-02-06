@@ -375,9 +375,9 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
           }
         }
 
-        if (validSessions.length > 0) {
-          updateSessionsRef.current(validSessions, { merge: false });
-        }
+        // Always persist validated sessions to storage (even empty list)
+        // to clear stale/expired session IDs that would cause 401 loops on restart
+        updateSessionsRef.current(validSessions, { merge: false });
       }
 
       if (storedActiveSessionId) {
