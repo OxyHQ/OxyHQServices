@@ -138,35 +138,57 @@ router.get(
     const sanitizedQuery = query.trim().substring(0, 100);
     const searchRegex = new RegExp(sanitizedQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
 
-    const profiles = await User.find({
+    const searchFilter = {
       $or: [
         { username: searchRegex },
         { 'name.first': searchRegex },
         { 'name.last': searchRegex },
         { description: searchRegex },
       ],
-    })
-      .select('-password -refreshToken')
-      .limit(parsedLimit)
-      .skip(parsedOffset)
-      .lean({ virtuals: true });
+    };
 
-    // Enrich profiles with statistics
-    const enrichedProfiles = await Promise.all(
-      profiles.map(async (profile) => {
-        const stats = await userService.getUserStats(profile._id.toString());
-        return userService.formatUserResponse(profile as any, stats);
-      })
-    );
+    // Single query: fetch profiles + total count using $facet (avoids duplicate query)
+    const [result] = await User.aggregate([
+      { $match: searchFilter },
+      {
+        $facet: {
+          profiles: [
+            { $skip: parsedOffset },
+            { $limit: parsedLimit },
+            { $project: { password: 0, refreshToken: 0 } },
+          ],
+          totalCount: [{ $count: 'count' }],
+        },
+      },
+    ]);
 
-    // Get total count for pagination
-    const total = await User.countDocuments({
-      $or: [
-        { username: searchRegex },
-        { 'name.first': searchRegex },
-        { 'name.last': searchRegex },
-        { description: searchRegex },
-      ],
+    const profiles = result.profiles || [];
+    const total = result.totalCount[0]?.count || 0;
+
+    // Batch-fetch follower/following stats for all profiles at once (avoids N+1)
+    const profileIds = profiles.map((p: any) => p._id);
+    const [followerCounts, followingCounts] = await Promise.all([
+      Follow.aggregate([
+        { $match: { followedId: { $in: profileIds.map((id: any) => id.toString()) }, followType: FollowType.USER } },
+        { $group: { _id: '$followedId', count: { $sum: 1 } } },
+      ]),
+      Follow.aggregate([
+        { $match: { followerUserId: { $in: profileIds.map((id: any) => id.toString()) }, followType: FollowType.USER } },
+        { $group: { _id: '$followerUserId', count: { $sum: 1 } } },
+      ]),
+    ]);
+
+    const followerMap = new Map(followerCounts.map((r: any) => [r._id.toString(), r.count]));
+    const followingMap = new Map(followingCounts.map((r: any) => [r._id.toString(), r.count]));
+
+    const enrichedProfiles = profiles.map((profile: any) => {
+      const id = profile._id.toString();
+      const stats = {
+        followers: followerMap.get(id) || 0,
+        following: followingMap.get(id) || 0,
+        karma: 0,
+      };
+      return userService.formatUserResponse(profile, stats);
     });
 
     logger.debug('GET /profiles/search', {

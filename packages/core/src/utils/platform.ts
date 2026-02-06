@@ -89,6 +89,20 @@ export function isAndroid(): boolean {
 }
 
 /**
+ * Check if running in React Native
+ */
+export function isReactNative(): boolean {
+  return typeof navigator !== 'undefined' && navigator.product === 'ReactNative';
+}
+
+/**
+ * Check if running in Node.js
+ */
+export function isNodeJS(): boolean {
+  return typeof process !== 'undefined' && process.versions != null && process.versions.node != null;
+}
+
+/**
  * Set the platform OS explicitly
  * Called by React Native entry point to register the platform
  * This allows lazy detection in environments where react-native is available

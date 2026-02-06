@@ -224,7 +224,7 @@ router.get('/apps', async (req: AuthenticatedRequest, res: express.Response) => 
     const apps = await DeveloperApp.find({
       developerUserId: userId,
       status: { $ne: 'deleted' },
-    }).sort({ createdAt: -1 });
+    }).sort({ createdAt: -1 }).limit(100);
 
     res.json({ apps: apps.map(serializeApp) });
   } catch (error: any) {
@@ -457,7 +457,8 @@ router.get('/apps/:appId/keys', async (req: AuthenticatedRequest, res: express.R
 
     const keys = await DeveloperApiKey.find({ appId, userId })
       .select('-keyHash')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .limit(100);
 
     res.json({ keys });
   } catch (error: any) {

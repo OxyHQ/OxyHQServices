@@ -107,11 +107,18 @@ router.get('/validate', asyncHandler(async (req, res) => {
   sendSuccess(res, { valid: true });
 }));
 
+// Strict rate limit for enumeration-sensitive check endpoints (10/min per IP)
+const checkLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: process.env.NODE_ENV === 'development' ? 100 : 10,
+  message: 'Too many lookup requests, please try again later.',
+});
+
 /**
  * GET /auth/check-username/:username
  * Check if username is available
  */
-router.get('/check-username/:username', asyncHandler(async (req, res) => {
+router.get('/check-username/:username', checkLimiter, asyncHandler(async (req, res) => {
   let { username } = req.params;
   
   if (!username) {
@@ -140,7 +147,7 @@ router.get('/check-username/:username', asyncHandler(async (req, res) => {
  * GET /auth/check-email/:email
  * Check if email is available
  */
-router.get('/check-email/:email', asyncHandler(async (req, res) => {
+router.get('/check-email/:email', checkLimiter, asyncHandler(async (req, res) => {
   const { email } = req.params;
   
   if (!email || !email.includes('@')) {
@@ -162,7 +169,7 @@ router.get('/check-email/:email', asyncHandler(async (req, res) => {
  * GET /auth/check-publickey/:publicKey
  * Check if a public key is already registered
  */
-router.get('/check-publickey/:publicKey', asyncHandler(async (req, res) => {
+router.get('/check-publickey/:publicKey', checkLimiter, asyncHandler(async (req, res) => {
   const { publicKey } = req.params;
   
   if (!publicKey) {
@@ -219,10 +226,10 @@ router.post('/session/create', asyncHandler(async (req, res) => {
     expiresAtDate = defaultExpiresAt;
   }
 
-  // Check if session token already exists
+  // Check if session token already exists (generic error to prevent enumeration)
   const existing = await AuthSession.findOne({ sessionToken });
   if (existing) {
-    throw new BadRequestError('Session token already exists');
+    throw new BadRequestError('Unable to create session');
   }
 
   // Create new auth session

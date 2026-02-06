@@ -104,9 +104,8 @@ export async function POST(request: NextRequest) {
         response.headers.set("Set-Login", "logged-in")
 
         const expiresAt = session.expiresAt ? new Date(session.expiresAt) : undefined
-        // Get the domain for cookie sharing across oxy.so subdomains
-        const host = request.headers.get("host") || ""
-        const cookieDomain = host.endsWith(".oxy.so") || host === "oxy.so" ? ".oxy.so" : undefined
+        // Cookie domain from env var (not from user-controlled Host header)
+        const cookieDomain = process.env.AUTH_COOKIE_DOMAIN || undefined
         response.cookies.set(SESSION_COOKIE_NAME, session.sessionId, {
             httpOnly: true,
             secure: true, // Required for sameSite: none

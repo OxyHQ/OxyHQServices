@@ -65,9 +65,27 @@ export function safeRedirectUrl(value?: string | null): string | null {
 
     try {
         const parsed = new URL(value)
-        if (parsed.protocol === "javascript:" || parsed.protocol === "data:") {
+
+        // Block dangerous protocols
+        if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
             return null
         }
+
+        // In production, require HTTPS (except localhost for dev tools)
+        if (
+            process.env.NODE_ENV === "production" &&
+            parsed.protocol === "http:" &&
+            parsed.hostname !== "localhost" &&
+            parsed.hostname !== "127.0.0.1"
+        ) {
+            return null
+        }
+
+        // Block IP-address hostnames (common phishing vector)
+        if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(parsed.hostname)) {
+            return null
+        }
+
         return parsed.toString()
     } catch {
         return null

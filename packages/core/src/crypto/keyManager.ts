@@ -7,7 +7,7 @@
 
 import { ec as EC } from 'elliptic';
 import type { ECKeyPair } from 'elliptic';
-import { isWeb, isIOS, isAndroid } from '../utils/platform';
+import { isWeb, isIOS, isAndroid, isReactNative, isNodeJS } from '../utils/platform';
 import { logger } from '../utils/loggerUtils';
 import { isDev } from '../shared/utils/debugUtils';
 
@@ -62,20 +62,6 @@ async function initSecureStore(): Promise<typeof import('expo-secure-store')> {
     throw new Error('expo-secure-store module is not available');
   }
   return SecureStore;
-}
-
-/**
- * Check if we're in a React Native environment
- */
-function isReactNative(): boolean {
-  return typeof navigator !== 'undefined' && navigator.product === 'ReactNative';
-}
-
-/**
- * Check if we're in a Node.js environment
- */
-function isNodeJS(): boolean {
-  return typeof process !== 'undefined' && process.versions != null && process.versions.node != null;
 }
 
 /**

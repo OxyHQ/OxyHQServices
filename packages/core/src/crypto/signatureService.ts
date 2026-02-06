@@ -7,25 +7,12 @@
 
 import { ec as EC } from 'elliptic';
 import { KeyManager } from './keyManager';
+import { isReactNative, isNodeJS } from '../utils/platform';
 
 // Lazy import for expo-crypto
 let ExpoCrypto: typeof import('expo-crypto') | null = null;
 
 const ec = new EC('secp256k1');
-
-/**
- * Check if we're in a React Native environment
- */
-function isReactNative(): boolean {
-  return typeof navigator !== 'undefined' && navigator.product === 'ReactNative';
-}
-
-/**
- * Check if we're in a Node.js environment
- */
-function isNodeJS(): boolean {
-  return typeof process !== 'undefined' && process.versions != null && process.versions.node != null;
-}
 
 /**
  * Initialize expo-crypto module
@@ -55,9 +42,7 @@ async function sha256(message: string): Promise<string> {
   // In Node.js, use Node's crypto module
   if (isNodeJS()) {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-implied-eval
-      const getCrypto = new Function('return require("crypto")');
-      const nodeCrypto = getCrypto();
+      const nodeCrypto = await import('crypto');
       return nodeCrypto.createHash('sha256').update(message).digest('hex');
     } catch {
       // Fall through to Web Crypto API
