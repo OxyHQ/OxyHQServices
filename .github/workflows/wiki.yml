@@ -1,0 +1,33 @@
+##
+## Sync wiki/ folder to GitHub Wiki
+##
+## Publishes all Markdown files from wiki/ to the repo's GitHub Wiki.
+## Uses the GITHUB_TOKEN (automatic) — requires "Read and write" permission
+## for Pages under Settings > Actions > General > Workflow permissions.
+##
+
+name: Sync Wiki
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'wiki/**'
+
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    name: Publish Wiki
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Push wiki pages
+        uses: Andrew-Chen-Wang/github-wiki-action@v4
+        env:
+          WIKI_DIR: wiki/
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

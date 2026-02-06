@@ -5,30 +5,32 @@ Complete documentation for the Oxy ecosystem: identity, authentication, and serv
 ## Documentation Index
 
 ### Architecture (Start Here)
-- **[Architecture Overview](ARCHITECTURE.md)** - Complete system architecture, identity vs auth, user linking
+- **[Architecture Overview](ARCHITECTURE.md)** - System architecture, identity vs auth, user linking
+
+### Infrastructure & Deployment
+- **[Infrastructure](INFRASTRUCTURE.md)** - DigitalOcean resources, VPC, databases, firewalls
+- **[Deployment](DEPLOYMENT.md)** - Docker, CI/CD pipeline, environment variables
+- **[Redis & Valkey](REDIS.md)** - Rate limiting, Socket.IO adapter, caching strategy
+
+### Authentication
+- **[Authentication Guide](AUTHENTICATION.md)** - Full auth integration (Expo, Web, Node.js, WebSockets)
+- **[Cross-Domain Authentication](CROSS_DOMAIN_AUTH.md)** - Web SSO using FedCM, popup, and redirect flows
+- **[Service Tokens](SERVICE_TOKENS.md)** - Internal service-to-service auth (OAuth2 Client Credentials)
+- **[Public Key Authentication](../packages/services/docs/PUBLIC_KEY_AUTHENTICATION.md)** - Cryptographic identity system
 
 ### Getting Started
 - **[Main README](../README.md)** - Project overview and quick start
 - **[Services Package](../packages/services/README.md)** - @oxyhq/services package docs (React Native / Expo)
 
-### Authentication
-- **[Cross-Domain Authentication](CROSS_DOMAIN_AUTH.md)** - Web SSO using FedCM, popup, and redirect flows
-- **[Public Key Authentication](../packages/services/docs/PUBLIC_KEY_AUTHENTICATION.md)** - Cryptographic identity system
-
 ### Platform Guides
 - **[Expo 54 Universal Guide](EXPO_54_GUIDE.md)** - Building universal apps (iOS, Android, Web) with Expo 54
 - **[Platform Guide](../packages/services/PLATFORM_GUIDE.md)** - Platform-specific usage
-
-### Typography & Design
-- **[Font Migration Guide](FONT_MIGRATION.md)** - Phudu to Inter migration complete summary
-- **[Services Typography](../packages/services/FONTS.md)** - Complete Inter font usage guide
 
 ### Email
 - **[Email Server](EMAIL.md)** - Native email system (username@oxy.so), setup, API reference, DKIM/SPF/DMARC
 
 ### API & Backend
 - **[API Package](../packages/api/README.md)** - Backend API documentation
-- **[Services Changelog](../packages/services/CHANGELOG.md)** - Version history and breaking changes
 
 ## Quick Links by Use Case
 
@@ -63,10 +65,15 @@ OxyHQServices/
 ├── docs/                              # Central documentation
 │   ├── README.md                      # This file (documentation index)
 │   ├── ARCHITECTURE.md               # Complete architecture guide
+│   ├── AUTHENTICATION.md             # Auth integration guide
 │   ├── CROSS_DOMAIN_AUTH.md          # Cross-domain SSO guide
+│   ├── DEPLOYMENT.md                 # Docker, CI/CD, env vars
 │   ├── EMAIL.md                      # Email server setup & API reference
 │   ├── EXPO_54_GUIDE.md              # Expo 54 universal app guide
-│   └── FONT_MIGRATION.md             # Font migration summary
+│   ├── FONT_MIGRATION.md             # Font migration summary
+│   ├── INFRASTRUCTURE.md             # DigitalOcean resources, VPC, firewalls
+│   ├── REDIS.md                      # Redis/Valkey implementation
+│   └── SERVICE_TOKENS.md             # Service-to-service auth
 ├── packages/
 │   ├── core/                          # @oxyhq/core (platform-agnostic foundation)
 │   ├── auth-sdk/                      # @oxyhq/auth (web auth SDK, React hooks)
