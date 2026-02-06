@@ -206,7 +206,10 @@ export function emitSessionUpdate(userId: string, payload: any) {
 }
 
 // MongoDB Connection with optimized connection pooling for scale
+const APP_NAME = "oxy";
+const dbName = `${APP_NAME}-${process.env.NODE_ENV || 'development'}`;
 const mongoOptions = {
+  dbName,
   autoIndex: true,
   autoCreate: true,
   // Connection pool settings for handling millions of users

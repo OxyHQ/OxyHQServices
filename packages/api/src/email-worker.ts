@@ -30,7 +30,10 @@ if (!MONGODB_URI) {
 }
 
 // MongoDB connection (same config as main server)
+const APP_NAME = "oxy";
+const dbName = `${APP_NAME}-${process.env.NODE_ENV || 'development'}`;
 const mongoOptions = {
+  dbName,
   autoIndex: true,
   autoCreate: true,
   maxPoolSize: 10,
