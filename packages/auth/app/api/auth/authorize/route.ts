@@ -92,7 +92,7 @@ export async function POST(request: NextRequest) {
     if (decision === "deny") {
         try {
             if (sessionToken) {
-                await apiPost(`/api/auth/session/cancel/${sessionToken}`, {}, {
+                await apiPost(`/auth/session/cancel/${sessionToken}`, {}, {
                     headers: getForwardHeaders(request),
                 })
             }
@@ -126,7 +126,7 @@ export async function POST(request: NextRequest) {
         let sessionIdForApp = sessionId
         if (sessionToken) {
             const response = await apiPost<AuthorizeResponse>(
-                `/api/auth/session/authorize/${sessionToken}`,
+                `/auth/session/authorize/${sessionToken}`,
                 {},
                 {
                     headers: {
@@ -143,7 +143,7 @@ export async function POST(request: NextRequest) {
 
         if (safeRedirect) {
             const token = await apiGet<TokenResponse>(
-                `/api/session/token/${sessionIdForApp}`,
+                `/session/token/${sessionIdForApp}`,
                 { headers: getForwardHeaders(request) }
             )
 

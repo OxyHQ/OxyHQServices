@@ -214,7 +214,7 @@ const SignInModal: React.FC = () => {
                     authorized: boolean;
                     sessionId?: string;
                     status?: string;
-                } = await oxyServices.makeRequest('GET', `/api/auth/session/status/${sessionToken}`, undefined, { cache: false });
+                } = await oxyServices.makeRequest('GET', `/auth/session/status/${sessionToken}`, undefined, { cache: false });
 
                 if (response.authorized && response.sessionId) {
                     cleanup();
@@ -242,7 +242,7 @@ const SignInModal: React.FC = () => {
             const sessionToken = generateSessionToken();
             const expiresAt = Date.now() + AUTH_SESSION_EXPIRY_MS;
 
-            await oxyServices.makeRequest('POST', '/api/auth/session/create', {
+            await oxyServices.makeRequest('POST', '/auth/session/create', {
                 sessionToken,
                 expiresAt,
                 appId: Platform.OS,

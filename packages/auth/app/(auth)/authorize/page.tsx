@@ -88,7 +88,7 @@ export default async function AuthorizePage({ searchParams }: AuthorizePageProps
     if (!status && token) {
         try {
             sessionInfo = await apiGet<SessionStatus>(
-                `/api/auth/session/status/${token}`
+                `/auth/session/status/${token}`
             )
             effectiveStatus = sessionInfo.status
             const safeRedirect = safeRedirectUrl(redirectUri)
@@ -99,7 +99,7 @@ export default async function AuthorizePage({ searchParams }: AuthorizePageProps
                 safeRedirect
             ) {
                 const tokenResponse = await apiGet<TokenResponse>(
-                    `/api/session/token/${sessionInfo.sessionId}`
+                    `/session/token/${sessionInfo.sessionId}`
                 )
                 const redirectTarget = new URL(safeRedirect)
                 redirectTarget.searchParams.set(

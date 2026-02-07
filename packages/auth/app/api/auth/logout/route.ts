@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
     try {
         // Call API to logout ALL sessions for this user (Single Logout)
         await apiDelete(
-            `/api/sessions/${sessionId}/all`,
+            `/sessions/${sessionId}/all`,
             { headers: getForwardHeaders(request) }
         )
     } catch (error) {
@@ -66,7 +66,7 @@ export async function GET(request: NextRequest) {
     if (sessionId) {
         try {
             await apiDelete(
-                `/api/sessions/${sessionId}/all`,
+                `/sessions/${sessionId}/all`,
                 { headers: getForwardHeaders(request) }
             )
         } catch (error) {

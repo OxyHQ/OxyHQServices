@@ -68,7 +68,7 @@ export async function POST(request: NextRequest) {
 
     try {
         const session = await apiPost<SessionAuthResponse>(
-            "/api/auth/login",
+            "/auth/login",
             { identifier, password },
             { headers: getForwardHeaders(request) }
         )

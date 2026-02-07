@@ -57,7 +57,7 @@ export async function GET(request: NextRequest) {
     }
 
     try {
-      const user = await apiGet<User>(`/api/session/user/${sessionCookie.value}`);
+      const user = await apiGet<User>(`/session/user/${sessionCookie.value}`);
       debugInfo.userFound = true;
       debugInfo.user = {
         id: user.id,

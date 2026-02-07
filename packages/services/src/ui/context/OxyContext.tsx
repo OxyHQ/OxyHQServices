@@ -512,7 +512,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       const iframe = document.createElement('iframe');
       iframe.style.cssText = 'display:none;width:0;height:0;border:0';
       const idpOrigin = authWebUrl || 'https://auth.oxy.so';
-      iframe.src = `${idpOrigin}/api/auth/session-check`;
+      iframe.src = `${idpOrigin}/auth/session-check`;
 
       let cleaned = false;
       const cleanup = () => {

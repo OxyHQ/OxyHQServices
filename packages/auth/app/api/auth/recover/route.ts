@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
     try {
         if (step === "request") {
             const response = await apiPost<RecoveryRequestResponse>(
-                "/api/auth/recover/request",
+                "/auth/recover/request",
                 { identifier },
                 { headers: getForwardHeaders(request) }
             )
@@ -74,7 +74,7 @@ export async function POST(request: NextRequest) {
             }
 
             const response = await apiPost<RecoveryVerifyResponse>(
-                "/api/auth/recover/verify",
+                "/auth/recover/verify",
                 { identifier, code },
                 { headers: getForwardHeaders(request) }
             )
@@ -122,7 +122,7 @@ export async function POST(request: NextRequest) {
             }
 
             await apiPost(
-                "/api/auth/recover/reset",
+                "/auth/recover/reset",
                 { recoveryToken, password },
                 { headers: getForwardHeaders(request) }
             )

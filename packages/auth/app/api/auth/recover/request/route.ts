@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
         }
 
         const response = await apiPost<RecoveryRequestResponse>(
-            "/api/auth/recover/request",
+            "/auth/recover/request",
             { identifier },
             { headers: getForwardHeaders(request) }
         )

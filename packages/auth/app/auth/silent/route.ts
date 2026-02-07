@@ -53,11 +53,11 @@ export async function GET(request: NextRequest) {
     try {
       // Get access token from session
       const tokenResponse = await apiGet<{ accessToken: string; expiresAt: string }>(
-        `/api/session/token/${sessionCookie.value}`
+        `/session/token/${sessionCookie.value}`
       );
 
       // Get user data
-      const user = await apiGet<User>(`/api/session/user/${sessionCookie.value}`);
+      const user = await apiGet<User>(`/session/user/${sessionCookie.value}`);
 
       sessionData = {
         sessionId: sessionCookie.value,

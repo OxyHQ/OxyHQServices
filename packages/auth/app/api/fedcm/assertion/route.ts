@@ -159,7 +159,7 @@ export async function POST(request: NextRequest) {
     // Fetch user to verify account_id matches session
     let user: User;
     try {
-      user = await apiGet<User>(`/api/session/user/${sessionCookie.value}`);
+      user = await apiGet<User>(`/session/user/${sessionCookie.value}`);
     } catch (error) {
       if (isDev) console.log('[FedCM Assertion] Session lookup failed:', error);
       return NextResponse.json(

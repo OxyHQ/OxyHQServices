@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
     // Forward to the main API exchange endpoint which handles signature verification
     // and session creation properly
     const sessionResponse = await apiPost<SessionLoginResponse>(
-      '/api/fedcm/exchange',
+      '/fedcm/exchange',
       { id_token },
       { headers: getForwardHeaders(request) }
     );

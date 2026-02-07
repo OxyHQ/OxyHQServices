@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
         }
 
         await apiPost(
-            "/api/auth/recover/reset",
+            "/auth/recover/reset",
             { recoveryToken, password },
             { headers: getForwardHeaders(request) }
         )

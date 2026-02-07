@@ -31,7 +31,7 @@ export async function GET(
         }
 
         const tokenData = await apiGet<TokenResponse>(
-            `/api/session/token/${sessionId}`
+            `/session/token/${sessionId}`
         )
 
         return NextResponse.json({

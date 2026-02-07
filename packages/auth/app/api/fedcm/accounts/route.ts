@@ -84,7 +84,7 @@ export async function GET(request: NextRequest) {
 
     let user: User;
     try {
-      user = await apiGet<User>(`/api/session/user/${sessionCookie.value}`);
+      user = await apiGet<User>(`/session/user/${sessionCookie.value}`);
     } catch {
       return createFedCMResponse({ accounts: [] }, request);
     }

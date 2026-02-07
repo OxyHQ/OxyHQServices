@@ -34,7 +34,7 @@ export async function GET() {
 
         try {
             const user = await apiGet<User>(
-                `/api/session/user/${sessionCookie.value}`
+                `/session/user/${sessionCookie.value}`
             )
 
             return NextResponse.json({

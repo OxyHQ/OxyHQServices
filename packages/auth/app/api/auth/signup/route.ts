@@ -73,7 +73,7 @@ export async function POST(request: NextRequest) {
         const payload: Record<string, string> = { email, password, username }
 
         const session = await apiPost<SessionAuthResponse>(
-            "/api/auth/signup",
+            "/auth/signup",
             payload,
             { headers: getForwardHeaders(request) }
         )

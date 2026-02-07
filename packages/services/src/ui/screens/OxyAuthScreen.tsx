@@ -224,7 +224,7 @@ const OxyAuthScreen: React.FC<BaseScreenProps> = ({
           sessionId?: string;
           publicKey?: string;
           status?: string;
-        } = await oxyServices.makeRequest('GET', `/api/auth/session/status/${sessionToken}`, undefined, { cache: false });
+        } = await oxyServices.makeRequest('GET', `/auth/session/status/${sessionToken}`, undefined, { cache: false });
 
         if (response.authorized && response.sessionId) {
           cleanup();
@@ -270,7 +270,7 @@ const OxyAuthScreen: React.FC<BaseScreenProps> = ({
       const expiresAt = Date.now() + AUTH_SESSION_EXPIRY_MS;
 
       // Register the auth session with the server
-      await oxyServices.makeRequest('POST', '/api/auth/session/create', {
+      await oxyServices.makeRequest('POST', '/auth/session/create', {
         sessionToken,
         expiresAt,
         appId: Platform.OS, // Identifier for requesting app
