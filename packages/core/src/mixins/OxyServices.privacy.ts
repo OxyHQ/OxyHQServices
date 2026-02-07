@@ -53,7 +53,7 @@ export function OxyServicesPrivacyMixin<T extends typeof OxyServicesBase>(Base: 
      */
     async getBlockedUsers(): Promise<BlockedUser[]> {
       try {
-        return await this.makeRequest<BlockedUser[]>('GET', '/api/privacy/blocked', undefined, {
+        return await this.makeRequest<BlockedUser[]>('GET', '/privacy/blocked', undefined, {
           cache: true,
           cacheTTL: 1 * 60 * 1000, // 1 minute cache
         });
@@ -72,7 +72,7 @@ export function OxyServicesPrivacyMixin<T extends typeof OxyServicesBase>(Base: 
         if (!userId) {
           throw new Error('User ID is required');
         }
-        return await this.makeRequest<{ message: string }>('POST', `/api/privacy/blocked/${userId}`, undefined, {
+        return await this.makeRequest<{ message: string }>('POST', `/privacy/blocked/${userId}`, undefined, {
           cache: false,
         });
       } catch (error) {
@@ -90,7 +90,7 @@ export function OxyServicesPrivacyMixin<T extends typeof OxyServicesBase>(Base: 
         if (!userId) {
           throw new Error('User ID is required');
         }
-        return await this.makeRequest<{ message: string }>('DELETE', `/api/privacy/blocked/${userId}`, undefined, {
+        return await this.makeRequest<{ message: string }>('DELETE', `/privacy/blocked/${userId}`, undefined, {
           cache: false,
         });
       } catch (error) {
@@ -121,7 +121,7 @@ export function OxyServicesPrivacyMixin<T extends typeof OxyServicesBase>(Base: 
      */
     async getRestrictedUsers(): Promise<RestrictedUser[]> {
       try {
-        return await this.makeRequest<RestrictedUser[]>('GET', '/api/privacy/restricted', undefined, {
+        return await this.makeRequest<RestrictedUser[]>('GET', '/privacy/restricted', undefined, {
           cache: true,
           cacheTTL: 1 * 60 * 1000, // 1 minute cache
         });
@@ -140,7 +140,7 @@ export function OxyServicesPrivacyMixin<T extends typeof OxyServicesBase>(Base: 
         if (!userId) {
           throw new Error('User ID is required');
         }
-        return await this.makeRequest<{ message: string }>('POST', `/api/privacy/restricted/${userId}`, undefined, {
+        return await this.makeRequest<{ message: string }>('POST', `/privacy/restricted/${userId}`, undefined, {
           cache: false,
         });
       } catch (error) {
@@ -158,7 +158,7 @@ export function OxyServicesPrivacyMixin<T extends typeof OxyServicesBase>(Base: 
         if (!userId) {
           throw new Error('User ID is required');
         }
-        return await this.makeRequest<{ message: string }>('DELETE', `/api/privacy/restricted/${userId}`, undefined, {
+        return await this.makeRequest<{ message: string }>('DELETE', `/privacy/restricted/${userId}`, undefined, {
           cache: false,
         });
       } catch (error) {

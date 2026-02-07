@@ -19,7 +19,7 @@ export function OxyServicesPaymentMixin<T extends typeof OxyServicesBase>(Base: 
      */
     async createPayment(data: any): Promise<any> {
       try {
-        return await this.makeRequest('POST', '/api/payments', data, { cache: false });
+        return await this.makeRequest('POST', '/payments', data, { cache: false });
       } catch (error) {
         throw this.handleError(error);
       }
@@ -32,7 +32,7 @@ export function OxyServicesPaymentMixin<T extends typeof OxyServicesBase>(Base: 
      */
     async getPayment(paymentId: string): Promise<any> {
       try {
-        return await this.makeRequest('GET', `/api/payments/${paymentId}`, undefined, {
+        return await this.makeRequest('GET', `/payments/${paymentId}`, undefined, {
           cache: true,
           cacheTTL: CACHE_TIMES.LONG,
         });
@@ -47,7 +47,7 @@ export function OxyServicesPaymentMixin<T extends typeof OxyServicesBase>(Base: 
      */
     async getUserPayments(): Promise<any[]> {
       try {
-        return await this.makeRequest('GET', '/api/payments/user', undefined, {
+        return await this.makeRequest('GET', '/payments/user', undefined, {
           cache: false, // Don't cache user payments - always get fresh data
         });
       } catch (error) {
@@ -62,7 +62,7 @@ export function OxyServicesPaymentMixin<T extends typeof OxyServicesBase>(Base: 
      */
     async getSubscription(userId: string): Promise<any> {
       try {
-        return await this.makeRequest('GET', `/api/subscription/${userId}`, undefined, {
+        return await this.makeRequest('GET', `/subscription/${userId}`, undefined, {
           cache: true,
           cacheTTL: CACHE_TIMES.MEDIUM,
         });
@@ -94,7 +94,7 @@ export function OxyServicesPaymentMixin<T extends typeof OxyServicesBase>(Base: 
      */
     async getWallet(userId: string): Promise<any> {
       try {
-        return await this.makeRequest('GET', `/api/wallet/${userId}`, undefined, {
+        return await this.makeRequest('GET', `/wallet/${userId}`, undefined, {
           cache: true,
           cacheTTL: CACHE_TIMES.SHORT, // Cache wallet for short time as balance changes frequently
         });
@@ -132,7 +132,7 @@ export function OxyServicesPaymentMixin<T extends typeof OxyServicesBase>(Base: 
         if (options?.offset) params.append('offset', options.offset.toString());
         
         const queryString = params.toString();
-        const url = `/api/wallet/transactions/${userId}${queryString ? `?${queryString}` : ''}`;
+        const url = `/wallet/transactions/${userId}${queryString ? `?${queryString}` : ''}`;
         
         return await this.makeRequest('GET', url, undefined, {
           cache: false, // Don't cache transactions - always get fresh data

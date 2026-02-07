@@ -397,7 +397,7 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
     try {
       const response = await this.makeRequest<SessionLoginResponse>(
         'POST',
-        '/api/fedcm/exchange',
+        '/fedcm/exchange',
         { id_token: idToken },
         { cache: false }
       );

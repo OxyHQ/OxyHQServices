@@ -308,7 +308,7 @@ export class AuthManager {
           // Use session-based token endpoint which handles auto-refresh server-side
           const response = await httpService.request<{ accessToken: string; expiresAt: string }>({
             method: 'GET',
-            url: `/api/session/token/${sessionId}`,
+            url: `/session/token/${sessionId}`,
             cache: false,
             retry: false,
           });

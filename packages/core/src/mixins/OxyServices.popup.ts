@@ -120,7 +120,7 @@ export function OxyServicesPopupAuthMixin<T extends typeof OxyServicesBase>(Base
         try {
           const userData = await this.makeRequest<any>(
             'GET',
-            `/api/session/user/${session.sessionId}`,
+            `/session/user/${session.sessionId}`,
             undefined,
             { cache: false }
           );

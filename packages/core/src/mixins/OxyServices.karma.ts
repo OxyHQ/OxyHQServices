@@ -16,7 +16,7 @@ export function OxyServicesKarmaMixin<T extends typeof OxyServicesBase>(Base: T)
      */
     async getUserKarma(userId: string): Promise<any> {
       try {
-        return await this.makeRequest('GET', `/api/karma/${userId}`, undefined, {
+        return await this.makeRequest('GET', `/karma/${userId}`, undefined, {
           cache: true,
           cacheTTL: 2 * 60 * 1000, // 2 minutes cache
         });
@@ -30,7 +30,7 @@ export function OxyServicesKarmaMixin<T extends typeof OxyServicesBase>(Base: T)
      */
     async giveKarma(userId: string, amount: number, reason?: string): Promise<any> {
       try {
-        return await this.makeRequest('POST', `/api/karma/${userId}/give`, {
+        return await this.makeRequest('POST', `/karma/${userId}/give`, {
           amount,
           reason
         }, { cache: false });
@@ -46,7 +46,7 @@ export function OxyServicesKarmaMixin<T extends typeof OxyServicesBase>(Base: T)
      */
     async getUserKarmaTotal(userId: string): Promise<any> {
       try {
-        return await this.makeRequest('GET', `/api/karma/${userId}/total`, undefined, {
+        return await this.makeRequest('GET', `/karma/${userId}/total`, undefined, {
           cache: true,
           cacheTTL: CACHE_TIMES.MEDIUM,
         });
@@ -68,7 +68,7 @@ export function OxyServicesKarmaMixin<T extends typeof OxyServicesBase>(Base: T)
         if (limit) params.limit = limit;
         if (offset) params.offset = offset;
         
-        return await this.makeRequest('GET', `/api/karma/${userId}/history`, params, {
+        return await this.makeRequest('GET', `/karma/${userId}/history`, params, {
           cache: true,
           cacheTTL: CACHE_TIMES.MEDIUM,
         });
@@ -83,7 +83,7 @@ export function OxyServicesKarmaMixin<T extends typeof OxyServicesBase>(Base: T)
      */
     async getKarmaLeaderboard(): Promise<any> {
       try {
-        return await this.makeRequest('GET', '/api/karma/leaderboard', undefined, {
+        return await this.makeRequest('GET', '/karma/leaderboard', undefined, {
           cache: true,
           cacheTTL: CACHE_TIMES.LONG,
         });
@@ -98,7 +98,7 @@ export function OxyServicesKarmaMixin<T extends typeof OxyServicesBase>(Base: T)
      */
     async getKarmaRules(): Promise<any> {
       try {
-        return await this.makeRequest('GET', '/api/karma/rules', undefined, {
+        return await this.makeRequest('GET', '/karma/rules', undefined, {
           cache: true,
           cacheTTL: CACHE_TIMES.EXTRA_LONG, // Rules don't change often
         });

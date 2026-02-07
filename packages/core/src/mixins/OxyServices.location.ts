@@ -17,7 +17,7 @@ export function OxyServicesLocationMixin<T extends typeof OxyServicesBase>(Base:
      */
     async updateLocation(latitude: number, longitude: number): Promise<any> {
       try {
-        return await this.makeRequest('POST', '/api/location', {
+        return await this.makeRequest('POST', '/location', {
           latitude,
           longitude
         }, { cache: false });
@@ -34,7 +34,7 @@ export function OxyServicesLocationMixin<T extends typeof OxyServicesBase>(Base:
     async getNearbyUsers(radius?: number): Promise<any[]> {
       try {
         const params: any = radius ? { radius } : undefined;
-        return await this.makeRequest('GET', '/api/location/nearby', params, {
+        return await this.makeRequest('GET', '/location/nearby', params, {
           cache: false, // Don't cache location data - always get fresh data
         });
       } catch (error) {

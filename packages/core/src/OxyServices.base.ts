@@ -305,7 +305,7 @@ export class OxyServicesBase {
     }
 
     try {
-      const res = await this.makeRequest<{ valid: boolean }>('GET', '/api/auth/validate', undefined, {
+      const res = await this.makeRequest<{ valid: boolean }>('GET', '/auth/validate', undefined, {
         cache: false,
         retry: false,
       });

@@ -68,7 +68,7 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
           title: string;
           description: string;
           image?: string;
-        }>('GET', '/api/link-metadata', { url }, {
+        }>('GET', '/link-metadata', { url }, {
           cache: true,
           cacheTTL: CACHE_TIMES.EXTRA_LONG,
         });
@@ -89,19 +89,19 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
      *
      * const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
      *
-     * // Protect all routes under /api/protected
-     * app.use('/api/protected', oxy.auth());
+     * // Protect all routes under /protected
+     * app.use('/protected', oxy.auth());
      *
      * // Access user in route handler
-     * app.get('/api/protected/me', (req, res) => {
+     * app.get('/protected/me', (req, res) => {
      *   res.json({ userId: req.userId, user: req.user });
      * });
      *
      * // Load full user profile from API
-     * app.use('/api/admin', oxy.auth({ loadUser: true }));
+     * app.use('/admin', oxy.auth({ loadUser: true }));
      *
      * // Optional auth - attach user if present, don't block if absent
-     * app.use('/api/public', oxy.auth({ optional: true }));
+     * app.use('/public', oxy.auth({ optional: true }));
      * ```
      *
      * @param options Optional configuration

@@ -77,7 +77,7 @@ app.use(cookieParser());
 
 // Body parsing middleware - IMPORTANT: Add this before any routes
 // Stripe webhook needs raw body for signature verification (must be before express.json)
-app.use('/api/billing/webhook', express.raw({ type: 'application/json' }));
+app.use('/billing/webhook', express.raw({ type: 'application/json' }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -321,7 +321,7 @@ app.get("/health", async (req, res) => {
 });
 
 // Performance monitoring endpoint (protected, for admin/internal use)
-app.get("/api/metrics", authMiddleware, (req: any, res: Response) => {
+app.get("/metrics", authMiddleware, (req: any, res: Response) => {
   try {
     const memoryStats = getMemoryStats();
     const connectionStats = getConnectionPoolStats(mongoose.connection);
@@ -358,42 +358,39 @@ app.use(bruteForceProtection);
 
 // CSRF token endpoint (must be before CSRF protection)
 app.get('/csrf-token', getCsrfToken);
-app.get('/api/csrf-token', getCsrfToken);
 
-// API Routes with /api prefix
+// API Routes
 // Apply stricter rate limiting to auth routes
 app.use("/auth", authRateLimiter, authRoutes);
-app.use("/api/auth", authRateLimiter, authRoutes);
-app.use("/api/auth", userRateLimiter, csrfProtection, authLinkingRoutes); // Auth linking (requires auth)
-app.use("/api/assets", assetRoutes);
-app.use("/api/storage", userRateLimiter, csrfProtection, storageRoutes);
-app.use("/api/search", searchRoutes);
-app.use("/api/profiles", csrfProtection, profilesRouter);
-app.use("/api/users", userRateLimiter, csrfProtection, usersRouter); // Per-user rate limiting for authenticated routes
+app.use("/auth", userRateLimiter, csrfProtection, authLinkingRoutes); // Auth linking (requires auth)
+app.use("/assets", assetRoutes);
+app.use("/storage", userRateLimiter, csrfProtection, storageRoutes);
+app.use("/search", searchRoutes);
+app.use("/profiles", csrfProtection, profilesRouter);
+app.use("/users", userRateLimiter, csrfProtection, usersRouter); // Per-user rate limiting for authenticated routes
 app.use("/session", userRateLimiter, sessionRouter); // SDK uses /session/token/:id
-app.use("/api/session", userRateLimiter, sessionRouter);
-app.use("/api/privacy", userRateLimiter, csrfProtection, privacyRoutes);
-app.use("/api/analytics", userRateLimiter, authMiddleware, analyticsRoutes);
-app.use('/api/payments', userRateLimiter, csrfProtection, paymentRoutes);
-app.use('/api/notifications', userRateLimiter, csrfProtection, notificationsRouter);
-app.use('/api/karma', csrfProtection, karmaRoutes);
-app.use('/api/wallet', userRateLimiter, csrfProtection, walletRoutes);
-app.use('/api/link-metadata', userRateLimiter, linkMetadataRoutes);
-app.use('/api/location-search', locationSearchRoutes);
-app.use('/api/developer', csrfProtection, developerRoutes);
-app.use('/api/devices', userRateLimiter, csrfProtection, devicesRouter);
-app.use('/api/security', userRateLimiter, csrfProtection, securityRoutes);
-app.use('/api/subscription', userRateLimiter, csrfProtection, subscriptionRoutes);
-app.use('/api/fedcm', fedcmRoutes);
+app.use("/privacy", userRateLimiter, csrfProtection, privacyRoutes);
+app.use("/analytics", userRateLimiter, authMiddleware, analyticsRoutes);
+app.use('/payments', userRateLimiter, csrfProtection, paymentRoutes);
+app.use('/notifications', userRateLimiter, csrfProtection, notificationsRouter);
+app.use('/karma', csrfProtection, karmaRoutes);
+app.use('/wallet', userRateLimiter, csrfProtection, walletRoutes);
+app.use('/link-metadata', userRateLimiter, linkMetadataRoutes);
+app.use('/location-search', locationSearchRoutes);
+app.use('/developer', csrfProtection, developerRoutes);
+app.use('/devices', userRateLimiter, csrfProtection, devicesRouter);
+app.use('/security', userRateLimiter, csrfProtection, securityRoutes);
+app.use('/subscription', userRateLimiter, csrfProtection, subscriptionRoutes);
+app.use('/fedcm', fedcmRoutes);
 app.use('/email', userRateLimiter, csrfProtection, emailRoutes);
 app.use('/email/proxy', emailProxyRoutes);
-app.use('/api/alia', userRateLimiter, aliaRoutes);
-app.use('/api/credits', userRateLimiter, csrfProtection, creditsRoutes);
-app.use('/api/billing', billingRoutes);
-app.use('/api/models', modelsStatsRoutes);
+app.use('/alia', userRateLimiter, aliaRoutes);
+app.use('/credits', userRateLimiter, csrfProtection, creditsRoutes);
+app.use('/billing', billingRoutes);
+app.use('/models', modelsStatsRoutes);
 
 // Add a protected route for testing
-app.get('/api/protected-server-route', authMiddleware, (req: any, res: Response) => {
+app.get('/protected-server-route', authMiddleware, (req: any, res: Response) => {
   res.json({ 
     message: 'Protected server route accessed successfully',
     user: req.user 

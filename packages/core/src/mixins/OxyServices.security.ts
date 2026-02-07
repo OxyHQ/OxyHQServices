@@ -31,7 +31,7 @@ export function OxyServicesSecurityMixin<T extends typeof OxyServicesBase>(Base:
 
         const response = await this.makeRequest<SecurityActivityResponse>(
           'GET',
-          '/api/security/activity',
+          '/security/activity',
           params,
           { cache: false }
         );
@@ -65,7 +65,7 @@ export function OxyServicesSecurityMixin<T extends typeof OxyServicesBase>(Base:
       try {
         await this.makeRequest<{ success: boolean }>(
           'POST',
-          '/api/security/activity/private-key-exported',
+          '/security/activity/private-key-exported',
           { deviceId },
           { cache: false }
         );
@@ -87,7 +87,7 @@ export function OxyServicesSecurityMixin<T extends typeof OxyServicesBase>(Base:
       try {
         await this.makeRequest<{ success: boolean }>(
           'POST',
-          '/api/security/activity/backup-created',
+          '/security/activity/backup-created',
           { deviceId },
           { cache: false }
         );

@@ -16,7 +16,7 @@ export function OxyServicesDevicesMixin<T extends typeof OxyServicesBase>(Base: 
      */
     async registerDevice(deviceData: any): Promise<any> {
       try {
-        return await this.makeRequest('POST', '/api/devices', deviceData, { cache: false });
+        return await this.makeRequest('POST', '/devices', deviceData, { cache: false });
       } catch (error) {
         throw this.handleError(error);
       }
@@ -28,7 +28,7 @@ export function OxyServicesDevicesMixin<T extends typeof OxyServicesBase>(Base: 
      */
     async getUserDevices(): Promise<any[]> {
       try {
-        return await this.makeRequest('GET', '/api/devices', undefined, {
+        return await this.makeRequest('GET', '/devices', undefined, {
           cache: false, // Don't cache device list - always get fresh data
         });
       } catch (error) {
@@ -42,7 +42,7 @@ export function OxyServicesDevicesMixin<T extends typeof OxyServicesBase>(Base: 
      */
     async removeDevice(deviceId: string): Promise<void> {
       try {
-        await this.makeRequest('DELETE', `/api/devices/${deviceId}`, undefined, { cache: false });
+        await this.makeRequest('DELETE', `/devices/${deviceId}`, undefined, { cache: false });
       } catch (error) {
         throw this.handleError(error);
       }
@@ -58,7 +58,7 @@ export function OxyServicesDevicesMixin<T extends typeof OxyServicesBase>(Base: 
       try {
         // Use makeRequest for consistent error handling and optional caching
         // Cache disabled by default to ensure fresh session data
-        return await this.makeRequest<any[]>('GET', `/api/session/device/sessions/${sessionId}`, undefined, {
+        return await this.makeRequest<any[]>('GET', `/session/device/sessions/${sessionId}`, undefined, {
           cache: false, // Don't cache sessions - always get fresh data
           deduplicate: true, // Deduplicate concurrent requests for same sessionId
         });
@@ -79,7 +79,7 @@ export function OxyServicesDevicesMixin<T extends typeof OxyServicesBase>(Base: 
         const urlParams: any = {};
         if (deviceId) urlParams.deviceId = deviceId;
         if (excludeCurrent) urlParams.excludeCurrent = 'true';
-        return await this.makeRequest('POST', `/api/session/device/logout-all/${sessionId}`, urlParams, { cache: false });
+        return await this.makeRequest('POST', `/session/device/logout-all/${sessionId}`, urlParams, { cache: false });
       } catch (error) {
         throw this.handleError(error);
       }
@@ -93,7 +93,7 @@ export function OxyServicesDevicesMixin<T extends typeof OxyServicesBase>(Base: 
      */
     async updateDeviceName(sessionId: string, deviceName: string): Promise<any> {
       try {
-        return await this.makeRequest('PUT', `/api/session/device/name/${sessionId}`, { deviceName }, { cache: false });
+        return await this.makeRequest('PUT', `/session/device/name/${sessionId}`, { deviceName }, { cache: false });
       } catch (error) {
         throw this.handleError(error);
       }
@@ -107,7 +107,7 @@ export function OxyServicesDevicesMixin<T extends typeof OxyServicesBase>(Base: 
       recoveryEmail: string | null;
     }> {
       try {
-        return await this.makeRequest('GET', '/api/devices/security', undefined, {
+        return await this.makeRequest('GET', '/devices/security', undefined, {
           cache: false,
         });
       } catch (error) {

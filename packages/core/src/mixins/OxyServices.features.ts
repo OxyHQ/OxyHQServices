@@ -115,7 +115,7 @@ export function OxyServicesFeaturesMixin<T extends typeof OxyServicesBase>(Base:
          */
         async submitFeedback(payload: FeedbackPayload): Promise<FeedbackResult> {
             try {
-                return await this.makeRequest<FeedbackResult>('POST', '/api/feedback', payload, {
+                return await this.makeRequest<FeedbackResult>('POST', '/feedback', payload, {
                     cache: false,
                 });
             } catch (error) {
@@ -132,7 +132,7 @@ export function OxyServicesFeaturesMixin<T extends typeof OxyServicesBase>(Base:
          */
         async getSubscriptionPlans(): Promise<SubscriptionPlan[]> {
             try {
-                return await this.makeRequest<SubscriptionPlan[]>('GET', '/api/subscriptions/plans', undefined, {
+                return await this.makeRequest<SubscriptionPlan[]>('GET', '/subscriptions/plans', undefined, {
                     cache: true,
                     cacheTTL: CACHE_TIMES.LONG,
                 });
@@ -146,7 +146,7 @@ export function OxyServicesFeaturesMixin<T extends typeof OxyServicesBase>(Base:
          */
         async getIndividualFeatures(): Promise<any[]> {
             try {
-                return await this.makeRequest<any[]>('GET', '/api/subscriptions/features', undefined, {
+                return await this.makeRequest<any[]>('GET', '/subscriptions/features', undefined, {
                     cache: true,
                     cacheTTL: CACHE_TIMES.LONG,
                 });
@@ -160,7 +160,7 @@ export function OxyServicesFeaturesMixin<T extends typeof OxyServicesBase>(Base:
          */
         async subscribe(planId: string, paymentMethodId?: string): Promise<SubscriptionResult> {
             return this.withAuthRetry(async () => {
-                return await this.makeRequest<SubscriptionResult>('POST', '/api/subscriptions/subscribe', {
+                return await this.makeRequest<SubscriptionResult>('POST', '/subscriptions/subscribe', {
                     planId,
                     paymentMethodId,
                 }, { cache: false });
@@ -172,7 +172,7 @@ export function OxyServicesFeaturesMixin<T extends typeof OxyServicesBase>(Base:
          */
         async subscribeToFeature(featureId: string, paymentMethodId?: string): Promise<SubscriptionResult> {
             return this.withAuthRetry(async () => {
-                return await this.makeRequest<SubscriptionResult>('POST', '/api/subscriptions/features/subscribe', {
+                return await this.makeRequest<SubscriptionResult>('POST', '/subscriptions/features/subscribe', {
                     featureId,
                     paymentMethodId,
                 }, { cache: false });
@@ -184,7 +184,7 @@ export function OxyServicesFeaturesMixin<T extends typeof OxyServicesBase>(Base:
          */
         async cancelSubscription(subscriptionId: string): Promise<void> {
             return this.withAuthRetry(async () => {
-                await this.makeRequest('POST', `/api/subscriptions/${subscriptionId}/cancel`, undefined, {
+                await this.makeRequest('POST', `/subscriptions/${subscriptionId}/cancel`, undefined, {
                     cache: false,
                 });
             }, 'cancelSubscription');
@@ -195,7 +195,7 @@ export function OxyServicesFeaturesMixin<T extends typeof OxyServicesBase>(Base:
          */
         async reactivateSubscription(subscriptionId: string): Promise<void> {
             return this.withAuthRetry(async () => {
-                await this.makeRequest('POST', `/api/subscriptions/${subscriptionId}/reactivate`, undefined, {
+                await this.makeRequest('POST', `/subscriptions/${subscriptionId}/reactivate`, undefined, {
                     cache: false,
                 });
             }, 'reactivateSubscription');
@@ -207,7 +207,7 @@ export function OxyServicesFeaturesMixin<T extends typeof OxyServicesBase>(Base:
         async getCurrentSubscription(): Promise<SubscriptionResult | null> {
             return this.withAuthRetry(async () => {
                 try {
-                    return await this.makeRequest<SubscriptionResult>('GET', '/api/subscriptions/current', undefined, {
+                    return await this.makeRequest<SubscriptionResult>('GET', '/subscriptions/current', undefined, {
                         cache: true,
                         cacheTTL: CACHE_TIMES.SHORT,
                     });
@@ -227,7 +227,7 @@ export function OxyServicesFeaturesMixin<T extends typeof OxyServicesBase>(Base:
          */
         async getSavedItems(userId?: string): Promise<SavedItem[]> {
             return this.withAuthRetry(async () => {
-                const endpoint = userId ? `/api/users/${userId}/saves` : '/api/saves';
+                const endpoint = userId ? `/users/${userId}/saves` : '/saves';
                 return await this.makeRequest<SavedItem[]>('GET', endpoint, undefined, {
                     cache: true,
                     cacheTTL: CACHE_TIMES.SHORT,
@@ -240,7 +240,7 @@ export function OxyServicesFeaturesMixin<T extends typeof OxyServicesBase>(Base:
          */
         async getCollections(userId?: string): Promise<Collection[]> {
             return this.withAuthRetry(async () => {
-                const endpoint = userId ? `/api/users/${userId}/collections` : '/api/collections';
+                const endpoint = userId ? `/users/${userId}/collections` : '/collections';
                 return await this.makeRequest<Collection[]>('GET', endpoint, undefined, {
                     cache: true,
                     cacheTTL: CACHE_TIMES.SHORT,
@@ -253,7 +253,7 @@ export function OxyServicesFeaturesMixin<T extends typeof OxyServicesBase>(Base:
          */
         async saveItem(itemId: string, itemType: string, collectionId?: string): Promise<SavedItem> {
             return this.withAuthRetry(async () => {
-                return await this.makeRequest<SavedItem>('POST', '/api/saves', {
+                return await this.makeRequest<SavedItem>('POST', '/saves', {
                     itemId,
                     itemType,
                     collectionId,
@@ -266,7 +266,7 @@ export function OxyServicesFeaturesMixin<T extends typeof OxyServicesBase>(Base:
          */
         async removeSavedItem(saveId: string): Promise<void> {
             return this.withAuthRetry(async () => {
-                await this.makeRequest('DELETE', `/api/saves/${saveId}`, undefined, { cache: false });
+                await this.makeRequest('DELETE', `/saves/${saveId}`, undefined, { cache: false });
             }, 'removeSavedItem');
         }
 
@@ -275,7 +275,7 @@ export function OxyServicesFeaturesMixin<T extends typeof OxyServicesBase>(Base:
          */
         async createCollection(name: string, description?: string): Promise<Collection> {
             return this.withAuthRetry(async () => {
-                return await this.makeRequest<Collection>('POST', '/api/collections', {
+                return await this.makeRequest<Collection>('POST', '/collections', {
                     name,
                     description,
                 }, { cache: false });
@@ -287,7 +287,7 @@ export function OxyServicesFeaturesMixin<T extends typeof OxyServicesBase>(Base:
          */
         async deleteCollection(collectionId: string): Promise<void> {
             return this.withAuthRetry(async () => {
-                await this.makeRequest('DELETE', `/api/collections/${collectionId}`, undefined, { cache: false });
+                await this.makeRequest('DELETE', `/collections/${collectionId}`, undefined, { cache: false });
             }, 'deleteCollection');
         }
 
@@ -300,7 +300,7 @@ export function OxyServicesFeaturesMixin<T extends typeof OxyServicesBase>(Base:
          */
         async getUserStats(userId: string): Promise<UserStats> {
             try {
-                return await this.makeRequest<UserStats>('GET', `/api/users/${userId}/stats`, undefined, {
+                return await this.makeRequest<UserStats>('GET', `/users/${userId}/stats`, undefined, {
                     cache: true,
                     cacheTTL: CACHE_TIMES.MEDIUM,
                 });
@@ -322,7 +322,7 @@ export function OxyServicesFeaturesMixin<T extends typeof OxyServicesBase>(Base:
                 if (limit) params.limit = limit;
                 if (offset) params.offset = offset;
 
-                const endpoint = userId ? `/api/users/${userId}/history` : '/api/history';
+                const endpoint = userId ? `/users/${userId}/history` : '/history';
                 return await this.makeRequest<HistoryItem[]>('GET', endpoint, params, {
                     cache: true,
                     cacheTTL: CACHE_TIMES.SHORT,
@@ -335,7 +335,7 @@ export function OxyServicesFeaturesMixin<T extends typeof OxyServicesBase>(Base:
          */
         async clearUserHistory(): Promise<void> {
             return this.withAuthRetry(async () => {
-                await this.makeRequest('DELETE', '/api/history', undefined, { cache: false });
+                await this.makeRequest('DELETE', '/history', undefined, { cache: false });
             }, 'clearUserHistory');
         }
 
@@ -344,7 +344,7 @@ export function OxyServicesFeaturesMixin<T extends typeof OxyServicesBase>(Base:
          */
         async deleteHistoryItem(itemId: string): Promise<void> {
             return this.withAuthRetry(async () => {
-                await this.makeRequest('DELETE', `/api/history/${itemId}`, undefined, { cache: false });
+                await this.makeRequest('DELETE', `/history/${itemId}`, undefined, { cache: false });
             }, 'deleteHistoryItem');
         }
 
@@ -358,7 +358,7 @@ export function OxyServicesFeaturesMixin<T extends typeof OxyServicesBase>(Base:
         async getFAQs(category?: string): Promise<FAQ[]> {
             try {
                 const params = category ? { category } : undefined;
-                return await this.makeRequest<FAQ[]>('GET', '/api/faqs', params, {
+                return await this.makeRequest<FAQ[]>('GET', '/faqs', params, {
                     cache: true,
                     cacheTTL: CACHE_TIMES.LONG,
                 });
@@ -372,7 +372,7 @@ export function OxyServicesFeaturesMixin<T extends typeof OxyServicesBase>(Base:
          */
         async searchFAQs(query: string): Promise<FAQ[]> {
             try {
-                return await this.makeRequest<FAQ[]>('GET', '/api/faqs/search', { query }, {
+                return await this.makeRequest<FAQ[]>('GET', '/faqs/search', { query }, {
                     cache: true,
                     cacheTTL: CACHE_TIMES.MEDIUM,
                 });
@@ -390,7 +390,7 @@ export function OxyServicesFeaturesMixin<T extends typeof OxyServicesBase>(Base:
          */
         async getUserAchievements(userId?: string): Promise<Achievement[]> {
             return this.withAuthRetry(async () => {
-                const endpoint = userId ? `/api/users/${userId}/achievements` : '/api/achievements';
+                const endpoint = userId ? `/users/${userId}/achievements` : '/achievements';
                 return await this.makeRequest<Achievement[]>('GET', endpoint, undefined, {
                     cache: true,
                     cacheTTL: CACHE_TIMES.MEDIUM,
@@ -403,7 +403,7 @@ export function OxyServicesFeaturesMixin<T extends typeof OxyServicesBase>(Base:
          */
         async getAllAchievements(): Promise<Achievement[]> {
             try {
-                return await this.makeRequest<Achievement[]>('GET', '/api/achievements/all', undefined, {
+                return await this.makeRequest<Achievement[]>('GET', '/achievements/all', undefined, {
                     cache: true,
                     cacheTTL: CACHE_TIMES.LONG,
                 });
@@ -421,7 +421,7 @@ export function OxyServicesFeaturesMixin<T extends typeof OxyServicesBase>(Base:
          */
         async deleteAccount(password: string): Promise<void> {
             return this.withAuthRetry(async () => {
-                await this.makeRequest('DELETE', '/api/account', { password }, { cache: false });
+                await this.makeRequest('DELETE', '/account', { password }, { cache: false });
             }, 'deleteAccount');
         }
     };

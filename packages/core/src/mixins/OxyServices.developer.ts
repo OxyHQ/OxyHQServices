@@ -18,7 +18,7 @@ export function OxyServicesDeveloperMixin<T extends typeof OxyServicesBase>(Base
      */
     async getDeveloperApps(): Promise<any[]> {
       try {
-        const res = await this.makeRequest<{ apps?: any[] }>('GET', '/api/developer/apps', undefined, {
+        const res = await this.makeRequest<{ apps?: any[] }>('GET', '/developer/apps', undefined, {
           cache: true,
           cacheTTL: CACHE_TIMES.MEDIUM,
         });
@@ -41,7 +41,7 @@ export function OxyServicesDeveloperMixin<T extends typeof OxyServicesBase>(Base
       scopes?: string[];
     }): Promise<any> {
       try {
-        const res = await this.makeRequest<{ app: any }>('POST', '/api/developer/apps', data, { cache: false });
+        const res = await this.makeRequest<{ app: any }>('POST', '/developer/apps', data, { cache: false });
         return res.app;
       } catch (error) {
         throw this.handleError(error);
@@ -53,7 +53,7 @@ export function OxyServicesDeveloperMixin<T extends typeof OxyServicesBase>(Base
      */
     async getDeveloperApp(appId: string): Promise<any> {
       try {
-      const res = await this.makeRequest<{ app: any }>('GET', `/api/developer/apps/${appId}`, undefined, {
+      const res = await this.makeRequest<{ app: any }>('GET', `/developer/apps/${appId}`, undefined, {
         cache: true,
         cacheTTL: CACHE_TIMES.LONG,
       });
@@ -77,7 +77,7 @@ export function OxyServicesDeveloperMixin<T extends typeof OxyServicesBase>(Base
       scopes?: string[];
     }): Promise<any> {
       try {
-        const res = await this.makeRequest<{ app: any }>('PATCH', `/api/developer/apps/${appId}`, data, { cache: false });
+        const res = await this.makeRequest<{ app: any }>('PATCH', `/developer/apps/${appId}`, data, { cache: false });
         return res.app;
       } catch (error) {
         throw this.handleError(error);
@@ -91,7 +91,7 @@ export function OxyServicesDeveloperMixin<T extends typeof OxyServicesBase>(Base
      */
     async regenerateDeveloperAppSecret(appId: string): Promise<any> {
       try {
-        return await this.makeRequest('POST', `/api/developer/apps/${appId}/regenerate-secret`, undefined, { cache: false });
+        return await this.makeRequest('POST', `/developer/apps/${appId}/regenerate-secret`, undefined, { cache: false });
       } catch (error) {
         throw this.handleError(error);
       }
@@ -104,7 +104,7 @@ export function OxyServicesDeveloperMixin<T extends typeof OxyServicesBase>(Base
      */
     async deleteDeveloperApp(appId: string): Promise<any> {
       try {
-        return await this.makeRequest('DELETE', `/api/developer/apps/${appId}`, undefined, { cache: false });
+        return await this.makeRequest('DELETE', `/developer/apps/${appId}`, undefined, { cache: false });
       } catch (error) {
         throw this.handleError(error);
       }

@@ -15,7 +15,7 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
      */
     async getProfileByUsername(username: string): Promise<User> {
       try {
-        return await this.makeRequest<User>('GET', `/api/profiles/username/${username}`, undefined, {
+        return await this.makeRequest<User>('GET', `/profiles/username/${username}`, undefined, {
           cache: true,
           cacheTTL: 5 * 60 * 1000, // 5 minutes cache for profiles
         });
@@ -35,7 +35,7 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
 
         const response = await this.makeRequest<SearchProfilesResponse | User[]>(
           'GET',
-          '/api/profiles/search',
+          '/profiles/search',
           paramsObj,
           {
             cache: true,
@@ -97,7 +97,7 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
       [key: string]: any;
     }>> {
       return this.withAuthRetry(async () => {
-        return await this.makeRequest('GET', '/api/profiles/recommendations', undefined, { cache: true });
+        return await this.makeRequest('GET', '/profiles/recommendations', undefined, { cache: true });
       }, 'getProfileRecommendations');
     }
 
@@ -106,7 +106,7 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
      */
     async getUserById(userId: string): Promise<User> {
       try {
-        return await this.makeRequest<User>('GET', `/api/users/${userId}`, undefined, {
+        return await this.makeRequest<User>('GET', `/users/${userId}`, undefined, {
           cache: true,
           cacheTTL: 5 * 60 * 1000, // 5 minutes cache
         });
@@ -120,7 +120,7 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
      */
     async getCurrentUser(): Promise<User> {
       return this.withAuthRetry(async () => {
-        return await this.makeRequest<User>('GET', '/api/users/me', undefined, {
+        return await this.makeRequest<User>('GET', '/users/me', undefined, {
           cache: true,
           cacheTTL: 1 * 60 * 1000, // 1 minute cache for current user
         });
@@ -133,7 +133,7 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
      */
     async updateProfile(updates: Record<string, any>): Promise<User> {
       try {
-        return await this.makeRequest<User>('PUT', '/api/users/me', updates, { cache: false });
+        return await this.makeRequest<User>('PUT', '/users/me', updates, { cache: false });
       } catch (error) {
         const errorAny = error as any;
         const errorMessage = error instanceof Error ? error.message : String(error);
@@ -162,7 +162,7 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
     async getPrivacySettings(userId?: string): Promise<any> {
       try {
         const id = userId || (await this.getCurrentUser()).id;
-        return await this.makeRequest<any>('GET', `/api/privacy/${id}/privacy`, undefined, {
+        return await this.makeRequest<any>('GET', `/privacy/${id}/privacy`, undefined, {
           cache: true,
           cacheTTL: 2 * 60 * 1000, // 2 minutes cache
         });
@@ -179,7 +179,7 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
     async updatePrivacySettings(settings: Record<string, any>, userId?: string): Promise<any> {
       try {
         const id = userId || (await this.getCurrentUser()).id;
-        return await this.makeRequest<any>('PATCH', `/api/privacy/${id}/privacy`, settings, {
+        return await this.makeRequest<any>('PATCH', `/privacy/${id}/privacy`, settings, {
           cache: false,
         });
       } catch (error) {
@@ -192,7 +192,7 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
      */
     async requestAccountVerification(reason: string, evidence?: string): Promise<{ message: string; requestId: string }> {
       try {
-        return await this.makeRequest<{ message: string; requestId: string }>('POST', '/api/users/verify/request', {
+        return await this.makeRequest<{ message: string; requestId: string }>('POST', '/users/verify/request', {
           reason,
           evidence,
         }, { cache: false });
@@ -209,7 +209,7 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
         // Use httpService for blob responses (it handles blob responses automatically)
         const result = await this.getClient().request<Blob>({
           method: 'GET',
-          url: `/api/users/me/data`,
+          url: `/users/me/data`,
           params: { format },
           cache: false,
         });
@@ -227,7 +227,7 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
      */
     async deleteAccount(password: string, confirmText: string): Promise<{ message: string }> {
       try {
-        return await this.makeRequest<{ message: string }>('DELETE', '/api/users/me', {
+        return await this.makeRequest<{ message: string }>('DELETE', '/users/me', {
           password,
           confirmText,
         }, { cache: false });
@@ -242,7 +242,7 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
      */
     async followUser(userId: string): Promise<{ success: boolean; message: string }> {
       try {
-        return await this.makeRequest('POST', `/api/users/${userId}/follow`, undefined, { cache: false });
+        return await this.makeRequest('POST', `/users/${userId}/follow`, undefined, { cache: false });
       } catch (error) {
         throw this.handleError(error);
       }
@@ -253,7 +253,7 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
      */
     async unfollowUser(userId: string): Promise<{ success: boolean; message: string }> {
       try {
-        return await this.makeRequest('DELETE', `/api/users/${userId}/follow`, undefined, { cache: false });
+        return await this.makeRequest('DELETE', `/users/${userId}/follow`, undefined, { cache: false });
       } catch (error) {
         throw this.handleError(error);
       }
@@ -264,7 +264,7 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
      */
     async getFollowStatus(userId: string): Promise<{ isFollowing: boolean }> {
       try {
-        return await this.makeRequest('GET', `/api/users/${userId}/follow-status`, undefined, {
+        return await this.makeRequest('GET', `/users/${userId}/follow-status`, undefined, {
           cache: true,
           cacheTTL: 1 * 60 * 1000, // 1 minute cache
         });
@@ -282,7 +282,7 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
     ): Promise<{ followers: User[]; total: number; hasMore: boolean }> {
       try {
         const params = buildPaginationParams(pagination || {});
-        const response = await this.makeRequest<{ data: User[]; pagination: { total: number; hasMore: boolean } }>('GET', `/api/users/${userId}/followers`, params, {
+        const response = await this.makeRequest<{ data: User[]; pagination: { total: number; hasMore: boolean } }>('GET', `/users/${userId}/followers`, params, {
           cache: true,
           cacheTTL: 2 * 60 * 1000, // 2 minutes cache
         });
@@ -305,7 +305,7 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
     ): Promise<{ following: User[]; total: number; hasMore: boolean }> {
       try {
         const params = buildPaginationParams(pagination || {});
-        const response = await this.makeRequest<{ data: User[]; pagination: { total: number; hasMore: boolean } }>('GET', `/api/users/${userId}/following`, params, {
+        const response = await this.makeRequest<{ data: User[]; pagination: { total: number; hasMore: boolean } }>('GET', `/users/${userId}/following`, params, {
           cache: true,
           cacheTTL: 2 * 60 * 1000, // 2 minutes cache
         });
@@ -324,7 +324,7 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
      */
     async getNotifications(): Promise<Notification[]> {
       return this.withAuthRetry(async () => {
-        return await this.makeRequest<Notification[]>('GET', '/api/notifications', undefined, {
+        return await this.makeRequest<Notification[]>('GET', '/notifications', undefined, {
           cache: false, // Don't cache notifications - always get fresh data
         });
       }, 'getNotifications');
@@ -335,7 +335,7 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
      */
     async getUnreadCount(): Promise<number> {
       try {
-        const res = await this.makeRequest<{ count: number }>('GET', '/api/notifications/unread-count', undefined, {
+        const res = await this.makeRequest<{ count: number }>('GET', '/notifications/unread-count', undefined, {
           cache: false, // Don't cache unread count - always get fresh data
         });
         return res.count;
@@ -349,7 +349,7 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
      */
     async createNotification(data: Partial<Notification>): Promise<Notification> {
       try {
-        return await this.makeRequest<Notification>('POST', '/api/notifications', data, { cache: false });
+        return await this.makeRequest<Notification>('POST', '/notifications', data, { cache: false });
       } catch (error) {
         throw this.handleError(error);
       }
@@ -360,7 +360,7 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
      */
     async markNotificationAsRead(notificationId: string): Promise<void> {
       try {
-        await this.makeRequest('PUT', `/api/notifications/${notificationId}/read`, undefined, { cache: false });
+        await this.makeRequest('PUT', `/notifications/${notificationId}/read`, undefined, { cache: false });
       } catch (error) {
         throw this.handleError(error);
       }
@@ -371,7 +371,7 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
      */
     async markAllNotificationsAsRead(): Promise<void> {
       try {
-        await this.makeRequest('PUT', '/api/notifications/read-all', undefined, { cache: false });
+        await this.makeRequest('PUT', '/notifications/read-all', undefined, { cache: false });
       } catch (error) {
         throw this.handleError(error);
       }
@@ -382,7 +382,7 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
      */
     async deleteNotification(notificationId: string): Promise<void> {
       try {
-        await this.makeRequest('DELETE', `/api/notifications/${notificationId}`, undefined, { cache: false });
+        await this.makeRequest('DELETE', `/notifications/${notificationId}`, undefined, { cache: false });
       } catch (error) {
         throw this.handleError(error);
       }

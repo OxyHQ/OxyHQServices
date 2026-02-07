@@ -12,7 +12,7 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
      */
     async deleteFile(fileId: string): Promise<any> {
       try {
-        return await this.makeRequest('DELETE', `/api/assets/${encodeURIComponent(fileId)}`, undefined, { cache: false });
+        return await this.makeRequest('DELETE', `/assets/${encodeURIComponent(fileId)}`, undefined, { cache: false });
       } catch (error) {
         throw this.handleError(error);
       }
@@ -31,7 +31,7 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
       if (token) params.set('token', token);
 
       const qs = params.toString();
-      return `${base}/api/assets/${encodeURIComponent(fileId)}/stream${qs ? `?${qs}` : ''}`;
+      return `${base}/assets/${encodeURIComponent(fileId)}/stream${qs ? `?${qs}` : ''}`;
     }
 
     /**
@@ -60,7 +60,7 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
         const paramsObj: any = {};
         if (limit) paramsObj.limit = limit;
         if (offset) paramsObj.offset = offset;
-        return await this.makeRequest('GET', '/api/assets', paramsObj, {
+        return await this.makeRequest('GET', '/assets', paramsObj, {
           cache: false,
         });
       } catch (error) {
@@ -73,7 +73,7 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
      */
     async getAccountStorageUsage(): Promise<AccountStorageUsageResponse> {
       try {
-        return await this.makeRequest<AccountStorageUsageResponse>('GET', '/api/storage/usage', undefined, {
+        return await this.makeRequest<AccountStorageUsageResponse>('GET', '/storage/usage', undefined, {
           cache: false,
         });
       } catch (error) {
@@ -128,7 +128,7 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
      */
     async getBatchFileAccess(fileIds: string[], context?: string): Promise<Record<string, any>> {
       try {
-        return await this.makeRequest('POST', '/api/assets/batch-access', { 
+        return await this.makeRequest('POST', '/assets/batch-access', { 
           fileIds, 
           context 
         });
@@ -191,7 +191,7 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
 
         const response = await this.getClient().request<{ file: any }>({
           method: 'POST',
-          url: '/api/assets/upload',
+          url: '/assets/upload',
           data: formData,
           cache: false,
         });
@@ -250,7 +250,7 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
         const body: any = { app, entityType, entityId };
         if (visibility) body.visibility = visibility;
         if (webhookUrl) body.webhookUrl = webhookUrl;
-        return await this.makeRequest('POST', `/api/assets/${fileId}/links`, body, { cache: false });
+        return await this.makeRequest('POST', `/assets/${fileId}/links`, body, { cache: false });
       } catch (error) {
         throw this.handleError(error);
       }
@@ -261,7 +261,7 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
      */
     async assetUnlink(fileId: string, app: string, entityType: string, entityId: string): Promise<any> {
       try {
-        return await this.makeRequest('DELETE', `/api/assets/${fileId}/links`, {
+        return await this.makeRequest('DELETE', `/assets/${fileId}/links`, {
           app,
           entityType,
           entityId
@@ -276,7 +276,7 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
      */
     async assetGet(fileId: string): Promise<any> {
       try {
-        return await this.makeRequest('GET', `/api/assets/${fileId}`, undefined, {
+        return await this.makeRequest('GET', `/assets/${fileId}`, undefined, {
           cache: true,
           cacheTTL: 5 * 60 * 1000,
         });
@@ -294,7 +294,7 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
         if (variant) params.variant = variant;
         if (expiresIn) params.expiresIn = expiresIn;
         
-        return await this.makeRequest<AssetUrlResponse>('GET', `/api/assets/${fileId}/url`, params, {
+        return await this.makeRequest<AssetUrlResponse>('GET', `/assets/${fileId}/url`, params, {
           cache: true,
           cacheTTL: 10 * 60 * 1000,
         });
@@ -308,7 +308,7 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
      */
     async assetRestore(fileId: string): Promise<any> {
       try {
-        return await this.makeRequest('POST', `/api/assets/${fileId}/restore`, undefined, { cache: false });
+        return await this.makeRequest('POST', `/assets/${fileId}/restore`, undefined, { cache: false });
       } catch (error) {
         throw this.handleError(error);
       }
@@ -320,7 +320,7 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
     async assetDelete(fileId: string, force: boolean = false): Promise<any> {
       try {
         const params: any = force ? { force: 'true' } : undefined;
-        return await this.makeRequest('DELETE', `/api/assets/${fileId}`, params, { cache: false });
+        return await this.makeRequest('DELETE', `/assets/${fileId}`, params, { cache: false });
       } catch (error) {
         throw this.handleError(error);
       }
@@ -343,7 +343,7 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
      */
     async assetUpdateVisibility(fileId: string, visibility: 'private' | 'public' | 'unlisted'): Promise<any> {
       try {
-        return await this.makeRequest('PATCH', `/api/assets/${fileId}/visibility`, {
+        return await this.makeRequest('PATCH', `/assets/${fileId}/visibility`, {
           visibility
         }, { cache: false });
       } catch (error) {
@@ -388,7 +388,7 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
 
       const urlRes = await this.makeRequest<{ url: string }>(
         'GET',
-        `/api/assets/${encodeURIComponent(fileId)}/url`,
+        `/assets/${encodeURIComponent(fileId)}/url`,
         Object.keys(params).length ? params : undefined,
         {
           cache: true,

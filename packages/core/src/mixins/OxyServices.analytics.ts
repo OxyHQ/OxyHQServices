@@ -19,7 +19,7 @@ export function OxyServicesAnalyticsMixin<T extends typeof OxyServicesBase>(Base
      */
     async trackEvent(eventName: string, properties?: Record<string, any>): Promise<void> {
       try {
-        await this.makeRequest('POST', '/api/analytics/events', {
+        await this.makeRequest('POST', '/analytics/events', {
           event: eventName,
           properties
         }, { cache: false, retry: false }); // Don't retry analytics events
@@ -40,7 +40,7 @@ export function OxyServicesAnalyticsMixin<T extends typeof OxyServicesBase>(Base
         if (startDate) params.startDate = startDate;
         if (endDate) params.endDate = endDate;
         
-        return await this.makeRequest('GET', '/api/analytics', params, {
+        return await this.makeRequest('GET', '/analytics', params, {
           cache: true,
           cacheTTL: CACHE_TIMES.LONG,
         });

@@ -90,7 +90,7 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
 
       const response = await this.makeRequest<ServiceTokenResponse>(
         'POST',
-        '/api/auth/service-token',
+        '/auth/service-token',
         { apiKey: key, apiSecret: secret },
         { cache: false, retry: false }
       );
@@ -142,7 +142,7 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
       timestamp: number
     ): Promise<{ message: string; user: User }> {
       try {
-        const res = await this.makeRequest<{ message: string; user: User }>('POST', '/api/auth/register', {
+        const res = await this.makeRequest<{ message: string; user: User }>('POST', '/auth/register', {
           publicKey,
           signature,
           timestamp,
@@ -166,7 +166,7 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
      */
     async requestChallenge(publicKey: string): Promise<ChallengeResponse> {
       try {
-        return await this.makeRequest<ChallengeResponse>('POST', '/api/auth/challenge', {
+        return await this.makeRequest<ChallengeResponse>('POST', '/auth/challenge', {
           publicKey,
         }, { cache: false });
       } catch (error) {
@@ -193,7 +193,7 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
       deviceFingerprint?: string
     ): Promise<SessionLoginResponse> {
       try {
-        return await this.makeRequest<SessionLoginResponse>('POST', '/api/auth/verify', {
+        return await this.makeRequest<SessionLoginResponse>('POST', '/auth/verify', {
           publicKey,
           challenge,
           signature,
@@ -213,7 +213,7 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
       try {
         return await this.makeRequest<PublicKeyCheckResponse>(
           'GET',
-          `/api/auth/check-publickey/${encodeURIComponent(publicKey)}`,
+          `/auth/check-publickey/${encodeURIComponent(publicKey)}`,
           undefined,
           { cache: false }
         );
@@ -229,7 +229,7 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
       try {
         return await this.makeRequest<User>(
           'GET',
-          `/api/auth/user/${encodeURIComponent(publicKey)}`,
+          `/auth/user/${encodeURIComponent(publicKey)}`,
           undefined,
           { cache: true, cacheTTL: 2 * 60 * 1000 }
         );
@@ -243,7 +243,7 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
      */
     async getUserBySession(sessionId: string): Promise<User> {
       try {
-        return await this.makeRequest<User>('GET', `/api/session/user/${sessionId}`, undefined, {
+        return await this.makeRequest<User>('GET', `/session/user/${sessionId}`, undefined, {
           cache: true,
           cacheTTL: 2 * 60 * 1000,
         });
@@ -265,7 +265,7 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
         
         return await this.makeRequest<Array<{ sessionId: string; user: User | null }>>(
           'POST',
-          '/api/session/users/batch',
+          '/session/users/batch',
           { sessionIds: uniqueSessionIds },
           {
             cache: true,
@@ -285,7 +285,7 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
       try {
         const res = await this.makeRequest<{ accessToken: string; expiresAt: string }>(
           'GET',
-          `/api/session/token/${sessionId}`,
+          `/session/token/${sessionId}`,
           undefined,
           { cache: false, retry: false }
         );
@@ -303,7 +303,7 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
      */
     async getSessionsBySessionId(sessionId: string): Promise<any[]> {
       try {
-        return await this.makeRequest('GET', `/api/session/sessions/${sessionId}`, undefined, {
+        return await this.makeRequest('GET', `/session/sessions/${sessionId}`, undefined, {
           cache: false,
         });
       } catch (error) {
@@ -317,8 +317,8 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
     async logoutSession(sessionId: string, targetSessionId?: string): Promise<void> {
       try {
         const url = targetSessionId 
-          ? `/api/session/logout/${sessionId}/${targetSessionId}`
-          : `/api/session/logout/${sessionId}`;
+          ? `/session/logout/${sessionId}/${targetSessionId}`
+          : `/session/logout/${sessionId}`;
         
         await this.makeRequest('POST', url, undefined, { cache: false });
       } catch (error) {
@@ -331,7 +331,7 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
      */
     async logoutAllSessions(sessionId: string): Promise<void> {
       try {
-        await this.makeRequest('POST', `/api/session/logout-all/${sessionId}`, undefined, { cache: false });
+        await this.makeRequest('POST', `/session/logout-all/${sessionId}`, undefined, { cache: false });
       } catch (error) {
         throw this.handleError(error);
       }
@@ -358,10 +358,10 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
         const urlParams: Record<string, string> = {};
         if (options.deviceFingerprint) urlParams.deviceFingerprint = options.deviceFingerprint;
         if (options.useHeaderValidation) urlParams.useHeaderValidation = 'true';
-        return await this.makeRequest('GET', `/api/session/validate/${sessionId}`, urlParams, { cache: false });
+        return await this.makeRequest('GET', `/session/validate/${sessionId}`, urlParams, { cache: false });
       } catch (error) {
         // Session is invalid — clear any cached user data for this session (#196)
-        this.clearCacheEntry(`GET:/api/session/user/${sessionId}`);
+        this.clearCacheEntry(`GET:/session/user/${sessionId}`);
         throw this.handleError(error);
       }
     }
@@ -371,7 +371,7 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
      */
     async checkUsernameAvailability(username: string): Promise<{ available: boolean; message: string }> {
       try {
-        return await this.makeRequest('GET', `/api/auth/check-username/${username}`, undefined, { cache: false });
+        return await this.makeRequest('GET', `/auth/check-username/${username}`, undefined, { cache: false });
       } catch (error) {
         throw this.handleError(error);
       }
@@ -382,7 +382,7 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
      */
     async checkEmailAvailability(email: string): Promise<{ available: boolean; message: string }> {
       try {
-        return await this.makeRequest('GET', `/api/auth/check-email/${email}`, undefined, { cache: false });
+        return await this.makeRequest('GET', `/auth/check-email/${email}`, undefined, { cache: false });
       } catch (error) {
         throw this.handleError(error);
       }
@@ -399,7 +399,7 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
       deviceFingerprint?: any
     ): Promise<SessionLoginResponse> {
       try {
-        return await this.makeRequest<SessionLoginResponse>('POST', '/api/auth/signup', {
+        return await this.makeRequest<SessionLoginResponse>('POST', '/auth/signup', {
           username,
           email,
           password,
@@ -421,7 +421,7 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
       deviceFingerprint?: any
     ): Promise<SessionLoginResponse> {
       try {
-        return await this.makeRequest<SessionLoginResponse>('POST', '/api/auth/login', {
+        return await this.makeRequest<SessionLoginResponse>('POST', '/auth/login', {
           identifier,
           password,
           deviceName,
