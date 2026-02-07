@@ -530,13 +530,14 @@ export class HttpService {
       const maxAttempts = 2;
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         try {
-          if (isDev()) console.log('[HttpService] Fetching CSRF token from:', `${this.baseURL}/api/csrf-token`, `(attempt ${attempt})`);
+          const csrfUrl = `${this.baseURL}/csrf-token`;
+          if (isDev()) console.log('[HttpService] Fetching CSRF token from:', csrfUrl, `(attempt ${attempt})`);
 
           // Use AbortController for timeout (more compatible than AbortSignal.timeout)
           const controller = new AbortController();
           const timeoutId = setTimeout(() => controller.abort(), 5000);
 
-          const response = await fetch(`${this.baseURL}/api/csrf-token`, {
+          const response = await fetch(csrfUrl, {
             method: 'GET',
             headers: { 'Accept': 'application/json' },
             credentials: 'include', // Required to receive and send cookies
@@ -627,7 +628,7 @@ export class HttpService {
 
   private async _refreshTokenFromSession(sessionId: string): Promise<string | null> {
     try {
-      const refreshUrl = `${this.baseURL}/api/session/token/${sessionId}`;
+      const refreshUrl = `${this.baseURL}/session/token/${sessionId}`;
       const response = await fetch(refreshUrl, {
         method: 'GET',
         headers: { 'Accept': 'application/json' },
