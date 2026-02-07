@@ -26,6 +26,29 @@ export function startSmtpInbound(): SMTPServer {
       ? {
           key: fs.readFileSync(SMTP_INBOUND_CONFIG.tls.key),
           cert: fs.readFileSync(SMTP_INBOUND_CONFIG.tls.cert),
+          minVersion: 'TLSv1.2' as const,
+          ciphers: [
+            'ECDHE-ECDSA-AES256-GCM-SHA384',
+            'ECDHE-RSA-AES256-GCM-SHA384',
+            'ECDHE-ECDSA-AES128-GCM-SHA256',
+            'ECDHE-RSA-AES128-GCM-SHA256',
+            'DHE-RSA-AES256-GCM-SHA384',
+            'DHE-RSA-AES128-GCM-SHA256',
+            'AES256-GCM-SHA384',
+            'AES128-GCM-SHA256',
+          ].join(':'),
+          // Include rsa_pkcs1_sha1 for older MTAs still using TLSv1.2
+          sigalgs: [
+            'ecdsa_secp256r1_sha256',
+            'ecdsa_secp384r1_sha384',
+            'rsa_pss_rsae_sha256',
+            'rsa_pss_rsae_sha384',
+            'rsa_pss_rsae_sha512',
+            'rsa_pkcs1_sha256',
+            'rsa_pkcs1_sha384',
+            'rsa_pkcs1_sha512',
+            'rsa_pkcs1_sha1',
+          ].join(':'),
         }
       : undefined;
 
@@ -165,7 +188,16 @@ export function startSmtpInbound(): SMTPServer {
   });
 
   smtpServer.on('error', (err: Error) => {
-    logger.error('SMTP server error', err);
+    const code = (err as any).code;
+    if (
+      code === 'ERR_SSL_NO_SUITABLE_SIGNATURE_ALGORITHM' ||
+      code === 'ECONNRESET' ||
+      err.message?.includes('SSL routines')
+    ) {
+      logger.warn('SMTP TLS handshake issue', { code, message: err.message });
+    } else {
+      logger.error('SMTP server error', err);
+    }
   });
 
   smtpServer.listen(SMTP_INBOUND_CONFIG.port, SMTP_INBOUND_CONFIG.host, () => {

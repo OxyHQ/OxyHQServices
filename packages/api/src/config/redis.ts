@@ -16,11 +16,30 @@ export function getRedisClient(): Redis | null {
       maxRetriesPerRequest: 3,
       lazyConnect: true,
       tls: process.env.REDIS_URL.startsWith('rediss://') ? {} : undefined,
+
+      // Send TCP keepalive every 30s to prevent idle connection drops.
+      // DigitalOcean managed Valkey drops idle connections at ~300s.
+      keepAlive: 30000,
+
+      enableReadyCheck: true,
+
+      retryStrategy(times: number) {
+        if (times > 20) return null;
+        return Math.min(times * 200, 5000);
+      },
+
+      reconnectOnError(err: Error) {
+        return err.message.includes('READONLY');
+      },
     });
 
     redis.on('connect', () => logger.info('Redis connected'));
+    redis.on('ready', () => logger.info('Redis ready'));
     redis.on('error', (err) => logger.error('Redis error:', err));
     redis.on('close', () => logger.warn('Redis connection closed'));
+    redis.on('reconnecting', (ms: number) =>
+      logger.info('Redis reconnecting', { retryIn: ms })
+    );
 
     redis.connect().catch((err) => {
       logger.error('Redis initial connect failed:', err);
