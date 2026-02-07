@@ -100,6 +100,13 @@ const securityHeaders = helmet({
     policy: 'strict-origin-when-cross-origin',
   },
 
+  // API is consumed cross-origin by multiple frontend apps —
+  // same-origin (Helmet default) blocks <img>, fetch, etc.
+  crossOriginResourcePolicy: { policy: 'cross-origin' as const },
+
+  // Not needed for API servers; can interfere with cross-origin consumers
+  crossOriginOpenerPolicy: false,
+
   // X-Content-Type-Options: Prevent MIME type sniffing (enabled by default)
   // X-DNS-Prefetch-Control: Control browser DNS prefetching
   // X-Download-Options: Prevent IE from executing downloads in site context

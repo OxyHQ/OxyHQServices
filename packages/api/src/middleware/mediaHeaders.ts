@@ -19,11 +19,12 @@ import { Request, Response, NextFunction } from 'express';
 /**
  * Headers for media file streaming
  * Pre-built strings for performance optimization
+ *
+ * Note: General CORS headers (Allow-Origin, Allow-Methods, Allow-Headers,
+ * Allow-Credentials) are handled by the global CORS middleware in config/cors.ts.
+ * This middleware only adds media-specific headers.
  */
-const MEDIA_CORS_ORIGIN = '*';
-const MEDIA_CORS_METHODS = 'GET, HEAD, OPTIONS';
-const MEDIA_CORS_ALLOW_HEADERS = 'Content-Type, Authorization, Range';
-const MEDIA_CORS_EXPOSE_HEADERS = 'Content-Type, Content-Length, Content-Range, Accept-Ranges, Content-Disposition, Last-Modified, ETag';
+const MEDIA_EXPOSE_HEADERS = 'Content-Type, Content-Length, Content-Range, Accept-Ranges, Content-Disposition, Last-Modified, ETag';
 const MEDIA_ACCEPT_RANGES = 'bytes';
 
 /**
@@ -59,17 +60,12 @@ export function mediaHeadersMiddleware(
   res: Response,
   next: NextFunction
 ): void {
-  // Cross-Origin-Resource-Policy allows cross-origin requests to access this resource
-  // This is crucial for preventing ORB blocking in modern browsers
+  // Cross-Origin-Resource-Policy: defense-in-depth (also set globally via Helmet)
   res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
-  
-  // CORS headers for cross-origin access
-  res.setHeader('Access-Control-Allow-Origin', MEDIA_CORS_ORIGIN);
-  res.setHeader('Access-Control-Allow-Methods', MEDIA_CORS_METHODS);
-  res.setHeader('Access-Control-Allow-Headers', MEDIA_CORS_ALLOW_HEADERS);
-  
-  // Expose headers that the client needs to access
-  res.setHeader('Access-Control-Expose-Headers', MEDIA_CORS_EXPOSE_HEADERS);
+
+  // Expose media-specific headers the client needs (Content-Range, Accept-Ranges, etc.)
+  // General CORS headers are handled by the global CORS middleware.
+  res.setHeader('Access-Control-Expose-Headers', MEDIA_EXPOSE_HEADERS);
   
   // Support range requests for video/audio streaming
   res.setHeader('Accept-Ranges', MEDIA_ACCEPT_RANGES);
