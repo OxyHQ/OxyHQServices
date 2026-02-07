@@ -57,7 +57,6 @@ const BillingTransactionSchema = new Schema<IBillingTransaction>({
 });
 
 BillingTransactionSchema.index({ userId: 1, createdAt: -1 });
-BillingTransactionSchema.index({ stripePaymentIntentId: 1 }, { sparse: true });
 
 const BillingTransaction = mongoose.model<IBillingTransaction>('BillingTransaction', BillingTransactionSchema);
 
