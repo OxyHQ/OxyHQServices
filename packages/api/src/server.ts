@@ -357,6 +357,7 @@ app.use(rateLimiter);
 app.use(bruteForceProtection);
 
 // CSRF token endpoint (must be before CSRF protection)
+app.get('/csrf-token', getCsrfToken);
 app.get('/api/csrf-token', getCsrfToken);
 
 // API Routes with /api prefix
@@ -369,7 +370,8 @@ app.use("/api/storage", userRateLimiter, csrfProtection, storageRoutes);
 app.use("/api/search", searchRoutes);
 app.use("/api/profiles", csrfProtection, profilesRouter);
 app.use("/api/users", userRateLimiter, csrfProtection, usersRouter); // Per-user rate limiting for authenticated routes
-app.use("/api/session", userRateLimiter, sessionRouter); // No CSRF on session routes (auth flow)
+app.use("/session", userRateLimiter, sessionRouter); // SDK uses /session/token/:id
+app.use("/api/session", userRateLimiter, sessionRouter);
 app.use("/api/privacy", userRateLimiter, csrfProtection, privacyRoutes);
 app.use("/api/analytics", userRateLimiter, authMiddleware, analyticsRoutes);
 app.use('/api/payments', userRateLimiter, csrfProtection, paymentRoutes);
