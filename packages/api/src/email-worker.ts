@@ -20,6 +20,7 @@ import mongoose from 'mongoose';
 import { logger } from './utils/logger';
 import { startSmtpInbound, stopSmtpInbound } from './services/smtp.inbound';
 import { smtpOutbound } from './services/smtp.outbound';
+import { getDbName } from './config/db';
 
 dotenv.config();
 
@@ -30,8 +31,7 @@ if (!MONGODB_URI) {
 }
 
 // MongoDB connection (same config as main server)
-const APP_NAME = "oxy";
-const dbName = `${APP_NAME}-${process.env.NODE_ENV || 'development'}`;
+const dbName = getDbName();
 const mongoOptions = {
   dbName,
   autoIndex: true,

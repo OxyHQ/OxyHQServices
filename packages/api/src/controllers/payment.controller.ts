@@ -28,9 +28,6 @@ import { logger } from '../utils/logger';
 import { sendSuccess } from '../utils/asyncHandler';
 import { UnauthorizedError, InternalServerError } from '../utils/error';
 
-// Log warning on module load
-logger.warn('⚠️ Payment controller loaded with STUB implementation - NOT production ready!');
-
 // Validation schemas
 const paymentMethodSchema = z.object({
   type: z.enum(['card', 'applePay', 'googlePay']),

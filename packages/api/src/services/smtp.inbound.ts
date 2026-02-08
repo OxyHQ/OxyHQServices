@@ -58,7 +58,7 @@ export function startSmtpInbound(): SMTPServer {
     size: SMTP_INBOUND_CONFIG.maxMessageSize,
     disabledCommands: ['AUTH'], // We don't require auth for inbound mail
     authOptional: true,
-    ...(tlsOptions ? { secure: false, key: tlsOptions.key, cert: tlsOptions.cert } : {}),
+    ...(tlsOptions ? { secure: false, ...tlsOptions } : {}),
 
     /**
      * Validate RCPT TO addresses — reject if the user doesn't exist.

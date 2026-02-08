@@ -36,6 +36,7 @@ import modelsStatsRoutes from './routes/models-stats';
 import { startSmtpInbound, stopSmtpInbound } from './services/smtp.inbound';
 import { smtpOutbound } from './services/smtp.outbound';
 import { getEnvBoolean } from './config/env';
+import { getDbName } from './config/db';
 import jwt from 'jsonwebtoken';
 import { logger } from './utils/logger';
 import { Response } from 'express';
@@ -214,13 +215,7 @@ export function emitSessionUpdate(userId: string, payload: any) {
 }
 
 // MongoDB Connection with optimized connection pooling for scale
-const APP_NAME = "oxy";
-const ENV_DB_MAP: Record<string, string> = {
-  production: 'prod',
-  development: 'dev',
-};
-const envSuffix = ENV_DB_MAP[process.env.NODE_ENV || 'development'] || process.env.NODE_ENV || 'dev';
-const dbName = `${APP_NAME}-${envSuffix}`;
+const dbName = getDbName();
 const mongoOptions = {
   dbName,
   autoIndex: true,
