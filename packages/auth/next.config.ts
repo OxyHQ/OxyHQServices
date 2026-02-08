@@ -1,6 +1,15 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  async redirects() {
+    return [
+      {
+        source: '/',
+        destination: 'https://oxy.so',
+        permanent: false,
+      },
+    ];
+  },
   async headers() {
     return [
       {
