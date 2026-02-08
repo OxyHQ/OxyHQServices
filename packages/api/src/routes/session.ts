@@ -3,10 +3,6 @@ import { SessionController } from '../controllers/session.controller';
 
 const router = express.Router();
 
-// Authentication routes
-router.post('/register', SessionController.register);
-router.post('/login', SessionController.signIn);
-
 // Session-based data retrieval routes
 router.get('/user/:sessionId', SessionController.getUserBySession);
 router.get('/token/:sessionId', SessionController.getTokenBySession);

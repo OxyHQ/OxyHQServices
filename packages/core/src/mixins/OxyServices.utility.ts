@@ -83,6 +83,17 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
      * Validates JWT tokens against the Oxy API and attaches user data to requests.
      * Uses server-side session validation for security (not just JWT decode).
      *
+     * **Design note — jwtDecode vs jwt.verify:**
+     * This middleware intentionally uses `jwtDecode()` (decode-only, no signature
+     * verification) for user tokens. This is by design, NOT a security gap:
+     * - Third-party apps using `oxy.auth()` don't have the Oxy JWT secret
+     * - Security comes from API-based session validation (`validateSession()`)
+     *   which checks the session server-side on every request
+     * - Service tokens (type: 'service') DO use cryptographic HMAC verification
+     *   via the `jwtSecret` option, since they are stateless
+     * - The backend's own `authMiddleware` uses `jwt.verify()` because it has
+     *   direct access to `ACCESS_TOKEN_SECRET`
+     *
      * @example
      * ```typescript
      * import { OxyServices } from '@oxyhq/core';
@@ -138,6 +149,7 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
             }
 
             const error = {
+              error: 'MISSING_TOKEN',
               message: 'Access token required',
               code: 'MISSING_TOKEN',
               status: 401
@@ -158,6 +170,7 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
             }
 
             const error = {
+              error: 'INVALID_TOKEN_FORMAT',
               message: 'Invalid token format',
               code: 'INVALID_TOKEN_FORMAT',
               status: 401
@@ -177,6 +190,7 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
                 return next();
               }
               const error = {
+                error: 'SERVICE_TOKEN_NOT_CONFIGURED',
                 message: 'Service token verification not configured',
                 code: 'SERVICE_TOKEN_NOT_CONFIGURED',
                 status: 403
@@ -212,7 +226,7 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
 
               if (!isSignatureError) {
                 console.error('[oxy.auth] Unexpected error during service token verification:', verifyError);
-                const error = { message: 'Internal authentication error', code: 'AUTH_INTERNAL_ERROR', status: 500 };
+                const error = { error: 'AUTH_INTERNAL_ERROR', message: 'Internal authentication error', code: 'AUTH_INTERNAL_ERROR', status: 500 };
                 if (onError) return onError(error);
                 return res.status(500).json(error);
               }
@@ -222,7 +236,7 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
                 req.user = null;
                 return next();
               }
-              const error = { message: 'Invalid service token signature', code: 'INVALID_SERVICE_TOKEN', status: 401 };
+              const error = { error: 'INVALID_SERVICE_TOKEN', message: 'Invalid service token signature', code: 'INVALID_SERVICE_TOKEN', status: 401 };
               if (onError) return onError(error);
               return res.status(401).json(error);
             }
@@ -234,7 +248,7 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
                 req.user = null;
                 return next();
               }
-              const error = { message: 'Service token expired', code: 'TOKEN_EXPIRED', status: 401 };
+              const error = { error: 'TOKEN_EXPIRED', message: 'Service token expired', code: 'TOKEN_EXPIRED', status: 401 };
               if (onError) return onError(error);
               return res.status(401).json(error);
             }
@@ -246,7 +260,7 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
                 req.user = null;
                 return next();
               }
-              const error = { message: 'Invalid service token: missing appId', code: 'INVALID_SERVICE_TOKEN', status: 401 };
+              const error = { error: 'INVALID_SERVICE_TOKEN', message: 'Invalid service token: missing appId', code: 'INVALID_SERVICE_TOKEN', status: 401 };
               if (onError) return onError(error);
               return res.status(401).json(error);
             }
@@ -278,6 +292,7 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
             }
 
             const error = {
+              error: 'INVALID_TOKEN_PAYLOAD',
               message: 'Token missing user ID',
               code: 'INVALID_TOKEN_PAYLOAD',
               status: 401
@@ -295,6 +310,7 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
             }
 
             const error = {
+              error: 'TOKEN_EXPIRED',
               message: 'Token expired',
               code: 'TOKEN_EXPIRED',
               status: 401
@@ -319,6 +335,7 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
                 }
 
                 const error = {
+                  error: 'INVALID_SESSION',
                   message: 'Session invalid or expired',
                   code: 'INVALID_SESSION',
                   status: 401
@@ -356,6 +373,7 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
               }
 
               const error = {
+                error: 'SESSION_VALIDATION_ERROR',
                 message: 'Session validation failed',
                 code: 'SESSION_VALIDATION_ERROR',
                 status: 401
@@ -415,6 +433,8 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
      *
      * Returns a middleware function for Socket.IO that validates JWT tokens
      * from the handshake auth object and attaches user data to the socket.
+     *
+     * Uses `jwtDecode()` + API session validation (same rationale as `auth()`).
      *
      * @example
      * ```typescript

@@ -123,6 +123,17 @@ export {
 // --- i18n ---
 export { translate } from './i18n';
 
+// --- Auth Helpers ---
+export {
+  SessionSyncRequiredError,
+  AuthenticationFailedError,
+  ensureValidToken,
+  isAuthenticationError,
+  withAuthErrorHandling,
+  authenticatedApiCall,
+} from './utils/authHelpers';
+export type { HandleApiErrorOptions } from './utils/authHelpers';
+
 // --- Session Utilities ---
 export { mergeSessions, normalizeAndSortSessions, sessionsArraysEqual } from './utils/sessionUtils';
 

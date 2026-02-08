@@ -1,9 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
+import { authenticatedApiCall } from '@oxyhq/core';
 import type { ClientSession } from '@oxyhq/core';
 import { queryKeys } from './queryKeys';
 import { useOxy } from '../../context/OxyContext';
 import { fetchSessionsWithFallback, mapSessionsToClient } from '../../utils/sessionHelpers';
-import { authenticatedApiCall } from '../../utils/authHelpers';
 
 /**
  * Get all active sessions for the current user

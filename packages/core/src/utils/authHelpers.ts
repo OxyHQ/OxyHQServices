@@ -1,9 +1,9 @@
 /**
- * Authentication helper utilities to reduce code duplication across hooks and utilities.
- * These functions handle common token validation and authentication error patterns.
+ * Authentication helper utilities for common token validation
+ * and authentication error handling patterns.
  */
 
-import type { OxyServices } from '@oxyhq/core';
+import type { OxyServices } from '../OxyServices';
 
 /**
  * Error thrown when session sync is required
@@ -30,17 +30,7 @@ export class AuthenticationFailedError extends Error {
  * If no valid token exists and an active session ID is available,
  * attempts to refresh the token using the session.
  *
- * @param oxyServices - The OxyServices instance
- * @param activeSessionId - The active session ID (if available)
  * @throws {SessionSyncRequiredError} If the session needs to be synced (offline session)
- * @throws {Error} If token refresh fails for other reasons
- *
- * @example
- * ```ts
- * // In a mutation or query function:
- * await ensureValidToken(oxyServices, activeSessionId);
- * return await oxyServices.updateProfile(updates);
- * ```
  */
 export async function ensureValidToken(
   oxyServices: OxyServices,
@@ -67,19 +57,13 @@ export async function ensureValidToken(
  * Options for handling API authentication errors
  */
 export interface HandleApiErrorOptions {
-  /** Optional callback to attempt session sync and retry */
   syncSession?: () => Promise<unknown>;
-  /** The active session ID for retry attempts */
   activeSessionId?: string | null;
-  /** The OxyServices instance for retry attempts */
   oxyServices?: OxyServices;
 }
 
 /**
  * Checks if an error is an authentication error (401 or auth-related message)
- *
- * @param error - The error to check
- * @returns True if the error is an authentication error
  */
 export function isAuthenticationError(error: unknown): boolean {
   if (!error || typeof error !== 'object') {
@@ -99,27 +83,9 @@ export function isAuthenticationError(error: unknown): boolean {
 
 /**
  * Wraps an API call with authentication error handling.
- * If an authentication error occurs, it can optionally attempt to sync the session and retry.
+ * On auth failure, optionally attempts to sync the session and retry.
  *
- * @param apiCall - The API call function to execute
- * @param options - Optional error handling configuration
- * @returns The result of the API call
  * @throws {AuthenticationFailedError} If authentication fails and cannot be recovered
- * @throws {Error} If the API call fails for non-auth reasons
- *
- * @example
- * ```ts
- * // Simple usage:
- * const result = await withAuthErrorHandling(
- *   () => oxyServices.updateProfile(updates)
- * );
- *
- * // With retry on auth failure:
- * const result = await withAuthErrorHandling(
- *   () => oxyServices.updateProfile(updates),
- *   { syncSession, activeSessionId, oxyServices }
- * );
- * ```
  */
 export async function withAuthErrorHandling<T>(
   apiCall: () => Promise<T>,
@@ -132,12 +98,10 @@ export async function withAuthErrorHandling<T>(
       throw error;
     }
 
-    // If we have sync capabilities, try to recover
     if (options?.syncSession && options?.activeSessionId && options?.oxyServices) {
       try {
         await options.syncSession();
         await options.oxyServices.getTokenBySession(options.activeSessionId);
-        // Retry the API call after refreshing token
         return await apiCall();
       } catch {
         throw new AuthenticationFailedError();
@@ -150,13 +114,6 @@ export async function withAuthErrorHandling<T>(
 
 /**
  * Combines token validation and auth error handling for a complete authenticated API call.
- * This is the recommended helper for most authenticated API operations.
- *
- * @param oxyServices - The OxyServices instance
- * @param activeSessionId - The active session ID
- * @param apiCall - The API call function to execute
- * @param syncSession - Optional callback to sync session on auth failure
- * @returns The result of the API call
  *
  * @example
  * ```ts

@@ -80,13 +80,6 @@ export type {
   ProfileMutationConfig, GenericMutationConfig,
 } from './ui/hooks/mutations/mutationFactory';
 
-// Auth helpers
-export {
-  ensureValidToken, withAuthErrorHandling, authenticatedApiCall,
-  isAuthenticationError, SessionSyncRequiredError, AuthenticationFailedError,
-} from './ui/utils/authHelpers';
-export type { HandleApiErrorOptions } from './ui/utils/authHelpers';
-
 // Error handlers
 export {
   handleAuthError, isInvalidSessionError,

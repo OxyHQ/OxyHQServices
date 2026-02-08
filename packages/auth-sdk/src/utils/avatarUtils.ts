@@ -1,10 +1,9 @@
-import type { OxyServices } from '@oxyhq/core';
-import type { User } from '@oxyhq/core';
+import { authenticatedApiCall } from '@oxyhq/core';
+import type { OxyServices, User } from '@oxyhq/core';
 import { useAccountStore } from '../stores/accountStore';
 import { useAuthStore } from '../stores/authStore';
 import { QueryClient } from '@tanstack/react-query';
 import { queryKeys, invalidateUserQueries, invalidateAccountQueries } from '../hooks/queries/queryKeys';
-import { authenticatedApiCall } from './authHelpers';
 
 /**
  * Updates file visibility to public for avatar use.

@@ -1,11 +1,11 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { authenticatedApiCall } from '@oxyhq/core';
 import type { User } from '@oxyhq/core';
 import { queryKeys, invalidateAccountQueries, invalidateUserQueries } from '../queries/queryKeys';
 import { useOxy } from '../../context/OxyContext';
 import { toast } from '../../../lib/sonner';
 import { refreshAvatarInStore } from '../../utils/avatarUtils';
 import { useAuthStore } from '../../stores/authStore';
-import { authenticatedApiCall } from '../../utils/authHelpers';
 
 /**
  * Update user profile with optimistic updates and offline queue support

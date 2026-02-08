@@ -67,8 +67,8 @@ export const authMiddleware = async (req: AuthRequest, res: Response, next: Next
     
     if (!process.env.ACCESS_TOKEN_SECRET) {
       logger.error('ACCESS_TOKEN_SECRET not configured');
-      return res.status(500).json({ 
-        success: false,
+      return res.status(500).json({
+        error: 'Server configuration error',
         message: 'Server configuration error'
       });
     }
@@ -212,7 +212,7 @@ export const simpleAuthMiddleware = async (req: SimpleAuthRequest, res: Response
     if (!process.env.ACCESS_TOKEN_SECRET) {
       logger.error('ACCESS_TOKEN_SECRET not configured');
       return res.status(500).json({
-        success: false,
+        error: 'Server configuration error',
         message: 'Server configuration error'
       });
     }
@@ -220,7 +220,7 @@ export const simpleAuthMiddleware = async (req: SimpleAuthRequest, res: Response
     try {
       // Decode token to check if it's session-based
       const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET!) as any;
-      
+
       // Only session-based tokens are supported
       if (!decoded.sessionId) {
         return res.status(401).json({
@@ -251,23 +251,21 @@ export const simpleAuthMiddleware = async (req: SimpleAuthRequest, res: Response
 
       if (error instanceof jwt.TokenExpiredError) {
         return res.status(401).json({
-          success: false,
-          message: 'Session expired',
-          code: 'TOKEN_EXPIRED'
+          error: 'Token expired',
+          message: 'Your session has expired. Please log in again.'
         });
       }
-      
+
       if (error instanceof jwt.JsonWebTokenError) {
         return res.status(401).json({
-          error: 'Invalid session',
-          code: 'INVALID_SESSION'
+          error: 'Invalid token',
+          message: 'The provided authentication token is invalid'
         });
       }
-      
+
       return res.status(401).json({
-        success: false,
-        message: 'Authentication error',
-        code: 'TOKEN_ERROR'
+        error: 'Authentication error',
+        message: 'An error occurred while authenticating your request'
       });
     }
   } catch (error) {
@@ -276,9 +274,8 @@ export const simpleAuthMiddleware = async (req: SimpleAuthRequest, res: Response
       method: 'simpleAuthMiddleware',
     });
     return res.status(500).json({
-      success: false,
-      message: 'Authentication error',
-      error: error instanceof Error ? error.message : 'Unknown error'
+      error: 'Server error',
+      message: 'An error occurred while authenticating your request'
     });
   }
 };

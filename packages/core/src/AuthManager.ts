@@ -366,6 +366,19 @@ export class AuthManager {
       this.refreshTimer = null;
     }
 
+    // Invalidate current session on the server (best-effort)
+    try {
+      const sessionJson = await this.storage.getItem(STORAGE_KEYS.SESSION);
+      if (sessionJson) {
+        const session = JSON.parse(sessionJson);
+        if (session.sessionId && typeof (this.oxyServices as any).logoutSession === 'function') {
+          await (this.oxyServices as any).logoutSession(session.sessionId);
+        }
+      }
+    } catch {
+      // Best-effort: don't block local signout on network failure
+    }
+
     // Revoke FedCM credential if supported
     try {
       const services = this.oxyServices as OxyServicesWithFedCM;

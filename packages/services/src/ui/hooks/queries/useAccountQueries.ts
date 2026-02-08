@@ -1,8 +1,8 @@
 import { useQuery, useQueries } from '@tanstack/react-query';
+import { authenticatedApiCall } from '@oxyhq/core';
 import type { User } from '@oxyhq/core';
 import { queryKeys } from './queryKeys';
 import { useOxy } from '../../context/OxyContext';
-import { authenticatedApiCall } from '../../utils/authHelpers';
 
 /**
  * Get user profile by session ID

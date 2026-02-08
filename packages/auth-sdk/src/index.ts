@@ -96,17 +96,6 @@ export { useFollow, useFollowerCounts } from './hooks/useFollow';
 export { useFileFiltering } from './hooks/useFileFiltering';
 export type { ViewMode, SortBy, SortOrder } from './hooks/useFileFiltering';
 
-// --- Auth Helpers ---
-export {
-  ensureValidToken,
-  withAuthErrorHandling,
-  authenticatedApiCall,
-  isAuthenticationError,
-  SessionSyncRequiredError,
-  AuthenticationFailedError,
-} from './utils/authHelpers';
-export type { HandleApiErrorOptions } from './utils/authHelpers';
-
 // --- Error Handlers ---
 export {
   handleAuthError,
@@ -115,30 +104,6 @@ export {
   extractErrorMessage,
 } from './utils/errorHandlers';
 export type { HandleAuthErrorOptions } from './utils/errorHandlers';
-
-// Re-export core for convenience
-export {
-  OxyServices,
-  CrossDomainAuth,
-  AuthManager,
-  createAuthManager,
-  createCrossDomainAuth,
-} from '@oxyhq/core';
-
-export type {
-  User,
-  LoginResponse,
-  ApiError,
-  SessionLoginResponse,
-  ClientSession,
-  MinimalUserData,
-  OxyConfig,
-  StorageAdapter,
-  AuthStateChangeCallback,
-  AuthMethod,
-  AuthManagerConfig,
-  CrossDomainAuthOptions,
-} from '@oxyhq/core';
 
 import { WebOxyProvider as _WebOxyProvider } from './WebOxyProvider';
 export default _WebOxyProvider;
