@@ -300,11 +300,11 @@ app.get("/health", async (req, res) => {
     const redisClient = getRedisClient();
     const redisStatus = redisClient ? (redisClient.status === 'ready' ? "connected" : "disconnected") : "not configured";
 
-    // Degraded if MongoDB OR Redis (when configured) is down
+    // Only MongoDB being down is truly unhealthy (503).
+    // Redis is used for caching/sockets — brief reconnections are "degraded" not "down".
     const isRedisDown = redisClient && redisClient.status !== 'ready';
-    const isHealthy = isMongoConnected && !isRedisDown;
 
-    res.status(isHealthy ? 200 : 503).json({
+    res.status(isMongoConnected ? 200 : 503).json({
       status: isMongoConnected ? (isRedisDown ? "degraded" : "operational") : "down",
       timestamp: new Date().toISOString(),
       database: isMongoConnected ? "connected" : "disconnected",
