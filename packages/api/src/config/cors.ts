@@ -41,6 +41,7 @@ export const ALLOWED_HEADERS = [
   'x-session-id',
   'X-Device-Fingerprint',
   'x-device-fingerprint',
+  'X-Native-App',
 ] as const;
 
 /**
