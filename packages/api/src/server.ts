@@ -346,6 +346,14 @@ app.get("/metrics", authMiddleware, (req: any, res: Response) => {
   }
 });
 
+// Strip /api/ prefix — SDK clients and Next.js BFF may prepend /api before paths
+app.use((req, _res, next) => {
+  if (req.url.startsWith('/api/') || req.url === '/api') {
+    req.url = req.url.slice(4) || '/';
+  }
+  next();
+});
+
 // Apply rate limiting middleware globally (before routes)
 // Note: Auth routes have their own stricter rate limiting
 app.use(rateLimiter);
