@@ -585,6 +585,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     logout,
     clearSessionState,
     baseURL: oxyServices.getBaseURL(),
+    getAccessToken: () => oxyServices.getAccessToken(),
     onRemoteSignOut: handleRemoteSignOut,
     onSessionRemoved: handleSessionRemoved,
   });

@@ -14,15 +14,15 @@ interface UseSessionSocketProps {
   logout: () => Promise<void>;
   clearSessionState: () => Promise<void>;
   baseURL: string;
+  getAccessToken: () => string | null;
   onRemoteSignOut?: () => void;
   onSessionRemoved?: (sessionId: string) => void;
 }
 
-export function useSessionSocket({ userId, activeSessionId, currentDeviceId, refreshSessions, logout, clearSessionState, baseURL, onRemoteSignOut, onSessionRemoved }: UseSessionSocketProps) {
+export function useSessionSocket({ userId, activeSessionId, currentDeviceId, refreshSessions, logout, clearSessionState, baseURL, getAccessToken, onRemoteSignOut, onSessionRemoved }: UseSessionSocketProps) {
   const socketRef = useRef<any>(null);
-  const joinedRoomRef = useRef<string | null>(null);
-  
-  // Store callbacks in refs to avoid re-joining when they change
+
+  // Store callbacks in refs to avoid reconnecting when they change
   const refreshSessionsRef = useRef(refreshSessions);
   const logoutRef = useRef(logout);
   const clearSessionStateRef = useRef(clearSessionState);
@@ -30,6 +30,7 @@ export function useSessionSocket({ userId, activeSessionId, currentDeviceId, ref
   const onSessionRemovedRef = useRef(onSessionRemoved);
   const activeSessionIdRef = useRef(activeSessionId);
   const currentDeviceIdRef = useRef(currentDeviceId);
+  const getAccessTokenRef = useRef(getAccessToken);
 
   // Update refs when callbacks change
   useEffect(() => {
@@ -40,42 +41,36 @@ export function useSessionSocket({ userId, activeSessionId, currentDeviceId, ref
     onSessionRemovedRef.current = onSessionRemoved;
     activeSessionIdRef.current = activeSessionId;
     currentDeviceIdRef.current = currentDeviceId;
-  }, [refreshSessions, logout, clearSessionState, onRemoteSignOut, onSessionRemoved, activeSessionId, currentDeviceId]);
+    getAccessTokenRef.current = getAccessToken;
+  }, [refreshSessions, logout, clearSessionState, onRemoteSignOut, onSessionRemoved, activeSessionId, currentDeviceId, getAccessToken]);
 
   useEffect(() => {
     if (!userId || !baseURL) {
       // Clean up if userId or baseURL becomes invalid
-      if (socketRef.current && joinedRoomRef.current) {
-        socketRef.current.emit('leave', { userId: joinedRoomRef.current });
-        joinedRoomRef.current = null;
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+        socketRef.current = null;
       }
       return;
     }
 
-    const roomId = `user:${userId}`;
-    
-    // Only create socket if it doesn't exist
-    if (!socketRef.current) {
-      socketRef.current = io(baseURL, {
-        transports: ['websocket'],
-      });
+    // Disconnect previous socket if switching users
+    if (socketRef.current) {
+      socketRef.current.disconnect();
+      socketRef.current = null;
     }
+
+    // Connect with auth token; use callback so reconnections get a fresh token
+    socketRef.current = io(baseURL, {
+      transports: ['websocket'],
+      auth: (cb: (data: { token: string }) => void) => {
+        const token = getAccessTokenRef.current();
+        cb({ token: token ?? '' });
+      },
+    });
     const socket = socketRef.current;
 
-    // Only join if we haven't already joined this room
-    if (joinedRoomRef.current !== roomId) {
-      // Leave previous room if switching users
-      if (joinedRoomRef.current) {
-        socket.emit('leave', { userId: joinedRoomRef.current });
-      }
-      
-      socket.emit('join', { userId: roomId });
-      joinedRoomRef.current = roomId;
-      
-      debug.log('Emitting join for room:', roomId);
-    }
-
-    // Set up event handlers (only once per socket instance)
+    // Server auto-joins the user to `user:<userId>` room on connection
     const handleConnect = () => {
       debug.log('Socket connected:', socket.id);
     };
@@ -222,12 +217,8 @@ export function useSessionSocket({ userId, activeSessionId, currentDeviceId, ref
     return () => {
       socket.off('connect', handleConnect);
       socket.off('session_update', handleSessionUpdate);
-      
-      // Only leave on unmount if we're still in this room
-      if (joinedRoomRef.current === roomId) {
-        socket.emit('leave', { userId: roomId });
-        joinedRoomRef.current = null;
-      }
+      socket.disconnect();
+      socketRef.current = null;
     };
   }, [userId, baseURL]); // Only depend on userId and baseURL - callbacks are in refs
 } 
