@@ -1,48 +1,54 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useMemo } from 'react';
 import io from 'socket.io-client';
 import { toast } from 'sonner';
 import { logger } from '@oxyhq/core';
 import { createDebugLogger } from '@oxyhq/core';
+import { useWebOxy } from '../WebOxyProvider';
+import { useQueryClient } from '@tanstack/react-query';
+import { useSessions } from './queries/useServicesQueries';
+import { invalidateSessionQueries } from './queries/queryKeys';
 
 const debug = createDebugLogger('SessionSocket');
 
-interface UseSessionSocketProps {
-  userId: string | null | undefined;
-  activeSessionId: string | null | undefined;
-  currentDeviceId: string | null | undefined;
-  refreshSessions: () => Promise<void>;
-  logout: () => Promise<void>;
-  clearSessionState: () => Promise<void>;
-  baseURL: string;
-  getAccessToken: () => string | null;
+export interface UseSessionSocketOptions {
   onRemoteSignOut?: () => void;
   onSessionRemoved?: (sessionId: string) => void;
 }
 
-export function useSessionSocket({ userId, activeSessionId, currentDeviceId, refreshSessions, logout, clearSessionState, baseURL, getAccessToken, onRemoteSignOut, onSessionRemoved }: UseSessionSocketProps) {
+export function useSessionSocket(options?: UseSessionSocketOptions) {
+  const { user, activeSessionId, oxyServices, signOut, clearSessionState } = useWebOxy();
+  const queryClient = useQueryClient();
+
+  const userId = user?.id ?? null;
+  const baseURL = oxyServices.getBaseURL();
+
+  // Derive currentDeviceId from sessions query
+  const { data: sessions } = useSessions(userId ?? undefined);
+  const currentDeviceId = useMemo(() => {
+    if (!sessions || !activeSessionId) return null;
+    const active = sessions.find((s) => s.sessionId === activeSessionId);
+    return active?.deviceId ?? null;
+  }, [sessions, activeSessionId]);
+
   const socketRef = useRef<any>(null);
 
-  // Store callbacks in refs to avoid reconnecting when they change
-  const refreshSessionsRef = useRef(refreshSessions);
-  const logoutRef = useRef(logout);
+  // Store callbacks and values in refs to avoid reconnecting when they change
   const clearSessionStateRef = useRef(clearSessionState);
-  const onRemoteSignOutRef = useRef(onRemoteSignOut);
-  const onSessionRemovedRef = useRef(onSessionRemoved);
+  const onRemoteSignOutRef = useRef(options?.onRemoteSignOut);
+  const onSessionRemovedRef = useRef(options?.onSessionRemoved);
   const activeSessionIdRef = useRef(activeSessionId);
   const currentDeviceIdRef = useRef(currentDeviceId);
-  const getAccessTokenRef = useRef(getAccessToken);
+  const queryClientRef = useRef(queryClient);
 
-  // Update refs when callbacks change
+  // Update refs when values change
   useEffect(() => {
-    refreshSessionsRef.current = refreshSessions;
-    logoutRef.current = logout;
     clearSessionStateRef.current = clearSessionState;
-    onRemoteSignOutRef.current = onRemoteSignOut;
-    onSessionRemovedRef.current = onSessionRemoved;
+    onRemoteSignOutRef.current = options?.onRemoteSignOut;
+    onSessionRemovedRef.current = options?.onSessionRemoved;
     activeSessionIdRef.current = activeSessionId;
     currentDeviceIdRef.current = currentDeviceId;
-    getAccessTokenRef.current = getAccessToken;
-  }, [refreshSessions, logout, clearSessionState, onRemoteSignOut, onSessionRemoved, activeSessionId, currentDeviceId, getAccessToken]);
+    queryClientRef.current = queryClient;
+  }, [clearSessionState, options?.onRemoteSignOut, options?.onSessionRemoved, activeSessionId, currentDeviceId, queryClient]);
 
   useEffect(() => {
     if (!userId || !baseURL) {
@@ -64,7 +70,7 @@ export function useSessionSocket({ userId, activeSessionId, currentDeviceId, ref
     socketRef.current = io(baseURL, {
       transports: ['websocket'],
       auth: (cb: (data: { token: string }) => void) => {
-        const token = getAccessTokenRef.current();
+        const token = oxyServices.getAccessToken();
         cb({ token: token ?? '' });
       },
     });
@@ -75,6 +81,11 @@ export function useSessionSocket({ userId, activeSessionId, currentDeviceId, ref
       debug.log('Socket connected:', socket.id);
     };
 
+    const refreshSessions = () => {
+      invalidateSessionQueries(queryClientRef.current);
+      return Promise.resolve();
+    };
+
     const handleSessionUpdate = async (data: {
       type: string;
       sessionId?: string;
@@ -82,17 +93,17 @@ export function useSessionSocket({ userId, activeSessionId, currentDeviceId, ref
       sessionIds?: string[]
     }) => {
       debug.log('Received session_update:', data);
-      
+
       const currentActiveSessionId = activeSessionIdRef.current;
-      const currentDeviceId = currentDeviceIdRef.current;
-      
+      const deviceId = currentDeviceIdRef.current;
+
       // Handle different event types
       if (data.type === 'session_removed') {
         // Track removed session
         if (data.sessionId && onSessionRemovedRef.current) {
           onSessionRemovedRef.current(data.sessionId);
         }
-        
+
         // If the removed sessionId matches the current activeSessionId, immediately clear state
         if (data.sessionId === currentActiveSessionId) {
           if (onRemoteSignOutRef.current) {
@@ -100,8 +111,6 @@ export function useSessionSocket({ userId, activeSessionId, currentDeviceId, ref
           } else {
             toast.info('You have been signed out remotely.');
           }
-          // Use clearSessionState since session was already removed server-side
-          // Await to ensure storage cleanup completes before continuing
           try {
             await clearSessionStateRef.current();
           } catch (error) {
@@ -110,13 +119,7 @@ export function useSessionSocket({ userId, activeSessionId, currentDeviceId, ref
             }
           }
         } else {
-          // Otherwise, just refresh the sessions list (with error handling)
-          refreshSessionsRef.current().catch((error) => {
-            // Silently handle errors from refresh - they're expected if sessions were removed
-            if (__DEV__) {
-              logger.debug('Failed to refresh sessions after session_removed', { component: 'useSessionSocket' }, error as unknown);
-            }
-          });
+          refreshSessions();
         }
       } else if (data.type === 'device_removed') {
         // Track all removed sessions from this device
@@ -125,16 +128,14 @@ export function useSessionSocket({ userId, activeSessionId, currentDeviceId, ref
             onSessionRemovedRef.current(sessionId);
           }
         }
-        
+
         // If the removed deviceId matches the current device, immediately clear state
-        if (data.deviceId && data.deviceId === currentDeviceId) {
+        if (data.deviceId && data.deviceId === deviceId) {
           if (onRemoteSignOutRef.current) {
             onRemoteSignOutRef.current();
           } else {
             toast.info('This device has been removed. You have been signed out.');
           }
-          // Use clearSessionState since sessions were already removed server-side
-          // Await to ensure storage cleanup completes before continuing
           try {
             await clearSessionStateRef.current();
           } catch (error) {
@@ -143,13 +144,7 @@ export function useSessionSocket({ userId, activeSessionId, currentDeviceId, ref
             }
           }
         } else {
-          // Otherwise, refresh sessions and device list (with error handling)
-          refreshSessionsRef.current().catch((error) => {
-            // Silently handle errors from refresh - they're expected if sessions were removed
-            if (__DEV__) {
-              logger.debug('Failed to refresh sessions after device_removed', { component: 'useSessionSocket' }, error as unknown);
-            }
-          });
+          refreshSessions();
         }
       } else if (data.type === 'sessions_removed') {
         // Track all removed sessions
@@ -158,7 +153,7 @@ export function useSessionSocket({ userId, activeSessionId, currentDeviceId, ref
             onSessionRemovedRef.current(sessionId);
           }
         }
-        
+
         // If the current activeSessionId is in the removed sessionIds list, immediately clear state
         if (data.sessionIds && currentActiveSessionId && data.sessionIds.includes(currentActiveSessionId)) {
           if (onRemoteSignOutRef.current) {
@@ -166,8 +161,6 @@ export function useSessionSocket({ userId, activeSessionId, currentDeviceId, ref
           } else {
             toast.info('You have been signed out remotely.');
           }
-          // Use clearSessionState since sessions were already removed server-side
-          // Await to ensure storage cleanup completes before continuing
           try {
             await clearSessionStateRef.current();
           } catch (error) {
@@ -176,23 +169,12 @@ export function useSessionSocket({ userId, activeSessionId, currentDeviceId, ref
             }
           }
         } else {
-          // Otherwise, refresh sessions list (with error handling)
-          refreshSessionsRef.current().catch((error) => {
-            // Silently handle errors from refresh - they're expected if sessions were removed
-            if (__DEV__) {
-              logger.debug('Failed to refresh sessions after sessions_removed', { component: 'useSessionSocket' }, error as unknown);
-            }
-          });
+          refreshSessions();
         }
       } else {
-        // For other event types (e.g., session_created), refresh sessions (with error handling)
-        refreshSessionsRef.current().catch((error) => {
-          // Log but don't throw - refresh errors shouldn't break the socket handler
-          if (__DEV__) {
-            logger.debug('Failed to refresh sessions after session_update', { component: 'useSessionSocket' }, error as unknown);
-          }
-        });
-        
+        // For other event types (e.g., session_created), refresh sessions
+        refreshSessions();
+
         // If the current session was logged out (legacy behavior), handle it specially
         if (data.sessionId === currentActiveSessionId) {
           if (onRemoteSignOutRef.current) {
@@ -200,8 +182,6 @@ export function useSessionSocket({ userId, activeSessionId, currentDeviceId, ref
           } else {
             toast.info('You have been signed out remotely.');
           }
-          // Use clearSessionState since session was already removed server-side
-          // Await to ensure storage cleanup completes before continuing
           try {
             await clearSessionStateRef.current();
           } catch (error) {
@@ -221,4 +201,4 @@ export function useSessionSocket({ userId, activeSessionId, currentDeviceId, ref
       socketRef.current = null;
     };
   }, [userId, baseURL]); // Only depend on userId and baseURL - callbacks are in refs
-} 
+}

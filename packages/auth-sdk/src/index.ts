@@ -90,6 +90,7 @@ export type {
 
 // --- Custom Hooks ---
 export { useSessionSocket } from './hooks/useSessionSocket';
+export type { UseSessionSocketOptions } from './hooks/useSessionSocket';
 export { useAssets, setOxyAssetInstance } from './hooks/useAssets';
 export { useFileDownloadUrl, setOxyFileUrlInstance } from './hooks/useFileDownloadUrl';
 export { useFollow, useFollowerCounts } from './hooks/useFollow';
