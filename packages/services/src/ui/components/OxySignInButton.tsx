@@ -93,9 +93,6 @@ export const OxySignInButton: React.FC<OxySignInButtonProps> = ({
         return subscribeToSignInModal(setIsModalOpen);
     }, []);
 
-    // Don't show the button if already authenticated (unless explicitly overridden)
-    if (isAuthenticated && !showWhenAuthenticated) return null;
-
     // Handle button press - opens full-screen sign-in modal with QR code and auth options
     const handlePress = useCallback(() => {
         if (onPress) {
@@ -107,6 +104,9 @@ export const OxySignInButton: React.FC<OxySignInButtonProps> = ({
         // Show the full-screen sign-in modal on all platforms
         showSignInModal();
     }, [onPress]);
+
+    // Don't show the button if already authenticated (unless explicitly overridden)
+    if (isAuthenticated && !showWhenAuthenticated) return null;
 
     const isButtonDisabled = disabled || isLoading || isModalOpen;
 
