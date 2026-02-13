@@ -101,6 +101,7 @@ export async function GET(request: NextRequest) {
         email: user.email,
         picture: user.avatar ? getAvatarUrl(user.avatar) : undefined,
         approved_clients: approvedClients,
+        login_hints: [user.id, user.email, user.username].filter(Boolean),
       },
     ];
 

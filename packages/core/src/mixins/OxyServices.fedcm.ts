@@ -8,6 +8,7 @@ const debug = createDebugLogger('FedCM');
 export interface FedCMAuthOptions {
   nonce?: string;
   context?: 'signin' | 'signup' | 'continue' | 'use';
+  loginHint?: string;
 }
 
 export interface FedCMConfig {
@@ -15,6 +16,8 @@ export interface FedCMConfig {
   configURL: string;
   clientId?: string;
 }
+
+const FEDCM_LOGIN_HINT_KEY = 'oxy_fedcm_login_hint';
 
 // Global lock to prevent concurrent FedCM requests
 // FedCM only allows one navigator.credentials.get request at a time
@@ -102,7 +105,10 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
       const nonce = options.nonce || this.generateNonce();
       const clientId = this.getClientId();
 
-      debug.log('Interactive sign-in: Requesting credential for', clientId);
+      // Use provided loginHint, or fall back to stored last-used account ID
+      const loginHint = options.loginHint || this.getStoredLoginHint();
+
+      debug.log('Interactive sign-in: Requesting credential for', clientId, loginHint ? `(hint: ${loginHint})` : '');
 
       // Request credential from browser's native identity flow
       const credential = await this.requestIdentityCredential({
@@ -110,6 +116,7 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
         clientId,
         nonce,
         context: options.context,
+        loginHint,
       });
 
       if (!credential || !credential.token) {
@@ -124,6 +131,11 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
       // Store access token in HttpService (extract from response or get from session)
       if (session && (session as any).accessToken) {
         this.httpService.setTokens((session as any).accessToken);
+      }
+
+      // Store the user ID as loginHint for future FedCM requests
+      if (session?.user?.id) {
+        this.storeLoginHint(session.user.id);
       }
 
       debug.log('Interactive sign-in: Success!', { userId: (session as any)?.user?.id });
@@ -195,14 +207,17 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
     // Optional/interactive mediation should only happen when the user clicks "Sign In".
     let credential: { token: string } | null = null;
 
+    const loginHint = this.getStoredLoginHint();
+
     try {
       const nonce = this.generateNonce();
-      debug.log('Silent SSO: Attempting silent mediation...');
+      debug.log('Silent SSO: Attempting silent mediation...', loginHint ? `(hint: ${loginHint})` : '');
 
       credential = await this.requestIdentityCredential({
         configURL: (this.constructor as any).DEFAULT_CONFIG_URL,
         clientId,
         nonce,
+        loginHint,
         mediation: 'silent',
       });
 
@@ -263,6 +278,11 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
       debug.warn('Silent SSO: No accessToken in session response');
     }
 
+    // Store the user ID as loginHint for future FedCM requests
+    if (session.user?.id) {
+      this.storeLoginHint(session.user.id);
+    }
+
     debug.log('Silent SSO: Success!', {
       sessionId: session.sessionId?.substring(0, 8) + '...',
       userId: session.user?.id
@@ -286,6 +306,7 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
     clientId: string;
     nonce: string;
     context?: string;
+    loginHint?: string;
     mediation?: 'silent' | 'optional' | 'required';
   }): Promise<{ token: string } | null> {
     const requestedMediation = options.mediation || 'optional';
@@ -346,7 +367,7 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
                 params: {
                   nonce: options.nonce, // For Chrome 145+
                 },
-                ...(options.context && { loginHint: options.context }),
+                ...(options.loginHint && { loginHint: options.loginHint }),
               },
             ],
           },
@@ -479,6 +500,26 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
       return 'unknown';
     }
     return window.location.origin;
+  }
+
+  /** @internal */
+  public getStoredLoginHint(): string | undefined {
+    if (typeof window === 'undefined') return undefined;
+    try {
+      return localStorage.getItem(FEDCM_LOGIN_HINT_KEY) || undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** @internal */
+  public storeLoginHint(userId: string): void {
+    if (typeof window === 'undefined') return;
+    try {
+      localStorage.setItem(FEDCM_LOGIN_HINT_KEY, userId);
+    } catch {
+      // Storage full or blocked
+    }
   }
   };
 }

@@ -58,6 +58,7 @@ const STORAGE_KEYS = {
   SESSION: 'oxy_session',
   USER: 'oxy_user',
   AUTH_METHOD: 'oxy_auth_method',
+  FEDCM_LOGIN_HINT: 'oxy_fedcm_login_hint',
 } as const;
 
 /**
@@ -409,6 +410,7 @@ export class AuthManager {
     await this.storage.removeItem(STORAGE_KEYS.SESSION);
     await this.storage.removeItem(STORAGE_KEYS.USER);
     await this.storage.removeItem(STORAGE_KEYS.AUTH_METHOD);
+    await this.storage.removeItem(STORAGE_KEYS.FEDCM_LOGIN_HINT);
   }
 
   /**
