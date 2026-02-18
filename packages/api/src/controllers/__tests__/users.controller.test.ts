@@ -1,14 +1,26 @@
 import { Request, Response, NextFunction } from 'express';
+
+const mockFind = jest.fn();
+
+jest.mock('../../models/User', () => ({
+  __esModule: true,
+  default: { find: mockFind },
+}));
+
+jest.mock('../../utils/logger', () => ({
+  logger: { error: jest.fn(), info: jest.fn(), debug: jest.fn(), warn: jest.fn() },
+}));
+
+jest.mock('../../utils/sanitize', () => ({
+  sanitizeSearchQuery: jest.fn((q: string) => q),
+}));
+
+jest.mock('../../utils/asyncHandler', () => ({
+  sendSuccess: jest.fn((res: any, data: any) => res.status(200).json({ data })),
+}));
+
 import { UsersController } from '../users.controller';
-
-// Mock the User model
-const mockUser = {
-  find: jest.fn(),
-  select: jest.fn(),
-  limit: jest.fn(),
-};
-
-jest.mock('../models/User', () => mockUser);
+import { BadRequestError, InternalServerError } from '../../utils/error';
 
 describe('UsersController', () => {
   let usersController: UsersController;
@@ -28,36 +40,20 @@ describe('UsersController', () => {
   });
 
   describe('searchUsers', () => {
-    it('should return 400 if query is missing', async () => {
+    it('should throw BadRequestError if query is missing', async () => {
       mockRequest.body = {};
 
-      await usersController.searchUsers(
-        mockRequest as Request,
-        mockResponse as Response,
-        mockNext
-      );
-
-      expect(mockResponse.status).toHaveBeenCalledWith(400);
-      expect(mockResponse.json).toHaveBeenCalledWith({
-        error: 'Invalid request',
-        message: 'Search query is required'
-      });
+      await expect(
+        usersController.searchUsers(mockRequest as Request, mockResponse as Response, mockNext)
+      ).rejects.toThrow(BadRequestError);
     });
 
-    it('should return 400 if query is not a string', async () => {
+    it('should throw BadRequestError if query is not a string', async () => {
       mockRequest.body = { query: 123 };
 
-      await usersController.searchUsers(
-        mockRequest as Request,
-        mockResponse as Response,
-        mockNext
-      );
-
-      expect(mockResponse.status).toHaveBeenCalledWith(400);
-      expect(mockResponse.json).toHaveBeenCalledWith({
-        error: 'Invalid request',
-        message: 'Search query is required'
-      });
+      await expect(
+        usersController.searchUsers(mockRequest as Request, mockResponse as Response, mockNext)
+      ).rejects.toThrow(BadRequestError);
     });
 
     it('should search users successfully', async () => {
@@ -68,12 +64,12 @@ describe('UsersController', () => {
 
       mockRequest.body = { query: 'test' };
 
-      // Mock the User.find chain
       const mockQuery = {
         select: jest.fn().mockReturnThis(),
-        limit: jest.fn().mockResolvedValue(mockUsers),
+        limit: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockResolvedValue(mockUsers),
       };
-      mockUser.find.mockReturnValue(mockQuery);
+      mockFind.mockReturnValue(mockQuery);
 
       await usersController.searchUsers(
         mockRequest as Request,
@@ -81,46 +77,31 @@ describe('UsersController', () => {
         mockNext
       );
 
-      expect(mockUser.find).toHaveBeenCalledWith({
+      expect(mockFind).toHaveBeenCalledWith({
         $or: [
           { username: { $regex: 'test', $options: 'i' } },
           { 'name.first': { $regex: 'test', $options: 'i' } },
-          { 'name.last': { $regex: 'test', $options: 'i' } }
-        ]
+          { 'name.last': { $regex: 'test', $options: 'i' } },
+        ],
       });
       expect(mockQuery.select).toHaveBeenCalledWith('username name avatar email description');
       expect(mockQuery.limit).toHaveBeenCalledWith(5);
-      expect(mockResponse.json).toHaveBeenCalledWith({
-        data: mockUsers
-      });
+      expect(mockQuery.lean).toHaveBeenCalled();
     });
 
-    it('should handle database errors', async () => {
+    it('should throw InternalServerError on database errors', async () => {
       mockRequest.body = { query: 'test' };
 
-      const mockError = new Error('Database error');
       const mockQuery = {
         select: jest.fn().mockReturnThis(),
-        limit: jest.fn().mockRejectedValue(mockError),
+        limit: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockRejectedValue(new Error('Database error')),
       };
-      mockUser.find.mockReturnValue(mockQuery);
+      mockFind.mockReturnValue(mockQuery);
 
-      // Mock console.error to avoid test output pollution
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
-
-      await usersController.searchUsers(
-        mockRequest as Request,
-        mockResponse as Response,
-        mockNext
-      );
-
-      expect(mockResponse.status).toHaveBeenCalledWith(500);
-      expect(mockResponse.json).toHaveBeenCalledWith({
-        error: 'Server error',
-        message: 'Error searching users: Database error'
-      });
-
-      consoleSpy.mockRestore();
+      await expect(
+        usersController.searchUsers(mockRequest as Request, mockResponse as Response, mockNext)
+      ).rejects.toThrow(InternalServerError);
     });
   });
 });

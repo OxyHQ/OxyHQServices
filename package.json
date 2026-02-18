@@ -11,7 +11,7 @@
     "packages/auth",
     "packages/accounts",
     "packages/inbox",
-    "packages/test-app",
+    "packages/test-app-expo",
     "packages/test-app-vite",
     "packages/console"
   ],

@@ -25,12 +25,6 @@ jest.mock('mongoose', () => ({
   })),
 }));
 
-// Mock bcrypt
-jest.mock('bcrypt', () => ({
-  hash: jest.fn(() => Promise.resolve('hashed-password')),
-  compare: jest.fn(() => Promise.resolve(true)),
-}));
-
 // Mock jsonwebtoken
 jest.mock('jsonwebtoken', () => ({
   sign: jest.fn(() => 'mock-jwt-token'),
