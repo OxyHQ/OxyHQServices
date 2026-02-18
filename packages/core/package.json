@@ -1,6 +1,6 @@
 {
   "name": "@oxyhq/core",
-  "version": "1.6.1",
+  "version": "1.6.6",
   "description": "OxyHQ SDK Foundation — API client, authentication, cryptographic identity, and shared utilities",
   "main": "dist/cjs/index.js",
   "module": "dist/esm/index.js",
@@ -58,7 +58,7 @@
     "build": "npm run build:cjs && npm run build:esm && npm run build:types && npm run copy-assets",
     "copy-assets": "cp -r src/i18n/locales dist/cjs/i18n/locales && cp -r src/i18n/locales dist/esm/i18n/locales",
     "build:cjs": "tsc -p tsconfig.cjs.json",
-    "build:esm": "tsc -p tsconfig.esm.json",
+    "build:esm": "tsc -p tsconfig.esm.json && node scripts/fix-esm-imports.mjs",
     "build:types": "tsc -p tsconfig.types.json",
     "clean": "rm -rf dist",
     "typescript": "tsc --noEmit",
