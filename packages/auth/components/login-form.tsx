@@ -225,7 +225,7 @@ export function LoginForm({
         try {
             // Get access token for existing session
             const tokenResponse = await fetch(`/api/auth/token/${existingSessionId}`)
-            const tokenData = await tokenResponse.json()
+            const tokenData = await tokenResponse.json().catch(() => ({}))
 
             if (!tokenResponse.ok || !tokenData.accessToken) {
                 // Session expired or invalid - show login form
