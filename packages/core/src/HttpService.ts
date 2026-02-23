@@ -337,8 +337,9 @@ export class HttpService {
                 // Token decode failed, fall through to clear
               }
             }
-            // Refresh failed or no token — clear tokens
+            // Refresh failed or no token — clear tokens and stale CSRF
             this.tokenStore.clearTokens();
+            this.tokenStore.clearCsrfToken();
           }
 
           // On 403 with CSRF error, clear cached token and retry once
@@ -616,12 +617,14 @@ export class HttpService {
         }
         const result = await this.tokenRefreshPromise;
         if (result) return result;
+        // Refresh failed — don't use the expired token (would cause 401 loop)
+        return null;
       }
 
       return `Bearer ${accessToken}`;
     } catch (error) {
       this.logger.error('Error processing token:', error);
-      return `Bearer ${accessToken}`;
+      return null;
     }
   }
 

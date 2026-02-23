@@ -361,11 +361,12 @@ export class AuthManager {
    * Sign out and clear all auth data.
    */
   async signOut(): Promise<void> {
-    // Clear refresh timer
+    // Clear refresh timer and cancel any in-flight refresh
     if (this.refreshTimer) {
       clearTimeout(this.refreshTimer);
       this.refreshTimer = null;
     }
+    this.refreshPromise = null;
 
     // Invalidate current session on the server (best-effort)
     try {

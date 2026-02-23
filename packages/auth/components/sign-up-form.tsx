@@ -83,28 +83,8 @@ export function SignUpForm({
                 return
             }
 
-            // Set cookie with SameSite=None for FedCM cross-origin requests
-            // Requires Secure flag, and domain for cross-subdomain access
-            const isSecure = window.location.protocol === "https:"
-            const host = window.location.hostname
-            const cookieDomain = host.endsWith(".oxy.so") || host === "oxy.so" ? ".oxy.so" : undefined
-
-            const cookieParts = [
-                `oxy_session_id=${payload.sessionId}`,
-                "path=/",
-                "samesite=none", // Required for FedCM cross-origin requests
-            ]
-            if (payload.expiresAt) {
-                const expiresAt = new Date(payload.expiresAt).toUTCString()
-                cookieParts.push(`expires=${expiresAt}`)
-            }
-            if (isSecure) {
-                cookieParts.push("secure") // Required for SameSite=None
-            }
-            if (cookieDomain) {
-                cookieParts.push(`domain=${cookieDomain}`)
-            }
-            document.cookie = cookieParts.join("; ")
+            // Session cookie is now set server-side with httpOnly flag
+            // by the /api/auth/signup route handler (Set-Cookie response header).
 
             // Set FedCM login status via iframe
             // The browser's FedCM Login Status API only processes Set-Login header

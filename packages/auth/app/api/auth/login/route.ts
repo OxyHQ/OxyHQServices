@@ -79,6 +79,17 @@ export async function POST(request: NextRequest) {
                 expiresAt: session.expiresAt,
                 accessToken: session.accessToken,
             })
+            // Set httpOnly session cookie (secure, cross-site for SSO)
+            const cookieDomainJson = process.env.AUTH_COOKIE_DOMAIN || undefined
+            const expiresAtJson = session.expiresAt ? new Date(session.expiresAt) : undefined
+            jsonResponse.cookies.set(SESSION_COOKIE_NAME, session.sessionId, {
+                httpOnly: true,
+                secure: true,
+                sameSite: "none",
+                path: "/",
+                ...(cookieDomainJson ? { domain: cookieDomainJson } : {}),
+                ...(expiresAtJson ? { expires: expiresAtJson } : {}),
+            })
             // Set FedCM login status for API responses too
             jsonResponse.headers.set("Set-Login", "logged-in")
             return jsonResponse
