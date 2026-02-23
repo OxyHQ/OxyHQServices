@@ -7,13 +7,13 @@ import React, { useCallback, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
-  FlatList,
   TouchableOpacity,
   StyleSheet,
   Platform,
   ActivityIndicator,
   RefreshControl,
 } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import { PencilEdit01Icon } from '@hugeicons/core-free-icons';
@@ -310,7 +310,7 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
         </View>
       )}
 
-      <FlatList
+      <FlashList
         data={messages}
         renderItem={renderItem}
         keyExtractor={keyExtractor}
@@ -320,6 +320,7 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
         onEndReached={handleLoadMore}
         onEndReachedThreshold={0.3}
         extraData={selectedMessageIds}
+        estimatedItemSize={76}
         refreshControl={
           <RefreshControl
             refreshing={isRefetching && !isFetchingNextPage}

@@ -204,7 +204,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
   },
   listPane: {
-    width: 380,
+    flex: 1,
+    maxWidth: 380,
     borderRightWidth: StyleSheet.hairlineWidth,
   },
   detailPane: {
