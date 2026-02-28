@@ -138,6 +138,15 @@ function getErrorMessage(payload: ApiPayload, fallback: string): string {
     return fallback
 }
 
+export class ApiError extends Error {
+    errors: string[]
+    constructor(message: string, errors: string[] = []) {
+        super(message)
+        this.name = "ApiError"
+        this.errors = errors
+    }
+}
+
 export async function apiRequest<T>(path: string, init: RequestInit): Promise<T> {
     const response = await fetch(`${getApiBaseUrl()}${path}`, {
         cache: "no-store",
@@ -155,7 +164,17 @@ export async function apiRequest<T>(path: string, init: RequestInit): Promise<T>
     }
 
     if (!response.ok) {
-        throw new Error(getErrorMessage(payload, response.statusText || "Request failed"))
+        const errors: string[] =
+            payload &&
+            typeof payload === "object" &&
+            "errors" in payload &&
+            Array.isArray((payload as Record<string, unknown>).errors)
+                ? ((payload as Record<string, unknown>).errors as string[])
+                : []
+        throw new ApiError(
+            getErrorMessage(payload, response.statusText || "Request failed"),
+            errors
+        )
     }
 
     return unwrapResponse(payload) as T

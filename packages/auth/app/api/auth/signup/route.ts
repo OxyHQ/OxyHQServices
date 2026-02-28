@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server"
 
 import {
+    ApiError,
     apiPost,
     buildRelativeUrl,
     getForwardHeaders,
@@ -135,7 +136,9 @@ export async function POST(request: NextRequest) {
         const message =
             error instanceof Error ? error.message : "Unable to sign up"
         if (isJson) {
-            return NextResponse.json({ message }, { status: 400 })
+            const errors =
+                error instanceof ApiError ? error.errors : []
+            return NextResponse.json({ message, errors }, { status: 400 })
         }
         return redirectWithError(request, message, {
             token: sessionToken,
