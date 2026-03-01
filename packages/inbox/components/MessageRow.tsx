@@ -95,6 +95,7 @@ export function MessageRow({
   onToggleSelect,
   onLongPress,
   isStarPending,
+  labelColorMap,
 }: {
   message: Message;
   onStar: (id: string) => void;
@@ -105,6 +106,7 @@ export function MessageRow({
   onToggleSelect?: (id: string) => void;
   onLongPress?: (id: string) => void;
   isStarPending?: boolean;
+  labelColorMap?: Map<string, string>;
 }) {
   const colorScheme = useColorScheme();
   const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
@@ -242,6 +244,31 @@ export function MessageRow({
           <SentimentIndicator sentiment={sentiment} size="small" />
         </View>
 
+        {/* Label chips */}
+        {message.labels.length > 0 && (
+          <View style={styles.labelChipRow}>
+            {message.labels.slice(0, 3).map((labelName) => {
+              const color = labelColorMap?.get(labelName) || '#5F6368';
+              return (
+                <View
+                  key={labelName}
+                  style={[styles.labelChipSmall, { backgroundColor: color + '20' }]}
+                >
+                  <View style={[styles.labelChipDotSmall, { backgroundColor: color }]} />
+                  <Text style={[styles.labelChipTextSmall, { color }]} numberOfLines={1}>
+                    {labelName}
+                  </Text>
+                </View>
+              );
+            })}
+            {message.labels.length > 3 && (
+              <Text style={[styles.moreLabelText, { color: colors.secondaryText }]}>
+                +{message.labels.length - 3}
+              </Text>
+            )}
+          </View>
+        )}
+
         <View style={styles.bottomRow}>
           <Text style={[styles.preview, { color: colors.secondaryText }]} numberOfLines={1}>
             {preview}
@@ -358,5 +385,33 @@ const styles = StyleSheet.create({
   },
   starButton: {
     padding: 2,
+  },
+  labelChipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 4,
+    marginTop: 2,
+  },
+  labelChipSmall: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 8,
+    maxWidth: 100,
+  },
+  labelChipDotSmall: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+  },
+  labelChipTextSmall: {
+    fontSize: 10,
+    fontWeight: '500',
+  },
+  moreLabelText: {
+    fontSize: 10,
+    alignSelf: 'center',
   },
 });

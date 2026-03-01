@@ -99,6 +99,14 @@ export const DEFAULT_MAILBOXES = [
   { name: 'Archive', path: 'Archive', specialUse: '\\Archive' },
 ] as const;
 
+/** AI auto-labeling on inbound email */
+export const AI_LABELING_CONFIG = {
+  enabled: process.env.AI_LABELING_ENABLED !== 'false',
+  model: getEnvVar('AI_LABELING_MODEL', 'alia-lite'),
+  timeout: getEnvNumber('AI_LABELING_TIMEOUT', 10000),
+  maxBodyChars: 1500,
+};
+
 /** Encryption settings */
 export const ENCRYPTION_CONFIG = {
   /** Encrypt incoming messages at rest for users with a publicKey */

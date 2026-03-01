@@ -16,12 +16,15 @@ type ViewMode =
   | { type: 'starred' }
   | { type: 'label'; labelId: string; labelName: string };
 
+export type InboxViewStyle = 'classic' | 'bundled';
+
 interface EmailState {
   currentMailbox: Mailbox | null;
   viewMode: ViewMode | null;
   selectedMessageId: string | null;
   sidebarCollapsed: boolean;
   moreExpanded: boolean;
+  inboxViewStyle: InboxViewStyle;
   selectedMessageIds: Set<string>;
   isSelectionMode: boolean;
   _api: EmailApiInstance | null;
@@ -31,6 +34,7 @@ interface EmailState {
   selectLabel: (labelId: string, labelName: string) => void;
   toggleSidebar: () => void;
   toggleMore: () => void;
+  setInboxViewStyle: (style: InboxViewStyle) => void;
   toggleMessageSelection: (id: string) => void;
   enterSelectionMode: (id: string) => void;
   clearSelection: () => void;
@@ -43,6 +47,7 @@ export const useEmailStore = create<EmailState>((set, get) => ({
   selectedMessageId: null,
   sidebarCollapsed: false,
   moreExpanded: false,
+  inboxViewStyle: 'bundled' as InboxViewStyle,
   selectedMessageIds: new Set<string>(),
   isSelectionMode: false,
   _api: null,
@@ -75,6 +80,10 @@ export const useEmailStore = create<EmailState>((set, get) => ({
 
   toggleMore: () => {
     set((s) => ({ moreExpanded: !s.moreExpanded }));
+  },
+
+  setInboxViewStyle: (style) => {
+    set({ inboxViewStyle: style });
   },
 
   toggleMessageSelection: (id) => {

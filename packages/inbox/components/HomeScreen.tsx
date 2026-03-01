@@ -37,6 +37,7 @@ import { Colors } from '@/constants/theme';
 import { SPECIAL_USE } from '@/constants/mailbox';
 import { useMessages } from '@/hooks/queries/useMessages';
 import { useMailboxes } from '@/hooks/queries/useMailboxes';
+import { useLabels } from '@/hooks/queries/useLabels';
 import { useToggleStar } from '@/hooks/mutations/useMessageMutations';
 import { useEmailStore } from '@/hooks/useEmail';
 import { MessageRow } from '@/components/MessageRow';
@@ -107,6 +108,12 @@ export function HomeScreen() {
   const weekDays = useMemo(() => getWeekDays(selectedDate), [selectedDate]);
 
   const { data: mailboxes = [] } = useMailboxes();
+  const { data: labels = [] } = useLabels();
+  const labelColorMap = useMemo(() => {
+    const map = new Map<string, string>();
+    labels.forEach((l) => map.set(l.name, l.color));
+    return map;
+  }, [labels]);
   const inboxId = mailboxes.find((m) => m.specialUse === SPECIAL_USE.INBOX)?._id;
   const { data, isLoading } = useMessages(inboxId ? { mailboxId: inboxId } : {});
   const toggleStar = useToggleStar();
@@ -405,6 +412,7 @@ export function HomeScreen() {
                           message={msg}
                           onStar={handleStar}
                           onSelect={handleMessagePress}
+                          labelColorMap={labelColorMap}
                         />
                       </React.Fragment>
                     ))}
@@ -456,6 +464,7 @@ export function HomeScreen() {
                           message={msg}
                           onStar={handleStar}
                           onSelect={handleMessagePress}
+                          labelColorMap={labelColorMap}
                         />
                       </React.Fragment>
                     ))}
@@ -501,6 +510,7 @@ export function HomeScreen() {
                           message={msg}
                           onStar={handleStar}
                           onSelect={handleMessagePress}
+                          labelColorMap={labelColorMap}
                         />
                       </React.Fragment>
                     ))

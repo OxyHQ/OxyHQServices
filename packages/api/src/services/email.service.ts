@@ -27,6 +27,7 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { logger } from '../utils/logger';
 import { NotFoundError, BadRequestError } from '../utils/error';
 import { v4 as uuidv4 } from 'uuid';
+import { aiLabelingService } from './aiLabeling.service';
 
 // Dedicated S3 client for the email attachments bucket
 const emailS3 = new S3Client({
@@ -68,6 +69,45 @@ class EmailService {
    * Ensure mailboxes exist for a user, provisioning if needed.
    * Also syncs any missing default mailboxes for existing users.
    */
+  // ─── Default Labels ──────────────────────────────────────────────
+
+  private static readonly DEFAULT_LABELS = [
+    { name: 'Personal', color: '#1A73E8', order: 0 },
+    { name: 'Work', color: '#34A853', order: 1 },
+    { name: 'Finance', color: '#FBBC04', order: 2 },
+    { name: 'Shopping', color: '#EA4335', order: 3 },
+    { name: 'Travel', color: '#9334E6', order: 4 },
+    { name: 'Social', color: '#E8710A', order: 5 },
+    { name: 'Updates', color: '#607D8B', order: 6 },
+    { name: 'Forums', color: '#795548', order: 7 },
+  ];
+
+  /**
+   * Seed default labels for a user if they have none.
+   * Uses the same lazy-provisioning pattern as ensureMailboxes().
+   */
+  async ensureDefaultLabels(userId: string): Promise<void> {
+    const count = await Label.countDocuments({ userId });
+    if (count > 0) return;
+
+    const docs = EmailService.DEFAULT_LABELS.map((l) => ({
+      userId: new mongoose.Types.ObjectId(userId),
+      name: l.name,
+      color: l.color,
+      order: l.order,
+    }));
+
+    try {
+      await Label.insertMany(docs, { ordered: false });
+      logger.info('Default labels seeded', { userId });
+    } catch (err: any) {
+      // Ignore duplicate key errors (race condition safe)
+      if (err.code !== 11000 && !err.message?.includes('E11000')) {
+        throw err;
+      }
+    }
+  }
+
   async ensureMailboxes(userId: string): Promise<void> {
     const existing = await Mailbox.find({ userId });
     if (existing.length === 0) {
@@ -292,6 +332,7 @@ class EmailService {
 
     const userId = user._id.toString();
     await this.ensureMailboxes(userId);
+    await this.ensureDefaultLabels(userId);
 
     // Check quota
     await this.enforceQuota(userId, params.rawSize);
@@ -366,6 +407,13 @@ class EmailService {
       subject: params.subject,
       mailbox: mailbox.name,
     });
+
+    // Fire-and-forget AI auto-labeling (non-blocking, only for non-spam)
+    if (!isSpam) {
+      aiLabelingService
+        .classifyAndLabel(userId, message._id.toString())
+        .catch(() => {});
+    }
 
     return message.toJSON() as any;
   }

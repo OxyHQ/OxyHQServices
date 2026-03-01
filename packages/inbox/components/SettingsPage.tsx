@@ -26,6 +26,7 @@ import { useOxy, toast } from '@oxyhq/services';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
+import { useEmailStore } from '@/hooks/useEmail';
 import { useSettings, useUpdateSettings } from '@/hooks/queries/useSettings';
 import { useQuota } from '@/hooks/queries/useQuota';
 import { useLabels, useCreateLabel, useUpdateLabel, useDeleteLabel } from '@/hooks/queries/useLabels';
@@ -52,6 +53,8 @@ export function SettingsPage({ section }: SettingsPageProps) {
   const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
   const { user } = useOxy();
   const { toggleColorScheme } = useThemeContext();
+  const inboxViewStyle = useEmailStore((s) => s.inboxViewStyle);
+  const setInboxViewStyle = useEmailStore((s) => s.setInboxViewStyle);
   const isDesktop = Platform.OS === 'web' && width >= 900;
 
   const { data: settingsData } = useSettings();
@@ -414,6 +417,20 @@ export function SettingsPage({ section }: SettingsPageProps) {
                   />
                 )}
               </TouchableOpacity>
+              <View style={styles.switchRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.cardLabel, { color: colors.text }]}>Bundled inbox</Text>
+                  <Text style={[styles.settingDescription, { color: colors.secondaryText }]}>
+                    Group messages by label in your inbox
+                  </Text>
+                </View>
+                <Switch
+                  value={inboxViewStyle === 'bundled'}
+                  onValueChange={(v) => setInboxViewStyle(v ? 'bundled' : 'classic')}
+                  trackColor={{ false: colors.border, true: colors.primaryContainer }}
+                  thumbColor={inboxViewStyle === 'bundled' ? colors.primary : colors.icon}
+                />
+              </View>
             </View>
           </>
         )}
@@ -611,5 +628,9 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 13,
     fontWeight: '600',
+  },
+  settingDescription: {
+    fontSize: 12,
+    marginTop: 2,
   },
 });
