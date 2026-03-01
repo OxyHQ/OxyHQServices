@@ -12,12 +12,11 @@ import {
   Platform,
   ActivityIndicator,
   RefreshControl,
-  ScrollView,
 } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
-import { PencilEdit01Icon, DashboardSquareIcon, LeftToRightListBulletIcon } from '@hugeicons/core-free-icons';
+import { PencilEdit01Icon } from '@hugeicons/core-free-icons';
 import { useRouter } from 'expo-router';
 import { useNavigation, DrawerActions } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -41,7 +40,6 @@ import { SearchHeader } from '@/components/SearchHeader';
 import { SelectionToolbar } from '@/components/SelectionToolbar';
 import { SwipeableRow } from '@/components/SwipeableRow';
 import { EmptyIllustration } from '@/components/EmptyIllustration';
-import { BundledInboxList } from '@/components/BundledInboxList';
 import { AskAlia } from '@/components/AskAlia';
 import type { Message } from '@/services/emailApi';
 
@@ -66,8 +64,6 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
   const toggleMessageSelection = useEmailStore((s) => s.toggleMessageSelection);
   const enterSelectionMode = useEmailStore((s) => s.enterSelectionMode);
   const clearSelection = useEmailStore((s) => s.clearSelection);
-  const inboxViewStyle = useEmailStore((s) => s.inboxViewStyle);
-  const setInboxViewStyle = useEmailStore((s) => s.setInboxViewStyle);
 
   const messagesOptions = useMemo(() => {
     if (!viewMode) return { mailboxId: currentMailbox?._id };
@@ -103,15 +99,6 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
   const deleteMutation = useDeleteMessage();
 
   const messages = useMemo(() => data?.pages.flatMap((p) => p.data) ?? [], [data]);
-
-  // Show bundled view only for Inbox mailbox
-  const isInboxMailbox = currentMailbox?.specialUse === SPECIAL_USE.INBOX ||
-    (viewMode?.type === 'mailbox' && viewMode.mailbox.specialUse === SPECIAL_USE.INBOX);
-  const showBundled = isInboxMailbox && inboxViewStyle === 'bundled';
-
-  const toggleViewStyle = useCallback(() => {
-    setInboxViewStyle(inboxViewStyle === 'bundled' ? 'classic' : 'bundled');
-  }, [inboxViewStyle, setInboxViewStyle]);
 
   // Clear selection when view changes
   useEffect(() => {
@@ -316,33 +303,12 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
         />
       )}
 
-      {/* Pagination info + view toggle */}
+      {/* Pagination info */}
       {messages.length > 0 && data?.pages?.[0]?.pagination && (
         <View style={styles.paginationBar}>
           <Text style={[styles.paginationText, { color: colors.secondaryText }]}>
             1–{messages.length} of {data.pages[0].pagination.total}
           </Text>
-          {isInboxMailbox && (
-            <TouchableOpacity
-              onPress={toggleViewStyle}
-              hitSlop={8}
-              style={styles.viewToggle}
-            >
-              {Platform.OS === 'web' ? (
-                <HugeiconsIcon
-                  icon={(inboxViewStyle === 'bundled' ? LeftToRightListBulletIcon : DashboardSquareIcon) as unknown as IconSvgElement}
-                  size={16}
-                  color={colors.secondaryText}
-                />
-              ) : (
-                <MaterialCommunityIcons
-                  name={inboxViewStyle === 'bundled' ? 'format-list-bulleted' : 'view-grid-outline'}
-                  size={16}
-                  color={colors.secondaryText}
-                />
-              )}
-            </TouchableOpacity>
-          )}
         </View>
       )}
 
@@ -352,54 +318,28 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
         </View>
       )}
 
-      {showBundled ? (
-        <ScrollView
-          refreshControl={
-            <RefreshControl
-              refreshing={isRefetching && !isFetchingNextPage}
-              onRefresh={handleRefresh}
-              tintColor={colors.primary}
-              colors={[colors.primary]}
-            />
-          }
-          contentContainerStyle={styles.bundledScrollContent}
-          showsVerticalScrollIndicator={false}
-        >
-          {messages.length > 0 ? (
-            <BundledInboxList
-              messages={messages}
-              labels={labels}
-              labelColorMap={labelColorMap}
-              replaceNavigation={replaceNavigation}
-            />
-          ) : (
-            renderEmpty()
-          )}
-        </ScrollView>
-      ) : (
-        <FlashList
-          data={messages}
-          renderItem={renderItem}
-          keyExtractor={keyExtractor}
-          ItemSeparatorComponent={renderSeparator}
-          ListEmptyComponent={renderEmpty}
-          ListFooterComponent={renderFooter}
-          onEndReached={handleLoadMore}
-          onEndReachedThreshold={0.3}
-          extraData={selectedMessageIds}
-          estimatedItemSize={76}
-          refreshControl={
-            <RefreshControl
-              refreshing={isRefetching && !isFetchingNextPage}
-              onRefresh={handleRefresh}
-              tintColor={colors.primary}
-              colors={[colors.primary]}
-            />
-          }
-          contentContainerStyle={messages.length === 0 ? styles.emptyListContent : undefined}
-          showsVerticalScrollIndicator={false}
-        />
-      )}
+      <FlashList
+        data={messages}
+        renderItem={renderItem}
+        keyExtractor={keyExtractor}
+        ItemSeparatorComponent={renderSeparator}
+        ListEmptyComponent={renderEmpty}
+        ListFooterComponent={renderFooter}
+        onEndReached={handleLoadMore}
+        onEndReachedThreshold={0.3}
+        extraData={selectedMessageIds}
+        estimatedItemSize={76}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefetching && !isFetchingNextPage}
+            onRefresh={handleRefresh}
+            tintColor={colors.primary}
+            colors={[colors.primary]}
+          />
+        }
+        contentContainerStyle={messages.length === 0 ? styles.emptyListContent : undefined}
+        showsVerticalScrollIndicator={false}
+      />
 
       {!isSelectionMode && (
         <TouchableOpacity
@@ -504,22 +444,12 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   paginationBar: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 4,
-    gap: 8,
+    alignItems: 'flex-end',
   },
   paginationText: {
     fontSize: 11,
     fontWeight: '500',
-  },
-  viewToggle: {
-    padding: 4,
-  },
-  bundledScrollContent: {
-    padding: 12,
-    paddingBottom: 80,
   },
 });
