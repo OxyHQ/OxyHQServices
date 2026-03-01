@@ -1,61 +1,21 @@
 const { getDefaultConfig } = require('expo/metro-config');
 const path = require('path');
 
-// Find the project and package directories
 const projectRoot = __dirname;
 const monorepoRoot = path.resolve(projectRoot, '..', '..');
-const coreRoot = path.resolve(monorepoRoot, 'packages', 'core');
-const servicesRoot = path.resolve(monorepoRoot, 'packages', 'services');
-const servicesSrc = path.resolve(servicesRoot, 'src');
-const servicesNodeModules = path.resolve(servicesRoot, 'node_modules');
 
 const config = getDefaultConfig(projectRoot);
 
-// Explicitly set projectRoot
-config.projectRoot = projectRoot;
-
-// 1. Watch the local services package (source + its node_modules)
-// Explicitly include the src directory to ensure hot reload works
+// Watch workspace packages for hot reload during development
 config.watchFolders = [
-  projectRoot,
-  coreRoot,
-  servicesRoot,
-  servicesSrc,
-  servicesNodeModules,
+  monorepoRoot,
 ];
 
-// 2. Let Metro know where to resolve packages and in what order
-config.resolver.nodeModulesPaths = [
-  path.resolve(projectRoot, 'node_modules'),
-  path.resolve(monorepoRoot, 'node_modules'),
-  servicesNodeModules,
-];
-
-// 3. Force Metro to resolve (sub)dependencies in the workspace
-config.resolver.disableHierarchicalLookup = true;
-
-// 4. Ensure source extensions include TypeScript files
-config.resolver.sourceExts = [
-  ...config.resolver.sourceExts,
-  'ts',
-  'tsx',
-];
-
-// 5. Extra module resolution for local packages
+// Resolve @oxyhq/* packages to their source for development
 config.resolver.extraNodeModules = {
-  '@oxyhq/core': path.resolve(coreRoot, 'src', 'index.ts'),
-  '@oxyhq/services': path.resolve(servicesRoot, 'src', 'index.ts'),
-  '@oxyhq/services/ui': path.resolve(servicesRoot, 'src', 'ui'),
+  '@oxyhq/core': path.resolve(monorepoRoot, 'packages', 'core', 'src', 'index.ts'),
+  '@oxyhq/services': path.resolve(monorepoRoot, 'packages', 'services', 'src', 'index.ts'),
+  '@oxyhq/services/ui': path.resolve(monorepoRoot, 'packages', 'services', 'src', 'ui'),
 };
 
-// 6. Enable better platform resolution
-config.resolver.platforms = ['native', 'android', 'ios', 'tsx', 'ts', 'web'];
-
-// 7. Optimize cache for better hot reload performance
-config.cacheStores = config.cacheStores || [];
-
 module.exports = config;
-
-
-
-

@@ -7,7 +7,6 @@
     "icon": "./assets/images/icon.png",
     "scheme": "inbox",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#FFFFFF",
@@ -49,7 +48,12 @@
             "useLegacyPackaging": true
           }
         }
-      ]
+      ],
+      "expo-font",
+      "expo-image",
+      "expo-secure-store",
+      "expo-sharing",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true,
