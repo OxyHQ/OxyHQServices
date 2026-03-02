@@ -189,25 +189,183 @@ class EmailService {
       'The Oxy Team',
     ].join('\n');
 
-    const html = `<!DOCTYPE html>
-<html>
-<head><meta charset="utf-8"></head>
-<body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#1a1a1a;background:#ffffff;">
-  <div style="max-width:560px;margin:40px auto;padding:0 20px;">
-    <h1 style="font-size:22px;font-weight:600;margin:0 0 24px;">Welcome to Inbox by Oxy</h1>
-    <p style="font-size:15px;line-height:1.6;margin:0 0 16px;">Hi ${displayName},</p>
-    <p style="font-size:15px;line-height:1.6;margin:0 0 16px;">Your new email is ready. Here are a few things to know:</p>
-    <ul style="font-size:15px;line-height:1.8;padding-left:20px;margin:0 0 16px;">
-      <li>Your address: <strong>${recipientAddress}</strong></li>
-      <li>Smart labels sort your mail automatically</li>
-      <li>Bundles group newsletters, social updates, and promos</li>
-      <li>Snooze messages to deal with them later</li>
-      <li>Pin important emails so they stay at the top</li>
-    </ul>
-    <p style="font-size:15px;line-height:1.6;margin:0 0 16px;">We're glad to have you here. Just reply to this email if you ever need help.</p>
-    <p style="font-size:15px;line-height:1.6;margin:24px 0 0;color:#666;">The Oxy Team</p>
-  </div>
-</body>
+    const html = `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office" style="color-scheme: light; supported-color-schemes: light;" xml:lang="en">
+  <body>
+    <div style="display:none !important;visibility:hidden;mso-hide:all;font-size:1px;color:#ffffff;line-height:1px;max-height:0px;max-width:0px;opacity:0;overflow:hidden;">Your new email is ready &mdash; here&#39;s what you can do&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;</div>
+    <title>Inbox by Oxy</title>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <meta name="viewport" content="width=device-width">
+    <meta name="x-apple-disable-message-reformatting">
+    <meta name="color-scheme" content="light">
+    <meta name="supported-color-schemes" content="light">
+    <!--[if gte mso 9]><xml>
+    <o:OfficeDocumentSettings>
+        <o:AllowPNG/>
+        <o:PixelsPerInch>96</o:PixelsPerInch>
+    </o:OfficeDocumentSettings>
+    </xml><![endif]-->
+    <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #f4f4f4;">
+      <tr>
+        <td align="center" valign="top" width="100%">
+          <table align="center" border="0" cellspacing="0" cellpadding="0">
+            <tr>
+              <td>
+                <table width="550" border="0" cellspacing="0" cellpadding="0" role="presentation" style="width: 550px; background-color: #ffffff; font-family: Helvetica, Arial, sans-serif;">
+                  <tr>
+                    <td>
+                      <!-- Logo -->
+                      <table style="width: 100%;" border="0" cellspacing="0" cellpadding="0" role="presentation">
+                        <tr>
+                          <td align="center" style="padding: 32px 24px 16px;">
+                            <span style="font-size: 24px; font-weight: 700; color: #000000; letter-spacing: -0.5px;">Inbox by Oxy</span>
+                          </td>
+                        </tr>
+                      </table>
+                      <!-- Greeting bar -->
+                      <table style="width: 100%;" border="0" cellspacing="0" cellpadding="0" role="presentation">
+                        <tr>
+                          <td style="padding: 0 24px;">
+                            <table width="100%" cellspacing="0" cellpadding="0" border="0" role="presentation">
+                              <tr>
+                                <td style="border-radius: 8px; padding: 18px 24px; background-color: #000000;">
+                                  <table width="100%" cellspacing="0" cellpadding="0" border="0" role="presentation">
+                                    <tr>
+                                      <td valign="middle" style="color: #ffffff; font-family: Helvetica, Arial, sans-serif; font-size: 16px; line-height: 20px; font-weight: bold;">
+                                        Hi, ${displayName}
+                                      </td>
+                                      <td align="right" style="font-family: Helvetica, Arial, sans-serif; font-size: 13px; line-height: 16px; color: #999999;">
+                                        ${recipientAddress}
+                                      </td>
+                                    </tr>
+                                  </table>
+                                </td>
+                              </tr>
+                            </table>
+                          </td>
+                        </tr>
+                      </table>
+                      <!-- Spacer -->
+                      <table style="width: 100%;" border="0" cellspacing="0" cellpadding="0" role="presentation">
+                        <tr><td style="line-height: 0; padding-bottom: 24px;"></td></tr>
+                      </table>
+                      <!-- Hero -->
+                      <table style="width: 100%;" border="0" cellspacing="0" cellpadding="0" role="presentation">
+                        <tr>
+                          <td style="padding: 0 24px;">
+                            <table width="100%" border="0" cellspacing="0" cellpadding="0" role="presentation" style="border-radius: 12px; overflow: hidden; background-color: #f0f0f0;">
+                              <tr>
+                                <td style="padding: 48px 32px; text-align: center;">
+                                  <p style="font-size: 32px; font-weight: 700; color: #000000; margin: 0 0 8px; line-height: 1.2; letter-spacing: -0.5px;">Welcome aboard</p>
+                                  <p style="font-size: 16px; color: #666666; margin: 0; line-height: 1.5;">Your email, built for clarity.</p>
+                                </td>
+                              </tr>
+                            </table>
+                          </td>
+                        </tr>
+                      </table>
+                      <!-- Spacer -->
+                      <table style="width: 100%;" border="0" cellspacing="0" cellpadding="0" role="presentation">
+                        <tr><td style="line-height: 0; padding-bottom: 24px;"></td></tr>
+                      </table>
+                      <!-- Features list -->
+                      <table style="width: 100%;" border="0" cellspacing="0" cellpadding="0" role="presentation">
+                        <tr>
+                          <td style="padding: 0 24px;">
+                            <p style="font-size: 18px; font-weight: 700; color: #000000; margin: 0 0 20px; line-height: 1.3;">Here&#39;s what you can do now:</p>
+                            <table width="100%" border="0" cellspacing="0" cellpadding="0" role="presentation">
+                              <tr>
+                                <td style="padding: 12px 0; border-bottom: 1px solid #f0f0f0;">
+                                  <table width="100%" border="0" cellspacing="0" cellpadding="0" role="presentation">
+                                    <tr>
+                                      <td width="32" valign="top" style="font-size: 18px; padding-right: 12px;">&#9993;</td>
+                                      <td style="font-size: 15px; line-height: 1.5; color: #333333;"><strong>Your address is ready</strong><br/><span style="color: #666666;">${recipientAddress}</span></td>
+                                    </tr>
+                                  </table>
+                                </td>
+                              </tr>
+                              <tr>
+                                <td style="padding: 12px 0; border-bottom: 1px solid #f0f0f0;">
+                                  <table width="100%" border="0" cellspacing="0" cellpadding="0" role="presentation">
+                                    <tr>
+                                      <td width="32" valign="top" style="font-size: 18px; padding-right: 12px;">&#127991;</td>
+                                      <td style="font-size: 15px; line-height: 1.5; color: #333333;"><strong>Smart labels</strong><br/><span style="color: #666666;">Your mail gets sorted automatically</span></td>
+                                    </tr>
+                                  </table>
+                                </td>
+                              </tr>
+                              <tr>
+                                <td style="padding: 12px 0; border-bottom: 1px solid #f0f0f0;">
+                                  <table width="100%" border="0" cellspacing="0" cellpadding="0" role="presentation">
+                                    <tr>
+                                      <td width="32" valign="top" style="font-size: 18px; padding-right: 12px;">&#128230;</td>
+                                      <td style="font-size: 15px; line-height: 1.5; color: #333333;"><strong>Bundles</strong><br/><span style="color: #666666;">Newsletters, social updates, and promos grouped together</span></td>
+                                    </tr>
+                                  </table>
+                                </td>
+                              </tr>
+                              <tr>
+                                <td style="padding: 12px 0; border-bottom: 1px solid #f0f0f0;">
+                                  <table width="100%" border="0" cellspacing="0" cellpadding="0" role="presentation">
+                                    <tr>
+                                      <td width="32" valign="top" style="font-size: 18px; padding-right: 12px;">&#9200;</td>
+                                      <td style="font-size: 15px; line-height: 1.5; color: #333333;"><strong>Snooze</strong><br/><span style="color: #666666;">Hide messages and bring them back when you&#39;re ready</span></td>
+                                    </tr>
+                                  </table>
+                                </td>
+                              </tr>
+                              <tr>
+                                <td style="padding: 12px 0;">
+                                  <table width="100%" border="0" cellspacing="0" cellpadding="0" role="presentation">
+                                    <tr>
+                                      <td width="32" valign="top" style="font-size: 18px; padding-right: 12px;">&#128204;</td>
+                                      <td style="font-size: 15px; line-height: 1.5; color: #333333;"><strong>Pin</strong><br/><span style="color: #666666;">Keep important emails at the top</span></td>
+                                    </tr>
+                                  </table>
+                                </td>
+                              </tr>
+                            </table>
+                          </td>
+                        </tr>
+                      </table>
+                      <!-- Spacer -->
+                      <table style="width: 100%;" border="0" cellspacing="0" cellpadding="0" role="presentation">
+                        <tr><td style="line-height: 0; padding-bottom: 32px;"></td></tr>
+                      </table>
+                      <!-- Footer -->
+                      <table style="width: 100%;" border="0" cellspacing="0" cellpadding="0" role="presentation" bgcolor="#ffffff">
+                        <tr>
+                          <td style="padding: 32px 24px; border-top: 1px solid #f0f0f0;">
+                            <table width="100%" border="0" cellspacing="0" cellpadding="0" role="presentation">
+                              <tr>
+                                <td align="left">
+                                  <span style="font-size: 16px; font-weight: 700; color: #000000; letter-spacing: -0.3px;">Inbox by Oxy</span>
+                                </td>
+                              </tr>
+                              <tr>
+                                <td align="left" style="padding-top: 12px; color: #999999; font-family: Helvetica, Arial, sans-serif; font-size: 12px; line-height: 18px;">
+                                  This is an automated welcome message. You can reply to this email if you ever need help.
+                                </td>
+                              </tr>
+                              <tr>
+                                <td align="left" style="padding-top: 12px; color: #999999; font-family: Helvetica, Arial, sans-serif; font-size: 12px; line-height: 18px;">
+                                  &copy; ${new Date().getFullYear()} Oxy. All rights reserved.
+                                </td>
+                              </tr>
+                            </table>
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
 </html>`;
 
     const now = new Date();
