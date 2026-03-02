@@ -305,68 +305,70 @@ export function HomeScreen() {
           <>
             {/* Greeting Card */}
             <View style={[styles.card, { backgroundColor: colors.background }]}>
-              <Text style={[styles.greetingText, { color: colors.text }]}>
-                {greeting}, {firstName}
-              </Text>
+              <View style={styles.cardContent}>
+                <Text style={[styles.greetingText, { color: colors.text }]}>
+                  {greeting}, {firstName}
+                </Text>
 
-              {/* Stats row */}
-              <View style={styles.statsRow}>
-                <View style={[styles.statPill, { backgroundColor: colors.primaryContainer }]}>
-                  {Platform.OS === 'web' ? (
-                    <HugeiconsIcon icon={Mail01Icon as unknown as IconSvgElement} size={14} color={colors.primary} />
-                  ) : (
-                    <MaterialCommunityIcons name="email-outline" size={14} color={colors.primary} />
-                  )}
-                  <Text style={[styles.statText, { color: colors.primary }]}>
-                    {unreadCount} unread
-                  </Text>
+                {/* Stats row */}
+                <View style={styles.statsRow}>
+                  <View style={[styles.statPill, { backgroundColor: colors.primaryContainer }]}>
+                    {Platform.OS === 'web' ? (
+                      <HugeiconsIcon icon={Mail01Icon as unknown as IconSvgElement} size={14} color={colors.primary} />
+                    ) : (
+                      <MaterialCommunityIcons name="email-outline" size={14} color={colors.primary} />
+                    )}
+                    <Text style={[styles.statText, { color: colors.primary }]}>
+                      {unreadCount} unread
+                    </Text>
+                  </View>
+                  <View style={[styles.statPill, { backgroundColor: isDark ? '#3D3000' : '#FFF8E1' }]}>
+                    {Platform.OS === 'web' ? (
+                      <HugeiconsIcon icon={StarIcon as unknown as IconSvgElement} size={14} color={colors.starred} />
+                    ) : (
+                      <MaterialCommunityIcons name="star" size={14} color={colors.starred} />
+                    )}
+                    <Text style={[styles.statText, { color: colors.starred }]}>
+                      {starredCount} starred
+                    </Text>
+                  </View>
+                  <View style={[styles.statPill, { backgroundColor: colors.surfaceVariant }]}>
+                    {Platform.OS === 'web' ? (
+                      <HugeiconsIcon icon={Attachment01Icon as unknown as IconSvgElement} size={14} color={colors.secondaryText} />
+                    ) : (
+                      <MaterialCommunityIcons name="paperclip" size={14} color={colors.secondaryText} />
+                    )}
+                    <Text style={[styles.statText, { color: colors.secondaryText }]}>
+                      {attachmentCount}
+                    </Text>
+                  </View>
                 </View>
-                <View style={[styles.statPill, { backgroundColor: isDark ? '#3D3000' : '#FFF8E1' }]}>
-                  {Platform.OS === 'web' ? (
-                    <HugeiconsIcon icon={StarIcon as unknown as IconSvgElement} size={14} color={colors.starred} />
-                  ) : (
-                    <MaterialCommunityIcons name="star" size={14} color={colors.starred} />
-                  )}
-                  <Text style={[styles.statText, { color: colors.starred }]}>
-                    {starredCount} starred
-                  </Text>
-                </View>
-                <View style={[styles.statPill, { backgroundColor: colors.surfaceVariant }]}>
-                  {Platform.OS === 'web' ? (
-                    <HugeiconsIcon icon={Attachment01Icon as unknown as IconSvgElement} size={14} color={colors.secondaryText} />
-                  ) : (
-                    <MaterialCommunityIcons name="paperclip" size={14} color={colors.secondaryText} />
-                  )}
-                  <Text style={[styles.statText, { color: colors.secondaryText }]}>
-                    {attachmentCount}
-                  </Text>
-                </View>
-              </View>
 
-              {briefLoading ? (
-                <View style={styles.briefLoadingRow}>
-                  <ActivityIndicator size="small" color={colors.primary} />
+                {briefLoading ? (
+                  <View style={styles.briefLoadingRow}>
+                    <ActivityIndicator size="small" color={colors.primary} />
+                    <Text style={[styles.digestText, { color: colors.secondaryText }]}>
+                      Alia is analyzing your inbox...
+                    </Text>
+                  </View>
+                ) : briefError && !briefText ? (
                   <Text style={[styles.digestText, { color: colors.secondaryText }]}>
-                    Alia is analyzing your inbox...
+                    Unable to generate brief right now.
                   </Text>
-                </View>
-              ) : briefError && !briefText ? (
-                <Text style={[styles.digestText, { color: colors.secondaryText }]}>
-                  Unable to generate brief right now.
-                </Text>
-              ) : briefText ? (
-                <Text style={[styles.digestText, { color: colors.secondaryText }]}>
-                  {briefText}
-                  {briefStreaming && <Text style={{ color: colors.primary }}>|</Text>}
-                </Text>
-              ) : (
-                <Text style={[styles.digestText, { color: colors.secondaryText }]}>
-                  No emails to summarize yet.
-                </Text>
-              )}
-              <TouchableOpacity onPress={regenerate} style={styles.refreshButton} activeOpacity={0.7}>
-                <MaterialCommunityIcons name="refresh" size={16} color={colors.secondaryText} />
-              </TouchableOpacity>
+                ) : briefText ? (
+                  <Text style={[styles.digestText, { color: colors.secondaryText }]}>
+                    {briefText}
+                    {briefStreaming && <Text style={{ color: colors.primary }}>|</Text>}
+                  </Text>
+                ) : (
+                  <Text style={[styles.digestText, { color: colors.secondaryText }]}>
+                    No emails to summarize yet.
+                  </Text>
+                )}
+                <TouchableOpacity onPress={regenerate} style={styles.refreshButton} activeOpacity={0.7}>
+                  <MaterialCommunityIcons name="refresh" size={16} color={colors.secondaryText} />
+                </TouchableOpacity>
+              </View>
             </View>
 
             {/* Needs Response - AI-detected emails requiring reply */}
@@ -709,7 +711,6 @@ const styles = StyleSheet.create({
   // Cards
   card: {
     borderRadius: 16,
-    padding: 20,
     marginBottom: 16,
     ...Platform.select({
       web: { boxShadow: '0 2px 16px rgba(0,0,0,0.10)' } as any,
@@ -721,6 +722,9 @@ const styles = StyleSheet.create({
         elevation: 3,
       },
     }),
+  },
+  cardContent: {
+    padding: 20,
   },
   // Greeting
   greetingText: {
@@ -768,6 +772,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 16,
     marginBottom: 8,
   },
   sectionTitle: {
