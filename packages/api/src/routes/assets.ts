@@ -22,8 +22,8 @@ interface AuthenticatedRequest extends express.Request {
 const router = express.Router();
 const upload = multer(); // memory storage
 
-// Require authentication for all asset routes
-router.use(authMiddleware);
+// Auth applied per-route: authMiddleware for private routes,
+// optionalAuthMiddleware for public stream/download endpoints.
 
 // Initialize S3 service and Asset service
 const s3Config = {
@@ -73,7 +73,7 @@ const unlinkFileSchema = z.object({
  * @desc List authenticated user's files (Central Asset Service)
  * @access Private
  */
-router.get('/', asyncHandler(async (req: AuthenticatedRequest, res: express.Response) => {
+router.get('/', authMiddleware, asyncHandler(async (req: AuthenticatedRequest, res: express.Response) => {
   const user = req.user;
   if (!user?._id) {
     throw new UnauthorizedError('Authentication required');
@@ -111,7 +111,7 @@ router.get('/', asyncHandler(async (req: AuthenticatedRequest, res: express.Resp
  * @desc Initialize file upload - returns pre-signed URL and file ID
  * @access Private
  */
-router.post('/init', asyncHandler(async (req: AuthenticatedRequest, res: express.Response) => {
+router.post('/init', authMiddleware, asyncHandler(async (req: AuthenticatedRequest, res: express.Response) => {
   const user = req.user;
   if (!user?._id) {
     throw new UnauthorizedError('Authentication required');
@@ -148,7 +148,7 @@ router.post('/init', asyncHandler(async (req: AuthenticatedRequest, res: express
  * @desc Complete file upload - commit metadata and trigger variant generation
  * @access Private
  */
-router.post('/complete', asyncHandler(async (req: AuthenticatedRequest, res: express.Response) => {
+router.post('/complete', authMiddleware, asyncHandler(async (req: AuthenticatedRequest, res: express.Response) => {
   const user = req.user;
   if (!user?._id) {
     throw new UnauthorizedError('Authentication required');
@@ -195,7 +195,7 @@ router.post('/complete', asyncHandler(async (req: AuthenticatedRequest, res: exp
  * @desc Direct upload via API (bypasses browser CORS for presigned PUT)
  * @access Private
  */
-router.post('/:id/upload-direct', upload.single('file'), asyncHandler(async (req: AuthenticatedRequest, res: express.Response) => {
+router.post('/:id/upload-direct', authMiddleware, upload.single('file'), asyncHandler(async (req: AuthenticatedRequest, res: express.Response) => {
   const user = req.user;
   if (!user?._id) {
     throw new UnauthorizedError('Authentication required');
@@ -227,7 +227,7 @@ router.post('/:id/upload-direct', upload.single('file'), asyncHandler(async (req
  * @desc Upload file directly - backend calculates SHA256
  * @access Private
  */
-router.post('/upload', upload.single('file'), asyncHandler(async (req: AuthenticatedRequest, res: express.Response) => {
+router.post('/upload', authMiddleware, upload.single('file'), asyncHandler(async (req: AuthenticatedRequest, res: express.Response) => {
   const user = req.user;
   if (!user?._id) {
     throw new UnauthorizedError('Authentication required');
@@ -283,7 +283,7 @@ router.post('/upload', upload.single('file'), asyncHandler(async (req: Authentic
  * @desc Link file to an entity
  * @access Private
  */
-router.post('/:id/links', asyncHandler(async (req: AuthenticatedRequest, res: express.Response) => {
+router.post('/:id/links', authMiddleware, asyncHandler(async (req: AuthenticatedRequest, res: express.Response) => {
   const user = req.user;
   if (!user?._id) {
     throw new UnauthorizedError('Authentication required');
@@ -330,7 +330,7 @@ router.post('/:id/links', asyncHandler(async (req: AuthenticatedRequest, res: ex
  * @desc Remove link from file
  * @access Private
  */
-router.delete('/:id/links', asyncHandler(async (req: AuthenticatedRequest, res: express.Response) => {
+router.delete('/:id/links', authMiddleware, asyncHandler(async (req: AuthenticatedRequest, res: express.Response) => {
   const user = req.user;
   if (!user?._id) {
     throw new UnauthorizedError('Authentication required');
@@ -375,7 +375,7 @@ router.delete('/:id/links', asyncHandler(async (req: AuthenticatedRequest, res: 
  * @desc Get file metadata with links and variants
  * @access Private
  */
-router.get('/:id', asyncHandler(async (req: AuthenticatedRequest, res: express.Response) => {
+router.get('/:id', authMiddleware, asyncHandler(async (req: AuthenticatedRequest, res: express.Response) => {
   const user = req.user;
   if (!user?._id) {
     throw new UnauthorizedError('Authentication required');
@@ -388,9 +388,9 @@ router.get('/:id', asyncHandler(async (req: AuthenticatedRequest, res: express.R
     throw new NotFoundError('File not found');
   }
 
-  logger.debug('File metadata retrieved', { 
-    userId: user._id, 
-    fileId 
+  logger.debug('File metadata retrieved', {
+    userId: user._id,
+    fileId
   });
 
   sendSuccess(res, {
@@ -419,7 +419,7 @@ router.get('/:id', asyncHandler(async (req: AuthenticatedRequest, res: express.R
  * @desc Get file URL (CDN or signed URL)
  * @access Private
  */
-router.get('/:id/url', asyncHandler(async (req: AuthenticatedRequest, res: express.Response) => {
+router.get('/:id/url', authMiddleware, asyncHandler(async (req: AuthenticatedRequest, res: express.Response) => {
   const user = req.user;
   if (!user?._id) {
     throw new UnauthorizedError('Authentication required');
@@ -456,7 +456,7 @@ router.get('/:id/url', asyncHandler(async (req: AuthenticatedRequest, res: expre
  * @desc Debug: return storageKey and existence of the underlying object
  * @access Private
  */
-router.get('/:id/exists', asyncHandler(async (req: AuthenticatedRequest, res: express.Response) => {
+router.get('/:id/exists', authMiddleware, asyncHandler(async (req: AuthenticatedRequest, res: express.Response) => {
   const user = req.user;
   if (!user?._id) {
     throw new UnauthorizedError('Authentication required');
@@ -617,7 +617,7 @@ router.get('/:id/download', optionalAuthMiddleware, asyncHandler(async (req: Aut
  * @desc Restore file from trash
  * @access Private
  */
-router.post('/:id/restore', asyncHandler(async (req: AuthenticatedRequest, res: express.Response) => {
+router.post('/:id/restore', authMiddleware, asyncHandler(async (req: AuthenticatedRequest, res: express.Response) => {
   const user = req.user;
   if (!user?._id) {
     throw new UnauthorizedError('Authentication required');
@@ -645,7 +645,7 @@ router.post('/:id/restore', asyncHandler(async (req: AuthenticatedRequest, res: 
  * @desc Update file visibility
  * @access Private
  */
-router.patch('/:id/visibility', asyncHandler(async (req: AuthenticatedRequest, res: express.Response) => {
+router.patch('/:id/visibility', authMiddleware, asyncHandler(async (req: AuthenticatedRequest, res: express.Response) => {
   const user = req.user;
   if (!user?._id) {
     throw new UnauthorizedError('Authentication required');
@@ -705,7 +705,7 @@ router.patch('/:id/visibility', asyncHandler(async (req: AuthenticatedRequest, r
  * @desc Delete file with impact summary
  * @access Private
  */
-router.delete('/:id', asyncHandler(async (req: AuthenticatedRequest, res: express.Response) => {
+router.delete('/:id', authMiddleware, asyncHandler(async (req: AuthenticatedRequest, res: express.Response) => {
   const user = req.user;
   if (!user?._id) {
     throw new UnauthorizedError('Authentication required');
@@ -747,7 +747,7 @@ router.delete('/:id', asyncHandler(async (req: AuthenticatedRequest, res: expres
  * @desc Check access for multiple files
  * @access Private
  */
-router.post('/batch-access', asyncHandler(async (req: AuthenticatedRequest, res: express.Response) => {
+router.post('/batch-access', authMiddleware, asyncHandler(async (req: AuthenticatedRequest, res: express.Response) => {
   const user = req.user;
   const { fileIds, context } = req.body;
 
