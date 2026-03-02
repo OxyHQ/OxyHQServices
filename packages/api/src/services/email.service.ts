@@ -217,7 +217,7 @@ class EmailService {
       userId: new mongoose.Types.ObjectId(userId),
       mailboxId: inboxMailbox._id,
       messageId: `<welcome-${userId}-${uuidv4()}@${EMAIL_DOMAIN}>`,
-      from: { name: 'Oxy Team', address: `hello@${EMAIL_DOMAIN}` },
+      from: { name: 'Inbox by Oxy', address: `hello@${EMAIL_DOMAIN}` },
       to: [{ name: recipientName, address: recipientAddress }],
       cc: [],
       bcc: [],
