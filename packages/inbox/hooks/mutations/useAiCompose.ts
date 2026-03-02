@@ -10,6 +10,7 @@
  */
 
 import { useState, useCallback } from 'react';
+import { useOxy } from '@oxyhq/services';
 import { aliaChatCompletion, streamAliaChatCompletion } from '@/services/aliaApi';
 
 export type ComposeTone = 'professional' | 'casual' | 'friendly' | 'formal';
@@ -91,8 +92,15 @@ interface UseAiComposeReturn {
 }
 
 export function useAiCompose(): UseAiComposeReturn {
+  const { oxyServices } = useOxy();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
+
+  const getToken = useCallback(() => {
+    const token = oxyServices.httpService.getAccessToken();
+    if (!token) throw new Error('Not authenticated');
+    return token;
+  }, [oxyServices]);
 
   const draft = useCallback(async (prompt: string, tone: ComposeTone = 'professional'): Promise<string> => {
     setIsLoading(true);
@@ -106,6 +114,7 @@ export function useAiCompose(): UseAiComposeReturn {
         ],
         maxTokens: 800,
         temperature: 0.7,
+        token: getToken(),
       });
       return result.trim();
     } catch (err) {
@@ -115,7 +124,7 @@ export function useAiCompose(): UseAiComposeReturn {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [getToken]);
 
   const streamDraft = useCallback(async (
     prompt: string,
@@ -134,6 +143,7 @@ export function useAiCompose(): UseAiComposeReturn {
         ],
         maxTokens: 800,
         temperature: 0.7,
+        token: getToken(),
       });
 
       for await (const chunk of generator) {
@@ -149,7 +159,7 @@ export function useAiCompose(): UseAiComposeReturn {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [getToken]);
 
   const polish = useCallback(async (text: string): Promise<string> => {
     setIsLoading(true);
@@ -163,6 +173,7 @@ export function useAiCompose(): UseAiComposeReturn {
         ],
         maxTokens: 1000,
         temperature: 0.5,
+        token: getToken(),
       });
       return result.trim();
     } catch (err) {
@@ -172,7 +183,7 @@ export function useAiCompose(): UseAiComposeReturn {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [getToken]);
 
   const changeTone = useCallback(async (text: string, tone: ComposeTone): Promise<string> => {
     setIsLoading(true);
@@ -186,6 +197,7 @@ export function useAiCompose(): UseAiComposeReturn {
         ],
         maxTokens: 1000,
         temperature: 0.6,
+        token: getToken(),
       });
       return result.trim();
     } catch (err) {
@@ -195,7 +207,7 @@ export function useAiCompose(): UseAiComposeReturn {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [getToken]);
 
   const adjustLength = useCallback(async (text: string, direction: 'shorter' | 'longer'): Promise<string> => {
     setIsLoading(true);
@@ -209,6 +221,7 @@ export function useAiCompose(): UseAiComposeReturn {
         ],
         maxTokens: direction === 'longer' ? 1500 : 500,
         temperature: 0.5,
+        token: getToken(),
       });
       return result.trim();
     } catch (err) {
@@ -218,7 +231,7 @@ export function useAiCompose(): UseAiComposeReturn {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [getToken]);
 
   const suggestSubject = useCallback(async (body: string): Promise<string> => {
     setIsLoading(true);
@@ -232,6 +245,7 @@ export function useAiCompose(): UseAiComposeReturn {
         ],
         maxTokens: 60,
         temperature: 0.6,
+        token: getToken(),
       });
       return result.trim().replace(/^["']|["']$/g, '');
     } catch (err) {
@@ -241,7 +255,7 @@ export function useAiCompose(): UseAiComposeReturn {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [getToken]);
 
   return {
     draft,

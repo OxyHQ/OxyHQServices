@@ -9,6 +9,7 @@
  */
 
 import { useState, useCallback } from 'react';
+import { useOxy } from '@oxyhq/services';
 import { aliaChatCompletion } from '@/services/aliaApi';
 
 export interface ParsedSearchQuery {
@@ -57,6 +58,7 @@ Examples:
 Respond with ONLY the JSON object, nothing else.`;
 
 export function useNaturalLanguageSearch() {
+  const { oxyServices } = useOxy();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const [lastResult, setLastResult] = useState<{
@@ -83,6 +85,9 @@ export function useNaturalLanguageSearch() {
     setError(null);
 
     try {
+      const token = oxyServices.httpService.getAccessToken();
+      if (!token) throw new Error('Not authenticated');
+
       const response = await aliaChatCompletion({
         model: 'alia-lite',
         messages: [
@@ -91,6 +96,7 @@ export function useNaturalLanguageSearch() {
         ],
         maxTokens: 200,
         temperature: 0.3,
+        token,
       });
 
       const trimmed = response.trim();
@@ -113,7 +119,7 @@ export function useNaturalLanguageSearch() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [oxyServices]);
 
   return {
     parseQuery,

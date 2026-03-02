@@ -1,11 +1,11 @@
 /**
  * Alia AI API client
  *
- * Lightweight fetch-based client for the Alia chat completions API.
- * OpenAI-compatible endpoint at https://api.alia.onl/v1.
+ * Proxies requests through the Oxy backend API which handles
+ * Alia API key management server-side.
  */
 
-const ALIA_BASE_URL = 'https://api.alia.onl/v1';
+const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
 export interface AliaMessage {
   role: 'system' | 'user' | 'assistant';
@@ -17,12 +17,8 @@ export interface AliaRequestOptions {
   messages: AliaMessage[];
   maxTokens?: number;
   temperature?: number;
-}
-
-function getApiKey(): string {
-  const key = process.env.EXPO_PUBLIC_ALIA_API_KEY;
-  if (!key) throw new Error('EXPO_PUBLIC_ALIA_API_KEY not configured');
-  return key;
+  /** User session JWT for backend authentication */
+  token: string;
 }
 
 /**
@@ -31,11 +27,11 @@ function getApiKey(): string {
 export async function* streamAliaChatCompletion(
   options: AliaRequestOptions,
 ): AsyncGenerator<string> {
-  const response = await fetch(`${ALIA_BASE_URL}/chat/completions`, {
+  const response = await fetch(`${API_URL}/alia/chat/completions`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${getApiKey()}`,
+      Authorization: `Bearer ${options.token}`,
     },
     body: JSON.stringify({
       model: options.model ?? 'alia-lite',
@@ -98,11 +94,11 @@ export async function* streamAliaChatCompletion(
 export async function aliaChatCompletion(
   options: AliaRequestOptions,
 ): Promise<string> {
-  const response = await fetch(`${ALIA_BASE_URL}/chat/completions`, {
+  const response = await fetch(`${API_URL}/alia/chat/completions`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${getApiKey()}`,
+      Authorization: `Bearer ${options.token}`,
     },
     body: JSON.stringify({
       model: options.model ?? 'alia-lite',

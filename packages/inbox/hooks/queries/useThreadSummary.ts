@@ -8,6 +8,7 @@
  */
 
 import { useQuery } from '@tanstack/react-query';
+import { useOxy } from '@oxyhq/services';
 import { aliaChatCompletion } from '@/services/aliaApi';
 import type { Message } from '@/services/emailApi';
 
@@ -75,7 +76,7 @@ function buildThreadPrompt(messages: Message[]): string {
   return parts.join('\n\n---\n\n');
 }
 
-async function fetchThreadSummary(messages: Message[]): Promise<ThreadSummaryResult> {
+async function fetchThreadSummary(messages: Message[], token: string): Promise<ThreadSummaryResult> {
   const prompt = buildThreadPrompt(messages);
 
   try {
@@ -87,6 +88,7 @@ async function fetchThreadSummary(messages: Message[]): Promise<ThreadSummaryRes
       ],
       maxTokens: 600,
       temperature: 0.5,
+      token,
     });
 
     // Parse JSON from response
@@ -127,12 +129,14 @@ export function useThreadSummary(
   messages: Message[] | undefined,
   options: UseThreadSummaryOptions = {}
 ) {
+  const { oxyServices } = useOxy();
+  const token = oxyServices.httpService.getAccessToken() ?? '';
   const { enabled = true, minMessages = 4 } = options;
-  const shouldFetch = enabled && messages && messages.length >= minMessages;
+  const shouldFetch = enabled && !!token && !!messages && messages.length >= minMessages;
 
   const query = useQuery({
     queryKey: ['threadSummary', messages?.map((m) => m._id).join(',')],
-    queryFn: () => fetchThreadSummary(messages!),
+    queryFn: () => fetchThreadSummary(messages!, token),
     enabled: shouldFetch,
     staleTime: 10 * 60 * 1000, // Cache for 10 minutes
     gcTime: 30 * 60 * 1000,

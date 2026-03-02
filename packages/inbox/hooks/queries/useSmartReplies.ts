@@ -6,6 +6,7 @@
  */
 
 import { useQuery } from '@tanstack/react-query';
+import { useOxy } from '@oxyhq/services';
 import { aliaChatCompletion } from '@/services/aliaApi';
 import type { Message } from '@/services/emailApi';
 
@@ -67,7 +68,7 @@ function shouldSkipSmartReplies(message: Message): boolean {
   return false;
 }
 
-async function fetchSmartReplies(message: Message): Promise<string[]> {
+async function fetchSmartReplies(message: Message, token: string): Promise<string[]> {
   if (shouldSkipSmartReplies(message)) {
     return [];
   }
@@ -83,6 +84,7 @@ async function fetchSmartReplies(message: Message): Promise<string[]> {
       ],
       maxTokens: 150,
       temperature: 0.7,
+      token,
     });
 
     // Parse JSON array from response
@@ -110,10 +112,13 @@ async function fetchSmartReplies(message: Message): Promise<string[]> {
 }
 
 export function useSmartReplies(message: Message | null | undefined): SmartRepliesResult {
+  const { oxyServices } = useOxy();
+  const token = oxyServices.httpService.getAccessToken() ?? '';
+
   const query = useQuery({
     queryKey: ['smartReplies', message?._id],
-    queryFn: () => fetchSmartReplies(message!),
-    enabled: !!message,
+    queryFn: () => fetchSmartReplies(message!, token),
+    enabled: !!message && !!token,
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes
     gcTime: 10 * 60 * 1000,
     retry: false, // Don't retry on failure

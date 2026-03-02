@@ -26,6 +26,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import { AiChat02Icon, Cancel01Icon, MailSend01Icon } from '@hugeicons/core-free-icons';
 
+import { useOxy } from '@oxyhq/services';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { streamAliaChatCompletion } from '@/services/aliaApi';
@@ -75,6 +76,7 @@ function buildEmailContext(messages: Message[]): string {
 }
 
 export function AskAlia({ messages, onNavigateToMessage }: AskAliaProps) {
+  const { oxyServices } = useOxy();
   const colorScheme = useColorScheme();
   const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
   const isDark = colorScheme === 'dark';
@@ -128,6 +130,9 @@ export function AskAlia({ messages, onNavigateToMessage }: AskAliaProps) {
     const emailContext = buildEmailContext(messages);
 
     try {
+      const token = oxyServices.httpService.getAccessToken();
+      if (!token) throw new Error('Not authenticated');
+
       const generator = streamAliaChatCompletion({
         model: 'alia-lite',
         messages: [
@@ -140,6 +145,7 @@ export function AskAlia({ messages, onNavigateToMessage }: AskAliaProps) {
         ],
         maxTokens: 500,
         temperature: 0.7,
+        token,
       });
 
       for await (const chunk of generator) {
@@ -167,7 +173,7 @@ export function AskAlia({ messages, onNavigateToMessage }: AskAliaProps) {
     } finally {
       setIsStreaming(false);
     }
-  }, [input, isStreaming, messages, chat]);
+  }, [input, isStreaming, messages, chat, oxyServices]);
 
   const handleClear = useCallback(() => {
     setChat([]);

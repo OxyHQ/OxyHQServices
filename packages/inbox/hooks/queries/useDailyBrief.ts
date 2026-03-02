@@ -7,6 +7,7 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { useOxy } from '@oxyhq/services';
 import { streamAliaChatCompletion, type AliaMessage } from '@/services/aliaApi';
 import type { Message } from '@/services/emailApi';
 
@@ -61,6 +62,7 @@ function getBriefCacheKey(): string[] {
 
 export function useDailyBrief(messages: Message[], userName: string) {
   const queryClient = useQueryClient();
+  const { oxyServices } = useOxy();
   const cacheKey = getBriefCacheKey();
 
   const [briefText, setBriefText] = useState('');
@@ -88,6 +90,9 @@ export function useDailyBrief(messages: Message[], userName: string) {
       return;
     }
 
+    const token = oxyServices.httpService.getAccessToken();
+    if (!token) return;
+
     setIsStreaming(true);
     setBriefText('');
     setError(null);
@@ -102,6 +107,7 @@ export function useDailyBrief(messages: Message[], userName: string) {
         messages: prompt,
         maxTokens: 300,
         temperature: 0.7,
+        token,
       })) {
         if (abortRef.current) break;
         accumulated += delta;
@@ -129,7 +135,7 @@ export function useDailyBrief(messages: Message[], userName: string) {
         setIsStreaming(false);
       }
     }
-  }, [messages, userName, queryClient, cacheKey]);
+  }, [messages, userName, queryClient, cacheKey, oxyServices]);
 
   // Auto-generate when messages arrive and no brief exists yet
   useEffect(() => {
