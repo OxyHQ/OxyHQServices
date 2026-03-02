@@ -23,6 +23,8 @@ export const AttachmentSchema = z.object({
   contentType: z.string(),
   size: z.number(),
   s3Key: z.string(),
+  contentId: z.string().optional(),
+  isInline: z.boolean().optional(),
 });
 
 export const MessageFlagsSchema = z.object({
@@ -54,6 +56,8 @@ export const MessageSchema = z.object({
   inReplyTo: z.string().nullable().optional(),
   references: z.array(z.string()).optional(),
   aliasTag: z.string().nullable().optional(),
+  threadCount: z.number().optional(),
+  threadParticipants: z.array(z.string()).optional(),
   date: z.string(),
   receivedAt: z.string(),
 });
@@ -102,6 +106,22 @@ export const EmailSettingsSchema = z.object({
   address: z.string().optional(),
 });
 
+export const SubscriptionSchema = z.object({
+  _id: z.string(),
+  name: z.string(),
+  messageCount: z.number(),
+  latestDate: z.string(),
+  oldestDate: z.string(),
+  latestMessageId: z.string(),
+  hasListUnsubscribe: z.boolean(),
+  type: z.enum(['list-unsubscribe', 'pattern-match', 'frequent']),
+});
+
+export const UnsubscribeResultSchema = z.object({
+  success: z.boolean(),
+  method: z.string(),
+});
+
 // ─── Inferred Types ────────────────────────────────────────────────
 
 export type EmailAddress = z.infer<typeof EmailAddressSchema>;
@@ -113,6 +133,8 @@ export type Label = z.infer<typeof LabelSchema>;
 export type Pagination = z.infer<typeof PaginationSchema>;
 export type QuotaUsage = z.infer<typeof QuotaUsageSchema>;
 export type EmailSettings = z.infer<typeof EmailSettingsSchema>;
+export type Subscription = z.infer<typeof SubscriptionSchema>;
+export type UnsubscribeResult = z.infer<typeof UnsubscribeResultSchema>;
 
 // ─── Response Wrappers ─────────────────────────────────────────────
 
@@ -326,6 +348,33 @@ export function createEmailApi(http: HttpService) {
       settings: { signature?: string; autoReply?: Partial<EmailSettings['autoReply']> },
     ): Promise<void> {
       await http.put('/email/settings', settings);
+    },
+
+    // ─── Subscriptions ───────────────────────────────────────────────
+
+    async listSubscriptions(
+      options: { limit?: number; offset?: number } = {},
+    ): Promise<{ data: Subscription[]; pagination: Pagination }> {
+      const params: Record<string, string> = {};
+      if (options.limit !== undefined) params.limit = String(options.limit);
+      if (options.offset !== undefined) params.offset = String(options.offset);
+
+      const res = (await http.get('/email/subscriptions', { params })) as PaginatedResponse<Subscription>;
+      return {
+        data: z.array(SubscriptionSchema).parse(res.data.data),
+        pagination: PaginationSchema.parse(res.data.pagination),
+      };
+    },
+
+    async unsubscribe(
+      senderAddress: string,
+      method?: 'list-unsubscribe' | 'block',
+    ): Promise<UnsubscribeResult> {
+      const res = (await http.post('/email/subscriptions/unsubscribe', {
+        senderAddress,
+        method,
+      })) as { data: UnsubscribeResult };
+      return UnsubscribeResultSchema.parse(res.data);
     },
   };
 }

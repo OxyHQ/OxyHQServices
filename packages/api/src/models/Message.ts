@@ -235,6 +235,8 @@ MessageSchema.index(
 MessageSchema.index({ userId: 1, labels: 1 });
 // Alias tag filtering
 MessageSchema.index({ userId: 1, aliasTag: 1 });
+// Subscription aggregation (group by sender)
+MessageSchema.index({ userId: 1, 'from.address': 1, date: -1 });
 // Retention / cleanup
 MessageSchema.index({ mailboxId: 1, receivedAt: 1 });
 

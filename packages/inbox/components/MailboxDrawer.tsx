@@ -35,6 +35,7 @@ import {
   PencilEdit01Icon,
   ArrowDown01Icon,
   ArrowUp01Icon,
+  Mail01Icon,
 } from '@hugeicons/core-free-icons';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
@@ -258,6 +259,11 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
     onClose?.();
   };
 
+  const handleSubscriptions = () => {
+    router.push('/subscriptions' as any);
+    onClose?.();
+  };
+
   const emailAddress = user?.username ? `${user.username}@oxy.so` : '';
   const displayName = user?.name?.first
     ? `${user.name.first}${user.name.last ? ` ${user.name.last}` : ''}`
@@ -278,6 +284,7 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
   };
 
   const isStarredActive = currentView === 'starred';
+  const isSubscriptionsActive = currentView === 'subscriptions';
 
   return (
     <View style={[styles.container, { backgroundColor: colors.sidebarBackground }, collapsed && styles.containerCollapsed]}>
@@ -379,6 +386,17 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
           colors={colors}
           collapsed={collapsed}
           onPress={handleStarred}
+        />
+
+        {/* Subscriptions */}
+        <NavItem
+          icon="newspaper-variant-outline"
+          hugeIcon={Mail01Icon as unknown as IconSvgElement}
+          label="Subscriptions"
+          isActive={isSubscriptionsActive}
+          colors={colors}
+          collapsed={collapsed}
+          onPress={handleSubscriptions}
         />
 
         {/* More toggle for secondary mailboxes */}

@@ -32,6 +32,8 @@ import {
   getAttachmentUrl,
   getEmailSettings,
   updateEmailSettings,
+  listSubscriptions,
+  unsubscribe,
 } from '../controllers/email.controller';
 
 const router = Router();
@@ -85,6 +87,11 @@ router.get('/quota', asyncHandler(getQuota));
 
 router.post('/attachments', upload.single('file'), asyncHandler(uploadAttachment));
 router.get('/attachments/:s3Key(*)', asyncHandler(getAttachmentUrl));
+
+// ─── Subscriptions ───────────────────────────────────────────
+
+router.get('/subscriptions', asyncHandler(listSubscriptions));
+router.post('/subscriptions/unsubscribe', asyncHandler(unsubscribe));
 
 // ─── Settings ─────────────────────────────────────────────────────
 

@@ -386,3 +386,39 @@ export async function updateEmailSettings(req: AuthRequest, res: Response): Prom
   await emailService.updateEmailSettings(userId, { signature, autoReply });
   res.json({ data: { message: 'Settings updated' } });
 }
+
+// ─── Subscriptions ──────────────────────────────────────────────
+
+export async function listSubscriptions(req: AuthRequest, res: Response): Promise<void> {
+  const userId = req.user!.id;
+  const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+  const offset = parseInt(req.query.offset as string) || 0;
+
+  const result = await emailService.getSubscriptions(userId, { limit, offset });
+  res.json({
+    data: result.data,
+    pagination: {
+      total: result.total,
+      limit,
+      offset,
+      hasMore: offset + limit < result.total,
+    },
+  });
+}
+
+export async function unsubscribe(req: AuthRequest, res: Response): Promise<void> {
+  const userId = req.user!.id;
+  const { senderAddress, method } = req.body;
+
+  if (!senderAddress || typeof senderAddress !== 'string') {
+    throw new BadRequestError('senderAddress is required');
+  }
+
+  const allowedMethods = ['list-unsubscribe', 'block'];
+  if (method && !allowedMethods.includes(method)) {
+    throw new BadRequestError('method must be "list-unsubscribe" or "block"');
+  }
+
+  const result = await emailService.unsubscribe(userId, senderAddress, method || 'list-unsubscribe');
+  res.json({ data: result });
+}

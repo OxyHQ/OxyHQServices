@@ -194,6 +194,7 @@ export default function InboxLayout() {
       <Stack.Screen name="[view]" />
       <Stack.Screen name="conversation/[id]" />
       <Stack.Screen name="compose" />
+      <Stack.Screen name="subscriptions" />
     </Stack>
   );
 }

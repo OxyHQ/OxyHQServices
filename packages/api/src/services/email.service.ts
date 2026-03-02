@@ -28,6 +28,7 @@ import { logger } from '../utils/logger';
 import { NotFoundError, BadRequestError } from '../utils/error';
 import { v4 as uuidv4 } from 'uuid';
 import { aiLabelingService } from './aiLabeling.service';
+import { smtpOutbound } from './smtp.outbound';
 
 // Dedicated S3 client for the email attachments bucket
 const emailS3 = new S3Client({
@@ -207,6 +208,71 @@ class EmailService {
         .lean({ virtuals: true }),
       Message.countDocuments(filter),
     ]);
+
+    // Enrich with thread metadata (count + participants)
+    const threaded = data.filter((m: any) => m.inReplyTo || (m.references && m.references.length > 0));
+    if (threaded.length > 0) {
+      // Collect all thread-related message IDs
+      const threadIdSet = new Set<string>();
+      for (const m of threaded) {
+        if (m.messageId) threadIdSet.add(m.messageId);
+        if (m.inReplyTo) threadIdSet.add(m.inReplyTo);
+        if (m.references) m.references.forEach((r: string) => threadIdSet.add(r));
+      }
+      const allThreadIds = [...threadIdSet];
+
+      const threadAgg = await Message.aggregate([
+        {
+          $match: {
+            userId: new mongoose.Types.ObjectId(userId),
+            $or: [
+              { messageId: { $in: allThreadIds } },
+              { inReplyTo: { $in: allThreadIds } },
+              { references: { $elemMatch: { $in: allThreadIds } } },
+            ],
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            messageIds: { $addToSet: '$messageId' },
+            allMessages: {
+              $push: {
+                messageId: '$messageId',
+                inReplyTo: '$inReplyTo',
+                references: '$references',
+                fromAddress: '$from.address',
+              },
+            },
+          },
+        },
+      ]);
+
+      if (threadAgg.length > 0) {
+        const allMessages = threadAgg[0].allMessages;
+        // Build a lookup: for each message in our page, find its thread siblings
+        for (const msg of data as any[]) {
+          if (!msg.inReplyTo && (!msg.references || msg.references.length === 0)) continue;
+
+          const myIds = new Set<string>();
+          if (msg.messageId) myIds.add(msg.messageId);
+          if (msg.inReplyTo) myIds.add(msg.inReplyTo);
+          if (msg.references) msg.references.forEach((r: string) => myIds.add(r));
+
+          const siblings = allMessages.filter((m: any) => {
+            if (myIds.has(m.messageId)) return true;
+            if (m.inReplyTo && myIds.has(m.inReplyTo)) return true;
+            if (m.references) return m.references.some((r: string) => myIds.has(r));
+            return false;
+          });
+
+          if (siblings.length > 1) {
+            msg.threadCount = siblings.length;
+            msg.threadParticipants = [...new Set(siblings.map((s: any) => s.fromAddress))];
+          }
+        }
+      }
+    }
 
     return { data: data as any[], total, limit, offset };
   }
@@ -897,6 +963,355 @@ class EmailService {
     if (settings.autoReply !== undefined) update.autoReply = settings.autoReply;
 
     await User.findByIdAndUpdate(userId, { $set: update });
+  }
+
+  // ─── Subscriptions ──────────────────────────────────────────────
+
+  /**
+   * Newsletter / subscription detection patterns.
+   * Matches common automated sender addresses.
+   */
+  private static readonly NEWSLETTER_PATTERNS = [
+    /noreply/i,
+    /no-reply/i,
+    /donotreply/i,
+    /do-not-reply/i,
+    /newsletter/i,
+    /marketing/i,
+    /promo/i,
+    /updates@/i,
+    /digest@/i,
+    /notification/i,
+    /mailer/i,
+    /news@/i,
+    /info@/i,
+    /announcements@/i,
+    /hello@/i,
+    /team@/i,
+    /support@/i,
+  ];
+
+  /**
+   * SSRF protection: block requests to private/internal networks.
+   */
+  private static readonly PRIVATE_IP_PATTERNS = [
+    /^127\./,
+    /^0\./,
+    /^10\./,
+    /^172\.(1[6-9]|2[0-9]|3[01])\./,
+    /^192\.168\./,
+    /^169\.254\./,
+    /^fc00:/i,
+    /^fe80:/i,
+    /^::1$/,
+    /^localhost$/i,
+  ];
+
+  /**
+   * Aggregate subscription senders: group messages by sender address,
+   * detect newsletter characteristics, and return paginated results.
+   */
+  async getSubscriptions(
+    userId: string,
+    options: { limit?: number; offset?: number } = {},
+  ): Promise<{ data: any[]; total: number }> {
+    const { limit = 50, offset = 0 } = options;
+
+    // Only aggregate from Inbox and Archive (received mail, not sent/drafts/trash)
+    const receivedMailboxes = await Mailbox.find({
+      userId,
+      specialUse: { $in: ['\\Inbox', '\\Archive'] },
+    })
+      .select('_id')
+      .lean();
+    const mailboxIds = receivedMailboxes.map((m) => m._id);
+
+    if (mailboxIds.length === 0) {
+      return { data: [], total: 0 };
+    }
+
+    const pipeline: any[] = [
+      {
+        $match: {
+          userId: new mongoose.Types.ObjectId(userId),
+          mailboxId: { $in: mailboxIds },
+        },
+      },
+      {
+        $group: {
+          _id: '$from.address',
+          name: { $last: '$from.name' },
+          messageCount: { $sum: 1 },
+          latestDate: { $max: '$date' },
+          oldestDate: { $min: '$date' },
+          latestMessageId: { $last: '$_id' },
+        },
+      },
+      { $match: { messageCount: { $gte: 3 } } },
+      { $sort: { messageCount: -1 } },
+      {
+        $facet: {
+          data: [{ $skip: offset }, { $limit: limit }],
+          total: [{ $count: 'count' }],
+        },
+      },
+    ];
+
+    const [result] = await Message.aggregate(pipeline);
+    const senders = result?.data ?? [];
+    const total = result?.total?.[0]?.count ?? 0;
+
+    if (senders.length === 0) {
+      return { data: [], total };
+    }
+
+    // Phase 2: fetch List-Unsubscribe headers for each sender's latest message
+    const latestMsgIds = senders.map((s: any) => s.latestMessageId);
+    const latestMessages = await Message.find({ _id: { $in: latestMsgIds } })
+      .select('+headers')
+      .lean();
+
+    const headerMap = new Map<string, Record<string, string>>();
+    for (const msg of latestMessages) {
+      const headers: Record<string, string> = {};
+      if (msg.headers instanceof Map) {
+        msg.headers.forEach((v: string, k: string) => {
+          headers[k.toLowerCase()] = v;
+        });
+      } else if (msg.headers && typeof msg.headers === 'object') {
+        for (const [k, v] of Object.entries(msg.headers as Record<string, string>)) {
+          headers[k.toLowerCase()] = v;
+        }
+      }
+      headerMap.set(msg._id.toString(), headers);
+    }
+
+    // Enrich senders with unsubscribe info and type detection
+    const enriched = senders.map((sender: any) => {
+      const headers = headerMap.get(sender.latestMessageId.toString()) || {};
+      const listUnsub = headers['list-unsubscribe'] || null;
+      const listUnsubPost = headers['list-unsubscribe-post'] || null;
+
+      let type: 'list-unsubscribe' | 'pattern-match' | 'frequent' = 'frequent';
+      if (listUnsub) {
+        type = 'list-unsubscribe';
+      } else if (
+        EmailService.NEWSLETTER_PATTERNS.some((p) => p.test(sender._id))
+      ) {
+        type = 'pattern-match';
+      }
+
+      return {
+        _id: sender._id,
+        name: sender.name || sender._id.split('@')[0],
+        messageCount: sender.messageCount,
+        latestDate: sender.latestDate,
+        oldestDate: sender.oldestDate,
+        latestMessageId: sender.latestMessageId,
+        hasListUnsubscribe: !!listUnsub,
+        type,
+      };
+    });
+
+    return { data: enriched, total };
+  }
+
+  /**
+   * Unsubscribe from a sender via List-Unsubscribe header or by blocking.
+   */
+  async unsubscribe(
+    userId: string,
+    senderAddress: string,
+    method: 'list-unsubscribe' | 'block' = 'list-unsubscribe',
+  ): Promise<{ success: boolean; method: string }> {
+    if (method === 'list-unsubscribe') {
+      // Find the latest message from this sender with headers
+      const latestMsg = await Message.findOne({
+        userId,
+        'from.address': senderAddress.toLowerCase(),
+      })
+        .sort({ date: -1 })
+        .select('+headers')
+        .lean();
+
+      if (latestMsg?.headers) {
+        const headers: Record<string, string> = {};
+        if (latestMsg.headers instanceof Map) {
+          latestMsg.headers.forEach((v: string, k: string) => {
+            headers[k.toLowerCase()] = v;
+          });
+        } else if (typeof latestMsg.headers === 'object') {
+          for (const [k, v] of Object.entries(latestMsg.headers as Record<string, string>)) {
+            headers[k.toLowerCase()] = v;
+          }
+        }
+
+        const listUnsub = headers['list-unsubscribe'];
+        const listUnsubPost = headers['list-unsubscribe-post'];
+
+        if (listUnsub) {
+          const httpMatch = listUnsub.match(/<(https:\/\/[^>]+)>/);
+          const mailtoMatch = listUnsub.match(/<mailto:([^>]+)>/);
+
+          // RFC 8058 One-Click Unsubscribe
+          if (httpMatch && listUnsubPost) {
+            try {
+              this.validateUnsubscribeUrl(httpMatch[1]);
+              const controller = new AbortController();
+              const timeout = setTimeout(() => controller.abort(), 10000);
+              await fetch(httpMatch[1], {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: 'List-Unsubscribe=One-Click-Unsubscribe',
+                signal: controller.signal,
+              });
+              clearTimeout(timeout);
+              return { success: true, method: 'one-click' };
+            } catch (err) {
+              logger.warn('One-click unsubscribe failed, trying fallback', {
+                sender: senderAddress,
+                error: err instanceof Error ? err.message : String(err),
+              });
+            }
+          }
+
+          // HTTP GET fallback
+          if (httpMatch) {
+            try {
+              this.validateUnsubscribeUrl(httpMatch[1]);
+              const controller = new AbortController();
+              const timeout = setTimeout(() => controller.abort(), 10000);
+              await fetch(httpMatch[1], { signal: controller.signal });
+              clearTimeout(timeout);
+              return { success: true, method: 'http' };
+            } catch (err) {
+              logger.warn('HTTP unsubscribe failed, trying mailto', {
+                sender: senderAddress,
+                error: err instanceof Error ? err.message : String(err),
+              });
+            }
+          }
+
+          // Mailto fallback
+          if (mailtoMatch) {
+            try {
+              const [address, queryString] = mailtoMatch[1].split('?');
+              const params = new URLSearchParams(queryString || '');
+
+              const user = await User.findById(userId).select('username name');
+              if (user?.username) {
+                await smtpOutbound.send({
+                  userId,
+                  from: {
+                    name: user.name?.first
+                      ? `${user.name.first} ${user.name.last || ''}`.trim()
+                      : user.username,
+                    address: resolveEmailAddress(user.username),
+                  },
+                  to: [{ address, name: '' }],
+                  subject: params.get('subject') || 'Unsubscribe',
+                  text: params.get('body') || 'Unsubscribe',
+                });
+                return { success: true, method: 'mailto' };
+              }
+            } catch (err) {
+              logger.warn('Mailto unsubscribe failed', {
+                sender: senderAddress,
+                error: err instanceof Error ? err.message : String(err),
+              });
+            }
+          }
+        }
+      }
+
+      // Fall through to block if List-Unsubscribe methods fail
+      logger.info('No List-Unsubscribe available, falling back to block', { sender: senderAddress });
+    }
+
+    // Block sender: move all messages from this sender to Spam
+    const spamMailbox = await this.getMailboxBySpecialUse(userId, '\\Junk');
+    if (spamMailbox) {
+      // Get messages not already in spam to update counters properly
+      const messagesToMove = await Message.find({
+        userId,
+        'from.address': senderAddress.toLowerCase(),
+        mailboxId: { $ne: spamMailbox._id },
+      })
+        .select('mailboxId size flags')
+        .lean();
+
+      if (messagesToMove.length > 0) {
+        // Group by source mailbox for counter updates
+        const byMailbox = new Map<string, { count: number; unseenCount: number; totalSize: number }>();
+        for (const msg of messagesToMove) {
+          const key = msg.mailboxId.toString();
+          const entry = byMailbox.get(key) || { count: 0, unseenCount: 0, totalSize: 0 };
+          entry.count++;
+          if (!msg.flags.seen) entry.unseenCount++;
+          entry.totalSize += msg.size;
+          byMailbox.set(key, entry);
+        }
+
+        // Move all at once
+        await Message.updateMany(
+          {
+            userId,
+            'from.address': senderAddress.toLowerCase(),
+            mailboxId: { $ne: spamMailbox._id },
+          },
+          { $set: { mailboxId: spamMailbox._id } },
+        );
+
+        // Update source mailbox counters
+        const counterUpdates = [];
+        let totalMoved = 0;
+        let totalUnseenMoved = 0;
+        let totalSizeMoved = 0;
+        for (const [mbId, entry] of byMailbox) {
+          counterUpdates.push(
+            Mailbox.findByIdAndUpdate(mbId, {
+              $inc: {
+                totalMessages: -entry.count,
+                unseenMessages: -entry.unseenCount,
+                size: -entry.totalSize,
+              },
+            }),
+          );
+          totalMoved += entry.count;
+          totalUnseenMoved += entry.unseenCount;
+          totalSizeMoved += entry.totalSize;
+        }
+
+        // Update spam mailbox counter
+        counterUpdates.push(
+          Mailbox.findByIdAndUpdate(spamMailbox._id, {
+            $inc: {
+              totalMessages: totalMoved,
+              unseenMessages: totalUnseenMoved,
+              size: totalSizeMoved,
+            },
+          }),
+        );
+
+        await Promise.all(counterUpdates);
+      }
+    }
+
+    return { success: true, method: 'blocked' };
+  }
+
+  /**
+   * Validate an unsubscribe URL against SSRF attacks.
+   * Only allows HTTPS URLs to non-private hosts.
+   */
+  private validateUnsubscribeUrl(url: string): void {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'https:') {
+      throw new Error('Only HTTPS unsubscribe URLs are allowed');
+    }
+    if (EmailService.PRIVATE_IP_PATTERNS.some((p) => p.test(parsed.hostname))) {
+      throw new Error('Private network URLs are not allowed');
+    }
   }
 
   // ─── Private helpers ──────────────────────────────────────────────
