@@ -60,6 +60,7 @@ import { StaleThreadBanner } from '@/components/StaleThreadBanner';
 import { useSentimentAnalysis } from '@/hooks/queries/useSentimentAnalysis';
 import { useStaleThread } from '@/hooks/queries/useStaleThread';
 import { SnoozeSheet } from '@/components/SnoozeSheet';
+import { CardRenderer } from '@/components/cards/CardRenderer';
 import type { EmailAddress } from '@/services/emailApi';
 import { useCidResolver } from '@/hooks/useCidResolver';
 
@@ -554,6 +555,25 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
           )}
         </View>
 
+        {/* Rich card for structured data (flights, orders, etc.) */}
+        {currentMessage.card && (
+          <View style={styles.cardSection}>
+            <CardRenderer card={currentMessage.card} />
+          </View>
+        )}
+
+        {/* Highlights (key data points) */}
+        {currentMessage.highlights && currentMessage.highlights.length > 0 && (
+          <View style={[styles.highlightsSection, { borderColor: colors.border }]}>
+            {currentMessage.highlights.map((h, i) => (
+              <View key={i} style={styles.highlightRow}>
+                <Text style={[styles.highlightLabel, { color: colors.secondaryText }]}>{h.label}</Text>
+                <Text style={[styles.highlightValue, { color: colors.text }]}>{h.value}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+
         {/* Stale thread banner - gentle nudge to reply */}
         <StaleThreadBanner
           staleInfo={staleInfo}
@@ -956,6 +976,34 @@ const styles = StyleSheet.create({
   labelChipText: {
     fontSize: 11,
     fontWeight: '500',
+  },
+  cardSection: {
+    paddingHorizontal: 16,
+    marginBottom: 12,
+  },
+  highlightsSection: {
+    marginHorizontal: 16,
+    marginBottom: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderRadius: 10,
+    gap: 6,
+  },
+  highlightRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  highlightLabel: {
+    fontSize: 12,
+    fontWeight: '500',
+    minWidth: 80,
+  },
+  highlightValue: {
+    fontSize: 13,
+    fontWeight: '600',
+    flex: 1,
   },
   senderRow: {
     flexDirection: 'row',

@@ -1,5 +1,5 @@
 /**
- * Snooze processor — checks for snoozed messages due to reappear.
+ * Snooze & reminder processor — checks for snoozed messages and due reminders.
  * Runs every 60 seconds via setInterval (no external dependency needed).
  */
 
@@ -19,9 +19,14 @@ export function startSnoozeCron(): void {
     } catch (err) {
       logger.error('Snooze cron failed', err instanceof Error ? err : new Error(String(err)));
     }
+    try {
+      await emailService.processDueReminders();
+    } catch (err) {
+      logger.error('Reminder cron failed', err instanceof Error ? err : new Error(String(err)));
+    }
   }, INTERVAL_MS);
 
-  logger.info('Snooze cron started (60s interval)');
+  logger.info('Snooze & reminder cron started (60s interval)');
 }
 
 export function stopSnoozeCron(): void {

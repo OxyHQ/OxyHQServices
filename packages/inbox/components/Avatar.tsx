@@ -3,8 +3,8 @@
  * Supports optional checkbox overlay for multi-select mode.
  */
 
-import React, { useMemo } from 'react';
-import { View, Text, StyleSheet, Platform } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { View, Text, Image, StyleSheet, Platform } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import { Tick02Icon } from '@hugeicons/core-free-icons';
@@ -24,11 +24,13 @@ export function Avatar({
   size = 40,
   showCheckbox,
   isChecked,
+  avatarUrls,
 }: {
   name: string;
   size?: number;
   showCheckbox?: boolean;
   isChecked?: boolean;
+  avatarUrls?: string[];
 }) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
@@ -43,6 +45,11 @@ export function Avatar({
     const palette = colors.avatarColors;
     return palette[hashCode(name) % palette.length];
   }, [name, colors.avatarColors]);
+
+  const [urlIndex, setUrlIndex] = useState(0);
+  // Reset index when URLs change (e.g., FlashList row recycling)
+  useEffect(() => { setUrlIndex(0); }, [avatarUrls]);
+  const currentUrl = avatarUrls && urlIndex < avatarUrls.length ? avatarUrls[urlIndex] : null;
 
   if (showCheckbox) {
     if (isChecked) {
@@ -83,6 +90,19 @@ export function Avatar({
     );
   }
 
+  if (currentUrl) {
+    return (
+      <View style={[styles.container, { width: size, height: size, borderRadius: size / 2, backgroundColor: bgColor }]}>
+        <Text style={[styles.initial, { fontSize: size * 0.42 }]}>{initial}</Text>
+        <Image
+          source={{ uri: currentUrl }}
+          style={[styles.image, { width: size, height: size, borderRadius: size / 2 }]}
+          onError={() => setUrlIndex((i) => i + 1)}
+        />
+      </View>
+    );
+  }
+
   return (
     <View
       style={[
@@ -108,5 +128,8 @@ const styles = StyleSheet.create({
   initial: {
     color: '#FFFFFF',
     fontWeight: '600',
+  },
+  image: {
+    position: 'absolute',
   },
 });

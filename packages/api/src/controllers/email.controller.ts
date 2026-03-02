@@ -494,3 +494,66 @@ export async function listBundledMessages(req: AuthRequest, res: Response): Prom
     },
   });
 }
+
+// ─── Reminders ──────────────────────────────────────────────────
+
+export async function createReminder(req: AuthRequest, res: Response): Promise<void> {
+  const userId = req.user!.id;
+  const { text, remindAt, relatedMessageId } = req.body;
+
+  if (!text || typeof text !== 'string' || text.trim().length === 0) {
+    throw new BadRequestError('Reminder text is required');
+  }
+  if (!remindAt) {
+    throw new BadRequestError('remindAt is required');
+  }
+  const remindDate = new Date(remindAt);
+  if (isNaN(remindDate.getTime()) || remindDate <= new Date()) {
+    throw new BadRequestError('remindAt must be a valid future date');
+  }
+
+  const reminder = await emailService.createReminder(userId, {
+    text: text.trim(),
+    remindAt,
+    relatedMessageId,
+  });
+  res.status(201).json({ data: reminder });
+}
+
+export async function listReminders(req: AuthRequest, res: Response): Promise<void> {
+  const userId = req.user!.id;
+  const includeCompleted = req.query.completed === 'true';
+  const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+  const offset = parseInt(req.query.offset as string) || 0;
+
+  const result = await emailService.listReminders(userId, { includeCompleted, limit, offset });
+  res.json({ data: result.data, pagination: result.pagination });
+}
+
+export async function getReminder(req: AuthRequest, res: Response): Promise<void> {
+  const userId = req.user!.id;
+  const reminder = await emailService.getReminder(userId, req.params.reminderId);
+  res.json({ data: reminder });
+}
+
+export async function updateReminder(req: AuthRequest, res: Response): Promise<void> {
+  const userId = req.user!.id;
+  const { reminderId } = req.params;
+  const { text, remindAt, completed, pinned, snoozedUntil } = req.body;
+
+  const updates: Record<string, any> = {};
+  if (text !== undefined) updates.text = text;
+  if (remindAt !== undefined) updates.remindAt = remindAt;
+  if (completed !== undefined) updates.completed = completed;
+  if (pinned !== undefined) updates.pinned = pinned;
+  if (snoozedUntil !== undefined) updates.snoozedUntil = snoozedUntil;
+
+  const reminder = await emailService.updateReminder(userId, reminderId, updates);
+  res.json({ data: reminder });
+}
+
+export async function deleteReminder(req: AuthRequest, res: Response): Promise<void> {
+  const userId = req.user!.id;
+  await emailService.deleteReminder(userId, req.params.reminderId);
+  res.status(204).send();
+}

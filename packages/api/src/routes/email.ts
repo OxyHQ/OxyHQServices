@@ -39,6 +39,11 @@ import {
   listBundles,
   updateBundle,
   listBundledMessages,
+  createReminder,
+  listReminders,
+  getReminder,
+  updateReminder,
+  deleteReminder,
 } from '../controllers/email.controller';
 
 const router = Router();
@@ -105,6 +110,14 @@ router.post('/subscriptions/unsubscribe', asyncHandler(unsubscribe));
 
 router.get('/bundles', asyncHandler(listBundles));
 router.put('/bundles/:bundleId', asyncHandler(updateBundle));
+
+// ─── Reminders ───────────────────────────────────────────────────
+
+router.post('/reminders', asyncHandler(createReminder));
+router.get('/reminders', asyncHandler(listReminders));
+router.get('/reminders/:reminderId', asyncHandler(getReminder));
+router.put('/reminders/:reminderId', asyncHandler(updateReminder));
+router.delete('/reminders/:reminderId', asyncHandler(deleteReminder));
 
 // ─── Settings ─────────────────────────────────────────────────────
 

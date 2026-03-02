@@ -28,8 +28,10 @@ import { Avatar } from './Avatar';
 import { AttachmentThumbnail } from './AttachmentThumbnail';
 import { ImportanceBadge } from './ImportanceBadge';
 import { SentimentIndicator } from './SentimentIndicator';
+import { CardPreview } from './cards/CardPreview';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useSentimentAnalysis } from '@/hooks/queries/useSentimentAnalysis';
+import { useSenderAvatar } from '@/hooks/queries/useSenderAvatar';
 import { Colors } from '@/constants/theme';
 import type { Message, Attachment } from '@/services/emailApi';
 
@@ -135,6 +137,7 @@ export function MessageRow({
   const isUnread = !message.flags.seen;
   const [avatarHovered, setAvatarHovered] = useState(false);
   const sentiment = useSentimentAnalysis(message);
+  const { avatarUrls } = useSenderAvatar(message.from.address);
 
   const showCheckbox = isSelectionMode || (Platform.OS === 'web' && avatarHovered);
 
@@ -207,6 +210,7 @@ export function MessageRow({
           size={40}
           showCheckbox={showCheckbox}
           isChecked={isMultiSelected}
+          avatarUrls={avatarUrls}
         />
       </Pressable>
 
@@ -345,6 +349,13 @@ export function MessageRow({
           </Text>
         </View>
 
+        {/* Card preview */}
+        {message.card && (
+          <View style={styles.cardPreviewRow}>
+            <CardPreview card={message.card} />
+          </View>
+        )}
+
         {/* Attachment thumbnails + mini-cards */}
         {hasAttachments && (() => {
           const imageAtts = message.attachments.filter(a => a.contentType.toLowerCase().startsWith('image/'));
@@ -452,6 +463,9 @@ const styles = StyleSheet.create({
   preview: {
     fontSize: 13,
     flex: 1,
+  },
+  cardPreviewRow: {
+    marginTop: 4,
   },
   thumbnailRow: {
     flexDirection: 'row',

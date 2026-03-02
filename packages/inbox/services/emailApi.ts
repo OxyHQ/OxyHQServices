@@ -36,6 +36,21 @@ export const MessageFlagsSchema = z.object({
   pinned: z.boolean().optional().default(false),
 });
 
+export const CardTypeSchema = z.enum(['trip', 'purchase', 'event', 'bill', 'package']);
+
+export const MessageCardSchema = z.object({
+  type: CardTypeSchema,
+  data: z.record(z.string(), z.any()),
+  confidence: z.number(),
+  extractedAt: z.string(),
+});
+
+export const HighlightSchema = z.object({
+  type: z.string(),
+  value: z.string(),
+  label: z.string(),
+});
+
 export const MessageSchema = z.object({
   _id: z.string(),
   userId: z.string(),
@@ -52,6 +67,8 @@ export const MessageSchema = z.object({
   attachments: z.array(AttachmentSchema),
   flags: MessageFlagsSchema,
   labels: z.array(z.string()),
+  card: MessageCardSchema.nullable().optional(),
+  highlights: z.array(HighlightSchema).optional(),
   spamScore: z.number().nullable().optional(),
   size: z.number(),
   inReplyTo: z.string().nullable().optional(),
@@ -136,11 +153,27 @@ export const BundleSchema = z.object({
   order: z.number(),
 });
 
+export const ReminderSchema = z.object({
+  _id: z.string(),
+  userId: z.string(),
+  text: z.string(),
+  remindAt: z.string(),
+  completed: z.boolean(),
+  pinned: z.boolean(),
+  snoozedUntil: z.string().nullable().optional(),
+  relatedMessageId: z.string().nullable().optional(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
 // ─── Inferred Types ────────────────────────────────────────────────
 
 export type EmailAddress = z.infer<typeof EmailAddressSchema>;
 export type Attachment = z.infer<typeof AttachmentSchema>;
 export type MessageFlags = z.infer<typeof MessageFlagsSchema>;
+export type CardType = z.infer<typeof CardTypeSchema>;
+export type MessageCard = z.infer<typeof MessageCardSchema>;
+export type Highlight = z.infer<typeof HighlightSchema>;
 export type Message = z.infer<typeof MessageSchema>;
 export type Mailbox = z.infer<typeof MailboxSchema>;
 export type Label = z.infer<typeof LabelSchema>;
@@ -150,6 +183,7 @@ export type EmailSettings = z.infer<typeof EmailSettingsSchema>;
 export type Subscription = z.infer<typeof SubscriptionSchema>;
 export type UnsubscribeResult = z.infer<typeof UnsubscribeResultSchema>;
 export type Bundle = z.infer<typeof BundleSchema>;
+export type Reminder = z.infer<typeof ReminderSchema>;
 
 // ─── Response Wrappers ─────────────────────────────────────────────
 
@@ -445,6 +479,49 @@ export function createEmailApi(http: HttpService) {
         })),
         pagination: PaginationSchema.parse(res.pagination),
       };
+    },
+
+    // ─── Reminders ────────────────────────────────────────────────
+
+    async createReminder(data: {
+      text: string;
+      remindAt: string;
+      relatedMessageId?: string;
+    }): Promise<Reminder> {
+      const res = (await http.post('/email/reminders', data)) as { data: Reminder };
+      return ReminderSchema.parse(res.data);
+    },
+
+    async listReminders(
+      options: { includeCompleted?: boolean; limit?: number; offset?: number } = {},
+    ): Promise<{ data: Reminder[]; pagination: Pagination }> {
+      const params: Record<string, string> = {};
+      if (options.includeCompleted) params.completed = 'true';
+      if (options.limit !== undefined) params.limit = String(options.limit);
+      if (options.offset !== undefined) params.offset = String(options.offset);
+
+      const res = (await http.get('/email/reminders', { params })) as PaginatedResponse<Reminder>;
+      return {
+        data: z.array(ReminderSchema).parse(res.data.data),
+        pagination: PaginationSchema.parse(res.data.pagination),
+      };
+    },
+
+    async getReminder(reminderId: string): Promise<Reminder> {
+      const res = (await http.get(`/email/reminders/${reminderId}`)) as { data: Reminder };
+      return ReminderSchema.parse(res.data);
+    },
+
+    async updateReminder(
+      reminderId: string,
+      updates: { text?: string; remindAt?: string; completed?: boolean; pinned?: boolean; snoozedUntil?: string | null },
+    ): Promise<Reminder> {
+      const res = (await http.put(`/email/reminders/${reminderId}`, updates)) as { data: Reminder };
+      return ReminderSchema.parse(res.data);
+    },
+
+    async deleteReminder(reminderId: string): Promise<void> {
+      await http.delete(`/email/reminders/${reminderId}`);
     },
   };
 }

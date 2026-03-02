@@ -28,7 +28,9 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { logger } from '../utils/logger';
 import { NotFoundError, BadRequestError } from '../utils/error';
 import { v4 as uuidv4 } from 'uuid';
+import { Reminder } from '../models/Reminder';
 import { aiLabelingService } from './aiLabeling.service';
+import { cardExtractionService } from './cardExtraction.service';
 import { smtpOutbound } from './smtp.outbound';
 
 // Dedicated S3 client for the email attachments bucket
@@ -482,11 +484,11 @@ class EmailService {
       mailbox: mailbox.name,
     });
 
-    // Fire-and-forget AI auto-labeling (non-blocking, only for non-spam)
+    // Fire-and-forget AI processing (non-blocking, only for non-spam)
     if (!isSpam) {
-      aiLabelingService
-        .classifyAndLabel(userId, message._id.toString())
-        .catch(() => {});
+      const msgId = message._id.toString();
+      aiLabelingService.classifyAndLabel(userId, msgId).catch(() => {});
+      cardExtractionService.extractAndUpdate(userId, msgId).catch(() => {});
     }
 
     return message.toJSON() as any;
@@ -1575,6 +1577,102 @@ class EmailService {
     }).filter((br) => br.messages.length > 0);
 
     return { primary, bundles: bundleResults, total };
+  }
+
+  // ─── Reminders ──────────────────────────────────────────────────
+
+  async createReminder(
+    userId: string,
+    data: { text: string; remindAt: string; relatedMessageId?: string },
+  ) {
+    const reminder = await Reminder.create({
+      userId,
+      text: data.text,
+      remindAt: new Date(data.remindAt),
+      relatedMessageId: data.relatedMessageId || null,
+    });
+    return reminder.toJSON();
+  }
+
+  async listReminders(
+    userId: string,
+    options: { includeCompleted?: boolean; limit?: number; offset?: number } = {},
+  ) {
+    const filter: Record<string, any> = { userId };
+    if (!options.includeCompleted) {
+      filter.completed = false;
+    }
+
+    const total = await Reminder.countDocuments(filter);
+    const limit = options.limit || 50;
+    const offset = options.offset || 0;
+
+    const reminders = await Reminder.find(filter)
+      .sort({ pinned: -1, remindAt: 1 })
+      .skip(offset)
+      .limit(limit)
+      .lean();
+
+    return {
+      data: reminders,
+      pagination: { total, limit, offset, hasMore: offset + limit < total },
+    };
+  }
+
+  async getReminder(userId: string, reminderId: string) {
+    const reminder = await Reminder.findOne({ _id: reminderId, userId });
+    if (!reminder) throw new NotFoundError('Reminder not found');
+    return reminder.toJSON();
+  }
+
+  async updateReminder(
+    userId: string,
+    reminderId: string,
+    updates: { text?: string; remindAt?: string; completed?: boolean; pinned?: boolean; snoozedUntil?: string | null },
+  ) {
+    const updateData: Record<string, any> = {};
+    if (updates.text !== undefined) updateData.text = updates.text;
+    if (updates.remindAt !== undefined) updateData.remindAt = new Date(updates.remindAt);
+    if (updates.completed !== undefined) updateData.completed = updates.completed;
+    if (updates.pinned !== undefined) updateData.pinned = updates.pinned;
+    if (updates.snoozedUntil !== undefined) {
+      updateData.snoozedUntil = updates.snoozedUntil ? new Date(updates.snoozedUntil) : null;
+    }
+
+    const reminder = await Reminder.findOneAndUpdate(
+      { _id: reminderId, userId },
+      { $set: updateData },
+      { new: true },
+    );
+    if (!reminder) throw new NotFoundError('Reminder not found');
+    return reminder.toJSON();
+  }
+
+  async deleteReminder(userId: string, reminderId: string) {
+    const result = await Reminder.deleteOne({ _id: reminderId, userId });
+    if (result.deletedCount === 0) throw new NotFoundError('Reminder not found');
+  }
+
+  async processDueReminders() {
+    const now = new Date();
+    const dueReminders = await Reminder.find({
+      completed: false,
+      remindAt: { $lte: now },
+      $or: [{ snoozedUntil: null }, { snoozedUntil: { $lte: now } }],
+    }).lean();
+
+    // For now, mark due reminders as "ready" by clearing snoozedUntil
+    // In the future, this could push notifications
+    for (const reminder of dueReminders) {
+      if (reminder.snoozedUntil) {
+        await Reminder.updateOne(
+          { _id: reminder._id },
+          { $set: { snoozedUntil: null } },
+        );
+      }
+    }
+
+    return dueReminders.length;
   }
 }
 

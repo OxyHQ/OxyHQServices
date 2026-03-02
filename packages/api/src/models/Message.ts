@@ -23,6 +23,21 @@ export interface IMessageFlags {
   pinned: boolean;
 }
 
+export type CardType = 'trip' | 'purchase' | 'event' | 'bill' | 'package';
+
+export interface IMessageCard {
+  type: CardType;
+  data: Record<string, any>;
+  confidence: number;
+  extractedAt: Date;
+}
+
+export interface IHighlight {
+  type: string;
+  value: string;
+  label: string;
+}
+
 export interface IMessage extends Document {
   userId: mongoose.Types.ObjectId;
   mailboxId: mongoose.Types.ObjectId;
@@ -39,6 +54,10 @@ export interface IMessage extends Document {
   attachments: IAttachment[];
   flags: IMessageFlags;
   labels: string[];
+  /** Structured data card extracted by AI */
+  card?: IMessageCard | null;
+  /** Key data highlights extracted from the email */
+  highlights: IHighlight[];
   /** True when body is encrypted with the recipient's publicKey */
   encrypted: boolean;
   encryptedBody?: string;
@@ -173,6 +192,25 @@ const MessageSchema = new Schema(
     },
     labels: {
       type: [String],
+      default: [],
+    },
+    card: {
+      type: {
+        type: { type: String, enum: ['trip', 'purchase', 'event', 'bill', 'package'] },
+        data: { type: Schema.Types.Mixed, default: {} },
+        confidence: { type: Number, default: 0 },
+        extractedAt: { type: Date, default: Date.now },
+      },
+      default: null,
+      _id: false,
+    },
+    highlights: {
+      type: [{
+        type: { type: String },
+        value: { type: String },
+        label: { type: String },
+        _id: false,
+      }],
       default: [],
     },
     encrypted: {

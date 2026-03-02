@@ -43,15 +43,20 @@ import { SelectionToolbar } from '@/components/SelectionToolbar';
 import { SwipeableRow } from '@/components/SwipeableRow';
 import { SnoozeSheet } from '@/components/SnoozeSheet';
 import { BundleRow } from '@/components/BundleRow';
+import { ReminderRow } from '@/components/ReminderRow';
+import { CreateReminderSheet } from '@/components/CreateReminderSheet';
 import { EmptyIllustration } from '@/components/EmptyIllustration';
 import { AskAlia } from '@/components/AskAlia';
 import { useBundles } from '@/hooks/queries/useBundles';
-import type { Message, Bundle } from '@/services/emailApi';
+import { useReminders } from '@/hooks/queries/useReminders';
+import { useCreateReminder, useUpdateReminder, useDeleteReminder } from '@/hooks/mutations/useReminderMutations';
+import type { Message, Bundle, Reminder } from '@/services/emailApi';
 
 type ListItem =
   | { type: 'header'; title: string; key: string }
   | { type: 'message'; data: Message }
-  | { type: 'bundle'; bundle: Bundle; messages: Message[]; unreadCount: number };
+  | { type: 'bundle'; bundle: Bundle; messages: Message[]; unreadCount: number }
+  | { type: 'reminder'; data: Reminder };
 
 function getDateCategory(dateStr: string): string {
   const date = new Date(dateStr);
@@ -131,6 +136,13 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
   const { data: bundles = [] } = useBundles();
 
   const [snoozeTargetId, setSnoozeTargetId] = useState<string | null>(null);
+  const [createReminderVisible, setCreateReminderVisible] = useState(false);
+
+  const { data: remindersResult } = useReminders();
+  const reminders = useMemo(() => remindersResult?.data ?? [], [remindersResult]);
+  const createReminderMutation = useCreateReminder();
+  const updateReminderMutation = useUpdateReminder();
+  const deleteReminderMutation = useDeleteReminder();
 
   const messages = useMemo(() => data?.pages.flatMap((p) => p.data) ?? [], [data]);
 
@@ -139,8 +151,33 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
   const showBundles = bundleView && isInboxView && bundles.length > 0;
 
   const listItems = useMemo<ListItem[]>(() => {
-    if (messages.length === 0) return [];
+    if (messages.length === 0 && reminders.length === 0) return [];
     const items: ListItem[] = [];
+
+    // Due/active reminders at the top (only in inbox view)
+    if (isInboxView && reminders.length > 0) {
+      const dueReminders = reminders.filter(
+        (r) => !r.completed && new Date(r.remindAt) <= new Date(),
+      );
+      const upcomingReminders = reminders.filter(
+        (r) => !r.completed && new Date(r.remindAt) > new Date(),
+      );
+
+      if (dueReminders.length > 0) {
+        items.push({ type: 'header', title: 'Reminders', key: 'header-Reminders' });
+        for (const r of dueReminders) {
+          items.push({ type: 'reminder', data: r });
+        }
+      }
+      if (upcomingReminders.length > 0 && upcomingReminders.length <= 3) {
+        if (dueReminders.length === 0) {
+          items.push({ type: 'header', title: 'Reminders', key: 'header-Reminders' });
+        }
+        for (const r of upcomingReminders) {
+          items.push({ type: 'reminder', data: r });
+        }
+      }
+    }
 
     // Partition pinned messages to top (only in mailbox views, not snoozed)
     const pinned = !isSnoozedView ? messages.filter((m) => m.flags.pinned) : [];
@@ -215,7 +252,7 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
     }
 
     return items;
-  }, [messages, isSnoozedView, showBundles, bundles, expandedBundles]);
+  }, [messages, isSnoozedView, isInboxView, showBundles, bundles, expandedBundles, reminders]);
 
   // Clear selection when view changes
   useEffect(() => {
@@ -256,6 +293,28 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
       setSnoozeTargetId(null);
     },
     [snoozeTargetId, snoozeMutation],
+  );
+
+  const handleCreateReminder = useCallback(
+    (text: string, remindAt: Date) => {
+      createReminderMutation.mutate({ text, remindAt: remindAt.toISOString() });
+      setCreateReminderVisible(false);
+    },
+    [createReminderMutation],
+  );
+
+  const handleToggleReminderComplete = useCallback(
+    (reminderId: string, completed: boolean) => {
+      updateReminderMutation.mutate({ reminderId, completed });
+    },
+    [updateReminderMutation],
+  );
+
+  const handleDeleteReminder = useCallback(
+    (reminderId: string) => {
+      deleteReminderMutation.mutate(reminderId);
+    },
+    [deleteReminderMutation],
   );
 
   const handleMessagePress = useCallback(
@@ -383,6 +442,16 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
           />
         );
       }
+      if (item.type === 'reminder') {
+        return (
+          <ReminderRow
+            reminder={item.data}
+            onToggleComplete={handleToggleReminderComplete}
+            onPress={() => {}}
+            onDelete={handleDeleteReminder}
+          />
+        );
+      }
       const msg = item.data;
       return (
         <SwipeableRow
@@ -407,7 +476,7 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
         </SwipeableRow>
       );
     },
-    [handleStar, handlePin, handleMessagePress, selectedMessageId, isSelectionMode, selectedMessageIds, toggleMessageSelection, handleLongPress, handleSwipeArchive, handleSwipeDelete, toggleStar.isPending, toggleStar.variables?.messageId, togglePin.isPending, togglePin.variables?.messageId, isSnoozedView, expandedBundles, toggleBundle, labelColorMap, colors.border, colors.secondaryText],
+    [handleStar, handlePin, handleMessagePress, selectedMessageId, isSelectionMode, selectedMessageIds, toggleMessageSelection, handleLongPress, handleSwipeArchive, handleSwipeDelete, toggleStar.isPending, toggleStar.variables?.messageId, togglePin.isPending, togglePin.variables?.messageId, isSnoozedView, expandedBundles, toggleBundle, labelColorMap, handleToggleReminderComplete, handleDeleteReminder, colors.border, colors.secondaryText],
   );
 
   const getItemType = useCallback((item: ListItem) => item.type, []);
@@ -415,6 +484,7 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
   const keyExtractor = useCallback((item: ListItem) => {
     if (item.type === 'header') return item.key;
     if (item.type === 'bundle') return `bundle-${item.bundle._id}`;
+    if (item.type === 'reminder') return `reminder-${item.data._id}`;
     return item.data._id;
   }, []);
 
@@ -470,9 +540,36 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
         />
       )}
 
-      {/* Pagination info */}
+      {/* Pagination info + bundle toggle */}
       {messages.length > 0 && data?.pages?.[0]?.pagination && (
         <View style={styles.paginationBar}>
+          {isInboxView && (
+            <TouchableOpacity
+              style={[styles.bundleToggle, { borderColor: colors.border }]}
+              onPress={() => setCreateReminderVisible(true)}
+              activeOpacity={0.7}
+            >
+              <MaterialCommunityIcons name="bell-plus-outline" size={14} color={colors.secondaryText} />
+              <Text style={[styles.bundleToggleText, { color: colors.secondaryText }]}>Remind</Text>
+            </TouchableOpacity>
+          )}
+          {isInboxView && bundles.length > 0 && (
+            <TouchableOpacity
+              style={[styles.bundleToggle, { borderColor: colors.border }]}
+              onPress={useEmailStore.getState().toggleBundleView}
+              activeOpacity={0.7}
+            >
+              <MaterialCommunityIcons
+                name={bundleView ? 'view-list' : 'view-dashboard-outline'}
+                size={14}
+                color={colors.secondaryText}
+              />
+              <Text style={[styles.bundleToggleText, { color: colors.secondaryText }]}>
+                {bundleView ? 'Flat' : 'Bundled'}
+              </Text>
+            </TouchableOpacity>
+          )}
+          <View style={{ flex: 1 }} />
           <Text style={[styles.paginationText, { color: colors.secondaryText }]}>
             1–{messages.length} of {data.pages[0].pagination.total}
           </Text>
@@ -562,6 +659,13 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
         onClose={() => setSnoozeTargetId(null)}
         onSnooze={handleSnooze}
       />
+
+      {/* Create reminder sheet */}
+      <CreateReminderSheet
+        visible={createReminderVisible}
+        onClose={() => setCreateReminderVisible(false)}
+        onCreate={handleCreateReminder}
+      />
     </View>
   );
 }
@@ -618,9 +722,23 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   paginationBar: {
+    flexDirection: 'row',
     paddingHorizontal: 16,
     paddingVertical: 4,
-    alignItems: 'flex-end',
+    alignItems: 'center',
+  },
+  bundleToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  bundleToggleText: {
+    fontSize: 11,
+    fontWeight: '500',
   },
   paginationText: {
     fontSize: 11,
