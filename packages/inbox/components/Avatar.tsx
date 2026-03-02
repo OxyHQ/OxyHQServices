@@ -47,8 +47,9 @@ export function Avatar({
   }, [name, colors.avatarColors]);
 
   const [urlIndex, setUrlIndex] = useState(0);
-  // Reset index when URLs change (e.g., FlashList row recycling)
-  useEffect(() => { setUrlIndex(0); }, [avatarUrls]);
+  const [imageLoaded, setImageLoaded] = useState(false);
+  // Reset state when URLs change (e.g., FlashList row recycling)
+  useEffect(() => { setUrlIndex(0); setImageLoaded(false); }, [avatarUrls]);
   const currentUrl = avatarUrls && urlIndex < avatarUrls.length ? avatarUrls[urlIndex] : null;
 
   if (showCheckbox) {
@@ -92,12 +93,13 @@ export function Avatar({
 
   if (currentUrl) {
     return (
-      <View style={[styles.container, { width: size, height: size, borderRadius: size / 2, backgroundColor: bgColor }]}>
-        <Text style={[styles.initial, { fontSize: size * 0.42 }]}>{initial}</Text>
+      <View style={[styles.container, { width: size, height: size, borderRadius: size / 2, backgroundColor: imageLoaded ? colors.background : bgColor, overflow: 'hidden' }]}>
+        {!imageLoaded && <Text style={[styles.initial, { fontSize: size * 0.42 }]}>{initial}</Text>}
         <Image
           source={{ uri: currentUrl }}
           style={[styles.image, { width: size, height: size, borderRadius: size / 2 }]}
-          onError={() => setUrlIndex((i) => i + 1)}
+          onLoad={() => setImageLoaded(true)}
+          onError={() => { setImageLoaded(false); setUrlIndex((i) => i + 1); }}
         />
       </View>
     );
