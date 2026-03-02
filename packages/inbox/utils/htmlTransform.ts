@@ -25,7 +25,11 @@ function isExternalUrl(url: string): boolean {
 }
 
 function buildProxyUrl(originalUrl: string, proxyBaseUrl: string): string {
-  const encoded = btoa(originalUrl);
+  // btoa() only handles Latin1 — encode as UTF-8 first to avoid DOMException
+  // on internationalized URLs. The backend decodes with Buffer.from(x, 'base64').toString('utf-8').
+  const bytes = new TextEncoder().encode(originalUrl);
+  const binary = Array.from(bytes, (b) => String.fromCharCode(b)).join('');
+  const encoded = btoa(binary);
   return `${proxyBaseUrl}?url=${encodeURIComponent(encoded)}`;
 }
 
@@ -67,6 +71,20 @@ export function proxyExternalImages(html: string, proxyBaseUrl: string): string 
   );
 
   return result;
+}
+
+/**
+ * Replace cid: references in email HTML with actual attachment URLs.
+ */
+export function resolveCidImages(html: string, cidMap: Record<string, string>): string {
+  if (!html || Object.keys(cidMap).length === 0) return html;
+  return html.replace(
+    /(['"])cid:([^'"]+)(['"])/gi,
+    (match, q1, cid, q2) => {
+      const url = cidMap[cid];
+      return url ? `${q1}${url}${q2}` : match;
+    },
+  );
 }
 
 /**

@@ -120,7 +120,7 @@ export async function updateMessageFlags(req: AuthRequest, res: Response): Promi
     throw new BadRequestError('flags object is required');
   }
 
-  const allowed = ['seen', 'starred', 'answered', 'forwarded', 'draft'];
+  const allowed = ['seen', 'starred', 'answered', 'forwarded', 'draft', 'pinned'];
   const filtered: Record<string, boolean> = {};
   for (const key of allowed) {
     if (key in flags && typeof flags[key] === 'boolean') {
@@ -165,6 +165,34 @@ export async function deleteMessage(req: AuthRequest, res: Response): Promise<vo
 
   await emailService.deleteMessage(userId, messageId, permanent);
   res.json({ data: { message: 'Message deleted' } });
+}
+
+// ─── Snooze ──────────────────────────────────────────────────────
+
+export async function snoozeMessage(req: AuthRequest, res: Response): Promise<void> {
+  const userId = req.user!.id;
+  const { messageId } = req.params;
+  const { until } = req.body;
+
+  if (!until || typeof until !== 'string') {
+    throw new BadRequestError('until (ISO date string) is required');
+  }
+
+  const untilDate = new Date(until);
+  if (isNaN(untilDate.getTime()) || untilDate.getTime() <= Date.now()) {
+    throw new BadRequestError('until must be a valid future date');
+  }
+
+  const message = await emailService.snoozeMessage(userId, messageId, untilDate);
+  res.json({ data: message });
+}
+
+export async function unsnoozeMessage(req: AuthRequest, res: Response): Promise<void> {
+  const userId = req.user!.id;
+  const { messageId } = req.params;
+
+  const message = await emailService.unsnoozeMessage(userId, messageId);
+  res.json({ data: message });
 }
 
 // ─── Labels ──────────────────────────────────────────────────────
@@ -421,4 +449,48 @@ export async function unsubscribe(req: AuthRequest, res: Response): Promise<void
 
   const result = await emailService.unsubscribe(userId, senderAddress, method || 'list-unsubscribe');
   res.json({ data: result });
+}
+
+// ─── Bundles ──────────────────────────────────────────────────────
+
+export async function listBundles(req: AuthRequest, res: Response): Promise<void> {
+  const userId = req.user!.id;
+  const bundles = await emailService.listBundles(userId);
+  res.json({ data: bundles });
+}
+
+export async function updateBundle(req: AuthRequest, res: Response): Promise<void> {
+  const userId = req.user!.id;
+  const { bundleId } = req.params;
+  const { enabled, collapsed, matchLabels, order } = req.body;
+
+  const updates: Record<string, any> = {};
+  if (typeof enabled === 'boolean') updates.enabled = enabled;
+  if (typeof collapsed === 'boolean') updates.collapsed = collapsed;
+  if (Array.isArray(matchLabels)) updates.matchLabels = matchLabels;
+  if (typeof order === 'number') updates.order = order;
+
+  const bundle = await emailService.updateBundle(userId, bundleId, updates);
+  res.json({ data: bundle });
+}
+
+export async function listBundledMessages(req: AuthRequest, res: Response): Promise<void> {
+  const userId = req.user!.id;
+  const mailboxId = req.query.mailbox as string | undefined;
+  const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+  const offset = parseInt(req.query.offset as string) || 0;
+
+  const result = await emailService.listBundledMessages(userId, mailboxId || null, { limit, offset });
+  res.json({
+    data: {
+      primary: result.primary,
+      bundles: result.bundles,
+    },
+    pagination: {
+      total: result.total,
+      limit,
+      offset,
+      hasMore: offset + limit < result.total,
+    },
+  });
 }

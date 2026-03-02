@@ -20,6 +20,7 @@ export interface IMessageFlags {
   answered: boolean;
   forwarded: boolean;
   draft: boolean;
+  pinned: boolean;
 }
 
 export interface IMessage extends Document {
@@ -51,6 +52,10 @@ export interface IMessage extends Document {
   references: string[];
   /** Alias tag if received via user+tag@oxy.so */
   aliasTag?: string;
+  /** When snoozed, the time to reappear */
+  snoozedUntil?: Date | null;
+  /** Original mailbox before snoozing */
+  snoozedFromMailbox?: mongoose.Types.ObjectId | null;
   /** Date header from the original message */
   date: Date;
   /** When our server received the message */
@@ -86,6 +91,7 @@ const MessageFlagsSchema = new Schema(
     answered: { type: Boolean, default: false },
     forwarded: { type: Boolean, default: false },
     draft: { type: Boolean, default: false },
+    pinned: { type: Boolean, default: false },
   },
   { _id: false }
 );
@@ -162,6 +168,7 @@ const MessageSchema = new Schema(
         answered: false,
         forwarded: false,
         draft: false,
+        pinned: false,
       }),
     },
     labels: {
@@ -202,6 +209,15 @@ const MessageSchema = new Schema(
       type: String,
       default: null,
     },
+    snoozedUntil: {
+      type: Date,
+      default: null,
+    },
+    snoozedFromMailbox: {
+      type: Schema.Types.ObjectId,
+      ref: 'Mailbox',
+      default: null,
+    },
     date: {
       type: Date,
       required: true,
@@ -237,6 +253,10 @@ MessageSchema.index({ userId: 1, labels: 1 });
 MessageSchema.index({ userId: 1, aliasTag: 1 });
 // Subscription aggregation (group by sender)
 MessageSchema.index({ userId: 1, 'from.address': 1, date: -1 });
+// Pinned messages
+MessageSchema.index({ userId: 1, 'flags.pinned': 1, date: -1 });
+// Snooze processing cron
+MessageSchema.index({ snoozedUntil: 1 }, { sparse: true });
 // Retention / cleanup
 MessageSchema.index({ mailboxId: 1, receivedAt: 1 });
 

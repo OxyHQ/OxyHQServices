@@ -73,6 +73,8 @@ function HtmlBodyWeb({ html }: HtmlBodyProps) {
     const iframe = iframeRef.current;
     if (!iframe) return;
 
+    let observer: ResizeObserver | null = null;
+
     const updateHeight = () => {
       const doc = iframe.contentDocument;
       if (!doc?.body) return;
@@ -81,18 +83,30 @@ function HtmlBodyWeb({ html }: HtmlBodyProps) {
     };
 
     const handleLoad = () => {
-      updateHeight();
-      // Observe for dynamic content (images, etc.)
       const doc = iframe.contentDocument;
-      if (doc?.body) {
-        const observer = new ResizeObserver(updateHeight);
-        observer.observe(doc.body);
-        return () => observer.disconnect();
-      }
+      if (!doc?.body) return;
+
+      // Set up observer first to catch fast-resolving cached images
+      observer = new ResizeObserver(updateHeight);
+      observer.observe(doc.body);
+
+      updateHeight();
+
+      // Guard for images that complete between measurement and observer attach.
+      // { once: true } auto-removes the listener after firing — no leak.
+      doc.querySelectorAll<HTMLImageElement>('img').forEach((img) => {
+        if (!img.complete) {
+          img.addEventListener('load', updateHeight, { once: true });
+          img.addEventListener('error', updateHeight, { once: true });
+        }
+      });
     };
 
     iframe.addEventListener('load', handleLoad);
-    return () => iframe.removeEventListener('load', handleLoad);
+    return () => {
+      iframe.removeEventListener('load', handleLoad);
+      observer?.disconnect();
+    };
   }, [wrappedHtml]);
 
   return (

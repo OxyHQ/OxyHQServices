@@ -36,6 +36,7 @@ import {
   ArrowDown01Icon,
   ArrowUp01Icon,
   Mail01Icon,
+  Clock01Icon,
 } from '@hugeicons/core-free-icons';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
@@ -55,6 +56,7 @@ const MAILBOX_ICONS_FALLBACK: Record<string, keyof typeof MaterialCommunityIcons
   Spam: 'alert-octagon-outline',
   Archive: 'archive-outline',
   Starred: 'star-outline',
+  Snoozed: 'clock-outline',
 };
 
 const MAILBOX_HUGE_ICONS: Record<string, IconSvgElement> = {
@@ -65,10 +67,11 @@ const MAILBOX_HUGE_ICONS: Record<string, IconSvgElement> = {
   Spam: SpamIcon as unknown as IconSvgElement,
   Archive: Archive01Icon as unknown as IconSvgElement,
   Starred: HugeStarIcon as unknown as IconSvgElement,
+  Snoozed: Clock01Icon as unknown as IconSvgElement,
 };
 
 // Primary mailboxes shown by default; the rest go behind "More"
-const PRIMARY_SPECIAL_USE = new Set([SPECIAL_USE.INBOX, SPECIAL_USE.SENT, SPECIAL_USE.DRAFTS]);
+const PRIMARY_SPECIAL_USE: Set<string> = new Set([SPECIAL_USE.INBOX, SPECIAL_USE.SENT, SPECIAL_USE.DRAFTS]);
 
 function getMailboxFallbackIcon(mailbox: Mailbox): keyof typeof MaterialCommunityIcons.glyphMap {
   if (mailbox.specialUse) {
@@ -198,10 +201,10 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
   const isForYouActive = pathname === '/for-you';
   const currentView = pathname.split('/')[1]?.toLowerCase() || 'inbox';
 
-  const { primaryMailboxes, secondaryMailboxes } = useMemo(() => {
+  const { primaryMailboxes, snoozedMailbox, secondaryMailboxes } = useMemo(() => {
     const order: Record<string, number> = {
       [SPECIAL_USE.INBOX]: 0, [SPECIAL_USE.SENT]: 1, [SPECIAL_USE.DRAFTS]: 2,
-      [SPECIAL_USE.SPAM]: 3, [SPECIAL_USE.TRASH]: 4, [SPECIAL_USE.ARCHIVE]: 5,
+      [SPECIAL_USE.SNOOZED]: 3, [SPECIAL_USE.SPAM]: 4, [SPECIAL_USE.TRASH]: 5, [SPECIAL_USE.ARCHIVE]: 6,
     };
     const sorted = mailboxes
       .filter((m) => m.specialUse)
@@ -209,7 +212,8 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
 
     return {
       primaryMailboxes: sorted.filter((m) => PRIMARY_SPECIAL_USE.has(m.specialUse!)),
-      secondaryMailboxes: sorted.filter((m) => !PRIMARY_SPECIAL_USE.has(m.specialUse!)),
+      snoozedMailbox: sorted.find((m) => m.specialUse === SPECIAL_USE.SNOOZED) || null,
+      secondaryMailboxes: sorted.filter((m) => !PRIMARY_SPECIAL_USE.has(m.specialUse!) && m.specialUse !== SPECIAL_USE.SNOOZED),
     };
   }, [mailboxes]);
 
@@ -225,6 +229,7 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
       [SPECIAL_USE.TRASH]: '/trash',
       [SPECIAL_USE.SPAM]: '/spam',
       [SPECIAL_USE.ARCHIVE]: '/archive',
+      [SPECIAL_USE.SNOOZED]: '/snoozed',
     };
     return routeMap[mailbox.specialUse] || `/folder-${mailbox.name.toLowerCase()}`;
   };
@@ -279,6 +284,7 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
       [SPECIAL_USE.TRASH]: 'trash',
       [SPECIAL_USE.SPAM]: 'spam',
       [SPECIAL_USE.ARCHIVE]: 'archive',
+      [SPECIAL_USE.SNOOZED]: 'snoozed',
     };
     return currentView === routeMap[mailbox.specialUse];
   };
@@ -387,6 +393,20 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
           collapsed={collapsed}
           onPress={handleStarred}
         />
+
+        {/* Snoozed */}
+        {snoozedMailbox && (
+          <NavItem
+            icon="clock-outline"
+            hugeIcon={Clock01Icon as unknown as IconSvgElement}
+            label="Snoozed"
+            isActive={isMailboxActive(snoozedMailbox)}
+            colors={colors}
+            badge={snoozedMailbox.unseenMessages}
+            collapsed={collapsed}
+            onPress={() => handleSelect(snoozedMailbox)}
+          />
+        )}
 
         {/* Subscriptions */}
         <NavItem

@@ -11,6 +11,7 @@ import mongoose from 'mongoose';
 import { Mailbox, IMailbox } from '../models/Mailbox';
 import { Message, IMessage, IEmailAddress, IAttachment } from '../models/Message';
 import { Label } from '../models/Label';
+import { Bundle } from '../models/Bundle';
 import User, { IUser } from '../models/User';
 import {
   DEFAULT_MAILBOXES,
@@ -71,6 +72,13 @@ class EmailService {
    * Also syncs any missing default mailboxes for existing users.
    */
   // ─── Default Labels ──────────────────────────────────────────────
+
+  private static readonly DEFAULT_BUNDLES = [
+    { name: 'Promotions', icon: 'tag-outline', color: '#34A853', matchLabels: ['Shopping'], order: 0 },
+    { name: 'Social', icon: 'account-group-outline', color: '#E8710A', matchLabels: ['Social'], order: 1 },
+    { name: 'Updates', icon: 'bell-outline', color: '#607D8B', matchLabels: ['Updates'], order: 2 },
+    { name: 'Forums', icon: 'forum-outline', color: '#795548', matchLabels: ['Forums'], order: 3 },
+  ];
 
   private static readonly DEFAULT_LABELS = [
     { name: 'Personal', color: '#1A73E8', order: 0 },
@@ -202,7 +210,7 @@ class EmailService {
 
     const [data, total] = await Promise.all([
       Message.find(filter)
-        .sort({ date: -1 })
+        .sort({ 'flags.pinned': -1, date: -1 })
         .skip(offset)
         .limit(limit)
         .lean({ virtuals: true }),
@@ -616,6 +624,103 @@ class EmailService {
     });
 
     return message.toJSON() as any;
+  }
+
+  // ─── Snooze ──────────────────────────────────────────────────────────
+
+  async snoozeMessage(userId: string, messageId: string, until: Date): Promise<any> {
+    const message = await Message.findOne({ _id: messageId, userId });
+    if (!message) throw new NotFoundError('Message not found');
+
+    const snoozedMailbox = await this.getMailboxBySpecialUse(userId, '\\Snoozed');
+    if (!snoozedMailbox) throw new NotFoundError('Snoozed mailbox not found');
+
+    // Already snoozed — just update the time
+    if (message.snoozedUntil) {
+      message.snoozedUntil = until;
+      await message.save();
+      return message.toJSON() as any;
+    }
+
+    const sourceMailboxId = message.mailboxId;
+    message.snoozedUntil = until;
+    message.snoozedFromMailbox = sourceMailboxId;
+    message.mailboxId = snoozedMailbox._id;
+    await message.save();
+
+    // Update mailbox counters
+    const unseenDelta = message.flags.seen ? 0 : 1;
+    await Promise.all([
+      Mailbox.findByIdAndUpdate(sourceMailboxId, {
+        $inc: { totalMessages: -1, unseenMessages: -unseenDelta, size: -message.size },
+      }),
+      Mailbox.findByIdAndUpdate(snoozedMailbox._id, {
+        $inc: { totalMessages: 1, unseenMessages: unseenDelta, size: message.size },
+      }),
+    ]);
+
+    logger.info('Message snoozed', { userId, messageId, until: until.toISOString() });
+    return message.toJSON() as any;
+  }
+
+  async unsnoozeMessage(userId: string, messageId: string): Promise<any> {
+    const message = await Message.findOne({ _id: messageId, userId });
+    if (!message) throw new NotFoundError('Message not found');
+    if (!message.snoozedUntil || !message.snoozedFromMailbox) {
+      throw new BadRequestError('Message is not snoozed');
+    }
+
+    const targetMailboxId = message.snoozedFromMailbox;
+    const snoozedMailboxId = message.mailboxId;
+
+    message.mailboxId = targetMailboxId;
+    message.snoozedUntil = null;
+    message.snoozedFromMailbox = null;
+    // Mark as unseen so it stands out when it reappears
+    message.flags.seen = false;
+    await message.save();
+
+    // Update mailbox counters (now unseen in target)
+    await Promise.all([
+      Mailbox.findByIdAndUpdate(snoozedMailboxId, {
+        $inc: { totalMessages: -1, size: -message.size },
+      }),
+      Mailbox.findByIdAndUpdate(targetMailboxId, {
+        $inc: { totalMessages: 1, unseenMessages: 1, size: message.size },
+      }),
+    ]);
+
+    logger.info('Message unsnoozed', { userId, messageId });
+    return message.toJSON() as any;
+  }
+
+  /**
+   * Process all snoozed messages whose snooze time has passed.
+   * Called by the snooze cron job every minute.
+   */
+  async processSnoozedMessages(): Promise<number> {
+    const now = new Date();
+    const due = await Message.find({
+      snoozedUntil: { $lte: now, $ne: null },
+      snoozedFromMailbox: { $ne: null },
+    }).select('_id userId');
+
+    let count = 0;
+    for (const msg of due) {
+      try {
+        await this.unsnoozeMessage(msg.userId.toString(), msg._id.toString());
+        count++;
+      } catch (err) {
+        logger.error('Failed to unsnooze message', err instanceof Error ? err : new Error(String(err)), {
+          messageId: msg._id.toString(),
+        });
+      }
+    }
+
+    if (count > 0) {
+      logger.info('Snooze cron processed', { count });
+    }
+    return count;
   }
 
   // ─── Thread / Conversation ─────────────────────────────────────────
@@ -1357,6 +1462,119 @@ class EmailService {
     for await (const msg of cursor) {
       await this.deleteMessageAttachments(msg as IMessage);
     }
+  }
+
+  // ─── Bundles ─────────────────────────────────────────────────────
+
+  async ensureDefaultBundles(userId: string): Promise<void> {
+    const count = await Bundle.countDocuments({ userId });
+    if (count > 0) return;
+
+    const docs = EmailService.DEFAULT_BUNDLES.map((b) => ({
+      userId: new mongoose.Types.ObjectId(userId),
+      name: b.name,
+      icon: b.icon,
+      color: b.color,
+      matchLabels: b.matchLabels,
+      order: b.order,
+      enabled: true,
+      collapsed: true,
+    }));
+
+    try {
+      await Bundle.insertMany(docs, { ordered: false });
+      logger.info('Default bundles seeded', { userId });
+    } catch (err: any) {
+      if (err.code !== 11000 && !err.message?.includes('E11000')) {
+        throw err;
+      }
+    }
+  }
+
+  async listBundles(userId: string): Promise<any[]> {
+    await this.ensureDefaultBundles(userId);
+    return Bundle.find({ userId }).sort({ order: 1 }).lean();
+  }
+
+  async updateBundle(
+    userId: string,
+    bundleId: string,
+    updates: { enabled?: boolean; collapsed?: boolean; matchLabels?: string[]; order?: number },
+  ): Promise<any> {
+    const bundle = await Bundle.findOneAndUpdate(
+      { _id: bundleId, userId },
+      { $set: updates },
+      { new: true },
+    ).lean();
+    if (!bundle) throw new NotFoundError('Bundle not found');
+    return bundle;
+  }
+
+  async listBundledMessages(
+    userId: string,
+    mailboxId: string | null,
+    options: { limit: number; offset: number },
+  ): Promise<{
+    primary: any[];
+    bundles: Array<{ bundle: any; messages: any[]; unreadCount: number }>;
+    total: number;
+  }> {
+    // Get enabled bundles
+    await this.ensureDefaultBundles(userId);
+    const bundles = await Bundle.find({ userId, enabled: true }).sort({ order: 1 }).lean();
+
+    // Collect all label names that belong to any bundle
+    const bundledLabels = new Set<string>();
+    for (const b of bundles) {
+      for (const l of b.matchLabels) {
+        bundledLabels.add(l);
+      }
+    }
+
+    // Query all messages for this mailbox
+    const query: Record<string, any> = { userId };
+    if (mailboxId) query.mailboxId = new mongoose.Types.ObjectId(mailboxId);
+
+    const allMessages = await Message.find(query)
+      .sort({ 'flags.pinned': -1, date: -1 })
+      .skip(options.offset)
+      .limit(options.limit)
+      .lean();
+
+    const total = await Message.countDocuments(query);
+
+    // Partition into primary vs bundled
+    const primary: any[] = [];
+    const bundleMap = new Map<string, any[]>();
+
+    for (const b of bundles) {
+      bundleMap.set(b._id.toString(), []);
+    }
+
+    for (const msg of allMessages) {
+      const msgLabels = (msg as any).labels || [];
+      let matched = false;
+
+      for (const b of bundles) {
+        if (b.matchLabels.some((l: string) => msgLabels.includes(l))) {
+          bundleMap.get(b._id.toString())!.push(msg);
+          matched = true;
+          break; // First matching bundle wins
+        }
+      }
+
+      if (!matched) {
+        primary.push(msg);
+      }
+    }
+
+    const bundleResults = bundles.map((b) => {
+      const messages = bundleMap.get(b._id.toString()) || [];
+      const unreadCount = messages.filter((m: any) => !m.flags?.seen).length;
+      return { bundle: b, messages, unreadCount };
+    }).filter((br) => br.messages.length > 0);
+
+    return { primary, bundles: bundleResults, total };
   }
 }
 

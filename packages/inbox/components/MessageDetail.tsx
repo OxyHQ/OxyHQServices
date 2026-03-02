@@ -26,6 +26,8 @@ import {
   Archive01Icon,
   Delete01Icon,
   StarIcon,
+  PinIcon,
+  Clock01Icon,
   Attachment01Icon,
   MailReply01Icon,
   MailReplyAll01Icon,
@@ -47,7 +49,7 @@ import { useMessage } from '@/hooks/queries/useMessage';
 import { useThread } from '@/hooks/queries/useThread';
 import { useMailboxes } from '@/hooks/queries/useMailboxes';
 import { useLabels } from '@/hooks/queries/useLabels';
-import { useToggleStar, useToggleRead, useArchiveMessage, useDeleteMessage, useUpdateMessageLabels } from '@/hooks/mutations/useMessageMutations';
+import { useToggleStar, useToggleRead, useArchiveMessage, useDeleteMessage, useUpdateMessageLabels, useTogglePin, useSnoozeMessage } from '@/hooks/mutations/useMessageMutations';
 import { toast } from '@oxyhq/services';
 import { Avatar } from '@/components/Avatar';
 import { HtmlBody } from '@/components/HtmlBody';
@@ -57,7 +59,9 @@ import { SentimentIndicator } from '@/components/SentimentIndicator';
 import { StaleThreadBanner } from '@/components/StaleThreadBanner';
 import { useSentimentAnalysis } from '@/hooks/queries/useSentimentAnalysis';
 import { useStaleThread } from '@/hooks/queries/useStaleThread';
+import { SnoozeSheet } from '@/components/SnoozeSheet';
 import type { EmailAddress } from '@/services/emailApi';
+import { useCidResolver } from '@/hooks/useCidResolver';
 
 function formatFullDate(dateStr: string): string {
   const date = new Date(dateStr);
@@ -119,8 +123,11 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
   const archiveMutation = useArchiveMessage();
   const deleteMutation = useDeleteMessage();
   const updateLabels = useUpdateMessageLabels();
+  const togglePin = useTogglePin();
+  const snoozeMutation = useSnoozeMessage();
 
   const [moreMenuVisible, setMoreMenuVisible] = useState(false);
+  const [snoozeVisible, setSnoozeVisible] = useState(false);
   const [labelMenuVisible, setLabelMenuVisible] = useState(false);
   const [replyMode, setReplyMode] = useState<'reply' | 'reply-all' | 'forward' | null>(null);
   const [replyTargetId, setReplyTargetId] = useState<string | null>(null);
@@ -138,6 +145,7 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
   useEffect(() => {
     setMoreMenuVisible(false);
     setLabelMenuVisible(false);
+    setSnoozeVisible(false);
     setReplyMode(null);
     setReplyTargetId(null);
     setExpandedMessages(new Set([messageId]));
@@ -160,6 +168,21 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
     if (!messageId || !currentMessage || toggleStar.isPending) return;
     toggleStar.mutate({ messageId, starred: !currentMessage.flags.starred });
   }, [messageId, currentMessage, toggleStar]);
+
+  const handlePin = useCallback(() => {
+    if (!messageId || !currentMessage || togglePin.isPending) return;
+    togglePin.mutate({ messageId, pinned: !currentMessage.flags.pinned });
+  }, [messageId, currentMessage, togglePin]);
+
+  const handleSnooze = useCallback(
+    (until: Date) => {
+      if (!messageId) return;
+      snoozeMutation.mutate({ messageId, until: until.toISOString() });
+      setSnoozeVisible(false);
+      if (mode === 'standalone') router.back();
+    },
+    [messageId, snoozeMutation, router, mode],
+  );
 
   const handleArchive = useCallback(() => {
     if (!messageId) return;
@@ -245,6 +268,9 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
 
   // Detect stale threads that need a response
   const staleInfo = useStaleThread(sortedThread, userEmail);
+
+  // Resolve CID inline image references to signed S3 URLs
+  const resolvedHtmlMap = useCidResolver(sortedThread, api, messageId);
 
   const handleAttachment = useCallback(async (s3Key: string, filename: string) => {
     if (!api) return;
@@ -360,6 +386,27 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
           )}
         </TouchableOpacity>
         <TouchableOpacity
+          onPress={handlePin}
+          style={[styles.iconButton, togglePin.isPending && { opacity: 0.5 }]}
+          disabled={togglePin.isPending}
+        >
+          {Platform.OS === 'web' ? (
+            <HugeiconsIcon
+              icon={PinIcon as unknown as IconSvgElement}
+              size={22}
+              color={currentMessage.flags.pinned ? colors.primary : colors.icon}
+              strokeWidth={1.5}
+              fill={currentMessage.flags.pinned ? colors.primary : 'none'}
+            />
+          ) : (
+            <MaterialCommunityIcons
+              name={currentMessage.flags.pinned ? 'pin' : 'pin-outline'}
+              size={22}
+              color={currentMessage.flags.pinned ? colors.primary : colors.icon}
+            />
+          )}
+        </TouchableOpacity>
+        <TouchableOpacity
           onPress={handleStar}
           style={[styles.iconButton, toggleStar.isPending && { opacity: 0.5 }]}
           disabled={toggleStar.isPending}
@@ -378,6 +425,13 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
               size={22}
               color={currentMessage.flags.starred ? colors.starred : colors.icon}
             />
+          )}
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => setSnoozeVisible(true)} style={styles.iconButton}>
+          {Platform.OS === 'web' ? (
+            <HugeiconsIcon icon={Clock01Icon as unknown as IconSvgElement} size={22} color={colors.icon} />
+          ) : (
+            <MaterialCommunityIcons name="clock-outline" size={22} color={colors.icon} />
           )}
         </TouchableOpacity>
 
@@ -667,7 +721,7 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
               {/* Body - full width for HTML emails */}
               <View style={styles.messageBody}>
                 {msg.html ? (
-                  <HtmlBody html={msg.html} />
+                  <HtmlBody html={resolvedHtmlMap[msg._id] ?? msg.html ?? ''} />
                 ) : (
                   <View style={styles.contentPadded}>
                     <Text style={[styles.bodyText, { color: colors.text }]}>
@@ -691,6 +745,13 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
           </View>
         )}
       </ScrollView>
+
+      {/* Snooze sheet */}
+      <SnoozeSheet
+        visible={snoozeVisible}
+        onClose={() => setSnoozeVisible(false)}
+        onSnooze={handleSnooze}
+      />
 
       {/* Sticky reply buttons at bottom */}
       {!replyMode && (

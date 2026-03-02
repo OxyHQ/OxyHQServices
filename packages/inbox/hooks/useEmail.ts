@@ -22,6 +22,8 @@ interface EmailState {
   selectedMessageId: string | null;
   sidebarCollapsed: boolean;
   moreExpanded: boolean;
+  bundleView: boolean;
+  expandedBundles: Set<string>;
   selectedMessageIds: Set<string>;
   isSelectionMode: boolean;
   _api: EmailApiInstance | null;
@@ -31,6 +33,8 @@ interface EmailState {
   selectLabel: (labelId: string, labelName: string) => void;
   toggleSidebar: () => void;
   toggleMore: () => void;
+  toggleBundleView: () => void;
+  toggleBundle: (bundleId: string) => void;
   toggleMessageSelection: (id: string) => void;
   enterSelectionMode: (id: string) => void;
   clearSelection: () => void;
@@ -43,6 +47,8 @@ export const useEmailStore = create<EmailState>((set, get) => ({
   selectedMessageId: null,
   sidebarCollapsed: false,
   moreExpanded: false,
+  bundleView: false,
+  expandedBundles: new Set<string>(),
   selectedMessageIds: new Set<string>(),
   isSelectionMode: false,
   _api: null,
@@ -75,6 +81,20 @@ export const useEmailStore = create<EmailState>((set, get) => ({
 
   toggleMore: () => {
     set((s) => ({ moreExpanded: !s.moreExpanded }));
+  },
+
+  toggleBundleView: () => {
+    set((s) => ({ bundleView: !s.bundleView }));
+  },
+
+  toggleBundle: (bundleId) => {
+    const next = new Set(get().expandedBundles);
+    if (next.has(bundleId)) {
+      next.delete(bundleId);
+    } else {
+      next.add(bundleId);
+    }
+    set({ expandedBundles: next });
   },
 
   toggleMessageSelection: (id) => {

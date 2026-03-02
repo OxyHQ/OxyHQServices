@@ -33,6 +33,7 @@ export const MessageFlagsSchema = z.object({
   answered: z.boolean(),
   forwarded: z.boolean(),
   draft: z.boolean(),
+  pinned: z.boolean().optional().default(false),
 });
 
 export const MessageSchema = z.object({
@@ -56,6 +57,7 @@ export const MessageSchema = z.object({
   inReplyTo: z.string().nullable().optional(),
   references: z.array(z.string()).optional(),
   aliasTag: z.string().nullable().optional(),
+  snoozedUntil: z.string().nullable().optional(),
   threadCount: z.number().optional(),
   threadParticipants: z.array(z.string()).optional(),
   date: z.string(),
@@ -122,6 +124,18 @@ export const UnsubscribeResultSchema = z.object({
   method: z.string(),
 });
 
+export const BundleSchema = z.object({
+  _id: z.string(),
+  userId: z.string(),
+  name: z.string(),
+  icon: z.string(),
+  color: z.string(),
+  matchLabels: z.array(z.string()),
+  enabled: z.boolean(),
+  collapsed: z.boolean(),
+  order: z.number(),
+});
+
 // ─── Inferred Types ────────────────────────────────────────────────
 
 export type EmailAddress = z.infer<typeof EmailAddressSchema>;
@@ -135,6 +149,7 @@ export type QuotaUsage = z.infer<typeof QuotaUsageSchema>;
 export type EmailSettings = z.infer<typeof EmailSettingsSchema>;
 export type Subscription = z.infer<typeof SubscriptionSchema>;
 export type UnsubscribeResult = z.infer<typeof UnsubscribeResultSchema>;
+export type Bundle = z.infer<typeof BundleSchema>;
 
 // ─── Response Wrappers ─────────────────────────────────────────────
 
@@ -214,6 +229,16 @@ export function createEmailApi(http: HttpService) {
 
     async moveMessage(messageId: string, mailboxId: string): Promise<Message> {
       const res = (await http.post(`/email/messages/${messageId}/move`, { mailboxId })) as { data: Message };
+      return MessageSchema.parse(res.data);
+    },
+
+    async snoozeMessage(messageId: string, until: string): Promise<Message> {
+      const res = (await http.post(`/email/messages/${messageId}/snooze`, { until })) as { data: Message };
+      return MessageSchema.parse(res.data);
+    },
+
+    async unsnoozeMessage(messageId: string): Promise<Message> {
+      const res = (await http.post(`/email/messages/${messageId}/unsnooze`)) as { data: Message };
       return MessageSchema.parse(res.data);
     },
 
@@ -375,6 +400,51 @@ export function createEmailApi(http: HttpService) {
         method,
       })) as { data: UnsubscribeResult };
       return UnsubscribeResultSchema.parse(res.data);
+    },
+
+    // ─── Bundles ────────────────────────────────────────────────────
+
+    async listBundles(): Promise<Bundle[]> {
+      const res = (await http.get('/email/bundles')) as { data: Bundle[] };
+      return z.array(BundleSchema).parse(res.data);
+    },
+
+    async updateBundle(
+      bundleId: string,
+      updates: { enabled?: boolean; collapsed?: boolean; matchLabels?: string[]; order?: number },
+    ): Promise<Bundle> {
+      const res = (await http.put(`/email/bundles/${bundleId}`, updates)) as { data: Bundle };
+      return BundleSchema.parse(res.data);
+    },
+
+    async listBundledMessages(
+      options: { mailboxId?: string; limit?: number; offset?: number } = {},
+    ): Promise<{
+      primary: Message[];
+      bundles: Array<{ bundle: Bundle; messages: Message[]; unreadCount: number }>;
+      pagination: Pagination;
+    }> {
+      const params: Record<string, string> = {};
+      if (options.mailboxId) params.mailbox = options.mailboxId;
+      if (options.limit !== undefined) params.limit = String(options.limit);
+      if (options.offset !== undefined) params.offset = String(options.offset);
+
+      const res = (await http.get('/email/messages/bundled', { params })) as {
+        data: {
+          primary: Message[];
+          bundles: Array<{ bundle: Bundle; messages: Message[]; unreadCount: number }>;
+        };
+        pagination: Pagination;
+      };
+      return {
+        primary: z.array(MessageSchema).parse(res.data.primary),
+        bundles: res.data.bundles.map((b) => ({
+          bundle: BundleSchema.parse(b.bundle),
+          messages: z.array(MessageSchema).parse(b.messages),
+          unreadCount: b.unreadCount,
+        })),
+        pagination: PaginationSchema.parse(res.pagination),
+      };
     },
   };
 }

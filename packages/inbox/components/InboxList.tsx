@@ -3,7 +3,7 @@
  * Used by the (inbox) layout on desktop (always visible) and by the index route on mobile.
  */
 
-import React, { useCallback, useMemo, useEffect } from 'react';
+import React, { useCallback, useMemo, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -34,14 +34,39 @@ import {
   useToggleRead,
   useArchiveMessage,
   useDeleteMessage,
+  useTogglePin,
+  useSnoozeMessage,
 } from '@/hooks/mutations/useMessageMutations';
 import { MessageRow } from '@/components/MessageRow';
 import { SearchHeader } from '@/components/SearchHeader';
 import { SelectionToolbar } from '@/components/SelectionToolbar';
 import { SwipeableRow } from '@/components/SwipeableRow';
+import { SnoozeSheet } from '@/components/SnoozeSheet';
+import { BundleRow } from '@/components/BundleRow';
 import { EmptyIllustration } from '@/components/EmptyIllustration';
 import { AskAlia } from '@/components/AskAlia';
-import type { Message } from '@/services/emailApi';
+import { useBundles } from '@/hooks/queries/useBundles';
+import type { Message, Bundle } from '@/services/emailApi';
+
+type ListItem =
+  | { type: 'header'; title: string; key: string }
+  | { type: 'message'; data: Message }
+  | { type: 'bundle'; bundle: Bundle; messages: Message[]; unreadCount: number };
+
+function getDateCategory(dateStr: string): string {
+  const date = new Date(dateStr);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const msgDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const diffMs = today.getTime() - msgDay.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+  if (diffDays === 0) return 'Today';
+  if (diffDays === 1) return 'Yesterday';
+  if (diffDays < 7) return 'This Week';
+  if (diffDays < 30) return 'This Month';
+  return 'Earlier';
+}
 
 interface InboxListProps {
   /** When true, uses router.replace for message navigation (desktop split-view) */
@@ -93,12 +118,104 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
     labels.forEach((l) => map.set(l.name, l.color));
     return map;
   }, [labels]);
+  const bundleView = useEmailStore((s) => s.bundleView);
+  const expandedBundles = useEmailStore((s) => s.expandedBundles);
+  const toggleBundle = useEmailStore((s) => s.toggleBundle);
+
   const toggleStar = useToggleStar();
   const toggleRead = useToggleRead();
+  const togglePin = useTogglePin();
+  const snoozeMutation = useSnoozeMessage();
   const archiveMutation = useArchiveMessage();
   const deleteMutation = useDeleteMessage();
+  const { data: bundles = [] } = useBundles();
+
+  const [snoozeTargetId, setSnoozeTargetId] = useState<string | null>(null);
 
   const messages = useMemo(() => data?.pages.flatMap((p) => p.data) ?? [], [data]);
+
+  const isInboxView = viewMode?.type === 'mailbox' && viewMode.mailbox.specialUse === SPECIAL_USE.INBOX;
+  const isSnoozedView = viewMode?.type === 'mailbox' && viewMode.mailbox.specialUse === SPECIAL_USE.SNOOZED;
+  const showBundles = bundleView && isInboxView && bundles.length > 0;
+
+  const listItems = useMemo<ListItem[]>(() => {
+    if (messages.length === 0) return [];
+    const items: ListItem[] = [];
+
+    // Partition pinned messages to top (only in mailbox views, not snoozed)
+    const pinned = !isSnoozedView ? messages.filter((m) => m.flags.pinned) : [];
+    const unpinned = !isSnoozedView ? messages.filter((m) => !m.flags.pinned) : messages;
+
+    if (pinned.length > 0) {
+      items.push({ type: 'header', title: 'Pinned', key: 'header-Pinned' });
+      for (const msg of pinned) {
+        items.push({ type: 'message', data: msg });
+      }
+    }
+
+    // Bundle view: group by bundle labels
+    if (showBundles) {
+      const enabledBundles = bundles.filter((b) => b.enabled);
+      const bundledLabels = new Set<string>();
+      for (const b of enabledBundles) {
+        for (const l of b.matchLabels) bundledLabels.add(l);
+      }
+
+      const primaryMsgs: Message[] = [];
+      const bundleMap = new Map<string, Message[]>();
+      for (const b of enabledBundles) bundleMap.set(b._id, []);
+
+      for (const msg of unpinned) {
+        let matched = false;
+        for (const b of enabledBundles) {
+          if (b.matchLabels.some((l) => msg.labels.includes(l))) {
+            bundleMap.get(b._id)!.push(msg);
+            matched = true;
+            break;
+          }
+        }
+        if (!matched) primaryMsgs.push(msg);
+      }
+
+      // Primary messages with date headers
+      let lastCategory = '';
+      for (const msg of primaryMsgs) {
+        const category = getDateCategory(msg.date);
+        if (category !== lastCategory) {
+          items.push({ type: 'header', title: category, key: `header-${category}` });
+          lastCategory = category;
+        }
+        items.push({ type: 'message', data: msg });
+      }
+
+      // Bundle rows (collapsed or expanded)
+      for (const b of enabledBundles) {
+        const msgs = bundleMap.get(b._id) || [];
+        if (msgs.length === 0) continue;
+        const unreadCount = msgs.filter((m) => !m.flags.seen).length;
+        items.push({ type: 'bundle', bundle: b, messages: msgs, unreadCount });
+
+        if (expandedBundles.has(b._id)) {
+          for (const msg of msgs) {
+            items.push({ type: 'message', data: msg });
+          }
+        }
+      }
+    } else {
+      // Normal flat view with date headers
+      let lastCategory = '';
+      for (const msg of unpinned) {
+        const category = getDateCategory(msg.date);
+        if (category !== lastCategory) {
+          items.push({ type: 'header', title: category, key: `header-${category}` });
+          lastCategory = category;
+        }
+        items.push({ type: 'message', data: msg });
+      }
+    }
+
+    return items;
+  }, [messages, isSnoozedView, showBundles, bundles, expandedBundles]);
 
   // Clear selection when view changes
   useEffect(() => {
@@ -121,6 +238,24 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
       if (msg) toggleStar.mutate({ messageId, starred: !msg.flags.starred });
     },
     [messages, toggleStar],
+  );
+
+  const handlePin = useCallback(
+    (messageId: string) => {
+      if (togglePin.isPending) return;
+      const msg = messages.find((m) => m._id === messageId);
+      if (msg) togglePin.mutate({ messageId, pinned: !msg.flags.pinned });
+    },
+    [messages, togglePin],
+  );
+
+  const handleSnooze = useCallback(
+    (until: Date) => {
+      if (!snoozeTargetId) return;
+      snoozeMutation.mutate({ messageId: snoozeTargetId, until: until.toISOString() });
+      setSnoozeTargetId(null);
+    },
+    [snoozeTargetId, snoozeMutation],
   );
 
   const handleMessagePress = useCallback(
@@ -227,29 +362,61 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
   );
 
   const renderItem = useCallback(
-    ({ item }: { item: Message }) => (
-      <SwipeableRow
-        onArchive={() => handleSwipeArchive(item._id)}
-        onDelete={() => handleSwipeDelete(item._id)}
-      >
-        <MessageRow
-          message={item}
-          onStar={handleStar}
-          onSelect={handleMessagePress}
-          isSelected={item._id === selectedMessageId}
-          isSelectionMode={isSelectionMode}
-          isMultiSelected={selectedMessageIds.has(item._id)}
-          onToggleSelect={toggleMessageSelection}
-          onLongPress={handleLongPress}
-          isStarPending={toggleStar.isPending && toggleStar.variables?.messageId === item._id}
-          labelColorMap={labelColorMap}
-        />
-      </SwipeableRow>
-    ),
-    [handleStar, handleMessagePress, selectedMessageId, isSelectionMode, selectedMessageIds, toggleMessageSelection, handleLongPress, handleSwipeArchive, handleSwipeDelete, toggleStar.isPending, toggleStar.variables?.messageId, labelColorMap],
+    ({ item }: { item: ListItem }) => {
+      if (item.type === 'header') {
+        return (
+          <View style={[styles.sectionHeader, { borderBottomColor: colors.border }]}>
+            <Text style={[styles.sectionHeaderText, { color: colors.secondaryText }]}>
+              {item.title}
+            </Text>
+          </View>
+        );
+      }
+      if (item.type === 'bundle') {
+        return (
+          <BundleRow
+            bundle={item.bundle}
+            messages={item.messages}
+            unreadCount={item.unreadCount}
+            isExpanded={expandedBundles.has(item.bundle._id)}
+            onToggle={() => toggleBundle(item.bundle._id)}
+          />
+        );
+      }
+      const msg = item.data;
+      return (
+        <SwipeableRow
+          onArchive={() => handleSwipeArchive(msg._id)}
+          onDelete={() => handleSwipeDelete(msg._id)}
+        >
+          <MessageRow
+            message={msg}
+            onStar={handleStar}
+            onPin={handlePin}
+            onSelect={handleMessagePress}
+            isSelected={msg._id === selectedMessageId}
+            isSelectionMode={isSelectionMode}
+            isMultiSelected={selectedMessageIds.has(msg._id)}
+            onToggleSelect={toggleMessageSelection}
+            onLongPress={handleLongPress}
+            isStarPending={toggleStar.isPending && toggleStar.variables?.messageId === msg._id}
+            isPinPending={togglePin.isPending && togglePin.variables?.messageId === msg._id}
+            showSnoozeTime={isSnoozedView}
+            labelColorMap={labelColorMap}
+          />
+        </SwipeableRow>
+      );
+    },
+    [handleStar, handlePin, handleMessagePress, selectedMessageId, isSelectionMode, selectedMessageIds, toggleMessageSelection, handleLongPress, handleSwipeArchive, handleSwipeDelete, toggleStar.isPending, toggleStar.variables?.messageId, togglePin.isPending, togglePin.variables?.messageId, isSnoozedView, expandedBundles, toggleBundle, labelColorMap, colors.border, colors.secondaryText],
   );
 
-  const keyExtractor = useCallback((item: Message) => item._id, []);
+  const getItemType = useCallback((item: ListItem) => item.type, []);
+
+  const keyExtractor = useCallback((item: ListItem) => {
+    if (item.type === 'header') return item.key;
+    if (item.type === 'bundle') return `bundle-${item.bundle._id}`;
+    return item.data._id;
+  }, []);
 
   const renderSeparator = useCallback(
     () => <View style={[styles.separator, { backgroundColor: colors.border }]} />,
@@ -319,16 +486,16 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
       )}
 
       <FlashList
-        data={messages}
+        data={listItems}
         renderItem={renderItem}
         keyExtractor={keyExtractor}
+        getItemType={getItemType}
         ItemSeparatorComponent={renderSeparator}
         ListEmptyComponent={renderEmpty}
         ListFooterComponent={renderFooter}
         onEndReached={handleLoadMore}
         onEndReachedThreshold={0.3}
         extraData={selectedMessageIds}
-        estimatedItemSize={76}
         refreshControl={
           <RefreshControl
             refreshing={isRefetching && !isFetchingNextPage}
@@ -337,7 +504,7 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
             colors={[colors.primary]}
           />
         }
-        contentContainerStyle={messages.length === 0 ? styles.emptyListContent : undefined}
+        contentContainerStyle={listItems.length === 0 ? styles.emptyListContent : undefined}
         showsVerticalScrollIndicator={false}
       />
 
@@ -388,6 +555,13 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
           }}
         />
       )}
+
+      {/* Snooze sheet */}
+      <SnoozeSheet
+        visible={snoozeTargetId !== null}
+        onClose={() => setSnoozeTargetId(null)}
+        onSnooze={handleSnooze}
+      />
     </View>
   );
 }
@@ -451,5 +625,16 @@ const styles = StyleSheet.create({
   paginationText: {
     fontSize: 11,
     fontWeight: '500',
+  },
+  sectionHeader: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  sectionHeaderText: {
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
 });

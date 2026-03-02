@@ -35,6 +35,7 @@ import billingRoutes from './routes/billing';
 import modelsStatsRoutes from './routes/models-stats';
 import { startSmtpInbound, stopSmtpInbound } from './services/smtp.inbound';
 import { smtpOutbound } from './services/smtp.outbound';
+import { startSnoozeCron, stopSnoozeCron } from './cron/snooze.cron';
 import { getEnvBoolean } from './config/env';
 import { getDbName } from './config/db';
 import jwt from 'jsonwebtoken';
@@ -265,6 +266,7 @@ mongoose.connection.on('reconnected', () => {
 
 // Graceful shutdown
 process.on('SIGINT', async () => {
+  stopSnoozeCron();
   await stopSmtpInbound();
   smtpOutbound.shutdown();
   await closeRedis();
@@ -423,6 +425,9 @@ if (require.main === module) {
         startSmtpInbound();
         logger.info('SMTP inbound server enabled');
       }
+
+      // Start snooze processor
+      startSnoozeCron();
 
       server.listen(PORT, '0.0.0.0', () => {
         logger.info(`Server running on port ${PORT}`, {

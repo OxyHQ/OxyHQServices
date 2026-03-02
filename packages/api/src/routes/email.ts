@@ -20,6 +20,8 @@ import {
   updateMessageLabels,
   moveMessage,
   deleteMessage,
+  snoozeMessage,
+  unsnoozeMessage,
   listLabels,
   createLabel,
   updateLabel,
@@ -34,6 +36,9 @@ import {
   updateEmailSettings,
   listSubscriptions,
   unsubscribe,
+  listBundles,
+  updateBundle,
+  listBundledMessages,
 } from '../controllers/email.controller';
 
 const router = Router();
@@ -56,12 +61,15 @@ router.delete('/mailboxes/:mailboxId', asyncHandler(deleteMailbox));
 // ─── Messages ─────────────────────────────────────────────────────
 
 router.get('/messages', asyncHandler(listMessages));
+router.get('/messages/bundled', asyncHandler(listBundledMessages));
 router.get('/messages/:messageId', asyncHandler(getMessage));
 router.get('/messages/:messageId/thread', asyncHandler(getThread));
 router.put('/messages/:messageId/flags', asyncHandler(updateMessageFlags));
 router.put('/messages/:messageId/labels', asyncHandler(updateMessageLabels));
 router.post('/messages/:messageId/move', asyncHandler(moveMessage));
 router.delete('/messages/:messageId', asyncHandler(deleteMessage));
+router.post('/messages/:messageId/snooze', asyncHandler(snoozeMessage));
+router.post('/messages/:messageId/unsnooze', asyncHandler(unsnoozeMessage));
 
 // ─── Labels ──────────────────────────────────────────────────────
 
@@ -92,6 +100,11 @@ router.get('/attachments/:s3Key(*)', asyncHandler(getAttachmentUrl));
 
 router.get('/subscriptions', asyncHandler(listSubscriptions));
 router.post('/subscriptions/unsubscribe', asyncHandler(unsubscribe));
+
+// ─── Bundles ──────────────────────────────────────────────────────
+
+router.get('/bundles', asyncHandler(listBundles));
+router.put('/bundles/:bundleId', asyncHandler(updateBundle));
 
 // ─── Settings ─────────────────────────────────────────────────────
 

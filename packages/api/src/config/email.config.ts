@@ -97,6 +97,7 @@ export const DEFAULT_MAILBOXES = [
   { name: 'Trash', path: 'Trash', specialUse: '\\Trash', retentionDays: 30 },
   { name: 'Spam', path: 'Spam', specialUse: '\\Junk', retentionDays: 30 },
   { name: 'Archive', path: 'Archive', specialUse: '\\Archive' },
+  { name: 'Snoozed', path: 'Snoozed', specialUse: '\\Snoozed' },
 ] as const;
 
 /** AI auto-labeling on inbound email */

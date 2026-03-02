@@ -26,6 +26,7 @@ const VIEW_TO_SPECIAL_USE: Record<string, string> = {
   trash: SPECIAL_USE.TRASH,
   spam: SPECIAL_USE.SPAM,
   archive: SPECIAL_USE.ARCHIVE,
+  snoozed: SPECIAL_USE.SNOOZED,
 };
 
 export default function MailboxViewRoute() {

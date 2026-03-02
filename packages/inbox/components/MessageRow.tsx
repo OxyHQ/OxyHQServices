@@ -11,6 +11,8 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import {
   StarIcon,
+  PinIcon,
+  Clock01Icon,
   Image01Icon,
   PlayCircle02Icon,
   MusicNote01Icon,
@@ -86,9 +88,23 @@ function getAttachmentInfo(att: Attachment): AttachmentInfo {
   return { icon: 'file-outline', hugeIcon: File01Icon as unknown as IconSvgElement, label: att.filename, color: '#5F6368' };
 }
 
+function formatSnoozeTime(dateStr: string): string {
+  const date = new Date(dateStr);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const snoozeDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const diffDays = Math.floor((snoozeDay.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  const time = date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+
+  if (diffDays === 0) return `Today, ${time}`;
+  if (diffDays === 1) return `Tomorrow, ${time}`;
+  return `${date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}, ${time}`;
+}
+
 export function MessageRow({
   message,
   onStar,
+  onPin,
   onSelect,
   isSelected,
   isSelectionMode,
@@ -96,10 +112,13 @@ export function MessageRow({
   onToggleSelect,
   onLongPress,
   isStarPending,
+  isPinPending,
+  showSnoozeTime,
   labelColorMap,
 }: {
   message: Message;
   onStar: (id: string) => void;
+  onPin?: (id: string) => void;
   onSelect: (id: string) => void;
   isSelected?: boolean;
   isSelectionMode?: boolean;
@@ -107,6 +126,8 @@ export function MessageRow({
   onToggleSelect?: (id: string) => void;
   onLongPress?: (id: string) => void;
   isStarPending?: boolean;
+  isPinPending?: boolean;
+  showSnoozeTime?: boolean;
   labelColorMap?: Map<string, string>;
 }) {
   const colorScheme = useColorScheme();
@@ -144,6 +165,10 @@ export function MessageRow({
   const handleStar = useCallback(() => {
     onStar(message._id);
   }, [onStar, message._id]);
+
+  const handlePin = useCallback(() => {
+    onPin?.(message._id);
+  }, [onPin, message._id]);
 
   const senderName = getSenderName(message);
   const preview = getPreview(message);
@@ -197,15 +222,59 @@ export function MessageRow({
           >
             {senderName}
           </Text>
-          <Text
-            style={[
-              styles.date,
-              { color: isUnread ? colors.unread : colors.read },
-              isUnread && styles.dateUnread,
-            ]}
-          >
-            {dateStr}
-          </Text>
+          {(message.threadCount ?? 0) > 1 && (
+            <View style={[styles.threadBadge, { backgroundColor: colors.surfaceVariant }]}>
+              <Text style={[styles.threadBadgeText, { color: colors.secondaryText }]}>
+                {message.threadCount}
+              </Text>
+            </View>
+          )}
+          {showSnoozeTime && message.snoozedUntil ? (
+            <View style={styles.snoozeTimeRow}>
+              {Platform.OS === 'web' ? (
+                <HugeiconsIcon icon={Clock01Icon as unknown as IconSvgElement} size={12} color={colors.primary} />
+              ) : (
+                <MaterialCommunityIcons name="clock-outline" size={12} color={colors.primary} />
+              )}
+              <Text style={[styles.snoozeTimeText, { color: colors.primary }]}>
+                {formatSnoozeTime(message.snoozedUntil)}
+              </Text>
+            </View>
+          ) : (
+            <Text
+              style={[
+                styles.date,
+                { color: isUnread ? colors.unread : colors.read },
+                isUnread && styles.dateUnread,
+              ]}
+            >
+              {dateStr}
+            </Text>
+          )}
+          {onPin && (
+            <TouchableOpacity
+              onPress={handlePin}
+              hitSlop={8}
+              style={[styles.starButton, isPinPending && { opacity: 0.5 }]}
+              disabled={isPinPending}
+            >
+              {Platform.OS === 'web' ? (
+                <HugeiconsIcon
+                  icon={PinIcon as unknown as IconSvgElement}
+                  size={16}
+                  color={message.flags.pinned ? colors.primary : colors.icon}
+                  strokeWidth={1.5}
+                  fill={message.flags.pinned ? colors.primary : 'none'}
+                />
+              ) : (
+                <MaterialCommunityIcons
+                  name={message.flags.pinned ? 'pin' : 'pin-outline'}
+                  size={18}
+                  color={message.flags.pinned ? colors.primary : colors.icon}
+                />
+              )}
+            </TouchableOpacity>
+          )}
           <TouchableOpacity
             onPress={handleStar}
             hitSlop={8}
@@ -428,6 +497,15 @@ const styles = StyleSheet.create({
   starButton: {
     padding: 2,
   },
+  snoozeTimeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
+  snoozeTimeText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
   labelChipRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -455,5 +533,16 @@ const styles = StyleSheet.create({
   moreLabelText: {
     fontSize: 10,
     alignSelf: 'center',
+  },
+  threadBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 8,
+    minWidth: 20,
+    alignItems: 'center',
+  },
+  threadBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
   },
 });

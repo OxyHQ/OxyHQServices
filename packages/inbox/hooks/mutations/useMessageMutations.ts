@@ -411,6 +411,89 @@ export function useUpdateMessageLabels() {
   });
 }
 
+export function useTogglePin() {
+  const api = useEmailStore((s) => s._api);
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ messageId, pinned }: { messageId: string; pinned: boolean }) => {
+      if (!api) throw new Error('Email API not initialized');
+      return await api.updateFlags(messageId, { pinned });
+    },
+    onMutate: async ({ messageId, pinned }) => {
+      await queryClient.cancelQueries({ queryKey: ['messages'] });
+
+      const prevMessages = queryClient.getQueriesData<MessagesInfinite>({ queryKey: ['messages'] });
+
+      queryClient.setQueriesData<MessagesInfinite>({ queryKey: ['messages'] }, (old) =>
+        updateMessageInPages(old, messageId, (m) => ({ ...m, flags: { ...m.flags, pinned } })),
+      );
+
+      return { prevMessages };
+    },
+    onError: (_err, _vars, context) => {
+      if (context) {
+        context.prevMessages.forEach(([key, data]) => queryClient.setQueryData(key, data));
+      }
+      toast.error('Failed to update pin.');
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['messages'] });
+    },
+  });
+}
+
+export function useSnoozeMessage() {
+  const api = useEmailStore((s) => s._api);
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ messageId, until }: { messageId: string; until: string }) => {
+      if (!api) throw new Error('Email API not initialized');
+      return await api.snoozeMessage(messageId, until);
+    },
+    onMutate: async ({ messageId }) => {
+      await queryClient.cancelQueries({ queryKey: ['messages'] });
+
+      queryClient.setQueriesData<MessagesInfinite>({ queryKey: ['messages'] }, (old) =>
+        removeMessageFromPages(old, messageId),
+      );
+    },
+    onSuccess: () => {
+      toast.success('Message snoozed.');
+    },
+    onError: () => {
+      toast.error('Failed to snooze message.');
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['messages'] });
+      queryClient.invalidateQueries({ queryKey: ['mailboxes'] });
+    },
+  });
+}
+
+export function useUnsnoozeMessage() {
+  const api = useEmailStore((s) => s._api);
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ messageId }: { messageId: string }) => {
+      if (!api) throw new Error('Email API not initialized');
+      return await api.unsnoozeMessage(messageId);
+    },
+    onSuccess: () => {
+      toast.success('Snooze removed.');
+    },
+    onError: () => {
+      toast.error('Failed to unsnooze message.');
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['messages'] });
+      queryClient.invalidateQueries({ queryKey: ['mailboxes'] });
+    },
+  });
+}
+
 export function useSaveDraft() {
   const api = useEmailStore((s) => s._api);
   const queryClient = useQueryClient();
