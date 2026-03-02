@@ -77,6 +77,7 @@ export const MessageSchema = z.object({
   snoozedUntil: z.string().nullable().optional(),
   threadCount: z.number().optional(),
   threadParticipants: z.array(z.string()).optional(),
+  senderAvatarPath: z.string().nullable().optional(),
   date: z.string(),
   receivedAt: z.string(),
 });
@@ -134,6 +135,7 @@ export const SubscriptionSchema = z.object({
   latestMessageId: z.string(),
   hasListUnsubscribe: z.boolean(),
   type: z.enum(['list-unsubscribe', 'pattern-match', 'frequent']),
+  senderAvatarPath: z.string().nullable().optional(),
 });
 
 export const UnsubscribeResultSchema = z.object({

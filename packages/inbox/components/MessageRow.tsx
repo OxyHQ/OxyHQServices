@@ -31,10 +31,10 @@ import { SentimentIndicator } from './SentimentIndicator';
 import { CardPreview } from './cards/CardPreview';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useSentimentAnalysis } from '@/hooks/queries/useSentimentAnalysis';
-import { useSenderAvatar } from '@/hooks/queries/useSenderAvatar';
-
 import { Colors } from '@/constants/theme';
 import type { Message, Attachment } from '@/services/emailApi';
+
+const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'https://api.oxy.so';
 
 function formatDate(dateStr: string): string {
   const date = new Date(dateStr);
@@ -138,7 +138,6 @@ export function MessageRow({
   const isUnread = !message.flags.seen;
   const [avatarHovered, setAvatarHovered] = useState(false);
   const sentiment = useSentimentAnalysis(message);
-  const { avatarUrls } = useSenderAvatar(message.from.address);
 
   const showCheckbox = isSelectionMode || (Platform.OS === 'web' && avatarHovered);
 
@@ -211,7 +210,7 @@ export function MessageRow({
           size={40}
           showCheckbox={showCheckbox}
           isChecked={isMultiSelected}
-          avatarUrls={avatarUrls}
+          avatarUrl={message.senderAvatarPath ? `${API_URL}${message.senderAvatarPath}` : null}
         />
       </Pressable>
 

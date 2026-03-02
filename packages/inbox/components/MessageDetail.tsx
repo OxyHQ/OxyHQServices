@@ -599,7 +599,7 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
                   onPress={() => toggleMessageExpanded(msg._id)}
                   activeOpacity={0.7}
                 >
-                  <SenderAvatar email={msg.from.address} name={msgSenderName} size={36} />
+                  <SenderAvatar avatarPath={msg.senderAvatarPath} name={msgSenderName} size={36} />
                   <View style={styles.collapsedMessageContent}>
                     <View style={styles.collapsedMessageHeader}>
                       <Text style={[styles.collapsedSenderName, { color: colors.text }]} numberOfLines={1}>
@@ -639,7 +639,7 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
                     activeOpacity={sortedThread.length > 1 ? 0.7 : 1}
                     style={styles.senderRowMain}
                   >
-                    <SenderAvatar email={msg.from.address} name={msgSenderName} size={40} />
+                    <SenderAvatar avatarPath={msg.senderAvatarPath} name={msgSenderName} size={40} />
                     <View style={styles.senderInfo}>
                       <View style={styles.senderNameRow}>
                         <Text style={[styles.senderName, { color: colors.text }]}>{msgSenderName}</Text>

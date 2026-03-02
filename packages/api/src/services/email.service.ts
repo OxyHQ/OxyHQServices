@@ -13,6 +13,7 @@ import { Message, IMessage, IEmailAddress, IAttachment } from '../models/Message
 import { Label } from '../models/Label';
 import { Bundle } from '../models/Bundle';
 import User, { IUser } from '../models/User';
+import { getAvatarPathsBatch } from './senderAvatar.service';
 import {
   DEFAULT_MAILBOXES,
   EMAIL_QUOTAS,
@@ -540,13 +541,17 @@ class EmailService {
       }
     }
 
+    await EmailService.enrichWithAvatars(data as any[]);
+
     return { data: data as any[], total, limit, offset };
   }
 
   async getMessage(userId: string, messageId: string): Promise<any> {
-    return Message.findOne({ _id: messageId, userId })
+    const msg = await Message.findOne({ _id: messageId, userId })
       .select('+text +html +headers +encryptedBody')
       .lean({ virtuals: true });
+    if (msg) await EmailService.enrichWithAvatars([msg]);
+    return msg;
   }
 
   async updateMessageFlags(
@@ -1041,6 +1046,8 @@ class EmailService {
       thread.sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
     }
 
+    await EmailService.enrichWithAvatars(thread);
+
     return thread;
   }
 
@@ -1331,6 +1338,27 @@ class EmailService {
   // ─── Subscriptions ──────────────────────────────────────────────
 
   /**
+   * Attach `senderAvatarPath` to each message based on sender email.
+   * Uses the shared SenderAvatar cache (resolved server-side, 7-day TTL).
+   */
+  private static async enrichWithAvatars(messages: any[]): Promise<void> {
+    if (messages.length === 0) return;
+    const emails = messages.map((m) => m.from?.address).filter(Boolean);
+    if (emails.length === 0) return;
+    try {
+      const avatarMap = await getAvatarPathsBatch(emails);
+      for (const msg of messages) {
+        const addr = msg.from?.address?.trim().toLowerCase();
+        if (addr && avatarMap.has(addr)) {
+          msg.senderAvatarPath = avatarMap.get(addr) ?? null;
+        }
+      }
+    } catch {
+      // Avatar enrichment is non-critical — don't fail message fetch
+    }
+  }
+
+  /**
    * Newsletter / subscription detection patterns.
    * Matches common automated sender addresses.
    */
@@ -1475,6 +1503,18 @@ class EmailService {
         type,
       };
     });
+
+    // Enrich subscriptions with sender avatars
+    const subEmails = enriched.map((s: any) => s._id);
+    try {
+      const avatarMap = await getAvatarPathsBatch(subEmails);
+      for (const sub of enriched) {
+        const addr = sub._id.trim().toLowerCase();
+        sub.senderAvatarPath = avatarMap.get(addr) ?? null;
+      }
+    } catch {
+      // Non-critical
+    }
 
     return { data: enriched, total };
   }

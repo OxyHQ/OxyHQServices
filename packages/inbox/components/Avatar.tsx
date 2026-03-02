@@ -10,7 +10,8 @@ import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import { Tick02Icon } from '@hugeicons/core-free-icons';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
-import { useSenderAvatar } from '@/hooks/queries/useSenderAvatar';
+
+const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'https://api.oxy.so';
 
 function hashCode(str: string): number {
   let hash = 0;
@@ -25,13 +26,13 @@ export function Avatar({
   size = 40,
   showCheckbox,
   isChecked,
-  avatarUrls,
+  avatarUrl,
 }: {
   name: string;
   size?: number;
   showCheckbox?: boolean;
   isChecked?: boolean;
-  avatarUrls?: string[];
+  avatarUrl?: string | null;
 }) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
@@ -47,11 +48,9 @@ export function Avatar({
     return palette[hashCode(name) % palette.length];
   }, [name, colors.avatarColors]);
 
-  const [urlIndex, setUrlIndex] = useState(0);
   const [imageLoaded, setImageLoaded] = useState(false);
-  // Reset state when URLs change (e.g., FlashList row recycling)
-  useEffect(() => { setUrlIndex(0); setImageLoaded(false); }, [avatarUrls]);
-  const currentUrl = avatarUrls && urlIndex < avatarUrls.length ? avatarUrls[urlIndex] : null;
+  const [imageError, setImageError] = useState(false);
+  useEffect(() => { setImageLoaded(false); setImageError(false); }, [avatarUrl]);
 
   if (showCheckbox) {
     if (isChecked) {
@@ -92,15 +91,15 @@ export function Avatar({
     );
   }
 
-  if (currentUrl) {
+  if (avatarUrl && !imageError) {
     return (
       <View style={[styles.container, { width: size, height: size, borderRadius: size / 2, backgroundColor: imageLoaded ? colors.background : bgColor, overflow: 'hidden' }]}>
         {!imageLoaded && <Text style={[styles.initial, { fontSize: size * 0.42 }]}>{initial}</Text>}
         <Image
-          source={{ uri: currentUrl }}
+          source={{ uri: avatarUrl }}
           style={[styles.image, { width: size, height: size, borderRadius: size / 2 }]}
           onLoad={() => setImageLoaded(true)}
-          onError={() => { setImageLoaded(false); setUrlIndex((i) => i + 1); }}
+          onError={() => { setImageLoaded(false); setImageError(true); }}
         />
       </View>
     );
@@ -124,12 +123,12 @@ export function Avatar({
 }
 
 /**
- * Convenience wrapper: resolves sender avatar URLs from an email address
- * and renders an Avatar. Safe to use inside .map() loops.
+ * Convenience wrapper: builds a full avatar URL from a server-provided
+ * relative path and renders an Avatar. Safe to use inside .map() loops.
  */
-export function SenderAvatar({ email, name, size }: { email: string; name: string; size?: number }) {
-  const { avatarUrls } = useSenderAvatar(email);
-  return <Avatar name={name} size={size} avatarUrls={avatarUrls} />;
+export function SenderAvatar({ avatarPath, name, size }: { avatarPath?: string | null; name: string; size?: number }) {
+  const url = avatarPath ? `${API_URL}${avatarPath}` : null;
+  return <Avatar name={name} size={size} avatarUrl={url} />;
 }
 
 const styles = StyleSheet.create({

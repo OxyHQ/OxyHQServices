@@ -47,7 +47,7 @@ export function SubscriptionRow({
 
   return (
     <View style={[styles.row, { backgroundColor: colors.background }]}>
-      <SenderAvatar email={subscription._id} name={subscription.name} size={40} />
+      <SenderAvatar avatarPath={subscription.senderAvatarPath} name={subscription.name} size={40} />
       <View style={styles.content}>
         <Text style={[styles.name, { color: colors.text }]} numberOfLines={1}>
           {subscription.name}
