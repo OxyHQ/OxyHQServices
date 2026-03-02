@@ -10,6 +10,7 @@ import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import { Tick02Icon } from '@hugeicons/core-free-icons';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
+import { useSenderAvatar } from '@/hooks/queries/useSenderAvatar';
 
 function hashCode(str: string): number {
   let hash = 0;
@@ -120,6 +121,15 @@ export function Avatar({
       <Text style={[styles.initial, { fontSize: size * 0.42 }]}>{initial}</Text>
     </View>
   );
+}
+
+/**
+ * Convenience wrapper: resolves sender avatar URLs from an email address
+ * and renders an Avatar. Safe to use inside .map() loops.
+ */
+export function SenderAvatar({ email, name, size }: { email: string; name: string; size?: number }) {
+  const { avatarUrls } = useSenderAvatar(email);
+  return <Avatar name={name} size={size} avatarUrls={avatarUrls} />;
 }
 
 const styles = StyleSheet.create({

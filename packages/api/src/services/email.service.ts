@@ -66,6 +66,21 @@ class EmailService {
 
     await Mailbox.insertMany(docs);
     logger.info('Email mailboxes provisioned', { userId });
+
+    // Create welcome email in the Inbox (don't fail provisioning if this fails)
+    try {
+      const inbox = await Mailbox.findOne({ userId, specialUse: '\\Inbox' });
+      if (inbox) {
+        await this.createWelcomeEmail(userId, inbox);
+      }
+    } catch (err) {
+      logger.error('Failed to create welcome email', err instanceof Error ? err : new Error(String(err)), {
+        component: 'EmailService',
+        method: 'provisionMailboxes',
+        userId,
+      });
+    }
+
     return this.listMailboxes(userId);
   }
 
@@ -141,6 +156,89 @@ class EmailService {
       await Mailbox.insertMany(docs);
       logger.info('Synced missing default mailboxes', { userId, count: missing.length });
     }
+  }
+
+  /**
+   * Create a welcome email in the user's Inbox.
+   * Called once during initial mailbox provisioning.
+   */
+  private async createWelcomeEmail(userId: string, inboxMailbox: IMailbox): Promise<void> {
+    const user = await User.findById(userId);
+    if (!user) return;
+
+    const displayName = user.name?.first || user.username || 'there';
+    const recipientName = [user.name?.first, user.name?.last].filter(Boolean).join(' ') || user.username || '';
+    const recipientAddress = user.username ? resolveEmailAddress(user.username) : `${userId}@${EMAIL_DOMAIN}`;
+
+    const subject = 'Welcome to Inbox by Oxy';
+    const text = [
+      `Hi ${displayName},`,
+      '',
+      'Welcome to Inbox by Oxy — your new email, built for clarity.',
+      '',
+      'A few things to get you started:',
+      '',
+      `- Your address: ${recipientAddress}`,
+      '- Smart labels sort your mail automatically',
+      '- Bundles group newsletters, social updates, and promos',
+      '- Snooze messages to deal with them later',
+      '- Pin important emails so they stay at the top',
+      '',
+      'We are glad to have you here. Just reply to this email if you ever need help.',
+      '',
+      'The Oxy Team',
+    ].join('\n');
+
+    const html = `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#1a1a1a;background:#ffffff;">
+  <div style="max-width:560px;margin:40px auto;padding:0 20px;">
+    <h1 style="font-size:22px;font-weight:600;margin:0 0 24px;">Welcome to Inbox by Oxy</h1>
+    <p style="font-size:15px;line-height:1.6;margin:0 0 16px;">Hi ${displayName},</p>
+    <p style="font-size:15px;line-height:1.6;margin:0 0 16px;">Your new email is ready. Here are a few things to know:</p>
+    <ul style="font-size:15px;line-height:1.8;padding-left:20px;margin:0 0 16px;">
+      <li>Your address: <strong>${recipientAddress}</strong></li>
+      <li>Smart labels sort your mail automatically</li>
+      <li>Bundles group newsletters, social updates, and promos</li>
+      <li>Snooze messages to deal with them later</li>
+      <li>Pin important emails so they stay at the top</li>
+    </ul>
+    <p style="font-size:15px;line-height:1.6;margin:0 0 16px;">We're glad to have you here. Just reply to this email if you ever need help.</p>
+    <p style="font-size:15px;line-height:1.6;margin:24px 0 0;color:#666;">The Oxy Team</p>
+  </div>
+</body>
+</html>`;
+
+    const now = new Date();
+    const size = Buffer.byteLength(text, 'utf8');
+
+    await Message.create({
+      userId: new mongoose.Types.ObjectId(userId),
+      mailboxId: inboxMailbox._id,
+      messageId: `<welcome-${userId}-${uuidv4()}@${EMAIL_DOMAIN}>`,
+      from: { name: 'Oxy Team', address: `hello@${EMAIL_DOMAIN}` },
+      to: [{ name: recipientName, address: recipientAddress }],
+      cc: [],
+      bcc: [],
+      subject,
+      text,
+      html,
+      headers: {},
+      attachments: [],
+      flags: { seen: false, starred: false, answered: false, forwarded: false, draft: false, pinned: false },
+      encrypted: false,
+      size,
+      references: [],
+      date: now,
+      receivedAt: now,
+    });
+
+    await Mailbox.findByIdAndUpdate(inboxMailbox._id, {
+      $inc: { totalMessages: 1, unseenMessages: 1, size },
+    });
+
+    logger.info('Welcome email created', { userId });
   }
 
   async listMailboxes(userId: string): Promise<any[]> {

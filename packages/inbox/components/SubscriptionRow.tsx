@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
-import { Avatar } from '@/components/Avatar';
+import { SenderAvatar } from '@/components/Avatar';
 import type { Subscription } from '@/services/emailApi';
 
 function formatFrequency(count: number): string {
@@ -47,7 +47,7 @@ export function SubscriptionRow({
 
   return (
     <View style={[styles.row, { backgroundColor: colors.background }]}>
-      <Avatar name={subscription.name} size={40} />
+      <SenderAvatar email={subscription._id} name={subscription.name} size={40} />
       <View style={styles.content}>
         <Text style={[styles.name, { color: colors.text }]} numberOfLines={1}>
           {subscription.name}

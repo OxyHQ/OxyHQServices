@@ -32,6 +32,7 @@ import { CardPreview } from './cards/CardPreview';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useSentimentAnalysis } from '@/hooks/queries/useSentimentAnalysis';
 import { useSenderAvatar } from '@/hooks/queries/useSenderAvatar';
+
 import { Colors } from '@/constants/theme';
 import type { Message, Attachment } from '@/services/emailApi';
 

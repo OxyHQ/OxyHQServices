@@ -51,7 +51,7 @@ import { useMailboxes } from '@/hooks/queries/useMailboxes';
 import { useLabels } from '@/hooks/queries/useLabels';
 import { useToggleStar, useToggleRead, useArchiveMessage, useDeleteMessage, useUpdateMessageLabels, useTogglePin, useSnoozeMessage } from '@/hooks/mutations/useMessageMutations';
 import { toast } from '@oxyhq/services';
-import { Avatar } from '@/components/Avatar';
+import { SenderAvatar } from '@/components/Avatar';
 import { HtmlBody } from '@/components/HtmlBody';
 import { InlineReply } from '@/components/InlineReply';
 import { ThreadSummary } from '@/components/ThreadSummary';
@@ -599,7 +599,7 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
                   onPress={() => toggleMessageExpanded(msg._id)}
                   activeOpacity={0.7}
                 >
-                  <Avatar name={msgSenderName} size={36} />
+                  <SenderAvatar email={msg.from.address} name={msgSenderName} size={36} />
                   <View style={styles.collapsedMessageContent}>
                     <View style={styles.collapsedMessageHeader}>
                       <Text style={[styles.collapsedSenderName, { color: colors.text }]} numberOfLines={1}>
@@ -639,7 +639,7 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
                     activeOpacity={sortedThread.length > 1 ? 0.7 : 1}
                     style={styles.senderRowMain}
                   >
-                    <Avatar name={msgSenderName} size={40} />
+                    <SenderAvatar email={msg.from.address} name={msgSenderName} size={40} />
                     <View style={styles.senderInfo}>
                       <View style={styles.senderNameRow}>
                         <Text style={[styles.senderName, { color: colors.text }]}>{msgSenderName}</Text>
