@@ -23,6 +23,7 @@ import {
   Attachment01Icon,
 } from '@hugeicons/core-free-icons';
 import { Avatar } from './Avatar';
+import { AttachmentThumbnail } from './AttachmentThumbnail';
 import { ImportanceBadge } from './ImportanceBadge';
 import { SentimentIndicator } from './SentimentIndicator';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -275,34 +276,59 @@ export function MessageRow({
           </Text>
         </View>
 
-        {/* Attachment mini-cards */}
-        {hasAttachments && (
-          <View style={styles.attachmentRow}>
-            {message.attachments.slice(0, 3).map((att, i) => {
-              const info = getAttachmentInfo(att);
-              return (
-                <View
-                  key={i}
-                  style={[styles.attachmentCard, { borderColor: colors.border }]}
-                >
-                  {Platform.OS === 'web' ? (
-                    <HugeiconsIcon icon={info.hugeIcon} size={14} color={info.color} />
-                  ) : (
-                    <MaterialCommunityIcons name={info.icon as any} size={14} color={info.color} />
+        {/* Attachment thumbnails + mini-cards */}
+        {hasAttachments && (() => {
+          const imageAtts = message.attachments.filter(a => a.contentType.toLowerCase().startsWith('image/'));
+          const otherAtts = message.attachments.filter(a => !a.contentType.toLowerCase().startsWith('image/'));
+          const maxThumbs = 3;
+          const extraImages = imageAtts.length > maxThumbs ? imageAtts.length - maxThumbs : 0;
+
+          return (
+            <>
+              {imageAtts.length > 0 && (
+                <View style={styles.thumbnailRow}>
+                  {imageAtts.slice(0, maxThumbs).map((att, i) => (
+                    <AttachmentThumbnail key={att.s3Key || i} s3Key={att.s3Key} size={48} />
+                  ))}
+                  {extraImages > 0 && (
+                    <View style={[styles.thumbnailOverflow, { backgroundColor: colors.surfaceVariant }]}>
+                      <Text style={[styles.thumbnailOverflowText, { color: colors.secondaryText }]}>
+                        +{extraImages}
+                      </Text>
+                    </View>
                   )}
-                  <Text style={[styles.attachmentLabel, { color: colors.text }]} numberOfLines={1}>
-                    {info.label}
-                  </Text>
                 </View>
-              );
-            })}
-            {message.attachments.length > 3 && (
-              <Text style={[styles.moreAttachments, { color: colors.secondaryText }]}>
-                +{message.attachments.length - 3}
-              </Text>
-            )}
-          </View>
-        )}
+              )}
+              {otherAtts.length > 0 && (
+                <View style={styles.attachmentRow}>
+                  {otherAtts.slice(0, 3).map((att, i) => {
+                    const info = getAttachmentInfo(att);
+                    return (
+                      <View
+                        key={i}
+                        style={[styles.attachmentCard, { borderColor: colors.border }]}
+                      >
+                        {Platform.OS === 'web' ? (
+                          <HugeiconsIcon icon={info.hugeIcon} size={14} color={info.color} />
+                        ) : (
+                          <MaterialCommunityIcons name={info.icon as any} size={14} color={info.color} />
+                        )}
+                        <Text style={[styles.attachmentLabel, { color: colors.text }]} numberOfLines={1}>
+                          {info.label}
+                        </Text>
+                      </View>
+                    );
+                  })}
+                  {otherAtts.length > 3 && (
+                    <Text style={[styles.moreAttachments, { color: colors.secondaryText }]}>
+                      +{otherAtts.length - 3}
+                    </Text>
+                  )}
+                </View>
+              )}
+            </>
+          );
+        })()}
       </View>
     </Pressable>
   );
@@ -357,6 +383,22 @@ const styles = StyleSheet.create({
   preview: {
     fontSize: 13,
     flex: 1,
+  },
+  thumbnailRow: {
+    flexDirection: 'row',
+    gap: 4,
+    marginTop: 6,
+  },
+  thumbnailOverflow: {
+    width: 48,
+    height: 48,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  thumbnailOverflowText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   attachmentRow: {
     flexDirection: 'row',
