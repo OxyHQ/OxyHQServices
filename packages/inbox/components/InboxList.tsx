@@ -3,7 +3,7 @@
  * Used by the (inbox) layout on desktop (always visible) and by the index route on mobile.
  */
 
-import React, { useCallback, useMemo, useEffect, useState } from 'react';
+import React, { useCallback, useMemo, useEffect, useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -46,7 +46,8 @@ import { BundleRow } from '@/components/BundleRow';
 import { ReminderRow } from '@/components/ReminderRow';
 import { CreateReminderSheet } from '@/components/CreateReminderSheet';
 import { EmptyIllustration } from '@/components/EmptyIllustration';
-import { AskAlia } from '@/components/AskAlia';
+import { AliaChatSheet, type AliaChatSheetRef } from '@alia.onl/sdk';
+import { AliaFace } from '@/components/AliaFace';
 import { useBundles } from '@/hooks/queries/useBundles';
 import { useReminders } from '@/hooks/queries/useReminders';
 import { useCreateReminder, useUpdateReminder, useDeleteReminder } from '@/hooks/mutations/useReminderMutations';
@@ -84,6 +85,7 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
   const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
+  const aliaChatRef = useRef<AliaChatSheetRef>(null);
   const { isAuthenticated } = useOxy();
 
   const currentMailbox = useEmailStore((s) => s.currentMailbox);
@@ -638,19 +640,28 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
         </TouchableOpacity>
       )}
 
-      {/* Ask Alia - AI chat assistant */}
+      {/* Alia AI chat assistant */}
       {isAuthenticated && !isSelectionMode && (
-        <AskAlia
-          messages={messages}
-          onNavigateToMessage={(msgId) => {
-            const path = `/conversation/${msgId}` as any;
-            if (replaceNavigation) {
-              router.replace(path);
-            } else {
-              router.push(path);
-            }
-          }}
-        />
+        <>
+          <View style={styles.aliaFab}>
+            <TouchableOpacity
+              style={styles.aliaFabTouchable}
+              onPress={() => aliaChatRef.current?.present()}
+              activeOpacity={0.8}
+            >
+              <AliaFace size={52} expression="Idle A" />
+            </TouchableOpacity>
+          </View>
+          <AliaChatSheet
+            ref={aliaChatRef}
+            clientContext="User is in the Inbox app viewing their email. Use oxy_inbox tools to access their emails."
+            suggestions={[
+              { label: 'Unread emails', icon: 'mail', prompt: 'What emails need my attention?' },
+              { label: "Today's summary", icon: 'text', prompt: 'Summarize my emails from today' },
+              { label: 'With attachments', icon: 'paperclip', prompt: 'Find emails with attachments' },
+            ]}
+          />
+        </>
       )}
 
       {/* Snooze sheet */}
@@ -754,5 +765,19 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+  },
+  aliaFab: {
+    position: 'absolute',
+    bottom: 80,
+    right: 16,
+    zIndex: 100,
+    ...Platform.select({
+      web: { boxShadow: '0 4px 16px rgba(0,0,0,0.2)' } as any,
+      default: { elevation: 8 },
+    }),
+    borderRadius: 28,
+  },
+  aliaFabTouchable: {
+    borderRadius: 28,
   },
 });
