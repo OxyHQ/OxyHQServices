@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import dns from 'dns/promises';
 import { SenderAvatar } from '../models/SenderAvatar';
 import User from '../models/User';
 import { extractUsername } from '../config/email.config';
@@ -12,10 +13,35 @@ function proxyPath(url: string): string {
 }
 
 /**
+ * Look up BIMI DNS TXT record for a domain.
+ * Returns the logo URL (l= tag) or null.
+ *
+ * BIMI record format: "v=BIMI1; l=https://example.com/logo.svg; a=..."
+ * Published at: default._bimi.<domain>
+ */
+async function lookupBimi(domain: string): Promise<string | null> {
+  try {
+    const records = await dns.resolveTxt(`default._bimi.${domain}`);
+    for (const parts of records) {
+      const record = parts.join('');
+      if (!record.toLowerCase().startsWith('v=bimi1')) continue;
+      const logoMatch = record.match(/l=(\S+)/i);
+      if (logoMatch?.[1]) {
+        const logoUrl = logoMatch[1].replace(/;$/, '');
+        if (logoUrl.startsWith('https://')) return logoUrl;
+      }
+    }
+  } catch {
+    // No BIMI record or DNS failure
+  }
+  return null;
+}
+
+/**
  * Resolve avatar for a single email address.
  * Returns a relative path (prepend API base URL on the client) or null.
  */
-async function resolveAvatar(email: string): Promise<{ avatarPath: string | null; source: 'oxy' | 'gravatar' | 'favicon' | 'none' }> {
+async function resolveAvatar(email: string): Promise<{ avatarPath: string | null; source: 'oxy' | 'bimi' | 'gravatar' | 'favicon' | 'none' }> {
   const normalized = email.trim().toLowerCase();
 
   // 1. Oxy user — look up by username
@@ -31,7 +57,16 @@ async function resolveAvatar(email: string): Promise<{ avatarPath: string | null
     }
   }
 
-  // 2. Gravatar — HEAD check
+  // 2. BIMI — DNS TXT record lookup for brand logo
+  const domain = normalized.split('@')[1];
+  if (domain) {
+    const bimiLogo = await lookupBimi(domain);
+    if (bimiLogo) {
+      return { avatarPath: proxyPath(bimiLogo), source: 'bimi' };
+    }
+  }
+
+  // 3. Gravatar — HEAD check
   const md5Hash = crypto.createHash('md5').update(normalized).digest('hex');
   const gravatarUrl = `https://www.gravatar.com/avatar/${md5Hash}?d=404&s=80`;
   try {
@@ -43,8 +78,7 @@ async function resolveAvatar(email: string): Promise<{ avatarPath: string | null
     // Gravatar check failed — continue
   }
 
-  // 3. Domain favicon — HEAD check
-  const domain = normalized.split('@')[1];
+  // 4. Domain favicon — HEAD check
   if (domain) {
     const faviconUrl = `https://${domain}/favicon.ico`;
     try {
