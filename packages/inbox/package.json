@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "scripts": {
     "start": "expo start",
-    "build": "npx expo export --platform web",
+    "build": "NODE_OPTIONS=--max-old-space-size=2048 npx expo export --platform web",
     "web": "expo start --web",
     "android": "expo start --android",
     "ios": "expo start --ios",
