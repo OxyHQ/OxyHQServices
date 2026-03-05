@@ -28,9 +28,6 @@ config.resolver.nodeModulesPaths = [
   servicesNodeModules,
 ];
 
-// Force deterministic resolution (avoids scanning full node_modules tree)
-config.resolver.disableHierarchicalLookup = true;
-
 // Resolve @oxyhq/* packages to their source for development
 config.resolver.extraNodeModules = {
   '@oxyhq/core': path.resolve(coreRoot, 'src', 'index.ts'),
