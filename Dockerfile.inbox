@@ -28,3 +28,7 @@ COPY packages/inbox packages/inbox
 RUN npm run build -w @oxyhq/core \
  && npm run build:js -w @oxyhq/services \
  && npm run build -w inbox
+
+# Final stage: tiny image with only the static files
+FROM alpine
+COPY --from=builder /app/packages/inbox/dist /app/packages/inbox/dist
