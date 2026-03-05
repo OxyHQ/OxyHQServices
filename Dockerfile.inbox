@@ -4,7 +4,7 @@ WORKDIR /app
 # Copy root package files
 COPY package*.json ./
 
-# Copy ALL workspace package.json files (npm ci needs them all)
+# Copy ALL workspace package.json files tracked in git (npm ci needs them)
 COPY packages/core/package.json packages/core/
 COPY packages/auth-sdk/package.json packages/auth-sdk/
 COPY packages/services/package.json packages/services/
@@ -13,8 +13,10 @@ COPY packages/auth/package.json packages/auth/
 COPY packages/accounts/package.json packages/accounts/
 COPY packages/inbox/package.json packages/inbox/
 COPY packages/test-app-expo/package.json packages/test-app-expo/
-COPY packages/test-app-vite/package.json packages/test-app-vite/
 COPY packages/console/package.json packages/console/
+
+# test-app-vite is a git submodule (not cloned by DO), create stub for npm ci
+RUN mkdir -p packages/test-app-vite && echo '{"name":"test-app-vite","version":"0.0.0","private":true}' > packages/test-app-vite/package.json
 
 RUN npm ci
 
