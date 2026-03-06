@@ -6,39 +6,33 @@
  * active Timeout handles as "non-blocking" and skip force-exit. But un-unref'd
  * Timeouts from Metro keep the event loop alive indefinitely.
  *
- * @expo/cli@54.x (accounts app) force-exits after 10s — this script replicates
- * that behavior until the bug is fixed upstream.
+ * Uses execSync with a timeout so the entire child process tree is killed when
+ * the timeout fires — preventing orphan processes that block the buildpack.
  *
  * See: https://github.com/expo/expo/issues/27938
  */
 
-const { spawn } = require('child_process');
+const { execSync } = require('child_process');
 const { existsSync } = require('fs');
 const path = require('path');
 
 const EXPORT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+const projectRoot = path.resolve(__dirname, '..');
+const distPath = path.join(projectRoot, 'dist', 'index.html');
 
-const child = spawn('npx', ['expo', 'export', '--platform', 'web'], {
-  stdio: 'inherit',
-  cwd: __dirname.replace(/[\\/]scripts$/, ''),
-});
-
-const timeout = setTimeout(() => {
-  const distPath = path.join(__dirname, '..', 'dist', 'index.html');
+try {
+  execSync('npx expo export --platform web', {
+    stdio: 'inherit',
+    cwd: projectRoot,
+    timeout: EXPORT_TIMEOUT_MS,
+    killSignal: 'SIGKILL',
+  });
+} catch (err) {
+  // execSync throws on timeout (ETIMEDOUT) or non-zero exit
   if (existsSync(distPath)) {
     console.log('\nExport completed but process did not exit (expo/cli#55 bug). Exiting.');
-    child.kill('SIGTERM');
     process.exit(0);
-  } else {
-    console.error('\nExport timed out and dist/index.html was not found.');
-    child.kill('SIGTERM');
-    process.exit(1);
   }
-}, EXPORT_TIMEOUT_MS);
-
-timeout.unref();
-
-child.on('close', (code) => {
-  clearTimeout(timeout);
-  process.exit(code ?? 0);
-});
+  console.error('\nExport failed:', err.message);
+  process.exit(1);
+}
