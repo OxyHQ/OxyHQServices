@@ -152,7 +152,7 @@ const MessageSchema = new Schema(
     },
     replyTo: {
       type: EmailAddressSchema,
-      default: null,
+      default: undefined,
     },
     subject: {
       type: String,
@@ -201,7 +201,7 @@ const MessageSchema = new Schema(
         confidence: { type: Number, default: 0 },
         extractedAt: { type: Date, default: Date.now },
       },
-      default: null,
+      default: undefined,
       _id: false,
     },
     highlights: {
