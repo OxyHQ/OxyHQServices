@@ -187,13 +187,16 @@ export type UnsubscribeResult = z.infer<typeof UnsubscribeResultSchema>;
 export type Bundle = z.infer<typeof BundleSchema>;
 export type Reminder = z.infer<typeof ReminderSchema>;
 
-// ─── Response Wrappers ─────────────────────────────────────────────
+// ─── Response Helpers ──────────────────────────────────────────────
 
-interface PaginatedResponse<T> {
-  data: {
-    data: T[];
-    pagination: Pagination;
-  };
+// HttpService.unwrapResponse() already strips the { data: ... } wrapper for
+// non-paginated responses and returns paginated { data, pagination } as-is.
+// So http.get() returns the inner value directly (or { data, pagination } for
+// paginated endpoints). No extra unwrapping needed here.
+
+interface PaginatedResult<T> {
+  data: T[];
+  pagination: Pagination;
 }
 
 // ─── API Client ────────────────────────────────────────────────────
@@ -203,13 +206,13 @@ export function createEmailApi(http: HttpService) {
     // ─── Mailboxes ──────────────────────────────────────────────────
 
     async listMailboxes(): Promise<Mailbox[]> {
-      const res = (await http.get('/email/mailboxes')) as { data: Mailbox[] };
-      return z.array(MailboxSchema).parse(res.data);
+      const res = await http.get('/email/mailboxes');
+      return z.array(MailboxSchema).parse(res);
     },
 
     async createMailbox(name: string, parentPath?: string): Promise<Mailbox> {
-      const res = (await http.post('/email/mailboxes', { name, parentPath })) as { data: Mailbox };
-      return MailboxSchema.parse(res.data);
+      const res = await http.post('/email/mailboxes', { name, parentPath });
+      return MailboxSchema.parse(res);
     },
 
     async deleteMailbox(mailboxId: string): Promise<void> {
@@ -236,46 +239,46 @@ export function createEmailApi(http: HttpService) {
       if (options.offset !== undefined) params.offset = String(options.offset);
       if (options.unseenOnly) params.unseen = 'true';
 
-      const res = (await http.get('/email/messages', { params })) as PaginatedResponse<Message>;
+      const res = (await http.get('/email/messages', { params })) as PaginatedResult<Message>;
       return {
-        data: z.array(MessageSchema).parse(res.data.data),
-        pagination: PaginationSchema.parse(res.data.pagination),
+        data: z.array(MessageSchema).parse(res.data),
+        pagination: PaginationSchema.parse(res.pagination),
       };
     },
 
     async getMessage(messageId: string): Promise<Message> {
-      const res = (await http.get(`/email/messages/${messageId}`)) as { data: Message };
-      return MessageSchema.parse(res.data);
+      const res = await http.get(`/email/messages/${messageId}`);
+      return MessageSchema.parse(res);
     },
 
     async getThread(messageId: string): Promise<Message[]> {
-      const res = (await http.get(`/email/messages/${messageId}/thread`)) as { data: Message[] };
-      return z.array(MessageSchema).parse(res.data);
+      const res = await http.get(`/email/messages/${messageId}/thread`);
+      return z.array(MessageSchema).parse(res);
     },
 
     async updateFlags(messageId: string, flags: Partial<MessageFlags>): Promise<Message> {
-      const res = (await http.put(`/email/messages/${messageId}/flags`, { flags })) as { data: Message };
-      return MessageSchema.parse(res.data);
+      const res = await http.put(`/email/messages/${messageId}/flags`, { flags });
+      return MessageSchema.parse(res);
     },
 
     async updateLabels(messageId: string, add: string[], remove: string[]): Promise<Message> {
-      const res = (await http.put(`/email/messages/${messageId}/labels`, { add, remove })) as { data: Message };
-      return MessageSchema.parse(res.data);
+      const res = await http.put(`/email/messages/${messageId}/labels`, { add, remove });
+      return MessageSchema.parse(res);
     },
 
     async moveMessage(messageId: string, mailboxId: string): Promise<Message> {
-      const res = (await http.post(`/email/messages/${messageId}/move`, { mailboxId })) as { data: Message };
-      return MessageSchema.parse(res.data);
+      const res = await http.post(`/email/messages/${messageId}/move`, { mailboxId });
+      return MessageSchema.parse(res);
     },
 
     async snoozeMessage(messageId: string, until: string): Promise<Message> {
-      const res = (await http.post(`/email/messages/${messageId}/snooze`, { until })) as { data: Message };
-      return MessageSchema.parse(res.data);
+      const res = await http.post(`/email/messages/${messageId}/snooze`, { until });
+      return MessageSchema.parse(res);
     },
 
     async unsnoozeMessage(messageId: string): Promise<Message> {
-      const res = (await http.post(`/email/messages/${messageId}/unsnooze`)) as { data: Message };
-      return MessageSchema.parse(res.data);
+      const res = await http.post(`/email/messages/${messageId}/unsnooze`);
+      return MessageSchema.parse(res);
     },
 
     async deleteMessage(messageId: string, permanent = false): Promise<void> {
@@ -286,18 +289,18 @@ export function createEmailApi(http: HttpService) {
     // ─── Labels ─────────────────────────────────────────────────────
 
     async listLabels(): Promise<Label[]> {
-      const res = (await http.get('/email/labels')) as { data: Label[] };
-      return z.array(LabelSchema).parse(res.data);
+      const res = await http.get('/email/labels');
+      return z.array(LabelSchema).parse(res);
     },
 
     async createLabel(name: string, color: string): Promise<Label> {
-      const res = (await http.post('/email/labels', { name, color })) as { data: Label };
-      return LabelSchema.parse(res.data);
+      const res = await http.post('/email/labels', { name, color });
+      return LabelSchema.parse(res);
     },
 
     async updateLabel(labelId: string, updates: { name?: string; color?: string }): Promise<Label> {
-      const res = (await http.put(`/email/labels/${labelId}`, updates)) as { data: Label };
-      return LabelSchema.parse(res.data);
+      const res = await http.put(`/email/labels/${labelId}`, updates);
+      return LabelSchema.parse(res);
     },
 
     async deleteLabel(labelId: string): Promise<void> {
@@ -317,12 +320,12 @@ export function createEmailApi(http: HttpService) {
       references?: string[];
       attachments?: string[];
     }): Promise<{ messageId: string; queued: boolean; message: string }> {
-      const res = (await http.post('/email/messages', message)) as { data: { messageId: string; queued: boolean; message: string } };
+      const res = await http.post('/email/messages', message);
       return z.object({
         messageId: z.string(),
         queued: z.boolean(),
         message: z.string(),
-      }).parse(res.data);
+      }).parse(res);
     },
 
     async saveDraft(draft: {
@@ -336,8 +339,8 @@ export function createEmailApi(http: HttpService) {
       references?: string[];
       existingDraftId?: string;
     }): Promise<Message> {
-      const res = (await http.post('/email/drafts', draft)) as { data: Message };
-      return MessageSchema.parse(res.data);
+      const res = await http.post('/email/drafts', draft);
+      return MessageSchema.parse(res);
     },
 
     // ─── Search ─────────────────────────────────────────────────────
@@ -368,18 +371,18 @@ export function createEmailApi(http: HttpService) {
       if (options.limit !== undefined) params.limit = String(options.limit);
       if (options.offset !== undefined) params.offset = String(options.offset);
 
-      const res = (await http.get('/email/search', { params })) as PaginatedResponse<Message>;
+      const res = (await http.get('/email/search', { params })) as PaginatedResult<Message>;
       return {
-        data: z.array(MessageSchema).parse(res.data.data),
-        pagination: PaginationSchema.parse(res.data.pagination),
+        data: z.array(MessageSchema).parse(res.data),
+        pagination: PaginationSchema.parse(res.pagination),
       };
     },
 
     // ─── Quota ──────────────────────────────────────────────────────
 
     async getQuota(): Promise<QuotaUsage> {
-      const res = (await http.get('/email/quota')) as { data: QuotaUsage };
-      return QuotaUsageSchema.parse(res.data);
+      const res = await http.get('/email/quota');
+      return QuotaUsageSchema.parse(res);
     },
 
     // ─── Attachments ────────────────────────────────────────────────
@@ -387,22 +390,22 @@ export function createEmailApi(http: HttpService) {
     async uploadAttachment(file: File | Blob, filename: string): Promise<Attachment> {
       const formData = new FormData();
       formData.append('file', file, filename);
-      const res = (await http.post('/email/attachments', formData)) as { data: Attachment };
-      return AttachmentSchema.parse(res.data);
+      const res = await http.post('/email/attachments', formData);
+      return AttachmentSchema.parse(res);
     },
 
     async getAttachmentUrl(s3Key: string): Promise<string> {
-      const res = (await http.get(
+      const res = await http.get(
         `/email/attachments/${encodeURIComponent(s3Key)}`,
-      )) as { data: { url: string } };
-      return z.object({ url: z.string() }).parse(res.data).url;
+      );
+      return z.object({ url: z.string() }).parse(res).url;
     },
 
     // ─── Settings ───────────────────────────────────────────────────
 
     async getSettings(): Promise<EmailSettings> {
-      const res = (await http.get('/email/settings')) as { data: EmailSettings };
-      return EmailSettingsSchema.parse(res.data);
+      const res = await http.get('/email/settings');
+      return EmailSettingsSchema.parse(res);
     },
 
     async updateSettings(
@@ -420,10 +423,10 @@ export function createEmailApi(http: HttpService) {
       if (options.limit !== undefined) params.limit = String(options.limit);
       if (options.offset !== undefined) params.offset = String(options.offset);
 
-      const res = (await http.get('/email/subscriptions', { params })) as PaginatedResponse<Subscription>;
+      const res = (await http.get('/email/subscriptions', { params })) as PaginatedResult<Subscription>;
       return {
-        data: z.array(SubscriptionSchema).parse(res.data.data),
-        pagination: PaginationSchema.parse(res.data.pagination),
+        data: z.array(SubscriptionSchema).parse(res.data),
+        pagination: PaginationSchema.parse(res.pagination),
       };
     },
 
@@ -431,26 +434,26 @@ export function createEmailApi(http: HttpService) {
       senderAddress: string,
       method?: 'list-unsubscribe' | 'block',
     ): Promise<UnsubscribeResult> {
-      const res = (await http.post('/email/subscriptions/unsubscribe', {
+      const res = await http.post('/email/subscriptions/unsubscribe', {
         senderAddress,
         method,
-      })) as { data: UnsubscribeResult };
-      return UnsubscribeResultSchema.parse(res.data);
+      });
+      return UnsubscribeResultSchema.parse(res);
     },
 
     // ─── Bundles ────────────────────────────────────────────────────
 
     async listBundles(): Promise<Bundle[]> {
-      const res = (await http.get('/email/bundles')) as { data: Bundle[] };
-      return z.array(BundleSchema).parse(res.data);
+      const res = await http.get('/email/bundles');
+      return z.array(BundleSchema).parse(res);
     },
 
     async updateBundle(
       bundleId: string,
       updates: { enabled?: boolean; collapsed?: boolean; matchLabels?: string[]; order?: number },
     ): Promise<Bundle> {
-      const res = (await http.put(`/email/bundles/${bundleId}`, updates)) as { data: Bundle };
-      return BundleSchema.parse(res.data);
+      const res = await http.put(`/email/bundles/${bundleId}`, updates);
+      return BundleSchema.parse(res);
     },
 
     async listBundledMessages(
@@ -465,7 +468,7 @@ export function createEmailApi(http: HttpService) {
       if (options.limit !== undefined) params.limit = String(options.limit);
       if (options.offset !== undefined) params.offset = String(options.offset);
 
-      const res = (await http.get('/email/messages/bundled', { params })) as {
+      const res = await http.get('/email/messages/bundled', { params }) as {
         data: {
           primary: Message[];
           bundles: Array<{ bundle: Bundle; messages: Message[]; unreadCount: number }>;
@@ -490,8 +493,8 @@ export function createEmailApi(http: HttpService) {
       remindAt: string;
       relatedMessageId?: string;
     }): Promise<Reminder> {
-      const res = (await http.post('/email/reminders', data)) as { data: Reminder };
-      return ReminderSchema.parse(res.data);
+      const res = await http.post('/email/reminders', data);
+      return ReminderSchema.parse(res);
     },
 
     async listReminders(
@@ -502,24 +505,24 @@ export function createEmailApi(http: HttpService) {
       if (options.limit !== undefined) params.limit = String(options.limit);
       if (options.offset !== undefined) params.offset = String(options.offset);
 
-      const res = (await http.get('/email/reminders', { params })) as PaginatedResponse<Reminder>;
+      const res = (await http.get('/email/reminders', { params })) as PaginatedResult<Reminder>;
       return {
-        data: z.array(ReminderSchema).parse(res.data.data),
-        pagination: PaginationSchema.parse(res.data.pagination),
+        data: z.array(ReminderSchema).parse(res.data),
+        pagination: PaginationSchema.parse(res.pagination),
       };
     },
 
     async getReminder(reminderId: string): Promise<Reminder> {
-      const res = (await http.get(`/email/reminders/${reminderId}`)) as { data: Reminder };
-      return ReminderSchema.parse(res.data);
+      const res = await http.get(`/email/reminders/${reminderId}`);
+      return ReminderSchema.parse(res);
     },
 
     async updateReminder(
       reminderId: string,
       updates: { text?: string; remindAt?: string; completed?: boolean; pinned?: boolean; snoozedUntil?: string | null },
     ): Promise<Reminder> {
-      const res = (await http.put(`/email/reminders/${reminderId}`, updates)) as { data: Reminder };
-      return ReminderSchema.parse(res.data);
+      const res = await http.put(`/email/reminders/${reminderId}`, updates);
+      return ReminderSchema.parse(res);
     },
 
     async deleteReminder(reminderId: string): Promise<void> {
