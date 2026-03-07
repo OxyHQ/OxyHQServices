@@ -111,12 +111,14 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
       debug.log('Interactive sign-in: Requesting credential for', clientId, loginHint ? `(hint: ${loginHint})` : '');
 
       // Request credential from browser's native identity flow
+      // mode: 'button' signals this is a user-gesture-initiated flow (Chrome 125+)
       const credential = await this.requestIdentityCredential({
         configURL: (this.constructor as any).DEFAULT_CONFIG_URL,
         clientId,
         nonce,
         context: options.context,
         loginHint,
+        mode: 'button',
       });
 
       if (!credential || !credential.token) {
@@ -205,7 +207,7 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
     // We intentionally do NOT fall back to optional mediation here because
     // this runs on app startup — showing browser UI without user action is bad UX.
     // Optional/interactive mediation should only happen when the user clicks "Sign In".
-    let credential: { token: string } | null = null;
+    let credential: { token: string; isAutoSelected: boolean } | null = null;
 
     const loginHint = this.getStoredLoginHint();
 
@@ -308,7 +310,8 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
     context?: string;
     loginHint?: string;
     mediation?: 'silent' | 'optional' | 'required';
-  }): Promise<{ token: string } | null> {
+    mode?: 'button' | 'widget';
+  }): Promise<{ token: string; isAutoSelected: boolean } | null> {
     const requestedMediation = options.mediation || 'optional';
     const isInteractive = requestedMediation !== 'silent';
 
@@ -356,7 +359,7 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
       try {
         debug.log('Calling navigator.credentials.get with mediation:', requestedMediation);
         // Type assertion needed as FedCM types may not be in all TypeScript versions
-        const credential = (await (navigator.credentials as any).get({
+        const credentialOptions: any = {
           identity: {
             providers: [
               {
@@ -370,10 +373,12 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
                 ...(options.loginHint && { loginHint: options.loginHint }),
               },
             ],
+            ...(options.mode && { mode: options.mode }),
           },
           mediation: requestedMediation,
           signal: controller.signal,
-        })) as any;
+        };
+        const credential = (await (navigator.credentials as any).get(credentialOptions)) as any;
 
         debug.log('navigator.credentials.get returned:', {
           hasCredential: !!credential,
@@ -386,8 +391,9 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
           return null;
         }
 
-        debug.log('Got valid identity credential with token');
-        return { token: credential.token };
+        const isAutoSelected = !!credential.isAutoSelected;
+        debug.log('Got valid identity credential with token', { isAutoSelected });
+        return { token: credential.token, isAutoSelected };
       } catch (error) {
         const errorName = error instanceof Error ? error.name : 'Unknown';
         const errorMessage = error instanceof Error ? error.message : String(error);
@@ -438,25 +444,31 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
   /**
    * Revoke FedCM credential (sign out)
    *
-   * This tells the browser to forget the FedCM credential for this app.
-   * The user will need to re-authenticate next time.
+   * Uses IdentityCredential.disconnect() to tell the browser to forget
+   * the RP-IdP-account association. This resets the "returning account"
+   * state, which is required for silent mediation to work again.
    */
   async revokeFedCMCredential(): Promise<void> {
+    // Read hint before clearing so we can pass it to disconnect()
+    const accountHint = this.getStoredLoginHint();
+    this.clearLoginHint();
+
     if (!this.isFedCMSupported()) {
       return;
     }
 
     try {
-      // FedCM logout API (if available)
-      if ('IdentityCredential' in window && 'logout' in (window as any).IdentityCredential) {
+      if ('IdentityCredential' in window && 'disconnect' in (window as any).IdentityCredential) {
         const clientId = this.getClientId();
-        await (window as any).IdentityCredential.logout({
+        await (window as any).IdentityCredential.disconnect({
           configURL: (this.constructor as any).DEFAULT_CONFIG_URL,
           clientId,
+          accountHint: accountHint || '*',
         });
+        debug.log('FedCM credential disconnected');
       }
     } catch (error) {
-      // Silent failure
+      debug.log('FedCM disconnect failed (non-critical):', error instanceof Error ? error.message : String(error));
     }
   }
 
@@ -519,6 +531,16 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
       localStorage.setItem(FEDCM_LOGIN_HINT_KEY, userId);
     } catch {
       // Storage full or blocked
+    }
+  }
+
+  /** @internal */
+  public clearLoginHint(): void {
+    if (typeof window === 'undefined') return;
+    try {
+      localStorage.removeItem(FEDCM_LOGIN_HINT_KEY);
+    } catch {
+      // Storage blocked
     }
   }
   };

@@ -1,5 +1,3 @@
 {
-  "provider_urls": ["https://auth.oxy.so/fedcm.json"],
-  "accounts_endpoint": "https://auth.oxy.so/api/fedcm/accounts",
-  "login_url": "https://auth.oxy.so/login"
+  "provider_urls": ["https://auth.oxy.so/fedcm.json"]
 }
