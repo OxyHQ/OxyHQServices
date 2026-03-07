@@ -15,6 +15,14 @@ import crypto from 'crypto';
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10 MB
 const FETCH_TIMEOUT = 10000; // 10 seconds
 const TRACKING_PIXEL_THRESHOLD = 100; // bytes
+const FONT_EXTENSIONS = /\.(ttf|otf|woff2?|eot)(\?|$)/i;
+const FONT_MIME: Record<string, string> = {
+  '.ttf': 'font/ttf',
+  '.otf': 'font/otf',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+  '.eot': 'application/vnd.ms-fontobject',
+};
 
 // Transparent 1x1 GIF for blocked tracking pixels
 const TRANSPARENT_GIF = Buffer.from(
@@ -206,20 +214,24 @@ export async function proxyResource(req: Request, res: Response): Promise<void> 
       redirect: 'follow',
     });
 
-    clearTimeout(timeoutId);
-
     if (!response.ok) {
+      clearTimeout(timeoutId);
       return sendTransparentGif(res, 3600);
     }
 
     const contentType = response.headers.get('content-type') || 'application/octet-stream';
 
-    // Validate content type
-    if (!/^(image\/|font\/|application\/(font|x-font))/i.test(contentType)) {
+    // Validate content type — allow octet-stream for font files (many servers
+    // serve .ttf/.woff as application/octet-stream instead of font/*)
+    const isAllowedType = /^(image\/|font\/|application\/(font|x-font))/i.test(contentType);
+    const isFontByExtension = contentType === 'application/octet-stream' && FONT_EXTENSIONS.test(url.pathname);
+    if (!isAllowedType && !isFontByExtension) {
+      clearTimeout(timeoutId);
       throw new BadRequestError('Only images and fonts allowed');
     }
 
     const arrayBuffer = await response.arrayBuffer();
+    clearTimeout(timeoutId);
     const buffer = Buffer.from(arrayBuffer);
 
     if (buffer.length > MAX_IMAGE_SIZE) {
@@ -232,8 +244,15 @@ export async function proxyResource(req: Request, res: Response): Promise<void> 
       return sendTransparentGif(res);
     }
 
-    addToCache(cacheKey, buffer, contentType);
-    sendProxiedResponse(res, buffer, contentType, false);
+    // Use correct MIME when upstream sends generic octet-stream for fonts
+    let resolvedType = contentType;
+    if (isFontByExtension) {
+      const ext = url.pathname.match(/\.\w+/)?.[0]?.toLowerCase();
+      if (ext && FONT_MIME[ext]) resolvedType = FONT_MIME[ext];
+    }
+
+    addToCache(cacheKey, buffer, resolvedType);
+    sendProxiedResponse(res, buffer, resolvedType, false);
   } catch (error) {
     clearTimeout(timeoutId);
 
