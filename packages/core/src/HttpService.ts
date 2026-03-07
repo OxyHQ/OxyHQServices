@@ -685,72 +685,25 @@ export class HttpService {
       this.requestMetrics.averageResponseTime * (1 - alpha) + duration * alpha;
   }
 
-  // Convenience methods (for backward compatibility)
-  /**
-   * GET request convenience method
-   */
-  async get<T = unknown>(url: string, config?: Omit<RequestConfig, 'method' | 'url'>): Promise<{ data: T }> {
-    const result = await this.request<T>({ method: 'GET', url, ...config });
-    return { data: result as T };
+  // Convenience methods
+  async get<T = unknown>(url: string, config?: Omit<RequestConfig, 'method' | 'url'>): Promise<T> {
+    return this.request<T>({ method: 'GET', url, ...config });
   }
 
-  /**
-   * POST request convenience method
-   * Supports FormData uploads - Content-Type will be set automatically for FormData
-   * @param url - Request URL
-   * @param data - Request body (can be FormData for file uploads)
-   * @param config - Request configuration including optional headers
-   * @example
-   * ```typescript
-   * const formData = new FormData();
-   * formData.append('file', file);
-   * await api.post('/upload', formData, { headers: { 'X-Custom-Header': 'value' } });
-   * ```
-   */
-  async post<T = unknown>(url: string, data?: unknown, config?: Omit<RequestConfig, 'method' | 'url' | 'data'>): Promise<{ data: T }> {
-    const result = await this.request<T>({ method: 'POST', url, data, ...config });
-    return { data: result as T };
+  async post<T = unknown>(url: string, data?: unknown, config?: Omit<RequestConfig, 'method' | 'url' | 'data'>): Promise<T> {
+    return this.request<T>({ method: 'POST', url, data, ...config });
   }
 
-  /**
-   * PUT request convenience method
-   * Supports FormData uploads - Content-Type will be set automatically for FormData
-   * @param url - Request URL
-   * @param data - Request body (can be FormData for file uploads)
-   * @param config - Request configuration including optional headers
-   * @example
-   * ```typescript
-   * const formData = new FormData();
-   * formData.append('file', file);
-   * await api.put('/upload', formData, { headers: { 'X-Custom-Header': 'value' } });
-   * ```
-   */
-  async put<T = unknown>(url: string, data?: unknown, config?: Omit<RequestConfig, 'method' | 'url' | 'data'>): Promise<{ data: T }> {
-    const result = await this.request<T>({ method: 'PUT', url, data, ...config });
-    return { data: result as T };
+  async put<T = unknown>(url: string, data?: unknown, config?: Omit<RequestConfig, 'method' | 'url' | 'data'>): Promise<T> {
+    return this.request<T>({ method: 'PUT', url, data, ...config });
   }
 
-  /**
-   * PATCH request convenience method
-   * Supports FormData uploads - Content-Type will be set automatically for FormData
-   * @param url - Request URL
-   * @param data - Request body (can be FormData for file uploads)
-   * @param config - Request configuration including optional headers
-   * @example
-   * ```typescript
-   * const formData = new FormData();
-   * formData.append('file', file);
-   * await api.patch('/upload', formData, { headers: { 'X-Custom-Header': 'value' } });
-   * ```
-   */
-  async patch<T = unknown>(url: string, data?: unknown, config?: Omit<RequestConfig, 'method' | 'url' | 'data'>): Promise<{ data: T }> {
-    const result = await this.request<T>({ method: 'PATCH', url, data, ...config });
-    return { data: result as T };
+  async patch<T = unknown>(url: string, data?: unknown, config?: Omit<RequestConfig, 'method' | 'url' | 'data'>): Promise<T> {
+    return this.request<T>({ method: 'PATCH', url, data, ...config });
   }
 
-  async delete<T = unknown>(url: string, config?: Omit<RequestConfig, 'method' | 'url'>): Promise<{ data: T }> {
-    const result = await this.request<T>({ method: 'DELETE', url, ...config });
-    return { data: result as T };
+  async delete<T = unknown>(url: string, config?: Omit<RequestConfig, 'method' | 'url'>): Promise<T> {
+    return this.request<T>({ method: 'DELETE', url, ...config });
   }
 
   // Token management
