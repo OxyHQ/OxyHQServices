@@ -387,8 +387,8 @@ app.use('/devices', userRateLimiter, csrfProtection, devicesRouter);
 app.use('/security', userRateLimiter, csrfProtection, securityRoutes);
 app.use('/subscription', userRateLimiter, csrfProtection, subscriptionRoutes);
 app.use('/fedcm', fedcmRoutes);
+app.use('/email/proxy', emailProxyRoutes); // public, no auth — must be before /email
 app.use('/email', userRateLimiter, csrfProtection, emailRoutes);
-app.use('/email/proxy', emailProxyRoutes);
 app.use('/alia', userRateLimiter, aliaRoutes);
 app.use('/credits', userRateLimiter, csrfProtection, creditsRoutes);
 app.use('/billing', billingRoutes);
