@@ -1,154 +1,71 @@
-/**
- * Centralized logging utilities for consistent logging across the application
- */
+import pino from 'pino';
+
+const isDev = process.env.NODE_ENV === 'development';
+
+const pinoLogger = pino({
+  level: process.env.LOG_LEVEL || (isDev ? 'debug' : 'info'),
+  ...(isDev
+    ? { transport: { target: 'pino-pretty', options: { colorize: true } } }
+    : {}),
+});
 
 export enum LogLevel {
   DEBUG = 0,
   INFO = 1,
   WARN = 2,
   ERROR = 3,
-  NONE = 4
+  NONE = 4,
 }
 
 export interface LogContext {
-  component?: string;
-  method?: string; // HTTP method or function method
-  userId?: string;
-  sessionId?: string;
-  requestId?: string;
-  path?: string;
   [key: string]: unknown;
 }
 
 class Logger {
-  private level: LogLevel = LogLevel.INFO;
-  private isDevelopment: boolean = process.env.NODE_ENV === 'development';
-
   setLevel(level: LogLevel): void {
-    this.level = level;
+    const map: Record<LogLevel, string> = {
+      [LogLevel.DEBUG]: 'debug',
+      [LogLevel.INFO]: 'info',
+      [LogLevel.WARN]: 'warn',
+      [LogLevel.ERROR]: 'error',
+      [LogLevel.NONE]: 'silent',
+    };
+    pinoLogger.level = map[level] || 'info';
   }
 
-  private shouldLog(level: LogLevel): boolean {
-    return level >= this.level;
+  debug(message: string, context?: LogContext): void {
+    context ? pinoLogger.debug(context, message) : pinoLogger.debug(message);
   }
 
-  private formatMessage(level: string, message: string, context?: LogContext): string {
-    const timestamp = new Date().toISOString();
-    const contextStr = context ? ` [${Object.entries(context).map(([k, v]) => `${k}:${v}`).join(', ')}]` : '';
-    return `[${timestamp}] ${level}${contextStr}: ${message}`;
+  info(message: string, context?: LogContext): void {
+    context ? pinoLogger.info(context, message) : pinoLogger.info(message);
   }
 
-  debug(message: string, context?: LogContext, ...args: unknown[]): void {
-    if (this.shouldLog(LogLevel.DEBUG)) {
-      const formattedMessage = this.formatMessage('DEBUG', message, context);
-      if (this.isDevelopment) {
-        console.log(formattedMessage, ...args);
-      }
+  warn(message: string, context?: LogContext): void {
+    context ? pinoLogger.warn(context, message) : pinoLogger.warn(message);
+  }
+
+  error(message: string, error?: Error | unknown, context?: LogContext): void {
+    const merged: Record<string, unknown> = { ...context };
+    if (error instanceof Error) {
+      merged.err = { message: error.message, stack: error.stack, name: error.name };
+    } else if (error && typeof error === 'object') {
+      Object.assign(merged, error);
+    } else if (error !== undefined && error !== null) {
+      merged.errorValue = error;
     }
+    pinoLogger.error(merged, message);
   }
 
-  info(message: string, context?: LogContext, ...args: unknown[]): void {
-    if (this.shouldLog(LogLevel.INFO)) {
-      const formattedMessage = this.formatMessage('INFO', message, context);
-      console.log(formattedMessage, ...args);
-    }
-  }
-
-  warn(message: string, context?: LogContext, ...args: unknown[]): void {
-    if (this.shouldLog(LogLevel.WARN)) {
-      const formattedMessage = this.formatMessage('WARN', message, context);
-      console.warn(formattedMessage, ...args);
-    }
-  }
-
-  error(message: string, error?: Error | unknown, context?: LogContext, ...args: unknown[]): void {
-    if (this.shouldLog(LogLevel.ERROR)) {
-      const formattedMessage = this.formatMessage('ERROR', message, context);
-      if (error) {
-        console.error(formattedMessage, error, ...args);
-      } else {
-        console.error(formattedMessage, ...args);
-      }
-    }
-  }
-
-  // Specialized logging methods for common patterns
-  auth(message: string, context?: LogContext, ...args: unknown[]): void {
-    this.info(`🔐 ${message}`, { ...context, category: 'auth' }, ...args);
-  }
-
-  api(message: string, context?: LogContext, ...args: unknown[]): void {
-    this.info(`🌐 ${message}`, { ...context, category: 'api' }, ...args);
-  }
-
-  session(message: string, context?: LogContext, ...args: unknown[]): void {
-    this.info(`📱 ${message}`, { ...context, category: 'session' }, ...args);
-  }
-
-  user(message: string, context?: LogContext, ...args: unknown[]): void {
-    this.info(`👤 ${message}`, { ...context, category: 'user' }, ...args);
-  }
-
-  device(message: string, context?: LogContext, ...args: unknown[]): void {
-    this.info(`📱 ${message}`, { ...context, category: 'device' }, ...args);
-  }
-
-  payment(message: string, context?: LogContext, ...args: unknown[]): void {
-    this.info(`💳 ${message}`, { ...context, category: 'payment' }, ...args);
-  }
-
-  // Performance logging
-  performance(operation: string, duration: number, context?: LogContext): void {
-    const level = duration > 1000 ? LogLevel.WARN : LogLevel.INFO;
-    const message = `⏱️ ${operation} completed in ${duration}ms`;
-    if (level === LogLevel.WARN) {
-      this.warn(message, { ...context, category: 'performance', duration });
-    } else {
-      this.info(message, { ...context, category: 'performance', duration });
-    }
-  }
-
-  // Error logging with stack trace
   errorWithStack(message: string, error: Error, context?: LogContext): void {
-    this.error(message, error, { ...context, stack: error.stack });
+    this.error(message, error, context);
   }
 
-  // Group related log messages
-  group(label: string, fn: () => void): void {
-    if (this.isDevelopment && this.shouldLog(LogLevel.DEBUG)) {
-      console.group(label);
-      fn();
-      console.groupEnd();
-    } else {
-      fn();
-    }
+  performance(operation: string, duration: number, context?: LogContext): void {
+    const msg = `${operation} completed in ${duration}ms`;
+    const merged = { ...context, operation, duration };
+    duration > 1000 ? pinoLogger.warn(merged, msg) : pinoLogger.info(merged, msg);
   }
 }
 
-// Create singleton instance
 export const logger = new Logger();
-
-// Convenience functions for common logging patterns
-export const logAuth = (message: string, context?: LogContext, ...args: unknown[]) => 
-  logger.auth(message, context, ...args);
-
-export const logApi = (message: string, context?: LogContext, ...args: unknown[]) => 
-  logger.api(message, context, ...args);
-
-export const logSession = (message: string, context?: LogContext, ...args: unknown[]) => 
-  logger.session(message, context, ...args);
-
-export const logUser = (message: string, context?: LogContext, ...args: unknown[]) => 
-  logger.user(message, context, ...args);
-
-export const logDevice = (message: string, context?: LogContext, ...args: unknown[]) => 
-  logger.device(message, context, ...args);
-
-export const logPayment = (message: string, context?: LogContext, ...args: unknown[]) => 
-  logger.payment(message, context, ...args);
-
-export const logError = (message: string, error?: Error | unknown, context?: LogContext, ...args: unknown[]) => 
-  logger.error(message, error, context, ...args);
-
-export const logPerformance = (operation: string, duration: number, context?: LogContext) => 
-  logger.performance(operation, duration, context);

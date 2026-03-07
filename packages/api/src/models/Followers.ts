@@ -7,4 +7,7 @@ const followersSchema: Schema = new Schema({
   updatedAt: { type: Date, required: true },
 });
 
+followersSchema.index({ userID: 1, contentID: 1 }, { unique: true });
+followersSchema.index({ contentID: 1 });
+
 export default mongoose.model("Followers", followersSchema);

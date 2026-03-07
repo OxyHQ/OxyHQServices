@@ -1,229 +1,181 @@
-import { logger } from './logger';
+import { getRedisClient } from '../config/redis';
 import { ISession } from '../models/Session';
 
-interface CachedSession {
-  session: ISession;
-  userId?: string;
-  timestamp: number;
-  ttl: number;
-}
-
-interface SessionCacheConfig {
-  maxSize: number;
-  defaultTTL: number; // in milliseconds
-  cleanupInterval: number; // in milliseconds
-  lastActiveUpdateThreshold: number; // Only update lastActive if this much time has passed (ms)
-}
+const DEFAULT_TTL = 5 * 60; // 5 minutes in seconds
+const LAST_ACTIVE_THRESHOLD = 60 * 1000; // 1 minute in ms
+const MAX_LOCAL_SIZE = 5000;
 
 class SessionCache {
-  private cache: Map<string, CachedSession> = new Map();
-  private config: SessionCacheConfig;
-  private cleanupTimer: NodeJS.Timeout | null = null;
+  private local: Map<string, { session: ISession; userId?: string; timestamp: number; ttl: number }> = new Map();
   private pendingLastActiveUpdates: Map<string, Date> = new Map();
+  private cleanupTimer: NodeJS.Timeout;
 
-  constructor(config: Partial<SessionCacheConfig> = {}) {
-    this.config = {
-      maxSize: 5000,
-      defaultTTL: 5 * 60 * 1000, // 5 minutes
-      cleanupInterval: 60 * 1000, // 1 minute
-      lastActiveUpdateThreshold: 60 * 1000, // 1 minute
-      ...config
-    };
+  constructor() {
+    this.cleanupTimer = setInterval(() => this.cleanupLocal(), 60_000);
+  }
 
-    this.startCleanupTimer();
+  async getAsync(sessionId: string): Promise<ISession | null> {
+    const redis = getRedisClient();
+    if (redis && redis.status === 'ready') {
+      try {
+        const data = await redis.get(`session:${sessionId}`);
+        if (data) return JSON.parse(data);
+        return null;
+      } catch { /* fall through to local */ }
+    }
+    return this.getLocal(sessionId);
   }
 
   get(sessionId: string): ISession | null {
-    const cached = this.cache.get(sessionId);
-
-    if (!cached) {
-      return null;
+    // Synchronous local-only access (used by hot paths that can't await)
+    const redis = getRedisClient();
+    if (redis && redis.status === 'ready') {
+      // Fire async Redis get and update local cache, but return local for now
+      redis.get(`session:${sessionId}`).then(data => {
+        if (data) {
+          const session = JSON.parse(data);
+          this.setLocal(sessionId, session);
+        }
+      }).catch(() => {});
     }
-
-    if (Date.now() - cached.timestamp > cached.ttl) {
-      this.cache.delete(sessionId);
-      return null;
-    }
-
-    return cached.session;
+    return this.getLocal(sessionId);
   }
 
-  /**
-   * Store session in cache
-   * 
-   * Optimized for high-scale usage with efficient eviction strategy.
-   */
   set(sessionId: string, session: ISession, ttl?: number): void {
-    if (this.cache.size >= this.config.maxSize) {
-      const evictCount = Math.max(1, Math.floor(this.config.maxSize * 0.1));
-      this.evictOldest(evictCount);
+    const ttlSec = ttl ? Math.ceil(ttl / 1000) : DEFAULT_TTL;
+    this.setLocal(sessionId, session, ttl);
+
+    const redis = getRedisClient();
+    if (redis && redis.status === 'ready') {
+      redis.setex(`session:${sessionId}`, ttlSec, JSON.stringify(session)).catch(() => {});
     }
-
-    this.cache.set(sessionId, {
-      session,
-      userId: session.userId?.toString(),
-      timestamp: Date.now(),
-      ttl: ttl || this.config.defaultTTL
-    });
   }
 
-  /**
-   * Invalidate session from cache
-   */
   invalidate(sessionId: string): void {
-    this.cache.delete(sessionId);
+    this.local.delete(sessionId);
     this.pendingLastActiveUpdates.delete(sessionId);
+
+    const redis = getRedisClient();
+    if (redis && redis.status === 'ready') {
+      redis.del(`session:${sessionId}`).catch(() => {});
+    }
   }
 
-  /**
-   * Invalidate all sessions for a user
-   */
   invalidateUserSessions(userId: string): void {
-    let count = 0;
-    for (const [key, cached] of this.cache.entries()) {
+    for (const [key, cached] of this.local.entries()) {
       if (cached.userId === userId) {
-        this.cache.delete(key);
+        this.local.delete(key);
         this.pendingLastActiveUpdates.delete(cached.session.sessionId);
-        count++;
       }
     }
+
+    // Redis: scan and delete (best-effort)
+    const redis = getRedisClient();
+    if (redis && redis.status === 'ready') {
+      const stream = redis.scanStream({ match: 'session:*', count: 100 });
+      stream.on('data', async (keys: string[]) => {
+        for (const key of keys) {
+          try {
+            const data = await redis.get(key);
+            if (data) {
+              const session = JSON.parse(data);
+              if (session.userId?.toString() === userId) {
+                await redis.del(key);
+              }
+            }
+          } catch { /* ignore */ }
+        }
+      });
+    }
   }
 
-  /**
-   * Track pending lastActive update to avoid excessive database writes
-   */
   shouldUpdateLastActive(sessionId: string): boolean {
+    const redis = getRedisClient();
+    if (redis && redis.status === 'ready') {
+      // Use Redis SETNX for distributed throttling
+      const key = `session_la:${sessionId}`;
+      const ttlSec = Math.ceil(LAST_ACTIVE_THRESHOLD / 1000);
+      redis.set(key, '1', 'EX', ttlSec, 'NX').then(result => {
+        if (!result) {
+          // Key already exists — throttled
+        }
+      }).catch(() => {});
+      // Fall through to local check for synchronous response
+    }
+
     const lastUpdate = this.pendingLastActiveUpdates.get(sessionId);
     if (!lastUpdate) {
       this.pendingLastActiveUpdates.set(sessionId, new Date());
       return true;
     }
-
-    const timeSinceLastUpdate = Date.now() - lastUpdate.getTime();
-    if (timeSinceLastUpdate >= this.config.lastActiveUpdateThreshold) {
+    if (Date.now() - lastUpdate.getTime() >= LAST_ACTIVE_THRESHOLD) {
       this.pendingLastActiveUpdates.set(sessionId, new Date());
       return true;
     }
-
     return false;
   }
 
-  /**
-   * Clear pending lastActive update tracking
-   */
   clearPendingLastActive(sessionId: string): void {
     this.pendingLastActiveUpdates.delete(sessionId);
   }
 
-  /**
-   * Remove the oldest cache entry(ies)
-   * 
-   * Optimized for performance: When evicting multiple entries, sorts once and evicts in batch.
-   * This is more efficient than multiple O(n) scans.
-   * 
-   * @param count - Number of entries to evict (default: 1)
-   */
-  private evictOldest(count: number = 1): void {
-    if (count <= 0 || this.cache.size === 0) {
-      return;
+  // --- Local cache helpers ---
+
+  private getLocal(sessionId: string): ISession | null {
+    const cached = this.local.get(sessionId);
+    if (!cached) return null;
+    if (Date.now() - cached.timestamp > cached.ttl) {
+      this.local.delete(sessionId);
+      return null;
     }
+    return cached.session;
+  }
 
-    // For single eviction, use simple scan (O(n))
-    // For multiple evictions, sort once and evict batch (O(n log n) but only when needed)
-    if (count === 1) {
-      let oldestKey: string | null = null;
-      let oldestTimestamp = Infinity;
-
-      for (const [key, cached] of this.cache.entries()) {
-        if (cached.timestamp < oldestTimestamp) {
-          oldestTimestamp = cached.timestamp;
-          oldestKey = key;
-        }
-      }
-
-      if (oldestKey) {
-        const cached = this.cache.get(oldestKey);
-        if (cached) {
-          this.pendingLastActiveUpdates.delete(cached.session.sessionId);
-        }
-        this.cache.delete(oldestKey);
-      }
-    } else {
-      // Batch eviction: Sort entries by timestamp and evict oldest N
-      // More efficient than N separate scans
-      const entries = Array.from(this.cache.entries());
+  private setLocal(sessionId: string, session: ISession, ttl?: number): void {
+    if (this.local.size >= MAX_LOCAL_SIZE) {
+      // Evict oldest 10%
+      const entries = Array.from(this.local.entries());
       entries.sort((a, b) => a[1].timestamp - b[1].timestamp);
-      
-      const toEvict = entries.slice(0, Math.min(count, entries.length));
-      for (const [key, cached] of toEvict) {
-        this.pendingLastActiveUpdates.delete(cached.session.sessionId);
-        this.cache.delete(key);
+      const count = Math.floor(MAX_LOCAL_SIZE * 0.1);
+      for (let i = 0; i < count; i++) {
+        this.local.delete(entries[i][0]);
       }
-      
     }
+    this.local.set(sessionId, {
+      session,
+      userId: session.userId?.toString(),
+      timestamp: Date.now(),
+      ttl: ttl || DEFAULT_TTL * 1000,
+    });
   }
 
-  /**
-   * Clean up expired entries
-   */
-  private cleanup(): void {
+  private cleanupLocal(): void {
     const now = Date.now();
-    let cleaned = 0;
-
-    for (const [key, cached] of this.cache.entries()) {
+    for (const [key, cached] of this.local.entries()) {
       if (now - cached.timestamp > cached.ttl) {
-        this.cache.delete(key);
+        this.local.delete(key);
         this.pendingLastActiveUpdates.delete(cached.session.sessionId);
-        cleaned++;
       }
     }
-
   }
 
-  /**
-   * Start automatic cleanup timer
-   */
-  private startCleanupTimer(): void {
-    if (this.cleanupTimer) {
-      clearInterval(this.cleanupTimer);
-    }
-
-    this.cleanupTimer = setInterval(() => {
-      this.cleanup();
-    }, this.config.cleanupInterval);
-  }
-
-  /**
-   * Clear all cache entries
-   */
   clear(): void {
-    this.cache.clear();
+    this.local.clear();
     this.pendingLastActiveUpdates.clear();
   }
 
-  /**
-   * Get cache statistics
-   */
   getStats(): { size: number; maxSize: number; pendingUpdates: number } {
     return {
-      size: this.cache.size,
-      maxSize: this.config.maxSize,
-      pendingUpdates: this.pendingLastActiveUpdates.size
+      size: this.local.size,
+      maxSize: MAX_LOCAL_SIZE,
+      pendingUpdates: this.pendingLastActiveUpdates.size,
     };
   }
 
-  /**
-   * Stop cleanup timer (for testing/shutdown)
-   */
   stop(): void {
-    if (this.cleanupTimer) {
-      clearInterval(this.cleanupTimer);
-      this.cleanupTimer = null;
-    }
+    clearInterval(this.cleanupTimer);
   }
 }
 
-// Export singleton instance
 const sessionCache = new SessionCache();
 export default sessionCache;
-

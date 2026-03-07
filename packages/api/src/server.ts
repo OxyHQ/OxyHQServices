@@ -52,6 +52,7 @@ import performanceMiddleware, { getMemoryStats, getConnectionPoolStats } from '.
 import { performanceMonitor } from './utils/performanceMonitor';
 import { waitForMongoConnection } from './utils/dbConnection';
 import { errorHandler } from './middleware/errorHandler';
+import compression from 'compression';
 
 // Load environment variables
 dotenv.config();
@@ -74,14 +75,27 @@ app.set('trust proxy', 1);
 // Security headers middleware (first, before any other middleware)
 app.use(securityHeaders);
 
+// Compress responses (gzip/brotli)
+app.use(compression());
+
 // Cookie parser middleware (before CSRF and body parsing)
 app.use(cookieParser());
 
 // Body parsing middleware - IMPORTANT: Add this before any routes
 // Stripe webhook needs raw body for signature verification (must be before express.json)
 app.use('/billing/webhook', express.raw({ type: 'application/json' }));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
+
+// Request timeout (30s) to prevent slow clients holding connections
+app.use((req, res, next) => {
+  req.setTimeout(30_000, () => {
+    if (!res.headersSent) {
+      res.status(408).json({ error: 'REQUEST_TIMEOUT', message: 'Request timeout' });
+    }
+  });
+  next();
+});
 
 // Performance monitoring middleware (before routes)
 app.use(performanceMiddleware);
@@ -222,8 +236,8 @@ const mongoOptions = {
   autoIndex: true,
   autoCreate: true,
   // Connection pool settings for handling millions of users
-  maxPoolSize: 50, // Maximum number of connections in the pool
-  minPoolSize: 5, // Minimum number of connections to maintain
+  maxPoolSize: getEnvNumber('MONGO_MAX_POOL_SIZE', 100),
+  minPoolSize: getEnvNumber('MONGO_MIN_POOL_SIZE', 10),
   maxIdleTimeMS: 30000, // Close connections after 30 seconds of inactivity
   serverSelectionTimeoutMS: 5000, // How long to try selecting a server before timing out
   socketTimeoutMS: 45000, // How long a send or receive on a socket can take before timing out
@@ -265,15 +279,31 @@ mongoose.connection.on('reconnected', () => {
 });
 
 // Graceful shutdown
-process.on('SIGINT', async () => {
+async function gracefulShutdown(signal: string) {
+  logger.info(`${signal} received, starting graceful shutdown`);
+
+  const forceTimer = setTimeout(() => {
+    logger.error('Graceful shutdown timed out, forcing exit');
+    process.exit(1);
+  }, 30_000);
+  forceTimer.unref();
+
+  server.close(() => {
+    logger.info('HTTP server closed');
+  });
+
   stopSnoozeCron();
   await stopSmtpInbound();
   smtpOutbound.shutdown();
   await closeRedis();
   await mongoose.connection.close();
-  logger.info('Connections closed through app termination');
+
+  logger.info('All connections closed, exiting');
   process.exit(0);
-});
+}
+
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 
 // API Routes
 app.get("/", async (req, res) => {

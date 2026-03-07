@@ -15,12 +15,17 @@ interface PerformanceStats {
   maxDuration: number;
   totalDuration: number;
   lastUpdated: number;
+  p50: number;
+  p95: number;
+  p99: number;
 }
 
 class PerformanceMonitor {
   private metrics: PerformanceMetric[] = [];
   private stats: Map<string, PerformanceStats> = new Map();
+  private durations: Map<string, number[]> = new Map();
   private maxMetrics: number = 1000;
+  private maxDurations: number = 500;
   private cleanupInterval: NodeJS.Timeout | null = null;
 
   constructor() {
@@ -67,9 +72,27 @@ class PerformanceMonitor {
   /**
    * Update statistics for an operation
    */
+  private percentile(sorted: number[], p: number): number {
+    if (sorted.length === 0) return 0;
+    const idx = Math.ceil(sorted.length * p) - 1;
+    return sorted[Math.max(0, idx)];
+  }
+
   private updateStats(operation: string, duration: number): void {
+    // Track recent durations for percentile calculation
+    let durs = this.durations.get(operation);
+    if (!durs) {
+      durs = [];
+      this.durations.set(operation, durs);
+    }
+    durs.push(duration);
+    if (durs.length > this.maxDurations) {
+      durs.splice(0, durs.length - this.maxDurations);
+    }
+
+    const sorted = [...durs].sort((a, b) => a - b);
+
     const existing = this.stats.get(operation);
-    
     if (existing) {
       existing.count++;
       existing.totalDuration += duration;
@@ -77,6 +100,9 @@ class PerformanceMonitor {
       existing.minDuration = Math.min(existing.minDuration, duration);
       existing.maxDuration = Math.max(existing.maxDuration, duration);
       existing.lastUpdated = Date.now();
+      existing.p50 = this.percentile(sorted, 0.5);
+      existing.p95 = this.percentile(sorted, 0.95);
+      existing.p99 = this.percentile(sorted, 0.99);
     } else {
       this.stats.set(operation, {
         operation,
@@ -85,7 +111,10 @@ class PerformanceMonitor {
         minDuration: duration,
         maxDuration: duration,
         totalDuration: duration,
-        lastUpdated: Date.now()
+        lastUpdated: Date.now(),
+        p50: duration,
+        p95: duration,
+        p99: duration,
       });
     }
   }
@@ -150,10 +179,10 @@ class PerformanceMonitor {
     const oneHourAgo = Date.now() - (60 * 60 * 1000);
     this.metrics = this.metrics.filter(m => m.timestamp > oneHourAgo);
     
-    // Clean up old stats
     for (const [operation, stats] of this.stats.entries()) {
       if (stats.lastUpdated < oneHourAgo) {
         this.stats.delete(operation);
+        this.durations.delete(operation);
       }
     }
   }
@@ -183,6 +212,7 @@ class PerformanceMonitor {
   clear(): void {
     this.metrics = [];
     this.stats.clear();
+    this.durations.clear();
     logger.info('Performance monitor cleared');
   }
 

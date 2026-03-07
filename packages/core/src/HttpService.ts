@@ -600,7 +600,7 @@ export class HttpService {
 
       // If token expires in less than 60 seconds, refresh it
       if (decoded.exp && decoded.exp - currentTime < 60 && decoded.sessionId) {
-        // Skip if we recently failed a refresh (5s cooldown to prevent storms)
+        // Skip if we recently failed a refresh (15s cooldown to prevent storms)
         if (Date.now() < this.tokenRefreshCooldownUntil) {
           return `Bearer ${accessToken}`;
         }
@@ -610,7 +610,7 @@ export class HttpService {
         if (!this.tokenRefreshPromise) {
           this.tokenRefreshPromise = this._refreshTokenFromSession(decoded.sessionId)
             .then((result) => {
-              if (!result) this.tokenRefreshCooldownUntil = Date.now() + 5000;
+              if (!result) this.tokenRefreshCooldownUntil = Date.now() + 15000;
               return result;
             })
             .finally(() => { this.tokenRefreshPromise = null; });
