@@ -114,10 +114,16 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
     isLoading,
     isRefetching,
     isFetchingNextPage,
+    error,
     refetch,
     fetchNextPage,
     hasNextPage,
   } = useMessages(messagesOptions);
+
+  // Surface query errors for debugging
+  useEffect(() => {
+    if (error) console.error('[InboxList] Messages query error:', error);
+  }, [error]);
   const { data: mailboxes = [] } = useMailboxes();
   const { data: labels = [] } = useLabels();
   const labelColorMap = useMemo(() => {

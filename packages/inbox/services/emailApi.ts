@@ -28,11 +28,11 @@ export const AttachmentSchema = z.object({
 });
 
 export const MessageFlagsSchema = z.object({
-  seen: z.boolean(),
-  starred: z.boolean(),
-  answered: z.boolean(),
-  forwarded: z.boolean(),
-  draft: z.boolean(),
+  seen: z.boolean().optional().default(false),
+  starred: z.boolean().optional().default(false),
+  answered: z.boolean().optional().default(false),
+  forwarded: z.boolean().optional().default(false),
+  draft: z.boolean().optional().default(false),
   pinned: z.boolean().optional().default(false),
 });
 
@@ -57,20 +57,20 @@ export const MessageSchema = z.object({
   mailboxId: z.string(),
   messageId: z.string(),
   from: EmailAddressSchema,
-  to: z.array(EmailAddressSchema),
+  to: z.array(EmailAddressSchema).default([]),
   cc: z.array(EmailAddressSchema).optional(),
   bcc: z.array(EmailAddressSchema).optional(),
-  subject: z.string(),
+  subject: z.string().default(''),
   text: z.string().nullable().optional(),
   html: z.string().nullable().optional(),
   headers: z.record(z.string(), z.string()).optional(),
-  attachments: z.array(AttachmentSchema),
-  flags: MessageFlagsSchema,
-  labels: z.array(z.string()),
+  attachments: z.array(AttachmentSchema).default([]),
+  flags: MessageFlagsSchema.default({}),
+  labels: z.array(z.string()).default([]),
   card: MessageCardSchema.nullable().optional(),
   highlights: z.array(HighlightSchema).optional(),
   spamScore: z.number().nullable().optional(),
-  size: z.number(),
+  size: z.number().default(0),
   inReplyTo: z.string().nullable().optional(),
   references: z.array(z.string()).optional(),
   aliasTag: z.string().nullable().optional(),
@@ -199,6 +199,20 @@ interface PaginatedResult<T> {
   pagination: Pagination;
 }
 
+/** Parse an array of messages, skipping any that fail validation. */
+function parseMessages(items: unknown): Message[] {
+  if (!Array.isArray(items)) return [];
+  return items.reduce<Message[]>((acc, item) => {
+    const result = MessageSchema.safeParse(item);
+    if (result.success) {
+      acc.push(result.data);
+    } else if (typeof console !== 'undefined') {
+      console.warn('[emailApi] Skipping invalid message:', result.error.issues);
+    }
+    return acc;
+  }, []);
+}
+
 // ─── API Client ────────────────────────────────────────────────────
 
 export function createEmailApi(http: HttpService) {
@@ -239,9 +253,9 @@ export function createEmailApi(http: HttpService) {
       if (options.offset !== undefined) params.offset = String(options.offset);
       if (options.unseenOnly) params.unseen = 'true';
 
-      const res = (await http.get('/email/messages', { params })) as PaginatedResult<Message>;
+      const res = (await http.get('/email/messages', { params })) as PaginatedResult<unknown>;
       return {
-        data: z.array(MessageSchema).parse(res.data),
+        data: parseMessages(res.data),
         pagination: PaginationSchema.parse(res.pagination),
       };
     },
@@ -371,9 +385,9 @@ export function createEmailApi(http: HttpService) {
       if (options.limit !== undefined) params.limit = String(options.limit);
       if (options.offset !== undefined) params.offset = String(options.offset);
 
-      const res = (await http.get('/email/search', { params })) as PaginatedResult<Message>;
+      const res = (await http.get('/email/search', { params })) as PaginatedResult<unknown>;
       return {
-        data: z.array(MessageSchema).parse(res.data),
+        data: parseMessages(res.data),
         pagination: PaginationSchema.parse(res.pagination),
       };
     },
@@ -476,10 +490,10 @@ export function createEmailApi(http: HttpService) {
         pagination: Pagination;
       };
       return {
-        primary: z.array(MessageSchema).parse(res.data.primary),
+        primary: parseMessages(res.data.primary),
         bundles: res.data.bundles.map((b) => ({
           bundle: BundleSchema.parse(b.bundle),
-          messages: z.array(MessageSchema).parse(b.messages),
+          messages: parseMessages(b.messages),
           unreadCount: b.unreadCount,
         })),
         pagination: PaginationSchema.parse(res.pagination),
