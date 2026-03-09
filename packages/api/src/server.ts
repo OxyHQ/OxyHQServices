@@ -250,37 +250,11 @@ const mongoOptions = {
 };
 
 mongoose.connect(process.env.MONGODB_URI as string, mongoOptions)
-.then(async () => {
+.then(() => {
   logger.info("Connected to MongoDB successfully", {
     maxPoolSize: mongoOptions.maxPoolSize,
     minPoolSize: mongoOptions.minPoolSize,
   });
-
-  // One-time migration: convert legacy avatar objects to string file IDs
-  try {
-    const users = mongoose.connection.collection('users');
-    const result = await users.find({ avatar: { $type: 'object' } }).toArray();
-    if (result.length > 0) {
-      const bulk = users.initializeUnorderedBulkOp();
-      for (const doc of result) {
-        const fileId = (doc.avatar as any)?.id;
-        if (fileId && typeof fileId === 'string' && fileId.length > 0) {
-          bulk.find({ _id: doc._id }).updateOne({ $set: { avatar: fileId } });
-        } else {
-          bulk.find({ _id: doc._id }).updateOne({ $unset: { avatar: 1 } });
-        }
-      }
-      const bulkResult = await bulk.execute();
-      logger.info(`Avatar migration: ${bulkResult.modifiedCount} documents updated`);
-    }
-    // Clean up empty string avatars
-    const cleaned = await users.updateMany({ avatar: '' }, { $unset: { avatar: 1 } });
-    if (cleaned.modifiedCount > 0) {
-      logger.info(`Avatar cleanup: ${cleaned.modifiedCount} empty avatars removed`);
-    }
-  } catch (err) {
-    logger.error('Avatar migration error (non-fatal):', err);
-  }
 })
 .catch((error) => {
   logger.error("MongoDB connection error:", error);
