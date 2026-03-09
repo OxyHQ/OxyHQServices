@@ -660,6 +660,7 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
           </View>
           <AliaChatSheet
             ref={aliaChatRef}
+            apiUrl="https://api.alia.onl"
             clientContext="User is in the Inbox app viewing their email. Use oxy_inbox tools to access their emails."
             suggestions={[
               { label: 'Unread emails', icon: 'mail', prompt: 'What emails need my attention?' },
