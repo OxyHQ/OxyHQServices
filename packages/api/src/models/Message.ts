@@ -195,10 +195,10 @@ const MessageSchema = new Schema(
     },
     card: {
       type: {
-        type: { type: String, enum: ['trip', 'purchase', 'event', 'bill', 'package'] },
-        data: { type: Schema.Types.Mixed, default: {} },
-        confidence: { type: Number, default: 0 },
-        extractedAt: { type: Date, default: Date.now },
+        type: { type: String, enum: ['trip', 'purchase', 'event', 'bill', 'package'], required: true },
+        data: { type: Schema.Types.Mixed },
+        confidence: { type: Number },
+        extractedAt: { type: Date },
       },
       _id: false,
     },

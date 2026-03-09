@@ -67,7 +67,7 @@ export const MessageSchema = z.object({
   attachments: z.array(AttachmentSchema).default([]),
   flags: MessageFlagsSchema.default({}),
   labels: z.array(z.string()).default([]),
-  card: MessageCardSchema.nullable().optional(),
+  card: MessageCardSchema.nullable().optional().catch(null),
   highlights: z.array(HighlightSchema).optional(),
   spamScore: z.number().nullable().optional(),
   size: z.number().default(0),
