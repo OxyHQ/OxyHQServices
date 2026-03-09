@@ -51,8 +51,9 @@ jobs:
             fi
 
             # Migrate SMTP TLS cert paths from api.oxy.so to mail.oxy.so
-            if grep -q 'api\.oxy\.so' .env 2>/dev/null; then
-              sed -i 's|api\.oxy\.so|mail.oxy.so|g' .env
+            if grep -q '^SMTP_TLS_\(KEY\|CERT\)=.*api\.oxy\.so' .env 2>/dev/null; then
+              sed -i '/^SMTP_TLS_KEY=/s|api\.oxy\.so|mail.oxy.so|g' .env
+              sed -i '/^SMTP_TLS_CERT=/s|api\.oxy\.so|mail.oxy.so|g' .env
               echo "=== Updated TLS cert paths to mail.oxy.so ==="
             fi
 
@@ -60,7 +61,7 @@ jobs:
             docker compose build api
 
             echo "=== Restarting ==="
-            docker compose up -d --force-recreate caddy api
+            docker compose up -d caddy api
 
             echo "=== Cleanup ==="
             docker image prune -f

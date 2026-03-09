@@ -1,6 +1,6 @@
 # Caddy reverse proxy configuration
 #
-# Replace api.oxy.so with your actual API domain.
+# Replace mail.oxy.so with your actual domain.
 # Caddy automatically obtains and renews Let's Encrypt TLS certificates.
 
 mail.oxy.so {
