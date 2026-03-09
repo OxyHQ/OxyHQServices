@@ -36,6 +36,8 @@ import {
   useDeleteMessage,
   useTogglePin,
   useSnoozeMessage,
+  useBulkUpdateFlags,
+  useBulkMoveMessages,
 } from '@/hooks/mutations/useMessageMutations';
 import { MessageRow } from '@/components/MessageRow';
 import { SearchHeader } from '@/components/SearchHeader';
@@ -48,6 +50,7 @@ import { CreateReminderSheet } from '@/components/CreateReminderSheet';
 import { EmptyIllustration } from '@/components/EmptyIllustration';
 import { AliaChatSheet, type AliaChatSheetRef } from '@alia.onl/sdk';
 import { AliaFace } from '@/components/AliaFace';
+import { useBatchSentimentAnalysis } from '@/hooks/queries/useSentimentAnalysis';
 import { useBundles } from '@/hooks/queries/useBundles';
 import { useReminders } from '@/hooks/queries/useReminders';
 import { useCreateReminder, useUpdateReminder, useDeleteReminder } from '@/hooks/mutations/useReminderMutations';
@@ -141,6 +144,8 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
   const snoozeMutation = useSnoozeMessage();
   const archiveMutation = useArchiveMessage();
   const deleteMutation = useDeleteMessage();
+  const bulkFlags = useBulkUpdateFlags();
+  const bulkMove = useBulkMoveMessages();
   const { data: bundles = [] } = useBundles();
 
   const [snoozeTargetId, setSnoozeTargetId] = useState<string | null>(null);
@@ -153,6 +158,9 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
   const deleteReminderMutation = useDeleteReminder();
 
   const messages = useMemo(() => data?.pages.flatMap((p) => p.data) ?? [], [data]);
+
+  // Batch sentiment analysis — computed once for all messages, passed as props to rows
+  const sentimentMap = useBatchSentimentAnalysis(messages);
 
   const isInboxView = viewMode?.type === 'mailbox' && viewMode.mailbox.specialUse === SPECIAL_USE.INBOX;
   const isSnoozedView = viewMode?.type === 'mailbox' && viewMode.mailbox.specialUse === SPECIAL_USE.SNOOZED;
@@ -359,45 +367,40 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
     [enterSelectionMode],
   );
 
-  // Bulk actions
+  // Bulk actions — single API call per operation
   const handleBulkArchive = useCallback(() => {
     const archiveBox = mailboxes.find((m) => m.specialUse === SPECIAL_USE.ARCHIVE);
     if (!archiveBox) {
       toast.error('Archive folder not available.');
       return;
     }
-    selectedMessageIds.forEach((id) => {
-      archiveMutation.mutate({ messageId: id, archiveMailboxId: archiveBox._id });
-    });
+    bulkMove.mutate({ messageIds: [...selectedMessageIds], mailboxId: archiveBox._id });
     clearSelection();
-  }, [selectedMessageIds, mailboxes, archiveMutation, clearSelection]);
+  }, [selectedMessageIds, mailboxes, bulkMove, clearSelection]);
 
   const handleBulkDelete = useCallback(() => {
     const trashBox = mailboxes.find((m) => m.specialUse === SPECIAL_USE.TRASH);
-    const isInTrash = currentMailbox?.specialUse === SPECIAL_USE.TRASH;
-    selectedMessageIds.forEach((id) => {
-      deleteMutation.mutate({ messageId: id, trashMailboxId: trashBox?._id, isInTrash });
-    });
+    if (!trashBox) {
+      toast.error('Trash folder not available.');
+      return;
+    }
+    bulkMove.mutate({ messageIds: [...selectedMessageIds], mailboxId: trashBox._id });
     clearSelection();
-  }, [selectedMessageIds, mailboxes, currentMailbox, deleteMutation, clearSelection]);
+  }, [selectedMessageIds, mailboxes, bulkMove, clearSelection]);
 
   const handleBulkStar = useCallback(() => {
     const selected = messages.filter((m) => selectedMessageIds.has(m._id));
     const shouldStar = selected.some((m) => !m.flags.starred);
-    selected.forEach((msg) => {
-      toggleStar.mutate({ messageId: msg._id, starred: shouldStar });
-    });
+    bulkFlags.mutate({ messageIds: [...selectedMessageIds], flags: { starred: shouldStar } });
     clearSelection();
-  }, [selectedMessageIds, messages, toggleStar, clearSelection]);
+  }, [selectedMessageIds, messages, bulkFlags, clearSelection]);
 
   const handleBulkMarkRead = useCallback(() => {
     const selected = messages.filter((m) => selectedMessageIds.has(m._id));
     const shouldMarkRead = selected.some((m) => !m.flags.seen);
-    selected.forEach((msg) => {
-      toggleRead.mutate({ messageId: msg._id, seen: shouldMarkRead });
-    });
+    bulkFlags.mutate({ messageIds: [...selectedMessageIds], flags: { seen: shouldMarkRead } });
     clearSelection();
-  }, [selectedMessageIds, messages, toggleRead, clearSelection]);
+  }, [selectedMessageIds, messages, bulkFlags, clearSelection]);
 
   // Derive title from view mode
   const mailboxTitle = useMemo(() => {
@@ -480,11 +483,12 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
             isPinPending={togglePin.isPending && togglePin.variables?.messageId === msg._id}
             showSnoozeTime={isSnoozedView}
             labelColorMap={labelColorMap}
+            sentiment={sentimentMap.get(msg._id)}
           />
         </SwipeableRow>
       );
     },
-    [handleStar, handlePin, handleMessagePress, selectedMessageId, isSelectionMode, selectedMessageIds, toggleMessageSelection, handleLongPress, handleSwipeArchive, handleSwipeDelete, toggleStar.isPending, toggleStar.variables?.messageId, togglePin.isPending, togglePin.variables?.messageId, isSnoozedView, expandedBundles, toggleBundle, labelColorMap, handleToggleReminderComplete, handleDeleteReminder, colors.border, colors.secondaryText],
+    [handleStar, handlePin, handleMessagePress, selectedMessageId, isSelectionMode, selectedMessageIds, toggleMessageSelection, handleLongPress, handleSwipeArchive, handleSwipeDelete, toggleStar.isPending, toggleStar.variables?.messageId, togglePin.isPending, togglePin.variables?.messageId, isSnoozedView, expandedBundles, toggleBundle, labelColorMap, handleToggleReminderComplete, handleDeleteReminder, colors.border, colors.secondaryText, sentimentMap],
   );
 
   const getItemType = useCallback((item: ListItem) => item.type, []);

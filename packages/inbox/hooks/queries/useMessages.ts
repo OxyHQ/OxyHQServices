@@ -37,5 +37,6 @@ export function useMessages(options: UseMessagesOptions = {}) {
     getNextPageParam: (lastPage) =>
       lastPage.pagination.hasMore ? lastPage.pagination.offset + lastPage.pagination.limit : undefined,
     enabled: hasFilter && !!api,
+    refetchInterval: 60_000, // Poll for new messages every 60 seconds
   });
 }

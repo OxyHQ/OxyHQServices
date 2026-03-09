@@ -127,7 +127,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
     useEffect(() => {
         if (finalUser) {
             const currentUserId = finalUser.id;
-            const currentAvatar = typeof finalUser.avatar === 'string' ? finalUser.avatar : '';
+            const currentAvatar = finalUser.avatar ?? '';
             const isNewUser = previousUserIdRef.current !== currentUserId;
             const isAvatarOnlyUpdate = !isNewUser && previousUserIdRef.current === currentUserId &&
                 previousAvatarRef.current !== currentAvatar &&

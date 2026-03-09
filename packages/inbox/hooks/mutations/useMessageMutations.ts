@@ -118,12 +118,10 @@ export function useToggleStar() {
         );
       }
     },
-    onSettled: (_data, _err, { messageId }) => {
-      // Refetch to ensure consistency (matches useToggleRead behavior)
-      queryClient.invalidateQueries({ queryKey: ['messages'] });
+    onSettled: () => {
+      // Only invalidate mailboxes (unseen counts may change).
+      // Message/thread caches are already synced from server response in onSuccess.
       queryClient.invalidateQueries({ queryKey: ['mailboxes'] });
-      queryClient.invalidateQueries({ queryKey: ['message', messageId] });
-      queryClient.invalidateQueries({ queryKey: ['thread'] });
     },
   });
 }
@@ -182,12 +180,10 @@ export function useToggleRead() {
         );
       }
     },
-    onSettled: (_data, _err, { messageId }) => {
-      // Refetch to ensure consistency
-      queryClient.invalidateQueries({ queryKey: ['messages'] });
+    onSettled: () => {
+      // Only invalidate mailboxes (unseen counts may change).
+      // Message/thread caches are already synced from server response in onSuccess.
       queryClient.invalidateQueries({ queryKey: ['mailboxes'] });
-      queryClient.invalidateQueries({ queryKey: ['message', messageId] });
-      queryClient.invalidateQueries({ queryKey: ['thread'] });
     },
   });
 }
@@ -225,7 +221,8 @@ export function useArchiveMessage() {
       toast.error('Failed to archive conversation.');
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['messages'] });
+      // Mark stale but don't trigger immediate refetch — optimistic update is already applied
+      queryClient.invalidateQueries({ queryKey: ['messages'], refetchType: 'none' });
       queryClient.invalidateQueries({ queryKey: ['mailboxes'] });
     },
   });
@@ -278,7 +275,8 @@ export function useDeleteMessage() {
       toast.error('Failed to delete conversation.');
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['messages'] });
+      // Mark stale but don't trigger immediate refetch — optimistic update is already applied
+      queryClient.invalidateQueries({ queryKey: ['messages'], refetchType: 'none' });
       queryClient.invalidateQueries({ queryKey: ['mailboxes'] });
     },
   });
@@ -405,8 +403,8 @@ export function useUpdateMessageLabels() {
       toast.error('Failed to update labels.');
     },
     onSettled: (_data, _err, { messageId }) => {
+      // Only invalidate single message cache — list is already updated optimistically
       queryClient.invalidateQueries({ queryKey: ['message', messageId] });
-      queryClient.invalidateQueries({ queryKey: ['messages'] });
     },
   });
 }
@@ -438,7 +436,8 @@ export function useTogglePin() {
       toast.error('Failed to update pin.');
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['messages'] });
+      // Only invalidate mailboxes — pin flag is already synced optimistically
+      queryClient.invalidateQueries({ queryKey: ['mailboxes'] });
     },
   });
 }
@@ -466,7 +465,8 @@ export function useSnoozeMessage() {
       toast.error('Failed to snooze message.');
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['messages'] });
+      // Mark stale but don't trigger immediate refetch — optimistic update is already applied
+      queryClient.invalidateQueries({ queryKey: ['messages'], refetchType: 'none' });
       queryClient.invalidateQueries({ queryKey: ['mailboxes'] });
     },
   });
@@ -488,7 +488,91 @@ export function useUnsnoozeMessage() {
       toast.error('Failed to unsnooze message.');
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['messages'] });
+      // Mark stale but don't trigger immediate refetch — optimistic update is already applied
+      queryClient.invalidateQueries({ queryKey: ['messages'], refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: ['mailboxes'] });
+    },
+  });
+}
+
+// ─── Bulk Operations ─────────────────────────────────────────────
+
+export function useBulkUpdateFlags() {
+  const api = useEmailStore((s) => s._api);
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ messageIds, flags }: { messageIds: string[]; flags: Partial<Message['flags']> }) => {
+      if (!api) throw new Error('Email API not initialized');
+      return api.bulkUpdateFlags(messageIds, flags);
+    },
+    onMutate: async ({ messageIds, flags }) => {
+      await queryClient.cancelQueries({ queryKey: ['messages'] });
+
+      const prevMessages = queryClient.getQueriesData<MessagesInfinite>({ queryKey: ['messages'] });
+
+      // Optimistically update all affected messages in a single pass
+      queryClient.setQueriesData<MessagesInfinite>({ queryKey: ['messages'] }, (old) => {
+        if (!old) return old;
+        const ids = new Set(messageIds);
+        return {
+          ...old,
+          pages: old.pages.map((page) => ({
+            ...page,
+            data: page.data.map((m) =>
+              ids.has(m._id) ? { ...m, flags: { ...m.flags, ...flags } } : m,
+            ),
+          })),
+        };
+      });
+
+      return { prevMessages };
+    },
+    onError: (_err, _vars, context) => {
+      if (context) {
+        context.prevMessages.forEach(([key, data]) => queryClient.setQueryData(key, data));
+      }
+      toast.error('Failed to update messages.');
+    },
+    onSuccess: () => {
+      toast.success('Messages updated.');
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['mailboxes'] });
+    },
+  });
+}
+
+export function useBulkMoveMessages() {
+  const api = useEmailStore((s) => s._api);
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ messageIds, mailboxId }: { messageIds: string[]; mailboxId: string }) => {
+      if (!api) throw new Error('Email API not initialized');
+      return api.bulkMoveMessages(messageIds, mailboxId);
+    },
+    onMutate: async ({ messageIds }) => {
+      await queryClient.cancelQueries({ queryKey: ['messages'] });
+
+      // Optimistically remove all moved messages from current view
+      queryClient.setQueriesData<MessagesInfinite>({ queryKey: ['messages'] }, (old) => {
+        if (!old) return old;
+        const ids = new Set(messageIds);
+        return {
+          ...old,
+          pages: old.pages.map((page) => ({
+            ...page,
+            data: page.data.filter((m) => !ids.has(m._id)),
+          })),
+        };
+      });
+    },
+    onError: () => {
+      toast.error('Failed to move messages.');
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['messages'], refetchType: 'none' });
       queryClient.invalidateQueries({ queryKey: ['mailboxes'] });
     },
   });

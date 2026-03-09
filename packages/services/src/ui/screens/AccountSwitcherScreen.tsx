@@ -340,8 +340,8 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
 
                                 <View style={[styles.settingItem, styles.firstSettingItem, styles.lastSettingItem, styles.currentAccountCard]}>
                                     <View style={styles.userIcon}>
-                                        {typeof user.avatar === 'string' && user.avatar ? (
-                                            <Image source={{ uri: oxyServices.getFileDownloadUrl(user.avatar as string, 'thumb') }} style={styles.accountAvatarImage} />
+                                        {user.avatar ? (
+                                            <Image source={{ uri: oxyServices.getFileDownloadUrl(user.avatar, 'thumb') }} style={styles.accountAvatarImage} />
                                         ) : (
                                             <View style={styles.accountAvatarFallback}>
                                                 <Text style={styles.accountAvatarText}>
@@ -400,8 +400,8 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                                                     <View style={styles.accountAvatarFallback}>
                                                         <ActivityIndicator size="small" color="#007AFF" />
                                                     </View>
-                                                ) : (typeof userProfile?.avatar === 'string' && userProfile.avatar) ? (
-                                                    <Image source={{ uri: oxyServices.getFileDownloadUrl(userProfile.avatar as string, 'thumb') }} style={styles.accountAvatarImage} />
+                                                ) : userProfile?.avatar ? (
+                                                    <Image source={{ uri: oxyServices.getFileDownloadUrl(userProfile.avatar, 'thumb') }} style={styles.accountAvatarImage} />
                                                 ) : (
                                                     <View style={styles.accountAvatarFallback}>
                                                         <Text style={styles.accountAvatarText}>

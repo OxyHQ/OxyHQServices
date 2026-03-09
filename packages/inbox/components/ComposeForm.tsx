@@ -33,8 +33,9 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { useEmailStore } from '@/hooks/useEmail';
 import { useSendMessageWithUndo, useSaveDraft } from '@/hooks/mutations/useMessageMutations';
+import { useContactSuggestions } from '@/hooks/queries/useContactSuggestions';
 import { AiComposeToolbar } from '@/components/AiComposeToolbar';
-import type { Attachment } from '@/services/emailApi';
+import type { Attachment, ContactSuggestion } from '@/services/emailApi';
 
 interface ComposeFormProps {
   mode: 'standalone' | 'embedded';
@@ -87,9 +88,65 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
     loadSignature();
   }, [api, signatureLoaded, initialBody]);
 
+  const draftIdRef = useRef<string | null>(null);
+  const sentRef = useRef(false);
+
   const fromAddress = user?.username ? `${user.username}@oxy.so` : '';
   const sending = sendPending;
   const hasContent = to.trim() || subject.trim() || body.trim() || attachments.length > 0;
+
+  // Auto-save draft every 30 seconds when form has content
+  useEffect(() => {
+    if (!api || !hasContent || sentRef.current) return;
+    const timer = setInterval(() => {
+      if (sentRef.current) return;
+      saveDraftMutation.mutate(
+        {
+          to: to.trim() ? parseAddresses(to) : undefined,
+          cc: cc.trim() ? parseAddresses(cc) : undefined,
+          bcc: bcc.trim() ? parseAddresses(bcc) : undefined,
+          subject: subject || undefined,
+          text: body || undefined,
+          inReplyTo: replyTo,
+          existingDraftId: draftIdRef.current ?? undefined,
+        },
+        {
+          onSuccess: (draft) => {
+            draftIdRef.current = draft._id;
+          },
+        },
+      );
+    }, 30_000);
+    return () => clearInterval(timer);
+  }, [api, hasContent, to, cc, bcc, subject, body, replyTo, saveDraftMutation]);
+
+  // Contact autocomplete state — track which field is active and the current query
+  const [activeField, setActiveField] = useState<'to' | 'cc' | 'bcc' | null>(null);
+  const [autocompleteQuery, setAutocompleteQuery] = useState('');
+  const { data: suggestions = [] } = useContactSuggestions(autocompleteQuery);
+
+  // Extract the last email segment (after the last comma) as the autocomplete query
+  const updateAutocomplete = useCallback((value: string, field: 'to' | 'cc' | 'bcc') => {
+    setActiveField(field);
+    const lastSegment = value.split(',').pop()?.trim() || '';
+    setAutocompleteQuery(lastSegment);
+  }, []);
+
+  const handleSelectSuggestion = useCallback(
+    (suggestion: ContactSuggestion, field: 'to' | 'cc' | 'bcc') => {
+      const setter = field === 'to' ? setTo : field === 'cc' ? setCc : setBcc;
+      setter((prev) => {
+        const parts = prev.split(',').map((s) => s.trim()).filter(Boolean);
+        // Replace the last (incomplete) segment with the selected address
+        if (parts.length > 0) parts.pop();
+        parts.push(suggestion.address);
+        return parts.join(', ') + ', ';
+      });
+      setAutocompleteQuery('');
+      setActiveField(null);
+    },
+    [],
+  );
 
   const isValidEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
@@ -157,6 +214,7 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
       return;
     }
 
+    sentRef.current = true;
     sendWithUndo(
       {
         to: toAddresses,
@@ -169,8 +227,10 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
       },
       {
         onSuccess: () => router.back(),
-        onError: (err: any) =>
-          toast.error(err.message || 'Unable to send email. Please try again.'),
+        onError: (err: any) => {
+          sentRef.current = false;
+          toast.error(err.message || 'Unable to send email. Please try again.');
+        },
       },
     );
   }, [to, cc, bcc, subject, body, replyTo, attachments, sendWithUndo, router]);
@@ -184,8 +244,14 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
         subject,
         text: body,
         inReplyTo: replyTo,
+        existingDraftId: draftIdRef.current ?? undefined,
       },
-      { onSettled: () => router.back() },
+      {
+        onSuccess: (draft) => {
+          draftIdRef.current = draft._id;
+        },
+        onSettled: () => router.back(),
+      },
     );
   }, [to, cc, bcc, subject, body, replyTo, saveDraftMutation, router]);
 
@@ -283,57 +349,117 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
         </View>
 
         {/* To */}
-        <View style={[styles.fieldRow, { borderBottomColor: colors.border }]}>
-          <Text style={[styles.fieldLabel, { color: colors.secondaryText }]}>To</Text>
-          <TextInput
-            style={[styles.fieldInput, { color: colors.text }]}
-            value={to}
-            onChangeText={setTo}
-            placeholder="Recipients"
-            placeholderTextColor={colors.searchPlaceholder}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-          {!showCcBcc && (
-            <TouchableOpacity onPress={() => setShowCcBcc(true)}>
-              {Platform.OS === 'web' ? (
-                <HugeiconsIcon icon={ArrowDown01Icon as unknown as IconSvgElement} size={20} color={colors.secondaryText} />
-              ) : (
-                <MaterialCommunityIcons name="chevron-down" size={20} color={colors.secondaryText} />
-              )}
-            </TouchableOpacity>
+        <View style={{ zIndex: activeField === 'to' ? 10 : 1 }}>
+          <View style={[styles.fieldRow, { borderBottomColor: colors.border }]}>
+            <Text style={[styles.fieldLabel, { color: colors.secondaryText }]}>To</Text>
+            <TextInput
+              style={[styles.fieldInput, { color: colors.text }]}
+              value={to}
+              onChangeText={(v) => { setTo(v); updateAutocomplete(v, 'to'); }}
+              onFocus={() => updateAutocomplete(to, 'to')}
+              onBlur={() => setTimeout(() => { if (activeField === 'to') setActiveField(null); }, 150)}
+              placeholder="Recipients"
+              placeholderTextColor={colors.searchPlaceholder}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            {!showCcBcc && (
+              <TouchableOpacity onPress={() => setShowCcBcc(true)}>
+                {Platform.OS === 'web' ? (
+                  <HugeiconsIcon icon={ArrowDown01Icon as unknown as IconSvgElement} size={20} color={colors.secondaryText} />
+                ) : (
+                  <MaterialCommunityIcons name="chevron-down" size={20} color={colors.secondaryText} />
+                )}
+              </TouchableOpacity>
+            )}
+          </View>
+          {activeField === 'to' && suggestions.length > 0 && (
+            <View style={[styles.suggestionsDropdown, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              {suggestions.map((s) => (
+                <TouchableOpacity key={s.address} style={styles.suggestionRow} onPress={() => handleSelectSuggestion(s, 'to')}>
+                  <Text style={[styles.suggestionName, { color: colors.text }]} numberOfLines={1}>
+                    {s.name || s.address}
+                  </Text>
+                  {s.name ? (
+                    <Text style={[styles.suggestionAddress, { color: colors.secondaryText }]} numberOfLines={1}>
+                      {s.address}
+                    </Text>
+                  ) : null}
+                </TouchableOpacity>
+              ))}
+            </View>
           )}
         </View>
 
         {/* Cc / Bcc */}
         {showCcBcc && (
           <>
-            <View style={[styles.fieldRow, { borderBottomColor: colors.border }]}>
-              <Text style={[styles.fieldLabel, { color: colors.secondaryText }]}>Cc</Text>
-              <TextInput
-                style={[styles.fieldInput, { color: colors.text }]}
-                value={cc}
-                onChangeText={setCc}
-                placeholder=""
-                placeholderTextColor={colors.searchPlaceholder}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
+            <View style={{ zIndex: activeField === 'cc' ? 10 : 1 }}>
+              <View style={[styles.fieldRow, { borderBottomColor: colors.border }]}>
+                <Text style={[styles.fieldLabel, { color: colors.secondaryText }]}>Cc</Text>
+                <TextInput
+                  style={[styles.fieldInput, { color: colors.text }]}
+                  value={cc}
+                  onChangeText={(v) => { setCc(v); updateAutocomplete(v, 'cc'); }}
+                  onFocus={() => updateAutocomplete(cc, 'cc')}
+                  onBlur={() => setTimeout(() => { if (activeField === 'cc') setActiveField(null); }, 150)}
+                  placeholder=""
+                  placeholderTextColor={colors.searchPlaceholder}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+              </View>
+              {activeField === 'cc' && suggestions.length > 0 && (
+                <View style={[styles.suggestionsDropdown, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                  {suggestions.map((s) => (
+                    <TouchableOpacity key={s.address} style={styles.suggestionRow} onPress={() => handleSelectSuggestion(s, 'cc')}>
+                      <Text style={[styles.suggestionName, { color: colors.text }]} numberOfLines={1}>
+                        {s.name || s.address}
+                      </Text>
+                      {s.name ? (
+                        <Text style={[styles.suggestionAddress, { color: colors.secondaryText }]} numberOfLines={1}>
+                          {s.address}
+                        </Text>
+                      ) : null}
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
             </View>
-            <View style={[styles.fieldRow, { borderBottomColor: colors.border }]}>
-              <Text style={[styles.fieldLabel, { color: colors.secondaryText }]}>Bcc</Text>
-              <TextInput
-                style={[styles.fieldInput, { color: colors.text }]}
-                value={bcc}
-                onChangeText={setBcc}
-                placeholder=""
-                placeholderTextColor={colors.searchPlaceholder}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
+            <View style={{ zIndex: activeField === 'bcc' ? 10 : 1 }}>
+              <View style={[styles.fieldRow, { borderBottomColor: colors.border }]}>
+                <Text style={[styles.fieldLabel, { color: colors.secondaryText }]}>Bcc</Text>
+                <TextInput
+                  style={[styles.fieldInput, { color: colors.text }]}
+                  value={bcc}
+                  onChangeText={(v) => { setBcc(v); updateAutocomplete(v, 'bcc'); }}
+                  onFocus={() => updateAutocomplete(bcc, 'bcc')}
+                  onBlur={() => setTimeout(() => { if (activeField === 'bcc') setActiveField(null); }, 150)}
+                  placeholder=""
+                  placeholderTextColor={colors.searchPlaceholder}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+              </View>
+              {activeField === 'bcc' && suggestions.length > 0 && (
+                <View style={[styles.suggestionsDropdown, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                  {suggestions.map((s) => (
+                    <TouchableOpacity key={s.address} style={styles.suggestionRow} onPress={() => handleSelectSuggestion(s, 'bcc')}>
+                      <Text style={[styles.suggestionName, { color: colors.text }]} numberOfLines={1}>
+                        {s.name || s.address}
+                      </Text>
+                      {s.name ? (
+                        <Text style={[styles.suggestionAddress, { color: colors.secondaryText }]} numberOfLines={1}>
+                          {s.address}
+                        </Text>
+                      ) : null}
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
             </View>
           </>
         )}
@@ -483,5 +609,36 @@ const styles = StyleSheet.create({
     lineHeight: 24,
     padding: 16,
     minHeight: 300,
+  },
+  suggestionsDropdown: {
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    right: 0,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderTopWidth: 0,
+    borderBottomLeftRadius: 8,
+    borderBottomRightRadius: 8,
+    maxHeight: 200,
+    overflow: 'hidden',
+    ...(Platform.OS === 'web'
+      ? { boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }
+      : { elevation: 4 }),
+  },
+  suggestionRow: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  suggestionName: {
+    fontSize: 14,
+    fontWeight: '500',
+    flexShrink: 1,
+  },
+  suggestionAddress: {
+    fontSize: 13,
+    flexShrink: 0,
   },
 });

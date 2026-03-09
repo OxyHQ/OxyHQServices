@@ -169,7 +169,7 @@ export function HomeScreen() {
 
   // AI-powered sections: emails needing response and follow-up
   const { messages: needsResponseMessages, count: needsResponseCount } = useNeedsResponse(allMessages, 5);
-  const { messages: followUpMessages, count: followUpCount, isLoading: followUpLoading } = useFollowUp(5);
+  const { messages: followUpMessages, count: followUpCount, isLoading: followUpLoading } = useFollowUp(allMessages, 5);
 
   const greeting = getGreeting();
   const today = selectedDate;

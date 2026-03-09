@@ -87,12 +87,9 @@ export class UserService {
     for (const [key, value] of Object.entries(sanitizedUpdates)) {
       if (!allowedFields.includes(key as any)) continue;
       
-      // Handle avatar field - can be string ID or object with id
       if (key === 'avatar') {
         if (typeof value === 'string') {
           filteredUpdates.avatar = value;
-        } else if (value && typeof value === 'object' && 'id' in value) {
-          filteredUpdates.avatar = (value as { id?: string }).id || '';
         }
         continue;
       }

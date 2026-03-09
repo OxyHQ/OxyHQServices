@@ -5,8 +5,9 @@
  * Supports multi-select via avatar checkbox (web hover / native long-press).
  */
 
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState, useRef } from 'react';
 import { View, Text, Pressable, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import { useQueryClient } from '@tanstack/react-query';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import {
@@ -28,9 +29,9 @@ import { Avatar } from './Avatar';
 import { AttachmentThumbnail } from './AttachmentThumbnail';
 import { ImportanceBadge } from './ImportanceBadge';
 import { SentimentIndicator } from './SentimentIndicator';
+import type { SentimentResult } from '@/hooks/queries/useSentimentAnalysis';
 import { CardPreview } from './cards/CardPreview';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { useSentimentAnalysis } from '@/hooks/queries/useSentimentAnalysis';
 import { Colors } from '@/constants/theme';
 import type { Message, Attachment } from '@/services/emailApi';
 
@@ -104,21 +105,7 @@ function formatSnoozeTime(dateStr: string): string {
   return `${date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}, ${time}`;
 }
 
-export function MessageRow({
-  message,
-  onStar,
-  onPin,
-  onSelect,
-  isSelected,
-  isSelectionMode,
-  isMultiSelected,
-  onToggleSelect,
-  onLongPress,
-  isStarPending,
-  isPinPending,
-  showSnoozeTime,
-  labelColorMap,
-}: {
+interface MessageRowProps {
   message: Message;
   onStar: (id: string) => void;
   onPin?: (id: string) => void;
@@ -132,12 +119,31 @@ export function MessageRow({
   isPinPending?: boolean;
   showSnoozeTime?: boolean;
   labelColorMap?: Map<string, string>;
-}) {
+  sentiment?: SentimentResult | null;
+}
+
+function MessageRowInner({
+  message,
+  onStar,
+  onPin,
+  onSelect,
+  isSelected,
+  isSelectionMode,
+  isMultiSelected,
+  onToggleSelect,
+  onLongPress,
+  isStarPending,
+  isPinPending,
+  showSnoozeTime,
+  labelColorMap,
+  sentiment,
+}: MessageRowProps) {
   const colorScheme = useColorScheme();
   const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
   const isUnread = !message.flags.seen;
   const [avatarHovered, setAvatarHovered] = useState(false);
-  const sentiment = useSentimentAnalysis(message);
+  const queryClient = useQueryClient();
+  const prefetchedRef = useRef(false);
 
   const showCheckbox = isSelectionMode || (Platform.OS === 'web' && avatarHovered);
 
@@ -173,6 +179,17 @@ export function MessageRow({
     onPin?.(message._id);
   }, [onPin, message._id]);
 
+  // Prefetch message data on hover (web only, once per mount)
+  const handleMouseEnter = useCallback(() => {
+    if (!prefetchedRef.current) {
+      prefetchedRef.current = true;
+      queryClient.prefetchQuery({
+        queryKey: ['message', message._id],
+        staleTime: 60_000,
+      });
+    }
+  }, [queryClient, message._id]);
+
   const senderName = getSenderName(message);
   const preview = getPreview(message);
   const dateStr = formatDate(message.date);
@@ -196,6 +213,7 @@ export function MessageRow({
       onPress={handlePress}
       onLongPress={handleLongPress}
       delayLongPress={500}
+      {...(Platform.OS === 'web' ? { onMouseEnter: handleMouseEnter } as any : {})}
     >
       <Pressable
         onPress={showCheckbox ? handleAvatarPress : undefined}
@@ -315,7 +333,7 @@ export function MessageRow({
             {message.subject || '(no subject)'}
           </Text>
           <ImportanceBadge message={message} />
-          <SentimentIndicator sentiment={sentiment} size="small" />
+          <SentimentIndicator sentiment={sentiment ?? null} size="small" />
         </View>
 
         {/* Label chips */}
@@ -413,6 +431,22 @@ export function MessageRow({
     </Pressable>
   );
 }
+
+export const MessageRow = React.memo(MessageRowInner, (prev, next) => {
+  return (
+    prev.message._id === next.message._id &&
+    prev.message.flags.starred === next.message.flags.starred &&
+    prev.message.flags.seen === next.message.flags.seen &&
+    prev.message.flags.pinned === next.message.flags.pinned &&
+    prev.message.labels === next.message.labels &&
+    prev.isSelected === next.isSelected &&
+    prev.isMultiSelected === next.isMultiSelected &&
+    prev.isSelectionMode === next.isSelectionMode &&
+    prev.isStarPending === next.isStarPending &&
+    prev.isPinPending === next.isPinPending &&
+    prev.sentiment?.type === next.sentiment?.type
+  );
+});
 
 const styles = StyleSheet.create({
   container: {

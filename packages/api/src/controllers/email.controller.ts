@@ -167,6 +167,72 @@ export async function deleteMessage(req: AuthRequest, res: Response): Promise<vo
   res.json({ data: { message: 'Message deleted' } });
 }
 
+// ─── Bulk Operations ─────────────────────────────────────────────
+
+export async function bulkUpdateFlags(req: AuthRequest, res: Response): Promise<void> {
+  const userId = req.user!.id;
+  const { messageIds, flags } = req.body;
+
+  if (!Array.isArray(messageIds) || messageIds.length === 0) {
+    throw new BadRequestError('messageIds array is required');
+  }
+  if (messageIds.length > 100) {
+    throw new BadRequestError('Maximum 100 messages per bulk operation');
+  }
+  if (!flags || typeof flags !== 'object') {
+    throw new BadRequestError('flags object is required');
+  }
+
+  const allowed = ['seen', 'starred', 'answered', 'forwarded', 'draft', 'pinned'];
+  const filtered: Record<string, boolean> = {};
+  for (const key of allowed) {
+    if (key in flags && typeof flags[key] === 'boolean') {
+      filtered[key] = flags[key];
+    }
+  }
+
+  const flagUpdates = Object.entries(filtered).reduce(
+    (acc, [key, value]) => {
+      acc[`flags.${key}`] = value;
+      return acc;
+    },
+    {} as Record<string, boolean>,
+  );
+
+  const result = await Message.updateMany(
+    { _id: { $in: messageIds }, userId },
+    { $set: flagUpdates },
+  );
+
+  res.json({ data: { matched: result.matchedCount, modified: result.modifiedCount } });
+}
+
+export async function bulkMoveMessages(req: AuthRequest, res: Response): Promise<void> {
+  const userId = req.user!.id;
+  const { messageIds, mailboxId } = req.body;
+
+  if (!Array.isArray(messageIds) || messageIds.length === 0) {
+    throw new BadRequestError('messageIds array is required');
+  }
+  if (messageIds.length > 100) {
+    throw new BadRequestError('Maximum 100 messages per bulk operation');
+  }
+  if (!mailboxId) {
+    throw new BadRequestError('mailboxId is required');
+  }
+
+  // Verify target mailbox belongs to user
+  const mailbox = await emailService.getMailboxById(userId, mailboxId);
+  if (!mailbox) throw new NotFoundError('Target mailbox not found');
+
+  const result = await Message.updateMany(
+    { _id: { $in: messageIds }, userId },
+    { $set: { mailboxId } },
+  );
+
+  res.json({ data: { matched: result.matchedCount, modified: result.modifiedCount } });
+}
+
 // ─── Snooze ──────────────────────────────────────────────────────
 
 export async function snoozeMessage(req: AuthRequest, res: Response): Promise<void> {
@@ -556,4 +622,56 @@ export async function deleteReminder(req: AuthRequest, res: Response): Promise<v
   const userId = req.user!.id;
   await emailService.deleteReminder(userId, req.params.reminderId);
   res.status(204).send();
+}
+
+// ─── Contacts ──────────────────────────────────────────────────────
+
+export async function suggestContacts(req: AuthRequest, res: Response): Promise<void> {
+  const userId = req.user!.id;
+  const q = (req.query.q as string || '').trim().toLowerCase();
+
+  if (!q || q.length < 2) {
+    res.json({ data: [] });
+    return;
+  }
+
+  // Escape special regex characters for safe prefix matching
+  const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  const results = await Message.aggregate([
+    { $match: { userId } },
+    {
+      $project: {
+        contacts: {
+          $concatArrays: [
+            [{ name: '$from.name', address: '$from.address' }],
+            { $ifNull: ['$to', []] },
+            { $ifNull: ['$cc', []] },
+          ],
+        },
+      },
+    },
+    { $unwind: '$contacts' },
+    {
+      $match: {
+        $or: [
+          { 'contacts.address': { $regex: escaped, $options: 'i' } },
+          { 'contacts.name': { $regex: escaped, $options: 'i' } },
+        ],
+      },
+    },
+    {
+      $group: {
+        _id: { $toLower: '$contacts.address' },
+        name: { $first: '$contacts.name' },
+        address: { $first: '$contacts.address' },
+        count: { $sum: 1 },
+      },
+    },
+    { $sort: { count: -1 } },
+    { $limit: 10 },
+    { $project: { _id: 0, name: 1, address: 1 } },
+  ]);
+
+  res.json({ data: results });
 }

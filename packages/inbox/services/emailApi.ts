@@ -168,6 +168,11 @@ export const ReminderSchema = z.object({
   updatedAt: z.string(),
 });
 
+export const ContactSuggestionSchema = z.object({
+  name: z.string().nullable().optional(),
+  address: z.string(),
+});
+
 // ─── Inferred Types ────────────────────────────────────────────────
 
 export type EmailAddress = z.infer<typeof EmailAddressSchema>;
@@ -186,6 +191,7 @@ export type Subscription = z.infer<typeof SubscriptionSchema>;
 export type UnsubscribeResult = z.infer<typeof UnsubscribeResultSchema>;
 export type Bundle = z.infer<typeof BundleSchema>;
 export type Reminder = z.infer<typeof ReminderSchema>;
+export type ContactSuggestion = z.infer<typeof ContactSuggestionSchema>;
 
 // ─── Response Helpers ──────────────────────────────────────────────
 
@@ -298,6 +304,24 @@ export function createEmailApi(http: HttpService) {
     async deleteMessage(messageId: string, permanent = false): Promise<void> {
       const params = permanent ? '?permanent=true' : '';
       await http.delete(`/email/messages/${messageId}${params}`);
+    },
+
+    // ─── Bulk Operations ──────────────────────────────────────────────
+
+    async bulkUpdateFlags(
+      messageIds: string[],
+      flags: Partial<MessageFlags>,
+    ): Promise<{ matched: number; modified: number }> {
+      const res = await http.post('/email/messages/bulk/flags', { messageIds, flags });
+      return z.object({ matched: z.number(), modified: z.number() }).parse(res);
+    },
+
+    async bulkMoveMessages(
+      messageIds: string[],
+      mailboxId: string,
+    ): Promise<{ matched: number; modified: number }> {
+      const res = await http.post('/email/messages/bulk/move', { messageIds, mailboxId });
+      return z.object({ matched: z.number(), modified: z.number() }).parse(res);
     },
 
     // ─── Labels ─────────────────────────────────────────────────────
@@ -541,6 +565,16 @@ export function createEmailApi(http: HttpService) {
 
     async deleteReminder(reminderId: string): Promise<void> {
       await http.delete(`/email/reminders/${reminderId}`);
+    },
+
+    // ─── Contacts ────────────────────────────────────────────────────
+
+    async suggestContacts(query: string): Promise<ContactSuggestion[]> {
+      const res = await http.get('/email/contacts/suggest', {
+        params: { q: query },
+      });
+      const parsed = z.object({ data: z.array(ContactSuggestionSchema) }).parse(res);
+      return parsed.data;
     },
   };
 }

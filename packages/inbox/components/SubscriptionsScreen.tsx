@@ -193,7 +193,6 @@ export function SubscriptionsScreen() {
         <FlashList
           data={subscriptions}
           renderItem={renderItem}
-          estimatedItemSize={72}
           ItemSeparatorComponent={renderSeparator}
           ListEmptyComponent={renderEmpty}
           ListFooterComponent={renderFooter}

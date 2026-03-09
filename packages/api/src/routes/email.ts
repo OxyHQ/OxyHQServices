@@ -39,6 +39,9 @@ import {
   listBundles,
   updateBundle,
   listBundledMessages,
+  bulkUpdateFlags,
+  bulkMoveMessages,
+  suggestContacts,
   createReminder,
   listReminders,
   getReminder,
@@ -76,12 +79,21 @@ router.delete('/messages/:messageId', asyncHandler(deleteMessage));
 router.post('/messages/:messageId/snooze', asyncHandler(snoozeMessage));
 router.post('/messages/:messageId/unsnooze', asyncHandler(unsnoozeMessage));
 
+// ─── Bulk Operations ─────────────────────────────────────────────
+
+router.post('/messages/bulk/flags', asyncHandler(bulkUpdateFlags));
+router.post('/messages/bulk/move', asyncHandler(bulkMoveMessages));
+
 // ─── Labels ──────────────────────────────────────────────────────
 
 router.get('/labels', asyncHandler(listLabels));
 router.post('/labels', asyncHandler(createLabel));
 router.put('/labels/:labelId', asyncHandler(updateLabel));
 router.delete('/labels/:labelId', asyncHandler(deleteLabel));
+
+// ─── Contacts ────────────────────────────────────────────────────
+
+router.get('/contacts/suggest', asyncHandler(suggestContacts));
 
 // ─── Compose ──────────────────────────────────────────────────────
 
