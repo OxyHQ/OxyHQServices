@@ -518,16 +518,5 @@ UserSchema.methods.updateLocationCoordinates = function(locationId: string, lat:
   return Promise.resolve(this);
 };
 
-// Normalize legacy avatar format ({ id, url } object → string file ID) on all queries.
-// Handles both lean and non-lean results transparently.
-function normalizeAvatarField(doc: any) {
-  if (doc && doc.avatar && typeof doc.avatar === 'object') {
-    doc.avatar = doc.avatar.id || undefined;
-  }
-}
-UserSchema.post('find', (docs: any[]) => docs?.forEach(normalizeAvatarField));
-UserSchema.post('findOne', normalizeAvatarField);
-UserSchema.post('findOneAndUpdate', normalizeAvatarField);
-
 export const User = mongoose.model<IUser>('User', UserSchema);
 export default User;

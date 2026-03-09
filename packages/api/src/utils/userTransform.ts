@@ -39,11 +39,3 @@ export function formatUserResponse(user: UserLike) {
     linksMetadata: user.linksMetadata,
   };
 }
-
-/**
- * Legacy function - redirects to formatUserResponse for backwards compatibility.
- * @deprecated Use formatUserResponse instead
- */
-export function normalizeUser(user: UserLike) {
-  return formatUserResponse(user);
-}
