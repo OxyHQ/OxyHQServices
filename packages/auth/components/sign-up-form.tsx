@@ -1,4 +1,3 @@
-
 "use client"
 
 import { useEffect, useState } from "react"
@@ -16,59 +15,11 @@ import {
     FieldLabel,
 } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import { PasswordInput } from "@/components/password-input"
+import { PasswordRequirements } from "@/components/password-requirements"
+import { SocialLoginButtons } from "@/components/social-login-buttons"
 import { Logo } from "@/components/logo"
-
-const PASSWORD_RULES = [
-    { test: (pw: string) => pw.length >= 12, label: "At least 12 characters" },
-    { test: (pw: string) => /[A-Z]/.test(pw), label: "One uppercase letter (A-Z)" },
-    { test: (pw: string) => /[a-z]/.test(pw), label: "One lowercase letter (a-z)" },
-    { test: (pw: string) => /[0-9]/.test(pw), label: "One number (0-9)" },
-    { test: (pw: string) => /[^A-Za-z0-9]/.test(pw), label: "One special character" },
-]
-
-function validatePassword(pw: string): string[] {
-    return PASSWORD_RULES.filter((rule) => !rule.test(pw)).map((rule) => rule.label)
-}
-
-function PasswordRequirements({ password }: { password: string }) {
-    return (
-        <ul className="mt-1.5 space-y-1 text-xs">
-            {PASSWORD_RULES.map((rule) => {
-                const passes = rule.test(password)
-                return (
-                    <li
-                        key={rule.label}
-                        className={cn(
-                            "flex items-center gap-1.5",
-                            passes
-                                ? "text-green-600 dark:text-green-400"
-                                : "text-muted-foreground"
-                        )}
-                    >
-                        {passes ? (
-                            <svg
-                                className="h-3 w-3 shrink-0"
-                                viewBox="0 0 16 16"
-                                fill="currentColor"
-                            >
-                                <path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z" />
-                            </svg>
-                        ) : (
-                            <svg
-                                className="h-3 w-3 shrink-0"
-                                viewBox="0 0 16 16"
-                                fill="currentColor"
-                            >
-                                <circle cx="8" cy="8" r="3" />
-                            </svg>
-                        )}
-                        {rule.label}
-                    </li>
-                )
-            })}
-        </ul>
-    )
-}
+import { validatePassword } from "@/lib/password-validation"
 
 type SignUpFormProps = React.ComponentProps<"div"> & {
     error?: string
@@ -163,19 +114,11 @@ export function SignUpForm({
                 return
             }
 
-            // Session cookie is now set server-side with httpOnly flag
-            // by the /api/auth/signup route handler (Set-Cookie response header).
-
             // Set FedCM login status via iframe
-            // The browser's FedCM Login Status API only processes Set-Login header
-            // from top-level frame navigations, not from fetch/XHR responses.
-            // Loading this endpoint in an iframe signals to the browser that
-            // the user is logged in at this IdP, enabling FedCM silent SSO.
             const loginStatusFrame = document.createElement("iframe")
             loginStatusFrame.style.display = "none"
             loginStatusFrame.src = "/api/fedcm/login-status"
             document.body.appendChild(loginStatusFrame)
-            // Clean up after a short delay (browser processes the header immediately)
             setTimeout(() => {
                 loginStatusFrame.remove()
             }, 1000)
@@ -231,7 +174,7 @@ export function SignUpForm({
                         </Link>
                         <h1 className="text-xl font-bold">Create your account</h1>
                         <FieldDescription>
-                            Already have an account? <Link href="/login">Login</Link>
+                            Already have an account? <Link href="/login">Sign in</Link>
                         </FieldDescription>
                     </div>
                     <Field>
@@ -258,10 +201,9 @@ export function SignUpForm({
                     </Field>
                     <Field>
                         <FieldLabel htmlFor="password">Password</FieldLabel>
-                        <Input
+                        <PasswordInput
                             id="password"
                             name="password"
-                            type="password"
                             autoComplete="new-password"
                             required
                             value={password}
@@ -282,12 +224,17 @@ export function SignUpForm({
                         )}
                     </Field>
                     <Field>
-                        <Button type="submit" disabled={isSubmitting}>
+                        <Button type="submit" className="w-full" disabled={isSubmitting}>
                             {isSubmitting ? "Creating account..." : "Sign Up"}
                         </Button>
                     </Field>
                 </FieldGroup>
             </form>
+            <SocialLoginButtons
+                sessionToken={sessionToken}
+                redirectUri={redirectUri}
+                state={state}
+            />
             <FieldDescription className="px-6 text-center">
                 By clicking continue, you agree to our{" "}
                 <a href="https://oxy.so/company/transparency/policies/terms-of-service">Terms of Service</a> and <a href="https://oxy.so/company/transparency/policies/privacy">Privacy Policy</a>.

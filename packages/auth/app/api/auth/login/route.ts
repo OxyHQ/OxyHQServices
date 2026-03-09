@@ -14,6 +14,17 @@ type SessionAuthResponse = {
     accessToken?: string
 }
 
+type TwoFactorResponse = {
+    twoFactorRequired: true
+    loginToken: string
+}
+
+type LoginResponse = SessionAuthResponse | TwoFactorResponse
+
+function isTwoFactorResponse(data: LoginResponse): data is TwoFactorResponse {
+    return 'twoFactorRequired' in data && data.twoFactorRequired === true
+}
+
 function redirectWithError(
     request: NextRequest,
     message: string,
@@ -67,11 +78,29 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-        const session = await apiPost<SessionAuthResponse>(
+        const loginResult = await apiPost<LoginResponse>(
             "/auth/login",
             { identifier, password },
             { headers: getForwardHeaders(request) }
         )
+
+        // Handle 2FA challenge response
+        if (isTwoFactorResponse(loginResult)) {
+            if (isJson) {
+                return NextResponse.json({
+                    twoFactorRequired: true,
+                    loginToken: loginResult.loginToken,
+                })
+            }
+            // For form submissions, redirect to login with 2FA notice
+            return redirectWithError(request, "Two-factor authentication required", {
+                token: sessionToken,
+                redirect_uri: redirectUri,
+                state,
+            })
+        }
+
+        const session = loginResult
 
         if (isJson) {
             const jsonResponse = NextResponse.json({

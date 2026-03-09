@@ -1,8 +1,11 @@
 import { Request, Response } from 'express';
+import jwt from 'jsonwebtoken';
 import { User } from '../models/User';
 import twoFactorService from '../services/twoFactor.service';
 import { logger } from '../utils/logger';
 import securityActivityService from '../services/securityActivityService';
+import sessionService from '../services/session.service';
+import { formatUserResponse } from '../utils/userTransform';
 
 /**
  * Setup 2FA - Generate secret and return QR code data
@@ -274,6 +277,128 @@ export async function verify2FAToken(req: Request, res: Response) {
     });
   } catch (error) {
     logger.error('Verify 2FA token error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+}
+
+/**
+ * Verify 2FA during login flow - accepts loginToken from signIn + TOTP/backup code
+ * Creates a session on success and returns SessionAuthResponse
+ */
+export async function verify2FALogin(req: Request, res: Response) {
+  try {
+    const { loginToken, token, backupCode, deviceName, deviceFingerprint } = req.body;
+
+    if (!loginToken) {
+      return res.status(400).json({ message: 'Login token is required' });
+    }
+
+    if (!token && !backupCode) {
+      return res.status(400).json({ message: 'Token or backup code is required' });
+    }
+
+    // Verify the loginToken JWT
+    let decoded: { userId: string; purpose: string };
+    try {
+      decoded = jwt.verify(loginToken, process.env.ACCESS_TOKEN_SECRET!) as { userId: string; purpose: string };
+    } catch {
+      return res.status(401).json({ message: 'Login session expired. Please sign in again.' });
+    }
+
+    if (decoded.purpose !== '2fa_challenge') {
+      return res.status(400).json({ message: 'Invalid login token' });
+    }
+
+    const user = await User.findById(decoded.userId).select('+twoFactorAuth');
+    if (!user || !user.twoFactorAuth?.enabled) {
+      return res.status(400).json({ message: 'Invalid credentials' });
+    }
+
+    let isValid = false;
+
+    // Try TOTP token first
+    if (token && user.twoFactorAuth.secret) {
+      isValid = twoFactorService.verifyToken(token, user.twoFactorAuth.secret);
+    }
+
+    // Try backup code if token failed or not provided
+    if (!isValid && backupCode && user.twoFactorAuth.backupCodes) {
+      const codeIndex = await twoFactorService.verifyBackupCode(
+        backupCode,
+        user.twoFactorAuth.backupCodes
+      );
+
+      if (codeIndex >= 0) {
+        isValid = true;
+        user.twoFactorAuth.backupCodes.splice(codeIndex, 1);
+        await user.save();
+
+        await securityActivityService.logSecurityEvent({
+          userId: user._id.toString(),
+          eventType: 'security_settings_changed',
+          eventDescription: 'Two-factor authentication backup code used during login',
+          metadata: {
+            setting: 'two_factor_auth',
+            action: 'backup_code_used',
+            remainingCodes: user.twoFactorAuth.backupCodes.length,
+          },
+          req,
+        });
+      }
+    }
+
+    if (!isValid) {
+      return res.status(400).json({ message: 'Invalid token or backup code' });
+    }
+
+    // Update verified timestamp
+    user.twoFactorAuth.verifiedAt = new Date();
+    await user.save();
+
+    // Create session (same as signIn would)
+    const session = await sessionService.createSession(
+      user._id.toString(),
+      req,
+      { deviceName, deviceFingerprint }
+    );
+
+    const userData = formatUserResponse(user as any);
+    if (!userData) {
+      return res.status(500).json({ message: 'Failed to format user data' });
+    }
+
+    try {
+      await securityActivityService.logSignIn(
+        user._id.toString(),
+        req,
+        session.deviceId,
+        {
+          deviceName: deviceName || session.deviceInfo?.deviceName,
+          deviceType: session.deviceInfo?.deviceType,
+          platform: session.deviceInfo?.platform,
+        }
+      );
+    } catch (error) {
+      logger.error('Failed to log security event for 2FA sign-in', error instanceof Error ? error : new Error(String(error)), {
+        component: 'TwoFactorController',
+        method: 'verify2FALogin',
+        userId: user._id.toString(),
+      });
+    }
+
+    return res.json({
+      sessionId: session.sessionId,
+      deviceId: session.deviceId,
+      expiresAt: session.expiresAt.toISOString(),
+      accessToken: session.accessToken,
+      user: {
+        id: userData.id,
+        username: userData.username,
+        avatar: userData.avatar,
+      },
+    });
+  } catch (error) {
+    logger.error('Verify 2FA login error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 }

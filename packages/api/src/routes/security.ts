@@ -5,6 +5,7 @@ import {
   enable2FA,
   disable2FA,
   verify2FAToken,
+  verify2FALogin,
   get2FAStatus,
   regenerateBackupCodes
 } from '../controllers/twoFactor.controller';
@@ -23,6 +24,7 @@ router.post('/2fa/setup', authMiddleware, setup2FA);
 router.post('/2fa/enable', authMiddleware, enable2FA);
 router.post('/2fa/disable', authMiddleware, disable2FA);
 router.post('/2fa/verify', verify2FAToken); // No auth required - used during login
+router.post('/2fa/verify-login', verify2FALogin); // No auth required - 2FA challenge during login, creates session
 router.post('/2fa/backup-codes/regenerate', authMiddleware, regenerateBackupCodes);
 
 export default router;

@@ -1,8 +1,9 @@
 /**
  * Authentication Routes
- * 
- * Supports both password-based auth (email/username + password)
- * and public key challenge-response for local identity wallets.
+ *
+ * Supports both password-based auth (email/username + password),
+ * public key challenge-response for local identity wallets,
+ * and social OAuth sign-in (Google, Apple, GitHub).
  */
 
 import express from 'express';
@@ -17,6 +18,7 @@ import { BadRequestError, NotFoundError, UnauthorizedError, ForbiddenError } fro
 import { logger } from '../utils/logger';
 import SignatureService from '../services/signature.service';
 import { emitAuthSessionUpdate } from '../utils/authSessionSocket';
+import socialAuthRouter from './socialAuth';
 
 const router = express.Router();
 const USERNAME_REGEX = /^[a-zA-Z0-9]{3,30}$/;
@@ -59,6 +61,17 @@ router.post('/recover/verify', SessionController.verifyRecoveryCode);
  * Body: { recoveryToken, password }
  */
 router.post('/recover/reset', SessionController.resetPassword);
+
+// ============================================
+// Social OAuth Sign-In Routes
+// ============================================
+
+/**
+ * POST /auth/social/google  - body: { idToken }
+ * POST /auth/social/apple   - body: { idToken, name? }
+ * POST /auth/social/github  - body: { code }
+ */
+router.use('/social', socialAuthRouter);
 
 // ============================================
 // Public Key Authentication Routes

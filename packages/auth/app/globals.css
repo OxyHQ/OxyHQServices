@@ -178,3 +178,40 @@
     animation: none;
   }
 }
+
+.auth-step-forward {
+  animation: auth-slide-right 0.3s ease both;
+}
+
+.auth-step-back {
+  animation: auth-slide-left 0.3s ease both;
+}
+
+@keyframes auth-slide-right {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes auth-slide-left {
+  from {
+    opacity: 0;
+    transform: translateX(-24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-step-forward,
+  .auth-step-back {
+    animation: none;
+  }
+}

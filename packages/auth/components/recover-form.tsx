@@ -1,10 +1,10 @@
-
 "use client"
 
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { toast } from "sonner"
+import { CheckCircle2 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -15,7 +15,10 @@ import {
     FieldLabel,
 } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import { PasswordInput } from "@/components/password-input"
+import { PasswordRequirements } from "@/components/password-requirements"
 import { Logo } from "@/components/logo"
+import { validatePassword } from "@/lib/password-validation"
 
 type RecoverFormProps = React.ComponentProps<"div"> & {
     error?: string
@@ -28,15 +31,20 @@ export function RecoverForm({
     className,
     error,
     step,
-    identifier,
+    identifier: initialIdentifier,
     devCode,
     ...props
 }: RecoverFormProps) {
     const recoveryStorageKey = "oxy_recovery_token"
     const router = useRouter()
-    const currentStep = step === "verify" || step === "reset" ? step : "request"
+    const currentStep = step === "verify" || step === "reset" || step === "success" ? step : "request"
     const [errorMessage, setErrorMessage] = useState(error)
     const [isSubmitting, setIsSubmitting] = useState(false)
+    const [identifierValue, setIdentifierValue] = useState(initialIdentifier || "")
+
+    // Password validation state for reset step
+    const [password, setPassword] = useState("")
+    const [passwordTouched, setPasswordTouched] = useState(false)
 
     useEffect(() => {
         setErrorMessage(error)
@@ -55,7 +63,7 @@ export function RecoverForm({
 
         const formData = new FormData(event.currentTarget)
         const stepValue = String(formData.get("step") || "request")
-        const identifierValue = String(formData.get("identifier") || "").trim()
+        const formIdentifier = String(formData.get("identifier") || "").trim()
         let didRedirect = false
 
         try {
@@ -65,7 +73,7 @@ export function RecoverForm({
                     headers: {
                         "content-type": "application/json",
                     },
-                    body: JSON.stringify({ identifier: identifierValue }),
+                    body: JSON.stringify({ identifier: formIdentifier }),
                 })
 
                 const payload = await response.json().catch(() => ({}))
@@ -80,8 +88,8 @@ export function RecoverForm({
 
                 const nextUrl = new URL("/recover", window.location.origin)
                 nextUrl.searchParams.set("step", "verify")
-                if (identifierValue) {
-                    nextUrl.searchParams.set("identifier", identifierValue)
+                if (formIdentifier) {
+                    nextUrl.searchParams.set("identifier", formIdentifier)
                 }
                 if (payload?.devCode) {
                     nextUrl.searchParams.set("devCode", payload.devCode)
@@ -99,7 +107,7 @@ export function RecoverForm({
                     headers: {
                         "content-type": "application/json",
                     },
-                    body: JSON.stringify({ identifier: identifierValue, code }),
+                    body: JSON.stringify({ identifier: formIdentifier, code }),
                 })
 
                 const payload = await response.json().catch(() => ({}))
@@ -121,8 +129,8 @@ export function RecoverForm({
 
                 const nextUrl = new URL("/recover", window.location.origin)
                 nextUrl.searchParams.set("step", "reset")
-                if (identifierValue) {
-                    nextUrl.searchParams.set("identifier", identifierValue)
+                if (formIdentifier) {
+                    nextUrl.searchParams.set("identifier", formIdentifier)
                 }
 
                 didRedirect = true
@@ -131,7 +139,14 @@ export function RecoverForm({
             }
 
             if (stepValue === "reset") {
-                const password = String(formData.get("password") || "")
+                // Client-side password validation
+                const clientErrors = validatePassword(password)
+                if (clientErrors.length > 0) {
+                    setPasswordTouched(true)
+                    setIsSubmitting(false)
+                    return
+                }
+
                 const recoveryToken = sessionStorage.getItem(recoveryStorageKey)
                 if (!recoveryToken) {
                     setErrorMessage(
@@ -159,8 +174,11 @@ export function RecoverForm({
                 }
 
                 sessionStorage.removeItem(recoveryStorageKey)
+
+                const nextUrl = new URL("/recover", window.location.origin)
+                nextUrl.searchParams.set("step", "success")
                 didRedirect = true
-                router.push("/login?reset=1")
+                router.push(`${nextUrl.pathname}${nextUrl.search}`)
                 return
             }
 
@@ -174,6 +192,25 @@ export function RecoverForm({
                 setIsSubmitting(false)
             }
         }
+    }
+
+    // Success screen
+    if (currentStep === "success") {
+        return (
+            <div className={cn("flex flex-col gap-6", className)} {...props}>
+                <div className="flex flex-col items-center gap-4 text-center">
+                    <Logo />
+                    <CheckCircle2 className="size-12 text-green-600 dark:text-green-400" />
+                    <h1 className="text-xl font-bold">Password reset successful</h1>
+                    <FieldDescription>
+                        Your password has been updated. You can now sign in with your new password.
+                    </FieldDescription>
+                    <Button asChild className="w-full">
+                        <Link href="/login">Sign in</Link>
+                    </Button>
+                </div>
+            </div>
+        )
     }
 
     return (
@@ -208,11 +245,13 @@ export function RecoverForm({
                                     type="text"
                                     placeholder="m@example.com"
                                     autoComplete="username"
+                                    value={identifierValue}
+                                    onChange={(e) => setIdentifierValue(e.target.value)}
                                     required
                                 />
                             </Field>
                             <Field>
-                                <Button type="submit" disabled={isSubmitting}>
+                                <Button type="submit" className="w-full" disabled={isSubmitting}>
                                     {isSubmitting ? "Sending..." : "Send Recovery Code"}
                                 </Button>
                             </Field>
@@ -221,7 +260,7 @@ export function RecoverForm({
                     {currentStep === "verify" ? (
                         <>
                             <input type="hidden" name="step" value="verify" />
-                            <input type="hidden" name="identifier" value={identifier || ""} />
+                            <input type="hidden" name="identifier" value={initialIdentifier || ""} />
                             <Field>
                                 <FieldLabel htmlFor="code">Recovery code</FieldLabel>
                                 <Input
@@ -238,7 +277,7 @@ export function RecoverForm({
                                 <FieldDescription>Dev code: {devCode}</FieldDescription>
                             ) : null}
                             <Field>
-                                <Button type="submit" disabled={isSubmitting}>
+                                <Button type="submit" className="w-full" disabled={isSubmitting}>
                                     {isSubmitting ? "Verifying..." : "Verify Code"}
                                 </Button>
                             </Field>
@@ -247,20 +286,34 @@ export function RecoverForm({
                     {currentStep === "reset" ? (
                         <>
                             <input type="hidden" name="step" value="reset" />
-                            <input type="hidden" name="identifier" value={identifier || ""} />
+                            <input type="hidden" name="identifier" value={initialIdentifier || ""} />
                             <Field>
                                 <FieldLabel htmlFor="password">New password</FieldLabel>
-                                <Input
+                                <PasswordInput
                                     id="password"
                                     name="password"
-                                    type="password"
-                                    placeholder="password"
+                                    placeholder="New password"
                                     autoComplete="new-password"
                                     required
+                                    value={password}
+                                    onChange={(e) => {
+                                        setPassword(e.target.value)
+                                        if (!passwordTouched && e.target.value.length > 0) {
+                                            setPasswordTouched(true)
+                                        }
+                                    }}
+                                    onBlur={() => {
+                                        if (password.length > 0) {
+                                            setPasswordTouched(true)
+                                        }
+                                    }}
                                 />
+                                {passwordTouched && (
+                                    <PasswordRequirements password={password} />
+                                )}
                             </Field>
                             <Field>
-                                <Button type="submit" disabled={isSubmitting}>
+                                <Button type="submit" className="w-full" disabled={isSubmitting}>
                                     {isSubmitting ? "Resetting..." : "Reset Password"}
                                 </Button>
                             </Field>

@@ -1,9 +1,12 @@
 import Link from "next/link"
 import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
+import { Check, Shield } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
-import { Field, FieldDescription, FieldGroup } from "@/components/ui/field"
+import { FieldDescription } from "@/components/ui/field"
+import { Card, CardContent } from "@/components/ui/card"
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 import { ToastMessage } from "@/components/toast-message"
 import { Empty, EmptyActions, EmptyDescription, EmptyTitle } from "@/components/ui/empty"
 import { Logo } from "@/components/logo"
@@ -32,12 +35,51 @@ type TokenResponse = {
     expiresAt: string
 }
 
+type UserInfo = {
+    id: string
+    username?: string
+    email?: string
+    avatar?: string
+    name?: {
+        first?: string
+        last?: string
+    }
+}
+
 function getParam(
     params: Record<string, string | string[] | undefined> | undefined,
     key: string
 ) {
     const value = params?.[key]
     return typeof value === "string" ? value : undefined
+}
+
+function getInitials(name: string): string {
+    return name
+        .split(" ")
+        .map((n) => n[0])
+        .join("")
+        .toUpperCase()
+        .slice(0, 2)
+}
+
+function getAvatarUrl(fileId: string): string {
+    return `https://cloud.oxy.so/assets/${encodeURIComponent(fileId)}/stream?variant=thumb`
+}
+
+function getDisplayName(user: UserInfo): string {
+    if (user.name?.first && user.name?.last) {
+        return `${user.name.first} ${user.name.last}`
+    }
+    return user.username || user.email || "User"
+}
+
+async function fetchCurrentUser(sessionId: string): Promise<UserInfo | null> {
+    try {
+        return await apiGet<UserInfo>(`/session/user/${sessionId}`)
+    } catch {
+        return null
+    }
 }
 
 export default async function AuthorizePage({ searchParams }: AuthorizePageProps) {
@@ -134,107 +176,197 @@ export default async function AuthorizePage({ searchParams }: AuthorizePageProps
         }
     }
 
-    const appName = sessionInfo?.appId || "this app"
+    const appName = sessionInfo?.appId || "This app"
     const expiresAt = sessionInfo?.expiresAt
 
     const showActions =
         !pageError && (!effectiveStatus || effectiveStatus === "pending")
 
+    // Fetch current user info for the identity card
+    const currentUser = await fetchCurrentUser(sessionId)
+    const displayName = currentUser ? getDisplayName(currentUser) : null
+    const userEmail = currentUser?.email
+    const initials = displayName ? getInitials(displayName) : "?"
+
+    const loginUrl = buildRelativeUrl("/login", {
+        token,
+        redirect_uri: redirectUri,
+        state,
+    })
+
     return (
-        <div className="flex flex-col gap-6">
-            <FieldGroup>
-                <div className="flex flex-col items-center gap-2 text-center">
-                    <Link
-                        href="/login"
-                        className="flex flex-col items-center gap-2 font-medium"
-                    >
-                        <Logo />
-                        <span className="sr-only">Oxy</span>
-                    </Link>
-                    <h1 className="text-xl font-bold">Authorize sign in</h1>
-                    <FieldDescription>
-                        {effectiveStatus === "approved"
-                            ? "Authorization complete."
-                            : effectiveStatus === "denied"
-                                ? "Authorization was denied."
-                                : `Allow ${appName} to access your Oxy account?`}
-                    </FieldDescription>
-                </div>
+        <div className="flex flex-col gap-6 w-full max-w-md mx-auto">
+            {/* Logo */}
+            <div className="flex justify-center">
+                <Link href="/login" className="flex items-center gap-2">
+                    <Logo />
+                    <span className="sr-only">Oxy</span>
+                </Link>
+            </div>
 
-                {pageError ? (
-                    <>
-                        <ToastMessage
-                            title="Authorization error"
-                            description={pageError}
-                            variant="error"
-                        />
-                        <FieldDescription className="text-center">
-                            {pageError}
-                        </FieldDescription>
-                    </>
-                ) : null}
+            <Card>
+                <CardContent className="pt-6 pb-6 px-6 flex flex-col gap-5">
+                    {/* Status messages for completed flows */}
+                    {effectiveStatus === "approved" || effectiveStatus === "denied" ? (
+                        <div className="text-center space-y-2">
+                            <h1 className="text-xl font-semibold">
+                                {effectiveStatus === "approved"
+                                    ? "Authorization complete"
+                                    : "Authorization denied"}
+                            </h1>
+                            <p className="text-sm text-muted-foreground">
+                                {effectiveStatus === "approved"
+                                    ? "You can close this window."
+                                    : "The request was denied. You can close this window."}
+                            </p>
+                        </div>
+                    ) : (
+                        <>
+                            {/* User identity badge */}
+                            {currentUser ? (
+                                <div className="flex items-center gap-3 rounded-lg border bg-muted/50 p-3">
+                                    <Avatar className="size-10 shrink-0">
+                                        {currentUser.avatar && (
+                                            <AvatarImage
+                                                src={getAvatarUrl(currentUser.avatar)}
+                                                alt={displayName || "User"}
+                                            />
+                                        )}
+                                        <AvatarFallback className="bg-primary text-primary-foreground text-sm font-semibold">
+                                            {initials}
+                                        </AvatarFallback>
+                                    </Avatar>
+                                    <div className="flex-1 min-w-0">
+                                        <div className="font-medium text-sm truncate">
+                                            {displayName}
+                                        </div>
+                                        {userEmail && (
+                                            <div className="text-xs text-muted-foreground truncate">
+                                                {userEmail}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <Link
+                                        href={loginUrl}
+                                        className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 shrink-0"
+                                    >
+                                        Not you?
+                                    </Link>
+                                </div>
+                            ) : null}
 
-                {showActions ? (
-                    <>
-                        {expiresAt ? (
-                            <FieldDescription>
-                                Request expires at {expiresAt}.
-                            </FieldDescription>
-                        ) : null}
-                        <Field className="grid gap-3 sm:grid-cols-2">
-                            <form method="post" action="/api/auth/authorize">
-                                <input type="hidden" name="decision" value="deny" />
-                                {token ? (
-                                    <input type="hidden" name="token" value={token} />
-                                ) : null}
-                                {redirectUri ? (
-                                    <input
-                                        type="hidden"
-                                        name="redirect_uri"
-                                        value={redirectUri}
-                                    />
-                                ) : null}
-                                {state ? (
-                                    <input type="hidden" name="state" value={state} />
-                                ) : null}
-                                <Button variant="outline" type="submit" className="w-full">
-                                    Deny
-                                </Button>
-                            </form>
-                            <form method="post" action="/api/auth/authorize">
-                                <input type="hidden" name="decision" value="approve" />
-                                {token ? (
-                                    <input type="hidden" name="token" value={token} />
-                                ) : null}
-                                {redirectUri ? (
-                                    <input
-                                        type="hidden"
-                                        name="redirect_uri"
-                                        value={redirectUri}
-                                    />
-                                ) : null}
-                                {state ? (
-                                    <input type="hidden" name="state" value={state} />
-                                ) : null}
-                                <Button type="submit" className="w-full">
-                                    Authorize
-                                </Button>
-                            </form>
-                        </Field>
-                        <FieldDescription className="text-center">
-                            <Link
-                                href={buildRelativeUrl("/login", {
-                                    token,
-                                    redirect_uri: redirectUri,
-                                    state,
-                                })}
-                            >
-                                Use a different account
-                            </Link>
-                        </FieldDescription>
-                    </>
-                ) : null}
-            </FieldGroup>
+                            {/* Heading */}
+                            <div className="text-center space-y-1">
+                                <h1 className="text-xl font-semibold">
+                                    Sign in to{" "}
+                                    <span className="text-primary">{appName}</span>
+                                </h1>
+                                <p className="text-sm text-muted-foreground">
+                                    {appName} wants to access your Oxy account
+                                </p>
+                            </div>
+
+                            {/* Error state */}
+                            {pageError ? (
+                                <ToastMessage
+                                    title="Authorization error"
+                                    description={pageError}
+                                    variant="error"
+                                />
+                            ) : null}
+
+                            {/* Permissions section */}
+                            {showActions ? (
+                                <>
+                                    <div className="space-y-3">
+                                        <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                                            <Shield className="size-4" />
+                                            <span>This will allow {appName} to:</span>
+                                        </div>
+                                        <ul className="space-y-2 pl-1">
+                                            <li className="flex items-start gap-2.5 text-sm">
+                                                <Check className="size-4 text-primary shrink-0 mt-0.5" />
+                                                <span>See your basic profile information</span>
+                                            </li>
+                                            <li className="flex items-start gap-2.5 text-sm">
+                                                <Check className="size-4 text-primary shrink-0 mt-0.5" />
+                                                <span>Access your account on your behalf</span>
+                                            </li>
+                                        </ul>
+                                    </div>
+
+                                    {expiresAt ? (
+                                        <FieldDescription className="text-center text-xs">
+                                            Request expires at {expiresAt}.
+                                        </FieldDescription>
+                                    ) : null}
+
+                                    {/* Action buttons */}
+                                    <div className="flex flex-col gap-2">
+                                        <form method="post" action="/api/auth/authorize">
+                                            <input type="hidden" name="decision" value="approve" />
+                                            {token ? (
+                                                <input type="hidden" name="token" value={token} />
+                                            ) : null}
+                                            {redirectUri ? (
+                                                <input
+                                                    type="hidden"
+                                                    name="redirect_uri"
+                                                    value={redirectUri}
+                                                />
+                                            ) : null}
+                                            {state ? (
+                                                <input type="hidden" name="state" value={state} />
+                                            ) : null}
+                                            <Button type="submit" className="w-full">
+                                                Allow
+                                            </Button>
+                                        </form>
+                                        <form method="post" action="/api/auth/authorize">
+                                            <input type="hidden" name="decision" value="deny" />
+                                            {token ? (
+                                                <input type="hidden" name="token" value={token} />
+                                            ) : null}
+                                            {redirectUri ? (
+                                                <input
+                                                    type="hidden"
+                                                    name="redirect_uri"
+                                                    value={redirectUri}
+                                                />
+                                            ) : null}
+                                            {state ? (
+                                                <input type="hidden" name="state" value={state} />
+                                            ) : null}
+                                            <Button variant="outline" type="submit" className="w-full">
+                                                Deny
+                                            </Button>
+                                        </form>
+                                    </div>
+                                </>
+                            ) : null}
+                        </>
+                    )}
+                </CardContent>
+            </Card>
+
+            {/* Footer */}
+            <p className="px-6 text-center text-xs text-muted-foreground">
+                By continuing, you agree to Oxy&apos;s{" "}
+                <a
+                    href="https://oxy.so/company/transparency/policies/terms-of-service"
+                    className="underline underline-offset-4 hover:text-primary"
+                >
+                    Terms of Service
+                </a>{" "}
+                and{" "}
+                <a
+                    href="https://oxy.so/company/transparency/policies/privacy"
+                    className="underline underline-offset-4 hover:text-primary"
+                >
+                    Privacy Policy
+                </a>
+                .
+            </p>
         </div>
     )
 }
