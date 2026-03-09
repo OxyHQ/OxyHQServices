@@ -50,11 +50,17 @@ jobs:
               echo "=== Added REDIS_URL to .env ==="
             fi
 
+            # Migrate SMTP TLS cert paths from api.oxy.so to mail.oxy.so
+            if grep -q 'api\.oxy\.so' .env 2>/dev/null; then
+              sed -i 's|api\.oxy\.so|mail.oxy.so|g' .env
+              echo "=== Updated TLS cert paths to mail.oxy.so ==="
+            fi
+
             echo "=== Building ==="
             docker compose build api
 
             echo "=== Restarting ==="
-            docker compose up -d
+            docker compose up -d --force-recreate caddy api
 
             echo "=== Cleanup ==="
             docker image prune -f
@@ -63,7 +69,8 @@ jobs:
             docker compose ps
 
             echo "=== Recent logs ==="
-            docker compose logs --tail=20 api
+            sleep 5
+            docker compose logs --tail=30 api
 
             echo "Deploy complete!"
         env:
