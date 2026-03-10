@@ -97,7 +97,7 @@ function parseIdentifier(identifier: string): { field: 'email' | 'username'; val
   return { field: 'username', value: normalizeUsername(trimmed) };
 }
 
-function buildSessionAuthResponse(session: { sessionId: string; deviceId: string; expiresAt: Date; accessToken?: string }, user: unknown): SessionAuthResponse | null {
+export function buildSessionAuthResponse(session: { sessionId: string; deviceId: string; expiresAt: Date; accessToken?: string }, user: unknown): SessionAuthResponse | null {
   const userData = formatUserResponse(user as any);
   if (!userData) {
     return null;
@@ -572,7 +572,7 @@ export class SessionController {
         ? { email: parsedIdentifier.value }
         : { username: parsedIdentifier.value };
 
-      const user = await User.findOne(query).select('+password');
+      const user = await User.findOne(query).select('+password +twoFactorAuth');
 
       if (!user?.password) {
         return res.status(401).json({ message: 'Invalid credentials' });
@@ -584,8 +584,7 @@ export class SessionController {
       }
 
       // Check if user has 2FA enabled
-      const userWith2FA = await User.findById(user._id).select('+twoFactorAuth');
-      if (userWith2FA?.twoFactorAuth?.enabled) {
+      if (user.twoFactorAuth?.enabled) {
         // Generate a short-lived login token for the 2FA challenge
         const loginToken = jwt.sign(
           {

@@ -103,23 +103,13 @@ export function LoginForm({
 
     useEffect(() => {
         setErrorMessage(error)
+        if (error) toast.error("Sign in failed", { description: error })
     }, [error])
 
     useEffect(() => {
         setNoticeMessage(notice)
+        if (notice) toast("Notice", { description: notice })
     }, [notice])
-
-    useEffect(() => {
-        if (noticeMessage) {
-            toast("Notice", { description: noticeMessage })
-        }
-    }, [noticeMessage])
-
-    useEffect(() => {
-        if (errorMessage) {
-            toast.error("Sign in failed", { description: errorMessage })
-        }
-    }, [errorMessage])
 
     // Auto-focus fields on step change
     useEffect(() => {
@@ -274,27 +264,7 @@ export function LoginForm({
                 return
             }
 
-            if (isOAuthFlow && redirectUri) {
-                const callbackUrl = new URL(redirectUri)
-                callbackUrl.searchParams.set("session_id", existingSessionId)
-                callbackUrl.searchParams.set("access_token", tokenData.accessToken)
-                callbackUrl.searchParams.set("expires_at", tokenData.expiresAt || "")
-                if (state) callbackUrl.searchParams.set("state", state)
-                if (!clientId) {
-                    toast.error("Configuration error", { description: "Missing client ID" })
-                    setIsSubmitting(false)
-                    return
-                }
-                callbackUrl.searchParams.set("redirect_uri", clientId)
-                window.location.href = callbackUrl.toString()
-                return
-            }
-
-            const nextUrl = new URL("/authorize", window.location.origin)
-            if (sessionToken) nextUrl.searchParams.set("token", sessionToken)
-            if (redirectUri) nextUrl.searchParams.set("redirect_uri", redirectUri)
-            if (state) nextUrl.searchParams.set("state", state)
-            router.push(`${nextUrl.pathname}${nextUrl.search}`)
+            redirectAfterLogin(existingSessionId, tokenData.accessToken, tokenData.expiresAt)
         } catch (err) {
             setErrorMessage(err instanceof Error ? err.message : "Unable to continue")
             setIsSubmitting(false)

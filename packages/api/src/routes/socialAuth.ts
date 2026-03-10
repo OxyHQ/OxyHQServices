@@ -15,9 +15,9 @@ import type { AuthMethod } from '../models/User';
 import { rateLimit } from '../middleware/rateLimiter';
 import { asyncHandler } from '../utils/asyncHandler';
 import { BadRequestError, UnauthorizedError } from '../utils/error';
-import { formatUserResponse } from '../utils/userTransform';
 import { logger } from '../utils/logger';
 import sessionService from '../services/session.service';
+import { buildSessionAuthResponse } from '../controllers/session.controller';
 import securityActivityService from '../services/securityActivityService';
 import socialAuthService from '../services/socialAuth.service';
 import type { SocialProfile } from '../services/socialAuth.service';
@@ -125,22 +125,10 @@ async function handleSocialSignIn(
   });
 
   // 5. Build response (same shape as password sign-in)
-  const userData = formatUserResponse(user);
-  if (!userData) {
+  const response = buildSessionAuthResponse(session, user);
+  if (!response) {
     throw new Error('Failed to format user data');
   }
-
-  const response = {
-    sessionId: session.sessionId,
-    deviceId: session.deviceId,
-    expiresAt: session.expiresAt.toISOString(),
-    accessToken: session.accessToken,
-    user: {
-      id: userData.id,
-      username: userData.username,
-      avatar: userData.avatar,
-    },
-  };
 
   // 6. Log security event (non-blocking)
   try {

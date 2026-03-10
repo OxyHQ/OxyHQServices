@@ -5,7 +5,7 @@ import twoFactorService from '../services/twoFactor.service';
 import { logger } from '../utils/logger';
 import securityActivityService from '../services/securityActivityService';
 import sessionService from '../services/session.service';
-import { formatUserResponse } from '../utils/userTransform';
+import { buildSessionAuthResponse } from './session.controller';
 
 /**
  * Setup 2FA - Generate secret and return QR code data
@@ -362,8 +362,8 @@ export async function verify2FALogin(req: Request, res: Response) {
       { deviceName, deviceFingerprint }
     );
 
-    const userData = formatUserResponse(user as any);
-    if (!userData) {
+    const response = buildSessionAuthResponse(session, user);
+    if (!response) {
       return res.status(500).json({ message: 'Failed to format user data' });
     }
 
@@ -386,17 +386,7 @@ export async function verify2FALogin(req: Request, res: Response) {
       });
     }
 
-    return res.json({
-      sessionId: session.sessionId,
-      deviceId: session.deviceId,
-      expiresAt: session.expiresAt.toISOString(),
-      accessToken: session.accessToken,
-      user: {
-        id: userData.id,
-        username: userData.username,
-        avatar: userData.avatar,
-      },
-    });
+    return res.json(response);
   } catch (error) {
     logger.error('Verify 2FA login error:', error);
     res.status(500).json({ message: 'Internal server error' });
