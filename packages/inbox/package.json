@@ -28,6 +28,7 @@
     "@shopify/react-native-skia": "2.4.18",
     "babel-plugin-module-resolver": "^5.0.2",
     "expo": "^55.0.4",
+    "expo-audio": "^55.0.8",
     "expo-blur": "~55.0.8",
     "expo-build-properties": "~55.0.9",
     "expo-camera": "~55.0.9",
