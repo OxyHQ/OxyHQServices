@@ -12,7 +12,7 @@
     "reset-project": "node ./scripts/reset-project.js"
   },
   "dependencies": {
-    "@alia.onl/sdk": "^1.0.0",
+    "@alia.onl/sdk": "2.0.0",
     "@expo/vector-icons": "^15.0.3",
     "@lottiefiles/dotlottie-react": "^0.13.5",
     "@lottiefiles/dotlottie-react-native": "^0.7.1",
