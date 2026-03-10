@@ -215,7 +215,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                 <View style={styles.avatarRow}>
                     <View style={styles.avatarWrapper}>
                         <Avatar
-                            uri={profile?.avatar ? oxyServices.getFileDownloadUrl(profile.avatar as string, 'thumb') : undefined}
+                            uri={profile?.avatar ? oxyServices.getFileDownloadUrl(profile.avatar, 'thumb') : undefined}
                             name={profile?.username || username}
                             size={96}
 

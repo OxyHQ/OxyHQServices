@@ -484,7 +484,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                                             <View style={styles.userIcon}>
                                                 {account.avatar ? (
                                                     <Image
-                                                        source={{ uri: oxyServices.getFileDownloadUrl(account.avatar as string, 'thumb') }}
+                                                        source={{ uri: oxyServices.getFileDownloadUrl(account.avatar, 'thumb') }}
                                                         style={styles.accountAvatarImage}
                                                     />
                                                 ) : (

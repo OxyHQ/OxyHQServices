@@ -27,10 +27,11 @@ class SessionCache {
   }
 
   get(sessionId: string): ISession | null {
-    // Synchronous local-only access (used by hot paths that can't await)
+    const local = this.getLocal(sessionId);
+    if (local) return local;
+
     const redis = getRedisClient();
     if (redis && redis.status === 'ready') {
-      // Fire async Redis get and update local cache, but return local for now
       redis.get(`session:${sessionId}`).then(data => {
         if (data) {
           const session = JSON.parse(data);
@@ -38,7 +39,7 @@ class SessionCache {
         }
       }).catch(() => {});
     }
-    return this.getLocal(sessionId);
+    return null;
   }
 
   set(sessionId: string, session: ISession, ttl?: number): void {

@@ -137,7 +137,7 @@ const UserListScreen: React.FC<UserListScreenProps> = ({
           <Avatar
             uri={
               item.avatar
-                ? oxyServices.getFileDownloadUrl(item.avatar as string, 'thumb')
+                ? oxyServices.getFileDownloadUrl(item.avatar, 'thumb')
                 : undefined
             }
             name={item.username || item.name?.full}

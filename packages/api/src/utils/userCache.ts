@@ -15,6 +15,9 @@ class UserCache {
   get(userId: string): IUser | null {
     if (!userId) return null;
 
+    const local = this.getLocal(userId);
+    if (local) return local;
+
     const redis = getRedisClient();
     if (redis && redis.status === 'ready') {
       redis.get(`user:${userId}`).then(data => {
@@ -24,7 +27,7 @@ class UserCache {
       }).catch(() => {});
     }
 
-    return this.getLocal(userId);
+    return null;
   }
 
   set(userId: string, user: IUser, ttl?: number): void {
