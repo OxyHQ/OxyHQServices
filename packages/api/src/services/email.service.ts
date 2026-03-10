@@ -748,8 +748,12 @@ class EmailService {
     // Fire-and-forget AI processing (non-blocking, only for non-spam)
     if (!isSpam) {
       const msgId = message._id.toString();
-      aiLabelingService.classifyAndLabel(userId, msgId).catch(() => {});
-      cardExtractionService.extractAndUpdate(userId, msgId).catch(() => {});
+      aiLabelingService.classifyAndLabel(userId, msgId).catch((err) => {
+        logger.warn('AI labeling failed', { msgId, error: String(err) });
+      });
+      cardExtractionService.extractAndUpdate(userId, msgId).catch((err) => {
+        logger.warn('Card extraction failed', { msgId, error: String(err) });
+      });
     }
 
     return message.toJSON() as any;

@@ -21,6 +21,12 @@ services:
       dockerfile: Dockerfile
     container_name: oxy-api
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     ports:
       - "25:25"        # SMTP inbound (must be exposed directly, not through Caddy)
       - "587:587"      # SMTP submission

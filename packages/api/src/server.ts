@@ -452,8 +452,12 @@ if (require.main === module) {
 
       // Start SMTP inbound server if enabled
       if (getEnvBoolean('SMTP_ENABLED', false)) {
-        startSmtpInbound();
-        logger.info('SMTP inbound server enabled');
+        try {
+          startSmtpInbound();
+          logger.info('SMTP inbound server enabled');
+        } catch (err) {
+          logger.error('SMTP inbound server failed to start', err instanceof Error ? err : new Error(String(err)));
+        }
       }
 
       // Start snooze processor

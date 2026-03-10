@@ -21,36 +21,47 @@ let smtpServer: SMTPServer | null = null;
  * Create and start the SMTP inbound server.
  */
 export function startSmtpInbound(): SMTPServer {
-  const tlsOptions =
-    SMTP_INBOUND_CONFIG.tls.key && SMTP_INBOUND_CONFIG.tls.cert
-      ? {
-          key: fs.readFileSync(SMTP_INBOUND_CONFIG.tls.key),
-          cert: fs.readFileSync(SMTP_INBOUND_CONFIG.tls.cert),
-          minVersion: 'TLSv1.2' as const,
-          ciphers: [
-            'ECDHE-ECDSA-AES256-GCM-SHA384',
-            'ECDHE-RSA-AES256-GCM-SHA384',
-            'ECDHE-ECDSA-AES128-GCM-SHA256',
-            'ECDHE-RSA-AES128-GCM-SHA256',
-            'DHE-RSA-AES256-GCM-SHA384',
-            'DHE-RSA-AES128-GCM-SHA256',
-            'AES256-GCM-SHA384',
-            'AES128-GCM-SHA256',
-          ].join(':'),
-          // Include rsa_pkcs1_sha1 for older MTAs still using TLSv1.2
-          sigalgs: [
-            'ecdsa_secp256r1_sha256',
-            'ecdsa_secp384r1_sha384',
-            'rsa_pss_rsae_sha256',
-            'rsa_pss_rsae_sha384',
-            'rsa_pss_rsae_sha512',
-            'rsa_pkcs1_sha256',
-            'rsa_pkcs1_sha384',
-            'rsa_pkcs1_sha512',
-            'rsa_pkcs1_sha1',
-          ].join(':'),
-        }
-      : undefined;
+  let tlsOptions: {
+    key: Buffer; cert: Buffer; minVersion: 'TLSv1.2'; ciphers: string; sigalgs: string;
+  } | undefined;
+
+  if (SMTP_INBOUND_CONFIG.tls.key && SMTP_INBOUND_CONFIG.tls.cert) {
+    try {
+      tlsOptions = {
+        key: fs.readFileSync(SMTP_INBOUND_CONFIG.tls.key),
+        cert: fs.readFileSync(SMTP_INBOUND_CONFIG.tls.cert),
+        minVersion: 'TLSv1.2' as const,
+        ciphers: [
+          'ECDHE-ECDSA-AES256-GCM-SHA384',
+          'ECDHE-RSA-AES256-GCM-SHA384',
+          'ECDHE-ECDSA-AES128-GCM-SHA256',
+          'ECDHE-RSA-AES128-GCM-SHA256',
+          'DHE-RSA-AES256-GCM-SHA384',
+          'DHE-RSA-AES128-GCM-SHA256',
+          'AES256-GCM-SHA384',
+          'AES128-GCM-SHA256',
+        ].join(':'),
+        // Include rsa_pkcs1_sha1 for older MTAs still using TLSv1.2
+        sigalgs: [
+          'ecdsa_secp256r1_sha256',
+          'ecdsa_secp384r1_sha384',
+          'rsa_pss_rsae_sha256',
+          'rsa_pss_rsae_sha384',
+          'rsa_pss_rsae_sha512',
+          'rsa_pkcs1_sha256',
+          'rsa_pkcs1_sha384',
+          'rsa_pkcs1_sha512',
+          'rsa_pkcs1_sha1',
+        ].join(':'),
+      };
+    } catch (err) {
+      logger.warn('SMTP TLS certs not found, starting without STARTTLS', {
+        keyPath: SMTP_INBOUND_CONFIG.tls.key,
+        certPath: SMTP_INBOUND_CONFIG.tls.cert,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
 
   smtpServer = new SMTPServer({
     name: EMAIL_DOMAIN,
