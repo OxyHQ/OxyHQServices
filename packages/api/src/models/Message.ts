@@ -115,6 +115,25 @@ const MessageFlagsSchema = new Schema(
   { _id: false }
 );
 
+const CardSchema = new Schema(
+  {
+    type: { type: String, enum: ['trip', 'purchase', 'event', 'bill', 'package'], required: true },
+    data: { type: Schema.Types.Mixed },
+    confidence: { type: Number },
+    extractedAt: { type: Date },
+  },
+  { _id: false }
+);
+
+const HighlightSchema = new Schema(
+  {
+    type: { type: String },
+    value: { type: String },
+    label: { type: String },
+  },
+  { _id: false }
+);
+
 const MessageSchema = new Schema(
   {
     userId: {
@@ -194,21 +213,10 @@ const MessageSchema = new Schema(
       default: [],
     },
     card: {
-      type: {
-        type: { type: String, enum: ['trip', 'purchase', 'event', 'bill', 'package'], required: true },
-        data: { type: Schema.Types.Mixed },
-        confidence: { type: Number },
-        extractedAt: { type: Date },
-      },
-      _id: false,
+      type: CardSchema,
     },
     highlights: {
-      type: [{
-        type: { type: String },
-        value: { type: String },
-        label: { type: String },
-        _id: false,
-      }],
+      type: [HighlightSchema],
       default: [],
     },
     encrypted: {
