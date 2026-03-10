@@ -5,8 +5,6 @@ module.exports = function (api) {
       [
         'babel-preset-expo',
         {
-          // Fix for Expo SDK 54+ Skia import issue
-          // ReferenceError: Property 'SkiaViewApi' doesn't exist
           experimentalImportSupport: false,
         },
       ],

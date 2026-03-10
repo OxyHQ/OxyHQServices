@@ -26,7 +26,7 @@
     "@react-navigation/elements": "^2.6.3",
     "@react-navigation/native": "^7.1.8",
     "@shopify/flash-list": "2.0.2",
-    "@shopify/react-native-skia": "2.4.18",
+
     "babel-plugin-module-resolver": "^5.0.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
