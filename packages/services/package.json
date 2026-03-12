@@ -57,8 +57,8 @@
   "scripts": {
     "typescript": "tsc --skipLibCheck --noEmit",
     "lint": "biome lint --error-on-warnings ./src",
-    "build": "bunx react-native-builder-bob build && bun run copy-assets && bun run copy-dts && bun run delete-dts.js && bun run delete-debug-view",
-    "build:js": "bunx react-native-builder-bob build --target commonjs && bunx react-native-builder-bob build --target module && bun run copy-assets",
+    "build": "bun x react-native-builder-bob build && bun run copy-assets && bun run copy-dts && bun run delete-dts.js && bun run delete-debug-view",
+    "build:js": "bun x react-native-builder-bob build --target commonjs && bun x react-native-builder-bob build --target module && bun run copy-assets",
     "test": "jest --passWithNoTests",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
