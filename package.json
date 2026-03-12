@@ -16,7 +16,7 @@
     "packages/console"
   ],
   "scripts": {
-    "build:all": "npm run core:build && npm run auth:build && npm run services:build && npm run build --workspaces --if-present",
+    "build:all": "turbo run build",
     "build:workspaces": "npm run build --workspaces --if-present",
     "start": "cd packages/api && npm start",
     "dev": "npm run dev --workspaces --if-present",
@@ -42,8 +42,10 @@
   },
   "devDependencies": {
     "@types/express": "^4.17.21",
-    "@types/express-serve-static-core": "^4.19.6"
+    "@types/express-serve-static-core": "^4.19.6",
+    "turbo": "^2.8.16"
   },
+  "packageManager": "npm@10.9.4",
   "engines": {
     "node": ">=18.x",
     "npm": ">=9.0.0"

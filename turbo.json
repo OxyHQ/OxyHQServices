@@ -1,0 +1,44 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**", "lib/**", ".next/**", ".output/**"],
+      "inputs": [
+        "src/**",
+        "app/**",
+        "components/**",
+        "tsconfig*.json",
+        "package.json",
+        "next.config.*",
+        "vite.config.*",
+        "scripts/**"
+      ]
+    },
+    "build:js": {
+      "dependsOn": ["^build"],
+      "outputs": ["lib/commonjs/**", "lib/module/**"],
+      "inputs": ["src/**", "tsconfig.json", "package.json"]
+    },
+    "build:cjs": {
+      "outputs": ["dist/cjs/**"],
+      "inputs": ["src/**", "tsconfig.cjs.json", "tsconfig.json"]
+    },
+    "build:esm": {
+      "outputs": ["dist/esm/**"],
+      "inputs": ["src/**", "tsconfig.esm.json", "tsconfig.json", "scripts/fix-esm-imports.mjs"]
+    },
+    "build:types": {
+      "outputs": ["dist/types/**"],
+      "inputs": ["src/**", "tsconfig.types.json", "tsconfig.json"]
+    },
+    "lint": {},
+    "test": {
+      "dependsOn": ["^build"]
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    }
+  }
+}
