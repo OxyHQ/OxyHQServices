@@ -80,8 +80,8 @@ export class SignatureService {
     if (isReactNative()) {
       const Crypto = await initExpoCrypto();
       const randomBytes = await Crypto.getRandomBytesAsync(32);
-      return Array.from(randomBytes)
-        .map((b: number) => b.toString(16).padStart(2, '0'))
+      return Array.from(new Uint8Array(randomBytes))
+        .map((b) => b.toString(16).padStart(2, '0'))
         .join('');
     }
 
