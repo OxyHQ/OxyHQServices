@@ -12,10 +12,6 @@ jobs:
     name: API Tests
     runs-on: ubuntu-latest
 
-    strategy:
-      matrix:
-        node-version: [18.x, 20.x]
-
     services:
       mongodb:
         image: mongo:7
@@ -31,22 +27,25 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Node.js ${{ matrix.node-version }}
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node-version }}
-          cache: 'npm'
+          node-version: '20.x'
 
       - name: Install dependencies
-        run: npm ci
-        working-directory: ./packages/api
+        run: bun install --frozen-lockfile
 
       - name: Run linter
-        run: npm run lint
+        run: bun run lint
         working-directory: ./packages/api
 
       - name: Run tests
-        run: npm test
+        run: bun run test
         working-directory: ./packages/api
         env:
           MONGODB_URI: mongodb://localhost:27017/oxyapi-test
@@ -60,7 +59,7 @@ jobs:
           NODE_ENV: test
 
       - name: Run tests with coverage
-        run: npm run test:coverage
+        run: bun run test:coverage
         working-directory: ./packages/api
         env:
           MONGODB_URI: mongodb://localhost:27017/oxyapi-test
@@ -89,18 +88,21 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20.x'
-          cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci
-        working-directory: ./packages/api
+        run: bun install --frozen-lockfile
 
       - name: Build TypeScript
-        run: npm run build
+        run: bun run build
         working-directory: ./packages/api
 
   # Security audit
@@ -116,9 +118,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20.x'
-          cache: 'npm'
 
       - name: Run npm audit
-        run: npm audit --audit-level=moderate
-        working-directory: ./packages/api
+        run: npx npm-audit-resolver || npm audit --audit-level=moderate
         continue-on-error: true

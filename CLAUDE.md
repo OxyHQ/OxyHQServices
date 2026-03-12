@@ -3,18 +3,18 @@
 ## Commands
 
 ```bash
-npm run build -w @oxyhq/core     # Build @oxyhq/core
-npm run build -w @oxyhq/auth     # Build @oxyhq/auth
-npm run build -w @oxyhq/services # Build @oxyhq/services
-npm run build:all                # Build all (order: core -> auth -> services -> rest)
-npm run test                     # Run all workspace tests
-npm run dev                      # Dev mode across workspaces
-npm install                      # Install all workspace deps
+bun run core:build               # Build @oxyhq/core
+bun run auth:build               # Build @oxyhq/auth
+bun run services:build           # Build @oxyhq/services
+bun run build:all                # Build all (order: core -> auth -> services -> rest)
+bun run test                     # Run all workspace tests
+bun run dev                      # Dev mode across workspaces
+bun install                      # Install all workspace deps
 ```
 
 ## Architecture
 
-Monorepo (`@oxyhq/sdk`) using npm workspaces. Build order matters: `core` -> `auth` -> `services` -> rest.
+Monorepo (`@oxyhq/sdk`) using Bun workspaces + Turbo. Build order matters: `core` -> `auth` -> `services` -> rest.
 
 ```
 packages/

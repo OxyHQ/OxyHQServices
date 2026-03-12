@@ -51,15 +51,14 @@
   "author": "OxyHQ",
   "license": "MIT",
   "engines": {
-    "node": ">=18.0.0",
-    "npm": ">=9.0.0"
+    "node": ">=18.0.0"
   },
   "homepage": "https://oxy.so",
   "scripts": {
     "typescript": "tsc --skipLibCheck --noEmit",
     "lint": "biome lint --error-on-warnings ./src",
-    "build": "npx react-native-builder-bob build && npm run copy-assets && npm run copy-dts && npm run delete-dts.js && npm run delete-debug-view",
-    "build:js": "npx react-native-builder-bob build --target commonjs && npx react-native-builder-bob build --target module && npm run copy-assets",
+    "build": "bunx react-native-builder-bob build && bun run copy-assets && bun run copy-dts && bun run delete-dts.js && bun run delete-debug-view",
+    "build:js": "bunx react-native-builder-bob build --target commonjs && bunx react-native-builder-bob build --target module && bun run copy-assets",
     "test": "jest --passWithNoTests",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
@@ -67,8 +66,8 @@
     "copy-dts": "copyfiles -u 1 \"src/**/*.d.ts\" lib/typescript",
     "delete-debug-view": "rm -rf ./lib/commonjs/components/bottomSheetDebugView ./lib/module/components/bottomSheetDebugView ./lib/typescript/components/bottomSheetDebugView || true",
     "delete-dts.js": "find ./lib/commonjs -name '*.d.js*' -delete && find ./lib/module -name '*.d.js*' -delete",
-    "release": "rm -rf lib && npm run build && release-it",
-    "prepublishOnly": "npm run typescript && npm test && npm run build"
+    "release": "rm -rf lib && bun run build && release-it",
+    "prepublishOnly": "bun run typescript && bun run test && bun run build"
   },
   "dependencies": {
     "@lottiefiles/dotlottie-react": "^0.13.5",

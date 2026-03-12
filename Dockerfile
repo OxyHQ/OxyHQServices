@@ -10,40 +10,43 @@
 
 FROM node:20-alpine AS builder
 
+RUN npm install -g bun
+
 WORKDIR /app
 
 # Copy workspace root files
-COPY package.json package-lock.json ./
+COPY package.json bun.lock ./
 
 # Copy all package.json files for dependency resolution
 COPY packages/api/package.json packages/api/
 COPY packages/core/package.json packages/core/
 
 # Install all workspace dependencies
-RUN npm ci --ignore-scripts
+RUN bun install --frozen-lockfile
 
 # Copy source code
 COPY packages/core/ packages/core/
 COPY packages/api/ packages/api/
 
 # Build core first (api depends on it), then api
-RUN npm run build -w @oxyhq/core 2>/dev/null || true
-RUN npm run build -w @oxyhq/api
+RUN bun run --filter @oxyhq/core build 2>/dev/null || true
+RUN bun run --filter @oxyhq/api build
 
 # ── Production image ──────────────────────────────────────────────
 FROM node:20-alpine
 
 RUN apk add --no-cache python3 make g++ ffmpeg
+RUN npm install -g bun
 
 WORKDIR /app
 
 # Copy workspace root
-COPY package.json package-lock.json ./
+COPY package.json bun.lock ./
 COPY packages/api/package.json packages/api/
 COPY packages/core/package.json packages/core/
 
-# Install production dependencies and build native addons
-RUN npm ci --omit=dev
+# Install production dependencies
+RUN bun install --frozen-lockfile --production
 
 # Copy built artifacts
 COPY --from=builder /app/packages/api/dist packages/api/dist
