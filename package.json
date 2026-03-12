@@ -12,7 +12,6 @@
     "packages/accounts",
     "packages/inbox",
     "packages/test-app-expo",
-    "packages/test-app-vite",
     "packages/console"
   ],
   "scripts": {
