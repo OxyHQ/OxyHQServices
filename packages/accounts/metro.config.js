@@ -51,7 +51,19 @@ config.resolver.extraNodeModules = {
 // 6. Enable better platform resolution
 config.resolver.platforms = ['native', 'android', 'ios', 'tsx', 'ts', 'web'];
 
-// 7. Optimize cache for better hot reload performance
+// 7. Shim Node.js-only modules for web builds (engine.io-client pulls in ws)
+const originalResolveRequest = config.resolver.resolveRequest;
+config.resolver.resolveRequest = (context, moduleName, platform) => {
+  if (platform === 'web' && (moduleName === 'ws' || moduleName === 'node:ws')) {
+    return { type: 'empty' };
+  }
+  if (originalResolveRequest) {
+    return originalResolveRequest(context, moduleName, platform);
+  }
+  return context.resolveRequest(context, moduleName, platform);
+};
+
+// 8. Optimize cache for better hot reload performance
 config.cacheStores = config.cacheStores || [];
 
 module.exports = config;
