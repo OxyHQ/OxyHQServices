@@ -22,7 +22,7 @@ const EXPORT_TIMEOUT_MS = 4 * 60 * 1000; // 4 minutes hard limit
 const projectRoot = path.resolve(__dirname, '..');
 const distPath = path.join(projectRoot, 'dist', 'index.html');
 
-const child = spawn('npx', ['expo', 'export', '--platform', 'web'], {
+const child = spawn('bun', ['x', 'expo', 'export', '--platform', 'web'], {
   cwd: projectRoot,
   stdio: ['inherit', 'pipe', 'pipe'],
   detached: true, // new process group so we can kill the whole tree
