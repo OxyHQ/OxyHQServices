@@ -3,7 +3,9 @@ import slowDown from "express-slow-down";
 import { Request, Response, NextFunction } from "express";
 import helmet from "helmet";
 import { RedisStore } from "rate-limit-redis";
+import type { RedisReply } from "rate-limit-redis";
 import { getRedisClient } from "../config/redis";
+import { AuthRequest } from "./auth";
 
 const isProd = process.env.NODE_ENV !== 'development';
 
@@ -14,7 +16,7 @@ function makeStore() {
   return {
     store: new RedisStore({
       sendCommand: (...args: string[]) =>
-        redis.call(args[0], ...args.slice(1)) as any,
+        redis.call(args[0], ...args.slice(1)) as Promise<RedisReply>,
     }),
   };
 }
@@ -50,10 +52,10 @@ const userRateLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: (req: Request) => {
-    return (req as any).user?.id || req.ip || 'unknown';
+    return (req as AuthRequest).user?.id || req.ip || 'unknown';
   },
   skip: (req: Request) => {
-    return req.path.startsWith('/files/upload') || !(req as any).user;
+    return req.path.startsWith('/files/upload') || !(req as AuthRequest).user;
   },
 });
 

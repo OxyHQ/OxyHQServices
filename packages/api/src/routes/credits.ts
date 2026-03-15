@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { authMiddleware } from '../middleware/auth';
+import { authMiddleware, AuthRequest } from '../middleware/auth';
 import { UserCredits } from '../models/UserCredits';
 import ApiKeyUsage from '../models/ApiKeyUsage';
 import { logger } from '../utils/logger';
@@ -21,9 +21,9 @@ async function getOrCreateUserCredits(userId: string) {
 }
 
 // Get credit balance
-router.get('/', authMiddleware, async (req: Request, res: Response) => {
+router.get('/', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
-    const userId = (req as any).user?._id?.toString();
+    const userId = req.user?._id?.toString();
     if (!userId) return res.status(401).json({ error: 'Authentication required' });
 
     const userCredits = await getOrCreateUserCredits(userId);
@@ -36,16 +36,16 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
       dailyRefresh: userCredits.credits.dailyRefresh,
       lastRefresh: userCredits.credits.lastRefresh,
     });
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Error fetching credits:', error);
     res.status(500).json({ error: 'Failed to fetch credits' });
   }
 });
 
 // Get daily credit usage history
-router.get('/usage', authMiddleware, async (req: Request, res: Response) => {
+router.get('/usage', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
-    const userId = (req as any).user?._id?.toString();
+    const userId = req.user?._id?.toString();
     if (!userId) return res.status(401).json({ error: 'Authentication required' });
 
     const period = (req.query.period as string) || '7d';
@@ -93,7 +93,7 @@ router.get('/usage', authMiddleware, async (req: Request, res: Response) => {
     }
 
     res.json(result);
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Error fetching credit usage:', error);
     res.status(500).json({ error: 'Failed to fetch credit usage' });
   }

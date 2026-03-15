@@ -1,11 +1,13 @@
 import expressRateLimit from 'express-rate-limit';
 import { RedisStore } from 'rate-limit-redis';
+import type { RedisReply } from 'rate-limit-redis';
 import { getRedisClient } from '../config/redis';
+import type { Request } from 'express';
 
 interface RateLimitOptions {
   windowMs: number;
   max: number;
-  keyGenerator?: (req: any) => string;
+  keyGenerator?: (req: Request) => string;
   message?: string;
 }
 
@@ -15,7 +17,7 @@ function makeStore() {
   return {
     store: new RedisStore({
       sendCommand: (...args: string[]) =>
-        redis.call(args[0], ...args.slice(1)) as any,
+        redis.call(args[0], ...args.slice(1)) as Promise<RedisReply>,
     }),
   };
 }

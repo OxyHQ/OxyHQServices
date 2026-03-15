@@ -6,14 +6,15 @@ import { logger } from '../utils/logger';
 import securityActivityService from '../services/securityActivityService';
 import sessionService from '../services/session.service';
 import { buildSessionAuthResponse } from './session.controller';
+import { AuthRequest } from '../middleware/auth';
 
 /**
  * Setup 2FA - Generate secret and return QR code data
  * Step 1: User requests to enable 2FA
  */
-export async function setup2FA(req: Request, res: Response) {
+export async function setup2FA(req: AuthRequest, res: Response) {
   try {
-    const userId = (req as any).user?.id;
+    const userId = req.user?.id;
     if (!userId) {
       return res.status(401).json({ message: 'Unauthorized' });
     }
@@ -62,9 +63,9 @@ export async function setup2FA(req: Request, res: Response) {
  * Enable 2FA - Verify token and enable 2FA
  * Step 2: User verifies they can generate valid tokens
  */
-export async function enable2FA(req: Request, res: Response) {
+export async function enable2FA(req: AuthRequest, res: Response) {
   try {
-    const userId = (req as any).user?.id;
+    const userId = req.user?.id;
     const { token } = req.body;
 
     if (!userId) {
@@ -112,7 +113,6 @@ export async function enable2FA(req: Request, res: Response) {
       metadata: {
         setting: 'two_factor_auth',
         action: 'enabled',
-        deviceInfo: (req as any).deviceInfo,
       },
       req,
     });
@@ -131,9 +131,9 @@ export async function enable2FA(req: Request, res: Response) {
 /**
  * Disable 2FA - Requires password and optional 2FA token
  */
-export async function disable2FA(req: Request, res: Response) {
+export async function disable2FA(req: AuthRequest, res: Response) {
   try {
-    const userId = (req as any).user?.id;
+    const userId = req.user?.id;
     const { password, token } = req.body;
 
     if (!userId) {
@@ -183,7 +183,6 @@ export async function disable2FA(req: Request, res: Response) {
       metadata: {
         setting: 'two_factor_auth',
         action: 'disabled',
-        deviceInfo: (req as any).deviceInfo,
       },
       req,
     });
@@ -396,9 +395,9 @@ export async function verify2FALogin(req: Request, res: Response) {
 /**
  * Get 2FA status for current user
  */
-export async function get2FAStatus(req: Request, res: Response) {
+export async function get2FAStatus(req: AuthRequest, res: Response) {
   try {
-    const userId = (req as any).user?.id;
+    const userId = req.user?.id;
 
     if (!userId) {
       return res.status(401).json({ message: 'Unauthorized' });
@@ -423,9 +422,9 @@ export async function get2FAStatus(req: Request, res: Response) {
 /**
  * Regenerate backup codes (requires 2FA verification)
  */
-export async function regenerateBackupCodes(req: Request, res: Response) {
+export async function regenerateBackupCodes(req: AuthRequest, res: Response) {
   try {
-    const userId = (req as any).user?.id;
+    const userId = req.user?.id;
     const { token } = req.body;
 
     if (!userId) {

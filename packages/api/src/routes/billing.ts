@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import Stripe from 'stripe';
-import { authMiddleware } from '../middleware/auth';
+import { authMiddleware, AuthRequest } from '../middleware/auth';
 import { UserCredits } from '../models/UserCredits';
 import BillingSubscription from '../models/BillingSubscription';
 import BillingTransaction from '../models/BillingTransaction';
@@ -85,16 +85,16 @@ const createCheckoutSchema = z.object({
   cancelUrl: z.string().url(),
 });
 
-router.post('/checkout/credits', authMiddleware, async (req: Request, res: Response) => {
+router.post('/checkout/credits', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
     const { packageId, successUrl, cancelUrl } = createCheckoutSchema.parse(req.body);
-    const userId = (req as any).user?._id?.toString();
+    const userId = req.user?._id?.toString();
     if (!userId) return res.status(401).json({ error: 'Authentication required' });
 
     const pkg = CREDIT_PACKAGES.find((p) => p.id === packageId);
     if (!pkg) return res.status(400).json({ error: 'Invalid package ID' });
 
-    const email = (req as any).user?.email;
+    const email = req.user?.email;
     const customerId = await getOrCreateStripeCustomer(userId, email);
 
     const session = await getStripe().checkout.sessions.create({
@@ -115,7 +115,7 @@ router.post('/checkout/credits', authMiddleware, async (req: Request, res: Respo
     });
 
     res.json({ sessionId: session.id, url: session.url });
-  } catch (error: any) {
+  } catch (error) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: 'Invalid input', details: error.errors });
     }
@@ -130,16 +130,16 @@ const createSubscriptionSchema = z.object({
   cancelUrl: z.string().url(),
 });
 
-router.post('/checkout/subscription', authMiddleware, async (req: Request, res: Response) => {
+router.post('/checkout/subscription', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
     const { planId, successUrl, cancelUrl } = createSubscriptionSchema.parse(req.body);
-    const userId = (req as any).user?._id?.toString();
+    const userId = req.user?._id?.toString();
     if (!userId) return res.status(401).json({ error: 'Authentication required' });
 
     const plan = SUBSCRIPTION_PLANS.find((p) => p.id === planId);
     if (!plan || !plan.stripePriceId) return res.status(400).json({ error: 'Invalid plan ID' });
 
-    const email = (req as any).user?.email;
+    const email = req.user?.email;
     const customerId = await getOrCreateStripeCustomer(userId, email);
 
     const session = await getStripe().checkout.sessions.create({
@@ -153,7 +153,7 @@ router.post('/checkout/subscription', authMiddleware, async (req: Request, res: 
     });
 
     res.json({ sessionId: session.id, url: session.url });
-  } catch (error: any) {
+  } catch (error) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: 'Invalid input', details: error.errors });
     }
@@ -162,9 +162,9 @@ router.post('/checkout/subscription', authMiddleware, async (req: Request, res: 
   }
 });
 
-router.get('/subscription', authMiddleware, async (req: Request, res: Response) => {
+router.get('/subscription', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
-    const userId = (req as any).user?._id?.toString();
+    const userId = req.user?._id?.toString();
     if (!userId) return res.status(401).json({ error: 'Authentication required' });
 
     const subscription = await BillingSubscription.findOne({
@@ -173,15 +173,15 @@ router.get('/subscription', authMiddleware, async (req: Request, res: Response) 
     });
 
     res.json({ subscription });
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Error fetching subscription:', error);
     res.status(500).json({ error: 'Failed to fetch subscription' });
   }
 });
 
-router.post('/subscription/cancel', authMiddleware, async (req: Request, res: Response) => {
+router.post('/subscription/cancel', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
-    const userId = (req as any).user?._id?.toString();
+    const userId = req.user?._id?.toString();
     if (!userId) return res.status(401).json({ error: 'Authentication required' });
 
     const subscription = await BillingSubscription.findOne({
@@ -199,15 +199,15 @@ router.post('/subscription/cancel', authMiddleware, async (req: Request, res: Re
     await subscription.save();
 
     res.json({ message: 'Subscription will be canceled at end of billing period', subscription });
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Error canceling subscription:', error);
     res.status(500).json({ error: 'Failed to cancel subscription' });
   }
 });
 
-router.get('/transactions', authMiddleware, async (req: Request, res: Response) => {
+router.get('/transactions', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
-    const userId = (req as any).user?._id?.toString();
+    const userId = req.user?._id?.toString();
     if (!userId) return res.status(401).json({ error: 'Authentication required' });
 
     const limit = Math.min(Math.max(Number(req.query.limit) || 20, 1), 100);
@@ -219,19 +219,19 @@ router.get('/transactions', authMiddleware, async (req: Request, res: Response) 
     const total = await BillingTransaction.countDocuments({ userId });
 
     res.json({ transactions, total });
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Error fetching transactions:', error);
     res.status(500).json({ error: 'Failed to fetch transactions' });
   }
 });
 
-router.post('/portal', authMiddleware, async (req: Request, res: Response) => {
+router.post('/portal', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
-    const userId = (req as any).user?._id?.toString();
+    const userId = req.user?._id?.toString();
     if (!userId) return res.status(401).json({ error: 'Authentication required' });
 
     const { returnUrl } = req.body;
-    const email = (req as any).user?.email;
+    const email = req.user?.email;
     const customerId = await getOrCreateStripeCustomer(userId, email);
 
     const session = await getStripe().billingPortal.sessions.create({
@@ -240,7 +240,7 @@ router.post('/portal', authMiddleware, async (req: Request, res: Response) => {
     });
 
     res.json({ url: session.url });
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Error creating portal session:', error);
     res.status(500).json({ error: 'Failed to create portal session' });
   }
@@ -262,9 +262,10 @@ router.post('/webhook', async (req: Request, res: Response) => {
   let event: Stripe.Event;
   try {
     event = getStripe().webhooks.constructEvent(req.body, sig, webhookSecret);
-  } catch (err: any) {
-    logger.error('Webhook verification failed:', err.message);
-    return res.status(400).json({ error: `Webhook Error: ${err.message}` });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    logger.error('Webhook verification failed:', message);
+    return res.status(400).json({ error: `Webhook Error: ${message}` });
   }
 
   try {
@@ -281,7 +282,7 @@ router.post('/webhook', async (req: Request, res: Response) => {
         break;
     }
     res.json({ received: true });
-  } catch (error: any) {
+  } catch (error) {
     logger.error('Error handling webhook:', error);
     res.status(500).json({ error: 'Webhook handler error' });
   }
@@ -349,7 +350,7 @@ async function handleSubscriptionUpdate(stripeSubscription: Stripe.Subscription)
     return;
   }
 
-  const sub = stripeSubscription as any;
+  const subscriptionItem = stripeSubscription.items.data[0];
 
   await BillingSubscription.findOneAndUpdate(
     { stripeSubscriptionId: stripeSubscription.id },
@@ -357,11 +358,11 @@ async function handleSubscriptionUpdate(stripeSubscription: Stripe.Subscription)
       userId: userCredits._id,
       stripeCustomerId: customerId,
       stripeSubscriptionId: stripeSubscription.id,
-      stripePriceId: stripeSubscription.items.data[0].price.id,
+      stripePriceId: subscriptionItem.price.id,
       status: stripeSubscription.status,
-      currentPeriodStart: new Date(sub.current_period_start * 1000),
-      currentPeriodEnd: new Date(sub.current_period_end * 1000),
-      cancelAtPeriodEnd: sub.cancel_at_period_end,
+      currentPeriodStart: new Date(subscriptionItem.current_period_start * 1000),
+      currentPeriodEnd: new Date(subscriptionItem.current_period_end * 1000),
+      cancelAtPeriodEnd: stripeSubscription.cancel_at_period_end,
       plan: { name: plan.name, creditsPerMonth: plan.creditsPerMonth, price: plan.price, currency: plan.currency },
     },
     { upsert: true, new: true }
@@ -370,7 +371,7 @@ async function handleSubscriptionUpdate(stripeSubscription: Stripe.Subscription)
   // Add credits on subscription renewal
   if (stripeSubscription.status === 'active') {
     const now = Date.now() / 1000;
-    if (Math.abs(now - sub.current_period_start) < 300) {
+    if (Math.abs(now - subscriptionItem.current_period_start) < 300) {
       await userCredits.addCredits(plan.creditsPerMonth, 'paid');
       await BillingTransaction.create({
         userId: userCredits._id,

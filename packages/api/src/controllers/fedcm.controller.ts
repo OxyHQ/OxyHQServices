@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import fedcmService from '../services/fedcm.service';
 import { logger } from '../utils/logger';
+import { AuthRequest } from '../middleware/auth';
 
 /**
  * Exchange FedCM ID token for an Oxy session
@@ -58,10 +59,10 @@ export async function getApprovedClients(req: Request, res: Response) {
 /**
  * Add a new approved client (internal service only)
  */
-export async function addApprovedClient(req: Request, res: Response) {
+export async function addApprovedClient(req: AuthRequest, res: Response) {
   try {
     const { origin, name, description } = req.body;
-    const userId = (req as any).user?.id;
+    const userId = req.user?.id;
 
     if (!origin || !name) {
       return res.status(400).json({ message: 'Origin and name are required' });
@@ -93,8 +94,8 @@ export async function addApprovedClient(req: Request, res: Response) {
         description: client.description,
       },
     });
-  } catch (error: any) {
-    if (error.code === 11000) {
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && (error as { code: number }).code === 11000) {
       return res.status(409).json({ message: 'Client origin already exists' });
     }
 

@@ -82,6 +82,8 @@ When splitting imports: use `import type` for type-only imports, regular `import
 ## Key Entry Points
 
 - `packages/core/src/index.ts` — all public core exports
+- `packages/core/src/utils/avatarUtils.ts` — shared avatar visibility logic (platform-agnostic)
+- `packages/core/src/utils/accountUtils.ts` — shared account helpers (`buildAccountsArray`, `createQuickAccount`)
 - `packages/auth-sdk/src/index.ts` — all public auth exports
 - `packages/auth-sdk/src/WebOxyProvider.tsx` — web auth context provider
 - `packages/services/src/index.ts` — RN-specific exports only

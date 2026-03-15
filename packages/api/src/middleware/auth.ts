@@ -5,10 +5,11 @@ import dotenv from 'dotenv';
 import { logger } from '../utils/logger';
 import { Document } from 'mongoose';
 import sessionService from '../services/session.service';
-import { 
-  extractTokenFromRequest, 
-  decodeToken, 
-  validateSessionToken
+import {
+  extractTokenFromRequest,
+  decodeToken,
+  validateSessionToken,
+  TokenDecoded
 } from './authUtils';
 
 // Ensure environment variables are loaded
@@ -219,7 +220,7 @@ export const simpleAuthMiddleware = async (req: SimpleAuthRequest, res: Response
 
     try {
       // Decode token to check if it's session-based
-      const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET!) as any;
+      const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET!) as TokenDecoded;
 
       // Only session-based tokens are supported
       if (!decoded.sessionId) {

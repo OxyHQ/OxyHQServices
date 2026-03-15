@@ -75,7 +75,7 @@ export function normalizeUser(user: any): NormalizedUser | null {
   if (!userId) return null;
   
   const userObj = user.toObject ? user.toObject() : (typeof user === 'object' && user !== null ? user : {});
-  const { _id, id, ...restUser } = userObj as any;
+  const { _id, id, ...restUser } = userObj as Record<string, unknown>;
   
   return {
     ...restUser,

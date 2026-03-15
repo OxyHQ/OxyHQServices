@@ -2,6 +2,7 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import { exchangeIdToken, getApprovedClients, addApprovedClient, removeApprovedClient } from '../controllers/fedcm.controller';
 import type { Request, Response, NextFunction } from 'express';
+import type { TokenDecoded } from '../middleware/authUtils';
 
 const router = express.Router();
 
@@ -17,7 +18,7 @@ function serviceTokenOnly(req: Request, res: Response, next: NextFunction) {
 
   const token = authHeader.substring(7);
   try {
-    const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET!) as any;
+    const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET!) as TokenDecoded;
     if (decoded.type !== 'service') {
       return res.status(403).json({ message: 'This endpoint is only accessible to internal services' });
     }
