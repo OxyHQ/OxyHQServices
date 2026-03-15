@@ -167,26 +167,19 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
      * FormData.append, which handles them natively.
      */
     async assetUpload(file: File | { uri: string; type?: string; name?: string; size?: number }, visibility?: 'private' | 'public' | 'unlisted', metadata?: Record<string, any>, onProgress?: (progress: number) => void): Promise<any> {
-      const fileName = (file as File).name || (file as { name?: string }).name || 'unknown';
-      const fileSize = (file as File).size || (file as { size?: number }).size || 0;
+      const fileName = 'name' in file && file.name ? file.name : 'unknown';
+      const fileSize = 'size' in file && file.size ? file.size : 0;
 
       try {
         const formData = new FormData();
 
-        // React Native file descriptors ({uri, type, name}) must be appended
-        // directly — RN's FormData handles them natively via the URI.
-        const isRNDescriptor = 'uri' in file && typeof (file as { uri: string }).uri === 'string';
-
-        if (isRNDescriptor) {
-          // RN FormData.append accepts {uri, type, name} as the value
+        if ('uri' in file && typeof file.uri === 'string') {
+          // React Native file descriptor — RN's FormData handles {uri, type, name} natively
           formData.append('file', file as unknown as Blob, fileName);
         } else if (file instanceof Blob) {
           formData.append('file', file, fileName);
-        } else if (typeof (file as { blob?: () => Promise<Blob> }).blob === 'function') {
-          const fileBlob = await (file as { blob: () => Promise<Blob> }).blob();
-          formData.append('file', fileBlob, fileName);
         } else {
-          formData.append('file', new Blob([file as BlobPart], { type: (file as File).type || 'application/octet-stream' }), fileName);
+          formData.append('file', new Blob([file as unknown as BlobPart], { type: 'application/octet-stream' }), fileName);
         }
         if (visibility) {
           formData.append('visibility', visibility);
