@@ -91,12 +91,12 @@ export const useUploadAvatar = () => {
   return useMutation({
     mutationFn: async (file: { uri: string; type?: string; name?: string; size?: number }) => {
       return authenticatedApiCall<User>(oxyServices, activeSessionId, async () => {
-        // Upload file first
-        const uploadResult = await oxyServices.assetUpload(file as any, 'public');
-        const fileId = uploadResult?.file?.id || uploadResult?.id || uploadResult;
+        // Upload file — RN file descriptor is compatible with assetUpload's blob handling
+        const uploadResult = await oxyServices.assetUpload(file as unknown as File, 'public');
+        const fileId = uploadResult?.file?.id;
 
         if (!fileId || typeof fileId !== 'string') {
-          throw new Error('Failed to get file ID from upload result');
+          throw new Error('Upload succeeded but response did not contain a file ID');
         }
 
         // Update profile with file ID
@@ -336,7 +336,7 @@ export const useUploadFile = () => {
       return authenticatedApiCall<UploadResult>(
         oxyServices,
         activeSessionId,
-        () => oxyServices.assetUpload(file as any, visibility, metadata, onProgress)
+        () => oxyServices.assetUpload(file, visibility, metadata, onProgress)
       );
     },
   });

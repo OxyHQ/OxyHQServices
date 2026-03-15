@@ -7,7 +7,7 @@ import { Colors } from '@/constants/theme';
 import { ThemedText } from '@/components/themed-text';
 import { Section } from '@/components/section';
 import { GroupedSection } from '@/components/grouped-section';
-import { UserAvatar } from '@/components/user-avatar';
+import { Avatar } from '@oxyhq/services';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import lottieAnimation from '@/assets/lottie/welcomeheader_background_op1.json';
 import { darkenColor } from '@/utils/color-utils';
@@ -616,7 +616,7 @@ export default function HomeScreen() {
                     onPress={handleAvatarPress}
                     activeOpacity={0.8}
                   >
-                    <UserAvatar name={displayName} imageUrl={avatarUrl} size={100} />
+                    <Avatar name={displayName} uri={avatarUrl} size={100} />
                   </TouchableOpacity>
                 </View>
                 <View style={styles.nameWrapper}>

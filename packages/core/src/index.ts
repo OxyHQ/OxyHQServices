@@ -163,6 +163,13 @@ export {
 } from './utils/loggerUtils';
 export type { LogContext } from './utils/loggerUtils';
 
+// --- Avatar Utilities ---
+export { updateAvatarVisibility } from './utils/avatarUtils';
+
+// --- Account Utilities ---
+export { buildAccountsArray, createQuickAccount } from './utils/accountUtils';
+export type { QuickAccount } from './utils/accountUtils';
+
 // Default export
 import { OxyServices } from './OxyServices';
 export default OxyServices;

@@ -89,14 +89,14 @@ export const useUploadAvatar = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (file: { uri: string; type?: string; name?: string; size?: number }) => {
+    mutationFn: async (file: File) => {
       return authenticatedApiCall<User>(oxyServices, activeSessionId, async () => {
         // Upload file first
-        const uploadResult = await oxyServices.assetUpload(file as any, 'public');
-        const fileId = uploadResult?.file?.id || uploadResult?.id || uploadResult;
+        const uploadResult = await oxyServices.assetUpload(file, 'public');
+        const fileId = uploadResult?.file?.id;
 
         if (!fileId || typeof fileId !== 'string') {
-          throw new Error('Failed to get file ID from upload result');
+          throw new Error('Upload succeeded but response did not contain a file ID');
         }
 
         // Update profile with file ID
@@ -107,11 +107,12 @@ export const useUploadAvatar = () => {
       await queryClient.cancelQueries({ queryKey: queryKeys.accounts.current() });
       const previousUser = queryClient.getQueryData<User>(queryKeys.accounts.current());
 
-      // Optimistically set a temporary avatar (using file URI as placeholder)
+      // Optimistically set a temporary avatar using object URL for preview
       if (previousUser) {
+        const previewUrl = typeof URL !== 'undefined' && URL.createObjectURL ? URL.createObjectURL(file) : undefined;
         const optimisticUser = {
           ...previousUser,
-          avatar: file.uri, // Temporary, will be replaced with fileId
+          avatar: previewUrl || previousUser.avatar,
         };
         queryClient.setQueryData<User>(queryKeys.accounts.current(), optimisticUser);
         if (activeSessionId) {
@@ -336,7 +337,7 @@ export const useUploadFile = () => {
       return authenticatedApiCall<UploadResult>(
         oxyServices,
         activeSessionId,
-        () => oxyServices.assetUpload(file as any, visibility, metadata, onProgress)
+        () => oxyServices.assetUpload(file, visibility, metadata, onProgress)
       );
     },
   });

@@ -1,5 +1,5 @@
 import type React from 'react';
-import { memo, useMemo } from 'react';
+import { memo, useMemo, useState, useEffect } from 'react';
 import { View, Text, Image, StyleSheet, type StyleProp, type ViewStyle, type ImageStyle, type TextStyle, ActivityIndicator, Platform } from 'react-native';
 import { useThemeColors } from '../styles';
 import { fontFamilies } from '../styles/fonts';
@@ -148,6 +148,14 @@ const Avatar: React.FC<AvatarProps> = ({
     isLoading = false,
 }) => {
     const colors = useThemeColors(theme);
+    const [imageError, setImageError] = useState(false);
+
+    // Reset error state when uri changes
+    useEffect(() => {
+        if (uri) {
+            setImageError(false);
+        }
+    }, [uri]);
 
     const displayText = useMemo(
         () => text || (name ? getInitials(name) : ''),
@@ -221,8 +229,8 @@ const Avatar: React.FC<AvatarProps> = ({
         );
     }
 
-    // Image avatar
-    if (uri) {
+    // Image avatar (with fallback to initials on error)
+    if (uri && !imageError) {
         return (
             <View
                 style={[
@@ -236,6 +244,7 @@ const Avatar: React.FC<AvatarProps> = ({
                     source={{ uri }}
                     style={[styles.image, containerStyle, imageStyle]}
                     resizeMode="cover"
+                    onError={() => setImageError(true)}
                 />
             </View>
         );

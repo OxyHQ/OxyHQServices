@@ -3,7 +3,7 @@ import type { FileMetadata } from '@oxyhq/core';
 import { File as ExpoFile } from 'expo-file-system';
 import { toast } from '../../lib/sonner';
 import type { RouteName } from '../navigation/routes';
-import { updateAvatarVisibility } from './avatarUtils';
+import { updateAvatarVisibility } from '@oxyhq/core';
 
 /**
  * Format file size in bytes to human-readable string

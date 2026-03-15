@@ -12,7 +12,8 @@ import { translate } from '@oxyhq/core';
 import type { QueryClient } from '@tanstack/react-query';
 import { toast } from '../../lib/sonner';
 import type { RouteName } from '../navigation/routes';
-import { updateAvatarVisibility, updateProfileWithAvatar } from '../utils/avatarUtils';
+import { updateAvatarVisibility } from '@oxyhq/core';
+import { updateProfileWithAvatar } from '../utils/avatarUtils';
 
 interface UseAvatarPickerOptions {
   oxyServices: OxyServices;
@@ -51,8 +52,9 @@ export function useAvatarPicker({
               queryClient
             );
             toast.success(translate(currentLanguage ?? undefined, 'editProfile.toasts.avatarUpdated') || 'Avatar updated');
-          } catch (e: any) {
-            toast.error(e.message || translate(currentLanguage ?? undefined, 'editProfile.toasts.updateAvatarFailed') || 'Failed to update avatar');
+          } catch (e: unknown) {
+            const message = e instanceof Error ? e.message : undefined;
+            toast.error(message || translate(currentLanguage ?? undefined, 'editProfile.toasts.updateAvatarFailed') || 'Failed to update avatar');
           }
         },
       },

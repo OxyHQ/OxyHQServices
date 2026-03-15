@@ -8,7 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { UserAvatar } from '@/components/user-avatar';
+import { Avatar } from '@oxyhq/services';
 import { useScrollContext } from '@/contexts/scroll-context';
 import { LogoIcon } from '@/assets/logo';
 import { useOxy } from '@oxyhq/services';
@@ -270,7 +270,7 @@ export function Header({ }: HeaderProps) {
                             activeOpacity={0.7}
                         >
                             {isAuthenticated ? (
-                                <UserAvatar name={displayName} imageUrl={avatarUrl} size={avatarSize} />
+                                <Avatar name={displayName} uri={avatarUrl} size={avatarSize} />
                             ) : (
                                 <View style={[styles.userIconContainer, {
                                     backgroundColor: colors.sidebarIconPersonalInfo,

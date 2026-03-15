@@ -64,7 +64,7 @@ export function EncryptedBackupGenerator({
         }
 
         // Helper functions defined once to avoid re-creation
-        const deriveKeyFromPassword = async (pwd: string, salt: Uint8Array, Crypto: any): Promise<Uint8Array> => {
+        const deriveKeyFromPassword = async (pwd: string, salt: Uint8Array, Crypto: typeof import('expo-crypto')): Promise<Uint8Array> => {
             // Use expo-crypto for key derivation
             // For production, use PBKDF2 with sufficient iterations (100,000+)
             // For now, using a simpler approach with multiple SHA-256 rounds
@@ -94,22 +94,39 @@ export function EncryptedBackupGenerator({
             password: string,
             salt: Uint8Array,
             iv: Uint8Array,
-            Crypto: any
-        ): Promise<string> => {
+            Crypto: typeof import('expo-crypto')
+        ): Promise<{ ciphertext: string; tag: string }> => {
             // Derive encryption key from password
-            const key = await deriveKeyFromPassword(password, salt, Crypto);
+            const keyBytes = await deriveKeyFromPassword(password, salt, Crypto);
 
-            // Simple XOR encryption (for production, use AES-GCM)
-            // TODO: Implement proper AES-256-GCM encryption
-            // For now, using XOR as a placeholder - NOT SECURE FOR PRODUCTION
+            // Import raw key bytes into Web Crypto API for AES-256-GCM
+            const cryptoKey = await crypto.subtle.importKey(
+                'raw',
+                keyBytes,
+                { name: 'AES-GCM' },
+                false,
+                ['encrypt']
+            );
+
             const privateKeyBytes = new TextEncoder().encode(privateKey);
-            const encrypted = new Uint8Array(privateKeyBytes.length);
-            for (let i = 0; i < privateKeyBytes.length; i++) {
-                encrypted[i] = privateKeyBytes[i] ^ key[i % key.length] ^ iv[i % iv.length];
-            }
 
-            // Convert to base64 using Buffer (works in React Native)
-            return Buffer.from(encrypted).toString('base64');
+            // AES-GCM encrypt: produces ciphertext + 128-bit authentication tag
+            // The tag is appended to the ciphertext by Web Crypto
+            const encryptedBuffer = await crypto.subtle.encrypt(
+                { name: 'AES-GCM', iv, tagLength: 128 },
+                cryptoKey,
+                privateKeyBytes
+            );
+
+            const encryptedBytes = new Uint8Array(encryptedBuffer);
+            // Web Crypto appends the 16-byte auth tag at the end of the ciphertext
+            const ciphertext = encryptedBytes.slice(0, encryptedBytes.length - 16);
+            const tag = encryptedBytes.slice(encryptedBytes.length - 16);
+
+            return {
+                ciphertext: Buffer.from(ciphertext).toString('base64'),
+                tag: Buffer.from(tag).toString('base64'),
+            };
         };
 
         try {
@@ -126,9 +143,9 @@ export function EncryptedBackupGenerator({
                 return;
             }
 
-            // Generate random salt and IV
+            // Generate random salt and IV (12 bytes is the recommended IV size for AES-GCM)
             const salt = Crypto.getRandomBytes(32);
-            const iv = Crypto.getRandomBytes(16);
+            const iv = Crypto.getRandomBytes(12);
 
             // Encrypt private key
             const encrypted = await encryptPrivateKey(privateKey, password, salt, iv, Crypto);
@@ -140,10 +157,11 @@ export function EncryptedBackupGenerator({
 
             // Create backup file structure
             const backupData = {
-                version: '1.0',
+                version: '2.0',
                 type: 'oxy_identity_backup',
-                algorithm: 'xor-sha256', // TODO: Change to 'aes-256-gcm' when proper encryption is implemented
-                encrypted,
+                algorithm: 'aes-256-gcm',
+                encrypted: encrypted.ciphertext,
+                tag: encrypted.tag,
                 salt: Array.from(salt).map(b => b.toString(16).padStart(2, '0')).join(''),
                 iv: Array.from(iv).map(b => b.toString(16).padStart(2, '0')).join(''),
                 createdAt,
@@ -223,9 +241,9 @@ Public Key: ${publicKey}`;
             } else {
                 alert('Error', 'Sharing is not available on this platform');
             }
-        } catch (error: any) {
+        } catch (error) {
             console.error('Failed to generate backup:', error);
-            alert('Error', error?.message || 'Failed to generate backup file');
+            alert('Error', error instanceof Error ? error.message : 'Failed to generate backup file');
         } finally {
             setIsGenerating(false);
         }

@@ -141,6 +141,9 @@ export interface OxyServices extends InstanceType<ReturnType<typeof composeOxySe
   authSocket(options?: {
     debug?: boolean;
   }): (socket: any, next: (err?: Error) => void) => Promise<void>;
+
+  // Asset management
+  assetUpdateVisibility(fileId: string, visibility: 'private' | 'public' | 'unlisted'): Promise<unknown>;
 }
 
 // Re-export error classes for convenience

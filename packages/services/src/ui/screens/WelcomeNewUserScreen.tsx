@@ -13,7 +13,7 @@ import GroupedPillButtons from '../components/internal/GroupedPillButtons';
 import { useI18n } from '../hooks/useI18n';
 import { useOxy } from '../context/OxyContext';
 import { useUpdateProfile } from '../hooks/mutations/useAccountMutations';
-import { updateAvatarVisibility } from '../utils/avatarUtils';
+import { updateAvatarVisibility } from '@oxyhq/core';
 
 const GAP = 12;
 const INNER_GAP = 8;

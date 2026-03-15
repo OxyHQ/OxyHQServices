@@ -11,10 +11,9 @@ import { AccountCard } from '@/components/ui';
 import { menuItems, type MenuItem } from '@/components/ui/sidebar-content';
 import { darkenColor } from '@/utils/color-utils';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
-// @ts-expect-error - FollowButton has conditional export type issue
 import { useOxy, FollowButton } from '@oxyhq/services';
 import type { User, BlockedUser, RestrictedUser } from '@oxyhq/core';
-import { UserAvatar } from '@/components/user-avatar';
+import { Avatar } from '@oxyhq/services';
 
 export default function SearchScreen() {
   const colorScheme = useColorScheme() ?? 'light';
@@ -216,14 +215,13 @@ export default function SearchScreen() {
           title: username,
           subtitle: user.name?.full || user.bio || username,
           customIcon: (
-            <UserAvatar
+            <Avatar
               name={username}
-              imageUrl={avatarUrl}
+              uri={avatarUrl}
               size={40}
             />
           ),
           customContent: (
-            // @ts-expect-error - FollowButton has conditional export type issue
             <FollowButton
               userId={userId}
               initiallyFollowing={false}

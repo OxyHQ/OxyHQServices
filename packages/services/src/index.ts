@@ -92,6 +92,8 @@ export { useFileFiltering } from './ui/hooks/useFileFiltering';
 export type { ViewMode, SortBy, SortOrder } from './ui/hooks/useFileFiltering';
 
 // UI components
+export { default as Avatar } from './ui/components/Avatar';
+export type { AvatarProps } from './ui/components/Avatar';
 export { OxySignInButton } from './ui/components/OxySignInButton';
 export { OxyLogo, FollowButton } from './ui';
 

@@ -6,37 +6,8 @@ import { QueryClient } from '@tanstack/react-query';
 import { queryKeys, invalidateUserQueries, invalidateAccountQueries } from '../hooks/queries/queryKeys';
 
 /**
- * Updates file visibility to public for avatar use.
- * Handles errors gracefully, only logging non-404 errors.
- * 
- * @param fileId - The file ID to update visibility for
- * @param oxyServices - OxyServices instance
- * @param contextName - Optional context name for logging
- * @returns Promise that resolves when visibility is updated (or skipped)
- */
-export async function updateAvatarVisibility(
-  fileId: string | undefined,
-  oxyServices: OxyServices,
-  contextName: string = 'AvatarUtils'
-): Promise<void> {
-  // Skip if temporary asset ID or no file ID
-  if (!fileId || fileId.startsWith('temp-')) {
-    return;
-  }
-
-  try {
-    await oxyServices.assetUpdateVisibility(fileId, 'public');
-    // Visibility update is logged by the API
-  } catch (visError: any) {
-    // Silently handle errors - 404 means asset doesn't exist yet (which is OK)
-    // Other errors are logged by the API, so no need to log here
-    // Function continues gracefully regardless of visibility update success
-  }
-}
-
-/**
  * Refreshes avatar in accountStore with cache-busted URL to force image reload.
- * 
+ *
  * @param sessionId - The session ID for the account to update
  * @param avatarFileId - The new avatar file ID
  * @param oxyServices - OxyServices instance to generate download URL
@@ -99,4 +70,3 @@ export async function updateProfileWithAvatar(
 
   return data;
 }
-

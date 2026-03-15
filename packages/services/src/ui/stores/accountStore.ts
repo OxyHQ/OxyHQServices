@@ -1,15 +1,10 @@
 import { create } from 'zustand';
 import { shallow } from 'zustand/shallow';
 import type { OxyServices } from '@oxyhq/core';
+import { buildAccountsArray, createQuickAccount } from '@oxyhq/core';
+import type { QuickAccount } from '@oxyhq/core';
 
-export interface QuickAccount {
-    sessionId: string;
-    userId?: string; // User ID for deduplication
-    username: string;
-    displayName: string;
-    avatar?: string;
-    avatarUrl?: string; // Cached avatar URL to prevent recalculation
-}
+export type { QuickAccount };
 
 interface AccountState {
     // Account data
@@ -54,38 +49,6 @@ const initialState = {
     error: null,
 };
 
-// Helper: Build accounts array from accounts map and order
-const buildAccountsArray = (accounts: Record<string, QuickAccount>, order: string[]): QuickAccount[] => {
-    const result: QuickAccount[] = [];
-    for (const id of order) {
-        const account = accounts[id];
-        if (account) result.push(account);
-    }
-    return result;
-};
-
-// Helper: Create QuickAccount from user data
-const createQuickAccount = (sessionId: string, userData: any, existingAccount?: QuickAccount, oxyServices?: OxyServices): QuickAccount => {
-    const displayName = userData.name?.full || userData.name?.first || userData.username || 'Account';
-    const userId = userData.id || userData._id?.toString();
-    
-    // Preserve existing avatarUrl if avatar hasn't changed (prevents image reload)
-    let avatarUrl: string | undefined;
-    if (existingAccount && existingAccount.avatar === userData.avatar && existingAccount.avatarUrl) {
-        avatarUrl = existingAccount.avatarUrl; // Reuse existing URL
-    } else if (userData.avatar && oxyServices) {
-        avatarUrl = oxyServices.getFileDownloadUrl(userData.avatar, 'thumb');
-    }
-    
-    return {
-        sessionId,
-        userId,
-        username: userData.username || '',
-        displayName,
-        avatar: userData.avatar,
-        avatarUrl,
-    };
-};
 
 export const useAccountStore = create<AccountState>((set, get) => ({
     ...initialState,
@@ -116,7 +79,7 @@ export const useAccountStore = create<AccountState>((set, get) => ({
                     existing.avatarUrl === newAccount.avatarUrl;
             });
         
-        if (sameAccounts) return {} as any;
+        if (sameAccounts) return {} as Partial<AccountState>;
         
         return { accounts: accountMap, accountOrder: order, accountsArray };
     }),
@@ -127,7 +90,7 @@ export const useAccountStore = create<AccountState>((set, get) => ({
             // Update existing
             const existing = state.accounts[account.sessionId];
             if (existing.avatar === account.avatar && existing.avatarUrl === account.avatarUrl) {
-                return {} as any; // No change
+                return {} as Partial<AccountState>; // No change
             }
             const newAccounts = { ...state.accounts, [account.sessionId]: account };
             return {
@@ -147,11 +110,11 @@ export const useAccountStore = create<AccountState>((set, get) => ({
     
     updateAccount: (sessionId, updates) => set((state) => {
         const existing = state.accounts[sessionId];
-        if (!existing) return {} as any;
+        if (!existing) return {} as Partial<AccountState>;
         
         const updated = { ...existing, ...updates };
         if (existing.avatar === updated.avatar && existing.avatarUrl === updated.avatarUrl) {
-            return {} as any; // No change
+            return {} as Partial<AccountState>; // No change
         }
         
         const newAccounts = { ...state.accounts, [sessionId]: updated };
@@ -162,7 +125,7 @@ export const useAccountStore = create<AccountState>((set, get) => ({
     }),
     
     removeAccount: (sessionId) => set((state) => {
-        if (!state.accounts[sessionId]) return {} as any;
+        if (!state.accounts[sessionId]) return {} as Partial<AccountState>;
         
         const { [sessionId]: _removed, ...rest } = state.accounts;
         const newOrder = state.accountOrder.filter(id => id !== sessionId);
@@ -175,7 +138,7 @@ export const useAccountStore = create<AccountState>((set, get) => ({
     }),
     
     moveAccountToTop: (sessionId) => set((state) => {
-        if (!state.accounts[sessionId]) return {} as any;
+        if (!state.accounts[sessionId]) return {} as Partial<AccountState>;
         
         const filtered = state.accountOrder.filter(id => id !== sessionId);
         const newOrder = [sessionId, ...filtered];
@@ -242,7 +205,12 @@ export const useAccountStore = create<AccountState>((set, get) => ({
                 for (const { sessionId, user: userData } of batchResults) {
                     if (userData && !accountMap.has(sessionId)) {
                         const existing = existingMap.get(sessionId);
-                        accountMap.set(sessionId, createQuickAccount(sessionId, userData, existing, oxyServices));
+                        accountMap.set(sessionId, createQuickAccount(
+                            sessionId,
+                            userData,
+                            existing,
+                            (fileId, variant) => oxyServices.getFileDownloadUrl(fileId, variant)
+                        ));
                     }
                 }
                 

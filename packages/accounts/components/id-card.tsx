@@ -5,7 +5,7 @@ import Svg, { Defs, RadialGradient, Stop, Path, Filter, FeGaussianBlur } from 'r
 import Animated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming, Easing } from 'react-native-reanimated';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { UserAvatar } from '@/components/user-avatar';
+import { Avatar } from '@oxyhq/services';
 
 export interface IdCardProps {
   id: string;
@@ -157,7 +157,7 @@ export function IdCard({ name, imageUrl, title, value, onPress, onPressIn }: IdC
       {/* Content container - positioned relative, on top, not blurred */}
       <View style={styles.contentContainer}>
         <View style={styles.avatarContainer}>
-          <UserAvatar name={name} imageUrl={imageUrl} size={36} />
+          <Avatar name={name} uri={imageUrl} size={36} />
         </View>
         <View style={styles.spacer} />
         <View style={styles.textContainer}>

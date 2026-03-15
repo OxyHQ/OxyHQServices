@@ -37,7 +37,7 @@ const ProfileCard: React.FC<ProfileCardProps> = ({
     const secondaryBackgroundColor = themeStyles.secondaryBackgroundColor;
     const primaryColor = '#0066CC';
 
-    const avatarUrl = useFileDownloadUrl(user?.avatar, { variant: 'thumb' }).url || undefined;
+    const avatarUrl = useFileDownloadUrl(oxyServices, user?.avatar, { variant: 'thumb' }).url || undefined;
 
     return (
         <View style={styles.headerSection}>
