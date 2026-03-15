@@ -91,8 +91,7 @@ export const useUploadAvatar = () => {
   return useMutation({
     mutationFn: async (file: { uri: string; type?: string; name?: string; size?: number }) => {
       return authenticatedApiCall<User>(oxyServices, activeSessionId, async () => {
-        // Upload file — RN file descriptor is compatible with assetUpload's blob handling
-        const uploadResult = await oxyServices.assetUpload(file as unknown as File, 'public');
+        const uploadResult = await oxyServices.assetUpload(file, 'public');
         const fileId = uploadResult?.file?.id;
 
         if (!fileId || typeof fileId !== 'string') {

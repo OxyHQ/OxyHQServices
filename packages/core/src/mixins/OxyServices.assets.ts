@@ -160,28 +160,34 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
     }
 
     /**
-     * Upload file using Central Asset Service
+     * Upload file using Central Asset Service.
+     *
+     * Accepts either a web File/Blob or a React Native file descriptor
+     * ({uri, type, name, size}). RN descriptors are passed directly to
+     * FormData.append, which handles them natively.
      */
-    async assetUpload(file: File, visibility?: 'private' | 'public' | 'unlisted', metadata?: Record<string, any>, onProgress?: (progress: number) => void): Promise<any> {
-      const fileName = file.name || 'unknown';
-      const fileSize = file.size;
-      
+    async assetUpload(file: File | { uri: string; type?: string; name?: string; size?: number }, visibility?: 'private' | 'public' | 'unlisted', metadata?: Record<string, any>, onProgress?: (progress: number) => void): Promise<any> {
+      const fileName = (file as File).name || (file as { name?: string }).name || 'unknown';
+      const fileSize = (file as File).size || (file as { size?: number }).size || 0;
+
       try {
         const formData = new FormData();
-        // Convert File to Blob to avoid read-only 'name' property error in Expo 54
-        // This is a known issue in Expo SDK 52+ where FormData tries to set the read-only 'name' property
-        let fileBlob: Blob;
-        if (file instanceof Blob) {
-          // Already a Blob, use directly
-          fileBlob = file;
-        } else if (typeof (file as any).blob === 'function') {
-          // Use async blob() method if available (Expo 54+ recommended approach)
-          fileBlob = await (file as any).blob();
+
+        // React Native file descriptors ({uri, type, name}) must be appended
+        // directly — RN's FormData handles them natively via the URI.
+        const isRNDescriptor = 'uri' in file && typeof (file as { uri: string }).uri === 'string';
+
+        if (isRNDescriptor) {
+          // RN FormData.append accepts {uri, type, name} as the value
+          formData.append('file', file as unknown as Blob, fileName);
+        } else if (file instanceof Blob) {
+          formData.append('file', file, fileName);
+        } else if (typeof (file as { blob?: () => Promise<Blob> }).blob === 'function') {
+          const fileBlob = await (file as { blob: () => Promise<Blob> }).blob();
+          formData.append('file', fileBlob, fileName);
         } else {
-          // Fallback: create Blob from File (works in all environments)
-          fileBlob = new Blob([file], { type: (file as any).type || 'application/octet-stream' });
+          formData.append('file', new Blob([file as BlobPart], { type: (file as File).type || 'application/octet-stream' }), fileName);
         }
-        formData.append('file', fileBlob, fileName);
         if (visibility) {
           formData.append('visibility', visibility);
         }

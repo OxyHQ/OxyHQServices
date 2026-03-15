@@ -58,8 +58,7 @@ export const useAssets = () => {
       clearErrors();
       setUploading(true);
       
-      // Upload file (progress tracking simplified for now)
-      const result = await oxyInstance.assetUpload(file as any, undefined, metadata);
+      const result = await oxyInstance.assetUpload(file, undefined, metadata);
 
       // Update progress with final status
       if (result?.file) {
