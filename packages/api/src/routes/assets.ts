@@ -488,8 +488,23 @@ router.get('/:id/stream', mediaHeadersMiddleware, optionalAuthMiddleware, asyncH
   const { variant } = req.query;
   const variantType = typeof variant === 'string' ? variant : undefined;
 
+  const fallback = typeof req.query.fallback === 'string' ? req.query.fallback : '';
+
   const file = await assetService.getFile(fileId);
   if (!file) {
+    if (fallback === 'placeholderVisible' || fallback === 'icon') {
+      const svg = generateMissingFilePlaceholder(fileId);
+      res.setHeader('Content-Type', 'image/svg+xml');
+      res.setHeader('Cache-Control', 'no-store');
+      return res.status(200).end(svg);
+    }
+    if (fallback === 'placeholder') {
+      const buf = Buffer.from(TRANSPARENT_PNG_PLACEHOLDER, 'base64');
+      res.setHeader('Content-Type', 'image/png');
+      res.setHeader('Content-Length', String(buf.length));
+      res.setHeader('Cache-Control', 'no-store');
+      return res.status(200).end(buf);
+    }
     throw new NotFoundError('File not found');
   }
 
@@ -503,6 +518,19 @@ router.get('/:id/stream', mediaHeadersMiddleware, optionalAuthMiddleware, asyncH
 
   if (!(await assetService.canUserAccessFile(file, userId, context))) {
     logger.warn('Access denied to file', { fileId, userId, visibility: file.visibility });
+    if (fallback === 'placeholderVisible' || fallback === 'icon') {
+      const svg = generateMissingFilePlaceholder(fileId);
+      res.setHeader('Content-Type', 'image/svg+xml');
+      res.setHeader('Cache-Control', 'no-store');
+      return res.status(200).end(svg);
+    }
+    if (fallback === 'placeholder') {
+      const buf = Buffer.from(TRANSPARENT_PNG_PLACEHOLDER, 'base64');
+      res.setHeader('Content-Type', 'image/png');
+      res.setHeader('Content-Length', String(buf.length));
+      res.setHeader('Cache-Control', 'no-store');
+      return res.status(200).end(buf);
+    }
     throw new ForbiddenError('Access denied');
   }
 
