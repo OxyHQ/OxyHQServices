@@ -53,6 +53,8 @@ import { performanceMonitor } from './utils/performanceMonitor';
 import { waitForMongoConnection } from './utils/dbConnection';
 import { errorHandler } from './middleware/errorHandler';
 import compression from 'compression';
+import swaggerUi from 'swagger-ui-express';
+import swaggerSpec from './config/swagger';
 
 // Load environment variables
 dotenv.config();
@@ -432,6 +434,18 @@ app.get('/protected-server-route', authMiddleware, (req: any, res: Response) => 
   });
 });
 
+// Swagger API documentation (non-production only)
+if (process.env.NODE_ENV !== 'production') {
+  app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+    customSiteTitle: 'Oxy API Documentation',
+  }));
+  // Serve raw OpenAPI spec as JSON
+  app.get('/docs.json', (_req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    res.send(swaggerSpec);
+  });
+}
+
 // Global error handler — standardised { error, message, details? } format
 app.use(errorHandler);
 
@@ -449,31 +463,6 @@ if (require.main === module) {
     .then(async () => {
       // Seed FedCM approved clients (idempotent - only inserts if not exists)
       await fedcmService.seedApprovedClients();
-
-      // One-time: set all avatar-referenced files to public visibility
-      // This prevents ORB blocking when browsers load avatar images cross-origin
-      // TODO(nate): remove after migration has run in production
-      try {
-        const usersCol = mongoose.connection.collection('users');
-        const filesCol = mongoose.connection.collection('files');
-        const avatarCursor = usersCol.find(
-          { avatar: { $type: 'string', $ne: '' } },
-          { projection: { avatar: 1 } }
-        );
-        let migrated = 0;
-        for await (const user of avatarCursor) {
-          const result = await filesCol.updateOne(
-            { _id: new mongoose.Types.ObjectId(user.avatar as string), visibility: { $ne: 'public' } },
-            { $set: { visibility: 'public' } }
-          );
-          if (result.modifiedCount > 0) migrated++;
-        }
-        logger.info('Avatar files visibility migration complete', { migrated });
-      } catch (migrationErr) {
-        logger.warn('Avatar visibility migration failed (non-fatal)', {
-          error: migrationErr instanceof Error ? migrationErr.message : String(migrationErr),
-        });
-      }
 
       // Start SMTP inbound server if enabled
       if (getEnvBoolean('SMTP_ENABLED', false)) {

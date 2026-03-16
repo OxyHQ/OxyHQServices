@@ -19,6 +19,25 @@ import { logger } from '../utils/logger';
 import SignatureService from '../services/signature.service';
 import { emitAuthSessionUpdate } from '../utils/authSessionSocket';
 import socialAuthRouter from './socialAuth';
+import { validate } from '../middleware/validate';
+import {
+  signupSchema,
+  loginSchema,
+  registerPublicKeySchema,
+  challengeSchema,
+  verifyChallengeSchema,
+  recoverRequestSchema,
+  recoverVerifySchema,
+  recoverResetSchema,
+  checkUsernameParams,
+  checkEmailParams,
+  checkPublicKeyParams,
+  getUserByPublicKeyParams,
+  authSessionCreateSchema,
+  authSessionTokenParams,
+  authorizeSessionBodySchema,
+  serviceTokenSchema,
+} from '../schemas/auth.schemas';
 
 const router = express.Router();
 const USERNAME_REGEX = /^[a-zA-Z0-9]{3,30}$/;
@@ -28,39 +47,283 @@ const USERNAME_REGEX = /^[a-zA-Z0-9]{3,30}$/;
 // ============================================
 
 /**
- * POST /auth/signup
- * Register a new user with email/username and password
- * Body: { email, username, password, deviceName?, deviceFingerprint? }
+ * @openapi
+ * /auth/signup:
+ *   post:
+ *     tags:
+ *       - Authentication
+ *     summary: Register a new user
+ *     description: Register a new user with email, username, and password.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *               - username
+ *               - password
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: user@example.com
+ *               username:
+ *                 type: string
+ *                 minLength: 3
+ *                 maxLength: 30
+ *                 pattern: '^[a-zA-Z0-9]{3,30}$'
+ *                 example: johndoe
+ *               password:
+ *                 type: string
+ *                 format: password
+ *                 minLength: 8
+ *                 example: securePassword123
+ *               deviceName:
+ *                 type: string
+ *                 example: Chrome on macOS
+ *               deviceFingerprint:
+ *                 type: string
+ *                 example: abc123fingerprint
+ *     responses:
+ *       200:
+ *         description: User registered successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 user:
+ *                   type: object
+ *                   properties:
+ *                     _id:
+ *                       type: string
+ *                     username:
+ *                       type: string
+ *                     email:
+ *                       type: string
+ *                 sessionId:
+ *                   type: string
+ *                 accessToken:
+ *                   type: string
+ *                 refreshToken:
+ *                   type: string
+ *       400:
+ *         description: Validation error (missing fields, invalid format, duplicate email/username)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
-router.post('/signup', SessionController.signUp);
+router.post('/signup', validate({ body: signupSchema }), SessionController.signUp);
 
 /**
- * POST /auth/login
- * Login with email/username and password
- * Body: { identifier | email | username, password, deviceName?, deviceFingerprint? }
+ * @openapi
+ * /auth/login:
+ *   post:
+ *     tags:
+ *       - Authentication
+ *     summary: Log in with credentials
+ *     description: Authenticate with email/username and password. Returns session tokens.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - password
+ *             properties:
+ *               identifier:
+ *                 type: string
+ *                 description: Email or username (use this or the specific email/username fields)
+ *                 example: johndoe
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: user@example.com
+ *               username:
+ *                 type: string
+ *                 example: johndoe
+ *               password:
+ *                 type: string
+ *                 format: password
+ *                 example: securePassword123
+ *               deviceName:
+ *                 type: string
+ *                 example: Chrome on macOS
+ *               deviceFingerprint:
+ *                 type: string
+ *                 example: abc123fingerprint
+ *     responses:
+ *       200:
+ *         description: Login successful
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 user:
+ *                   type: object
+ *                   properties:
+ *                     _id:
+ *                       type: string
+ *                     username:
+ *                       type: string
+ *                     email:
+ *                       type: string
+ *                 sessionId:
+ *                   type: string
+ *                 accessToken:
+ *                   type: string
+ *                 refreshToken:
+ *                   type: string
+ *       401:
+ *         description: Invalid credentials
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
-router.post('/login', SessionController.signIn);
+router.post('/login', validate({ body: loginSchema }), SessionController.signIn);
 
 /**
- * POST /auth/recover/request
- * Request a password recovery code
- * Body: { identifier | email | username }
+ * @openapi
+ * /auth/recover/request:
+ *   post:
+ *     tags:
+ *       - Authentication
+ *     summary: Request password recovery
+ *     description: Send a password recovery code to the user's email.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               identifier:
+ *                 type: string
+ *                 description: Email or username
+ *                 example: user@example.com
+ *               email:
+ *                 type: string
+ *                 format: email
+ *               username:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Recovery code sent (returns success even if account not found to prevent enumeration)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *       400:
+ *         description: Missing identifier
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
-router.post('/recover/request', SessionController.requestPasswordReset);
+router.post('/recover/request', validate({ body: recoverRequestSchema }), SessionController.requestPasswordReset);
 
 /**
- * POST /auth/recover/verify
- * Verify recovery code and return a reset token
- * Body: { identifier | email | username, code }
+ * @openapi
+ * /auth/recover/verify:
+ *   post:
+ *     tags:
+ *       - Authentication
+ *     summary: Verify recovery code
+ *     description: Verify the recovery code sent via email and receive a reset token.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - code
+ *             properties:
+ *               identifier:
+ *                 type: string
+ *                 description: Email or username
+ *                 example: user@example.com
+ *               email:
+ *                 type: string
+ *                 format: email
+ *               username:
+ *                 type: string
+ *               code:
+ *                 type: string
+ *                 description: Recovery code received via email
+ *                 example: '123456'
+ *     responses:
+ *       200:
+ *         description: Code verified, reset token returned
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 recoveryToken:
+ *                   type: string
+ *       400:
+ *         description: Invalid or expired code
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
-router.post('/recover/verify', SessionController.verifyRecoveryCode);
+router.post('/recover/verify', validate({ body: recoverVerifySchema }), SessionController.verifyRecoveryCode);
 
 /**
- * POST /auth/recover/reset
- * Reset password using recovery token
- * Body: { recoveryToken, password }
+ * @openapi
+ * /auth/recover/reset:
+ *   post:
+ *     tags:
+ *       - Authentication
+ *     summary: Reset password
+ *     description: Reset the user's password using a valid recovery token.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - recoveryToken
+ *               - password
+ *             properties:
+ *               recoveryToken:
+ *                 type: string
+ *                 description: Token received from /auth/recover/verify
+ *               password:
+ *                 type: string
+ *                 format: password
+ *                 minLength: 8
+ *                 description: New password
+ *     responses:
+ *       200:
+ *         description: Password reset successful
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *       400:
+ *         description: Invalid or expired recovery token
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
-router.post('/recover/reset', SessionController.resetPassword);
+router.post('/recover/reset', validate({ body: recoverResetSchema }), SessionController.resetPassword);
 
 // ============================================
 // Social OAuth Sign-In Routes
@@ -82,7 +345,7 @@ router.use('/social', socialAuthRouter);
  * Register a new user with public key
  * Body: { publicKey, username, email?, signature, timestamp }
  */
-router.post('/register', SessionController.register);
+router.post('/register', validate({ body: registerPublicKeySchema }), SessionController.register);
 
 /**
  * POST /auth/challenge
@@ -94,7 +357,7 @@ const challengeLimiter = rateLimit({
   windowMs: 60 * 1000, 
   max: process.env.NODE_ENV === 'development' ? 100 : 10 // 10 per minute (100 in dev)
 });
-router.post('/challenge', challengeLimiter, SessionController.requestChallenge);
+router.post('/challenge', challengeLimiter, validate({ body: challengeSchema }), SessionController.requestChallenge);
 
 /**
  * POST /auth/verify
@@ -106,15 +369,31 @@ const verifyLimiter = rateLimit({
   windowMs: 60 * 1000, 
   max: process.env.NODE_ENV === 'development' ? 50 : 5 // 5 per minute (50 in dev)
 });
-router.post('/verify', verifyLimiter, SessionController.verifyChallenge);
+router.post('/verify', verifyLimiter, validate({ body: verifyChallengeSchema }), SessionController.verifyChallenge);
 
 // ============================================
 // Validation Routes
 // ============================================
 
 /**
- * GET /auth/validate
- * Validate current authentication status
+ * @openapi
+ * /auth/validate:
+ *   get:
+ *     tags:
+ *       - Authentication
+ *     summary: Validate authentication status
+ *     description: Check whether the current request carries valid authentication.
+ *     responses:
+ *       200:
+ *         description: Authentication is valid
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 valid:
+ *                   type: boolean
+ *                   example: true
  */
 router.get('/validate', asyncHandler(async (req, res) => {
   sendSuccess(res, { valid: true });
@@ -128,10 +407,44 @@ const checkLimiter = rateLimit({
 });
 
 /**
- * GET /auth/check-username/:username
- * Check if username is available
+ * @openapi
+ * /auth/check-username/{username}:
+ *   get:
+ *     tags:
+ *       - Authentication
+ *     summary: Check username availability
+ *     description: Check whether a username is available for registration.
+ *     parameters:
+ *       - in: path
+ *         name: username
+ *         required: true
+ *         schema:
+ *           type: string
+ *           minLength: 3
+ *           maxLength: 30
+ *         example: johndoe
+ *     responses:
+ *       200:
+ *         description: Availability check result
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 available:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *       400:
+ *         description: Invalid username format
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       429:
+ *         description: Rate limit exceeded
  */
-router.get('/check-username/:username', checkLimiter, asyncHandler(async (req, res) => {
+router.get('/check-username/:username', checkLimiter, validate({ params: checkUsernameParams }), asyncHandler(async (req, res) => {
   let { username } = req.params;
   
   if (!username) {
@@ -157,10 +470,43 @@ router.get('/check-username/:username', checkLimiter, asyncHandler(async (req, r
 }));
 
 /**
- * GET /auth/check-email/:email
- * Check if email is available
+ * @openapi
+ * /auth/check-email/{email}:
+ *   get:
+ *     tags:
+ *       - Authentication
+ *     summary: Check email availability
+ *     description: Check whether an email address is available for registration.
+ *     parameters:
+ *       - in: path
+ *         name: email
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: email
+ *         example: user@example.com
+ *     responses:
+ *       200:
+ *         description: Availability check result
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 available:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *       400:
+ *         description: Invalid email format
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       429:
+ *         description: Rate limit exceeded
  */
-router.get('/check-email/:email', checkLimiter, asyncHandler(async (req, res) => {
+router.get('/check-email/:email', checkLimiter, validate({ params: checkEmailParams }), asyncHandler(async (req, res) => {
   const { email } = req.params;
   
   if (!email || !email.includes('@')) {
@@ -182,7 +528,7 @@ router.get('/check-email/:email', checkLimiter, asyncHandler(async (req, res) =>
  * GET /auth/check-publickey/:publicKey
  * Check if a public key is already registered
  */
-router.get('/check-publickey/:publicKey', checkLimiter, asyncHandler(async (req, res) => {
+router.get('/check-publickey/:publicKey', checkLimiter, validate({ params: checkPublicKeyParams }), asyncHandler(async (req, res) => {
   const { publicKey } = req.params;
   
   if (!publicKey) {
@@ -210,7 +556,7 @@ router.get('/check-publickey/:publicKey', checkLimiter, asyncHandler(async (req,
  * GET /auth/user/:publicKey
  * Get user by public key (public profile info)
  */
-router.get('/user/:publicKey', SessionController.getUserByPublicKey);
+router.get('/user/:publicKey', validate({ params: getUserByPublicKeyParams }), SessionController.getUserByPublicKey);
 
 // ============================================
 // Cross-App Authentication (OAuth-like flow)
@@ -224,7 +570,7 @@ import sessionService from '../services/session.service';
  * Create a new auth session for cross-app authentication
  * Called by third-party apps to initiate the auth flow
  */
-router.post('/session/create', asyncHandler(async (req, res) => {
+router.post('/session/create', validate({ body: authSessionCreateSchema }), asyncHandler(async (req, res) => {
   const { sessionToken, expiresAt, appId } = req.body;
 
   if (!sessionToken || !appId) {
@@ -267,7 +613,7 @@ router.post('/session/create', asyncHandler(async (req, res) => {
  * Check the status of an auth session (polling endpoint)
  * Called by third-party apps to check if user has authorized
  */
-router.get('/session/status/:sessionToken', asyncHandler(async (req, res) => {
+router.get('/session/status/:sessionToken', validate({ params: authSessionTokenParams }), asyncHandler(async (req, res) => {
   const { sessionToken } = req.params;
 
   const authSession = await AuthSession.findOne({ sessionToken });
@@ -299,7 +645,7 @@ router.get('/session/status/:sessionToken', asyncHandler(async (req, res) => {
  * Authorize an auth session (called from Oxy Accounts app)
  * Requires a valid session header from the authorizing user
  */
-router.post('/session/authorize/:sessionToken', asyncHandler(async (req, res) => {
+router.post('/session/authorize/:sessionToken', validate({ params: authSessionTokenParams, body: authorizeSessionBodySchema }), asyncHandler(async (req, res) => {
   const { sessionToken } = req.params;
   const userSessionId = req.header('x-session-id');
   const { deviceName, deviceFingerprint } = req.body;
@@ -371,7 +717,7 @@ router.post('/session/authorize/:sessionToken', asyncHandler(async (req, res) =>
  * POST /auth/session/cancel/:sessionToken
  * Cancel an auth session
  */
-router.post('/session/cancel/:sessionToken', asyncHandler(async (req, res) => {
+router.post('/session/cancel/:sessionToken', validate({ params: authSessionTokenParams }), asyncHandler(async (req, res) => {
   const { sessionToken } = req.params;
 
   const authSession = await AuthSession.findOne({ sessionToken });
@@ -402,14 +748,73 @@ const serviceTokenLimiter = rateLimit({
 });
 
 /**
- * POST /auth/service-token
- * Exchange DeveloperApp credentials for a short-lived service JWT.
- * Only available to internal apps (isInternal: true).
- *
- * Body: { apiKey, apiSecret }
- * Response: { token, expiresIn, appName }
+ * @openapi
+ * /auth/service-token:
+ *   post:
+ *     tags:
+ *       - Authentication
+ *     summary: Exchange credentials for a service token
+ *     description: >
+ *       Internal service-to-service authentication endpoint.
+ *       Exchange DeveloperApp credentials (apiKey + apiSecret) for a short-lived
+ *       service JWT (1 hour). Only available to apps with isInternal flag set.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - apiKey
+ *               - apiSecret
+ *             properties:
+ *               apiKey:
+ *                 type: string
+ *                 description: DeveloperApp API key
+ *                 example: oxy_dk_abc123
+ *               apiSecret:
+ *                 type: string
+ *                 description: DeveloperApp API secret
+ *     responses:
+ *       200:
+ *         description: Service token issued
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 token:
+ *                   type: string
+ *                   description: Short-lived JWT for service-to-service calls
+ *                 expiresIn:
+ *                   type: integer
+ *                   description: Token lifetime in seconds
+ *                   example: 3600
+ *                 appName:
+ *                   type: string
+ *                   description: Name of the authenticated app
+ *       400:
+ *         description: Missing apiKey or apiSecret
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       401:
+ *         description: Invalid credentials
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       403:
+ *         description: App is not an internal service
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       429:
+ *         description: Rate limit exceeded
  */
-router.post('/service-token', serviceTokenLimiter, asyncHandler(async (req, res) => {
+router.post('/service-token', serviceTokenLimiter, validate({ body: serviceTokenSchema }), asyncHandler(async (req, res) => {
   const { apiKey, apiSecret } = req.body;
 
   if (!apiKey || !apiSecret) {
