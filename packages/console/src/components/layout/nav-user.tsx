@@ -23,12 +23,11 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar';
 import { useAuth } from '@oxyhq/auth';
-import config from '@/lib/config';
 import { Link } from '@tanstack/react-router';
 
 export function NavUser() {
   const { isMobile } = useSidebar();
-  const { user, signOut } = useAuth();
+  const { user, signOut, oxyServices } = useAuth();
 
   const handleSignOut = async () => {
     await signOut();
@@ -47,7 +46,7 @@ export function NavUser() {
   const getAvatarUrl = () => {
     if (!user?.avatar) return undefined;
     if (user.avatar.startsWith('http')) return user.avatar;
-    return `${config.oxyUrl}/media/${user.avatar}`;
+    return oxyServices.getFileDownloadUrl(user.avatar, 'thumb');
   };
 
   const getUserDisplayName = () => {
