@@ -1,0 +1,86 @@
+name: Deploy Frontend to Cloudflare Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      accounts: ${{ steps.filter.outputs.accounts }}
+      inbox: ${{ steps.filter.outputs.inbox }}
+      console: ${{ steps.filter.outputs.console }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            accounts:
+              - 'packages/accounts/**'
+              - 'packages/core/**'
+              - 'packages/services/**'
+            inbox:
+              - 'packages/inbox/**'
+              - 'packages/core/**'
+              - 'packages/services/**'
+            console:
+              - 'packages/console/**'
+              - 'packages/core/**'
+              - 'packages/auth-sdk/**'
+
+  deploy-accounts:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.accounts == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+      - run: bun install --frozen-lockfile
+      - run: bun x turbo run build --filter=accounts
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy packages/accounts/dist --project-name=oxy-accounts
+
+  deploy-inbox:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.inbox == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+      - run: bun install --frozen-lockfile
+      - run: bun x turbo run build --filter=inbox
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy packages/inbox/dist --project-name=oxy-inbox
+
+  deploy-console:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.console == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+      - run: bun install --frozen-lockfile
+      - run: bun x turbo run build --filter=oxy-console
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy packages/console/dist --project-name=oxy-console
