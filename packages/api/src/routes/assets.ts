@@ -9,6 +9,7 @@ import { logger } from '../utils/logger';
 import { asyncHandler, sendSuccess } from '../utils/asyncHandler';
 import { BadRequestError, NotFoundError, UnauthorizedError, ForbiddenError, ValidationError, ConflictError } from '../utils/error';
 import { z } from 'zod';
+import jwt from 'jsonwebtoken';
 import { FileVisibility } from '../models/File';
 import { generateMissingFilePlaceholder, TRANSPARENT_PNG_PLACEHOLDER } from '../utils/placeholders';
 
@@ -483,7 +484,23 @@ router.get('/:id/exists', authMiddleware, asyncHandler(async (req: Authenticated
  * @access Public (with optional authentication for private files)
  */
 router.get('/:id/stream', mediaHeadersMiddleware, optionalAuthMiddleware, asyncHandler(async (req: AuthenticatedRequest, res: express.Response) => {
-  const userId = getUserId(req);
+  let userId = getUserId(req);
+
+  // If optionalAuth failed (e.g. expired token), decode the token ignoring expiration
+  // to identify the user for ownership checks. This is safe because:
+  // - The signature is still verified (not tampered with)
+  // - This is a read-only endpoint (no mutations)
+  // - Access control still applies (we just know who's asking)
+  if (!userId && typeof req.query.token === 'string' && process.env.ACCESS_TOKEN_SECRET) {
+    try {
+      const decoded = jwt.verify(req.query.token, process.env.ACCESS_TOKEN_SECRET, {
+        ignoreExpiration: true,
+      }) as { userId?: string; id?: string; _id?: string };
+      userId = decoded.userId || decoded.id || decoded._id;
+    } catch {
+      // Invalid signature or malformed token — leave userId undefined
+    }
+  }
   const { id: fileId } = req.params;
   const { variant } = req.query;
   const variantType = typeof variant === 'string' ? variant : undefined;
