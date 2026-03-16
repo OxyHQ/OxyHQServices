@@ -79,8 +79,17 @@ jobs:
           node-version: '20.x'
       - run: bun install --frozen-lockfile
       - run: bun x turbo run build --filter=oxy-console
+      - name: Resolve build output directory
+        run: |
+          if [ -d packages/console/dist ]; then
+            echo "DEPLOY_DIR=packages/console/dist" >> $GITHUB_ENV
+          elif [ -d packages/console/.output/public ]; then
+            echo "DEPLOY_DIR=packages/console/.output/public" >> $GITHUB_ENV
+          else
+            echo "No build output found" && exit 1
+          fi
       - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy packages/console/dist --project-name=oxy-console
+          command: pages deploy ${{ env.DEPLOY_DIR }} --project-name=oxy-console
