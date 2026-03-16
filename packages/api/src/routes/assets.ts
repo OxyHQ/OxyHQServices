@@ -9,7 +9,6 @@ import { logger } from '../utils/logger';
 import { asyncHandler, sendSuccess } from '../utils/asyncHandler';
 import { BadRequestError, NotFoundError, UnauthorizedError, ForbiddenError, ValidationError, ConflictError } from '../utils/error';
 import { z } from 'zod';
-import jwt from 'jsonwebtoken';
 import { FileVisibility } from '../models/File';
 import { generateMissingFilePlaceholder, TRANSPARENT_PNG_PLACEHOLDER } from '../utils/placeholders';
 
@@ -484,23 +483,7 @@ router.get('/:id/exists', authMiddleware, asyncHandler(async (req: Authenticated
  * @access Public (with optional authentication for private files)
  */
 router.get('/:id/stream', mediaHeadersMiddleware, optionalAuthMiddleware, asyncHandler(async (req: AuthenticatedRequest, res: express.Response) => {
-  let userId = getUserId(req);
-
-  // If optionalAuth failed (e.g. expired token), decode the token ignoring expiration
-  // to identify the user for ownership checks. This is safe because:
-  // - The signature is still verified (not tampered with)
-  // - This is a read-only endpoint (no mutations)
-  // - Access control still applies (we just know who's asking)
-  if (!userId && typeof req.query.token === 'string' && process.env.ACCESS_TOKEN_SECRET) {
-    try {
-      const decoded = jwt.verify(req.query.token, process.env.ACCESS_TOKEN_SECRET, {
-        ignoreExpiration: true,
-      }) as { userId?: string; id?: string; _id?: string };
-      userId = decoded.userId || decoded.id || decoded._id;
-    } catch {
-      // Invalid signature or malformed token — leave userId undefined
-    }
-  }
+  const userId = getUserId(req);
   const { id: fileId } = req.params;
   const { variant } = req.query;
   const variantType = typeof variant === 'string' ? variant : undefined;
@@ -551,33 +534,35 @@ router.get('/:id/stream', mediaHeadersMiddleware, optionalAuthMiddleware, asyncH
     throw new ForbiddenError('Access denied');
   }
 
-  if (file.visibility === 'public' && !variantType) {
-    try {
-      const url = await s3Service.getPresignedDownloadUrl(file.storageKey, 3600);
-      res.setHeader('Cache-Control', 'public, max-age=3600');
-      return res.redirect(url);
-    } catch (e) {
-      logger.warn('Failed to generate redirect URL for public file, falling back to stream', { fileId, error: e });
-    }
-  }
-
-  const originalKey = file.storageKey;
-  let storageKey = originalKey;
+  // Resolve variant storageKey if requested
+  let storageKey = file.storageKey;
   if (variantType) {
     try {
       const ensured = await assetService.ensureVariant(fileId, variantType, file);
       storageKey = ensured.key;
     } catch (e: any) {
       logger.warn('Variant ensure failed, falling back to original', { fileId, variantType, error: e?.message });
-      storageKey = originalKey;
     }
   }
 
-  // Stream from S3/Spaces (getObjectStream will fail fast if file doesn't exist)
-  // Removed fileExists check to avoid extra S3 API call - improves performance
+  // Redirect to presigned S3 URL — browser fetches image directly from S3/Spaces
+  // with no auth required. This avoids ERR_BLOCKED_BY_ORB from expired tokens
+  // because the presigned URL IS the authorization (valid 1 hour).
+  try {
+    const url = await s3Service.getPresignedDownloadUrl(storageKey, 3600);
+    const cacheControl = file.visibility === 'public'
+      ? 'public, max-age=3600'
+      : 'private, max-age=3600';
+    res.setHeader('Cache-Control', cacheControl);
+    return res.redirect(url);
+  } catch (e) {
+    logger.warn('Failed to generate presigned URL, falling back to stream', { fileId, error: e });
+  }
+
+  // Fallback: stream through our server if presigned URL generation fails
   try {
     const streamInfo = await s3Service.getObjectStream(storageKey);
-    
+
     if (streamInfo.contentType) {
       res.setHeader('Content-Type', streamInfo.contentType);
     }
@@ -587,7 +572,6 @@ router.get('/:id/stream', mediaHeadersMiddleware, optionalAuthMiddleware, asyncH
     if (streamInfo.lastModified) {
       res.setHeader('Last-Modified', new Date(streamInfo.lastModified).toUTCString());
     }
-    // Cache headers: immutable for content-addressed files
     res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
 
     streamInfo.body.on('error', (err: any) => {
@@ -601,12 +585,8 @@ router.get('/:id/stream', mediaHeadersMiddleware, optionalAuthMiddleware, asyncH
 
     streamInfo.body.pipe(res);
   } catch (streamError: any) {
-    // Handle file not found or other S3 errors
     if (streamError.name === 'NoSuchKey' || streamError.name === 'NotFound') {
-      // Optional placeholder fallback for UI
-      const fallback = typeof req.query.fallback === 'string' ? req.query.fallback : '';
       if (fallback === 'placeholder') {
-        // 1x1 transparent PNG (invisible)
         const buf = Buffer.from(TRANSPARENT_PNG_PLACEHOLDER, 'base64');
         res.setHeader('Content-Type', 'image/png');
         res.setHeader('Content-Length', String(buf.length));
@@ -614,7 +594,6 @@ router.get('/:id/stream', mediaHeadersMiddleware, optionalAuthMiddleware, asyncH
         return res.status(200).end(buf);
       }
       if (fallback === 'icon' || fallback === 'placeholderVisible') {
-        // Visible SVG placeholder
         const svg = generateMissingFilePlaceholder(fileId);
         res.setHeader('Content-Type', 'image/svg+xml');
         res.setHeader('Cache-Control', 'no-store');
@@ -622,7 +601,6 @@ router.get('/:id/stream', mediaHeadersMiddleware, optionalAuthMiddleware, asyncH
       }
       throw new NotFoundError('File not found');
     }
-    // Re-throw other errors
     throw streamError;
   }
 }));

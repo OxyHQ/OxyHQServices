@@ -9,10 +9,15 @@ import * as crypto from 'crypto';
 const FEDCM_ISSUER = (process.env.FEDCM_ISSUER || 'https://auth.oxy.so').replace(/\/+$/, '');
 
 // Shared secret for verifying FedCM tokens - must match auth.oxy.so
-if (!process.env.FEDCM_TOKEN_SECRET) {
-  throw new Error('FEDCM_TOKEN_SECRET is required but not configured');
+// Validated lazily on first use so the module can be imported without crashing
+// when the env var is missing (startup validation in env.ts catches it separately).
+function getFedCMTokenSecret(): string {
+  const secret = process.env.FEDCM_TOKEN_SECRET;
+  if (!secret) {
+    throw new Error('FEDCM_TOKEN_SECRET is required but not configured');
+  }
+  return secret;
 }
-const FEDCM_TOKEN_SECRET = process.env.FEDCM_TOKEN_SECRET;
 
 interface FedCMTokenPayload {
   iss: string;
@@ -38,7 +43,7 @@ function verifyIdToken(token: string): FedCMTokenPayload {
   // Verify signature
   const signatureInput = `${headerB64}.${payloadB64}`;
   const expectedSignature = crypto
-    .createHmac('sha256', FEDCM_TOKEN_SECRET)
+    .createHmac('sha256', getFedCMTokenSecret())
     .update(signatureInput)
     .digest('base64')
     .replace(/\+/g, '-')
