@@ -3,6 +3,8 @@ import { authMiddleware, AuthRequest } from '../middleware/auth';
 import { UserCredits } from '../models/UserCredits';
 import ApiKeyUsage from '../models/ApiKeyUsage';
 import { logger } from '../utils/logger';
+import { validate } from '../middleware/validate';
+import { creditsUsageQuerySchema } from '../schemas/credits.schemas';
 
 const router = Router();
 
@@ -43,7 +45,7 @@ router.get('/', authMiddleware, async (req: AuthRequest, res: Response) => {
 });
 
 // Get daily credit usage history
-router.get('/usage', authMiddleware, async (req: AuthRequest, res: Response) => {
+router.get('/usage', authMiddleware, validate({ query: creditsUsageQuerySchema }), async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?._id?.toString();
     if (!userId) return res.status(401).json({ error: 'Authentication required' });

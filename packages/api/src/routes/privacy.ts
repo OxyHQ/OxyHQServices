@@ -1,4 +1,5 @@
 import express, { Request, Response } from 'express';
+import { Model, Document } from 'mongoose';
 import User from "../models/User";
 import Block from "../models/Block";
 import Restricted from "../models/Restricted";
@@ -7,6 +8,8 @@ import { asyncHandler } from '../utils/asyncHandler';
 import { BadRequestError, NotFoundError, ConflictError, UnauthorizedError } from '../utils/error';
 import { resolveUserIdToObjectId } from '../utils/validation';
 import { z } from "zod";
+import { validate } from '../middleware/validate';
+import { privacyUserIdParams, targetIdParams } from '../schemas/privacy.schemas';
 
 interface AuthenticatedRequest extends Request {
   user?: {
@@ -93,21 +96,21 @@ const updatePrivacySettings = asyncHandler(async (req: Request, res: Response) =
 });
 
 // Generic handler factory for user management operations
-const createUserListHandler = <T extends typeof Block | typeof Restricted>(
-  Model: T,
+const createUserListHandler = (
+  UserModel: Model<Document>,
   fieldName: 'blockedId' | 'restrictedId'
 ) => {
   return asyncHandler(async (req: Request, res: Response) => {
     const authUser = (req as AuthenticatedRequest).user;
-    const users = await (Model as any).find({ userId: authUser?.id })
+    const users = await UserModel.find({ userId: authUser?.id })
       .populate(fieldName, 'username avatar')
       .lean();
     res.json(users);
   });
 };
 
-const createUserActionHandler = <T extends typeof Block | typeof Restricted>(
-  Model: T,
+const createUserActionHandler = (
+  UserModel: Model<Document>,
   fieldName: 'blockedId' | 'restrictedId',
   actionName: string
 ) => {
@@ -119,7 +122,7 @@ const createUserActionHandler = <T extends typeof Block | typeof Restricted>(
       throw new BadRequestError(`Invalid ${actionName} request`);
     }
 
-    const existing = await (Model as any).findOne({
+    const existing = await UserModel.findOne({
       userId: authUser.id,
       [fieldName]: targetId
     });
@@ -128,7 +131,7 @@ const createUserActionHandler = <T extends typeof Block | typeof Restricted>(
       throw new ConflictError(`User already ${actionName === 'block' ? 'blocked' : 'restricted'}`);
     }
 
-    const record = new (Model as any)({
+    const record = new UserModel({
       userId: authUser.id,
       [fieldName]: targetId
     });
@@ -138,8 +141,8 @@ const createUserActionHandler = <T extends typeof Block | typeof Restricted>(
   });
 };
 
-const createUserRemoveHandler = <T extends typeof Block | typeof Restricted>(
-  Model: T,
+const createUserRemoveHandler = (
+  UserModel: Model<Document>,
   fieldName: 'blockedId' | 'restrictedId',
   actionName: string
 ) => {
@@ -151,7 +154,7 @@ const createUserRemoveHandler = <T extends typeof Block | typeof Restricted>(
       throw new UnauthorizedError("Authentication required");
     }
 
-    const result = await (Model as any).deleteOne({
+    const result = await UserModel.deleteOne({
       userId: authUser.id,
       [fieldName]: targetId
     });
@@ -174,13 +177,13 @@ const getRestrictedUsers = createUserListHandler(Restricted, 'restrictedId');
 const restrictUser = createUserActionHandler(Restricted, 'restrictedId', 'restrict');
 const unrestrictUser = createUserRemoveHandler(Restricted, 'restrictedId', 'unrestrict');
 
-router.get("/:id/privacy", getPrivacySettings);
-router.patch("/:id/privacy", updatePrivacySettings);
+router.get("/:id/privacy", validate({ params: privacyUserIdParams }), getPrivacySettings);
+router.patch("/:id/privacy", validate({ params: privacyUserIdParams }), updatePrivacySettings);
 router.get("/blocked", getBlockedUsers);
-router.post("/blocked/:targetId", blockUser);
-router.delete("/blocked/:targetId", unblockUser);
+router.post("/blocked/:targetId", validate({ params: targetIdParams }), blockUser);
+router.delete("/blocked/:targetId", validate({ params: targetIdParams }), unblockUser);
 router.get("/restricted", getRestrictedUsers);
-router.post("/restricted/:targetId", restrictUser);
-router.delete("/restricted/:targetId", unrestrictUser);
+router.post("/restricted/:targetId", validate({ params: targetIdParams }), restrictUser);
+router.delete("/restricted/:targetId", validate({ params: targetIdParams }), unrestrictUser);
 
 export default router;

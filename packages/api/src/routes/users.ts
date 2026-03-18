@@ -29,6 +29,14 @@ import { PaginationParams, UserStatistics } from '../types/user.types';
 import { resolveUserIdToObjectId } from '../utils/validation';
 import SignatureService from '../services/signature.service';
 import { emailService } from '../services/email.service';
+import { validate } from '../middleware/validate';
+import {
+  searchUsersBodySchema,
+  verifyRequestSchema,
+  deleteAccountSchema,
+  dataExportQuerySchema,
+  updatePrivacyBodySchema,
+} from '../schemas/users.schemas';
 
 // Types
 interface AuthRequest extends Request {
@@ -496,6 +504,7 @@ router.put(
   authMiddleware,
   resolveUserId,
   requireOwnership,
+  validate({ body: updatePrivacyBodySchema }),
   asyncHandler(async (req: AuthRequest, res: Response) => {
     const { userId } = req.params;
 
@@ -538,6 +547,7 @@ router.put(
  */
 router.post(
   '/search',
+  validate({ body: searchUsersBodySchema }),
   asyncHandler(async (req: Request, res: Response) => {
     await usersController.searchUsers(req, res, () => {});
   })
@@ -555,6 +565,7 @@ router.post(
 router.post(
   '/verify/request',
   authMiddleware,
+  validate({ body: verifyRequestSchema }),
   asyncHandler(async (req: AuthRequest, res: Response) => {
     const userId = req.user?.id;
     if (!userId) {
@@ -596,6 +607,7 @@ router.post(
 router.get(
   '/me/data',
   authMiddleware,
+  validate({ query: dataExportQuerySchema }),
   asyncHandler(async (req: AuthRequest, res: Response) => {
     const userId = req.user?.id;
     if (!userId) {
@@ -657,6 +669,7 @@ router.get(
 router.delete(
   '/me',
   authMiddleware,
+  validate({ body: deleteAccountSchema }),
   asyncHandler(async (req: AuthRequest, res: Response) => {
     const userId = req.user?.id;
     if (!userId) {

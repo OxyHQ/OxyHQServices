@@ -256,7 +256,7 @@ export class AssetService {
       
       await file.save();
       fileCache.invalidate(file._id.toString());
-      fileCache.set(file._id.toString(), file as any);
+      fileCache.set(file._id.toString(), file);
 
       this.queueVariantGeneration(file);
 
@@ -328,7 +328,7 @@ export class AssetService {
       
       await file.save();
       fileCache.invalidate(fileId);
-      fileCache.set(fileId, file as any);
+      fileCache.set(fileId, file);
 
       logger.info('File linked successfully', { 
         fileId, 
@@ -351,9 +351,9 @@ export class AssetService {
     try {
       const axios = (await import('axios')).default;
       const notifyPromises = file.links
-        .filter(l => (l as any).webhookUrl)
+        .filter(l => l.webhookUrl)
         .map(async (link) => {
-          const url = (link as any).webhookUrl as string;
+          const url = link.webhookUrl!;
           const payload = {
             event,
             fileId: file._id.toString(),
@@ -372,7 +372,7 @@ export class AssetService {
             await axios.post(url, payload, { timeout: 5000 });
             logger.info('Webhook delivered', { url, fileId: file._id, event });
           } catch (err) {
-            logger.warn('Failed to deliver webhook', { url, fileId: file._id, event, error: (err as any)?.message });
+            logger.warn('Failed to deliver webhook', { url, fileId: file._id, event, error: err instanceof Error ? err.message : String(err) });
           }
         });
 
@@ -411,7 +411,7 @@ export class AssetService {
 
       await file.save();
       fileCache.invalidate(fileId);
-      fileCache.set(fileId, file as any);
+      fileCache.set(fileId, file);
 
       logger.info('File unlinked successfully', { 
         fileId, 
@@ -453,10 +453,10 @@ export class AssetService {
         return cached;
       }
 
-      const file = await File.findById(fileId).lean();
+      const file = await File.findById(fileId).lean() as IFile | null;
       if (file) {
-        fileCache.set(fileId, file as any);
-        return file as any;
+        fileCache.set(fileId, file);
+        return file;
       }
       return null;
     } catch (error) {
@@ -587,7 +587,7 @@ export class AssetService {
       file.status = 'active';
       await file.save();
       fileCache.invalidate(fileId);
-      fileCache.set(fileId, file as any);
+      fileCache.set(fileId, file);
 
       logger.info('File restored from trash', { fileId });
 
@@ -646,7 +646,7 @@ export class AssetService {
       file.visibility = visibility;
       await file.save();
       fileCache.invalidate(fileId);
-      fileCache.set(fileId, file as any);
+      fileCache.set(fileId, file);
 
       // Notify linked apps about visibility change
       try {

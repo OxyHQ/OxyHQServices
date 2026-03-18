@@ -47,7 +47,7 @@ export class UserService {
       const first = (user.name.first as string) || '';
       const last = (user.name.last as string) || '';
       if (!('full' in user.name) || !user.name.full) {
-        (user.name as any).full = [first, last].filter(Boolean).join(' ').trim();
+        user.name.full = [first, last].filter(Boolean).join(' ').trim();
       }
     }
 
@@ -85,7 +85,7 @@ export class UserService {
     const filteredUpdates: Partial<ProfileUpdateInput> = {};
 
     for (const [key, value] of Object.entries(sanitizedUpdates)) {
-      if (!allowedFields.includes(key as any)) continue;
+      if (!(allowedFields as readonly string[]).includes(key)) continue;
       
       if (key === 'avatar') {
         if (typeof value === 'string') {
@@ -105,7 +105,7 @@ export class UserService {
       }
       
       // Assign other fields
-      (filteredUpdates as any)[key] = value;
+      (filteredUpdates as Record<string, unknown>)[key] = value;
     }
 
     // Validate uniqueness constraints
@@ -126,12 +126,12 @@ export class UserService {
 
     // Update language directly on document to avoid MongoDB conflict
     if (language !== undefined) {
-      (user as any).language = language;
+      user.set('language', language);
     }
 
     // Update other fields directly on the document
     Object.entries(otherUpdates).forEach(([key, value]) => {
-      (user as any)[key] = value;
+      user.set(key, value);
     });
 
     // Save the document - this ensures all Mongoose middleware and validation runs
@@ -173,7 +173,7 @@ export class UserService {
       const first = (userObj.name.first as string) || '';
       const last = (userObj.name.last as string) || '';
       if (!('full' in userObj.name) || !userObj.name.full) {
-        (userObj.name as any).full = [first, last].filter(Boolean).join(' ').trim();
+        userObj.name.full = [first, last].filter(Boolean).join(' ').trim();
       }
     }
 

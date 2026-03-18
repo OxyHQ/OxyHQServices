@@ -2,6 +2,8 @@ import express, { Request, Response, NextFunction } from 'express';
 import { processPayment, validatePaymentMethod, getPaymentMethods, getUserPayments } from '../controllers/payment.controller';
 import { authMiddleware } from '../middleware/auth';
 import { asyncHandler } from '../utils/asyncHandler';
+import { validate } from '../middleware/validate';
+import { processPaymentSchema, validatePaymentMethodSchema, paymentMethodsUserIdParams } from '../schemas/payment.schemas';
 
 const router = express.Router();
 
@@ -22,9 +24,9 @@ function stubGuard(_req: Request, res: Response, next: NextFunction): void {
   });
 }
 
-router.post('/process', stubGuard, processPayment);
-router.post('/validate', stubGuard, validatePaymentMethod);
-router.get('/methods/:userId', stubGuard, getPaymentMethods);
+router.post('/process', stubGuard, validate({ body: processPaymentSchema }), processPayment);
+router.post('/validate', stubGuard, validate({ body: validatePaymentMethodSchema }), validatePaymentMethod);
+router.get('/methods/:userId', stubGuard, validate({ params: paymentMethodsUserIdParams }), getPaymentMethods);
 router.get('/user', asyncHandler(getUserPayments));
 
 export default router;

@@ -446,13 +446,14 @@ if (process.env.NODE_ENV !== 'production') {
   });
 }
 
-// Global error handler — standardised { error, message, details? } format
-app.use(errorHandler);
-
 // 404 handler for undefined routes
 app.use((_req: express.Request, res: express.Response) => {
   res.status(404).json({ error: 'NOT_FOUND', message: 'Resource not found' });
 });
+
+// Global error handler — standardised { error, message, details? } format
+// Must be registered last so it catches errors from all routes and middleware above
+app.use(errorHandler);
 
 // Only call listen if this module is run directly
 const PORT = getEnvNumber('PORT', 3001);

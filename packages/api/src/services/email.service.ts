@@ -518,7 +518,7 @@ class EmailService {
       if (threadAgg.length > 0) {
         const allMessages = threadAgg[0].allMessages;
         // Build a lookup: for each message in our page, find its thread siblings
-        for (const msg of data as any[]) {
+        for (const msg of data) {
           if (!msg.inReplyTo && (!msg.references || msg.references.length === 0)) continue;
 
           const myIds = new Set<string>();
@@ -541,9 +541,9 @@ class EmailService {
       }
     }
 
-    await EmailService.enrichWithAvatars(data as any[]);
+    await EmailService.enrichWithAvatars(data);
 
-    return { data: data as any[], total, limit, offset };
+    return { data, total, limit, offset };
   }
 
   async getMessage(userId: string, messageId: string): Promise<any> {
@@ -610,7 +610,7 @@ class EmailService {
       }),
     ]);
 
-    return message.toJSON() as any;
+    return message.toJSON();
   }
 
   async deleteMessage(userId: string, messageId: string, permanent: boolean = false): Promise<void> {
@@ -756,7 +756,7 @@ class EmailService {
       });
     }
 
-    return message.toJSON() as any;
+    return message.toJSON();
   }
 
   // ─── Compose & save draft / send ──────────────────────────────────
@@ -838,7 +838,7 @@ class EmailService {
       $inc: { totalMessages: 1, size },
     });
 
-    return message.toJSON() as any;
+    return message.toJSON();
   }
 
   /**
@@ -890,7 +890,7 @@ class EmailService {
       $inc: { totalMessages: 1, size: messageData.size },
     });
 
-    return message.toJSON() as any;
+    return message.toJSON();
   }
 
   // ─── Snooze ──────────────────────────────────────────────────────────
@@ -906,7 +906,7 @@ class EmailService {
     if (message.snoozedUntil) {
       message.snoozedUntil = until;
       await message.save();
-      return message.toJSON() as any;
+      return message.toJSON();
     }
 
     const sourceMailboxId = message.mailboxId;
@@ -927,7 +927,7 @@ class EmailService {
     ]);
 
     logger.info('Message snoozed', { userId, messageId, until: until.toISOString() });
-    return message.toJSON() as any;
+    return message.toJSON();
   }
 
   async unsnoozeMessage(userId: string, messageId: string): Promise<any> {
@@ -958,7 +958,7 @@ class EmailService {
     ]);
 
     logger.info('Message unsnoozed', { userId, messageId });
-    return message.toJSON() as any;
+    return message.toJSON();
   }
 
   /**
@@ -1072,7 +1072,7 @@ class EmailService {
       color,
       order: count,
     });
-    return label.toJSON() as any;
+    return label.toJSON();
   }
 
   async updateLabel(userId: string, labelId: string, updates: { name?: string; color?: string }): Promise<any> {
@@ -1181,14 +1181,14 @@ class EmailService {
 
     const [data, total] = await Promise.all([
       Message.find(filter, projection)
-        .sort(sort as any)
+        .sort(sort as Record<string, 1 | -1 | { $meta: string }>)
         .skip(offset)
         .limit(limit)
         .lean({ virtuals: true }),
       Message.countDocuments(filter),
     ]);
 
-    return { data: data as any[], total, limit, offset };
+    return { data, total, limit, offset };
   }
 
   // ─── Quota ────────────────────────────────────────────────────────
@@ -1319,8 +1319,8 @@ class EmailService {
     const user = await User.findById(userId).select('+emailSignature +autoReply +username');
     if (!user) throw new NotFoundError('User not found');
     return {
-      signature: (user as any).emailSignature ?? '',
-      autoReply: (user as any).autoReply ?? { enabled: false },
+      signature: user.emailSignature ?? '',
+      autoReply: user.autoReply ?? { enabled: false },
       address: user.username ? resolveEmailAddress(user.username) : '',
     };
   }
@@ -1345,7 +1345,7 @@ class EmailService {
    * Attach `senderAvatarPath` to each message based on sender email.
    * Uses the shared SenderAvatar cache (resolved server-side, 7-day TTL).
    */
-  private static async enrichWithAvatars(messages: any[]): Promise<void> {
+  private static async enrichWithAvatars(messages: Array<Record<string, unknown> & { from?: IEmailAddress; senderAvatarPath?: string | null }>): Promise<void> {
     if (messages.length === 0) return;
     const emails = messages.map((m) => m.from?.address).filter(Boolean);
     if (emails.length === 0) return;
@@ -1854,7 +1854,7 @@ class EmailService {
     }
 
     for (const msg of allMessages) {
-      const msgLabels = (msg as any).labels || [];
+      const msgLabels = msg.labels || [];
       let matched = false;
 
       for (const b of bundles) {

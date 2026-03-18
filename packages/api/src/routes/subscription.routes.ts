@@ -2,6 +2,8 @@ import express from 'express';
 import { getSubscription, updateSubscription, cancelSubscription } from '../controllers/subscription.controller';
 import { authMiddleware, AuthRequest } from '../middleware/auth';
 import { asyncHandler } from '../utils/asyncHandler';
+import { validate } from '../middleware/validate';
+import { subscriptionUserIdParams, updateSubscriptionSchema } from '../schemas/subscription.schemas';
 
 const router = express.Router();
 
@@ -12,7 +14,7 @@ router.use(authMiddleware);
  * GET /api/subscription/:userId
  * Get user subscription
  */
-router.get('/:userId', asyncHandler(async (req, res) => {
+router.get('/:userId', validate({ params: subscriptionUserIdParams }), asyncHandler(async (req, res) => {
   await getSubscription(req as AuthRequest, res);
 }));
 
@@ -20,7 +22,7 @@ router.get('/:userId', asyncHandler(async (req, res) => {
  * PUT /api/subscription/:userId
  * Update user subscription
  */
-router.put('/:userId', asyncHandler(async (req, res) => {
+router.put('/:userId', validate({ params: subscriptionUserIdParams, body: updateSubscriptionSchema }), asyncHandler(async (req, res) => {
   await updateSubscription(req as AuthRequest, res);
 }));
 
@@ -28,7 +30,7 @@ router.put('/:userId', asyncHandler(async (req, res) => {
  * DELETE /api/subscription/:userId
  * Cancel user subscription
  */
-router.delete('/:userId', asyncHandler(async (req, res) => {
+router.delete('/:userId', validate({ params: subscriptionUserIdParams }), asyncHandler(async (req, res) => {
   await cancelSubscription(req as AuthRequest, res);
 }));
 

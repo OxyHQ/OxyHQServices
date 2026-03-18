@@ -121,4 +121,3 @@ jobs:
 
       - name: Run npm audit
         run: npx npm-audit-resolver || npm audit --audit-level=moderate
-        continue-on-error: true

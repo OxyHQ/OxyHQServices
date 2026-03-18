@@ -19,6 +19,8 @@ import { userService } from '../services/user.service';
 import { PaginationParams, UserProfile, UserStatistics } from '../types/user.types';
 import Follow, { FollowType } from '../models/Follow';
 import User from '../models/User';
+import { validate } from '../middleware/validate';
+import { usernameParams, profileSearchQuerySchema } from '../schemas/profiles.schemas';
 
 interface AuthRequest extends Request {
   user?: {
@@ -75,6 +77,7 @@ const validatePagination = (req: Request, res: Response, next: () => void): void
  */
 router.get(
   '/username/:username',
+  validate({ params: usernameParams }),
   asyncHandler(async (req: Request, res: Response) => {
     // Sanitize username: only allow alphanumeric characters
     const username = req.params.username.replace(/[^a-zA-Z0-9]/g, '');
@@ -120,6 +123,7 @@ router.get(
  */
 router.get(
   '/search',
+  validate({ query: profileSearchQuerySchema }),
   validatePagination,
   asyncHandler(async (req: Request, res: Response) => {
     const query = req.query.query as string;

@@ -8,6 +8,13 @@ import { getOrCreateUserCredits } from './credits';
 import { logger } from '../utils/logger';
 import { isValidObjectId } from '../utils/validation';
 import { z } from 'zod';
+import { validate } from '../middleware/validate';
+import {
+  checkoutCreditsSchema,
+  checkoutSubscriptionSchema,
+  portalSchema,
+  transactionsQuerySchema,
+} from '../schemas/billing.schemas';
 
 const router = Router();
 
@@ -85,7 +92,7 @@ const createCheckoutSchema = z.object({
   cancelUrl: z.string().url(),
 });
 
-router.post('/checkout/credits', authMiddleware, async (req: AuthRequest, res: Response) => {
+router.post('/checkout/credits', authMiddleware, validate({ body: checkoutCreditsSchema }), async (req: AuthRequest, res: Response) => {
   try {
     const { packageId, successUrl, cancelUrl } = createCheckoutSchema.parse(req.body);
     const userId = req.user?._id?.toString();
@@ -130,7 +137,7 @@ const createSubscriptionSchema = z.object({
   cancelUrl: z.string().url(),
 });
 
-router.post('/checkout/subscription', authMiddleware, async (req: AuthRequest, res: Response) => {
+router.post('/checkout/subscription', authMiddleware, validate({ body: checkoutSubscriptionSchema }), async (req: AuthRequest, res: Response) => {
   try {
     const { planId, successUrl, cancelUrl } = createSubscriptionSchema.parse(req.body);
     const userId = req.user?._id?.toString();
@@ -205,7 +212,7 @@ router.post('/subscription/cancel', authMiddleware, async (req: AuthRequest, res
   }
 });
 
-router.get('/transactions', authMiddleware, async (req: AuthRequest, res: Response) => {
+router.get('/transactions', authMiddleware, validate({ query: transactionsQuerySchema }), async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?._id?.toString();
     if (!userId) return res.status(401).json({ error: 'Authentication required' });
@@ -225,7 +232,7 @@ router.get('/transactions', authMiddleware, async (req: AuthRequest, res: Respon
   }
 });
 
-router.post('/portal', authMiddleware, async (req: AuthRequest, res: Response) => {
+router.post('/portal', authMiddleware, validate({ body: portalSchema }), async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?._id?.toString();
     if (!userId) return res.status(401).json({ error: 'Authentication required' });

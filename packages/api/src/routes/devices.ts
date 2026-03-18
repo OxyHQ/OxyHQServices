@@ -1,6 +1,8 @@
 import express from 'express';
 import { DevicesController } from '../controllers/devices.controller';
 import { authMiddleware } from '../middleware/auth';
+import { validate } from '../middleware/validate';
+import { deviceIdParams } from '../schemas/devices.schemas';
 
 const router = express.Router();
 
@@ -14,7 +16,7 @@ router.get('/', DevicesController.getUserDevices);
 router.get('/security', DevicesController.getSecurityInfo);
 
 // Remove a device (logout all sessions on that device)
-router.delete('/:deviceId', DevicesController.removeDevice);
+router.delete('/:deviceId', validate({ params: deviceIdParams }), DevicesController.removeDevice);
 
 export default router;
 

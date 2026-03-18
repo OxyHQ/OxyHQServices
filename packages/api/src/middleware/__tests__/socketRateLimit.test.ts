@@ -1,23 +1,38 @@
 import { createSocketRateLimiter } from '../socketRateLimit';
+import type { Socket } from 'socket.io';
 
-// Minimal Socket mock
-type AnyFn = (...args: any[]) => any;
+// Minimal Socket mock that satisfies the subset of Socket used by the rate limiter.
+// The middleware function only uses: socket.id, socket.use, socket.on, socket.emit, socket.disconnect.
+// We extend a partial Socket and add test helpers.
+type MiddlewareFn = (packet: unknown[], next: jest.Mock) => void;
+type EventListener = (...args: unknown[]) => void;
 
-function createMockSocket(id = 'socket-1') {
-  const listeners: Record<string, AnyFn[]> = {};
-  const middlewares: AnyFn[] = [];
+interface MockSocketHelpers {
+  _fireEvent(packet?: unknown[]): jest.Mock;
+  _fireDisconnect(): void;
+}
+
+type MockSocket = Pick<Socket, 'id'> & {
+  use: jest.Mock;
+  on: jest.Mock;
+  emit: jest.Mock;
+  disconnect: jest.Mock;
+} & MockSocketHelpers;
+
+function createMockSocket(id = 'socket-1'): MockSocket {
+  const listeners: Record<string, EventListener[]> = {};
+  const middlewares: MiddlewareFn[] = [];
   return {
     id,
-    use: jest.fn((fn: AnyFn) => {
+    use: jest.fn((fn: MiddlewareFn) => {
       middlewares.push(fn);
     }),
-    on: jest.fn((event: string, fn: AnyFn) => {
+    on: jest.fn((event: string, fn: EventListener) => {
       (listeners[event] ??= []).push(fn);
     }),
     emit: jest.fn(),
     disconnect: jest.fn(),
-    // helpers for testing
-    _fireEvent(packet: any[] = ['test']) {
+    _fireEvent(packet: unknown[] = ['test']) {
       const mw = middlewares[0];
       if (!mw) throw new Error('No middleware installed');
       const next = jest.fn();
@@ -28,6 +43,18 @@ function createMockSocket(id = 'socket-1') {
       (listeners['disconnect'] ?? []).forEach(fn => fn());
     },
   };
+}
+
+/**
+ * Wraps a mock socket for use with the rate limiter middleware.
+ * The mock implements all Socket properties accessed by the middleware
+ * (id, use, on, emit, disconnect).
+ */
+function toSocket(mock: MockSocket): Socket {
+  // The middleware only accesses a small subset of Socket properties.
+  // The mock provides all of them, so this structural cast is safe.
+  const socketLike: Record<string, unknown> = mock;
+  return socketLike as Socket;
 }
 
 describe('createSocketRateLimiter', () => {
@@ -45,7 +72,7 @@ describe('createSocketRateLimiter', () => {
     const next = jest.fn();
 
     // Connect
-    middleware(socket as any, next);
+    middleware(toSocket(socket), next);
     expect(next).toHaveBeenCalled();
     expect(socket.use).toHaveBeenCalled();
 
@@ -61,7 +88,7 @@ describe('createSocketRateLimiter', () => {
   it('disconnects when limit is exceeded', () => {
     const middleware = createSocketRateLimiter(3, 10_000);
     const socket = createMockSocket();
-    middleware(socket as any, jest.fn());
+    middleware(toSocket(socket), jest.fn());
 
     // Send 3 events — OK
     for (let i = 0; i < 3; i++) {
@@ -77,7 +104,7 @@ describe('createSocketRateLimiter', () => {
   it('resets counter after window expires', () => {
     const middleware = createSocketRateLimiter(3, 1_000);
     const socket = createMockSocket();
-    middleware(socket as any, jest.fn());
+    middleware(toSocket(socket), jest.fn());
 
     // Use up all 3
     for (let i = 0; i < 3; i++) {
@@ -96,7 +123,7 @@ describe('createSocketRateLimiter', () => {
   it('cleans up state on disconnect', () => {
     const middleware = createSocketRateLimiter(10, 10_000);
     const socket = createMockSocket();
-    middleware(socket as any, jest.fn());
+    middleware(toSocket(socket), jest.fn());
 
     // Send an event to create state
     socket._fireEvent();
@@ -106,7 +133,7 @@ describe('createSocketRateLimiter', () => {
 
     // Reconnect with same id — should start fresh (no accumulated count)
     const socket2 = createMockSocket('socket-1');
-    middleware(socket2 as any, jest.fn());
+    middleware(toSocket(socket2), jest.fn());
 
     // Should allow full limit again
     for (let i = 0; i < 10; i++) {

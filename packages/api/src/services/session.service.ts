@@ -1,5 +1,5 @@
 import Session, { ISession } from '../models/Session';
-import { User } from '../models/User';
+import { User, IUser } from '../models/User';
 import { logger } from '../utils/logger';
 import sessionCache from '../utils/sessionCache';
 import userCache from '../utils/userCache';
@@ -158,7 +158,7 @@ class SessionService {
             
             const user = await User.findById(userId).select(select).lean();
             if (user) {
-              userCache.set(userId, user as any);
+              userCache.set(userId, user as IUser);
               return { session: cached, user };
             }
             
@@ -190,7 +190,7 @@ class SessionService {
         if (!userDoc) {
           return null;
         }
-        user = userDoc as any;
+        user = userDoc as IUser;
         if (useCache && user) {
           userCache.set(userId, user);
         }
@@ -639,7 +639,7 @@ class SessionService {
 
       // Check if access token is expired
       try {
-        const decoded = jwt.verify(session.accessToken, process.env.ACCESS_TOKEN_SECRET!) as any;
+        const decoded = jwt.verify(session.accessToken, process.env.ACCESS_TOKEN_SECRET!) as jwt.JwtPayload;
         const currentTime = Math.floor(Date.now() / 1000);
         
         if (decoded.exp && decoded.exp < currentTime) {

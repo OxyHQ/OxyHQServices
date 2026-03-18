@@ -17,6 +17,8 @@ import { authMiddleware, AuthRequest } from '../middleware/auth.js';
 import SignatureService from '../services/signature.service.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { BadRequestError, ConflictError } from '../utils/error.js';
+import { validate } from '../middleware/validate.js';
+import { linkAuthMethodSchema, unlinkTypeParams } from '../schemas/authLinking.schemas.js';
 
 const router = Router();
 
@@ -86,7 +88,7 @@ router.get('/methods', asyncHandler(async (req: AuthRequest, res: Response) => {
  * POST /api/auth/link
  * Link a new authentication method to the current user account
  */
-router.post('/link', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/link', validate({ body: linkAuthMethodSchema }), asyncHandler(async (req: AuthRequest, res: Response) => {
   const userId = req.user?._id;
   if (!userId) {
     throw new BadRequestError('User not authenticated');
@@ -267,7 +269,7 @@ router.post('/link', asyncHandler(async (req: AuthRequest, res: Response) => {
  * Unlink an authentication method from the current user account
  * Must keep at least one auth method
  */
-router.delete('/link/:type', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.delete('/link/:type', validate({ params: unlinkTypeParams }), asyncHandler(async (req: AuthRequest, res: Response) => {
   const userId = req.user?._id;
   if (!userId) {
     throw new BadRequestError('User not authenticated');

@@ -15,6 +15,8 @@ import type { AuthMethod } from '../models/User';
 import { rateLimit } from '../middleware/rateLimiter';
 import { asyncHandler } from '../utils/asyncHandler';
 import { BadRequestError, UnauthorizedError } from '../utils/error';
+import { validate } from '../middleware/validate';
+import { googleSignInSchema, appleSignInSchema, githubSignInSchema } from '../schemas/socialAuth.schemas';
 import { logger } from '../utils/logger';
 import sessionService from '../services/session.service';
 import { buildSessionAuthResponse } from '../controllers/session.controller';
@@ -160,7 +162,7 @@ async function handleSocialSignIn(
  * POST /auth/social/google
  * Body: { idToken, deviceName?, deviceFingerprint? }
  */
-router.post('/google', asyncHandler(async (req, res) => {
+router.post('/google', validate({ body: googleSignInSchema }), asyncHandler(async (req, res) => {
   const { idToken } = req.body;
   if (!idToken || typeof idToken !== 'string') {
     throw new BadRequestError('idToken is required');
@@ -181,7 +183,7 @@ router.post('/google', asyncHandler(async (req, res) => {
  * Apple only sends the user's name on the very first authorization.
  * Clients should forward it in the request body so we can store it.
  */
-router.post('/apple', asyncHandler(async (req, res) => {
+router.post('/apple', validate({ body: appleSignInSchema }), asyncHandler(async (req, res) => {
   const { idToken, name } = req.body;
   if (!idToken || typeof idToken !== 'string') {
     throw new BadRequestError('idToken is required');
@@ -204,7 +206,7 @@ router.post('/apple', asyncHandler(async (req, res) => {
  * POST /auth/social/github
  * Body: { code, deviceName?, deviceFingerprint? }
  */
-router.post('/github', asyncHandler(async (req, res) => {
+router.post('/github', validate({ body: githubSignInSchema }), asyncHandler(async (req, res) => {
   const { code } = req.body;
   if (!code || typeof code !== 'string') {
     throw new BadRequestError('code is required');

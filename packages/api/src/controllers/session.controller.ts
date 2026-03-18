@@ -98,7 +98,7 @@ function parseIdentifier(identifier: string): { field: 'email' | 'username'; val
 }
 
 export function buildSessionAuthResponse(session: { sessionId: string; deviceId: string; expiresAt: Date; accessToken?: string }, user: unknown): SessionAuthResponse | null {
-  const userData = formatUserResponse(user as any);
+  const userData = formatUserResponse(user);
   if (!userData) {
     return null;
   }
@@ -613,17 +613,19 @@ export class SessionController {
         { deviceName, deviceFingerprint }
       );
 
-      const response = buildSessionAuthResponse(session, user);
+      const baseResponse = buildSessionAuthResponse(session, user);
+
+      if (!baseResponse) {
+        return res.status(500).json({ message: 'Failed to format user data' });
+      }
 
       // Include anomaly information in response if detected
-      if (anomalyCheck.hasAnomalies && response) {
-        (response as any).securityAlert = {
+      const response: SessionAuthResponse & { securityAlert?: { message: string; anomalies: Array<{ type: string; reason: string; details?: string }> } } = baseResponse;
+      if (anomalyCheck.hasAnomalies) {
+        response.securityAlert = {
           message: 'Unusual activity detected on your account',
           anomalies: anomalyCheck.anomalies,
         };
-      }
-      if (!response) {
-        return res.status(500).json({ message: 'Failed to format user data' });
       }
 
       try {
@@ -1197,7 +1199,7 @@ export class SessionController {
       for (const session of sessions) {
         if (!session.userId || typeof session.userId !== 'object') continue;
         
-        const user = session.userId as any;
+        const user = session.userId;
         const userData = formatUserResponse(user);
         if (!userData?.id) continue;
         

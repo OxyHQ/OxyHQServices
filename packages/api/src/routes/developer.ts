@@ -7,6 +7,8 @@ import ApiKeyUsage from '../models/ApiKeyUsage';
 import { authMiddleware } from '../middleware/auth';
 import { logger } from '../utils/logger';
 import { z } from 'zod';
+import { validate } from '../middleware/validate';
+import { appIdParams, appIdRouteParams, appKeyParams, periodQuerySchema } from '../schemas/developer.schemas';
 
 interface AuthenticatedRequest extends express.Request {
   user?: {
@@ -129,7 +131,7 @@ const apiKeyScopesEnum = ['chat:completions', 'models:read', 'files:read', 'file
 // ============================================
 
 // Get global usage statistics across all apps
-router.get('/usage', async (req: AuthenticatedRequest, res: express.Response) => {
+router.get('/usage', validate({ query: periodQuerySchema }), async (req: AuthenticatedRequest, res: express.Response) => {
   try {
     const userId = getUserId(req);
     if (!userId) return res.status(401).json({ error: 'Authentication required' });
@@ -234,7 +236,7 @@ router.get('/apps', async (req: AuthenticatedRequest, res: express.Response) => 
 });
 
 // Create app
-router.post('/apps', async (req: AuthenticatedRequest, res: express.Response) => {
+router.post('/apps', validate({ body: createAppSchema }), async (req: AuthenticatedRequest, res: express.Response) => {
   try {
     const userId = getUserId(req);
     if (!userId) return res.status(401).json({ error: 'Authentication required' });
@@ -283,7 +285,7 @@ router.post('/apps', async (req: AuthenticatedRequest, res: express.Response) =>
 });
 
 // Get single app
-router.get('/apps/:id', async (req: AuthenticatedRequest, res: express.Response) => {
+router.get('/apps/:id', validate({ params: appIdParams }), async (req: AuthenticatedRequest, res: express.Response) => {
   try {
     const userId = getUserId(req);
     if (!userId) return res.status(401).json({ error: 'Authentication required' });
@@ -304,7 +306,7 @@ router.get('/apps/:id', async (req: AuthenticatedRequest, res: express.Response)
 });
 
 // Update app
-router.patch('/apps/:id', async (req: AuthenticatedRequest, res: express.Response) => {
+router.patch('/apps/:id', validate({ params: appIdParams, body: updateAppSchema }), async (req: AuthenticatedRequest, res: express.Response) => {
   try {
     const userId = getUserId(req);
     if (!userId) return res.status(401).json({ error: 'Authentication required' });
@@ -351,7 +353,7 @@ router.patch('/apps/:id', async (req: AuthenticatedRequest, res: express.Respons
 });
 
 // Regenerate API secret
-router.post('/apps/:id/regenerate-secret', async (req: AuthenticatedRequest, res: express.Response) => {
+router.post('/apps/:id/regenerate-secret', validate({ params: appIdParams }), async (req: AuthenticatedRequest, res: express.Response) => {
   try {
     const userId = getUserId(req);
     if (!userId) return res.status(401).json({ error: 'Authentication required' });
@@ -375,7 +377,7 @@ router.post('/apps/:id/regenerate-secret', async (req: AuthenticatedRequest, res
 });
 
 // Delete app (cascade deletes keys + usage)
-router.delete('/apps/:id', async (req: AuthenticatedRequest, res: express.Response) => {
+router.delete('/apps/:id', validate({ params: appIdParams }), async (req: AuthenticatedRequest, res: express.Response) => {
   try {
     const userId = getUserId(req);
     if (!userId) return res.status(401).json({ error: 'Authentication required' });
@@ -405,7 +407,7 @@ router.delete('/apps/:id', async (req: AuthenticatedRequest, res: express.Respon
 // APP USAGE STATISTICS
 // ============================================
 
-router.get('/apps/:appId/usage', async (req: AuthenticatedRequest, res: express.Response) => {
+router.get('/apps/:appId/usage', validate({ params: appIdRouteParams, query: periodQuerySchema }), async (req: AuthenticatedRequest, res: express.Response) => {
   try {
     const userId = getUserId(req);
     if (!userId) return res.status(401).json({ error: 'Authentication required' });
@@ -446,7 +448,7 @@ const updateApiKeySchema = z.object({
 });
 
 // List keys for an app
-router.get('/apps/:appId/keys', async (req: AuthenticatedRequest, res: express.Response) => {
+router.get('/apps/:appId/keys', validate({ params: appIdRouteParams }), async (req: AuthenticatedRequest, res: express.Response) => {
   try {
     const userId = getUserId(req);
     if (!userId) return res.status(401).json({ error: 'Authentication required' });
@@ -468,7 +470,7 @@ router.get('/apps/:appId/keys', async (req: AuthenticatedRequest, res: express.R
 });
 
 // Create API key
-router.post('/apps/:appId/keys', async (req: AuthenticatedRequest, res: express.Response) => {
+router.post('/apps/:appId/keys', validate({ params: appIdRouteParams, body: createApiKeySchema }), async (req: AuthenticatedRequest, res: express.Response) => {
   try {
     const userId = getUserId(req);
     if (!userId) return res.status(401).json({ error: 'Authentication required' });
@@ -515,7 +517,7 @@ router.post('/apps/:appId/keys', async (req: AuthenticatedRequest, res: express.
 });
 
 // Update API key
-router.patch('/apps/:appId/keys/:keyId', async (req: AuthenticatedRequest, res: express.Response) => {
+router.patch('/apps/:appId/keys/:keyId', validate({ params: appKeyParams, body: updateApiKeySchema }), async (req: AuthenticatedRequest, res: express.Response) => {
   try {
     const userId = getUserId(req);
     if (!userId) return res.status(401).json({ error: 'Authentication required' });
@@ -545,7 +547,7 @@ router.patch('/apps/:appId/keys/:keyId', async (req: AuthenticatedRequest, res: 
 });
 
 // Delete API key
-router.delete('/apps/:appId/keys/:keyId', async (req: AuthenticatedRequest, res: express.Response) => {
+router.delete('/apps/:appId/keys/:keyId', validate({ params: appKeyParams }), async (req: AuthenticatedRequest, res: express.Response) => {
   try {
     const userId = getUserId(req);
     if (!userId) return res.status(401).json({ error: 'Authentication required' });
@@ -568,7 +570,7 @@ router.delete('/apps/:appId/keys/:keyId', async (req: AuthenticatedRequest, res:
 });
 
 // Per-key usage
-router.get('/apps/:appId/keys/:keyId/usage', async (req: AuthenticatedRequest, res: express.Response) => {
+router.get('/apps/:appId/keys/:keyId/usage', validate({ params: appKeyParams, query: periodQuerySchema }), async (req: AuthenticatedRequest, res: express.Response) => {
   try {
     const userId = getUserId(req);
     if (!userId) return res.status(401).json({ error: 'Authentication required' });

@@ -2,10 +2,12 @@ import express, { Request, Response } from "express";
 import User from "../models/User";
 import { logger } from '../utils/logger';
 import { sanitizeSearchQuery } from '../utils/sanitize';
+import { validate } from '../middleware/validate';
+import { searchQuerySchema } from '../schemas/search.schemas';
 
 const router = express.Router();
 
-router.get("/", async (req: Request, res: Response) => {
+router.get("/", validate({ query: searchQuerySchema }), async (req: Request, res: Response) => {
   try {
     const { query, type = "all" } = req.query;
     const page = Math.max(1, parseInt(req.query.page as string) || 1);

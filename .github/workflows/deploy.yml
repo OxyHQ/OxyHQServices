@@ -69,8 +69,16 @@ jobs:
             echo "=== Status ==="
             docker compose ps
 
+            echo "=== Health check ==="
+            sleep 10
+            if ! docker compose exec -T api curl -sf http://localhost:3001/health; then
+              echo "Health check failed! Showing recent logs:"
+              docker compose logs --tail=50 api
+              exit 1
+            fi
+            echo "Health check passed"
+
             echo "=== Recent logs ==="
-            sleep 5
             docker compose logs --tail=30 api
 
             echo "Deploy complete!"
