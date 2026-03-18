@@ -271,6 +271,10 @@ const UserSchema: Schema = new Schema(
       trim: true,
       lowercase: true,
       enum: ['teal', 'blue', 'green', 'amber', 'red', 'purple', 'pink', 'sky', 'orange', 'mint'],
+      default: () => {
+        const colors = ['teal', 'blue', 'green', 'amber', 'red', 'purple', 'pink', 'sky', 'orange', 'mint'];
+        return colors[Math.floor(Math.random() * colors.length)];
+      },
     },
     _count: {
       followers: { type: Number, default: 0 },
