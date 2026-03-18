@@ -30,7 +30,7 @@ export interface User {
   email?: string;
   // Avatar file id (asset id)
   avatar?: string;
-  // Hex color code for user's accent/profile color
+  // Named color preset (e.g. 'teal', 'blue', 'purple')
   color?: string;
   // Privacy and security settings
   privacySettings?: {
