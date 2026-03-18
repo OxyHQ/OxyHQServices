@@ -57,7 +57,7 @@ export function sanitizeObject<T extends Record<string, unknown>>(
  * Skips: avatar (file ID), links (URLs), email, password.
  */
 export function sanitizeProfileUpdate(updates: Record<string, unknown>): Record<string, unknown> {
-  const skipFields = ['avatar', 'email', 'password', 'links', 'linksMetadata', 'locations'];
+  const skipFields = ['avatar', 'color', 'email', 'password', 'links', 'linksMetadata', 'locations'];
   const result = { ...updates };
 
   for (const key of Object.keys(result)) {

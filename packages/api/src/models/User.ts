@@ -59,6 +59,7 @@ export interface IUser extends Document {
   };
   // Avatar file ID referencing assets collection
   avatar?: string; // file id
+  color?: string; // Hex color code for user's accent/profile color
   _count?: {
     followers?: number;
     following?: number;
@@ -265,6 +266,7 @@ const UserSchema: Schema = new Schema(
       muteKeywords: { type: Boolean, default: false },
     },
   avatar: { type: String },
+    color: { type: String, trim: true },
     _count: {
       followers: { type: Number, default: 0 },
       following: { type: Number, default: 0 },

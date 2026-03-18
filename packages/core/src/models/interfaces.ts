@@ -30,6 +30,8 @@ export interface User {
   email?: string;
   // Avatar file id (asset id)
   avatar?: string;
+  // Hex color code for user's accent/profile color
+  color?: string;
   // Privacy and security settings
   privacySettings?: {
     [key: string]: unknown;
