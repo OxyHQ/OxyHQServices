@@ -156,9 +156,9 @@ class SessionService {
               return { session: cached, user: cachedUser };
             }
             
-            const user = await User.findById(userId).select(select).lean();
+            const user = await User.findById(userId).select(select).lean<IUser>();
             if (user) {
-              userCache.set(userId, user as IUser);
+              userCache.set(userId, user);
               return { session: cached, user };
             }
             
@@ -186,11 +186,11 @@ class SessionService {
       let user = userCache.get(userId);
       
       if (!user) {
-        const userDoc = await User.findById(userId).select(select).lean();
+        const userDoc = await User.findById(userId).select(select).lean<IUser>();
         if (!userDoc) {
           return null;
         }
-        user = userDoc as IUser;
+        user = userDoc;
         if (useCache && user) {
           userCache.set(userId, user);
         }

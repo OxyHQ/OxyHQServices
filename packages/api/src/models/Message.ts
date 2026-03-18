@@ -81,6 +81,10 @@ export interface IMessage extends Document {
   receivedAt: Date;
   createdAt: Date;
   updatedAt: Date;
+  /** Computed: number of messages in the thread (set at query time, not stored) */
+  threadCount?: number;
+  /** Computed: unique sender addresses in the thread (set at query time, not stored) */
+  threadParticipants?: string[];
 }
 
 const EmailAddressSchema = new Schema(

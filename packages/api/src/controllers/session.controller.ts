@@ -15,7 +15,7 @@ import SignatureService from '../services/signature.service';
 import sessionService from '../services/session.service';
 import sessionCache from '../utils/sessionCache';
 import { logger } from '../utils/logger';
-import { formatUserResponse } from '../utils/userTransform';
+import { formatUserResponse, type UserLike } from '../utils/userTransform';
 import { generateAlphanumericCode, hashPassword, verifyPassword, validatePasswordStrength } from '../utils/password';
 import securityActivityService from '../services/securityActivityService';
 import anomalyDetectionService from '../services/anomalyDetection.service';
@@ -97,7 +97,7 @@ function parseIdentifier(identifier: string): { field: 'email' | 'username'; val
   return { field: 'username', value: normalizeUsername(trimmed) };
 }
 
-export function buildSessionAuthResponse(session: { sessionId: string; deviceId: string; expiresAt: Date; accessToken?: string }, user: unknown): SessionAuthResponse | null {
+export function buildSessionAuthResponse(session: { sessionId: string; deviceId: string; expiresAt: Date; accessToken?: string }, user: UserLike): SessionAuthResponse | null {
   const userData = formatUserResponse(user);
   if (!userData) {
     return null;

@@ -96,8 +96,8 @@ const updatePrivacySettings = asyncHandler(async (req: Request, res: Response) =
 });
 
 // Generic handler factory for user management operations
-const createUserListHandler = (
-  UserModel: Model<Document>,
+const createUserListHandler = <T extends Document>(
+  UserModel: Model<T>,
   fieldName: 'blockedId' | 'restrictedId'
 ) => {
   return asyncHandler(async (req: Request, res: Response) => {
@@ -109,8 +109,8 @@ const createUserListHandler = (
   });
 };
 
-const createUserActionHandler = (
-  UserModel: Model<Document>,
+const createUserActionHandler = <T extends Document>(
+  UserModel: Model<T>,
   fieldName: 'blockedId' | 'restrictedId',
   actionName: string
 ) => {
@@ -141,8 +141,8 @@ const createUserActionHandler = (
   });
 };
 
-const createUserRemoveHandler = (
-  UserModel: Model<Document>,
+const createUserRemoveHandler = <T extends Document>(
+  UserModel: Model<T>,
   fieldName: 'blockedId' | 'restrictedId',
   actionName: string
 ) => {

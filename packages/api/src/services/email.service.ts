@@ -7,7 +7,7 @@
  * Email addresses are always derived: {username}@oxy.so — never stored independently.
  */
 
-import mongoose from 'mongoose';
+import mongoose, { type SortOrder } from 'mongoose';
 import { Mailbox, IMailbox } from '../models/Mailbox';
 import { Message, IMessage, IEmailAddress, IAttachment } from '../models/Message';
 import { Label } from '../models/Label';
@@ -535,7 +535,7 @@ class EmailService {
 
           if (siblings.length > 1) {
             msg.threadCount = siblings.length;
-            msg.threadParticipants = [...new Set(siblings.map((s: any) => s.fromAddress))];
+            msg.threadParticipants = [...new Set<string>(siblings.map((s: any) => s.fromAddress))];
           }
         }
       }
@@ -1177,11 +1177,13 @@ class EmailService {
     }
 
     const projection = query ? { score: { $meta: 'textScore' } } : {};
-    const sort = query ? { score: { $meta: 'textScore' } } : { date: -1 as const };
+    const sort: Record<string, SortOrder | { $meta: string }> = query
+      ? { score: { $meta: 'textScore' } }
+      : { date: -1 };
 
     const [data, total] = await Promise.all([
       Message.find(filter, projection)
-        .sort(sort as Record<string, 1 | -1 | { $meta: string }>)
+        .sort(sort)
         .skip(offset)
         .limit(limit)
         .lean({ virtuals: true }),
@@ -1347,7 +1349,7 @@ class EmailService {
    */
   private static async enrichWithAvatars(messages: Array<Record<string, unknown> & { from?: IEmailAddress; senderAvatarPath?: string | null }>): Promise<void> {
     if (messages.length === 0) return;
-    const emails = messages.map((m) => m.from?.address).filter(Boolean);
+    const emails = messages.map((m) => m.from?.address).filter((e): e is string => Boolean(e));
     if (emails.length === 0) return;
     try {
       const avatarMap = await getAvatarPathsBatch(emails);

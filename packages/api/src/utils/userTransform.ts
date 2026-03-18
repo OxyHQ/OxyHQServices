@@ -5,7 +5,7 @@
 
 import type { IUser } from '../models/User';
 
-type UserLike = IUser | { _id: any; [key: string]: any } | null | undefined;
+export type UserLike = IUser | { _id: any; [key: string]: any } | null | undefined;
 
 /**
  * Format user object for API response.
