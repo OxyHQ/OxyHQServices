@@ -20,6 +20,7 @@ import {
   UserStatistics,
   FollowActionResult,
 } from '../types/user.types';
+import Subscription from '../models/Subscription';
 
 // Constants
 import { PAGINATION } from '../utils/constants';
@@ -69,6 +70,7 @@ export class UserService {
       'email',
       'username',
       'avatar',
+      'color',
       'bio',
       'description',
       'links',
@@ -93,7 +95,23 @@ export class UserService {
         }
         continue;
       }
-      
+
+      // Validate premium-exclusive colors
+      if (key === 'color' && value === 'oxy') {
+        const user = await User.findById(userId).select('username').lean();
+        const isOxyUser = user?.username?.toLowerCase() === 'oxy';
+        if (!isOxyUser) {
+          const subscription = await Subscription.findOne({
+            userId,
+            status: 'active',
+            plan: { $in: ['pro', 'business'] },
+          }).lean();
+          if (!subscription) {
+            throw new Error('The oxy color is exclusive to premium subscribers');
+          }
+        }
+      }
+
       // Validate accountExpiresAfterInactivityDays
       if (key === 'accountExpiresAfterInactivityDays') {
         if (value !== null && value !== undefined) {

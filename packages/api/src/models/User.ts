@@ -279,7 +279,7 @@ const UserSchema: Schema = new Schema(
       type: String,
       trim: true,
       lowercase: true,
-      enum: ['teal', 'blue', 'green', 'amber', 'red', 'purple', 'pink', 'sky', 'orange', 'mint'],
+      enum: ['teal', 'blue', 'green', 'amber', 'red', 'purple', 'pink', 'sky', 'orange', 'mint', 'oxy'],
       default: () => {
         const colors = ['teal', 'blue', 'green', 'amber', 'red', 'purple', 'pink', 'sky', 'orange', 'mint'];
         return colors[Math.floor(Math.random() * colors.length)];
