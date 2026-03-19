@@ -513,6 +513,14 @@ export class UserService {
       updatedAt: userAny.updatedAt as Date | undefined,
     };
 
+    if (userAny.type) {
+      response.type = userAny.type;
+    }
+    if (userAny.federation) {
+      response.federation = userAny.federation;
+    }
+    response.isFederated = userAny.type === 'federated';
+
     if (stats) {
       response._count = stats;
     }
