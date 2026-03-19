@@ -33,6 +33,7 @@ import aliaRoutes from './routes/alia';
 import creditsRoutes from './routes/credits';
 import billingRoutes from './routes/billing';
 import modelsStatsRoutes from './routes/models-stats';
+import topicsRoutes from './routes/topics.routes';
 import { startSmtpInbound, stopSmtpInbound } from './services/smtp.inbound';
 import { smtpOutbound } from './services/smtp.outbound';
 import { startSnoozeCron, stopSnoozeCron } from './cron/snooze.cron';
@@ -425,6 +426,7 @@ app.use('/alia', userRateLimiter, aliaRoutes);
 app.use('/credits', userRateLimiter, csrfProtection, creditsRoutes);
 app.use('/billing', billingRoutes);
 app.use('/models', modelsStatsRoutes);
+app.use('/topics', topicsRoutes);
 
 // Add a protected route for testing
 app.get('/protected-server-route', authMiddleware, (req: any, res: Response) => {

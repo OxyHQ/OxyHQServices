@@ -40,6 +40,8 @@ export type { KeyPair, SignedMessage, AuthChallenge, RecoveryPhraseResult } from
 // --- Models & Types ---
 export * from './models/interfaces';
 export * from './models/session';
+export type { TopicData, TopicTranslation } from './models/Topic';
+export { TopicType, TopicSource } from './models/Topic';
 
 // --- Device Management ---
 export { DeviceManager } from './utils/deviceManager';

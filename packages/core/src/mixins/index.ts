@@ -23,6 +23,7 @@ import { OxyServicesDevicesMixin } from './OxyServices.devices';
 import { OxyServicesSecurityMixin } from './OxyServices.security';
 import { OxyServicesUtilityMixin } from './OxyServices.utility';
 import { OxyServicesFeaturesMixin } from './OxyServices.features';
+import { OxyServicesTopicsMixin } from './OxyServices.topics';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type MixinFunction = (Base: any) => any;
@@ -66,6 +67,7 @@ const MIXIN_PIPELINE: MixinFunction[] = [
     OxyServicesDevicesMixin,
     OxyServicesSecurityMixin,
     OxyServicesFeaturesMixin,
+    OxyServicesTopicsMixin,
 
     // Utility (last, can use all above)
     OxyServicesUtilityMixin,
