@@ -268,8 +268,14 @@ router.get(
   authMiddleware,
   validatePagination,
   asyncHandler(async (req: AuthRequest, res: Response) => {
-    const { limit, offset } = req.query as PaginationQuery;
+    const { limit, offset, excludeTypes: excludeTypesRaw } = req.query as PaginationQuery & { excludeTypes?: string };
     const currentUserId = req.user?.id;
+
+    // Parse and validate excludeTypes filter
+    const validTypes = new Set(['federated', 'agent', 'automated']);
+    const excludeTypes = excludeTypesRaw
+      ? excludeTypesRaw.split(',').filter(t => validTypes.has(t.trim())).map(t => t.trim())
+      : [];
 
     if (!currentUserId) {
       throw new UnauthorizedError('Authentication required');
@@ -338,6 +344,10 @@ router.get(
           },
         },
         { $unwind: '$user' },
+        // Filter by user type if excludeTypes specified
+        ...(excludeTypes.length > 0
+          ? [{ $match: { 'user.type': { $nin: excludeTypes } } }]
+          : []),
         // Get follower/following counts
         {
           $lookup: {
@@ -400,8 +410,9 @@ router.get(
       const alreadyRecommendedIds = recommendations.map((u) => u._id);
       const fillLimit = parsedLimit - recommendations.length;
 
+      const typeFilter = excludeTypes.length > 0 ? { type: { $nin: excludeTypes } } : {};
       const randomUsers = await User.aggregate([
-        { $match: { _id: { $nin: excludeIds.concat(alreadyRecommendedIds) } } },
+        { $match: { _id: { $nin: excludeIds.concat(alreadyRecommendedIds) }, ...typeFilter } },
         { $sample: { size: fillLimit } },
         {
           $lookup: {

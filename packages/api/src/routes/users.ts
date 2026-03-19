@@ -730,114 +730,55 @@ router.delete(
 );
 
 /**
- * PUT /users/federated
+ * PUT /users/resolve
  *
- * Upsert a federated (ActivityPub / fediverse) user. Called by internal Oxy
- * services (e.g. Mention) whenever they encounter a remote actor that should
- * be represented as an Oxy user. Requires a valid service token.
+ * Find or create a non-local user (federated, agent, or automated).
+ * Called by Oxy ecosystem services when they encounter an external user
+ * that needs an Oxy identity. Requires a valid service token.
  *
- * @body {string} actorUri    - ActivityPub actor URI (globally unique key)
- * @body {string} domain      - Origin domain, e.g. "mastodon.social"
- * @body {string} username    - Full handle, e.g. "user@mastodon.social"
- * @body {string} [displayName] - Display name from the remote profile
- * @body {string} [avatar]    - Avatar URL or asset ID
- * @body {string} [bio]       - Profile bio text
- * @body {string} [actorId]   - Ref to FederatedActor._id in the calling app DB
- * @returns {User} The upserted user document
- */
-router.put(
-  '/federated',
-  serviceAuthMiddleware,
-  asyncHandler(async (req: Request, res: Response) => {
-    const { actorUri, domain, username, displayName, avatar, bio, actorId } = req.body;
-
-    if (!actorUri || typeof actorUri !== 'string') {
-      throw new BadRequestError('actorUri is required');
-    }
-    if (!domain || typeof domain !== 'string') {
-      throw new BadRequestError('domain is required');
-    }
-    if (!username || typeof username !== 'string') {
-      throw new BadRequestError('username is required');
-    }
-
-    // Build the $set payload — never touch auth fields
-    const setFields: Record<string, unknown> = {
-      type: 'federated',
-      username,
-      'federation.actorUri': actorUri,
-      'federation.domain': domain,
-    };
-
-    if (typeof displayName === 'string') {
-      setFields['name.first'] = displayName;
-    }
-    if (typeof avatar === 'string') {
-      setFields.avatar = avatar;
-    }
-    if (typeof bio === 'string') {
-      setFields.bio = bio;
-    }
-    if (typeof actorId === 'string') {
-      setFields['federation.actorId'] = actorId;
-    }
-
-    const user = await User.findOneAndUpdate(
-      { 'federation.actorUri': actorUri },
-      { $set: setFields },
-      { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true }
-    )
-      .select('-password -refreshToken')
-      .lean({ virtuals: true });
-
-    if (!user) {
-      throw new Error('Failed to upsert federated user');
-    }
-
-    logger.info('Federated user upserted', {
-      actorUri,
-      domain,
-      username,
-      userId: user._id,
-    });
-
-    sendSuccess(res, user);
-  })
-);
-
-/**
- * PUT /users/automated
- *
- * Upsert an agent or automated user account. Called by internal services
- * to register bots, AI agents, or scheduled/feed-based accounts.
- * Requires a valid service token.
- *
- * @body {'agent' | 'automated'} type - Account type
- * @body {string} username    - Unique username for the account
+ * @body {'federated' | 'agent' | 'automated'} type
+ * @body {string} username      - Unique username (e.g. "user@mastodon.social")
+ * @body {string} [actorUri]    - ActivityPub actor URI (required for federated)
+ * @body {string} [domain]      - Origin domain (required for federated)
  * @body {string} [displayName] - Display name
- * @body {string} [avatar]    - Avatar URL or asset ID
- * @body {string} [bio]       - Profile bio text
- * @body {string} [ownerId]   - User ID of the human owner/creator
- * @returns {User} The upserted user document
+ * @body {string} [avatar]      - Avatar URL or asset ID
+ * @body {string} [bio]         - Profile bio
+ * @body {string} [ownerId]     - Owner user ID (for agent/automated)
+ * @returns {User} The resolved user document
  */
 router.put(
-  '/automated',
+  '/resolve',
   serviceAuthMiddleware,
   asyncHandler(async (req: Request, res: Response) => {
-    const { type, username, displayName, avatar, bio, ownerId } = req.body;
+    const { type, username, actorUri, domain, displayName, avatar, bio, ownerId } = req.body;
 
-    if (!type || !['agent', 'automated'].includes(type)) {
-      throw new BadRequestError('type must be "agent" or "automated"');
+    if (!type || !['federated', 'agent', 'automated'].includes(type)) {
+      throw new BadRequestError('type must be "federated", "agent", or "automated"');
     }
     if (!username || typeof username !== 'string') {
       throw new BadRequestError('username is required');
     }
 
-    // Build the $set payload — never touch auth fields
-    const setFields: Record<string, unknown> = {
-      type,
-      username,
-    };
+    // Build the upsert filter and $set payload — never touch auth fields
+    let filter: Record<string, unknown>;
+    const setFields: Record<string, unknown> = { type, username };
+
+    if (type === 'federated') {
+      if (!actorUri || typeof actorUri !== 'string') {
+        throw new BadRequestError('actorUri is required for federated users');
+      }
+      if (!domain || typeof domain !== 'string') {
+        throw new BadRequestError('domain is required for federated users');
+      }
+      filter = { 'federation.actorUri': actorUri };
+      setFields['federation.actorUri'] = actorUri;
+      setFields['federation.domain'] = domain;
+    } else {
+      filter = { username, type: { $in: ['agent', 'automated'] } };
+      if (typeof ownerId === 'string') {
+        setFields['automation.ownerId'] = ownerId;
+      }
+    }
 
     if (typeof displayName === 'string') {
       setFields['name.first'] = displayName;
@@ -848,12 +789,9 @@ router.put(
     if (typeof bio === 'string') {
       setFields.bio = bio;
     }
-    if (typeof ownerId === 'string') {
-      setFields['automation.ownerId'] = ownerId;
-    }
 
     const user = await User.findOneAndUpdate(
-      { username, type: { $in: ['agent', 'automated'] } },
+      filter,
       { $set: setFields },
       { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true }
     )
@@ -861,15 +799,10 @@ router.put(
       .lean({ virtuals: true });
 
     if (!user) {
-      throw new Error('Failed to upsert automated user');
+      throw new Error('Failed to resolve user');
     }
 
-    logger.info('Automated user upserted', {
-      type,
-      username,
-      ownerId,
-      userId: user._id,
-    });
+    logger.info('External user resolved', { type, username, userId: user._id });
 
     sendSuccess(res, user);
   })

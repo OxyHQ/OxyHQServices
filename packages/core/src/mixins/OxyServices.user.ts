@@ -105,9 +105,29 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
     }
 
     /**
-     * Get profile recommendations
+     * Resolve (find or create) a non-local user. All user creation for
+     * external accounts (federated, agent, automated) goes through this
+     * method — calling services never write user data directly.
      */
-    async getProfileRecommendations(): Promise<Array<{
+    async resolveExternalUser(data: {
+      type: 'federated' | 'agent' | 'automated';
+      username: string;
+      actorUri?: string;
+      domain?: string;
+      displayName?: string;
+      avatar?: string;
+      bio?: string;
+      ownerId?: string;
+    }): Promise<User> {
+      return this.makeRequest<User>('PUT', '/users/resolve', data);
+    }
+
+    /**
+     * Get profile recommendations, optionally filtering out specific user types.
+     */
+    async getProfileRecommendations(options?: {
+      excludeTypes?: Array<'federated' | 'agent' | 'automated'>;
+    }): Promise<Array<{
       id: string;
       username: string;
       name?: { first?: string; last?: string; full?: string };
@@ -121,8 +141,11 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
       _count?: { followers: number; following: number };
       [key: string]: unknown;
     }>> {
+      const params = options?.excludeTypes?.length
+        ? { excludeTypes: options.excludeTypes.join(',') }
+        : undefined;
       return this.withAuthRetry(async () => {
-        return await this.makeRequest('GET', '/profiles/recommendations', undefined, { cache: true });
+        return await this.makeRequest('GET', '/profiles/recommendations', params, { cache: true });
       }, 'getProfileRecommendations');
     }
 
