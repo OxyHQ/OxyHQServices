@@ -805,4 +805,74 @@ router.put(
   })
 );
 
+/**
+ * PUT /users/automated
+ *
+ * Upsert an agent or automated user account. Called by internal services
+ * to register bots, AI agents, or scheduled/feed-based accounts.
+ * Requires a valid service token.
+ *
+ * @body {'agent' | 'automated'} type - Account type
+ * @body {string} username    - Unique username for the account
+ * @body {string} [displayName] - Display name
+ * @body {string} [avatar]    - Avatar URL or asset ID
+ * @body {string} [bio]       - Profile bio text
+ * @body {string} [ownerId]   - User ID of the human owner/creator
+ * @returns {User} The upserted user document
+ */
+router.put(
+  '/automated',
+  serviceAuthMiddleware,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { type, username, displayName, avatar, bio, ownerId } = req.body;
+
+    if (!type || !['agent', 'automated'].includes(type)) {
+      throw new BadRequestError('type must be "agent" or "automated"');
+    }
+    if (!username || typeof username !== 'string') {
+      throw new BadRequestError('username is required');
+    }
+
+    // Build the $set payload — never touch auth fields
+    const setFields: Record<string, unknown> = {
+      type,
+      username,
+    };
+
+    if (typeof displayName === 'string') {
+      setFields['name.first'] = displayName;
+    }
+    if (typeof avatar === 'string') {
+      setFields.avatar = avatar;
+    }
+    if (typeof bio === 'string') {
+      setFields.bio = bio;
+    }
+    if (typeof ownerId === 'string') {
+      setFields['automation.ownerId'] = ownerId;
+    }
+
+    const user = await User.findOneAndUpdate(
+      { username, type: { $in: ['agent', 'automated'] } },
+      { $set: setFields },
+      { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true }
+    )
+      .select('-password -refreshToken')
+      .lean({ virtuals: true });
+
+    if (!user) {
+      throw new Error('Failed to upsert automated user');
+    }
+
+    logger.info('Automated user upserted', {
+      type,
+      username,
+      ownerId,
+      userId: user._id,
+    });
+
+    sendSuccess(res, user);
+  })
+);
+
 export default router;

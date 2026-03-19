@@ -94,8 +94,11 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
       name?: { first?: string; last?: string; full?: string };
       description?: string;
       isFederated?: boolean;
+      isAgent?: boolean;
+      isAutomated?: boolean;
       instance?: string;
       federation?: { actorUri?: string; domain?: string; actorId?: string };
+      automation?: { ownerId?: string };
       _count?: { followers: number; following: number };
       [key: string]: unknown;
     }>> {

@@ -21,11 +21,14 @@ export interface IUser extends Document {
   password?: string; // Hashed password for password-based accounts
   refreshToken?: string | null;
   authMethods?: AuthMethod[]; // Linked authentication methods for unified auth
-  type?: 'local' | 'federated'; // 'local' = Oxy account, 'federated' = ActivityPub/fediverse account
+  type?: 'local' | 'federated' | 'agent' | 'automated';
   federation?: {
     actorUri?: string;  // ActivityPub actor URI (globally unique identifier)
     domain?: string;    // e.g. "mastodon.social"
     actorId?: string;   // Ref to FederatedActor._id in app DB
+  };
+  automation?: {
+    ownerId?: string;   // User ID of the human owner/creator
   };
   twoFactorAuth?: {
     enabled: boolean;
@@ -356,7 +359,7 @@ const UserSchema: Schema = new Schema(
     // Federated (ActivityPub / fediverse) user support
     type: {
       type: String,
-      enum: ['local', 'federated'],
+      enum: ['local', 'federated', 'agent', 'automated'],
       default: 'local',
       index: true,
     },
@@ -364,6 +367,9 @@ const UserSchema: Schema = new Schema(
       actorUri: { type: String, index: { sparse: true, unique: true } },
       domain: { type: String, index: { sparse: true } },
       actorId: { type: String, sparse: true },
+    },
+    automation: {
+      ownerId: { type: String, index: { sparse: true } },
     },
   },
   {
