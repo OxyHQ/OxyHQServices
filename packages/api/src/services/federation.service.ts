@@ -251,8 +251,7 @@ class FederationService {
       { $set: setFields },
       { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true },
     )
-      .select('-password -refreshToken')
-      .lean({ virtuals: true }) as IUser | null;
+      .select('-password -refreshToken');
 
     if (user) {
       logger.info(`Resolved fediverse user: ${profile.username} (${profile.actorUri})`);
