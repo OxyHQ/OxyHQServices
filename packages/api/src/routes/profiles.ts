@@ -218,7 +218,7 @@ router.get(
       total,
     });
 
-    sendPaginated(res, enrichedProfiles, enrichedProfiles.length, parsedLimit, parsedOffset);
+    sendPaginated(res, enrichedProfiles, total, parsedLimit, parsedOffset);
   })
 );
 

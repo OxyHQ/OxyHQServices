@@ -7,7 +7,6 @@
 
 import crypto from 'crypto';
 import User, { IUser } from '../models/User';
-// File model not directly imported — avatar management goes through AssetService
 import { AssetService } from './assetService';
 import { createS3Service } from './s3Service';
 import { logger } from '../utils/logger';
@@ -196,8 +195,16 @@ class FederationService {
     const atIndex = cleaned.indexOf('@');
     if (atIndex === -1) return null;
 
-    // Check cache: existing user fetched recently
-    const existing = await User.findOne({ username: cleaned, type: 'federated' })
+    const domain = cleaned.substring(atIndex + 1);
+
+    // Check cache: existing user fetched recently.
+    // Match by domain + case-insensitive username to handle alias/case variations.
+    const escapedCleaned = cleaned.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const existing = await User.findOne({
+      type: 'federated',
+      'federation.domain': domain,
+      username: { $regex: new RegExp(`^${escapedCleaned}$`, 'i') },
+    })
       .select('-password -refreshToken')
       .lean({ virtuals: true }) as IUser | null;
 
@@ -218,7 +225,7 @@ class FederationService {
     if (profile.avatarUrl) {
       const storedId = await this.downloadAndStoreAvatar(
         profile.avatarUrl,
-        existing?.avatar || undefined,
+        existing?.avatar,
       );
       if (storedId) avatarFileId = storedId;
     }
