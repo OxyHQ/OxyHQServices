@@ -86,6 +86,25 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
     }
 
     /**
+     * Resolve a fediverse handle to an Oxy user profile.
+     * Performs WebFinger discovery and returns the user, or null if not found.
+     * @param handle - Fediverse handle (e.g. "@user@mastodon.social" or "user@domain")
+     */
+    async resolveProfile(handle: string): Promise<User | null> {
+      try {
+        const result = await this.makeRequest<{ data: User | null }>('GET', '/profiles/resolve', {
+          handle,
+        }, {
+          cache: true,
+          cacheTTL: 24 * 60 * 60 * 1000, // 24h cache — matches server-side staleness window
+        });
+        return result.data ?? null;
+      } catch {
+        return null;
+      }
+    }
+
+    /**
      * Get profile recommendations
      */
     async getProfileRecommendations(): Promise<Array<{

@@ -16,6 +16,7 @@ import {
   UnauthorizedError,
 } from '../utils/error';
 import { userService } from '../services/user.service';
+import { federationService, isFediverseHandle } from '../services/federation.service';
 import { PaginationParams, UserProfile, UserStatistics } from '../types/user.types';
 import Follow, { FollowType } from '../models/Follow';
 import User from '../models/User';
@@ -151,23 +152,38 @@ router.get(
       ],
     };
 
-    // Single query: fetch profiles + total count using $facet (avoids duplicate query)
-    const [result] = await User.aggregate([
-      { $match: searchFilter },
-      {
-        $facet: {
-          profiles: [
-            { $skip: parsedOffset },
-            { $limit: parsedLimit },
-            { $project: { password: 0, refreshToken: 0 } },
-          ],
-          totalCount: [{ $count: 'count' }],
+    // Run local DB search and (if query is a fediverse handle) remote resolution in parallel
+    const isFediverse = isFediverseHandle(sanitizedQuery);
+    const [dbResult, federatedUser] = await Promise.all([
+      User.aggregate([
+        { $match: searchFilter },
+        {
+          $facet: {
+            profiles: [
+              { $skip: parsedOffset },
+              { $limit: parsedLimit },
+              { $project: { password: 0, refreshToken: 0 } },
+            ],
+            totalCount: [{ $count: 'count' }],
+          },
         },
-      },
+      ]).then((r) => r[0]),
+      isFediverse
+        ? federationService.resolveAndUpsert(sanitizedQuery).catch(() => null)
+        : Promise.resolve(null),
     ]);
 
-    const profiles = result.profiles || [];
-    const total = result.totalCount[0]?.count || 0;
+    const profiles = dbResult.profiles || [];
+    const total = dbResult.totalCount[0]?.count || 0;
+
+    // If federation resolved a user not already in DB results, prepend it
+    if (federatedUser) {
+      const fedId = federatedUser._id?.toString();
+      const alreadyIncluded = profiles.some((p: any) => p._id?.toString() === fedId);
+      if (!alreadyIncluded) {
+        profiles.unshift(federatedUser);
+      }
+    }
 
     // Batch-fetch follower/following stats for all profiles at once (avoids N+1)
     const profileIds = profiles.map((p: any) => p._id);
@@ -202,13 +218,45 @@ router.get(
       total,
     });
 
-    sendPaginated(res, enrichedProfiles, total, parsedLimit, parsedOffset);
+    sendPaginated(res, enrichedProfiles, enrichedProfiles.length, parsedLimit, parsedOffset);
+  })
+);
+
+/**
+ * GET /profiles/resolve
+ *
+ * Resolve a fediverse handle (e.g. @user@mastodon.social) to an Oxy user profile.
+ * Performs WebFinger discovery, fetches the ActivityPub actor, and upserts as a
+ * federated user. Returns cached results if resolved within the last 24 hours.
+ *
+ * @query {string} handle - Fediverse handle (e.g. "@user@domain" or "user@domain")
+ * @returns {User | null} Resolved user profile or null
+ */
+router.get(
+  '/resolve',
+  asyncHandler(async (req: Request, res: Response) => {
+    const handle = (req.query.handle as string || '').trim();
+
+    if (!handle || !isFediverseHandle(handle)) {
+      throw new BadRequestError('Invalid fediverse handle. Expected format: @user@domain or user@domain');
+    }
+
+    const user = await federationService.resolveAndUpsert(handle);
+    if (!user) {
+      return sendSuccess(res, null);
+    }
+
+    const stats = await userService.getUserStats(user._id.toString());
+    const response = userService.formatUserResponse(user, stats);
+
+    logger.debug('GET /profiles/resolve', { handle });
+    sendSuccess(res, response);
   })
 );
 
 /**
  * GET /profiles/recommendations
- * 
+ *
  * Get recommended user profiles based on mutual connections
  * 
  * @query {number} limit - Number of results (max 100, default 10)
