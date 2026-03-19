@@ -198,12 +198,11 @@ class FederationService {
     const domain = cleaned.substring(atIndex + 1);
 
     // Check cache: existing user fetched recently.
-    // Match by domain + case-insensitive username to handle alias/case variations.
-    const escapedCleaned = cleaned.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    // Fediverse usernames are case-insensitive; we store them lowercased.
     const existing = await User.findOne({
       type: 'federated',
       'federation.domain': domain,
-      username: { $regex: new RegExp(`^${escapedCleaned}$`, 'i') },
+      username: cleaned.toLowerCase(),
     })
       .select('-password -refreshToken')
       .lean({ virtuals: true }) as IUser | null;
@@ -233,7 +232,7 @@ class FederationService {
     // Upsert into Oxy users collection
     const setFields: Record<string, unknown> = {
       type: 'federated',
-      username: profile.username,
+      username: profile.username.toLowerCase(),
       'name.first': profile.displayName,
       'federation.actorUri': profile.actorUri,
       'federation.domain': profile.domain,

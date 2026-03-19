@@ -38,6 +38,7 @@ const router = Router();
 import { PAGINATION } from '../utils/constants';
 
 // Constants
+const VALID_EXCLUDE_TYPES = new Set(['federated', 'agent', 'automated']);
 const MIN_USERNAME_LENGTH = 3;
 const MAX_USERNAME_LENGTH = 30;
 
@@ -271,10 +272,8 @@ router.get(
     const { limit, offset, excludeTypes: excludeTypesRaw } = req.query as PaginationQuery & { excludeTypes?: string };
     const currentUserId = req.user?.id;
 
-    // Parse and validate excludeTypes filter
-    const validTypes = new Set(['federated', 'agent', 'automated']);
     const excludeTypes = excludeTypesRaw
-      ? excludeTypesRaw.split(',').filter(t => validTypes.has(t.trim())).map(t => t.trim())
+      ? excludeTypesRaw.split(',').filter(t => VALID_EXCLUDE_TYPES.has(t.trim())).map(t => t.trim())
       : [];
 
     if (!currentUserId) {
