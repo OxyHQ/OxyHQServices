@@ -428,6 +428,19 @@ app.use('/billing', billingRoutes);
 app.use('/models', modelsStatsRoutes);
 app.use('/topics', topicsRoutes);
 
+// ActivityPub actor endpoint — serves public key for HTTP Signature verification.
+// Remote servers fetch this to verify signed requests made by our federation service.
+import { getInstanceActor } from './services/federation.service';
+app.get('/ap/actor', async (_req: any, res: Response) => {
+  try {
+    const actor = await getInstanceActor();
+    res.setHeader('Content-Type', 'application/activity+json');
+    res.json(actor);
+  } catch {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Add a protected route for testing
 app.get('/protected-server-route', authMiddleware, (req: any, res: Response) => {
   res.json({ 

@@ -3,9 +3,11 @@
  *
  * Resolves fediverse (ActivityPub) handles to Oxy user profiles.
  * Handles WebFinger discovery, actor profile fetching, avatar download, and user upsert.
+ * Signs outgoing requests with HTTP Signatures for servers that enforce authorized fetch.
  */
 
 import crypto from 'crypto';
+import mongoose from 'mongoose';
 import User, { IUser } from '../models/User';
 import { AssetService } from './assetService';
 import { createS3Service } from './s3Service';
@@ -16,6 +18,7 @@ const AP_ACCEPT_TYPES = [
   'application/ld+json; profile="https://www.w3.org/ns/activitystreams"',
 ];
 
+const AP_DOMAIN = process.env.FEDERATION_DOMAIN || 'api.oxy.so';
 const USER_AGENT = 'OxyHQ/1.0 (ActivityPub)';
 const STALE_MS = 24 * 60 * 60 * 1000; // 24 hours
 
@@ -31,7 +34,141 @@ export function isFediverseHandle(query: string): boolean {
   return FEDIVERSE_HANDLE_REGEX.test(query.trim());
 }
 
-/** Lazy-init asset service (shares the same S3 config as the rest of the app). */
+// ============================================================
+// HTTP Signature Signing
+// ============================================================
+
+/** Mongoose model for the instance key pair (lazy-created collection). */
+const keyPairSchema = new mongoose.Schema({
+  keyId: { type: String, required: true, unique: true },
+  publicKeyPem: { type: String, required: true },
+  privateKeyPem: { type: String, required: true },
+}, { timestamps: true });
+
+const FederationKeyPair = mongoose.models.FederationKeyPair
+  || mongoose.model('FederationKeyPair', keyPairSchema, 'federation_keypairs');
+
+interface KeyPairDoc {
+  keyId: string;
+  publicKeyPem: string;
+  privateKeyPem: string;
+}
+
+let _cachedKeyPair: KeyPairDoc | null = null;
+
+/**
+ * Get or create the instance-level RSA key pair used for signing fetch requests.
+ * The key pair is generated once, stored in MongoDB, and cached in memory.
+ */
+async function getInstanceKeyPair(): Promise<KeyPairDoc> {
+  if (_cachedKeyPair) return _cachedKeyPair;
+
+  const keyId = `https://${AP_DOMAIN}/ap/actor#main-key`;
+  const existing = await FederationKeyPair.findOne({ keyId }).lean() as KeyPairDoc | null;
+  if (existing) {
+    _cachedKeyPair = existing;
+    return existing;
+  }
+
+  const { publicKey, privateKey } = crypto.generateKeyPairSync('rsa', {
+    modulusLength: 2048,
+    publicKeyEncoding: { type: 'spki', format: 'pem' },
+    privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+  });
+
+  const doc = await FederationKeyPair.create({
+    keyId,
+    publicKeyPem: publicKey,
+    privateKeyPem: privateKey,
+  });
+
+  _cachedKeyPair = { keyId: doc.keyId, publicKeyPem: doc.publicKeyPem, privateKeyPem: doc.privateKeyPem };
+  return _cachedKeyPair;
+}
+
+/**
+ * Build HTTP Signature headers per draft-cavage-http-signatures-12.
+ */
+function signRequest(
+  privateKeyPem: string,
+  keyId: string,
+  method: string,
+  url: string,
+): Record<string, string> {
+  const parsedUrl = new URL(url);
+  const date = new Date().toUTCString();
+  const signedHeaderNames = ['(request-target)', 'host', 'date'];
+  const signingString = [
+    `(request-target): ${method.toLowerCase()} ${parsedUrl.pathname}`,
+    `host: ${parsedUrl.host}`,
+    `date: ${date}`,
+  ].join('\n');
+
+  const signer = crypto.createSign('sha256');
+  signer.update(signingString);
+  signer.end();
+  const signature = signer.sign(privateKeyPem, 'base64');
+
+  return {
+    Host: parsedUrl.host,
+    Date: date,
+    Signature: [
+      `keyId="${keyId}"`,
+      'algorithm="rsa-sha256"',
+      `headers="${signedHeaderNames.join(' ')}"`,
+      `signature="${signature}"`,
+    ].join(','),
+  };
+}
+
+/**
+ * Fetch a URL with HTTP Signature authentication.
+ * Required by servers that enforce authorized fetch (e.g., Threads).
+ */
+async function signedFetch(url: string, accept: string): Promise<Response> {
+  const keyPair = await getInstanceKeyPair();
+  const sigHeaders = signRequest(keyPair.privateKeyPem, keyPair.keyId, 'GET', url);
+
+  return fetch(url, {
+    headers: {
+      Accept: accept,
+      'User-Agent': USER_AGENT,
+      ...sigHeaders,
+    },
+    signal: AbortSignal.timeout(10_000),
+  });
+}
+
+/**
+ * Returns the instance actor JSON-LD document for HTTP Signature key verification.
+ * Served at GET /ap/actor by the routes layer.
+ */
+export async function getInstanceActor(): Promise<Record<string, unknown>> {
+  const keyPair = await getInstanceKeyPair();
+  const actorUrl = `https://${AP_DOMAIN}/ap/actor`;
+
+  return {
+    '@context': [
+      'https://www.w3.org/ns/activitystreams',
+      'https://w3id.org/security/v1',
+    ],
+    id: actorUrl,
+    type: 'Application',
+    preferredUsername: 'oxy',
+    inbox: `${actorUrl}/inbox`,
+    outbox: `${actorUrl}/outbox`,
+    publicKey: {
+      id: keyPair.keyId,
+      owner: actorUrl,
+      publicKeyPem: keyPair.publicKeyPem,
+    },
+  };
+}
+
+// ============================================================
+// Asset Service (lazy init)
+// ============================================================
+
 let _assetService: AssetService | null = null;
 function getAssetService(): AssetService {
   if (!_assetService) {
@@ -46,6 +183,10 @@ function getAssetService(): AssetService {
   }
   return _assetService;
 }
+
+// ============================================================
+// Federation Service
+// ============================================================
 
 class FederationService {
   /**
@@ -84,7 +225,7 @@ class FederationService {
 
   /**
    * Fetch an ActivityPub actor by URI and extract user-profile fields.
-   * Returns the fields needed for an Oxy User upsert, or null on failure.
+   * Uses HTTP Signature for servers that enforce authorized fetch.
    */
   async fetchActorProfile(actorUri: string): Promise<{
     actorUri: string;
@@ -95,13 +236,7 @@ class FederationService {
     bio?: string;
   } | null> {
     try {
-      const res = await fetch(actorUri, {
-        headers: {
-          Accept: AP_ACCEPT_TYPES[0],
-          'User-Agent': USER_AGENT,
-        },
-        signal: AbortSignal.timeout(10_000),
-      });
+      const res = await signedFetch(actorUri, AP_ACCEPT_TYPES[0]);
       if (!res.ok) return null;
 
       const actor = (await res.json()) as Record<string, unknown>;
@@ -186,7 +321,7 @@ class FederationService {
    * Full pipeline: resolve a fediverse handle to an Oxy user.
    * 1. Check local cache (existing user with matching federation.actorUri, <24h old)
    * 2. WebFinger → actor URI
-   * 3. Fetch actor profile
+   * 3. Fetch actor profile (with HTTP Signature)
    * 4. Download avatar to Oxy Cloud
    * 5. Upsert as Oxy user with type=federated
    */
