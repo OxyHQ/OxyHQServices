@@ -349,6 +349,10 @@ export class UserService {
       throw new Error('User not found');
     }
 
+    // Federated users are always public — their privacy settings are governed
+    // by their home instance, not by Oxy privacy controls.
+    const isFederatedTarget = (targetUser as unknown as { type?: string }).type === 'federated';
+
     // Check existing follow relationship
     const existingFollow = await Follow.findOne({
       followerUserId: currentUserId,

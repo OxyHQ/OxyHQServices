@@ -12,7 +12,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { Types } from 'mongoose';
 import User from '../models/User';
-import { authMiddleware } from '../middleware/auth';
+import { authMiddleware, serviceAuthMiddleware } from '../middleware/auth';
 import { logger } from '../utils/logger';
 import { asyncHandler, sendSuccess, sendPaginated } from '../utils/asyncHandler';
 import {
@@ -726,6 +726,82 @@ router.delete(
     sendSuccess(res, {
       message: 'Account deleted successfully',
     });
+  })
+);
+
+/**
+ * PUT /users/federated
+ *
+ * Upsert a federated (ActivityPub / fediverse) user. Called by internal Oxy
+ * services (e.g. Mention) whenever they encounter a remote actor that should
+ * be represented as an Oxy user. Requires a valid service token.
+ *
+ * @body {string} actorUri    - ActivityPub actor URI (globally unique key)
+ * @body {string} domain      - Origin domain, e.g. "mastodon.social"
+ * @body {string} username    - Full handle, e.g. "user@mastodon.social"
+ * @body {string} [displayName] - Display name from the remote profile
+ * @body {string} [avatar]    - Avatar URL or asset ID
+ * @body {string} [bio]       - Profile bio text
+ * @body {string} [actorId]   - Ref to FederatedActor._id in the calling app DB
+ * @returns {User} The upserted user document
+ */
+router.put(
+  '/federated',
+  serviceAuthMiddleware,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { actorUri, domain, username, displayName, avatar, bio, actorId } = req.body;
+
+    if (!actorUri || typeof actorUri !== 'string') {
+      throw new BadRequestError('actorUri is required');
+    }
+    if (!domain || typeof domain !== 'string') {
+      throw new BadRequestError('domain is required');
+    }
+    if (!username || typeof username !== 'string') {
+      throw new BadRequestError('username is required');
+    }
+
+    // Build the $set payload — never touch auth fields
+    const setFields: Record<string, unknown> = {
+      type: 'federated',
+      username,
+      'federation.actorUri': actorUri,
+      'federation.domain': domain,
+    };
+
+    if (typeof displayName === 'string') {
+      setFields['name.first'] = displayName;
+    }
+    if (typeof avatar === 'string') {
+      setFields.avatar = avatar;
+    }
+    if (typeof bio === 'string') {
+      setFields.bio = bio;
+    }
+    if (typeof actorId === 'string') {
+      setFields['federation.actorId'] = actorId;
+    }
+
+    const user = await User.findOneAndUpdate(
+      { 'federation.actorUri': actorUri },
+      { $set: setFields },
+      { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true }
+    )
+      .select('-password -refreshToken')
+      .lean({ virtuals: true });
+
+    if (!user) {
+      throw new Error('Failed to upsert federated user');
+    }
+
+    logger.info('Federated user upserted', {
+      actorUri,
+      domain,
+      username,
+      userId: user._id,
+    });
+
+    sendSuccess(res, user);
   })
 );
 

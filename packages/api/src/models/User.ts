@@ -21,6 +21,12 @@ export interface IUser extends Document {
   password?: string; // Hashed password for password-based accounts
   refreshToken?: string | null;
   authMethods?: AuthMethod[]; // Linked authentication methods for unified auth
+  type?: 'local' | 'federated'; // 'local' = Oxy account, 'federated' = ActivityPub/fediverse account
+  federation?: {
+    actorUri?: string;  // ActivityPub actor URI (globally unique identifier)
+    domain?: string;    // e.g. "mastodon.social"
+    actorId?: string;   // Ref to FederatedActor._id in app DB
+  };
   twoFactorAuth?: {
     enabled: boolean;
     secret?: string; // TOTP secret (encrypted)
@@ -346,6 +352,18 @@ const UserSchema: Schema = new Schema(
       body: { type: String, default: '' },
       startDate: { type: Date, default: null },
       endDate: { type: Date, default: null },
+    },
+    // Federated (ActivityPub / fediverse) user support
+    type: {
+      type: String,
+      enum: ['local', 'federated'],
+      default: 'local',
+      index: true,
+    },
+    federation: {
+      actorUri: { type: String, index: { sparse: true, unique: true } },
+      domain: { type: String, index: { sparse: true } },
+      actorId: { type: String, sparse: true },
     },
   },
   {

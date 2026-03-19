@@ -93,8 +93,11 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
       username: string;
       name?: { first?: string; last?: string; full?: string };
       description?: string;
+      isFederated?: boolean;
+      instance?: string;
+      federation?: { actorUri?: string; domain?: string; actorId?: string };
       _count?: { followers: number; following: number };
-      [key: string]: any;
+      [key: string]: unknown;
     }>> {
       return this.withAuthRetry(async () => {
         return await this.makeRequest('GET', '/profiles/recommendations', undefined, { cache: true });

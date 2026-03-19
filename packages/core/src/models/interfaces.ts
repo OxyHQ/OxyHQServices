@@ -60,6 +60,15 @@ export interface User {
     following?: number;
   };
   accountExpiresAfterInactivityDays?: number | null; // Days of inactivity before account expires (null = never expire)
+  // Fediverse / ActivityPub support
+  type?: 'local' | 'federated';
+  isFederated?: boolean;
+  instance?: string;
+  federation?: {
+    actorUri?: string;
+    domain?: string;
+    actorId?: string;
+  };
   [key: string]: unknown;
 }
 

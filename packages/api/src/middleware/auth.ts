@@ -189,12 +189,73 @@ export const authMiddleware = async (req: AuthRequest, res: Response, next: Next
 };
 
 /**
+ * Service token authentication middleware
+ *
+ * Validates OAuth2 client-credentials service JWTs (type: 'service').
+ * Only accepts tokens issued via POST /auth/service-token — rejects regular
+ * user session tokens. Used to protect internal endpoints that should only
+ * be called by other Oxy ecosystem services.
+ *
+ * @param req - Express request object
+ * @param res - Express response object
+ * @param next - Express next function
+ */
+export const serviceAuthMiddleware = (req: Request, res: Response, next: NextFunction) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) {
+    return res.status(401).json({
+      error: 'Authentication required',
+      message: 'Invalid or missing authorization header',
+    });
+  }
+
+  const token = authHeader.split(' ')[1];
+
+  if (!process.env.ACCESS_TOKEN_SECRET) {
+    logger.error('ACCESS_TOKEN_SECRET not configured');
+    return res.status(500).json({
+      error: 'Server configuration error',
+      message: 'Server configuration error',
+    });
+  }
+
+  try {
+    const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET) as {
+      type?: string;
+      appId?: string;
+      appName?: string;
+      [key: string]: unknown;
+    };
+
+    if (decoded.type !== 'service') {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'This endpoint requires a service token',
+      });
+    }
+
+    next();
+  } catch (error) {
+    if (error instanceof jwt.TokenExpiredError) {
+      return res.status(401).json({
+        error: 'Token expired',
+        message: 'Service token has expired',
+      });
+    }
+    return res.status(401).json({
+      error: 'Invalid token',
+      message: 'The provided service token is invalid',
+    });
+  }
+};
+
+/**
  * Simplified authentication middleware that only validates the token and attaches the user ID
- * 
+ *
  * Optimized for high-scale usage - lighter weight than full authMiddleware.
  * Uses session-based tokens only.
  * Use this when you only need the user ID, not the full user object.
- * 
+ *
  * @param req - Express request object
  * @param res - Express response object
  * @param next - Express next function
