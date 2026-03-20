@@ -8,7 +8,6 @@
  */
 
 import { Request, Response, NextFunction } from 'express';
-import type { CorsOptions } from 'cors';
 
 /**
  * Standard HTTP methods allowed for CORS
@@ -100,7 +99,7 @@ export function createCorsMiddleware() {
 /**
  * Socket.IO CORS configuration — allows all origins with credentials
  */
-export const SOCKET_IO_CORS_CONFIG: CorsOptions = {
+export const SOCKET_IO_CORS_CONFIG = {
   origin: true,
   methods: ['GET', 'POST'],
   credentials: true,
