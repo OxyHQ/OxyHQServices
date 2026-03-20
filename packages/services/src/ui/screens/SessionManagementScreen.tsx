@@ -20,6 +20,7 @@ import { Header, GroupedSection } from '../components';
 import { useThemeStyles } from '../hooks/useThemeStyles';
 import { normalizeTheme } from '../utils/themeUtils';
 import { useOxy } from '../context/OxyContext';
+import { useI18n } from '../hooks/useI18n';
 
 // Button background colors for session actions
 const SWITCH_BUTTON_BG = {
@@ -46,6 +47,7 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
         logoutAll,
         switchSession,
     } = useOxy();
+    const { t } = useI18n();
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -74,11 +76,11 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
                 console.error('Failed to load sessions:', error);
             }
             if (Platform.OS === 'web') {
-                toast.error('Failed to load sessions. Please try again.');
+                toast.error(t('sessionManagement.toasts.loadFailed'));
             } else {
                 Alert.alert(
                     'Error',
-                    'Failed to load sessions. Please try again.',
+                    t('sessionManagement.toasts.loadFailed'),
                     [{ text: 'OK' }]
                 );
             }
@@ -90,17 +92,17 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
 
     // Memoized logout session handler - prevents unnecessary re-renders
     const handleLogoutSession = useCallback(async (sessionId: string) => {
-        confirmAction('Are you sure you want to logout this session?', async () => {
+        confirmAction(t('sessionManagement.confirms.logoutSession'), async () => {
             try {
                 setActionLoading(sessionId);
                 await logout(sessionId);
                 await refreshSessions();
-                toast.success('Session logged out successfully');
+                toast.success(t('sessionManagement.toasts.logoutSuccess'));
             } catch (error) {
                 if (__DEV__) {
                     console.error('Logout session failed:', error);
                 }
-                toast.error('Failed to logout session. Please try again.');
+                toast.error(t('sessionManagement.toasts.logoutFailed'));
             } finally {
                 setActionLoading(null);
             }
@@ -116,11 +118,11 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
     // Memoized logout other sessions handler - prevents unnecessary re-renders
     const handleLogoutOtherSessions = useCallback(async () => {
         if (otherSessionsCount === 0) {
-            toast.info('No other sessions to logout.');
+            toast.info(t('sessionManagement.toasts.noOtherSessions'));
             return;
         }
         confirmAction(
-            `This will logout ${otherSessionsCount} other session${otherSessionsCount > 1 ? 's' : ''}. Continue?`,
+            t('sessionManagement.confirms.logoutOthers', { count: otherSessionsCount }),
             async () => {
                 try {
                     setActionLoading('others');
@@ -130,12 +132,12 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
                         }
                     }
                     await refreshSessions();
-                    toast.success('Other sessions logged out successfully');
+                    toast.success(t('sessionManagement.toasts.logoutOthersSuccess'));
                 } catch (error) {
                     if (__DEV__) {
                         console.error('Logout other sessions failed:', error);
                     }
-                    toast.error('Failed to logout other sessions. Please try again.');
+                    toast.error(t('sessionManagement.toasts.logoutOthersFailed'));
                 } finally {
                     setActionLoading(null);
                 }
@@ -146,7 +148,7 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
     // Memoized logout all sessions handler - prevents unnecessary re-renders
     const handleLogoutAllSessions = useCallback(async () => {
         confirmAction(
-            'This will logout all sessions including this one and you will need to sign in again. Continue?',
+            t('sessionManagement.confirms.logoutAll'),
             async () => {
                 try {
                     setActionLoading('all');
@@ -155,7 +157,7 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
                     if (__DEV__) {
                         console.error('Logout all sessions failed:', error);
                     }
-                    toast.error('Failed to logout all sessions. Please try again.');
+                    toast.error(t('sessionManagement.toasts.logoutAllFailed'));
                 } finally {
                     setActionLoading(null);
                 }
@@ -165,7 +167,7 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
 
     // Memoized relative time formatter - prevents function recreation on every render
     const formatRelative = useCallback((dateString?: string) => {
-        if (!dateString) return 'Unknown';
+        if (!dateString) return t('appInfo.items.unknown');
         const date = new Date(dateString);
         const now = new Date();
         const diffMs = date.getTime() - now.getTime();
@@ -187,12 +189,12 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
         setSwitchLoading(sessionId);
         try {
             await switchSession(sessionId);
-            toast.success('Switched session');
+            toast.success(t('sessionManagement.toasts.switchSuccess'));
         } catch (e) {
             if (__DEV__) {
                 console.error('Switch session failed', e);
             }
-            toast.error('Failed to switch session');
+            toast.error(t('sessionManagement.toasts.switchFailed'));
         } finally {
             setSwitchLoading(null);
         }
@@ -220,7 +222,7 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
                 id: session.sessionId,
                 icon: isCurrent ? 'shield-checkmark' : 'laptop-outline',
                 iconColor: isCurrent ? successColor : primaryColor,
-                title: isCurrent ? 'Current Session' : `Session ${session.sessionId.substring(0, 8)}...`,
+                title: isCurrent ? t('sessionManagement.currentSession') : t('sessionManagement.sessionLabel', { id: session.sessionId.substring(0, 8) }),
                 subtitle: subtitleParts.join(' \u2022 '),
                 showChevron: false,
                 multiRow: true,
@@ -234,7 +236,7 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
                             {switchLoading === session.sessionId ? (
                                 <ActivityIndicator size="small" color={primaryColor} />
                             ) : (
-                                <Text style={[styles.sessionPillText, { color: primaryColor }]}>Switch</Text>
+                                <Text style={[styles.sessionPillText, { color: primaryColor }]}>{t('sessionManagement.switch')}</Text>
                             )}
                         </TouchableOpacity>
                         <TouchableOpacity
@@ -245,13 +247,13 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
                             {actionLoading === session.sessionId ? (
                                 <ActivityIndicator size="small" color={dangerColor} />
                             ) : (
-                                <Text style={[styles.sessionPillText, { color: dangerColor }]}>Logout</Text>
+                                <Text style={[styles.sessionPillText, { color: dangerColor }]}>{t('sessionManagement.logout')}</Text>
                             )}
                         </TouchableOpacity>
                     </View>
                 ) : (
                     <View style={styles.sessionActionsRow}>
-                        <Text style={[styles.currentBadgeText, { color: successColor }]}>Active</Text>
+                        <Text style={[styles.currentBadgeText, { color: successColor }]}>{t('sessionManagement.active')}</Text>
                     </View>
                 ),
                 selected: isCurrent,
@@ -265,8 +267,8 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
             id: 'logout-others',
             icon: 'exit-outline',
             iconColor: primaryColor,
-            title: 'Logout Other Sessions',
-            subtitle: otherSessionsCount === 0 ? 'No other sessions' : 'End all sessions except this one',
+            title: t('sessionManagement.logoutOthers.title'),
+            subtitle: otherSessionsCount === 0 ? t('sessionManagement.logoutOthers.noOtherSessions') : t('sessionManagement.logoutOthers.subtitle'),
             onPress: handleLogoutOtherSessions,
             showChevron: false,
             customContent: actionLoading === 'others' ? <ActivityIndicator size="small" color={primaryColor} /> : undefined,
@@ -277,8 +279,8 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
             id: 'logout-all',
             icon: 'warning-outline',
             iconColor: dangerColor,
-            title: 'Logout All Sessions',
-            subtitle: 'End all sessions including this one',
+            title: t('sessionManagement.logoutAll.title'),
+            subtitle: t('sessionManagement.logoutAll.subtitle'),
             onPress: handleLogoutAllSessions,
             showChevron: false,
             customContent: actionLoading === 'all' ? <ActivityIndicator size="small" color={dangerColor} /> : undefined,
@@ -291,7 +293,7 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
         return (
             <View style={[styles.container, styles.centerContent, { backgroundColor }]}>
                 <ActivityIndicator size="large" color={primaryColor} />
-                <Text style={[styles.loadingText, { color: textColor }]}>Loading sessions...</Text>
+                <Text style={[styles.loadingText, { color: textColor }]}>{t('sessionManagement.loading')}</Text>
             </View>
         );
     }
@@ -299,8 +301,8 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
     return (
         <View style={[styles.container, { backgroundColor }]}>
             <Header
-                title="Active Sessions"
-                subtitle="Manage your active sessions across all devices"
+                title={t('sessionManagement.title')}
+                subtitle={t('sessionManagement.subtitle')}
 
                 onBack={goBack || onClose}
                 elevation="subtle"
@@ -319,7 +321,7 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
                 {userSessions.length > 0 ? (
                     <>
                         {lastRefreshed && (
-                            <Text style={[styles.metaText, { color: '#777', marginBottom: 6 }]}>Last refreshed {formatRelative(lastRefreshed.toISOString())}</Text>
+                            <Text style={[styles.metaText, { color: '#777', marginBottom: 6 }]}>{t('sessionManagement.lastRefreshed', { time: formatRelative(lastRefreshed.toISOString()) })}</Text>
                         )}
                         <View style={styles.fullBleed}>
                             <GroupedSection items={sessionItems} />
@@ -331,13 +333,13 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
                     </>
                 ) : (
                     <View style={styles.emptyState}>
-                        <Text style={[styles.emptyStateText, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>No active sessions found</Text>
+                        <Text style={[styles.emptyStateText, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>{t('sessionManagement.empty')}</Text>
                     </View>
                 )}
             </ScrollView>
             <View style={[styles.footer, { borderTopColor: borderColor }]}>
                 <TouchableOpacity style={styles.closeButton} onPress={onClose}>
-                    <Text style={[styles.closeButtonText, { color: primaryColor }]}>Close</Text>
+                    <Text style={[styles.closeButtonText, { color: primaryColor }]}>{t('sessionManagement.close')}</Text>
                 </TouchableOpacity>
             </View>
         </View>

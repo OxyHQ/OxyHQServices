@@ -49,7 +49,7 @@ const FormInput: React.FC<FormInputProps> = React.memo(({
         ]}>
             {!multiline && (
                 <Ionicons
-                    name={icon as any}
+                    name={icon as React.ComponentProps<typeof Ionicons>['name']}
                     size={22}
                     color={colors.secondaryText}
                     style={styles.inputIcon}

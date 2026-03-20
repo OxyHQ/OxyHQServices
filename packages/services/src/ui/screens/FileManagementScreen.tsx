@@ -41,6 +41,7 @@ import { useThemeStyles } from '../hooks/useThemeStyles';
 import { useColorScheme } from '../hooks/useColorScheme';
 import { normalizeTheme } from '../utils/themeUtils';
 import { useOxy } from '../context/OxyContext';
+import { useI18n } from '../hooks/useI18n';
 import { useUploadFile } from '../hooks/mutations/useAccountMutations';
 import {
     confirmAction,
@@ -55,6 +56,10 @@ import { UploadPreview } from '../components/fileManagement/UploadPreview';
 import { fileManagementStyles } from '../components/fileManagement/styles';
 import type { OnConfirmFileSelection } from '../types/fileManagement';
 
+/** Extract error message from unknown error type */
+const getErrorMessage = (error: unknown): string | undefined =>
+    error instanceof Error ? getErrorMessage(error) : typeof error === 'string' ? error : undefined;
+
 // Animated button component for smooth transitions
 const AnimatedButton: React.FC<{
     isSelected: boolean;
@@ -62,7 +67,7 @@ const AnimatedButton: React.FC<{
     icon: string;
     primaryColor: string;
     textColor: string;
-    style: any;
+    style: Record<string, unknown>;
 }> = ({ isSelected, onPress, icon, primaryColor, textColor, style }) => {
     const animatedValue = useRef(new Animated.Value(isSelected ? 1 : 0)).current;
 
@@ -97,7 +102,7 @@ const AnimatedButton: React.FC<{
             >
                 <Animated.View>
                     <MaterialCommunityIcons
-                        name={icon as any}
+                        name={icon as React.ComponentProps<typeof MaterialCommunityIcons>['name']}
                         size={16}
                         color={isSelected ? '#FFFFFF' : textColor}
                     />
@@ -128,6 +133,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 }) => {
     // Use useOxy() hook for OxyContext values
     const { user, oxyServices } = useOxy();
+    const { t } = useI18n();
     const uploadFileMutation = useUploadFile();
     const files = useFiles();
     // Ensure containerWidth is a number (TypeScript guard)
@@ -226,13 +232,13 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         if (disabledMimeTypes.length) {
             const blocked = disabledMimeTypes.some(mt => file.contentType === mt || file.contentType.startsWith(mt.endsWith('/') ? mt : `${mt}/`));
             if (blocked) {
-                toast.error('This file type cannot be selected');
+                toast.error(t('fileManagement.toasts.fileTypeBlocked'));
                 return;
             }
         }
 
         // Update file visibility if it differs from defaultVisibility
-        const fileVisibility = (file.metadata as any)?.visibility || 'private';
+        const fileVisibility = (file.metadata as Record<string, unknown> | undefined)?.visibility || 'private';
         if (fileVisibility !== defaultVisibility) {
             try {
                 await oxyServices.assetUpdateVisibility(file.id, defaultVisibility);
@@ -253,7 +259,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     linkContext.entityType,
                     linkContext.entityId,
                     defaultVisibility,
-                    (linkContext as any).webhookUrl
+                    (linkContext as Record<string, unknown>).webhookUrl
                 );
             } catch (error) {
                 // Continue anyway - selection shouldn't fail if linking fails
@@ -274,7 +280,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             const already = next.has(file.id);
             if (!already) {
                 if (maxSelection && next.size >= maxSelection) {
-                    toast.error(`You can select up to ${maxSelection}`);
+                    toast.error(t('fileManagement.toasts.maxSelection', { max: maxSelection }));
                     return prev;
                 }
                 next.add(file.id);
@@ -294,7 +300,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         // Update visibility and link files if needed
         const updatePromises = chosen.map(async (file) => {
             // Update visibility if needed
-            const fileVisibility = (file.metadata as any)?.visibility || 'private';
+            const fileVisibility = (file.metadata as Record<string, unknown> | undefined)?.visibility || 'private';
             if (fileVisibility !== defaultVisibility) {
                 try {
                     await oxyServices.assetUpdateVisibility(file.id, defaultVisibility);
@@ -312,7 +318,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         linkContext.entityType,
                         linkContext.entityId,
                         defaultVisibility,
-                        (linkContext as any).webhookUrl
+                        (linkContext as Record<string, unknown>).webhookUrl
                     );
                 } catch (error) {
                     // File linking failed, continue with selection
@@ -381,7 +387,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             const currentPaging = mode === 'more' ? (prevPagingRef.current ?? paging) : paging;
             const effectiveOffset = mode === 'more' ? currentPaging.offset + currentPaging.limit : 0;
             const response = await oxyServices.listUserFiles(currentPaging.limit, effectiveOffset);
-            const assets: FileMetadata[] = (response.files || []).map((f: any) => ({
+            const assets: FileMetadata[] = (response.files || []).map((f: Record<string, unknown>) => ({
                 id: f.id,
                 filename: f.originalName || f.sha256,
                 contentType: f.mime,
@@ -411,8 +417,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     loadingMore: false,
                 }));
             }
-        } catch (error: any) {
-            toast.error(error.message || 'Failed to load files');
+        } catch (error: unknown) {
+            toast.error(getErrorMessage(error) || t('fileManagement.toasts.loadFailed'));
         } finally {
             setLoading(false);
             setRefreshing(false);
@@ -508,7 +514,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             const oversizedFiles = selectedFiles.filter(file => file.size > maxSize);
             if (oversizedFiles.length > 0) {
                 const fileList = oversizedFiles.map(f => f.name).join(', ');
-                toast.error(`The following files are too large (max 50MB): ${fileList}`);
+                toast.error(t('fileManagement.toasts.filesTooLarge', { files: fileList }));
                 return [];
             }
             let successCount = 0;
@@ -570,16 +576,16 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         successCount++;
                     } else {
                         // Fallback: will reconcile on later list refresh
-                        useFileStore.getState().updateFile(optimisticId, { metadata: { uploading: false } as any });
+                        useFileStore.getState().updateFile(optimisticId, { metadata: { uploading: false } as Partial<FileMetadata>['metadata'] });
                         if (__DEV__) {
                             console.warn('Upload completed but no file data returned:', { fileName, result });
                         }
                         // Still count as success if upload didn't throw
                         successCount++;
                     }
-                } catch (error: any) {
+                } catch (error: unknown) {
                     failureCount++;
-                    const errorMessage = error.message || error.toString() || 'Upload failed';
+                    const errorMessage = getErrorMessage(error) || String(error) || 'Upload failed';
                     const fullError = `${fileName}: ${errorMessage}`;
                     errors.push(fullError);
                     if (__DEV__) {
@@ -588,7 +594,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                             fileSize: raw.size,
                             fileType: raw.type,
                             error: errorMessage,
-                            stack: error.stack
+                            stack: (error instanceof Error) ? error.stack : undefined
                         });
                     }
 
@@ -599,26 +605,27 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
             // Show success/error messages
             if (successCount > 0) {
-                toast.success(`${successCount} file(s) uploaded successfully`);
+                toast.success(t('fileManagement.toasts.uploadSuccess', { count: successCount }));
             }
             if (failureCount > 0) {
                 // Show detailed error message with first few errors
                 const errorDetails = errors.length > 0
                     ? `\n${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...and ${errors.length - 3} more` : ''}`
                     : '';
-                toast.error(`${failureCount} file(s) failed to upload${errorDetails}`);
+                toast.error(`${t('fileManagement.toasts.uploadFailed', { count: failureCount })}${errorDetails}`);
             }
             // Silent background refresh to ensure metadata/variants updated
             setTimeout(() => { loadFiles('silent'); }, 1200);
-        } catch (error: any) {
-            toast.error(error.message || 'Failed to upload files');
+        } catch (error: unknown) {
+            toast.error(getErrorMessage(error) || t('fileManagement.toasts.uploadError'));
         } finally {
             storeSetUploadProgress(null);
         }
         return uploadedFiles;
     };
 
-    const handleFileSelection = useCallback(async (selectedFiles: File[] | any[]) => {
+    // biome-ignore lint/suspicious/noExplicitAny: Files from document picker may have extra properties like uri
+    const handleFileSelection = useCallback(async (selectedFiles: Array<File | any>) => {
         const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
         const processedFiles: Array<{ file: File | Blob; preview?: string; size: number; name: string; type: string }> = [];
 
@@ -628,7 +635,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 if (__DEV__) {
                     console.error('Invalid file: file is null or undefined');
                 }
-                toast.error('Invalid file: file is missing');
+                toast.error(t('fileManagement.toasts.invalidFileMissing'));
                 continue;
             }
 
@@ -636,7 +643,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 if (__DEV__) {
                     console.error('Invalid file: missing or invalid name property', file);
                 }
-                toast.error('Invalid file: missing file name');
+                toast.error(t('fileManagement.toasts.invalidFileName'));
                 continue;
             }
 
@@ -644,7 +651,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 if (__DEV__) {
                     console.error('Invalid file: missing or invalid size property', file);
                 }
-                toast.error(`Invalid file "${file.name || 'unknown'}": missing file size`);
+                toast.error(t('fileManagement.toasts.invalidFileSize', { name: file.name || 'unknown' }));
                 continue;
             }
 
@@ -652,13 +659,13 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 if (__DEV__) {
                     console.error('Invalid file: file size is zero or negative', file);
                 }
-                toast.error(`File "${file.name}" is empty`);
+                toast.error(t('fileManagement.toasts.fileEmpty', { name: file.name }));
                 continue;
             }
 
             // Validate file size
             if (file.size > MAX_FILE_SIZE) {
-                toast.error(`"${file.name}" is too large. Maximum file size is ${formatFileSize(MAX_FILE_SIZE)}`);
+                toast.error(t('fileManagement.toasts.fileTooLarge', { name: file.name, maxSize: formatFileSize(MAX_FILE_SIZE) }));
                 continue;
             }
 
@@ -669,7 +676,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             let preview: string | undefined;
             if (fileType.startsWith('image/')) {
                 // Try to use file URI from expo-document-picker if available (works on all platforms)
-                const fileUri = (file as any).uri;
+                const fileUri = (file as File & { uri?: string }).uri;
                 if (fileUri && typeof fileUri === 'string' &&
                     (fileUri.startsWith('file://') || fileUri.startsWith('content://') ||
                         fileUri.startsWith('http://') || fileUri.startsWith('https://') ||
@@ -678,10 +685,10 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 } else {
                     // Fallback: create blob URL if possible (works on web)
                     try {
-                        if (file instanceof File || file instanceof Blob) {
+                        if ((file as object) instanceof File || (file as object) instanceof Blob) {
                             preview = URL.createObjectURL(file);
                         }
-                    } catch (error: any) {
+                    } catch (error: unknown) {
                         if (__DEV__) {
                             console.warn('Failed to create preview URL:', error);
                         }
@@ -700,7 +707,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         }
 
         if (processedFiles.length === 0) {
-            toast.error('No valid files to upload');
+            toast.error(t('fileManagement.toasts.noValidFiles'));
             return;
         }
 
@@ -755,8 +762,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             }
 
             endUpload();
-        } catch (error: any) {
-            toast.error(error.message || 'Failed to upload files');
+        } catch (error: unknown) {
+            toast.error(getErrorMessage(error) || t('fileManagement.toasts.uploadError'));
             endUpload();
         }
     };
@@ -791,7 +798,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     const handleFileUpload = async () => {
         // Prevent concurrent document picker calls
         if (isPickingDocument) {
-            toast.error('Please wait for the current file selection to complete');
+            toast.error(t('fileManagement.toasts.waitForSelection'));
             return;
         }
 
@@ -816,7 +823,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
             if (!result.assets || result.assets.length === 0) {
                 setIsPickingDocument(false);
-                toast.error('No files were selected');
+                toast.error(t('fileManagement.toasts.noFilesSelected'));
                 return;
             }
 
@@ -845,8 +852,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         }
                         return null;
                     })
-                    .catch((error: any) => {
-                        errors.push(`File "${doc.name || 'file'}": ${error.message || 'Failed to process'}`);
+                    .catch((error: unknown) => {
+                        errors.push(`File "${doc.name || 'file'}": ${getErrorMessage(error) || 'Failed to process'}`);
                         return null;
                     })
             );
@@ -863,7 +870,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             // Show errors if any
             if (errors.length > 0) {
                 const errorMessage = errors.slice(0, 3).join('\n') + (errors.length > 3 ? `\n...and ${errors.length - 3} more` : '');
-                toast.error(`Failed to load some files:\n${errorMessage}`);
+                toast.error(t('fileManagement.toasts.loadSomeFailed', { errors: errorMessage }));
             }
 
             // Process successfully converted files
@@ -871,20 +878,20 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 await handleFileSelection(files);
             } else {
                 // Files were selected but none could be converted
-                toast.error('No files could be processed. Please try selecting files again.');
+                toast.error(t('fileManagement.toasts.noFilesProcessed'));
             }
-        } catch (error: any) {
+        } catch (error: unknown) {
             if (__DEV__) {
                 console.error('File upload error:', error);
             }
-            if (error.message?.includes('expo-document-picker') || error.message?.includes('Different document picking in progress')) {
-                if (error.message?.includes('Different document picking in progress')) {
-                    toast.error('Please wait for the current file selection to complete');
+            if (getErrorMessage(error)?.includes('expo-document-picker') || getErrorMessage(error)?.includes('Different document picking in progress')) {
+                if (getErrorMessage(error)?.includes('Different document picking in progress')) {
+                    toast.error(t('fileManagement.toasts.waitForSelection'));
                 } else {
-                    toast.error('File picker not available. Please install expo-document-picker');
+                    toast.error(t('fileManagement.toasts.filePickerNotAvailable'));
                 }
             } else {
-                toast.error(error.message || 'Failed to select files');
+                toast.error(getErrorMessage(error) || t('fileManagement.toasts.selectFilesFailed'));
             }
         } finally {
             // Always reset the picking state, even if there was an error
@@ -895,10 +902,10 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     const handleFileDelete = async (fileId: string, filename: string) => {
         // Use platform-aware confirmation dialog
         const confirmed = await confirmAction(
-            `Are you sure you want to delete "${filename}"? This action cannot be undone.`,
-            'Delete File',
-            'Delete',
-            'Cancel'
+            t('fileManagement.confirms.deleteFile', { filename }),
+            t('fileManagement.deleteFile'),
+            t('fileManagement.confirm'),
+            t('common.cancel')
         );
 
         if (!confirmed) {
@@ -909,24 +916,24 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             storeSetDeleting(fileId);
             await oxyServices.deleteFile(fileId);
 
-            toast.success('File deleted successfully');
+            toast.success(t('fileManagement.toasts.deleteSuccess'));
 
             // Reload files after successful deletion
             // Optimistic remove
             useFileStore.getState().removeFile(fileId);
             // Silent background reconcile
             setTimeout(() => loadFiles('silent'), 800);
-        } catch (error: any) {
+        } catch (error: unknown) {
 
             // Provide specific error messages
-            if (error.message?.includes('File not found') || error.message?.includes('404')) {
-                toast.error('File not found. It may have already been deleted.');
+            if (getErrorMessage(error)?.includes('File not found') || getErrorMessage(error)?.includes('404')) {
+                toast.error(t('fileManagement.toasts.fileNotFound'));
                 // Still reload files to refresh the list
                 setTimeout(() => loadFiles('silent'), 800);
-            } else if (error.message?.includes('permission') || error.message?.includes('403')) {
-                toast.error('You do not have permission to delete this file.');
+            } else if (getErrorMessage(error)?.includes('permission') || getErrorMessage(error)?.includes('403')) {
+                toast.error(t('fileManagement.toasts.noPermission'));
             } else {
-                toast.error(error.message || 'Failed to delete file');
+                toast.error(getErrorMessage(error) || t('fileManagement.toasts.deleteFailed'));
             }
         } finally {
             storeSetDeleting(null);
@@ -941,10 +948,10 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         const selectedFiles = Array.from(selectedIds).map(id => fileMap[id]).filter(Boolean);
 
         const confirmed = await confirmAction(
-            `Are you sure you want to delete ${selectedFiles.length} file(s)? This action cannot be undone.`,
-            'Delete Files',
-            'Delete',
-            'Cancel'
+            t('fileManagement.confirms.deleteFiles', { count: selectedFiles.length }),
+            t('fileManagement.deleteFiles'),
+            t('fileManagement.confirm'),
+            t('common.cancel')
         );
 
         if (!confirmed) return;
@@ -955,7 +962,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     await oxyServices.deleteFile(fileId);
                     useFileStore.getState().removeFile(fileId);
                     return { success: true, fileId };
-                } catch (error: any) {
+                } catch (error: unknown) {
                     return { success: false, fileId, error };
                 }
             });
@@ -965,16 +972,16 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             const failed = results.length - successful;
 
             if (successful > 0) {
-                toast.success(`${successful} file(s) deleted successfully`);
+                toast.success(t('fileManagement.toasts.bulkDeleteSuccess', { count: successful }));
             }
             if (failed > 0) {
-                toast.error(`${failed} file(s) failed to delete`);
+                toast.error(t('fileManagement.toasts.bulkDeleteFailed', { count: failed }));
             }
 
             setSelectedIds(new Set());
             setTimeout(() => loadFiles('silent'), 800);
-        } catch (error: any) {
-            toast.error(error.message || 'Failed to delete files');
+        } catch (error: unknown) {
+            toast.error(getErrorMessage(error) || t('fileManagement.toasts.bulkDeleteError'));
         }
     }, [selectedIds, files, oxyServices, loadFiles]);
 
@@ -986,7 +993,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 try {
                     await oxyServices.assetUpdateVisibility(fileId, visibility);
                     return { success: true, fileId };
-                } catch (error: any) {
+                } catch (error: unknown) {
                     return { success: false, fileId, error };
                 }
             });
@@ -996,21 +1003,21 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             const failed = results.length - successful;
 
             if (successful > 0) {
-                toast.success(`${successful} file(s) visibility updated to ${visibility}`);
+                toast.success(t('fileManagement.toasts.visibilitySuccess', { count: successful, visibility }));
                 // Update file metadata in store
                 Array.from(selectedIds).forEach(fileId => {
                     useFileStore.getState().updateFile(fileId, {
-                        metadata: { ...files.find(f => f.id === fileId)?.metadata, visibility }
-                    } as any);
+                        metadata: { ...files.find(f => f.id === fileId)?.metadata, visibility } as Partial<FileMetadata>['metadata']
+                    });
                 });
             }
             if (failed > 0) {
-                toast.error(`${failed} file(s) failed to update visibility`);
+                toast.error(t('fileManagement.toasts.visibilityFailed', { count: failed }));
             }
 
             setTimeout(() => loadFiles('silent'), 800);
-        } catch (error: any) {
-            toast.error(error.message || 'Failed to update visibility');
+        } catch (error: unknown) {
+            toast.error(getErrorMessage(error) || t('fileManagement.toasts.visibilityError'));
         }
     }, [selectedIds, oxyServices, files, loadFiles]);
 
@@ -1032,7 +1039,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     document.body.appendChild(link);
                     link.click();
                     document.body.removeChild(link);
-                    toast.success('File download started');
+                    toast.success(t('fileManagement.toasts.downloadStarted'));
                 } catch (linkError) {
                     // Fallback to authenticated download
                     const blob = await oxyServices.getFileContentAsBlob(fileId);
@@ -1047,16 +1054,16 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
                     // Clean up the blob URL
                     URL.revokeObjectURL(url);
-                    toast.success('File downloaded successfully');
+                    toast.success(t('fileManagement.toasts.downloadSuccess'));
                 }
             } else {
                 // For mobile, open the URL (user can save from browser)
                 // Note: This is a simplified approach - for full mobile support,
                 // consider using expo-file-system or react-native-fs
-                toast.info('Please use your browser to download the file');
+                toast.info(t('fileManagement.toasts.downloadMobile'));
             }
-        } catch (error: any) {
-            toast.error(error.message || 'Failed to download file');
+        } catch (error: unknown) {
+            toast.error(getErrorMessage(error) || t('fileManagement.toasts.downloadFailed'));
         }
     };
 
@@ -1094,11 +1101,11 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         const content = await oxyServices.getFileContentAsText(file.id);
                         setFileContent(content);
                     }
-                } catch (error: any) {
-                    if (error.message?.includes('404') || error.message?.includes('not found')) {
-                        toast.error('File not found. It may have been deleted.');
+                } catch (error: unknown) {
+                    if (getErrorMessage(error)?.includes('404') || getErrorMessage(error)?.includes('not found')) {
+                        toast.error(t('fileManagement.toasts.fileNotFoundContent'));
                     } else {
-                        toast.error('Failed to load file content');
+                        toast.error(t('fileManagement.toasts.loadContentFailed'));
                     }
                     setFileContent(null);
                 }
@@ -1106,8 +1113,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 // For non-viewable files, don't load content
                 setFileContent(null);
             }
-        } catch (error: any) {
-            toast.error(error.message || 'Failed to open file');
+        } catch (error: unknown) {
+            toast.error(getErrorMessage(error) || t('fileManagement.toasts.openFailed'));
         } finally {
             setLoadingFileContent(false);
         }
@@ -1275,7 +1282,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                                             contentFit="cover"
                                             transition={120}
                                             cachePolicy="memory-disk"
-                                            onError={(_: any) => {
+                                            onError={(_: unknown) => {
                                                 // If thumbnail not available, we still show icon overlay
                                             }}
                                             accessibilityLabel={`${file.filename} video thumbnail`}
@@ -1290,7 +1297,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                                     style={[fileManagementStyles.fallbackIcon, { display: isImage ? 'none' : 'flex' }]}
                                 >
                                     <Ionicons
-                                        name={getFileIcon(file.contentType) as any}
+                                        name={getFileIcon(file.contentType) as React.ComponentProps<typeof Ionicons>['name']}
                                         size={32}
                                         color={themeStyles.primaryColor}
                                     />
@@ -1305,7 +1312,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         ) : (
                             <View style={fileManagementStyles.fileIconContainer}>
                                 <Ionicons
-                                    name={getFileIcon(file.contentType) as any}
+                                    name={getFileIcon(file.contentType) as React.ComponentProps<typeof Ionicons>['name']}
                                     size={32}
                                     color={themeStyles.primaryColor}
                                 />
@@ -1371,7 +1378,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     };
 
     // GroupedSection-based file items (for 'all' view) replacing legacy flat list look
-    const groupedFileItems = useMemo(() => {
+    // biome-ignore lint/suspicious/noExplicitAny: GroupedSection items have dynamic props
+    const groupedFileItems: any[] = useMemo(() => {
         // filteredFiles is already sorted, so just use it directly
         const sortedFiles = filteredFiles;
 
@@ -1415,7 +1423,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                                 contentFit="cover"
                                 transition={120}
                                 cachePolicy="memory-disk"
-                                onError={(_: any) => {
+                                onError={(_: unknown) => {
                                     // If thumbnail not available, we still show icon overlay
                                 }}
                                 accessibilityLabel={`${file.filename} video thumbnail`}
@@ -1498,6 +1506,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         {file.metadata.description}
                     </Text>
                 ) : undefined,
+            // biome-ignore lint/suspicious/noExplicitAny: GroupedSectionItem has dynamic properties
             } as any;
         });
     }, [filteredFiles, theme, themeStyles, deleting, handleFileDownload, handleFileDelete, handleFileOpen, getSafeDownloadUrlCallback, selectMode, selectedIds]);
@@ -1639,11 +1648,11 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             return (
                 <View style={fileManagementStyles.emptyState}>
                     <Ionicons name="images-outline" size={64} color={themeStyles.isDarkTheme ? '#666666' : '#CCCCCC'} />
-                    <Text style={[fileManagementStyles.emptyStateTitle, { color: themeStyles.textColor }]}>No Photos Yet</Text>
+                    <Text style={[fileManagementStyles.emptyStateTitle, { color: themeStyles.textColor }]}>{t('fileManagement.emptyPhotos.title')}</Text>
                     <Text style={[fileManagementStyles.emptyStateDescription, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}> {
                         user?.id === targetUserId
-                            ? "Upload photos to get started. You can select multiple photos at once."
-                            : "This user hasn't uploaded any photos yet"
+                            ? t('fileManagement.emptyPhotos.ownDescription')
+                            : t('fileManagement.emptyPhotos.otherDescription')
                     } </Text>
                     {user?.id === targetUserId && (
                         <TouchableOpacity
@@ -1658,7 +1667,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                             ) : (
                                 <>
                                     <Ionicons name="cloud-upload" size={20} color="#FFFFFF" />
-                                    <Text style={fileManagementStyles.emptyStateButtonText}>Upload Photos</Text>
+                                    <Text style={fileManagementStyles.emptyStateButtonText}>{t('fileManagement.uploadPhotos')}</Text>
                                 </>
                             )}
                         </TouchableOpacity>
@@ -1692,7 +1701,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 {loadingDimensions && (
                     <View style={fileManagementStyles.dimensionsLoadingIndicator}>
                         <ActivityIndicator size="small" color={themeStyles.primaryColor} />
-                        <Text style={[fileManagementStyles.dimensionsLoadingText, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>Loading photo layout...</Text>
+                        <Text style={[fileManagementStyles.dimensionsLoadingText, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>{t('fileManagement.loadingPhotoLayout')}</Text>
                     </View>
                 )}
 
@@ -1733,11 +1742,11 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     const renderEmptyState = () => (
         <View style={fileManagementStyles.emptyState}>
             <Ionicons name="folder-open-outline" size={64} color={themeStyles.isDarkTheme ? '#666666' : '#CCCCCC'} />
-            <Text style={[fileManagementStyles.emptyStateTitle, { color: themeStyles.textColor }]}>No Files Yet</Text>
+            <Text style={[fileManagementStyles.emptyStateTitle, { color: themeStyles.textColor }]}>{t('fileManagement.emptyFiles.title')}</Text>
             <Text style={[fileManagementStyles.emptyStateDescription, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
                 {user?.id === targetUserId
-                    ? "Upload files to get started. You can select multiple files at once."
-                    : "This user hasn't uploaded any files yet"
+                    ? t('fileManagement.emptyFiles.ownDescription')
+                    : t('fileManagement.emptyFiles.otherDescription')
                 }
             </Text>
             {user?.id === targetUserId && (
@@ -1753,7 +1762,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     ) : (
                         <>
                             <Ionicons name="cloud-upload" size={20} color="#FFFFFF" />
-                            <Text style={fileManagementStyles.emptyStateButtonText}>Upload Files</Text>
+                            <Text style={fileManagementStyles.emptyStateButtonText}>{t('fileManagement.uploadFiles')}</Text>
                         </>
                     )}
                 </TouchableOpacity>
@@ -1785,7 +1794,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             outputRange: [-skeletonContainerWidth * 2, skeletonContainerWidth * 2],
         });
 
-        const SkeletonBox = ({ width, height, borderRadius = 8, style, delay = 0 }: { width: number | string; height: number; borderRadius?: number; style?: any; delay?: number }) => {
+        const SkeletonBox = ({ width, height, borderRadius = 8, style, delay = 0 }: { width: number | string; height: number; borderRadius?: number; style?: Record<string, unknown>; delay?: number }) => {
             const delayedTranslateX = shimmerAnim.interpolate({
                 inputRange: [0, 1],
                 outputRange: [-skeletonContainerWidth * 2 + delay, skeletonContainerWidth * 2 + delay],
@@ -1976,8 +1985,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         return (
             <View style={fileManagementStyles.container}>
                 <Header
-                    title="Review Files"
-                    subtitle={`${pendingFiles.length} file${pendingFiles.length !== 1 ? 's' : ''} ready to upload`}
+                    title={t('fileManagement.reviewFiles')}
+                    subtitle={t('fileManagement.readyToUpload', { count: pendingFiles.length })}
                     onBack={handleCancelUpload}
                     showBackButton
                     variant="minimal"
@@ -2000,46 +2009,46 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     return (
         <View style={fileManagementStyles.container}>
             <Header
-                title={selectMode ? (multiSelect ? `${selectedIds.size}${maxSelection ? `/${maxSelection}` : ''} Selected` : 'Select a File') : (viewMode === 'photos' ? 'Photos' : 'File Management')}
-                subtitle={selectMode ? (multiSelect ? `${filteredFiles.length} available` : 'Tap to select') : `${filteredFiles.length} ${filteredFiles.length === 1 ? 'item' : 'items'}`}
+                title={selectMode ? (multiSelect ? (maxSelection ? t('fileManagement.selectedWithMax', { count: selectedIds.size, max: maxSelection }) : t('fileManagement.selected', { count: selectedIds.size })) : t('fileManagement.selectFile')) : (viewMode === 'photos' ? t('fileManagement.photos') : t('fileManagement.title'))}
+                subtitle={selectMode ? (multiSelect ? t('fileManagement.available', { count: filteredFiles.length }) : t('fileManagement.tapToSelect')) : (filteredFiles.length === 1 ? t('fileManagement.itemCount', { count: filteredFiles.length }) : t('fileManagement.itemCount_plural', { count: filteredFiles.length }))}
                 rightActions={selectMode && multiSelect ? [
                     {
                         key: 'clear',
-                        text: 'Clear',
+                        text: t('fileManagement.clear'),
                         onPress: () => setSelectedIds(new Set()),
                         disabled: selectedIds.size === 0,
                     },
                     {
                         key: 'confirm',
-                        text: 'Confirm',
+                        text: t('fileManagement.confirm'),
                         onPress: confirmMultiSelection,
                         disabled: selectedIds.size === 0,
                     }
                 ] : !selectMode && selectedIds.size > 0 ? [
                     {
                         key: 'clear',
-                        text: 'Clear',
+                        text: t('fileManagement.clear'),
                         onPress: () => setSelectedIds(new Set()),
                     },
                     {
                         key: 'delete',
-                        text: `Delete (${selectedIds.size})`,
+                        text: t('fileManagement.delete', { count: selectedIds.size }),
                         onPress: handleBulkDelete,
                         icon: 'delete',
                     },
                     {
                         key: 'visibility',
-                        text: 'Visibility',
+                        text: t('fileManagement.visibility'),
                         onPress: () => {
                             // Show visibility options menu
                             Alert.alert(
-                                'Change Visibility',
-                                `Change visibility for ${selectedIds.size} file(s)?`,
+                                t('fileManagement.changeVisibility'),
+                                t('fileManagement.changeVisibilityConfirm', { count: selectedIds.size }),
                                 [
-                                    { text: 'Cancel', style: 'cancel' },
-                                    { text: 'Private', onPress: () => handleBulkVisibilityChange('private') },
-                                    { text: 'Public', onPress: () => handleBulkVisibilityChange('public') },
-                                    { text: 'Unlisted', onPress: () => handleBulkVisibilityChange('unlisted') },
+                                    { text: t('common.cancel'), style: 'cancel' },
+                                    { text: t('fileManagement.private'), onPress: () => handleBulkVisibilityChange('private') },
+                                    { text: t('fileManagement.public'), onPress: () => handleBulkVisibilityChange('public') },
+                                    { text: t('fileManagement.unlisted'), onPress: () => handleBulkVisibilityChange('unlisted') },
                                 ]
                             );
                         },
@@ -2174,7 +2183,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     <Ionicons name="search" size={22} color={themeStyles.colors.icon} />
                     <TextInput
                         style={[fileManagementStyles.searchInput, { color: themeStyles.textColor }]}
-                        placeholder={viewMode === 'photos' ? 'Search photos...' : 'Search files...'}
+                        placeholder={viewMode === 'photos' ? t('fileManagement.searchPhotos') : t('fileManagement.searchFiles')}
                         placeholderTextColor={themeStyles.colors.secondaryText}
                         value={searchQuery}
                         onChangeText={setSearchQuery}
@@ -2201,7 +2210,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     <View style={fileManagementStyles.statItem}>
                         <Text style={[fileManagementStyles.statValue, { color: themeStyles.textColor }]}>{filteredFiles.length}</Text>
                         <Text style={[fileManagementStyles.statLabel, { color: themeStyles.colors.secondaryText }]}>
-                            {searchQuery.length > 0 ? 'Found' : (filteredFiles.length === 1 ? (viewMode === 'photos' ? 'Photo' : 'File') : (viewMode === 'photos' ? 'Photos' : 'Files'))}
+                            {searchQuery.length > 0 ? t('fileManagement.found') : (filteredFiles.length === 1 ? (viewMode === 'photos' ? t('fileManagement.photo') : t('fileManagement.file')) : (viewMode === 'photos' ? t('fileManagement.photos_stat') : t('fileManagement.files')))}
                         </Text>
                     </View>
                     <View style={fileManagementStyles.statItem}>
@@ -2209,14 +2218,14 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                             {formatFileSize(filteredFiles.reduce((total, file) => total + file.length, 0))}
                         </Text>
                         <Text style={[fileManagementStyles.statLabel, { color: themeStyles.colors.secondaryText }]}>
-                            {searchQuery.length > 0 ? 'Size' : 'Total Size'}
+                            {searchQuery.length > 0 ? t('fileManagement.size') : t('fileManagement.totalSize')}
                         </Text>
                     </View>
                     {searchQuery.length > 0 && (
                         <View style={fileManagementStyles.statItem}>
                             <Text style={[fileManagementStyles.statValue, { color: themeStyles.textColor }]}>{files.length}</Text>
                             <Text style={[fileManagementStyles.statLabel, { color: themeStyles.colors.secondaryText }]}>
-                                Total
+                                {t('fileManagement.total')}
                             </Text>
                         </View>
                     )}
@@ -2250,16 +2259,16 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     {filteredFiles.length === 0 && searchQuery.length > 0 ? (
                         <View style={fileManagementStyles.emptyState}>
                             <Ionicons name="search" size={64} color={themeStyles.isDarkTheme ? '#666666' : '#CCCCCC'} />
-                            <Text style={[fileManagementStyles.emptyStateTitle, { color: themeStyles.textColor }]}>No Results Found</Text>
+                            <Text style={[fileManagementStyles.emptyStateTitle, { color: themeStyles.textColor }]}>{t('fileManagement.noResults.title')}</Text>
                             <Text style={[fileManagementStyles.emptyStateDescription, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
-                                No files match your search for "{searchQuery}"
+                                {t('fileManagement.noResults.description', { query: searchQuery })}
                             </Text>
                             <TouchableOpacity
                                 style={[fileManagementStyles.emptyStateButton, { backgroundColor: themeStyles.primaryColor }]}
                                 onPress={() => setSearchQuery('')}
                             >
                                 <Ionicons name="refresh" size={20} color="#FFFFFF" />
-                                <Text style={fileManagementStyles.emptyStateButtonText}>Clear Search</Text>
+                                <Text style={fileManagementStyles.emptyStateButtonText}>{t('fileManagement.clearSearch')}</Text>
                             </TouchableOpacity>
                         </View>
                     ) : filteredFiles.length === 0 ? renderEmptyState() : (
@@ -2268,7 +2277,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                             {paging.loadingMore && (
                                 <View style={fileManagementStyles.loadingMoreBar}>
                                     <ActivityIndicator size="small" color={themeStyles.primaryColor} />
-                                    <Text style={[fileManagementStyles.loadingMoreText, { color: themeStyles.textColor }]}>Loading more...</Text>
+                                    <Text style={[fileManagementStyles.loadingMoreText, { color: themeStyles.textColor }]}>{t('fileManagement.loadingMore')}</Text>
                                 </View>
                             )}
                         </>
@@ -2295,7 +2304,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         <Ionicons name="cloud-upload" size={18} color={themeStyles.primaryColor} />
                         <View style={fileManagementStyles.uploadBannerContent}>
                             <Text style={[fileManagementStyles.uploadBannerText, { color: themeStyles.textColor }]}>
-                                Uploading{uploadProgress ? ` ${uploadProgress.current}/${uploadProgress.total}` : '...'}
+                                {t('fileManagement.uploading')}{uploadProgress ? ` ${uploadProgress.current}/${uploadProgress.total}` : '...'}
                             </Text>
                             {uploadProgress && uploadProgress.total > 0 && (
                                 <View style={[fileManagementStyles.uploadProgressBarContainer, { backgroundColor: themeStyles.isDarkTheme ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }]}>

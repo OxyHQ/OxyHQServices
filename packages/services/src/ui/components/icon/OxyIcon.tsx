@@ -19,7 +19,7 @@ const OxyIcon: React.FC<IconProps> = ({
 
   return (
     <Ionicons
-      name={name as any}
+      name={name as React.ComponentProps<typeof Ionicons>['name']}
       size={size}
       color={color}
       style={style}

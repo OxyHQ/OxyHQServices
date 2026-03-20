@@ -25,6 +25,7 @@ import { Section, GroupedSection } from '../components';
 import { useThemeStyles } from '../hooks/useThemeStyles';
 import { useColorScheme } from '../hooks/useColorScheme';
 import { useOxy } from '../context/OxyContext';
+import { useI18n } from '../hooks/useI18n';
 
 
 interface SystemInfo {
@@ -44,6 +45,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
 }) => {
     // Use useOxy() hook for OxyContext values
     const { user, sessions, oxyServices, isAuthenticated } = useOxy();
+    const { t } = useI18n();
     const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
     const [isRunningSystemCheck, setIsRunningSystemCheck] = useState(false);
     const [connectionStatus, setConnectionStatus] = useState<'checking' | 'connected' | 'disconnected' | 'unknown'>('unknown');
@@ -103,9 +105,9 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
     const copyToClipboard = async (text: string, label: string) => {
         try {
             await Clipboard.setString(text);
-            toast.success(`${label} copied to clipboard`);
+            toast.success(t('appInfo.toasts.copiedToClipboard', { label }));
         } catch (error) {
-            toast.error('Failed to copy to clipboard');
+            toast.error(t('appInfo.toasts.copyFailed'));
         }
     };
 
@@ -126,9 +128,9 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                 }
             }
 
-            toast.success('System check completed successfully');
+            toast.success(t('appInfo.toasts.systemCheckSuccess'));
         } catch (error) {
-            toast.error('System check failed');
+            toast.error(t('appInfo.toasts.systemCheckFailed'));
         } finally {
             setIsRunningSystemCheck(false);
         }
@@ -154,7 +156,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
 
     const handleCopyFullReport = () => {
         const report = generateFullReport();
-        copyToClipboard(report, 'Full system report');
+        copyToClipboard(report, t('appInfo.items.copyFullReport'));
     };
 
     return (
@@ -164,141 +166,141 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                 <TouchableOpacity style={styles.cancelButton} onPress={onClose}>
                     <Ionicons name="close" size={24} color="#666" />
                 </TouchableOpacity>
-                <Text style={styles.headerTitle}>App Information</Text>
+                <Text style={styles.headerTitle}>{t('appInfo.title')}</Text>
                 <View style={styles.placeholder} />
             </View>
 
             <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
                 {/* Package Information */}
-                <Section title="Package Information" >
+                <Section title={t('appInfo.sections.package')} >
                     <GroupedSection
                         items={[
                             {
                                 id: 'name',
                                 icon: 'information',
                                 iconColor: themeStyles.colors.iconSecurity,
-                                title: 'Name',
+                                title: t('appInfo.items.name'),
                                 subtitle: packageInfo.name,
-                                onPress: () => copyToClipboard(packageInfo.name, 'Package name'),
+                                onPress: () => copyToClipboard(packageInfo.name, t('appInfo.items.name')),
                                 customContent: <OxyServicesLogo width={20} height={20} style={styles.settingIcon} />,
                             },
                             {
                                 id: 'version',
                                 icon: 'tag',
                                 iconColor: themeStyles.colors.iconData,
-                                title: 'Version',
+                                title: t('appInfo.items.version'),
                                 subtitle: packageInfo.version,
-                                onPress: () => copyToClipboard(packageInfo.version, 'Version'),
+                                onPress: () => copyToClipboard(packageInfo.version, t('appInfo.items.version')),
                             },
                             {
                                 id: 'description',
                                 icon: 'file-document',
                                 iconColor: themeStyles.colors.iconPersonalInfo,
-                                title: 'Description',
-                                subtitle: packageInfo.description || 'No description',
+                                title: t('appInfo.items.description'),
+                                subtitle: packageInfo.description || t('appInfo.items.noDescription'),
                             },
                             {
                                 id: 'main-entry',
                                 icon: 'code-tags',
                                 iconColor: themeStyles.colors.iconStorage,
-                                title: 'Main Entry',
+                                title: t('appInfo.items.mainEntry'),
                                 subtitle: packageInfo.main || 'N/A',
-                                onPress: () => copyToClipboard(packageInfo.main || 'N/A', 'Main entry'),
+                                onPress: () => copyToClipboard(packageInfo.main || 'N/A', t('appInfo.items.mainEntry')),
                             },
                             {
                                 id: 'module-entry',
                                 icon: 'library',
                                 iconColor: themeStyles.colors.iconSharing,
-                                title: 'Module Entry',
+                                title: t('appInfo.items.moduleEntry'),
                                 subtitle: packageInfo.module || 'N/A',
-                                onPress: () => copyToClipboard(packageInfo.module || 'N/A', 'Module entry'),
+                                onPress: () => copyToClipboard(packageInfo.module || 'N/A', t('appInfo.items.moduleEntry')),
                             },
                             {
                                 id: 'types-entry',
                                 icon: 'wrench',
                                 iconColor: themeStyles.colors.iconPersonalInfo,
-                                title: 'Types Entry',
+                                title: t('appInfo.items.typesEntry'),
                                 subtitle: packageInfo.types || 'N/A',
-                                onPress: () => copyToClipboard(packageInfo.types || 'N/A', 'Types entry'),
+                                onPress: () => copyToClipboard(packageInfo.types || 'N/A', t('appInfo.items.typesEntry')),
                             },
                         ]}
                     />
                 </Section>
 
                 {/* System Information */}
-                <Section title="System Information" >
+                <Section title={t('appInfo.sections.system')} >
                     <GroupedSection
                         items={[
                             {
                                 id: 'platform',
                                 icon: 'cellphone',
                                 iconColor: themeStyles.colors.iconSecurity,
-                                title: 'Platform',
+                                title: t('appInfo.items.platform'),
                                 subtitle: Platform.OS,
                             },
                             {
                                 id: 'platform-version',
                                 icon: 'chip',
                                 iconColor: themeStyles.colors.iconData,
-                                title: 'Platform Version',
-                                subtitle: systemInfo?.version || 'Loading...',
+                                title: t('appInfo.items.platformVersion'),
+                                subtitle: systemInfo?.version || t('common.status.loading'),
                             },
                             {
                                 id: 'screen-width',
                                 icon: 'resize',
                                 iconColor: themeStyles.colors.iconStorage,
-                                title: 'Screen Width',
+                                title: t('appInfo.items.screenWidth'),
                                 subtitle: `${systemInfo?.screenDimensions.width || 0}px`,
                             },
                             {
                                 id: 'screen-height',
                                 icon: 'resize',
                                 iconColor: themeStyles.colors.iconSharing,
-                                title: 'Screen Height',
+                                title: t('appInfo.items.screenHeight'),
                                 subtitle: `${systemInfo?.screenDimensions.height || 0}px`,
                             },
                             {
                                 id: 'environment',
                                 icon: 'cog',
                                 iconColor: themeStyles.colors.iconPersonalInfo,
-                                title: 'Environment',
-                                subtitle: __DEV__ ? 'Development' : 'Production',
+                                title: t('appInfo.items.environment'),
+                                subtitle: __DEV__ ? t('appInfo.items.development') : t('appInfo.items.production'),
                             },
                         ]}
                     />
                 </Section>
 
                 {/* User Information */}
-                <Section title="User Information" >
+                <Section title={t('appInfo.sections.user')} >
                     <GroupedSection
                         items={[
                             {
                                 id: 'auth-status',
                                 icon: 'shield-check',
                                 iconColor: isAuthenticated ? themeStyles.colors.iconPersonalInfo : themeStyles.colors.iconSharing,
-                                title: 'Authentication Status',
-                                subtitle: isAuthenticated ? 'Authenticated' : 'Not Authenticated',
+                                title: t('appInfo.items.authStatus'),
+                                subtitle: isAuthenticated ? t('appInfo.items.authenticated') : t('appInfo.items.notAuthenticated'),
                             },
                             ...(user ? [
                                 {
                                     id: 'user-id',
                                     icon: 'account',
                                     iconColor: themeStyles.colors.iconSecurity,
-                                    title: 'User ID',
+                                    title: t('appInfo.items.userId'),
                                     subtitle: user.id,
-                                    onPress: () => copyToClipboard(user.id, 'User ID'),
+                                    onPress: () => copyToClipboard(user.id, t('appInfo.items.userId')),
                                 },
                                 {
                                     id: 'username',
                                     icon: 'at',
                                     iconColor: themeStyles.colors.iconData,
-                                    title: 'Username',
+                                    title: t('appInfo.items.username'),
                                     subtitle: user.username || 'N/A',
                                     onPress: () => {
                                         if (user?.username && navigate) {
                                             navigate('Profile', { userId: user.id });
                                         } else {
-                                            toast.info('No username available or navigation not supported');
+                                            toast.info(t('appInfo.toasts.noUsernameOrNav'));
                                         }
                                     },
                                 },
@@ -306,22 +308,22 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                                     id: 'email',
                                     icon: 'mail',
                                     iconColor: themeStyles.colors.iconStorage,
-                                    title: 'Email',
+                                    title: t('appInfo.items.email'),
                                     subtitle: user.email || 'N/A',
                                 },
                                 {
                                     id: 'premium-status',
                                     icon: 'star',
                                     iconColor: user.isPremium ? '#FFD700' : '#8E8E93',
-                                    title: 'Premium Status',
-                                    subtitle: user.isPremium ? 'Premium' : 'Standard',
+                                    title: t('appInfo.items.premiumStatus'),
+                                    subtitle: user.isPremium ? t('appInfo.items.premium') : t('appInfo.items.standard'),
                                 },
                             ] : []),
                             {
                                 id: 'active-sessions',
                                 icon: 'account-group',
                                 iconColor: themeStyles.colors.iconPersonalInfo,
-                                title: 'Total Active Sessions',
+                                title: t('appInfo.items.totalActiveSessions'),
                                 subtitle: sessions?.length?.toString() || '0',
                             },
                         ]}
@@ -329,39 +331,39 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                 </Section>
 
                 {/* API Configuration */}
-                <Section title="API Configuration" >
+                <Section title={t('appInfo.sections.api')} >
                     <GroupedSection
                         items={[
                             {
                                 id: 'api-base-url',
                                 icon: 'server',
                                 iconColor: themeStyles.colors.iconSecurity,
-                                title: 'API Base URL',
-                                subtitle: oxyServices?.getBaseURL() || 'Not configured',
-                                onPress: () => copyToClipboard(oxyServices?.getBaseURL() || 'Not configured', 'API Base URL'),
+                                title: t('appInfo.items.apiBaseUrl'),
+                                subtitle: oxyServices?.getBaseURL() || t('appInfo.items.notConfigured'),
+                                onPress: () => copyToClipboard(oxyServices?.getBaseURL() || t('appInfo.items.notConfigured'), t('appInfo.items.apiBaseUrl')),
                             },
                             {
                                 id: 'connection-status',
                                 icon: connectionStatus === 'checking' ? 'sync' : connectionStatus === 'connected' ? 'wifi' : 'wifi-off',
                                 iconColor: connectionStatus === 'checking' ? themeStyles.colors.iconStorage : connectionStatus === 'connected' ? themeStyles.colors.iconPersonalInfo : themeStyles.colors.iconSharing,
-                                title: 'Connection Status',
-                                subtitle: connectionStatus === 'checking' ? 'Checking...' : connectionStatus === 'connected' ? 'Connected' : connectionStatus === 'disconnected' ? 'Disconnected' : 'Unknown',
+                                title: t('appInfo.items.connectionStatus'),
+                                subtitle: connectionStatus === 'checking' ? t('appInfo.items.checking') : connectionStatus === 'connected' ? t('appInfo.items.connected') : connectionStatus === 'disconnected' ? t('appInfo.items.disconnected') : t('appInfo.items.unknown'),
                                 onPress: async () => {
                                     setConnectionStatus('checking');
 
                                     if (!oxyServices) {
                                         setConnectionStatus('disconnected');
-                                        toast.error('OxyServices not initialized');
+                                        toast.error(t('appInfo.toasts.oxyServicesNotInitialized'));
                                         return;
                                     }
 
                                     try {
                                         await oxyServices.healthCheck();
                                         setConnectionStatus('connected');
-                                        toast.success('API connection successful');
+                                        toast.success(t('appInfo.toasts.apiConnectionSuccess'));
                                     } catch (error) {
                                         setConnectionStatus('disconnected');
-                                        toast.error('Failed to connect to API server');
+                                        toast.error(t('appInfo.toasts.apiConnectionFailed'));
                                     }
                                 },
                             },
@@ -370,55 +372,55 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                 </Section>
 
                 {/* Build Information */}
-                <Section title="Build Information" >
+                <Section title={t('appInfo.sections.build')} >
                     <GroupedSection
                         items={[
                             {
                                 id: 'build-timestamp',
                                 icon: 'clock',
                                 iconColor: themeStyles.colors.iconSecurity,
-                                title: 'Build Timestamp',
-                                subtitle: systemInfo?.timestamp || 'Loading...',
-                                onPress: () => copyToClipboard(systemInfo?.timestamp || 'Loading...', 'Build timestamp'),
+                                title: t('appInfo.items.buildTimestamp'),
+                                subtitle: systemInfo?.timestamp || t('common.status.loading'),
+                                onPress: () => copyToClipboard(systemInfo?.timestamp || t('common.status.loading'), t('appInfo.items.buildTimestamp')),
                             },
                             {
                                 id: 'react-native',
                                 icon: 'react',
                                 iconColor: '#61DAFB',
-                                title: 'React Native',
-                                subtitle: 'Expo/React Native',
+                                title: t('appInfo.items.reactNative'),
+                                subtitle: t('appInfo.items.reactNativeValue'),
                             },
                             {
                                 id: 'js-engine',
                                 icon: 'flash',
                                 iconColor: themeStyles.colors.iconSharing,
-                                title: 'JavaScript Engine',
-                                subtitle: 'Hermes',
+                                title: t('appInfo.items.jsEngine'),
+                                subtitle: t('appInfo.items.jsEngineValue'),
                             },
                         ]}
                     />
                 </Section>
 
                 {/* Quick Actions */}
-                <Section title="Quick Actions" >
+                <Section title={t('appInfo.sections.quickActions')} >
                     <GroupedSection
                         items={[
                             {
                                 id: 'copy-full-report',
                                 icon: 'content-copy',
                                 iconColor: themeStyles.colors.iconSecurity,
-                                title: 'Copy Full Report',
-                                subtitle: 'Copy complete application information to clipboard',
+                                title: t('appInfo.items.copyFullReport'),
+                                subtitle: t('appInfo.items.copyFullReportSubtitle'),
                                 onPress: handleCopyFullReport,
                             },
                             {
                                 id: 'run-system-check',
                                 icon: isRunningSystemCheck ? 'sync' : 'check-circle',
                                 iconColor: isRunningSystemCheck ? '#FF9500' : '#34C759',
-                                title: isRunningSystemCheck ? 'Running System Check...' : 'Run System Check',
+                                title: isRunningSystemCheck ? t('appInfo.items.runningSystemCheck') : t('appInfo.items.runSystemCheck'),
                                 subtitle: isRunningSystemCheck
-                                    ? 'Checking API, authentication, and platform status...'
-                                    : 'Verify application health and status',
+                                    ? t('appInfo.items.systemCheckRunning')
+                                    : t('appInfo.items.systemCheckSubtitle'),
                                 onPress: runSystemCheck,
                                 disabled: isRunningSystemCheck,
                                 customContent: isRunningSystemCheck ? (

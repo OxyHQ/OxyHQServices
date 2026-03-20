@@ -1,3 +1,5 @@
+import type { TextStyle } from 'react-native';
+
 // Types for react-native-paper compatibility
 // Support both string theme ('light' | 'dark') and InternalTheme object
 export type ThemeProp = Partial<InternalTheme> | 'light' | 'dark';
@@ -61,24 +63,24 @@ export type InternalTheme = {
     placeholder?: string;
   };
   fonts: {
-    displayLarge: any;
-    displayMedium: any;
-    displaySmall: any;
-    headlineLarge: any;
-    headlineMedium: any;
-    headlineSmall: any;
-    titleLarge: any;
-    titleMedium: any;
-    titleSmall: any;
-    labelLarge: any;
-    labelMedium: any;
-    labelSmall: any;
-    bodyLarge: any;
-    bodyMedium: any;
-    bodySmall: any;
-    default: any;
+    displayLarge: TextStyle;
+    displayMedium: TextStyle;
+    displaySmall: TextStyle;
+    headlineLarge: TextStyle;
+    headlineMedium: TextStyle;
+    headlineSmall: TextStyle;
+    titleLarge: TextStyle;
+    titleMedium: TextStyle;
+    titleSmall: TextStyle;
+    labelLarge: TextStyle;
+    labelMedium: TextStyle;
+    labelSmall: TextStyle;
+    bodyLarge: TextStyle;
+    bodyMedium: TextStyle;
+    bodySmall: TextStyle;
+    default: TextStyle;
     // Legacy property for backward compatibility
-    regular?: any;
+    regular?: TextStyle;
   };
 };
 
