@@ -94,7 +94,14 @@ const OxyProvider: FC<OxyProviderProps> = ({
     // Simple storage initialization for query persistence
     const storageRef = useRef<StorageInterface | null>(null);
     const queryClientRef = useRef<ReturnType<typeof createQueryClient> | null>(null);
-    const [queryClient, setQueryClient] = useState<ReturnType<typeof createQueryClient> | null>(null);
+    // Initialize immediately if provided via prop to avoid a null-render frame
+    const [queryClient, setQueryClient] = useState<ReturnType<typeof createQueryClient> | null>(() => {
+        if (providedQueryClient) {
+            queryClientRef.current = providedQueryClient;
+            return providedQueryClient;
+        }
+        return null;
+    });
 
     useEffect(() => {
         if (providedQueryClient) {
