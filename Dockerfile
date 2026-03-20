@@ -23,7 +23,7 @@ COPY packages/api/package.json packages/api/
 COPY packages/core/package.json packages/core/
 
 # Install all workspace dependencies
-RUN bun install --frozen-lockfile
+RUN bun install
 
 # Copy source code
 COPY packages/core/ packages/core/
@@ -48,7 +48,7 @@ COPY packages/api/package.json packages/api/
 COPY packages/core/package.json packages/core/
 
 # Install production dependencies
-RUN bun install --frozen-lockfile --production
+RUN bun install --production
 
 # Copy built artifacts
 COPY --from=builder /app/packages/api/dist packages/api/dist
