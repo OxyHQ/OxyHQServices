@@ -1,7 +1,7 @@
-import React, { memo, useMemo } from 'react';
+import type React from 'react';
+import { memo, useMemo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-// @ts-ignore - MaterialCommunityIcons is available at runtime
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useColorScheme } from '../hooks/useColorScheme';
 import { darkenColor } from '../utils/colorUtils';
@@ -68,7 +68,7 @@ const GroupedItemComponent = ({
                 <View style={styles.actionIcon}>{customIcon}</View>
             ) : icon ? (
                 <View style={[styles.iconContainer, { backgroundColor: finalIconColor }]}>
-                    <MaterialCommunityIcons name={icon as any} size={22} color={darkenColor(finalIconColor)} />
+                    <MaterialCommunityIcons name={icon} size={22} color={darkenColor(finalIconColor)} />
                 </View>
             ) : null}
             <View style={styles.actionTextContainer}>
