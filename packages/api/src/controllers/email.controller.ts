@@ -8,7 +8,7 @@
 import { Request, Response } from 'express';
 import { emailService } from '../services/email.service';
 import { smtpOutbound } from '../services/smtp.outbound';
-import { resolveEmailAddress, EMAIL_DOMAIN } from '../config/email.config';
+import { resolveEmailAddress } from '../config/email.config';
 import User from '../models/User';
 import { Message } from '../models/Message';
 import {
@@ -16,7 +16,7 @@ import {
   UnauthorizedError,
   NotFoundError,
 } from '../utils/error';
-import { logger } from '../utils/logger';
+
 
 interface AuthRequest extends Request {
   user?: { id: string };
@@ -530,7 +530,7 @@ export async function updateBundle(req: AuthRequest, res: Response): Promise<voi
   const { bundleId } = req.params;
   const { enabled, collapsed, matchLabels, order } = req.body;
 
-  const updates: Record<string, any> = {};
+  const updates: Record<string, boolean | string[] | number> = {};
   if (typeof enabled === 'boolean') updates.enabled = enabled;
   if (typeof collapsed === 'boolean') updates.collapsed = collapsed;
   if (Array.isArray(matchLabels)) updates.matchLabels = matchLabels;

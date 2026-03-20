@@ -34,15 +34,27 @@ class Logger {
   }
 
   debug(message: string, context?: LogContext): void {
-    context ? pinoLogger.debug(context, message) : pinoLogger.debug(message);
+    if (context) {
+      pinoLogger.debug(context, message);
+    } else {
+      pinoLogger.debug(message);
+    }
   }
 
   info(message: string, context?: LogContext): void {
-    context ? pinoLogger.info(context, message) : pinoLogger.info(message);
+    if (context) {
+      pinoLogger.info(context, message);
+    } else {
+      pinoLogger.info(message);
+    }
   }
 
   warn(message: string, context?: LogContext): void {
-    context ? pinoLogger.warn(context, message) : pinoLogger.warn(message);
+    if (context) {
+      pinoLogger.warn(context, message);
+    } else {
+      pinoLogger.warn(message);
+    }
   }
 
   error(message: string, error?: Error | unknown, context?: LogContext): void {
@@ -64,7 +76,11 @@ class Logger {
   performance(operation: string, duration: number, context?: LogContext): void {
     const msg = `${operation} completed in ${duration}ms`;
     const merged = { ...context, operation, duration };
-    duration > 1000 ? pinoLogger.warn(merged, msg) : pinoLogger.info(merged, msg);
+    if (duration > 1000) {
+      pinoLogger.warn(merged, msg);
+    } else {
+      pinoLogger.info(merged, msg);
+    }
   }
 }
 

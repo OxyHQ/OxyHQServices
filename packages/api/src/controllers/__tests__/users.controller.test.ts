@@ -16,7 +16,7 @@ jest.mock('../../utils/sanitize', () => ({
 }));
 
 jest.mock('../../utils/asyncHandler', () => ({
-  sendSuccess: jest.fn((res: any, data: any) => res.status(200).json({ data })),
+  sendSuccess: jest.fn((res: Response, data: unknown) => res.status(200).json({ data })),
 }));
 
 import { UsersController } from '../users.controller';

@@ -99,8 +99,8 @@ export const getContentViewers = async (req: Request, res: Response) => {
 export const getFollowerDetails = async (req: Request, res: Response) => {
   try {
     const { userID, period = "weekly" } = req.query;
-    const { startDate, endDate } = getDateRange(period as string);
-    
+    const { startDate } = getDateRange(period as string);
+
     const followerStats = await User.aggregate([
       { $match: { _id: userID } },
       { $lookup: {

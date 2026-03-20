@@ -1,11 +1,11 @@
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import Session from '../models/Session';
 import { logger } from '../utils/logger';
 import { extractTokenFromRequest, decodeToken } from '../middleware/authUtils';
 import sessionService from '../services/session.service';
 import { AuthRequest } from '../middleware/auth';
 import { emitSessionUpdate } from '../server';
-import securityActivityService from '../services/securityActivityService';
+
 
 export class DevicesController {
   /**
@@ -18,8 +18,6 @@ export class DevicesController {
       if (!user || !user._id) {
         return res.status(401).json({ error: 'Authentication required' });
       }
-
-      const userId = user._id.toString();
 
       // Get current session to identify current device
       const token = extractTokenFromRequest(req);
@@ -50,7 +48,19 @@ export class DevicesController {
       .exec();
 
       // Group by deviceId and get the most recent session info for each device
-      const deviceMap = new Map<string, any>();
+      interface DeviceEntry {
+        id: string;
+        deviceId: string;
+        name: string;
+        deviceName: string;
+        type: string;
+        deviceType: string;
+        lastActive: string | Date;
+        createdAt: string | Date;
+        isCurrent: boolean;
+      }
+
+      const deviceMap = new Map<string, DeviceEntry>();
 
       for (const session of sessions) {
         const deviceId = session.deviceId;
