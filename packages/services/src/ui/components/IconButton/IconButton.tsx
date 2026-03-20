@@ -13,7 +13,7 @@ import { getIconButtonColor } from './utils';
 import { useInternalTheme } from '../theming';
 import type { $RemoveChildren, ThemeProp } from "../types";
 import { forwardRef } from '../utils/forwardRef';
-import ActivityIndicator from '../ActivityIndicator';
+import { Loading } from '@oxyhq/bloom';
 import CrossFadeIcon from '../CrossFadeIcon';
 import Icon, { type IconSource } from '../Icon';
 import Surface from '../Surface';
@@ -206,7 +206,7 @@ const IconButton = forwardRef<View, Props>(
           {...rest}
         >
           {loading ? (
-            <ActivityIndicator size={size} color={iconColor} />
+            <Loading iconSize={size} color={iconColor} />
           ) : (
             <IconComponent color={iconColor} source={icon} size={size} />
           )}

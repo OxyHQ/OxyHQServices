@@ -147,6 +147,7 @@
   },
   "editProfile": {
     "title": "Editar perfil",
+    "subtitle": "Gestiona tu perfil y preferencias",
     "sections": {
       "profilePicture": "Foto de perfil",
       "basicInfo": "Información básica",
@@ -157,29 +158,69 @@
     "items": {
       "displayName": {
         "title": "Nombre para mostrar",
-        "add": "Añade tu nombre para mostrar"
+        "subtitle": "Así aparecerá tu nombre para los demás",
+        "add": "Añade tu nombre para mostrar",
+        "firstName": "Nombre",
+        "firstNamePlaceholder": "Introduce tu nombre",
+        "lastName": "Apellido",
+        "lastNamePlaceholder": "Introduce tu apellido (opcional)"
       },
       "username": {
         "title": "Usuario",
-        "choose": "Elige un usuario"
+        "subtitle": "Tu identificador único en la plataforma",
+        "label": "Usuario",
+        "placeholder": "Elige un usuario",
+        "choose": "Elige un usuario",
+        "required": "El usuario es obligatorio",
+        "tooShort": "El usuario debe tener al menos 3 caracteres"
       },
       "email": {
         "title": "Correo electrónico",
-        "add": "Añade tu correo electrónico"
+        "subtitle": "Tu dirección de correo principal",
+        "label": "Correo electrónico",
+        "placeholder": "Introduce tu correo electrónico",
+        "add": "Añade tu correo electrónico",
+        "invalid": "Introduce una dirección de correo válida"
       },
       "bio": {
         "title": "Biografía",
+        "subtitle": "Cuenta algo sobre ti",
+        "label": "Biografía",
         "placeholder": "Cuenta algo sobre ti"
+      },
+      "phone": {
+        "title": "Número de teléfono",
+        "subtitle": "Tu número de teléfono de contacto",
+        "label": "Número de teléfono",
+        "placeholder": "Introduce tu número de teléfono"
+      },
+      "address": {
+        "title": "Dirección",
+        "subtitle": "Tu dirección física",
+        "label": "Dirección",
+        "placeholder": "Introduce tu dirección"
+      },
+      "birthday": {
+        "title": "Fecha de nacimiento",
+        "subtitle": "Tu fecha de nacimiento",
+        "label": "Fecha de nacimiento",
+        "placeholder": "AAAA-MM-DD"
       },
       "locations": {
         "title": "Ubicaciones",
+        "subtitle": "Lugares donde has estado o vives",
         "add": "Añade tus ubicaciones",
+        "placeholder": "Introduce el nombre del lugar",
+        "yourLocations": "Tus ubicaciones",
         "count": "{{count}} ubicación añadida",
         "count_plural": "{{count}} ubicaciones añadidas"
       },
       "links": {
         "title": "Enlaces",
+        "subtitle": "Comparte tu web, perfiles sociales, etc.",
         "add": "Añade tus enlaces",
+        "placeholder": "Introduce la URL",
+        "yourLinks": "Tus enlaces",
         "count": "{{count}} enlace añadido",
         "count_plural": "{{count}} enlaces añadidos"
       },
@@ -219,9 +260,15 @@
       "getStarted": "Comenzar",
       "createAccount": "Crear cuenta",
       "signIn": "Entrar",
+      "signOut": "Cerrar sesión",
       "verify": "Verificar",
       "resetPassword": "Restablecer contraseña"
     },
+    "cancel": "Cancelar",
+    "retry": "Reintentar",
+    "save": "Guardar",
+    "saved": "Guardado correctamente",
+    "saving": "Guardando...",
     "links": {
       "recoverAccount": "Recuperar tu cuenta",
       "signUp": "Registrarse"
@@ -623,6 +670,34 @@
         "title": "¿Por qué el karma?",
         "text": "El karma desbloquea funciones especiales y reconocimiento en el ecosistema de Oxy. ¡Cuanto más contribuyas, más ganarás!"
       }
+    },
+    "achievements": {
+      "unlocked": "Logros desbloqueados",
+      "locked": "Logros bloqueados",
+      "firstStep": "Primer paso",
+      "firstStepDesc": "Ganaste tu primer punto de karma",
+      "novice": "Novato",
+      "noviceDesc": "Alcanzaste 10 puntos de karma",
+      "contributor": "Contribuidor",
+      "contributorDesc": "Alcanzaste 50 puntos de karma",
+      "risingStar": "Estrella en ascenso",
+      "risingStarDesc": "Alcanzaste 100 puntos de karma",
+      "earlyAdopter": "Pionero",
+      "earlyAdopterDesc": "Parte de la comunidad desde el inicio",
+      "communityHero": "Héroe de la comunidad",
+      "communityHeroDesc": "Alcanzaste 500 puntos de karma",
+      "legend": "Leyenda",
+      "legendDesc": "Alcanzaste 1000 puntos de karma",
+      "phoenix": "Fénix",
+      "phoenixDesc": "Alcanzaste 2500 puntos de karma",
+      "unstoppable": "Imparable",
+      "unstoppableDesc": "Alcanzaste 5000 puntos de karma",
+      "bugHunter": "Cazador de errores",
+      "bugHunterDesc": "Reportaste errores útiles",
+      "helper": "Ayudante",
+      "helperDesc": "Ayudaste a 10 usuarios",
+      "streakMaster": "Maestro de rachas",
+      "streakMasterDesc": "Racha de actividad de 7 días"
     }
   },
   "premium": {
@@ -819,8 +894,19 @@
       "account": "PRIVACIDAD DE LA CUENTA",
       "interactions": "INTERACCIONES",
       "activity": "ACTIVIDAD Y DATOS",
-      "content": "CONTENIDO Y SEGURIDAD"
+      "content": "CONTENIDO Y SEGURIDAD",
+      "blockedUsers": "USUARIOS BLOQUEADOS",
+      "restrictedUsers": "USUARIOS RESTRINGIDOS"
     },
+    "noBlockedUsers": "No hay usuarios bloqueados",
+    "noRestrictedUsers": "No hay usuarios restringidos",
+    "unblock": "Desbloquear",
+    "unblockError": "Error al desbloquear al usuario",
+    "unrestrict": "Quitar restricción",
+    "unrestrictError": "Error al quitar la restricción del usuario",
+    "restrictedDescription": "Interacciones limitadas",
+    "userUnblocked": "Usuario desbloqueado",
+    "userUnrestricted": "Restricción del usuario eliminada",
     "isPrivateAccount": "Cuenta privada",
     "isPrivateAccountDesc": "Solo los seguidores aprobados pueden ver tus publicaciones",
     "profileVisibility": "Visibilidad del perfil",
@@ -940,5 +1026,22 @@
       "title": "Política de cookies",
       "subtitle": "Cómo usamos cookies y tecnologías similares"
     }
+  },
+  "faq": {
+    "title": "Preguntas frecuentes",
+    "searchPlaceholder": "Buscar en las FAQ...",
+    "allCategories": "Todas",
+    "loading": "Cargando preguntas frecuentes...",
+    "noResults": "No se encontraron preguntas que coincidan con tu búsqueda",
+    "empty": "No hay preguntas frecuentes disponibles",
+    "loadError": "Error al cargar las preguntas frecuentes"
+  },
+  "userList": {
+    "followers": "Seguidores",
+    "following": "Siguiendo",
+    "noFollowers": "Aún no hay seguidores",
+    "noFollowersDesc": "Cuando alguien siga a este usuario, aparecerá aquí.",
+    "noFollowing": "No sigue a nadie",
+    "noFollowingDesc": "Cuando este usuario siga a alguien, aparecerá aquí."
   }
 }

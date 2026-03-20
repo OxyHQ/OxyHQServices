@@ -444,6 +444,34 @@
         "title": "Why Karma?",
         "text": "Karma unlocks special features and recognition in the Oxy Ecosystem. The more you contribute, the more you earn!"
       }
+    },
+    "achievements": {
+      "unlocked": "Unlocked Achievements",
+      "locked": "Locked Achievements",
+      "firstStep": "First Step",
+      "firstStepDesc": "Earned your first karma point",
+      "novice": "Novice",
+      "noviceDesc": "Reached 10 karma points",
+      "contributor": "Contributor",
+      "contributorDesc": "Reached 50 karma points",
+      "risingStar": "Rising Star",
+      "risingStarDesc": "Reached 100 karma points",
+      "earlyAdopter": "Early Adopter",
+      "earlyAdopterDesc": "Been part of the community from the start",
+      "communityHero": "Community Hero",
+      "communityHeroDesc": "Reached 500 karma points",
+      "legend": "Legend",
+      "legendDesc": "Reached 1000 karma points",
+      "phoenix": "Phoenix",
+      "phoenixDesc": "Reached 2500 karma points",
+      "unstoppable": "Unstoppable",
+      "unstoppableDesc": "Reached 5000 karma points",
+      "bugHunter": "Bug Hunter",
+      "bugHunterDesc": "Reported helpful bugs",
+      "helper": "Helper",
+      "helperDesc": "Helped 10 users",
+      "streakMaster": "Streak Master",
+      "streakMasterDesc": "7 day activity streak"
     }
   },
   "premium": {
@@ -533,6 +561,7 @@
   },
   "editProfile": {
     "title": "Edit Profile",
+    "subtitle": "Manage your profile and preferences",
     "sections": {
       "profilePicture": "Profile Picture",
       "basicInfo": "Basic Information",
@@ -543,29 +572,69 @@
     "items": {
       "displayName": {
         "title": "Display Name",
-        "add": "Add your display name"
+        "subtitle": "This is how your name will appear to others",
+        "add": "Add your display name",
+        "firstName": "First Name",
+        "firstNamePlaceholder": "Enter first name",
+        "lastName": "Last Name",
+        "lastNamePlaceholder": "Enter last name (optional)"
       },
       "username": {
         "title": "Username",
-        "choose": "Choose a username"
+        "subtitle": "Your unique identifier on the platform",
+        "label": "Username",
+        "placeholder": "Choose a username",
+        "choose": "Choose a username",
+        "required": "Username is required",
+        "tooShort": "Username must be at least 3 characters"
       },
       "email": {
         "title": "Email",
-        "add": "Add your email address"
+        "subtitle": "Your primary email address",
+        "label": "Email Address",
+        "placeholder": "Enter your email address",
+        "add": "Add your email address",
+        "invalid": "Please enter a valid email address"
       },
       "bio": {
         "title": "Bio",
+        "subtitle": "Tell people a bit about yourself",
+        "label": "Bio",
         "placeholder": "Tell people about yourself"
+      },
+      "phone": {
+        "title": "Phone Number",
+        "subtitle": "Your contact phone number",
+        "label": "Phone Number",
+        "placeholder": "Enter your phone number"
+      },
+      "address": {
+        "title": "Address",
+        "subtitle": "Your physical address",
+        "label": "Address",
+        "placeholder": "Enter your address"
+      },
+      "birthday": {
+        "title": "Birthday",
+        "subtitle": "Your date of birth",
+        "label": "Birthday",
+        "placeholder": "YYYY-MM-DD"
       },
       "locations": {
         "title": "Locations",
+        "subtitle": "Places you've been or live",
         "add": "Add your locations",
+        "placeholder": "Enter location name",
+        "yourLocations": "Your Locations",
         "count": "{{count}} location added",
         "count_plural": "{{count}} locations added"
       },
       "links": {
         "title": "Links",
+        "subtitle": "Share your website, social profiles, etc.",
         "add": "Add your links",
+        "placeholder": "Enter URL",
+        "yourLinks": "Your Links",
         "count": "{{count}} link added",
         "count_plural": "{{count}} links added"
       },
@@ -798,8 +867,19 @@
       "account": "ACCOUNT PRIVACY",
       "interactions": "INTERACTIONS",
       "activity": "ACTIVITY & DATA",
-      "content": "CONTENT & SAFETY"
+      "content": "CONTENT & SAFETY",
+      "blockedUsers": "BLOCKED USERS",
+      "restrictedUsers": "RESTRICTED USERS"
     },
+    "noBlockedUsers": "No blocked users",
+    "noRestrictedUsers": "No restricted users",
+    "unblock": "Unblock",
+    "unblockError": "Failed to unblock user",
+    "unrestrict": "Unrestrict",
+    "unrestrictError": "Failed to unrestrict user",
+    "restrictedDescription": "Limited interactions",
+    "userUnblocked": "User unblocked",
+    "userUnrestricted": "User unrestricted",
     "isPrivateAccount": "Private Account",
     "isPrivateAccountDesc": "Only approved followers can see your posts",
     "profileVisibility": "Profile Visibility",
@@ -920,6 +1000,23 @@
       "subtitle": "How we use cookies and similar technologies"
     }
   },
+  "faq": {
+    "title": "FAQ",
+    "searchPlaceholder": "Search FAQs...",
+    "allCategories": "All",
+    "loading": "Loading FAQs...",
+    "noResults": "No FAQs match your search",
+    "empty": "No FAQs available",
+    "loadError": "Failed to load FAQs"
+  },
+  "userList": {
+    "followers": "Followers",
+    "following": "Following",
+    "noFollowers": "No followers yet",
+    "noFollowersDesc": "When people follow this user, they will appear here.",
+    "noFollowing": "Not following anyone",
+    "noFollowingDesc": "When this user follows people, they will appear here."
+  },
   "common": {
     "errors": {
       "signOutFailed": "There was a problem signing you out. Please try again."
@@ -939,9 +1036,15 @@
       "getStarted": "Get Started",
       "createAccount": "Create Account",
       "signIn": "Sign In",
+      "signOut": "Sign Out",
       "verify": "Verify",
       "resetPassword": "Reset Password"
     },
+    "cancel": "Cancel",
+    "retry": "Retry",
+    "save": "Save",
+    "saved": "Saved successfully",
+    "saving": "Saving...",
     "links": {
       "recoverAccount": "Recover your account",
       "signUp": "Sign Up"
