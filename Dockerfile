@@ -22,8 +22,11 @@ RUN node -e "const p=require('./package.json'); p.workspaces=['packages/core','p
 COPY packages/api/package.json packages/api/
 COPY packages/core/package.json packages/core/
 
-# Install all workspace dependencies (disable frozen lockfile since workspaces were overridden)
-RUN node -e "require('fs').writeFileSync('bunfig.toml','[install]\\npeer = false\\nfrozenLockfile = false\\n')" && bun install
+# Use Docker-specific bunfig that disables frozen lockfile (workspaces are overridden at build time)
+COPY docker/bunfig.docker.toml bunfig.toml
+
+# Install all workspace dependencies
+RUN bun install
 
 # Copy source code
 COPY packages/core/ packages/core/
@@ -47,8 +50,11 @@ RUN node -e "const p=require('./package.json'); p.workspaces=['packages/core','p
 COPY packages/api/package.json packages/api/
 COPY packages/core/package.json packages/core/
 
-# Install production dependencies (disable frozen lockfile since workspaces were overridden)
-RUN node -e "require('fs').writeFileSync('bunfig.toml','[install]\\npeer = false\\nfrozenLockfile = false\\n')" && bun install --production
+# Use Docker-specific bunfig that disables frozen lockfile (workspaces are overridden at build time)
+COPY docker/bunfig.docker.toml bunfig.toml
+
+# Install production dependencies
+RUN bun install --production
 
 # Copy built artifacts
 COPY --from=builder /app/packages/api/dist packages/api/dist
