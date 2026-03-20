@@ -72,6 +72,10 @@ export interface AuthActions {
 export interface UseAuthReturn extends AuthState, AuthActions {
   /** Access to full OxyServices instance for advanced usage */
   oxyServices: ReturnType<typeof useOxy>['oxyServices'];
+  /** Open a bottom sheet screen (e.g. 'AccountSettings', 'FileManagement') */
+  showBottomSheet: ReturnType<typeof useOxy>['showBottomSheet'];
+  /** Open the avatar picker bottom sheet */
+  openAvatarPicker: ReturnType<typeof useOxy>['openAvatarPicker'];
 }
 
 /**
@@ -99,6 +103,7 @@ export function useAuth(): UseAuthReturn {
     hasIdentity,
     getPublicKey,
     showBottomSheet,
+    openAvatarPicker,
   } = useOxy();
 
   const signIn = useCallback(async (publicKey?: string): Promise<User> => {
@@ -193,6 +198,8 @@ export function useAuth(): UseAuthReturn {
 
     // Advanced
     oxyServices,
+    showBottomSheet,
+    openAvatarPicker,
   };
 }
 
