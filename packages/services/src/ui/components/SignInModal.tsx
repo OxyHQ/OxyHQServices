@@ -8,7 +8,8 @@
  * Animates with fade-in effect.
  */
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import type React from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
     View,
     Text,

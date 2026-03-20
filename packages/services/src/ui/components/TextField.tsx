@@ -1,20 +1,20 @@
 import * as React from 'react';
 import {
   Animated,
-  LayoutChangeEvent,
-  StyleProp,
+  type LayoutChangeEvent,
+  type StyleProp,
   TextInput as NativeTextInput,
-  TextStyle,
-  ViewStyle,
-  NativeSyntheticEvent,
-  TextLayoutEventData,
+  type TextStyle,
+  type ViewStyle,
+  type NativeSyntheticEvent,
+  type TextLayoutEventData,
 } from 'react-native';
 
 import TextFieldAffix, {
-  Props as TextFieldAffixProps,
+  type Props as TextFieldAffixProps,
 } from './TextField/Adornment/TextFieldAffix';
 import TextFieldIcon, {
-  Props as TextFieldIconProps,
+  type Props as TextFieldIconProps,
 } from './TextField/Adornment/TextFieldIcon';
 import TextFieldFlat from './TextField/TextFieldFlat';
 import TextFieldOutlined from './TextField/TextFieldOutlined';
@@ -314,15 +314,12 @@ const TextField = forwardRef<TextFieldHandles, Props>(
           useNativeDriver: true,
         }).start();
       } else {
-        // hide error
-        {
           Animated.timing(error, {
             toValue: 0,
             duration: BLUR_ANIMATION_DURATION * scale,
             // To prevent this - https://github.com/callstack/react-native-paper/issues/941
             useNativeDriver: true,
           }).start();
-        }
       }
     }, [errorProp, scale, error]);
 

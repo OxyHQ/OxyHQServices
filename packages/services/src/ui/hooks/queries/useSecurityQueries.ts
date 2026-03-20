@@ -44,7 +44,7 @@ export const useSecurityActivity = (
 /**
  * Get recent security activity (convenience hook)
  */
-export const useRecentSecurityActivity = (limit: number = 10) => {
+export const useRecentSecurityActivity = (limit = 10) => {
   const { oxyServices, activeSessionId } = useOxy();
 
   return useQuery<SecurityActivity[]>({

@@ -1,4 +1,5 @@
-import React, { useCallback, useMemo, useRef, useState, useEffect } from 'react';
+import type React from 'react';
+import { useCallback, useMemo, useRef, useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform, Animated } from 'react-native';
 import AnimatedReanimated, { useSharedValue, useAnimatedStyle, withTiming } from 'react-native-reanimated';
 import type { BaseScreenProps } from '../types/navigation';
@@ -231,7 +232,7 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
                                 name={currentUser?.name?.full || currentUser?.name?.first || currentUser?.username}
                                 uri={avatarUri}
 
-                                backgroundColor={colors.primary + '20'}
+                                backgroundColor={`${colors.primary}20`}
                                 style={styles.avatar}
                             />
                             <TouchableOpacity style={[styles.changeAvatarButton, { backgroundColor: colors.primary }]} onPress={openAvatarPicker}>

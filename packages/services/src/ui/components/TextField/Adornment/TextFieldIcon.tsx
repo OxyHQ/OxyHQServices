@@ -1,11 +1,11 @@
 import React from 'react';
 import {
-  ColorValue,
-  GestureResponderEvent,
-  StyleProp,
+  type ColorValue,
+  type GestureResponderEvent,
+  type StyleProp,
   StyleSheet,
   View,
-  ViewStyle,
+  type ViewStyle,
 } from 'react-native';
 
 import { getIconColor } from './utils';

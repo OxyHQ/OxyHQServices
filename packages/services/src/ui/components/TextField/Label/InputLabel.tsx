@@ -1,7 +1,7 @@
 import React from 'react';
 import {
   Animated,
-  ColorValue,
+  type ColorValue,
   Platform,
   StyleSheet,
   useWindowDimensions,

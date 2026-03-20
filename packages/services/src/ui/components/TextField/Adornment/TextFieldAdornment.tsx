@@ -25,7 +25,7 @@ export function getAdornmentConfig({
   left?: React.ReactNode;
   right?: React.ReactNode;
 }): Array<AdornmentConfig> {
-  let adornmentConfig: any[] = [];
+  const adornmentConfig: any[] = [];
   if (left || right) {
     [
       { side: AdornmentSide.Left, adornment: left },
@@ -104,9 +104,8 @@ export function getAdornmentStyleAdjustmentForNativeInput({
         {}
       );
     return allStyleAdjustmentsMerged;
-  } else {
-    return [{}];
   }
+    return [{}];
 }
 
 const captalize = (text: string) =>
@@ -181,7 +180,7 @@ const TextFieldAdornment: React.FunctionComponent<TextFieldAdornmentProps> = ({
                 forceFocus={forceFocus}
               />
             );
-          } else if (type === AdornmentType.Affix) {
+          }if (type === AdornmentType.Affix) {
             return (
               <AffixAdornment
                 {...commonProps}
@@ -194,15 +193,13 @@ const TextFieldAdornment: React.FunctionComponent<TextFieldAdornmentProps> = ({
                 maxFontSizeMultiplier={maxFontSizeMultiplier}
               />
             );
-          } else {
-            return null;
           }
+            return null;
         })}
       </>
     );
-  } else {
-    return null;
   }
+    return null;
 };
 
 export default TextFieldAdornment;

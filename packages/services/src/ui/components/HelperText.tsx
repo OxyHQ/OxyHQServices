@@ -1,10 +1,10 @@
 import * as React from 'react';
 import {
   Animated,
-  LayoutChangeEvent,
-  StyleProp,
+  type LayoutChangeEvent,
+  type StyleProp,
   StyleSheet,
-  TextStyle,
+  type TextStyle,
 } from 'react-native';
 import { useThemeColors } from '../styles';
 
@@ -14,7 +14,7 @@ const getTextColor = (colors: ReturnType<typeof useThemeColors>, disabled?: bool
     return colors.error;
   }
   if (disabled) {
-    return colors.secondaryText + '80'; // Add opacity
+    return `${colors.secondaryText}80`; // Add opacity
   }
   return colors.secondaryText;
 };
@@ -109,7 +109,7 @@ const HelperText = ({
       return colors.error;
     }
     if (disabled) {
-      return colors.secondaryText + '80'; // Add opacity
+      return `${colors.secondaryText}80`; // Add opacity
     }
     return colors.secondaryText;
   };

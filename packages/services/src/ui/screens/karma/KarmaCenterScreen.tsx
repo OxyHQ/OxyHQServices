@@ -90,19 +90,19 @@ const KarmaCenterScreen: React.FC<BaseScreenProps> = ({
                     </Text>
                     <View style={styles.actionContainer}>
                         <View style={styles.actionRow}>
-                            <TouchableOpacity style={styles.actionIconWrapper} onPress={() => navigate && navigate('KarmaLeaderboard')}>
+                            <TouchableOpacity style={styles.actionIconWrapper} onPress={() => navigate?.('KarmaLeaderboard')}>
                                 <View style={[styles.actionIcon, { backgroundColor: iconLeaderboard }]}>
                                     <Ionicons name="trophy-outline" size={28} color={darkenColor(iconLeaderboard)} />
                                 </View>
                                 <Text style={[styles.actionLabel, { color: mutedTextColor }]}>{t('karma.center.actions.leaderboard') || 'Leaderboard'}</Text>
                             </TouchableOpacity>
-                            <TouchableOpacity style={styles.actionIconWrapper} onPress={() => navigate && navigate('KarmaRules')}>
+                            <TouchableOpacity style={styles.actionIconWrapper} onPress={() => navigate?.('KarmaRules')}>
                                 <View style={[styles.actionIcon, { backgroundColor: iconRules }]}>
                                     <Ionicons name="document-text-outline" size={28} color={darkenColor(iconRules)} />
                                 </View>
                                 <Text style={[styles.actionLabel, { color: mutedTextColor }]}>{t('karma.center.actions.rules') || 'Rules'}</Text>
                             </TouchableOpacity>
-                            <TouchableOpacity style={styles.actionIconWrapper} onPress={() => navigate && navigate('AboutKarma')}>
+                            <TouchableOpacity style={styles.actionIconWrapper} onPress={() => navigate?.('AboutKarma')}>
                                 <View style={[styles.actionIcon, { backgroundColor: iconAbout }]}>
                                     <Ionicons name="star-outline" size={28} color={darkenColor(iconAbout)} />
                                 </View>
@@ -110,13 +110,13 @@ const KarmaCenterScreen: React.FC<BaseScreenProps> = ({
                             </TouchableOpacity>
                         </View>
                         <View style={styles.actionRow}>
-                            <TouchableOpacity style={styles.actionIconWrapper} onPress={() => navigate && navigate('KarmaRewards')}>
+                            <TouchableOpacity style={styles.actionIconWrapper} onPress={() => navigate?.('KarmaRewards')}>
                                 <View style={[styles.actionIcon, { backgroundColor: iconRewards }]}>
                                     <Ionicons name="gift-outline" size={28} color={darkenColor(iconRewards)} />
                                 </View>
                                 <Text style={[styles.actionLabel, { color: mutedTextColor }]}>{t('karma.center.actions.rewards') || 'Rewards'}</Text>
                             </TouchableOpacity>
-                            <TouchableOpacity style={styles.actionIconWrapper} onPress={() => navigate && navigate('KarmaFAQ')}>
+                            <TouchableOpacity style={styles.actionIconWrapper} onPress={() => navigate?.('KarmaFAQ')}>
                                 <View style={[styles.actionIcon, { backgroundColor: iconFAQ }]}>
                                     <Ionicons name="help-circle-outline" size={28} color={darkenColor(iconFAQ)} />
                                 </View>

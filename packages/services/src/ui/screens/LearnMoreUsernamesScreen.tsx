@@ -1,4 +1,5 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import type React from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import {
     View,
     Text,
@@ -78,7 +79,7 @@ const LearnMoreUsernamesScreen: React.FC<BaseScreenProps> = ({
                 contentContainerStyle={styles.contentContainer}
             >
                 <View style={styles.introSection}>
-                    <View style={[styles.introIcon, { backgroundColor: themeStyles.primaryColor + '15' }]}>
+                    <View style={[styles.introIcon, { backgroundColor: `${themeStyles.primaryColor}15` }]}>
                         <Ionicons name="at" size={32} color={themeStyles.primaryColor} />
                     </View>
                     <Text style={[styles.introTitle, { color: themeStyles.textColor }]}>
@@ -108,7 +109,7 @@ const LearnMoreUsernamesScreen: React.FC<BaseScreenProps> = ({
                                 accessibilityHint={isExpanded ? 'Collapse section' : 'Expand section'}
                                 accessibilityState={{ expanded: isExpanded }}
                             >
-                                <View style={[styles.sectionIconContainer, { backgroundColor: themeStyles.primaryColor + '15' }]}>
+                                <View style={[styles.sectionIconContainer, { backgroundColor: `${themeStyles.primaryColor}15` }]}>
                                     <Ionicons
                                         name={section.icon}
                                         size={20}

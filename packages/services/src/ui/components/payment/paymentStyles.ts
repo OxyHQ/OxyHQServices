@@ -230,7 +230,7 @@ export const createPaymentStyles = (colors: PaymentColors) => StyleSheet.create(
         marginBottom: 8,
     },
     oxyPayBalanceBox: {
-        backgroundColor: colors.primary + '22',
+        backgroundColor: `${colors.primary}22`,
         borderRadius: 12,
         padding: 8,
         marginTop: 8,
@@ -333,7 +333,7 @@ export const createPaymentStyles = (colors: PaymentColors) => StyleSheet.create(
         flexDirection: 'row',
         alignItems: 'center',
         alignSelf: 'center',
-        backgroundColor: colors.primary + '11',
+        backgroundColor: `${colors.primary}11`,
         borderRadius: 16,
         paddingHorizontal: 16,
         paddingVertical: 8,

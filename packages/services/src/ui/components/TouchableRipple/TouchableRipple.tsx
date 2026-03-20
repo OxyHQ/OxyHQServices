@@ -1,12 +1,12 @@
 import * as React from 'react';
 import {
-  ColorValue,
-  GestureResponderEvent,
+  type ColorValue,
+  type GestureResponderEvent,
   Platform,
-  StyleProp,
+  type StyleProp,
   StyleSheet,
-  View,
-  ViewStyle,
+  type View,
+  type ViewStyle,
 } from 'react-native';
 
 import type { PressableProps, PressableStateCallbackType } from './Pressable';
@@ -22,9 +22,9 @@ const SettingsContext = React.createContext({ rippleEffectEnabled: true });
 
 // Color manipulation utilities (simplified without color package)
 const hexToRgb = (hex: string): [number, number, number] => {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
+  const r = Number.parseInt(hex.slice(1, 3), 16);
+  const g = Number.parseInt(hex.slice(3, 5), 16);
+  const b = Number.parseInt(hex.slice(5, 7), 16);
   return [r, g, b];
 };
 

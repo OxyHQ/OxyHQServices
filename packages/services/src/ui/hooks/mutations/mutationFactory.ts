@@ -9,7 +9,7 @@
  * 5. On success: update cache, stores, and invalidate queries
  */
 
-import { QueryClient, UseMutationOptions } from '@tanstack/react-query';
+import type { QueryClient, UseMutationOptions } from '@tanstack/react-query';
 import type { User } from '@oxyhq/core';
 import { queryKeys, invalidateAccountQueries, invalidateUserQueries } from '../queries/queryKeys';
 import { toast } from '../../../lib/sonner';

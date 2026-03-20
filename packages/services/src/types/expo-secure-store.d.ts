@@ -13,10 +13,10 @@ declare module 'expo-secure-store' {
   export const AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY: 'AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY';
   export const WHEN_PASSCODE_SET_THIS_DEVICE_ONLY: 'WHEN_PASSCODE_SET_THIS_DEVICE_ONLY';
 
-  export async function setItemAsync(key: string, value: string, options?: SecureStoreOptions): Promise<void>;
-  export async function getItemAsync(key: string, options?: SecureStoreOptions): Promise<string | null>;
-  export async function deleteItemAsync(key: string, options?: SecureStoreOptions): Promise<void>;
-  export async function isAvailableAsync(): Promise<boolean>;
+  export function setItemAsync(key: string, value: string, options?: SecureStoreOptions): Promise<void>;
+  export function getItemAsync(key: string, options?: SecureStoreOptions): Promise<string | null>;
+  export function deleteItemAsync(key: string, options?: SecureStoreOptions): Promise<void>;
+  export function isAvailableAsync(): Promise<boolean>;
 }
 
 

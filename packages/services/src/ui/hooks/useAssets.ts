@@ -1,8 +1,8 @@
 import { useCallback } from 'react';
 import { useAssetStore } from '../stores/assetStore';
-import { OxyServices } from '@oxyhq/core';
+import type { OxyServices } from '@oxyhq/core';
 import {
-  Asset,
+  type Asset,
   AssetLinkRequest,
   AssetUnlinkRequest,
   AssetUploadProgress
@@ -181,13 +181,8 @@ export const useAssets = () => {
     if (!oxyInstance) {
       throw new Error('OxyServices instance not configured. Call setOxyAssetInstance first.');
     }
-
-    try {
       const result = await oxyInstance.assetGetUrl(assetId, variant, expiresIn);
       return result.url;
-    } catch (error: any) {
-      throw error;
-    }
   }, []);
 
   // Get asset metadata
@@ -195,23 +190,18 @@ export const useAssets = () => {
     if (!oxyInstance) {
       throw new Error('OxyServices instance not configured. Call setOxyAssetInstance first.');
     }
-
-    try {
       const result = await oxyInstance.assetGet(assetId);
       if (result.file) {
         setAsset(result.file);
         return result.file;
       }
       throw new Error('Asset not found');
-    } catch (error: any) {
-      throw error;
-    }
   }, [setAsset]);
 
   // Delete asset
   const deleteAsset = useCallback(async (
     assetId: string, 
-    force: boolean = false
+    force = false
   ): Promise<void> => {
     if (!oxyInstance) {
       throw new Error('OxyServices instance not configured. Call setOxyAssetInstance first.');
@@ -236,15 +226,10 @@ export const useAssets = () => {
     if (!oxyInstance) {
       throw new Error('OxyServices instance not configured. Call setOxyAssetInstance first.');
     }
-
-    try {
       const result = await oxyInstance.assetRestore(assetId);
       if (result.file) {
         setAsset(result.file);
       }
-    } catch (error: any) {
-      throw error;
-    }
   }, [setAsset]);
 
   // Get variants
@@ -252,12 +237,7 @@ export const useAssets = () => {
     if (!oxyInstance) {
       throw new Error('OxyServices instance not configured. Call setOxyAssetInstance first.');
     }
-
-    try {
       return await oxyInstance.assetGetVariants(assetId);
-    } catch (error: any) {
-      throw error;
-    }
   }, []);
 
   return {

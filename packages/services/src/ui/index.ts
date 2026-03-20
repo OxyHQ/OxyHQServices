@@ -19,7 +19,25 @@
 import isFrontend from './isFrontend';
 
 // UI exports
-let OxyProvider, OxySignInButton, OxyLogo, Avatar, FollowButton, OxyPayButton, FontLoader, setupFonts, OxyIcon, useOxy, useAuth, useFollow, ProfileScreen, useAuthStore, useAccountStore, fontFamilies, fontStyles, toast, useStorage;
+let OxyProvider;
+let OxySignInButton;
+let OxyLogo;
+let Avatar;
+let FollowButton;
+let OxyPayButton;
+let FontLoader;
+let setupFonts;
+let OxyIcon;
+let useOxy;
+let useAuth;
+let useFollow;
+let ProfileScreen;
+let useAuthStore;
+let useAccountStore;
+let fontFamilies;
+let fontStyles;
+let toast;
+let useStorage;
 
 if (isFrontend) {
   OxyProvider = require('./components/OxyProvider').default;

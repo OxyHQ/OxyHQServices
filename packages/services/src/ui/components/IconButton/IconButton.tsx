@@ -1,12 +1,12 @@
-import * as React from 'react';
+import type * as React from 'react';
 import {
-  GestureResponderEvent,
-  StyleProp,
+  type GestureResponderEvent,
+  type StyleProp,
   StyleSheet,
-  ViewStyle,
-  View,
-  Animated,
-  ColorValue,
+  type ViewStyle,
+  type View,
+  type Animated,
+  type ColorValue,
 } from 'react-native';
 
 import { getIconButtonColor } from './utils';
@@ -15,7 +15,7 @@ import type { $RemoveChildren, ThemeProp } from "../types";
 import { forwardRef } from '../utils/forwardRef';
 import ActivityIndicator from '../ActivityIndicator';
 import CrossFadeIcon from '../CrossFadeIcon';
-import Icon, { IconSource } from '../Icon';
+import Icon, { type IconSource } from '../Icon';
 import Surface from '../Surface';
 import TouchableRipple from '../TouchableRipple/TouchableRipple';
 

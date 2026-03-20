@@ -111,12 +111,11 @@ const FollowButton: React.FC<FollowButtonProps> = ({
     }
   }, [disabled, isLoading, toggleFollow, onFollowChange, isFollowing, preventParentActions, scale]);
 
-  // Initialize Zustand state with initial value if not already set
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional mount-only initialization
   useEffect(() => {
     if (userId && !isFollowing && initiallyFollowing) {
       setFollowStatus?.(initiallyFollowing);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, initiallyFollowing]);
 
   // Fetch latest follow status from backend on mount if authenticated
@@ -124,13 +123,12 @@ const FollowButton: React.FC<FollowButtonProps> = ({
     if (userId && isAuthenticated) {
       fetchStatus?.();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, oxyServices, isAuthenticated]);
+  }, [userId, fetchStatus, isAuthenticated]);
 
   // Animate button on follow/unfollow
   useEffect(() => {
     animationProgress.value = withTiming(isFollowing ? 1 : 0, { duration: 300, easing: Easing.inOut(Easing.ease) });
-  }, [isFollowing]);
+  }, [isFollowing, animationProgress]);
 
   // Animated styles for better performance
   const animatedButtonStyle = useAnimatedStyle(() => {

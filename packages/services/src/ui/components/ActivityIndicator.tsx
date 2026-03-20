@@ -3,10 +3,10 @@ import {
   Animated,
   Easing,
   Platform,
-  StyleProp,
+  type StyleProp,
   StyleSheet,
   View,
-  ViewStyle,
+  type ViewStyle,
 } from 'react-native';
 
 import { useInternalTheme } from './theming';
@@ -94,13 +94,13 @@ const ActivityIndicator = ({
       // $FlowFixMe
       Animated.loop(rotation.current).start();
     }
-  }, [scale, fade, timer]);
+  }, [scale]);
 
-  const stopRotation = () => {
+  const stopRotation = React.useCallback(() => {
     if (rotation.current) {
       rotation.current.stop();
     }
-  };
+  }, []);
 
   React.useEffect(() => {
     if (rotation.current === undefined) {
@@ -128,7 +128,7 @@ const ActivityIndicator = ({
     } else {
       stopRotation();
     }
-  }, [animating, fade, hidesWhenStopped, startRotation, scale, timer]);
+  }, [animating, hidesWhenStopped, startRotation, stopRotation, scale]);
 
   const color = indicatorColor || theme.colors?.primary;
   const size =

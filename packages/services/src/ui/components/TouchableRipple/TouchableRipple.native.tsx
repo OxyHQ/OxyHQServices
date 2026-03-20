@@ -1,13 +1,13 @@
 import * as React from 'react';
 import {
-  PressableAndroidRippleConfig,
-  StyleProp,
+  type PressableAndroidRippleConfig,
+  type StyleProp,
   Platform,
-  ViewStyle,
+  type ViewStyle,
   StyleSheet,
-  GestureResponderEvent,
+  type GestureResponderEvent,
   View,
-  ColorValue,
+  type ColorValue,
 } from 'react-native';
 
 import type { PressableProps } from './Pressable';
@@ -28,7 +28,7 @@ export type Props = PressableProps & {
   background?: PressableAndroidRippleConfig;
   centered?: boolean;
   disabled?: boolean;
-  onPress?: (e: GestureResponderEvent) => void | null;
+  onPress?: (e: GestureResponderEvent) => undefined | null;
   onLongPress?: (e: GestureResponderEvent) => void;
   onPressIn?: (e: GestureResponderEvent) => void;
   onPressOut?: (e: GestureResponderEvent) => void;

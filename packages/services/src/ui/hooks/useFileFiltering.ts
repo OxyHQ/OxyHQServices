@@ -75,8 +75,7 @@ export function useFileFiltering({
         (file) =>
           file.filename.toLowerCase().includes(query) ||
           file.contentType.toLowerCase().includes(query) ||
-          (file.metadata?.description &&
-            file.metadata.description.toLowerCase().includes(query))
+          (file.metadata?.description?.toLowerCase().includes(query))
       );
     }
 

@@ -2,11 +2,11 @@ import * as React from 'react';
 import {
   Animated,
   Platform,
-  ShadowStyleIOS,
-  StyleProp,
+  type ShadowStyleIOS,
+  type StyleProp,
   StyleSheet,
-  View,
-  ViewStyle,
+  type View,
+  type ViewStyle,
 } from 'react-native';
 
 import { useInternalTheme } from './theming';

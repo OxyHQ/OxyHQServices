@@ -2,16 +2,16 @@ import { Animated } from 'react-native';
 
 // Simple hex color manipulation without color package
 const hexToRgb = (hex: string): [number, number, number] => {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
+  const r = Number.parseInt(hex.slice(1, 3), 16);
+  const g = Number.parseInt(hex.slice(3, 5), 16);
+  const b = Number.parseInt(hex.slice(5, 7), 16);
   return [r, g, b];
 };
 
 const rgbToHex = (r: number, g: number, b: number): string => {
   return `#${[r, g, b].map(x => {
     const hex = Math.round(x).toString(16);
-    return hex.length === 1 ? '0' + hex : hex;
+    return hex.length === 1 ? `0${hex}` : hex;
   }).join('')}`;
 };
 
@@ -30,7 +30,7 @@ export const isAnimatedValue = (
 
 export default function overlay<T extends Animated.Value | number>(
   elevation: T,
-  surfaceColor: string = '#121212'
+  surfaceColor = '#121212'
 ): T extends number ? string : Animated.AnimatedInterpolation<number | string> {
   if (isAnimatedValue(elevation)) {
     const inputRange = [0, 1, 2, 3, 8, 24];
@@ -48,7 +48,7 @@ export default function overlay<T extends Animated.Value | number>(
   return calculateColor(surfaceColor, elevation);
 }
 
-function calculateColor(surfaceColor: string, elevation: number = 1) {
+function calculateColor(surfaceColor: string, elevation = 1) {
   let overlayTransparency: number;
   if (elevation >= 1 && elevation <= 24) {
     overlayTransparency = elevationOverlayTransparency[elevation];

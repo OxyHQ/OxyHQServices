@@ -1,4 +1,5 @@
-import React, { useState, useCallback } from 'react';
+import type React from 'react';
+import { useState, useCallback } from 'react';
 import {
     View,
     Text,
@@ -97,7 +98,7 @@ const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
                     </Text>
 
                     {error && (
-                        <View style={[styles.errorContainer, { backgroundColor: colors.danger + '20' }]}>
+                        <View style={[styles.errorContainer, { backgroundColor: `${colors.danger}20` }]}>
                             <Text style={[styles.errorText, { color: colors.danger }]}>
                                 {error}
                             </Text>
@@ -171,7 +172,7 @@ const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
                             style={[
                                 styles.button,
                                 styles.deleteButton,
-                                { backgroundColor: isValid ? colors.danger : colors.danger + '50' },
+                                { backgroundColor: isValid ? colors.danger : `${colors.danger}50` },
                             ]}
                             onPress={handleDelete}
                             disabled={!isValid || isDeleting}

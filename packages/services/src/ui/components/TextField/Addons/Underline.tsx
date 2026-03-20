@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Animated, StyleSheet, StyleProp, ViewStyle } from 'react-native';
+import { Animated, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 
 import type { ThemeProp } from '../../types';
 

@@ -1,8 +1,8 @@
-import * as React from 'react';
+import type * as React from 'react';
 import {
   I18nManager,
   Image,
-  ImageSourcePropType,
+  type ImageSourcePropType,
   Platform,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -141,14 +141,14 @@ const Icon = ({
             width: size,
             height: size,
             tintColor: color,
-            resizeMode: `contain`,
+            resizeMode: "contain",
           },
         ]}
         {...accessibilityProps}
         accessibilityIgnoresInvertColors
       />
     );
-  } else if (typeof s === 'string') {
+  }if (typeof s === 'string') {
     // String icons - use MaterialCommunityIcons from @expo/vector-icons
     // This is the default icon library used by react-native-paper
     const styleArray = Array.isArray(rest.style)
@@ -171,7 +171,7 @@ const Icon = ({
         {...accessibilityProps}
       />
     );
-  } else if (typeof s === 'function') {
+  }if (typeof s === 'function') {
     return s({ color: iconColor, size, direction, testID });
   }
 

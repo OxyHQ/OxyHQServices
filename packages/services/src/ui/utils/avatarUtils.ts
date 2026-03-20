@@ -2,7 +2,7 @@ import { authenticatedApiCall } from '@oxyhq/core';
 import type { OxyServices, User } from '@oxyhq/core';
 import { useAccountStore } from '../stores/accountStore';
 import { useAuthStore } from '../stores/authStore';
-import { QueryClient } from '@tanstack/react-query';
+import type { QueryClient } from '@tanstack/react-query';
 import { queryKeys, invalidateUserQueries, invalidateAccountQueries } from '../hooks/queries/queryKeys';
 
 /**
@@ -18,7 +18,7 @@ export function refreshAvatarInStore(
   oxyServices: OxyServices
 ): void {
   const { updateAccount } = useAccountStore.getState();
-  const cacheBustedUrl = oxyServices.getFileDownloadUrl(avatarFileId, 'thumb') + `?t=${Date.now()}`;
+  const cacheBustedUrl = `${oxyServices.getFileDownloadUrl(avatarFileId, 'thumb')}?t=${Date.now()}`;
   updateAccount(sessionId, {
     avatar: avatarFileId,
     avatarUrl: cacheBustedUrl,

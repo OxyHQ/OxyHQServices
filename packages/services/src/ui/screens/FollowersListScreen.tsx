@@ -1,4 +1,4 @@
-import React from 'react';
+import type React from 'react';
 import type { BaseScreenProps } from '../types/navigation';
 import UserListScreen from './UserListScreen';
 

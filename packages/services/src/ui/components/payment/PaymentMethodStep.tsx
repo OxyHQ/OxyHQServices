@@ -1,4 +1,5 @@
-import React, { useMemo } from 'react';
+import type React from 'react';
+import { useMemo } from 'react';
 import { View, Text, Animated } from 'react-native';
 import { GroupedSection } from '../index';
 import GroupedPillButtons from '../internal/GroupedPillButtons';

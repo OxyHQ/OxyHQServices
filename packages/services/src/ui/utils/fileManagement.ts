@@ -13,7 +13,7 @@ export function formatFileSize(bytes: number): string {
     const k = 1024;
     const sizes = ['Bytes', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return Number.parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    return `${Number.parseFloat((bytes / k ** i).toFixed(2))} ${sizes[i]}`;
 }
 
 /**
@@ -36,8 +36,8 @@ export function getFileIcon(contentType: string): string {
 export function confirmAction(
     message: string,
     title?: string,
-    confirmText: string = 'OK',
-    cancelText: string = 'Cancel'
+    confirmText = 'OK',
+    cancelText = 'Cancel'
 ): Promise<boolean> {
     return new Promise((resolve) => {
         Alert.alert(
@@ -145,7 +145,7 @@ export async function convertDocumentPickerAssetToFile(
  */
 export function getSafeDownloadUrl(
     file: FileMetadata,
-    variant: string = 'thumb',
+    variant: string,
     getFileDownloadUrl: (fileId: string, variant?: string) => string
 ): string {
     const isImage = file.contentType.startsWith('image/');

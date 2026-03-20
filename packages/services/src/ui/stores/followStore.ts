@@ -93,7 +93,7 @@ export const useFollowStore = create<FollowState>((set: any, get: any) => ({
       // The API returns counts for both users:
       // - followers: target user's follower count (the user being followed)
       // - following: current user's following count (the user doing the following)
-      if (response && response.counts) {
+      if (response?.counts) {
         const { counts } = response;
         
         // Get current user ID from oxyServices
@@ -159,7 +159,7 @@ export const useFollowStore = create<FollowState>((set: any, get: any) => ({
     }));
     try {
       const user = await oxyServices.getUserById(userId);
-      if (user && user._count) {
+      if (user?._count) {
         set((state: FollowState) => ({
           followerCounts: { 
             ...state.followerCounts, 

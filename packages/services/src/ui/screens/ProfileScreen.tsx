@@ -354,7 +354,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
 const createStyles = (colors: ThemeColors) => StyleSheet.create({
     container: { flex: 1 },
     scrollContainer: { alignItems: 'stretch', paddingBottom: 40 },
-    bannerContainer: { height: 160, backgroundColor: colors.primary + '20', position: 'relative', overflow: 'hidden' },
+    bannerContainer: { height: 160, backgroundColor: `${colors.primary}20`, position: 'relative', overflow: 'hidden' },
     bannerImage: { flex: 1, backgroundColor: colors.primary }, // Placeholder, replace with Image if available
     avatarRow: { flexDirection: 'row', alignItems: 'flex-end', marginTop: -56, paddingHorizontal: 20, justifyContent: 'space-between', zIndex: 2 },
     avatarWrapper: { borderWidth: 5, borderColor: colors.background, borderRadius: 64, overflow: 'hidden', backgroundColor: colors.background },

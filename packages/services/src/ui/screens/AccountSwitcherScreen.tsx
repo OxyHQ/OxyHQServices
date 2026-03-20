@@ -526,7 +526,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                                             id: `device-session-${session.sessionId}`,
                                             icon: session.isCurrent ? 'cellphone' : 'cellphone-basic',
                                             iconColor: session.isCurrent ? '#34C759' : '#8E8E93',
-                                            title: `${session.deviceName} ${session.isCurrent ? '(' + (t('accountSwitcher.device.thisDevice') || 'This device') + ')' : ''}`,
+                                            title: `${session.deviceName} ${session.isCurrent ? `(${t('accountSwitcher.device.thisDevice') || 'This device'})` : ''}`,
                                             subtitle: t('accountSwitcher.device.lastActive', { date: new Date(session.lastActive).toLocaleDateString() }) || `Last active: ${new Date(session.lastActive).toLocaleDateString()}`,
                                             onPress: session.isCurrent ? undefined : () => handleRemoteSessionLogout(session.sessionId, session.deviceName),
                                             disabled: session.isCurrent || remotingLogoutSessionId === session.sessionId,

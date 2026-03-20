@@ -1,4 +1,4 @@
-import { Animated, Platform, ShadowStyleIOS, ViewStyle } from 'react-native';
+import { Animated, Platform, type ShadowStyleIOS, type ViewStyle } from 'react-native';
 
 const SHADOW_COLOR = '#000000';
 const SHADOW_OPACITY = 0.24;
@@ -36,20 +36,20 @@ function v2Shadow(elevation: number | Animated.Value = 0): ViewStyle | ShadowSty
           outputRange: [0, 0.75, 1.5, 3, 8, 24],
         }),
       } as unknown as ShadowStyleIOS;
-    } else {
+    }
       return {
         elevation: elevation.interpolate({
           inputRange,
           outputRange: [0, 1, 2, 3, 8, 24],
         }) as unknown as number,
       };
-    }
-  } else {
+  }
     if (elevation === 0) {
       return {};
     }
 
-    let height, radius;
+    let height;
+    let radius;
     switch (elevation) {
       case 1:
         height = 0.5;
@@ -74,12 +74,10 @@ function v2Shadow(elevation: number | Animated.Value = 0): ViewStyle | ShadowSty
         shadowOpacity: SHADOW_OPACITY,
         shadowRadius: radius,
       } as ShadowStyleIOS;
-    } else {
+    }
       return {
         elevation: elevation,
       };
-    }
-  }
 }
 
 function v3Shadow(elevation: number | Animated.Value = 0): ViewStyle | ShadowStyleIOS {
@@ -108,15 +106,14 @@ function v3Shadow(elevation: number | Animated.Value = 0): ViewStyle | ShadowSty
           outputRange: shadowRadius,
         }),
       } as unknown as ShadowStyleIOS;
-    } else {
+    }
       return {
         elevation: elevation.interpolate({
           inputRange,
           outputRange: [0, 1, 2, 3, 4, 5],
         }) as unknown as number,
       };
-    }
-  } else {
+  }
     if (Platform.OS === 'ios') {
       return {
         shadowColor: MD3_SHADOW_COLOR,
@@ -127,10 +124,8 @@ function v3Shadow(elevation: number | Animated.Value = 0): ViewStyle | ShadowSty
         },
         shadowRadius: shadowRadius[elevation] || 0,
       } as ShadowStyleIOS;
-    } else {
+    }
       return {
         elevation: elevation || 0,
       };
-    }
-  }
 }

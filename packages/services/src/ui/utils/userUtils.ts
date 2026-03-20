@@ -10,7 +10,7 @@ export const formatDate = (dateString: string | undefined | null | Date): string
   
   try {
     const date = dateString instanceof Date ? dateString : new Date(dateString);
-    if (isNaN(date.getTime())) return '';
+    if (Number.isNaN(date.getTime())) return '';
     
     return date.toLocaleDateString('en-US', {
       month: 'short',

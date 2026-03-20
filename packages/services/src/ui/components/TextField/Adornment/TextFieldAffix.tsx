@@ -1,15 +1,15 @@
 import React from 'react';
 import {
   Animated,
-  DimensionValue,
-  GestureResponderEvent,
-  LayoutChangeEvent,
+  type DimensionValue,
+  type GestureResponderEvent,
+  type LayoutChangeEvent,
   Pressable,
-  StyleProp,
+  type StyleProp,
   StyleSheet,
   Text,
-  TextStyle,
-  ViewStyle,
+  type TextStyle,
+  type ViewStyle,
 } from 'react-native';
 
 import { AdornmentSide } from './enums';

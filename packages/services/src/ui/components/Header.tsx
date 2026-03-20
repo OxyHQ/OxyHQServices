@@ -19,7 +19,7 @@ import { normalizeColorScheme } from '../utils/themeUtils';
 import { Colors } from '../constants/theme';
 
 // Calculate header height based on platform and variant
-export const getHeaderHeight = (variant: HeaderProps['variant'] = 'default', safeAreaTop: number = 0): number => {
+export const getHeaderHeight = (variant: HeaderProps['variant'] = 'default', safeAreaTop = 0): number => {
     const paddingTop = Platform.OS === 'ios' ? Math.max(safeAreaTop, 50) : 16;
     const paddingBottom = 12;
     const contentHeight = variant === 'minimal' ? 36 : 40;

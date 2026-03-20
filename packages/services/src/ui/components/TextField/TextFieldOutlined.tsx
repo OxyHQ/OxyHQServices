@@ -6,9 +6,9 @@ import {
   StyleSheet,
   I18nManager,
   Platform,
-  TextStyle,
-  ColorValue,
-  LayoutChangeEvent,
+  type TextStyle,
+  type ColorValue,
+  type LayoutChangeEvent,
 } from 'react-native';
 import { useThemeColors } from '../../hooks/useThemeColors';
 
@@ -17,7 +17,7 @@ import { AdornmentType, AdornmentSide } from './Adornment/enums';
 import TextFieldAdornment, {
   getAdornmentConfig,
   getAdornmentStyleAdjustmentForNativeInput,
-  TextFieldAdornmentProps,
+  type TextFieldAdornmentProps,
 } from './Adornment/TextFieldAdornment';
 import {
   MAXIMIZED_LABEL_FONT_SIZE,
@@ -34,7 +34,7 @@ import {
   calculateInputHeight,
   calculatePadding,
   adjustPaddingOut,
-  Padding,
+  type Padding,
   calculateOutlinedIconAndAffixTopPosition,
   getOutlinedInputColors,
   getConstants,

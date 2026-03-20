@@ -52,8 +52,8 @@ export type Padding = { paddingTop: number; paddingBottom: number };
 
 export const calculateLabelTopPosition = (
   labelHeight: number,
-  height: number = 0,
-  optionalPadding: number = 0
+  height = 0,
+  optionalPadding = 0
 ): number => {
   const customHeight = height > 0 ? height : 0;
 
@@ -62,7 +62,7 @@ export const calculateLabelTopPosition = (
 
 export const calculateInputHeight = (
   labelHeight: number,
-  height: any = 0,
+  height: any,
   minHeight: number
 ): number => {
   const finalHeight = height > 0 ? height : labelHeight;
@@ -408,9 +408,8 @@ const getFlatBackgroundColor = ({ theme, disabled }: BaseProps) => {
   if (theme.isV3) {
     if (disabled) {
       return color(theme.colors.onSurface).alpha(0.04).rgb().string();
-    } else {
-      return theme.colors.surfaceVariant;
     }
+      return theme.colors.surfaceVariant;
   }
 
   if (disabled) {

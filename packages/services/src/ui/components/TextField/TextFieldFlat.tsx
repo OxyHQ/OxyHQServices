@@ -4,7 +4,7 @@ import {
   Platform,
   StyleSheet,
   TextInput as NativeTextInput,
-  TextStyle,
+  type TextStyle,
   View,
   Animated,
 } from 'react-native';
@@ -13,7 +13,7 @@ import { useThemeColors } from '../../hooks/useThemeColors';
 import { Underline } from './Addons/Underline';
 import { AdornmentSide, AdornmentType, InputMode } from './Adornment/enums';
 import TextFieldAdornment, {
-  TextFieldAdornmentProps,
+  type TextFieldAdornmentProps,
 } from './Adornment/TextFieldAdornment';
 import {
   getAdornmentConfig,
@@ -38,7 +38,7 @@ import {
   calculatePadding,
   getConstants,
   getFlatInputColors,
-  Padding,
+  type Padding,
 } from './helpers';
 import InputLabel from './Label/InputLabel';
 import type { ChildTextInputProps, RenderProps } from './types';

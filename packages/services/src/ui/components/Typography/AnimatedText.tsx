@@ -1,11 +1,11 @@
-import * as React from 'react';
+import type * as React from 'react';
 import {
   Animated,
   I18nManager,
-  StyleProp,
+  type StyleProp,
   StyleSheet,
-  TextStyle,
-  Text,
+  type TextStyle,
+  type Text,
 } from 'react-native';
 
 import type { VariantProp } from './types';
@@ -71,7 +71,7 @@ const AnimatedText = forwardRef<Text & HTMLElement, Props<never>>(
           ]}
         />
       );
-    } else {
+    }
       const font = !theme.isV3 ? (theme.fonts.regular || theme.fonts.default) : theme.fonts.bodyMedium;
       const textStyle = {
         ...font,
@@ -91,7 +91,6 @@ const AnimatedText = forwardRef<Text & HTMLElement, Props<never>>(
           ]}
         />
       );
-    }
   }
 );
 

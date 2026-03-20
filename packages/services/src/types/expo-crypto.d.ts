@@ -9,7 +9,7 @@ declare module 'expo-crypto' {
     MD4 = 'MD4',
   }
 
-  export async function digestStringAsync(
+  export function digestStringAsync(
     algorithm: CryptoDigestAlgorithm | 'MD5' | 'SHA1' | 'SHA256' | 'SHA384' | 'SHA512',
     data: string,
     options?: { encoding?: 'base64' | 'hex' }

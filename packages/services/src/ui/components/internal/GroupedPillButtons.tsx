@@ -85,7 +85,6 @@ const GroupedPillButtons: React.FC<GroupedPillButtonsProps> = ({
                 backgroundColor = isDisabled ? '#CCCCCC' : (colors.secondary || colors.primary);
                 borderColor = isDisabled ? '#CCCCCC' : (colors.secondary || colors.primary);
                 break;
-            case 'transparent':
             default:
                 backgroundColor = 'transparent';
                 borderColor = isDisabled ? '#CCCCCC' : colors.border;
@@ -117,7 +116,6 @@ const GroupedPillButtons: React.FC<GroupedPillButtonsProps> = ({
             case 'secondary':
                 textColor = isDisabled ? '#999999' : '#FFFFFF';
                 break;
-            case 'transparent':
             default:
                 textColor = isDisabled ? '#999999' : colors.text;
                 break;
@@ -137,7 +135,6 @@ const GroupedPillButtons: React.FC<GroupedPillButtonsProps> = ({
             case 'primary':
             case 'secondary':
                 return isDisabled ? '#999999' : '#FFFFFF';
-            case 'transparent':
             default:
                 return isDisabled ? '#999999' : colors.text;
         }
@@ -182,7 +179,7 @@ const GroupedPillButtons: React.FC<GroupedPillButtonsProps> = ({
                     )}
                 </>
             );
-        } else if (isFirstButton || isBack) {
+        }if (isFirstButton || isBack) {
             // First button or back button: icon on left, text on right
             return (
                 <>
@@ -198,7 +195,7 @@ const GroupedPillButtons: React.FC<GroupedPillButtonsProps> = ({
                     </Text>
                 </>
             );
-        } else {
+        }
             // Second button or forward/action button: text on left, icon on right
             return (
                 <>
@@ -214,7 +211,6 @@ const GroupedPillButtons: React.FC<GroupedPillButtonsProps> = ({
                     )}
                 </>
             );
-        }
     };
 
     return (

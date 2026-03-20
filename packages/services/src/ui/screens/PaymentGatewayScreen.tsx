@@ -1,4 +1,5 @@
-import React, { useState, useRef, useMemo, useCallback } from 'react';
+import type React from 'react';
+import { useState, useRef, useMemo, useCallback } from 'react';
 import {
     View,
     Text,
@@ -179,7 +180,7 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
     }, [onPaymentResult, onClose, goBack]);
 
     // Validate amount
-    if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
+    if (!amount || Number.isNaN(Number(amount)) || Number(amount) <= 0) {
         return (
             <View style={styles.errorContainer}>
                 <Text style={styles.errorText}>Invalid or missing payment amount.</Text>

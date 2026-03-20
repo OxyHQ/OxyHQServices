@@ -380,7 +380,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                 return {
                     ...feature,
                     isIncludedInCurrentPlan,
-                    isSubscribed: isIncludedInCurrentPlan ? true : false // Mock some individual subscriptions
+                    isSubscribed: !!isIncludedInCurrentPlan // Mock some individual subscriptions
                 };
             });
 
@@ -424,7 +424,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
 
             // Mock subscription update
             setSubscription({
-                id: 'sub_' + Date.now(),
+                id: `sub_${Date.now()}`,
                 planId,
                 status: 'active',
                 currentPeriodStart: new Date().toISOString(),
@@ -716,12 +716,11 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
         const getAppScopeText = () => {
             if (plan.appScope === 'ecosystem') {
                 return t('premium.plan.scope.allApps') || 'Works across all Oxy apps';
-            } else if (isAppSpecific) {
+            }if (isAppSpecific) {
                 const appName = plan.applicableApps[0];
                 return t('premium.plan.scope.exclusive', { app: appName }) || `Exclusive to ${appName} app`;
-            } else {
-                return t('premium.plan.scope.availableIn', { apps: plan.applicableApps.join(', ') }) || `Available in: ${plan.applicableApps.join(', ')}`;
             }
+                return t('premium.plan.scope.availableIn', { apps: plan.applicableApps.join(', ') }) || `Available in: ${plan.applicableApps.join(', ')}`;
         };
 
         const getAvailabilityStatus = () => {
@@ -899,9 +898,8 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
         const getAppScopeText = () => {
             if (feature.appScope === 'ecosystem') {
                 return t('premium.feature.scope.allApps');
-            } else {
-                return t('premium.feature.scope.availableIn', { apps: feature.applicableApps.join(', ') }) || `Available in: ${feature.applicableApps.join(', ')}`;
             }
+                return t('premium.feature.scope.availableIn', { apps: feature.applicableApps.join(', ') }) || `Available in: ${feature.applicableApps.join(', ')}`;
         };
 
         return (

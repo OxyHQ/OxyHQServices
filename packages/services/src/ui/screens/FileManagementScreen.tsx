@@ -180,7 +180,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             filtered = filteredByMode.filter(file =>
                 file.filename.toLowerCase().includes(query) ||
                 file.contentType.toLowerCase().includes(query) ||
-                (file.metadata?.description && file.metadata.description.toLowerCase().includes(query))
+                (file.metadata?.description?.toLowerCase().includes(query))
             );
         }
 
@@ -215,7 +215,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     const itemRefs = useRef<Map<string, number>>(new Map()); // Track item positions
     const containerRef = useRef<View>(null);
     useEffect(() => {
-        if (initialSelectedIds && initialSelectedIds.length) {
+        if (initialSelectedIds?.length) {
             setSelectedIds(new Set(initialSelectedIds));
         }
     }, [initialSelectedIds]);
@@ -224,7 +224,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         // Allow selection in regular mode for bulk operations
         // if (!selectMode) return;
         if (disabledMimeTypes.length) {
-            const blocked = disabledMimeTypes.some(mt => file.contentType === mt || file.contentType.startsWith(mt.endsWith('/') ? mt : mt + '/'));
+            const blocked = disabledMimeTypes.some(mt => file.contentType === mt || file.contentType.startsWith(mt.endsWith('/') ? mt : `${mt}/`));
             if (blocked) {
                 toast.error('This file type cannot be selected');
                 return;
@@ -339,7 +339,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
     // Helper to safely request a thumbnail variant only for image mime types.
     const getSafeDownloadUrlCallback = useCallback(
-        (file: FileMetadata, variant: string = 'thumb') => {
+        (file: FileMetadata, variant = 'thumb') => {
             return getSafeDownloadUrl(file, variant, (fileId: string, variant?: string) => oxyServices.getFileDownloadUrl(fileId, variant));
         },
         [oxyServices]
@@ -640,7 +640,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 continue;
             }
 
-            if (file.size === undefined || file.size === null || isNaN(file.size)) {
+            if (file.size === undefined || file.size === null || Number.isNaN(file.size)) {
                 if (__DEV__) {
                     console.error('Invalid file: missing or invalid size property', file);
                 }
@@ -1278,7 +1278,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                                             onError={(_: any) => {
                                                 // If thumbnail not available, we still show icon overlay
                                             }}
-                                            accessibilityLabel={file.filename + ' video thumbnail'}
+                                            accessibilityLabel={`${file.filename} video thumbnail`}
                                         />
                                         <View style={fileManagementStyles.videoOverlay}>
                                             <Ionicons name="play" size={24} color="#FFFFFF" />
@@ -1418,7 +1418,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                                 onError={(_: any) => {
                                     // If thumbnail not available, we still show icon overlay
                                 }}
-                                accessibilityLabel={file.filename + ' video thumbnail'}
+                                accessibilityLabel={`${file.filename} video thumbnail`}
                             />
                             <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.25)' }}>
                                 <Ionicons name="play" size={16} color="#FFFFFF" />
@@ -1642,7 +1642,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     <Text style={[fileManagementStyles.emptyStateTitle, { color: themeStyles.textColor }]}>No Photos Yet</Text>
                     <Text style={[fileManagementStyles.emptyStateDescription, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}> {
                         user?.id === targetUserId
-                            ? `Upload photos to get started. You can select multiple photos at once.`
+                            ? "Upload photos to get started. You can select multiple photos at once."
                             : "This user hasn't uploaded any photos yet"
                     } </Text>
                     {user?.id === targetUserId && (
@@ -1736,7 +1736,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             <Text style={[fileManagementStyles.emptyStateTitle, { color: themeStyles.textColor }]}>No Files Yet</Text>
             <Text style={[fileManagementStyles.emptyStateDescription, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
                 {user?.id === targetUserId
-                    ? `Upload files to get started. You can select multiple files at once.`
+                    ? "Upload files to get started. You can select multiple files at once."
                     : "This user hasn't uploaded any files yet"
                 }
             </Text>
@@ -2000,7 +2000,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     return (
         <View style={fileManagementStyles.container}>
             <Header
-                title={selectMode ? (multiSelect ? `${selectedIds.size}${maxSelection ? '/' + maxSelection : ''} Selected` : 'Select a File') : (viewMode === 'photos' ? 'Photos' : 'File Management')}
+                title={selectMode ? (multiSelect ? `${selectedIds.size}${maxSelection ? `/${maxSelection}` : ''} Selected` : 'Select a File') : (viewMode === 'photos' ? 'Photos' : 'File Management')}
                 subtitle={selectMode ? (multiSelect ? `${filteredFiles.length} available` : 'Tap to select') : `${filteredFiles.length} ${filteredFiles.length === 1 ? 'item' : 'items'}`}
                 rightActions={selectMode && multiSelect ? [
                     {

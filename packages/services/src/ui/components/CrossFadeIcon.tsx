@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { Animated, StyleSheet, View } from 'react-native';
 
-import Icon, { IconSource, isEqualIcon, isValidIcon } from './Icon';
+import Icon, { type IconSource, isEqualIcon, isValidIcon } from './Icon';
 import { useInternalTheme } from './theming';
 import type { ThemeProp } from './types';
 
@@ -61,7 +61,7 @@ const CrossFadeIcon = ({
         useNativeDriver: true,
       }).start();
     }
-  }, [currentIcon, previousIcon, fade, scale]);
+  }, [currentIcon, previousIcon, scale]);
 
   const opacityPrev = fade;
   const opacityNext = previousIcon
