@@ -92,7 +92,7 @@ export const getUserByPublicKeyParams = z.object({
 export const authSessionCreateSchema = z.object({
   sessionToken: z.string().trim().min(1),
   appId: z.string().trim().min(1),
-  expiresAt: z.string().optional(),
+  expiresAt: z.union([z.string(), z.number()]).optional(),
 });
 
 // GET /auth/session/status/:sessionToken
