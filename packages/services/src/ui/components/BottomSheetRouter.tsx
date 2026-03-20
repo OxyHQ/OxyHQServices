@@ -1,5 +1,5 @@
-import React, { useRef, useEffect, useCallback, useMemo } from 'react';
-import { BackHandler, View, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
+import React, { useRef, useEffect, useCallback, useMemo, type ErrorInfo } from 'react';
+import { BackHandler, View, StyleSheet, Text, type StyleProp, type ViewStyle } from 'react-native';
 import { useStore } from 'zustand';
 import type { RouteName } from '../navigation/routes';
 import { getScreenComponent, isValidRoute } from '../navigation/routes';
@@ -15,6 +15,58 @@ import {
     goBack,
     updateState,
 } from '../navigation/bottomSheetManager';
+
+/** Error boundary to catch screen rendering failures (e.g. lazy require() throws) */
+interface ScreenErrorBoundaryState {
+    error: Error | null;
+}
+
+class ScreenErrorBoundary extends React.Component<
+    { screenName: string; children: React.ReactNode },
+    ScreenErrorBoundaryState
+> {
+    state: ScreenErrorBoundaryState = { error: null };
+
+    static getDerivedStateFromError(error: Error): ScreenErrorBoundaryState {
+        return { error };
+    }
+
+    componentDidCatch(error: Error, info: ErrorInfo): void {
+        if (__DEV__) {
+            console.error(
+                `[BottomSheetRouter] Screen "${this.props.screenName}" crashed:`,
+                error,
+                info.componentStack,
+            );
+        }
+    }
+
+    componentDidUpdate(prevProps: { screenName: string }): void {
+        if (prevProps.screenName !== this.props.screenName && this.state.error) {
+            this.setState({ error: null });
+        }
+    }
+
+    render(): React.ReactNode {
+        if (this.state.error) {
+            return (
+                <View style={errorStyles.container}>
+                    <Text style={errorStyles.title}>Something went wrong</Text>
+                    {__DEV__ && (
+                        <Text style={errorStyles.message}>{this.state.error.message}</Text>
+                    )}
+                </View>
+            );
+        }
+        return this.props.children;
+    }
+}
+
+const errorStyles = StyleSheet.create({
+    container: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
+    title: { fontSize: 16, fontWeight: '600', marginBottom: 8 },
+    message: { fontSize: 13, color: '#888', textAlign: 'center' },
+});
 
 export interface BottomSheetRouterProps {
     onScreenChange?: (screen: RouteName | null) => void;
@@ -32,10 +84,16 @@ const BottomSheetRouter: React.FC<BottomSheetRouterProps> = ({ onScreenChange, o
 
     const { currentScreen, screenProps, currentStep, isOpen } = useStore(bottomSheetStore);
 
-    const ScreenComponent = useMemo(
-        () => (currentScreen ? getScreenComponent(currentScreen) : null),
-        [currentScreen]
-    );
+    const ScreenComponent = useMemo(() => {
+        if (!currentScreen) return null;
+        const component = getScreenComponent(currentScreen);
+        if (__DEV__ && !component) {
+            console.error(
+                `[BottomSheetRouter] getScreenComponent("${currentScreen}") returned undefined — the screen's lazy require() likely failed.`,
+            );
+        }
+        return component ?? null;
+    }, [currentScreen]);
 
     // Notify screen changes
     useEffect(() => {
@@ -163,7 +221,11 @@ const BottomSheetRouter: React.FC<BottomSheetRouterProps> = ({ onScreenChange, o
             onDismiss={handleDismiss}
             onDismissAttempt={handleDismissAttempt}
         >
-            {ScreenComponent && currentScreen && <ScreenComponent {...screenPropsValue} />}
+            {ScreenComponent && currentScreen && (
+                <ScreenErrorBoundary screenName={currentScreen}>
+                    <ScreenComponent {...screenPropsValue} />
+                </ScreenErrorBoundary>
+            )}
         </BottomSheet>
     );
 };

@@ -1,9 +1,10 @@
+import type React from 'react';
 import { useEffect, useRef, useState, type FC } from 'react';
 import { AppState, Platform } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import type { OxyProviderProps } from '../types/navigation';
-import { OxyContextProvider } from '../context/OxyContext';
+import { OxyContextProvider, type OxyContextProviderProps } from '../context/OxyContext';
 import { QueryClientProvider, focusManager, onlineManager } from '@tanstack/react-query';
 import { setupFonts } from './FontLoader';
 import { Toaster } from '../../lib/sonner';
@@ -17,9 +18,9 @@ setupFonts();
 const isWeb = Platform.OS === 'web';
 
 // Conditionally import components
-let KeyboardProvider: any = ({ children }: any) => children;
-let BottomSheetRouter: any = null;
-let SignInModal: any = null;
+let KeyboardProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => <>{children}</>;
+let BottomSheetRouter: React.ComponentType | null = null;
+let SignInModal: React.ComponentType | null = null;
 
 // KeyboardProvider only on native
 if (!isWeb) {
@@ -33,8 +34,10 @@ if (!isWeb) {
 // BottomSheetRouter works on all platforms
 try {
     BottomSheetRouter = require('./BottomSheetRouter').default;
-} catch {
-    // BottomSheetRouter not available
+} catch (error) {
+    if (__DEV__) {
+        console.error('[OxyProvider] Failed to load BottomSheetRouter:', error);
+    }
 }
 
 // SignInModal works on all platforms
@@ -42,6 +45,10 @@ try {
     SignInModal = require('./SignInModal').default;
 } catch {
     // SignInModal not available
+}
+
+if (__DEV__ && !BottomSheetRouter) {
+    console.warn('[OxyProvider] BottomSheetRouter is null — bottom sheet navigation will not work. Check that BottomSheetRouter.tsx and its dependencies are importable.');
 }
 
 /**
@@ -135,7 +142,7 @@ const OxyProvider: FC<OxyProviderProps> = ({
             return () => {
                 document.removeEventListener('visibilitychange', handleVisibilityChange);
             };
-        } else {
+        }
             // Native: use AppState
             const subscription = AppState.addEventListener('change', (state) => {
                 focusManager.setFocused(state === 'active');
@@ -143,7 +150,6 @@ const OxyProvider: FC<OxyProviderProps> = ({
             return () => {
                 subscription.remove();
             };
-        }
     }, []);
 
     // Setup network status monitoring for offline detection
@@ -204,12 +210,12 @@ const OxyProvider: FC<OxyProviderProps> = ({
     const coreContent = (
         <QueryClientProvider client={queryClient}>
             <OxyContextProvider
-                oxyServices={oxyServices as any}
+                oxyServices={oxyServices as OxyContextProviderProps['oxyServices']}
                 baseURL={baseURL}
                 authWebUrl={authWebUrl}
                 authRedirectUri={authRedirectUri}
                 storageKeyPrefix={storageKeyPrefix}
-                onAuthStateChange={onAuthStateChange as any}
+                onAuthStateChange={onAuthStateChange as OxyContextProviderProps['onAuthStateChange']}
             >
                 {children}
                 {/* Only render bottom sheet router on native */}

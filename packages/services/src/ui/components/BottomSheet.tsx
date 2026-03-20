@@ -1,4 +1,5 @@
-import React, { forwardRef, useImperativeHandle, useRef, useEffect, useState, useCallback, useMemo } from 'react';
+import type React from 'react';
+import { forwardRef, useImperativeHandle, useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import {
     View,
     StyleSheet,
@@ -8,9 +9,8 @@ import {
     Platform,
     type ViewStyle,
     type StyleProp,
-    ScrollView,
 } from 'react-native';
-import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { useKeyboardHandler } from 'react-native-keyboard-controller';
 import Animated, {
     interpolate,
@@ -72,7 +72,7 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
     const [rendered, setRendered] = useState(false); // keep mounted for exit animation
     const closeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const hasClosedRef = useRef(false);
-    const scrollViewRef = useRef<ScrollView>(null);
+    const scrollViewRef = useRef<Animated.ScrollView>(null);
 
     const translateY = useSharedValue(SCREEN_HEIGHT);
     const opacity = useSharedValue(0);
@@ -305,7 +305,7 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
 
     return (
         <Modal visible={rendered} transparent animationType="none" statusBarTranslucent onRequestClose={dismiss}>
-            <GestureHandlerRootView style={StyleSheet.absoluteFill}>
+            <View style={StyleSheet.absoluteFill}>
                 <Animated.View style={[styles.backdrop, backdropStyle]}>
                     {backdropComponent ? (
                         backdropComponent({ onPress: handleBackdropPress })
@@ -324,21 +324,20 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
 
                         <GestureDetector gesture={nativeGesture}>
                             <Animated.ScrollView
-                                ref={scrollViewRef as any}
+                                ref={scrollViewRef}
                                 style={[
                                     styles.scrollView,
-                                    Platform.OS === 'web' && {
-                                        scrollbarWidth: 'thin' as const,
+                                    Platform.OS === 'web' && ({
+                                        scrollbarWidth: 'thin',
                                         scrollbarColor: `${colors.border} transparent`,
-                                    } as any,
+                                    } as ViewStyle),
                                 ]}
                                 contentContainerStyle={dynamicStyles.scrollContent}
                                 showsVerticalScrollIndicator={false}
                                 keyboardShouldPersistTaps="handled"
                                 onScroll={scrollHandler}
                                 scrollEventThrottle={16}
-                                // @ts-ignore - Web className
-                                className={Platform.OS === 'web' ? 'bottom-sheet-scrollview' : undefined}
+                                {...(Platform.OS === 'web' ? { className: 'bottom-sheet-scrollview' } : undefined)}
                                 onLayout={() => {
                                     if (Platform.OS === 'web') {
                                         createWebScrollbarStyle(colors.border);
@@ -350,7 +349,7 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
                         </GestureDetector>
                     </Animated.View>
                 </GestureDetector>
-            </GestureHandlerRootView>
+            </View>
         </Modal>
     );
 });
