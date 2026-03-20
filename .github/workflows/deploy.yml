@@ -57,7 +57,7 @@ jobs:
             fi
 
             echo "=== Building ==="
-            docker compose build --no-cache api
+            docker compose build api
 
             echo "=== Restarting ==="
             docker compose up -d caddy api
@@ -70,7 +70,7 @@ jobs:
 
             echo "=== Health check ==="
             sleep 10
-            if ! docker compose exec -T api curl -sf http://localhost:3001/health; then
+            if ! docker compose exec -T api curl -sf http://localhost:8080/health; then
               echo "Health check failed! Showing recent logs:"
               docker compose logs --tail=50 api
               exit 1
