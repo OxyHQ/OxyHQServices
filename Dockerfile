@@ -23,7 +23,7 @@ COPY packages/api/package.json packages/api/
 COPY packages/core/package.json packages/core/
 
 # Install all workspace dependencies (disable frozen lockfile since workspaces were overridden)
-RUN echo '[install]\nfrozenLockfile = false' > bunfig.toml && bun install
+RUN printf '[install]\nfrozenLockfile = false\n' > bunfig.toml && bun install
 
 # Copy source code
 COPY packages/core/ packages/core/
@@ -48,7 +48,7 @@ COPY packages/api/package.json packages/api/
 COPY packages/core/package.json packages/core/
 
 # Install production dependencies (disable frozen lockfile since workspaces were overridden)
-RUN echo '[install]\nfrozenLockfile = false' > bunfig.toml && bun install --production
+RUN printf '[install]\nfrozenLockfile = false\n' > bunfig.toml && bun install --production
 
 # Copy built artifacts
 COPY --from=builder /app/packages/api/dist packages/api/dist
