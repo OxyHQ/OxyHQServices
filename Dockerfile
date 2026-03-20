@@ -14,18 +14,17 @@ RUN npm install -g bun
 
 WORKDIR /app
 
-# Copy workspace root files and override workspaces to only include api + core
-COPY package.json bun.lock ./
+# Copy workspace root and override workspaces to only include api + core.
+# Remove bun.lock since the workspace change invalidates it — bun will
+# resolve fresh dependencies (still deterministic from package.json versions).
+COPY package.json ./
 RUN node -e "const p=require('./package.json'); p.workspaces=['packages/core','packages/api']; require('fs').writeFileSync('package.json', JSON.stringify(p, null, 2));"
 
-# Copy all package.json files for dependency resolution
+# Copy package.json files for dependency resolution
 COPY packages/api/package.json packages/api/
 COPY packages/core/package.json packages/core/
 
-# Use Docker-specific bunfig that disables frozen lockfile (workspaces are overridden at build time)
-COPY docker/bunfig.docker.toml bunfig.toml
-
-# Install all workspace dependencies
+# Install dependencies (no lockfile — workspace subset doesn't match the full monorepo lock)
 RUN bun install
 
 # Copy source code
@@ -44,14 +43,11 @@ RUN npm install -g bun
 
 WORKDIR /app
 
-# Copy workspace root and override workspaces to only include api + core
-COPY package.json bun.lock ./
+# Copy workspace root and override workspaces
+COPY package.json ./
 RUN node -e "const p=require('./package.json'); p.workspaces=['packages/core','packages/api']; require('fs').writeFileSync('package.json', JSON.stringify(p, null, 2));"
 COPY packages/api/package.json packages/api/
 COPY packages/core/package.json packages/core/
-
-# Use Docker-specific bunfig that disables frozen lockfile (workspaces are overridden at build time)
-COPY docker/bunfig.docker.toml bunfig.toml
 
 # Install production dependencies
 RUN bun install --production
