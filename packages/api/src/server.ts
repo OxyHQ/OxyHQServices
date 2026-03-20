@@ -111,7 +111,7 @@ const server = http.createServer(app);
 
 // Setup Socket.IO with centralized CORS config
 const io = new SocketIOServer(server, {
-  cors: SOCKET_IO_CORS_CONFIG as any,
+  cors: SOCKET_IO_CORS_CONFIG,
 });
 
 // Attach Redis adapter for multi-instance broadcast (if Redis available)
