@@ -38,7 +38,7 @@ RUN bun run --filter @oxyhq/api build
 # ── Production image ──────────────────────────────────────────────
 FROM node:20-alpine
 
-RUN apk add --no-cache python3 make g++ ffmpeg
+RUN apk add --no-cache python3 make g++ ffmpeg curl
 RUN npm install -g bun
 
 WORKDIR /app
