@@ -14,8 +14,9 @@ RUN npm install -g bun
 
 WORKDIR /app
 
-# Copy workspace root files
+# Copy workspace root files and override workspaces to only include api + core
 COPY package.json bun.lock ./
+RUN node -e "const p=require('./package.json'); p.workspaces=['packages/core','packages/api']; require('fs').writeFileSync('package.json', JSON.stringify(p, null, 2));"
 
 # Copy all package.json files for dependency resolution
 COPY packages/api/package.json packages/api/
@@ -40,8 +41,9 @@ RUN npm install -g bun
 
 WORKDIR /app
 
-# Copy workspace root
+# Copy workspace root and override workspaces to only include api + core
 COPY package.json bun.lock ./
+RUN node -e "const p=require('./package.json'); p.workspaces=['packages/core','packages/api']; require('fs').writeFileSync('package.json', JSON.stringify(p, null, 2));"
 COPY packages/api/package.json packages/api/
 COPY packages/core/package.json packages/core/
 
