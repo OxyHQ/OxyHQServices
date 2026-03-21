@@ -354,14 +354,16 @@ class FederationService {
     const profile = await this.fetchActorProfile(actorUri);
     if (!profile) return null;
 
-    // Download avatar to Oxy Cloud (replaces old avatar if exists)
-    let avatarFileId: string | undefined;
+    // Download avatar to Oxy Cloud (replaces old avatar if exists).
+    // Falls back to the raw AP URL so avatars always display even if
+    // the S3 upload fails or the image can't be fetched.
+    let avatarValue: string | undefined;
     if (profile.avatarUrl) {
       const storedId = await this.downloadAndStoreAvatar(
         profile.avatarUrl,
         existing?.avatar,
       );
-      if (storedId) avatarFileId = storedId;
+      avatarValue = storedId ?? profile.avatarUrl;
     }
 
     // Upsert into Oxy users collection
@@ -373,8 +375,8 @@ class FederationService {
       'federation.domain': profile.domain,
     };
 
-    if (avatarFileId) {
-      setFields.avatar = avatarFileId;
+    if (avatarValue) {
+      setFields.avatar = avatarValue;
     }
     if (profile.bio) {
       setFields.bio = profile.bio;
