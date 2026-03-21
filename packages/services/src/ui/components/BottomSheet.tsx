@@ -11,7 +11,6 @@ import {
     type StyleProp,
 } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import { useKeyboardHandler } from 'react-native-keyboard-controller';
 import Animated, {
     interpolate,
     runOnJS,
@@ -23,6 +22,15 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useThemeColors } from '../hooks/useThemeColors';
+
+// Optional keyboard handler — uses no-op fallback when not installed (web, or missing dep)
+const noopKeyboardHandler = (_handlers: Record<string, (e: { height: number }) => void>, _deps: unknown[]) => {};
+let useKeyboardHandler: (handlers: Record<string, (e: { height: number }) => void>, deps: unknown[]) => void = noopKeyboardHandler;
+try {
+    useKeyboardHandler = require('react-native-keyboard-controller').useKeyboardHandler;
+} catch {
+    // Keyboard controller not available — keyboard handling disabled
+}
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
