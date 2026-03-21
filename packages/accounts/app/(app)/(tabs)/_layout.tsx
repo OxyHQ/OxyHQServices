@@ -1,8 +1,10 @@
-import { NativeTabs, Icon, Label, VectorIcon } from 'expo-router/unstable-native-tabs';
+import { NativeTabs } from 'expo-router/unstable-native-tabs';
 import { Slot } from 'expo-router';
 import { Platform } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import React from 'react';
+
+const { Label, Icon, VectorIcon } = NativeTabs.Trigger;
 
 export default function TabLayout() {
   if (Platform.OS === 'web') {

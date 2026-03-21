@@ -68,8 +68,8 @@
     "@radix-ui/react-slot": "1.2.3"
   },
   "dependencies": {
-    "@expo/metro-runtime": "~6.1.2",
-    "expo-contacts": "~15.0.11",
+    "@expo/metro-runtime": "~55.0.6",
+    "expo-contacts": "~55.0.9",
     "is-arrayish": "^0.3.2"
   }
 }
