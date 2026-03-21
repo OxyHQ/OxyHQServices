@@ -25,7 +25,8 @@ export class MediaPrivacyService {
         return { allowed: true, reason: 'owner' };
       }
 
-      if (file.visibility === 'public' && !context && !viewerUserId) {
+      // Public files without a specific entity context are always accessible
+      if (file.visibility === 'public' && !context) {
         return { allowed: true, isPublic: true };
       }
 
@@ -37,10 +38,6 @@ export class MediaPrivacyService {
         const isBlocked = await this.isUserBlocked(ownerId, viewerUserId);
         if (isBlocked) {
           return { allowed: false, reason: 'blocked' };
-        }
-
-        if (file.visibility === 'public' && !context) {
-          return { allowed: true, isPublic: true };
         }
       }
 
@@ -85,6 +82,13 @@ export class MediaPrivacyService {
   }
 
   private async isUserBlocked(ownerId: string, viewerId: string): Promise<boolean> {
+    // System/synthetic user IDs (e.g. "__federation__") are never blocked.
+    // Also guards against CastError when querying Block with non-ObjectId strings.
+    const objectIdRegex = /^[0-9a-f]{24}$/i;
+    if (!objectIdRegex.test(ownerId) || !objectIdRegex.test(viewerId)) {
+      return false;
+    }
+
     const cached = blockCache.get(ownerId, viewerId);
     if (cached !== null) {
       return cached;
