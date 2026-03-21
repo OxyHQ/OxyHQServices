@@ -56,8 +56,6 @@ export interface OxyProviderProps {
     authWebUrl?: string;
     authRedirectUri?: string;
     queryClient?: QueryClient;
-    /** Skip wrapping in SafeAreaProvider/GestureHandlerRootView (use when parent already provides them) */
-    skipProviderWrappers?: boolean;
 }
 
 

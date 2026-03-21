@@ -1,8 +1,6 @@
 import type React from 'react';
 import { useEffect, useRef, useState, type FC } from 'react';
 import { AppState, Platform } from 'react-native';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
 import type { OxyProviderProps } from '../types/navigation';
 import { OxyContextProvider, type OxyContextProviderProps } from '../context/OxyContext';
 import { QueryClientProvider, focusManager, onlineManager } from '@tanstack/react-query';
@@ -54,9 +52,9 @@ if (__DEV__ && !BottomSheetRouter) {
 /**
  * OxyProvider - Universal provider for Expo apps (native + web)
  *
- * Zero-config authentication and session management:
- * - Native (iOS/Android): Keychain-based identity, bottom sheet auth UI
- * - Web: FedCM cross-domain SSO, popup fallback
+ * Provides authentication, session management, query client, and UI overlays.
+ * Does NOT wrap in SafeAreaProvider or GestureHandlerRootView — those are the
+ * consuming app's responsibility.
  *
  * Usage:
  * ```tsx
@@ -64,9 +62,13 @@ if (__DEV__ && !BottomSheetRouter) {
  *
  * function App() {
  *   return (
- *     <OxyProvider baseURL="https://api.oxy.so">
- *       <YourApp />
- *     </OxyProvider>
+ *     <SafeAreaProvider>
+ *       <GestureHandlerRootView style={{ flex: 1 }}>
+ *         <OxyProvider baseURL="https://api.oxy.so">
+ *           <YourApp />
+ *         </OxyProvider>
+ *       </GestureHandlerRootView>
+ *     </SafeAreaProvider>
  *   );
  * }
  *
@@ -89,7 +91,6 @@ const OxyProvider: FC<OxyProviderProps> = ({
     authWebUrl,
     authRedirectUri,
     queryClient: providedQueryClient,
-    skipProviderWrappers = false,
 }) => {
 
     // Simple storage initialization for query persistence
@@ -214,7 +215,7 @@ const OxyProvider: FC<OxyProviderProps> = ({
         return null;
     }
 
-    // Core content that works on all platforms
+    // Core content: QueryClient + OxyContext + UI overlays
     const coreContent = (
         <QueryClientProvider client={queryClient}>
             <OxyContextProvider
@@ -226,29 +227,17 @@ const OxyProvider: FC<OxyProviderProps> = ({
                 onAuthStateChange={onAuthStateChange as OxyContextProviderProps['onAuthStateChange']}
             >
                 {children}
-                {/* Only render bottom sheet router on native */}
                 {BottomSheetRouter && <BottomSheetRouter />}
-                {/* Sign-in modal for all platforms */}
                 {SignInModal && <SignInModal />}
                 <Toaster />
             </OxyContextProvider>
         </QueryClientProvider>
     );
 
-    // Skip wrapper providers when parent already provides them (e.g., Mention's AppProviders)
-    if (skipProviderWrappers) {
-        return coreContent;
-    }
-
-    // All platforms use same wrapper (KeyboardProvider is passthrough on web)
     return (
-        <SafeAreaProvider>
-            <GestureHandlerRootView style={{ flex: 1 }}>
-                <KeyboardProvider>
-                    {coreContent}
-                </KeyboardProvider>
-            </GestureHandlerRootView>
-        </SafeAreaProvider>
+        <KeyboardProvider>
+            {coreContent}
+        </KeyboardProvider>
     );
 };
 
