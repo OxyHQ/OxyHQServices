@@ -347,34 +347,49 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       const storedSessionIds: string[] = storedSessionIdsJson ? JSON.parse(storedSessionIdsJson) : [];
       const storedActiveSessionId = await storage.getItem(storageKeys.activeSessionId);
 
-      const validSessions: ClientSession[] = [];
+      let validSessions: ClientSession[] = [];
 
       if (storedSessionIds.length > 0) {
-        for (const sessionId of storedSessionIds) {
-          try {
-            const validation = await oxyServices.validateSession(sessionId, { useHeaderValidation: true });
-            if (validation?.valid && validation.user) {
-              const now = new Date();
-              validSessions.push({
-                sessionId,
-                deviceId: '',
-                expiresAt: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-                lastActive: now.toISOString(),
-                userId: validation.user.id?.toString() ?? '',
-                isCurrent: sessionId === storedActiveSessionId,
+        // Validate all sessions in parallel (with 8s timeout per session) to avoid
+        // sequential blocking that freezes the app on startup
+        const VALIDATION_TIMEOUT = 8000;
+        const results = await Promise.allSettled(
+          storedSessionIds.map(async (sessionId) => {
+            const timeoutPromise = new Promise<null>((resolve) =>
+              setTimeout(() => resolve(null), VALIDATION_TIMEOUT),
+            );
+            const validationPromise = oxyServices
+              .validateSession(sessionId, { useHeaderValidation: true })
+              .catch((validationError: unknown) => {
+                if (!isInvalidSessionError(validationError) && !isTimeoutOrNetworkError(validationError)) {
+                  logger('Session validation failed during init', validationError);
+                } else if (__DEV__ && isTimeoutOrNetworkError(validationError)) {
+                  loggerUtil.debug('Session validation timeout (expected when offline)', { component: 'OxyContext', method: 'restoreSessionsFromStorage' }, validationError as unknown);
+                }
+                return null;
               });
-            }
-          } catch (validationError) {
-            // Silently handle expected errors (invalid sessions, timeouts, network issues) during restoration
-            // Only log unexpected errors
-            if (!isInvalidSessionError(validationError) && !isTimeoutOrNetworkError(validationError)) {
-              logger('Session validation failed during init', validationError);
-            } else if (__DEV__ && isTimeoutOrNetworkError(validationError)) {
-              // Only log timeouts in dev mode for debugging
-              loggerUtil.debug('Session validation timeout (expected when offline)', { component: 'OxyContext', method: 'restoreSessionsFromStorage' }, validationError as unknown);
-            }
-          }
-        }
+
+            return Promise.race([validationPromise, timeoutPromise]).then((validation) => {
+              if (validation?.valid && validation.user) {
+                const now = new Date();
+                return {
+                  sessionId,
+                  deviceId: '',
+                  expiresAt: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+                  lastActive: now.toISOString(),
+                  userId: validation.user.id?.toString() ?? '',
+                  isCurrent: sessionId === storedActiveSessionId,
+                } as ClientSession;
+              }
+              return null;
+            });
+          }),
+        );
+
+        validSessions = results
+          .filter((r): r is PromiseFulfilledResult<ClientSession | null> => r.status === 'fulfilled')
+          .map((r) => r.value)
+          .filter((s): s is ClientSession => s !== null);
 
         // Always persist validated sessions to storage (even empty list)
         // to clear stale/expired session IDs that would cause 401 loops on restart
