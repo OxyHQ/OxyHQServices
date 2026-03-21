@@ -1,5 +1,4 @@
-import type React from 'react';
-import { useEffect, useCallback } from 'react';
+import React, { useEffect, useCallback, memo } from 'react';
 import {
   TouchableOpacity,
   Text,
@@ -21,8 +20,9 @@ import Animated, {
 import { useOxy } from '../context/OxyContext';
 import { fontFamilies } from '../styles/fonts';
 import { toast } from '../../lib/sonner';
-import { useFollow } from '../hooks/useFollow';
+import { useFollowForButton } from '../hooks/useFollow';
 import { useThemeColors } from '../styles/theme';
+import type { OxyServices } from '@oxyhq/core';
 
 // Create animated TouchableOpacity
 const AnimatedTouchableOpacity = Animated.createAnimatedComponent(TouchableOpacity);
@@ -41,8 +41,22 @@ export interface FollowButtonProps {
   theme?: 'light' | 'dark';
 }
 
-const FollowButton: React.FC<FollowButtonProps> = ({
+/**
+ * Inner component that handles all hooks and rendering.
+ *
+ * Separated from the outer wrapper to avoid a Rules of Hooks violation.
+ * The outer wrapper handles the auth/self-follow guard and returns null
+ * before any hooks are called. This inner component always renders
+ * (all hooks are called unconditionally).
+ *
+ * Receives oxyServices as a prop instead of calling useOxy(), so it does
+ * not subscribe to the OxyContext. This is critical in list contexts where
+ * N buttons would all re-render on any context change (session socket events,
+ * token refreshes, etc.).
+ */
+const FollowButtonInner = memo(function FollowButtonInner({
   userId,
+  oxyServices,
   initiallyFollowing = false,
   size = 'medium',
   onFollowChange,
@@ -52,42 +66,23 @@ const FollowButton: React.FC<FollowButtonProps> = ({
   showLoadingState = true,
   preventParentActions = true,
   theme = 'light',
-}) => {
-  const { oxyServices, isAuthenticated, user: currentUser } = useOxy();
+}: FollowButtonProps & { oxyServices: OxyServices }) {
   const colors = useThemeColors(theme);
 
-  // Safety check: Don't render follow button on own profile
-  // This provides a fallback in case parent components don't handle this check
-  // Normalize IDs by trimming whitespace and comparing as strings
-  const normalizeId = (id: string | undefined | null): string => {
-    if (!id) return '';
-    return String(id).trim();
-  };
-
-  const currentUserId = normalizeId(currentUser?.id);
-  const targetUserId = normalizeId(userId);
-
-  // Don't render if:
-  // 1. Not authenticated (can't follow anyway)
-  // 2. Viewing own profile (currentUser.id matches userId)
-  if (!isAuthenticated || (currentUserId && targetUserId && currentUserId === targetUserId)) {
-    return null;
-  }
+  // Uses granular Zustand selectors — only re-renders when THIS user's data changes
   const {
     isFollowing,
     isLoading,
-    error,
     toggleFollow,
     setFollowStatus,
     fetchStatus,
-    clearError,
-  } = useFollow(userId);
+  } = useFollowForButton(userId, oxyServices);
 
   // Animation values
   const animationProgress = useSharedValue(isFollowing ? 1 : 0);
   const scale = useSharedValue(1);
 
-  // Button press handler with animation
+  // Stable press handler — depends on primitives only
   const handlePress = useCallback(async (event?: { preventDefault?: () => void; stopPropagation?: () => void }) => {
     if (preventParentActions && event && event.preventDefault) {
       event.preventDefault();
@@ -103,7 +98,7 @@ const FollowButton: React.FC<FollowButtonProps> = ({
     });
 
     try {
-      await toggleFollow?.();
+      await toggleFollow();
       if (onFollowChange) onFollowChange(!isFollowing);
     } catch (err: unknown) {
       const error = err instanceof Error ? err : new Error(String(err));
@@ -111,26 +106,28 @@ const FollowButton: React.FC<FollowButtonProps> = ({
     }
   }, [disabled, isLoading, toggleFollow, onFollowChange, isFollowing, preventParentActions, scale]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional mount-only initialization
+  // Set initial follow status on mount if provided and not already set
   useEffect(() => {
     if (userId && !isFollowing && initiallyFollowing) {
-      setFollowStatus?.(initiallyFollowing);
+      setFollowStatus(initiallyFollowing);
     }
+    // Intentional: only run on mount with initial values
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, initiallyFollowing]);
 
-  // Fetch latest follow status from backend on mount if authenticated
+  // Fetch latest follow status from backend on mount
   useEffect(() => {
-    if (userId && isAuthenticated) {
-      fetchStatus?.();
+    if (userId) {
+      fetchStatus();
     }
-  }, [userId, fetchStatus, isAuthenticated]);
+  }, [userId, fetchStatus]);
 
   // Animate button on follow/unfollow
   useEffect(() => {
     animationProgress.value = withTiming(isFollowing ? 1 : 0, { duration: 300, easing: Easing.inOut(Easing.ease) });
   }, [isFollowing, animationProgress]);
 
-  // Animated styles for better performance
+  // Animated styles
   const animatedButtonStyle = useAnimatedStyle(() => {
     return {
       transform: [{ scale: scale.value }],
@@ -157,98 +154,109 @@ const FollowButton: React.FC<FollowButtonProps> = ({
     };
   }, [colors]);
 
-  // Get base button style (without state-specific colors since they're animated)
-  const getBaseButtonStyle = (): StyleProp<ViewStyle> => {
-    const baseStyle = {
-      flexDirection: 'row' as const,
-      alignItems: 'center' as const,
-      justifyContent: 'center' as const,
-      borderWidth: 1,
-      ...Platform.select({
-        web: {
-          boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-        },
-        default: {
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: 2 },
-          shadowOpacity: 0.1,
-          shadowRadius: 4,
-          elevation: 2,
-        }
-      }),
-    };
-
-    // Size-specific styles
-    let sizeStyle = {};
-    if (size === 'small') {
-      sizeStyle = {
-        paddingVertical: 6,
-        paddingHorizontal: 12,
-        minWidth: 70,
-        borderRadius: 35,
-      };
-    } else if (size === 'large') {
-      sizeStyle = {
-        paddingVertical: 12,
-        paddingHorizontal: 24,
-        minWidth: 120,
-        borderRadius: 35,
-      };
-    } else {
-      // medium
-      sizeStyle = {
-        paddingVertical: 8,
-        paddingHorizontal: 16,
-        minWidth: 90,
-        borderRadius: 35,
-      };
-    }
-
-    return [baseStyle, sizeStyle, style];
-  };
-
-  // Get base text style (without state-specific colors since they're animated)
-  const getBaseTextStyle = (): StyleProp<TextStyle> => {
-    const baseTextStyle = {
-      fontFamily: fontFamilies.interSemiBold,
-      fontWeight: '600' as const,
-    };
-
-    // Size-specific text styles
-    let sizeTextStyle = {};
-    if (size === 'small') {
-      sizeTextStyle = { fontSize: 13 };
-    } else if (size === 'large') {
-      sizeTextStyle = { fontSize: 16 };
-    } else {
-      // medium
-      sizeTextStyle = { fontSize: 15 };
-    }
-
-    return [baseTextStyle, sizeTextStyle, textStyle];
-  };
+  const baseButtonStyle = getBaseButtonStyle(size, style);
+  const baseTextStyle = getBaseTextStyle(size, textStyle);
 
   return (
     <AnimatedTouchableOpacity
-      style={[getBaseButtonStyle(), animatedButtonStyle]}
+      style={[baseButtonStyle, animatedButtonStyle]}
       onPress={handlePress}
       disabled={disabled || isLoading}
       activeOpacity={0.8}
     >
       {showLoadingState && isLoading ? (
         <ActivityIndicator
-          size={size === 'small' ? 'small' : 'small'}
+          size="small"
           color={isFollowing ? '#FFFFFF' : colors.primary}
         />
       ) : (
-        <AnimatedText style={[getBaseTextStyle(), animatedTextStyle]}>
+        <AnimatedText style={[baseTextStyle, animatedTextStyle]}>
           {isFollowing ? 'Following' : 'Follow'}
         </AnimatedText>
       )}
     </AnimatedTouchableOpacity>
   );
+});
+
+/**
+ * Outer wrapper that handles the "should we render?" check.
+ *
+ * This is the ONLY place useOxy() is called — to check authentication and
+ * get the current user ID for the self-follow guard. The oxyServices instance
+ * is passed down as a prop to the inner component, which avoids subscribing
+ * to the full OxyContext.
+ *
+ * The early return happens BEFORE the inner component mounts, so the inner
+ * component's hooks are never called conditionally (no Rules of Hooks violation).
+ */
+const FollowButton: React.FC<FollowButtonProps> = (props) => {
+  const { oxyServices, isAuthenticated, user: currentUser } = useOxy();
+
+  const currentUserId = currentUser?.id ? String(currentUser.id).trim() : '';
+  const targetUserId = props.userId ? String(props.userId).trim() : '';
+
+  // Don't render if not authenticated or viewing own profile
+  if (!isAuthenticated || !targetUserId || (currentUserId && currentUserId === targetUserId)) {
+    return null;
+  }
+
+  return (
+    <FollowButtonInner
+      {...props}
+      userId={targetUserId}
+      oxyServices={oxyServices}
+    />
+  );
 };
 
+// Pure helper functions (no hooks, no state) extracted outside the component
+function getBaseButtonStyle(size: string, style?: StyleProp<ViewStyle>): StyleProp<ViewStyle> {
+  const baseStyle: ViewStyle = {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    ...Platform.select({
+      web: {},
+      default: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 2,
+      }
+    }),
+  };
+
+  let sizeStyle: ViewStyle;
+  if (size === 'small') {
+    sizeStyle = { paddingVertical: 6, paddingHorizontal: 12, minWidth: 70, borderRadius: 35 };
+  } else if (size === 'large') {
+    sizeStyle = { paddingVertical: 12, paddingHorizontal: 24, minWidth: 120, borderRadius: 35 };
+  } else {
+    sizeStyle = { paddingVertical: 8, paddingHorizontal: 16, minWidth: 90, borderRadius: 35 };
+  }
+
+  return [baseStyle, sizeStyle, style];
+}
+
+function getBaseTextStyle(size: string, textStyle?: StyleProp<TextStyle>): StyleProp<TextStyle> {
+  const baseTextStyle: TextStyle = {
+    fontFamily: fontFamilies.interSemiBold,
+    fontWeight: '600',
+  };
+
+  let sizeTextStyle: TextStyle;
+  if (size === 'small') {
+    sizeTextStyle = { fontSize: 13 };
+  } else if (size === 'large') {
+    sizeTextStyle = { fontSize: 16 };
+  } else {
+    sizeTextStyle = { fontSize: 15 };
+  }
+
+  return [baseTextStyle, sizeTextStyle, textStyle];
+}
 
 export { FollowButton };
 export default FollowButton;
