@@ -8,6 +8,7 @@ import { FAIRWalletIcon } from '../icon';
 import { createPaymentStyles } from './paymentStyles';
 import { toast } from '../../../lib/sonner';
 import type { CardDetails, PaymentColors, PaymentStepAnimations } from './types';
+import { useI18n } from '../../hooks/useI18n';
 
 interface PaymentDetailsStepProps {
     paymentMethod: string;
@@ -37,11 +38,12 @@ const PaymentDetailsStep: React.FC<PaymentDetailsStepProps> = ({
     QRCodeComponent,
 }) => {
     const styles = useMemo(() => createPaymentStyles(colors), [colors]);
+    const { t } = useI18n();
     const { fadeAnim, slideAnim, scaleAnim } = animations;
 
     const handleCopyAddress = () => {
         Clipboard.setString(faircoinAddress);
-        toast('Address copied to clipboard!');
+        toast(t('payment.details.addressCopied'));
     };
 
     const handleOpenFairWallet = () => {
@@ -68,22 +70,22 @@ const PaymentDetailsStep: React.FC<PaymentDetailsStepProps> = ({
         >
             <View style={styles.section}>
                 <Text style={styles.sectionTitle}>
-                    {paymentMethod === 'card' ? 'Card Details' :
-                        paymentMethod === 'oxy' ? 'Oxy Pay' :
-                            paymentMethod === 'faircoin' ? 'FairCoin Payment' : 'Payment Details'}
+                    {paymentMethod === 'card' ? t('payment.details.cardDetails') :
+                        paymentMethod === 'oxy' ? t('payment.details.oxyPay') :
+                            paymentMethod === 'faircoin' ? t('payment.details.faircoinPayment') : t('payment.details.paymentDetails')}
                 </Text>
 
                 {paymentMethod === 'card' && (
                     <View style={styles.cardPaymentCard}>
                         <View style={styles.cardPaymentContent}>
                             <Ionicons name="card-outline" size={64} color={colors.primary} style={styles.cardPaymentIcon} />
-                            <Text style={styles.cardPaymentMainTitle}>Credit Card</Text>
-                            <Text style={styles.cardPaymentSubtitle}>Enter your card details securely</Text>
+                            <Text style={styles.cardPaymentMainTitle}>{t('payment.details.creditCard')}</Text>
+                            <Text style={styles.cardPaymentSubtitle}>{t('payment.details.enterCardSecurely')}</Text>
 
                             <View style={styles.cardPaymentFields}>
                                 <View style={styles.cardRowInfo}>
                                     <Ionicons name="card-outline" size={24} color={colors.primary} style={styles.cardRowIcon} />
-                                    <Text style={styles.cardRowText}>We accept Visa, Mastercard, and more</Text>
+                                    <Text style={styles.cardRowText}>{t('payment.details.acceptedCards')}</Text>
                                 </View>
                                 <TextField
                                     value={cardDetails.number}
@@ -131,7 +133,7 @@ const PaymentDetailsStep: React.FC<PaymentDetailsStepProps> = ({
                             </View>
 
                             <View style={{ height: 18 }} />
-                            <Text style={styles.cardPaymentWaiting}>Ready to process payment...</Text>
+                            <Text style={styles.cardPaymentWaiting}>{t('payment.details.readyToProcess')}</Text>
                         </View>
                     </View>
                 )}
@@ -140,13 +142,13 @@ const PaymentDetailsStep: React.FC<PaymentDetailsStepProps> = ({
                     <View style={styles.oxyPayCard}>
                         <View style={styles.oxyPayContent}>
                             <Ionicons name="wallet-outline" size={64} color={colors.primary} style={styles.oxyPayIcon} />
-                            <Text style={styles.oxyPayMainTitle}>Oxy Pay</Text>
-                            <Text style={styles.oxyPaySubtitle}>Pay with your in-app wallet</Text>
+                            <Text style={styles.oxyPayMainTitle}>{t('payment.details.oxyPay')}</Text>
+                            <Text style={styles.oxyPaySubtitle}>{t('payment.details.payWithWallet')}</Text>
                             <View style={styles.oxyPayBalanceBox}>
-                                <Text style={styles.oxyPayBalanceText}>Balance: ⊜ 123.45</Text>
+                                <Text style={styles.oxyPayBalanceText}>{t('payment.details.balance', { balance: '⊜ 123.45' })}</Text>
                             </View>
                             <View style={{ height: 18 }} />
-                            <Text style={styles.oxyPayWaiting}>Ready to process payment...</Text>
+                            <Text style={styles.oxyPayWaiting}>{t('payment.details.readyToProcess')}</Text>
                         </View>
                     </View>
                 )}
@@ -156,10 +158,10 @@ const PaymentDetailsStep: React.FC<PaymentDetailsStepProps> = ({
                         <View style={styles.faircoinContent}>
                             <FAIRWalletIcon size={64} style={styles.faircoinIcon} />
                             <Text style={styles.faircoinMainTitle}>FAIRWallet</Text>
-                            <Text style={styles.faircoinSubtitle}>Pay with FairCoin</Text>
+                            <Text style={styles.faircoinSubtitle}>{t('payment.details.payWithFairCoin')}</Text>
                             {!isMobile && QRCodeComponent ? (
                                 <>
-                                    <Text style={styles.faircoinScanText}>Scan to Pay</Text>
+                                    <Text style={styles.faircoinScanText}>{t('payment.details.scanToPay')}</Text>
                                     <View style={styles.faircoinQRCard}>
                                         <QRCodeComponent value={faircoinAddress} size={qrSize - 32} />
                                         <View style={styles.faircoinQRBadge}>
@@ -169,30 +171,30 @@ const PaymentDetailsStep: React.FC<PaymentDetailsStepProps> = ({
                                 </>
                             ) : (
                                 <>
-                                    <Text style={styles.faircoinTitle}>Use the options below to pay with FAIRWallet</Text>
+                                    <Text style={styles.faircoinTitle}>{t('payment.details.fairWalletInstructions')}</Text>
                                     <Text style={styles.faircoinAddress}>{faircoinAddress}</Text>
                                     <TouchableOpacity
                                         style={[styles.faircoinButton, { backgroundColor: '#9ffb50', borderRadius: 18, marginTop: 12, width: '90%', flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }]}
                                         onPress={handleOpenFairWallet}
                                         accessibilityRole="button"
-                                        accessibilityLabel="Open in FAIRWallet"
+                                        accessibilityLabel={t('payment.details.openInFairWallet')}
                                     >
                                         <FAIRWalletIcon size={20} style={{ marginRight: 8 }} />
-                                        <Text style={[styles.faircoinButtonText, { color: '#1b1f0a', fontWeight: 'bold', fontSize: 16 }]}>Open in FAIRWallet</Text>
+                                        <Text style={[styles.faircoinButtonText, { color: '#1b1f0a', fontWeight: 'bold', fontSize: 16 }]}>{t('payment.details.openInFairWallet')}</Text>
                                     </TouchableOpacity>
                                     <TouchableOpacity
                                         style={[styles.faircoinButton, { backgroundColor: '#9ffb50', borderRadius: 18, marginTop: 10, width: '90%', flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }]}
                                         onPress={handleCopyAddress}
                                         accessibilityRole="button"
-                                        accessibilityLabel="Copy FairCoin address"
+                                        accessibilityLabel={t('payment.details.copyAddress')}
                                     >
                                         <FAIRWalletIcon size={20} style={{ marginRight: 8 }} />
-                                        <Text style={[styles.faircoinButtonText, { color: '#1b1f0a', fontWeight: 'bold', fontSize: 16 }]}>Copy Address</Text>
+                                        <Text style={[styles.faircoinButtonText, { color: '#1b1f0a', fontWeight: 'bold', fontSize: 16 }]}>{t('payment.details.copyAddress')}</Text>
                                     </TouchableOpacity>
                                 </>
                             )}
                             <View style={{ height: 18 }} />
-                            <Text style={styles.faircoinWaiting}>Waiting for payment...</Text>
+                            <Text style={styles.faircoinWaiting}>{t('payment.details.waitingForPayment')}</Text>
                         </View>
                     </View>
                 )}
@@ -201,13 +203,13 @@ const PaymentDetailsStep: React.FC<PaymentDetailsStepProps> = ({
             <GroupedPillButtons
                 buttons={[
                     {
-                        text: 'Back',
+                        text: t('payment.actions.back'),
                         onPress: onBack,
                         icon: 'arrow-back',
                         variant: 'transparent',
                     },
                     {
-                        text: 'Continue',
+                        text: t('payment.actions.continue'),
                         onPress: onNext,
                         icon: 'arrow-forward',
                         variant: 'primary',

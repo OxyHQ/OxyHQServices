@@ -6,6 +6,7 @@ import GroupedPillButtons from '../internal/GroupedPillButtons';
 import { FAIRWalletIcon } from '../icon';
 import { createPaymentStyles } from './paymentStyles';
 import type { PaymentMethod, PaymentColors, PaymentStepAnimations } from './types';
+import { useI18n } from '../../hooks/useI18n';
 
 interface PaymentMethodStepProps {
     availablePaymentMethods: PaymentMethod[];
@@ -27,6 +28,7 @@ const PaymentMethodStep: React.FC<PaymentMethodStepProps> = ({
     onNext,
 }) => {
     const styles = useMemo(() => createPaymentStyles(colors), [colors]);
+    const { t } = useI18n();
     const { fadeAnim, slideAnim, scaleAnim } = animations;
 
     return (
@@ -45,7 +47,7 @@ const PaymentMethodStep: React.FC<PaymentMethodStepProps> = ({
             accessibilityLabel="Choose payment method step"
         >
             <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Choose Payment Method</Text>
+                <Text style={styles.sectionTitle}>{t('payment.method.title')}</Text>
 
                 <GroupedSection
                     items={availablePaymentMethods.map(method => ({
@@ -54,8 +56,8 @@ const PaymentMethodStep: React.FC<PaymentMethodStepProps> = ({
                         iconColor: method.key === 'card' ? '#007AFF' :
                             method.key === 'oxy' ? '#32D74B' :
                                 method.key === 'faircoin' ? '#9ffb50' : colors.primary,
-                        title: method.label,
-                        subtitle: method.description,
+                        title: t(`payment.methods.${method.key}.label`),
+                        subtitle: t(`payment.methods.${method.key}.description`),
                         onPress: () => onSelectMethod(method.key),
                         selected: selectedMethod === method.key,
                         showChevron: false,
@@ -69,13 +71,13 @@ const PaymentMethodStep: React.FC<PaymentMethodStepProps> = ({
             <GroupedPillButtons
                 buttons={[
                     {
-                        text: 'Back',
+                        text: t('payment.actions.back'),
                         onPress: onBack,
                         icon: 'arrow-back',
                         variant: 'transparent',
                     },
                     {
-                        text: 'Continue',
+                        text: t('payment.actions.continue'),
                         onPress: onNext,
                         icon: 'arrow-forward',
                         variant: 'primary',

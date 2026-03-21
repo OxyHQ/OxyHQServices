@@ -19,7 +19,7 @@ const MEMORY_STORAGE = (): StorageInterface => {
 
   return {
     async getItem(key: string) {
-      return store.has(key) ? store.get(key)! : null;
+      return store.get(key) ?? null;
     },
     async setItem(key: string, value: string) {
       store.set(key, value);

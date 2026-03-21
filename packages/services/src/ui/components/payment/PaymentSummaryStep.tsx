@@ -7,6 +7,7 @@ import GroupedPillButtons from '../internal/GroupedPillButtons';
 import { createPaymentStyles } from './paymentStyles';
 import { getCurrencySymbol, CURRENCY_SYMBOLS } from './constants';
 import type { PaymentItem, PaymentColors, PaymentStepAnimations } from './types';
+import { useI18n } from '../../hooks/useI18n';
 
 interface PaymentSummaryStepProps {
     paymentItems: PaymentItem[];
@@ -40,6 +41,7 @@ const PaymentSummaryStep: React.FC<PaymentSummaryStepProps> = ({
     onNext,
 }) => {
     const styles = useMemo(() => createPaymentStyles(colors), [colors]);
+    const { t } = useI18n();
     const currencySymbol = getCurrencySymbol(currency);
     const { fadeAnim, slideAnim, scaleAnim } = animations;
 
@@ -59,7 +61,7 @@ const PaymentSummaryStep: React.FC<PaymentSummaryStepProps> = ({
             accessibilityLabel="Payment summary step"
         >
             <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Payment Summary</Text>
+                <Text style={styles.sectionTitle}>{t('payment.summary.title')}</Text>
 
                 <View style={styles.summaryCard}>
                     <View style={styles.summaryCardContent}>
@@ -70,10 +72,10 @@ const PaymentSummaryStep: React.FC<PaymentSummaryStepProps> = ({
                             style={styles.summaryCardIcon}
                         />
                         <Text style={styles.summaryCardMainTitle}>
-                            {paymentItems.length > 0 ? 'Order Summary' : 'Payment'}
+                            {paymentItems.length > 0 ? t('payment.summary.orderSummary') : t('payment.summary.payment')}
                         </Text>
                         <Text style={styles.summaryCardSubtitle}>
-                            {paymentItems.length > 0 ? 'Review your payment details' : 'Complete your payment'}
+                            {paymentItems.length > 0 ? t('payment.summary.reviewDetails') : t('payment.summary.completePayment')}
                         </Text>
 
                         {paymentItems.length > 0 ? (
@@ -99,15 +101,15 @@ const PaymentSummaryStep: React.FC<PaymentSummaryStepProps> = ({
 
                                 <View style={styles.summaryCardTotalSection}>
                                     <View style={styles.summaryCardTotalRow}>
-                                        <Text style={styles.summaryCardTotalLabel}>Subtotal</Text>
+                                        <Text style={styles.summaryCardTotalLabel}>{t('payment.summary.subtotal')}</Text>
                                         <Text style={styles.summaryCardTotalValue}>{currencySymbol} {amount}</Text>
                                     </View>
                                     <View style={styles.summaryCardTotalRow}>
-                                        <Text style={styles.summaryCardTotalLabel}>Tax</Text>
+                                        <Text style={styles.summaryCardTotalLabel}>{t('payment.summary.tax')}</Text>
                                         <Text style={styles.summaryCardTotalValue}>{currencySymbol} 0.00</Text>
                                     </View>
                                     <View style={styles.summaryCardTotalRow}>
-                                        <Text style={styles.summaryCardTotalLabel}>Total</Text>
+                                        <Text style={styles.summaryCardTotalLabel}>{t('payment.summary.total')}</Text>
                                         <Text style={styles.summaryCardTotalValue}>{currencySymbol} {amount}</Text>
                                     </View>
                                 </View>
@@ -115,7 +117,7 @@ const PaymentSummaryStep: React.FC<PaymentSummaryStepProps> = ({
                         ) : (
                             <>
                                 <View style={styles.summaryCardAmount}>
-                                    <Text style={styles.summaryCardAmountLabel}>Amount to Pay</Text>
+                                    <Text style={styles.summaryCardAmountLabel}>{t('payment.summary.amountToPay')}</Text>
                                     <Text style={styles.summaryCardAmountValue}>{currencySymbol} {amount}</Text>
                                     {description && (
                                         <Text style={styles.summaryCardAmountDescription}>{description}</Text>
@@ -126,7 +128,7 @@ const PaymentSummaryStep: React.FC<PaymentSummaryStepProps> = ({
 
                                 <View style={styles.summaryCardTotalSection}>
                                     <View style={styles.summaryCardTotalRow}>
-                                        <Text style={styles.summaryCardTotalLabel}>Total</Text>
+                                        <Text style={styles.summaryCardTotalLabel}>{t('payment.summary.total')}</Text>
                                         <Text style={styles.summaryCardTotalValue}>{currencySymbol} {amount}</Text>
                                     </View>
                                 </View>
@@ -139,13 +141,13 @@ const PaymentSummaryStep: React.FC<PaymentSummaryStepProps> = ({
             <GroupedPillButtons
                 buttons={[
                     {
-                        text: 'Close',
+                        text: t('payment.actions.close'),
                         onPress: onClose,
                         icon: 'close',
                         variant: 'transparent',
                     },
                     {
-                        text: 'Continue',
+                        text: t('payment.actions.continue'),
                         onPress: onNext,
                         icon: 'arrow-forward',
                         variant: 'primary',

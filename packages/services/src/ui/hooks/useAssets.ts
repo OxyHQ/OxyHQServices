@@ -84,8 +84,8 @@ export const useAssets = () => {
       }
       
       return null;
-    } catch (error: any) {
-      setUploadError(error.message || 'Upload failed');
+    } catch (error: unknown) {
+      setUploadError((error instanceof Error ? error.message : null) || 'Upload failed');
       throw error;
     } finally {
       setUploading(false);
@@ -133,8 +133,8 @@ export const useAssets = () => {
           createdAt: new Date().toISOString()
         });
       }
-    } catch (error: any) {
-      setLinkError(error.message || 'Link failed');
+    } catch (error: unknown) {
+      setLinkError((error instanceof Error ? error.message : null) || 'Link failed');
       throw error;
     } finally {
       setLinking(false);
@@ -164,8 +164,8 @@ export const useAssets = () => {
         // Update store optimistically
         removeLink(assetId, app, entityType, entityId);
       }
-    } catch (error: any) {
-      setLinkError(error.message || 'Unlink failed');
+    } catch (error: unknown) {
+      setLinkError((error instanceof Error ? error.message : null) || 'Unlink failed');
       throw error;
     } finally {
       setLinking(false);
@@ -213,8 +213,8 @@ export const useAssets = () => {
       
       await oxyInstance.assetDelete(assetId, force);
       removeAsset(assetId);
-    } catch (error: any) {
-      setDeleteError(error.message || 'Delete failed');
+    } catch (error: unknown) {
+      setDeleteError((error instanceof Error ? error.message : null) || 'Delete failed');
       throw error;
     } finally {
       setDeleting(false);

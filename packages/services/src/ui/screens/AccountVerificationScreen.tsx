@@ -70,12 +70,12 @@ const AccountVerificationScreen: React.FC<BaseScreenProps> = ({
                     },
                 ]
             );
-        } catch (error: any) {
+        } catch (error: unknown) {
             if (__DEV__) {
                 console.error('Failed to submit verification request:', error);
             }
             toast.error(
-                error?.message || t('accountVerification.submitError') || 'Failed to submit verification request'
+                (error instanceof Error ? error.message : null) || t('accountVerification.submitError') || 'Failed to submit verification request'
             );
         } finally {
             setIsSubmitting(false);

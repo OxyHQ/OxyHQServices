@@ -152,7 +152,8 @@
     "subtitle": "Choose your preferred language",
     "current": "Current Language",
     "available": "Available Languages",
-    "changed": "Language changed to {{lang}}"
+    "changed": "Language changed to {{lang}}",
+    "saveFailed": "Failed to save language preference"
   },
   "profile": {
     "edit": "Edit Profile",
@@ -1158,6 +1159,117 @@
       "oxyServicesNotInitialized": "OxyServices not initialized",
       "noUsernameOrNav": "No username available or navigation not supported"
     }
+  },
+  "learnMoreUsernames": {
+    "introTitle": "Your unique identity",
+    "introText": "Your username is how people find and recognize you across all Oxy apps.",
+    "sections": {
+      "what": {
+        "title": "What is a username?",
+        "content": "Your username is your unique identifier on Oxy. It's how other people find and mention you. Think of it like your handle on social media - it's public and represents your identity across all Oxy apps."
+      },
+      "rules": {
+        "title": "Username rules",
+        "content": "Usernames can only contain lowercase letters (a-z) and numbers (0-9). They must be at least 4 characters long. Special characters, spaces, and uppercase letters are not allowed to keep usernames simple and easy to remember."
+      },
+      "unique": {
+        "title": "Why must it be unique?",
+        "content": "Each username can only belong to one person. This ensures that when someone searches for you or mentions you, they find the right person. It also prevents confusion and impersonation."
+      },
+      "change": {
+        "title": "Can I change it later?",
+        "content": "Yes! You can change your username anytime in your account settings. Keep in mind that your old username will become available for others to use, and people who knew your old username will need to find you with the new one."
+      },
+      "tips": {
+        "title": "Tips for choosing a username",
+        "content": "Choose something memorable and easy to spell. Avoid using personal information like your birth year or phone number. Consider using a name that represents you across all contexts - professional and personal."
+      }
+    },
+    "collapseHint": "Collapse section",
+    "expandHint": "Expand section",
+    "footer": "Need more help? Visit our Help Center for additional information."
+  },
+  "payment": {
+    "summary": {
+      "title": "Payment Summary",
+      "orderSummary": "Order Summary",
+      "payment": "Payment",
+      "reviewDetails": "Review your payment details",
+      "completePayment": "Complete your payment",
+      "subtotal": "Subtotal",
+      "tax": "Tax",
+      "total": "Total",
+      "amountToPay": "Amount to Pay"
+    },
+    "method": {
+      "title": "Choose Payment Method"
+    },
+    "details": {
+      "cardDetails": "Card Details",
+      "oxyPay": "Oxy Pay",
+      "faircoinPayment": "FairCoin Payment",
+      "paymentDetails": "Payment Details",
+      "creditCard": "Credit Card",
+      "enterCardSecurely": "Enter your card details securely",
+      "acceptedCards": "We accept Visa, Mastercard, and more",
+      "readyToProcess": "Ready to process payment...",
+      "payWithWallet": "Pay with your in-app wallet",
+      "balance": "Balance: {{balance}}",
+      "payWithFairCoin": "Pay with FairCoin",
+      "scanToPay": "Scan to Pay",
+      "fairWalletInstructions": "Use the options below to pay with FAIRWallet",
+      "openInFairWallet": "Open in FAIRWallet",
+      "copyAddress": "Copy Address",
+      "addressCopied": "Address copied to clipboard!",
+      "waitingForPayment": "Waiting for payment..."
+    },
+    "review": {
+      "title": "Review Payment",
+      "securePayment": "Secure payment",
+      "securePaymentDesc": "Your payment is protected by industry-standard encryption",
+      "amount": "Amount",
+      "paymentMethod": "Payment Method",
+      "card": "Card",
+      "oxyPayAccount": "Oxy Pay Account",
+      "faircoinWallet": "FairCoin Wallet",
+      "paidViaQR": "Paid via QR",
+      "processing": "Processing...",
+      "payNow": "Pay Now"
+    },
+    "success": {
+      "title": "Payment Complete",
+      "heading": "Payment Successful!",
+      "thanks": "Thank you for your payment.",
+      "processed": "Your transaction has been processed successfully."
+    },
+    "actions": {
+      "close": "Close",
+      "continue": "Continue",
+      "back": "Back",
+      "done": "Done"
+    },
+    "errors": {
+      "invalidAmount": "Invalid or missing payment amount."
+    },
+    "methods": {
+      "card": {
+        "label": "Credit/Debit Card",
+        "description": "Pay securely with your credit or debit card."
+      },
+      "oxy": {
+        "label": "Oxy Pay",
+        "description": "Use your Oxy Pay in-app balance."
+      },
+      "faircoin": {
+        "label": "FAIRWallet",
+        "description": "Pay with FairCoin by scanning a QR code."
+      }
+    }
+  },
+  "userLinks": {
+    "title": "Links",
+    "linkCount": "{{count}} link",
+    "linkCount_plural": "{{count}} links"
   },
   "fileManagement": {
     "title": "File Management",

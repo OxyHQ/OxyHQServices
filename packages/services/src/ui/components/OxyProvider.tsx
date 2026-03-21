@@ -89,6 +89,7 @@ const OxyProvider: FC<OxyProviderProps> = ({
     authWebUrl,
     authRedirectUri,
     queryClient: providedQueryClient,
+    skipProviderWrappers = false,
 }) => {
 
     // Simple storage initialization for query persistence
@@ -233,6 +234,11 @@ const OxyProvider: FC<OxyProviderProps> = ({
             </OxyContextProvider>
         </QueryClientProvider>
     );
+
+    // Skip wrapper providers when parent already provides them (e.g., Mention's AppProviders)
+    if (skipProviderWrappers) {
+        return <KeyboardProvider>{coreContent}</KeyboardProvider>;
+    }
 
     // All platforms use same wrapper (KeyboardProvider is passthrough on web)
     return (

@@ -94,13 +94,13 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
     }, []);
 
     // Dismiss callbacks
-    const safeClose = () => {
+    const safeClose = useCallback(() => {
         if (onDismissAttempt?.()) {
             onDismiss?.();
         } else if (!onDismissAttempt) {
             onDismiss?.();
         }
-    };
+    }, [onDismiss, onDismissAttempt]);
 
     const finishClose = useCallback(() => {
         if (hasClosedRef.current) return;
@@ -109,6 +109,7 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
         setRendered(false);
     }, [safeClose]);
 
+    // biome-ignore lint/correctness/useExhaustiveDependencies: opacity and translateY are Reanimated SharedValues (stable refs) that should not be listed as dependencies
     useEffect(() => {
         if (visible) {
             if (closeTimeoutRef.current) {
@@ -299,7 +300,7 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
                 // The sheet extends behind safe area, and screens add padding as needed
             },
         });
-    }, [colors.background, detached, insets.bottom]);
+    }, [colors.background, detached]);
 
     if (!rendered) return null;
 

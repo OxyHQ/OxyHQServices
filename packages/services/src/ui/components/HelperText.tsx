@@ -96,7 +96,7 @@ const HelperText = ({
         useNativeDriver: true,
       }).start();
     }
-  }, [visible, shown]);
+  }, [visible]);
 
   const handleTextLayout = (e: LayoutChangeEvent) => {
     onLayout?.(e);

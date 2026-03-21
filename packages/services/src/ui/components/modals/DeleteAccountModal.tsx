@@ -54,8 +54,8 @@ const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
         try {
             await onDelete(password);
             // Modal will be closed by parent on success
-        } catch (err: any) {
-            setError(err?.message || t('deleteAccount.error') || 'Failed to delete account');
+        } catch (err: unknown) {
+            setError((err instanceof Error ? err.message : null) || t('deleteAccount.error') || 'Failed to delete account');
         } finally {
             setIsDeleting(false);
         }

@@ -58,11 +58,11 @@ const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
             if (isAuthenticated && user?.id) {
                 try {
                     await oxyServices.updateProfile({ language: languageId });
-                } catch (e: any) {
+                } catch (e: unknown) {
                     // Server sync failed, but we'll save locally anyway
                     serverSyncFailed = true;
                     if (__DEV__) {
-                        console.warn('Failed to sync language to server (will save locally only):', e?.message || e);
+                        console.warn('Failed to sync language to server (will save locally only):', e instanceof Error ? e.message : e);
                     }
                 }
             }
@@ -89,7 +89,7 @@ const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
             if (__DEV__) {
                 console.error('Error saving language preference:', error);
             }
-            toast.error('Failed to save language preference');
+            toast.error(t('language.saveFailed'));
             setIsLoading(false);
         }
     }, [currentLanguage, isLoading, isAuthenticated, user?.id, oxyServices, setLanguage, t, onClose, goBack]);

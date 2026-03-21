@@ -164,8 +164,8 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
                     if (avatarStepIndex >= 0 && currentStep !== avatarStepIndex) {
                         animateToStepCallback(avatarStepIndex);
                     }
-                } catch (e: any) {
-                    toast.error(e.message || t('editProfile.toasts.updateAvatarFailed') || 'Failed to update avatar');
+                } catch (e: unknown) {
+                    toast.error((e instanceof Error ? e.message : null) || t('editProfile.toasts.updateAvatarFailed') || 'Failed to update avatar');
                 }
             }
         });

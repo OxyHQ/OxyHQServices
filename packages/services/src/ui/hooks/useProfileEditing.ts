@@ -82,7 +82,7 @@ export const useProfileEditing = () => {
         try {
             await updateProfileMutation.mutateAsync(updateData);
             return true;
-        } catch (error: any) {
+        } catch (error: unknown) {
             // Error toast is handled by the mutation
             return false;
         }

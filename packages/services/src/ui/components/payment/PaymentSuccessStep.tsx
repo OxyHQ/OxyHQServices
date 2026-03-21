@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import GroupedPillButtons from '../internal/GroupedPillButtons';
 import { createPaymentStyles } from './paymentStyles';
 import type { PaymentColors, PaymentStepAnimations } from './types';
+import { useI18n } from '../../hooks/useI18n';
 
 interface PaymentSuccessStepProps {
     colors: PaymentColors;
@@ -18,6 +19,7 @@ const PaymentSuccessStep: React.FC<PaymentSuccessStepProps> = ({
     onDone,
 }) => {
     const styles = useMemo(() => createPaymentStyles(colors), [colors]);
+    const { t } = useI18n();
     const { fadeAnim, slideAnim, scaleAnim } = animations;
 
     return (
@@ -36,7 +38,7 @@ const PaymentSuccessStep: React.FC<PaymentSuccessStepProps> = ({
             accessibilityLabel="Payment complete"
         >
             <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Payment Complete</Text>
+                <Text style={styles.sectionTitle}>{t('payment.success.title')}</Text>
 
                 <View style={styles.successCard}>
                     <View style={styles.successContent}>
@@ -46,10 +48,10 @@ const PaymentSuccessStep: React.FC<PaymentSuccessStepProps> = ({
                             color={colors.success || '#4BB543'}
                             style={styles.successIcon}
                         />
-                        <Text style={styles.successMainTitle}>Payment Successful!</Text>
-                        <Text style={styles.successSubtitle}>Thank you for your payment.</Text>
+                        <Text style={styles.successMainTitle}>{t('payment.success.heading')}</Text>
+                        <Text style={styles.successSubtitle}>{t('payment.success.thanks')}</Text>
                         <View style={{ height: 18 }} />
-                        <Text style={styles.successMessage}>Your transaction has been processed successfully.</Text>
+                        <Text style={styles.successMessage}>{t('payment.success.processed')}</Text>
                     </View>
                 </View>
             </View>
@@ -57,7 +59,7 @@ const PaymentSuccessStep: React.FC<PaymentSuccessStepProps> = ({
             <GroupedPillButtons
                 buttons={[
                     {
-                        text: 'Done',
+                        text: t('payment.actions.done'),
                         onPress: onDone,
                         icon: 'checkmark',
                         variant: 'primary',

@@ -66,13 +66,13 @@ const visibilityListeners = new Set<(visible: boolean) => void>();
 export const showSignInModal = () => {
     modalVisible = true;
     setModalVisibleCallback?.(true);
-    visibilityListeners.forEach(listener => listener(true));
+    for (const listener of visibilityListeners) listener(true);
 };
 
 export const hideSignInModal = () => {
     modalVisible = false;
     setModalVisibleCallback?.(false);
-    visibilityListeners.forEach(listener => listener(false));
+    for (const listener of visibilityListeners) listener(false);
 };
 
 export const isSignInModalVisible = () => modalVisible;
@@ -111,6 +111,7 @@ const SignInModal: React.FC = () => {
     }, []);
 
     // Animate in/out
+    // biome-ignore lint/correctness/useExhaustiveDependencies: opacity and scale are Reanimated SharedValues (stable refs) that should not be listed as dependencies
     useEffect(() => {
         if (visible) {
             opacity.value = withTiming(1, { duration: 250 });
@@ -199,7 +200,7 @@ const SignInModal: React.FC = () => {
         });
 
         socket.on('connect_error', (err) => {
-            debug.log('Socket connection error, falling back to polling:', err.message);
+            debug.log('Socket connection error, falling back to polling:', (err instanceof Error ? err.message : null));
             socket.disconnect();
             startPolling(sessionToken);
         });
@@ -252,8 +253,8 @@ const SignInModal: React.FC = () => {
             setAuthSession({ sessionToken, expiresAt });
             setIsWaiting(true);
             connectSocket(sessionToken);
-        } catch (err: any) {
-            setError(err.message || 'Failed to create auth session');
+        } catch (err: unknown) {
+            setError((err instanceof Error ? err.message : null) || 'Failed to create auth session');
         } finally {
             setIsLoading(false);
         }

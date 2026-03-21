@@ -82,6 +82,7 @@ export async function convertDocumentPickerAssetToFile(
             }
             // Preserve URI for preview if available (useful for mobile previews)
             if (doc.uri) {
+                // biome-ignore lint/suspicious/noExplicitAny: attaching uri for mobile preview on a File object requires dynamic property assignment
                 (file as any).uri = doc.uri;
             }
             return file;
@@ -102,6 +103,7 @@ export async function convertDocumentPickerAssetToFile(
                     const fileType = doc.mimeType || blob.type || 'application/octet-stream';
                     file = new globalThis.File([blob], fileName, { type: fileType });
                     // Preserve URI for preview
+                    // biome-ignore lint/suspicious/noExplicitAny: attaching uri for mobile preview on a File object requires dynamic property assignment
                     (file as any).uri = doc.uri;
                     return file;
                 }
@@ -110,7 +112,7 @@ export async function convertDocumentPickerAssetToFile(
                 // React Native's Blob doesn't support Uint8Array directly, so we use fetch
                 const fileName = doc.name || `file-${index + 1}`;
                 const fileType = doc.mimeType || 'application/octet-stream';
-                
+
                 // Use fetch to get the file as a blob (works with file:// and content:// URIs in React Native)
                 const response = await fetch(doc.uri);
                 if (!response.ok) {
@@ -119,17 +121,18 @@ export async function convertDocumentPickerAssetToFile(
                 const blob = await response.blob();
                 file = new globalThis.File([blob], fileName, { type: fileType });
                 // Preserve URI for preview (especially important for mobile)
+                // biome-ignore lint/suspicious/noExplicitAny: attaching uri for mobile preview on a File object requires dynamic property assignment
                 (file as any).uri = doc.uri;
                 return file;
-            } catch (error: any) {
+            } catch (error: unknown) {
                 console.error('Failed to read file from URI:', error);
-                throw new Error(`Failed to load file: ${error.message || 'Unknown error'}`);
+                throw new Error(`Failed to load file: ${(error instanceof Error ? error.message : null) || 'Unknown error'}`);
             }
         }
 
         // No file or URI available - this shouldn't happen with Expo 54
         throw new Error('Missing file data (no file or uri property)');
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('Error converting document to file:', error);
         throw error;
     }
@@ -185,6 +188,7 @@ export function getSafeDownloadUrl(
 export async function uploadFileRaw(
     file: File | Blob,
     userId: string,
+    // biome-ignore lint/suspicious/noExplicitAny: OxyServices type cannot be fully resolved due to mixin composition pattern
     oxyServices: any,
     visibility?: 'private' | 'public' | 'unlisted'
 ) {
@@ -198,10 +202,11 @@ export interface AvatarPickerConfig {
     /** Navigation function from BaseScreenProps */
     navigate?: (screen: RouteName, props?: Record<string, unknown>) => void;
     /** OxyServices instance */
+    // biome-ignore lint/suspicious/noExplicitAny: OxyServices type cannot be fully resolved due to mixin composition pattern
     oxyServices: any;
     /** TanStack Query mutation for updating profile */
     updateProfileMutation: {
-        mutateAsync: (updates: { avatar: string }) => Promise<any>;
+        mutateAsync: (updates: { avatar: string }) => Promise<unknown>;
     };
     /** Callback to update local avatar state */
     onAvatarSelected?: (fileId: string) => void;
@@ -257,7 +262,7 @@ export function createAvatarPickerHandler(config: AvatarPickerConfig): () => voi
             multiSelect: false,
             disabledMimeTypes: ['video/', 'audio/', 'application/pdf'],
             afterSelect: 'none', // Don't navigate away - stay on current screen
-            onSelect: async (file: any) => {
+            onSelect: async (file: FileMetadata) => {
                 if (!file.contentType.startsWith('image/')) {
                     toast.error(t('editProfile.toasts.selectImage') || 'Please select an image file');
                     return;
@@ -276,8 +281,8 @@ export function createAvatarPickerHandler(config: AvatarPickerConfig): () => voi
                     await updateProfileMutation.mutateAsync({ avatar: file.id });
                     
                     toast.success(t('editProfile.toasts.avatarUpdated') || 'Avatar updated');
-                } catch (e: any) {
-                    toast.error(e.message || t('editProfile.toasts.updateAvatarFailed') || 'Failed to update avatar');
+                } catch (e: unknown) {
+                    toast.error((e instanceof Error ? e.message : null) || t('editProfile.toasts.updateAvatarFailed') || 'Failed to update avatar');
                 }
             }
         });

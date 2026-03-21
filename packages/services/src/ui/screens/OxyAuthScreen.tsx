@@ -200,7 +200,7 @@ const OxyAuthScreen: React.FC<BaseScreenProps> = ({
     });
 
     socket.on('connect_error', (err) => {
-      debug.log('Socket connection error, falling back to polling:', err.message);
+      debug.log('Socket connection error, falling back to polling:', (err instanceof Error ? err.message : null));
       // Fall back to polling if socket fails
       socket.disconnect();
       startPolling(sessionToken);
@@ -281,8 +281,8 @@ const OxyAuthScreen: React.FC<BaseScreenProps> = ({
 
       // Try socket first, will fall back to polling if needed
       connectSocket(sessionToken);
-    } catch (err: any) {
-      setError(err.message || 'Failed to create auth session');
+    } catch (err: unknown) {
+      setError((err instanceof Error ? err.message : null) || 'Failed to create auth session');
     } finally {
       setIsLoading(false);
     }

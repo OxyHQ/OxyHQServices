@@ -40,7 +40,7 @@ const QuickActions: React.FC<QuickActionsProps> = ({ actions, theme }) => {
                             ]}
                             onPress={action.onPress}
                         >
-                            <Ionicons name={action.icon as any} size={24} color={action.iconColor} />
+                            <Ionicons name={action.icon as React.ComponentProps<typeof Ionicons>['name']} size={24} color={action.iconColor} />
                         </TouchableOpacity>
                         <Text style={[styles.quickActionText, { color: textColor }]}>{action.title}</Text>
                     </View>

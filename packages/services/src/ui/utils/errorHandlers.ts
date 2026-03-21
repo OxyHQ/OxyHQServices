@@ -54,7 +54,7 @@ export const isInvalidSessionError = (error: unknown): boolean => {
   }
 
   // Check error.status directly (HttpService sets this)
-  if ((error as any).status === 401) {
+  if ('status' in (error as object) && (error as Record<string, unknown>).status === 401) {
     return true;
   }
 

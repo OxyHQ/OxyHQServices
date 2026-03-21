@@ -59,10 +59,10 @@ export const useFollowStore = create<FollowState>((set: any, get: any) => ({
         fetchingUsers: { ...state.fetchingUsers, [userId]: false },
         errors: { ...state.errors, [userId]: null },
       }));
-    } catch (error: any) {
+    } catch (error: unknown) {
       set((state: FollowState) => ({
         fetchingUsers: { ...state.fetchingUsers, [userId]: false },
-        errors: { ...state.errors, [userId]: error?.message || 'Failed to fetch follow status' },
+        errors: { ...state.errors, [userId]: (error instanceof Error ? error.message : null) || 'Failed to fetch follow status' },
       }));
     }
   },
@@ -119,10 +119,10 @@ export const useFollowStore = create<FollowState>((set: any, get: any) => ({
           return updates;
         });
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       set((state: FollowState) => ({
         loadingUsers: { ...state.loadingUsers, [userId]: false },
-        errors: { ...state.errors, [userId]: error?.message || 'Failed to update follow status' },
+        errors: { ...state.errors, [userId]: (error instanceof Error ? error.message : null) || 'Failed to update follow status' },
       }));
     }
   },

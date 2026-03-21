@@ -5,6 +5,7 @@ import type { BaseScreenProps } from '../types/navigation';
 import { Header, GroupedSection } from '../components';
 import { useThemeStyles } from '../hooks/useThemeStyles';
 import { normalizeTheme } from '../utils/themeUtils';
+import { useI18n } from '../hooks/useI18n';
 
 interface UserLinksScreenProps extends BaseScreenProps {
     userId: string;
@@ -28,6 +29,7 @@ const UserLinksScreen: React.FC<UserLinksScreenProps> = ({
     // primaryColor from hook (#007AFF) is already correct for this screen
     const normalizedTheme = normalizeTheme(theme);
     const themeStyles = useThemeStyles(normalizedTheme);
+    const { t } = useI18n();
 
     const handleLinkPress = async (url: string) => {
         try {
@@ -54,15 +56,15 @@ const UserLinksScreen: React.FC<UserLinksScreenProps> = ({
     return (
         <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
             <Header
-                title="Links"
-                subtitle={`${links.length} link${links.length !== 1 ? 's' : ''}`}
+                title={t('userLinks.title')}
+                subtitle={links.length !== 1 ? t('userLinks.linkCount_plural', { count: links.length }) : t('userLinks.linkCount', { count: links.length })}
                 onBack={goBack}
                 elevation="subtle"
             />
 
             <ScrollView style={styles.content}>
                 <View style={styles.section}>
-                    <Text style={[styles.sectionTitle, { color: themeStyles.textColor }]}>Links</Text>
+                    <Text style={[styles.sectionTitle, { color: themeStyles.textColor }]}>{t('userLinks.title')}</Text>
 
                     <GroupedSection
                         items={groupedItems}

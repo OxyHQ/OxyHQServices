@@ -154,7 +154,7 @@ export const setupFonts = async () => {
         return true;
     } catch (error: unknown) {
         if (__DEV__) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
+        const errorMessage = error instanceof Error ? (error instanceof Error ? error.message : null) : String(error);
         console.warn('Error setting up fonts:', errorMessage);
         }
         return false;

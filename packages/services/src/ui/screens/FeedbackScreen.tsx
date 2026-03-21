@@ -137,9 +137,9 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
                 setCurrentStep(0);
             }, 3000);
 
-        } catch (error: any) {
-            setFeedbackState({ status: 'error', message: error.message || (t('feedback.toasts.submitFailed') || 'Failed to submit feedback') });
-            toast.error(error.message || (t('feedback.toasts.submitFailed') || 'Failed to submit feedback'));
+        } catch (error: unknown) {
+            setFeedbackState({ status: 'error', message: (error instanceof Error ? error.message : null) || (t('feedback.toasts.submitFailed') || 'Failed to submit feedback') });
+            toast.error((error instanceof Error ? error.message : null) || (t('feedback.toasts.submitFailed') || 'Failed to submit feedback'));
         }
     }, [feedbackData, user, isTypeStepValid, isDetailsStepValid, isContactStepValid, resetForm, setFeedbackState, t]);
 

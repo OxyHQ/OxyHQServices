@@ -75,10 +75,10 @@ export function useAsyncAction<T = void>(
 
             onSuccess?.(result);
             return result;
-        } catch (err: any) {
+        } catch (err: unknown) {
             const message = typeof errorMessage === 'function'
                 ? errorMessage(err)
-                : errorMessage || err?.message || 'An error occurred';
+                : errorMessage || (err instanceof Error ? err.message : null) || 'An error occurred';
 
             toast.error(message);
             setError(err instanceof Error ? err : new Error(message));
@@ -120,8 +120,8 @@ export async function executeWithToast<T>(
             toast.success(successMessage);
         }
         return result;
-    } catch (err: any) {
-        toast.error(errorMessage || err?.message || 'An error occurred');
+    } catch (err: unknown) {
+        toast.error(errorMessage || (err instanceof Error ? err.message : null) || 'An error occurred');
         return undefined;
     }
 }

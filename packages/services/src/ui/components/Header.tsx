@@ -177,7 +177,7 @@ const Header: React.FC<HeaderProps> = ({
                         {action.text}
                     </Text>
                 ) : (
-                    <Ionicons name={action.icon as any} size={18} color={colors.tint} />
+                    <Ionicons name={action.icon as React.ComponentProps<typeof Ionicons>['name']} size={18} color={colors.tint} />
                 )}
             </TouchableOpacity>
         );
@@ -359,7 +359,7 @@ const styles = StyleSheet.create({
         zIndex: 1000,
         ...Platform.select({
             web: {
-                position: 'sticky' as any,
+                position: 'sticky' as 'relative',
                 top: 0,
                 left: 0,
                 right: 0,

@@ -13,6 +13,7 @@ import { useThemeColors } from '../styles';
 import { normalizeTheme } from '../utils/themeUtils';
 import GroupedPillButtons from '../components/internal/GroupedPillButtons';
 import { useThemeStyles } from '../hooks/useThemeStyles';
+import { useI18n } from '../hooks/useI18n';
 import QRCode from 'react-native-qrcode-svg';
 
 import {
@@ -80,6 +81,7 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
     const normalizedTheme = normalizeTheme(theme);
     const colors = useThemeColors(normalizedTheme);
     const themeStyles = useThemeStyles(normalizedTheme);
+    const { t } = useI18n();
     const styles = useMemo(() => createPaymentStyles(colors), [colors]);
 
     // Determine if the payment is for a recurring item (subscription)
@@ -183,11 +185,11 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
     if (!amount || Number.isNaN(Number(amount)) || Number(amount) <= 0) {
         return (
             <View style={styles.errorContainer}>
-                <Text style={styles.errorText}>Invalid or missing payment amount.</Text>
+                <Text style={styles.errorText}>{t('payment.errors.invalidAmount')}</Text>
                 <GroupedPillButtons
                     buttons={[
                         {
-                            text: 'Close',
+                            text: t('payment.actions.close'),
                             onPress: handleClose,
                             icon: 'close',
                             variant: 'primary',

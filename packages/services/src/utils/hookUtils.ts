@@ -21,10 +21,11 @@ export function useAsync<T>(
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: asyncFn is intentionally excluded — this is a mount-only pattern where the callback identity should not cause re-creation
   const execute = useCallback(async () => {
     setLoading(true);
     setError(null);
-    
+
     try {
       const result = await asyncFn();
       setData(result);
@@ -52,9 +53,10 @@ export function useAsyncEffect<T>(
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: asyncFn is intentionally excluded — this is a mount-only pattern where the callback identity should not trigger re-execution
   useEffect(() => {
     let mounted = true;
-    
+
     const execute = async () => {
       try {
         const result = await asyncFn();

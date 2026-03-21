@@ -72,13 +72,13 @@ export function useSettingToggle(options: UseSettingToggleOptions): UseSettingTo
             if (showSuccessToast && successMessage) {
                 toast.success(successMessage);
             }
-        } catch (err: any) {
+        } catch (err: unknown) {
             // Revert on error
             if (revertOnError) {
                 setValue(previousValue);
             }
 
-            toast.error(errorMessage || err?.message || 'An error occurred');
+            toast.error(errorMessage || (err instanceof Error ? err.message : null) || 'An error occurred');
         } finally {
             setIsSaving(false);
         }
@@ -122,7 +122,7 @@ export function useSettingToggles<T extends { [K in keyof T]: boolean }>(options
 
         try {
             await onSave(key, newValue);
-        } catch (err: any) {
+        } catch (err: unknown) {
             // Revert on error
             if (revertOnError) {
                 setValues(prev => ({ ...prev, [key]: previousValue }));
@@ -131,7 +131,7 @@ export function useSettingToggles<T extends { [K in keyof T]: boolean }>(options
             const message = typeof errorMessage === 'function'
                 ? errorMessage(key)
                 : errorMessage;
-            toast.error(message || err?.message || 'An error occurred');
+            toast.error(message || (err instanceof Error ? err.message : null) || 'An error occurred');
         } finally {
             setSavingKeys(prev => {
                 const next = new Set(prev);

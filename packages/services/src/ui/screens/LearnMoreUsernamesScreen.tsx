@@ -10,43 +10,44 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import type { BaseScreenProps } from '../types/navigation';
 import { useThemeStyles } from '../hooks/useThemeStyles';
+import { useI18n } from '../hooks/useI18n';
 
 interface InfoSection {
     id: string;
-    title: string;
-    content: string;
+    titleKey: string;
+    contentKey: string;
     icon: string;
 }
 
 const INFO_SECTIONS: InfoSection[] = [
     {
         id: 'what',
-        title: 'What is a username?',
-        content: 'Your username is your unique identifier on Oxy. It\'s how other people find and mention you. Think of it like your handle on social media - it\'s public and represents your identity across all Oxy apps.',
+        titleKey: 'learnMoreUsernames.sections.what.title',
+        contentKey: 'learnMoreUsernames.sections.what.content',
         icon: 'at-outline',
     },
     {
         id: 'rules',
-        title: 'Username rules',
-        content: 'Usernames can only contain lowercase letters (a-z) and numbers (0-9). They must be at least 4 characters long. Special characters, spaces, and uppercase letters are not allowed to keep usernames simple and easy to remember.',
+        titleKey: 'learnMoreUsernames.sections.rules.title',
+        contentKey: 'learnMoreUsernames.sections.rules.content',
         icon: 'list-outline',
     },
     {
         id: 'unique',
-        title: 'Why must it be unique?',
-        content: 'Each username can only belong to one person. This ensures that when someone searches for you or mentions you, they find the right person. It also prevents confusion and impersonation.',
+        titleKey: 'learnMoreUsernames.sections.unique.title',
+        contentKey: 'learnMoreUsernames.sections.unique.content',
         icon: 'finger-print-outline',
     },
     {
         id: 'change',
-        title: 'Can I change it later?',
-        content: 'Yes! You can change your username anytime in your account settings. Keep in mind that your old username will become available for others to use, and people who knew your old username will need to find you with the new one.',
+        titleKey: 'learnMoreUsernames.sections.change.title',
+        contentKey: 'learnMoreUsernames.sections.change.content',
         icon: 'refresh-outline',
     },
     {
         id: 'tips',
-        title: 'Tips for choosing a username',
-        content: 'Choose something memorable and easy to spell. Avoid using personal information like your birth year or phone number. Consider using a name that represents you across all contexts - professional and personal.',
+        titleKey: 'learnMoreUsernames.sections.tips.title',
+        contentKey: 'learnMoreUsernames.sections.tips.content',
         icon: 'bulb-outline',
     },
 ];
@@ -55,6 +56,7 @@ const LearnMoreUsernamesScreen: React.FC<BaseScreenProps> = ({
     theme,
 }) => {
     const themeStyles = useThemeStyles(theme || 'light');
+    const { t } = useI18n();
     const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set(['what'])); // Start with first section expanded
 
     const toggleExpanded = useCallback((id: string) => {
@@ -83,15 +85,16 @@ const LearnMoreUsernamesScreen: React.FC<BaseScreenProps> = ({
                         <Ionicons name="at" size={32} color={themeStyles.primaryColor} />
                     </View>
                     <Text style={[styles.introTitle, { color: themeStyles.textColor }]}>
-                        Your unique identity
+                        {t('learnMoreUsernames.introTitle')}
                     </Text>
                     <Text style={[styles.introText, { color: themeStyles.mutedTextColor }]}>
-                        Your username is how people find and recognize you across all Oxy apps.
+                        {t('learnMoreUsernames.introText')}
                     </Text>
                 </View>
 
                 {INFO_SECTIONS.map((section, index) => {
                     const isExpanded = expandedIds.has(section.id);
+                    const sectionTitle = t(section.titleKey);
                     return (
                         <View
                             key={section.id}
@@ -105,8 +108,8 @@ const LearnMoreUsernamesScreen: React.FC<BaseScreenProps> = ({
                                 style={styles.sectionHeader}
                                 onPress={() => toggleExpanded(section.id)}
                                 accessibilityRole="button"
-                                accessibilityLabel={section.title}
-                                accessibilityHint={isExpanded ? 'Collapse section' : 'Expand section'}
+                                accessibilityLabel={sectionTitle}
+                                accessibilityHint={isExpanded ? t('learnMoreUsernames.collapseHint') : t('learnMoreUsernames.expandHint')}
                                 accessibilityState={{ expanded: isExpanded }}
                             >
                                 <View style={[styles.sectionIconContainer, { backgroundColor: `${themeStyles.primaryColor}15` }]}>
@@ -117,7 +120,7 @@ const LearnMoreUsernamesScreen: React.FC<BaseScreenProps> = ({
                                     />
                                 </View>
                                 <Text style={[styles.sectionTitle, { color: themeStyles.textColor }]}>
-                                    {section.title}
+                                    {sectionTitle}
                                 </Text>
                                 <Ionicons
                                     name={isExpanded ? 'chevron-up' : 'chevron-down'}
@@ -128,7 +131,7 @@ const LearnMoreUsernamesScreen: React.FC<BaseScreenProps> = ({
                             {isExpanded && (
                                 <View style={[styles.sectionContent, { borderTopColor: themeStyles.borderColor }]}>
                                     <Text style={[styles.sectionText, { color: themeStyles.mutedTextColor }]}>
-                                        {section.content}
+                                        {t(section.contentKey)}
                                     </Text>
                                 </View>
                             )}
@@ -138,7 +141,7 @@ const LearnMoreUsernamesScreen: React.FC<BaseScreenProps> = ({
 
                 <View style={styles.footer}>
                     <Text style={[styles.footerText, { color: themeStyles.mutedTextColor }]}>
-                        Need more help? Visit our Help Center for additional information.
+                        {t('learnMoreUsernames.footer')}
                     </Text>
                 </View>
             </ScrollView>

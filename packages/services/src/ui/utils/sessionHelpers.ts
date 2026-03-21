@@ -13,10 +13,11 @@ interface DeviceSession {
 
 /**
  * Service type for session helpers.
- * Uses 'any' to work around TypeScript mixin composition type inference issues.
+ * Uses 'unknown' to work around TypeScript mixin composition type inference issues.
  * The OxyServices class has these methods but TypeScript can't see them due to the mixin pattern.
+ * Methods are accessed dynamically, so callers must pass a properly typed instance.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: OxyServices methods are accessed dynamically due to mixin composition; TypeScript cannot infer the full type
 type OxyServicesAny = any;
 
 export interface FetchSessionsWithFallbackOptions {

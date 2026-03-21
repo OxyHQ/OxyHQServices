@@ -10,7 +10,7 @@ interface AnimatedButtonProps {
   icon: string;
   primaryColor: string;
   textColor: string;
-  style: any;
+  style: Record<string, unknown>;
 }
 
 /**
@@ -46,7 +46,7 @@ export const AnimatedButton: React.FC<AnimatedButtonProps> = ({
       <Animated.View style={[style, { backgroundColor }]}>
         <Animated.View>
           <MaterialCommunityIcons
-            name={icon as any}
+            name={icon as React.ComponentProps<typeof MaterialCommunityIcons>['name']}
             size={16}
             color={isSelected ? '#FFFFFF' : textColor}
           />

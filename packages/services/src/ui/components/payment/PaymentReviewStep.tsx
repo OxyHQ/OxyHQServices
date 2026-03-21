@@ -6,6 +6,7 @@ import GroupedPillButtons from '../internal/GroupedPillButtons';
 import { createPaymentStyles } from './paymentStyles';
 import { PAYMENT_METHODS, getCurrencySymbol } from './constants';
 import type { CardDetails, PaymentColors, PaymentStepAnimations } from './types';
+import { useI18n } from '../../hooks/useI18n';
 
 interface PaymentReviewStepProps {
     amount: string | number;
@@ -31,6 +32,7 @@ const PaymentReviewStep: React.FC<PaymentReviewStepProps> = ({
     onPay,
 }) => {
     const styles = useMemo(() => createPaymentStyles(colors), [colors]);
+    const { t } = useI18n();
     const currencySymbol = getCurrencySymbol(currency);
     const { fadeAnim, slideAnim, scaleAnim } = animations;
 
@@ -52,7 +54,7 @@ const PaymentReviewStep: React.FC<PaymentReviewStepProps> = ({
             accessibilityLabel="Review payment step"
         >
             <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Review Payment</Text>
+                <Text style={styles.sectionTitle}>{t('payment.review.title')}</Text>
 
                 <GroupedSection
                     items={[
@@ -60,43 +62,43 @@ const PaymentReviewStep: React.FC<PaymentReviewStepProps> = ({
                             id: 'secure-payment',
                             icon: 'shield-check',
                             iconColor: colors.success || '#4BB543',
-                            title: 'Secure payment',
-                            subtitle: 'Your payment is protected by industry-standard encryption',
+                            title: t('payment.review.securePayment'),
+                            subtitle: t('payment.review.securePaymentDesc'),
                         },
                         {
                             id: 'amount',
                             icon: 'cash',
                             iconColor: colors.primary,
-                            title: 'Amount',
+                            title: t('payment.review.amount'),
                             subtitle: `${currencySymbol} ${amount}`,
                         },
                         {
                             id: 'payment-method',
                             icon: selectedMethod?.icon as any,
                             iconColor: colors.primary,
-                            title: 'Payment Method',
-                            subtitle: selectedMethod?.label,
+                            title: t('payment.review.paymentMethod'),
+                            subtitle: selectedMethod ? t(`payment.methods.${selectedMethod.key}.label`) : undefined,
                         },
                         ...(paymentMethod === 'card' ? [{
                             id: 'card-details',
                             icon: 'card' as const,
                             iconColor: colors.primary,
-                            title: 'Card',
+                            title: t('payment.review.card'),
                             subtitle: cardDetails.number.replace(/.(?=.{4})/g, '*'),
                         }] : []),
                         ...(paymentMethod === 'oxy' ? [{
                             id: 'oxy-balance',
                             icon: 'wallet' as const,
                             iconColor: colors.primary,
-                            title: 'Oxy Pay Account',
-                            subtitle: 'Balance: ⊜ 123.45',
+                            title: t('payment.review.oxyPayAccount'),
+                            subtitle: t('payment.details.balance', { balance: '⊜ 123.45' }),
                         }] : []),
                         ...(paymentMethod === 'faircoin' ? [{
                             id: 'faircoin-wallet',
                             icon: 'qr-code' as const,
                             iconColor: colors.primary,
-                            title: 'FairCoin Wallet',
-                            subtitle: 'Paid via QR',
+                            title: t('payment.review.faircoinWallet'),
+                            subtitle: t('payment.review.paidViaQR'),
                         }] : []),
                     ]}
                 />
@@ -105,13 +107,13 @@ const PaymentReviewStep: React.FC<PaymentReviewStepProps> = ({
             <GroupedPillButtons
                 buttons={[
                     {
-                        text: 'Back',
+                        text: t('payment.actions.back'),
                         onPress: onBack,
                         icon: 'arrow-back',
                         variant: 'transparent',
                     },
                     {
-                        text: isPaying ? 'Processing...' : 'Pay Now',
+                        text: isPaying ? t('payment.review.processing') : t('payment.review.payNow'),
                         onPress: onPay,
                         icon: 'checkmark',
                         variant: 'primary',

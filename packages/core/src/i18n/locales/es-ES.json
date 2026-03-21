@@ -117,7 +117,8 @@
     "subtitle": "Elige tu idioma preferido",
     "current": "Idioma actual",
     "available": "Idiomas disponibles",
-    "changed": "Idioma cambiado a {{lang}}"
+    "changed": "Idioma cambiado a {{lang}}",
+    "saveFailed": "Error al guardar la preferencia de idioma"
   },
   "recover": {
     "title": "Recuperar cuenta",
@@ -1146,6 +1147,117 @@
       "oxyServicesNotInitialized": "OxyServices no inicializado",
       "noUsernameOrNav": "No hay usuario disponible o la navegación no es compatible"
     }
+  },
+  "learnMoreUsernames": {
+    "introTitle": "Tu identidad única",
+    "introText": "Tu nombre de usuario es la forma en que las personas te encuentran y reconocen en todas las apps de Oxy.",
+    "sections": {
+      "what": {
+        "title": "¿Qué es un nombre de usuario?",
+        "content": "Tu nombre de usuario es tu identificador único en Oxy. Es la forma en que otras personas te encuentran y mencionan. Piensa en él como tu identificador en redes sociales: es público y representa tu identidad en todas las apps de Oxy."
+      },
+      "rules": {
+        "title": "Reglas del nombre de usuario",
+        "content": "Los nombres de usuario solo pueden contener letras minúsculas (a-z) y números (0-9). Deben tener al menos 4 caracteres. No se permiten caracteres especiales, espacios ni mayúsculas para mantener los nombres de usuario simples y fáciles de recordar."
+      },
+      "unique": {
+        "title": "¿Por qué debe ser único?",
+        "content": "Cada nombre de usuario solo puede pertenecer a una persona. Esto asegura que cuando alguien te busque o te mencione, encuentre a la persona correcta. También previene la confusión y la suplantación de identidad."
+      },
+      "change": {
+        "title": "¿Puedo cambiarlo después?",
+        "content": "¡Sí! Puedes cambiar tu nombre de usuario en cualquier momento en la configuración de tu cuenta. Ten en cuenta que tu antiguo nombre de usuario quedará disponible para que otros lo usen, y las personas que conocían tu antiguo nombre de usuario necesitarán encontrarte con el nuevo."
+      },
+      "tips": {
+        "title": "Consejos para elegir un nombre de usuario",
+        "content": "Elige algo memorable y fácil de escribir. Evita usar información personal como tu año de nacimiento o número de teléfono. Considera usar un nombre que te represente en todos los contextos, tanto profesional como personal."
+      }
+    },
+    "collapseHint": "Contraer sección",
+    "expandHint": "Expandir sección",
+    "footer": "¿Necesitas más ayuda? Visita nuestro Centro de Ayuda para información adicional."
+  },
+  "payment": {
+    "summary": {
+      "title": "Resumen del pago",
+      "orderSummary": "Resumen del pedido",
+      "payment": "Pago",
+      "reviewDetails": "Revisa los detalles de tu pago",
+      "completePayment": "Completa tu pago",
+      "subtotal": "Subtotal",
+      "tax": "Impuesto",
+      "total": "Total",
+      "amountToPay": "Monto a pagar"
+    },
+    "method": {
+      "title": "Elige el método de pago"
+    },
+    "details": {
+      "cardDetails": "Detalles de la tarjeta",
+      "oxyPay": "Oxy Pay",
+      "faircoinPayment": "Pago con FairCoin",
+      "paymentDetails": "Detalles del pago",
+      "creditCard": "Tarjeta de crédito",
+      "enterCardSecurely": "Introduce los datos de tu tarjeta de forma segura",
+      "acceptedCards": "Aceptamos Visa, Mastercard y más",
+      "readyToProcess": "Listo para procesar el pago...",
+      "payWithWallet": "Paga con tu billetera de la app",
+      "balance": "Saldo: {{balance}}",
+      "payWithFairCoin": "Paga con FairCoin",
+      "scanToPay": "Escanea para pagar",
+      "fairWalletInstructions": "Usa las opciones de abajo para pagar con FAIRWallet",
+      "openInFairWallet": "Abrir en FAIRWallet",
+      "copyAddress": "Copiar dirección",
+      "addressCopied": "¡Dirección copiada al portapapeles!",
+      "waitingForPayment": "Esperando el pago..."
+    },
+    "review": {
+      "title": "Revisar pago",
+      "securePayment": "Pago seguro",
+      "securePaymentDesc": "Tu pago está protegido con cifrado estándar de la industria",
+      "amount": "Monto",
+      "paymentMethod": "Método de pago",
+      "card": "Tarjeta",
+      "oxyPayAccount": "Cuenta Oxy Pay",
+      "faircoinWallet": "Billetera FairCoin",
+      "paidViaQR": "Pagado vía QR",
+      "processing": "Procesando...",
+      "payNow": "Pagar ahora"
+    },
+    "success": {
+      "title": "Pago completado",
+      "heading": "¡Pago exitoso!",
+      "thanks": "Gracias por tu pago.",
+      "processed": "Tu transacción se ha procesado correctamente."
+    },
+    "actions": {
+      "close": "Cerrar",
+      "continue": "Continuar",
+      "back": "Atrás",
+      "done": "Listo"
+    },
+    "errors": {
+      "invalidAmount": "Monto de pago inválido o faltante."
+    },
+    "methods": {
+      "card": {
+        "label": "Tarjeta de crédito/débito",
+        "description": "Paga de forma segura con tu tarjeta de crédito o débito."
+      },
+      "oxy": {
+        "label": "Oxy Pay",
+        "description": "Usa tu saldo de Oxy Pay en la app."
+      },
+      "faircoin": {
+        "label": "FAIRWallet",
+        "description": "Paga con FairCoin escaneando un código QR."
+      }
+    }
+  },
+  "userLinks": {
+    "title": "Enlaces",
+    "linkCount": "{{count}} enlace",
+    "linkCount_plural": "{{count}} enlaces"
   },
   "fileManagement": {
     "title": "Gestión de archivos",

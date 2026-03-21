@@ -246,11 +246,11 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                                     // For React Native, you'd need to use a library like expo-file-system
                                     toast.success(t('accountOverview.items.downloadData.success') || 'Data downloaded successfully');
                                 }
-                            } catch (error: any) {
+                            } catch (error: unknown) {
                                 if (__DEV__) {
                                     console.error('Failed to download data:', error);
                                 }
-                                toast.error(error?.message || t('accountOverview.items.downloadData.error') || 'Failed to download data');
+                                toast.error((error instanceof Error ? error.message : null) || t('accountOverview.items.downloadData.error') || 'Failed to download data');
                             }
                         },
                     },
@@ -276,21 +276,21 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                                     // For React Native, you'd need to use a library like expo-file-system
                                     toast.success(t('accountOverview.items.downloadData.success') || 'Data downloaded successfully');
                                 }
-                            } catch (error: any) {
+                            } catch (error: unknown) {
                                 if (__DEV__) {
                                     console.error('Failed to download data:', error);
                                 }
-                                toast.error(error?.message || t('accountOverview.items.downloadData.error') || 'Failed to download data');
+                                toast.error((error instanceof Error ? error.message : null) || t('accountOverview.items.downloadData.error') || 'Failed to download data');
                             }
                         },
                     },
                 ]
             );
-        } catch (error: any) {
+        } catch (error: unknown) {
             if (__DEV__) {
                 console.error('Failed to initiate download:', error);
             }
-            toast.error(error?.message || t('accountOverview.items.downloadData.error') || 'Failed to download data');
+            toast.error((error instanceof Error ? error.message : null) || t('accountOverview.items.downloadData.error') || 'Failed to download data');
         }
     }, [oxyServices, user, t]);
 
