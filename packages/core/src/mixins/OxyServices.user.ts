@@ -92,13 +92,13 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
      */
     async resolveProfile(handle: string): Promise<User | null> {
       try {
-        const result = await this.makeRequest<{ data: User | null }>('GET', '/profiles/resolve', {
+        const result = await this.makeRequest<User | null>('GET', '/profiles/resolve', {
           handle,
         }, {
           cache: true,
           cacheTTL: 24 * 60 * 60 * 1000, // 24h cache — matches server-side staleness window
         });
-        return result.data ?? null;
+        return result ?? null;
       } catch {
         return null;
       }
