@@ -264,7 +264,11 @@ class FederationService {
    * Download a remote avatar image, upload it to Oxy Cloud, and return the file ID.
    * If the user already has an avatar file, deletes the old one first.
    */
-  private async downloadAndStoreAvatar(
+  /**
+   * Download a remote avatar image, upload it to Oxy Cloud, and return the file ID.
+   * If the user already has an avatar file, deletes the old one first.
+   */
+  async downloadAndStoreAvatar(
     avatarUrl: string,
     existingAvatarFileId?: string,
   ): Promise<string | null> {
@@ -273,18 +277,38 @@ class FederationService {
         headers: { 'User-Agent': USER_AGENT },
         signal: AbortSignal.timeout(15_000),
       });
-      if (!res.ok) return null;
+      if (!res.ok) {
+        logger.warn(`Avatar download failed: HTTP ${res.status} for ${avatarUrl}`);
+        return null;
+      }
 
-      const contentType = res.headers.get('content-type') || 'image/png';
-      if (!contentType.startsWith('image/')) return null;
+      // Sanitize content-type: strip parameters (e.g. "image/jpeg; charset=utf-8" → "image/jpeg")
+      const rawContentType = res.headers.get('content-type') || 'image/png';
+      const contentType = rawContentType.split(';')[0].trim().toLowerCase();
+
+      // Accept image/* and common binary types that CDNs return for images
+      if (!contentType.startsWith('image/') && contentType !== 'application/octet-stream') {
+        logger.warn(`Avatar download skipped: non-image content-type "${rawContentType}" for ${avatarUrl}`);
+        return null;
+      }
 
       const buffer = Buffer.from(await res.arrayBuffer());
       if (buffer.length === 0 || buffer.length > 5 * 1024 * 1024) return null; // max 5MB
 
+      // For application/octet-stream, infer MIME from URL extension or default to png
+      let mime = contentType;
+      if (mime === 'application/octet-stream') {
+        const urlLower = avatarUrl.toLowerCase();
+        if (urlLower.endsWith('.jpg') || urlLower.endsWith('.jpeg')) mime = 'image/jpeg';
+        else if (urlLower.endsWith('.webp')) mime = 'image/webp';
+        else if (urlLower.endsWith('.gif')) mime = 'image/gif';
+        else mime = 'image/png';
+      }
+
       const assetService = getAssetService();
 
-      // Delete old avatar file if it exists
-      if (existingAvatarFileId) {
+      // Delete old avatar file if it exists (skip if it looks like a URL, not a file ID)
+      if (existingAvatarFileId && !existingAvatarFileId.startsWith('http')) {
         try {
           await assetService.deleteFile(existingAvatarFileId, true);
         } catch {
@@ -292,20 +316,20 @@ class FederationService {
         }
       }
 
-      // Determine extension from content type
+      // Determine extension from sanitized content type
       const extMap: Record<string, string> = {
         'image/png': 'png',
         'image/jpeg': 'jpg',
         'image/webp': 'webp',
         'image/gif': 'gif',
       };
-      const ext = extMap[contentType] || 'png';
+      const ext = extMap[mime] || 'png';
       const filename = `federated-avatar-${crypto.randomBytes(8).toString('hex')}.${ext}`;
 
       const file = await assetService.uploadFileDirect(
         FEDERATION_SYSTEM_USER,
         buffer,
-        contentType,
+        mime,
         filename,
         'public',
       );
@@ -342,7 +366,17 @@ class FederationService {
       .select('-password -refreshToken')
       .lean({ virtuals: true }) as IUser | null;
 
-    if (existing?.updatedAt && Date.now() - new Date(existing.updatedAt).getTime() < STALE_MS) {
+    // An avatar stored as a URL (from PUT /users/resolve) must be re-downloaded
+    // so it becomes a proper Oxy file. Skip the cache shortcut in that case.
+    const avatarNeedsDownload = existing?.avatar
+      && typeof existing.avatar === 'string'
+      && existing.avatar.startsWith('http');
+
+    if (
+      existing?.updatedAt
+      && Date.now() - new Date(existing.updatedAt).getTime() < STALE_MS
+      && !avatarNeedsDownload
+    ) {
       return existing;
     }
 
@@ -354,16 +388,14 @@ class FederationService {
     const profile = await this.fetchActorProfile(actorUri);
     if (!profile) return null;
 
-    // Download avatar to Oxy Cloud (replaces old avatar if exists).
-    // Falls back to the raw AP URL so avatars always display even if
-    // the S3 upload fails or the image can't be fetched.
-    let avatarValue: string | undefined;
+    // Download avatar to Oxy Cloud (replaces old avatar if exists)
+    let avatarFileId: string | undefined;
     if (profile.avatarUrl) {
       const storedId = await this.downloadAndStoreAvatar(
         profile.avatarUrl,
         existing?.avatar,
       );
-      avatarValue = storedId ?? profile.avatarUrl;
+      if (storedId) avatarFileId = storedId;
     }
 
     // Upsert into Oxy users collection
@@ -375,8 +407,8 @@ class FederationService {
       'federation.domain': profile.domain,
     };
 
-    if (avatarValue) {
-      setFields.avatar = avatarValue;
+    if (avatarFileId) {
+      setFields.avatar = avatarFileId;
     }
     if (profile.bio) {
       setFields.bio = profile.bio;

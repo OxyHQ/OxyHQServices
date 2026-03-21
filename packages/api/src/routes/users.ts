@@ -51,6 +51,7 @@ interface PaginationQuery {
 }
 
 import { PAGINATION } from '../utils/constants';
+import { federationService } from '../services/federation.service';
 
 // Initialize router and controller
 const router = Router();
@@ -783,11 +784,26 @@ router.put(
     if (typeof displayName === 'string') {
       setFields['name.first'] = displayName;
     }
-    if (typeof avatar === 'string') {
-      setFields.avatar = avatar;
-    }
     if (typeof bio === 'string') {
       setFields.bio = bio;
+    }
+
+    // For avatar URLs, download and store as an Oxy file instead of
+    // saving raw external URLs. Only overwrite if the user doesn't
+    // already have a stored file ID (avoids clobbering good avatars).
+    if (typeof avatar === 'string' && avatar.startsWith('http')) {
+      const existingUser = await User.findOne(filter).select('avatar').lean();
+      const existingAvatar = existingUser?.avatar as string | undefined;
+      const alreadyHasFileId = existingAvatar && !existingAvatar.startsWith('http');
+      if (!alreadyHasFileId) {
+        const fileId = await federationService.downloadAndStoreAvatar(avatar, existingAvatar);
+        if (fileId) {
+          setFields.avatar = fileId;
+        }
+      }
+    } else if (typeof avatar === 'string') {
+      // Non-URL avatar (already a file ID) — set directly
+      setFields.avatar = avatar;
     }
 
     const user = await User.findOneAndUpdate(
