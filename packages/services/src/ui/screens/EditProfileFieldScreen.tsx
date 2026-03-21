@@ -255,31 +255,30 @@ const EditProfileFieldScreen: React.FC<EditProfileFieldScreenProps> = ({
     useEffect(() => {
         if (!user) return;
 
-        // Cast user to any to access dynamic properties
-        const userData = user as any;
+        const userData = user;
 
         if (fieldConfig.isList) {
             if (fieldType === 'locations') {
-                const locations = Array.isArray(userData.locations) ? userData.locations : [];
-                setListItems(locations.map((loc: any, i: number) => ({
-                    id: loc.id || `location-${i}`,
-                    name: loc.name || '',
+                const locations = Array.isArray(userData.locations) ? userData.locations as Array<Record<string, unknown>> : [];
+                setListItems(locations.map((loc, i) => ({
+                    id: String(loc.id || `location-${i}`),
+                    name: String(loc.name || ''),
                     ...loc,
                 })));
             } else if (fieldType === 'links') {
-                const linksMetadata = Array.isArray(userData.linksMetadata) ? userData.linksMetadata : [];
+                const linksMetadata = Array.isArray(userData.linksMetadata) ? userData.linksMetadata as Array<Record<string, unknown>> : [];
                 const links = Array.isArray(userData.links) ? userData.links : [];
                 // Use linksMetadata if available, otherwise convert links array
                 if (linksMetadata.length > 0) {
-                    setListItems(linksMetadata.map((link: any, i: number) => ({
-                        id: link.id || `link-${i}`,
-                        url: link.url || link.link || '',
-                        title: link.title || '',
+                    setListItems(linksMetadata.map((link, i) => ({
+                        id: String(link.id || `link-${i}`),
+                        url: String(link.url || link.link || ''),
+                        title: String(link.title || ''),
                         ...link,
                     })));
                 } else {
-                    setListItems(links.map((item: any, i: number) => {
-                        const url = typeof item === 'string' ? item : (item.link || item.url || '');
+                    setListItems(links.map((item, i) => {
+                        const url = typeof item === 'string' ? item : (item.link || '');
                         return {
                             id: `link-${i}`,
                             url,
@@ -365,11 +364,24 @@ const EditProfileFieldScreen: React.FC<EditProfileFieldScreenProps> = ({
         if (fieldConfig.isList) {
             let success = false;
             if (fieldType === 'locations') {
-                success = await saveProfile({ locations: listItems as any });
+                success = await saveProfile({
+                    locations: listItems.map(item => ({
+                        id: item.id,
+                        name: String(item.name || ''),
+                        ...(item.label !== undefined && { label: String(item.label) }),
+                        ...(item.coordinates !== undefined && { coordinates: item.coordinates as { lat: number; lon: number } }),
+                    })),
+                });
             } else if (fieldType === 'links') {
                 success = await saveProfile({
-                    linksMetadata: listItems as any,
-                    links: listItems.map((item: any) => item.url),
+                    linksMetadata: listItems.map(item => ({
+                        id: item.id,
+                        url: String(item.url || ''),
+                        ...(item.title !== undefined && { title: String(item.title) }),
+                        ...(item.description !== undefined && { description: String(item.description) }),
+                        ...(item.image !== undefined && { image: String(item.image) }),
+                    })),
+                    links: listItems.map(item => String(item.url || '')),
                 });
             }
             if (success) {

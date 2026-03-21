@@ -53,7 +53,7 @@ export const FileDetailsModal: React.FC<FileDetailsModalProps> = ({
                     <View style={[fileManagementStyles.fileDetailCard, { backgroundColor: themeStyles.secondaryBackgroundColor, borderColor }]}>
                         <View style={fileManagementStyles.fileDetailIcon}>
                             <Ionicons
-                                name={getFileIcon(file.contentType) as any}
+                                name={getFileIcon(file.contentType) as React.ComponentProps<typeof Ionicons>['name']}
                                 size={64}
                                 color={themeStyles.primaryColor}
                             />

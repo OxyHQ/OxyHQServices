@@ -1506,8 +1506,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         {file.metadata.description}
                     </Text>
                 ) : undefined,
-            // biome-ignore lint/suspicious/noExplicitAny: GroupedSectionItem has dynamic properties
-            } as any;
+            };
         });
     }, [filteredFiles, theme, themeStyles, deleting, handleFileDownload, handleFileDelete, handleFileOpen, getSafeDownloadUrlCallback, selectMode, selectedIds]);
 

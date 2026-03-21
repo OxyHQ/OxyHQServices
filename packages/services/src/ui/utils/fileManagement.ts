@@ -6,6 +6,15 @@ import type { RouteName } from '../navigation/routes';
 import { updateAvatarVisibility } from '@oxyhq/core';
 
 /**
+ * Extended File interface that includes a `uri` property for mobile preview support.
+ * React Native file pickers return URI-based references that need to be preserved
+ * on the File object for preview rendering.
+ */
+interface FileWithUri extends File {
+  uri?: string;
+}
+
+/**
  * Format file size in bytes to human-readable string
  */
 export function formatFileSize(bytes: number): string {
@@ -69,12 +78,12 @@ export async function convertDocumentPickerAssetToFile(
     index: number
 ): Promise<File | null> {
     try {
-        let file: File | null = null;
+        let file: FileWithUri | null = null;
 
         // Priority 1: Use doc.file if available (web native File API)
         // This is the most efficient path as it doesn't require fetching
         if (doc.file && doc.file instanceof globalThis.File) {
-            file = doc.file as File;
+            file = doc.file as FileWithUri;
             // Ensure file has required properties
             if (!file.name && doc.name) {
                 // Create new File with proper name if missing
@@ -82,8 +91,7 @@ export async function convertDocumentPickerAssetToFile(
             }
             // Preserve URI for preview if available (useful for mobile previews)
             if (doc.uri) {
-                // biome-ignore lint/suspicious/noExplicitAny: attaching uri for mobile preview on a File object requires dynamic property assignment
-                (file as any).uri = doc.uri;
+                file.uri = doc.uri;
             }
             return file;
         }
@@ -101,10 +109,9 @@ export async function convertDocumentPickerAssetToFile(
                     const blob = await response.blob();
                     const fileName = doc.name || `file-${index + 1}`;
                     const fileType = doc.mimeType || blob.type || 'application/octet-stream';
-                    file = new globalThis.File([blob], fileName, { type: fileType });
+                    file = new globalThis.File([blob], fileName, { type: fileType }) as FileWithUri;
                     // Preserve URI for preview
-                    // biome-ignore lint/suspicious/noExplicitAny: attaching uri for mobile preview on a File object requires dynamic property assignment
-                    (file as any).uri = doc.uri;
+                    file.uri = doc.uri;
                     return file;
                 }
 
@@ -119,10 +126,9 @@ export async function convertDocumentPickerAssetToFile(
                     throw new Error(`Failed to fetch file: ${response.statusText}`);
                 }
                 const blob = await response.blob();
-                file = new globalThis.File([blob], fileName, { type: fileType });
+                file = new globalThis.File([blob], fileName, { type: fileType }) as FileWithUri;
                 // Preserve URI for preview (especially important for mobile)
-                // biome-ignore lint/suspicious/noExplicitAny: attaching uri for mobile preview on a File object requires dynamic property assignment
-                (file as any).uri = doc.uri;
+                file.uri = doc.uri;
                 return file;
             } catch (error: unknown) {
                 console.error('Failed to read file from URI:', error);

@@ -50,7 +50,7 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
     const fadeAnim = useRef(new Animated.Value(1)).current;
     const slideAnim = useRef(new Animated.Value(0)).current;
 
-    const styles = useMemo(() => createFeedbackStyles(colors as any), [colors]);
+    const styles = useMemo(() => createFeedbackStyles(colors), [colors]);
 
     const animateTransition = useCallback((nextStep: number) => {
         Animated.timing(fadeAnim, {
@@ -149,7 +149,7 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
         iconColor: type.color,
         title: type.label,
         subtitle: type.description,
-        onPress: () => { updateField('type', type.id as any); updateField('category', ''); },
+        onPress: () => { updateField('type', type.id); updateField('category', ''); },
         selected: feedbackData.type === type.id,
         showChevron: false,
         multiRow: true,
@@ -172,7 +172,7 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
         icon: p.icon,
         iconColor: p.color,
         title: p.label,
-        onPress: () => updateField('priority', p.id as any),
+        onPress: () => updateField('priority', p.id),
         selected: feedbackData.priority === p.id,
         showChevron: false,
         dense: true,
@@ -246,7 +246,7 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
                 onChangeText={(text) => { updateField('title', text); setErrorMessage(''); }}
                 placeholder={t('feedback.fields.title.placeholder') || 'Brief summary of your feedback'}
                 testID="feedback-title-input"
-                colors={colors as any}
+                colors={colors}
                 styles={styles}
                 accessibilityLabel="Feedback title"
                 accessibilityHint="Enter a brief summary of your feedback"
@@ -261,7 +261,7 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
                 multiline={true}
                 numberOfLines={6}
                 testID="feedback-description-input"
-                colors={colors as any}
+                colors={colors}
                 styles={styles}
                 accessibilityLabel="Feedback description"
                 accessibilityHint="Provide detailed information about your feedback"
@@ -319,7 +319,7 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
                 onChangeText={(text) => { updateField('contactEmail', text); setErrorMessage(''); }}
                 placeholder={user?.email || (t('feedback.fields.email.placeholder') || 'Enter your email address')}
                 testID="feedback-email-input"
-                colors={colors as any}
+                colors={colors}
                 styles={styles}
                 accessibilityLabel="Email address"
                 accessibilityHint="Enter your email so we can respond"
@@ -494,7 +494,7 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
                 keyboardShouldPersistTaps="handled"
             >
                 {feedbackState.status !== 'success' && (
-                    <ProgressIndicator currentStep={currentStep} totalSteps={4} colors={colors as any} styles={styles} />
+                    <ProgressIndicator currentStep={currentStep} totalSteps={4} colors={colors} styles={styles} />
                 )}
                 {renderCurrentStep()}
             </ScrollView>

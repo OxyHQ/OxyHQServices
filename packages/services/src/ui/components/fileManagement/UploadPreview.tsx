@@ -72,7 +72,7 @@ const UploadPreviewContent: React.FC<{
                             ) : (
                                 <View style={[fileManagementStyles.uploadPreviewIconContainer, { backgroundColor: themeStyles.isDarkTheme ? '#333333' : '#F0F0F0' }]}>
                                     <Ionicons
-                                        name={getFileIcon(pendingFile.type) as any}
+                                        name={getFileIcon(pendingFile.type) as React.ComponentProps<typeof Ionicons>['name']}
                                         size={32}
                                         color={themeStyles.primaryColor}
                                     />

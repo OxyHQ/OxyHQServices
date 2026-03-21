@@ -11,13 +11,18 @@ interface GroupedSectionItem {
     title: string;
     subtitle?: string;
     onPress?: () => void;
+    onLongPress?: () => void;
     showChevron?: boolean;
     disabled?: boolean;
+    selected?: boolean;
     customContent?: React.ReactNode;
     customIcon?: React.ReactNode;
     multiRow?: boolean;
     dense?: boolean;
     customContentBelow?: React.ReactNode;
+    theme?: string;
+    /** Allow additional properties for extensibility */
+    [key: string]: unknown;
 }
 
 interface GroupedSectionProps {

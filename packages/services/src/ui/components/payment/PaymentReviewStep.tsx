@@ -74,7 +74,7 @@ const PaymentReviewStep: React.FC<PaymentReviewStepProps> = ({
                         },
                         {
                             id: 'payment-method',
-                            icon: selectedMethod?.icon as any,
+                            icon: selectedMethod?.icon,
                             iconColor: colors.primary,
                             title: t('payment.review.paymentMethod'),
                             subtitle: selectedMethod ? t(`payment.methods.${selectedMethod.key}.label`) : undefined,

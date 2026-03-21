@@ -41,7 +41,11 @@ const HistoryViewScreen: React.FC<BaseScreenProps> = ({
         if (isReactNative) {
             try {
                 const asyncStorageModule = await import('@react-native-async-storage/async-storage');
-                const storage = (asyncStorageModule.default as unknown) as any;
+                const storage = asyncStorageModule.default as unknown as {
+                    getItem: (key: string) => Promise<string | null>;
+                    setItem: (key: string, value: string) => Promise<void>;
+                    removeItem: (key: string) => Promise<void>;
+                };
                 return {
                     getItem: storage.getItem.bind(storage),
                     setItem: storage.setItem.bind(storage),

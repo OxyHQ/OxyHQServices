@@ -915,7 +915,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                 <View style={styles.featureHeader}>
                     <View style={styles.featureIconContainer}>
                         <Ionicons
-                            name={getCategoryIcon(feature.category) as any}
+                            name={getCategoryIcon(feature.category) as React.ComponentProps<typeof Ionicons>['name']}
                             size={24}
                             color={getCategoryColor(feature.category)}
                         />

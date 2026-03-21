@@ -118,11 +118,17 @@ export function useAuth(): UseAuthReturn {
     // If user is clicking "Sign In", they need interactive auth NOW
     if (isWebBrowser() && !publicKey && !isIdentityProvider) {
       try {
-        const popupSession = await (oxyServices as any).signInWithPopup?.();
+        const popupSession = await oxyServices.signInWithPopup?.();
         if (popupSession?.user) {
-          // Update context state with the session (this updates user, sessions, storage)
-          await handlePopupSession(popupSession);
-          return popupSession.user;
+          // The popup auth flow fetches full user data, so the session user
+          // contains full User fields even though the base type is MinimalUserData.
+          // Cast to the expected shape for handlePopupSession.
+          const sessionWithUser = {
+            ...popupSession,
+            user: popupSession.user as unknown as User,
+          };
+          await handlePopupSession(sessionWithUser);
+          return sessionWithUser.user;
         }
         throw new Error('Sign-in failed. Please try again.');
       } catch (popupError) {

@@ -292,7 +292,7 @@ const KarmaRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
                             {isLocked ? (
                                 <Ionicons name="lock-closed" size={40} color="#8E8E93" />
                             ) : (
-                                <Ionicons name={achievement.icon as any} size={40} color="#FFFFFF" />
+                                <Ionicons name={achievement.icon as React.ComponentProps<typeof Ionicons>['name']} size={40} color="#FFFFFF" />
                             )}
                         </View>
 

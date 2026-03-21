@@ -84,7 +84,7 @@ const PaymentSummaryStep: React.FC<PaymentSummaryStepProps> = ({
                                     <GroupedSection
                                         items={paymentItems.map((item, idx) => ({
                                             id: `item-${idx}`,
-                                            icon: getItemTypeIcon(item.type) as any,
+                                            icon: getItemTypeIcon(item.type),
                                             iconColor: colors.primary,
                                             title: `${item.type === 'product' && item.quantity ? `${item.quantity} × ` : ''}${item.name}${item.type === 'subscription' && item.period ? ` (${item.period})` : ''}`,
                                             subtitle: item.description || `${item.currency ? (CURRENCY_SYMBOLS[item.currency.toUpperCase()] || item.currency) : currencySymbol} ${item.price * (item.quantity ?? 1)}`,

@@ -10,6 +10,11 @@ import type { OxyServices } from '@oxyhq/core';
 import { SignatureService } from '@oxyhq/core';
 import * as Crypto from 'expo-crypto';
 
+/** Type guard for error objects with optional code and status properties */
+function isErrorWithCodeOrStatus(error: unknown): error is { code?: string; status?: number; message?: string } {
+  return typeof error === 'object' && error !== null;
+}
+
 export interface UseAuthOperationsOptions {
   oxyServices: OxyServices;
   storage: StorageInterface | null;
@@ -95,8 +100,8 @@ export const useAuthOperations = ({
           errorMessage.includes('network') ||
           errorMessage.includes('Failed to fetch') ||
           errorMessage.includes('fetch failed') ||
-          (error as any)?.code === 'NETWORK_ERROR' ||
-          (error as any)?.status === 0;
+          (isErrorWithCodeOrStatus(error) && error.code === 'NETWORK_ERROR') ||
+          (isErrorWithCodeOrStatus(error) && error.status === 0);
 
         if (isNetworkError) {
           if (__DEV__ && logger) {
@@ -189,7 +194,7 @@ export const useAuthOperations = ({
           await oxyServices.getTokenBySession(sessionResponse.sessionId);
         } catch (tokenError: unknown) {
           const errorMessage = tokenError instanceof Error ? tokenError.message : String(tokenError);
-          const status = (tokenError as any)?.status;
+          const status = isErrorWithCodeOrStatus(tokenError) ? tokenError.status : undefined;
           if (status === 404 || errorMessage.includes('404')) {
             throw new Error(`Session was created but token could not be retrieved. Session ID: ${sessionResponse.sessionId.substring(0, 8)}...`);
           }

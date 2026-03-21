@@ -263,7 +263,8 @@ const createStyles = (themeStyles: any) => StyleSheet.create({
         flex: 1,
         fontSize: 16,
         ...Platform.select({
-            web: { outlineStyle: 'none' as any },
+            // outlineStyle: 'none' is a valid web CSS property not in React Native's TextStyle definition
+            web: { outlineStyle: 'none' as unknown as import('react-native').TextStyle['outlineStyle'] },
         }),
     },
     categoriesContainer: {

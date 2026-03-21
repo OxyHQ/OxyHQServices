@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import type { User } from '@oxyhq/core';
+import type { User, ClientSession } from '@oxyhq/core';
 import { queryKeys, invalidateSessionQueries } from '../queries/queryKeys';
 import { useOxy } from '../../context/OxyContext';
 import { toast } from '../../../lib/sonner';
@@ -59,8 +59,8 @@ export const useLogoutSession = () => {
       // Optimistically remove session
       if (previousSessions) {
         const sessionToLogout = targetSessionId || activeSessionId;
-        const updatedSessions = (previousSessions as any[]).filter(
-          (s: any) => s.sessionId !== sessionToLogout
+        const updatedSessions = (previousSessions as ClientSession[]).filter(
+          (s) => s.sessionId !== sessionToLogout
         );
         queryClient.setQueryData(queryKeys.sessions.list(), updatedSessions);
       }

@@ -2,6 +2,8 @@ import type React from 'react';
 import { View, TouchableOpacity, Text, ActivityIndicator, StyleSheet, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
+type IoniconsName = React.ComponentProps<typeof Ionicons>['name'];
+
 interface ButtonConfig {
     text: string;
     onPress: () => void;
@@ -12,9 +14,16 @@ interface ButtonConfig {
     testID?: string;
 }
 
+interface GroupedPillButtonColors {
+    primary: string;
+    secondary?: string;
+    border: string;
+    text: string;
+}
+
 interface GroupedPillButtonsProps {
     buttons: ButtonConfig[];
-    colors: any;
+    colors: GroupedPillButtonColors;
     gap?: number;
 }
 
@@ -100,7 +109,7 @@ const GroupedPillButtons: React.FC<GroupedPillButtonsProps> = ({
         };
     };
 
-    const getTextStyle = (button: ButtonConfig, colors: any) => {
+    const getTextStyle = (button: ButtonConfig, colors: GroupedPillButtonColors) => {
         const baseTextStyle = {
             fontSize: 15,
             fontWeight: '600' as const,
@@ -124,11 +133,11 @@ const GroupedPillButtons: React.FC<GroupedPillButtonsProps> = ({
         return {
             ...baseTextStyle,
             color: textColor,
-            ...(Platform.OS === 'web' ? { whiteSpace: 'nowrap' as any } : null),
+            ...(Platform.OS === 'web' ? { whiteSpace: 'nowrap' as const } : null),
         };
     };
 
-    const getIconColor = (button: ButtonConfig, colors: any) => {
+    const getIconColor = (button: ButtonConfig, colors: GroupedPillButtonColors) => {
         const isDisabled = button.disabled || button.loading;
         
         switch (button.variant) {
@@ -147,7 +156,7 @@ const GroupedPillButtons: React.FC<GroupedPillButtonsProps> = ({
             button.icon === 'chevron-back';
     };
 
-    const renderButtonContent = (button: ButtonConfig, colors: any, index: number) => {
+    const renderButtonContent = (button: ButtonConfig, colors: GroupedPillButtonColors, index: number) => {
         const iconColor = getIconColor(button, colors);
         const isBack = isBackButton(button);
         const isFirstButton = index === 0;
@@ -172,7 +181,7 @@ const GroupedPillButtons: React.FC<GroupedPillButtonsProps> = ({
                     </Text>
                     {button.icon && (
                         <Ionicons
-                            name={button.icon as any}
+                            name={button.icon as IoniconsName}
                             size={16}
                             color={iconColor}
                         />
@@ -185,7 +194,7 @@ const GroupedPillButtons: React.FC<GroupedPillButtonsProps> = ({
                 <>
                     {button.icon && (
                         <Ionicons
-                            name={button.icon as any}
+                            name={button.icon as IoniconsName}
                             size={16}
                             color={iconColor}
                         />
@@ -204,7 +213,7 @@ const GroupedPillButtons: React.FC<GroupedPillButtonsProps> = ({
                     </Text>
                     {button.icon && (
                         <Ionicons
-                            name={button.icon as any}
+                            name={button.icon as IoniconsName}
                             size={16}
                             color={iconColor}
                         />

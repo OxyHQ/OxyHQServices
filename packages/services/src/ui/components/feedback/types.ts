@@ -16,7 +16,7 @@ export interface FeedbackState {
 }
 
 export interface FeedbackType {
-    id: string;
+    id: FeedbackData['type'];
     label: string;
     icon: string;
     color: string;
@@ -24,7 +24,7 @@ export interface FeedbackType {
 }
 
 export interface PriorityLevel {
-    id: string;
+    id: FeedbackData['priority'];
     label: string;
     icon: string;
     color: string;
