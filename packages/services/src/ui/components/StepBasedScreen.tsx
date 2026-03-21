@@ -3,6 +3,8 @@ import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import {
     View,
     Platform,
+    type ViewStyle,
+    type TextStyle,
 } from 'react-native';
 import Animated, {
     useSharedValue,
@@ -10,17 +12,23 @@ import Animated, {
     withTiming,
 } from 'react-native-reanimated';
 import { useThemeColors, createAuthStyles } from '../styles';
+import type { ThemeColors } from '../styles';
 import { fontFamilies } from '../styles/fonts';
 import type { BaseScreenProps, StepController } from '../types/navigation';
 import type { RouteName } from '../types/navigation';
 import { screenContentStyle } from '../constants/spacing';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+/** Style map type used throughout step-based screens */
+// biome-ignore lint/suspicious/noExplicitAny: styles object contains mixed ViewStyle/TextStyle with platform-specific properties
+type StepStyles = Record<string, any>;
+
 export interface StepConfig {
     id: string;
+    // biome-ignore lint/suspicious/noExplicitAny: step components accept varying props that cannot be statically typed
     component: React.ComponentType<any>;
-    props?: Record<string, any>;
-    canProceed?: (stepData?: any) => boolean;
+    props?: Record<string, unknown>;
+    canProceed?: (stepData?: unknown) => boolean;
     onEnter?: () => void;
     onExit?: () => void;
 }
@@ -31,22 +39,23 @@ export interface StepBasedScreenProps extends Omit<BaseScreenProps, 'navigate'> 
     showProgressIndicator?: boolean;
     enableAnimations?: boolean;
     onStepChange?: (currentStep: number, totalSteps: number) => void;
-    onComplete?: (stepData: any[]) => void;
-    stepData?: any[];
-    navigate: (screen: RouteName, props?: Record<string, any>) => void;
-    oxyServices: any; // Required services for step components
-    getNavigationProps?: () => Record<string, unknown>; // Optional callback to extract navigation props from screen state
+    onComplete?: (stepData: unknown[]) => void;
+    stepData?: unknown[];
+    navigate: (screen: RouteName, props?: Record<string, unknown>) => void;
+    // biome-ignore lint/suspicious/noExplicitAny: OxyServices type cannot be fully resolved due to mixin composition pattern
+    oxyServices: any;
+    getNavigationProps?: () => Record<string, unknown>;
 }
 
 interface StepBasedScreenState {
-    stepData: any[];
+    stepData: unknown[];
 }
 
 // Individual animated progress dot
 const AnimatedProgressDot: React.FC<{
     isActive: boolean;
-    colors: any;
-    styles: any;
+    colors: ThemeColors;
+    styles: StepStyles;
 }> = ({ isActive, colors, styles }) => {
     const width = useSharedValue(isActive ? 12 : 6);
     const backgroundColor = useSharedValue(isActive ? colors.primary : colors.border);
@@ -78,12 +87,13 @@ const AnimatedProgressDot: React.FC<{
 const ProgressIndicator: React.FC<{
     currentStep: number;
     totalSteps: number;
-    colors: any;
-    styles: any;
+    colors: ThemeColors;
+    styles: StepStyles;
 }> = ({ currentStep, totalSteps, colors, styles }) => (
     <View style={styles.progressContainer}>
         {Array.from({ length: totalSteps }, (_, index) => (
             <AnimatedProgressDot
+                // biome-ignore lint/suspicious/noArrayIndexKey: progress dots are static and have no stable IDs
                 key={index}
                 isActive={currentStep === index}
                 colors={colors}
@@ -213,7 +223,7 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
             marginHorizontal: 3,
             backgroundColor: colors.border,
         },
-    }), [colors, theme]);
+    }), [colors, themeString]);
 
     // ========================================================================
     // Animation Values (removed - router handles animations now)
@@ -240,7 +250,7 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
     // ========================================================================
     // Step Data Management
     // ========================================================================
-    const updateStepData = useCallback((stepIndex: number, data: any) => {
+    const updateStepData = useCallback((stepIndex: number, data: unknown) => {
         setState(prev => {
             const nextStepData = prev.stepData.slice();
             nextStepData[stepIndex] = data;
@@ -304,8 +314,8 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
                 Object.assign(navigationProps, extractedProps);
             } else {
                 // Fallback: Extract props from stepData
-                const step0Data = stepData[0] || {};
-                const currentStepData = stepData[currentStep] || {};
+                const step0Data = (stepData[0] || {}) as Record<string, unknown>;
+                const currentStepData = (stepData[currentStep] || {}) as Record<string, unknown>;
 
                 if (step0Data.username || currentStepData.username) {
                     navigationProps.username = step0Data.username || currentStepData.username;
@@ -348,7 +358,7 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
             const extractedProps = getNavigationProps();
             Object.assign(navigationProps, extractedProps);
         } else {
-            const step0Data = stepData[0] || {};
+            const step0Data = (stepData[0] || {}) as Record<string, unknown>;
             if (step0Data.username) navigationProps.username = step0Data.username;
             if (step0Data.userProfile) navigationProps.userProfile = step0Data.userProfile;
             if (step0Data.email) navigationProps.email = step0Data.email;
@@ -385,7 +395,7 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
     const CurrentStepComponent = currentStepConfig?.component;
 
     const updateCurrentStepData = useCallback(
-        (data: any) => updateStepData(currentStep, data),
+        (data: unknown) => updateStepData(currentStep, data),
         [currentStep, updateStepData]
     );
 
@@ -408,7 +418,7 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
         totalSteps: steps.length,
 
         // Step data - spread the step data properties directly as props
-        ...state.stepData[currentStep],
+        ...(state.stepData[currentStep] as Record<string, unknown> | undefined),
 
         // Step data management
         updateStepData: updateCurrentStepData,

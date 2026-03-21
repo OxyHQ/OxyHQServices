@@ -237,7 +237,7 @@ const OxyProvider: FC<OxyProviderProps> = ({
 
     // Skip wrapper providers when parent already provides them (e.g., Mention's AppProviders)
     if (skipProviderWrappers) {
-        return <KeyboardProvider>{coreContent}</KeyboardProvider>;
+        return coreContent;
     }
 
     // All platforms use same wrapper (KeyboardProvider is passthrough on web)

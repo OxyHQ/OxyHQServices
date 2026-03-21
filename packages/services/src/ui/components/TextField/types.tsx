@@ -36,8 +36,8 @@ type TextInputProps = React.ComponentPropsWithRef<typeof NativeTextInput> & {
   dense?: boolean;
   multiline?: boolean;
   numberOfLines?: number;
-  onFocus?: (args: any) => void;
-  onBlur?: (args: any) => void;
+  onFocus?: (args: NativeSyntheticEvent<unknown>) => void;
+  onBlur?: (args: NativeSyntheticEvent<unknown>) => void;
   render?: (props: RenderProps) => React.ReactNode;
   value?: string;
   style?: StyleProp<TextStyle>;
@@ -57,10 +57,11 @@ export type RenderProps = {
   editable?: boolean;
   selectionColor?: string;
   cursorColor?: string;
-  onFocus?: (args: any) => void;
-  onBlur?: (args: any) => void;
+  onFocus?: (args: NativeSyntheticEvent<unknown>) => void;
+  onBlur?: (args: NativeSyntheticEvent<unknown>) => void;
   underlineColorAndroid?: string;
-  onLayout?: (args: any) => void;
+  onLayout?: (args: LayoutChangeEvent) => void;
+  // biome-ignore lint/suspicious/noExplicitAny: style prop is passed through to native TextInput with platform-specific properties
   style: any;
   multiline?: boolean;
   numberOfLines?: number;
@@ -85,12 +86,12 @@ export type State = {
 export type ChildTextInputProps = {
   parentState: State;
   innerRef: (ref?: NativeTextInput | null) => void;
-  onFocus?: (args: any) => void;
-  onBlur?: (args: any) => void;
+  onFocus?: (args: NativeSyntheticEvent<unknown>) => void;
+  onBlur?: (args: NativeSyntheticEvent<unknown>) => void;
   forceFocus: () => void;
   onChangeText?: (value: string) => void;
   onInputLayout: (event: LayoutChangeEvent) => void;
-  onLayoutAnimatedText: (args: any) => void;
+  onLayoutAnimatedText: (args: LayoutChangeEvent) => void;
   onLabelTextLayout: (event: NativeSyntheticEvent<TextLayoutEventData>) => void;
   onLeftAffixLayoutChange: (event: LayoutChangeEvent) => void;
   onRightAffixLayoutChange: (event: LayoutChangeEvent) => void;
@@ -98,6 +99,7 @@ export type ChildTextInputProps = {
 
 export type LabelProps = {
   mode?: 'flat' | 'outlined';
+  // biome-ignore lint/suspicious/noExplicitAny: style object accessed with direct property reads in downstream label components
   placeholderStyle: any;
   placeholderOpacity:
   | number
@@ -110,6 +112,7 @@ export type LabelProps = {
   fontSize: number;
   lineHeight?: number | undefined;
   fontWeight: TextStyle['fontWeight'];
+  // biome-ignore lint/suspicious/noExplicitAny: font object shape varies across platforms and RN versions
   font: any;
   topPosition: number;
   paddingLeft?: number;
@@ -122,7 +125,7 @@ export type LabelProps = {
   activeColor: string;
   errorColor?: string;
   labelError?: boolean | null;
-  onLayoutAnimatedText: (args: any) => void;
+  onLayoutAnimatedText: (args: LayoutChangeEvent) => void;
   onLabelTextLayout: (event: NativeSyntheticEvent<TextLayoutEventData>) => void;
   roundness: number;
   maxFontSizeMultiplier?: number | undefined | null;
@@ -140,6 +143,7 @@ export type InputLabelProps = {
   labelLayoutWidth: number;
   labelLayoutHeight: number;
   inputContainerLayout: { width: number };
+  // biome-ignore lint/suspicious/noExplicitAny: labelBackground is a render function or React element with varying signatures
   labelBackground?: any;
   maxFontSizeMultiplier?: number | undefined | null;
   isV3?: boolean;
@@ -147,6 +151,7 @@ export type InputLabelProps = {
 } & LabelProps;
 
 export type LabelBackgroundProps = {
+  // biome-ignore lint/suspicious/noExplicitAny: style object accessed with direct property reads for transform/padding
   labelStyle: any;
   labeled: Animated.Value;
   labelLayoutWidth: number;

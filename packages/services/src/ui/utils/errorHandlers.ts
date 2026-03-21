@@ -83,7 +83,7 @@ export const isTimeoutOrNetworkError = (error: unknown): boolean => {
   }
 
   const message = extractErrorMessage(error, '').toLowerCase();
-  const errorCode = (error as any).code;
+  const errorCode = isObject(error) && 'code' in (error as object) ? (error as Record<string, unknown>).code : undefined;
 
   // Check for timeout/cancelled messages
   if (

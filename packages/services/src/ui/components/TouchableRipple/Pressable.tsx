@@ -38,4 +38,5 @@ export type PressableProps = Omit<
 
 export const Pressable: React.ForwardRefExoticComponent<
   PressableProps & React.RefAttributes<View>
+// biome-ignore lint/suspicious/noExplicitAny: PressableNative type must be widened to support web-specific hover/focus state callback types
 > = PressableNative as any;

@@ -158,6 +158,7 @@ const Icon = ({
         : [];
     return (
       <MaterialCommunityIcons
+        // biome-ignore lint/suspicious/noExplicitAny: MaterialCommunityIcons name expects literal union; dynamic icon names require cast
         name={s as any}
         size={size}
         color={iconColor}
@@ -166,6 +167,7 @@ const Icon = ({
             transform: [{ scaleX: direction === 'rtl' ? -1 : 1 }],
           },
           ...styleArray,
+          // biome-ignore lint/suspicious/noExplicitAny: style array type incompatibility with MaterialCommunityIcons style prop
         ] as any}
         testID={testID}
         {...accessibilityProps}
