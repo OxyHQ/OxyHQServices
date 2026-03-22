@@ -1,6 +1,6 @@
 {
   "name": "@oxyhq/services",
-  "version": "6.9.19",
+  "version": "6.9.20",
   "description": "OxyHQ Expo/React Native SDK — UI components, screens, and native features",
   "main": "lib/commonjs/index.js",
   "module": "lib/module/index.js",
@@ -18,6 +18,13 @@
       "import": "./lib/module/index.js",
       "require": "./lib/commonjs/index.js",
       "default": "./lib/module/index.js"
+    },
+    "./ui": {
+      "types": "./lib/typescript/module/ui/index.d.ts",
+      "react-native": "./src/ui/index.ts",
+      "import": "./lib/module/ui/index.js",
+      "require": "./lib/commonjs/ui/index.js",
+      "default": "./lib/module/ui/index.js"
     },
     "./package.json": "./package.json"
   },
@@ -68,6 +75,7 @@
     "@oxyhq/core": "*",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-community/netinfo": "^11.4.1",
+    "@tanstack/react-query": "^5.90.20",
     "@types/react": "*",
     "copyfiles": "^2.4.1",
     "expo-blur": "~55.0.8",
@@ -127,8 +135,7 @@
     "react-native-gesture-handler": "~2.30.0",
     "react-native-reanimated": ">=4.2.0",
     "react-native-safe-area-context": "~5.6.0",
-    "react-native-svg": ">=13.0.0",
-    "@tanstack/react-query": ">=5.0.0"
+    "react-native-svg": ">=13.0.0"
   },
   "peerDependenciesMeta": {
     "@expo/vector-icons": {

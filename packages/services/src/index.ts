@@ -95,8 +95,7 @@ export type { ViewMode, SortBy, SortOrder } from './ui/hooks/useFileFiltering';
 export { default as Avatar } from './ui/components/Avatar';
 export type { AvatarProps } from './ui/components/Avatar';
 export { OxySignInButton } from './ui/components/OxySignInButton';
-export { default as OxyLogo } from './ui/components/OxyLogo';
-export { default as FollowButton } from './ui/components/FollowButton';
+export { OxyLogo, FollowButton } from './ui';
 
 // Bottom sheet navigation
 export { showBottomSheet, closeBottomSheet } from './ui/navigation/bottomSheetManager';
