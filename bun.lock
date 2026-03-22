@@ -372,10 +372,10 @@
     },
     "packages/services": {
       "name": "@oxyhq/services",
-      "version": "6.9.15",
+      "version": "6.9.19",
       "dependencies": {
         "@lottiefiles/dotlottie-react": "^0.13.5",
-        "@oxyhq/bloom": "0.1.15",
+        "@oxyhq/bloom": "0.1.17",
         "@oxyhq/core": "*",
         "@react-native-async-storage/async-storage": "2.2.0",
         "@react-native-community/netinfo": "^11.4.1",
@@ -1408,7 +1408,7 @@
 
     "@oxyhq/auth": ["@oxyhq/auth@workspace:packages/auth-sdk"],
 
-    "@oxyhq/bloom": ["@oxyhq/bloom@0.1.15", "", { "dependencies": { "nanoid": "^5.1.5", "react-remove-scroll-bar": "^2.3.8" }, "peerDependencies": { "@gorhom/bottom-sheet": ">=5.0.0", "react": ">=18.0.0", "react-native": ">=0.73.0", "react-native-gesture-handler": ">=2.0.0", "react-native-reanimated": ">=3.0.0", "react-native-safe-area-context": ">=5.0.0", "react-native-svg": ">=13.0.0", "sonner": ">=2.0.0", "sonner-native": ">=0.17.0" }, "optionalPeers": ["@gorhom/bottom-sheet", "react-native-gesture-handler", "react-native-reanimated", "react-native-svg", "sonner", "sonner-native"] }, "sha512-cW07k2LVJGx0tRe482smKHySqVAZCMWfrYyTcH1Vn4DRwvkHIaU0chqRK48i4qd+WzJT1J/Ig8f7cNtofkVn+A=="],
+    "@oxyhq/bloom": ["@oxyhq/bloom@0.1.17", "", { "dependencies": { "nanoid": "^5.1.5", "react-remove-scroll-bar": "^2.3.8" }, "peerDependencies": { "@gorhom/bottom-sheet": ">=5.0.0", "react": ">=18.0.0", "react-native": ">=0.73.0", "react-native-gesture-handler": ">=2.0.0", "react-native-reanimated": ">=3.0.0", "react-native-safe-area-context": ">=5.0.0", "react-native-svg": ">=13.0.0", "sonner": ">=2.0.0", "sonner-native": ">=0.17.0" }, "optionalPeers": ["@gorhom/bottom-sheet", "react-native-gesture-handler", "react-native-reanimated", "react-native-svg", "sonner", "sonner-native"] }, "sha512-zqS70XDoia8sn/+VsWm2CspK5vjZ4PDUKLK8ZOSmpka9uwmj27ZxmgF69y/+vPJc5Tt6R7QrWsXwaJqQKpNPtg=="],
 
     "@oxyhq/core": ["@oxyhq/core@workspace:packages/core"],
 
