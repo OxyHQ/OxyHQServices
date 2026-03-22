@@ -712,10 +712,44 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
 export const OxyContextProvider = OxyProvider;
 
+const noop = () => Promise.resolve() as any;
+
+const LOADING_STATE: OxyContextState = {
+  user: null,
+  sessions: [],
+  activeSessionId: null,
+  isAuthenticated: false,
+  isLoading: true,
+  isTokenReady: false,
+  isStorageReady: false,
+  error: null,
+  currentLanguage: 'en',
+  currentLanguageMetadata: {} as any,
+  currentLanguageName: 'English',
+  currentNativeLanguageName: 'English',
+  hasIdentity: () => Promise.resolve(false),
+  getPublicKey: () => Promise.resolve(null),
+  signIn: noop,
+  handlePopupSession: noop,
+  logout: noop,
+  logoutAll: noop,
+  switchSession: noop,
+  removeSession: noop,
+  refreshSessions: noop,
+  setLanguage: noop,
+  getDeviceSessions: () => Promise.resolve([]),
+  logoutAllDeviceSessions: noop,
+  updateDeviceName: noop,
+  clearSessionState: noop,
+  clearAllAccountData: noop,
+  oxyServices: null as any,
+  openAvatarPicker: () => {},
+};
+
 export const useOxy = (): OxyContextState => {
   const context = useContext(OxyContext);
   if (!context) {
-    throw new Error('useOxy must be used within an OxyContextProvider');
+    return LOADING_STATE;
   }
   return context;
 };
