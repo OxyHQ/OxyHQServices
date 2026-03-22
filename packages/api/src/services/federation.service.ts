@@ -198,8 +198,10 @@ class FederationService {
     const atIndex = cleaned.indexOf('@');
     if (atIndex === -1) return null;
 
-    const domain = cleaned.substring(atIndex + 1);
-    const resource = `acct:${cleaned}`;
+    const rawDomain = cleaned.substring(atIndex + 1);
+    const domain = rawDomain.replace(/^www\./i, '');
+    const normalizedAcct = `${cleaned.substring(0, atIndex)}@${domain}`;
+    const resource = `acct:${normalizedAcct}`;
     const url = `https://${domain}/.well-known/webfinger?resource=${encodeURIComponent(resource)}`;
 
     try {
