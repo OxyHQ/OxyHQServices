@@ -18,7 +18,8 @@ const AP_ACCEPT_TYPES = [
   'application/ld+json; profile="https://www.w3.org/ns/activitystreams"',
 ];
 
-const AP_DOMAIN = process.env.FEDERATION_DOMAIN || 'api.oxy.so';
+const AP_DOMAIN = process.env.FEDERATION_DOMAIN || 'oxy.so';
+const MENTION_API_DOMAIN = process.env.MENTION_API_DOMAIN || 'api.mention.earth';
 const USER_AGENT = 'OxyHQ/1.0 (ActivityPub)';
 const STALE_MS = 24 * 60 * 60 * 1000; // 24 hours
 
@@ -54,19 +55,19 @@ interface KeyPairDoc {
   privateKeyPem: string;
 }
 
-let _cachedKeyPair: KeyPairDoc | null = null;
+const _keyPairCache = new Map<string, KeyPairDoc>();
 
 /**
- * Get or create the instance-level RSA key pair used for signing fetch requests.
- * The key pair is generated once, stored in MongoDB, and cached in memory.
+ * Get or create an RSA key pair for the given keyId.
+ * Generated once per identity, stored in MongoDB, cached in memory.
  */
-async function getInstanceKeyPair(): Promise<KeyPairDoc> {
-  if (_cachedKeyPair) return _cachedKeyPair;
+async function getOrCreateKeyPair(keyId: string): Promise<KeyPairDoc> {
+  const cached = _keyPairCache.get(keyId);
+  if (cached) return cached;
 
-  const keyId = `https://${AP_DOMAIN}/ap/actor#main-key`;
   const existing = await FederationKeyPair.findOne({ keyId }).lean() as KeyPairDoc | null;
   if (existing) {
-    _cachedKeyPair = existing;
+    _keyPairCache.set(keyId, existing);
     return existing;
   }
 
@@ -82,8 +83,19 @@ async function getInstanceKeyPair(): Promise<KeyPairDoc> {
     privateKeyPem: privateKey,
   });
 
-  _cachedKeyPair = { keyId: doc.keyId, publicKeyPem: doc.publicKeyPem, privateKeyPem: doc.privateKeyPem };
-  return _cachedKeyPair;
+  const result = { keyId: doc.keyId, publicKeyPem: doc.publicKeyPem, privateKeyPem: doc.privateKeyPem };
+  _keyPairCache.set(keyId, result);
+  return result;
+}
+
+/** Get or create the instance-level key pair. */
+async function getInstanceKeyPair(): Promise<KeyPairDoc> {
+  return getOrCreateKeyPair(`https://${AP_DOMAIN}/ap/users/instance#main-key`);
+}
+
+/** Get or create a per-user key pair. */
+export async function getUserKeyPair(username: string): Promise<KeyPairDoc> {
+  return getOrCreateKeyPair(`https://${AP_DOMAIN}/ap/users/${username}#main-key`);
 }
 
 /**
@@ -141,11 +153,10 @@ async function signedFetch(url: string, accept: string): Promise<Response> {
 
 /**
  * Returns the instance actor JSON-LD document for HTTP Signature key verification.
- * Served at GET /ap/actor by the routes layer.
  */
 export async function getInstanceActor(): Promise<Record<string, unknown>> {
   const keyPair = await getInstanceKeyPair();
-  const actorUrl = `https://${AP_DOMAIN}/ap/actor`;
+  const actorUrl = `https://${AP_DOMAIN}/ap/users/instance`;
 
   return {
     '@context': [
@@ -154,9 +165,54 @@ export async function getInstanceActor(): Promise<Record<string, unknown>> {
     ],
     id: actorUrl,
     type: 'Application',
-    preferredUsername: 'oxy',
-    inbox: `${actorUrl}/inbox`,
-    outbox: `${actorUrl}/outbox`,
+    preferredUsername: 'instance',
+    name: AP_DOMAIN,
+    summary: '',
+    url: `https://${AP_DOMAIN}`,
+    inbox: `https://${MENTION_API_DOMAIN}/ap/users/instance/inbox`,
+    outbox: `https://${MENTION_API_DOMAIN}/ap/users/instance/outbox`,
+    endpoints: { sharedInbox: `https://${MENTION_API_DOMAIN}/ap/inbox` },
+    publicKey: {
+      id: keyPair.keyId,
+      owner: actorUrl,
+      publicKeyPem: keyPair.publicKeyPem,
+    },
+  };
+}
+
+/**
+ * Returns a per-user actor JSON-LD document.
+ * Actor profile is on oxy.so, inbox/outbox on Mention.
+ */
+export async function getUserActor(user: IUser): Promise<Record<string, unknown> | null> {
+  if (!user?.username) return null;
+  const username = user.username.split('@')[0]; // strip @domain if present
+  const keyPair = await getUserKeyPair(username);
+  const actorUrl = `https://${AP_DOMAIN}/ap/users/${username}`;
+
+  return {
+    '@context': [
+      'https://www.w3.org/ns/activitystreams',
+      'https://w3id.org/security/v1',
+    ],
+    id: actorUrl,
+    type: 'Person',
+    preferredUsername: username,
+    name: user.name?.first || user.name?.full || username,
+    summary: user.bio || user.description || '',
+    url: `https://${AP_DOMAIN}/@${username}`,
+    inbox: `https://${MENTION_API_DOMAIN}/ap/users/${username}/inbox`,
+    outbox: `https://${MENTION_API_DOMAIN}/ap/users/${username}/outbox`,
+    followers: `https://${MENTION_API_DOMAIN}/ap/users/${username}/followers`,
+    following: `https://${MENTION_API_DOMAIN}/ap/users/${username}/following`,
+    endpoints: { sharedInbox: `https://${MENTION_API_DOMAIN}/ap/inbox` },
+    icon: user.avatar ? {
+      type: 'Image',
+      mediaType: 'image/png',
+      url: typeof user.avatar === 'string' && user.avatar.startsWith('http')
+        ? user.avatar
+        : `https://cloud.oxy.so/files/${user.avatar}/variant/thumb`,
+    } : undefined,
     publicKey: {
       id: keyPair.keyId,
       owner: actorUrl,

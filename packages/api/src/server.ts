@@ -7,7 +7,7 @@ import usersRouter from "./routes/users";
 import notificationsRouter from "./routes/notifications.routes";
 import sessionRouter from "./routes/session";
 import dotenv from "dotenv";
-import { User } from "./models/User";
+import User, { IUser } from "./models/User";
 import searchRoutes from "./routes/search";
 import { rateLimiter, authRateLimiter, userRateLimiter, bruteForceProtection, securityHeaders } from "./middleware/security";
 import privacyRoutes from "./routes/privacy";
@@ -428,9 +428,10 @@ app.use('/billing', billingRoutes);
 app.use('/models', modelsStatsRoutes);
 app.use('/topics', topicsRoutes);
 
-// ActivityPub actor endpoint — serves public key for HTTP Signature verification.
-// Remote servers fetch this to verify signed requests made by our federation service.
-import { getInstanceActor } from './services/federation.service';
+// ActivityPub endpoints — serves actor profiles and public keys for federation.
+import { getInstanceActor, getUserActor, getUserKeyPair } from './services/federation.service';
+
+// Instance actor
 app.get('/ap/actor', async (_req: any, res: Response) => {
   try {
     const actor = await getInstanceActor();
@@ -438,6 +439,93 @@ app.get('/ap/actor', async (_req: any, res: Response) => {
     res.json(actor);
   } catch {
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Per-user actor profiles
+app.get('/ap/users/:username', async (req: any, res: Response) => {
+  try {
+    const { username } = req.params;
+
+    // Instance actor
+    if (username === 'instance') {
+      const actor = await getInstanceActor();
+      res.setHeader('Content-Type', 'application/activity+json');
+      res.setHeader('Cache-Control', 'max-age=1800');
+      return res.json(actor);
+    }
+
+    // Per-user actor
+    const user = await User.findOne({ username: username.toLowerCase() }).lean() as unknown as IUser | null;
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const actor = await getUserActor(user);
+    if (!actor) return res.status(500).json({ error: 'Failed to build actor' });
+
+    res.setHeader('Content-Type', 'application/activity+json');
+    res.setHeader('Cache-Control', 'max-age=1800');
+    return res.json(actor);
+  } catch (err: any) {
+    logger.error('Actor endpoint error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// WebFinger endpoint
+app.get('/.well-known/webfinger', async (req: any, res: Response) => {
+  try {
+    const resource = req.query.resource as string;
+    if (!resource?.startsWith('acct:')) return res.status(400).json({ error: 'Invalid resource' });
+
+    const acct = resource.replace('acct:', '');
+    const atIndex = acct.indexOf('@');
+    if (atIndex === -1) return res.status(400).json({ error: 'Invalid acct format' });
+
+    const username = acct.substring(0, atIndex);
+    const domain = acct.substring(atIndex + 1);
+    const AP_DOMAIN = process.env.FEDERATION_DOMAIN || 'oxy.so';
+
+    if (domain !== AP_DOMAIN) return res.status(404).json({ error: 'Domain not served here' });
+
+    const user = await User.findOne({ username: username.toLowerCase() }).lean();
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    res.setHeader('Content-Type', 'application/jrd+json');
+    res.setHeader('Cache-Control', 'max-age=3600');
+    return res.json({
+      subject: `acct:${username}@${AP_DOMAIN}`,
+      links: [
+        {
+          rel: 'self',
+          type: 'application/activity+json',
+          href: `https://${AP_DOMAIN}/ap/users/${username}`,
+        },
+        {
+          rel: 'http://webfinger.net/rel/profile-page',
+          type: 'text/html',
+          href: `https://${AP_DOMAIN}/@${username}`,
+        },
+      ],
+    });
+  } catch (err: any) {
+    logger.error('WebFinger error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Internal API: get key pair for a user (used by Mention backend for signing)
+app.get('/api/federation/keypair/:username', async (req: any, res: Response) => {
+  try {
+    const { username } = req.params;
+    const keyPair = await getUserKeyPair(username);
+    return res.json({
+      keyId: keyPair.keyId,
+      publicKeyPem: keyPair.publicKeyPem,
+      privateKeyPem: keyPair.privateKeyPem,
+    });
+  } catch (err: any) {
+    logger.error('KeyPair endpoint error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
   }
 });
 
