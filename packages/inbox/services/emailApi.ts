@@ -226,7 +226,7 @@ export function createEmailApi(http: HttpService) {
     // ─── Mailboxes ──────────────────────────────────────────────────
 
     async listMailboxes(): Promise<Mailbox[]> {
-      const res = await http.get('/email/mailboxes');
+      const res = await http.get('/email/mailboxes', { cache: false });
       return z.array(MailboxSchema).parse(res);
     },
 
@@ -259,7 +259,7 @@ export function createEmailApi(http: HttpService) {
       if (options.offset !== undefined) params.offset = String(options.offset);
       if (options.unseenOnly) params.unseen = 'true';
 
-      const res = (await http.get('/email/messages', { params })) as PaginatedResult<unknown>;
+      const res = (await http.get('/email/messages', { params, cache: false })) as PaginatedResult<unknown>;
       return {
         data: parseMessages(res.data),
         pagination: PaginationSchema.parse(res.pagination),
@@ -267,12 +267,12 @@ export function createEmailApi(http: HttpService) {
     },
 
     async getMessage(messageId: string): Promise<Message> {
-      const res = await http.get(`/email/messages/${messageId}`);
+      const res = await http.get(`/email/messages/${messageId}`, { cache: false });
       return MessageSchema.parse(res);
     },
 
     async getThread(messageId: string): Promise<Message[]> {
-      const res = await http.get(`/email/messages/${messageId}/thread`);
+      const res = await http.get(`/email/messages/${messageId}/thread`, { cache: false });
       return z.array(MessageSchema).parse(res);
     },
 
@@ -327,7 +327,7 @@ export function createEmailApi(http: HttpService) {
     // ─── Labels ─────────────────────────────────────────────────────
 
     async listLabels(): Promise<Label[]> {
-      const res = await http.get('/email/labels');
+      const res = await http.get('/email/labels', { cache: false });
       return z.array(LabelSchema).parse(res);
     },
 
@@ -409,7 +409,7 @@ export function createEmailApi(http: HttpService) {
       if (options.limit !== undefined) params.limit = String(options.limit);
       if (options.offset !== undefined) params.offset = String(options.offset);
 
-      const res = (await http.get('/email/search', { params })) as PaginatedResult<unknown>;
+      const res = (await http.get('/email/search', { params, cache: false })) as PaginatedResult<unknown>;
       return {
         data: parseMessages(res.data),
         pagination: PaginationSchema.parse(res.pagination),
@@ -419,7 +419,7 @@ export function createEmailApi(http: HttpService) {
     // ─── Quota ──────────────────────────────────────────────────────
 
     async getQuota(): Promise<QuotaUsage> {
-      const res = await http.get('/email/quota');
+      const res = await http.get('/email/quota', { cache: false });
       return QuotaUsageSchema.parse(res);
     },
 
@@ -435,6 +435,7 @@ export function createEmailApi(http: HttpService) {
     async getAttachmentUrl(s3Key: string): Promise<string> {
       const res = await http.get(
         `/email/attachments/${encodeURIComponent(s3Key)}`,
+        { cache: false },
       );
       return z.object({ url: z.string() }).parse(res).url;
     },
@@ -442,7 +443,7 @@ export function createEmailApi(http: HttpService) {
     // ─── Settings ───────────────────────────────────────────────────
 
     async getSettings(): Promise<EmailSettings> {
-      const res = await http.get('/email/settings');
+      const res = await http.get('/email/settings', { cache: false });
       return EmailSettingsSchema.parse(res);
     },
 
@@ -461,7 +462,7 @@ export function createEmailApi(http: HttpService) {
       if (options.limit !== undefined) params.limit = String(options.limit);
       if (options.offset !== undefined) params.offset = String(options.offset);
 
-      const res = (await http.get('/email/subscriptions', { params })) as PaginatedResult<Subscription>;
+      const res = (await http.get('/email/subscriptions', { params, cache: false })) as PaginatedResult<Subscription>;
       return {
         data: z.array(SubscriptionSchema).parse(res.data),
         pagination: PaginationSchema.parse(res.pagination),
@@ -482,7 +483,7 @@ export function createEmailApi(http: HttpService) {
     // ─── Bundles ────────────────────────────────────────────────────
 
     async listBundles(): Promise<Bundle[]> {
-      const res = await http.get('/email/bundles');
+      const res = await http.get('/email/bundles', { cache: false });
       return z.array(BundleSchema).parse(res);
     },
 
@@ -506,7 +507,7 @@ export function createEmailApi(http: HttpService) {
       if (options.limit !== undefined) params.limit = String(options.limit);
       if (options.offset !== undefined) params.offset = String(options.offset);
 
-      const res = await http.get('/email/messages/bundled', { params }) as {
+      const res = await http.get('/email/messages/bundled', { params, cache: false }) as {
         data: {
           primary: Message[];
           bundles: Array<{ bundle: Bundle; messages: Message[]; unreadCount: number }>;
@@ -543,7 +544,7 @@ export function createEmailApi(http: HttpService) {
       if (options.limit !== undefined) params.limit = String(options.limit);
       if (options.offset !== undefined) params.offset = String(options.offset);
 
-      const res = (await http.get('/email/reminders', { params })) as PaginatedResult<Reminder>;
+      const res = (await http.get('/email/reminders', { params, cache: false })) as PaginatedResult<Reminder>;
       return {
         data: z.array(ReminderSchema).parse(res.data),
         pagination: PaginationSchema.parse(res.pagination),
@@ -551,7 +552,7 @@ export function createEmailApi(http: HttpService) {
     },
 
     async getReminder(reminderId: string): Promise<Reminder> {
-      const res = await http.get(`/email/reminders/${reminderId}`);
+      const res = await http.get(`/email/reminders/${reminderId}`, { cache: false });
       return ReminderSchema.parse(res);
     },
 
@@ -572,6 +573,7 @@ export function createEmailApi(http: HttpService) {
     async suggestContacts(query: string): Promise<ContactSuggestion[]> {
       const res = await http.get('/email/contacts/suggest', {
         params: { q: query },
+        cache: false,
       });
       const parsed = z.object({ data: z.array(ContactSuggestionSchema) }).parse(res);
       return parsed.data;
