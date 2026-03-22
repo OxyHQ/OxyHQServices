@@ -514,7 +514,7 @@ app.get('/.well-known/webfinger', async (req: any, res: Response) => {
 });
 
 // Internal API: get key pair for a user (used by Mention backend for signing)
-app.get('/api/federation/keypair/:username', async (req: any, res: Response) => {
+app.get('/federation/keypair/:username', async (req: any, res: Response) => {
   try {
     const { username } = req.params;
     const keyPair = await getUserKeyPair(username);
