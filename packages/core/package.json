@@ -1,6 +1,6 @@
 {
   "name": "@oxyhq/core",
-  "version": "1.11.6",
+  "version": "1.11.7",
   "description": "OxyHQ SDK Foundation — API client, authentication, cryptographic identity, and shared utilities",
   "main": "dist/cjs/index.js",
   "module": "dist/esm/index.js",

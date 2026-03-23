@@ -11,6 +11,7 @@ import type { OxyServices } from './OxyServices';
 import type { HttpService } from './HttpService';
 import type { SessionLoginResponse, MinimalUserData } from './models/session';
 import { retryAsync } from './utils/asyncUtils';
+import { jwtDecode } from 'jwt-decode';
 
 /**
  * OxyServices already declares revokeFedCMCredential via mixin type augmentation.
@@ -429,10 +430,29 @@ export class AuthManager {
   }
 
   /**
-   * Get stored access token.
+   * Get a valid access token, refreshing automatically if expired or expiring soon.
    */
   async getAccessToken(): Promise<string | null> {
-    return this.storage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
+    const token = await this.storage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
+    if (!token) return null;
+
+    try {
+      const decoded = jwtDecode<{ exp?: number }>(token);
+      if (decoded.exp) {
+        const now = Math.floor(Date.now() / 1000);
+        const buffer = 60; // refresh 60 seconds before expiry
+        if (decoded.exp - now < buffer) {
+          const refreshed = await this.refreshToken();
+          if (refreshed) {
+            return this.storage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
+          }
+        }
+      }
+    } catch {
+      // Decode failed — return token as-is, let the server decide
+    }
+
+    return token;
   }
 
   /**
