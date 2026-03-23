@@ -13,7 +13,7 @@ const { spawn } = require('child_process');
 const { existsSync } = require('fs');
 const path = require('path');
 
-const EXPORT_TIMEOUT_MS = 4 * 60 * 1000; // 4 minutes hard limit
+const EXPORT_TIMEOUT_MS = 8 * 60 * 1000; // 8 minutes hard limit (DO build instances are slow)
 const projectRoot = path.resolve(__dirname, '..');
 const distPath = path.join(projectRoot, 'dist', 'index.html');
 
