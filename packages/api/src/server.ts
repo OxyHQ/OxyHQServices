@@ -33,6 +33,7 @@ import aliaRoutes from './routes/alia';
 import creditsRoutes from './routes/credits';
 import billingRoutes from './routes/billing';
 import modelsStatsRoutes from './routes/models-stats';
+import platformStatsRoutes from './routes/platform-stats';
 import topicsRoutes from './routes/topics.routes';
 import { startSmtpInbound, stopSmtpInbound } from './services/smtp.inbound';
 import { smtpOutbound } from './services/smtp.outbound';
@@ -426,6 +427,7 @@ app.use('/alia', userRateLimiter, aliaRoutes);
 app.use('/credits', userRateLimiter, csrfProtection, creditsRoutes);
 app.use('/billing', billingRoutes);
 app.use('/models', modelsStatsRoutes);
+app.use('/platform-stats', platformStatsRoutes);
 app.use('/topics', topicsRoutes);
 
 // ActivityPub endpoints — serves actor profiles and public keys for federation.
