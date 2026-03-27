@@ -63,11 +63,19 @@ export function startSmtpInbound(): SMTPServer {
     }
   }
 
+  // Disable STARTTLS when no certs are configured to prevent broken TLS
+  // handshakes that cause MTAs to reject delivery
+  const disabledCommands = ['AUTH'];
+  if (!tlsOptions) {
+    disabledCommands.push('STARTTLS');
+    logger.info('No TLS certs configured, STARTTLS disabled — accepting plaintext only');
+  }
+
   smtpServer = new SMTPServer({
     name: EMAIL_DOMAIN,
     banner: SMTP_INBOUND_CONFIG.banner,
     size: SMTP_INBOUND_CONFIG.maxMessageSize,
-    disabledCommands: ['AUTH'], // We don't require auth for inbound mail
+    disabledCommands,
     authOptional: true,
     ...(tlsOptions ? { secure: false, ...tlsOptions } : {}),
 
