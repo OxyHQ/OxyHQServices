@@ -13,6 +13,19 @@ import { AssetService } from './assetService';
 import { createS3Service } from './s3Service';
 import { logger } from '../utils/logger';
 
+/** Decode common HTML entities (&#39; &amp; &lt; &gt; &quot; and numeric). */
+function decodeHtmlEntities(text: string): string {
+  if (!text) return text;
+  return text
+    .replace(/&#(\d+);/g, (_m, code) => String.fromCharCode(Number(code)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_m, hex) => String.fromCharCode(parseInt(hex, 16)))
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'");
+}
+
 const AP_ACCEPT_TYPES = [
   'application/activity+json',
   'application/ld+json; profile="https://www.w3.org/ns/activitystreams"',
@@ -308,9 +321,9 @@ class FederationService {
         actorUri: actor.id as string,
         domain,
         username: acct,
-        displayName: (actor.name as string) || username,
+        displayName: decodeHtmlEntities((actor.name as string) || username),
         avatarUrl: (actor.icon as Record<string, unknown>)?.url as string | undefined,
-        bio: (actor.summary as string)?.replace(/<[^>]*>/g, '') || undefined,
+        bio: decodeHtmlEntities((actor.summary as string)?.replace(/<[^>]*>/g, '') || ''),
       };
     } catch (err) {
       logger.warn(`Failed to fetch actor profile ${actorUri}: ${err}`);
