@@ -473,6 +473,28 @@ app.get('/ap/users/:username', async (req: any, res: Response) => {
   }
 });
 
+// NodeInfo — required by some servers (e.g. Threads) to validate federation
+app.get('/.well-known/nodeinfo', (_req: any, res: Response) => {
+  res.json({
+    links: [
+      {
+        rel: 'http://nodeinfo.diaspora.software/ns/schema/2.0',
+        href: `https://${AP_DOMAIN}/nodeinfo/2.0`,
+      },
+    ],
+  });
+});
+
+app.get('/nodeinfo/2.0', (_req: any, res: Response) => {
+  res.json({
+    version: '2.0',
+    software: { name: 'mention', version: '2.0.0' },
+    protocols: ['activitypub'],
+    usage: { users: { total: 1, activeMonth: 1, activeHalfyear: 1 }, localPosts: 0 },
+    openRegistrations: false,
+  });
+});
+
 // WebFinger endpoint
 app.get('/.well-known/webfinger', async (req: any, res: Response) => {
   try {
