@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 // GET /profiles/username/:username
 export const usernameParams = z.object({
-  username: z.string().trim().min(3).max(30),
+  username: z.string().trim().min(3).max(100),
 });
 
 // GET /profiles/search

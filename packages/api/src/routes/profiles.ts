@@ -81,29 +81,45 @@ router.get(
   '/username/:username',
   validate({ params: usernameParams }),
   asyncHandler(async (req: Request, res: Response) => {
-    // Sanitize username: only allow alphanumeric characters
-    const username = req.params.username.replace(/[^a-zA-Z0-9]/g, '');
+    const raw = req.params.username;
+
+    // Federated handles (user@domain) are looked up as-is;
+    // local usernames are sanitised to alphanumeric + underscores/hyphens/dots.
+    const isFedHandle = isFediverseHandle(raw);
+    const username = isFedHandle
+      ? raw.replace(/^@/, '').toLowerCase()
+      : raw.replace(/[^a-zA-Z0-9._-]/g, '');
 
     if (!username || username.length < MIN_USERNAME_LENGTH) {
       throw new BadRequestError(
-        `Username must be at least ${MIN_USERNAME_LENGTH} characters long and contain only letters and numbers`
+        `Username must be at least ${MIN_USERNAME_LENGTH} characters`
       );
     }
 
-    if (username.length > MAX_USERNAME_LENGTH) {
+    if (!isFedHandle && username.length > MAX_USERNAME_LENGTH) {
       throw new BadRequestError(`Username must be no more than ${MAX_USERNAME_LENGTH} characters`);
     }
 
-    const user = await User.findOne({ username })
+    let user = await User.findOne({ username })
       .select('-password -refreshToken')
       .lean({ virtuals: true });
+
+    // If not found and it's a fediverse handle, resolve via WebFinger
+    if (!user && isFedHandle) {
+      const resolved = await federationService.resolveAndUpsert(username).catch(() => null);
+      if (resolved) {
+        user = await User.findById(resolved._id)
+          .select('-password -refreshToken')
+          .lean({ virtuals: true });
+      }
+    }
 
     if (!user) {
       throw new NotFoundError('Profile not found');
     }
 
     // Get user statistics
-    const stats = await userService.getUserStats(user._id.toString());
+    const stats = await userService.getUserStats((user as any)._id.toString());
 
     // Format response with stats
     const response = userService.formatUserResponse(user as any, stats);
