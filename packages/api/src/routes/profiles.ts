@@ -43,6 +43,103 @@ const MIN_USERNAME_LENGTH = 3;
 const MAX_USERNAME_LENGTH = 30;
 
 /**
+ * Shared aggregation stages that look up follower and following counts
+ * for each user matched in a Follow-based aggregation pipeline.
+ */
+const followCountLookupStages = [
+  {
+    $lookup: {
+      from: 'follows',
+      let: { userId: '$_id' },
+      pipeline: [
+        {
+          $match: {
+            $expr: {
+              $and: [
+                { $eq: ['$followedId', '$$userId'] },
+                { $eq: ['$followType', FollowType.USER] },
+              ],
+            },
+          },
+        },
+      ],
+      as: 'followersArr',
+    },
+  },
+  {
+    $lookup: {
+      from: 'follows',
+      let: { userId: '$_id' },
+      pipeline: [
+        {
+          $match: {
+            $expr: {
+              $and: [
+                { $eq: ['$followerUserId', '$$userId'] },
+                { $eq: ['$followType', FollowType.USER] },
+              ],
+            },
+          },
+        },
+      ],
+      as: 'followingArr',
+    },
+  },
+];
+
+const profileProjectionStage = {
+  $project: {
+    _id: 1,
+    username: '$user.username',
+    name: '$user.name',
+    avatar: '$user.avatar',
+    description: '$user.description',
+    type: '$user.type',
+    federation: '$user.federation',
+    automation: '$user.automation',
+    mutualCount: 1,
+    followersCount: { $size: '$followersArr' },
+    followingCount: { $size: '$followingArr' },
+  },
+};
+
+/** Same projection but for pipelines starting from the users collection. */
+const userProfileProjectionStage = {
+  $project: {
+    _id: 1,
+    username: 1,
+    name: 1,
+    avatar: 1,
+    description: 1,
+    type: 1,
+    federation: 1,
+    automation: 1,
+    mutualCount: { $literal: 0 },
+    followersCount: { $size: '$followersArr' },
+    followingCount: { $size: '$followingArr' },
+  },
+};
+
+function formatProfileResult(u: any) {
+  return {
+    id: u._id,
+    username: u.username,
+    name: u.name,
+    avatar: u.avatar,
+    description: u.description,
+    mutualCount: u.mutualCount || 0,
+    isFederated: u.type === 'federated',
+    isAgent: u.type === 'agent',
+    isAutomated: u.type === 'automated',
+    instance: u.federation?.domain,
+    _count: {
+      followers: u.followersCount || 0,
+      following: u.followingCount || 0,
+    },
+  };
+}
+
+/**
  * Validates pagination query parameters
  */
 const validatePagination = (req: Request, res: Response, next: () => void): void => {
@@ -272,6 +369,114 @@ router.get(
 );
 
 /**
+ * GET /profiles/:userId/similar
+ *
+ * Get profiles similar to a given user, based on co-follower overlap.
+ * Finds users followed by the same people who follow :userId, ranked by overlap count.
+ *
+ * @param {string} userId - Target user ID
+ * @query {number} limit - Number of results (max 100, default 10)
+ * @query {number} offset - Pagination offset (default 0)
+ * @returns {UserProfile[]} List of similar profiles
+ */
+router.get(
+  '/:userId/similar',
+  authMiddleware,
+  validatePagination,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { limit, offset } = req.query as PaginationQuery;
+    const currentUserId = req.user?.id;
+    const targetUserId = req.params.userId;
+
+    if (!currentUserId) {
+      throw new UnauthorizedError('Authentication required');
+    }
+
+    if (!Types.ObjectId.isValid(targetUserId)) {
+      throw new BadRequestError('Invalid user ID');
+    }
+
+    const parsedLimit = limit
+      ? Math.min(parseInt(limit, 10), PAGINATION.MAX_LIMIT)
+      : PAGINATION.DEFAULT_LIMIT;
+    const parsedOffset = offset ? parseInt(offset, 10) : 0;
+
+    const [targetFollowers, currentFollowing] = await Promise.all([
+      Follow.find({
+        followedId: targetUserId,
+        followType: FollowType.USER,
+      }).select('followerUserId').lean(),
+      Follow.find({
+        followerUserId: currentUserId,
+        followType: FollowType.USER,
+      }).select('followedId').lean(),
+    ]);
+
+    const targetFollowerIds = targetFollowers
+      .map((f) =>
+        f.followerUserId instanceof Types.ObjectId
+          ? f.followerUserId
+          : new Types.ObjectId(f.followerUserId as string)
+      )
+      .filter((id): id is Types.ObjectId => id instanceof Types.ObjectId);
+
+    const excludeIds: Types.ObjectId[] = [
+      new Types.ObjectId(currentUserId),
+      new Types.ObjectId(targetUserId),
+      ...currentFollowing.map((f) =>
+        f.followedId instanceof Types.ObjectId
+          ? f.followedId
+          : new Types.ObjectId(f.followedId as string)
+      ),
+    ];
+
+    let similar: any[] = [];
+
+    if (targetFollowerIds.length > 0) {
+      similar = await Follow.aggregate([
+        {
+          $match: {
+            followerUserId: { $in: targetFollowerIds },
+            followType: FollowType.USER,
+            followedId: { $nin: excludeIds },
+          },
+        },
+        {
+          $group: {
+            _id: '$followedId',
+            mutualCount: { $sum: 1 },
+          },
+        },
+        { $sort: { mutualCount: -1 } },
+        { $skip: parsedOffset },
+        { $limit: parsedLimit },
+        {
+          $lookup: {
+            from: 'users',
+            localField: '_id',
+            foreignField: '_id',
+            as: 'user',
+          },
+        },
+        { $unwind: '$user' },
+        ...followCountLookupStages,
+        profileProjectionStage,
+      ]);
+    }
+
+    const formattedSimilar = similar.map(formatProfileResult);
+
+    logger.debug('GET /profiles/:userId/similar', {
+      currentUserId,
+      targetUserId,
+      similarCount: formattedSimilar.length,
+    });
+
+    sendSuccess(res, formattedSimilar);
+  })
+);
+
+/**
  * GET /profiles/recommendations
  *
  * Get recommended user profiles based on mutual connections
@@ -312,7 +517,6 @@ router.get(
 
     excludeIds.push(new Types.ObjectId(currentUserId));
 
-    // Get users that current user follows
     const following = await Follow.find({
       followerUserId: currentUserId,
       followType: FollowType.USER,
@@ -330,7 +534,6 @@ router.get(
 
     let recommendations: any[] = [];
 
-    // Find users followed by people you follow (mutuals), ranked by mutual count
     if (followingIds.length > 0) {
       recommendations = await Follow.aggregate([
         {
@@ -349,7 +552,6 @@ router.get(
         { $sort: { mutualCount: -1 } },
         { $skip: parsedOffset },
         { $limit: parsedLimit },
-        // Join with User
         {
           $lookup: {
             from: 'users',
@@ -359,68 +561,14 @@ router.get(
           },
         },
         { $unwind: '$user' },
-        // Filter by user type if excludeTypes specified
         ...(excludeTypes.length > 0
           ? [{ $match: { 'user.type': { $nin: excludeTypes } } }]
           : []),
-        // Get follower/following counts
-        {
-          $lookup: {
-            from: 'follows',
-            let: { userId: '$_id' },
-            pipeline: [
-              {
-                $match: {
-                  $expr: {
-                    $and: [
-                      { $eq: ['$followedId', '$$userId'] },
-                      { $eq: ['$followType', FollowType.USER] },
-                    ],
-                  },
-                },
-              },
-            ],
-            as: 'followersArr',
-          },
-        },
-        {
-          $lookup: {
-            from: 'follows',
-            let: { userId: '$_id' },
-            pipeline: [
-              {
-                $match: {
-                  $expr: {
-                    $and: [
-                      { $eq: ['$followerUserId', '$$userId'] },
-                      { $eq: ['$followType', FollowType.USER] },
-                    ],
-                  },
-                },
-              },
-            ],
-            as: 'followingArr',
-          },
-        },
-        {
-          $project: {
-            _id: 1,
-            username: '$user.username',
-            name: '$user.name',
-            avatar: '$user.avatar',
-            description: '$user.description',
-            type: '$user.type',
-            federation: '$user.federation',
-            automation: '$user.automation',
-            mutualCount: 1,
-            followersCount: { $size: '$followersArr' },
-            followingCount: { $size: '$followingArr' },
-          },
-        },
+        ...followCountLookupStages,
+        profileProjectionStage,
       ]);
     }
 
-    // If not enough recommendations, fill with random users
     if (recommendations.length < parsedLimit) {
       const alreadyRecommendedIds = recommendations.map((u) => u._id);
       const fillLimit = parsedLimit - recommendations.length;
@@ -429,81 +577,14 @@ router.get(
       const randomUsers = await User.aggregate([
         { $match: { _id: { $nin: excludeIds.concat(alreadyRecommendedIds) }, ...typeFilter } },
         { $sample: { size: fillLimit } },
-        {
-          $lookup: {
-            from: 'follows',
-            let: { userId: '$_id' },
-            pipeline: [
-              {
-                $match: {
-                  $expr: {
-                    $and: [
-                      { $eq: ['$followedId', '$$userId'] },
-                      { $eq: ['$followType', FollowType.USER] },
-                    ],
-                  },
-                },
-              },
-            ],
-            as: 'followersArr',
-          },
-        },
-        {
-          $lookup: {
-            from: 'follows',
-            let: { userId: '$_id' },
-            pipeline: [
-              {
-                $match: {
-                  $expr: {
-                    $and: [
-                      { $eq: ['$followerUserId', '$$userId'] },
-                      { $eq: ['$followType', FollowType.USER] },
-                    ],
-                  },
-                },
-              },
-            ],
-            as: 'followingArr',
-          },
-        },
-        {
-          $project: {
-            _id: 1,
-            username: 1,
-            name: 1,
-            avatar: 1,
-            description: 1,
-            type: 1,
-            federation: 1,
-            automation: 1,
-            mutualCount: { $literal: 0 },
-            followersCount: { $size: '$followersArr' },
-            followingCount: { $size: '$followingArr' },
-          },
-        },
+        ...followCountLookupStages,
+        userProfileProjectionStage,
       ]);
 
       recommendations = recommendations.concat(randomUsers);
     }
 
-    // Format recommendations response
-    const formattedRecommendations = recommendations.map((u) => ({
-      id: u._id,
-      username: u.username,
-      name: u.name,
-      avatar: u.avatar,
-      description: u.description,
-      mutualCount: u.mutualCount || 0,
-      isFederated: u.type === 'federated',
-      isAgent: u.type === 'agent',
-      isAutomated: u.type === 'automated',
-      instance: u.federation?.domain,
-      _count: {
-        followers: u.followersCount || 0,
-        following: u.followingCount || 0,
-      },
-    }));
+    const formattedRecommendations = recommendations.map(formatProfileResult);
 
     logger.debug('GET /profiles/recommendations', {
       currentUserId,

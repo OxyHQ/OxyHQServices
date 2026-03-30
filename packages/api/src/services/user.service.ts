@@ -25,6 +25,13 @@ import Subscription from '../models/Subscription';
 // Constants
 import { PAGINATION } from '../utils/constants';
 
+interface UserWithCount {
+  _count?: {
+    followers?: number;
+    following?: number;
+  };
+}
+
 export class UserService {
   /**
    * Get user by ID with proper serialization
@@ -391,13 +398,6 @@ export class UserService {
         User.findById(currentUserId).select('_count').lean(),
       ]);
 
-      interface UserWithCount {
-        _count?: {
-          followers?: number;
-          following?: number;
-        };
-      }
-
       const targetCounts = (updatedTarget as UserWithCount)?._count;
       const currentCounts = (updatedCurrent as UserWithCount)?._count;
 
@@ -425,13 +425,6 @@ export class UserService {
       User.findById(targetUserId).select('_count').lean(),
       User.findById(currentUserId).select('_count').lean(),
     ]);
-
-    interface UserWithCount {
-      _count?: {
-        followers?: number;
-        following?: number;
-      };
-    }
 
     const targetCounts = (updatedTarget as UserWithCount)?._count;
     const currentCounts = (updatedCurrent as UserWithCount)?._count;
