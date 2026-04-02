@@ -9,6 +9,7 @@ export { default as Header, getHeaderHeight } from './Header';
 export { default as LoadingState } from './LoadingState';
 export { default as EmptyState } from './EmptyState';
 export { default as SettingRow } from './SettingRow';
+export { SettingsIcon } from './SettingsIcon';
 
 // Re-export existing components
 export { default as Avatar } from './Avatar';

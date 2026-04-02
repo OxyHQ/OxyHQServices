@@ -1,18 +1,18 @@
 import React, { useMemo } from 'react';
 import {
     View,
-    Text,
-    TouchableOpacity,
     StyleSheet,
     ScrollView,
     Linking,
 } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
 import { toast } from '../../lib/sonner';
-import { Header, Section, GroupedSection } from '../components';
+import { Header } from '../components';
+import { SettingsIcon } from '../components/SettingsIcon';
 import { useI18n } from '../hooks/useI18n';
 import { useThemeStyles } from '../hooks/useThemeStyles';
 import { useColorScheme } from '../hooks/useColorScheme';
+import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 
 const HelpSupportScreen: React.FC<BaseScreenProps> = ({
     onClose,
@@ -57,82 +57,60 @@ const HelpSupportScreen: React.FC<BaseScreenProps> = ({
 
             <ScrollView style={styles.content}>
                 {/* Help Options */}
-                <Section title={t('help.options') || 'Get Help'} isFirst={true}>
-                    <GroupedSection
-                        items={[
-                            {
-                                id: 'faq',
-                                icon: 'help-circle',
-                                iconColor: themeStyles.colors.iconSecurity,
-                                title: t('help.faq.title') || 'Frequently Asked Questions',
-                                subtitle: t('help.faq.subtitle') || 'Find answers to common questions',
-                                onPress: handleFAQ,
-                            },
-                            {
-                                id: 'contact',
-                                icon: 'mail',
-                                iconColor: themeStyles.colors.iconPersonalInfo,
-                                title: t('help.contact.title') || 'Contact Support',
-                                subtitle: t('help.contact.subtitle') || 'Get help from our support team',
-                                onPress: handleContactSupport,
-                            },
-                            {
-                                id: 'report-bug',
-                                icon: 'bug',
-                                iconColor: themeStyles.colors.iconStorage,
-                                title: t('help.reportBug.title') || 'Report a Bug',
-                                subtitle: t('help.reportBug.subtitle') || 'Help us improve by reporting issues',
-                                onPress: handleReportBug,
-                            },
-                        ]}
-
+                <SettingsListGroup title={t('help.options') || 'Get Help'}>
+                    <SettingsListItem
+                        icon={<SettingsIcon name="help-circle" color={themeStyles.colors.iconSecurity} />}
+                        title={t('help.faq.title') || 'Frequently Asked Questions'}
+                        description={t('help.faq.subtitle') || 'Find answers to common questions'}
+                        onPress={handleFAQ}
                     />
-                </Section>
+                    <SettingsListItem
+                        icon={<SettingsIcon name="email" color={themeStyles.colors.iconPersonalInfo} />}
+                        title={t('help.contact.title') || 'Contact Support'}
+                        description={t('help.contact.subtitle') || 'Get help from our support team'}
+                        onPress={handleContactSupport}
+                    />
+                    <SettingsListItem
+                        icon={<SettingsIcon name="bug" color={themeStyles.colors.iconStorage} />}
+                        title={t('help.reportBug.title') || 'Report a Bug'}
+                        description={t('help.reportBug.subtitle') || 'Help us improve by reporting issues'}
+                        onPress={handleReportBug}
+                    />
+                </SettingsListGroup>
 
                 {/* Resources */}
-                <Section title={t('help.resources') || 'Resources'} >
-                    <GroupedSection
-                        items={[
-                            {
-                                id: 'documentation',
-                                icon: 'file-document',
-                                iconColor: '#8E8E93',
-                                title: t('help.documentation.title') || 'Documentation',
-                                subtitle: t('help.documentation.subtitle') || 'User guides and tutorials',
-                                onPress: () => {
-                                    Linking.openURL('https://developer.oxy.so/docs').catch(() => {
-                                        toast.error(t('help.linkError') || 'Failed to open link');
-                                    });
-                                },
-                            },
-                            {
-                                id: 'community',
-                                icon: 'account-group',
-                                iconColor: themeStyles.colors.iconData,
-                                title: t('help.community.title') || 'Community',
-                                subtitle: t('help.community.subtitle') || 'Join our community',
-                                onPress: () => {
-                                    Linking.openURL('https://community.oxy.so').catch(() => {
-                                        toast.error(t('help.linkError') || 'Failed to open link');
-                                    });
-                                },
-                            },
-                            {
-                                id: 'developers-portal',
-                                icon: 'code-tags',
-                                iconColor: themeStyles.colors.iconSharing,
-                                title: t('help.developersPortal.title') || 'Developers Portal',
-                                subtitle: t('help.developersPortal.subtitle') || 'API documentation and developer resources',
-                                onPress: () => {
-                                    Linking.openURL('https://developer.oxy.so').catch(() => {
-                                        toast.error(t('help.linkError') || 'Failed to open link');
-                                    });
-                                },
-                            },
-                        ]}
-
+                <SettingsListGroup title={t('help.resources') || 'Resources'}>
+                    <SettingsListItem
+                        icon={<SettingsIcon name="file-document" color="#8E8E93" />}
+                        title={t('help.documentation.title') || 'Documentation'}
+                        description={t('help.documentation.subtitle') || 'User guides and tutorials'}
+                        onPress={() => {
+                            Linking.openURL('https://developer.oxy.so/docs').catch(() => {
+                                toast.error(t('help.linkError') || 'Failed to open link');
+                            });
+                        }}
                     />
-                </Section>
+                    <SettingsListItem
+                        icon={<SettingsIcon name="account-group" color={themeStyles.colors.iconData} />}
+                        title={t('help.community.title') || 'Community'}
+                        description={t('help.community.subtitle') || 'Join our community'}
+                        onPress={() => {
+                            Linking.openURL('https://community.oxy.so').catch(() => {
+                                toast.error(t('help.linkError') || 'Failed to open link');
+                            });
+                        }}
+                    />
+                    <SettingsListItem
+                        icon={<SettingsIcon name="code-tags" color={themeStyles.colors.iconSharing} />}
+                        title={t('help.developersPortal.title') || 'Developers Portal'}
+                        description={t('help.developersPortal.subtitle') || 'API documentation and developer resources'}
+                        onPress={() => {
+                            Linking.openURL('https://developer.oxy.so').catch(() => {
+                                toast.error(t('help.linkError') || 'Failed to open link');
+                            });
+                        }}
+                    />
+                </SettingsListGroup>
             </ScrollView>
         </View>
     );
@@ -149,4 +127,3 @@ const styles = StyleSheet.create({
 });
 
 export default React.memo(HelpSupportScreen);
-

@@ -21,6 +21,7 @@ import { toast } from '../../lib/sonner';
 import { confirmAction } from '../utils/confirmAction';
 import { Ionicons } from '@expo/vector-icons';
 import { Section, GroupedSection, GroupedItem } from '../components';
+import { SettingsIcon } from '../components/SettingsIcon';
 import { useI18n } from '../hooks/useI18n';
 import { useThemeStyles } from '../hooks/useThemeStyles';
 import { getDisplayName, getShortDisplayName } from '../utils/userUtils';
@@ -35,6 +36,7 @@ import {
     createScreenContentStyle,
 } from '../constants/spacing';
 import { DeleteAccountModal } from '../components/modals';
+import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 
 // Optional Lottie import - gracefully handle if not available
 let LottieView: any = null;
@@ -56,13 +58,13 @@ try {
 
 /**
  * AccountOverviewScreen - Optimized for performance
- * 
+ *
  * Performance optimizations implemented:
  * - useMemo for theme calculations (only recalculates when theme changes)
  * - useMemo for additional accounts filtering (only recalculates when dependencies change)
  * - useCallback for event handlers to prevent unnecessary re-renders
  * - React.memo wrapper to prevent re-renders when props haven't changed
- * - GroupedSection components for better organization and cleaner code
+ * - SettingsListGroup/SettingsListItem from bloom for consistent grouped list rendering
  */
 const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
     onClose,
@@ -139,8 +141,8 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
 
     // Load user profiles for additional accounts using TanStack Query
     const sessionIds = additionalAccounts.map(s => s.sessionId);
-    const { data: usersData, isLoading: isLoadingUsers } = useUsersBySessions(sessionIds, { 
-        enabled: additionalAccounts.length > 0 
+    const { data: usersData, isLoading: isLoadingUsers } = useUsersBySessions(sessionIds, {
+        enabled: additionalAccounts.length > 0
     });
 
     React.useEffect(() => {
@@ -380,71 +382,52 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                 )}
 
                 {/* User Profile Section */}
-                <Section title={t('accountOverview.sections.profile')} isFirst={true}>
-                    <GroupedSection
-                        items={[
-                            {
-                                id: 'profile-info',
-                                icon: 'account',
-                                iconColor: baseThemeStyles.colors.iconSecurity,
-                                title: displayName,
-                                subtitle: user ? (user.email || user.username) : (t('common.status.loading') || 'Loading...'),
-                                onPress: () => navigate?.('AccountSettings', { activeTab: 'profile' }),
-                            },
-                        ]}
+                <SettingsListGroup title={t('accountOverview.sections.profile')}>
+                    <SettingsListItem
+                        icon={<SettingsIcon name="account" color={baseThemeStyles.colors.iconSecurity} />}
+                        title={displayName}
+                        description={user ? (user.email || user.username) : (t('common.status.loading') || 'Loading...')}
+                        onPress={() => navigate?.('AccountSettings', { activeTab: 'profile' })}
                     />
-                </Section>
+                </SettingsListGroup>
 
                 {/* Account Settings */}
-                <Section title={t('accountOverview.sections.accountSettings')} >
-                    <GroupedSection
-                        items={[
-                            {
-                                id: 'edit-profile',
-                                icon: 'account-circle',
-                                iconColor: baseThemeStyles.colors.iconPersonalInfo,
-                                title: t('accountOverview.items.editProfile.title'),
-                                subtitle: t('accountOverview.items.editProfile.subtitle'),
-                                onPress: () => navigate?.('AccountSettings', { activeTab: 'profile' }),
-                            },
-                            {
-                                id: 'security-privacy',
-                                icon: 'shield-check',
-                                iconColor: baseThemeStyles.colors.iconSecurity,
-                                title: t('accountOverview.items.security.title'),
-                                subtitle: t('accountOverview.items.security.subtitle'),
-                                onPress: () => navigate?.('AccountSettings', { activeTab: 'password' }),
-                            },
-                            {
-                                id: 'notifications',
-                                icon: 'bell',
-                                iconColor: baseThemeStyles.colors.iconStorage,
-                                title: t('accountOverview.items.notifications.title'),
-                                subtitle: t('accountOverview.items.notifications.subtitle'),
-                                onPress: () => navigate?.('AccountSettings', { activeTab: 'notifications' }),
-                            },
-                            {
-                                id: 'premium-subscription',
-                                icon: 'star',
-                                iconColor: baseThemeStyles.colors.iconPayments,
-                                title: t('accountOverview.items.premium.title'),
-                                subtitle: user?.isPremium ? t('accountOverview.items.premium.manage') : t('accountOverview.items.premium.upgrade'),
-                                onPress: () => navigate?.('PremiumSubscription'),
-                            },
-                            ...(user?.isPremium ? [{
-                                id: 'billing-management',
-                                icon: 'card',
-                                iconColor: baseThemeStyles.colors.iconPersonalInfo,
-                                title: t('accountOverview.items.billing.title'),
-                                subtitle: t('accountOverview.items.billing.subtitle'),
-                                onPress: () => toast.info(t('accountOverview.items.billing.coming')),
-                            }] : []),
-                        ]}
-
+                <SettingsListGroup title={t('accountOverview.sections.accountSettings')}>
+                    <SettingsListItem
+                        icon={<SettingsIcon name="account-circle" color={baseThemeStyles.colors.iconPersonalInfo} />}
+                        title={t('accountOverview.items.editProfile.title')}
+                        description={t('accountOverview.items.editProfile.subtitle')}
+                        onPress={() => navigate?.('AccountSettings', { activeTab: 'profile' })}
                     />
-                </Section>
+                    <SettingsListItem
+                        icon={<SettingsIcon name="shield-check" color={baseThemeStyles.colors.iconSecurity} />}
+                        title={t('accountOverview.items.security.title')}
+                        description={t('accountOverview.items.security.subtitle')}
+                        onPress={() => navigate?.('AccountSettings', { activeTab: 'password' })}
+                    />
+                    <SettingsListItem
+                        icon={<SettingsIcon name="bell" color={baseThemeStyles.colors.iconStorage} />}
+                        title={t('accountOverview.items.notifications.title')}
+                        description={t('accountOverview.items.notifications.subtitle')}
+                        onPress={() => navigate?.('AccountSettings', { activeTab: 'notifications' })}
+                    />
+                    <SettingsListItem
+                        icon={<SettingsIcon name="star" color={baseThemeStyles.colors.iconPayments} />}
+                        title={t('accountOverview.items.premium.title')}
+                        description={user?.isPremium ? t('accountOverview.items.premium.manage') : t('accountOverview.items.premium.upgrade')}
+                        onPress={() => navigate?.('PremiumSubscription')}
+                    />
+                    {user?.isPremium ? (
+                        <SettingsListItem
+                            icon={<SettingsIcon name="credit-card" color={baseThemeStyles.colors.iconPersonalInfo} />}
+                            title={t('accountOverview.items.billing.title')}
+                            description={t('accountOverview.items.billing.subtitle')}
+                            onPress={() => toast.info(t('accountOverview.items.billing.coming'))}
+                        />
+                    ) : null}
+                </SettingsListGroup>
 
-                {/* Additional Accounts */}
+                {/* Additional Accounts - kept with GroupedSection due to custom avatar content */}
                 {showMoreAccounts && (
                     <Section title={`${t('accountOverview.sections.additionalAccounts') || 'Additional Accounts'}${additionalAccountsData.length > 0 ? ` (${additionalAccountsData.length})` : ''}`} >
                         {loadingAdditionalAccounts ? (
@@ -520,175 +503,127 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
 
                 {/* Account Management */}
                 {showMoreAccounts && (
-                    <Section title={t('accountOverview.sections.accountManagement') || 'Account Management'} >
-                        <GroupedSection
-                            items={[
-                                {
-                                    id: 'add-account',
-                                    icon: 'add',
-                                    iconColor: baseThemeStyles.colors.iconSecurity,
-                                    title: t('accountOverview.items.addAccount.title') || 'Add Another Account',
-                                    subtitle: t('accountOverview.items.addAccount.subtitle') || 'Sign in with a different account',
-                                    onPress: handleAddAccount,
-                                },
-                                {
-                                    id: 'sign-out-all',
-                                    icon: 'logout',
-                                    iconColor: baseThemeStyles.colors.iconSharing,
-                                    title: t('accountOverview.items.signOutAll.title') || 'Sign out of all accounts',
-                                    subtitle: t('accountOverview.items.signOutAll.subtitle') || 'Remove all accounts from this device',
-                                    onPress: handleSignOutAll,
-                                },
-                            ]}
-
+                    <SettingsListGroup title={t('accountOverview.sections.accountManagement') || 'Account Management'}>
+                        <SettingsListItem
+                            icon={<SettingsIcon name="plus" color={baseThemeStyles.colors.iconSecurity} />}
+                            title={t('accountOverview.items.addAccount.title') || 'Add Another Account'}
+                            description={t('accountOverview.items.addAccount.subtitle') || 'Sign in with a different account'}
+                            onPress={handleAddAccount}
                         />
-                    </Section>
+                        <SettingsListItem
+                            icon={<SettingsIcon name="logout" color={baseThemeStyles.colors.iconSharing} />}
+                            title={t('accountOverview.items.signOutAll.title') || 'Sign out of all accounts'}
+                            description={t('accountOverview.items.signOutAll.subtitle') || 'Remove all accounts from this device'}
+                            onPress={handleSignOutAll}
+                        />
+                    </SettingsListGroup>
                 )}
 
                 {/* Quick Actions */}
-                <Section title={t('accountOverview.sections.quickActions')} >
-                    <GroupedSection
-                        items={[
-                            {
-                                id: 'account-switcher',
-                                icon: 'account-group',
-                                iconColor: baseThemeStyles.colors.iconData,
-                                title: showMoreAccounts
-                                    ? t('accountOverview.items.accountSwitcher.titleHide')
-                                    : t('accountOverview.items.accountSwitcher.titleShow'),
-                                subtitle: showMoreAccounts
-                                    ? t('accountOverview.items.accountSwitcher.subtitleHide')
-                                    : additionalAccountsData.length > 0
-                                        ? t('accountOverview.items.accountSwitcher.subtitleSwitchBetween', { count: String(additionalAccountsData.length + 1) })
-                                        : loadingAdditionalAccounts
-                                            ? t('accountOverview.items.accountSwitcher.subtitleLoading')
-                                            : t('accountOverview.items.accountSwitcher.subtitleManageMultiple'),
-                                onPress: () => setShowMoreAccounts(!showMoreAccounts),
-                            },
-                            {
-                                id: 'history-view',
-                                icon: 'clock',
-                                iconColor: baseThemeStyles.colors.iconSecurity,
-                                title: t('accountOverview.items.history.title') || 'History',
-                                subtitle: t('accountOverview.items.history.subtitle') || 'View and manage your search history',
-                                onPress: () => navigate?.('HistoryView'),
-                            },
-                            {
-                                id: 'saves-collections',
-                                icon: 'bookmark',
-                                iconColor: baseThemeStyles.colors.iconStorage,
-                                title: t('accountOverview.items.saves.title') || 'Saves & Collections',
-                                subtitle: t('accountOverview.items.saves.subtitle') || 'View your saved items and collections',
-                                onPress: () => navigate?.('SavesCollections'),
-                            },
-                            {
-                                id: 'download-data',
-                                icon: 'download',
-                                iconColor: baseThemeStyles.colors.iconPersonalInfo,
-                                title: t('accountOverview.items.downloadData.title'),
-                                subtitle: t('accountOverview.items.downloadData.subtitle'),
-                                onPress: handleDownloadData,
-                            },
-                            {
-                                id: 'delete-account',
-                                icon: 'delete',
-                                iconColor: baseThemeStyles.colors.iconSharing,
-                                title: t('accountOverview.items.deleteAccount.title'),
-                                subtitle: t('accountOverview.items.deleteAccount.subtitle'),
-                                onPress: handleDeleteAccount,
-                            },
-                        ]}
-
+                <SettingsListGroup title={t('accountOverview.sections.quickActions')}>
+                    <SettingsListItem
+                        icon={<SettingsIcon name="account-group" color={baseThemeStyles.colors.iconData} />}
+                        title={showMoreAccounts
+                            ? t('accountOverview.items.accountSwitcher.titleHide')
+                            : t('accountOverview.items.accountSwitcher.titleShow')}
+                        description={showMoreAccounts
+                            ? t('accountOverview.items.accountSwitcher.subtitleHide')
+                            : additionalAccountsData.length > 0
+                                ? t('accountOverview.items.accountSwitcher.subtitleSwitchBetween', { count: String(additionalAccountsData.length + 1) })
+                                : loadingAdditionalAccounts
+                                    ? t('accountOverview.items.accountSwitcher.subtitleLoading')
+                                    : t('accountOverview.items.accountSwitcher.subtitleManageMultiple')}
+                        onPress={() => setShowMoreAccounts(!showMoreAccounts)}
                     />
-                </Section>
+                    <SettingsListItem
+                        icon={<SettingsIcon name="clock" color={baseThemeStyles.colors.iconSecurity} />}
+                        title={t('accountOverview.items.history.title') || 'History'}
+                        description={t('accountOverview.items.history.subtitle') || 'View and manage your search history'}
+                        onPress={() => navigate?.('HistoryView')}
+                    />
+                    <SettingsListItem
+                        icon={<SettingsIcon name="bookmark" color={baseThemeStyles.colors.iconStorage} />}
+                        title={t('accountOverview.items.saves.title') || 'Saves & Collections'}
+                        description={t('accountOverview.items.saves.subtitle') || 'View your saved items and collections'}
+                        onPress={() => navigate?.('SavesCollections')}
+                    />
+                    <SettingsListItem
+                        icon={<SettingsIcon name="download" color={baseThemeStyles.colors.iconPersonalInfo} />}
+                        title={t('accountOverview.items.downloadData.title')}
+                        description={t('accountOverview.items.downloadData.subtitle')}
+                        onPress={handleDownloadData}
+                    />
+                    <SettingsListItem
+                        icon={<SettingsIcon name="delete" color={baseThemeStyles.colors.iconSharing} />}
+                        title={t('accountOverview.items.deleteAccount.title')}
+                        description={t('accountOverview.items.deleteAccount.subtitle')}
+                        onPress={handleDeleteAccount}
+                    />
+                </SettingsListGroup>
 
                 {/* Support & Settings */}
-                <Section title={t('accountOverview.sections.support')} >
-                    <GroupedSection
-                        items={[
-                            {
-                                id: 'search-settings',
-                                icon: 'magnify',
-                                iconColor: baseThemeStyles.colors.iconSecurity,
-                                title: t('accountOverview.items.searchSettings.title') || 'Search Settings',
-                                subtitle: t('accountOverview.items.searchSettings.subtitle') || 'SafeSearch and personalization',
-                                onPress: () => navigate?.('SearchSettings'),
-                            },
-                            {
-                                id: 'language-settings',
-                                icon: 'translate',
-                                iconColor: baseThemeStyles.colors.iconPersonalInfo,
-                                title: t('accountOverview.items.language.title') || 'Language',
-                                subtitle: t('accountOverview.items.language.subtitle') || 'Choose your preferred language',
-                                onPress: () => navigate?.('LanguageSelector'),
-                            },
-                            {
-                                id: 'account-preferences',
-                                icon: 'cog',
-                                iconColor: '#8E8E93',
-                                title: t('accountOverview.items.preferences.title'),
-                                subtitle: t('accountOverview.items.preferences.subtitle'),
-                                onPress: () => toast.info(t('accountOverview.items.preferences.coming')),
-                            },
-                            {
-                                id: 'help-support',
-                                icon: 'help-circle',
-                                iconColor: baseThemeStyles.colors.iconSecurity,
-                                title: t('accountOverview.items.help.title'),
-                                subtitle: t('accountOverview.items.help.subtitle'),
-                                onPress: () => navigate?.('HelpSupport'),
-                            },
-                            {
-                                id: 'privacy-policy',
-                                icon: 'shield-check',
-                                iconColor: baseThemeStyles.colors.iconPersonalInfo,
-                                title: t('accountOverview.items.privacyPolicy.title') || 'Privacy Policy',
-                                subtitle: t('accountOverview.items.privacyPolicy.subtitle') || 'How we handle your data',
-                                onPress: () => navigate?.('LegalDocuments', { initialStep: 1 }),
-                            },
-                            {
-                                id: 'terms-of-service',
-                                icon: 'file-document',
-                                iconColor: baseThemeStyles.colors.iconSecurity,
-                                title: t('accountOverview.items.termsOfService.title') || 'Terms of Service',
-                                subtitle: t('accountOverview.items.termsOfService.subtitle') || 'Terms and conditions of use',
-                                onPress: () => navigate?.('LegalDocuments', { initialStep: 2 }),
-                            },
-                            {
-                                id: 'connected-apps',
-                                icon: 'link',
-                                iconColor: baseThemeStyles.colors.iconPersonalInfo,
-                                title: t('accountOverview.items.connectedApps.title'),
-                                subtitle: t('accountOverview.items.connectedApps.subtitle'),
-                                onPress: () => toast.info(t('accountOverview.items.connectedApps.coming')),
-                            },
-                            {
-                                id: 'about',
-                                icon: 'information',
-                                iconColor: '#8E8E93',
-                                title: t('accountOverview.items.about.title'),
-                                subtitle: t('accountOverview.items.about.subtitle'),
-                                onPress: () => navigate?.('AppInfo'),
-                            },
-                        ]}
-
+                <SettingsListGroup title={t('accountOverview.sections.support')}>
+                    <SettingsListItem
+                        icon={<SettingsIcon name="magnify" color={baseThemeStyles.colors.iconSecurity} />}
+                        title={t('accountOverview.items.searchSettings.title') || 'Search Settings'}
+                        description={t('accountOverview.items.searchSettings.subtitle') || 'SafeSearch and personalization'}
+                        onPress={() => navigate?.('SearchSettings')}
                     />
-                </Section>
+                    <SettingsListItem
+                        icon={<SettingsIcon name="translate" color={baseThemeStyles.colors.iconPersonalInfo} />}
+                        title={t('accountOverview.items.language.title') || 'Language'}
+                        description={t('accountOverview.items.language.subtitle') || 'Choose your preferred language'}
+                        onPress={() => navigate?.('LanguageSelector')}
+                    />
+                    <SettingsListItem
+                        icon={<SettingsIcon name="cog" color="#8E8E93" />}
+                        title={t('accountOverview.items.preferences.title')}
+                        description={t('accountOverview.items.preferences.subtitle')}
+                        onPress={() => toast.info(t('accountOverview.items.preferences.coming'))}
+                    />
+                    <SettingsListItem
+                        icon={<SettingsIcon name="help-circle" color={baseThemeStyles.colors.iconSecurity} />}
+                        title={t('accountOverview.items.help.title')}
+                        description={t('accountOverview.items.help.subtitle')}
+                        onPress={() => navigate?.('HelpSupport')}
+                    />
+                    <SettingsListItem
+                        icon={<SettingsIcon name="shield-check" color={baseThemeStyles.colors.iconPersonalInfo} />}
+                        title={t('accountOverview.items.privacyPolicy.title') || 'Privacy Policy'}
+                        description={t('accountOverview.items.privacyPolicy.subtitle') || 'How we handle your data'}
+                        onPress={() => navigate?.('LegalDocuments', { initialStep: 1 })}
+                    />
+                    <SettingsListItem
+                        icon={<SettingsIcon name="file-document" color={baseThemeStyles.colors.iconSecurity} />}
+                        title={t('accountOverview.items.termsOfService.title') || 'Terms of Service'}
+                        description={t('accountOverview.items.termsOfService.subtitle') || 'Terms and conditions of use'}
+                        onPress={() => navigate?.('LegalDocuments', { initialStep: 2 })}
+                    />
+                    <SettingsListItem
+                        icon={<SettingsIcon name="link" color={baseThemeStyles.colors.iconPersonalInfo} />}
+                        title={t('accountOverview.items.connectedApps.title')}
+                        description={t('accountOverview.items.connectedApps.subtitle')}
+                        onPress={() => toast.info(t('accountOverview.items.connectedApps.coming'))}
+                    />
+                    <SettingsListItem
+                        icon={<SettingsIcon name="information" color="#8E8E93" />}
+                        title={t('accountOverview.items.about.title')}
+                        description={t('accountOverview.items.about.subtitle')}
+                        onPress={() => navigate?.('AppInfo')}
+                    />
+                </SettingsListGroup>
 
                 {/* Sign Out */}
-                <Section title={t('accountOverview.sections.actions')} >
-                    <GroupedItem
-                        icon="logout"
-                        iconColor="#FF3B30"
+                <SettingsListGroup title={t('accountOverview.sections.actions')}>
+                    <SettingsListItem
+                        icon={<SettingsIcon name="logout" color="#FF3B30" />}
                         title={t('accountOverview.items.signOut.title')}
-                        subtitle={t('accountOverview.items.signOut.subtitle')}
-
+                        description={t('accountOverview.items.signOut.subtitle')}
                         onPress={confirmLogout}
-                        isFirst={true}
-                        isLast={true}
+                        destructive={true}
                         showChevron={false}
                     />
-                </Section>
+                </SettingsListGroup>
             </ScrollView>
 
             {/* Delete Account Modal */}
@@ -781,7 +716,6 @@ const styles = StyleSheet.create({
         paddingHorizontal: 16,
         paddingVertical: 8,
         borderRadius: 16,
-        // backgroundColor should be applied inline using colors.iconSecurity
     },
     manageButtonText: {
         color: '#fff',
