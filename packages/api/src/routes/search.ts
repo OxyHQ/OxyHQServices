@@ -29,7 +29,7 @@ router.get("/", validate({ query: searchQuerySchema }), async (req: Request, res
           { location: searchQuery }
         ]
       })
-      .select('username name description avatar location')
+      .select('username name description avatar location color')
       .skip(skip)
       .limit(limit);
 

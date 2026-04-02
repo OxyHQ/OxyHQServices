@@ -28,6 +28,7 @@ export function formatUserResponse(user: UserLike) {
     username: user.username,
     email: user.email,
     avatar: user.avatar,
+    color: user.color,
     name: user.name,
     privacySettings: user.privacySettings,
     verified: user.verified,

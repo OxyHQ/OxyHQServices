@@ -272,7 +272,7 @@ export class UserService {
     const followers = await User.find({
       _id: { $in: followerIds },
     })
-      .select('username name avatar -email')
+      .select('username name avatar color -email')
       .lean()
       .exec() as UserProfile[];
 
@@ -332,7 +332,7 @@ export class UserService {
     const following = await User.find({
       _id: { $in: followingIds },
     })
-      .select('username name avatar -email')
+      .select('username name avatar color -email')
       .lean()
       .exec() as UserProfile[];
 
@@ -500,6 +500,7 @@ export class UserService {
       verified: userAny.verified as boolean | undefined,
       bio: userAny.bio as string | undefined,
       description: userAny.description as string | undefined,
+      color: userAny.color as string | undefined,
       links: userAny.links as string[] | undefined,
       linksMetadata: userAny.linksMetadata as unknown,
       createdAt: userAny.createdAt as Date | undefined,

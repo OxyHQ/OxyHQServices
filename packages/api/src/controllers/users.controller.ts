@@ -40,7 +40,7 @@ export class UsersController {
           { 'name.last': { $regex: sanitizedQuery, $options: 'i' } },
         ],
       })
-        .select('username name avatar email description')
+        .select('username name avatar email description color')
         .limit(5)
         .lean();
 
