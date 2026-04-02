@@ -17,7 +17,6 @@ import {
     StyleSheet,
     Modal,
     Dimensions,
-    ActivityIndicator,
     Platform,
     Linking,
 } from 'react-native';
@@ -30,7 +29,9 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import io, { type Socket } from 'socket.io-client';
 import QRCode from 'react-native-qrcode-svg';
-import { useThemeColors } from '../hooks/useThemeColors';
+import { useTheme } from '@oxyhq/bloom/theme';
+import { Button } from '@oxyhq/bloom/button';
+import { Loading } from '@oxyhq/bloom/loading';
 import { useOxy } from '../context/OxyContext';
 import OxyLogo from './OxyLogo';
 import { createDebugLogger } from '@oxyhq/core';
@@ -91,7 +92,7 @@ const SignInModal: React.FC = () => {
     const [isWaiting, setIsWaiting] = useState(false);
 
     const insets = useSafeAreaInsets();
-    const colors = useThemeColors();
+    const theme = useTheme();
     const { oxyServices, switchSession } = useOxy();
 
     const socketRef = useRef<Socket | null>(null);
@@ -345,7 +346,7 @@ const SignInModal: React.FC = () => {
 
     return (
         <Modal visible={visible} transparent animationType="none" statusBarTranslucent onRequestClose={handleClose}>
-            <Animated.View style={[styles.backdrop, backdropStyle]}>
+            <Animated.View style={[styles.backdrop, { backgroundColor: theme.colors.overlay }, backdropStyle]}>
                 <TouchableOpacity style={StyleSheet.absoluteFill} onPress={handleClose} activeOpacity={1} />
 
                 <Animated.View style={[styles.content, contentStyle, { paddingTop: insets.top + 20, paddingBottom: insets.bottom + 20 }]}>
@@ -357,28 +358,23 @@ const SignInModal: React.FC = () => {
                     {/* Header */}
                     <View style={styles.header}>
                         <OxyLogo width={56} height={56} />
-                        <Text style={[styles.title, { color: colors.text }]}>Sign in with Oxy</Text>
-                        <Text style={[styles.subtitle, { color: colors.secondaryText }]}>
+                        <Text style={[styles.title, { color: theme.colors.text }]}>Sign in with Oxy</Text>
+                        <Text style={[styles.subtitle, { color: theme.colors.secondaryText }]}>
                             Scan with Oxy Accounts app or use the button below
                         </Text>
                     </View>
 
                     {isLoading ? (
                         <View style={styles.loadingContainer}>
-                            <ActivityIndicator size="large" color={colors.tint} />
-                            <Text style={[styles.loadingText, { color: colors.secondaryText }]}>
+                            <Loading size="large" />
+                            <Text style={[styles.loadingText, { color: theme.colors.secondaryText }]}>
                                 Preparing sign in...
                             </Text>
                         </View>
                     ) : error ? (
                         <View style={styles.errorContainer}>
-                            <Text style={[styles.errorText, { color: '#EA4335' }]}>{error}</Text>
-                            <TouchableOpacity
-                                style={[styles.button, { backgroundColor: colors.tint }]}
-                                onPress={handleRefresh}
-                            >
-                                <Text style={styles.buttonText}>Try Again</Text>
-                            </TouchableOpacity>
+                            <Text style={[styles.errorText, { color: theme.colors.error }]}>{error}</Text>
+                            <Button onPress={handleRefresh}>Try Again</Button>
                         </View>
                     ) : (
                         <>
@@ -392,7 +388,7 @@ const SignInModal: React.FC = () => {
                                         color="black"
                                     />
                                 ) : (
-                                    <ActivityIndicator size="large" color="#d169e5" />
+                                    <Loading size="large" />
                                 )}
                             </View>
 
@@ -404,18 +400,17 @@ const SignInModal: React.FC = () => {
                             </View>
 
                             {/* Open Auth Popup Button */}
-                            <TouchableOpacity
-                                style={[styles.button, { backgroundColor: '#d169e5' }]}
+                            <Button
                                 onPress={handleOpenAuthPopup}
+                                icon={<OxyLogo width={20} height={20} fillColor={theme.colors.card} />}
                             >
-                                <OxyLogo width={20} height={20} fillColor="white" style={styles.buttonIcon} />
-                                <Text style={styles.buttonText}>Open Oxy Auth</Text>
-                            </TouchableOpacity>
+                                Open Oxy Auth
+                            </Button>
 
                             {/* Status */}
                             {isWaiting && (
                                 <View style={styles.statusContainer}>
-                                    <ActivityIndicator size="small" color="white" />
+                                    <Loading size="small" />
                                     <Text style={styles.statusText}>
                                         Waiting for authorization...
                                     </Text>
@@ -432,7 +427,6 @@ const SignInModal: React.FC = () => {
 const styles = StyleSheet.create({
     backdrop: {
         flex: 1,
-        backgroundColor: 'rgba(0, 0, 0, 0.85)',
         justifyContent: 'center',
         alignItems: 'center',
     },
@@ -493,23 +487,6 @@ const styles = StyleSheet.create({
     dividerText: {
         marginHorizontal: 16,
         fontSize: 14,
-    },
-    button: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingVertical: 16,
-        paddingHorizontal: 24,
-        borderRadius: 12,
-        width: '100%',
-    },
-    buttonIcon: {
-        marginRight: 10,
-    },
-    buttonText: {
-        color: 'white',
-        fontSize: 16,
-        fontWeight: '600',
     },
     statusContainer: {
         flexDirection: 'row',

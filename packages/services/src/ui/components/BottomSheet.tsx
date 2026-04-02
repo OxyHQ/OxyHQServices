@@ -21,7 +21,7 @@ import Animated, {
     withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useThemeColors } from '../hooks/useThemeColors';
+import { useTheme } from '@oxyhq/bloom/theme';
 
 // Keyboard handler — only on native platforms. On web, keyboard events are handled by the browser.
 const noopKeyboardHandler = (_handlers: Record<string, (e: { height: number }) => void>, _deps: unknown[]) => {};
@@ -77,7 +77,7 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
     } = props;
 
     const insets = useSafeAreaInsets();
-    const colors = useThemeColors();
+    const theme = useTheme();
     const [visible, setVisible] = useState(false);
     const [rendered, setRendered] = useState(false); // keep mounted for exit animation
     const closeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -159,9 +159,9 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
     // Apply web scrollbar styles when colors change
     useEffect(() => {
         if (Platform.OS === 'web') {
-            createWebScrollbarStyle(colors.border);
+            createWebScrollbarStyle(theme.colors.border);
         }
-    }, [colors.border]);
+    }, [theme.colors.border]);
 
     const present = useCallback(() => {
         setRendered(true);
@@ -293,15 +293,14 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
     });
 
     const dynamicStyles = useMemo(() => {
-        const isDark = colors.background === '#000000';
         return StyleSheet.create({
             handle: {
                 ...styles.handle,
-                backgroundColor: isDark ? '#444' : '#C7C7CC',
+                backgroundColor: theme.isDark ? theme.colors.border : theme.colors.borderLight,
             },
             sheet: {
                 ...styles.sheet,
-                backgroundColor: colors.background,
+                backgroundColor: theme.colors.background,
                 ...(detached ? styles.sheetDetached : styles.sheetNormal),
             },
             scrollContent: {
@@ -310,14 +309,14 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
                 // The sheet extends behind safe area, and screens add padding as needed
             },
         });
-    }, [colors.background, detached]);
+    }, [theme.colors.background, theme.colors.border, theme.colors.borderLight, theme.isDark, detached]);
 
     if (!rendered) return null;
 
     return (
         <Modal visible={rendered} transparent animationType="none" statusBarTranslucent onRequestClose={dismiss}>
             <View style={StyleSheet.absoluteFill}>
-                <Animated.View style={[styles.backdrop, backdropStyle]}>
+                <Animated.View style={[styles.backdrop, { backgroundColor: theme.colors.overlay }, backdropStyle]}>
                     {backdropComponent ? (
                         backdropComponent({ onPress: handleBackdropPress })
                     ) : (
@@ -340,7 +339,7 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
                                     styles.scrollView,
                                     Platform.OS === 'web' && ({
                                         scrollbarWidth: 'thin',
-                                        scrollbarColor: `${colors.border} transparent`,
+                                        scrollbarColor: `${theme.colors.border} transparent`,
                                     } as ViewStyle),
                                 ]}
                                 contentContainerStyle={dynamicStyles.scrollContent}
@@ -351,7 +350,7 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
                                 {...(Platform.OS === 'web' ? { className: 'bottom-sheet-scrollview' } : undefined)}
                                 onLayout={() => {
                                     if (Platform.OS === 'web') {
-                                        createWebScrollbarStyle(colors.border);
+                                        createWebScrollbarStyle(theme.colors.border);
                                     }
                                 }}
                             >
@@ -370,7 +369,6 @@ BottomSheet.displayName = 'BottomSheet';
 const styles = StyleSheet.create({
     backdrop: {
         flex: 1,
-        backgroundColor: 'rgba(0, 0, 0, 0.5)',
     },
     backdropTouchable: {
         flex: 1,
@@ -428,10 +426,6 @@ const createWebScrollbarStyle = (borderColor: string) => {
         document.head.appendChild(styleElement);
     }
 
-    // Use theme border color for scrollbar
-    const scrollbarColor = borderColor;
-    const scrollbarHoverColor = borderColor === '#E5E5EA' ? '#C7C7CC' : '#555';
-
     styleElement.textContent = `
         .bottom-sheet-scrollview::-webkit-scrollbar {
             width: 6px;
@@ -441,11 +435,11 @@ const createWebScrollbarStyle = (borderColor: string) => {
             border-radius: 10px;
         }
         .bottom-sheet-scrollview::-webkit-scrollbar-thumb {
-            background: ${scrollbarColor};
+            background: ${borderColor};
             border-radius: 10px;
         }
         .bottom-sheet-scrollview::-webkit-scrollbar-thumb:hover {
-            background: ${scrollbarHoverColor};
+            background: ${borderColor};
         }
     `;
 };

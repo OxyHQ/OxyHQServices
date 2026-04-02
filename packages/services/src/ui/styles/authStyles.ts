@@ -203,7 +203,7 @@ export const createAuthStyles = (colors: AuthThemeColors, theme: string) => Styl
     width: '100%',
   },
   modernButtonText: {
-    color: '#FFFFFF',
+    color: colors.background,
     fontSize: 16,
     fontWeight: '600',
     letterSpacing: 0.5,
@@ -244,7 +244,7 @@ export const createAuthStyles = (colors: AuthThemeColors, theme: string) => Styl
   },
   modernUserAvatar: {
     borderWidth: 4,
-    borderColor: 'rgba(209, 105, 229, 0.2)',
+    borderColor: `${colors.primary}33`,
   },
   statusIndicator: {
     position: 'absolute',
@@ -254,7 +254,7 @@ export const createAuthStyles = (colors: AuthThemeColors, theme: string) => Styl
     height: 20,
     borderRadius: 10,
     borderWidth: 3,
-    borderColor: '#FFFFFF',
+    borderColor: colors.background,
   },
   modernUserDisplayName: {
     fontFamily: fontFamilies.interBold,

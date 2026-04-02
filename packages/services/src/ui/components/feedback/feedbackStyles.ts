@@ -130,7 +130,7 @@ export const createFeedbackStyles = (colors: FeedbackColors) => StyleSheet.creat
         }),
     },
     buttonText: {
-        color: '#FFFFFF',
+        color: colors.background,
         fontSize: 16,
         fontWeight: '600',
         letterSpacing: 0.5,
@@ -193,7 +193,7 @@ export const createFeedbackStyles = (colors: FeedbackColors) => StyleSheet.creat
         borderRadius: 5,
         marginHorizontal: 6,
         borderWidth: 2,
-        borderColor: '#fff',
+        borderColor: colors.background,
         ...Platform.select({
             web: {
                 boxShadow: '0 1px 2px rgba(0,0,0,0.08)',

@@ -1,6 +1,7 @@
 /**
- * Below are the colors that are used in the app. The colors are defined in the light and dark mode.
- * There are many other ways to style your app. For example, [Nativewind](https://www.nativewind.dev/), [Tamagui](https://tamagui.dev/), [unistyles](https://reactnativeunistyles.vercel.app), etc.
+ * Below are the colors that are used in the app.
+ * These are kept as a compatibility layer — prefer using bloom's useTheme() / useThemeColor()
+ * directly in new code. Existing screens still reference Colors.light / Colors.dark.
  */
 
 import { Platform } from 'react-native';

@@ -34,12 +34,12 @@ export const createPaymentStyles = (colors: PaymentColors) => StyleSheet.create(
     },
     errorText: {
         fontSize: 18,
-        color: 'red',
+        color: colors.error ?? '#EF4444',
         marginBottom: 24,
     },
     // Summary card styles
     summaryCard: {
-        backgroundColor: '#fff',
+        backgroundColor: colors.card ?? colors.background ?? '#fff',
         borderRadius: 16,
         padding: 24,
         marginBottom: 24,
@@ -131,7 +131,7 @@ export const createPaymentStyles = (colors: PaymentColors) => StyleSheet.create(
     },
     // Card payment styles
     cardPaymentCard: {
-        backgroundColor: '#fff',
+        backgroundColor: colors.card ?? colors.background ?? '#fff',
         borderRadius: 16,
         padding: 24,
         marginBottom: 24,
@@ -200,7 +200,7 @@ export const createPaymentStyles = (colors: PaymentColors) => StyleSheet.create(
     },
     // Oxy Pay styles
     oxyPayCard: {
-        backgroundColor: '#fff',
+        backgroundColor: colors.card ?? colors.background ?? '#fff',
         borderRadius: 16,
         padding: 24,
         marginBottom: 24,
@@ -247,7 +247,7 @@ export const createPaymentStyles = (colors: PaymentColors) => StyleSheet.create(
     },
     // FairCoin styles
     faircoinCard: {
-        backgroundColor: '#fff',
+        backgroundColor: colors.card ?? colors.background ?? '#fff',
         borderRadius: 16,
         padding: 24,
         marginBottom: 24,
@@ -358,7 +358,7 @@ export const createPaymentStyles = (colors: PaymentColors) => StyleSheet.create(
     },
     // Success styles
     successCard: {
-        backgroundColor: '#fff',
+        backgroundColor: colors.card ?? colors.background ?? '#fff',
         borderRadius: 16,
         padding: 24,
         marginBottom: 24,

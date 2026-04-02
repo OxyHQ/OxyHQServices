@@ -1,6 +1,11 @@
 import { Platform, StyleSheet, type TextStyle } from 'react-native';
+import { useTheme as useBloomThemeHook, type ThemeColors as BloomThemeColors } from '@oxyhq/bloom';
 import { fontFamilies } from './fonts';
 
+/**
+ * ThemeColors used by services style files.
+ * Maps to bloom's ThemeColors, with a few convenience aliases.
+ */
 export interface ThemeColors {
   text: string;
   background: string;
@@ -24,7 +29,26 @@ export interface Theme {
   };
 }
 
-const lightColors: ThemeColors = {
+/**
+ * Adapts bloom's ThemeColors into the services ThemeColors shape.
+ */
+function bloomColorsToThemeColors(bloomColors: BloomThemeColors): ThemeColors {
+  return {
+    text: bloomColors.text,
+    background: bloomColors.background,
+    inputBackground: bloomColors.backgroundSecondary,
+    placeholder: bloomColors.textTertiary,
+    primary: bloomColors.primary,
+    border: bloomColors.border,
+    error: bloomColors.error,
+    success: bloomColors.success,
+    warning: bloomColors.warning,
+    secondaryText: bloomColors.textSecondary,
+  };
+}
+
+/** Fallback colors when bloom context is not available */
+const fallbackLight: ThemeColors = {
   text: '#000000',
   background: '#FFFFFF',
   inputBackground: '#F5F5F5',
@@ -37,7 +61,7 @@ const lightColors: ThemeColors = {
   secondaryText: '#666666',
 };
 
-const darkColors: ThemeColors = {
+const fallbackDark: ThemeColors = {
   text: '#FFFFFF',
   background: '#000000',
   inputBackground: '#333333',
@@ -50,11 +74,11 @@ const darkColors: ThemeColors = {
   secondaryText: '#BBBBBB',
 };
 
-const createTheme = (isDark: boolean): Theme => {
-  const colors = isDark ? darkColors : lightColors;
-  
+const createTheme = (isDark: boolean, colors?: ThemeColors): Theme => {
+  const themeColors = colors ?? (isDark ? fallbackDark : fallbackLight);
+
   return {
-    colors,
+    colors: themeColors,
     fonts: {
       title: {
         fontFamily: fontFamilies.interBold,
@@ -69,7 +93,7 @@ const createTheme = (isDark: boolean): Theme => {
         fontFamily: fontFamilies.interSemiBold,
         fontSize: 16,
         fontWeight: '600',
-        color: '#FFFFFF',
+        color: themeColors.background,
       },
       label: {
         fontSize: 14,
@@ -84,8 +108,18 @@ export const getTheme = (theme: 'light' | 'dark'): Theme => {
   return createTheme(theme === 'dark');
 };
 
+/**
+ * Returns theme colors from bloom when available, with fallback to local colors.
+ * Prefer this hook for new code — it reads from bloom's ThemeProvider.
+ */
 export const useThemeColors = (theme: 'light' | 'dark'): ThemeColors => {
-  return getTheme(theme).colors;
+  try {
+    const bloomTheme = useBloomThemeHook();
+    return bloomColorsToThemeColors(bloomTheme.colors);
+  } catch {
+    // Bloom provider not available, fall back to local colors
+    return getTheme(theme).colors;
+  }
 };
 
 // Common styles that can be reused across components
@@ -122,10 +156,10 @@ export const createCommonStyles = (theme: 'light' | 'dark') => {
       fontFamily: fontFamilies.interSemiBold,
       fontSize: 16,
       fontWeight: '600',
-      color: '#FFFFFF',
+      color: colors.background,
     },
     errorContainer: {
-      backgroundColor: '#FFEBEE',
+      backgroundColor: `${colors.error}18`,
       padding: 12,
       borderRadius: 35,
       marginBottom: 16,

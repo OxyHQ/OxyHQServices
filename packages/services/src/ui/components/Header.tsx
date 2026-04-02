@@ -14,9 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import OxyIcon from './icon/OxyIcon';
 import { fontFamilies } from '../styles/fonts';
-import { useColorScheme } from '../hooks/useColorScheme';
-import { normalizeColorScheme } from '../utils/themeUtils';
-import { Colors } from '../constants/theme';
+import { useTheme } from '@oxyhq/bloom/theme';
 
 // Calculate header height based on platform and variant
 export const getHeaderHeight = (variant: HeaderProps['variant'] = 'default', safeAreaTop = 0): number => {
@@ -77,10 +75,9 @@ const Header: React.FC<HeaderProps> = ({
     titleAlignment = 'left',
     scrollY,
 }) => {
-    // Use theme colors directly from Colors constant (like Accounts sidebar)
-    // Ensure colorScheme is always 'light' or 'dark' with proper fallback chain
-    const colorScheme = normalizeColorScheme(useColorScheme(), theme);
-    const colors = Colors[colorScheme];
+    const bloomTheme = useTheme();
+    const colors = bloomTheme.colors;
+    const colorScheme = bloomTheme.mode;
     const insets = useSafeAreaInsets();
     const headerHeight = getHeaderHeight(variant, insets.top);
 
@@ -168,12 +165,12 @@ const Header: React.FC<HeaderProps> = ({
             >
                 {action.loading ? (
                     <View style={styles.loadingContainer}>
-                        <View style={[styles.loadingDot, { backgroundColor: isTextAction ? '#FFFFFF' : colors.tint }]} />
-                        <View style={[styles.loadingDot, { backgroundColor: isTextAction ? '#FFFFFF' : colors.tint }]} />
-                        <View style={[styles.loadingDot, { backgroundColor: isTextAction ? '#FFFFFF' : colors.tint }]} />
+                        <View style={[styles.loadingDot, { backgroundColor: isTextAction ? colors.card : colors.tint }]} />
+                        <View style={[styles.loadingDot, { backgroundColor: isTextAction ? colors.card : colors.tint }]} />
+                        <View style={[styles.loadingDot, { backgroundColor: isTextAction ? colors.card : colors.tint }]} />
                     </View>
                 ) : isTextAction ? (
-                    <Text style={[styles.actionText, { color: '#FFFFFF' }]}>
+                    <Text style={[styles.actionText, { color: colors.card }]}>
                         {action.text}
                     </Text>
                 ) : (
@@ -246,11 +243,11 @@ const Header: React.FC<HeaderProps> = ({
                 <Text style={[titleStyle, { color: colors.text }]}>
                     {title}
                 </Text>
-                {subtitle && (
-                    <Text style={[subtitleStyle, { color: colors.secondaryText }]}>
+                {subtitle ? (
+                    <Text style={[subtitleStyle, { color: colors.textSecondary }]}>
                         {subtitle}
                     </Text>
-                )}
+                ) : null}
             </View>
         );
     };

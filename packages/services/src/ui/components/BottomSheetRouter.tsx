@@ -4,8 +4,7 @@ import { useStore } from 'zustand';
 import type { RouteName } from '../navigation/routes';
 import { getScreenComponent, isValidRoute } from '../navigation/routes';
 import type { BaseScreenProps } from '../types/navigation';
-import { useColorScheme } from '../hooks/useColorScheme';
-import { Colors } from '../constants/theme';
+import { useTheme } from '@oxyhq/bloom/theme';
 import BottomSheet, { type BottomSheetRef } from './BottomSheet';
 import {
     bottomSheetStore,
@@ -65,7 +64,7 @@ class ScreenErrorBoundary extends React.Component<
 const errorStyles = StyleSheet.create({
     container: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
     title: { fontSize: 16, fontWeight: '600', marginBottom: 8 },
-    message: { fontSize: 13, color: '#888', textAlign: 'center' },
+    message: { fontSize: 13, textAlign: 'center' },
 });
 
 export interface BottomSheetRouterProps {
@@ -78,8 +77,7 @@ export interface BottomSheetRouterProps {
  */
 const BottomSheetRouter: React.FC<BottomSheetRouterProps> = ({ onScreenChange, onDismiss }) => {
     const sheetRef = useRef<BottomSheetRef>(null);
-    const colorScheme = useColorScheme();
-    const colors = Colors[colorScheme ?? 'light'];
+    const theme = useTheme();
     const prevScreenRef = useRef<RouteName | null>(null);
 
     const { currentScreen, screenProps, currentStep, isOpen } = useStore(bottomSheetStore);
@@ -190,9 +188,9 @@ const BottomSheetRouter: React.FC<BottomSheetRouterProps> = ({ onScreenChange, o
 
     const renderBackground = useCallback(
         (props: { style?: StyleProp<ViewStyle> }) => (
-            <View style={[styles.background, { backgroundColor: colors.background }, props.style]} />
+            <View style={[styles.background, { backgroundColor: theme.colors.background }, props.style]} />
         ),
-        [colors.background]
+        [theme.colors.background]
     );
 
     const screenPropsValue = useMemo((): BaseScreenProps & { scrollTo: typeof scrollTo } => {
@@ -202,14 +200,14 @@ const BottomSheetRouter: React.FC<BottomSheetRouterProps> = ({ onScreenChange, o
             goBack: handleGoBack,
             onClose: closeBottomSheet,
             onAuthenticated: closeBottomSheet,
-            theme: colorScheme ?? 'light',
+            theme: theme.mode,
             currentScreen: currentScreen ?? undefined,
             initialStep: currentStep ?? (screenProps?.initialStep as number | undefined),
             onStepChange: handleStepChange,
             scrollTo,
             ...rest,
         };
-    }, [navigate, handleGoBack, colorScheme, currentScreen, currentStep, screenProps, handleStepChange, scrollTo]);
+    }, [navigate, handleGoBack, theme.mode, currentScreen, currentStep, screenProps, handleStepChange, scrollTo]);
 
     return (
         <BottomSheet

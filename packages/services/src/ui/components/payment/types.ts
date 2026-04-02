@@ -41,5 +41,7 @@ export interface PaymentColors {
     secondaryText: string;
     border: string;
     success?: string;
+    error?: string;
     background?: string;
+    card?: string;
 }

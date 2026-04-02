@@ -698,14 +698,6 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                     username={user.username || ''}
                     onClose={() => setShowDeleteModal(false)}
                     onDelete={handleConfirmDelete}
-                    colors={{
-                        background: themeStyles.backgroundColor,
-                        text: themeStyles.textColor,
-                        secondaryText: themeStyles.isDarkTheme ? '#888888' : '#666666',
-                        border: themeStyles.borderColor,
-                        danger: '#FF3B30',
-                        inputBackground: themeStyles.isDarkTheme ? '#333333' : '#F5F5F5',
-                    }}
                     t={t}
                 />
             )}

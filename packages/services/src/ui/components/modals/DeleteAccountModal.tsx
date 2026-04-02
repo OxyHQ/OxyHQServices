@@ -7,25 +7,18 @@ import {
     TouchableOpacity,
     StyleSheet,
     Modal,
-    ActivityIndicator,
     KeyboardAvoidingView,
     Platform,
 } from 'react-native';
 import OxyIcon from '../icon/OxyIcon';
+import { useTheme } from '@oxyhq/bloom/theme';
+import { Loading } from '@oxyhq/bloom/loading';
 
 interface DeleteAccountModalProps {
     visible: boolean;
     username: string;
     onClose: () => void;
     onDelete: (password: string) => Promise<void>;
-    colors: {
-        background: string;
-        text: string;
-        secondaryText: string;
-        border: string;
-        danger: string;
-        inputBackground: string;
-    };
     t: (key: string, params?: Record<string, string>) => string | undefined;
 }
 
@@ -34,9 +27,9 @@ const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
     username,
     onClose,
     onDelete,
-    colors,
     t,
 }) => {
+    const theme = useTheme();
     const [password, setPassword] = useState('');
     const [confirmUsername, setConfirmUsername] = useState('');
     const [isDeleting, setIsDeleting] = useState(false);
@@ -81,41 +74,41 @@ const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
                 style={styles.overlay}
             >
                 <TouchableOpacity
-                    style={styles.backdrop}
+                    style={[styles.backdrop, { backgroundColor: theme.colors.overlay }]}
                     activeOpacity={1}
                     onPress={handleClose}
                 />
-                <View style={[styles.modal, { backgroundColor: colors.background }]}>
+                <View style={[styles.modal, { backgroundColor: theme.colors.background }]}>
                     <View style={styles.header}>
-                        <OxyIcon name="alert" size={32} color={colors.danger} />
-                        <Text style={[styles.title, { color: colors.danger }]}>
+                        <OxyIcon name="alert" size={32} color={theme.colors.error} />
+                        <Text style={[styles.title, { color: theme.colors.error }]}>
                             {t('deleteAccount.title') || 'Delete Account'}
                         </Text>
                     </View>
 
-                    <Text style={[styles.warning, { color: colors.text }]}>
+                    <Text style={[styles.warning, { color: theme.colors.text }]}>
                         {t('deleteAccount.warning') || 'This action cannot be undone. Your account and all associated data will be permanently deleted.'}
                     </Text>
 
                     {error && (
-                        <View style={[styles.errorContainer, { backgroundColor: `${colors.danger}20` }]}>
-                            <Text style={[styles.errorText, { color: colors.danger }]}>
+                        <View style={[styles.errorContainer, { backgroundColor: `${theme.colors.error}20` }]}>
+                            <Text style={[styles.errorText, { color: theme.colors.error }]}>
                                 {error}
                             </Text>
                         </View>
                     )}
 
                     <View style={styles.inputGroup}>
-                        <Text style={[styles.label, { color: colors.secondaryText }]}>
+                        <Text style={[styles.label, { color: theme.colors.secondaryText }]}>
                             {t('deleteAccount.passwordLabel') || 'Enter your password'}
                         </Text>
-                        <View style={[styles.inputContainer, { borderColor: colors.border, backgroundColor: colors.inputBackground }]}>
+                        <View style={[styles.inputContainer, { borderColor: theme.colors.border, backgroundColor: theme.colors.background }]}>
                             <TextInput
-                                style={[styles.input, { color: colors.text }]}
+                                style={[styles.input, { color: theme.colors.text }]}
                                 value={password}
                                 onChangeText={setPassword}
                                 placeholder={t('deleteAccount.passwordPlaceholder') || 'Password'}
-                                placeholderTextColor={colors.secondaryText}
+                                placeholderTextColor={theme.colors.secondaryText}
                                 secureTextEntry={!showPassword}
                                 autoCapitalize="none"
                                 editable={!isDeleting}
@@ -127,14 +120,14 @@ const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
                                 <OxyIcon
                                     name={showPassword ? 'eye-off' : 'eye'}
                                     size={20}
-                                    color={colors.secondaryText}
+                                    color={theme.colors.secondaryText}
                                 />
                             </TouchableOpacity>
                         </View>
                     </View>
 
                     <View style={styles.inputGroup}>
-                        <Text style={[styles.label, { color: colors.secondaryText }]}>
+                        <Text style={[styles.label, { color: theme.colors.secondaryText }]}>
                             {t('deleteAccount.confirmLabel', { username }) || `Type "${username}" to confirm`}
                         </Text>
                         <TextInput
@@ -142,15 +135,15 @@ const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
                                 styles.input,
                                 styles.confirmInput,
                                 {
-                                    borderColor: confirmUsername === username ? '#34C759' : colors.border,
-                                    backgroundColor: colors.inputBackground,
-                                    color: colors.text,
+                                    borderColor: confirmUsername === username ? theme.colors.success : theme.colors.border,
+                                    backgroundColor: theme.colors.background,
+                                    color: theme.colors.text,
                                 },
                             ]}
                             value={confirmUsername}
                             onChangeText={setConfirmUsername}
                             placeholder={username}
-                            placeholderTextColor={colors.secondaryText}
+                            placeholderTextColor={theme.colors.secondaryText}
                             autoCapitalize="none"
                             autoCorrect={false}
                             editable={!isDeleting}
@@ -159,11 +152,11 @@ const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
 
                     <View style={styles.buttons}>
                         <TouchableOpacity
-                            style={[styles.button, styles.cancelButton, { borderColor: colors.border }]}
+                            style={[styles.button, styles.cancelButton, { borderColor: theme.colors.border }]}
                             onPress={handleClose}
                             disabled={isDeleting}
                         >
-                            <Text style={[styles.buttonText, { color: colors.text }]}>
+                            <Text style={[styles.buttonText, { color: theme.colors.text }]}>
                                 {t('common.cancel') || 'Cancel'}
                             </Text>
                         </TouchableOpacity>
@@ -172,15 +165,15 @@ const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
                             style={[
                                 styles.button,
                                 styles.deleteButton,
-                                { backgroundColor: isValid ? colors.danger : `${colors.danger}50` },
+                                { backgroundColor: isValid ? theme.colors.error : `${theme.colors.error}50` },
                             ]}
                             onPress={handleDelete}
                             disabled={!isValid || isDeleting}
                         >
                             {isDeleting ? (
-                                <ActivityIndicator color="#fff" size="small" />
+                                <Loading size="small" />
                             ) : (
-                                <Text style={styles.deleteButtonText}>
+                                <Text style={[styles.deleteButtonText, { color: theme.colors.card }]}>
                                     {t('deleteAccount.confirm') || 'Delete Forever'}
                                 </Text>
                             )}
@@ -200,7 +193,6 @@ const styles = StyleSheet.create({
     },
     backdrop: {
         ...StyleSheet.absoluteFillObject,
-        backgroundColor: 'rgba(0, 0, 0, 0.5)',
     },
     modal: {
         width: '90%',
@@ -288,7 +280,6 @@ const styles = StyleSheet.create({
     deleteButtonText: {
         fontSize: 16,
         fontWeight: '600',
-        color: '#fff',
     },
 });
 

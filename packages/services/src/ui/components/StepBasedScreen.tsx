@@ -11,8 +11,9 @@ import Animated, {
     useAnimatedStyle,
     withTiming,
 } from 'react-native-reanimated';
-import { useThemeColors, createAuthStyles } from '../styles';
-import type { ThemeColors } from '../styles';
+import { useTheme } from '@oxyhq/bloom/theme';
+import type { ThemeColors } from '@oxyhq/bloom/theme';
+import { createAuthStyles } from '../styles';
 import { fontFamilies } from '../styles/fonts';
 import type { BaseScreenProps, StepController } from '../types/navigation';
 import type { RouteName } from '../types/navigation';
@@ -136,13 +137,25 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
     // ========================================================================
     // Computed Values
     // ========================================================================
-    // Narrow theme type with default value
-    const themeValue = (theme === 'light' || theme === 'dark') ? theme : 'light';
-    const themeString = typeof theme === 'string' ? theme : 'light';
-    const colors = useThemeColors(themeValue);
+    const bloomTheme = useTheme();
+    const colors = bloomTheme.colors;
+    const themeString = bloomTheme.mode;
+    // Map bloom theme colors to AuthThemeColors shape for createAuthStyles
+    const authColors = useMemo(() => ({
+        text: colors.text,
+        background: colors.background,
+        inputBackground: colors.backgroundSecondary,
+        placeholder: colors.textTertiary,
+        primary: colors.primary,
+        border: colors.border,
+        error: colors.error,
+        success: colors.success,
+        warning: colors.warning,
+        secondaryText: colors.textSecondary,
+    }), [colors]);
     const insets = useSafeAreaInsets();
     const styles = useMemo(() => ({
-        ...createAuthStyles(colors, themeString),
+        ...createAuthStyles(authColors, themeString),
         // Additional styles for step components
         modernHeader: {
             alignItems: 'flex-start' as const,
@@ -189,7 +202,7 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
             }),
         },
         buttonText: {
-            color: '#FFFFFF',
+            color: colors.card,
             fontSize: 16,
             fontWeight: '600' as const,
             letterSpacing: 0.5,
@@ -223,7 +236,7 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
             marginHorizontal: 3,
             backgroundColor: colors.border,
         },
-    }), [colors, themeString]);
+    }), [authColors, colors, themeString]);
 
     // ========================================================================
     // Animation Values (removed - router handles animations now)
