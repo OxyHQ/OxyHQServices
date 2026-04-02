@@ -359,7 +359,7 @@ const SignInModal: React.FC = () => {
                     <View style={styles.header}>
                         <OxyLogo width={56} height={56} />
                         <Text style={[styles.title, { color: theme.colors.text }]}>Sign in with Oxy</Text>
-                        <Text style={[styles.subtitle, { color: theme.colors.secondaryText }]}>
+                        <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]}>
                             Scan with Oxy Accounts app or use the button below
                         </Text>
                     </View>
@@ -367,7 +367,7 @@ const SignInModal: React.FC = () => {
                     {isLoading ? (
                         <View style={styles.loadingContainer}>
                             <Loading size="large" />
-                            <Text style={[styles.loadingText, { color: theme.colors.secondaryText }]}>
+                            <Text style={[styles.loadingText, { color: theme.colors.textSecondary }]}>
                                 Preparing sign in...
                             </Text>
                         </View>

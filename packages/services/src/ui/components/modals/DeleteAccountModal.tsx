@@ -99,7 +99,7 @@ const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
                     )}
 
                     <View style={styles.inputGroup}>
-                        <Text style={[styles.label, { color: theme.colors.secondaryText }]}>
+                        <Text style={[styles.label, { color: theme.colors.textSecondary }]}>
                             {t('deleteAccount.passwordLabel') || 'Enter your password'}
                         </Text>
                         <View style={[styles.inputContainer, { borderColor: theme.colors.border, backgroundColor: theme.colors.background }]}>
@@ -108,7 +108,7 @@ const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
                                 value={password}
                                 onChangeText={setPassword}
                                 placeholder={t('deleteAccount.passwordPlaceholder') || 'Password'}
-                                placeholderTextColor={theme.colors.secondaryText}
+                                placeholderTextColor={theme.colors.textSecondary}
                                 secureTextEntry={!showPassword}
                                 autoCapitalize="none"
                                 editable={!isDeleting}
@@ -120,14 +120,14 @@ const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
                                 <OxyIcon
                                     name={showPassword ? 'eye-off' : 'eye'}
                                     size={20}
-                                    color={theme.colors.secondaryText}
+                                    color={theme.colors.textSecondary}
                                 />
                             </TouchableOpacity>
                         </View>
                     </View>
 
                     <View style={styles.inputGroup}>
-                        <Text style={[styles.label, { color: theme.colors.secondaryText }]}>
+                        <Text style={[styles.label, { color: theme.colors.textSecondary }]}>
                             {t('deleteAccount.confirmLabel', { username }) || `Type "${username}" to confirm`}
                         </Text>
                         <TextInput
@@ -143,7 +143,7 @@ const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
                             value={confirmUsername}
                             onChangeText={setConfirmUsername}
                             placeholder={username}
-                            placeholderTextColor={theme.colors.secondaryText}
+                            placeholderTextColor={theme.colors.textSecondary}
                             autoCapitalize="none"
                             autoCorrect={false}
                             editable={!isDeleting}
