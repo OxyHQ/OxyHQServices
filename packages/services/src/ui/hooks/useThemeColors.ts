@@ -1,26 +1,27 @@
 import { useMemo } from 'react';
-import { useColorScheme } from './useColorScheme';
+import { useTheme } from '@oxyhq/bloom/theme';
 import { Colors } from '../constants/theme';
 
 /**
- * Reusable hook to get theme colors based on current color scheme
- * Returns the Colors object for the current theme (light or dark)
- * 
- * @returns Colors object for the current color scheme
- * 
- * @example
- * ```tsx
- * const colors = useThemeColors();
- * <View style={{ backgroundColor: colors.background }}>
- *   <Text style={{ color: colors.text }}>Hello</Text>
- * </View>
- * ```
+ * Returns theme colors based on current color scheme.
+ * Delegates to bloom's useTheme() and maps to the Colors shape
+ * for backward compatibility with existing screens.
  */
 export const useThemeColors = () => {
-  const colorScheme = useColorScheme();
-  
-  return useMemo(() => {
-    return Colors[colorScheme ?? 'light'];
-  }, [colorScheme]);
-};
+  const theme = useTheme();
 
+  return useMemo(() => {
+    const base = Colors[theme.isDark ? 'dark' : 'light'];
+    // Merge bloom colors over the local constants so bloom's
+    // dynamic colors (from scoped CSS vars) take precedence.
+    return {
+      ...base,
+      background: theme.colors.background,
+      text: theme.colors.text,
+      border: theme.colors.border,
+      tint: theme.colors.primary,
+      card: theme.colors.card,
+      primary: theme.colors.primary,
+    };
+  }, [theme]);
+};

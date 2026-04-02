@@ -20,11 +20,12 @@ import {
   StyleSheet,
   Linking,
   Platform,
-  ActivityIndicator,
 } from 'react-native';
 import io, { type Socket } from 'socket.io-client';
 import type { BaseScreenProps } from '../types/navigation';
-import { useThemeColors } from '../styles';
+import { useTheme } from '@oxyhq/bloom/theme';
+import { Button } from '@oxyhq/bloom/button';
+import { Loading } from '@oxyhq/bloom/loading';
 import { useOxy } from '../context/OxyContext';
 import QRCode from 'react-native-qrcode-svg';
 import OxyLogo from '../components/OxyLogo';
@@ -117,8 +118,17 @@ const OxyAuthScreen: React.FC<BaseScreenProps> = ({
   onAuthenticated,
   theme,
 }) => {
-  const themeValue = (theme === 'light' || theme === 'dark') ? theme : 'light';
-  const colors = useThemeColors(themeValue);
+  const bloomTheme = useTheme();
+  const colors = {
+    background: bloomTheme.colors.background,
+    text: bloomTheme.colors.text,
+    secondaryText: bloomTheme.colors.textSecondary,
+    primary: bloomTheme.colors.primary,
+    error: bloomTheme.colors.error,
+    border: bloomTheme.colors.border,
+    card: bloomTheme.colors.card,
+    inputBackground: bloomTheme.colors.backgroundSecondary,
+  };
   const { oxyServices, signIn, switchSession } = useOxy();
 
   const [authSession, setAuthSession] = useState<AuthSession | null>(null);
@@ -401,7 +411,7 @@ const OxyAuthScreen: React.FC<BaseScreenProps> = ({
   if (isLoading) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color={colors.primary} />
+        <Loading size="large" />
         <Text style={[styles.loadingText, { color: colors.secondaryText }]}>
           Preparing sign in...
         </Text>
@@ -413,12 +423,9 @@ const OxyAuthScreen: React.FC<BaseScreenProps> = ({
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         <Text style={[styles.errorText, { color: colors.error }]}>{error}</Text>
-        <TouchableOpacity
-          style={[styles.button, { backgroundColor: colors.primary }]}
-          onPress={handleRefresh}
-        >
-          <Text style={styles.buttonText}>Try Again</Text>
-        </TouchableOpacity>
+        <Button variant="primary" onPress={handleRefresh} style={{ width: '100%', borderRadius: 12 }}>
+          Try Again
+        </Button>
       </View>
     );
   }
@@ -457,18 +464,19 @@ const OxyAuthScreen: React.FC<BaseScreenProps> = ({
       </View>
 
       {/* Open Oxy Auth Button */}
-      <TouchableOpacity
-        style={[styles.button, { backgroundColor: colors.primary }]}
+      <Button
+        variant="primary"
         onPress={handleOpenAuth}
+        icon={<OxyLogo width={20} height={20} fillColor={colors.card} style={styles.buttonIcon} />}
+        style={{ width: '100%', borderRadius: 12 }}
       >
-        <OxyLogo width={20} height={20} fillColor="white" style={styles.buttonIcon} />
-        <Text style={styles.buttonText}>Open Oxy Auth</Text>
-      </TouchableOpacity>
+        Open Oxy Auth
+      </Button>
 
       {/* Status */}
       {isWaiting && (
         <View style={styles.statusContainer}>
-          <ActivityIndicator size="small" color={colors.primary} />
+          <Loading size="small" style={{ flex: undefined }} />
           <Text style={[styles.statusText, { color: colors.secondaryText }]}>
             Waiting for authorization...
           </Text>
@@ -547,22 +555,8 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     fontSize: 14,
   },
-  button: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 16,
-    paddingHorizontal: 24,
-    borderRadius: 12,
-    width: '100%',
-  },
   buttonIcon: {
     marginRight: 10,
-  },
-  buttonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
   },
   statusContainer: {
     flexDirection: 'row',
