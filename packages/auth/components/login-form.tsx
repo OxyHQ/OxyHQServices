@@ -142,6 +142,10 @@ export function LoginForm({
     const redirectAfterLogin = (sessionId: string, accessToken?: string, expiresAt?: string) => {
         setFedCMLoginStatus()
 
+        // Store credentials so authorize page can use them
+        if (sessionId) sessionStorage.setItem("oxy_session_id", sessionId)
+        if (accessToken) sessionStorage.setItem("oxy_access_token", accessToken)
+
         if (isOAuthFlow && redirectUri) {
             const callbackUrl = new URL(redirectUri)
             callbackUrl.searchParams.set("session_id", sessionId)

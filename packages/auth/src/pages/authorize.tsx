@@ -88,18 +88,27 @@ export function AuthorizePage() {
   useEffect(() => {
     async function loadData() {
       try {
-        // First, check if user has an existing session via /auth/me
-        let sessionId: string | null = null;
+        // Check for stored credentials from login
+        const storedSessionId = sessionStorage.getItem("oxy_session_id");
+        const storedToken = sessionStorage.getItem("oxy_access_token");
+
+        let sessionId: string | null = storedSessionId;
         let user: UserInfo | null = null;
+
+        // Try to get user info using stored token or cookies
+        const authHeaders: Record<string, string> = {};
+        if (storedToken) authHeaders["Authorization"] = `Bearer ${storedToken}`;
+
         try {
           const meResponse = await fetch(buildAuthUrl("/me"), {
             credentials: "include",
+            headers: authHeaders,
           });
           if (meResponse.ok) {
             const meData = await meResponse.json();
-            if (meData.user && meData.sessionId) {
-              sessionId = meData.sessionId;
+            if (meData.user) {
               user = meData.user;
+              if (meData.sessionId) sessionId = meData.sessionId;
             }
           }
         } catch {
@@ -136,7 +145,7 @@ export function AuthorizePage() {
             ) {
               const tokenResponse = await fetch(
                 buildApiUrl(`/session/token/${sessionInfo.sessionId}`),
-                { credentials: "include" }
+                { credentials: "include", headers: storedToken ? { Authorization: `Bearer ${storedToken}` } : {} }
               );
               if (tokenResponse.ok) {
                 const tokenData = await tokenResponse.json();
@@ -288,14 +297,18 @@ export function AuthorizePage() {
       }
 
       // Authorize the auth session
+      const storedToken = sessionStorage.getItem("oxy_access_token");
+      const headers: Record<string, string> = {
+        "content-type": "application/json",
+        "x-session-id": sessionId,
+      };
+      if (storedToken) headers["Authorization"] = `Bearer ${storedToken}`;
+
       const authorizeResponse = await fetch(
         buildAuthUrl(`/session/authorize/${token}`),
         {
           method: "POST",
-          headers: {
-            "content-type": "application/json",
-            "x-session-id": sessionId,
-          },
+          headers,
           credentials: "include",
           body: JSON.stringify({}),
         }
@@ -333,7 +346,7 @@ export function AuthorizePage() {
         // Get access token for the redirect
         const tokenResponse = await fetch(
           buildApiUrl(`/session/token/${sessionIdForApp}`),
-          { credentials: "include" }
+          { credentials: "include", headers: storedToken ? { Authorization: `Bearer ${storedToken}` } : {} }
         );
         if (tokenResponse.ok) {
           const tokenData = await tokenResponse.json();
