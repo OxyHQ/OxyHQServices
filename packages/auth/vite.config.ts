@@ -2,13 +2,22 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
 
+const emptyModule = path.resolve(__dirname, "src/empty-module.js");
+
 export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: [
       { find: "@", replacement: path.resolve(__dirname, ".") },
-      { find: /^react-native\/(.+)/, replacement: path.resolve(__dirname, "../../node_modules/react-native-web/dist/$1") },
-      { find: "react-native", replacement: path.resolve(__dirname, "../../node_modules/react-native-web") },
+      // Stub native-only deep imports that monorepo hoisting pulls in
+      { find: /^react-native\/Libraries\/.*/, replacement: emptyModule },
+      { find: "react-native", replacement: "react-native-web" },
+      { find: "expo-router", replacement: emptyModule },
+      { find: "expo-modules-core", replacement: emptyModule },
+      { find: "react-native-svg", replacement: emptyModule },
+      { find: "react-native-screens", replacement: emptyModule },
+      { find: "react-native-safe-area-context", replacement: emptyModule },
+      { find: "react-native-gesture-handler", replacement: emptyModule },
     ],
     extensions: [".web.tsx", ".web.ts", ".web.js", ".tsx", ".ts", ".js"],
   },
@@ -19,18 +28,7 @@ export default defineConfig({
     esbuildOptions: {
       loader: { ".js": "jsx" },
     },
-    exclude: [
-      "react-native-svg",
-      "react-native-screens",
-      "react-native-safe-area-context",
-      "react-native-gesture-handler",
-      "expo-router",
-      "expo-image",
-      "expo-modules-core",
-    ],
-  },
-  ssr: {
-    noExternal: ["react-native-web", "@oxyhq/bloom"],
+    exclude: ["@react-native-async-storage/async-storage"],
   },
   server: {
     port: 3002,
@@ -38,8 +36,5 @@ export default defineConfig({
   },
   build: {
     outDir: "dist",
-    commonjsOptions: {
-      transformMixedEsModules: true,
-    },
   },
 });
