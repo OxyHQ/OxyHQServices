@@ -63,7 +63,7 @@ const resolveAuthWebBaseUrl = (baseURL: string, authWebUrl?: string): string => 
   try {
     const url = new URL(baseURL);
     if (url.port === '3001') {
-      url.port = '3000';
+      url.port = '3002';
       return url.origin;
     }
     if (url.hostname.startsWith('api.')) {

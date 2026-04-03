@@ -288,7 +288,7 @@ const SignInModal: React.FC = () => {
             try {
                 const url = new URL(baseURL);
                 if (url.port === '3001') {
-                    url.port = '3000';
+                    url.port = '3002';
                     authWebUrl = url.origin;
                 } else if (url.hostname.startsWith('api.')) {
                     url.hostname = `auth.${url.hostname.slice(4)}`;
