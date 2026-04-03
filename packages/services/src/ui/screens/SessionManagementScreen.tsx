@@ -55,7 +55,7 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
 
     // Use bloom theme for non-style color props (ActivityIndicator, icon colors, etc.)
     const bloomTheme = useTheme();
-    const isDarkTheme = bloomTheme.colorScheme === 'dark';
+    const isDarkTheme = bloomTheme.isDark;
     const primaryColor = bloomTheme.colors.primary;
     const dangerColor = bloomTheme.colors.error;
     const successColor = bloomTheme.colors.success || '#34C759';

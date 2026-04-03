@@ -72,6 +72,7 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
     const colors = {
         primary: bloomTheme.colors.primary,
         border: bloomTheme.colors.border,
+        text: bloomTheme.colors.text,
     };
     const normalizedTheme = normalizeTheme(theme);
     const styles = useMemo(() => createStyles(normalizedTheme), [normalizedTheme]);

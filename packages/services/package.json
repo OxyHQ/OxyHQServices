@@ -1,6 +1,6 @@
 {
   "name": "@oxyhq/services",
-  "version": "6.9.33",
+  "version": "6.9.41",
   "description": "OxyHQ Expo/React Native SDK — UI components, screens, and native features",
   "main": "lib/commonjs/index.js",
   "module": "lib/module/index.js",
@@ -71,7 +71,7 @@
   },
   "dependencies": {
     "@lottiefiles/dotlottie-react": "^0.13.5",
-    "@oxyhq/bloom": "0.1.22",
+    "@oxyhq/bloom": "0.1.24",
     "@oxyhq/core": "*",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-community/netinfo": "^11.4.1",
