@@ -1,11 +1,9 @@
-"use client"
-
 import { useEffect, useState, useRef } from "react"
-import { useRouter } from "next/navigation"
-import Link from "next/link"
+import { useNavigate, Link } from "react-router-dom"
 import { toast } from "sonner"
 import { ArrowLeft } from "lucide-react"
 
+import { buildAuthUrl } from "@/lib/oxy-api-client"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import {
@@ -57,7 +55,7 @@ export function LoginForm({
     ...props
 }: LoginFormProps) {
     const isOAuthFlow = responseType === "token" && redirectUri
-    const router = useRouter()
+    const navigate = useNavigate()
     const [errorMessage, setErrorMessage] = useState(error)
     const [noticeMessage, setNoticeMessage] = useState(notice)
     const [isSubmitting, setIsSubmitting] = useState(false)
@@ -84,7 +82,7 @@ export function LoginForm({
     useEffect(() => {
         async function checkExistingSession() {
             try {
-                const response = await fetch("/api/auth/me", {
+                const response = await fetch(buildAuthUrl("/me"), {
                     credentials: "include",
                 })
                 const data = await response.json()
@@ -136,7 +134,7 @@ export function LoginForm({
     const setFedCMLoginStatus = () => {
         const loginStatusFrame = document.createElement("iframe")
         loginStatusFrame.style.display = "none"
-        loginStatusFrame.src = "/api/fedcm/login-status"
+        loginStatusFrame.src = "/fedcm/login-status"
         document.body.appendChild(loginStatusFrame)
         setTimeout(() => loginStatusFrame.remove(), 1000)
     }
@@ -162,7 +160,7 @@ export function LoginForm({
         if (!sessionToken && !redirectUri) {
             nextUrl.searchParams.set("error", "No authorization request found. Return to the app and try again.")
         }
-        router.push(`${nextUrl.pathname}${nextUrl.search}`)
+        navigate(`${nextUrl.pathname}${nextUrl.search}`)
     }
 
     const handlePasswordSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -174,9 +172,10 @@ export function LoginForm({
         const password = String(formData.get("password") || "")
 
         try {
-            const response = await fetch("/api/auth/login", {
+            const response = await fetch(buildAuthUrl("/login"), {
                 method: "POST",
                 headers: { "content-type": "application/json" },
+                credentials: "include",
                 body: JSON.stringify({ identifier: identifier.trim(), password }),
             })
             const payload = await response.json().catch(() => ({}))
@@ -221,9 +220,10 @@ export function LoginForm({
         }
 
         try {
-            const response = await fetch("/api/auth/2fa/verify", {
+            const response = await fetch(buildAuthUrl("/2fa/verify"), {
                 method: "POST",
                 headers: { "content-type": "application/json" },
+                credentials: "include",
                 body: JSON.stringify(body),
             })
             const payload = await response.json().catch(() => ({}))
@@ -252,7 +252,9 @@ export function LoginForm({
 
         setIsSubmitting(true)
         try {
-            const tokenResponse = await fetch(`/api/auth/token/${existingSessionId}`)
+            const tokenResponse = await fetch(buildAuthUrl(`/token/${existingSessionId}`), {
+                credentials: "include",
+            })
             const tokenData = await tokenResponse.json().catch(() => ({}))
 
             if (!tokenResponse.ok || !tokenData.accessToken) {
@@ -329,7 +331,7 @@ export function LoginForm({
                             </Field>
                             <FieldDescription className="text-center">
                                 Don&apos;t have an account?{" "}
-                                <Link href="/signup">Create account</Link>
+                                <Link to="/signup">Create account</Link>
                             </FieldDescription>
                             <Field>
                                 <Button type="submit" className="w-full">Next</Button>
@@ -371,7 +373,7 @@ export function LoginForm({
                         </Field>
                         <FieldDescription>
                             <Link
-                                href={`/recover?identifier=${encodeURIComponent(identifier.trim())}`}
+                                to={`/recover?identifier=${encodeURIComponent(identifier.trim())}`}
                                 className="text-primary hover:underline"
                             >
                                 Forgot password?

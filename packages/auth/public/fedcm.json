@@ -1,7 +1,7 @@
 {
-  "accounts_endpoint": "/api/fedcm/accounts",
-  "id_assertion_endpoint": "/api/fedcm/assertion",
-  "disconnect_endpoint": "/api/fedcm/disconnect",
+  "accounts_endpoint": "/fedcm/accounts",
+  "id_assertion_endpoint": "/fedcm/assertion",
+  "disconnect_endpoint": "/fedcm/disconnect",
   "login_url": "/login",
   "branding": {
     "background_color": "#7C3AED",

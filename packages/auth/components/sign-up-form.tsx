@@ -1,10 +1,8 @@
-"use client"
-
 import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
-import Link from "next/link"
+import { useNavigate, Link } from "react-router-dom"
 import { toast } from "sonner"
 
+import { buildAuthUrl } from "@/lib/oxy-api-client"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import {
@@ -36,13 +34,13 @@ export function SignUpForm({
     state,
     ...props
 }: SignUpFormProps) {
-    const router = useRouter()
+    const navigate = useNavigate()
     const [errorMessage, setErrorMessage] = useState(error)
     const [serverErrors, setServerErrors] = useState<string[]>([])
     const [isSubmitting, setIsSubmitting] = useState(false)
     const [password, setPassword] = useState("")
     const [passwordTouched, setPasswordTouched] = useState(false)
-    const formAction = "/api/auth/signup"
+    const formAction = buildAuthUrl("/signup")
 
     useEffect(() => {
         setErrorMessage(error)
@@ -84,11 +82,12 @@ export function SignUpForm({
         let didRedirect = false
 
         try {
-            const response = await fetch("/api/auth/signup", {
+            const response = await fetch(buildAuthUrl("/signup"), {
                 method: "POST",
                 headers: {
                     "content-type": "application/json",
                 },
+                credentials: "include",
                 body: JSON.stringify({ email, username, password }),
             })
             const payload = await response.json().catch(() => ({}))
@@ -117,7 +116,7 @@ export function SignUpForm({
             // Set FedCM login status via iframe
             const loginStatusFrame = document.createElement("iframe")
             loginStatusFrame.style.display = "none"
-            loginStatusFrame.src = "/api/fedcm/login-status"
+            loginStatusFrame.src = "/fedcm/login-status"
             document.body.appendChild(loginStatusFrame)
             setTimeout(() => {
                 loginStatusFrame.remove()
@@ -141,7 +140,7 @@ export function SignUpForm({
             }
 
             didRedirect = true
-            router.push(`${nextUrl.pathname}${nextUrl.search}`)
+            navigate(`${nextUrl.pathname}${nextUrl.search}`)
         } catch (err) {
             setErrorMessage(
                 err instanceof Error ? err.message : "Unable to sign up"
@@ -166,7 +165,7 @@ export function SignUpForm({
                 <FieldGroup>
                     <div className="flex flex-col items-center gap-2 text-center">
                         <Link
-                            href="/login"
+                            to="/login"
                             className="flex flex-col items-center gap-2 font-medium"
                         >
                             <Logo />
@@ -174,7 +173,7 @@ export function SignUpForm({
                         </Link>
                         <h1 className="text-xl font-bold">Create your account</h1>
                         <FieldDescription>
-                            Already have an account? <Link href="/login">Sign in</Link>
+                            Already have an account? <Link to="/login">Sign in</Link>
                         </FieldDescription>
                     </div>
                     <Field>

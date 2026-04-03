@@ -1,5 +1,3 @@
-"use client"
-
 import { ChevronRight, UserPlus } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -10,9 +8,9 @@ import {
     CardHeader,
     CardTitle,
 } from "@/components/ui/card"
-import { Avatar } from "@/components/ui/avatar"
+import { Avatar } from "@oxyhq/bloom/avatar"
 import { Logo } from "@/components/logo"
-import { getAvatarUrl } from "@/lib/oxy-api"
+import { getAvatarUrl } from "@/lib/oxy-api-client"
 
 type Account = {
     id: string
@@ -70,9 +68,7 @@ export function AccountSwitcher({
                         disabled={isLoading}
                     >
                         <Avatar
-                            src={account.avatar ? getAvatarUrl(account.avatar) : undefined}
-                            alt={displayName}
-                            fallback={initials}
+                            source={account.avatar ? getAvatarUrl(account.avatar) : undefined}
                             size={40}
                         />
                         <div className="flex-1 text-left ml-3 min-w-0">

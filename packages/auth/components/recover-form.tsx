@@ -1,11 +1,9 @@
-"use client"
-
 import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
-import Link from "next/link"
+import { useNavigate, Link } from "react-router-dom"
 import { toast } from "sonner"
 import { CheckCircle2 } from "lucide-react"
 
+import { buildAuthUrl } from "@/lib/oxy-api-client"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import {
@@ -36,7 +34,7 @@ export function RecoverForm({
     ...props
 }: RecoverFormProps) {
     const recoveryStorageKey = "oxy_recovery_token"
-    const router = useRouter()
+    const navigate = useNavigate()
     const currentStep = step === "verify" || step === "reset" || step === "success" ? step : "request"
     const [errorMessage, setErrorMessage] = useState(error)
     const [isSubmitting, setIsSubmitting] = useState(false)
@@ -68,11 +66,12 @@ export function RecoverForm({
 
         try {
             if (stepValue === "request") {
-                const response = await fetch("/api/auth/recover/request", {
+                const response = await fetch(buildAuthUrl("/recover/request"), {
                     method: "POST",
                     headers: {
                         "content-type": "application/json",
                     },
+                    credentials: "include",
                     body: JSON.stringify({ identifier: formIdentifier }),
                 })
 
@@ -96,17 +95,18 @@ export function RecoverForm({
                 }
 
                 didRedirect = true
-                router.push(`${nextUrl.pathname}${nextUrl.search}`)
+                navigate(`${nextUrl.pathname}${nextUrl.search}`)
                 return
             }
 
             if (stepValue === "verify") {
                 const code = String(formData.get("code") || "").trim()
-                const response = await fetch("/api/auth/recover/verify", {
+                const response = await fetch(buildAuthUrl("/recover/verify"), {
                     method: "POST",
                     headers: {
                         "content-type": "application/json",
                     },
+                    credentials: "include",
                     body: JSON.stringify({ identifier: formIdentifier, code }),
                 })
 
@@ -134,7 +134,7 @@ export function RecoverForm({
                 }
 
                 didRedirect = true
-                router.push(`${nextUrl.pathname}${nextUrl.search}`)
+                navigate(`${nextUrl.pathname}${nextUrl.search}`)
                 return
             }
 
@@ -155,11 +155,12 @@ export function RecoverForm({
                     return
                 }
 
-                const response = await fetch("/api/auth/recover/reset", {
+                const response = await fetch(buildAuthUrl("/recover/reset"), {
                     method: "POST",
                     headers: {
                         "content-type": "application/json",
                     },
+                    credentials: "include",
                     body: JSON.stringify({ recoveryToken, password }),
                 })
 
@@ -178,7 +179,7 @@ export function RecoverForm({
                 const nextUrl = new URL("/recover", window.location.origin)
                 nextUrl.searchParams.set("step", "success")
                 didRedirect = true
-                router.push(`${nextUrl.pathname}${nextUrl.search}`)
+                navigate(`${nextUrl.pathname}${nextUrl.search}`)
                 return
             }
 
@@ -206,7 +207,7 @@ export function RecoverForm({
                         Your password has been updated. You can now sign in with your new password.
                     </FieldDescription>
                     <Button asChild className="w-full">
-                        <Link href="/login">Sign in</Link>
+                        <Link to="/login">Sign in</Link>
                     </Button>
                 </div>
             </div>
@@ -215,11 +216,11 @@ export function RecoverForm({
 
     return (
         <div className={cn("flex flex-col gap-6", className)} {...props}>
-            <form method="post" action="/api/auth/recover" onSubmit={handleSubmit}>
+            <form onSubmit={handleSubmit}>
                 <FieldGroup>
                     <div className="flex flex-col items-center gap-2 text-center">
                         <Link
-                            href="/login"
+                            to="/login"
                             className="flex flex-col items-center gap-2 font-medium"
                         >
                             <Logo />

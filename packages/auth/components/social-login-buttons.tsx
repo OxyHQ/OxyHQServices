@@ -1,5 +1,3 @@
-"use client"
-
 import { useMemo } from "react"
 import { Button } from "@/components/ui/button"
 
@@ -80,9 +78,9 @@ export function SocialLoginButtons({
     const providers = useMemo(() => {
         const list: Provider[] = []
 
-        const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID
-        const appleClientId = process.env.NEXT_PUBLIC_APPLE_CLIENT_ID
-        const githubClientId = process.env.NEXT_PUBLIC_GITHUB_CLIENT_ID
+        const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID
+        const appleClientId = import.meta.env.VITE_APPLE_CLIENT_ID
+        const githubClientId = import.meta.env.VITE_GITHUB_CLIENT_ID
 
         if (googleClientId) {
             list.push({

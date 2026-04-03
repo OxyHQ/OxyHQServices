@@ -23,7 +23,7 @@ packages/
   services/       @oxyhq/services   Expo/React Native SDK (UI, screens, native features)
   api/            @oxyhq/api        Express.js backend API
   accounts/                         Expo accounts app
-  auth/                             Next.js auth app (standalone, FedCM IdP)
+  auth/                             Vite auth app (standalone, FedCM IdP)
   test-app/                         Expo test/playground app
   test-app-vite/                    Vite test app (web-only, uses @oxyhq/core + @oxyhq/auth)
 ```

@@ -1,0 +1,21 @@
+import { useSearchParams } from "react-router-dom";
+import { LoginForm } from "@/components/login-form";
+
+export function LoginPage() {
+  const [searchParams] = useSearchParams();
+
+  const reset = searchParams.get("reset");
+  const notice = reset ? "Password reset. Please sign in." : undefined;
+
+  return (
+    <LoginForm
+      error={searchParams.get("error") ?? undefined}
+      notice={notice}
+      sessionToken={searchParams.get("token") ?? undefined}
+      redirectUri={searchParams.get("redirect_uri") ?? undefined}
+      state={searchParams.get("state") ?? undefined}
+      responseType={searchParams.get("response_type") ?? undefined}
+      clientId={searchParams.get("client_id") ?? undefined}
+    />
+  );
+}

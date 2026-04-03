@@ -1,5 +1,3 @@
-"use client"
-
 import { useEffect, useRef } from "react"
 
 /**
@@ -29,7 +27,7 @@ export function FedCMLoginStatus() {
         // that the user is (or is not) logged in at this IdP
         const frame = document.createElement("iframe")
         frame.style.display = "none"
-        frame.src = "/api/fedcm/login-status"
+        frame.src = "/fedcm/login-status"
         document.body.appendChild(frame)
 
         // Clean up after a short delay
