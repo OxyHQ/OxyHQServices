@@ -28,22 +28,21 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* Auth layout routes */}
         <Route element={<AuthLayout />}>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/signup" element={<SignUpPage />} />
           <Route path="/authorize" element={<AuthorizePage />} />
           <Route path="/recover" element={<RecoverPage />} />
+          <Route path="/auth/login" element={<LoginPage />} />
+          <Route path="/auth/signup" element={<SignUpPage />} />
+          <Route path="/auth/authorize" element={<AuthorizePage />} />
+          <Route path="/auth/recover" element={<RecoverPage />} />
         </Route>
 
-        {/* Standalone routes (no auth layout) */}
         <Route path="/auth/callback" element={<AuthCallbackPage />} />
         <Route path="/auth/social/callback" element={<SocialCallbackPage />} />
 
-        {/* Root redirect - external URL handled via window.location */}
         <Route path="/" element={<ExternalRedirect url="https://oxy.so" />} />
-
-        {/* Fallback */}
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
       <Toaster position="bottom-right" />
