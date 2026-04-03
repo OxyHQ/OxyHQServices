@@ -10,7 +10,7 @@ import {
     CardHeader,
     CardTitle,
 } from "@/components/ui/card"
-import { Avatar } from "@oxyhq/bloom/avatar"
+import { Avatar } from "@/components/ui/avatar"
 import { Logo } from "@/components/logo"
 import { getAvatarUrl } from "@/lib/oxy-api"
 
@@ -70,7 +70,9 @@ export function AccountSwitcher({
                         disabled={isLoading}
                     >
                         <Avatar
-                            source={account.avatar ? getAvatarUrl(account.avatar) : undefined}
+                            src={account.avatar ? getAvatarUrl(account.avatar) : undefined}
+                            alt={displayName}
+                            fallback={initials}
                             size={40}
                         />
                         <div className="flex-1 text-left ml-3 min-w-0">

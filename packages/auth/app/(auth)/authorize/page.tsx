@@ -6,7 +6,7 @@ import { Check, Shield } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { FieldDescription } from "@/components/ui/field"
 import { Card, CardContent } from "@/components/ui/card"
-import { Avatar } from "@oxyhq/bloom/avatar"
+import { Avatar } from "@/components/ui/avatar"
 import { ToastMessage } from "@/components/toast-message"
 import { Empty, EmptyActions, EmptyDescription, EmptyTitle } from "@/components/ui/empty"
 import { Logo } from "@/components/logo"
@@ -223,7 +223,9 @@ export default async function AuthorizePage({ searchParams }: AuthorizePageProps
                             {currentUser ? (
                                 <div className="flex items-center gap-3 rounded-lg border bg-muted/50 p-3">
                                     <Avatar
-                                        source={currentUser.avatar ? getAvatarUrl(currentUser.avatar) : undefined}
+                                        src={currentUser.avatar ? getAvatarUrl(currentUser.avatar) : undefined}
+                                        alt={displayName || "User"}
+                                        fallback={initials}
                                         size={40}
                                     />
                                     <div className="flex-1 min-w-0">

@@ -67,9 +67,9 @@ const OxyPayButton: React.FC<OxyPayButtonProps> = ({
         >
             <View style={styles.buttonContent}>
                 <OxyLogo
-                    width={logoWidth}
-                    height={logoHeight}
-                    style={{ marginRight: logoWidth * 0.12, marginTop: (fontSize - logoHeight) / 2 }}
+                    variant="icon"
+                    size={logoHeight}
+                    style={{ marginRight: logoHeight * 0.2, marginTop: (fontSize - logoHeight) / 2 }}
                     fillColor={textColor}
                 />
                 <Text style={[styles.text, { color: textColor, fontSize }, textStyle]}>{text}</Text>

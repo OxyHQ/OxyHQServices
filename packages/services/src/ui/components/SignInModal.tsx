@@ -357,7 +357,7 @@ const SignInModal: React.FC = () => {
 
                     {/* Header */}
                     <View style={styles.header}>
-                        <OxyLogo width={56} height={56} />
+                        <OxyLogo variant="icon" size={56} />
                         <Text className="text-foreground" style={styles.title}>Sign in with Oxy</Text>
                         <Text className="text-muted-foreground" style={styles.subtitle}>
                             Scan with Oxy Accounts app or use the button below
@@ -402,7 +402,7 @@ const SignInModal: React.FC = () => {
                             {/* Open Auth Popup Button */}
                             <Button
                                 onPress={handleOpenAuthPopup}
-                                icon={<OxyLogo width={20} height={20} fillColor={theme.colors.card} />}
+                                icon={<OxyLogo variant="icon" size={20} fillColor={theme.colors.card} />}
                             >
                                 Open Oxy Auth
                             </Button>

@@ -424,7 +424,7 @@ const OxyAuthScreen: React.FC<BaseScreenProps> = ({
     <View style={styles.container} className="bg-background">
       {/* Header */}
       <View style={styles.header}>
-        <OxyLogo width={48} height={48} />
+        <OxyLogo variant="icon" size={48} />
         <Text style={styles.title} className="text-foreground">Sign in with Oxy</Text>
         <Text style={styles.subtitle} className="text-muted-foreground">
           Use your Oxy identity to sign in securely
@@ -457,7 +457,7 @@ const OxyAuthScreen: React.FC<BaseScreenProps> = ({
       <Button
         variant="primary"
         onPress={handleOpenAuth}
-        icon={<OxyLogo width={20} height={20} fillColor={bloomTheme.colors.card} style={styles.buttonIcon} />}
+        icon={<OxyLogo variant="icon" size={20} fillColor={bloomTheme.colors.card} style={styles.buttonIcon} />}
         style={{ width: '100%', borderRadius: 12 }}
       >
         Open Oxy Auth

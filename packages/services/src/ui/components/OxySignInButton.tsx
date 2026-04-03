@@ -142,10 +142,10 @@ export const OxySignInButton: React.FC<OxySignInButtonProps> = ({
         >
             <View style={styles.buttonContent}>
                 <OxyLogo
-                    width={20}
-                    height={20}
-                    fillColor={variant === 'contained' ? 'white' : '#d169e5'}
-                    secondaryFillColor={variant === 'contained' ? '#d169e5' : undefined}
+                    variant="icon"
+                    size={20}
+                    fillColor={variant === 'contained' ? 'white' : '#d269e6'}
+                    innerFillColor={variant === 'contained' ? '#d269e6' : undefined}
                     style={isButtonDisabled ? { opacity: 0.6 } : undefined}
                 />
                 <Text style={[styles.text, getTextStyle(), isButtonDisabled && styles.textDisabled]}>
