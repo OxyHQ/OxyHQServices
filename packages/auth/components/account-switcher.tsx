@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/card"
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 import { Logo } from "@/components/logo"
+import { getAvatarUrl } from "@/lib/oxy-api"
 
 type Account = {
     id: string
@@ -36,10 +37,6 @@ function getInitials(name: string): string {
         .join("")
         .toUpperCase()
         .slice(0, 2)
-}
-
-function getAvatarUrl(fileId: string): string {
-    return `https://cloud.oxy.so/assets/${encodeURIComponent(fileId)}/stream?variant=thumb`
 }
 
 export function AccountSwitcher({

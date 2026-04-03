@@ -20,6 +20,21 @@ export function getApiBaseUrl(): string {
     return DEFAULT_API_URL
 }
 
+/**
+ * Build a streaming avatar URL from a file ID.
+ *
+ * Uses the API base URL (`api.oxy.so`) — the same endpoint that
+ * `OxyServices.getFileDownloadUrl()` targets — instead of the legacy
+ * `cloud.oxy.so` path which does not serve `/assets/:id/stream`.
+ */
+export function getAvatarUrl(fileId: string): string {
+    const base = getApiBaseUrl()
+    const params = new URLSearchParams()
+    params.set("variant", "thumb")
+    params.set("fallback", "placeholderVisible")
+    return `${base}/assets/${encodeURIComponent(fileId)}/stream?${params.toString()}`
+}
+
 export function buildRelativeUrl(
     pathname: string,
     params: Record<string, string | undefined>

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono, Inter } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
 import { FedCMLoginStatus } from "@/components/fedcm-login-status";
+import { getBloomThemeCSS } from "@/lib/bloom-css";
 import "./globals.css";
 
 const inter = Inter({subsets:['latin'],variable:'--font-sans'});
@@ -21,6 +22,8 @@ export const metadata: Metadata = {
   description: "Sign in to the Oxy platform",
 };
 
+const bloomCSS = getBloomThemeCSS();
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -28,6 +31,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={inter.variable}>
+      <head>
+        <style dangerouslySetInnerHTML={{ __html: bloomCSS }} />
+      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >

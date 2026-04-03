@@ -354,7 +354,7 @@ export function LoginForm({
                                 <span className="sr-only">Oxy</span>
                             </a>
                             <h1 className="text-xl font-bold">Welcome</h1>
-                            <div className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm text-muted-foreground">
+                            <div className="inline-flex items-center gap-2 rounded-full bg-muted px-3 py-1 text-sm text-muted-foreground">
                                 {identifier}
                             </div>
                         </div>

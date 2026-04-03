@@ -9,8 +9,7 @@
 
 import { cookies } from 'next/headers';
 import { NextRequest, NextResponse } from 'next/server';
-import { apiGet } from '@/lib/oxy-api';
-import { SESSION_COOKIE_NAME } from '@/lib/oxy-api';
+import { apiGet, getAvatarUrl, SESSION_COOKIE_NAME } from '@/lib/oxy-api';
 import { getFedCMCorsHeaders, getFedCMPreflightHeaders } from '@/lib/fedcm-cors';
 
 export const runtime = 'nodejs';
@@ -25,10 +24,6 @@ interface User {
     first?: string;
     last?: string;
   };
-}
-
-function getAvatarUrl(fileId: string): string {
-  return `https://cloud.oxy.so/assets/${encodeURIComponent(fileId)}/stream?variant=thumb`;
 }
 
 function getDisplayName(user: User): string {

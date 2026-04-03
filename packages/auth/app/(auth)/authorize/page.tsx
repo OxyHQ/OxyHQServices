@@ -13,6 +13,7 @@ import { Logo } from "@/components/logo"
 import {
     apiGet,
     buildRelativeUrl,
+    getAvatarUrl,
     SESSION_COOKIE_NAME,
     safeRedirectUrl,
 } from "@/lib/oxy-api"
@@ -61,10 +62,6 @@ function getInitials(name: string): string {
         .join("")
         .toUpperCase()
         .slice(0, 2)
-}
-
-function getAvatarUrl(fileId: string): string {
-    return `https://cloud.oxy.so/assets/${encodeURIComponent(fileId)}/stream?variant=thumb`
 }
 
 function getDisplayName(user: UserInfo): string {
