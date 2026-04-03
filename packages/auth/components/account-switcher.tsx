@@ -10,7 +10,7 @@ import {
     CardHeader,
     CardTitle,
 } from "@/components/ui/card"
-import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
+import { Avatar } from "@oxyhq/bloom/avatar"
 import { Logo } from "@/components/logo"
 import { getAvatarUrl } from "@/lib/oxy-api"
 
@@ -69,17 +69,10 @@ export function AccountSwitcher({
                         onClick={onContinue}
                         disabled={isLoading}
                     >
-                        <Avatar>
-                            {account.avatar && (
-                                <AvatarImage
-                                    src={getAvatarUrl(account.avatar)}
-                                    alt={displayName}
-                                />
-                            )}
-                            <AvatarFallback className="bg-primary text-primary-foreground font-semibold">
-                                {initials}
-                            </AvatarFallback>
-                        </Avatar>
+                        <Avatar
+                            source={account.avatar ? getAvatarUrl(account.avatar) : undefined}
+                            size={40}
+                        />
                         <div className="flex-1 text-left ml-3 min-w-0">
                             <div className="font-medium truncate">{displayName}</div>
                             {account.email && (

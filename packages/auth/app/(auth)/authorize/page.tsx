@@ -6,7 +6,7 @@ import { Check, Shield } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { FieldDescription } from "@/components/ui/field"
 import { Card, CardContent } from "@/components/ui/card"
-import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
+import { Avatar } from "@oxyhq/bloom/avatar"
 import { ToastMessage } from "@/components/toast-message"
 import { Empty, EmptyActions, EmptyDescription, EmptyTitle } from "@/components/ui/empty"
 import { Logo } from "@/components/logo"
@@ -222,17 +222,10 @@ export default async function AuthorizePage({ searchParams }: AuthorizePageProps
                             {/* User identity badge */}
                             {currentUser ? (
                                 <div className="flex items-center gap-3 rounded-lg border bg-muted/50 p-3">
-                                    <Avatar className="size-10 shrink-0">
-                                        {currentUser.avatar && (
-                                            <AvatarImage
-                                                src={getAvatarUrl(currentUser.avatar)}
-                                                alt={displayName || "User"}
-                                            />
-                                        )}
-                                        <AvatarFallback className="bg-primary text-primary-foreground text-sm font-semibold">
-                                            {initials}
-                                        </AvatarFallback>
-                                    </Avatar>
+                                    <Avatar
+                                        source={currentUser.avatar ? getAvatarUrl(currentUser.avatar) : undefined}
+                                        size={40}
+                                    />
                                     <div className="flex-1 min-w-0">
                                         <div className="font-medium text-sm truncate">
                                             {displayName}
