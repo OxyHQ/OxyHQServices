@@ -1,5 +1,6 @@
 import type { ReactNode, RefObject } from 'react';
 import type { QueryClient } from '@tanstack/react-query';
+import type { ThemeMode, AppColorName } from '@oxyhq/bloom';
 import type { RouteName } from '../navigation/routes';
 import type { User } from '@oxyhq/core';
 import type { ClientSession } from '@oxyhq/core';
@@ -56,6 +57,8 @@ export interface OxyProviderProps {
     authWebUrl?: string;
     authRedirectUri?: string;
     queryClient?: QueryClient;
+    themeMode?: ThemeMode;
+    colorPreset?: AppColorName;
 }
 
 

@@ -1,9 +1,10 @@
 import type React from 'react';
 import { useEffect, useRef, useState, type FC } from 'react';
-import { AppState, Platform } from 'react-native';
+import { AppState, Platform, useColorScheme } from 'react-native';
 import type { OxyProviderProps } from '../types/navigation';
 import { OxyContextProvider, type OxyContextProviderProps } from '../context/OxyContext';
 import { QueryClientProvider, focusManager, onlineManager } from '@tanstack/react-query';
+import { BloomThemeProvider } from '@oxyhq/bloom';
 import { setupFonts } from './FontLoader';
 import { Toaster } from '../../lib/sonner';
 import { createQueryClient } from '../hooks/queryClient';
@@ -91,6 +92,8 @@ const OxyProvider: FC<OxyProviderProps> = ({
     authWebUrl,
     authRedirectUri,
     queryClient: providedQueryClient,
+    themeMode = 'system',
+    colorPreset,
 }) => {
 
     // Simple storage initialization for query persistence
@@ -218,19 +221,21 @@ const OxyProvider: FC<OxyProviderProps> = ({
     // Core content: QueryClient + OxyContext + UI overlays
     const coreContent = (
         <QueryClientProvider client={queryClient}>
-            <OxyContextProvider
-                oxyServices={oxyServices as OxyContextProviderProps['oxyServices']}
-                baseURL={baseURL}
-                authWebUrl={authWebUrl}
-                authRedirectUri={authRedirectUri}
-                storageKeyPrefix={storageKeyPrefix}
-                onAuthStateChange={onAuthStateChange as OxyContextProviderProps['onAuthStateChange']}
-            >
-                {children}
-                {BottomSheetRouter && <BottomSheetRouter />}
-                {SignInModal && <SignInModal />}
-                <Toaster />
-            </OxyContextProvider>
+            <BloomThemeProvider mode={themeMode} colorPreset={colorPreset}>
+                <OxyContextProvider
+                    oxyServices={oxyServices as OxyContextProviderProps['oxyServices']}
+                    baseURL={baseURL}
+                    authWebUrl={authWebUrl}
+                    authRedirectUri={authRedirectUri}
+                    storageKeyPrefix={storageKeyPrefix}
+                    onAuthStateChange={onAuthStateChange as OxyContextProviderProps['onAuthStateChange']}
+                >
+                    {children}
+                    {BottomSheetRouter && <BottomSheetRouter />}
+                    {SignInModal && <SignInModal />}
+                    <Toaster />
+                </OxyContextProvider>
+            </BloomThemeProvider>
         </QueryClientProvider>
     );
 
