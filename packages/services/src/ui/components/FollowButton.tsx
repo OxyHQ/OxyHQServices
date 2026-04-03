@@ -21,7 +21,7 @@ import { useOxy } from '../context/OxyContext';
 import { fontFamilies } from '../styles/fonts';
 import { toast } from '../../lib/sonner';
 import { useFollowForButton } from '../hooks/useFollow';
-import { useThemeColors } from '../styles/theme';
+import { useTheme } from '@oxyhq/bloom/theme';
 import type { OxyServices } from '@oxyhq/core';
 
 // Create animated TouchableOpacity
@@ -65,9 +65,10 @@ const FollowButtonInner = memo(function FollowButtonInner({
   disabled = false,
   showLoadingState = true,
   preventParentActions = true,
-  theme = 'light',
+  theme: _theme = 'light',
 }: FollowButtonProps & { oxyServices: OxyServices }) {
-  const colors = useThemeColors(theme);
+  const bloomTheme = useTheme();
+  const colors = bloomTheme.colors;
 
   // Uses granular Zustand selectors — only re-renders when THIS user's data changes
   const {
@@ -128,18 +129,20 @@ const FollowButtonInner = memo(function FollowButtonInner({
   }, [isFollowing, animationProgress]);
 
   // Animated styles
+  // When not following (progress=0): primary filled button (bg-primary, text white)
+  // When following (progress=1): outlined button (bg-background, border-border, text-foreground)
   const animatedButtonStyle = useAnimatedStyle(() => {
     return {
       transform: [{ scale: scale.value }],
       backgroundColor: interpolateColor(
         animationProgress.value,
         [0, 1],
-        [colors.background, colors.primary]
+        [colors.primary, colors.background]
       ),
       borderColor: interpolateColor(
         animationProgress.value,
         [0, 1],
-        [colors.border, colors.primary]
+        [colors.primary, colors.border]
       ),
     };
   }, [colors]);
@@ -149,7 +152,7 @@ const FollowButtonInner = memo(function FollowButtonInner({
       color: interpolateColor(
         animationProgress.value,
         [0, 1],
-        [colors.text, '#FFFFFF']
+        ['#FFFFFF', colors.text]
       ),
     };
   }, [colors]);
@@ -167,7 +170,7 @@ const FollowButtonInner = memo(function FollowButtonInner({
       {showLoadingState && isLoading ? (
         <ActivityIndicator
           size="small"
-          color={isFollowing ? '#FFFFFF' : colors.primary}
+          color={isFollowing ? colors.text : '#FFFFFF'}
         />
       ) : (
         <AnimatedText style={[baseTextStyle, animatedTextStyle]}>
