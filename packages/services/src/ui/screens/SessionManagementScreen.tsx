@@ -17,8 +17,7 @@ import { toast } from '../../lib/sonner';
 import type { ClientSession } from '@oxyhq/core';
 import { confirmAction } from '../utils/confirmAction';
 import { Header, GroupedSection } from '../components';
-import { useThemeStyles } from '../hooks/useThemeStyles';
-import { normalizeTheme } from '../utils/themeUtils';
+import { useTheme } from '@oxyhq/bloom/theme';
 import { useOxy } from '../context/OxyContext';
 import { useI18n } from '../hooks/useI18n';
 
@@ -54,11 +53,12 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
     const [switchLoading, setSwitchLoading] = useState<string | null>(null);
     const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
 
-    // Use centralized theme styles hook for consistency
-    const normalizedTheme = normalizeTheme(theme);
-    const themeStyles = useThemeStyles(normalizedTheme);
-    // Extract commonly used colors for readability
-    const { textColor, backgroundColor, borderColor, primaryColor, dangerColor, successColor, isDarkTheme } = themeStyles;
+    // Use bloom theme for non-style color props (ActivityIndicator, icon colors, etc.)
+    const bloomTheme = useTheme();
+    const isDarkTheme = bloomTheme.colorScheme === 'dark';
+    const primaryColor = bloomTheme.colors.primary;
+    const dangerColor = bloomTheme.colors.error;
+    const successColor = bloomTheme.colors.success || '#34C759';
 
     // Memoized load sessions function - prevents unnecessary re-renders
     const loadSessions = useCallback(async (isRefresh = false) => {
@@ -291,15 +291,15 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
 
     if (loading) {
         return (
-            <View style={[styles.container, styles.centerContent, { backgroundColor }]}>
+            <View style={[styles.container, styles.centerContent]} className="bg-background">
                 <ActivityIndicator size="large" color={primaryColor} />
-                <Text style={[styles.loadingText, { color: textColor }]}>{t('sessionManagement.loading')}</Text>
+                <Text style={styles.loadingText} className="text-foreground">{t('sessionManagement.loading')}</Text>
             </View>
         );
     }
 
     return (
-        <View style={[styles.container, { backgroundColor }]}>
+        <View style={styles.container} className="bg-background">
             <Header
                 title={t('sessionManagement.title')}
                 subtitle={t('sessionManagement.subtitle')}
@@ -337,9 +337,9 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
                     </View>
                 )}
             </ScrollView>
-            <View style={[styles.footer, { borderTopColor: borderColor }]}>
+            <View style={styles.footer} className="border-border">
                 <TouchableOpacity style={styles.closeButton} onPress={onClose}>
-                    <Text style={[styles.closeButtonText, { color: primaryColor }]}>{t('sessionManagement.close')}</Text>
+                    <Text style={styles.closeButtonText} className="text-primary">{t('sessionManagement.close')}</Text>
                 </TouchableOpacity>
             </View>
         </View>

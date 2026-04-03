@@ -10,9 +10,8 @@ import type { BaseScreenProps } from '../types/navigation';
 import { toast } from '../../lib/sonner';
 import { Header, Section, Avatar, SettingRow, LoadingState, EmptyState, GroupedSection } from '../components';
 import { useI18n } from '../hooks/useI18n';
-import { useThemeStyles } from '../hooks/useThemeStyles';
+import { useTheme } from '@oxyhq/bloom/theme';
 import { useSettingToggles } from '../hooks/useSettingToggle';
-import { normalizeTheme } from '../utils/themeUtils';
 import type { BlockedUser, RestrictedUser } from '@oxyhq/core';
 import { useOxy } from '../context/OxyContext';
 
@@ -196,8 +195,7 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
         return { userId, username, avatar };
     }, []);
 
-    const normalizedTheme = normalizeTheme(theme);
-    const themeStyles = useThemeStyles(normalizedTheme);
+    const bloomTheme = useTheme();
 
     // Convert blocked users to GroupedSection items
     const blockedUserItems = useMemo(() => {
@@ -220,16 +218,16 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                 customContent: (
                     <TouchableOpacity
                         onPress={() => handleUnblock(userId)}
-                        style={[styles.actionButton, { backgroundColor: themeStyles.secondaryBackgroundColor }]}
+                        style={[styles.actionButton, { backgroundColor: bloomTheme.colors.backgroundSecondary }]}
                     >
-                        <Text style={[styles.actionButtonText, { color: themeStyles.dangerColor }]}>
+                        <Text style={[styles.actionButtonText, { color: bloomTheme.colors.error }]}>
                             {t('privacySettings.unblock') || 'Unblock'}
                         </Text>
                     </TouchableOpacity>
                 ),
             };
         });
-    }, [blockedUsers, oxyServices, themeStyles, handleUnblock, t]);
+    }, [blockedUsers, oxyServices, bloomTheme, handleUnblock, t]);
 
     // Convert restricted users to GroupedSection items
     const restrictedUserItems = useMemo(() => {
@@ -253,33 +251,33 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                 customContent: (
                     <TouchableOpacity
                         onPress={() => handleUnrestrict(userId)}
-                        style={[styles.actionButton, { backgroundColor: themeStyles.secondaryBackgroundColor }]}
+                        style={[styles.actionButton, { backgroundColor: bloomTheme.colors.backgroundSecondary }]}
                     >
-                        <Text style={[styles.actionButtonText, { color: themeStyles.primaryColor }]}>
+                        <Text style={[styles.actionButtonText, { color: bloomTheme.colors.primary }]}>
                             {t('privacySettings.unrestrict') || 'Unrestrict'}
                         </Text>
                     </TouchableOpacity>
                 ),
             };
         });
-    }, [restrictedUsers, oxyServices, themeStyles, handleUnrestrict, t]);
+    }, [restrictedUsers, oxyServices, bloomTheme, handleUnrestrict, t]);
 
     if (isLoading) {
         return (
-            <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
+            <View style={styles.container} className="bg-background">
                 <Header
                     title={t('privacySettings.title') || 'Privacy Settings'}
                     onBack={goBack || onClose}
                     variant="minimal"
                     elevation="subtle"
                 />
-                <LoadingState color={themeStyles.textColor} />
+                <LoadingState color={bloomTheme.colors.text} />
             </View>
         );
     }
 
     return (
-        <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
+        <View style={styles.container} className="bg-background">
             <Header
                 title={t('privacySettings.title') || 'Privacy Settings'}
                 onBack={goBack || onClose}
@@ -296,9 +294,9 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                         value={settings.isPrivateAccount}
                         onValueChange={() => toggle('isPrivateAccount')}
                         disabled={isSaving}
-                        textColor={themeStyles.textColor}
-                        mutedTextColor={themeStyles.mutedTextColor}
-                        borderColor={themeStyles.borderColor}
+                        textColor={bloomTheme.colors.text}
+                        mutedTextColor={bloomTheme.colors.textSecondary}
+                        borderColor={bloomTheme.colors.border}
                     />
                     <SettingRow
                         title={t('privacySettings.profileVisibility') || 'Profile Visibility'}
@@ -306,9 +304,9 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                         value={settings.profileVisibility}
                         onValueChange={() => toggle('profileVisibility')}
                         disabled={isSaving}
-                        textColor={themeStyles.textColor}
-                        mutedTextColor={themeStyles.mutedTextColor}
-                        borderColor={themeStyles.borderColor}
+                        textColor={bloomTheme.colors.text}
+                        mutedTextColor={bloomTheme.colors.textSecondary}
+                        borderColor={bloomTheme.colors.border}
                     />
                     <SettingRow
                         title={t('privacySettings.hideOnlineStatus') || 'Hide Online Status'}
@@ -316,9 +314,9 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                         value={settings.hideOnlineStatus}
                         onValueChange={() => toggle('hideOnlineStatus')}
                         disabled={isSaving}
-                        textColor={themeStyles.textColor}
-                        mutedTextColor={themeStyles.mutedTextColor}
-                        borderColor={themeStyles.borderColor}
+                        textColor={bloomTheme.colors.text}
+                        mutedTextColor={bloomTheme.colors.textSecondary}
+                        borderColor={bloomTheme.colors.border}
                     />
                     <SettingRow
                         title={t('privacySettings.hideLastSeen') || 'Hide Last Seen'}
@@ -326,9 +324,9 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                         value={settings.hideLastSeen}
                         onValueChange={() => toggle('hideLastSeen')}
                         disabled={isSaving}
-                        textColor={themeStyles.textColor}
-                        mutedTextColor={themeStyles.mutedTextColor}
-                        borderColor={themeStyles.borderColor}
+                        textColor={bloomTheme.colors.text}
+                        mutedTextColor={bloomTheme.colors.textSecondary}
+                        borderColor={bloomTheme.colors.border}
                     />
                 </Section>
 
@@ -340,9 +338,9 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                         value={settings.allowTagging}
                         onValueChange={() => toggle('allowTagging')}
                         disabled={isSaving}
-                        textColor={themeStyles.textColor}
-                        mutedTextColor={themeStyles.mutedTextColor}
-                        borderColor={themeStyles.borderColor}
+                        textColor={bloomTheme.colors.text}
+                        mutedTextColor={bloomTheme.colors.textSecondary}
+                        borderColor={bloomTheme.colors.border}
                     />
                     <SettingRow
                         title={t('privacySettings.allowMentions') || 'Allow Mentions'}
@@ -350,9 +348,9 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                         value={settings.allowMentions}
                         onValueChange={() => toggle('allowMentions')}
                         disabled={isSaving}
-                        textColor={themeStyles.textColor}
-                        mutedTextColor={themeStyles.mutedTextColor}
-                        borderColor={themeStyles.borderColor}
+                        textColor={bloomTheme.colors.text}
+                        mutedTextColor={bloomTheme.colors.textSecondary}
+                        borderColor={bloomTheme.colors.border}
                     />
                     <SettingRow
                         title={t('privacySettings.allowDirectMessages') || 'Allow Direct Messages'}
@@ -360,9 +358,9 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                         value={settings.allowDirectMessages}
                         onValueChange={() => toggle('allowDirectMessages')}
                         disabled={isSaving}
-                        textColor={themeStyles.textColor}
-                        mutedTextColor={themeStyles.mutedTextColor}
-                        borderColor={themeStyles.borderColor}
+                        textColor={bloomTheme.colors.text}
+                        mutedTextColor={bloomTheme.colors.textSecondary}
+                        borderColor={bloomTheme.colors.border}
                     />
                     <SettingRow
                         title={t('privacySettings.hideReadReceipts') || 'Hide Read Receipts'}
@@ -370,9 +368,9 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                         value={settings.hideReadReceipts}
                         onValueChange={() => toggle('hideReadReceipts')}
                         disabled={isSaving}
-                        textColor={themeStyles.textColor}
-                        mutedTextColor={themeStyles.mutedTextColor}
-                        borderColor={themeStyles.borderColor}
+                        textColor={bloomTheme.colors.text}
+                        mutedTextColor={bloomTheme.colors.textSecondary}
+                        borderColor={bloomTheme.colors.border}
                     />
                 </Section>
 
@@ -384,9 +382,9 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                         value={settings.showActivity}
                         onValueChange={() => toggle('showActivity')}
                         disabled={isSaving}
-                        textColor={themeStyles.textColor}
-                        mutedTextColor={themeStyles.mutedTextColor}
-                        borderColor={themeStyles.borderColor}
+                        textColor={bloomTheme.colors.text}
+                        mutedTextColor={bloomTheme.colors.textSecondary}
+                        borderColor={bloomTheme.colors.border}
                     />
                     <SettingRow
                         title={t('privacySettings.dataSharing') || 'Data Sharing'}
@@ -394,9 +392,9 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                         value={settings.dataSharing}
                         onValueChange={() => toggle('dataSharing')}
                         disabled={isSaving}
-                        textColor={themeStyles.textColor}
-                        mutedTextColor={themeStyles.mutedTextColor}
-                        borderColor={themeStyles.borderColor}
+                        textColor={bloomTheme.colors.text}
+                        mutedTextColor={bloomTheme.colors.textSecondary}
+                        borderColor={bloomTheme.colors.border}
                     />
                     <SettingRow
                         title={t('privacySettings.locationSharing') || 'Location Sharing'}
@@ -404,9 +402,9 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                         value={settings.locationSharing}
                         onValueChange={() => toggle('locationSharing')}
                         disabled={isSaving}
-                        textColor={themeStyles.textColor}
-                        mutedTextColor={themeStyles.mutedTextColor}
-                        borderColor={themeStyles.borderColor}
+                        textColor={bloomTheme.colors.text}
+                        mutedTextColor={bloomTheme.colors.textSecondary}
+                        borderColor={bloomTheme.colors.border}
                     />
                     <SettingRow
                         title={t('privacySettings.analyticsSharing') || 'Analytics Sharing'}
@@ -414,9 +412,9 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                         value={settings.analyticsSharing}
                         onValueChange={() => toggle('analyticsSharing')}
                         disabled={isSaving}
-                        textColor={themeStyles.textColor}
-                        mutedTextColor={themeStyles.mutedTextColor}
-                        borderColor={themeStyles.borderColor}
+                        textColor={bloomTheme.colors.text}
+                        mutedTextColor={bloomTheme.colors.textSecondary}
+                        borderColor={bloomTheme.colors.border}
                     />
                 </Section>
 
@@ -428,9 +426,9 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                         value={settings.sensitiveContent}
                         onValueChange={() => toggle('sensitiveContent')}
                         disabled={isSaving}
-                        textColor={themeStyles.textColor}
-                        mutedTextColor={themeStyles.mutedTextColor}
-                        borderColor={themeStyles.borderColor}
+                        textColor={bloomTheme.colors.text}
+                        mutedTextColor={bloomTheme.colors.textSecondary}
+                        borderColor={bloomTheme.colors.border}
                     />
                     <SettingRow
                         title={t('privacySettings.autoFilter') || 'Auto Filter'}
@@ -438,9 +436,9 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                         value={settings.autoFilter}
                         onValueChange={() => toggle('autoFilter')}
                         disabled={isSaving}
-                        textColor={themeStyles.textColor}
-                        mutedTextColor={themeStyles.mutedTextColor}
-                        borderColor={themeStyles.borderColor}
+                        textColor={bloomTheme.colors.text}
+                        mutedTextColor={bloomTheme.colors.textSecondary}
+                        borderColor={bloomTheme.colors.border}
                     />
                     <SettingRow
                         title={t('privacySettings.muteKeywords') || 'Mute Keywords'}
@@ -448,9 +446,9 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                         value={settings.muteKeywords}
                         onValueChange={() => toggle('muteKeywords')}
                         disabled={isSaving}
-                        textColor={themeStyles.textColor}
-                        mutedTextColor={themeStyles.mutedTextColor}
-                        borderColor={themeStyles.borderColor}
+                        textColor={bloomTheme.colors.text}
+                        mutedTextColor={bloomTheme.colors.textSecondary}
+                        borderColor={bloomTheme.colors.border}
                     />
                     <SettingRow
                         title={t('privacySettings.blockScreenshots') || 'Block Screenshots'}
@@ -458,20 +456,20 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                         value={settings.blockScreenshots}
                         onValueChange={() => toggle('blockScreenshots')}
                         disabled={isSaving}
-                        textColor={themeStyles.textColor}
-                        mutedTextColor={themeStyles.mutedTextColor}
-                        borderColor={themeStyles.borderColor}
+                        textColor={bloomTheme.colors.text}
+                        mutedTextColor={bloomTheme.colors.textSecondary}
+                        borderColor={bloomTheme.colors.border}
                     />
                 </Section>
 
                 {/* Blocked Users */}
                 <Section title={t('privacySettings.sections.blockedUsers') || 'BLOCKED USERS'}>
                     {isLoadingUsers ? (
-                        <LoadingState color={themeStyles.textColor} size="small" />
+                        <LoadingState color={bloomTheme.colors.text} size="small" />
                     ) : blockedUsers.length === 0 ? (
                         <EmptyState
                             message={t('privacySettings.noBlockedUsers') || 'No blocked users'}
-                            textColor={themeStyles.mutedTextColor}
+                            textColor={bloomTheme.colors.textSecondary}
                         />
                     ) : (
                         <GroupedSection items={blockedUserItems} />
@@ -481,11 +479,11 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                 {/* Restricted Users */}
                 <Section title={t('privacySettings.sections.restrictedUsers') || 'RESTRICTED USERS'}>
                     {isLoadingUsers ? (
-                        <LoadingState color={themeStyles.textColor} size="small" />
+                        <LoadingState color={bloomTheme.colors.text} size="small" />
                     ) : restrictedUsers.length === 0 ? (
                         <EmptyState
                             message={t('privacySettings.noRestrictedUsers') || 'No restricted users'}
-                            textColor={themeStyles.mutedTextColor}
+                            textColor={bloomTheme.colors.textSecondary}
                         />
                     ) : (
                         <GroupedSection items={restrictedUserItems} />

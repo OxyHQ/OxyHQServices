@@ -9,8 +9,10 @@ import { toast } from '../../lib/sonner';
 import { confirmAction } from '../utils/confirmAction';
 import { Header, Section, GroupedSection, LoadingState, EmptyState } from '../components';
 import { useI18n } from '../hooks/useI18n';
-import { useThemeStyles } from '../hooks/useThemeStyles';
+import { useTheme } from '@oxyhq/bloom/theme';
 import { useColorScheme } from '../hooks/useColorScheme';
+import { Colors } from '../constants/theme';
+import { normalizeColorScheme } from '../utils/themeUtils';
 import { useOxy } from '../context/OxyContext';
 
 interface HistoryItem {
@@ -28,8 +30,10 @@ const HistoryViewScreen: React.FC<BaseScreenProps> = ({
     // Use useOxy() hook for OxyContext values
     const { user } = useOxy();
     const { t } = useI18n();
+    const bloomTheme = useTheme();
     const colorScheme = useColorScheme();
-    const themeStyles = useThemeStyles(theme || 'light', colorScheme);
+    const normalizedColorScheme = normalizeColorScheme(colorScheme);
+    const themeColors = Colors[normalizedColorScheme];
     const [history, setHistory] = useState<HistoryItem[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isDeleting, setIsDeleting] = useState(false);
@@ -180,7 +184,7 @@ const HistoryViewScreen: React.FC<BaseScreenProps> = ({
     };
 
     return (
-        <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
+        <View style={styles.container} className="bg-background">
             <Header
                 title={t('history.title') || 'History'}
                 onBack={goBack || onClose}
@@ -196,7 +200,7 @@ const HistoryViewScreen: React.FC<BaseScreenProps> = ({
                             {
                                 id: 'delete-last-15',
                                 icon: 'clock-outline',
-                                iconColor: themeStyles.colors.iconStorage,
+                                iconColor: themeColors.iconStorage,
                                 title: t('history.deleteLast15Minutes.title') || 'Delete Last 15 Minutes',
                                 subtitle: t('history.deleteLast15Minutes.subtitle') || 'Remove recent history entries',
                                 onPress: handleDeleteLast15Minutes,
@@ -205,7 +209,7 @@ const HistoryViewScreen: React.FC<BaseScreenProps> = ({
                             {
                                 id: 'clear-all',
                                 icon: 'delete-outline',
-                                iconColor: themeStyles.colors.iconSharing,
+                                iconColor: themeColors.iconSharing,
                                 title: t('history.clearAll.title') || 'Clear All History',
                                 subtitle: t('history.clearAll.subtitle') || 'Remove all history entries',
                                 onPress: handleClearAll,
@@ -221,19 +225,19 @@ const HistoryViewScreen: React.FC<BaseScreenProps> = ({
                     {isLoading ? (
                         <LoadingState
                             message={t('history.loading') || 'Loading history...'}
-                            color={themeStyles.textColor}
+                            color={bloomTheme.colors.text}
                         />
                     ) : history.length === 0 ? (
                         <EmptyState
                             message={t('history.empty') || 'No history yet'}
-                            textColor={themeStyles.textColor}
+                            textColor={bloomTheme.colors.text}
                         />
                     ) : (
                         <GroupedSection
                             items={history.map((item) => ({
                                 id: item.id,
                                 icon: item.type === 'search' ? 'search' : 'globe',
-                                iconColor: item.type === 'search' ? themeStyles.colors.iconSecurity : themeStyles.colors.iconPersonalInfo,
+                                iconColor: item.type === 'search' ? themeColors.iconSecurity : themeColors.iconPersonalInfo,
                                 title: item.query,
                                 subtitle: formatTime(item.timestamp),
                             }))}

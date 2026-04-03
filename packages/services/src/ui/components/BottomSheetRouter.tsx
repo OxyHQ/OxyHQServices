@@ -188,9 +188,9 @@ const BottomSheetRouter: React.FC<BottomSheetRouterProps> = ({ onScreenChange, o
 
     const renderBackground = useCallback(
         (props: { style?: StyleProp<ViewStyle> }) => (
-            <View style={[styles.background, { backgroundColor: theme.colors.background }, props.style]} />
+            <View className="bg-background" style={[styles.background, props.style]} />
         ),
-        [theme.colors.background]
+        []
     );
 
     const screenPropsValue = useMemo((): BaseScreenProps & { scrollTo: typeof scrollTo } => {

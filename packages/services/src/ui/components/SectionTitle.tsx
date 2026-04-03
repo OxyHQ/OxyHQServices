@@ -1,9 +1,6 @@
 import type React from 'react';
 import { Text, StyleSheet, type StyleProp, type TextStyle } from 'react-native';
 import { fontFamilies } from '../styles/fonts';
-import { useColorScheme } from '../hooks/useColorScheme';
-import { normalizeColorScheme } from '../utils/themeUtils';
-import { useThemeStyles } from '../hooks/useThemeStyles';
 
 interface SectionTitleProps {
     title: string;
@@ -12,11 +9,8 @@ interface SectionTitleProps {
 }
 
 const SectionTitle: React.FC<SectionTitleProps> = ({ title, theme, style }) => {
-    const colorScheme = normalizeColorScheme(useColorScheme(), theme);
-    const themeStyles = useThemeStyles(theme || colorScheme, colorScheme);
-
     return (
-        <Text style={[styles.sectionTitle, { color: themeStyles.textColor }, style]}>
+        <Text className="text-foreground" style={[styles.sectionTitle, style]}>
             {title}
         </Text>
     );

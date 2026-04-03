@@ -1,8 +1,7 @@
 import type React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useThemeStyles } from '../hooks/useThemeStyles';
-import { useColorScheme } from '../hooks/useColorScheme';
+import { useTheme } from '@oxyhq/bloom/theme';
 
 interface QuickAction {
     id: string;
@@ -18,31 +17,30 @@ interface QuickActionsProps {
 }
 
 const QuickActions: React.FC<QuickActionsProps> = ({ actions, theme }) => {
-    const colorScheme = useColorScheme();
-    const themeStyles = useThemeStyles(theme, colorScheme);
-    const textColor = themeStyles.textColor;
-    const secondaryBackgroundColor = themeStyles.secondaryBackgroundColor;
+    const { isDark } = useTheme();
 
     return (
-        <View style={[
-            styles.quickActionsContainer,
-            styles.firstGroupedItem,
-            styles.lastGroupedItem,
-            { backgroundColor: secondaryBackgroundColor }
-        ]}>
+        <View
+            className="bg-secondary"
+            style={[
+                styles.quickActionsContainer,
+                styles.firstGroupedItem,
+                styles.lastGroupedItem,
+            ]}
+        >
             <View style={styles.quickActionsRow}>
                 {actions.map((action) => (
                     <View key={action.id} style={styles.quickActionItem}>
                         <TouchableOpacity
                             style={[
                                 styles.quickActionCircle,
-                                { backgroundColor: themeStyles.isDarkTheme ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.03)' }
+                                { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.03)' }
                             ]}
                             onPress={action.onPress}
                         >
                             <Ionicons name={action.icon as React.ComponentProps<typeof Ionicons>['name']} size={24} color={action.iconColor} />
                         </TouchableOpacity>
-                        <Text style={[styles.quickActionText, { color: textColor }]}>{action.title}</Text>
+                        <Text className="text-foreground" style={styles.quickActionText}>{action.title}</Text>
                     </View>
                 ))}
             </View>

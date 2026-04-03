@@ -10,8 +10,10 @@ import { toast } from '../../lib/sonner';
 import { Header } from '../components';
 import { SettingsIcon } from '../components/SettingsIcon';
 import { useI18n } from '../hooks/useI18n';
-import { useThemeStyles } from '../hooks/useThemeStyles';
+import { useTheme } from '@oxyhq/bloom/theme';
 import { useColorScheme } from '../hooks/useColorScheme';
+import { Colors } from '../constants/theme';
+import { normalizeColorScheme } from '../utils/themeUtils';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 
 const HelpSupportScreen: React.FC<BaseScreenProps> = ({
@@ -21,8 +23,10 @@ const HelpSupportScreen: React.FC<BaseScreenProps> = ({
     navigate,
 }) => {
     const { t } = useI18n();
+    const bloomTheme = useTheme();
     const colorScheme = useColorScheme();
-    const themeStyles = useThemeStyles(theme || 'light', colorScheme);
+    const normalizedColorScheme = normalizeColorScheme(colorScheme);
+    const themeColors = Colors[normalizedColorScheme];
 
     const handleContactSupport = useMemo(() => () => {
         Linking.openURL('mailto:support@oxy.so?subject=Support Request').catch(() => {
@@ -46,7 +50,7 @@ const HelpSupportScreen: React.FC<BaseScreenProps> = ({
     }, [t]);
 
     return (
-        <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
+        <View style={styles.container} className="bg-background">
             <Header
                 title={t('help.title') || 'Help & Support'}
 
@@ -59,19 +63,19 @@ const HelpSupportScreen: React.FC<BaseScreenProps> = ({
                 {/* Help Options */}
                 <SettingsListGroup title={t('help.options') || 'Get Help'}>
                     <SettingsListItem
-                        icon={<SettingsIcon name="help-circle" color={themeStyles.colors.iconSecurity} />}
+                        icon={<SettingsIcon name="help-circle" color={themeColors.iconSecurity} />}
                         title={t('help.faq.title') || 'Frequently Asked Questions'}
                         description={t('help.faq.subtitle') || 'Find answers to common questions'}
                         onPress={handleFAQ}
                     />
                     <SettingsListItem
-                        icon={<SettingsIcon name="email" color={themeStyles.colors.iconPersonalInfo} />}
+                        icon={<SettingsIcon name="email" color={themeColors.iconPersonalInfo} />}
                         title={t('help.contact.title') || 'Contact Support'}
                         description={t('help.contact.subtitle') || 'Get help from our support team'}
                         onPress={handleContactSupport}
                     />
                     <SettingsListItem
-                        icon={<SettingsIcon name="bug" color={themeStyles.colors.iconStorage} />}
+                        icon={<SettingsIcon name="bug" color={themeColors.iconStorage} />}
                         title={t('help.reportBug.title') || 'Report a Bug'}
                         description={t('help.reportBug.subtitle') || 'Help us improve by reporting issues'}
                         onPress={handleReportBug}
@@ -91,7 +95,7 @@ const HelpSupportScreen: React.FC<BaseScreenProps> = ({
                         }}
                     />
                     <SettingsListItem
-                        icon={<SettingsIcon name="account-group" color={themeStyles.colors.iconData} />}
+                        icon={<SettingsIcon name="account-group" color={themeColors.iconData} />}
                         title={t('help.community.title') || 'Community'}
                         description={t('help.community.subtitle') || 'Join our community'}
                         onPress={() => {
@@ -101,7 +105,7 @@ const HelpSupportScreen: React.FC<BaseScreenProps> = ({
                         }}
                     />
                     <SettingsListItem
-                        icon={<SettingsIcon name="code-tags" color={themeStyles.colors.iconSharing} />}
+                        icon={<SettingsIcon name="code-tags" color={themeColors.iconSharing} />}
                         title={t('help.developersPortal.title') || 'Developers Portal'}
                         description={t('help.developersPortal.subtitle') || 'API documentation and developer resources'}
                         onPress={() => {

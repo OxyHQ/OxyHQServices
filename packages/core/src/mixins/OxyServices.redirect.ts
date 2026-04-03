@@ -37,7 +37,7 @@ export function OxyServicesRedirectAuthMixin<T extends typeof OxyServicesBase>(B
     constructor(...args: any[]) {
       super(...(args as [any]));
     }
-  public static readonly AUTH_URL = 'https://auth.oxy.so';
+  public static readonly DEFAULT_AUTH_URL = 'https://auth.oxy.so';
   public static readonly TOKEN_STORAGE_KEY = 'oxy_access_token';
   public static readonly SESSION_STORAGE_KEY = 'oxy_session_id';
   public static readonly STATE_STORAGE_KEY = 'oxy_auth_state';
@@ -270,7 +270,7 @@ export function OxyServicesRedirectAuthMixin<T extends typeof OxyServicesBase>(B
     nonce: string;
     clientId: string;
   }): string {
-    const url = new URL(`${(this.constructor as any).AUTH_URL}/${params.mode}`);
+    const url = new URL(`${(this.config.authWebUrl || (this.constructor as any).DEFAULT_AUTH_URL)}/${params.mode}`);
     url.searchParams.set('redirect_uri', params.redirectUri);
     url.searchParams.set('state', params.state);
     url.searchParams.set('nonce', params.nonce);

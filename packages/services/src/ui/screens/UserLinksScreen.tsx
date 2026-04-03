@@ -3,8 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Linking } 
 import { Ionicons } from '@expo/vector-icons';
 import type { BaseScreenProps } from '../types/navigation';
 import { Header, GroupedSection } from '../components';
-import { useThemeStyles } from '../hooks/useThemeStyles';
-import { normalizeTheme } from '../utils/themeUtils';
+import { useTheme } from '@oxyhq/bloom/theme';
 import { useI18n } from '../hooks/useI18n';
 
 interface UserLinksScreenProps extends BaseScreenProps {
@@ -25,10 +24,7 @@ const UserLinksScreen: React.FC<UserLinksScreenProps> = ({
     goBack,
     navigate
 }) => {
-    // Use centralized theme styles hook for consistency
-    // primaryColor from hook (#007AFF) is already correct for this screen
-    const normalizedTheme = normalizeTheme(theme);
-    const themeStyles = useThemeStyles(normalizedTheme);
+    const bloomTheme = useTheme();
     const { t } = useI18n();
 
     const handleLinkPress = async (url: string) => {
@@ -54,7 +50,7 @@ const UserLinksScreen: React.FC<UserLinksScreenProps> = ({
     }));
 
     return (
-        <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
+        <View style={styles.container} className="bg-background">
             <Header
                 title={t('userLinks.title')}
                 subtitle={links.length !== 1 ? t('userLinks.linkCount_plural', { count: links.length }) : t('userLinks.linkCount', { count: links.length })}
@@ -64,7 +60,7 @@ const UserLinksScreen: React.FC<UserLinksScreenProps> = ({
 
             <ScrollView style={styles.content}>
                 <View style={styles.section}>
-                    <Text style={[styles.sectionTitle, { color: themeStyles.textColor }]}>{t('userLinks.title')}</Text>
+                    <Text style={styles.sectionTitle} className="text-foreground">{t('userLinks.title')}</Text>
 
                     <GroupedSection
                         items={groupedItems}

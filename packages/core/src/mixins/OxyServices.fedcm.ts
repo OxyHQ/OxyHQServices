@@ -52,6 +52,13 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
       super(...(args as [any]));
     }
   public static readonly DEFAULT_CONFIG_URL = 'https://auth.oxy.so/fedcm.json';
+
+  public resolveFedcmConfigUrl(): string {
+    return this.config.authWebUrl
+      ? `${this.config.authWebUrl}/fedcm.json`
+      : (this.constructor as any).DEFAULT_CONFIG_URL;
+  }
+
   public static readonly FEDCM_TIMEOUT = 15000; // 15 seconds for interactive
   public static readonly FEDCM_SILENT_TIMEOUT = 3000; // 3 seconds for silent mediation
 
@@ -113,7 +120,7 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
       // Request credential from browser's native identity flow
       // mode: 'button' signals this is a user-gesture-initiated flow (Chrome 125+)
       const credential = await this.requestIdentityCredential({
-        configURL: (this.constructor as any).DEFAULT_CONFIG_URL,
+        configURL: this.resolveFedcmConfigUrl(),
         clientId,
         nonce,
         context: options.context,
@@ -216,7 +223,7 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
       debug.log('Silent SSO: Attempting silent mediation...', loginHint ? `(hint: ${loginHint})` : '');
 
       credential = await this.requestIdentityCredential({
-        configURL: (this.constructor as any).DEFAULT_CONFIG_URL,
+        configURL: this.resolveFedcmConfigUrl(),
         clientId,
         nonce,
         loginHint,
@@ -461,7 +468,7 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
       if ('IdentityCredential' in window && 'disconnect' in (window as any).IdentityCredential) {
         const clientId = this.getClientId();
         await (window as any).IdentityCredential.disconnect({
-          configURL: (this.constructor as any).DEFAULT_CONFIG_URL,
+          configURL: this.resolveFedcmConfigUrl(),
           clientId,
           accountHint: accountHint || '*',
         });
@@ -480,7 +487,7 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
   getFedCMConfig(): FedCMConfig {
     return {
       enabled: this.isFedCMSupported(),
-      configURL: (this.constructor as any).DEFAULT_CONFIG_URL,
+      configURL: this.resolveFedcmConfigUrl(),
       clientId: this.getClientId(),
     };
   }

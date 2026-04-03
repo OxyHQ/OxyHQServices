@@ -119,16 +119,6 @@ const OxyAuthScreen: React.FC<BaseScreenProps> = ({
   theme,
 }) => {
   const bloomTheme = useTheme();
-  const colors = {
-    background: bloomTheme.colors.background,
-    text: bloomTheme.colors.text,
-    secondaryText: bloomTheme.colors.textSecondary,
-    primary: bloomTheme.colors.primary,
-    error: bloomTheme.colors.error,
-    border: bloomTheme.colors.border,
-    card: bloomTheme.colors.card,
-    inputBackground: bloomTheme.colors.backgroundSecondary,
-  };
   const { oxyServices, signIn, switchSession } = useOxy();
 
   const [authSession, setAuthSession] = useState<AuthSession | null>(null);
@@ -410,9 +400,9 @@ const OxyAuthScreen: React.FC<BaseScreenProps> = ({
 
   if (isLoading) {
     return (
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <View style={styles.container} className="bg-background">
         <Loading size="large" />
-        <Text style={[styles.loadingText, { color: colors.secondaryText }]}>
+        <Text style={styles.loadingText} className="text-muted-foreground">
           Preparing sign in...
         </Text>
       </View>
@@ -421,8 +411,8 @@ const OxyAuthScreen: React.FC<BaseScreenProps> = ({
 
   if (error) {
     return (
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <Text style={[styles.errorText, { color: colors.error }]}>{error}</Text>
+      <View style={styles.container} className="bg-background">
+        <Text style={styles.errorText} className="text-destructive">{error}</Text>
         <Button variant="primary" onPress={handleRefresh} style={{ width: '100%', borderRadius: 12 }}>
           Try Again
         </Button>
@@ -431,18 +421,18 @@ const OxyAuthScreen: React.FC<BaseScreenProps> = ({
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <View style={styles.container} className="bg-background">
       {/* Header */}
       <View style={styles.header}>
         <OxyLogo width={48} height={48} />
-        <Text style={[styles.title, { color: colors.text }]}>Sign in with Oxy</Text>
-        <Text style={[styles.subtitle, { color: colors.secondaryText }]}>
+        <Text style={styles.title} className="text-foreground">Sign in with Oxy</Text>
+        <Text style={styles.subtitle} className="text-muted-foreground">
           Use your Oxy identity to sign in securely
         </Text>
       </View>
 
       {/* QR Code */}
-      <View style={[styles.qrContainer, { backgroundColor: colors.inputBackground, borderColor: colors.border }]}>
+      <View style={styles.qrContainer} className="bg-secondary border-border">
         <View style={styles.qrWrapper}>
           <QRCode
             value={getQRData()}
@@ -451,23 +441,23 @@ const OxyAuthScreen: React.FC<BaseScreenProps> = ({
             color="black"
           />
         </View>
-        <Text style={[styles.qrHint, { color: colors.secondaryText }]}>
+        <Text style={styles.qrHint} className="text-muted-foreground">
           Scan with Oxy Accounts app
         </Text>
       </View>
 
       {/* Divider */}
       <View style={styles.dividerContainer}>
-        <View style={[styles.divider, { backgroundColor: colors.border }]} />
-        <Text style={[styles.dividerText, { color: colors.secondaryText }]}>or</Text>
-        <View style={[styles.divider, { backgroundColor: colors.border }]} />
+        <View style={styles.divider} className="bg-border" />
+        <Text style={styles.dividerText} className="text-muted-foreground">or</Text>
+        <View style={styles.divider} className="bg-border" />
       </View>
 
       {/* Open Oxy Auth Button */}
       <Button
         variant="primary"
         onPress={handleOpenAuth}
-        icon={<OxyLogo width={20} height={20} fillColor={colors.card} style={styles.buttonIcon} />}
+        icon={<OxyLogo width={20} height={20} fillColor={bloomTheme.colors.card} style={styles.buttonIcon} />}
         style={{ width: '100%', borderRadius: 12 }}
       >
         Open Oxy Auth
@@ -477,7 +467,7 @@ const OxyAuthScreen: React.FC<BaseScreenProps> = ({
       {isWaiting && (
         <View style={styles.statusContainer}>
           <Loading size="small" style={{ flex: undefined }} />
-          <Text style={[styles.statusText, { color: colors.secondaryText }]}>
+          <Text style={styles.statusText} className="text-muted-foreground">
             Waiting for authorization...
           </Text>
         </View>
@@ -485,11 +475,11 @@ const OxyAuthScreen: React.FC<BaseScreenProps> = ({
 
       {/* Footer */}
       <View style={styles.footer}>
-        <Text style={[styles.footerText, { color: colors.secondaryText }]}>
+        <Text style={styles.footerText} className="text-muted-foreground">
           Don't have Oxy Accounts?{' '}
         </Text>
         <TouchableOpacity onPress={() => Linking.openURL(OXY_ACCOUNTS_WEB_URL)}>
-          <Text style={[styles.footerLink, { color: colors.primary }]}>
+          <Text style={styles.footerLink} className="text-primary">
             Get it here
           </Text>
         </TouchableOpacity>
@@ -498,7 +488,7 @@ const OxyAuthScreen: React.FC<BaseScreenProps> = ({
       {/* Cancel Button */}
       {goBack && (
         <TouchableOpacity style={styles.cancelButton} onPress={goBack}>
-          <Text style={[styles.cancelText, { color: colors.secondaryText }]}>Cancel</Text>
+          <Text style={styles.cancelText} className="text-muted-foreground">Cancel</Text>
         </TouchableOpacity>
       )}
     </View>

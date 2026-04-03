@@ -16,7 +16,7 @@ import { confirmAction } from '../utils/confirmAction';
 import { useAuthStore } from '../stores/authStore';
 import { GroupedSection } from '../components';
 import { useI18n } from '../hooks/useI18n';
-import { useThemeStyles } from '../hooks/useThemeStyles';
+import { useTheme } from '@oxyhq/bloom/theme';
 import { useColorScheme } from '../hooks/useColorScheme';
 import { Colors } from '../constants/theme';
 import { normalizeColorScheme } from '../utils/themeUtils';
@@ -109,13 +109,12 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
     }>>([]);
 
 
-    // Get theme colors using centralized hook
+    // Get theme colors
+    const bloomTheme = useTheme();
     const colorScheme = useColorScheme();
-    const themeStyles = useThemeStyles(theme || 'light', colorScheme);
 
-    // Extract colors for convenience - ensure it's always defined
-    // useThemeStyles always returns colors, but add safety check for edge cases
-    const colors = themeStyles.colors || Colors[normalizeColorScheme(colorScheme, theme || 'light')];
+    // Extract colors for convenience
+    const colors = Colors[normalizeColorScheme(colorScheme, theme || 'light')];
 
 
     // Track initialization to prevent unnecessary resets
@@ -317,17 +316,14 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
 
     if (userLoading || !isAuthenticated) {
         return (
-            <View style={[styles.container, {
-                backgroundColor: themeStyles.backgroundColor,
-                justifyContent: 'center'
-            }]}>
-                <ActivityIndicator size="large" color={themeStyles.primaryColor} />
+            <View style={[styles.container, { justifyContent: 'center' }]} className="bg-background">
+                <ActivityIndicator size="large" color={bloomTheme.colors.primary} />
             </View>
         );
     }
 
     return (
-        <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
+        <View style={styles.container} className="bg-background">
             <ScrollView
                 ref={scrollViewRef}
                 style={styles.content}
@@ -336,10 +332,10 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
             >
                 {/* Title and Subtitle Header */}
                 <View style={[styles.headerContainer, styles.headerSection]}>
-                            <Text style={[styles.modernTitle, { color: themeStyles.textColor, marginBottom: 0, marginTop: 0 }]}>
+                            <Text style={[styles.modernTitle, { marginBottom: 0, marginTop: 0 }]} className="text-foreground">
                                 {t('accountOverview.items.editProfile.title') || t('editProfile.title') || 'Edit Profile'}
                             </Text>
-                            <Text style={[styles.modernSubtitle, { color: colors.secondaryText, marginBottom: 0, marginTop: 0 }]}>
+                            <Text style={[styles.modernSubtitle, { marginBottom: 0, marginTop: 0 }]} className="text-muted-foreground">
                                 {t('accountOverview.items.editProfile.subtitle') || t('editProfile.subtitle') || 'Manage your profile and preferences'}
                             </Text>
                         </View>
@@ -356,7 +352,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                 setProfilePictureSectionY(y);
                             }}
                         >
-                            <Text style={[styles.sectionTitle, { color: colors.secondaryText }]}>
+                            <Text style={styles.sectionTitle} className="text-muted-foreground">
                                 {t('editProfile.sections.profilePicture') || 'PROFILE PICTURE'}
                             </Text>
                             <View style={styles.groupedSectionWrapper}>
@@ -430,7 +426,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                 setBasicInfoSectionY(y);
                             }}
                         >
-                            <Text style={[styles.sectionTitle, { color: colors.secondaryText }]}>
+                            <Text style={styles.sectionTitle} className="text-muted-foreground">
                                 {t('editProfile.sections.basicInfo') || 'BASIC INFORMATION'}
                             </Text>
                             <View style={styles.groupedSectionWrapper}>
@@ -474,7 +470,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                 setAboutSectionY(y);
                             }}
                         >
-                            <Text style={[styles.sectionTitle, { color: colors.secondaryText }]}>
+                            <Text style={styles.sectionTitle} className="text-muted-foreground">
                                 {t('editProfile.sections.about') || 'ABOUT YOU'}
                             </Text>
                             <View style={styles.groupedSectionWrapper}>
@@ -526,7 +522,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                 setQuickActionsSectionY(y);
                             }}
                         >
-                            <Text style={[styles.sectionTitle, { color: colors.secondaryText }]}>
+                            <Text style={styles.sectionTitle} className="text-muted-foreground">
                                 {t('editProfile.sections.quickActions') || 'QUICK ACTIONS'}
                             </Text>
                             <View style={styles.groupedSectionWrapper}>
@@ -570,7 +566,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                 setSecuritySectionY(y);
                             }}
                         >
-                            <Text style={[styles.sectionTitle, { color: colors.secondaryText }]}>
+                            <Text style={styles.sectionTitle} className="text-muted-foreground">
                                 {t('editProfile.sections.security') || 'SECURITY'}
                             </Text>
                             <View style={styles.groupedSectionWrapper}>

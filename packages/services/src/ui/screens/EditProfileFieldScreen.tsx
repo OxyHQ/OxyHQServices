@@ -13,8 +13,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { BaseScreenProps } from '../types/navigation';
-import { useThemeStyles } from '../hooks/useThemeStyles';
-import { useColorScheme } from '../hooks/useColorScheme';
+import { useTheme } from '@oxyhq/bloom/theme';
 import { normalizeTheme } from '../utils/themeUtils';
 import { Header } from '../components';
 import { useI18n } from '../hooks/useI18n';
@@ -78,10 +77,8 @@ const EditProfileFieldScreen: React.FC<EditProfileFieldScreenProps> = ({
     const { user } = useOxy();
     const { t } = useI18n();
     const { saveProfile, updateField, isSaving } = useProfileEditing();
-    const colorScheme = useColorScheme();
+    const bloomTheme = useTheme();
     const normalizedTheme = normalizeTheme(theme);
-    const themeStyles = useThemeStyles(normalizedTheme, colorScheme);
-    const colors = themeStyles.colors;
 
     // State for field values
     const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
@@ -417,24 +414,24 @@ const EditProfileFieldScreen: React.FC<EditProfileFieldScreenProps> = ({
 
         return (
             <View key={field.key} style={styles.inputGroup}>
-                <Text style={[styles.label, { color: colors.text }]}>
+                <Text style={[styles.label, { color: bloomTheme.colors.text }]}>
                     {field.label}
                 </Text>
                 <TextInput
                     style={[
                         isTextarea ? styles.textArea : styles.input,
                         {
-                            backgroundColor: colors.card,
-                            color: colors.text,
-                            borderColor: fieldErrors[field.key] ? '#FF3B30' : colors.border,
+                            backgroundColor: bloomTheme.colors.card,
+                            color: bloomTheme.colors.text,
+                            borderColor: fieldErrors[field.key] ? '#FF3B30' : bloomTheme.colors.border,
                         },
                     ]}
                     value={fieldValues[field.key] || ''}
                     onChangeText={(value) => handleFieldChange(field.key, value)}
                     placeholder={field.placeholder}
-                    placeholderTextColor={colors.secondaryText}
+                    placeholderTextColor={bloomTheme.colors.textSecondary}
                     autoFocus={index === 0}
-                    selectionColor={colors.tint}
+                    selectionColor={bloomTheme.colors.primary}
                     {...field.inputProps}
                 />
                 {fieldErrors[field.key] && (
@@ -459,23 +456,23 @@ const EditProfileFieldScreen: React.FC<EditProfileFieldScreenProps> = ({
         return (
             <>
                 <View style={styles.inputGroup}>
-                    <Text style={[styles.label, { color: colors.text }]}>{addLabel}</Text>
+                    <Text style={[styles.label, { color: bloomTheme.colors.text }]}>{addLabel}</Text>
                     <View style={styles.addItemRow}>
                         <TextInput
                             style={[
                                 styles.input,
                                 {
-                                    backgroundColor: colors.card,
-                                    color: colors.text,
-                                    borderColor: colors.border,
+                                    backgroundColor: bloomTheme.colors.card,
+                                    color: bloomTheme.colors.text,
+                                    borderColor: bloomTheme.colors.border,
                                     flex: 1,
                                 },
                             ]}
                             value={newItemValue}
                             onChangeText={setNewItemValue}
                             placeholder={placeholder}
-                            placeholderTextColor={colors.secondaryText}
-                            selectionColor={colors.tint}
+                            placeholderTextColor={bloomTheme.colors.textSecondary}
+                            selectionColor={bloomTheme.colors.primary}
                             autoCapitalize="none"
                             autoCorrect={false}
                             onSubmitEditing={handleAddItem}
@@ -485,7 +482,7 @@ const EditProfileFieldScreen: React.FC<EditProfileFieldScreenProps> = ({
                         <TouchableOpacity
                             style={[
                                 styles.addButton,
-                                { backgroundColor: newItemValue.trim() ? colors.tint : colors.border }
+                                { backgroundColor: newItemValue.trim() ? bloomTheme.colors.primary : bloomTheme.colors.border }
                             ]}
                             onPress={handleAddItem}
                             disabled={!newItemValue.trim()}
@@ -497,7 +494,7 @@ const EditProfileFieldScreen: React.FC<EditProfileFieldScreenProps> = ({
 
                 {listItems.length > 0 && (
                     <View style={styles.listSection}>
-                        <Text style={[styles.listTitle, { color: colors.text }]}>
+                        <Text style={[styles.listTitle, { color: bloomTheme.colors.text }]}>
                             {listTitle} ({listItems.length})
                         </Text>
                         {listItems.map((item: any) => (
@@ -505,18 +502,18 @@ const EditProfileFieldScreen: React.FC<EditProfileFieldScreenProps> = ({
                                 key={item.id}
                                 style={[
                                     styles.listItem,
-                                    { backgroundColor: colors.card, borderColor: colors.border }
+                                    { backgroundColor: bloomTheme.colors.card, borderColor: bloomTheme.colors.border }
                                 ]}
                             >
                                 {fieldType === 'links' && item.image && (
                                     <Image source={{ uri: item.image }} style={styles.linkImage} />
                                 )}
                                 <View style={styles.listItemContent}>
-                                    <Text style={[styles.listItemTitle, { color: colors.text }]} numberOfLines={1}>
+                                    <Text style={[styles.listItemTitle, { color: bloomTheme.colors.text }]} numberOfLines={1}>
                                         {fieldType === 'locations' ? item.name : (item.title || item.url)}
                                     </Text>
                                     {fieldType === 'links' && (
-                                        <Text style={[styles.listItemSubtitle, { color: colors.secondaryText }]} numberOfLines={1}>
+                                        <Text style={[styles.listItemSubtitle, { color: bloomTheme.colors.textSecondary }]} numberOfLines={1}>
                                             {item.url}
                                         </Text>
                                     )}
@@ -537,7 +534,8 @@ const EditProfileFieldScreen: React.FC<EditProfileFieldScreenProps> = ({
 
     return (
         <KeyboardAvoidingView
-            style={[styles.container, { backgroundColor: normalizedTheme === 'dark' ? '#000000' : '#F5F5F5' }]}
+            style={styles.container}
+            className="bg-background"
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
             <Header
@@ -563,18 +561,18 @@ const EditProfileFieldScreen: React.FC<EditProfileFieldScreenProps> = ({
             >
                 {/* Big Title */}
                 <View style={styles.titleContainer}>
-                    <Text style={[styles.bigTitle, { color: colors.text }]}>
+                    <Text style={[styles.bigTitle, { color: bloomTheme.colors.text }]}>
                         {fieldConfig.title}
                     </Text>
                     {fieldConfig.subtitle && (
-                        <Text style={[styles.bigSubtitle, { color: colors.secondaryText }]}>
+                        <Text style={[styles.bigSubtitle, { color: bloomTheme.colors.textSecondary }]}>
                             {fieldConfig.subtitle}
                         </Text>
                     )}
                 </View>
 
                 {/* Form Content */}
-                <View style={[styles.formCard, { backgroundColor: colors.card }]}>
+                <View style={[styles.formCard, { backgroundColor: bloomTheme.colors.card }]}>
                     {fieldConfig.isList ? renderListContent() : fieldConfig.fields.map(renderField)}
                 </View>
             </ScrollView>

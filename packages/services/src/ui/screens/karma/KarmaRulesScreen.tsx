@@ -4,9 +4,7 @@ import { View, Text, StyleSheet, ScrollView, ActivityIndicator } from 'react-nat
 import type { BaseScreenProps } from '../../types/navigation';
 import { Header } from '../../components';
 import { useI18n } from '../../hooks/useI18n';
-import { useThemeStyles } from '../../hooks/useThemeStyles';
-import { normalizeTheme } from '../../utils/themeUtils';
-import { useColorScheme } from '../../hooks/useColorScheme';
+import { useTheme } from '@oxyhq/bloom/theme';
 import { useOxy } from '../../context/OxyContext';
 
 const KarmaRulesScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
@@ -17,9 +15,7 @@ const KarmaRulesScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    const colorScheme = useColorScheme();
-    const normalizedTheme = normalizeTheme(theme);
-    const themeStyles = useThemeStyles(normalizedTheme, colorScheme);
+    const bloomTheme = useTheme();
     // Override primaryColor for Karma screens (purple instead of blue)
     const primaryColor = '#d169e5';
 
@@ -33,7 +29,7 @@ const KarmaRulesScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
     }, [oxyServices]);
 
     return (
-        <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
+        <View style={styles.container} className="bg-background">
             <Header
                 title={t('karma.rules.title') || 'Karma Rules'}
                 subtitle={t('karma.rules.subtitle') || 'How to earn karma points'}
@@ -48,11 +44,11 @@ const KarmaRulesScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
             ) : (
                 <ScrollView contentContainerStyle={styles.listContainer}>
                     {rules.length === 0 ? (
-                        <Text style={[styles.placeholder, { color: themeStyles.textColor }]}>{t('karma.rules.empty') || 'No rules found.'}</Text>
+                        <Text style={[styles.placeholder, { color: bloomTheme.colors.text }]}>{t('karma.rules.empty') || 'No rules found.'}</Text>
                     ) : (
                         rules.map((rule, idx) => (
                             <View key={rule.id || idx} style={styles.ruleRow}>
-                                <Text style={[styles.ruleDesc, { color: themeStyles.textColor }]}>{rule.description}</Text>
+                                <Text style={[styles.ruleDesc, { color: bloomTheme.colors.text }]}>{rule.description}</Text>
                             </View>
                         ))
                     )}

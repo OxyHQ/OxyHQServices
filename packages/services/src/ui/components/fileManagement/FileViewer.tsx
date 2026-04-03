@@ -4,10 +4,11 @@ import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Image } fr
 import { Image as ExpoImage } from 'expo-image';
 // @ts-ignore - MaterialCommunityIcons is available at runtime
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useTheme } from '@oxyhq/bloom/theme';
 import type { FileMetadata } from '@oxyhq/core';
 import { formatFileSize } from '../../utils/fileManagement';
 import { fileManagementStyles } from './styles';
-import type { ThemeStyles } from '../../hooks/useThemeStyles';
+import { Colors } from '../../constants/theme';
 import { GroupedSection } from '../GroupedSection';
 
 interface FileViewerProps {
@@ -19,8 +20,9 @@ interface FileViewerProps {
     onClose: () => void;
     onDownload: (fileId: string, filename: string) => void;
     onDelete: (fileId: string, filename: string) => void;
-    themeStyles: ThemeStyles;
     isOwner: boolean;
+    /** @deprecated No longer used. Colors are sourced from useTheme() internally. */
+    themeStyles?: unknown;
 }
 
 export const FileViewer: React.FC<FileViewerProps> = ({
@@ -32,9 +34,10 @@ export const FileViewer: React.FC<FileViewerProps> = ({
     onClose,
     onDownload,
     onDelete,
-    themeStyles,
     isOwner,
 }) => {
+    const { colors, isDark } = useTheme();
+    const constantColors = Colors[isDark ? 'dark' : 'light'];
     const isImage = file.contentType.startsWith('image/');
     const isText = file.contentType.startsWith('text/') ||
         file.contentType.includes('json') ||
@@ -45,10 +48,9 @@ export const FileViewer: React.FC<FileViewerProps> = ({
     const isVideo = file.contentType.startsWith('video/');
     const isAudio = file.contentType.startsWith('audio/');
 
-    const backgroundColor = isImage && fileContent
+    const bgColor = isImage && fileContent
         ? 'transparent'
-        : themeStyles.backgroundColor;
-    const borderColor = themeStyles.borderColor;
+        : undefined;
 
     const [containerWidth, setContainerWidth] = useState<number>(0);
     const [imageDimensions, setImageDimensions] = useState<{ width: number; height: number } | null>(null);
@@ -107,28 +109,28 @@ export const FileViewer: React.FC<FileViewerProps> = ({
             {
                 id: 'filename',
                 icon: 'file-document',
-                iconColor: themeStyles.colors.iconSecurity,
+                iconColor: constantColors.iconSecurity,
                 title: 'File Name',
                 subtitle: file.filename,
             },
             {
                 id: 'size',
                 icon: 'server',
-                iconColor: themeStyles.colors.iconStorage,
+                iconColor: constantColors.iconStorage,
                 title: 'Size',
                 subtitle: formatFileSize(file.length),
             },
             {
                 id: 'type',
                 icon: 'code-tags',
-                iconColor: themeStyles.colors.iconData,
+                iconColor: constantColors.iconData,
                 title: 'Type',
                 subtitle: file.contentType,
             },
             {
                 id: 'uploaded',
                 icon: 'clock',
-                iconColor: themeStyles.colors.iconPersonalInfo,
+                iconColor: constantColors.iconPersonalInfo,
                 title: 'Uploaded',
                 subtitle: new Date(file.uploadDate).toLocaleString(),
             },
@@ -138,7 +140,7 @@ export const FileViewer: React.FC<FileViewerProps> = ({
             items.push({
                 id: 'description',
                 icon: 'text',
-                iconColor: themeStyles.colors.iconData,
+                iconColor: constantColors.iconData,
                 title: 'Description',
                 subtitle: file.metadata.description,
             });
@@ -147,16 +149,19 @@ export const FileViewer: React.FC<FileViewerProps> = ({
         items.push({
             id: 'fileId',
             icon: 'key',
-            iconColor: themeStyles.colors.iconSecurity,
+            iconColor: constantColors.iconSecurity,
             title: 'File ID',
             subtitle: file.id,
         });
 
         return items;
-    }, [file, themeStyles.colors]);
+    }, [file, constantColors]);
 
     return (
-        <View style={[fileManagementStyles.fileViewerContainer, { backgroundColor }]}>
+        <View
+            className={isImage && fileContent ? undefined : 'bg-background'}
+            style={[fileManagementStyles.fileViewerContainer, bgColor ? { backgroundColor: bgColor } : undefined]}
+        >
             {/* Blurred Background Image - only for images */}
             {isImage && fileContent && (
                 <>
@@ -168,24 +173,26 @@ export const FileViewer: React.FC<FileViewerProps> = ({
                         transition={120}
                         cachePolicy="memory-disk"
                     />
-                    <View style={[fileManagementStyles.backgroundOverlay, { backgroundColor: themeStyles.isDarkTheme ? 'rgba(0, 0, 0, 0.6)' : 'rgba(255, 255, 255, 0.85)' }]} />
+                    <View style={[fileManagementStyles.backgroundOverlay, { backgroundColor: isDark ? 'rgba(0, 0, 0, 0.6)' : 'rgba(255, 255, 255, 0.85)' }]} />
                 </>
             )}
 
             {/* Floating Back Button */}
             <TouchableOpacity
-                style={[fileManagementStyles.floatingBackButton, { backgroundColor: themeStyles.colors.card }]}
+                className="bg-card"
+                style={fileManagementStyles.floatingBackButton}
                 onPress={onClose}
             >
-                <MaterialCommunityIcons name="arrow-left" size={20} color={themeStyles.textColor} />
+                <MaterialCommunityIcons name="arrow-left" size={20} color={colors.text} />
             </TouchableOpacity>
 
             {/* Floating Download Button */}
             <TouchableOpacity
-                style={[fileManagementStyles.floatingDownloadButton, { backgroundColor: themeStyles.colors.card }]}
+                className="bg-card"
+                style={fileManagementStyles.floatingDownloadButton}
                 onPress={() => onDownload(file.id, file.filename)}
             >
-                <MaterialCommunityIcons name="download" size={20} color={themeStyles.primaryColor} />
+                <MaterialCommunityIcons name="download" size={20} color={colors.primary} />
             </TouchableOpacity>
 
             {/* File Content */}
@@ -195,13 +202,13 @@ export const FileViewer: React.FC<FileViewerProps> = ({
             >
                 {loadingFileContent ? (
                     <View style={fileManagementStyles.fileViewerLoading}>
-                        <ActivityIndicator size="large" color={themeStyles.primaryColor} />
-                        <Text style={[fileManagementStyles.fileViewerLoadingText, { color: themeStyles.textColor }]}>
+                        <ActivityIndicator size="large" color={colors.primary} />
+                        <Text className="text-foreground" style={fileManagementStyles.fileViewerLoadingText}>
                             Loading file content...
                         </Text>
                     </View>
                 ) : isImage && fileContent ? (
-                    <View 
+                    <View
                         style={fileManagementStyles.imageContainer}
                         onLayout={(e) => {
                             const width = e.nativeEvent.layout.width;
@@ -210,7 +217,7 @@ export const FileViewer: React.FC<FileViewerProps> = ({
                             }
                         }}
                     >
-                        <View 
+                        <View
                             style={[
                                 fileManagementStyles.imageWrapper,
                                 {
@@ -236,9 +243,9 @@ export const FileViewer: React.FC<FileViewerProps> = ({
                         </View>
                     </View>
                 ) : isText && fileContent ? (
-                    <View style={[fileManagementStyles.textContainer, { backgroundColor: themeStyles.colors.card }]}>
+                    <View className="bg-card" style={fileManagementStyles.textContainer}>
                         <ScrollView style={{ flex: 1 }} nestedScrollEnabled>
-                            <Text style={[fileManagementStyles.textContent, { color: themeStyles.textColor }]}>
+                            <Text className="text-foreground" style={fileManagementStyles.textContent}>
                                 {fileContent}
                             </Text>
                         </ScrollView>
@@ -248,17 +255,18 @@ export const FileViewer: React.FC<FileViewerProps> = ({
                         <MaterialCommunityIcons
                             name="file-pdf-box"
                             size={64}
-                            color={themeStyles.colors.secondaryText}
+                            color={colors.textSecondary}
                         />
-                        <Text style={[fileManagementStyles.unsupportedFileTitle, { color: themeStyles.textColor }]}>
+                        <Text className="text-foreground" style={fileManagementStyles.unsupportedFileTitle}>
                             PDF Preview Not Available
                         </Text>
-                        <Text style={[fileManagementStyles.unsupportedFileDescription, { color: themeStyles.colors.secondaryText }]}>
+                        <Text className="text-muted-foreground" style={fileManagementStyles.unsupportedFileDescription}>
                             PDF files cannot be previewed in this viewer.{'\n'}
                             Download the file to view its contents.
                         </Text>
                         <TouchableOpacity
-                            style={[fileManagementStyles.downloadButtonLarge, { backgroundColor: themeStyles.primaryColor }]}
+                            className="bg-primary"
+                            style={fileManagementStyles.downloadButtonLarge}
                             onPress={() => onDownload(file.id, file.filename)}
                         >
                             <MaterialCommunityIcons name="download" size={18} color="#FFFFFF" />
@@ -270,17 +278,18 @@ export const FileViewer: React.FC<FileViewerProps> = ({
                         <MaterialCommunityIcons
                             name="video-outline"
                             size={64}
-                            color={themeStyles.colors.secondaryText}
+                            color={colors.textSecondary}
                         />
-                        <Text style={[fileManagementStyles.unsupportedFileTitle, { color: themeStyles.textColor }]}>
+                        <Text className="text-foreground" style={fileManagementStyles.unsupportedFileTitle}>
                             Video Playback Not Available
                         </Text>
-                        <Text style={[fileManagementStyles.unsupportedFileDescription, { color: themeStyles.colors.secondaryText }]}>
+                        <Text className="text-muted-foreground" style={fileManagementStyles.unsupportedFileDescription}>
                             Video playback is not supported in this viewer.{'\n'}
                             Download the file to view it.
                         </Text>
                         <TouchableOpacity
-                            style={[fileManagementStyles.downloadButtonLarge, { backgroundColor: themeStyles.primaryColor }]}
+                            className="bg-primary"
+                            style={fileManagementStyles.downloadButtonLarge}
                             onPress={() => onDownload(file.id, file.filename)}
                         >
                             <MaterialCommunityIcons name="download" size={18} color="#FFFFFF" />
@@ -292,17 +301,18 @@ export const FileViewer: React.FC<FileViewerProps> = ({
                         <MaterialCommunityIcons
                             name="music-note-outline"
                             size={64}
-                            color={themeStyles.colors.secondaryText}
+                            color={colors.textSecondary}
                         />
-                        <Text style={[fileManagementStyles.unsupportedFileTitle, { color: themeStyles.textColor }]}>
+                        <Text className="text-foreground" style={fileManagementStyles.unsupportedFileTitle}>
                             Audio Playback Not Available
                         </Text>
-                        <Text style={[fileManagementStyles.unsupportedFileDescription, { color: themeStyles.colors.secondaryText }]}>
+                        <Text className="text-muted-foreground" style={fileManagementStyles.unsupportedFileDescription}>
                             Audio playback is not supported in this viewer.{'\n'}
                             Download the file to listen to it.
                         </Text>
                         <TouchableOpacity
-                            style={[fileManagementStyles.downloadButtonLarge, { backgroundColor: themeStyles.primaryColor }]}
+                            className="bg-primary"
+                            style={fileManagementStyles.downloadButtonLarge}
                             onPress={() => onDownload(file.id, file.filename)}
                         >
                             <MaterialCommunityIcons name="download" size={18} color="#FFFFFF" />
@@ -314,17 +324,18 @@ export const FileViewer: React.FC<FileViewerProps> = ({
                         <MaterialCommunityIcons
                             name="file-outline"
                             size={64}
-                            color={themeStyles.colors.secondaryText}
+                            color={colors.textSecondary}
                         />
-                        <Text style={[fileManagementStyles.unsupportedFileTitle, { color: themeStyles.textColor }]}>
+                        <Text className="text-foreground" style={fileManagementStyles.unsupportedFileTitle}>
                             Preview Not Available
                         </Text>
-                        <Text style={[fileManagementStyles.unsupportedFileDescription, { color: themeStyles.colors.secondaryText }]}>
+                        <Text className="text-muted-foreground" style={fileManagementStyles.unsupportedFileDescription}>
                             This file type cannot be previewed.{'\n'}
                             Download the file to view its contents.
                         </Text>
                         <TouchableOpacity
-                            style={[fileManagementStyles.downloadButtonLarge, { backgroundColor: themeStyles.primaryColor }]}
+                            className="bg-primary"
+                            style={fileManagementStyles.downloadButtonLarge}
                             onPress={() => onDownload(file.id, file.filename)}
                         >
                             <MaterialCommunityIcons name="download" size={18} color="#FFFFFF" />
@@ -335,9 +346,9 @@ export const FileViewer: React.FC<FileViewerProps> = ({
             </ScrollView>
 
             {/* File Details Section - at bottom */}
-            <View style={[fileManagementStyles.fileDetailsSection, { backgroundColor: themeStyles.colors.card }]}>
+            <View className="bg-card" style={fileManagementStyles.fileDetailsSection}>
                 <View style={fileManagementStyles.fileDetailsSectionHeader}>
-                    <Text style={[fileManagementStyles.fileDetailsSectionTitle, { color: themeStyles.textColor }]}>
+                    <Text className="text-foreground" style={fileManagementStyles.fileDetailsSectionTitle}>
                         File Details
                     </Text>
                     <TouchableOpacity
@@ -347,7 +358,7 @@ export const FileViewer: React.FC<FileViewerProps> = ({
                         <MaterialCommunityIcons
                             name={showFileDetailsInViewer ? "chevron-up" : "chevron-down"}
                             size={20}
-                            color={themeStyles.colors.secondaryText}
+                            color={colors.textSecondary}
                         />
                     </TouchableOpacity>
                 </View>
@@ -361,7 +372,8 @@ export const FileViewer: React.FC<FileViewerProps> = ({
                         {isOwner && (
                             <View style={fileManagementStyles.fileDetailsActions}>
                                 <TouchableOpacity
-                                    style={[fileManagementStyles.fileDetailsActionButton, { backgroundColor: themeStyles.dangerColor }]}
+                                    className="bg-destructive"
+                                    style={fileManagementStyles.fileDetailsActionButton}
                                     onPress={() => {
                                         onClose();
                                         onDelete(file.id, file.filename);

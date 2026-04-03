@@ -6,18 +6,7 @@ import {
   StyleSheet,
   type TextStyle,
 } from 'react-native';
-import { useThemeColors } from '../styles';
-
-// Helper function for text color
-const getTextColor = (colors: ReturnType<typeof useThemeColors>, disabled?: boolean, type?: 'error' | 'info') => {
-  if (type === 'error') {
-    return colors.error;
-  }
-  if (disabled) {
-    return `${colors.secondaryText}80`; // Add opacity
-  }
-  return colors.secondaryText;
-};
+import { useTheme } from '@oxyhq/bloom/theme';
 
 export type HelperTextProps = {
   /**
@@ -73,7 +62,7 @@ const HelperText = ({
   maxFontSizeMultiplier = 1.5,
   ...rest
 }: HelperTextProps) => {
-  const colors = useThemeColors(themeProp);
+  const { colors } = useTheme();
   const { current: shown } = React.useRef<Animated.Value>(
     new Animated.Value(visible ? 1 : 0)
   );
@@ -109,9 +98,9 @@ const HelperText = ({
       return colors.error;
     }
     if (disabled) {
-      return `${colors.secondaryText}80`; // Add opacity
+      return `${colors.textSecondary}80`; // Add opacity
     }
-    return colors.secondaryText;
+    return colors.textSecondary;
   };
 
   const textColor = getTextColor();

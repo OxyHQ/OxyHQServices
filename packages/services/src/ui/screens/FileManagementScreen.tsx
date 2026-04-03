@@ -37,9 +37,7 @@ import { useFileStore, useFiles, useUploading as useUploadingStore, useUploadAgg
 import Header from '../components/Header';
 import JustifiedPhotoGrid from '../components/photogrid/JustifiedPhotoGrid';
 import { GroupedSection } from '../components';
-import { useThemeStyles } from '../hooks/useThemeStyles';
-import { useColorScheme } from '../hooks/useColorScheme';
-import { normalizeTheme } from '../utils/themeUtils';
+import { useTheme } from '@oxyhq/bloom/theme';
 import { useOxy } from '../context/OxyContext';
 import { useI18n } from '../hooks/useI18n';
 import { useUploadFile } from '../hooks/mutations/useAccountMutations';
@@ -352,14 +350,20 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     );
 
     // Use centralized theme styles hook for consistency
-    const colorScheme = useColorScheme();
-    const normalizedTheme = normalizeTheme(theme);
-    const baseThemeStyles = useThemeStyles(normalizedTheme, colorScheme);
+    const bloomTheme = useTheme();
     // FileManagementScreen uses a slightly different light background
     const themeStyles = useMemo(() => ({
-        ...baseThemeStyles,
-        backgroundColor: baseThemeStyles.isDarkTheme ? baseThemeStyles.backgroundColor : '#f2f2f2',
-    }), [baseThemeStyles]);
+        backgroundColor: bloomTheme.isDark ? bloomTheme.colors.background : '#f2f2f2',
+        secondaryBackgroundColor: bloomTheme.colors.backgroundSecondary,
+        borderColor: bloomTheme.colors.border,
+        textColor: bloomTheme.colors.text,
+        mutedTextColor: bloomTheme.colors.textSecondary,
+        primaryColor: bloomTheme.colors.primary,
+        isDarkTheme: bloomTheme.isDark,
+        colors: {
+            card: bloomTheme.colors.card,
+        },
+    }), [bloomTheme]);
 
     // Extract commonly used theme variables
     const backgroundColor = themeStyles.backgroundColor;

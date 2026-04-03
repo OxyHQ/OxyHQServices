@@ -181,10 +181,10 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
     const renderTypeStep = () => (
         <Animated.View style={[styles.stepContainer, { opacity: fadeAnim, transform: [{ translateX: slideAnim }] }]}>
             <View style={styles.modernHeader}>
-                <Text style={[styles.stepTitle, { color: colors.text }]}>
+                <Text style={styles.stepTitle} className="text-foreground">
                     {t('feedback.type.title') || 'What type of feedback?'}
                 </Text>
-                <Text style={[styles.modernSubtitle, { color: colors.secondaryText }]}>
+                <Text style={styles.modernSubtitle} className="text-muted-foreground">
                     {t('feedback.type.subtitle') || 'Choose the category that best describes your feedback'}
                 </Text>
             </View>
@@ -194,7 +194,7 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
 
             {feedbackData.type && (
                 <View style={styles.categoryContainer}>
-                    <Text style={[styles.modernLabel, { color: colors.secondaryText, marginBottom: 8 }]}>
+                    <Text style={[styles.modernLabel, { marginBottom: 8 }]} className="text-muted-foreground">
                         {t('feedback.category.label') || 'Category'}
                     </Text>
                     <View style={styles.fullBleed}>
@@ -205,17 +205,19 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
 
             <View style={styles.navigationButtons}>
                 <TouchableOpacity
-                    style={[styles.navButton, { backgroundColor: 'transparent', borderColor: colors.border, borderRadius: 35 }]}
+                    style={[styles.navButton, { borderRadius: 35 }]}
+                    className="border-border"
                     onPress={goBack}
                     accessibilityRole="button"
                     accessibilityLabel="Go back"
                 >
                     <Ionicons name="arrow-back" size={16} color={colors.text} />
-                    <Text style={[styles.navButtonText, { color: colors.text }]}>{t('common.actions.back') || 'Back'}</Text>
+                    <Text style={styles.navButtonText} className="text-foreground">{t('common.actions.back') || 'Back'}</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                    style={[styles.navButton, { backgroundColor: colors.primary, borderColor: colors.primary, borderRadius: 35 }]}
+                    style={[styles.navButton, { borderRadius: 35 }]}
+                    className="bg-primary border-primary"
                     onPress={nextStep}
                     disabled={!isTypeStepValid()}
                     accessibilityRole="button"
@@ -231,10 +233,10 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
     const renderDetailsStep = () => (
         <Animated.View style={[styles.stepContainer, { opacity: fadeAnim, transform: [{ translateX: slideAnim }] }]}>
             <View style={styles.modernHeader}>
-                <Text style={[styles.stepTitle, { color: colors.text }]}>
+                <Text style={styles.stepTitle} className="text-foreground">
                     {t('feedback.details.title') || 'Tell us more'}
                 </Text>
-                <Text style={[styles.modernSubtitle, { color: colors.secondaryText }]}>
+                <Text style={styles.modernSubtitle} className="text-muted-foreground">
                     {t('feedback.details.subtitle') || 'Provide details about your feedback'}
                 </Text>
             </View>
@@ -268,7 +270,7 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
             />
 
             <View style={{ marginBottom: 24 }}>
-                <Text style={[styles.modernLabel, { color: colors.secondaryText, marginBottom: 8 }]}>
+                <Text style={[styles.modernLabel, { marginBottom: 8 }]} className="text-muted-foreground">
                     {t('feedback.priority.label') || 'Priority Level'}
                 </Text>
                 <View style={styles.fullBleed}>
@@ -278,17 +280,19 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
 
             <View style={styles.navigationButtons}>
                 <TouchableOpacity
-                    style={[styles.navButton, styles.backButton, { borderColor: colors.border }]}
+                    style={[styles.navButton, styles.backButton]}
+                    className="border-border"
                     onPress={prevStep}
                     accessibilityRole="button"
                     accessibilityLabel="Go back"
                 >
                     <Ionicons name="arrow-back" size={16} color={colors.text} />
-                    <Text style={[styles.navButtonText, { color: colors.text }]}>{t('common.actions.back') || 'Back'}</Text>
+                    <Text style={styles.navButtonText} className="text-foreground">{t('common.actions.back') || 'Back'}</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                    style={[styles.navButton, styles.nextButton, { backgroundColor: colors.primary, borderColor: colors.primary }]}
+                    style={[styles.navButton, styles.nextButton]}
+                    className="bg-primary border-primary"
                     onPress={nextStep}
                     disabled={!isDetailsStepValid()}
                     accessibilityRole="button"
@@ -304,10 +308,10 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
     const renderContactStep = () => (
         <Animated.View style={[styles.stepContainer, { opacity: fadeAnim, transform: [{ translateX: slideAnim }] }]}>
             <View style={styles.modernHeader}>
-                <Text style={[styles.stepTitle, { color: colors.text }]}>
+                <Text style={styles.stepTitle} className="text-foreground">
                     {t('feedback.contact.title') || 'Contact Information'}
                 </Text>
-                <Text style={[styles.modernSubtitle, { color: colors.secondaryText }]}>
+                <Text style={styles.modernSubtitle} className="text-muted-foreground">
                     {t('feedback.contact.subtitle') || 'Help us get back to you'}
                 </Text>
             </View>
@@ -341,24 +345,26 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
                 >
                     {feedbackData.systemInfo && <Ionicons name="checkmark" size={16} color="#FFFFFF" />}
                 </TouchableOpacity>
-                <Text style={[styles.checkboxText, { color: colors.text }]}>
+                <Text style={styles.checkboxText} className="text-foreground">
                     {t('feedback.contact.includeSystemInfo') || 'Include system information to help us better understand your issue'}
                 </Text>
             </View>
 
             <View style={styles.navigationButtons}>
                 <TouchableOpacity
-                    style={[styles.navButton, styles.backButton, { borderColor: colors.border }]}
+                    style={[styles.navButton, styles.backButton]}
+                    className="border-border"
                     onPress={prevStep}
                     accessibilityRole="button"
                     accessibilityLabel="Go back"
                 >
                     <Ionicons name="arrow-back" size={16} color={colors.text} />
-                    <Text style={[styles.navButtonText, { color: colors.text }]}>Back</Text>
+                    <Text style={styles.navButtonText} className="text-foreground">Back</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                    style={[styles.navButton, styles.nextButton, { backgroundColor: colors.primary, borderColor: colors.primary }]}
+                    style={[styles.navButton, styles.nextButton]}
+                    className="bg-primary border-primary"
                     onPress={nextStep}
                     disabled={!isContactStepValid()}
                     accessibilityRole="button"
@@ -374,45 +380,46 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
     const renderSummaryStep = () => (
         <Animated.View style={[styles.stepContainer, { opacity: fadeAnim, transform: [{ translateX: slideAnim }] }]}>
             <View style={styles.modernHeader}>
-                <Text style={[styles.stepTitle, { color: colors.text }]}>
+                <Text style={styles.stepTitle} className="text-foreground">
                     {t('feedback.summary.title') || 'Summary'}
                 </Text>
-                <Text style={[styles.modernSubtitle, { color: colors.secondaryText }]}>
+                <Text style={styles.modernSubtitle} className="text-muted-foreground">
                     {t('feedback.summary.subtitle') || 'Please review your feedback before submitting'}
                 </Text>
             </View>
 
             <View style={styles.summaryContainer}>
                 <View style={styles.summaryRow}>
-                    <Text style={[styles.summaryLabel, { color: colors.secondaryText }]}>Type:</Text>
-                    <Text style={[styles.summaryValue, { color: colors.text }]}>
+                    <Text style={styles.summaryLabel} className="text-muted-foreground">Type:</Text>
+                    <Text style={styles.summaryValue} className="text-foreground">
                         {FEEDBACK_TYPES.find(t => t.id === feedbackData.type)?.label}
                     </Text>
                 </View>
                 <View style={styles.summaryRow}>
-                    <Text style={[styles.summaryLabel, { color: colors.secondaryText }]}>Category:</Text>
-                    <Text style={[styles.summaryValue, { color: colors.text }]}>{feedbackData.category}</Text>
+                    <Text style={styles.summaryLabel} className="text-muted-foreground">Category:</Text>
+                    <Text style={styles.summaryValue} className="text-foreground">{feedbackData.category}</Text>
                 </View>
                 <View style={styles.summaryRow}>
-                    <Text style={[styles.summaryLabel, { color: colors.secondaryText }]}>Priority:</Text>
-                    <Text style={[styles.summaryValue, { color: colors.text }]}>
+                    <Text style={styles.summaryLabel} className="text-muted-foreground">Priority:</Text>
+                    <Text style={styles.summaryValue} className="text-foreground">
                         {PRIORITY_LEVELS.find(p => p.id === feedbackData.priority)?.label}
                     </Text>
                 </View>
                 <View style={styles.summaryRow}>
-                    <Text style={[styles.summaryLabel, { color: colors.secondaryText }]}>Title:</Text>
-                    <Text style={[styles.summaryValue, { color: colors.text }]}>{feedbackData.title}</Text>
+                    <Text style={styles.summaryLabel} className="text-muted-foreground">Title:</Text>
+                    <Text style={styles.summaryValue} className="text-foreground">{feedbackData.title}</Text>
                 </View>
                 <View style={styles.summaryRow}>
-                    <Text style={[styles.summaryLabel, { color: colors.secondaryText }]}>Contact:</Text>
-                    <Text style={[styles.summaryValue, { color: colors.text }]}>
+                    <Text style={styles.summaryLabel} className="text-muted-foreground">Contact:</Text>
+                    <Text style={styles.summaryValue} className="text-foreground">
                         {feedbackData.contactEmail || user?.email}
                     </Text>
                 </View>
             </View>
 
             <TouchableOpacity
-                style={[styles.button, { backgroundColor: colors.primary }]}
+                style={styles.button}
+                    className="bg-primary"
                 onPress={handleSubmitFeedback}
                 disabled={feedbackState.status === 'submitting'}
                 testID="submit-feedback-button"
@@ -431,13 +438,14 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
 
             <View style={styles.navigationButtons}>
                 <TouchableOpacity
-                    style={[styles.navButton, { backgroundColor: 'transparent', borderColor: colors.border, borderRadius: 35 }]}
+                    style={[styles.navButton, { borderRadius: 35 }]}
+                    className="border-border"
                     onPress={prevStep}
                     accessibilityRole="button"
                     accessibilityLabel="Go back"
                 >
                     <Ionicons name="arrow-back" size={16} color={colors.text} />
-                    <Text style={[styles.navButtonText, { color: colors.text }]}>{t('common.actions.back') || 'Back'}</Text>
+                    <Text style={styles.navButtonText} className="text-foreground">{t('common.actions.back') || 'Back'}</Text>
                 </TouchableOpacity>
             </View>
         </Animated.View>
@@ -449,14 +457,15 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
                 <View style={[styles.successIcon, { backgroundColor: `${colors.success || '#34C759'}20`, padding: 24, borderRadius: 50 }]}>
                     <Ionicons name="checkmark-circle" size={48} color={colors.success || '#34C759'} />
                 </View>
-                <Text style={[styles.successTitle, { color: colors.text }]}>
+                <Text style={styles.successTitle} className="text-foreground">
                     {t('feedback.success.thanks') || 'Thank You!'}
                 </Text>
-                <Text style={[styles.successMessage, { color: colors.secondaryText }]}>
+                <Text style={styles.successMessage} className="text-muted-foreground">
                     {t('feedback.success.message') || "Your feedback has been submitted successfully. We'll review it and get back to you soon."}
                 </Text>
                 <TouchableOpacity
-                    style={[styles.button, { backgroundColor: colors.primary }]}
+                    style={styles.button}
+                    className="bg-primary"
                     onPress={() => { resetForm(); setCurrentStep(0); }}
                     accessibilityRole="button"
                     accessibilityLabel="Submit another feedback"
@@ -480,12 +489,12 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
 
     return (
         <KeyboardAvoidingView
-            style={[styles.container, { backgroundColor: theme === 'dark' ? colors.background : '#F7F9FC' }]}
+            style={styles.container}
+            className="bg-background"
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
             <StatusBar
                 barStyle={theme === 'dark' ? 'light-content' : 'dark-content'}
-                backgroundColor={theme === 'dark' ? colors.background : '#F7F9FC'}
             />
 
             <ScrollView

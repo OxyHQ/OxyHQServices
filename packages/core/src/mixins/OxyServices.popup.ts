@@ -43,7 +43,13 @@ export function OxyServicesPopupAuthMixin<T extends typeof OxyServicesBase>(Base
     constructor(...args: any[]) {
       super(...(args as [any]));
     }
-  public static readonly AUTH_URL = 'https://auth.oxy.so';
+  public static readonly DEFAULT_AUTH_URL = 'https://auth.oxy.so';
+
+  /** Resolve auth URL from config or static default (method, not getter — getters break in TS mixins) */
+  public resolveAuthUrl(): string {
+    return this.config.authWebUrl || (this.constructor as any).DEFAULT_AUTH_URL;
+  }
+
   public static readonly POPUP_WIDTH = 500;
   public static readonly POPUP_HEIGHT = 700;
   public static readonly POPUP_TIMEOUT = 60000; // 1 minute
@@ -95,7 +101,7 @@ export function OxyServicesPopupAuthMixin<T extends typeof OxyServicesBase>(Base
       state,
       nonce,
       clientId: window.location.origin,
-      redirectUri: `${(this.constructor as any).AUTH_URL}/auth/callback`,
+      redirectUri: `${this.resolveAuthUrl()}/auth/callback`,
     });
 
     const popup = this.openCenteredPopup(authUrl, 'Oxy Sign In', width, height);
@@ -198,7 +204,7 @@ export function OxyServicesPopupAuthMixin<T extends typeof OxyServicesBase>(Base
     iframe.style.height = '0';
     iframe.style.border = 'none';
 
-    const silentUrl = `${(this.constructor as any).AUTH_URL}/auth/silent?` + `client_id=${encodeURIComponent(clientId)}&` + `nonce=${nonce}`;
+    const silentUrl = `${this.resolveAuthUrl()}/auth/silent?` + `client_id=${encodeURIComponent(clientId)}&` + `nonce=${nonce}`;
 
     iframe.src = silentUrl;
     document.body.appendChild(iframe);
@@ -260,7 +266,7 @@ export function OxyServicesPopupAuthMixin<T extends typeof OxyServicesBase>(Base
       }, timeout);
 
       const messageHandler = (event: MessageEvent) => {
-        const authUrl = (this.constructor as any).AUTH_URL;
+        const authUrl = this.resolveAuthUrl();
 
         // Log all messages for debugging
         if (event.data && typeof event.data === 'object' && event.data.type) {
@@ -347,7 +353,7 @@ export function OxyServicesPopupAuthMixin<T extends typeof OxyServicesBase>(Base
 
       const messageHandler = (event: MessageEvent) => {
         // Verify origin
-        if (event.origin !== (this.constructor as any).AUTH_URL) {
+        if (event.origin !== this.resolveAuthUrl()) {
           return;
         }
 
@@ -382,7 +388,7 @@ export function OxyServicesPopupAuthMixin<T extends typeof OxyServicesBase>(Base
     clientId: string;
     redirectUri: string;
   }): string {
-    const url = new URL(`${(this.constructor as any).AUTH_URL}/${params.mode}`);
+    const url = new URL(`${this.resolveAuthUrl()}/${params.mode}`);
     url.searchParams.set('response_type', 'token');
     url.searchParams.set('client_id', params.clientId);
     url.searchParams.set('redirect_uri', params.redirectUri);

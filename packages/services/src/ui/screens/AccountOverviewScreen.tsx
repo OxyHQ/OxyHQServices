@@ -23,10 +23,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { Section, GroupedSection, GroupedItem } from '../components';
 import { SettingsIcon } from '../components/SettingsIcon';
 import { useI18n } from '../hooks/useI18n';
-import { useThemeStyles } from '../hooks/useThemeStyles';
+import { useTheme } from '@oxyhq/bloom/theme';
 import { getDisplayName, getShortDisplayName } from '../utils/userUtils';
 import { useColorScheme } from '../hooks/useColorScheme';
-import { normalizeTheme } from '../utils/themeUtils';
+import { Colors } from '../constants/theme';
+import { normalizeColorScheme, normalizeTheme } from '../utils/themeUtils';
 import { useOxy } from '../context/OxyContext';
 import { useUsersBySessions } from '../hooks/queries/useAccountQueries';
 import {
@@ -91,17 +92,16 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
     const hasPlayedRef = useRef(false);
     const insets = useSafeAreaInsets();
 
-    // Use centralized theme styles hook for consistency
+    // Use bloom theme for ActivityIndicator and other non-style color props
+    const bloomTheme = useTheme();
     const colorScheme = useColorScheme();
     const normalizedTheme = normalizeTheme(theme);
-    const baseThemeStyles = useThemeStyles(normalizedTheme, colorScheme);
-    const themeStyles = useMemo(() => ({
-        ...baseThemeStyles,
-        // AccountOverviewScreen uses a custom primary color (purple) instead of the default blue
+    // AccountOverviewScreen uses a custom primary color (purple) instead of the default blue
+    const themeColors = {
         primaryColor: '#d169e5',
-        // Keep custom icon color for this screen
-        iconColor: baseThemeStyles.isDarkTheme ? '#BBBBBB' : '#666666',
-    }), [baseThemeStyles]);
+    };
+    // Icon colors from the Colors constant
+    const baseThemeColors = Colors[normalizeColorScheme(colorScheme, normalizedTheme)];
 
     // Compute user data for display
     const displayName = useMemo(() => getDisplayName(user), [user]);
@@ -320,23 +320,23 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
 
     if (!isAuthenticated) {
         return (
-            <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
-                <Text style={[styles.message, { color: themeStyles.textColor }]}>{t('common.status.notSignedIn')}</Text>
+            <View style={styles.container} className="bg-background">
+                <Text style={styles.message} className="text-foreground">{t('common.status.notSignedIn')}</Text>
             </View>
         );
     }
 
     if (isLoading) {
         return (
-            <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor, justifyContent: 'center' }]}>
-                <ActivityIndicator size="large" color={themeStyles.primaryColor} />
+            <View style={[styles.container, { justifyContent: 'center' }]} className="bg-background">
+                <ActivityIndicator size="large" color={themeColors.primaryColor} />
             </View>
         );
     }
 
 
     return (
-        <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
+        <View style={styles.container} className="bg-background">
             <ScrollView
                 style={styles.content}
                 contentContainerStyle={styles.scrollContent}
@@ -370,10 +370,10 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                                 </TouchableOpacity>
                             </View>
                             <View style={styles.nameWrapper}>
-                                <Text style={[styles.welcomeText, { color: themeStyles.textColor }]}>
+                                <Text style={styles.welcomeText} className="text-foreground">
                                     {displayName}
                                 </Text>
-                                <Text style={[styles.welcomeSubtext, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                                <Text style={styles.welcomeSubtext} className="text-muted-foreground">
                                     Manage your Oxy account.
                                 </Text>
                             </View>
@@ -384,7 +384,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                 {/* User Profile Section */}
                 <SettingsListGroup title={t('accountOverview.sections.profile')}>
                     <SettingsListItem
-                        icon={<SettingsIcon name="account" color={baseThemeStyles.colors.iconSecurity} />}
+                        icon={<SettingsIcon name="account" color={baseThemeColors.iconSecurity} />}
                         title={displayName}
                         description={user ? (user.email || user.username) : (t('common.status.loading') || 'Loading...')}
                         onPress={() => navigate?.('AccountSettings', { activeTab: 'profile' })}
@@ -394,32 +394,32 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                 {/* Account Settings */}
                 <SettingsListGroup title={t('accountOverview.sections.accountSettings')}>
                     <SettingsListItem
-                        icon={<SettingsIcon name="account-circle" color={baseThemeStyles.colors.iconPersonalInfo} />}
+                        icon={<SettingsIcon name="account-circle" color={baseThemeColors.iconPersonalInfo} />}
                         title={t('accountOverview.items.editProfile.title')}
                         description={t('accountOverview.items.editProfile.subtitle')}
                         onPress={() => navigate?.('AccountSettings', { activeTab: 'profile' })}
                     />
                     <SettingsListItem
-                        icon={<SettingsIcon name="shield-check" color={baseThemeStyles.colors.iconSecurity} />}
+                        icon={<SettingsIcon name="shield-check" color={baseThemeColors.iconSecurity} />}
                         title={t('accountOverview.items.security.title')}
                         description={t('accountOverview.items.security.subtitle')}
                         onPress={() => navigate?.('AccountSettings', { activeTab: 'password' })}
                     />
                     <SettingsListItem
-                        icon={<SettingsIcon name="bell" color={baseThemeStyles.colors.iconStorage} />}
+                        icon={<SettingsIcon name="bell" color={baseThemeColors.iconStorage} />}
                         title={t('accountOverview.items.notifications.title')}
                         description={t('accountOverview.items.notifications.subtitle')}
                         onPress={() => navigate?.('AccountSettings', { activeTab: 'notifications' })}
                     />
                     <SettingsListItem
-                        icon={<SettingsIcon name="star" color={baseThemeStyles.colors.iconPayments} />}
+                        icon={<SettingsIcon name="star" color={baseThemeColors.iconPayments} />}
                         title={t('accountOverview.items.premium.title')}
                         description={user?.isPremium ? t('accountOverview.items.premium.manage') : t('accountOverview.items.premium.upgrade')}
                         onPress={() => navigate?.('PremiumSubscription')}
                     />
                     {user?.isPremium ? (
                         <SettingsListItem
-                            icon={<SettingsIcon name="credit-card" color={baseThemeStyles.colors.iconPersonalInfo} />}
+                            icon={<SettingsIcon name="credit-card" color={baseThemeColors.iconPersonalInfo} />}
                             title={t('accountOverview.items.billing.title')}
                             description={t('accountOverview.items.billing.subtitle')}
                             onPress={() => toast.info(t('accountOverview.items.billing.coming'))}
@@ -436,12 +436,12 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                                     {
                                         id: 'loading-accounts',
                                         icon: 'sync',
-                                        iconColor: baseThemeStyles.colors.iconSecurity,
+                                        iconColor: baseThemeColors.iconSecurity,
                                         title: t('accountOverview.loadingAdditional.title') || 'Loading accounts...',
                                         subtitle: t('accountOverview.loadingAdditional.subtitle') || 'Please wait while we load your additional accounts',
                                         customContent: (
                                             <View style={styles.loadingContainer}>
-                                                <ActivityIndicator size="small" color={baseThemeStyles.colors.iconSecurity} />
+                                                <ActivityIndicator size="small" color={baseThemeColors.iconSecurity} />
                                                 <Text style={styles.loadingText}>{t('accountOverview.loadingAdditional.title') || 'Loading accounts...'}</Text>
                                             </View>
                                         ),
@@ -454,7 +454,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                                 items={additionalAccountsData.map((account, index) => ({
                                     id: `account-${account.id}`,
                                     icon: 'account',
-                                    iconColor: baseThemeStyles.colors.iconData,
+                                    iconColor: baseThemeColors.iconData,
                                     title: typeof account.name === 'object'
                                         ? account.name?.full || account.name?.first || account.username
                                         : account.name || account.username,
@@ -505,13 +505,13 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                 {showMoreAccounts && (
                     <SettingsListGroup title={t('accountOverview.sections.accountManagement') || 'Account Management'}>
                         <SettingsListItem
-                            icon={<SettingsIcon name="plus" color={baseThemeStyles.colors.iconSecurity} />}
+                            icon={<SettingsIcon name="plus" color={baseThemeColors.iconSecurity} />}
                             title={t('accountOverview.items.addAccount.title') || 'Add Another Account'}
                             description={t('accountOverview.items.addAccount.subtitle') || 'Sign in with a different account'}
                             onPress={handleAddAccount}
                         />
                         <SettingsListItem
-                            icon={<SettingsIcon name="logout" color={baseThemeStyles.colors.iconSharing} />}
+                            icon={<SettingsIcon name="logout" color={baseThemeColors.iconSharing} />}
                             title={t('accountOverview.items.signOutAll.title') || 'Sign out of all accounts'}
                             description={t('accountOverview.items.signOutAll.subtitle') || 'Remove all accounts from this device'}
                             onPress={handleSignOutAll}
@@ -522,7 +522,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                 {/* Quick Actions */}
                 <SettingsListGroup title={t('accountOverview.sections.quickActions')}>
                     <SettingsListItem
-                        icon={<SettingsIcon name="account-group" color={baseThemeStyles.colors.iconData} />}
+                        icon={<SettingsIcon name="account-group" color={baseThemeColors.iconData} />}
                         title={showMoreAccounts
                             ? t('accountOverview.items.accountSwitcher.titleHide')
                             : t('accountOverview.items.accountSwitcher.titleShow')}
@@ -536,25 +536,25 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                         onPress={() => setShowMoreAccounts(!showMoreAccounts)}
                     />
                     <SettingsListItem
-                        icon={<SettingsIcon name="clock" color={baseThemeStyles.colors.iconSecurity} />}
+                        icon={<SettingsIcon name="clock" color={baseThemeColors.iconSecurity} />}
                         title={t('accountOverview.items.history.title') || 'History'}
                         description={t('accountOverview.items.history.subtitle') || 'View and manage your search history'}
                         onPress={() => navigate?.('HistoryView')}
                     />
                     <SettingsListItem
-                        icon={<SettingsIcon name="bookmark" color={baseThemeStyles.colors.iconStorage} />}
+                        icon={<SettingsIcon name="bookmark" color={baseThemeColors.iconStorage} />}
                         title={t('accountOverview.items.saves.title') || 'Saves & Collections'}
                         description={t('accountOverview.items.saves.subtitle') || 'View your saved items and collections'}
                         onPress={() => navigate?.('SavesCollections')}
                     />
                     <SettingsListItem
-                        icon={<SettingsIcon name="download" color={baseThemeStyles.colors.iconPersonalInfo} />}
+                        icon={<SettingsIcon name="download" color={baseThemeColors.iconPersonalInfo} />}
                         title={t('accountOverview.items.downloadData.title')}
                         description={t('accountOverview.items.downloadData.subtitle')}
                         onPress={handleDownloadData}
                     />
                     <SettingsListItem
-                        icon={<SettingsIcon name="delete" color={baseThemeStyles.colors.iconSharing} />}
+                        icon={<SettingsIcon name="delete" color={baseThemeColors.iconSharing} />}
                         title={t('accountOverview.items.deleteAccount.title')}
                         description={t('accountOverview.items.deleteAccount.subtitle')}
                         onPress={handleDeleteAccount}
@@ -564,13 +564,13 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                 {/* Support & Settings */}
                 <SettingsListGroup title={t('accountOverview.sections.support')}>
                     <SettingsListItem
-                        icon={<SettingsIcon name="magnify" color={baseThemeStyles.colors.iconSecurity} />}
+                        icon={<SettingsIcon name="magnify" color={baseThemeColors.iconSecurity} />}
                         title={t('accountOverview.items.searchSettings.title') || 'Search Settings'}
                         description={t('accountOverview.items.searchSettings.subtitle') || 'SafeSearch and personalization'}
                         onPress={() => navigate?.('SearchSettings')}
                     />
                     <SettingsListItem
-                        icon={<SettingsIcon name="translate" color={baseThemeStyles.colors.iconPersonalInfo} />}
+                        icon={<SettingsIcon name="translate" color={baseThemeColors.iconPersonalInfo} />}
                         title={t('accountOverview.items.language.title') || 'Language'}
                         description={t('accountOverview.items.language.subtitle') || 'Choose your preferred language'}
                         onPress={() => navigate?.('LanguageSelector')}
@@ -582,25 +582,25 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                         onPress={() => toast.info(t('accountOverview.items.preferences.coming'))}
                     />
                     <SettingsListItem
-                        icon={<SettingsIcon name="help-circle" color={baseThemeStyles.colors.iconSecurity} />}
+                        icon={<SettingsIcon name="help-circle" color={baseThemeColors.iconSecurity} />}
                         title={t('accountOverview.items.help.title')}
                         description={t('accountOverview.items.help.subtitle')}
                         onPress={() => navigate?.('HelpSupport')}
                     />
                     <SettingsListItem
-                        icon={<SettingsIcon name="shield-check" color={baseThemeStyles.colors.iconPersonalInfo} />}
+                        icon={<SettingsIcon name="shield-check" color={baseThemeColors.iconPersonalInfo} />}
                         title={t('accountOverview.items.privacyPolicy.title') || 'Privacy Policy'}
                         description={t('accountOverview.items.privacyPolicy.subtitle') || 'How we handle your data'}
                         onPress={() => navigate?.('LegalDocuments', { initialStep: 1 })}
                     />
                     <SettingsListItem
-                        icon={<SettingsIcon name="file-document" color={baseThemeStyles.colors.iconSecurity} />}
+                        icon={<SettingsIcon name="file-document" color={baseThemeColors.iconSecurity} />}
                         title={t('accountOverview.items.termsOfService.title') || 'Terms of Service'}
                         description={t('accountOverview.items.termsOfService.subtitle') || 'Terms and conditions of use'}
                         onPress={() => navigate?.('LegalDocuments', { initialStep: 2 })}
                     />
                     <SettingsListItem
-                        icon={<SettingsIcon name="link" color={baseThemeStyles.colors.iconPersonalInfo} />}
+                        icon={<SettingsIcon name="link" color={baseThemeColors.iconPersonalInfo} />}
                         title={t('accountOverview.items.connectedApps.title')}
                         description={t('accountOverview.items.connectedApps.subtitle')}
                         onPress={() => toast.info(t('accountOverview.items.connectedApps.coming'))}

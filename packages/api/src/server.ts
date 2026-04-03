@@ -473,6 +473,8 @@ app.get('/ap/users/:username', async (req: any, res: Response) => {
   }
 });
 
+const AP_DOMAIN = process.env.FEDERATION_DOMAIN || 'oxy.so';
+
 // NodeInfo — required by some servers (e.g. Threads) to validate federation
 app.get('/.well-known/nodeinfo', (_req: any, res: Response) => {
   res.json({

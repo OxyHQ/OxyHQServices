@@ -9,8 +9,10 @@ import type { BaseScreenProps } from '../types/navigation';
 import { toast } from '../../lib/sonner';
 import { Header, Section, GroupedSection, LoadingState } from '../components';
 import { useI18n } from '../hooks/useI18n';
-import { useThemeStyles } from '../hooks/useThemeStyles';
+import { useTheme } from '@oxyhq/bloom/theme';
 import { useColorScheme } from '../hooks/useColorScheme';
+import { Colors } from '../constants/theme';
+import { normalizeColorScheme } from '../utils/themeUtils';
 
 const LegalDocumentsScreen: React.FC<BaseScreenProps> = ({
     onClose,
@@ -20,8 +22,10 @@ const LegalDocumentsScreen: React.FC<BaseScreenProps> = ({
 }) => {
     const { t } = useI18n();
     const [loading, setLoading] = useState(false);
+    const bloomTheme = useTheme();
     const colorScheme = useColorScheme();
-    const themeStyles = useThemeStyles(theme || 'light', colorScheme);
+    const normalizedColorScheme = normalizeColorScheme(colorScheme);
+    const themeColors = Colors[normalizedColorScheme];
 
     // Policy URLs from Oxy Transparency Center
     const POLICY_URLS = {
@@ -91,7 +95,7 @@ const LegalDocumentsScreen: React.FC<BaseScreenProps> = ({
     // If a specific document type is requested, show loading state while opening
     if (documentType) {
         return (
-            <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
+            <View style={styles.container} className="bg-background">
                 <Header
                     title={getPolicyTitle(documentType)}
                     onBack={goBack || onClose}
@@ -100,7 +104,7 @@ const LegalDocumentsScreen: React.FC<BaseScreenProps> = ({
                 />
                 <LoadingState
                     message={t('legal.opening') || 'Opening document...'}
-                    color={themeStyles.textColor}
+                    color={bloomTheme.colors.text}
                 />
             </View>
         );
@@ -108,7 +112,7 @@ const LegalDocumentsScreen: React.FC<BaseScreenProps> = ({
 
     // Default: show both options
     return (
-        <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
+        <View style={styles.container} className="bg-background">
             <Header
                 title={t('legal.title') || 'Legal Documents'}
                 onBack={goBack || onClose}
@@ -123,7 +127,7 @@ const LegalDocumentsScreen: React.FC<BaseScreenProps> = ({
                             {
                                 id: 'privacy-policy',
                                 icon: 'shield-check',
-                                iconColor: themeStyles.colors.iconPersonalInfo,
+                                iconColor: themeColors.iconPersonalInfo,
                                 title: t('legal.privacyPolicy.title') || 'Privacy Policy',
                                 subtitle: t('legal.privacyPolicy.subtitle') || 'How we handle your data',
                                 onPress: handleOpenPolicy('privacy'),
@@ -131,7 +135,7 @@ const LegalDocumentsScreen: React.FC<BaseScreenProps> = ({
                             {
                                 id: 'terms-of-service',
                                 icon: 'file-document',
-                                iconColor: themeStyles.colors.iconSecurity,
+                                iconColor: themeColors.iconSecurity,
                                 title: t('legal.termsOfService.title') || 'Terms of Service',
                                 subtitle: t('legal.termsOfService.subtitle') || 'Terms and conditions of use',
                                 onPress: handleOpenPolicy('terms'),
@@ -139,7 +143,7 @@ const LegalDocumentsScreen: React.FC<BaseScreenProps> = ({
                             {
                                 id: 'community-guidelines',
                                 icon: 'account-group',
-                                iconColor: themeStyles.colors.iconData,
+                                iconColor: themeColors.iconData,
                                 title: t('legal.communityGuidelines.title') || 'Community Guidelines',
                                 subtitle: t('legal.communityGuidelines.subtitle') || 'Rules and expectations for our community',
                                 onPress: handleOpenPolicy('community'),
@@ -147,7 +151,7 @@ const LegalDocumentsScreen: React.FC<BaseScreenProps> = ({
                             {
                                 id: 'data-retention',
                                 icon: 'clock',
-                                iconColor: themeStyles.colors.iconStorage,
+                                iconColor: themeColors.iconStorage,
                                 title: t('legal.dataRetention.title') || 'Data Retention Policy',
                                 subtitle: t('legal.dataRetention.subtitle') || 'How long we keep your data',
                                 onPress: handleOpenPolicy('dataRetention'),
@@ -155,7 +159,7 @@ const LegalDocumentsScreen: React.FC<BaseScreenProps> = ({
                             {
                                 id: 'content-moderation',
                                 icon: 'eye',
-                                iconColor: themeStyles.colors.iconSharing,
+                                iconColor: themeColors.iconSharing,
                                 title: t('legal.contentModeration.title') || 'Content Moderation Policy',
                                 subtitle: t('legal.contentModeration.subtitle') || 'How we moderate content',
                                 onPress: handleOpenPolicy('contentModeration'),

@@ -14,7 +14,7 @@ import type { BaseScreenProps } from '../types/navigation';
 import { toast } from '../../lib/sonner';
 import { Header, LoadingState, EmptyState } from '../components';
 import { useI18n } from '../hooks/useI18n';
-import { useThemeStyles } from '../hooks/useThemeStyles';
+import { useTheme } from '@oxyhq/bloom/theme';
 import { useOxy } from '../context/OxyContext';
 
 interface FAQ {
@@ -31,7 +31,7 @@ const FAQScreen: React.FC<BaseScreenProps> = ({
 }) => {
     const { oxyServices } = useOxy();
     const { t } = useI18n();
-    const themeStyles = useThemeStyles(theme || 'light');
+    const bloomTheme = useTheme();
 
     const [faqs, setFaqs] = useState<FAQ[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -93,10 +93,10 @@ const FAQScreen: React.FC<BaseScreenProps> = ({
         });
     }, []);
 
-    const styles = useMemo(() => createStyles(themeStyles), [themeStyles]);
+    const styles = useMemo(() => createStyles(), []);
 
     return (
-        <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
+        <View style={styles.container} className="bg-background">
             <Header
                 title={t('faq.title') || 'FAQ'}
                 onBack={goBack || onClose}
@@ -106,12 +106,12 @@ const FAQScreen: React.FC<BaseScreenProps> = ({
 
             {/* Search bar */}
             <View style={styles.searchContainer}>
-                <View style={[styles.searchInputWrapper, { backgroundColor: themeStyles.secondaryBackgroundColor, borderColor: themeStyles.borderColor }]}>
-                    <Ionicons name="search" size={20} color={themeStyles.mutedTextColor} style={styles.searchIcon} />
+                <View style={[styles.searchInputWrapper, { backgroundColor: bloomTheme.colors.backgroundSecondary, borderColor: bloomTheme.colors.border }]}>
+                    <Ionicons name="search" size={20} color={bloomTheme.colors.textSecondary} style={styles.searchIcon} />
                     <TextInput
-                        style={[styles.searchInput, { color: themeStyles.textColor }]}
+                        style={[styles.searchInput, { color: bloomTheme.colors.text }]}
                         placeholder={t('faq.searchPlaceholder') || 'Search FAQs...'}
-                        placeholderTextColor={themeStyles.mutedTextColor}
+                        placeholderTextColor={bloomTheme.colors.textSecondary}
                         value={searchQuery}
                         onChangeText={setSearchQuery}
                         accessibilityLabel="Search FAQs"
@@ -122,7 +122,7 @@ const FAQScreen: React.FC<BaseScreenProps> = ({
                             accessibilityRole="button"
                             accessibilityLabel="Clear search"
                         >
-                            <Ionicons name="close-circle" size={20} color={themeStyles.mutedTextColor} />
+                            <Ionicons name="close-circle" size={20} color={bloomTheme.colors.textSecondary} />
                         </TouchableOpacity>
                     )}
                 </View>
@@ -140,7 +140,7 @@ const FAQScreen: React.FC<BaseScreenProps> = ({
                         style={[
                             styles.categoryChip,
                             !selectedCategory && styles.categoryChipActive,
-                            { backgroundColor: !selectedCategory ? themeStyles.primaryColor : themeStyles.secondaryBackgroundColor }
+                            { backgroundColor: !selectedCategory ? bloomTheme.colors.primary : bloomTheme.colors.backgroundSecondary }
                         ]}
                         onPress={() => setSelectedCategory(null)}
                         accessibilityRole="button"
@@ -149,7 +149,7 @@ const FAQScreen: React.FC<BaseScreenProps> = ({
                     >
                         <Text style={[
                             styles.categoryChipText,
-                            { color: !selectedCategory ? '#FFFFFF' : themeStyles.textColor }
+                            { color: !selectedCategory ? '#FFFFFF' : bloomTheme.colors.text }
                         ]}>
                             {t('faq.allCategories') || 'All'}
                         </Text>
@@ -160,7 +160,7 @@ const FAQScreen: React.FC<BaseScreenProps> = ({
                             style={[
                                 styles.categoryChip,
                                 selectedCategory === cat && styles.categoryChipActive,
-                                { backgroundColor: selectedCategory === cat ? themeStyles.primaryColor : themeStyles.secondaryBackgroundColor }
+                                { backgroundColor: selectedCategory === cat ? bloomTheme.colors.primary : bloomTheme.colors.backgroundSecondary }
                             ]}
                             onPress={() => setSelectedCategory(cat)}
                             accessibilityRole="button"
@@ -169,7 +169,7 @@ const FAQScreen: React.FC<BaseScreenProps> = ({
                         >
                             <Text style={[
                                 styles.categoryChipText,
-                                { color: selectedCategory === cat ? '#FFFFFF' : themeStyles.textColor }
+                                { color: selectedCategory === cat ? '#FFFFFF' : bloomTheme.colors.text }
                             ]}>
                                 {cat}
                             </Text>
@@ -182,12 +182,12 @@ const FAQScreen: React.FC<BaseScreenProps> = ({
                 {isLoading ? (
                     <LoadingState
                         message={t('faq.loading') || 'Loading FAQs...'}
-                        color={themeStyles.textColor}
+                        color={bloomTheme.colors.text}
                     />
                 ) : filteredFaqs.length === 0 ? (
                     <EmptyState
                         message={searchQuery ? (t('faq.noResults') || 'No FAQs match your search') : (t('faq.empty') || 'No FAQs available')}
-                        textColor={themeStyles.textColor}
+                        textColor={bloomTheme.colors.text}
                     />
                 ) : (
                     filteredFaqs.map((faq, index) => {
@@ -197,7 +197,7 @@ const FAQScreen: React.FC<BaseScreenProps> = ({
                                 key={faq.id}
                                 style={[
                                     styles.faqItem,
-                                    { backgroundColor: themeStyles.secondaryBackgroundColor, borderColor: themeStyles.borderColor },
+                                    { backgroundColor: bloomTheme.colors.backgroundSecondary, borderColor: bloomTheme.colors.border },
                                     index === 0 && styles.faqItemFirst,
                                 ]}
                             >
@@ -209,23 +209,23 @@ const FAQScreen: React.FC<BaseScreenProps> = ({
                                     accessibilityHint={isExpanded ? 'Collapse answer' : 'Expand answer'}
                                     accessibilityState={{ expanded: isExpanded }}
                                 >
-                                    <Text style={[styles.faqQuestionText, { color: themeStyles.textColor }]}>
+                                    <Text style={[styles.faqQuestionText, { color: bloomTheme.colors.text }]}>
                                         {faq.question}
                                     </Text>
                                     <Ionicons
                                         name={isExpanded ? 'chevron-up' : 'chevron-down'}
                                         size={20}
-                                        color={themeStyles.mutedTextColor}
+                                        color={bloomTheme.colors.textSecondary}
                                     />
                                 </TouchableOpacity>
                                 {isExpanded && (
-                                    <View style={[styles.faqAnswer, { borderTopColor: themeStyles.borderColor }]}>
-                                        <Text style={[styles.faqAnswerText, { color: themeStyles.mutedTextColor }]}>
+                                    <View style={[styles.faqAnswer, { borderTopColor: bloomTheme.colors.border }]}>
+                                        <Text style={[styles.faqAnswerText, { color: bloomTheme.colors.textSecondary }]}>
                                             {faq.answer}
                                         </Text>
                                         <View style={styles.faqCategory}>
-                                            <Ionicons name="pricetag-outline" size={14} color={themeStyles.primaryColor} />
-                                            <Text style={[styles.faqCategoryText, { color: themeStyles.primaryColor }]}>
+                                            <Ionicons name="pricetag-outline" size={14} color={bloomTheme.colors.primary} />
+                                            <Text style={[styles.faqCategoryText, { color: bloomTheme.colors.primary }]}>
                                                 {faq.category}
                                             </Text>
                                         </View>
@@ -240,7 +240,7 @@ const FAQScreen: React.FC<BaseScreenProps> = ({
     );
 };
 
-const createStyles = (themeStyles: any) => StyleSheet.create({
+const createStyles = () => StyleSheet.create({
     container: {
         flex: 1,
     },

@@ -78,33 +78,34 @@ const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
                     activeOpacity={1}
                     onPress={handleClose}
                 />
-                <View style={[styles.modal, { backgroundColor: theme.colors.background }]}>
+                <View className="bg-background" style={styles.modal}>
                     <View style={styles.header}>
                         <OxyIcon name="alert" size={32} color={theme.colors.error} />
-                        <Text style={[styles.title, { color: theme.colors.error }]}>
+                        <Text className="text-destructive" style={styles.title}>
                             {t('deleteAccount.title') || 'Delete Account'}
                         </Text>
                     </View>
 
-                    <Text style={[styles.warning, { color: theme.colors.text }]}>
+                    <Text className="text-foreground" style={styles.warning}>
                         {t('deleteAccount.warning') || 'This action cannot be undone. Your account and all associated data will be permanently deleted.'}
                     </Text>
 
                     {error && (
                         <View style={[styles.errorContainer, { backgroundColor: `${theme.colors.error}20` }]}>
-                            <Text style={[styles.errorText, { color: theme.colors.error }]}>
+                            <Text className="text-destructive" style={styles.errorText}>
                                 {error}
                             </Text>
                         </View>
                     )}
 
                     <View style={styles.inputGroup}>
-                        <Text style={[styles.label, { color: theme.colors.textSecondary }]}>
+                        <Text className="text-muted-foreground" style={styles.label}>
                             {t('deleteAccount.passwordLabel') || 'Enter your password'}
                         </Text>
-                        <View style={[styles.inputContainer, { borderColor: theme.colors.border, backgroundColor: theme.colors.background }]}>
+                        <View className="border-border bg-background" style={styles.inputContainer}>
                             <TextInput
-                                style={[styles.input, { color: theme.colors.text }]}
+                                className="text-foreground"
+                                style={styles.input}
                                 value={password}
                                 onChangeText={setPassword}
                                 placeholder={t('deleteAccount.passwordPlaceholder') || 'Password'}
@@ -127,17 +128,16 @@ const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
                     </View>
 
                     <View style={styles.inputGroup}>
-                        <Text style={[styles.label, { color: theme.colors.textSecondary }]}>
+                        <Text className="text-muted-foreground" style={styles.label}>
                             {t('deleteAccount.confirmLabel', { username }) || `Type "${username}" to confirm`}
                         </Text>
                         <TextInput
+                            className="text-foreground bg-background"
                             style={[
                                 styles.input,
                                 styles.confirmInput,
                                 {
                                     borderColor: confirmUsername === username ? theme.colors.success : theme.colors.border,
-                                    backgroundColor: theme.colors.background,
-                                    color: theme.colors.text,
                                 },
                             ]}
                             value={confirmUsername}
@@ -152,11 +152,12 @@ const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
 
                     <View style={styles.buttons}>
                         <TouchableOpacity
-                            style={[styles.button, styles.cancelButton, { borderColor: theme.colors.border }]}
+                            className="border-border"
+                            style={[styles.button, styles.cancelButton]}
                             onPress={handleClose}
                             disabled={isDeleting}
                         >
-                            <Text style={[styles.buttonText, { color: theme.colors.text }]}>
+                            <Text className="text-foreground" style={styles.buttonText}>
                                 {t('common.cancel') || 'Cancel'}
                             </Text>
                         </TouchableOpacity>

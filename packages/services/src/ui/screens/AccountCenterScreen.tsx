@@ -18,7 +18,7 @@ import Section from '../components/Section';
 import QuickActions from '../components/QuickActions';
 import { SettingsIcon } from '../components/SettingsIcon';
 import { useI18n } from '../hooks/useI18n';
-import { useThemeStyles } from '../hooks/useThemeStyles';
+import { useTheme } from '@oxyhq/bloom/theme';
 import { useColorScheme } from '../hooks/useColorScheme';
 import { Colors } from '../constants/theme';
 import { normalizeColorScheme, normalizeTheme } from '../utils/themeUtils';
@@ -34,14 +34,11 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
     // Use useOxy() hook for OxyContext values
     const { user, logout, isLoading, sessions, isAuthenticated } = useOxy();
     const { t } = useI18n();
+    const bloomTheme = useTheme();
     const colorScheme = useColorScheme();
     const normalizedTheme = normalizeTheme(theme);
-    const themeStyles = useThemeStyles(normalizedTheme, colorScheme);
-    // AccountCenterScreen uses a slightly different light background
-    const backgroundColor = themeStyles.isDarkTheme ? themeStyles.backgroundColor : '#f2f2f2';
-    // Extract commonly used colors for readability - ensure colors is always defined
-    const { textColor, primaryColor, dangerColor, colors: themeColors } = themeStyles;
-    const colors = themeColors || Colors[normalizeColorScheme(colorScheme, normalizedTheme)];
+    const dangerColor = bloomTheme.colors.error;
+    const colors = Colors[normalizeColorScheme(colorScheme, normalizedTheme)];
 
     // Memoized logout handler - prevents unnecessary re-renders
     const handleLogout = useCallback(async () => {
@@ -68,22 +65,22 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
 
     if (!isAuthenticated) {
         return (
-            <View style={[styles.container, { backgroundColor }]}>
-                <Text style={[styles.message, { color: textColor }]}>{t('common.status.notSignedIn') || 'Not signed in'}</Text>
+            <View style={styles.container} className="bg-background">
+                <Text style={styles.message} className="text-foreground">{t('common.status.notSignedIn') || 'Not signed in'}</Text>
             </View>
         );
     }
 
     if (isLoading) {
         return (
-            <View style={[styles.container, { backgroundColor, justifyContent: 'center' }]}>
-                <ActivityIndicator size="large" color={primaryColor} />
+            <View style={[styles.container, { justifyContent: 'center' }]} className="bg-background">
+                <ActivityIndicator size="large" color={bloomTheme.colors.primary} />
             </View>
         );
     }
 
     return (
-        <View style={[styles.container, { backgroundColor }]}>
+        <View style={styles.container} className="bg-background">
             {/* Header with user profile */}
             {user && (
                 <ProfileCard
@@ -230,7 +227,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                 </SettingsListGroup>
 
                 <View style={styles.versionContainer}>
-                    <Text style={[styles.versionText, { color: themeStyles.isDarkTheme ? '#666666' : '#999999' }]}>
+                    <Text style={styles.versionText} className="text-muted-foreground">
                         {t('accountCenter.version', { version: packageInfo.version }) || `Version ${packageInfo.version}`}
                     </Text>
                 </View>

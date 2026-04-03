@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
     View,
     Text,
@@ -13,8 +13,7 @@ import type { BaseScreenProps } from '../types/navigation';
 import { toast } from '../../lib/sonner';
 import { Header, Section } from '../components';
 import { useI18n } from '../hooks/useI18n';
-import { useThemeStyles } from '../hooks/useThemeStyles';
-import { normalizeTheme } from '../utils/themeUtils';
+import { useTheme } from '@oxyhq/bloom/theme';
 import { useOxy } from '../context/OxyContext';
 
 const AccountVerificationScreen: React.FC<BaseScreenProps> = ({
@@ -29,14 +28,7 @@ const AccountVerificationScreen: React.FC<BaseScreenProps> = ({
     const [evidence, setEvidence] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
 
-    const normalizedTheme = normalizeTheme(theme);
-    const baseThemeStyles = useThemeStyles(normalizedTheme);
-    const themeStyles = useMemo(() => ({
-        ...baseThemeStyles,
-        inputBackgroundColor: baseThemeStyles.isDarkTheme ? '#1C1C1E' : '#F2F2F7',
-        inputTextColor: baseThemeStyles.textColor,
-        placeholderTextColor: baseThemeStyles.mutedTextColor,
-    }), [baseThemeStyles]);
+    const bloomTheme = useTheme();
 
     const handleSubmit = useCallback(async () => {
         if (!reason.trim()) {
@@ -83,10 +75,10 @@ const AccountVerificationScreen: React.FC<BaseScreenProps> = ({
     }, [reason, evidence, oxyServices, t, goBack]);
 
     return (
-        <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
+        <View style={styles.container} className="bg-background">
             <Header
                 title={t('accountVerification.title') || 'Account Verification'}
-                
+
                 onBack={goBack || onClose}
                 variant="minimal"
                 elevation="subtle"
@@ -94,30 +86,26 @@ const AccountVerificationScreen: React.FC<BaseScreenProps> = ({
 
             <ScrollView style={styles.content}>
                 <Section  isFirst={true}>
-                    <Text style={[styles.description, { color: themeStyles.mutedTextColor }]}>
+                    <Text style={styles.description} className="text-muted-foreground">
                         {t('accountVerification.description') || 'Request a verified badge for your account. Verified accounts help establish authenticity and credibility.'}
                     </Text>
                 </Section>
 
                 <Section title={t('accountVerification.sections.request') || 'VERIFICATION REQUEST'} >
                     <View style={styles.inputGroup}>
-                        <Text style={[styles.label, { color: themeStyles.textColor }]}>
+                        <Text style={styles.label} className="text-foreground">
                             {t('accountVerification.reasonLabel') || 'Reason for Verification *'}
                         </Text>
                         <TextInput
                             style={[
                                 styles.textInput,
                                 styles.textArea,
-                                {
-                                    backgroundColor: themeStyles.inputBackgroundColor,
-                                    color: themeStyles.inputTextColor,
-                                    borderColor: themeStyles.borderColor,
-                                },
                             ]}
+                            className="bg-secondary text-foreground border-border"
                             value={reason}
                             onChangeText={setReason}
                             placeholder={t('accountVerification.reasonPlaceholder') || 'Explain why you need a verified badge (e.g., public figure, brand, organization)'}
-                            placeholderTextColor={themeStyles.placeholderTextColor}
+                            placeholderTextColor={bloomTheme.colors.textSecondary}
                             multiline
                             numberOfLines={4}
                             textAlignVertical="top"
@@ -126,23 +114,19 @@ const AccountVerificationScreen: React.FC<BaseScreenProps> = ({
                     </View>
 
                     <View style={styles.inputGroup}>
-                        <Text style={[styles.label, { color: themeStyles.textColor }]}>
+                        <Text style={styles.label} className="text-foreground">
                             {t('accountVerification.evidenceLabel') || 'Evidence (Optional)'}
                         </Text>
                         <TextInput
                             style={[
                                 styles.textInput,
                                 styles.textArea,
-                                {
-                                    backgroundColor: themeStyles.inputBackgroundColor,
-                                    color: themeStyles.inputTextColor,
-                                    borderColor: themeStyles.borderColor,
-                                },
                             ]}
+                            className="bg-secondary text-foreground border-border"
                             value={evidence}
                             onChangeText={setEvidence}
                             placeholder={t('accountVerification.evidencePlaceholder') || 'Provide any supporting documentation or links (e.g., official website, social media profiles)'}
-                            placeholderTextColor={themeStyles.placeholderTextColor}
+                            placeholderTextColor={bloomTheme.colors.textSecondary}
                             multiline
                             numberOfLines={4}
                             textAlignVertical="top"
@@ -153,10 +137,8 @@ const AccountVerificationScreen: React.FC<BaseScreenProps> = ({
 
                 <Section >
                     <TouchableOpacity
-                        style={[
-                            styles.submitButton,
-                            { backgroundColor: isSubmitting ? themeStyles.mutedTextColor : '#007AFF' },
-                        ]}
+                        style={styles.submitButton}
+                        className={isSubmitting ? 'bg-muted-foreground' : 'bg-primary'}
                         onPress={handleSubmit}
                         disabled={isSubmitting || !reason.trim()}
                     >
@@ -171,7 +153,7 @@ const AccountVerificationScreen: React.FC<BaseScreenProps> = ({
                 </Section>
 
                 <Section >
-                    <Text style={[styles.note, { color: themeStyles.mutedTextColor }]}>
+                    <Text style={styles.note} className="text-muted-foreground">
                         {t('accountVerification.note') || 'Note: Verification requests are reviewed manually and may take several days. We will notify you once your request has been reviewed.'}
                     </Text>
                 </Section>

@@ -7,7 +7,7 @@ import Avatar from '../components/Avatar';
 import { Ionicons } from '@expo/vector-icons';
 import { toast } from '../../lib/sonner';
 import { useAuthStore } from '../stores/authStore';
-import { useThemeColors } from '../styles';
+import { useTheme } from '@oxyhq/bloom/theme';
 import { fontFamilies } from '../styles/fonts';
 import { normalizeTheme } from '../utils/themeUtils';
 import GroupedPillButtons from '../components/internal/GroupedPillButtons';
@@ -68,8 +68,12 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
     const { t } = useI18n();
     const updateProfileMutation = useUpdateProfile();
     const currentUser = user || newUser; // fallback
+    const bloomTheme = useTheme();
+    const colors = {
+        primary: bloomTheme.colors.primary,
+        border: bloomTheme.colors.border,
+    };
     const normalizedTheme = normalizeTheme(theme);
-    const colors = useThemeColors(normalizedTheme);
     const styles = useMemo(() => createStyles(normalizedTheme), [normalizedTheme]);
 
     // Animation state
@@ -212,15 +216,15 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
             <Animated.View style={{ opacity: fadeAnim, transform: [{ translateX: slideAnim }] }}>
                 <View style={[styles.scrollInner, styles.contentContainer]}>
                     <View style={[styles.header, styles.sectionSpacing]}>
-                        <Text style={[styles.title, { color: colors.text }]}>{step.title}</Text>
-                        {step.body && <Text style={[styles.body, { color: colors.secondaryText }]}>{step.body}</Text>}
+                        <Text style={styles.title} className="text-foreground">{step.title}</Text>
+                        {step.body && <Text style={styles.body} className="text-muted-foreground">{step.body}</Text>}
                     </View>
                     {Array.isArray(step.bullets) && step.bullets.length > 0 && (
                         <View style={[styles.bulletContainer, styles.sectionSpacing]}>
                             {step.bullets.map(b => (
                                 <View key={b} style={styles.bulletRow}>
                                     <Ionicons name="ellipse" size={8} color={colors.primary} style={{ marginTop: 6 }} />
-                                    <Text style={[styles.bulletText, { color: colors.secondaryText }]}>{b}</Text>
+                                    <Text style={styles.bulletText} className="text-muted-foreground">{b}</Text>
                                 </View>
                             ))}
                         </View>
@@ -235,7 +239,7 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
                                 backgroundColor={`${colors.primary}20`}
                                 style={styles.avatar}
                             />
-                            <TouchableOpacity style={[styles.changeAvatarButton, { backgroundColor: colors.primary }]} onPress={openAvatarPicker}>
+                            <TouchableOpacity style={styles.changeAvatarButton} className="bg-primary" onPress={openAvatarPicker}>
                                 <Ionicons name="image-outline" size={18} color="#FFFFFF" />
                                 <Text style={styles.changeAvatarText}>{avatarUri ? (t('welcomeNew.avatar.change') || 'Change Avatar') : (t('welcomeNew.avatar.add') || 'Add Avatar')}</Text>
                             </TouchableOpacity>

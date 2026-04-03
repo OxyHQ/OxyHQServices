@@ -18,8 +18,10 @@ import { toast } from '../../lib/sonner';
 import { Ionicons } from '@expo/vector-icons';
 import OxyServicesLogo from '../../assets/icons/OxyServices';
 import { SettingsIcon } from '../components/SettingsIcon';
-import { useThemeStyles } from '../hooks/useThemeStyles';
+import { useTheme } from '@oxyhq/bloom/theme';
 import { useColorScheme } from '../hooks/useColorScheme';
+import { Colors } from '../constants/theme';
+import { normalizeColorScheme } from '../utils/themeUtils';
 import { useOxy } from '../context/OxyContext';
 import { useI18n } from '../hooks/useI18n';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
@@ -47,11 +49,13 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
     const [isRunningSystemCheck, setIsRunningSystemCheck] = useState(false);
     const [connectionStatus, setConnectionStatus] = useState<'checking' | 'connected' | 'disconnected' | 'unknown'>('unknown');
 
+    const bloomTheme = useTheme();
     const colorScheme = useColorScheme();
-    const themeStyles = useThemeStyles(theme || 'light', colorScheme);
+    const normalizedColorScheme = normalizeColorScheme(colorScheme);
+    const themeColors = Colors[normalizedColorScheme];
     // AppInfoScreen uses a slightly different light background
-    const backgroundColor = themeStyles.isDarkTheme ? themeStyles.backgroundColor : '#f2f2f2';
-    const primaryColor = themeStyles.colors.iconSecurity;
+    const backgroundColor = bloomTheme.isDark ? bloomTheme.colors.background : '#f2f2f2';
+    const primaryColor = themeColors.iconSecurity;
 
     useEffect(() => {
         const updateDimensions = () => {
@@ -177,30 +181,30 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                         onPress={() => copyToClipboard(packageInfo.name, t('appInfo.items.name'))}
                     />
                     <SettingsListItem
-                        icon={<SettingsIcon name="tag" color={themeStyles.colors.iconData} />}
+                        icon={<SettingsIcon name="tag" color={themeColors.iconData} />}
                         title={t('appInfo.items.version')}
                         description={packageInfo.version}
                         onPress={() => copyToClipboard(packageInfo.version, t('appInfo.items.version'))}
                     />
                     <SettingsListItem
-                        icon={<SettingsIcon name="file-document" color={themeStyles.colors.iconPersonalInfo} />}
+                        icon={<SettingsIcon name="file-document" color={themeColors.iconPersonalInfo} />}
                         title={t('appInfo.items.description')}
                         description={packageInfo.description || t('appInfo.items.noDescription')}
                     />
                     <SettingsListItem
-                        icon={<SettingsIcon name="code-tags" color={themeStyles.colors.iconStorage} />}
+                        icon={<SettingsIcon name="code-tags" color={themeColors.iconStorage} />}
                         title={t('appInfo.items.mainEntry')}
                         description={packageInfo.main || 'N/A'}
                         onPress={() => copyToClipboard(packageInfo.main || 'N/A', t('appInfo.items.mainEntry'))}
                     />
                     <SettingsListItem
-                        icon={<SettingsIcon name="library" color={themeStyles.colors.iconSharing} />}
+                        icon={<SettingsIcon name="library" color={themeColors.iconSharing} />}
                         title={t('appInfo.items.moduleEntry')}
                         description={packageInfo.module || 'N/A'}
                         onPress={() => copyToClipboard(packageInfo.module || 'N/A', t('appInfo.items.moduleEntry'))}
                     />
                     <SettingsListItem
-                        icon={<SettingsIcon name="wrench" color={themeStyles.colors.iconPersonalInfo} />}
+                        icon={<SettingsIcon name="wrench" color={themeColors.iconPersonalInfo} />}
                         title={t('appInfo.items.typesEntry')}
                         description={packageInfo.types || 'N/A'}
                         onPress={() => copyToClipboard(packageInfo.types || 'N/A', t('appInfo.items.typesEntry'))}
@@ -210,27 +214,27 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                 {/* System Information */}
                 <SettingsListGroup title={t('appInfo.sections.system')}>
                     <SettingsListItem
-                        icon={<SettingsIcon name="cellphone" color={themeStyles.colors.iconSecurity} />}
+                        icon={<SettingsIcon name="cellphone" color={themeColors.iconSecurity} />}
                         title={t('appInfo.items.platform')}
                         description={Platform.OS}
                     />
                     <SettingsListItem
-                        icon={<SettingsIcon name="chip" color={themeStyles.colors.iconData} />}
+                        icon={<SettingsIcon name="chip" color={themeColors.iconData} />}
                         title={t('appInfo.items.platformVersion')}
                         description={systemInfo?.version || t('common.status.loading')}
                     />
                     <SettingsListItem
-                        icon={<SettingsIcon name="resize" color={themeStyles.colors.iconStorage} />}
+                        icon={<SettingsIcon name="resize" color={themeColors.iconStorage} />}
                         title={t('appInfo.items.screenWidth')}
                         description={`${systemInfo?.screenDimensions.width || 0}px`}
                     />
                     <SettingsListItem
-                        icon={<SettingsIcon name="resize" color={themeStyles.colors.iconSharing} />}
+                        icon={<SettingsIcon name="resize" color={themeColors.iconSharing} />}
                         title={t('appInfo.items.screenHeight')}
                         description={`${systemInfo?.screenDimensions.height || 0}px`}
                     />
                     <SettingsListItem
-                        icon={<SettingsIcon name="cog" color={themeStyles.colors.iconPersonalInfo} />}
+                        icon={<SettingsIcon name="cog" color={themeColors.iconPersonalInfo} />}
                         title={t('appInfo.items.environment')}
                         description={__DEV__ ? t('appInfo.items.development') : t('appInfo.items.production')}
                     />
@@ -239,20 +243,20 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                 {/* User Information */}
                 <SettingsListGroup title={t('appInfo.sections.user')}>
                     <SettingsListItem
-                        icon={<SettingsIcon name="shield-check" color={isAuthenticated ? themeStyles.colors.iconPersonalInfo : themeStyles.colors.iconSharing} />}
+                        icon={<SettingsIcon name="shield-check" color={isAuthenticated ? themeColors.iconPersonalInfo : themeColors.iconSharing} />}
                         title={t('appInfo.items.authStatus')}
                         description={isAuthenticated ? t('appInfo.items.authenticated') : t('appInfo.items.notAuthenticated')}
                     />
                     {user && (
                         <>
                             <SettingsListItem
-                                icon={<SettingsIcon name="account" color={themeStyles.colors.iconSecurity} />}
+                                icon={<SettingsIcon name="account" color={themeColors.iconSecurity} />}
                                 title={t('appInfo.items.userId')}
                                 description={user.id}
                                 onPress={() => copyToClipboard(user.id, t('appInfo.items.userId'))}
                             />
                             <SettingsListItem
-                                icon={<SettingsIcon name="at" color={themeStyles.colors.iconData} />}
+                                icon={<SettingsIcon name="at" color={themeColors.iconData} />}
                                 title={t('appInfo.items.username')}
                                 description={user.username || 'N/A'}
                                 onPress={() => {
@@ -264,7 +268,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                                 }}
                             />
                             <SettingsListItem
-                                icon={<SettingsIcon name="email" color={themeStyles.colors.iconStorage} />}
+                                icon={<SettingsIcon name="email" color={themeColors.iconStorage} />}
                                 title={t('appInfo.items.email')}
                                 description={user.email || 'N/A'}
                             />
@@ -276,7 +280,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                         </>
                     )}
                     <SettingsListItem
-                        icon={<SettingsIcon name="account-group" color={themeStyles.colors.iconPersonalInfo} />}
+                        icon={<SettingsIcon name="account-group" color={themeColors.iconPersonalInfo} />}
                         title={t('appInfo.items.totalActiveSessions')}
                         description={sessions?.length?.toString() || '0'}
                     />
@@ -285,7 +289,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                 {/* API Configuration */}
                 <SettingsListGroup title={t('appInfo.sections.api')}>
                     <SettingsListItem
-                        icon={<SettingsIcon name="server" color={themeStyles.colors.iconSecurity} />}
+                        icon={<SettingsIcon name="server" color={themeColors.iconSecurity} />}
                         title={t('appInfo.items.apiBaseUrl')}
                         description={oxyServices?.getBaseURL() || t('appInfo.items.notConfigured')}
                         onPress={() => copyToClipboard(oxyServices?.getBaseURL() || t('appInfo.items.notConfigured'), t('appInfo.items.apiBaseUrl'))}
@@ -293,7 +297,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                     <SettingsListItem
                         icon={<SettingsIcon
                             name={connectionStatus === 'checking' ? 'sync' : connectionStatus === 'connected' ? 'wifi' : 'wifi-off'}
-                            color={connectionStatus === 'checking' ? themeStyles.colors.iconStorage : connectionStatus === 'connected' ? themeStyles.colors.iconPersonalInfo : themeStyles.colors.iconSharing}
+                            color={connectionStatus === 'checking' ? themeColors.iconStorage : connectionStatus === 'connected' ? themeColors.iconPersonalInfo : themeColors.iconSharing}
                         />}
                         title={t('appInfo.items.connectionStatus')}
                         description={connectionStatus === 'checking' ? t('appInfo.items.checking') : connectionStatus === 'connected' ? t('appInfo.items.connected') : connectionStatus === 'disconnected' ? t('appInfo.items.disconnected') : t('appInfo.items.unknown')}
@@ -321,7 +325,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                 {/* Build Information */}
                 <SettingsListGroup title={t('appInfo.sections.build')}>
                     <SettingsListItem
-                        icon={<SettingsIcon name="clock" color={themeStyles.colors.iconSecurity} />}
+                        icon={<SettingsIcon name="clock" color={themeColors.iconSecurity} />}
                         title={t('appInfo.items.buildTimestamp')}
                         description={systemInfo?.timestamp || t('common.status.loading')}
                         onPress={() => copyToClipboard(systemInfo?.timestamp || t('common.status.loading'), t('appInfo.items.buildTimestamp'))}
@@ -332,7 +336,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                         description={t('appInfo.items.reactNativeValue')}
                     />
                     <SettingsListItem
-                        icon={<SettingsIcon name="flash" color={themeStyles.colors.iconSharing} />}
+                        icon={<SettingsIcon name="flash" color={themeColors.iconSharing} />}
                         title={t('appInfo.items.jsEngine')}
                         description={t('appInfo.items.jsEngineValue')}
                     />
@@ -341,7 +345,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                 {/* Quick Actions */}
                 <SettingsListGroup title={t('appInfo.sections.quickActions')}>
                     <SettingsListItem
-                        icon={<SettingsIcon name="content-copy" color={themeStyles.colors.iconSecurity} />}
+                        icon={<SettingsIcon name="content-copy" color={themeColors.iconSecurity} />}
                         title={t('appInfo.items.copyFullReport')}
                         description={t('appInfo.items.copyFullReportSubtitle')}
                         onPress={handleCopyFullReport}

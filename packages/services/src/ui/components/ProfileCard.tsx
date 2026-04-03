@@ -1,13 +1,12 @@
 import type React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useTheme } from '@oxyhq/bloom/theme';
 import { useI18n } from '../hooks/useI18n';
 import Avatar from './Avatar';
 import { useOxy } from '../context/OxyContext';
 import { useFileDownloadUrl } from '../hooks';
 import { fontFamilies } from '../styles/fonts';
-import { useThemeStyles } from '../hooks/useThemeStyles';
-import { useColorScheme } from '../hooks/useColorScheme';
 
 interface ProfileCardProps {
     user: {
@@ -29,24 +28,22 @@ const ProfileCard: React.FC<ProfileCardProps> = ({
     onClosePress,
     showCloseButton = false,
 }) => {
-    const colorScheme = useColorScheme();
-    const themeStyles = useThemeStyles(theme, colorScheme);
+    const { colors } = useTheme();
     const { oxyServices } = useOxy();
     const { t } = useI18n();
-    const textColor = themeStyles.textColor;
-    const secondaryBackgroundColor = themeStyles.secondaryBackgroundColor;
-    const primaryColor = '#0066CC';
 
     const avatarUrl = useFileDownloadUrl(oxyServices, user?.avatar, { variant: 'thumb' }).url || undefined;
 
     return (
         <View style={styles.headerSection}>
-            <View style={[
-                styles.profileCard,
-                styles.firstGroupedItem,
-                styles.lastGroupedItem,
-                { backgroundColor: secondaryBackgroundColor }
-            ]}>
+            <View
+                className="bg-secondary"
+                style={[
+                    styles.profileCard,
+                    styles.firstGroupedItem,
+                    styles.lastGroupedItem,
+                ]}
+            >
                 <View style={styles.userProfile}>
                     <Avatar
                         uri={user?.avatar ? avatarUrl : undefined}
@@ -55,9 +52,9 @@ const ProfileCard: React.FC<ProfileCardProps> = ({
                         theme={theme}
                     />
                     <View style={styles.userInfo}>
-                        <Text style={[styles.userName, { color: textColor }]}>{user.username}</Text>
+                        <Text className="text-foreground" style={styles.userName}>{user.username}</Text>
                         {user.email && (
-                            <Text style={[styles.userEmail, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                            <Text className="text-muted-foreground" style={styles.userEmail}>
                                 {user.email}
                             </Text>
                         )}
@@ -66,7 +63,7 @@ const ProfileCard: React.FC<ProfileCardProps> = ({
                                 style={styles.editProfileButton}
                                 onPress={onEditPress}
                             >
-                                <Text style={[styles.editProfileText, { color: primaryColor }]}>
+                                <Text className="text-primary" style={styles.editProfileText}>
                                     {t('editProfile.title') || 'Edit Profile'}
                                 </Text>
                             </TouchableOpacity>
@@ -75,7 +72,7 @@ const ProfileCard: React.FC<ProfileCardProps> = ({
                 </View>
                 {showCloseButton && onClosePress && (
                     <TouchableOpacity style={styles.closeButton} onPress={onClosePress}>
-                        <Ionicons name="close" size={24} color={textColor} />
+                        <Ionicons name="close" size={24} color={colors.text} />
                     </TouchableOpacity>
                 )}
             </View>

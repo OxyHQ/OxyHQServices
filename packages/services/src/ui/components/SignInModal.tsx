@@ -358,8 +358,8 @@ const SignInModal: React.FC = () => {
                     {/* Header */}
                     <View style={styles.header}>
                         <OxyLogo width={56} height={56} />
-                        <Text style={[styles.title, { color: theme.colors.text }]}>Sign in with Oxy</Text>
-                        <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]}>
+                        <Text className="text-foreground" style={styles.title}>Sign in with Oxy</Text>
+                        <Text className="text-muted-foreground" style={styles.subtitle}>
                             Scan with Oxy Accounts app or use the button below
                         </Text>
                     </View>
@@ -367,13 +367,13 @@ const SignInModal: React.FC = () => {
                     {isLoading ? (
                         <View style={styles.loadingContainer}>
                             <Loading size="large" />
-                            <Text style={[styles.loadingText, { color: theme.colors.textSecondary }]}>
+                            <Text className="text-muted-foreground" style={styles.loadingText}>
                                 Preparing sign in...
                             </Text>
                         </View>
                     ) : error ? (
                         <View style={styles.errorContainer}>
-                            <Text style={[styles.errorText, { color: theme.colors.error }]}>{error}</Text>
+                            <Text className="text-destructive" style={styles.errorText}>{error}</Text>
                             <Button onPress={handleRefresh}>Try Again</Button>
                         </View>
                     ) : (
@@ -462,13 +462,11 @@ const styles = StyleSheet.create({
         fontSize: 28,
         fontWeight: 'bold',
         marginTop: 16,
-        color: 'white',
     },
     subtitle: {
         fontSize: 15,
         marginTop: 8,
         textAlign: 'center',
-        color: 'rgba(255, 255, 255, 0.7)',
     },
     qrContainer: {
         padding: 20,

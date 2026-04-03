@@ -3,10 +3,8 @@ import { memo, useMemo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useColorScheme } from '../hooks/useColorScheme';
+import { useTheme } from '@oxyhq/bloom/theme';
 import { darkenColor } from '../utils/colorUtils';
-import { normalizeColorScheme } from '../utils/themeUtils';
-import { Colors } from '../constants/theme';
 
 
 interface GroupedItemProps {
@@ -42,24 +40,17 @@ const GroupedItemComponent = ({
     accessibilityLabel,
     accessibilityHint,
 }: GroupedItemProps) => {
-    const hookColorScheme = useColorScheme();
-    const colorScheme = normalizeColorScheme(hookColorScheme);
-    // GroupedItem is a leaf component without a theme prop, so it should directly use Colors
-    // instead of useThemeStyles which expects a theme prop from screen components
-    const colors = Colors[colorScheme];
+    const { colors } = useTheme();
     // Use fallback color when iconColor is not provided
-    const finalIconColor = iconColor || colors.iconSecurity;
+    const finalIconColor = iconColor || colors.icon;
 
     const itemStyles = useMemo(
         () => [
             styles.groupedItem,
             isFirst && styles.firstGroupedItem,
             isLast && styles.lastGroupedItem,
-            {
-                backgroundColor: colors.card,
-            },
         ],
-        [colors.card, isFirst, isLast],
+        [isFirst, isLast],
     );
 
     const content = (
@@ -72,9 +63,9 @@ const GroupedItemComponent = ({
                 </View>
             ) : null}
             <View style={styles.actionTextContainer}>
-                <Text style={[styles.actionButtonText, { color: colors.text }]}>{title}</Text>
+                <Text className="text-foreground" style={styles.actionButtonText}>{title}</Text>
                 {subtitle && (
-                    <Text style={[styles.actionButtonSubtext, { color: colors.secondaryText }]}>
+                    <Text className="text-muted-foreground" style={styles.actionButtonSubtext}>
                         {subtitle}
                     </Text>
                 )}
@@ -89,6 +80,7 @@ const GroupedItemComponent = ({
     if (onPress && !disabled) {
         return (
             <TouchableOpacity
+                className="bg-card"
                 style={itemStyles}
                 onPress={onPress}
                 activeOpacity={0.7}
@@ -104,6 +96,7 @@ const GroupedItemComponent = ({
 
     return (
         <View
+            className="bg-card"
             style={itemStyles}
             accessibilityRole="text"
             accessibilityLabel={accessibilityLabel || title}

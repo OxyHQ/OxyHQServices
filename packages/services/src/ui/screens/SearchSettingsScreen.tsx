@@ -7,9 +7,8 @@ import {
 import type { BaseScreenProps } from '../types/navigation';
 import { Header, Section, LoadingState, SettingRow } from '../components';
 import { useI18n } from '../hooks/useI18n';
-import { useThemeStyles } from '../hooks/useThemeStyles';
+import { useTheme } from '@oxyhq/bloom/theme';
 import { useSettingToggles } from '../hooks/useSettingToggle';
-import { normalizeTheme } from '../utils/themeUtils';
 import { useOxy } from '../context/OxyContext';
 import type { User } from '@oxyhq/core';
 
@@ -75,25 +74,24 @@ const SearchSettingsScreen: React.FC<BaseScreenProps> = ({
         loadSettings();
     }, [user?.id, oxyServices, setValues]);
 
-    const normalizedTheme = normalizeTheme(theme);
-    const themeStyles = useThemeStyles(normalizedTheme);
+    const bloomTheme = useTheme();
 
     if (isLoading) {
         return (
-            <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
+            <View style={styles.container} className="bg-background">
                 <Header
                     title={t('searchSettings.title') || 'Search Settings'}
                     onBack={goBack || onClose}
                     variant="minimal"
                     elevation="subtle"
                 />
-                <LoadingState color={themeStyles.textColor} />
+                <LoadingState color={bloomTheme.colors.text} />
             </View>
         );
     }
 
     return (
-        <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
+        <View style={styles.container} className="bg-background">
             <Header
                 title={t('searchSettings.title') || 'Search Settings'}
 
@@ -111,9 +109,9 @@ const SearchSettingsScreen: React.FC<BaseScreenProps> = ({
                         value={settings.safeSearch}
                         onValueChange={() => toggle('safeSearch')}
                         disabled={isSaving}
-                        textColor={themeStyles.textColor}
-                        mutedTextColor={themeStyles.mutedTextColor}
-                        borderColor={themeStyles.borderColor}
+                        textColor={bloomTheme.colors.text}
+                        mutedTextColor={bloomTheme.colors.textSecondary}
+                        borderColor={bloomTheme.colors.border}
                     />
                 </Section>
 
@@ -125,9 +123,9 @@ const SearchSettingsScreen: React.FC<BaseScreenProps> = ({
                         value={settings.searchPersonalization}
                         onValueChange={() => toggle('searchPersonalization')}
                         disabled={isSaving}
-                        textColor={themeStyles.textColor}
-                        mutedTextColor={themeStyles.mutedTextColor}
-                        borderColor={themeStyles.borderColor}
+                        textColor={bloomTheme.colors.text}
+                        mutedTextColor={bloomTheme.colors.textSecondary}
+                        borderColor={bloomTheme.colors.border}
                     />
                 </Section>
             </ScrollView>

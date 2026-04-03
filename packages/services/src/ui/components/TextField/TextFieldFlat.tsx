@@ -8,7 +8,7 @@ import {
   View,
   Animated,
 } from 'react-native';
-import { useThemeColors } from '../../hooks/useThemeColors';
+import { useTheme } from '@oxyhq/bloom/theme';
 
 import { Underline } from './Addons/Underline';
 import { AdornmentSide, AdornmentType, InputMode } from './Adornment/enums';
@@ -158,17 +158,17 @@ const TextInputFlat = ({
     theme,
   });
 
-  const themeColors = useThemeColors();
+  const { colors: bloomColors } = useTheme();
 
   const containerStyle = {
-    backgroundColor: themeColors.inputBackground,
+    backgroundColor: bloomColors.backgroundSecondary,
     borderTopLeftRadius: theme.roundness,
     borderTopRightRadius: theme.roundness,
   };
 
   // Override text color with theme color (unless custom textColor prop is provided)
   // If disabled, keep the original inputTextColor which handles opacity correctly
-  const finalInputTextColor = textColor ?? (disabled ? inputTextColor : themeColors.text);
+  const finalInputTextColor = textColor ?? (disabled ? inputTextColor : bloomColors.text);
 
   const labelScale = MINIMIZED_LABEL_FONT_SIZE / fontSize;
   const fontScale = MAXIMIZED_LABEL_FONT_SIZE / fontSize;

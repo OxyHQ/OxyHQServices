@@ -14,8 +14,10 @@ import type { BaseScreenProps } from '../../types/navigation';
 import { fontFamilies } from '../../styles/fonts';
 import { Ionicons } from '@expo/vector-icons';
 import { useI18n } from '../../hooks/useI18n';
-import { useThemeStyles } from '../../hooks/useThemeStyles';
+import { useTheme } from '@oxyhq/bloom/theme';
 import { useColorScheme } from '../../hooks/useColorScheme';
+import { Colors } from '../../constants/theme';
+import { normalizeColorScheme } from '../../utils/themeUtils';
 import { darkenColor } from '../../utils/colorUtils';
 import { useOxy } from '../../context/OxyContext';
 
@@ -32,19 +34,21 @@ const KarmaCenterScreen: React.FC<BaseScreenProps> = ({
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
+    const bloomTheme = useTheme();
     const colorScheme = useColorScheme();
-    const themeStyles = useThemeStyles(theme || 'light', colorScheme);
+    const normalizedColorScheme = normalizeColorScheme(colorScheme);
+    const themeColors = Colors[normalizedColorScheme];
     // Override primaryColor for Karma screens (purple instead of blue)
     const primaryColor = '#d169e5';
-    const dangerColor = themeStyles.dangerColor || '#D32F2F';
-    const mutedTextColor = themeStyles.isDarkTheme ? '#BBBBBB' : '#888888';
+    const dangerColor = bloomTheme.colors.error || '#D32F2F';
+    const mutedTextColor = bloomTheme.isDark ? '#BBBBBB' : '#888888';
 
     // Icon colors from theme
-    const iconLeaderboard = themeStyles.colors.iconPayments;
-    const iconRules = themeStyles.colors.iconSecurity;
-    const iconAbout = themeStyles.colors.iconPayments;
-    const iconRewards = themeStyles.colors.iconStorage;
-    const iconFAQ = themeStyles.colors.iconPersonalInfo;
+    const iconLeaderboard = themeColors.iconPayments;
+    const iconRules = themeColors.iconSecurity;
+    const iconAbout = themeColors.iconPayments;
+    const iconRewards = themeColors.iconStorage;
+    const iconFAQ = themeColors.iconPersonalInfo;
 
     useEffect(() => {
         if (!user) return;
@@ -66,26 +70,26 @@ const KarmaCenterScreen: React.FC<BaseScreenProps> = ({
 
     if (!isAuthenticated) {
         return (
-            <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
-                <Text style={[styles.message, { color: themeStyles.textColor }]}>{t('common.status.notSignedIn') || 'Not signed in'}</Text>
+            <View style={styles.container} className="bg-background">
+                <Text style={[styles.message, { color: bloomTheme.colors.text }]}>{t('common.status.notSignedIn') || 'Not signed in'}</Text>
             </View>
         );
     }
 
     if (isLoading) {
         return (
-            <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor, justifyContent: 'center' }]}>
+            <View style={[styles.container, { justifyContent: 'center' }]} className="bg-background">
                 <ActivityIndicator size="large" color={primaryColor} />
             </View>
         );
     }
 
     return (
-        <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
+        <View style={styles.container} className="bg-background">
             <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContainer}>
                 <View style={styles.walletHeader}>
                     <Text style={[styles.karmaAmount, { color: primaryColor }]}>{karmaTotal ?? 0}</Text>
-                    <Text style={[styles.karmaLabel, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#888888' }]}>
+                    <Text style={[styles.karmaLabel, { color: bloomTheme.isDark ? '#BBBBBB' : '#888888' }]}>
                         {t('karma.center.balance') || 'Karma Balance'}
                     </Text>
                     <View style={styles.actionContainer}>
@@ -128,24 +132,24 @@ const KarmaCenterScreen: React.FC<BaseScreenProps> = ({
                         {t('karma.center.info') || 'Karma can only be earned by positive actions in the Oxy Ecosystem. It cannot be sent or received directly.'}
                     </Text>
                 </View>
-                <Text style={[styles.sectionTitle, { color: themeStyles.textColor }]}>
+                <Text style={[styles.sectionTitle, { color: bloomTheme.colors.text }]}>
                     {t('karma.center.history') || 'Karma History'}
                 </Text>
                 <View style={styles.historyContainer}>
                     {karmaHistory.length === 0 ? (
-                        <Text style={{ color: themeStyles.textColor, textAlign: 'center', marginTop: 16 }}>
+                        <Text style={{ color: bloomTheme.colors.text, textAlign: 'center', marginTop: 16 }}>
                             {t('karma.center.noHistory') || 'No karma history yet.'}
                         </Text>
                     ) : (
                         karmaHistory.map((entry: any) => (
-                            <View key={entry.id} style={[styles.historyItem, { borderColor: themeStyles.borderColor }]}>
+                            <View key={entry.id} style={[styles.historyItem, { borderColor: bloomTheme.colors.border }]}>
                                 <Text style={[styles.historyPoints, { color: entry.points > 0 ? primaryColor : dangerColor }]}>
                                     {entry.points > 0 ? '+' : ''}{entry.points}
                                 </Text>
-                                <Text style={[styles.historyDesc, { color: themeStyles.textColor }]}>
+                                <Text style={[styles.historyDesc, { color: bloomTheme.colors.text }]}>
                                     {entry.reason || (t('karma.center.noDescription') || 'No description')}
                                 </Text>
-                                <Text style={[styles.historyDate, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#888888' }]}>
+                                <Text style={[styles.historyDate, { color: bloomTheme.isDark ? '#BBBBBB' : '#888888' }]}>
                                     {entry.createdAt ? new Date(entry.createdAt).toLocaleString() : ''}
                                 </Text>
                             </View>

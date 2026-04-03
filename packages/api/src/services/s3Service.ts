@@ -36,7 +36,7 @@ export class S3Service {
     // Add custom endpoint for DigitalOcean Spaces or other S3-compatible services
     if (config.endpointUrl) {
       clientConfig.endpoint = config.endpointUrl;
-      clientConfig.forcePathStyle = false; // Try without forcing path style first
+      clientConfig.forcePathStyle = config.endpointUrl.includes('localhost') || config.endpointUrl.includes('127.0.0.1');
       clientConfig.useAccelerateEndpoint = false;
       clientConfig.useArnRegion = false;
     }

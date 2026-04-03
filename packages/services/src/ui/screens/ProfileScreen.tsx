@@ -2,7 +2,7 @@ import type React from 'react';
 import { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, ScrollView, TouchableOpacity, Image } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
-import { useThemeColors, type ThemeColors } from '../styles';
+import { useTheme } from '@oxyhq/bloom/theme';
 import Avatar from '../components/Avatar';
 import { FollowButton } from '../components';
 import { useFollow } from '../hooks/useFollow';
@@ -52,8 +52,8 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
         isLoadingCounts,
     } = useFollow(userId);
 
-    const colors = useThemeColors((theme as 'light' | 'dark') ?? 'light');
-    const styles = createStyles(colors);
+    const bloomTheme = useTheme();
+    const styles = createStyles();
     const { t } = useI18n();
 
     // Check if current user is viewing their own profile
@@ -176,27 +176,27 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
 
     if (isLoading) {
         return (
-            <View style={[styles.container, { backgroundColor: colors.background, justifyContent: 'center' }]}>
-                <ActivityIndicator size="large" color={colors.primary} />
+            <View style={[styles.container, { justifyContent: 'center' }]} className="bg-background">
+                <ActivityIndicator size="large" color={bloomTheme.colors.primary} />
             </View>
         );
     }
 
     if (error) {
         return (
-            <View style={[styles.container, { backgroundColor: colors.background }]}>
+            <View style={styles.container} className="bg-background">
                 <View style={styles.errorHeader}>
                     {goBack && (
                         <TouchableOpacity onPress={goBack} style={styles.backButton}>
-                            <Ionicons name="arrow-back" size={24} color={colors.text} />
+                            <Ionicons name="arrow-back" size={24} color={bloomTheme.colors.text} />
                         </TouchableOpacity>
                     )}
-                    <Text style={[styles.errorTitle, { color: colors.text }]}>Profile Error</Text>
+                    <Text style={styles.errorTitle} className="text-foreground">Profile Error</Text>
                 </View>
                 <View style={styles.errorContent}>
-                    <Ionicons name="alert-circle" size={48} color={colors.error} style={styles.errorIcon} />
-                    <Text style={[styles.errorText, { color: colors.error }]}>{error}</Text>
-                    <Text style={[styles.errorSubtext, { color: colors.secondaryText }]}>
+                    <Ionicons name="alert-circle" size={48} color={bloomTheme.colors.error} style={styles.errorIcon} />
+                    <Text style={styles.errorText} className="text-destructive">{error}</Text>
+                    <Text style={styles.errorSubtext} className="text-muted-foreground">
                         This could happen if the user doesn't exist or the profile service is unavailable.
                     </Text>
                 </View>
@@ -205,15 +205,15 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
     }
 
     return (
-        <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <View style={styles.container} className="bg-background">
             <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.scrollContainer}>
                 {/* Banner Image */}
-                <View style={styles.bannerContainer}>
-                    <View style={styles.bannerImage} />
+                <View style={styles.bannerContainer} className="bg-primary/20">
+                    <View style={styles.bannerImage} className="bg-primary" />
                 </View>
                 {/* Avatar overlapping banner */}
                 <View style={styles.avatarRow}>
-                    <View style={styles.avatarWrapper}>
+                    <View style={styles.avatarWrapper} className="border-background bg-background">
                         <Avatar
                             uri={profile?.avatar ? oxyServices.getFileDownloadUrl(profile.avatar, 'thumb') : undefined}
                             name={profile?.username || username}
@@ -226,9 +226,10 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                         {isOwnProfile ? (
                             <TouchableOpacity
                                 style={styles.actionButton}
+                                className="bg-background border-primary"
                                 onPress={() => navigate?.('AccountSettings')}
                             >
-                                <Text style={styles.actionButtonText}>{t('editProfile.title') || 'Edit Profile'}</Text>
+                                <Text style={styles.actionButtonText} className="text-primary">{t('editProfile.title') || 'Edit Profile'}</Text>
                             </TouchableOpacity>
                         ) : (
                             <FollowButton
@@ -246,59 +247,59 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                 </View>
                 {/* Profile Info */}
                 <View style={styles.header}>
-                    <Text style={[styles.displayName, { color: colors.text }]}>
+                    <Text style={styles.displayName} className="text-foreground">
                         {(profile && 'displayName' in profile && typeof profile.displayName === 'string' ? profile.displayName : null) || profile?.username || username || profile?.id || ''}
                     </Text>
                     {profile?.username && (
-                        <Text style={[styles.subText, { color: colors.secondaryText }]}>@{profile.username}</Text>
+                        <Text style={styles.subText} className="text-muted-foreground">@{profile.username}</Text>
                     )}
                     {/* Bio placeholder */}
-                    <Text style={[styles.bio, { color: colors.text }]}>{profile?.bio || (t('profile.noBio') || 'This user has no bio yet.')}</Text>
+                    <Text style={styles.bio} className="text-foreground">{profile?.bio || (t('profile.noBio') || 'This user has no bio yet.')}</Text>
 
                     {/* Info Grid Row */}
                     <View style={styles.infoGrid}>
                         {profile?.createdAt && (
                             <View style={styles.infoGridItem}>
-                                <Ionicons name="calendar-outline" size={16} color={colors.secondaryText} style={{ marginRight: 6 }} />
-                                <Text style={[styles.infoGridText, { color: colors.secondaryText }]}>
+                                <Ionicons name="calendar-outline" size={16} color={bloomTheme.colors.textSecondary} style={{ marginRight: 6 }} />
+                                <Text style={styles.infoGridText} className="text-muted-foreground">
                                     {t('profile.joinedOn', { date: new Date(profile.createdAt).toLocaleDateString() }) || `Joined ${new Date(profile.createdAt).toLocaleDateString()}`}
                                 </Text>
                             </View>
                         )}
                         {profile?.location && (
                             <View style={styles.infoGridItem}>
-                                <Ionicons name="location-outline" size={16} color={colors.secondaryText} style={{ marginRight: 6 }} />
-                                <Text style={[styles.infoGridText, { color: colors.secondaryText }]} numberOfLines={1}>{profile.location}</Text>
+                                <Ionicons name="location-outline" size={16} color={bloomTheme.colors.textSecondary} style={{ marginRight: 6 }} />
+                                <Text style={styles.infoGridText} className="text-muted-foreground" numberOfLines={1}>{profile.location}</Text>
                             </View>
                         )}
                         {profile?.website && (
                             <View style={styles.infoGridItem}>
-                                <Ionicons name="globe-outline" size={16} color={colors.secondaryText} style={{ marginRight: 6 }} />
-                                <Text style={[styles.infoGridText, { color: colors.secondaryText }]} numberOfLines={1}>{profile.website}</Text>
+                                <Ionicons name="globe-outline" size={16} color={bloomTheme.colors.textSecondary} style={{ marginRight: 6 }} />
+                                <Text style={styles.infoGridText} className="text-muted-foreground" numberOfLines={1}>{profile.website}</Text>
                             </View>
                         )}
                         {profile && 'company' in profile && typeof profile.company === 'string' && profile.company && (
                             <View style={styles.infoGridItem}>
-                                <Ionicons name="business-outline" size={16} color={colors.secondaryText} style={{ marginRight: 6 }} />
-                                <Text style={[styles.infoGridText, { color: colors.secondaryText }]} numberOfLines={1}>{profile.company}</Text>
+                                <Ionicons name="business-outline" size={16} color={bloomTheme.colors.textSecondary} style={{ marginRight: 6 }} />
+                                <Text style={styles.infoGridText} className="text-muted-foreground" numberOfLines={1}>{profile.company}</Text>
                             </View>
                         )}
                         {profile && 'jobTitle' in profile && typeof profile.jobTitle === 'string' && profile.jobTitle && (
                             <View style={styles.infoGridItem}>
-                                <Ionicons name="briefcase-outline" size={16} color={colors.secondaryText} style={{ marginRight: 6 }} />
-                                <Text style={[styles.infoGridText, { color: colors.secondaryText }]} numberOfLines={1}>{profile.jobTitle}</Text>
+                                <Ionicons name="briefcase-outline" size={16} color={bloomTheme.colors.textSecondary} style={{ marginRight: 6 }} />
+                                <Text style={styles.infoGridText} className="text-muted-foreground" numberOfLines={1}>{profile.jobTitle}</Text>
                             </View>
                         )}
                         {profile && 'education' in profile && typeof profile.education === 'string' && profile.education && (
                             <View style={styles.infoGridItem}>
-                                <Ionicons name="school-outline" size={16} color={colors.secondaryText} style={{ marginRight: 6 }} />
-                                <Text style={[styles.infoGridText, { color: colors.secondaryText }]} numberOfLines={1}>{profile.education}</Text>
+                                <Ionicons name="school-outline" size={16} color={bloomTheme.colors.textSecondary} style={{ marginRight: 6 }} />
+                                <Text style={styles.infoGridText} className="text-muted-foreground" numberOfLines={1}>{profile.education}</Text>
                             </View>
                         )}
                         {profile && 'birthday' in profile && typeof profile.birthday === 'string' && profile.birthday && (
                             <View style={styles.infoGridItem}>
-                                <Ionicons name="gift-outline" size={16} color={colors.secondaryText} style={{ marginRight: 6 }} />
-                                <Text style={[styles.infoGridText, { color: colors.secondaryText }]}>
+                                <Ionicons name="gift-outline" size={16} color={bloomTheme.colors.textSecondary} style={{ marginRight: 6 }} />
+                                <Text style={styles.infoGridText} className="text-muted-foreground">
                                     {t('profile.bornOn', { date: new Date(profile.birthday).toLocaleDateString() }) || `Born ${new Date(profile.birthday).toLocaleDateString()}`}
                                 </Text>
                             </View>
@@ -308,12 +309,12 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                                 style={styles.infoGridItem}
                                 onPress={() => navigate?.('UserLinks', { userId, links })}
                             >
-                                <Ionicons name="link-outline" size={16} color={colors.secondaryText} style={{ marginRight: 6 }} />
-                                <Text style={[styles.infoGridText, { color: colors.secondaryText }]} numberOfLines={1}>
+                                <Ionicons name="link-outline" size={16} color={bloomTheme.colors.textSecondary} style={{ marginRight: 6 }} />
+                                <Text style={styles.infoGridText} className="text-muted-foreground" numberOfLines={1}>
                                     {links[0].url}
                                 </Text>
                                 {links.length > 1 && (
-                                    <Text style={[styles.linksMore, { color: colors.secondaryText }]}>
+                                    <Text style={styles.linksMore} className="text-muted-foreground">
                                         {t('profile.more', { count: links.length - 1 }) || `+ ${links.length - 1} more`}
                                     </Text>
                                 )}
@@ -321,28 +322,28 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                         )}
                     </View>
                     {/* Divider */}
-                    <View style={styles.divider} />
+                    <View style={styles.divider} className="bg-border" />
                     {/* All Stats in one row */}
                     <View style={styles.statsRow}>
                         <View style={styles.statItem}>
-                            <Text style={[styles.karmaAmount, { color: colors.primary }]}>{karmaTotal !== null && karmaTotal !== undefined ? karmaTotal : '--'}</Text>
-                            <Text style={[styles.karmaLabel, { color: colors.secondaryText }]}>{t('profile.karma') || 'Karma'}</Text>
+                            <Text style={styles.karmaAmount} className="text-primary">{karmaTotal !== null && karmaTotal !== undefined ? karmaTotal : '--'}</Text>
+                            <Text style={styles.karmaLabel} className="text-muted-foreground">{t('profile.karma') || 'Karma'}</Text>
                         </View>
                         <View style={styles.statItem}>
                             {isLoadingCounts ? (
-                                <ActivityIndicator size="small" color={colors.text} />
+                                <ActivityIndicator size="small" color={bloomTheme.colors.text} />
                             ) : (
-                                <Text style={[styles.karmaAmount, { color: colors.text }]}>{followerCount !== null ? followerCount : '--'}</Text>
+                                <Text style={styles.karmaAmount} className="text-foreground">{followerCount !== null ? followerCount : '--'}</Text>
                             )}
-                            <Text style={[styles.karmaLabel, { color: colors.secondaryText }]}>{t('profile.followers') || 'Followers'}</Text>
+                            <Text style={styles.karmaLabel} className="text-muted-foreground">{t('profile.followers') || 'Followers'}</Text>
                         </View>
                         <View style={styles.statItem}>
                             {isLoadingCounts ? (
-                                <ActivityIndicator size="small" color={colors.text} />
+                                <ActivityIndicator size="small" color={bloomTheme.colors.text} />
                             ) : (
-                                <Text style={[styles.karmaAmount, { color: colors.text }]}>{followingCount !== null ? followingCount : '--'}</Text>
+                                <Text style={styles.karmaAmount} className="text-foreground">{followingCount !== null ? followingCount : '--'}</Text>
                             )}
-                            <Text style={[styles.karmaLabel, { color: colors.secondaryText }]}>{t('profile.following') || 'Following'}</Text>
+                            <Text style={styles.karmaLabel} className="text-muted-foreground">{t('profile.following') || 'Following'}</Text>
                         </View>
                     </View>
                 </View>
@@ -351,37 +352,33 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
     );
 };
 
-const createStyles = (colors: ThemeColors) => StyleSheet.create({
+const createStyles = () => StyleSheet.create({
     container: { flex: 1 },
     scrollContainer: { alignItems: 'stretch', paddingBottom: 40 },
-    bannerContainer: { height: 160, backgroundColor: `${colors.primary}20`, position: 'relative', overflow: 'hidden' },
-    bannerImage: { flex: 1, backgroundColor: colors.primary }, // Placeholder, replace with Image if available
+    bannerContainer: { height: 160, position: 'relative', overflow: 'hidden' },
+    bannerImage: { flex: 1 },
     avatarRow: { flexDirection: 'row', alignItems: 'flex-end', marginTop: -56, paddingHorizontal: 20, justifyContent: 'space-between', zIndex: 2 },
-    avatarWrapper: { borderWidth: 5, borderColor: colors.background, borderRadius: 64, overflow: 'hidden', backgroundColor: colors.background },
+    avatarWrapper: { borderWidth: 5, borderRadius: 64, overflow: 'hidden' },
     actionButtonWrapper: { flex: 1, alignItems: 'flex-end', justifyContent: 'flex-end' },
     actionButton: {
-        backgroundColor: colors.background,
         borderWidth: 1,
-        borderColor: colors.primary,
         borderRadius: 24,
         paddingVertical: 7,
         paddingHorizontal: 22,
         marginBottom: 8,
         elevation: 2,
-        shadowColor: colors.primary,
         shadowOffset: { width: 0, height: 1 },
         shadowOpacity: 0.08,
         shadowRadius: 2
     },
     actionButtonText: {
-        color: colors.primary,
         fontWeight: 'bold',
         fontSize: 16
     },
     header: { alignItems: 'flex-start', width: '100%', paddingHorizontal: 20 },
     displayName: { fontSize: 24, fontWeight: 'bold', marginTop: 10, marginBottom: 2, letterSpacing: 0.1 },
-    subText: { fontSize: 16, marginBottom: 2, color: colors.secondaryText },
-    bio: { fontSize: 16, marginTop: 10, marginBottom: 10, color: colors.text, lineHeight: 22 },
+    subText: { fontSize: 16, marginBottom: 2 },
+    bio: { fontSize: 16, marginTop: 10, marginBottom: 10, lineHeight: 22 },
     infoGrid: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -396,16 +393,15 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     },
     infoGridText: {
         fontSize: 15,
-        color: colors.text
     },
-    divider: { height: 1, backgroundColor: colors.border, width: '100%', marginVertical: 14 },
+    divider: { height: 1, width: '100%', marginVertical: 14 },
     linksMore: {
         fontSize: 15,
         marginLeft: 4
     },
     statsRow: { width: '100%', flex: 1, flexDirection: 'row', alignItems: 'center', marginTop: 6, marginBottom: 2, justifyContent: 'space-between' },
     statItem: { flex: 1, alignItems: 'center', minWidth: 50, marginBottom: 12 },
-    karmaLabel: { fontSize: 14, marginBottom: 2, textAlign: 'center', color: colors.secondaryText },
+    karmaLabel: { fontSize: 14, marginBottom: 2, textAlign: 'center' },
     karmaAmount: { fontSize: 24, fontWeight: 'bold', textAlign: 'center', letterSpacing: 0.2 },
     // Error handling styles
     errorHeader: {

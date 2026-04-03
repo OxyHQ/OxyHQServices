@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { BaseScreenProps } from '../types/navigation';
-import { useThemeStyles } from '../hooks/useThemeStyles';
+import { useTheme } from '@oxyhq/bloom/theme';
 import { useI18n } from '../hooks/useI18n';
 
 interface InfoSection {
@@ -55,7 +55,7 @@ const INFO_SECTIONS: InfoSection[] = [
 const LearnMoreUsernamesScreen: React.FC<BaseScreenProps> = ({
     theme,
 }) => {
-    const themeStyles = useThemeStyles(theme || 'light');
+    const bloomTheme = useTheme();
     const { t } = useI18n();
     const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set(['what'])); // Start with first section expanded
 
@@ -71,23 +71,23 @@ const LearnMoreUsernamesScreen: React.FC<BaseScreenProps> = ({
         });
     }, []);
 
-    const styles = useMemo(() => createStyles(themeStyles), [themeStyles]);
+    const styles = useMemo(() => createStyles(), []);
 
     return (
-        <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
+        <View style={styles.container} className="bg-background">
             <ScrollView
                 style={styles.content}
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={styles.contentContainer}
             >
                 <View style={styles.introSection}>
-                    <View style={[styles.introIcon, { backgroundColor: `${themeStyles.primaryColor}15` }]}>
-                        <Ionicons name="at" size={32} color={themeStyles.primaryColor} />
+                    <View style={[styles.introIcon, { backgroundColor: `${bloomTheme.colors.primary}15` }]}>
+                        <Ionicons name="at" size={32} color={bloomTheme.colors.primary} />
                     </View>
-                    <Text style={[styles.introTitle, { color: themeStyles.textColor }]}>
+                    <Text style={[styles.introTitle, { color: bloomTheme.colors.text }]}>
                         {t('learnMoreUsernames.introTitle')}
                     </Text>
-                    <Text style={[styles.introText, { color: themeStyles.mutedTextColor }]}>
+                    <Text style={[styles.introText, { color: bloomTheme.colors.textSecondary }]}>
                         {t('learnMoreUsernames.introText')}
                     </Text>
                 </View>
@@ -100,7 +100,7 @@ const LearnMoreUsernamesScreen: React.FC<BaseScreenProps> = ({
                             key={section.id}
                             style={[
                                 styles.section,
-                                { backgroundColor: themeStyles.secondaryBackgroundColor, borderColor: themeStyles.borderColor },
+                                { backgroundColor: bloomTheme.colors.backgroundSecondary, borderColor: bloomTheme.colors.border },
                                 index === 0 && styles.sectionFirst,
                             ]}
                         >
@@ -112,25 +112,25 @@ const LearnMoreUsernamesScreen: React.FC<BaseScreenProps> = ({
                                 accessibilityHint={isExpanded ? t('learnMoreUsernames.collapseHint') : t('learnMoreUsernames.expandHint')}
                                 accessibilityState={{ expanded: isExpanded }}
                             >
-                                <View style={[styles.sectionIconContainer, { backgroundColor: `${themeStyles.primaryColor}15` }]}>
+                                <View style={[styles.sectionIconContainer, { backgroundColor: `${bloomTheme.colors.primary}15` }]}>
                                     <Ionicons
                                         name={section.icon}
                                         size={20}
-                                        color={themeStyles.primaryColor}
+                                        color={bloomTheme.colors.primary}
                                     />
                                 </View>
-                                <Text style={[styles.sectionTitle, { color: themeStyles.textColor }]}>
+                                <Text style={[styles.sectionTitle, { color: bloomTheme.colors.text }]}>
                                     {sectionTitle}
                                 </Text>
                                 <Ionicons
                                     name={isExpanded ? 'chevron-up' : 'chevron-down'}
                                     size={20}
-                                    color={themeStyles.mutedTextColor}
+                                    color={bloomTheme.colors.textSecondary}
                                 />
                             </TouchableOpacity>
                             {isExpanded && (
-                                <View style={[styles.sectionContent, { borderTopColor: themeStyles.borderColor }]}>
-                                    <Text style={[styles.sectionText, { color: themeStyles.mutedTextColor }]}>
+                                <View style={[styles.sectionContent, { borderTopColor: bloomTheme.colors.border }]}>
+                                    <Text style={[styles.sectionText, { color: bloomTheme.colors.textSecondary }]}>
                                         {t(section.contentKey)}
                                     </Text>
                                 </View>
@@ -140,7 +140,7 @@ const LearnMoreUsernamesScreen: React.FC<BaseScreenProps> = ({
                 })}
 
                 <View style={styles.footer}>
-                    <Text style={[styles.footerText, { color: themeStyles.mutedTextColor }]}>
+                    <Text style={[styles.footerText, { color: bloomTheme.colors.textSecondary }]}>
                         {t('learnMoreUsernames.footer')}
                     </Text>
                 </View>
@@ -149,7 +149,7 @@ const LearnMoreUsernamesScreen: React.FC<BaseScreenProps> = ({
     );
 };
 
-const createStyles = (themeStyles: ReturnType<typeof useThemeStyles>) => StyleSheet.create({
+const createStyles = () => StyleSheet.create({
     container: {
         flex: 1,
     },

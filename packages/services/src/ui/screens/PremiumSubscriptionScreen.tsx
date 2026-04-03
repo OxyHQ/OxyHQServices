@@ -19,9 +19,7 @@ import { confirmAction } from '../utils/confirmAction';
 import { Ionicons } from '@expo/vector-icons';
 import Avatar from '../components/Avatar';
 import { useI18n } from '../hooks/useI18n';
-import { useThemeStyles } from '../hooks/useThemeStyles';
-import { normalizeTheme } from '../utils/themeUtils';
-import { useColorScheme } from '../hooks/useColorScheme';
+import { useTheme } from '@oxyhq/bloom/theme';
 import { useOxy } from '../context/OxyContext';
 
 interface SubscriptionPlan {
@@ -84,11 +82,16 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
     const [currentAppPackage, setCurrentAppPackage] = useState<string>('mention'); // Default to mention for demo
 
     const { t } = useI18n();
-    const colorScheme = useColorScheme();
-    const normalizedTheme = normalizeTheme(theme);
-    const themeStyles = useThemeStyles(normalizedTheme, colorScheme);
+    const bloomTheme = useTheme();
     // Extract commonly used colors for readability
-    const { textColor, backgroundColor, secondaryBackgroundColor, borderColor, primaryColor, successColor, dangerColor, isDarkTheme } = themeStyles;
+    const textColor = bloomTheme.colors.text;
+    const backgroundColor = bloomTheme.colors.background;
+    const secondaryBackgroundColor = bloomTheme.colors.backgroundSecondary;
+    const borderColor = bloomTheme.colors.border;
+    const primaryColor = bloomTheme.colors.primary;
+    const successColor = bloomTheme.colors.success;
+    const dangerColor = bloomTheme.colors.error;
+    const isDarkTheme = bloomTheme.isDark;
     const warningColor = '#FF9500';
 
     // TODO: Replace mock data with actual API integration

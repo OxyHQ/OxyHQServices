@@ -117,10 +117,8 @@ const Header: React.FC<HeaderProps> = ({
 
         return (
             <TouchableOpacity
-                style={[
-                    styles.backButton,
-                    { backgroundColor: colors.card }
-                ]}
+                className="bg-card"
+                style={styles.backButton}
                 onPress={handleBackPress}
                 activeOpacity={0.7}
             >
@@ -134,10 +132,8 @@ const Header: React.FC<HeaderProps> = ({
 
         return (
             <TouchableOpacity
-                style={[
-                    styles.closeButton,
-                    { backgroundColor: colors.card }
-                ]}
+                className="bg-card"
+                style={styles.closeButton}
                 onPress={onClose}
                 activeOpacity={0.7}
             >
@@ -240,11 +236,11 @@ const Header: React.FC<HeaderProps> = ({
                 getTitleAlignment(),
                 variant === 'minimal' && styles.titleContainerMinimal
             ]}>
-                <Text style={[titleStyle, { color: colors.text }]}>
+                <Text className="text-foreground" style={titleStyle}>
                     {title}
                 </Text>
                 {subtitle ? (
-                    <Text style={[subtitleStyle, { color: colors.textSecondary }]}>
+                    <Text className="text-muted-foreground" style={subtitleStyle}>
                         {subtitle}
                     </Text>
                 ) : null}
@@ -295,17 +291,13 @@ const Header: React.FC<HeaderProps> = ({
     const getBackgroundStyle = () => {
         if (variant === 'gradient') {
             return {
-                backgroundColor: colors.background,
                 // Add gradient overlay effect
                 borderBottomWidth: 1,
-                borderBottomColor: colors.border,
             };
         }
 
         return {
-            backgroundColor: colors.background,
             borderBottomWidth: elevation === 'none' ? 0 : 1,
-            borderBottomColor: colors.border,
         };
     };
 
@@ -336,7 +328,7 @@ const Header: React.FC<HeaderProps> = ({
         : containerStyle;
 
     return (
-        <HeaderContainer style={headerStyle}>
+        <HeaderContainer className="bg-background border-border" style={headerStyle}>
             <View style={[
                 styles.content,
                 variant === 'minimal' && styles.contentMinimal

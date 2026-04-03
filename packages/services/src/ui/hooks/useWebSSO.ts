@@ -49,12 +49,16 @@ function isWebBrowser(): boolean {
 
 /**
  * Check if we're on the identity provider domain (where FedCM would authenticate against itself)
- * Only auth.oxy.so is the IdP - accounts.oxy.so is a client app like any other
+ * Compares against config.authWebUrl if set, otherwise defaults to auth.oxy.so
  */
-function isIdentityProvider(): boolean {
+function isIdentityProvider(authWebUrl?: string): boolean {
   if (!isWebBrowser()) return false;
   const hostname = window.location.hostname;
-  return hostname === 'auth.oxy.so';
+  let idpHostname = 'auth.oxy.so';
+  if (authWebUrl) {
+    try { idpHostname = new URL(authWebUrl).hostname; } catch { /* malformed URL, use default */ }
+  }
+  return hostname === idpHostname;
 }
 
 /**
@@ -85,6 +89,7 @@ export function useWebSSO({
 
   // Check FedCM support once
   const fedCMSupported = isWebBrowser() && oxyServices.isFedCMSupported?.();
+  const authWebUrl = oxyServices.config?.authWebUrl;
 
   const checkSSO = useCallback(async (): Promise<SessionLoginResponse | null> => {
     if (!isWebBrowser() || isCheckingRef.current) {
@@ -92,7 +97,7 @@ export function useWebSSO({
     }
 
     // Don't use FedCM on the auth domain itself - it would authenticate against itself
-    if (isIdentityProvider()) {
+    if (isIdentityProvider(authWebUrl)) {
       onSSOUnavailable?.();
       return null;
     }
@@ -122,7 +127,7 @@ export function useWebSSO({
     } finally {
       isCheckingRef.current = false;
     }
-  }, [oxyServices, onSessionFound, onSSOUnavailable, onError, fedCMSupported]);
+  }, [oxyServices, onSessionFound, onSSOUnavailable, onError, fedCMSupported, authWebUrl]);
 
   /**
    * Trigger interactive FedCM sign-in
@@ -160,8 +165,8 @@ export function useWebSSO({
 
   // Auto-check SSO on mount (web only, FedCM only, not on auth domain)
   useEffect(() => {
-    if (!enabled || !isWebBrowser() || hasCheckedRef.current || isIdentityProvider()) {
-      if (isIdentityProvider()) {
+    if (!enabled || !isWebBrowser() || hasCheckedRef.current || isIdentityProvider(authWebUrl)) {
+      if (isIdentityProvider(authWebUrl)) {
         onSSOUnavailable?.();
       }
       return;

@@ -23,9 +23,6 @@ import { Ionicons } from '@expo/vector-icons';
 import Avatar from '../components/Avatar';
 import { Header, GroupedSection, LoadingState } from '../components';
 import { useI18n } from '../hooks/useI18n';
-import { useThemeStyles } from '../hooks/useThemeStyles';
-import { useColorScheme } from '../hooks/useColorScheme';
-import { normalizeTheme } from '../utils/themeUtils';
 import { useOxy } from '../context/OxyContext';
 
 interface SessionWithUser extends ClientSession {
@@ -76,25 +73,6 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
 
     const screenWidth = Dimensions.get('window').width;
     const { t } = useI18n();
-    const colorScheme = useColorScheme();
-    const normalizedTheme = normalizeTheme(theme);
-    const themeStyles = useThemeStyles(normalizedTheme, colorScheme);
-
-    // Modern color scheme - memoized for performance
-    // Uses themeStyles for base colors, with some custom additions for this screen
-    const colors = useMemo(() => ({
-        background: themeStyles.backgroundColor,
-        surface: themeStyles.secondaryBackgroundColor,
-        card: themeStyles.isDarkTheme ? '#2C2C2E' : '#FFFFFF',
-        text: themeStyles.textColor,
-        secondaryText: themeStyles.isDarkTheme ? '#8E8E93' : '#6D6D70',
-        accent: themeStyles.primaryColor,
-        destructive: themeStyles.dangerColor,
-        success: themeStyles.successColor,
-        border: themeStyles.borderColor,
-        activeCard: themeStyles.isDarkTheme ? '#0A84FF20' : '#007AFF15',
-        shadow: themeStyles.isDarkTheme ? 'rgba(0,0,0,0.3)' : 'rgba(0,0,0,0.1)',
-    }), [themeStyles]);
 
     // Refresh sessions when screen loads
     useEffect(() => {
@@ -309,7 +287,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
     );
 
     return (
-        <View style={[styles.container, { backgroundColor: '#f2f2f2' }]}>
+        <View style={styles.container} className="bg-background">
             {/* Header */}
             <Header
                 title={t('accountSwitcher.title') || 'Account Switcher'}

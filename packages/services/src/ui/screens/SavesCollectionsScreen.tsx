@@ -10,8 +10,10 @@ import type { BaseScreenProps } from '../types/navigation';
 import { toast } from '../../lib/sonner';
 import { Header, Section, GroupedSection, LoadingState, EmptyState } from '../components';
 import { useI18n } from '../hooks/useI18n';
-import { useThemeStyles } from '../hooks/useThemeStyles';
+import { useTheme } from '@oxyhq/bloom/theme';
 import { useColorScheme } from '../hooks/useColorScheme';
+import { Colors } from '../constants/theme';
+import { normalizeColorScheme } from '../utils/themeUtils';
 import { useOxy } from '../context/OxyContext';
 
 interface SavedItem {
@@ -44,10 +46,12 @@ const SavesCollectionsScreen: React.FC<BaseScreenProps> = ({
     const [isLoading, setIsLoading] = useState(true);
     const [activeTab, setActiveTab] = useState<'saves' | 'collections'>('saves');
 
+    const bloomTheme = useTheme();
     const colorScheme = useColorScheme();
-    const themeStyles = useThemeStyles(theme || 'light', colorScheme);
-    const tabActiveColor = themeStyles.colors.iconSecurity;
-    const tabInactiveColor = themeStyles.isDarkTheme ? '#888888' : '#666666';
+    const normalizedColorScheme = normalizeColorScheme(colorScheme);
+    const themeColors = Colors[normalizedColorScheme];
+    const tabActiveColor = themeColors.iconSecurity;
+    const tabInactiveColor = bloomTheme.isDark ? '#888888' : '#666666';
 
     // Load saved items and collections from API
     useEffect(() => {
@@ -89,7 +93,7 @@ const SavesCollectionsScreen: React.FC<BaseScreenProps> = ({
     };
 
     return (
-        <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
+        <View style={styles.container} className="bg-background">
             <Header
                 title={t('saves.title') || 'Saves & Collections'}
                 onBack={goBack || onClose}
@@ -98,7 +102,7 @@ const SavesCollectionsScreen: React.FC<BaseScreenProps> = ({
             />
 
             {/* Tabs */}
-            <View style={[styles.tabs, { borderBottomColor: themeStyles.borderColor }]}>
+            <View style={[styles.tabs, { borderBottomColor: bloomTheme.colors.border }]}>
                 <TouchableOpacity
                     style={[
                         styles.tab,
@@ -143,13 +147,13 @@ const SavesCollectionsScreen: React.FC<BaseScreenProps> = ({
                 {isLoading ? (
                     <LoadingState
                         message={t('saves.loading') || 'Loading...'}
-                        color={themeStyles.textColor}
+                        color={bloomTheme.colors.text}
                     />
                 ) : activeTab === 'saves' ? (
                     savedItems.length === 0 ? (
                         <EmptyState
                             message={t('saves.empty') || 'No saved items yet'}
-                            textColor={themeStyles.textColor}
+                            textColor={bloomTheme.colors.text}
                         />
                     ) : (
                         <Section title={t('saves.savedItems') || 'Saved Items'} isFirst={true}>
@@ -157,7 +161,7 @@ const SavesCollectionsScreen: React.FC<BaseScreenProps> = ({
                                 items={savedItems.map((item) => ({
                                     id: item.id,
                                     icon: item.type === 'post' ? 'document-text' : 'folder',
-                                    iconColor: item.type === 'post' ? themeStyles.colors.iconSecurity : themeStyles.colors.iconStorage,
+                                    iconColor: item.type === 'post' ? themeColors.iconSecurity : themeColors.iconStorage,
                                     title: item.title,
                                     subtitle: formatDate(item.savedAt),
                                 }))}
@@ -168,7 +172,7 @@ const SavesCollectionsScreen: React.FC<BaseScreenProps> = ({
                     collections.length === 0 ? (
                         <EmptyState
                             message={t('saves.noCollections') || 'No collections yet'}
-                            textColor={themeStyles.textColor}
+                            textColor={bloomTheme.colors.text}
                         />
                     ) : (
                         <Section title={t('saves.collections') || 'Collections'} isFirst={true}>
@@ -176,7 +180,7 @@ const SavesCollectionsScreen: React.FC<BaseScreenProps> = ({
                                 items={collections.map((collection) => ({
                                     id: collection.id,
                                     icon: 'folder',
-                                    iconColor: themeStyles.colors.iconStorage,
+                                    iconColor: themeColors.iconStorage,
                                     title: collection.name,
                                     subtitle: `${collection.itemCount || 0} items`,
                                 }))}

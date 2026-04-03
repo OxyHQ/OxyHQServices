@@ -1,7 +1,7 @@
 import type React from 'react';
 import { memo, useMemo, useState, useEffect } from 'react';
 import { View, Text, Image, StyleSheet, type StyleProp, type ViewStyle, type ImageStyle, type TextStyle, ActivityIndicator, Platform } from 'react-native';
-import { useThemeColors } from '../styles';
+import { useTheme } from '@oxyhq/bloom/theme';
 import { fontFamilies } from '../styles/fonts';
 
 export interface AvatarProps {
@@ -147,7 +147,7 @@ const Avatar: React.FC<AvatarProps> = ({
     textStyle,
     isLoading = false,
 }) => {
-    const colors = useThemeColors(theme);
+    const { colors } = useTheme();
     const [imageError, setImageError] = useState(false);
 
     // Reset error state when uri changes
@@ -217,7 +217,7 @@ const Avatar: React.FC<AvatarProps> = ({
                 style={[
                     styles.container,
                     containerStyle,
-                    { backgroundColor: colors.inputBackground },
+                    { backgroundColor: colors.backgroundSecondary },
                     style
                 ]}
             >

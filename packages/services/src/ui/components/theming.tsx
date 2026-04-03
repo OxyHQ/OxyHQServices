@@ -1,4 +1,5 @@
-import { useThemeColors, getTheme } from '../styles';
+import { useTheme } from '@oxyhq/bloom/theme';
+import { getTheme } from '../styles';
 import type { InternalTheme } from './types';
 
 /**
@@ -15,7 +16,19 @@ export const useInternalTheme = (
     theme = 'dark';
   }
 
-  const colors = useThemeColors(theme);
+  const bloomTheme = useTheme();
+  const colors = {
+    text: bloomTheme.colors.text,
+    background: bloomTheme.colors.background,
+    inputBackground: bloomTheme.colors.backgroundSecondary,
+    placeholder: bloomTheme.colors.textTertiary,
+    primary: bloomTheme.colors.primary,
+    border: bloomTheme.colors.border,
+    error: bloomTheme.colors.error,
+    success: bloomTheme.colors.success,
+    warning: bloomTheme.colors.warning,
+    secondaryText: bloomTheme.colors.textSecondary,
+  };
   const themeObj = getTheme(theme);
 
   // Create InternalTheme compatible object

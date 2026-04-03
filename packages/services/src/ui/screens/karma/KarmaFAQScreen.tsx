@@ -4,8 +4,8 @@ import type { BaseScreenProps } from '../../types/navigation';
 import { Ionicons } from '@expo/vector-icons';
 import { Header, GroupedItem } from '../../components';
 import { useI18n } from '../../hooks/useI18n';
-import { useThemeStyles } from '../../hooks/useThemeStyles';
-import { normalizeTheme, normalizeColorScheme } from '../../utils/themeUtils';
+import { useTheme } from '@oxyhq/bloom/theme';
+import { normalizeColorScheme } from '../../utils/themeUtils';
 import { useColorScheme } from '../../hooks/useColorScheme';
 import { Colors } from '../../constants/theme';
 
@@ -26,17 +26,10 @@ const KarmaFAQScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
     const [search, setSearch] = useState('');
 
     // Memoize theme-related calculations to prevent unnecessary recalculations
-    const normalizedTheme = normalizeTheme(theme);
-    const baseThemeStyles = useThemeStyles(normalizedTheme);
+    const bloomTheme = useTheme();
     const colorScheme = useColorScheme();
     const normalizedColorScheme = normalizeColorScheme(colorScheme);
     const colors = Colors[normalizedColorScheme];
-    const themeStyles = useMemo(() => ({
-        ...baseThemeStyles,
-        primaryColor: '#d169e5',
-        inputBg: baseThemeStyles.isDarkTheme ? '#23232b' : '#f2f2f7',
-        inputBorder: baseThemeStyles.borderColor,
-    }), [baseThemeStyles]);
 
     // Memoize filtered FAQs to prevent filtering on every render
     const faqs = useMemo(() => FAQ_KEYS.map(key => ({
@@ -61,7 +54,7 @@ const KarmaFAQScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
     }, []);
 
     return (
-        <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
+        <View style={styles.container} className="bg-background">
             <Header
                 title={t('karma.faq.title') || 'Karma FAQ'}
                 subtitle={t('karma.faq.subtitle') || 'Frequently asked questions about karma'}
@@ -77,9 +70,9 @@ const KarmaFAQScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
                 <View style={[styles.searchContainer, { backgroundColor: colors.card }]}>
                     <Ionicons name="search" size={22} color={colors.icon} />
                     <TextInput
-                        style={[styles.searchInput, { color: themeStyles.textColor }]}
+                        style={[styles.searchInput, { color: bloomTheme.colors.text }]}
                         placeholder={t('karma.faq.search') || 'Search FAQ...'}
-                        placeholderTextColor={themeStyles.isDarkTheme ? '#BBBBBB' : '#888888'}
+                        placeholderTextColor={bloomTheme.isDark ? '#BBBBBB' : '#888888'}
                         value={search}
                         onChangeText={setSearch}
                         returnKeyType="search"
@@ -114,7 +107,7 @@ const KarmaFAQScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
                                     />
                                     {isExpanded && (
                                         <View style={[styles.answerContainer, { backgroundColor: colors.card }, isLast && styles.lastAnswerContainer]}>
-                                            <Text style={[styles.answer, { color: themeStyles.textColor }]}>
+                                            <Text style={[styles.answer, { color: bloomTheme.colors.text }]}>
                                                 {faq.a}
                                             </Text>
                                         </View>

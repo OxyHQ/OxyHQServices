@@ -1,10 +1,10 @@
 import type React from 'react';
 import { View, Text, TouchableOpacity, Modal, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useTheme } from '@oxyhq/bloom/theme';
 import type { FileMetadata } from '@oxyhq/core';
 import { formatFileSize, getFileIcon } from '../../utils/fileManagement';
 import { fileManagementStyles } from './styles';
-import type { ThemeStyles } from '../../hooks/useThemeStyles';
 
 interface FileDetailsModalProps {
     visible: boolean;
@@ -12,8 +12,9 @@ interface FileDetailsModalProps {
     onClose: () => void;
     onDownload: (fileId: string, filename: string) => void;
     onDelete: (fileId: string, filename: string) => void;
-    themeStyles: ThemeStyles;
     isOwner: boolean;
+    /** @deprecated No longer used. Colors are sourced from useTheme() internally. */
+    themeStyles?: unknown;
 }
 
 export const FileDetailsModal: React.FC<FileDetailsModalProps> = ({
@@ -22,11 +23,9 @@ export const FileDetailsModal: React.FC<FileDetailsModalProps> = ({
     onClose,
     onDownload,
     onDelete,
-    themeStyles,
     isOwner,
 }) => {
-    const backgroundColor = themeStyles.backgroundColor;
-    const borderColor = themeStyles.borderColor;
+    const { colors } = useTheme();
 
     if (!file) return null;
 
@@ -37,66 +36,66 @@ export const FileDetailsModal: React.FC<FileDetailsModalProps> = ({
             presentationStyle="pageSheet"
             onRequestClose={onClose}
         >
-            <View style={[fileManagementStyles.modalContainer, { backgroundColor }]}>
-                <View style={[fileManagementStyles.modalHeader, { borderBottomColor: borderColor }]}>
+            <View className="bg-background" style={fileManagementStyles.modalContainer}>
+                <View className="border-b border-border" style={fileManagementStyles.modalHeader}>
                     <TouchableOpacity
                         style={fileManagementStyles.modalCloseButton}
                         onPress={onClose}
                     >
-                        <Ionicons name="close" size={24} color={themeStyles.textColor} />
+                        <Ionicons name="close" size={24} color={colors.text} />
                     </TouchableOpacity>
-                    <Text style={[fileManagementStyles.modalTitle, { color: themeStyles.textColor }]}>File Details</Text>
+                    <Text className="text-foreground" style={fileManagementStyles.modalTitle}>File Details</Text>
                     <View style={fileManagementStyles.modalPlaceholder} />
                 </View>
 
                 <ScrollView style={fileManagementStyles.modalContent}>
-                    <View style={[fileManagementStyles.fileDetailCard, { backgroundColor: themeStyles.secondaryBackgroundColor, borderColor }]}>
+                    <View className="bg-secondary border-border" style={fileManagementStyles.fileDetailCard}>
                         <View style={fileManagementStyles.fileDetailIcon}>
                             <Ionicons
                                 name={getFileIcon(file.contentType) as React.ComponentProps<typeof Ionicons>['name']}
                                 size={64}
-                                color={themeStyles.primaryColor}
+                                color={colors.primary}
                             />
                         </View>
 
-                        <Text style={[fileManagementStyles.fileDetailName, { color: themeStyles.textColor }]}>
+                        <Text className="text-foreground" style={fileManagementStyles.fileDetailName}>
                             {file.filename}
                         </Text>
 
                         <View style={fileManagementStyles.fileDetailInfo}>
                             <View style={fileManagementStyles.detailRow}>
-                                <Text style={[fileManagementStyles.detailLabel, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                                <Text className="text-muted-foreground" style={fileManagementStyles.detailLabel}>
                                     Size:
                                 </Text>
-                                <Text style={[fileManagementStyles.detailValue, { color: themeStyles.textColor }]}>
+                                <Text className="text-foreground" style={fileManagementStyles.detailValue}>
                                     {formatFileSize(file.length)}
                                 </Text>
                             </View>
 
                             <View style={fileManagementStyles.detailRow}>
-                                <Text style={[fileManagementStyles.detailLabel, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                                <Text className="text-muted-foreground" style={fileManagementStyles.detailLabel}>
                                     Type:
                                 </Text>
-                                <Text style={[fileManagementStyles.detailValue, { color: themeStyles.textColor }]}>
+                                <Text className="text-foreground" style={fileManagementStyles.detailValue}>
                                     {file.contentType}
                                 </Text>
                             </View>
 
                             <View style={fileManagementStyles.detailRow}>
-                                <Text style={[fileManagementStyles.detailLabel, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                                <Text className="text-muted-foreground" style={fileManagementStyles.detailLabel}>
                                     Uploaded:
                                 </Text>
-                                <Text style={[fileManagementStyles.detailValue, { color: themeStyles.textColor }]}>
+                                <Text className="text-foreground" style={fileManagementStyles.detailValue}>
                                     {new Date(file.uploadDate).toLocaleString()}
                                 </Text>
                             </View>
 
                             {file.metadata?.description && (
                                 <View style={fileManagementStyles.detailRow}>
-                                    <Text style={[fileManagementStyles.detailLabel, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                                    <Text className="text-muted-foreground" style={fileManagementStyles.detailLabel}>
                                         Description:
                                     </Text>
-                                    <Text style={[fileManagementStyles.detailValue, { color: themeStyles.textColor }]}>
+                                    <Text className="text-foreground" style={fileManagementStyles.detailValue}>
                                         {file.metadata.description}
                                     </Text>
                                 </View>
@@ -105,7 +104,8 @@ export const FileDetailsModal: React.FC<FileDetailsModalProps> = ({
 
                         <View style={fileManagementStyles.modalActions}>
                             <TouchableOpacity
-                                style={[fileManagementStyles.modalActionButton, { backgroundColor: themeStyles.primaryColor }]}
+                                className="bg-primary"
+                                style={fileManagementStyles.modalActionButton}
                                 onPress={() => {
                                     onDownload(file.id, file.filename);
                                     onClose();
@@ -117,7 +117,8 @@ export const FileDetailsModal: React.FC<FileDetailsModalProps> = ({
 
                             {isOwner && (
                                 <TouchableOpacity
-                                    style={[fileManagementStyles.modalActionButton, { backgroundColor: themeStyles.dangerColor }]}
+                                    className="bg-destructive"
+                                    style={fileManagementStyles.modalActionButton}
                                     onPress={() => {
                                         onClose();
                                         onDelete(file.id, file.filename);

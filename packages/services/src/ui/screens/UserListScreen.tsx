@@ -10,7 +10,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
-import { useThemeColors, type ThemeColors } from '../styles';
+import { useTheme } from '@oxyhq/bloom/theme';
 import Avatar from '../components/Avatar';
 import { FollowButton } from '../components';
 import { Ionicons } from '@expo/vector-icons';
@@ -46,8 +46,8 @@ const UserListScreen: React.FC<UserListScreenProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
 
-  const colors = useThemeColors((theme as 'light' | 'dark') ?? 'light');
-  const styles = createStyles(colors);
+  const bloomTheme = useTheme();
+  const styles = createStyles();
   const { t } = useI18n();
 
   const currentUserId = currentUser?.id || (currentUser?._id as string | undefined);
@@ -145,16 +145,16 @@ const UserListScreen: React.FC<UserListScreenProps> = ({
             size={48}
           />
           <View style={styles.userInfo}>
-            <Text style={styles.userName} numberOfLines={1}>
+            <Text style={styles.userName} className="text-foreground" numberOfLines={1}>
               {item.name?.full || item.username || 'Unknown User'}
             </Text>
             {item.username && (
-              <Text style={styles.userHandle} numberOfLines={1}>
+              <Text style={styles.userHandle} className="text-muted-foreground" numberOfLines={1}>
                 @{item.username}
               </Text>
             )}
             {description ? (
-              <Text style={styles.userBio} numberOfLines={2}>
+              <Text style={styles.userBio} className="text-foreground" numberOfLines={2}>
                 {description}
               </Text>
             ) : null}
@@ -167,7 +167,7 @@ const UserListScreen: React.FC<UserListScreenProps> = ({
         </TouchableOpacity>
       );
     },
-    [colors, styles, handleUserPress, currentUserId, oxyServices]
+    [bloomTheme, styles, handleUserPress, currentUserId, oxyServices]
   );
 
   const renderEmpty = useCallback(() => {
@@ -177,30 +177,30 @@ const UserListScreen: React.FC<UserListScreenProps> = ({
         <Ionicons
           name={mode === 'followers' ? 'people-outline' : 'heart-outline'}
           size={64}
-          color={colors.secondaryText}
+          color={bloomTheme.colors.textSecondary}
         />
-        <Text style={styles.emptyTitle}>
+        <Text style={styles.emptyTitle} className="text-foreground">
           {mode === 'followers'
             ? t('userList.noFollowers') || 'No followers yet'
             : t('userList.noFollowing') || 'Not following anyone'}
         </Text>
-        <Text style={styles.emptySubtitle}>
+        <Text style={styles.emptySubtitle} className="text-muted-foreground">
           {mode === 'followers'
             ? t('userList.noFollowersDesc') || 'When people follow this user, they will appear here.'
             : t('userList.noFollowingDesc') || 'When this user follows people, they will appear here.'}
         </Text>
       </View>
     );
-  }, [isLoading, mode, colors, styles, t]);
+  }, [isLoading, mode, bloomTheme, styles, t]);
 
   const renderFooter = useCallback(() => {
     if (!isLoadingMore) return null;
     return (
       <View style={styles.footerLoader}>
-        <ActivityIndicator size="small" color={colors.primary} />
+        <ActivityIndicator size="small" color={bloomTheme.colors.primary} />
       </View>
     );
-  }, [isLoadingMore, colors, styles]);
+  }, [isLoadingMore, bloomTheme, styles]);
 
   const title = mode === 'followers'
     ? (t('userList.followers') || 'Followers')
@@ -208,18 +208,18 @@ const UserListScreen: React.FC<UserListScreenProps> = ({
 
   if (isLoading && users.length === 0) {
     return (
-      <View style={styles.container}>
-        <View style={styles.header}>
+      <View style={styles.container} className="bg-background">
+        <View style={styles.header} className="border-border">
           {goBack && (
             <TouchableOpacity onPress={goBack} style={styles.backButton}>
-              <Ionicons name="arrow-back" size={24} color={colors.text} />
+              <Ionicons name="arrow-back" size={24} color={bloomTheme.colors.text} />
             </TouchableOpacity>
           )}
-          <Text style={styles.headerTitle}>{title}</Text>
+          <Text style={styles.headerTitle} className="text-foreground">{title}</Text>
           <View style={styles.headerRight} />
         </View>
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.primary} />
+          <ActivityIndicator size="large" color={bloomTheme.colors.primary} />
         </View>
       </View>
     );
@@ -227,20 +227,20 @@ const UserListScreen: React.FC<UserListScreenProps> = ({
 
   if (error) {
     return (
-      <View style={styles.container}>
-        <View style={styles.header}>
+      <View style={styles.container} className="bg-background">
+        <View style={styles.header} className="border-border">
           {goBack && (
             <TouchableOpacity onPress={goBack} style={styles.backButton}>
-              <Ionicons name="arrow-back" size={24} color={colors.text} />
+              <Ionicons name="arrow-back" size={24} color={bloomTheme.colors.text} />
             </TouchableOpacity>
           )}
-          <Text style={styles.headerTitle}>{title}</Text>
+          <Text style={styles.headerTitle} className="text-foreground">{title}</Text>
           <View style={styles.headerRight} />
         </View>
         <View style={styles.errorContainer}>
-          <Ionicons name="alert-circle" size={48} color={colors.error} />
-          <Text style={styles.errorText}>{error}</Text>
-          <TouchableOpacity style={styles.retryButton} onPress={() => fetchUsers(0)}>
+          <Ionicons name="alert-circle" size={48} color={bloomTheme.colors.error} />
+          <Text style={styles.errorText} className="text-destructive">{error}</Text>
+          <TouchableOpacity style={styles.retryButton} className="bg-primary" onPress={() => fetchUsers(0)}>
             <Text style={styles.retryButtonText}>{t('common.retry') || 'Retry'}</Text>
           </TouchableOpacity>
         </View>
@@ -249,16 +249,16 @@ const UserListScreen: React.FC<UserListScreenProps> = ({
   }
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
+    <View style={styles.container} className="bg-background">
+      <View style={styles.header} className="border-border">
         {goBack && (
           <TouchableOpacity onPress={goBack} style={styles.backButton}>
-            <Ionicons name="arrow-back" size={24} color={colors.text} />
+            <Ionicons name="arrow-back" size={24} color={bloomTheme.colors.text} />
           </TouchableOpacity>
         )}
         <View style={styles.headerTitleContainer}>
-          <Text style={styles.headerTitle}>{title}</Text>
-          {total > 0 && <Text style={styles.headerCount}>{total}</Text>}
+          <Text style={styles.headerTitle} className="text-foreground">{title}</Text>
+          {total > 0 && <Text style={styles.headerCount} className="text-muted-foreground">{total}</Text>}
         </View>
         <View style={styles.headerRight} />
       </View>
@@ -267,7 +267,7 @@ const UserListScreen: React.FC<UserListScreenProps> = ({
         renderItem={renderUser}
         keyExtractor={(item, index) => item.id || (item._id as string) || `user-${index}`}
         contentContainerStyle={styles.listContent}
-        ItemSeparatorComponent={() => <View style={styles.separator} />}
+        ItemSeparatorComponent={() => <View style={styles.separator} className="bg-border" />}
         ListEmptyComponent={renderEmpty}
         ListFooterComponent={renderFooter}
         onEndReached={handleLoadMore}
@@ -276,8 +276,8 @@ const UserListScreen: React.FC<UserListScreenProps> = ({
           <RefreshControl
             refreshing={isRefreshing}
             onRefresh={handleRefresh}
-            tintColor={colors.primary}
-            colors={[colors.primary]}
+            tintColor={bloomTheme.colors.primary}
+            colors={[bloomTheme.colors.primary]}
           />
         }
       />
@@ -285,11 +285,10 @@ const UserListScreen: React.FC<UserListScreenProps> = ({
   );
 };
 
-const createStyles = (colors: ThemeColors) =>
+const createStyles = () =>
   StyleSheet.create({
     container: {
       flex: 1,
-      backgroundColor: colors.background,
     },
     header: {
       flexDirection: 'row',
@@ -297,7 +296,6 @@ const createStyles = (colors: ThemeColors) =>
       paddingHorizontal: 16,
       paddingVertical: 12,
       borderBottomWidth: 1,
-      borderBottomColor: colors.border,
     },
     backButton: {
       padding: 8,
@@ -311,11 +309,9 @@ const createStyles = (colors: ThemeColors) =>
     headerTitle: {
       fontSize: 18,
       fontWeight: '600',
-      color: colors.text,
     },
     headerCount: {
       fontSize: 16,
-      color: colors.secondaryText,
       marginLeft: 8,
     },
     headerRight: {
@@ -334,13 +330,11 @@ const createStyles = (colors: ThemeColors) =>
     },
     errorText: {
       fontSize: 16,
-      color: colors.error,
       textAlign: 'center',
       marginTop: 16,
       marginBottom: 24,
     },
     retryButton: {
-      backgroundColor: colors.primary,
       paddingHorizontal: 24,
       paddingVertical: 12,
       borderRadius: 8,
@@ -367,16 +361,13 @@ const createStyles = (colors: ThemeColors) =>
     userName: {
       fontSize: 16,
       fontWeight: '600',
-      color: colors.text,
     },
     userHandle: {
       fontSize: 14,
-      color: colors.secondaryText,
       marginTop: 2,
     },
     userBio: {
       fontSize: 14,
-      color: colors.text,
       marginTop: 4,
       opacity: 0.8,
     },
@@ -385,7 +376,6 @@ const createStyles = (colors: ThemeColors) =>
     },
     separator: {
       height: 1,
-      backgroundColor: colors.border,
       marginLeft: 76,
     },
     emptyContainer: {
@@ -398,13 +388,11 @@ const createStyles = (colors: ThemeColors) =>
     emptyTitle: {
       fontSize: 18,
       fontWeight: '600',
-      color: colors.text,
       marginTop: 16,
       textAlign: 'center',
     },
     emptySubtitle: {
       fontSize: 14,
-      color: colors.secondaryText,
       marginTop: 8,
       textAlign: 'center',
     },

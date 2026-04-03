@@ -8,8 +8,7 @@ import {
     Platform,
 } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
-import { useThemeStyles } from '../hooks/useThemeStyles';
-import { useColorScheme } from '../hooks/useColorScheme';
+import { useTheme } from '@oxyhq/bloom/theme';
 import { normalizeTheme } from '../utils/themeUtils';
 import { Ionicons } from '@expo/vector-icons';
 import { toast } from '../../lib/sonner';
@@ -37,10 +36,8 @@ const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
     // Use useOxy() hook for OxyContext values
     const { user, currentLanguage, setLanguage, oxyServices, isAuthenticated } = useOxy();
     const { t } = useI18n();
-    const colorScheme = useColorScheme();
+    const bloomTheme = useTheme();
     const normalizedTheme = normalizeTheme(theme);
-    const themeStyles = useThemeStyles(normalizedTheme, colorScheme);
-    const themeColors = themeStyles.colors;
     const [isLoading, setIsLoading] = useState(false);
 
     // Memoize the language select handler to prevent recreation on every render
@@ -111,16 +108,16 @@ const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
                 selected: isSelected,
                 onPress: () => handleLanguageSelect(language.id),
                 customContent: isSelected ? (
-                    <Ionicons name="checkmark-circle" size={24} color={themeColors.tint} />
+                    <Ionicons name="checkmark-circle" size={24} color={bloomTheme.colors.primary} />
                 ) : undefined,
             };
         }),
-        [currentLanguage, handleLanguageSelect, themeColors]
+        [currentLanguage, handleLanguageSelect, bloomTheme]
     );
 
 
     return (
-        <View style={[styles.container, { backgroundColor: theme === 'dark' ? '#000000' : '#F5F5F5' }]}>
+        <View style={styles.container} className="bg-background">
             <Header
                 title=""
                 subtitle=""
@@ -138,11 +135,11 @@ const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
             >
                 {/* Big Title */}
                 <View style={styles.titleContainer}>
-                    <Text style={[styles.bigTitle, { color: themeColors.text }]}>
+                    <Text style={[styles.bigTitle, { color: bloomTheme.colors.text }]}>
                         {t('language.title')}
                     </Text>
                     {t('language.subtitle') && (
-                        <Text style={[styles.bigSubtitle, { color: themeColors.secondaryText }]}>
+                        <Text style={[styles.bigSubtitle, { color: bloomTheme.colors.textSecondary }]}>
                             {t('language.subtitle')}
                         </Text>
                     )}
@@ -151,7 +148,7 @@ const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
                 {/* Available languages - Main section */}
                 <View style={styles.sectionContainer}>
                     <View style={[styles.materialCard, {
-                        backgroundColor: themeColors.card,
+                        backgroundColor: bloomTheme.colors.card,
                     }]}>
                         <GroupedSection items={languageItems} />
                     </View>

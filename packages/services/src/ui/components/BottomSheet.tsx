@@ -300,7 +300,6 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
             },
             sheet: {
                 ...styles.sheet,
-                backgroundColor: theme.colors.background,
                 ...(detached ? styles.sheetDetached : styles.sheetNormal),
             },
             scrollContent: {
@@ -309,7 +308,7 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
                 // The sheet extends behind safe area, and screens add padding as needed
             },
         });
-    }, [theme.colors.background, theme.colors.border, theme.colors.borderLight, theme.isDark, detached]);
+    }, [theme.colors.border, theme.colors.borderLight, theme.isDark, detached]);
 
     if (!rendered) return null;
 
@@ -327,7 +326,7 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
                 </Animated.View>
 
                 <GestureDetector gesture={panGesture}>
-                    <Animated.View style={[dynamicStyles.sheet, sheetMarginStyle, sheetStyle, sheetHeightStyle]}>
+                    <Animated.View className="bg-background" style={[dynamicStyles.sheet, sheetMarginStyle, sheetStyle, sheetHeightStyle]}>
                         {backgroundComponent?.({ style: styles.background })}
 
                         <View style={dynamicStyles.handle} />

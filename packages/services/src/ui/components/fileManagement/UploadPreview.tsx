@@ -2,9 +2,9 @@ import type React from 'react';
 import { View, Text, TouchableOpacity, Modal, ScrollView } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
+import { useTheme } from '@oxyhq/bloom/theme';
 import { formatFileSize, getFileIcon } from '../../utils/fileManagement';
 import { fileManagementStyles } from './styles';
-import type { ThemeStyles } from '../../hooks/useThemeStyles';
 
 interface PendingFile {
     file: File | Blob;
@@ -20,8 +20,9 @@ interface UploadPreviewProps {
     onConfirm: () => void;
     onCancel: () => void;
     onRemoveFile: (index: number) => void;
-    themeStyles: ThemeStyles;
     inline?: boolean; // New prop to support inline rendering without Modal
+    /** @deprecated No longer used. Colors are sourced from useTheme() internally. */
+    themeStyles?: unknown;
 }
 
 const UploadPreviewContent: React.FC<{
@@ -29,26 +30,23 @@ const UploadPreviewContent: React.FC<{
     onConfirm: () => void;
     onCancel: () => void;
     onRemoveFile: (index: number) => void;
-    themeStyles: ThemeStyles;
 }> = ({
     pendingFiles,
     onConfirm,
     onCancel,
     onRemoveFile,
-    themeStyles,
 }) => {
-    const backgroundColor = themeStyles.backgroundColor;
-    const borderColor = themeStyles.borderColor;
+    const { colors, isDark } = useTheme();
     const totalSize = pendingFiles.reduce((sum, f) => sum + f.size, 0);
 
     return (
-        <View style={[fileManagementStyles.uploadPreviewContainer, { backgroundColor }]}>
-            <View style={[fileManagementStyles.uploadPreviewHeader, { borderBottomColor: borderColor }]}>
-                <Text style={[fileManagementStyles.uploadPreviewTitle, { color: themeStyles.textColor }]}>
+        <View className="bg-background" style={fileManagementStyles.uploadPreviewContainer}>
+            <View className="border-b border-border" style={fileManagementStyles.uploadPreviewHeader}>
+                <Text className="text-foreground" style={fileManagementStyles.uploadPreviewTitle}>
                     Review Files ({pendingFiles.length})
                 </Text>
                 <TouchableOpacity onPress={onCancel}>
-                    <Ionicons name="close" size={24} color={themeStyles.textColor} />
+                    <Ionicons name="close" size={24} color={colors.text} />
                 </TouchableOpacity>
             </View>
 
@@ -58,10 +56,8 @@ const UploadPreviewContent: React.FC<{
                     return (
                         <View
                             key={index}
-                            style={[
-                                fileManagementStyles.uploadPreviewItem,
-                                { backgroundColor: themeStyles.secondaryBackgroundColor, borderColor }
-                            ]}
+                            className="bg-secondary border-border"
+                            style={fileManagementStyles.uploadPreviewItem}
                         >
                             {isImage && pendingFile.preview ? (
                                 <ExpoImage
@@ -70,19 +66,19 @@ const UploadPreviewContent: React.FC<{
                                     contentFit="cover"
                                 />
                             ) : (
-                                <View style={[fileManagementStyles.uploadPreviewIconContainer, { backgroundColor: themeStyles.isDarkTheme ? '#333333' : '#F0F0F0' }]}>
+                                <View style={[fileManagementStyles.uploadPreviewIconContainer, { backgroundColor: isDark ? '#333333' : '#F0F0F0' }]}>
                                     <Ionicons
                                         name={getFileIcon(pendingFile.type) as React.ComponentProps<typeof Ionicons>['name']}
                                         size={32}
-                                        color={themeStyles.primaryColor}
+                                        color={colors.primary}
                                     />
                                 </View>
                             )}
                             <View style={fileManagementStyles.uploadPreviewInfo}>
-                                <Text style={[fileManagementStyles.uploadPreviewName, { color: themeStyles.textColor }]} numberOfLines={1}>
+                                <Text className="text-foreground" style={fileManagementStyles.uploadPreviewName} numberOfLines={1}>
                                     {pendingFile.name}
                                 </Text>
-                                <Text style={[fileManagementStyles.uploadPreviewMeta, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                                <Text className="text-muted-foreground" style={fileManagementStyles.uploadPreviewMeta}>
                                     {formatFileSize(pendingFile.size)} • {pendingFile.type}
                                 </Text>
                             </View>
@@ -90,36 +86,38 @@ const UploadPreviewContent: React.FC<{
                                 style={fileManagementStyles.uploadPreviewRemove}
                                 onPress={() => onRemoveFile(index)}
                             >
-                                <Ionicons name="close-circle" size={24} color={themeStyles.dangerColor} />
+                                <Ionicons name="close-circle" size={24} color={colors.error} />
                             </TouchableOpacity>
                         </View>
                     );
                 })}
             </ScrollView>
 
-            <View style={[fileManagementStyles.uploadPreviewFooter, { borderTopColor: borderColor }]}>
+            <View className="border-t border-border" style={fileManagementStyles.uploadPreviewFooter}>
                 <View style={fileManagementStyles.uploadPreviewStats}>
-                    <Text style={[fileManagementStyles.uploadPreviewStatsText, { color: themeStyles.textColor }]}>
+                    <Text className="text-foreground" style={fileManagementStyles.uploadPreviewStatsText}>
                         {pendingFiles.length} file{pendingFiles.length !== 1 ? 's' : ''}
                     </Text>
-                    <Text style={[fileManagementStyles.uploadPreviewStatsText, { color: themeStyles.textColor }]}>
+                    <Text className="text-foreground" style={fileManagementStyles.uploadPreviewStatsText}>
                         {formatFileSize(totalSize)}
                     </Text>
                 </View>
                 <View style={fileManagementStyles.uploadPreviewActions}>
                     <TouchableOpacity
+                        className="border-border"
                         style={[
                             fileManagementStyles.uploadPreviewCancelButton,
-                            { borderColor, backgroundColor: 'transparent' }
+                            { backgroundColor: 'transparent' }
                         ]}
                         onPress={onCancel}
                     >
-                        <Text style={[fileManagementStyles.uploadPreviewCancelText, { color: themeStyles.textColor }]}>
+                        <Text className="text-foreground" style={fileManagementStyles.uploadPreviewCancelText}>
                             Cancel
                         </Text>
                     </TouchableOpacity>
                     <TouchableOpacity
-                        style={[fileManagementStyles.uploadPreviewConfirmButton, { backgroundColor: themeStyles.primaryColor }]}
+                        className="bg-primary"
+                        style={fileManagementStyles.uploadPreviewConfirmButton}
                         onPress={onConfirm}
                     >
                         <Ionicons name="cloud-upload" size={20} color="#FFFFFF" />
@@ -137,7 +135,6 @@ export const UploadPreview: React.FC<UploadPreviewProps> = ({
     onConfirm,
     onCancel,
     onRemoveFile,
-    themeStyles,
     inline = false,
 }) => {
     // If inline mode, render content directly without Modal
@@ -149,7 +146,6 @@ export const UploadPreview: React.FC<UploadPreviewProps> = ({
                 onConfirm={onConfirm}
                 onCancel={onCancel}
                 onRemoveFile={onRemoveFile}
-                themeStyles={themeStyles}
             />
         );
     }
@@ -167,7 +163,6 @@ export const UploadPreview: React.FC<UploadPreviewProps> = ({
                 onConfirm={onConfirm}
                 onCancel={onCancel}
                 onRemoveFile={onRemoveFile}
-                themeStyles={themeStyles}
             />
         </Modal>
     );

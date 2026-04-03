@@ -107,10 +107,15 @@ export function useAuth(): UseAuthReturn {
   } = useOxy();
 
   const signIn = useCallback(async (publicKey?: string): Promise<User> => {
-    // Check if we're on the identity provider itself (auth.oxy.so)
-    // Only auth.oxy.so has local login forms - accounts.oxy.so is a client app
+    // Check if we're on the identity provider itself
+    // Only the IdP has local login forms - other apps are client apps
+    const authWebUrl = oxyServices.config?.authWebUrl;
+    let idpHostname = 'auth.oxy.so';
+    if (authWebUrl) {
+      try { idpHostname = new URL(authWebUrl).hostname; } catch { /* malformed URL, use default */ }
+    }
     const isIdentityProvider = isWebBrowser() &&
-      window.location.hostname === 'auth.oxy.so';
+      window.location.hostname === idpHostname;
 
     // Web (not on IdP): Use popup-based authentication
     // We go straight to popup to preserve the "user gesture" (click event)
@@ -166,9 +171,10 @@ export function useAuth(): UseAuthReturn {
 
     // Web fallback: navigate to login page on auth domain
     if (isWebBrowser()) {
+      const authBase = authWebUrl || 'https://accounts.oxy.so';
       const loginUrl = window.location.hostname.includes('oxy.so')
         ? '/login'
-        : 'https://accounts.oxy.so/login';
+        : `${authBase}/login`;
       window.location.href = loginUrl;
       return new Promise(() => {}); // Never resolves, page will redirect
     }

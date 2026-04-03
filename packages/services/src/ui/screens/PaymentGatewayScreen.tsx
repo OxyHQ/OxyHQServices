@@ -12,7 +12,6 @@ import type { BaseScreenProps } from '../types/navigation';
 import { useThemeColors } from '../styles';
 import { normalizeTheme } from '../utils/themeUtils';
 import GroupedPillButtons from '../components/internal/GroupedPillButtons';
-import { useThemeStyles } from '../hooks/useThemeStyles';
 import { useI18n } from '../hooks/useI18n';
 import QRCode from 'react-native-qrcode-svg';
 
@@ -80,7 +79,6 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
 
     const normalizedTheme = normalizeTheme(theme);
     const colors = useThemeColors(normalizedTheme);
-    const themeStyles = useThemeStyles(normalizedTheme);
     const { t } = useI18n();
     const styles = useMemo(() => createPaymentStyles(colors), [colors]);
 
@@ -282,7 +280,7 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
     };
 
     return (
-        <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
+        <View style={styles.container} className="bg-background">
             <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
                 {renderCurrentStep()}
             </ScrollView>

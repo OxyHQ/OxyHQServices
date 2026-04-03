@@ -5,9 +5,7 @@ import type { BaseScreenProps } from '../../types/navigation';
 import Avatar from '../../components/Avatar';
 import { Header } from '../../components';
 import { useI18n } from '../../hooks/useI18n';
-import { useThemeStyles } from '../../hooks/useThemeStyles';
-import { normalizeTheme } from '../../utils/themeUtils';
-import { useColorScheme } from '../../hooks/useColorScheme';
+import { useTheme } from '@oxyhq/bloom/theme';
 import { useOxy } from '../../context/OxyContext';
 
 const KarmaLeaderboardScreen: React.FC<BaseScreenProps> = ({ goBack, theme, navigate }) => {
@@ -18,9 +16,7 @@ const KarmaLeaderboardScreen: React.FC<BaseScreenProps> = ({ goBack, theme, navi
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    const colorScheme = useColorScheme();
-    const normalizedTheme = normalizeTheme(theme);
-    const themeStyles = useThemeStyles(normalizedTheme, colorScheme);
+    const bloomTheme = useTheme();
     // Override primaryColor for Karma screens (purple instead of blue)
     const primaryColor = '#d169e5';
 
@@ -34,7 +30,7 @@ const KarmaLeaderboardScreen: React.FC<BaseScreenProps> = ({ goBack, theme, navi
     }, [oxyServices]);
 
     return (
-        <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
+        <View style={styles.container} className="bg-background">
             <Header
                 title={t('karma.leaderboard.title') || 'Karma Leaderboard'}
                 subtitle={t('karma.leaderboard.subtitle') || 'Top contributors in the community'}
@@ -49,7 +45,7 @@ const KarmaLeaderboardScreen: React.FC<BaseScreenProps> = ({ goBack, theme, navi
             ) : (
                 <ScrollView contentContainerStyle={styles.listContainer}>
                     {leaderboard.length === 0 ? (
-                        <Text style={[styles.placeholder, { color: themeStyles.textColor }]}>{t('karma.leaderboard.empty') || 'No leaderboard data.'}</Text>
+                        <Text style={[styles.placeholder, { color: bloomTheme.colors.text }]}>{t('karma.leaderboard.empty') || 'No leaderboard data.'}</Text>
                     ) : (
                         leaderboard.map((entry, idx) => (
                             <TouchableOpacity
@@ -60,7 +56,7 @@ const KarmaLeaderboardScreen: React.FC<BaseScreenProps> = ({ goBack, theme, navi
                             >
                                 <Text style={[styles.rank, { color: primaryColor }]}>{idx + 1}</Text>
                                 <Avatar name={entry.username || 'User'} size={40}  style={styles.avatar} />
-                                <Text style={[styles.username, { color: themeStyles.textColor }]}>{entry.username || entry.userId}</Text>
+                                <Text style={[styles.username, { color: bloomTheme.colors.text }]}>{entry.username || entry.userId}</Text>
                                 <Text style={[styles.karma, { color: primaryColor }]}>{entry.total}</Text>
                             </TouchableOpacity>
                         ))

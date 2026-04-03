@@ -5,8 +5,8 @@ import type { BaseScreenProps } from '../../types/navigation';
 import { Header } from '../../components';
 import { Ionicons } from '@expo/vector-icons';
 import { useI18n } from '../../hooks/useI18n';
-import { useThemeStyles } from '../../hooks/useThemeStyles';
-import { normalizeTheme, normalizeColorScheme } from '../../utils/themeUtils';
+import { useTheme } from '@oxyhq/bloom/theme';
+import { normalizeColorScheme } from '../../utils/themeUtils';
 import { useColorScheme } from '../../hooks/useColorScheme';
 import { Colors } from '../../constants/theme';
 import { useOxy } from '../../context/OxyContext';
@@ -31,15 +31,13 @@ const KarmaRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
     const [karmaTotal, setKarmaTotal] = useState<number>(0);
     const [isLoading, setIsLoading] = useState(true);
 
-    const normalizedTheme = normalizeTheme(theme);
-    const baseThemeStyles = useThemeStyles(normalizedTheme);
+    const bloomTheme = useTheme();
     const colorScheme = useColorScheme();
     const normalizedColorScheme = normalizeColorScheme(colorScheme);
     const colors = Colors[normalizedColorScheme];
     const themeStyles = useMemo(() => ({
-        ...baseThemeStyles,
         primaryColor: '#d169e5',
-    }), [baseThemeStyles]);
+    }), []);
 
     useEffect(() => {
         if (!user || !isAuthenticated) {
@@ -322,10 +320,10 @@ const KarmaRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
                     )}
                 </View>
 
-                <Text style={[styles.achievementName, { color: themeStyles.textColor, opacity: isLocked ? 0.5 : 1 }]}>
+                <Text style={[styles.achievementName, { color: bloomTheme.colors.text, opacity: isLocked ? 0.5 : 1 }]}>
                     {achievement.name}
                 </Text>
-                <Text style={[styles.achievementDescription, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#888888', opacity: isLocked ? 0.5 : 1 }]}>
+                <Text style={[styles.achievementDescription, { color: bloomTheme.isDark ? '#BBBBBB' : '#888888', opacity: isLocked ? 0.5 : 1 }]}>
                     {achievement.description}
                 </Text>
             </View>
@@ -334,7 +332,7 @@ const KarmaRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
 
     if (!isAuthenticated) {
         return (
-            <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
+            <View style={styles.container} className="bg-background">
                 <Header
                     title={t('karma.rewards.title') || 'Karma Rewards'}
                     subtitle={t('karma.rewards.subtitle') || 'Unlock special features and recognition'}
@@ -342,7 +340,7 @@ const KarmaRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
                     elevation="subtle"
                 />
                 <View style={styles.centerContent}>
-                    <Text style={[styles.message, { color: themeStyles.textColor }]}>
+                    <Text style={[styles.message, { color: bloomTheme.colors.text }]}>
                         {t('common.status.notSignedIn') || 'Not signed in'}
                     </Text>
                 </View>
@@ -351,7 +349,7 @@ const KarmaRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
     }
 
     return (
-        <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
+        <View style={styles.container} className="bg-background">
             <Header
                 title={t('karma.rewards.title') || 'Karma Rewards'}
                 subtitle={t('karma.rewards.subtitle') || 'Unlock special features and recognition'}
@@ -369,7 +367,7 @@ const KarmaRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
                             <Text style={[styles.currentKarma, { color: themeStyles.primaryColor }]}>
                                 {karmaTotal}
                             </Text>
-                            <Text style={[styles.karmaLabel, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#888888' }]}>
+                            <Text style={[styles.karmaLabel, { color: bloomTheme.isDark ? '#BBBBBB' : '#888888' }]}>
                                 {t('karma.center.balance') || 'Karma Points'}
                             </Text>
                         </View>
@@ -377,13 +375,13 @@ const KarmaRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
                             <Text style={[styles.achievementCount, { color: themeStyles.primaryColor }]}>
                                 {unlockedAchievements.length}
                             </Text>
-                            <Text style={[styles.achievementCountLabel, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#888888' }]}>
+                            <Text style={[styles.achievementCountLabel, { color: bloomTheme.isDark ? '#BBBBBB' : '#888888' }]}>
                                 {t('karma.achievements.unlocked') || 'Achievements'}
                             </Text>
                         </View>
                     </View>
                     <View style={styles.progressBarContainer}>
-                        <View style={[styles.progressBar, { backgroundColor: themeStyles.borderColor }]}>
+                        <View style={[styles.progressBar, { backgroundColor: bloomTheme.colors.border }]}>
                             <View
                                 style={[
                                     styles.progressBarFill,
@@ -394,7 +392,7 @@ const KarmaRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
                                 ]}
                             />
                         </View>
-                        <Text style={[styles.progressText, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#888888' }]}>
+                        <Text style={[styles.progressText, { color: bloomTheme.isDark ? '#BBBBBB' : '#888888' }]}>
                             {unlockedAchievements.length} / {achievements.length}
                         </Text>
                     </View>
@@ -403,7 +401,7 @@ const KarmaRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
                 {/* Unlocked Achievements */}
                 {unlockedAchievements.length > 0 && (
                     <>
-                        <Text style={[styles.sectionTitle, { color: themeStyles.textColor }]}>
+                        <Text style={[styles.sectionTitle, { color: bloomTheme.colors.text }]}>
                             {t('karma.achievements.unlocked') || 'Unlocked Achievements'}
                         </Text>
                         <View style={styles.achievementsGrid}>
@@ -415,7 +413,7 @@ const KarmaRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
                 {/* Locked Achievements */}
                 {lockedAchievements.length > 0 && (
                     <>
-                        <Text style={[styles.sectionTitle, { color: themeStyles.textColor }]}>
+                        <Text style={[styles.sectionTitle, { color: bloomTheme.colors.text }]}>
                             {t('karma.achievements.locked') || 'Locked Achievements'}
                         </Text>
                         <View style={styles.achievementsGrid}>

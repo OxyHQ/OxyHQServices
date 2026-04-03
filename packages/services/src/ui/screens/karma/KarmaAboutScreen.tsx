@@ -3,21 +3,17 @@ import { View, Text, StyleSheet, ScrollView, Platform } from 'react-native';
 import type { BaseScreenProps } from '../../types/navigation';
 import { Header } from '../../components';
 import { useI18n } from '../../hooks/useI18n';
-import { useThemeStyles } from '../../hooks/useThemeStyles';
-import { normalizeTheme } from '../../utils/themeUtils';
-import { useColorScheme } from '../../hooks/useColorScheme';
+import { useTheme } from '@oxyhq/bloom/theme';
 import { fontFamilies } from '../../styles/fonts';
 
 const KarmaAboutScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
     const { t } = useI18n();
-    const colorScheme = useColorScheme();
-    const normalizedTheme = normalizeTheme(theme);
-    const themeStyles = useThemeStyles(normalizedTheme, colorScheme);
+    const bloomTheme = useTheme();
     // Override primaryColor for Karma screens (purple instead of blue)
     const primaryColor = '#d169e5';
 
     return (
-        <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
+        <View style={styles.container} className="bg-background">
             <Header
                 title={t('karma.about.title') || 'About Karma'}
                 subtitle={t('karma.about.subtitle') || 'Learn about the karma system'}
@@ -26,13 +22,13 @@ const KarmaAboutScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
                 elevation="subtle"
             />
             <ScrollView contentContainerStyle={styles.contentContainer}>
-                <Text style={[styles.paragraph, { color: themeStyles.textColor }]}>
+                <Text style={[styles.paragraph, { color: bloomTheme.colors.text }]}>
                     {t('karma.about.intro') || 'Karma is a recognition of your positive actions in the Oxy Ecosystem. It cannot be sent or received directly, only earned by contributing to the community.'}
                 </Text>
                 <Text style={[styles.section, { color: primaryColor }]}>
                     {t('karma.about.how.title') || 'How to Earn Karma'}
                 </Text>
-                <Text style={[styles.paragraph, { color: themeStyles.textColor }]}>
+                <Text style={[styles.paragraph, { color: bloomTheme.colors.text }]}>
                     • {t('karma.about.how.help') || 'Helping other users'}{'\n'}
                     • {t('karma.about.how.report') || 'Reporting bugs'}{'\n'}
                     • {t('karma.about.how.contribute') || 'Contributing content'}{'\n'}
@@ -42,7 +38,7 @@ const KarmaAboutScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
                 <Text style={[styles.section, { color: primaryColor }]}>
                     {t('karma.about.why.title') || 'Why Karma?'}
                 </Text>
-                <Text style={[styles.paragraph, { color: themeStyles.textColor }]}>
+                <Text style={[styles.paragraph, { color: bloomTheme.colors.text }]}>
                     {t('karma.about.why.text') || 'Karma unlocks special features and recognition in the Oxy Ecosystem. The more you contribute, the more you earn!'}
                 </Text>
             </ScrollView>

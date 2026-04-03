@@ -1,7 +1,7 @@
 import type React from 'react';
 import Svg, { Circle, Path } from 'react-native-svg';
 import type { ViewStyle } from 'react-native';
-import { useThemeColors } from '../styles/theme';
+import { useTheme } from '@oxyhq/bloom/theme';
 
 interface OxyLogoProps {
     width?: number;
@@ -37,7 +37,7 @@ export const OxyLogo: React.FC<OxyLogoProps> = ({
     theme = 'light'
 }) => {
     // Get colors from theme
-    const themeColors = useThemeColors(theme);
+    const { colors: themeColors } = useTheme();
 
     // Use theme primary color if no fillColor is provided
     const primaryColor = fillColor || themeColors.primary;

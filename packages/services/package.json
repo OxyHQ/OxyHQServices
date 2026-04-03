@@ -1,6 +1,6 @@
 {
   "name": "@oxyhq/services",
-  "version": "6.9.30",
+  "version": "6.9.33",
   "description": "OxyHQ Expo/React Native SDK — UI components, screens, and native features",
   "main": "lib/commonjs/index.js",
   "module": "lib/module/index.js",
@@ -71,7 +71,7 @@
   },
   "dependencies": {
     "@lottiefiles/dotlottie-react": "^0.13.5",
-    "@oxyhq/bloom": "0.1.21",
+    "@oxyhq/bloom": "0.1.22",
     "@oxyhq/core": "*",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-community/netinfo": "^11.4.1",
@@ -94,6 +94,8 @@
     "zustand": "^5.0.9"
   },
   "devDependencies": {
+    "nativewind": "5.0.0-preview.3",
+    "react-native-css": "^3.0.0",
     "@biomejs/biome": "^1.9.4",
     "@commitlint/cli": "^17.6.5",
     "@commitlint/config-conventional": "^17.6.5",
@@ -135,9 +137,13 @@
     "react-native-gesture-handler": "~2.30.0",
     "react-native-reanimated": ">=4.2.0",
     "react-native-safe-area-context": "~5.6.0",
-    "react-native-svg": ">=13.0.0"
+    "react-native-svg": ">=13.0.0",
+    "nativewind": ">=4.0.0"
   },
   "peerDependenciesMeta": {
+    "nativewind": {
+      "optional": true
+    },
     "@expo/vector-icons": {
       "optional": true
     },
