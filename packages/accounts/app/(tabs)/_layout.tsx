@@ -25,33 +25,26 @@ import Animated, {
 
 const THEME_TRANSITION_MS = 280;
 const ICON_ANIM_MS = 350;
+const ICON_EASING = Easing.bezier(0.34, 1.56, 0.64, 1);
 
-/** Animated wrapper that plays rotate+scale+fade entrance when `triggerKey` changes. */
-function AnimatedThemeIcon({ triggerKey, children }: { triggerKey: string; children: React.ReactNode }) {
-  const progress = useSharedValue(0);
-  const prevKey = useRef(triggerKey);
-
-  if (prevKey.current !== triggerKey) {
-    prevKey.current = triggerKey;
-    progress.value = 0;
-    progress.value = withTiming(1, { duration: ICON_ANIM_MS, easing: Easing.bezier(0.34, 1.56, 0.64, 1) });
-  }
-
-  // On first mount, start already animated in
-  if (progress.value === 0 && prevKey.current === triggerKey) {
-    progress.value = 1;
-  }
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    opacity: progress.value,
-    transform: [
-      { rotate: `${-90 + 90 * progress.value}deg` },
-      { scale: 0.4 + 0.6 * progress.value },
-    ],
-  }));
-
-  return <Animated.View style={animatedStyle}>{children}</Animated.View>;
-}
+/** Custom entering animation: rotate(-90°→0°) + scale(0.4→1) + fade in. */
+const themeIconEntering = () => {
+  'worklet';
+  const config = { duration: ICON_ANIM_MS, easing: ICON_EASING };
+  return {
+    initialValues: {
+      opacity: 0,
+      transform: [{ rotate: '-90deg' }, { scale: 0.4 }],
+    },
+    animations: {
+      opacity: withTiming(1, config),
+      transform: [
+        { rotate: withTiming('0deg', config) },
+        { scale: withTiming(1, config) },
+      ],
+    },
+  };
+};
 
 export default function TabLayout() {
   const { mode } = useTheme();
@@ -203,9 +196,9 @@ export default function TabLayout() {
           </TouchableOpacity>
           <TouchableOpacity style={styles.circleButton} onPressIn={handlePressIn} onPress={toggleColorScheme}>
             <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconData }]}>
-              <AnimatedThemeIcon triggerKey={mode}>
+              <Animated.View key={mode} entering={themeIconEntering}>
                 <MaterialCommunityIcons name={mode === 'dark' ? 'weather-sunny' : 'weather-night'} size={22} color={darkenColor(colors.sidebarIconData)} />
-              </AnimatedThemeIcon>
+              </Animated.View>
             </View>
           </TouchableOpacity>
         </View>
