@@ -173,6 +173,11 @@ export function AuthorizePage() {
                   "expires_at",
                   tokenData.expiresAt
                 );
+                if (user) {
+                  redirectTarget.searchParams.set("user_id", user.id);
+                  if (user.username) redirectTarget.searchParams.set("username", user.username);
+                  if (user.avatar) redirectTarget.searchParams.set("avatar_url", getAvatarUrl(user.avatar));
+                }
                 if (state) redirectTarget.searchParams.set("state", state);
                 window.location.href = redirectTarget.toString();
                 return;
@@ -365,6 +370,11 @@ export function AuthorizePage() {
           url.searchParams.set("access_token", tokenData.accessToken);
           url.searchParams.set("session_id", sessionIdForApp);
           url.searchParams.set("expires_at", tokenData.expiresAt);
+          if (data.user) {
+            url.searchParams.set("user_id", data.user.id);
+            if (data.user.username) url.searchParams.set("username", data.user.username);
+            if (data.user.avatar) url.searchParams.set("avatar_url", getAvatarUrl(data.user.avatar));
+          }
           if (state) url.searchParams.set("state", state);
           window.location.href = url.toString();
         } else {
