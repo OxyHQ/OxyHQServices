@@ -62,8 +62,8 @@ export default function RootLayout() {
 
   return (
     <KeyboardProvider>
-      <AlertProvider>
-        <OxyProvider baseURL={API_URL} themeMode="system">
+      <OxyProvider baseURL={API_URL} themeMode="system">
+        <AlertProvider>
           {!appIsReady ? (
             <AppSplashScreen
               startFade={startFade}
@@ -72,8 +72,8 @@ export default function RootLayout() {
           ) : (
             <AppStackContent />
           )}
-        </OxyProvider>
-      </AlertProvider>
+        </AlertProvider>
+      </OxyProvider>
     </KeyboardProvider>
   );
 }
