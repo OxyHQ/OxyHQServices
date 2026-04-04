@@ -10,6 +10,7 @@ import { OxyProvider, ActingAsBanner } from '@oxyhq/services';
 import { useTheme } from '@oxyhq/bloom/theme';
 
 import { ScrollProvider } from '@/contexts/scroll-context';
+import { ThemeModeProvider, useThemeMode } from '@/contexts/theme-mode-context';
 import AppSplashScreen from '@/components/AppSplashScreen';
 import { AppInitializer } from '@/lib/appInitializer';
 import { AlertProvider } from '@/components/ui';
@@ -33,6 +34,16 @@ interface SplashState {
 }
 
 export default function RootLayout() {
+  return (
+    <ThemeModeProvider>
+      <RootLayoutInner />
+    </ThemeModeProvider>
+  );
+}
+
+function RootLayoutInner() {
+  const { themeMode } = useThemeMode();
+
   const [splashState, setSplashState] = useState<SplashState>({
     initializationComplete: false,
     startFade: false,
@@ -63,7 +74,7 @@ export default function RootLayout() {
 
   return (
     <KeyboardProvider>
-      <OxyProvider baseURL={API_URL} themeMode="system">
+      <OxyProvider baseURL={API_URL} themeMode={themeMode}>
         <Head>
           <title>Oxy Account</title>
           <meta name="description" content="Manage your Oxy account, security, and privacy settings" />

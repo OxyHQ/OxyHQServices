@@ -3,8 +3,8 @@ import { Drawer } from 'expo-router/drawer';
 import React, { useRef, useCallback, useState } from 'react';
 import { View, ScrollView, StyleSheet, Platform, useWindowDimensions, TextInput, TouchableOpacity } from 'react-native';
 import { useTheme } from '@oxyhq/bloom/theme';
-import { useBloomTheme } from '@oxyhq/bloom/theme';
 import { useColors } from '@/hooks/useColors';
+import { useThemeMode } from '@/contexts/theme-mode-context';
 import { DesktopSidebar, DrawerContent } from '@/components/ui';
 import { Header } from '@/components/header';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -17,7 +17,7 @@ import Animated, { useAnimatedStyle, useDerivedValue, withTiming, runOnJS } from
 
 export default function TabLayout() {
   const { mode } = useTheme();
-  const { setMode } = useBloomTheme();
+  const { toggleTheme } = useThemeMode();
   const colors = useColors();
   const { width } = useWindowDimensions();
   const router = useRouter();
@@ -58,8 +58,8 @@ export default function TabLayout() {
   }, [scrollToTop]);
 
   const toggleColorScheme = useCallback(() => {
-    setMode(mode === 'dark' ? 'light' : 'dark');
-  }, [mode, setMode]);
+    toggleTheme();
+  }, [toggleTheme]);
 
   // Update showGoToTopButton state using runOnJS to avoid reading .value during render
   const updateShowGoToTopButton = useCallback((shouldShow: boolean) => {
