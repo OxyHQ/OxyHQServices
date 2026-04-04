@@ -20,15 +20,16 @@ const FedCMClientSchema = new Schema<IFedCMClient>({
     trim: true,
     validate: {
       validator: function(v: string) {
-        // Validate that origin is a valid URL
+        // Validate that origin is a valid URL (HTTP, HTTPS, or approved native app schemes)
         try {
           const url = new URL(v);
-          return url.protocol === 'http:' || url.protocol === 'https:';
+          const allowedProtocols = ['http:', 'https:', 'astro:'];
+          return allowedProtocols.includes(url.protocol);
         } catch {
           return false;
         }
       },
-      message: 'Origin must be a valid HTTP or HTTPS URL'
+      message: 'Origin must be a valid HTTP, HTTPS, or approved native app URL'
     }
   },
   name: {

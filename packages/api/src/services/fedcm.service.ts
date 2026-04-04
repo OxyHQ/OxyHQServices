@@ -173,6 +173,14 @@ class FedCMService {
           autoSignIn: true,
           approvedAt: new Date(),
         },
+        {
+          origin: 'astro://auth',
+          name: 'Astro Browser',
+          description: 'Astro browser native auth callback',
+          approved: true,
+          autoSignIn: true,
+          approvedAt: new Date(),
+        },
       ];
 
       for (const clientData of defaultClients) {

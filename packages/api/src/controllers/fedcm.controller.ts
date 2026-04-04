@@ -68,11 +68,12 @@ export async function addApprovedClient(req: AuthRequest, res: Response) {
       return res.status(400).json({ message: 'Origin and name are required' });
     }
 
-    // Validate origin format
+    // Validate origin format (allow HTTP, HTTPS, and approved native app schemes)
     try {
       const url = new URL(origin);
-      if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-        return res.status(400).json({ message: 'Origin must use HTTP or HTTPS protocol' });
+      const allowedProtocols = ['http:', 'https:', 'astro:'];
+      if (!allowedProtocols.includes(url.protocol)) {
+        return res.status(400).json({ message: 'Origin must use HTTP, HTTPS, or an approved native app protocol' });
       }
     } catch {
       return res.status(400).json({ message: 'Invalid origin URL' });

@@ -50,15 +50,26 @@ function getDisplayName(user: UserInfo): string {
   return user.username || user.email || "User";
 }
 
+// Native app schemes that are allowed as redirect targets.
+// These correspond to registered Oxy client applications (e.g. Astro browser).
+const ALLOWED_NATIVE_SCHEMES = ["astro:"];
+
 function safeRedirectUrl(value?: string | null): string | null {
   if (!value) return null;
   try {
     const parsed = new URL(value);
-    if (parsed.protocol !== "https:" && parsed.protocol !== "http:")
-      return null;
-    if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(parsed.hostname))
-      return null;
-    return parsed.toString();
+    // Allow standard web protocols
+    if (parsed.protocol === "https:" || parsed.protocol === "http:") {
+      // Block raw IP addresses for web redirects
+      if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(parsed.hostname))
+        return null;
+      return parsed.toString();
+    }
+    // Allow registered native app schemes (no IP check needed)
+    if (ALLOWED_NATIVE_SCHEMES.includes(parsed.protocol)) {
+      return parsed.toString();
+    }
+    return null;
   } catch {
     return null;
   }
