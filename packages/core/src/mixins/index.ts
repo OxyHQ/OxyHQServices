@@ -24,6 +24,7 @@ import { OxyServicesSecurityMixin } from './OxyServices.security';
 import { OxyServicesUtilityMixin } from './OxyServices.utility';
 import { OxyServicesFeaturesMixin } from './OxyServices.features';
 import { OxyServicesTopicsMixin } from './OxyServices.topics';
+import { OxyServicesManagedAccountsMixin } from './OxyServices.managedAccounts';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type MixinFunction = (Base: any) => any;
@@ -68,6 +69,7 @@ const MIXIN_PIPELINE: MixinFunction[] = [
     OxyServicesSecurityMixin,
     OxyServicesFeaturesMixin,
     OxyServicesTopicsMixin,
+    OxyServicesManagedAccountsMixin,
 
     // Utility (last, can use all above)
     OxyServicesUtilityMixin,

@@ -74,6 +74,9 @@ export interface User {
   automation?: {
     ownerId?: string;
   };
+  // Managed account fields
+  isManagedAccount?: boolean;
+  managedBy?: string;
   [key: string]: unknown;
 }
 

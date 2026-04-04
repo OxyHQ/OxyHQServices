@@ -32,6 +32,7 @@ export type { PopupAuthOptions } from './mixins/OxyServices.popup';
 export type { RedirectAuthOptions } from './mixins/OxyServices.redirect';
 export type { ServiceTokenResponse } from './mixins/OxyServices.auth';
 export type { ServiceApp } from './mixins/OxyServices.utility';
+export type { CreateManagedAccountInput, ManagedAccountManager, ManagedAccount } from './mixins/OxyServices.managedAccounts';
 
 // --- Crypto / Identity ---
 export { KeyManager, SignatureService, RecoveryPhraseService } from './crypto';

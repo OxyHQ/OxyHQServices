@@ -131,6 +131,9 @@ export class HttpService {
   private tokenRefreshCooldownUntil: number = 0;
   private _onTokenRefreshed: ((accessToken: string) => void) | null = null;
 
+  // Acting-as identity for managed accounts
+  private _actingAsUserId: string | null = null;
+
   // Performance monitoring
   private requestMetrics = {
     totalRequests: 0,
@@ -289,6 +292,11 @@ export class HttpService {
             csrfTokenLength: csrfToken?.length,
             hasNativeAppHeader: headers['X-Native-App'] === 'true',
           });
+        }
+
+        // Add X-Acting-As header for managed account identity delegation
+        if (this._actingAsUserId) {
+          headers['X-Acting-As'] = this._actingAsUserId;
         }
 
         // Merge custom headers if provided
@@ -704,6 +712,15 @@ export class HttpService {
 
   async delete<T = unknown>(url: string, config?: Omit<RequestConfig, 'method' | 'url'>): Promise<T> {
     return this.request<T>({ method: 'DELETE', url, ...config });
+  }
+
+  // Acting-as identity management (managed accounts)
+  setActingAs(userId: string | null): void {
+    this._actingAsUserId = userId;
+  }
+
+  getActingAs(): string | null {
+    return this._actingAsUserId;
   }
 
   // Token management

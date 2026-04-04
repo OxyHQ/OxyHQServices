@@ -35,10 +35,11 @@ import billingRoutes from './routes/billing';
 import modelsStatsRoutes from './routes/models-stats';
 import platformStatsRoutes from './routes/platform-stats';
 import topicsRoutes from './routes/topics.routes';
+import managedAccountsRouter from './routes/managedAccounts';
 import { startSmtpInbound, stopSmtpInbound } from './services/smtp.inbound';
 import { smtpOutbound } from './services/smtp.outbound';
 import { startSnoozeCron, stopSnoozeCron } from './cron/snooze.cron';
-import { getEnvBoolean } from './config/env';
+import { getEnvBoolean, validateRequiredEnvVars, getSanitizedConfig, getEnvNumber } from './config/env';
 import { getDbName } from './config/db';
 import jwt from 'jsonwebtoken';
 import { logger } from './utils/logger';
@@ -47,7 +48,6 @@ import { authMiddleware, serviceAuthMiddleware } from './middleware/auth';
 import cookieParser from 'cookie-parser';
 import { csrfProtection, getCsrfToken } from './middleware/csrf';
 import { createCorsMiddleware, SOCKET_IO_CORS_CONFIG } from './config/cors';
-import { validateRequiredEnvVars, getSanitizedConfig, getEnvNumber } from './config/env';
 import { createAdapter } from '@socket.io/redis-adapter';
 import { getRedisClient, closeRedis } from './config/redis';
 import performanceMiddleware, { getMemoryStats, getConnectionPoolStats } from './middleware/performance';
@@ -429,6 +429,7 @@ app.use('/billing', billingRoutes);
 app.use('/models', modelsStatsRoutes);
 app.use('/platform-stats', platformStatsRoutes);
 app.use('/topics', topicsRoutes);
+app.use('/managed-accounts', userRateLimiter, csrfProtection, authMiddleware, managedAccountsRouter);
 
 // ActivityPub endpoints — serves actor profiles and public keys for federation.
 import { getInstanceActor, getUserActor, getUserKeyPair } from './services/federation.service';
@@ -554,14 +555,6 @@ app.get('/federation/keypair/:username', serviceAuthMiddleware, async (req: any,
     logger.error('KeyPair endpoint error:', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
-});
-
-// Add a protected route for testing
-app.get('/protected-server-route', authMiddleware, (req: any, res: Response) => {
-  res.json({ 
-    message: 'Protected server route accessed successfully',
-    user: req.user 
-  });
 });
 
 // Swagger API documentation (non-production only)

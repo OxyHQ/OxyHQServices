@@ -183,6 +183,29 @@ export class OxyServicesBase {
   }
 
   /**
+   * Set the acting-as identity for managed accounts.
+   *
+   * When set, all subsequent API requests will include the `X-Acting-As` header,
+   * causing the server to attribute actions to the managed account. The
+   * authenticated user must be an authorized manager of the target account.
+   *
+   * Pass `null` to clear and revert to the authenticated user's own identity.
+   *
+   * @param userId - The managed account user ID, or null to clear
+   */
+  public setActingAs(userId: string | null): void {
+    this.httpService.setActingAs(userId);
+  }
+
+  /**
+   * Get the current acting-as identity (managed account user ID), or null
+   * if operating as the authenticated user's own identity.
+   */
+  public getActingAs(): string | null {
+    return this.httpService.getActingAs();
+  }
+
+  /**
    * Wait for authentication to be ready
    * 
    * Optimized for high-scale usage with immediate synchronous check and adaptive polling.

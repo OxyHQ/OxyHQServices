@@ -22,6 +22,8 @@ export interface IUser extends Document {
   refreshToken?: string | null;
   authMethods?: AuthMethod[]; // Linked authentication methods for unified auth
   type?: 'local' | 'federated' | 'agent' | 'automated';
+  isManagedAccount?: boolean;
+  managedBy?: mongoose.Types.ObjectId;
   federation?: {
     actorUri?: string;  // ActivityPub actor URI (globally unique identifier)
     domain?: string;    // e.g. "mastodon.social"
@@ -355,6 +357,18 @@ const UserSchema: Schema = new Schema(
       body: { type: String, default: '' },
       startDate: { type: Date, default: null },
       endDate: { type: Date, default: null },
+    },
+    // Managed account (sub-account) support
+    isManagedAccount: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    managedBy: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+      index: { sparse: true },
     },
     // Federated (ActivityPub / fediverse) user support
     type: {
