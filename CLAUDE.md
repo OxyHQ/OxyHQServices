@@ -1,5 +1,13 @@
 # CLAUDE.md
 
+## Custom Agents
+
+Use these agents for OxyHQ work:
+
+- **oxy-services**: Any work within this repo
+- **mention-fixer**: When debugging issues that span Mention + Oxy
+- **git-ops**: Git commit, push, merge operations
+
 ## Commands
 
 ```bash
