@@ -131,7 +131,20 @@ export function LoginForm({
         goToStep("password", "forward")
     }
 
-    const setFedCMLoginStatus = () => {
+    const setFedCMLoginStatus = (sessionId: string) => {
+        // Register the session with the FedCM server so it can set
+        // the httpOnly cookie the browser needs for FedCM account lookups
+        fetch("/fedcm/set-session", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ sessionId, action: "login" }),
+        }).catch(() => {
+            // Best-effort -- FedCM is an enhancement, not critical path
+        })
+
+        // Also load the login-status endpoint in an iframe to set
+        // the Set-Login header for the browser's FedCM Login Status API
         const loginStatusFrame = document.createElement("iframe")
         loginStatusFrame.style.display = "none"
         loginStatusFrame.src = "/fedcm/login-status"
@@ -140,7 +153,7 @@ export function LoginForm({
     }
 
     const redirectAfterLogin = (sessionId: string, accessToken?: string, expiresAt?: string) => {
-        setFedCMLoginStatus()
+        setFedCMLoginStatus(sessionId)
 
         // Store credentials so authorize page can use them
         if (sessionId) sessionStorage.setItem("oxy_session_id", sessionId)

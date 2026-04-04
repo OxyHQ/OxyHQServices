@@ -161,6 +161,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@base-ui/react": "^1.1.0",
+        "@hono/node-server": "^1.14.3",
         "@hugeicons/core-free-icons": "^3.1.1",
         "@hugeicons/react": "^1.1.4",
         "@oxyhq/bloom": "0.1.25",
@@ -177,6 +178,7 @@
         "@tailwindcss/postcss": "^4",
         "class-variance-authority": "^0.7.1",
         "clsx": "^2.1.1",
+        "hono": "^4.11.7",
         "input-otp": "^1.4.2",
         "lucide-react": "^0.454.0",
         "radix-ui": "^1.4.3",
@@ -203,7 +205,7 @@
     },
     "packages/auth-sdk": {
       "name": "@oxyhq/auth",
-      "version": "2.0.3",
+      "version": "2.0.4",
       "dependencies": {
         "@tanstack/react-query": "^5.90.20",
         "sonner": "^2.0.4",
@@ -274,7 +276,7 @@
     },
     "packages/core": {
       "name": "@oxyhq/core",
-      "version": "1.11.9",
+      "version": "1.11.10",
       "dependencies": {
         "bip39": "^3.1.0",
         "buffer": "^6.0.3",
@@ -375,7 +377,7 @@
     },
     "packages/services": {
       "name": "@oxyhq/services",
-      "version": "6.9.42",
+      "version": "6.9.43",
       "dependencies": {
         "@lottiefiles/dotlottie-react": "^0.13.5",
         "@oxyhq/bloom": "0.1.25",

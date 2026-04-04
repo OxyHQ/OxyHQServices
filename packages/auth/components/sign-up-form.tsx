@@ -113,6 +113,14 @@ export function SignUpForm({
                 return
             }
 
+            // Register session with the FedCM server for cross-domain SSO
+            fetch("/fedcm/set-session", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                credentials: "include",
+                body: JSON.stringify({ sessionId: payload.sessionId, action: "login" }),
+            }).catch(() => {})
+
             // Set FedCM login status via iframe
             const loginStatusFrame = document.createElement("iframe")
             loginStatusFrame.style.display = "none"

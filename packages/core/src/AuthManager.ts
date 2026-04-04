@@ -48,6 +48,17 @@ export interface AuthManagerConfig {
   autoRefresh?: boolean;
   /** Token refresh interval in milliseconds (default: 5 minutes before expiry) */
   refreshBuffer?: number;
+  /** Enable cross-tab coordination via BroadcastChannel (default: true in browsers) */
+  crossTabSync?: boolean;
+}
+
+/**
+ * Messages sent between tabs via BroadcastChannel for token refresh coordination.
+ */
+interface CrossTabMessage {
+  type: 'refresh_starting' | 'tokens_refreshed' | 'signed_out';
+  sessionId?: string;
+  timestamp: number;
 }
 
 /**
@@ -145,21 +156,117 @@ export class AuthManager {
   private currentUser: MinimalUserData | null = null;
   private refreshTimer: ReturnType<typeof setTimeout> | null = null;
   private refreshPromise: Promise<boolean> | null = null;
-  private config: Required<AuthManagerConfig>;
+  private config: Required<Omit<AuthManagerConfig, 'crossTabSync'>> & { crossTabSync: boolean };
+
+  /** Tracks the access token this instance last knew about, for cross-tab adoption. */
+  private _lastKnownAccessToken: string | null = null;
+
+  /** BroadcastChannel for coordinating token refreshes across browser tabs. */
+  private _broadcastChannel: BroadcastChannel | null = null;
+
+  /** Set to true when another tab broadcasts a successful refresh, so this tab can skip its own. */
+  private _otherTabRefreshed = false;
 
   constructor(oxyServices: OxyServices, config: AuthManagerConfig = {}) {
     this.oxyServices = oxyServices;
+    const crossTabSync = config.crossTabSync ?? (typeof BroadcastChannel !== 'undefined');
     this.config = {
       storage: config.storage ?? this.getDefaultStorage(),
       autoRefresh: config.autoRefresh ?? true,
       refreshBuffer: config.refreshBuffer ?? 5 * 60 * 1000, // 5 minutes
+      crossTabSync,
     };
     this.storage = this.config.storage;
 
     // Persist tokens to storage when HttpService refreshes them automatically
     this.oxyServices.httpService.onTokenRefreshed = (accessToken: string) => {
+      this._lastKnownAccessToken = accessToken;
       this.storage.setItem(STORAGE_KEYS.ACCESS_TOKEN, accessToken);
     };
+
+    // Setup cross-tab coordination in browser environments
+    if (this.config.crossTabSync) {
+      this._initBroadcastChannel();
+    }
+  }
+
+  /**
+   * Initialize BroadcastChannel for cross-tab token refresh coordination.
+   * Only called in browser environments where BroadcastChannel is available.
+   */
+  private _initBroadcastChannel(): void {
+    if (typeof BroadcastChannel === 'undefined') return;
+
+    try {
+      this._broadcastChannel = new BroadcastChannel('oxy_auth_sync');
+      this._broadcastChannel.onmessage = (event: MessageEvent<CrossTabMessage>) => {
+        this._handleCrossTabMessage(event.data);
+      };
+    } catch {
+      // BroadcastChannel not supported or blocked (e.g., opaque origins)
+      this._broadcastChannel = null;
+    }
+  }
+
+  /**
+   * Handle messages from other tabs about token refresh activity.
+   */
+  private async _handleCrossTabMessage(message: CrossTabMessage): Promise<void> {
+    if (!message || !message.type) return;
+
+    switch (message.type) {
+      case 'tokens_refreshed': {
+        // Another tab successfully refreshed. Signal to cancel our pending refresh.
+        this._otherTabRefreshed = true;
+
+        // Adopt the new tokens from shared storage
+        const newToken = await this.storage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
+        if (newToken && newToken !== this._lastKnownAccessToken) {
+          this._lastKnownAccessToken = newToken;
+          this.oxyServices.httpService.setTokens(newToken);
+
+          // Re-read session for updated expiry and schedule next refresh
+          const sessionJson = await this.storage.getItem(STORAGE_KEYS.SESSION);
+          if (sessionJson) {
+            try {
+              const session = JSON.parse(sessionJson);
+              if (session.expiresAt && this.config.autoRefresh) {
+                this.setupTokenRefresh(session.expiresAt);
+              }
+            } catch {
+              // Ignore parse errors
+            }
+          }
+        }
+        break;
+      }
+
+      case 'signed_out': {
+        // Another tab signed out. Clear our local state to stay consistent.
+        if (this.refreshTimer) {
+          clearTimeout(this.refreshTimer);
+          this.refreshTimer = null;
+        }
+        this.refreshPromise = null;
+        this._lastKnownAccessToken = null;
+        this.oxyServices.httpService.setTokens('');
+        this.currentUser = null;
+        this.notifyListeners();
+        break;
+      }
+      // 'refresh_starting' is informational; we don't need to act on it currently
+    }
+  }
+
+  /**
+   * Broadcast a message to other tabs.
+   */
+  private _broadcast(message: CrossTabMessage): void {
+    try {
+      this._broadcastChannel?.postMessage(message);
+    } catch {
+      // Channel closed or unavailable
+    }
   }
 
   /**
@@ -212,6 +319,7 @@ export class AuthManager {
   ): Promise<void> {
     // Store tokens
     if (session.accessToken) {
+      this._lastKnownAccessToken = session.accessToken;
       await this.storage.setItem(STORAGE_KEYS.ACCESS_TOKEN, session.accessToken);
       this.oxyServices.httpService.setTokens(session.accessToken);
     }
@@ -287,6 +395,9 @@ export class AuthManager {
   }
 
   private async _doRefreshToken(): Promise<boolean> {
+    // Reset the cross-tab flag before starting
+    this._otherTabRefreshed = false;
+
     // Get session info to find sessionId for token refresh
     const sessionJson = await this.storage.getItem(STORAGE_KEYS.SESSION);
     if (!sessionJson) {
@@ -298,14 +409,31 @@ export class AuthManager {
       const session = JSON.parse(sessionJson);
       sessionId = session.sessionId;
       if (!sessionId) return false;
-} catch (err) {
+    } catch (err) {
       console.error('AuthManager: Failed to parse session from storage.', err);
       return false;
     }
 
+    // Record the token we know about before attempting refresh
+    const tokenBeforeRefresh = this._lastKnownAccessToken;
+
+    // Broadcast that we're starting a refresh (informational for other tabs)
+    this._broadcast({ type: 'refresh_starting', sessionId, timestamp: Date.now() });
+
     try {
       await retryAsync(
         async () => {
+          // Before each attempt, check if another tab already refreshed
+          if (this._otherTabRefreshed) {
+            const adoptedToken = await this.storage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
+            if (adoptedToken && adoptedToken !== tokenBeforeRefresh) {
+              // Another tab succeeded. Adopt its tokens and short-circuit.
+              this._lastKnownAccessToken = adoptedToken;
+              this.oxyServices.httpService.setTokens(adoptedToken);
+              return;
+            }
+          }
+
           const httpService = this.oxyServices.httpService as HttpService;
           // Use session-based token endpoint which handles auto-refresh server-side
           const response = await httpService.request<{ accessToken: string; expiresAt: string }>({
@@ -320,6 +448,7 @@ export class AuthManager {
           }
 
           // Update access token in storage and HTTP client
+          this._lastKnownAccessToken = response.accessToken;
           await this.storage.setItem(STORAGE_KEYS.ACCESS_TOKEN, response.accessToken);
           this.oxyServices.httpService.setTokens(response.accessToken);
 
@@ -329,7 +458,7 @@ export class AuthManager {
               const session = JSON.parse(sessionJson);
               session.expiresAt = response.expiresAt;
               await this.storage.setItem(STORAGE_KEYS.SESSION, JSON.stringify(session));
-} catch (err) {
+            } catch (err) {
               // Ignore parse errors for session update, but log for debugging.
               console.error('AuthManager: Failed to re-save session after token refresh.', err);
             }
@@ -338,6 +467,9 @@ export class AuthManager {
               this.setupTokenRefresh(response.expiresAt);
             }
           }
+
+          // Broadcast success so other tabs can adopt these tokens
+          this._broadcast({ type: 'tokens_refreshed', sessionId, timestamp: Date.now() });
         },
         2,    // 2 retries = 3 total attempts
         1000, // 1s base delay with exponential backoff + jitter
@@ -350,7 +482,42 @@ export class AuthManager {
       );
       return true;
     } catch {
-      // All retry attempts exhausted, clear session
+      // All retry attempts exhausted. Before clearing the session, check if
+      // another tab managed to refresh successfully while we were retrying.
+      // Since all tabs share the same storage (localStorage), a successful
+      // refresh from another tab will have written a different access token.
+      const currentStoredToken = await this.storage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
+      if (currentStoredToken && currentStoredToken !== tokenBeforeRefresh) {
+        // Another tab refreshed successfully. Adopt its tokens instead of logging out.
+        this._lastKnownAccessToken = currentStoredToken;
+        this.oxyServices.httpService.setTokens(currentStoredToken);
+
+        // Restore user from storage in case it was updated
+        const userJson = await this.storage.getItem(STORAGE_KEYS.USER);
+        if (userJson) {
+          try {
+            this.currentUser = JSON.parse(userJson);
+          } catch {
+            // Ignore parse errors
+          }
+        }
+
+        // Re-read session expiry and schedule next refresh
+        const updatedSessionJson = await this.storage.getItem(STORAGE_KEYS.SESSION);
+        if (updatedSessionJson) {
+          try {
+            const session = JSON.parse(updatedSessionJson);
+            if (session.expiresAt && this.config.autoRefresh) {
+              this.setupTokenRefresh(session.expiresAt);
+            }
+          } catch {
+            // Ignore parse errors
+          }
+        }
+        return true;
+      }
+
+      // No other tab rescued us -- truly clear the session
       await this.clearSession();
       this.currentUser = null;
       this.notifyListeners();
@@ -394,9 +561,13 @@ export class AuthManager {
 
     // Clear HTTP client tokens
     this.oxyServices.httpService.setTokens('');
+    this._lastKnownAccessToken = null;
 
     // Clear storage
     await this.clearSession();
+
+    // Notify other tabs so they also sign out
+    this._broadcast({ type: 'signed_out', timestamp: Date.now() });
 
     // Update state and notify
     this.currentUser = null;
@@ -479,6 +650,7 @@ export class AuthManager {
       // Restore token to HTTP client
       const token = await this.storage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
       if (token) {
+        this._lastKnownAccessToken = token;
         this.oxyServices.httpService.setTokens(token);
       }
 
@@ -520,6 +692,16 @@ export class AuthManager {
       this.refreshTimer = null;
     }
     this.listeners.clear();
+
+    // Close BroadcastChannel
+    if (this._broadcastChannel) {
+      try {
+        this._broadcastChannel.close();
+      } catch {
+        // Ignore close errors
+      }
+      this._broadcastChannel = null;
+    }
   }
 }
 

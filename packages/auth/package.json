@@ -5,11 +5,15 @@
   "type": "module",
   "scripts": {
     "dev": "vite --port 3002",
+    "dev:server": "bun run --watch server/index.ts",
     "build": "vite build",
-    "start": "vite preview --port 3002",
+    "build:server": "bun build server/index.ts --outdir dist-server --target node --format esm",
+    "build:all": "bun run build && bun run build:server",
+    "start": "bun run dist-server/index.js",
     "lint": "eslint"
   },
   "dependencies": {
+    "@hono/node-server": "^1.14.3",
     "@oxyhq/bloom": "0.1.25",
     "@base-ui/react": "^1.1.0",
     "@hugeicons/core-free-icons": "^3.1.1",
@@ -27,6 +31,7 @@
     "@tailwindcss/postcss": "^4",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "hono": "^4.11.7",
     "input-otp": "^1.4.2",
     "lucide-react": "^0.454.0",
     "radix-ui": "^1.4.3",

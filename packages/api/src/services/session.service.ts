@@ -25,6 +25,7 @@ const SESSION_EXPIRES_IN = 7 * 24 * 60 * 60 * 1000; // 7 days
 const ACCESS_TOKEN_EXPIRES_IN = '15m';
 const REFRESH_TOKEN_EXPIRES_IN = '7d';
 const OBJECT_ID_LENGTH = 24; // MongoDB ObjectId hex string length
+const TOKEN_ROTATION_GRACE_PERIOD_MS = 30_000; // 30 seconds grace period for concurrent tab refreshes
 
 /**
  * Extract userId string from various possible formats (ObjectId, populated object, string)
@@ -440,17 +441,51 @@ class SessionService {
       const payload = validationResult.payload;
       const sessionId = payload.sessionId;
 
-      const session = await Session.findOne({
+      // First, try matching the current refresh token (fast path)
+      let session = await Session.findOne({
         sessionId,
         refreshToken,
         isActive: true,
         expiresAt: { $gt: new Date() }
       });
 
+      // If no match on current token, check if this is a recently-rotated token (grace period).
+      // This handles the multi-tab race condition: Tab A rotates the token, Tab B still holds
+      // the old token. If within the grace period, return the already-rotated tokens.
       if (!session) {
+        const now = new Date();
+        const graceWindowStart = new Date(now.getTime() - TOKEN_ROTATION_GRACE_PERIOD_MS);
+
+        const graceSession = await Session.findOne({
+          sessionId,
+          previousRefreshToken: refreshToken,
+          tokenRotatedAt: { $gte: graceWindowStart },
+          isActive: true,
+          expiresAt: { $gt: now }
+        });
+
+        if (graceSession) {
+          // Another tab already rotated. Return the current (already-rotated) tokens
+          // without generating new ones, making this idempotent within the grace window.
+          logger.info('[SessionService] Refresh token grace period used', {
+            sessionId: sessionId.substring(0, 8),
+          });
+
+          sessionCache.invalidate(sessionId);
+          sessionCache.set(sessionId, graceSession);
+
+          return {
+            accessToken: graceSession.accessToken,
+            refreshToken: graceSession.refreshToken,
+            session: graceSession
+          };
+        }
+
+        // No grace period match either -- token is truly invalid
         return null;
       }
 
+      // Standard rotation: generate new tokens and store the old one for grace period
       const now = new Date();
       const { accessToken: newAccessToken, refreshToken: newRefreshToken } = generateSessionTokens(
         payload.userId || session.userId.toString(),
@@ -458,6 +493,8 @@ class SessionService {
         payload.deviceId || session.deviceId
       );
 
+      session.previousRefreshToken = session.refreshToken;
+      session.tokenRotatedAt = now;
       session.accessToken = newAccessToken;
       session.refreshToken = newRefreshToken;
       session.lastRefresh = now;
@@ -466,7 +503,7 @@ class SessionService {
 
       sessionCache.invalidate(sessionId);
       sessionCache.set(sessionId, session);
-      
+
       return {
         accessToken: newAccessToken,
         refreshToken: newRefreshToken,
