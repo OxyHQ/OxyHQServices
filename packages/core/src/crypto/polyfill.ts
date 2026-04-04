@@ -31,28 +31,36 @@ type CryptoLike = {
 
 // Cache for expo-crypto module (lazy loaded only in React Native)
 let expoCryptoModule: { getRandomBytes: (count: number) => Uint8Array } | null = null;
-let expoCryptoLoadAttempted = false;
+let expoCryptoLoadPromise: Promise<void> | null = null;
 
-function getRandomBytesSync(byteCount: number): Uint8Array {
-  if (!expoCryptoLoadAttempted) {
-    expoCryptoLoadAttempted = true;
+/**
+ * Eagerly start loading expo-crypto. The module is cached once resolved so
+ * the synchronous getRandomValues shim can read from it immediately.
+ * Uses dynamic import with variable indirection to prevent ESM bundlers
+ * (Vite, webpack) from statically resolving the specifier.
+ */
+function startExpoCryptoLoad(): void {
+  if (expoCryptoLoadPromise) return;
+  expoCryptoLoadPromise = (async () => {
     try {
-      // Only use require() in CJS environments (Metro/Node). In ESM (Vite/browser),
-      // crypto.getRandomValues exists natively so this code path is never reached.
-      if (typeof require !== 'undefined') {
-        const moduleName = 'expo-crypto';
-        expoCryptoModule = require(moduleName);
-      }
+      const moduleName = 'expo-crypto';
+      expoCryptoModule = await import(moduleName);
     } catch {
       // expo-crypto not available — expected in non-RN environments
     }
-  }
+  })();
+}
+
+function getRandomBytesSync(byteCount: number): Uint8Array {
+  // Kick off loading if not already started (should have been started at module init)
+  startExpoCryptoLoad();
   if (expoCryptoModule) {
     return expoCryptoModule.getRandomBytes(byteCount);
   }
   throw new Error(
     'No crypto.getRandomValues implementation available. ' +
-    'In React Native, install expo-crypto.'
+    'In React Native, install expo-crypto. ' +
+    'If expo-crypto is installed, ensure the polyfill module is imported early enough for the async load to complete.'
   );
 }
 
@@ -67,8 +75,11 @@ const cryptoPolyfill: CryptoLike = {
 
 // Only polyfill if crypto or crypto.getRandomValues is not available
 if (typeof globalObject.crypto === 'undefined') {
+  // Start loading expo-crypto eagerly so it is ready by the time getRandomValues is called
+  startExpoCryptoLoad();
   (globalObject as unknown as { crypto: CryptoLike }).crypto = cryptoPolyfill;
 } else if (typeof globalObject.crypto.getRandomValues !== 'function') {
+  startExpoCryptoLoad();
   (globalObject.crypto as CryptoLike).getRandomValues = cryptoPolyfill.getRandomValues;
 }
 

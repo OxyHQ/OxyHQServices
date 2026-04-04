@@ -719,10 +719,20 @@ router.post('/session/authorize/:sessionToken', validate({ params: authSessionTo
  */
 router.post('/session/cancel/:sessionToken', validate({ params: authSessionTokenParams }), asyncHandler(async (req, res) => {
   const { sessionToken } = req.params;
+  const { appId } = req.body;
+
+  if (!appId) {
+    throw new BadRequestError('appId is required');
+  }
 
   const authSession = await AuthSession.findOne({ sessionToken });
   if (!authSession) {
     throw new NotFoundError('Auth session not found');
+  }
+
+  // Verify the caller owns this session by matching the appId
+  if (authSession.appId !== appId) {
+    throw new ForbiddenError('Not authorized to cancel this session');
   }
 
   authSession.status = 'cancelled';

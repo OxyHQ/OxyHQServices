@@ -10,7 +10,7 @@ import {
   type ReactNode,
 } from 'react';
 import { OxyServices } from '@oxyhq/core';
-import type { User, ApiError } from '@oxyhq/core';
+import type { User, ApiError, SessionLoginResponse } from '@oxyhq/core';
 import { KeyManager } from '@oxyhq/core';
 import type { ClientSession } from '@oxyhq/core';
 import { toast } from '../../lib/sonner';
@@ -58,13 +58,7 @@ export interface OxyContextState {
    * Handle session from popup authentication
    * Updates auth state, persists session to storage
    */
-  handlePopupSession: (session: {
-    sessionId: string;
-    accessToken?: string;
-    expiresAt?: string;
-    user: User;
-    deviceId?: string;
-  }) => Promise<void>;
+  handlePopupSession: (session: SessionLoginResponse) => Promise<void>;
 
   // Session management
   logout: (targetSessionId?: string) => Promise<void>;
@@ -450,7 +444,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
   // Web SSO: Automatically check for cross-domain session on web platforms
   // Also used for popup auth - updates all state and persists session
-  const handleWebSSOSession = useCallback(async (session: any) => {
+  const handleWebSSOSession = useCallback(async (session: SessionLoginResponse) => {
     if (!session?.user || !session?.sessionId) {
       if (__DEV__) {
         loggerUtil.warn('handleWebSSOSession: Invalid session', { component: 'OxyContext' });
@@ -476,8 +470,19 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
     updateSessions([clientSession], { merge: true });
     setActiveSessionId(session.sessionId);
-    loginSuccess(session.user);
-    onAuthStateChange?.(session.user);
+
+    // Fetch the full user profile now that we have a valid access token.
+    // The session only carries MinimalUserData; the store and callbacks expect a full User.
+    let fullUser: User;
+    try {
+      fullUser = await oxyServices.getCurrentUser();
+    } catch {
+      // If the profile fetch fails, fall back to the minimal data from the session
+      // so the user is still logged in (the store accepts User, but the shapes overlap at runtime).
+      fullUser = session.user as unknown as User;
+    }
+    loginSuccess(fullUser);
+    onAuthStateChange?.(fullUser);
 
     // Persist to storage
     if (storage) {
@@ -567,7 +572,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       pendingIdPCleanupRef.current?.();
       pendingIdPCleanupRef.current = null;
     };
-  }, [user, initialized, clearSessionState]);
+  }, [user, initialized, clearSessionState, authWebUrl]);
 
   const activeSession = activeSessionId
     ? sessions.find((session) => session.sessionId === activeSessionId)

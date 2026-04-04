@@ -87,7 +87,7 @@ export const fetchSessionsWithFallback = async (
     const deviceSessions = await oxyServices.getDeviceSessions(sessionId);
     return mapSessionsToClient(deviceSessions, fallbackDeviceId, fallbackUserId);
   } catch (error) {
-    if (__DEV__ && logger) {
+    if (process.env.NODE_ENV !== 'production' && logger) {
       logger('Failed to get device sessions, falling back to user sessions', error);
     }
 

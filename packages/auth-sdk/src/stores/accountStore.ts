@@ -233,7 +233,7 @@ export const useAccountStore = create<AccountState>((set, get) => ({
                 get().setAccounts(ordered);
             } catch (error) {
                 const errorMessage = error instanceof Error ? error.message : 'Failed to load accounts';
-                if (__DEV__) {
+                if (process.env.NODE_ENV !== 'production') {
                     console.error('AccountStore: Failed to load accounts:', error);
                 }
                 set({ error: errorMessage });
@@ -242,7 +242,7 @@ export const useAccountStore = create<AccountState>((set, get) => ({
             }
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Failed to load accounts';
-            if (__DEV__) {
+            if (process.env.NODE_ENV !== 'production') {
                 console.error('AccountStore: Failed to load accounts:', error);
             }
             set({ error: errorMessage, loading: false });

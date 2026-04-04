@@ -43,7 +43,7 @@ import { getDbName } from './config/db';
 import jwt from 'jsonwebtoken';
 import { logger } from './utils/logger';
 import { Response } from 'express';
-import { authMiddleware } from './middleware/auth';
+import { authMiddleware, serviceAuthMiddleware } from './middleware/auth';
 import cookieParser from 'cookie-parser';
 import { csrfProtection, getCsrfToken } from './middleware/csrf';
 import { createCorsMiddleware, SOCKET_IO_CORS_CONFIG } from './config/cors';
@@ -407,7 +407,7 @@ app.use("/storage", userRateLimiter, csrfProtection, storageRoutes);
 app.use("/search", searchRoutes);
 app.use("/profiles", csrfProtection, profilesRouter);
 app.use("/users", userRateLimiter, csrfProtection, usersRouter); // Per-user rate limiting for authenticated routes
-app.use("/session", userRateLimiter, sessionRouter); // SDK uses /session/token/:id
+app.use("/session", userRateLimiter, csrfProtection, sessionRouter); // SDK uses /session/token/:id
 app.use("/privacy", userRateLimiter, csrfProtection, privacyRoutes);
 app.use("/analytics", userRateLimiter, authMiddleware, analyticsRoutes);
 app.use('/payments', userRateLimiter, csrfProtection, paymentRoutes);
@@ -432,6 +432,9 @@ app.use('/topics', topicsRoutes);
 
 // ActivityPub endpoints — serves actor profiles and public keys for federation.
 import { getInstanceActor, getUserActor, getUserKeyPair } from './services/federation.service';
+
+// Federation domain constant — used by nodeinfo, webfinger, and actor endpoints
+const AP_DOMAIN = process.env.FEDERATION_DOMAIN || 'oxy.so';
 
 // Instance actor
 app.get('/ap/actor', async (_req: any, res: Response) => {
@@ -509,7 +512,6 @@ app.get('/.well-known/webfinger', async (req: any, res: Response) => {
 
     const username = acct.substring(0, atIndex);
     const domain = acct.substring(atIndex + 1);
-    const AP_DOMAIN = process.env.FEDERATION_DOMAIN || 'oxy.so';
 
     if (domain !== AP_DOMAIN) return res.status(404).json({ error: 'Domain not served here' });
 
@@ -540,7 +542,8 @@ app.get('/.well-known/webfinger', async (req: any, res: Response) => {
 });
 
 // Internal API: get key pair for a user (used by Mention backend for signing)
-app.get('/federation/keypair/:username', async (req: any, res: Response) => {
+// Protected: only accessible with a valid service token (internal Oxy services)
+app.get('/federation/keypair/:username', serviceAuthMiddleware, async (req: any, res: Response) => {
   try {
     const { username } = req.params;
     const keyPair = await getUserKeyPair(username);

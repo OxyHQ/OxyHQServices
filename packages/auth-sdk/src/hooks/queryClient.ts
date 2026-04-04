@@ -18,7 +18,7 @@ export const createPersistenceAdapter = (storage: StorageInterface) => {
         });
         await storage.setItem(QUERY_CACHE_KEY, serialized);
       } catch (error) {
-        if (__DEV__) {
+        if (process.env.NODE_ENV !== 'production') {
           console.warn('[QueryClient] Failed to persist cache:', error);
         }
       }
@@ -46,7 +46,7 @@ export const createPersistenceAdapter = (storage: StorageInterface) => {
 
         return parsed.clientState;
       } catch (error) {
-        if (__DEV__) {
+        if (process.env.NODE_ENV !== 'production') {
           console.warn('[QueryClient] Failed to restore cache:', error);
         }
         return undefined;
@@ -56,7 +56,7 @@ export const createPersistenceAdapter = (storage: StorageInterface) => {
       try {
         await storage.removeItem(QUERY_CACHE_KEY);
       } catch (error) {
-        if (__DEV__) {
+        if (process.env.NODE_ENV !== 'production') {
           console.warn('[QueryClient] Failed to remove cache:', error);
         }
       }

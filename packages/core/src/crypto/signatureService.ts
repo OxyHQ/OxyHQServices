@@ -86,11 +86,11 @@ export class SignatureService {
     }
 
     // In Node.js, use Node's crypto module
+    // Variable indirection prevents bundlers (Vite, webpack) from statically resolving this
     if (isNodeJS()) {
       try {
-        // eslint-disable-next-line @typescript-eslint/no-implied-eval
-        const getCrypto = new Function('return require("crypto")');
-        const nodeCrypto = getCrypto();
+        const cryptoModuleName = 'crypto';
+        const nodeCrypto = await import(cryptoModuleName);
         return nodeCrypto.randomBytes(32).toString('hex');
       } catch {
         // Fall through to Web Crypto API
@@ -162,7 +162,10 @@ export class SignatureService {
         // In React Native, use async verify instead
         throw new Error('verifySync should only be used in Node.js. Use verify() in React Native.');
       }
-      // Use Function constructor to prevent Metro bundler from statically analyzing this require
+      // Intentionally using Function constructor here: this method is synchronous by design
+      // (Node.js backend hot-path) so we cannot use `await import()`. The Function constructor
+      // prevents Metro/bundlers from statically resolving the require. This is acceptable because
+      // verifySync is gated by isNodeJS() and will never execute in browser/RN environments.
       // eslint-disable-next-line @typescript-eslint/no-implied-eval
       const getCrypto = new Function('return require("crypto")');
       const crypto = getCrypto();

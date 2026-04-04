@@ -91,7 +91,7 @@ const createNativeStorage = async (): Promise<StorageInterface> => {
     asyncStorageInstance = asyncStorageModule.default as unknown as StorageInterface;
     return asyncStorageInstance;
   } catch (error) {
-    if (__DEV__) {
+    if (process.env.NODE_ENV !== 'production') {
       console.error('Failed to import AsyncStorage:', error);
     }
     throw new Error('AsyncStorage is required in React Native environment');

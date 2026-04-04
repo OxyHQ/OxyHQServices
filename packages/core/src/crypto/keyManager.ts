@@ -102,13 +102,11 @@ async function getSecureRandomBytes(length: number): Promise<Uint8Array> {
   }
   
   // In Node.js, use Node's crypto module
-  // Use Function constructor to prevent Metro bundler from statically analyzing this require
-  // This ensures the require is only evaluated in Node.js runtime, not during Metro bundling
+  // Variable indirection prevents bundlers (Vite, webpack) from statically resolving this
   try {
-    // eslint-disable-next-line @typescript-eslint/no-implied-eval
-    const getCrypto = new Function('return require("crypto")');
-    const crypto = getCrypto();
-    return new Uint8Array(crypto.randomBytes(length));
+    const cryptoModuleName = 'crypto';
+    const nodeCrypto = await import(cryptoModuleName);
+    return new Uint8Array(nodeCrypto.randomBytes(length));
   } catch (error) {
     // Fallback to expo-crypto if Node crypto fails
     const Crypto = await initExpoCrypto();

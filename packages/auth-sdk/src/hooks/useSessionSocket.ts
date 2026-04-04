@@ -114,7 +114,7 @@ export function useSessionSocket(options?: UseSessionSocketOptions) {
           try {
             await clearSessionStateRef.current();
           } catch (error) {
-            if (__DEV__) {
+            if (process.env.NODE_ENV !== 'production') {
               logger.error('Failed to clear session state after session_removed', error instanceof Error ? error : new Error(String(error)), { component: 'useSessionSocket' });
             }
           }
@@ -139,7 +139,7 @@ export function useSessionSocket(options?: UseSessionSocketOptions) {
           try {
             await clearSessionStateRef.current();
           } catch (error) {
-            if (__DEV__) {
+            if (process.env.NODE_ENV !== 'production') {
               logger.error('Failed to clear session state after device_removed', error instanceof Error ? error : new Error(String(error)), { component: 'useSessionSocket' });
             }
           }
@@ -164,7 +164,7 @@ export function useSessionSocket(options?: UseSessionSocketOptions) {
           try {
             await clearSessionStateRef.current();
           } catch (error) {
-            if (__DEV__) {
+            if (process.env.NODE_ENV !== 'production') {
               logger.error('Failed to clear session state after sessions_removed', error instanceof Error ? error : new Error(String(error)), { component: 'useSessionSocket' });
             }
           }
