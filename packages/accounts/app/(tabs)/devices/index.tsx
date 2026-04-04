@@ -50,14 +50,6 @@ export default function DevicesScreen() {
       setError(null);
       try {
         const devicesData = await oxyServices.getUserDevices();
-
-        // Debug logging to verify data consistency
-        console.log('[Devices Screen] Fetched devices:', {
-          count: devicesData?.length || 0,
-          deviceIds: devicesData?.map((d: any) => d.deviceId || d.id),
-          devices: devicesData,
-        });
-
         setDevices(devicesData || []);
       } catch (err: any) {
         console.error('Failed to fetch devices:', err);
@@ -240,11 +232,11 @@ export default function DevicesScreen() {
                   if (oxyServices) {
                     setLoading(true);
                     oxyServices.getUserDevices()
-                      .then((devicesData) => {
+                      .then((devicesData: Device[]) => {
                         setDevices(devicesData || []);
                         setLoading(false);
                       })
-                      .catch((err) => {
+                      .catch((err: Error) => {
                         setError(err?.message || 'Failed to load devices');
                         setLoading(false);
                       });

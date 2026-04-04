@@ -1,6 +1,5 @@
-import type React from 'react';
-import { useEffect, useRef, useState, type FC } from 'react';
-import { AppState, Platform, useColorScheme } from 'react-native';
+import { lazy, Suspense, useEffect, useRef, useState, type ComponentType, type FC, type ReactNode } from 'react';
+import { AppState, Platform } from 'react-native';
 import type { OxyProviderProps } from '../types/navigation';
 import { OxyContextProvider, type OxyContextProviderProps } from '../context/OxyContext';
 import { QueryClientProvider, focusManager, onlineManager } from '@tanstack/react-query';
@@ -16,39 +15,27 @@ setupFonts();
 // Detect if running on web
 const isWeb = Platform.OS === 'web';
 
-// Conditionally import components
-let KeyboardProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => <>{children}</>;
-let BottomSheetRouter: React.ComponentType | null = null;
-let SignInModal: React.ComponentType | null = null;
+// Lazy-load optional components (avoids require() for ESM compatibility).
+// The .then() extracts + casts the default export so that `lazy()` sees
+// `Promise<{ default: ComponentType }>` instead of the full module namespace.
+const LazyBottomSheetRouter = lazy((): Promise<{ default: ComponentType }> =>
+    import('./BottomSheetRouter.js').then(
+        (mod) => ({ default: mod.default as unknown as ComponentType }),
+        (error) => {
+            if (__DEV__) {
+                console.error('[OxyProvider] Failed to load BottomSheetRouter:', error);
+            }
+            return { default: (() => null) as FC };
+        },
+    ),
+);
 
-// KeyboardProvider only on native
-if (!isWeb) {
-    try {
-        KeyboardProvider = require('react-native-keyboard-controller').KeyboardProvider;
-    } catch {
-        // KeyboardProvider not available
-    }
-}
-
-// BottomSheetRouter works on all platforms
-try {
-    BottomSheetRouter = require('./BottomSheetRouter').default;
-} catch (error) {
-    if (__DEV__) {
-        console.error('[OxyProvider] Failed to load BottomSheetRouter:', error);
-    }
-}
-
-// SignInModal works on all platforms
-try {
-    SignInModal = require('./SignInModal').default;
-} catch {
-    // SignInModal not available
-}
-
-if (__DEV__ && !BottomSheetRouter) {
-    console.warn('[OxyProvider] BottomSheetRouter is null — bottom sheet navigation will not work. Check that BottomSheetRouter.tsx and its dependencies are importable.');
-}
+const LazySignInModal = lazy((): Promise<{ default: ComponentType }> =>
+    import('./SignInModal.js').then(
+        (mod) => ({ default: mod.default as unknown as ComponentType }),
+        () => ({ default: (() => null) as FC }),
+    ),
+);
 
 /**
  * OxyProvider - Universal provider for Expo apps (native + web)
@@ -95,6 +82,17 @@ const OxyProvider: FC<OxyProviderProps> = ({
     themeMode = 'system',
     colorPreset,
 }) => {
+
+    // Dynamic KeyboardProvider for native (avoids require() for ESM compatibility)
+    const [KBProvider, setKBProvider] = useState<FC<{ children: ReactNode }> | null>(null);
+    useEffect(() => {
+        if (isWeb) return;
+        const moduleName = 'react-native-keyboard-controller';
+        import(/* webpackIgnore: true */ moduleName)
+            .then((mod) => setKBProvider(() => mod.KeyboardProvider))
+            .catch(() => { /* KeyboardProvider not available */ });
+    }, []);
+    const KeyboardWrapper: FC<{ children: ReactNode }> = KBProvider ?? (({ children }) => <>{children}</>);
 
     // Simple storage initialization for query persistence
     const storageRef = useRef<StorageInterface | null>(null);
@@ -231,8 +229,10 @@ const OxyProvider: FC<OxyProviderProps> = ({
                     onAuthStateChange={onAuthStateChange as OxyContextProviderProps['onAuthStateChange']}
                 >
                     {children}
-                    {BottomSheetRouter && <BottomSheetRouter />}
-                    {SignInModal && <SignInModal />}
+                    <Suspense fallback={null}>
+                        <LazyBottomSheetRouter />
+                        <LazySignInModal />
+                    </Suspense>
                     <Toaster />
                 </OxyContextProvider>
             </BloomThemeProvider>
@@ -240,9 +240,9 @@ const OxyProvider: FC<OxyProviderProps> = ({
     );
 
     return (
-        <KeyboardProvider>
+        <KeyboardWrapper>
             {coreContent}
-        </KeyboardProvider>
+        </KeyboardWrapper>
     );
 };
 

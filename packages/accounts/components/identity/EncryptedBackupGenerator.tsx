@@ -102,7 +102,7 @@ export function EncryptedBackupGenerator({
             // Import raw key bytes into Web Crypto API for AES-256-GCM
             const cryptoKey = await crypto.subtle.importKey(
                 'raw',
-                keyBytes,
+                keyBytes.buffer as ArrayBuffer,
                 { name: 'AES-GCM' },
                 false,
                 ['encrypt']
@@ -113,7 +113,7 @@ export function EncryptedBackupGenerator({
             // AES-GCM encrypt: produces ciphertext + 128-bit authentication tag
             // The tag is appended to the ciphertext by Web Crypto
             const encryptedBuffer = await crypto.subtle.encrypt(
-                { name: 'AES-GCM', iv, tagLength: 128 },
+                { name: 'AES-GCM', iv: iv.buffer as ArrayBuffer, tagLength: 128 },
                 cryptoKey,
                 privateKeyBytes
             );

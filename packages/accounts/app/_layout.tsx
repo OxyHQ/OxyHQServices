@@ -79,11 +79,6 @@ function RootLayoutContent() {
     }
   }, [fontsLoaded]);
 
-  // Load eager settings that don't block app initialization
-  useEffect(() => {
-    AppInitializer.loadEagerSettings();
-  }, []);
-
   useEffect(() => {
     initializeApp();
   }, [initializeApp]);
@@ -143,7 +138,6 @@ function AppStackContent({ colorScheme }: { colorScheme: 'light' | 'dark' | null
             <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
             {/* Auth route redirects based on onboarding status */}
             <Stack.Screen name="(auth)" redirect={!needsAuth} options={{ headerShown: false }} />
-            <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
           </Stack>
           <StatusBar style="auto" />
         </ThemeProvider>

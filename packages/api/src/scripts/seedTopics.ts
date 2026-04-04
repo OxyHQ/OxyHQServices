@@ -2,7 +2,7 @@
  * Idempotent seed script for category topics.
  *
  * Usage:
- *   npx ts-node src/scripts/seedTopics.ts
+ *   bun run src/scripts/seedTopics.ts
  *
  * Requires MONGODB_URI and NODE_ENV environment variables.
  */

@@ -206,7 +206,6 @@
       "version": "2.0.3",
       "dependencies": {
         "@tanstack/react-query": "^5.90.20",
-        "socket.io-client": "^4.8.1",
         "sonner": "^2.0.4",
         "zustand": "^5.0.9",
       },
@@ -219,7 +218,11 @@
       "peerDependencies": {
         "@oxyhq/core": "*",
         "react": ">=18.0.0",
+        "socket.io-client": "^4.8.1",
       },
+      "optionalPeers": [
+        "socket.io-client",
+      ],
     },
     "packages/console": {
       "name": "oxy-console",
@@ -372,7 +375,7 @@
     },
     "packages/services": {
       "name": "@oxyhq/services",
-      "version": "6.9.41",
+      "version": "6.9.42",
       "dependencies": {
         "@lottiefiles/dotlottie-react": "^0.13.5",
         "@oxyhq/bloom": "0.1.25",
@@ -409,7 +412,6 @@
         "@types/node": "^20.19.9",
         "expo-file-system": "~55.0.10",
         "expo-font": "~55.0.4",
-        "expo-haptics": "~55.0.8",
         "expo-image": "~55.0.6",
         "expo-linear-gradient": "~55.0.8",
         "husky": "^4.3.8",

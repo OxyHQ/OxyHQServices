@@ -23,7 +23,7 @@ const isExpoGo = (): boolean => {
 };
 
 interface UseAuthHandlersOptions {
-  signIn: () => Promise<unknown>;
+  signIn: (...args: any[]) => Promise<unknown>;
   oxyServices: OxyServices | null;
   usernameRef: React.MutableRefObject<string>;
   setAuthError: (error: string | null) => void;

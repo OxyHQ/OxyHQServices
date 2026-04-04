@@ -11,9 +11,17 @@ import { AccountCard } from '@/components/ui';
 import { menuItems, type MenuItem } from '@/components/ui/sidebar-content';
 import { darkenColor } from '@/utils/color-utils';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
-import { useOxy, FollowButton } from '@oxyhq/services';
+import { useOxy, FollowButton as ImportedFollowButton } from '@oxyhq/services';
 import type { User, BlockedUser, RestrictedUser } from '@oxyhq/core';
 import { Avatar } from '@oxyhq/services';
+
+// Explicit type annotation to avoid implicit any when services source has transient TS errors
+const FollowButton: React.FC<{
+  userId: string;
+  initiallyFollowing?: boolean;
+  size?: 'small' | 'medium' | 'large';
+  theme?: 'light' | 'dark';
+}> = ImportedFollowButton;
 
 export default function SearchScreen() {
   const colorScheme = useColorScheme() ?? 'light';
@@ -100,7 +108,7 @@ export default function SearchScreen() {
       const response = await oxyServices.searchProfiles(query, { limit: 10 });
 
       // Filter out current user, blocked users, and restricted users
-      const filtered = (response.data || []).filter((u) => {
+      const filtered = (response.data || []).filter((u: User) => {
         const userId = extractUserId(u);
         if (!userId) return false; // Skip invalid users
 

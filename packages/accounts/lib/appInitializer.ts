@@ -3,7 +3,6 @@
  * Simplified version for Accounts app
  */
 
-import { Platform } from 'react-native';
 import * as SplashScreen from 'expo-splash-screen';
 
 export interface InitializationResult {
@@ -45,17 +44,5 @@ export class AppInitializer {
       };
     }
   }
-
-  /**
-   * Loads eager settings that don't block app initialization
-   */
-  static async loadEagerSettings(): Promise<void> {
-    // Placeholder for any eager settings loading
-    // Can be expanded later if needed
-  }
 }
-
-
-
-
 

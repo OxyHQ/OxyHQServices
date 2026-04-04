@@ -76,12 +76,18 @@ export function useBiometricSettings() {
     loadCapabilities();
   }, []);
 
+  // Local fallback state for when API is unavailable
+  const [localEnabled, setLocalEnabled] = useState<boolean | null>(null);
+
+  // Cast privacy settings to a record for accessing dynamic keys
+  const privacyRecord = privacySettings as Record<string, unknown> | undefined;
+
   // Sync privacy settings with local storage when loaded
   useEffect(() => {
     if (Platform.OS === 'web') return;
 
-    if (privacySettings) {
-      const biometricEnabled = privacySettings?.biometricLogin ?? false;
+    if (privacyRecord) {
+      const biometricEnabled = (privacyRecord?.biometricLogin as boolean | undefined) ?? false;
       // Sync with local storage
       if (biometricEnabled) {
         AsyncStorage.setItem('oxy_biometric_enabled', 'true').catch(() => {});
@@ -92,19 +98,19 @@ export function useBiometricSettings() {
       // Fallback to local storage on error
       AsyncStorage.getItem('oxy_biometric_enabled')
         .then((localPref) => {
-          // Only use local pref if we don't have server data
-          if (!privacySettings) {
-            // This will be handled by the enabled state below
+          if (!privacyRecord && localPref !== null) {
+            // Use local storage as fallback when API is unavailable
+            setLocalEnabled(localPref === 'true');
           }
         })
         .catch(() => {});
     }
   }, [privacySettings, privacyError]);
 
-  // Determine enabled state from privacy settings or local storage
-  const enabled = Platform.OS === 'web' 
-    ? false 
-    : (privacySettings?.biometricLogin ?? false);
+  // Determine enabled state from privacy settings, falling back to local storage
+  const enabled = Platform.OS === 'web'
+    ? false
+    : ((privacyRecord?.biometricLogin as boolean | undefined) ?? localEnabled ?? false);
 
   const isLoading = isLoadingPrivacy;
   const isSaving = updatePrivacyMutation.isPending;

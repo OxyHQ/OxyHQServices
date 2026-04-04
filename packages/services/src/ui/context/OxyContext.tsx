@@ -80,6 +80,7 @@ export interface OxyContextState {
   updateDeviceName: (deviceName: string) => Promise<void>;
   clearSessionState: () => Promise<void>;
   clearAllAccountData: () => Promise<void>;
+  storageKeyPrefix: string;
   oxyServices: OxyServices;
   useFollow?: UseFollowHook;
   showBottomSheet?: (screenOrConfig: RouteName | { screen: RouteName; props?: Record<string, unknown> }) => void;
@@ -672,6 +673,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     updateDeviceName,
     clearSessionState,
     clearAllAccountData,
+    storageKeyPrefix,
     oxyServices,
     useFollow: useFollowHook,
     showBottomSheet: showBottomSheetForContext,
@@ -694,6 +696,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     logoutAll,
     logoutAllDeviceSessions,
     oxyServices,
+    storageKeyPrefix,
     refreshSessionsWithUser,
     sessions,
     setLanguage,
@@ -747,6 +750,7 @@ const LOADING_STATE: OxyContextState = {
   updateDeviceName: noop,
   clearSessionState: noop,
   clearAllAccountData: noop,
+  storageKeyPrefix: 'oxy_session',
   oxyServices: null as any,
   openAvatarPicker: () => {},
 };

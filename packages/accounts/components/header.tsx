@@ -244,7 +244,7 @@ export function Header({ }: HeaderProps) {
                                 onPressOut={handleLogoPressOut}
                                 activeOpacity={0.7}
                             >
-                                <LogoIcon height={32} useThemeColors={true} />
+                                <LogoIcon height={32} />
                             </TouchableOpacity>
                         )}
                     </View>
@@ -258,7 +258,7 @@ export function Header({ }: HeaderProps) {
                                 onPressOut={handleLogoPressOut}
                                 activeOpacity={0.7}
                             >
-                                <LogoIcon height={24} useThemeColors={true} />
+                                <LogoIcon height={24} />
                             </TouchableOpacity>
                         </View>
                     )}

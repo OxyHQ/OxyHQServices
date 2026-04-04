@@ -23,14 +23,14 @@ A comprehensive Node.js/TypeScript backend server providing JWT-based authentica
 
 ```bash
 # Install dependencies
-npm install
+bun install
 
 # Configure environment
 cp .env.example .env
 # Edit .env with your MongoDB URI, JWT secrets, and other configs
 
 # Start development server
-npm run dev
+bun run dev
 ```
 
 ## Documentation
@@ -145,7 +145,7 @@ Note: All auth endpoints are also available under `/auth` (e.g., `POST /auth/log
 
 - Node.js 16+
 - MongoDB 4.4+
-- npm or yarn
+- Bun
 
 ## Environment Variables
 
@@ -181,16 +181,16 @@ SMTP_FROM="Oxy <no-reply@oxy.so>"
 
 ```bash
 # Development mode with hot reload
-npm run dev
+bun run dev
 
 # Build for production
-npm run build
+bun run build
 
 # Start production server
-npm start
+bun run start
 
 # Clean build artifacts
-npm run clean
+bun run clean
 ```
 
 ## Real-time Features

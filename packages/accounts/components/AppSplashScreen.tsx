@@ -75,7 +75,6 @@ const AppSplashScreen: React.FC<AppSplashScreenProps> = ({
         <View style={styles.logoContainer}>
           <LogoIcon
             height={LOGO_SIZE}
-            useThemeColors={true}
             color={theme?.mode === 'dark' ? '#000000' : undefined}
           />
           <View style={styles.spinnerContainer}>

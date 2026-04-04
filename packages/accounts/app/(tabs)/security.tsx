@@ -29,14 +29,26 @@ export default function SecurityScreen() {
     // OxyServices integration
     const { user, isAuthenticated, isLoading: oxyLoading, sessions, hasIdentity, getPublicKey, logoutAll, oxyServices } = useOxy();
     const alert = useAlert();
-    const [enhancedSafeBrowsing, setEnhancedSafeBrowsing] = useState(false);
-    const [darkWebReport, setDarkWebReport] = useState(false);
     const [isLoggingOutAll, setIsLoggingOutAll] = useState(false);
 
+    // Device type for typing the query result
+    interface DeviceRecord {
+        id?: string;
+        deviceId?: string;
+        name?: string;
+        deviceName?: string;
+        type?: string;
+        deviceType?: string;
+        lastActive?: string;
+        createdAt?: string;
+        isCurrent?: boolean;
+    }
+
     // Fetch devices using TanStack Query hook
-    const { data: devices = [], isLoading: loading, error: devicesError } = useUserDevices({
+    const { data: rawDevices, isLoading: loading, error: devicesError } = useUserDevices({
         enabled: isAuthenticated,
     });
+    const devices = (rawDevices ?? []) as DeviceRecord[];
 
     // Fetch security activity
     const { data: securityActivities = [], isLoading: securityActivityLoading } = useRecentSecurityActivity(10);
@@ -410,7 +422,7 @@ export default function SecurityScreen() {
     const handleLogoutAll = useCallback(async () => {
         alert(
             'Sign out of all devices?',
-            `This will sign you out of all ${sessions?.length || 0} active session${sessions?.length !== 1 ? 's' : ''} except this one. You&apos;ll need to sign in again on other devices.`,
+            `This will sign you out of all ${sessions?.length || 0} active session${sessions?.length !== 1 ? 's' : ''} except this one. You'll need to sign in again on other devices.`,
             [
                 { text: 'Cancel', style: 'cancel' },
                 {
@@ -456,35 +468,6 @@ export default function SecurityScreen() {
         return items;
     }, [sessions, handleLogoutAll, isLoggingOutAll]);
 
-    // Feature cards
-    const featureCards = useMemo(() => [
-        {
-            id: 'safe-browsing',
-            icon: 'shield-check-outline',
-            iconColor: colors.sidebarIconSecurity,
-            title: 'Enhanced Safe Browsing for your account',
-            subtitle: 'More personalized protections against dangerous websites, downloads, and extensions.',
-            customContent: (
-                <Switch
-                    value={enhancedSafeBrowsing}
-                    onValueChange={setEnhancedSafeBrowsing}
-                />
-            ),
-        },
-        {
-            id: 'dark-web',
-            icon: 'magnify',
-            iconColor: colors.sidebarIconData,
-            title: 'Dark web report',
-            subtitle: 'Start monitoring to get alerts and guidance if your info is found on the dark web',
-            customContent: (
-                <Switch
-                    value={darkWebReport}
-                    onValueChange={setDarkWebReport}
-                />
-            ),
-        },
-    ], [colors, enhancedSafeBrowsing, darkWebReport]);
 
     // Show loading state
     if (oxyLoading || loading) {
@@ -647,11 +630,6 @@ export default function SecurityScreen() {
                 </Section>
             )}
 
-            <Section title="Security features">
-                <AccountCard>
-                    <GroupedSection items={featureCards} />
-                </AccountCard>
-            </Section>
         </>
     );
 

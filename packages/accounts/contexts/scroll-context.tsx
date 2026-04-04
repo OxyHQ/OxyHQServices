@@ -4,8 +4,8 @@ import { useSharedValue, SharedValue } from 'react-native-reanimated';
 
 interface ScrollContextType {
   isScrolled: boolean;
-  setIsScrolled: (isScrolled: boolean) => void;
-  scrollRef: React.RefObject<Animated.ScrollView>;
+  setIsScrolled: React.Dispatch<React.SetStateAction<boolean>>;
+  scrollRef: React.RefObject<Animated.ScrollView | null>;
   scrollToTop: () => void;
   scrollY: SharedValue<number>;
   scrollDirection: SharedValue<'up' | 'down'>;

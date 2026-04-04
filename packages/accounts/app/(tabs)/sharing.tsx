@@ -1,31 +1,41 @@
 import React, { useMemo, useCallback, useState, useEffect } from 'react';
-import { View, StyleSheet, Text, TouchableOpacity, ActivityIndicator, Platform } from 'react-native';
+import { View, StyleSheet, Text, ActivityIndicator, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { GroupedSection } from '@/components/grouped-section';
 import { Section } from '@/components/section';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { AccountCard, ScreenHeader, useAlert, LinkButton } from '@/components/ui';
+import { AccountCard, ScreenHeader, useAlert, Switch } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
-import { useHapticPress } from '@/hooks/use-haptic-press';
-import { useOxy, useFollow, useCurrentUser, showBottomSheet } from '@oxyhq/services';
+import { useOxy, useFollow, usePrivacySettings, useUpdatePrivacySettings } from '@oxyhq/services';
 import { UnauthenticatedScreen } from '@/components/unauthenticated-screen';
 import * as Contacts from 'expo-contacts';
 
 export default function PeopleAndSharingScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
-  const handlePressIn = useHapticPress();
   const alert = useAlert();
   const router = useRouter();
-  const { isAuthenticated, isLoading: authLoading, user, oxyServices } = useOxy();
+  const { isAuthenticated, isLoading: authLoading, user, oxyServices, showBottomSheet } = useOxy();
 
   // Get user ID as string
   const userId = typeof user?._id === 'string' ? user._id : undefined;
 
   // Fetch follower/following counts
   const { followerCount, followingCount, fetchUserCounts } = useFollow(userId);
+
+  // Privacy settings via react-query hooks (same pattern as data.tsx)
+  const { data: privacySettings, isLoading: privacyLoading } = usePrivacySettings(userId, {
+    enabled: !!userId && isAuthenticated,
+  });
+  const updatePrivacyMutation = useUpdatePrivacySettings();
+
+  // Cast privacy settings to a record so we can access dynamic keys
+  const settings = privacySettings as Record<string, unknown> | undefined;
+
+  // Derive privacy values from settings
+  const profileVisibility = (settings?.profileVisibility as boolean | undefined) ?? true;
+  const locationSharing = (settings?.locationSharing as boolean | undefined) ?? false;
 
   // Blocked and restricted users state
   const [blockedCount, setBlockedCount] = useState(0);
@@ -35,7 +45,7 @@ export default function PeopleAndSharingScreen() {
   // Contacts sync state (native only)
   const [contactsPermission, setContactsPermission] = useState<Contacts.PermissionStatus | null>(null);
   const [isSyncingContacts, setIsSyncingContacts] = useState(false);
-  const [syncedContactsCount, setSyncedContactsCount] = useState<number | null>(null);
+  const [deviceContactsCount, setDeviceContactsCount] = useState<number | null>(null);
 
   // Check contacts permission on mount (native only)
   useEffect(() => {
@@ -48,7 +58,8 @@ export default function PeopleAndSharingScreen() {
     checkPermission();
   }, []);
 
-  // Handle contacts sync
+  // Handle contacts sync -- reads device contacts and shows count.
+  // Backend sync API does not exist yet, so we are transparent about it.
   const handleSyncContacts = useCallback(async () => {
     if (Platform.OS === 'web') return;
 
@@ -74,7 +85,6 @@ export default function PeopleAndSharingScreen() {
           Contacts.Fields.Name,
           Contacts.Fields.Emails,
           Contacts.Fields.PhoneNumbers,
-          Contacts.Fields.Image,
         ],
       });
 
@@ -84,21 +94,33 @@ export default function PeopleAndSharingScreen() {
         return;
       }
 
-      // Here you would sync contacts to the backend
-      // For now, just show the count
-      setSyncedContactsCount(data.length);
+      setDeviceContactsCount(data.length);
 
       alert(
-        'Contacts Synced',
-        `Successfully synced ${data.length} contacts from your device. You can now find friends who are also on Oxy.`
+        'Contacts Found',
+        `Found ${data.length} contacts on your device. Contact sync to find friends on Oxy is not yet available -- stay tuned.`
       );
     } catch (error) {
-      console.error('Failed to sync contacts:', error);
-      alert('Error', 'Failed to sync contacts. Please try again.');
+      console.error('Failed to read contacts:', error);
+      alert('Error', 'Failed to read contacts from your device. Please try again.');
     } finally {
       setIsSyncingContacts(false);
     }
   }, [alert]);
+
+  // Handle privacy setting updates
+  const handlePrivacyUpdate = useCallback(async (key: string, value: boolean) => {
+    if (!userId) return;
+
+    try {
+      await updatePrivacyMutation.mutateAsync({
+        settings: { [key]: value },
+        userId,
+      });
+    } catch (error: any) {
+      alert('Error', error?.message || 'Failed to update privacy setting');
+    }
+  }, [userId, updatePrivacyMutation, alert]);
 
   // Fetch blocked/restricted counts
   useEffect(() => {
@@ -107,8 +129,8 @@ export default function PeopleAndSharingScreen() {
 
       try {
         const [blockedUsers, restrictedUsers] = await Promise.all([
-          oxyServices.getBlockedUsers?.() || Promise.resolve([]),
-          oxyServices.getRestrictedUsers?.() || Promise.resolve([]),
+          oxyServices.getBlockedUsers(),
+          oxyServices.getRestrictedUsers(),
         ]);
         setBlockedCount(Array.isArray(blockedUsers) ? blockedUsers.length : 0);
         setRestrictedCount(Array.isArray(restrictedUsers) ? restrictedUsers.length : 0);
@@ -125,8 +147,6 @@ export default function PeopleAndSharingScreen() {
     }
   }, [isAuthenticated, userId, oxyServices, fetchUserCounts, hasFetchedPrivacy]);
 
-  const isLoading = authLoading;
-
   // Contacts section items
   const contactsItems = useMemo(() => {
     const items = [];
@@ -134,11 +154,11 @@ export default function PeopleAndSharingScreen() {
     // Sync contacts from device (native only)
     if (Platform.OS !== 'web') {
       const getContactsSubtitle = () => {
-        if (syncedContactsCount !== null) {
-          return `${syncedContactsCount} contacts synced`;
+        if (deviceContactsCount !== null) {
+          return `${deviceContactsCount} contacts found on device`;
         }
         if (contactsPermission === 'denied') {
-          return 'Permission denied - tap to request access';
+          return 'Permission denied -- tap to request access';
         }
         return 'Find friends from your contacts';
       };
@@ -168,7 +188,7 @@ export default function PeopleAndSharingScreen() {
         : 'People who follow you',
       onPress: () => {
         if (userId) {
-          showBottomSheet({ screen: 'FollowersList', props: { userId, initialCount: followerCount } });
+          showBottomSheet?.({ screen: 'FollowersList', props: { userId, initialCount: followerCount } });
         }
       },
       showChevron: true,
@@ -185,7 +205,7 @@ export default function PeopleAndSharingScreen() {
         : 'People you follow',
       onPress: () => {
         if (userId) {
-          showBottomSheet({ screen: 'FollowingList', props: { userId, initialCount: followingCount } });
+          showBottomSheet?.({ screen: 'FollowingList', props: { userId, initialCount: followingCount } });
         }
       },
       showChevron: true,
@@ -203,9 +223,10 @@ export default function PeopleAndSharingScreen() {
     });
 
     return items;
-  }, [colors, followerCount, followingCount, router, handleSyncContacts, isSyncingContacts, syncedContactsCount, contactsPermission, userId]);
+  }, [colors, followerCount, followingCount, router, handleSyncContacts, isSyncingContacts, deviceContactsCount, contactsPermission, userId, showBottomSheet]);
 
-  // Privacy & blocking items
+  // Privacy & blocking items -- opens the PrivacySettings bottom sheet
+  // which already has full blocked/restricted user management UI
   const privacyItems = useMemo(() => {
     const items = [];
 
@@ -219,8 +240,7 @@ export default function PeopleAndSharingScreen() {
         ? `${blockedCount} ${blockedCount === 1 ? 'user' : 'users'} blocked`
         : 'No users blocked',
       onPress: () => {
-        // Navigate to blocked users list when implemented
-        alert('Blocked Users', 'Blocked users management coming soon');
+        showBottomSheet?.({ screen: 'PrivacySettings' });
       },
       showChevron: true,
     });
@@ -235,31 +255,34 @@ export default function PeopleAndSharingScreen() {
         ? `${restrictedCount} ${restrictedCount === 1 ? 'user' : 'users'} restricted`
         : 'No users restricted',
       onPress: () => {
-        // Navigate to restricted users list when implemented
-        alert('Restricted Users', 'Restricted users management coming soon');
+        showBottomSheet?.({ screen: 'PrivacySettings' });
       },
       showChevron: true,
     });
 
     return items;
-  }, [colors, blockedCount, restrictedCount, alert]);
+  }, [colors, blockedCount, restrictedCount, showBottomSheet]);
 
   // Profile visibility items (About me section)
   const profileVisibilityItems = useMemo(() => {
     const items = [];
 
-    // Profile visibility
+    // Profile visibility toggle
     items.push({
       id: 'profile-visibility',
       icon: 'eye-outline',
       iconColor: colors.sidebarIconData,
       title: 'Profile visibility',
-      subtitle: 'Control who can see your profile information',
-      onPress: () => {
-        // Navigate to profile visibility settings when implemented
-        alert('Profile Visibility', 'Profile visibility settings coming soon');
-      },
-      showChevron: true,
+      subtitle: profileVisibility
+        ? 'Your profile is visible to everyone'
+        : 'Your profile is hidden from public view',
+      customContent: (
+        <Switch
+          value={profileVisibility}
+          onValueChange={(value) => handlePrivacyUpdate('profileVisibility', value)}
+          disabled={updatePrivacyMutation.isPending}
+        />
+      ),
     });
 
     // What others see
@@ -273,31 +296,48 @@ export default function PeopleAndSharingScreen() {
       showChevron: true,
     });
 
-    return items;
-  }, [colors, alert, router]);
-
-  // Location & sharing items
-  const locationItems = useMemo(() => {
-    const items = [];
-
-    // Location sharing
+    // Full privacy settings via bottom sheet
     items.push({
-      id: 'location-sharing',
-      icon: 'map-marker-outline',
-      iconColor: colors.success,
-      title: 'Location sharing',
-      subtitle: 'Share your location with people you trust',
+      id: 'privacy-settings',
+      icon: 'shield-lock-outline',
+      iconColor: colors.sidebarIconData,
+      title: 'All privacy settings',
+      subtitle: 'Detailed privacy and interaction controls',
       onPress: () => {
-        alert('Location Sharing', 'Location sharing coming soon');
+        showBottomSheet?.({ screen: 'PrivacySettings' });
       },
       showChevron: true,
     });
 
     return items;
-  }, [colors, alert]);
+  }, [colors, profileVisibility, handlePrivacyUpdate, updatePrivacyMutation.isPending, router, showBottomSheet]);
+
+  // Location sharing items -- uses the same privacy settings API toggle as data.tsx
+  const locationItems = useMemo(() => {
+    const items = [];
+
+    items.push({
+      id: 'location-sharing',
+      icon: 'map-marker-outline',
+      iconColor: colors.success,
+      title: 'Location sharing',
+      subtitle: locationSharing
+        ? 'Your location is being shared'
+        : 'Location sharing is off',
+      customContent: (
+        <Switch
+          value={locationSharing}
+          onValueChange={(value) => handlePrivacyUpdate('locationSharing', value)}
+          disabled={updatePrivacyMutation.isPending}
+        />
+      ),
+    });
+
+    return items;
+  }, [colors, locationSharing, handlePrivacyUpdate, updatePrivacyMutation.isPending]);
 
   // Show loading state
-  if (authLoading || (isLoading && isAuthenticated)) {
+  if (authLoading) {
     return (
       <ScreenContentWrapper>
         <View style={[styles.container, styles.loadingContainer, { backgroundColor: colors.background }]}>
@@ -393,19 +433,5 @@ const styles = StyleSheet.create({
     fontSize: 14,
     opacity: 0.7,
     marginBottom: 8,
-  },
-  emptyState: {
-    alignItems: 'center',
-    paddingVertical: 40,
-    gap: 12,
-  },
-  emptyText: {
-    fontSize: 16,
-    fontWeight: '500',
-    textAlign: 'center',
-  },
-  emptySubtext: {
-    fontSize: 14,
-    textAlign: 'center',
   },
 });

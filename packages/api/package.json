@@ -5,10 +5,10 @@
   "main": "dist/server.js",
   "scripts": {
     "start": "node dist/server.js",
-    "dev": "nodemon src/server.ts",
+    "dev": "bun --watch src/server.ts",
     "build": "tsc",
     "clean": "rm -rf dist",
-    "migrate:locations": "ts-node src/utils/migrateLocations.ts",
+    "migrate:locations": "bun run src/utils/migrateLocations.ts",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
@@ -26,8 +26,7 @@
   "author": "OxyHQ",
   "license": "MIT",
   "engines": {
-    "node": ">=18.0.0",
-    "npm": ">=9.0.0"
+    "node": ">=18.0.0"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.857.0",

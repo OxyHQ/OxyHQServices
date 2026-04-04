@@ -129,32 +129,16 @@ export function useSearchNavigation({
         const textLength = text.length;
 
         // Navigate to search screen
-        // Note: router.push() may not always return a Promise, so we handle both cases
-        const navigationResult = router.push({
+        // router.push() returns void, so use setTimeout for post-navigation focus
+        router.push({
           pathname: '/(tabs)/search',
           params: { q: text || '' },
         });
 
-        // Handle focus after navigation - use setTimeout as fallback if no Promise
-        if (navigationResult && typeof navigationResult.then === 'function') {
-          navigationResult
-            .then(() => {
-              // Focus input after navigation completes
-              attemptFocusWithRetry(textLength);
-            })
-            .catch((error) => {
-              // Reset navigation flag on error
-              hasNavigatedToSearchRef.current = false;
-              if (__DEV__) {
-                console.error('[useSearchNavigation] Navigation failed:', error);
-              }
-            });
-        } else {
-          // Fallback: use setTimeout if router.push doesn't return a Promise
-          setTimeout(() => {
-            attemptFocusWithRetry(textLength);
-          }, 300);
-        }
+        // Focus input after navigation settles
+        setTimeout(() => {
+          attemptFocusWithRetry(textLength);
+        }, 300);
       }
       // Note: If text is empty and we haven't navigated yet, we don't navigate
       // This prevents navigating to search screen when input is cleared before navigation

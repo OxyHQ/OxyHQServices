@@ -234,12 +234,6 @@ export default function TabLayout() {
           }}
         />
         <Drawer.Screen
-          name="explore"
-          options={{
-            drawerItemStyle: { display: 'none' },
-          }}
-        />
-        <Drawer.Screen
           name="sessions"
           options={{
             drawerItemStyle: { display: 'none' },

@@ -24,9 +24,9 @@ export function Section({ title, children, isFirst = false, style }: SectionProp
         return styleObj.fontSize === 14 && styleObj.opacity === 0.7;
     };
     
-    const isFirstChildDescription = React.isValidElement(firstChild) && 
-        firstChild.type === ThemedText && 
-        isSectionSubtitleStyle(firstChild.props.style);
+    const isFirstChildDescription = React.isValidElement(firstChild) &&
+        firstChild.type === ThemedText &&
+        isSectionSubtitleStyle((firstChild.props as { style?: unknown }).style);
 
     const description = isFirstChildDescription ? firstChild : null;
     const content = isFirstChildDescription ? childrenArray.slice(1) : childrenArray;

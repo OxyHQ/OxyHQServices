@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect, useCallback } from 'react';
-import { View, StyleSheet, Platform, useWindowDimensions, Text, TouchableOpacity, ActivityIndicator, ScrollView, Linking, Image } from 'react-native';
+import { View, StyleSheet, Platform, useWindowDimensions, Text, TouchableOpacity, ActivityIndicator, Linking, Image } from 'react-native';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { ThemedText } from '@/components/themed-text';
@@ -9,7 +9,6 @@ import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { Section } from '@/components/section';
 import { useOxy } from '@oxyhq/services';
 import { formatDate } from '@/utils/date-utils';
-import { useRouter } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { darkenColor } from '@/utils/color-utils';
 import faircoinImage from '@/assets/images/faircoin.jpg';
@@ -17,7 +16,6 @@ import faircoinImage from '@/assets/images/faircoin.jpg';
 export default function PaymentsScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const { width } = useWindowDimensions();
-  const router = useRouter();
   const alert = useAlert();
 
   const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
@@ -30,6 +28,7 @@ export default function PaymentsScreen() {
   const [wallet, setWallet] = useState<any>(null);
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [expandedPaymentMethod, setExpandedPaymentMethod] = useState<string | null>(null);
 
   // Fetch all payment-related data
   useEffect(() => {
@@ -145,71 +144,47 @@ export default function PaymentsScreen() {
     showBottomSheet?.('PremiumSubscription');
   }, [showBottomSheet]);
 
-  const handleViewPaymentMethods = useCallback(() => {
-    // Show information about available payment methods
-    alert(
-      'Payment Methods',
-      'Available payment methods:\n\n• Credit/Debit Card - Secure card payments\n• Oxy Pay - Use your in-app wallet balance\n• FAIRWallet - Pay with FairCoin via QR code\n\nTo make a payment, use the payment gateway when purchasing subscriptions or services.',
-      [{ text: 'OK' }]
-    );
-  }, [alert]);
-
-  const handleViewBillingHistory = useCallback(() => {
-    if (payments.length === 0) {
-      alert(
-        'Billing History',
-        'No payment history found.',
-        [{ text: 'OK' }]
-      );
-      return;
+  // Format payment status with color
+  const getPaymentStatusColor = useCallback((status?: string) => {
+    switch (status?.toLowerCase()) {
+      case 'completed':
+      case 'succeeded':
+      case 'paid':
+        return colors.success;
+      case 'pending':
+      case 'processing':
+        return colors.warning;
+      case 'failed':
+      case 'declined':
+        return colors.danger;
+      default:
+        return colors.secondaryText;
     }
-    
-    const historyText = payments.map((payment, index) => {
-      const date = payment.createdAt ? formatDate(payment.createdAt) : 'Unknown date';
-      const amount = payment.amount ? `⊜ ${payment.amount.toFixed(2)}` : 'N/A';
-      const currency = payment.currency || 'FAIR';
-      return `${index + 1}. ${date} - ${amount} ${currency}`;
-    }).join('\n');
+  }, [colors]);
 
-    alert(
-      'Billing History',
-      historyText || 'No payment history available.',
-      [{ text: 'OK' }]
-    );
-  }, [payments, alert]);
+  const getPaymentStatusLabel = useCallback((status?: string) => {
+    if (!status) return 'Completed';
+    return status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
+  }, []);
 
-  const handleViewWalletDetails = useCallback(() => {
-    const balance = wallet?.balance || 0;
-    alert(
-      'Oxy Pay Wallet',
-      `Your current balance: ${formatFairCoinBalance(balance)}\n\nOxy Pay is your in-app wallet that uses FairCoin (⊜) as the base currency. You can use your balance to pay for subscriptions, services, and other Oxy features.`,
-      [{ text: 'OK' }]
-    );
-  }, [wallet, formatFairCoinBalance, alert]);
+  // Format transaction type label
+  const getTransactionTypeLabel = useCallback((type?: string) => {
+    if (!type) return 'Transaction';
+    const labels: Record<string, string> = {
+      credit: 'Credit',
+      debit: 'Debit',
+      transfer: 'Transfer',
+      payment: 'Payment',
+      refund: 'Refund',
+      deposit: 'Deposit',
+      withdrawal: 'Withdrawal',
+    };
+    return labels[type.toLowerCase()] || type.charAt(0).toUpperCase() + type.slice(1);
+  }, []);
 
-  const handleViewTransactions = useCallback(() => {
-    if (transactions.length === 0) {
-      alert(
-        'Transaction History',
-        'No transactions found.',
-        [{ text: 'OK' }]
-      );
-      return;
-    }
-    
-    const historyText = transactions.map((tx, index) => {
-      const date = tx.createdAt ? formatDate(tx.createdAt) : 'Unknown date';
-      const amount = tx.amount ? `⊜ ${tx.amount.toFixed(2)}` : 'N/A';
-      const type = tx.type || 'transaction';
-      return `${index + 1}. ${date} - ${type} - ${amount}`;
-    }).join('\n');
-
-    alert(
-      'Transaction History',
-      historyText || 'No transaction history available.',
-      [{ text: 'OK' }]
-    );
-  }, [transactions, alert]);
+  const togglePaymentMethodExpanded = useCallback((id: string) => {
+    setExpandedPaymentMethod(prev => prev === id ? null : id);
+  }, []);
 
   const handleInstallFairCoinWallet = useCallback(() => {
     const walletUrl = 'https://fairco.in/wallet';
@@ -266,15 +241,7 @@ export default function PaymentsScreen() {
       icon: 'wallet-outline',
       iconColor: colors.sidebarIconPayments,
       title: 'Oxy Pay',
-      subtitle: `Balance: ${formatFairCoinBalance(walletBalance)}`,
-      customContent: (
-        <TouchableOpacity 
-          style={[styles.button, { backgroundColor: colors.card }]}
-          onPress={handleViewWalletDetails}
-        >
-          <Text style={[styles.buttonText, { color: colors.text }]}>Details</Text>
-        </TouchableOpacity>
-      ),
+      subtitle: `Balance: ${formatFairCoinBalance(walletBalance)} -- Pay for subscriptions, services, and features`,
     });
 
     // FairCoin/FAIRWallet info
@@ -283,19 +250,11 @@ export default function PaymentsScreen() {
       icon: 'qrcode-scan',
       iconColor: '#FF6B35',
       title: 'FAIRWallet',
-      subtitle: 'FairCoin cryptocurrency payments',
-      customContent: (
-        <TouchableOpacity 
-          style={[styles.button, { backgroundColor: colors.card }]}
-          onPress={handleViewPaymentMethods}
-        >
-          <Text style={[styles.buttonText, { color: colors.text }]}>Info</Text>
-        </TouchableOpacity>
-      ),
+      subtitle: 'Direct FairCoin payments via QR code scanning',
     });
 
     return items;
-  }, [wallet, colors, formatFairCoinBalance, handleViewWalletDetails, handleViewPaymentMethods]);
+  }, [wallet, colors, formatFairCoinBalance]);
 
   // Payment methods section
   const paymentMethodsItems = useMemo(() => {
@@ -307,17 +266,11 @@ export default function PaymentsScreen() {
       icon: 'credit-card-outline',
       iconColor: colors.sidebarIconPayments,
       title: 'Credit/Debit Card',
-      subtitle: subscription?.paymentMethod 
-        ? `${subscription.paymentMethod} ••••`
-        : 'No card on file',
-      customContent: (
-        <TouchableOpacity 
-          style={[styles.button, { backgroundColor: colors.card }]}
-          onPress={handleViewPaymentMethods}
-        >
-          <Text style={[styles.buttonText, { color: colors.text }]}>Info</Text>
-        </TouchableOpacity>
-      ),
+      subtitle: subscription?.paymentMethod
+        ? `${subscription.paymentMethod} •••• -- Secure card payments`
+        : 'Secure card payments -- No card on file',
+      onPress: () => togglePaymentMethodExpanded('card'),
+      showChevron: true,
     });
 
     // Oxy Pay
@@ -326,15 +279,9 @@ export default function PaymentsScreen() {
       icon: 'wallet-outline',
       iconColor: colors.sidebarIconPayments,
       title: 'Oxy Pay',
-      subtitle: `Balance: ${formatFairCoinBalance(wallet?.balance || 0)}`,
-      customContent: (
-        <TouchableOpacity 
-          style={[styles.button, { backgroundColor: colors.card }]}
-          onPress={handleViewWalletDetails}
-        >
-          <Text style={[styles.buttonText, { color: colors.text }]}>Details</Text>
-        </TouchableOpacity>
-      ),
+      subtitle: `Balance: ${formatFairCoinBalance(wallet?.balance || 0)} -- Use your in-app wallet balance`,
+      onPress: () => togglePaymentMethodExpanded('oxy-pay-method'),
+      showChevron: true,
     });
 
     // FairCoin
@@ -343,64 +290,66 @@ export default function PaymentsScreen() {
       icon: 'qrcode-scan',
       iconColor: '#FF6B35',
       title: 'FAIRWallet',
-      subtitle: 'FairCoin cryptocurrency',
-      customContent: (
-        <TouchableOpacity 
-          style={[styles.button, { backgroundColor: colors.card }]}
-          onPress={handleViewPaymentMethods}
-        >
-          <Text style={[styles.buttonText, { color: colors.text }]}>Info</Text>
-        </TouchableOpacity>
-      ),
+      subtitle: 'Pay with FairCoin via QR code',
+      onPress: () => togglePaymentMethodExpanded('faircoin-method'),
+      showChevron: true,
     });
 
     return items;
-  }, [subscription, wallet, colors, formatFairCoinBalance, handleViewPaymentMethods, handleViewWalletDetails]);
+  }, [subscription, wallet, colors, formatFairCoinBalance, togglePaymentMethodExpanded]);
 
-  // History section items
-  const historyItems = useMemo(() => {
-    const items: any[] = [];
+  // Billing history items for inline display
+  const billingHistoryItems = useMemo(() => {
+    return payments.map((payment, index) => {
+      const date = payment.createdAt ? formatDate(payment.createdAt) : 'Unknown date';
+      const amount = payment.amount ? `${payment.amount.toFixed(2)}` : 'N/A';
+      const currency = payment.currency || 'FAIR';
+      const status = payment.status || 'completed';
 
-    // Billing history
-    items.push({
-      id: 'billing',
-      icon: 'file-document-outline',
-      iconColor: colors.sidebarIconData,
-      title: 'Billing history',
-      subtitle: payments.length > 0 
-        ? `${payments.length} payment${payments.length !== 1 ? 's' : ''}`
-        : 'No payment history',
-      customContent: (
-        <TouchableOpacity 
-          style={[styles.button, { backgroundColor: colors.card }]}
-          onPress={handleViewBillingHistory}
-        >
-          <Text style={[styles.buttonText, { color: colors.text }]}>View</Text>
-        </TouchableOpacity>
-      ),
-    });
-
-    // Transaction history
-    if (transactions.length > 0) {
-      items.push({
-        id: 'transactions',
-        icon: 'swap-horizontal',
-        iconColor: colors.sidebarIconPayments,
-        title: 'Transaction history',
-        subtitle: `${transactions.length} recent transaction${transactions.length !== 1 ? 's' : ''}`,
+      return {
+        id: `billing-${payment.id || index}`,
+        icon: 'file-document-outline',
+        iconColor: colors.sidebarIconData,
+        title: `${amount} ${currency}`,
+        subtitle: date,
         customContent: (
-          <TouchableOpacity 
-            style={[styles.button, { backgroundColor: colors.card }]}
-            onPress={handleViewTransactions}
-          >
-            <Text style={[styles.buttonText, { color: colors.text }]}>View</Text>
-          </TouchableOpacity>
+          <View style={styles.statusBadge}>
+            <View style={[styles.statusDot, { backgroundColor: getPaymentStatusColor(status) }]} />
+            <Text style={[styles.statusText, { color: getPaymentStatusColor(status) }]}>
+              {getPaymentStatusLabel(status)}
+            </Text>
+          </View>
         ),
-      });
-    }
+      };
+    });
+  }, [payments, colors, getPaymentStatusColor, getPaymentStatusLabel]);
 
-    return items;
-  }, [payments, transactions, colors, handleViewBillingHistory, handleViewTransactions]);
+  // Transaction history items for inline display
+  const transactionHistoryItems = useMemo(() => {
+    return transactions.map((tx, index) => {
+      const date = tx.createdAt ? formatDate(tx.createdAt) : 'Unknown date';
+      const amount = tx.amount ? tx.amount.toFixed(2) : 'N/A';
+      const type = tx.type || 'transaction';
+      const isCredit = type.toLowerCase() === 'credit' || type.toLowerCase() === 'deposit' || type.toLowerCase() === 'refund';
+      const txIcon = isCredit ? 'arrow-down-circle-outline' : 'arrow-up-circle-outline';
+
+      return {
+        id: `tx-${tx.id || index}`,
+        icon: txIcon,
+        iconColor: isCredit ? colors.success : colors.sidebarIconPayments,
+        title: getTransactionTypeLabel(type),
+        subtitle: date,
+        customContent: (
+          <Text style={[
+            styles.transactionAmount,
+            { color: isCredit ? colors.success : colors.text },
+          ]}>
+            {isCredit ? '+' : '-'} {amount}
+          </Text>
+        ),
+      };
+    });
+  }, [transactions, colors, getTransactionTypeLabel]);
 
   // Info section items
   const infoItems = useMemo(() => {
@@ -561,16 +510,87 @@ export default function PaymentsScreen() {
         <AccountCard>
           <GroupedSection items={paymentMethodsItems} />
         </AccountCard>
+        {expandedPaymentMethod && (
+          <View style={[styles.expandedDetails, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            {expandedPaymentMethod === 'card' && (
+              <>
+                <Text style={[styles.expandedTitle, { color: colors.text }]}>Credit/Debit Card</Text>
+                <Text style={[styles.expandedBody, { color: colors.secondaryText }]}>
+                  Secure card payments processed through Oxy services. Your card details are encrypted and handled by secure payment processors. Cards are charged when purchasing subscriptions or services.
+                </Text>
+              </>
+            )}
+            {expandedPaymentMethod === 'oxy-pay-method' && (
+              <>
+                <Text style={[styles.expandedTitle, { color: colors.text }]}>Oxy Pay Wallet</Text>
+                <Text style={[styles.expandedBody, { color: colors.secondaryText }]}>
+                  Your in-app wallet uses FairCoin as the base currency. Use your balance to pay for subscriptions, premium features, and services within the Oxy ecosystem. Your current balance is displayed at the top of this screen.
+                </Text>
+              </>
+            )}
+            {expandedPaymentMethod === 'faircoin-method' && (
+              <>
+                <Text style={[styles.expandedTitle, { color: colors.text }]}>FAIRWallet</Text>
+                <Text style={[styles.expandedBody, { color: colors.secondaryText }]}>
+                  FAIRWallet enables direct FairCoin payments via QR code scanning. When making a payment, choose FAIRWallet as your payment method and scan the generated QR code with your FairCoin wallet app. Transactions use blockchain technology for transparency and security.
+                </Text>
+              </>
+            )}
+          </View>
+        )}
       </Section>
 
-      {/* History Section */}
-      {historyItems.length > 0 && (
-        <Section title="History">
+      {/* Billing History Section */}
+      <Section title="Billing History">
+        {billingHistoryItems.length > 0 ? (
           <AccountCard>
-            <GroupedSection items={historyItems} />
+            <GroupedSection items={billingHistoryItems} />
           </AccountCard>
-        </Section>
-      )}
+        ) : (
+          <AccountCard>
+            <View style={styles.emptyStateContainer}>
+              <MaterialCommunityIcons
+                name="file-document-outline"
+                size={40}
+                color={colors.text}
+                style={styles.emptyStateIcon}
+              />
+              <Text style={[styles.emptyStateTitle, { color: colors.text }]}>
+                No billing history
+              </Text>
+              <Text style={[styles.emptyStateSubtitle, { color: colors.secondaryText }]}>
+                Your payments and invoices will appear here
+              </Text>
+            </View>
+          </AccountCard>
+        )}
+      </Section>
+
+      {/* Transaction History Section */}
+      <Section title="Transaction History">
+        {transactionHistoryItems.length > 0 ? (
+          <AccountCard>
+            <GroupedSection items={transactionHistoryItems} />
+          </AccountCard>
+        ) : (
+          <AccountCard>
+            <View style={styles.emptyStateContainer}>
+              <MaterialCommunityIcons
+                name="swap-horizontal"
+                size={40}
+                color={colors.text}
+                style={styles.emptyStateIcon}
+              />
+              <Text style={[styles.emptyStateTitle, { color: colors.text }]}>
+                No transactions
+              </Text>
+              <Text style={[styles.emptyStateSubtitle, { color: colors.secondaryText }]}>
+                Your wallet transactions will appear here
+              </Text>
+            </View>
+          </AccountCard>
+        )}
+      </Section>
 
       {/* Info Section */}
       <Section title="About Payments">
@@ -604,9 +624,6 @@ export default function PaymentsScreen() {
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
-  },
-  scrollView: {
     flex: 1,
   },
   mobileContent: {
@@ -681,6 +698,61 @@ const styles = StyleSheet.create({
   buttonText: {
     fontSize: 14,
     fontWeight: '500',
+  },
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  statusText: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  transactionAmount: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  expandedDetails: {
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 8,
+    borderWidth: 1,
+  },
+  expandedTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    marginBottom: 6,
+  },
+  expandedBody: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  emptyStateContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 32,
+    paddingHorizontal: 24,
+  },
+  emptyStateIcon: {
+    opacity: 0.4,
+    marginBottom: 12,
+  },
+  emptyStateTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    marginBottom: 6,
+    opacity: 0.8,
+  },
+  emptyStateSubtitle: {
+    fontSize: 13,
+    opacity: 0.6,
+    textAlign: 'center',
+    lineHeight: 18,
   },
   faircoinBanner: {
     borderRadius: 24,

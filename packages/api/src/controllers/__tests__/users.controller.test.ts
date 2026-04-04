@@ -84,7 +84,7 @@ describe('UsersController', () => {
           { 'name.last': { $regex: 'test', $options: 'i' } },
         ],
       });
-      expect(mockQuery.select).toHaveBeenCalledWith('username name avatar email description');
+      expect(mockQuery.select).toHaveBeenCalledWith('username name avatar email description color');
       expect(mockQuery.limit).toHaveBeenCalledWith(5);
       expect(mockQuery.lean).toHaveBeenCalled();
     });

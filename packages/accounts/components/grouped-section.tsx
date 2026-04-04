@@ -1,7 +1,7 @@
 import React, { memo } from 'react';
 import { View } from 'react-native';
 import { GroupedItem } from './grouped-item';
-import { Ionicons } from '@expo/vector-icons';
+import type { MaterialCommunityIconName } from '@/types/icons';
 
 interface GroupedSectionItem {
     id: string;
@@ -26,7 +26,7 @@ const GroupedSectionComponent = ({ items }: GroupedSectionProps) => {
             {items.map((item, index) => (
                 <View key={`${item.id}-${index}`} style={{ marginBottom: index < items.length - 1 ? 4 : 0 }}>
                     <GroupedItem
-                        icon={item.icon}
+                        icon={item.icon as MaterialCommunityIconName | undefined}
                         iconColor={item.iconColor}
                         title={item.title}
                         subtitle={item.subtitle}

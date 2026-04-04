@@ -3,13 +3,11 @@ import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { StyleSheet, ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-interface KeyboardAwareScrollViewProps {
+interface KeyboardAwareScrollViewWrapperProps {
   children: React.ReactNode;
   style?: ViewStyle | ViewStyle[];
   contentContainerStyle?: ViewStyle | ViewStyle[];
-  enableOnAndroid?: boolean;
-  enableAutomaticScroll?: boolean;
-  extraScrollHeight?: number;
+  extraKeyboardSpace?: number;
   keyboardShouldPersistTaps?: 'always' | 'never' | 'handled';
 }
 
@@ -17,11 +15,9 @@ export function KeyboardAwareScrollViewWrapper({
   children,
   style,
   contentContainerStyle,
-  enableOnAndroid = true,
-  enableAutomaticScroll = true,
-  extraScrollHeight = 20,
+  extraKeyboardSpace = 20,
   keyboardShouldPersistTaps = 'handled',
-}: KeyboardAwareScrollViewProps) {
+}: KeyboardAwareScrollViewWrapperProps) {
   const insets = useSafeAreaInsets();
 
   return (
@@ -32,9 +28,7 @@ export function KeyboardAwareScrollViewWrapper({
         { paddingBottom: insets.bottom },
         contentContainerStyle,
       ]}
-      enableOnAndroid={enableOnAndroid}
-      enableAutomaticScroll={enableAutomaticScroll}
-      extraScrollHeight={extraScrollHeight}
+      extraKeyboardSpace={extraKeyboardSpace}
       keyboardShouldPersistTaps={keyboardShouldPersistTaps}
       showsVerticalScrollIndicator={false}
     >

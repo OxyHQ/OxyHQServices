@@ -28,11 +28,14 @@ export default function DataScreen() {
   });
   const updatePrivacyMutation = useUpdatePrivacySettings();
 
+  // Cast privacy settings to a record so we can access dynamic keys
+  const settings = privacySettings as Record<string, unknown> | undefined;
+
   // Get privacy settings values (use defaults if not loaded yet)
-  const dataSharing = privacySettings?.dataSharing ?? true;
-  const locationSharing = privacySettings?.locationSharing ?? false;
-  const analyticsSharing = privacySettings?.analyticsSharing ?? true;
-  const showActivity = privacySettings?.showActivity ?? true;
+  const dataSharing = (settings?.dataSharing as boolean | undefined) ?? true;
+  const locationSharing = (settings?.locationSharing as boolean | undefined) ?? false;
+  const analyticsSharing = (settings?.analyticsSharing as boolean | undefined) ?? true;
+  const showActivity = (settings?.showActivity as boolean | undefined) ?? true;
 
   // Handle privacy setting updates
   const handlePrivacyUpdate = useCallback(async (key: string, value: boolean) => {

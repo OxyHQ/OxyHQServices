@@ -8,7 +8,6 @@ import { handleAuthError, isInvalidSessionError } from '../../utils/errorHandler
 import type { StorageInterface } from '../../utils/storageHelpers';
 import type { OxyServices } from '@oxyhq/core';
 import { SignatureService } from '@oxyhq/core';
-import * as Crypto from 'expo-crypto';
 
 /** Type guard for error objects with optional code and status properties */
 function isErrorWithCodeOrStatus(error: unknown): error is { code?: string; status?: number; message?: string } {
@@ -133,6 +132,8 @@ export const useAuthOperations = ({
         }
 
         // Generate a local session ID using cryptographically secure randomness
+        const cryptoModule = 'expo-crypto';
+        const Crypto = await import(/* webpackIgnore: true */ cryptoModule);
         const localSessionId = `offline_${Crypto.getRandomUUID()}`;
         const localDeviceId = `device_${Crypto.getRandomUUID()}`;
         const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(); // 7 days

@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { View, StyleSheet, Platform } from 'react-native';
+import { View, StyleSheet, Platform, type ColorValue } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
@@ -10,11 +10,11 @@ export function DrawerContent(props: DrawerContentComponentProps) {
     const colorScheme = useColorScheme() ?? 'light';
     const colors = Colors[colorScheme];
 
-    const gradientColors = useMemo(() => {
+    const gradientColors = useMemo((): readonly [ColorValue, ColorValue, ColorValue] => {
         if (colorScheme === 'dark') {
-            return ['rgba(0, 0, 0, 0.9)', 'rgba(0, 0, 0, 0.5)', 'transparent'];
+            return ['rgba(0, 0, 0, 0.9)', 'rgba(0, 0, 0, 0.5)', 'transparent'] as const;
         } else {
-            return ['rgba(255, 255, 255, 0.9)', 'rgba(255, 255, 255, 0.5)', 'transparent'];
+            return ['rgba(255, 255, 255, 0.9)', 'rgba(255, 255, 255, 0.5)', 'transparent'] as const;
         }
     }, [colorScheme]);
 

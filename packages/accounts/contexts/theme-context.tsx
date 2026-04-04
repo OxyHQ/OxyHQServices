@@ -58,15 +58,16 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   
   // Update web system theme when React Native's useColorScheme updates (after hydration)
   useEffect(() => {
-    if (Platform.OS === 'web' && systemColorScheme) {
+    if (Platform.OS === 'web' && systemColorScheme && systemColorScheme !== 'unspecified') {
       setWebSystemTheme(systemColorScheme);
     }
   }, [systemColorScheme]);
-  
+
   // Get system theme - use state for web (initialized synchronously), useColorScheme for native
-  const systemTheme: ResolvedTheme = Platform.OS === 'web' 
+  // ColorSchemeName can be 'light' | 'dark' | 'unspecified'; treat 'unspecified' as 'light'
+  const systemTheme: ResolvedTheme = Platform.OS === 'web'
     ? webSystemTheme
-    : (systemColorScheme ?? 'light');
+    : (systemColorScheme === 'dark' ? 'dark' : 'light');
 
   // Resolve the actual theme to use
   const resolvedTheme: ResolvedTheme = 

@@ -16,10 +16,10 @@ export function Logo({ height = 32, style }: LogoProps) {
   const width = height * (41 / 22);
 
   return (
-    <Image 
-      source={require('@/assets/images/OxyLogo.svg')} 
+    <Image
+      source={require('@/assets/images/OxyLogo.svg')}
       style={[styles.logo, { height, width }, style]}
-      contentFit="contain"
+      resizeMode="contain"
     />
   );
 }

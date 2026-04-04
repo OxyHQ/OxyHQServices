@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button, KeyboardAwareScrollViewWrapper } from '@/components/ui';
 import { useUsernameValidation } from '@/hooks/auth/useUsernameValidation';
 import { sanitizeUsernameInput } from '@/utils/auth/usernameUtils';
-import { showBottomSheet } from '@oxyhq/services';
+import { useOxy } from '@oxyhq/services';
 import type { OxyServices } from '@oxyhq/core';
 import telescopeAnimation from '@/assets/lottie/telescope.json';
 
@@ -39,6 +39,7 @@ export function UsernameStep({
   isUpdating = false,
   updateError = null,
 }: UsernameStepProps) {
+  const { showBottomSheet } = useOxy();
   const insets = useSafeAreaInsets();
   const validation = useUsernameValidation(username, oxyServices);
   const lottieRef = useRef<LottieView>(null);
@@ -212,7 +213,7 @@ export function UsernameStep({
         {!isOffline && (
           <Button
             variant="ghost"
-            onPress={() => showBottomSheet('LearnMoreUsernames')}
+            onPress={() => showBottomSheet?.('LearnMoreUsernames')}
             disabled={isUpdating}
           >
             Learn more about usernames

@@ -1,5 +1,5 @@
 import React, { useRef, useState, useCallback, useMemo } from 'react';
-import { View, ScrollView, StyleSheet, TouchableOpacity, Platform } from 'react-native';
+import { View, ScrollView, StyleSheet, TouchableOpacity, Platform, type ColorValue } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Colors } from '@/constants/theme';
@@ -45,8 +45,9 @@ export function HorizontalScrollSection({
     checkScrollPosition(contentSize.width, contentOffset.x, layoutMeasurement.width);
   }, [checkScrollPosition]);
 
-  const handleContentSizeChange = useCallback((contentWidth: number, contentHeight: number) => {
-    scrollViewRef.current?.measure((x, y, width, height, pageX, pageY) => {
+  const handleContentSizeChange = useCallback((contentWidth: number, _contentHeight: number) => {
+    const scrollView = scrollViewRef.current as any;
+    scrollView?.measure((_x: number, _y: number, width: number, _height: number, _pageX: number, _pageY: number) => {
       if (contentWidth > width) {
         setShowRightArrow(true);
       } else {
@@ -62,7 +63,8 @@ export function HorizontalScrollSection({
   }, [handlePressIn, onPressIn]);
 
   const scrollRight = useCallback(() => {
-    scrollViewRef.current?.measure((x, y, width) => {
+    const scrollView = scrollViewRef.current as any;
+    scrollView?.measure((_x: number, _y: number, _width: number) => {
       scrollViewRef.current?.scrollToEnd({ animated: true });
     });
     handlePressIn();
@@ -81,12 +83,12 @@ export function HorizontalScrollSection({
 
   // Gradient colors based on theme - fade from transparent at edges to background color near arrows
   const gradientColors = useMemo(() => {
-    const bgColor = colors.background;
+    const bgColor = colors.background as ColorValue;
     return {
-      // Left: bgColor near arrow → transparent at left edge
-      left: [bgColor, 'transparent'],
-      // Right: transparent at right edge → bgColor near arrow
-      right: ['transparent', bgColor],
+      // Left: bgColor near arrow -> transparent at left edge
+      left: [bgColor, 'transparent'] as readonly [ColorValue, ColorValue],
+      // Right: transparent at right edge -> bgColor near arrow
+      right: ['transparent', bgColor] as readonly [ColorValue, ColorValue],
     };
   }, [colors.background]);
 
