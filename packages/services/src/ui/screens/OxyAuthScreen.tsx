@@ -119,7 +119,7 @@ const OxyAuthScreen: React.FC<BaseScreenProps> = ({
   theme,
 }) => {
   const bloomTheme = useTheme();
-  const { oxyServices, signIn, switchSession } = useOxy();
+  const { oxyServices, signIn, switchSession, storageKeyPrefix } = useOxy();
 
   const [authSession, setAuthSession] = useState<AuthSession | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -273,7 +273,7 @@ const OxyAuthScreen: React.FC<BaseScreenProps> = ({
       await oxyServices.makeRequest('POST', '/auth/session/create', {
         sessionToken,
         expiresAt,
-        appId: Platform.OS, // Identifier for requesting app
+        appId: storageKeyPrefix ? storageKeyPrefix.charAt(0).toUpperCase() + storageKeyPrefix.slice(1) : Platform.OS,
       }, { cache: false });
 
       setAuthSession({ sessionToken, expiresAt });
