@@ -14,6 +14,7 @@ import { useHapticPress } from '@/hooks/use-haptic-press';
 import { useSearchNavigation } from '@/hooks/use-search-navigation';
 import { darkenColor } from '@/utils/color-utils';
 import Animated, {
+  Easing,
   useAnimatedStyle,
   useDerivedValue,
   useSharedValue,
@@ -23,6 +24,34 @@ import Animated, {
 } from 'react-native-reanimated';
 
 const THEME_TRANSITION_MS = 280;
+const ICON_ANIM_MS = 350;
+
+/** Animated wrapper that plays rotate+scale+fade entrance when `triggerKey` changes. */
+function AnimatedThemeIcon({ triggerKey, children }: { triggerKey: string; children: React.ReactNode }) {
+  const progress = useSharedValue(0);
+  const prevKey = useRef(triggerKey);
+
+  if (prevKey.current !== triggerKey) {
+    prevKey.current = triggerKey;
+    progress.value = 0;
+    progress.value = withTiming(1, { duration: ICON_ANIM_MS, easing: Easing.bezier(0.34, 1.56, 0.64, 1) });
+  }
+
+  // On first mount, start already animated in
+  if (progress.value === 0 && prevKey.current === triggerKey) {
+    progress.value = 1;
+  }
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    opacity: progress.value,
+    transform: [
+      { rotate: `${-90 + 90 * progress.value}deg` },
+      { scale: 0.4 + 0.6 * progress.value },
+    ],
+  }));
+
+  return <Animated.View style={animatedStyle}>{children}</Animated.View>;
+}
 
 export default function TabLayout() {
   const { mode } = useTheme();
@@ -174,7 +203,9 @@ export default function TabLayout() {
           </TouchableOpacity>
           <TouchableOpacity style={styles.circleButton} onPressIn={handlePressIn} onPress={toggleColorScheme}>
             <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconData }]}>
-              <MaterialCommunityIcons name={mode === 'dark' ? 'weather-sunny' : 'weather-night'} size={22} color={darkenColor(colors.sidebarIconData)} />
+              <AnimatedThemeIcon triggerKey={mode}>
+                <MaterialCommunityIcons name={mode === 'dark' ? 'weather-sunny' : 'weather-night'} size={22} color={darkenColor(colors.sidebarIconData)} />
+              </AnimatedThemeIcon>
             </View>
           </TouchableOpacity>
         </View>
