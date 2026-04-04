@@ -1,8 +1,7 @@
 import React, { useMemo } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useColors } from '@/hooks/useColors';
 
 export interface IdentityCard {
   id: string;
@@ -19,8 +18,7 @@ interface IdentityCardsSectionProps {
 }
 
 export function IdentityCardsSection({ cards, onPressIn }: IdentityCardsSectionProps) {
-  const colorScheme = useColorScheme() ?? 'light';
-  const colors = Colors[colorScheme];
+  const colors = useColors();
   const { width } = useWindowDimensions();
 
   const cardWidth = useMemo(() => {
@@ -46,9 +44,9 @@ export function IdentityCardsSection({ cards, onPressIn }: IdentityCardsSectionP
         >
           {card.customIcon}
           <Text style={[styles.identityCardTitle, { color: colors.text }]}>{card.title}</Text>
-          <Text style={[styles.identityCardSubtitle, { color: colors.secondaryText }]}>{card.subtitle}</Text>
+          <Text style={[styles.identityCardSubtitle, { color: colors.textSecondary }]}>{card.subtitle}</Text>
           {card.showChevron && (
-            <Ionicons name="chevron-forward" size={20} color={colors.secondaryText} style={styles.identityChevron} />
+            <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} style={styles.identityChevron} />
           )}
         </TouchableOpacity>
       ))}

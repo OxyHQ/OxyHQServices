@@ -1,22 +1,22 @@
 import React, { useMemo } from 'react';
 import { View, StyleSheet, Platform, type ColorValue } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/hooks/useColors';
+import { useTheme } from '@oxyhq/bloom/theme';
 import { DrawerContentScrollView, DrawerContentComponentProps } from '@react-navigation/drawer';
 import { SidebarContent } from './sidebar-content';
 
 export function DrawerContent(props: DrawerContentComponentProps) {
-    const colorScheme = useColorScheme() ?? 'light';
-    const colors = Colors[colorScheme];
+    const colors = useColors();
+    const { mode } = useTheme();
 
     const gradientColors = useMemo((): readonly [ColorValue, ColorValue, ColorValue] => {
-        if (colorScheme === 'dark') {
+        if (mode === 'dark') {
             return ['rgba(0, 0, 0, 0.9)', 'rgba(0, 0, 0, 0.5)', 'transparent'] as const;
         } else {
             return ['rgba(255, 255, 255, 0.9)', 'rgba(255, 255, 255, 0.5)', 'transparent'] as const;
         }
-    }, [colorScheme]);
+    }, [mode]);
 
     return (
         <View style={styles.container}>

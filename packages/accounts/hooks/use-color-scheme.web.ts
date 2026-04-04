@@ -1,12 +1,11 @@
-import { useThemeContext } from '@/contexts/theme-context';
-
 /**
- * To support static rendering, this value needs to be re-calculated on the client side for web
- * Now uses ThemeContext which loads theme synchronously from localStorage to prevent flash
+ * Web-specific colour-scheme hook.
+ * Bloom's BloomThemeProvider already handles SSR / static rendering
+ * and prevents the flash-of-wrong-theme, so this simply delegates.
  */
-export function useColorScheme() {
-  const { resolvedTheme, isLoaded } = useThemeContext();
-  
-  // Return the resolved theme, or 'light' as fallback if not loaded yet (shouldn't happen on web)
-  return isLoaded ? resolvedTheme : 'light';
+import { useTheme } from '@oxyhq/bloom/theme';
+
+export function useColorScheme(): 'light' | 'dark' {
+  const { mode } = useTheme();
+  return mode;
 }

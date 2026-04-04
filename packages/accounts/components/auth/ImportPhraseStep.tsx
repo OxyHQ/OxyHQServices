@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, TextInput, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useColors } from '@/hooks/useColors';
 import { Button, KeyboardAwareScrollViewWrapper } from '@/components/ui';
 
 interface ImportPhraseStepProps {
@@ -13,7 +14,6 @@ interface ImportPhraseStepProps {
   isLoading: boolean;
   backgroundColor: string;
   textColor: string;
-  colorScheme: 'light' | 'dark';
 }
 
 /**
@@ -28,8 +28,8 @@ export function ImportPhraseStep({
   isLoading,
   backgroundColor,
   textColor,
-  colorScheme,
 }: ImportPhraseStepProps) {
+  const colors = useColors();
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
@@ -44,8 +44,8 @@ export function ImportPhraseStep({
         </Text>
 
         <View style={[styles.phraseGrid, {
-          backgroundColor: colorScheme === 'dark' ? '#1C1C1E' : '#F5F5F5',
-          borderColor: colorScheme === 'dark' ? '#2C2C2E' : '#E0E0E0'
+          backgroundColor: colors.card,
+          borderColor: colors.border,
         }]}>
           {phraseWords.map((word, index) => (
             <View key={index} style={styles.wordInputContainer}>
@@ -53,7 +53,7 @@ export function ImportPhraseStep({
               <TextInput
                 style={[styles.wordInput, {
                   color: textColor,
-                  borderColor: colorScheme === 'dark' ? '#2C2C2E' : '#E0E0E0'
+                  borderColor: colors.border,
                 }]}
                 value={word}
                 onChangeText={(text) => {
@@ -65,7 +65,7 @@ export function ImportPhraseStep({
                   }
                 }}
                 placeholder="word"
-                placeholderTextColor={colorScheme === 'dark' ? '#8E8E93' : '#8E8E93'}
+                placeholderTextColor={colors.textSecondary}
                 autoCapitalize="none"
                 autoCorrect={false}
               />
@@ -73,7 +73,7 @@ export function ImportPhraseStep({
           ))}
         </View>
 
-        {error && <Text style={styles.errorText}>{error}</Text>}
+        {error && <Text style={[styles.errorText, { color: colors.error }]}>{error}</Text>}
 
         <Button
           variant="primary"
@@ -127,7 +127,6 @@ const styles = StyleSheet.create({
     marginTop: 32,
   },
   errorText: {
-    color: '#DC3545',
     fontSize: 14,
     marginTop: 8,
     textAlign: 'center',

@@ -1,8 +1,7 @@
 import React from 'react';
 import { View, StyleSheet, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -10,8 +9,7 @@ import { TouchableOpacity } from 'react-native';
 import { useHapticPress } from '@/hooks/use-haptic-press';
 
 export default function EasterEggScreen() {
-  const colorScheme = useColorScheme() ?? 'light';
-  const colors = Colors[colorScheme];
+  const colors = useColors();
   const router = useRouter();
   const handlePressIn = useHapticPress();
 
@@ -32,7 +30,7 @@ export default function EasterEggScreen() {
           <ThemedText style={[styles.title, { color: colors.text }]}>
             🎉 Easter Egg Found! 🎉
           </ThemedText>
-          <ThemedText style={[styles.subtitle, { color: colors.secondaryText }]}>
+          <ThemedText style={[styles.subtitle, { color: colors.textSecondary }]}>
             You discovered a hidden feature!
           </ThemedText>
           <ThemedText style={[styles.description, { color: colors.text }]}>

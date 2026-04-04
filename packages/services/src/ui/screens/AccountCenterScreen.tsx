@@ -11,8 +11,9 @@ import { useCallback, useMemo } from 'react';
 import type { BaseScreenProps } from '../types/navigation';
 import { packageInfo } from '@oxyhq/core';
 import { toast } from '../../lib/sonner';
-import { confirmAction } from '../utils/confirmAction';
 import { fontFamilies } from '../styles/fonts';
+import * as Prompt from '@oxyhq/bloom/prompt';
+import { usePromptControl } from '@oxyhq/bloom/prompt';
 import ProfileCard from '../components/ProfileCard';
 import Section from '../components/Section';
 import QuickActions from '../components/QuickActions';
@@ -31,7 +32,6 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
     theme,
     navigate,
 }) => {
-    // Use useOxy() hook for OxyContext values
     const { user, logout, isLoading, sessions, isAuthenticated, managedAccounts } = useOxy();
     const { t } = useI18n();
     const bloomTheme = useTheme();
@@ -39,8 +39,8 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
     const normalizedTheme = normalizeTheme(theme);
     const dangerColor = bloomTheme.colors.error;
     const colors = Colors[normalizeColorScheme(colorScheme, normalizedTheme)];
+    const logoutPrompt = usePromptControl();
 
-    // Memoized logout handler - prevents unnecessary re-renders
     const handleLogout = useCallback(async () => {
         try {
             await logout();
@@ -54,14 +54,6 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
             toast.error(t('common.errors.signOutFailed') || 'There was a problem signing you out. Please try again.');
         }
     }, [logout, onClose, t]);
-
-    // Memoized confirm logout handler - prevents unnecessary re-renders
-    const confirmLogout = useCallback(() => {
-        confirmAction(
-            t('common.confirms.signOut') || 'Are you sure you want to sign out?',
-            handleLogout
-        );
-    }, [handleLogout, t]);
 
     if (!isAuthenticated) {
         return (
@@ -81,7 +73,6 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
 
     return (
         <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
-            {/* Header with user profile */}
             {user && (
                 <ProfileCard
                     user={user}
@@ -93,7 +84,6 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
             )}
 
             <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
-                {/* Quick Actions */}
                 <Section title={t('accountCenter.sections.quickActions') || 'Quick Actions'} isFirst={true}>
                     <QuickActions
                         theme={normalizedTheme}
@@ -105,144 +95,58 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                             ...(user?.isPremium ? [{ id: 'billing', icon: 'card', iconColor: colors.iconPersonalInfo, title: t('accountCenter.quickActions.billing') || 'Billing', onPress: () => navigate?.('PaymentGateway') }] : []),
                             ...(sessions && sessions.length > 1 ? [{ id: 'switch', icon: 'swap-horizontal', iconColor: colors.iconStorage, title: t('accountCenter.quickActions.switch') || 'Switch', onPress: () => navigate?.('AccountSwitcher') }] : []),
                         ], [user?.isPremium, sessions, navigate, t, colors])}
-
                     />
                 </Section>
 
-                {/* Account Management */}
                 <SettingsListGroup title={t('accountCenter.sections.accountManagement') || 'Account Management'}>
-                    <SettingsListItem
-                        icon={<SettingsIcon name="account-circle" color={colors.iconSecurity} />}
-                        title={t('accountCenter.items.accountOverview.title') || 'Account Overview'}
-                        description={t('accountCenter.items.accountOverview.subtitle') || 'Complete account information'}
-                        onPress={() => navigate?.('AccountOverview')}
-                    />
-                    <SettingsListItem
-                        icon={<SettingsIcon name="cog" color={colors.iconData} />}
-                        title={t('accountCenter.items.editProfile.title') || 'Edit Profile'}
-                        description={t('accountCenter.items.editProfile.subtitle') || 'Manage your profile and preferences'}
-                        onPress={() => navigate?.('AccountSettings')}
-                    />
-                    <SettingsListItem
-                        icon={<SettingsIcon name="shield-check" color={colors.iconSecurity} />}
-                        title={t('accountCenter.items.manageSessions.title') || 'Manage Sessions'}
-                        description={t('accountCenter.items.manageSessions.subtitle') || 'Security and active devices'}
-                        onPress={() => navigate?.('SessionManagement')}
-                    />
-                    <SettingsListItem
-                        icon={<SettingsIcon name="folder" color={colors.iconStorage} />}
-                        title={t('accountCenter.items.fileManagement.title') || 'File Management'}
-                        description={t('accountCenter.items.fileManagement.subtitle') || 'Upload, download, and manage your files'}
-                        onPress={() => navigate?.('FileManagement')}
-                    />
-                    <SettingsListItem
-                        icon={<SettingsIcon name="star" color={colors.iconPayments} />}
-                        title={t('accountCenter.items.premium.title') || 'Oxy+ Subscriptions'}
-                        description={user?.isPremium ? (t('accountCenter.items.premium.manage') || 'Manage your premium plan') : (t('accountCenter.items.premium.upgrade') || 'Upgrade to premium features')}
-                        onPress={() => navigate?.('PremiumSubscription')}
-                    />
+                    <SettingsListItem icon={<SettingsIcon name="account-circle" color={colors.iconSecurity} />} title={t('accountCenter.items.accountOverview.title') || 'Account Overview'} description={t('accountCenter.items.accountOverview.subtitle') || 'Complete account information'} onPress={() => navigate?.('AccountOverview')} />
+                    <SettingsListItem icon={<SettingsIcon name="cog" color={colors.iconData} />} title={t('accountCenter.items.editProfile.title') || 'Edit Profile'} description={t('accountCenter.items.editProfile.subtitle') || 'Manage your profile and preferences'} onPress={() => navigate?.('AccountSettings')} />
+                    <SettingsListItem icon={<SettingsIcon name="shield-check" color={colors.iconSecurity} />} title={t('accountCenter.items.manageSessions.title') || 'Manage Sessions'} description={t('accountCenter.items.manageSessions.subtitle') || 'Security and active devices'} onPress={() => navigate?.('SessionManagement')} />
+                    <SettingsListItem icon={<SettingsIcon name="folder" color={colors.iconStorage} />} title={t('accountCenter.items.fileManagement.title') || 'File Management'} description={t('accountCenter.items.fileManagement.subtitle') || 'Upload, download, and manage your files'} onPress={() => navigate?.('FileManagement')} />
+                    <SettingsListItem icon={<SettingsIcon name="star" color={colors.iconPayments} />} title={t('accountCenter.items.premium.title') || 'Oxy+ Subscriptions'} description={user?.isPremium ? (t('accountCenter.items.premium.manage') || 'Manage your premium plan') : (t('accountCenter.items.premium.upgrade') || 'Upgrade to premium features')} onPress={() => navigate?.('PremiumSubscription')} />
                     {user?.isPremium ? (
-                        <SettingsListItem
-                            icon={<SettingsIcon name="credit-card" color={colors.iconPersonalInfo} />}
-                            title={t('accountCenter.items.billing.title') || 'Billing Management'}
-                            description={t('accountCenter.items.billing.subtitle') || 'Payment methods and invoices'}
-                            onPress={() => navigate?.('PaymentGateway')}
-                        />
+                        <SettingsListItem icon={<SettingsIcon name="credit-card" color={colors.iconPersonalInfo} />} title={t('accountCenter.items.billing.title') || 'Billing Management'} description={t('accountCenter.items.billing.subtitle') || 'Payment methods and invoices'} onPress={() => navigate?.('PaymentGateway')} />
                     ) : null}
                 </SettingsListGroup>
 
-                {/* Multi-Account Management */}
                 {sessions && sessions.length > 1 && (
                     <SettingsListGroup title={t('accountCenter.sections.multiAccount') || 'Multi-Account'}>
-                        <SettingsListItem
-                            icon={<SettingsIcon name="account-group" color={colors.iconStorage} />}
-                            title={t('accountCenter.items.switchAccount.title') || 'Switch Account'}
-                            description={t('accountCenter.items.switchAccount.subtitle', { count: sessions.length }) || `${sessions.length} accounts available`}
-                            onPress={() => navigate?.('AccountSwitcher')}
-                        />
-                        <SettingsListItem
-                            icon={<SettingsIcon name="account-plus" color={colors.iconPersonalInfo} />}
-                            title={t('accountCenter.items.addAccount.title') || 'Add Another Account'}
-                            description={t('accountCenter.items.addAccount.subtitle') || 'Sign in with a different account'}
-                            onPress={() => navigate?.('OxyAuth')}
-                        />
+                        <SettingsListItem icon={<SettingsIcon name="account-group" color={colors.iconStorage} />} title={t('accountCenter.items.switchAccount.title') || 'Switch Account'} description={t('accountCenter.items.switchAccount.subtitle', { count: sessions.length }) || `${sessions.length} accounts available`} onPress={() => navigate?.('AccountSwitcher')} />
+                        <SettingsListItem icon={<SettingsIcon name="account-plus" color={colors.iconPersonalInfo} />} title={t('accountCenter.items.addAccount.title') || 'Add Another Account'} description={t('accountCenter.items.addAccount.subtitle') || 'Sign in with a different account'} onPress={() => navigate?.('OxyAuth')} />
                     </SettingsListGroup>
                 )}
 
-                {/* Single Account Setup */}
                 {(!sessions || sessions.length <= 1) && (
                     <SettingsListGroup title={t('accountCenter.sections.addAccount') || 'Add Account'}>
-                        <SettingsListItem
-                            icon={<SettingsIcon name="account-plus" color={colors.iconPersonalInfo} />}
-                            title={t('accountCenter.items.addAccount.title') || 'Add Another Account'}
-                            description={t('accountCenter.items.addAccount.subtitle') || 'Sign in with a different account'}
-                            onPress={() => navigate?.('OxyAuth')}
-                        />
+                        <SettingsListItem icon={<SettingsIcon name="account-plus" color={colors.iconPersonalInfo} />} title={t('accountCenter.items.addAccount.title') || 'Add Another Account'} description={t('accountCenter.items.addAccount.subtitle') || 'Sign in with a different account'} onPress={() => navigate?.('OxyAuth')} />
                     </SettingsListGroup>
                 )}
 
-                {/* Managed Accounts */}
                 {isAuthenticated && (
                     <SettingsListGroup title="Managed Accounts">
-                        <SettingsListItem
-                            icon={<SettingsIcon name="account-switch" color={colors.iconStorage} />}
-                            title="Manage Identities"
-                            description={managedAccounts.length > 0
-                                ? `${managedAccounts.length} managed ${managedAccounts.length === 1 ? 'identity' : 'identities'}`
-                                : 'Sub-accounts you control'}
-                            onPress={() => navigate?.('AccountSwitcher')}
-                        />
-                        <SettingsListItem
-                            icon={<SettingsIcon name="account-plus" color={colors.iconPersonalInfo} />}
-                            title="Create New Identity"
-                            description="Add a managed sub-account"
-                            onPress={() => navigate?.('CreateManagedAccount')}
-                        />
+                        <SettingsListItem icon={<SettingsIcon name="account-switch" color={colors.iconStorage} />} title="Manage Identities" description={managedAccounts.length > 0 ? `${managedAccounts.length} managed ${managedAccounts.length === 1 ? 'identity' : 'identities'}` : 'Sub-accounts you control'} onPress={() => navigate?.('AccountSwitcher')} />
+                        <SettingsListItem icon={<SettingsIcon name="account-plus" color={colors.iconPersonalInfo} />} title="Create New Identity" description="Add a managed sub-account" onPress={() => navigate?.('CreateManagedAccount')} />
                     </SettingsListGroup>
                 )}
 
-                {/* Additional Options */}
                 <SettingsListGroup title={t('accountCenter.sections.moreOptions') || 'More Options'}>
                     {Platform.OS !== 'web' ? (
-                        <SettingsListItem
-                            icon={<SettingsIcon name="bell" color={colors.iconStorage} />}
-                            title={t('accountCenter.items.notifications.title') || 'Notifications'}
-                            description={t('accountCenter.items.notifications.subtitle') || 'Manage notification settings'}
-                            onPress={() => navigate?.('AccountSettings', { activeTab: 'notifications' })}
-                        />
+                        <SettingsListItem icon={<SettingsIcon name="bell" color={colors.iconStorage} />} title={t('accountCenter.items.notifications.title') || 'Notifications'} description={t('accountCenter.items.notifications.subtitle') || 'Manage notification settings'} onPress={() => navigate?.('AccountSettings', { activeTab: 'notifications' })} />
                     ) : null}
-                    <SettingsListItem
-                        icon={<SettingsIcon name="translate" color={colors.iconPersonalInfo} />}
-                        title={t('language.title') || 'Language'}
-                        description={t('language.subtitle') || 'Choose your preferred language'}
-                        onPress={() => navigate?.('LanguageSelector')}
-                    />
-                    <SettingsListItem
-                        icon={<SettingsIcon name="help-circle" color={colors.iconSecurity} />}
-                        title={t('accountOverview.items.help.title') || 'Help & Support'}
-                        description={t('accountOverview.items.help.subtitle') || 'Get help and contact support'}
-                        onPress={() => navigate?.('HelpSupport')}
-                    />
-                    <SettingsListItem
-                        icon={<SettingsIcon name="information" color="#8E8E93" />}
-                        title={t('accountCenter.items.appInfo.title') || 'App Information'}
-                        description={t('accountCenter.items.appInfo.subtitle') || 'Version and system details'}
-                        onPress={() => navigate?.('AppInfo')}
-                    />
+                    <SettingsListItem icon={<SettingsIcon name="translate" color={colors.iconPersonalInfo} />} title={t('language.title') || 'Language'} description={t('language.subtitle') || 'Choose your preferred language'} onPress={() => navigate?.('LanguageSelector')} />
+                    <SettingsListItem icon={<SettingsIcon name="help-circle" color={colors.iconSecurity} />} title={t('accountOverview.items.help.title') || 'Help & Support'} description={t('accountOverview.items.help.subtitle') || 'Get help and contact support'} onPress={() => navigate?.('HelpSupport')} />
+                    <SettingsListItem icon={<SettingsIcon name="information" color="#8E8E93" />} title={t('accountCenter.items.appInfo.title') || 'App Information'} description={t('accountCenter.items.appInfo.subtitle') || 'Version and system details'} onPress={() => navigate?.('AppInfo')} />
                 </SettingsListGroup>
 
-                {/* Sign Out Section */}
                 <SettingsListGroup>
                     <SettingsListItem
                         icon={<SettingsIcon name="logout" color={dangerColor} />}
                         title={isLoading ? (t('accountCenter.signingOut') || 'Signing out...') : (t('common.actions.signOut') || 'Sign Out')}
-                        onPress={confirmLogout}
+                        onPress={() => logoutPrompt.open()}
                         destructive={true}
                         showChevron={false}
                         disabled={isLoading}
-                        rightElement={isLoading ? (
-                            <ActivityIndicator color={dangerColor} size="small" />
-                        ) : undefined}
+                        rightElement={isLoading ? (<ActivityIndicator color={dangerColor} size="small" />) : undefined}
                     />
                 </SettingsListGroup>
 
@@ -252,32 +156,26 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                     </Text>
                 </View>
             </ScrollView>
+
+            <Prompt.Basic
+                control={logoutPrompt}
+                title={t('common.actions.signOut') || 'Sign Out'}
+                description={t('common.confirms.signOut') || 'Are you sure you want to sign out?'}
+                onConfirm={handleLogout}
+                confirmButtonCta={t('common.actions.signOut') || 'Sign Out'}
+                confirmButtonColor="negative"
+            />
         </View>
     );
 };
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-    },
-    scrollView: {
-        flex: 1,
-    },
+    container: { flex: 1 },
+    scrollView: { flex: 1 },
     scrollContainer: screenContentStyle,
-    versionContainer: {
-        alignItems: 'center',
-        marginTop: 20,
-        marginBottom: 20,
-    },
-    versionText: {
-        fontSize: 12,
-        fontFamily: fontFamilies.inter,
-    },
-    message: {
-        fontSize: 16,
-        textAlign: 'center',
-        marginTop: 24,
-    },
+    versionContainer: { alignItems: 'center', marginTop: 20, marginBottom: 20 },
+    versionText: { fontSize: 12, fontFamily: fontFamilies.inter },
+    message: { fontSize: 16, textAlign: 'center', marginTop: 24 },
 });
 
 export default AccountCenterScreen;

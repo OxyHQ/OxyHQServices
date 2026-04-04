@@ -10,8 +10,8 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { ThemedView } from '@/components/themed-view';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { useThemeColor } from '@/hooks/use-theme-color';
+import { useTheme } from '@oxyhq/bloom/theme';
+import { useColors } from '@/hooks/useColors';
 import { useScrollContext } from '@/contexts/scroll-context';
 
 const HEADER_HEIGHT = 250;
@@ -26,13 +26,13 @@ export default function ParallaxScrollView({
   headerImage,
   headerBackgroundColor,
 }: Props) {
-  const backgroundColor = useThemeColor({}, 'background');
-  const colorScheme = useColorScheme() ?? 'light';
+  const { mode } = useTheme();
+  const colors = useColors();
   const insets = useSafeAreaInsets();
   const { setIsScrolled } = useScrollContext();
   const scrollRef = useAnimatedRef<Animated.ScrollView>();
   const scrollOffset = useScrollOffset(scrollRef);
-  
+
   const headerAnimatedStyle = useAnimatedStyle(() => {
     const translateY = interpolate(
       scrollOffset.value,
@@ -44,19 +44,19 @@ export default function ParallaxScrollView({
       [-HEADER_HEIGHT, 0, HEADER_HEIGHT],
       [2, 1, 1]
     );
-    
+
     return {
       transform: [{ translateY }, { scale }],
     };
   }, []);
-  
+
   const headerStyle = useMemo(() => [
     styles.header,
-    { backgroundColor: headerBackgroundColor[colorScheme] },
+    { backgroundColor: headerBackgroundColor[mode] },
     headerAnimatedStyle,
-  ], [colorScheme, headerBackgroundColor, headerAnimatedStyle]);
-  
-  const scrollViewStyle = useMemo(() => ({ backgroundColor, flex: 1 }), [backgroundColor]);
+  ], [mode, headerBackgroundColor, headerAnimatedStyle]);
+
+  const scrollViewStyle = useMemo(() => ({ backgroundColor: colors.background, flex: 1 }), [colors.background]);
 
   // Header height: safe area top + header top padding (16) + content height (~56) + bottom padding (16)
   const headerContentHeight = 56;
@@ -65,7 +65,7 @@ export default function ParallaxScrollView({
   const headerTotalHeight = insets.top + headerTopPadding + headerContentHeight + headerBottomPadding;
 
   // Handle scroll events
-  const handleScroll = (event: any) => {
+  const handleScroll = (event: { nativeEvent: { contentOffset: { y: number } } }) => {
     const offsetY = event.nativeEvent.contentOffset.y;
     setIsScrolled(offsetY > 10);
   };

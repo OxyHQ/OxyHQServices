@@ -3,8 +3,7 @@ import { StyleSheet, RefreshControl, Platform, useWindowDimensions } from 'react
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { useAnimatedScrollHandler, runOnJS, useAnimatedReaction } from 'react-native-reanimated';
 import { useScrollContext } from '@/contexts/scroll-context';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/hooks/useColors';
 
 interface ScreenContentWrapperProps {
   children: React.ReactNode;
@@ -15,8 +14,7 @@ interface ScreenContentWrapperProps {
 export function ScreenContentWrapper({ children, refreshing = false, onRefresh }: ScreenContentWrapperProps) {
   const { setIsScrolled, scrollRef, scrollY, scrollDirection, headerHeight: contextHeaderHeight } = useScrollContext();
   const { width } = useWindowDimensions();
-  const colorScheme = useColorScheme() ?? 'light';
-  const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
+  const colors = useColors();
 
   // Check if we're on mobile (header is absolutely positioned on mobile)
   const isMobile = Platform.OS !== 'web' || (Platform.OS === 'web' && width < 768);

@@ -1,8 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Platform, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AccountCard, ScreenHeader, LinkButton, useAlert } from '@/components/ui';
@@ -15,11 +14,9 @@ import type { AccountStorageUsageResponse } from '@oxyhq/core';
 import { formatDate } from '@/utils/date-utils';
 
 export default function StorageScreen() {
-  const colorScheme = useColorScheme() ?? 'light';
+  const colors = useColors();
   const { width } = useWindowDimensions();
   const router = useRouter();
-
-  const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
   const isDesktop = Platform.OS === 'web' && width >= 768;
 
   const { oxyServices, isAuthenticated, isLoading: oxyLoading } = useOxy();
@@ -124,10 +121,10 @@ export default function StorageScreen() {
       { key: 'photosVideos', color: colors.sidebarIconPayments, pct: toPct(photosVideos) },
       { key: 'recordings', color: colors.sidebarIconData, pct: toPct(recordings) },
       { key: 'family', color: colors.sidebarIconPersonalInfo, pct: toPct(family) },
-      { key: 'other', color: colors.secondaryText, pct: toPct(other) },
+      { key: 'other', color: colors.textSecondary, pct: toPct(other) },
       { key: 'remaining', color: colors.border, pct: toPct(remaining) },
     ].filter((s) => s.pct > 0.2); // avoid tiny slivers that look like rendering glitches
-  }, [colors.border, colors.sidebarIconData, colors.sidebarIconPayments, colors.sidebarIconPersonalInfo, colors.sidebarIconSecurity, colors.sidebarIconSharing, colors.secondaryText, usage]);
+  }, [colors.border, colors.sidebarIconData, colors.sidebarIconPayments, colors.sidebarIconPersonalInfo, colors.sidebarIconSecurity, colors.sidebarIconSharing, colors.textSecondary, usage]);
 
   const handleCategoryPress = useCallback((categoryId: string, categoryName: string, bytes: number, count: number) => {
     const sizeText = formatBytes(bytes).text;
@@ -206,7 +203,7 @@ export default function StorageScreen() {
       items.push({
         id: 'other',
         icon: 'folder-outline',
-        iconColor: colors.secondaryText,
+        iconColor: colors.textSecondary,
         title: 'Other',
         subtitle: `${safeCount(cats?.other?.count).toLocaleString()} file${safeCount(cats?.other?.count) !== 1 ? 's' : ''}`,
         bytes: safe(cats?.other?.bytes),
@@ -216,7 +213,7 @@ export default function StorageScreen() {
     }
 
     return items;
-  }, [colors.sidebarIconData, colors.sidebarIconPayments, colors.sidebarIconPersonalInfo, colors.sidebarIconSecurity, colors.sidebarIconSharing, colors.secondaryText, handleCategoryPress, router, usage]);
+  }, [colors.sidebarIconData, colors.sidebarIconPayments, colors.sidebarIconPersonalInfo, colors.sidebarIconSecurity, colors.sidebarIconSharing, colors.textSecondary, handleCategoryPress, router, usage]);
 
   const accountInfoItems = useMemo(() => {
     if (!usage) return [];
@@ -232,13 +229,13 @@ export default function StorageScreen() {
       {
         id: 'updated',
         icon: 'clock-outline',
-        iconColor: colors.secondaryText,
+        iconColor: colors.textSecondary,
         title: 'Last updated',
         subtitle: formatRelativeTime(usage.updatedAt),
         showChevron: false,
       },
     ];
-  }, [colors.sidebarIconPayments, colors.secondaryText, formatRelativeTime, planDisplayName, usage]);
+  }, [colors.sidebarIconPayments, colors.textSecondary, formatRelativeTime, planDisplayName, usage]);
 
   if (!isAuthenticated && !oxyLoading) {
     return (
@@ -280,7 +277,7 @@ export default function StorageScreen() {
                   <ThemedText style={[styles.usageTitle, { color: colors.text }]}>
                     {usageSummaryText}
                   </ThemedText>
-                  <ThemedText style={[styles.usagePercentage, { color: colors.secondaryText }]}>
+                  <ThemedText style={[styles.usagePercentage, { color: colors.textSecondary }]}>
                     {usagePercentage}% used
                   </ThemedText>
                 </View>
@@ -299,7 +296,7 @@ export default function StorageScreen() {
                   </View>
                 </View>
 
-                <ThemedText style={[styles.usageSubtitle, { color: colors.secondaryText }]}>
+                <ThemedText style={[styles.usageSubtitle, { color: colors.textSecondary }]}>
                   Your storage is shared across Oxy Photos, Oxy Drive, and Oxy Mail.
                 </ThemedText>
               </>

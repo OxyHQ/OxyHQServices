@@ -1,7 +1,7 @@
 {
   "name": "@oxyhq/services",
   "version": "6.9.44",
-  "description": "OxyHQ Expo/React Native SDK — UI components, screens, and native features",
+  "description": "OxyHQ Expo/React Native SDK \u2014 UI components, screens, and native features",
   "main": "lib/commonjs/index.js",
   "module": "lib/module/index.js",
   "types": "lib/typescript/commonjs/index.d.ts",
@@ -57,7 +57,7 @@
   "scripts": {
     "typescript": "tsc --skipLibCheck --noEmit",
     "lint": "biome lint --error-on-warnings ./src",
-    "build": "bun x react-native-builder-bob build && bun run copy-assets && bun run copy-dts && bun run delete-dts.js && bun run delete-debug-view",
+    "build": "bun x react-native-builder-bob build --target commonjs && bun x react-native-builder-bob build --target module && bun x react-native-builder-bob build --target typescript && bun run copy-assets && bun run copy-dts && bun run delete-dts.js && bun run delete-debug-view",
     "build:js": "bun x react-native-builder-bob build --target commonjs && bun x react-native-builder-bob build --target module && bun run copy-assets",
     "test": "jest --passWithNoTests",
     "test:watch": "jest --watch",

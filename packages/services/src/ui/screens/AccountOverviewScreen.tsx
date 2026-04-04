@@ -6,7 +6,6 @@ import {
     StyleSheet,
     ActivityIndicator,
     ScrollView,
-    Alert,
     Platform,
     Image,
     TextStyle,
@@ -18,8 +17,9 @@ import Avatar from '../components/Avatar';
 import OxyIcon from '../components/icon/OxyIcon';
 import { fontFamilies } from '../styles/fonts';
 import { toast } from '../../lib/sonner';
-import { confirmAction } from '../utils/confirmAction';
 import { Ionicons } from '@expo/vector-icons';
+import * as Prompt from '@oxyhq/bloom/prompt';
+import { usePromptControl } from '@oxyhq/bloom/prompt';
 import { Section, GroupedSection, GroupedItem } from '../components';
 import { SettingsIcon } from '../components/SettingsIcon';
 import { useI18n } from '../hooks/useI18n';
@@ -89,6 +89,9 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
     const [additionalAccountsData, setAdditionalAccountsData] = useState<any[]>([]);
     const [loadingAdditionalAccounts, setLoadingAdditionalAccounts] = useState(false);
     const deleteAccountControl = useDialogControl();
+    const logoutPrompt = usePromptControl();
+    const signOutAllPrompt = usePromptControl();
+    const downloadDataPrompt = usePromptControl();
     const lottieRef = useRef<any>(null);
     const hasPlayedRef = useRef(false);
     const insets = useSafeAreaInsets();
@@ -200,102 +203,36 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
         }
     }, [logout, onClose]);
 
-    const confirmLogout = useCallback(() => {
-        confirmAction(t('common.confirms.signOut'), handleLogout);
-    }, [handleLogout]);
-
     const handleAddAccount = useCallback(() => {
         toast.info(t('accountOverview.addAccountComing'));
     }, [t]);
 
-    const handleSignOutAll = useCallback(() => {
-        confirmAction(t('common.confirms.signOutAll'), handleLogout);
-    }, [handleLogout]);
-
-    const handleDownloadData = useCallback(async () => {
-        if (!oxyServices || !user) {
-            toast.error(t('accountOverview.items.downloadData.error') || 'Service not available');
-            return;
-        }
-
+    const performDownload = useCallback(async (format: 'json' | 'csv') => {
+        if (!oxyServices || !user) { toast.error(t('accountOverview.items.downloadData.error') || 'Service not available'); return; }
         try {
-            Alert.alert(
-                t('accountOverview.items.downloadData.confirmTitle') || 'Download Account Data',
-                t('accountOverview.items.downloadData.confirmMessage') || 'Choose the format for your account data export:',
-                [
-                    {
-                        text: t('common.cancel') || 'Cancel',
-                        style: 'cancel',
-                    },
-                    {
-                        text: 'JSON',
-                        onPress: async () => {
-                            try {
-                                toast.loading(t('accountOverview.items.downloadData.downloading') || 'Preparing download...');
-                                const blob = await oxyServices.downloadAccountData('json');
-
-                                // Create download link for web
-                                if (Platform.OS === 'web') {
-                                    const url = URL.createObjectURL(blob);
-                                    const link = document.createElement('a');
-                                    link.href = url;
-                                    link.download = `account-data-${Date.now()}.json`;
-                                    document.body.appendChild(link);
-                                    link.click();
-                                    document.body.removeChild(link);
-                                    URL.revokeObjectURL(url);
-                                    toast.success(t('accountOverview.items.downloadData.success') || 'Data downloaded successfully');
-                                } else {
-                                    // For React Native, you'd need to use a library like expo-file-system
-                                    toast.success(t('accountOverview.items.downloadData.success') || 'Data downloaded successfully');
-                                }
-                            } catch (error: unknown) {
-                                if (__DEV__) {
-                                    console.error('Failed to download data:', error);
-                                }
-                                toast.error((error instanceof Error ? error.message : null) || t('accountOverview.items.downloadData.error') || 'Failed to download data');
-                            }
-                        },
-                    },
-                    {
-                        text: 'CSV',
-                        onPress: async () => {
-                            try {
-                                toast.loading(t('accountOverview.items.downloadData.downloading') || 'Preparing download...');
-                                const blob = await oxyServices.downloadAccountData('csv');
-
-                                // Create download link for web
-                                if (Platform.OS === 'web') {
-                                    const url = URL.createObjectURL(blob);
-                                    const link = document.createElement('a');
-                                    link.href = url;
-                                    link.download = `account-data-${Date.now()}.csv`;
-                                    document.body.appendChild(link);
-                                    link.click();
-                                    document.body.removeChild(link);
-                                    URL.revokeObjectURL(url);
-                                    toast.success(t('accountOverview.items.downloadData.success') || 'Data downloaded successfully');
-                                } else {
-                                    // For React Native, you'd need to use a library like expo-file-system
-                                    toast.success(t('accountOverview.items.downloadData.success') || 'Data downloaded successfully');
-                                }
-                            } catch (error: unknown) {
-                                if (__DEV__) {
-                                    console.error('Failed to download data:', error);
-                                }
-                                toast.error((error instanceof Error ? error.message : null) || t('accountOverview.items.downloadData.error') || 'Failed to download data');
-                            }
-                        },
-                    },
-                ]
-            );
-        } catch (error: unknown) {
-            if (__DEV__) {
-                console.error('Failed to initiate download:', error);
+            toast.loading(t('accountOverview.items.downloadData.downloading') || 'Preparing download...');
+            const blob = await oxyServices.downloadAccountData(format);
+            if (Platform.OS === 'web') {
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `account-data-${Date.now()}.${format}`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
             }
+            toast.success(t('accountOverview.items.downloadData.success') || 'Data downloaded successfully');
+        } catch (error: unknown) {
+            if (__DEV__) { console.error('Failed to download data:', error); }
             toast.error((error instanceof Error ? error.message : null) || t('accountOverview.items.downloadData.error') || 'Failed to download data');
         }
     }, [oxyServices, user, t]);
+
+    const handleDownloadData = useCallback(() => {
+        if (!oxyServices || !user) { toast.error(t('accountOverview.items.downloadData.error') || 'Service not available'); return; }
+        downloadDataPrompt.open();
+    }, [oxyServices, user, t, downloadDataPrompt]);
 
     const handleDeleteAccount = useCallback(() => {
         if (!user) {
@@ -515,7 +452,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                             icon={<SettingsIcon name="logout" color={baseThemeColors.iconSharing} />}
                             title={t('accountOverview.items.signOutAll.title') || 'Sign out of all accounts'}
                             description={t('accountOverview.items.signOutAll.subtitle') || 'Remove all accounts from this device'}
-                            onPress={handleSignOutAll}
+                            onPress={() => signOutAllPrompt.open()}
                         />
                     </SettingsListGroup>
                 )}
@@ -620,7 +557,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                         icon={<SettingsIcon name="logout" color="#FF3B30" />}
                         title={t('accountOverview.items.signOut.title')}
                         description={t('accountOverview.items.signOut.subtitle')}
-                        onPress={confirmLogout}
+                        onPress={() => logoutPrompt.open()}
                         destructive={true}
                         showChevron={false}
                     />
@@ -636,6 +573,34 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                     t={t}
                 />
             )}
+
+            <Prompt.Basic
+                control={logoutPrompt}
+                title={t('accountOverview.items.signOut.title') || 'Sign Out'}
+                description={t('common.confirms.signOut') || 'Are you sure you want to sign out?'}
+                onConfirm={handleLogout}
+                confirmButtonCta={t('accountOverview.items.signOut.title') || 'Sign Out'}
+                confirmButtonColor="negative"
+            />
+            <Prompt.Basic
+                control={signOutAllPrompt}
+                title={t('accountOverview.items.signOutAll.title') || 'Sign Out All'}
+                description={t('common.confirms.signOutAll') || 'Are you sure you want to sign out of all accounts?'}
+                onConfirm={handleLogout}
+                confirmButtonCta={t('accountOverview.items.signOutAll.title') || 'Sign Out All'}
+                confirmButtonColor="negative"
+            />
+            <Prompt.Outer control={downloadDataPrompt}>
+                <Prompt.Content>
+                    <Prompt.TitleText>{t('accountOverview.items.downloadData.confirmTitle') || 'Download Account Data'}</Prompt.TitleText>
+                    <Prompt.DescriptionText>{t('accountOverview.items.downloadData.confirmMessage') || 'Choose the format for your account data export:'}</Prompt.DescriptionText>
+                </Prompt.Content>
+                <Prompt.Actions>
+                    <Prompt.Action cta="JSON" onPress={() => performDownload('json')} color="primary" />
+                    <Prompt.Action cta="CSV" onPress={() => performDownload('csv')} color="primary_subtle" />
+                    <Prompt.Cancel cta={t('common.cancel') || 'Cancel'} />
+                </Prompt.Actions>
+            </Prompt.Outer>
         </View>
     );
 };

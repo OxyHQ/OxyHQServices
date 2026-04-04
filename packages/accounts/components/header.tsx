@@ -5,8 +5,8 @@ import { useNavigation, DrawerActions } from '@react-navigation/native';
 import type { DrawerNavigationProp } from '@react-navigation/drawer';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/hooks/useColors';
+import { useTheme } from '@oxyhq/bloom/theme';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Avatar } from '@oxyhq/services';
 import { useScrollContext } from '@/contexts/scroll-context';
@@ -41,8 +41,8 @@ const getHapticStyle = (intensity: number): Haptics.ImpactFeedbackStyle => {
 export function Header({ }: HeaderProps) {
     const navigation = useNavigation<DrawerNavigationProp<any>>();
     const router = useRouter();
-    const colorScheme = useColorScheme();
-    const colors = Colors[colorScheme ?? 'light'];
+    const colors = useColors();
+    const { mode } = useTheme();
     const insets = useSafeAreaInsets();
     const { width } = useWindowDimensions();
     const { isScrolled, scrollToTop, scrollY, scrollDirection } = useScrollContext();
@@ -221,7 +221,7 @@ export function Header({ }: HeaderProps) {
         >
             <BlurView
                 intensity={isScrolled ? 50 : 0}
-                tint={colorScheme === 'dark' ? 'dark' : 'light'}
+                tint={mode === 'dark' ? 'dark' : 'light'}
                 experimentalBlurMethod={Platform.OS === 'android' ? 'dimezisBlurView' : undefined}
                 style={[headerStyle, !isDesktop && styles.headerColumn]}
             >

@@ -1,8 +1,7 @@
 import React, { useMemo, useCallback, useState } from 'react';
 import { View, StyleSheet, Platform, useWindowDimensions, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
 import { Section } from '@/components/section';
 import { GroupedSection } from '@/components/grouped-section';
@@ -12,13 +11,11 @@ import { UnauthenticatedScreen } from '@/components/unauthenticated-screen';
 import { useOxy, usePrivacySettings, useUpdatePrivacySettings } from '@oxyhq/services';
 
 export default function DataScreen() {
-  const colorScheme = useColorScheme() ?? 'light';
+  const colors = useColors();
   const { width } = useWindowDimensions();
   const alert = useAlert();
   const router = useRouter();
   const [isDownloading, setIsDownloading] = useState(false);
-
-  const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
   const isDesktop = Platform.OS === 'web' && width >= 768;
 
   // OxyServices integration
@@ -261,13 +258,13 @@ export default function DataScreen() {
     {
       id: 'delete-account',
       icon: 'delete-outline',
-      iconColor: colors.danger,
+      iconColor: colors.error,
       title: 'Delete account',
       subtitle: 'Permanently delete your account and all data',
       onPress: handleDeleteAccount,
       showChevron: false,
     },
-  ], [colors.danger, handleDeleteAccount]);
+  ], [colors.error, handleDeleteAccount]);
 
 
   // Show loading state

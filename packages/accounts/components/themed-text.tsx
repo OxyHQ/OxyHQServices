@@ -1,7 +1,6 @@
 import React, { useMemo, memo } from 'react';
 import { StyleSheet, Text, type TextProps } from 'react-native';
-
-import { useThemeColor } from '@/hooks/use-theme-color';
+import { useColors } from '@/hooks/useColors';
 
 export type ThemedTextProps = TextProps & {
   lightColor?: string;
@@ -11,23 +10,20 @@ export type ThemedTextProps = TextProps & {
 
 const ThemedTextComponent = ({
   style,
-  lightColor,
-  darkColor,
   type = 'default',
   ...rest
 }: ThemedTextProps) => {
-  const color = useThemeColor({ light: lightColor, dark: darkColor }, 'text');
-  const linkColor = useThemeColor({ light: '#0a7ea4', dark: '#0a7ea4' }, 'tint');
+  const colors = useColors();
 
   const textStyle = useMemo(() => [
-    { color: type === 'link' ? linkColor : color },
+    { color: type === 'link' ? colors.tint : colors.text },
     type === 'default' ? styles.default : undefined,
     type === 'title' ? styles.title : undefined,
     type === 'defaultSemiBold' ? styles.defaultSemiBold : undefined,
     type === 'subtitle' ? styles.subtitle : undefined,
     type === 'link' ? styles.link : undefined,
     style,
-  ], [color, linkColor, type, style]);
+  ], [colors.text, colors.tint, type, style]);
 
   return (
     <Text

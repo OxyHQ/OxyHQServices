@@ -2,8 +2,8 @@ import React, { useMemo, useCallback, useRef, useEffect, useState } from 'react'
 import { View, StyleSheet, Platform, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
 import LottieView from 'lottie-react-native';
 import { useRouter } from 'expo-router';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useTheme } from '@oxyhq/bloom/theme';
+import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
 import { Section } from '@/components/section';
 import { GroupedSection } from '@/components/grouped-section';
@@ -26,7 +26,8 @@ import { RecentActivitySection, type RecentActivityItem } from '@/components/rec
 import { UsernameRequiredModal } from '@/components/UsernameRequiredModal';
 
 export default function HomeScreen() {
-  const colorScheme = useColorScheme() ?? 'light';
+  const { mode } = useTheme();
+  const colors = useColors();
   const router = useRouter();
   const lottieRef = useRef<LottieView>(null);
   const hasPlayedRef = useRef(false);
@@ -72,7 +73,7 @@ export default function HomeScreen() {
   // Use reactive state from identity store (with defaults)
   const { isSynced } = identitySyncState || { isSynced: true };
 
-  const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
+  // colors already from useColors() above
 
   // Compute user data
   const displayName = useMemo(() => getDisplayName(user), [user]);
@@ -393,7 +394,7 @@ export default function HomeScreen() {
 
     return securityActivities.slice(0, 3).map((activity: any) => {
       const eventIcon = getEventIcon(activity.eventType);
-      const eventColor = getSeverityColor(activity.severity || 'low', colorScheme);
+      const eventColor = getSeverityColor(activity.severity || 'low', mode);
       const description = formatEventDescription(activity);
 
       return {
@@ -405,7 +406,7 @@ export default function HomeScreen() {
         onPress: () => router.push('/(tabs)/security' as any),
       };
     });
-  }, [securityActivities, colors.sidebarIconSecurity, colorScheme, formatRelativeTime, router]);
+  }, [securityActivities, colors.sidebarIconSecurity, mode, formatRelativeTime, router]);
 
   // Quick stats cards
   const quickStatsCards = useMemo<AccountInfoCard[]>(() => [

@@ -1,6 +1,6 @@
 import React from 'react';
 import { TouchableOpacity, Text, ActivityIndicator, ViewStyle, TextStyle } from 'react-native';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useColors } from '@/hooks/useColors';
 
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost';
 
@@ -25,9 +25,9 @@ export function Button({
     textStyle,
     testID,
 }: ButtonProps) {
-    const colorScheme = useColorScheme() ?? 'light';
-    const backgroundColor = colorScheme === 'dark' ? '#000000' : '#FFFFFF';
-    const textColor = colorScheme === 'dark' ? '#FFFFFF' : '#000000';
+    const colors = useColors();
+    const backgroundColor = colors.background;
+    const textColor = colors.text;
 
     const isDisabled = disabled || loading;
 
@@ -46,9 +46,7 @@ export function Button({
                 return {
                     ...baseStyle,
                     backgroundColor: isDisabled
-                        ? colorScheme === 'dark'
-                            ? '#2C2C2E'
-                            : '#CCCCCC'
+                        ? colors.card
                         : textColor,
                     opacity: isDisabled ? 0.6 : 1,
                 };
@@ -86,9 +84,7 @@ export function Button({
                 return {
                     ...baseStyle,
                     color: isDisabled
-                        ? colorScheme === 'dark'
-                            ? '#8E8E93'
-                            : '#999999'
+                        ? colors.textSecondary
                         : backgroundColor,
                 };
             case 'secondary':

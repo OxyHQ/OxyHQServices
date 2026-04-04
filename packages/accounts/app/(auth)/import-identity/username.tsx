@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useRouter } from 'expo-router';
 import { useOxy } from '@oxyhq/services';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useColors } from '@/hooks/useColors';
 import { UsernameStep } from '@/components/auth/UsernameStep';
 import { useNetworkStatus } from '@/hooks/auth/useNetworkStatus';
 import { generateSuggestedUsername } from '@/utils/auth/usernameUtils';
 import { useAuthFlowContext } from '@/contexts/auth-flow-context';
-import { Colors } from '@/constants/theme';
 
 /**
  * Import Identity - Username Screen
@@ -15,19 +14,13 @@ import { Colors } from '@/constants/theme';
  */
 export default function ImportIdentityUsernameScreen() {
   const router = useRouter();
-  const colorScheme = useColorScheme() ?? 'light';
+  const colors = useColors();
   const { oxyServices, getPublicKey } = useOxy();
   const { isOffline, checkNetworkStatus } = useNetworkStatus();
   const { usernameRef } = useAuthFlowContext();
 
-  const backgroundColor = useMemo(
-    () => (colorScheme === 'dark' ? Colors.dark.background : Colors.light.background),
-    [colorScheme]
-  );
-  const textColor = useMemo(
-    () => (colorScheme === 'dark' ? Colors.dark.text : Colors.light.text),
-    [colorScheme]
-  );
+  const backgroundColor = colors.background;
+  const textColor = colors.text;
 
   const [username, setUsername] = useState<string>('');
   const hasInitializedUsername = useRef(false);
@@ -82,7 +75,6 @@ export default function ImportIdentityUsernameScreen() {
       oxyServices={oxyServices}
       backgroundColor={backgroundColor}
       textColor={textColor}
-      colorScheme={colorScheme}
     />
   );
 }

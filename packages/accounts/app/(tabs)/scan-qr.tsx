@@ -11,8 +11,7 @@ import {
 import { CameraView, useCameraPermissions, BarcodeScanningResult } from 'expo-camera';
 import { useRouter } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/hooks/useColors';
 import { useOxy } from '@oxyhq/services';
 import { useAlert } from '@/components/ui';
 
@@ -24,8 +23,7 @@ import { useAlert } from '@/components/ui';
  */
 export default function ScanQRScreen() {
   const router = useRouter();
-  const colorScheme = useColorScheme() ?? 'light';
-  const colors = Colors[colorScheme];
+  const colors = useColors();
   const alert = useAlert();
   const { hasIdentity, isLoading, isStorageReady } = useOxy();
   const [permission, requestPermission] = useCameraPermissions();
@@ -154,7 +152,7 @@ export default function ScanQRScreen() {
     return (
       <View style={[styles.container, { backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center' }]}>
         <ActivityIndicator size="large" color={colors.tint} />
-        <Text style={[styles.text, { color: colors.secondaryText, marginTop: 16 }]}>
+        <Text style={[styles.text, { color: colors.textSecondary, marginTop: 16 }]}>
           Checking identity...
         </Text>
       </View>
@@ -170,13 +168,13 @@ export default function ScanQRScreen() {
           <MaterialCommunityIcons
             name="qrcode-scan"
             size={64}
-            color={colors.secondaryText}
+            color={colors.textSecondary}
             style={styles.icon}
           />
           <Text style={[styles.title, { color: colors.text }]}>
             Identity Required
           </Text>
-          <Text style={[styles.subtitle, { color: colors.secondaryText }]}>
+          <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
             To scan QR codes and authorize sign-in requests, you need to create or import an identity.{'\n\n'}
             Identity creation is only available on native platforms (iOS/Android). Please use the mobile app to set up your identity.
           </Text>
@@ -193,7 +191,7 @@ export default function ScanQRScreen() {
     return (
       <View style={[styles.container, { backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center' }]}>
         <ActivityIndicator size="large" color={colors.tint} />
-        <Text style={[styles.text, { color: colors.secondaryText, marginTop: 16 }]}>
+        <Text style={[styles.text, { color: colors.textSecondary, marginTop: 16 }]}>
           Redirecting to identity setup...
         </Text>
       </View>
@@ -218,13 +216,13 @@ export default function ScanQRScreen() {
         <MaterialCommunityIcons
           name="camera-off"
           size={64}
-          color={colors.secondaryText}
+          color={colors.textSecondary}
           style={styles.icon}
         />
         <Text style={[styles.title, { color: colors.text }]}>
           Camera Access Required
         </Text>
-        <Text style={[styles.subtitle, { color: colors.secondaryText }]}>
+        <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
           To scan QR codes for sign-in authorization, we need access to your camera.
         </Text>
         <TouchableOpacity
@@ -245,7 +243,7 @@ export default function ScanQRScreen() {
           style={[styles.linkButton]}
           onPress={handleClose}
         >
-          <Text style={[styles.linkText, { color: colors.secondaryText }]}>
+          <Text style={[styles.linkText, { color: colors.textSecondary }]}>
             Cancel
           </Text>
         </TouchableOpacity>

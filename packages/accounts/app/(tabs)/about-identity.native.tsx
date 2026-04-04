@@ -7,8 +7,7 @@ import {
   Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
 import { Section } from '@/components/section';
 import { GroupedSection } from '@/components/grouped-section';
@@ -25,8 +24,7 @@ import { formatDate, getDisplayName } from '@/utils/date-utils';
 import { IdentityCard } from '@/components/identity';
 
 export default function AboutIdentityScreen() {
-  const colorScheme = useColorScheme() ?? 'light';
-  const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
+  const colors = useColors();
   const router = useRouter();
   const alert = useAlert();
   const { user, isAuthenticated, isLoading: oxyLoading, oxyServices, showBottomSheet } = useOxy();

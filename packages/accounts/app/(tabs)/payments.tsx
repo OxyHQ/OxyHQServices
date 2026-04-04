@@ -1,7 +1,6 @@
 import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { View, StyleSheet, Platform, useWindowDimensions, Text, TouchableOpacity, ActivityIndicator, Linking, Image } from 'react-native';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
 import { GroupedSection } from '@/components/grouped-section';
 import { AccountCard, ScreenHeader, useAlert } from '@/components/ui';
@@ -14,11 +13,9 @@ import { darkenColor } from '@/utils/color-utils';
 import faircoinImage from '@/assets/images/faircoin.jpg';
 
 export default function PaymentsScreen() {
-  const colorScheme = useColorScheme() ?? 'light';
+  const colors = useColors();
   const { width } = useWindowDimensions();
   const alert = useAlert();
-
-  const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
   const isDesktop = Platform.OS === 'web' && width >= 768;
 
   // OxyServices integration
@@ -156,9 +153,9 @@ export default function PaymentsScreen() {
         return colors.warning;
       case 'failed':
       case 'declined':
-        return colors.danger;
+        return colors.error;
       default:
-        return colors.secondaryText;
+        return colors.textSecondary;
     }
   }, [colors]);
 
@@ -209,7 +206,7 @@ export default function PaymentsScreen() {
       id: 'subscription',
       icon: 'credit-card-outline',
       iconColor: subscription?.plan !== 'basic' && subscription?.status === 'active' 
-        ? '#34C759' 
+        ? colors.success
         : colors.sidebarIconPayments,
       title: planName,
       subtitle: subscription?.plan !== 'basic' && subscription?.status === 'active'
@@ -464,7 +461,7 @@ export default function PaymentsScreen() {
             <Text style={[styles.walletBalance, { color: colors.text }]}>
               {formatFairCoinBalance(wallet.balance || 0)}
             </Text>
-            <Text style={[styles.walletSubtitle, { color: colors.secondaryText }]}>
+            <Text style={[styles.walletSubtitle, { color: colors.textSecondary }]}>
               Your in-app wallet for Oxy services
             </Text>
           </View>
@@ -475,7 +472,7 @@ export default function PaymentsScreen() {
               <Text style={[styles.summaryCardValue, { color: colors.text }]}>
                 {transactions.length}
               </Text>
-              <Text style={[styles.summaryCardLabel, { color: colors.secondaryText }]}>
+              <Text style={[styles.summaryCardLabel, { color: colors.textSecondary }]}>
                 Transactions
               </Text>
             </View>
@@ -483,7 +480,7 @@ export default function PaymentsScreen() {
               <Text style={[styles.summaryCardValue, { color: colors.text }]}>
                 {payments.length}
               </Text>
-              <Text style={[styles.summaryCardLabel, { color: colors.secondaryText }]}>
+              <Text style={[styles.summaryCardLabel, { color: colors.textSecondary }]}>
                 Payments
               </Text>
             </View>
@@ -515,7 +512,7 @@ export default function PaymentsScreen() {
             {expandedPaymentMethod === 'card' && (
               <>
                 <Text style={[styles.expandedTitle, { color: colors.text }]}>Credit/Debit Card</Text>
-                <Text style={[styles.expandedBody, { color: colors.secondaryText }]}>
+                <Text style={[styles.expandedBody, { color: colors.textSecondary }]}>
                   Secure card payments processed through Oxy services. Your card details are encrypted and handled by secure payment processors. Cards are charged when purchasing subscriptions or services.
                 </Text>
               </>
@@ -523,7 +520,7 @@ export default function PaymentsScreen() {
             {expandedPaymentMethod === 'oxy-pay-method' && (
               <>
                 <Text style={[styles.expandedTitle, { color: colors.text }]}>Oxy Pay Wallet</Text>
-                <Text style={[styles.expandedBody, { color: colors.secondaryText }]}>
+                <Text style={[styles.expandedBody, { color: colors.textSecondary }]}>
                   Your in-app wallet uses FairCoin as the base currency. Use your balance to pay for subscriptions, premium features, and services within the Oxy ecosystem. Your current balance is displayed at the top of this screen.
                 </Text>
               </>
@@ -531,7 +528,7 @@ export default function PaymentsScreen() {
             {expandedPaymentMethod === 'faircoin-method' && (
               <>
                 <Text style={[styles.expandedTitle, { color: colors.text }]}>FAIRWallet</Text>
-                <Text style={[styles.expandedBody, { color: colors.secondaryText }]}>
+                <Text style={[styles.expandedBody, { color: colors.textSecondary }]}>
                   FAIRWallet enables direct FairCoin payments via QR code scanning. When making a payment, choose FAIRWallet as your payment method and scan the generated QR code with your FairCoin wallet app. Transactions use blockchain technology for transparency and security.
                 </Text>
               </>
@@ -558,7 +555,7 @@ export default function PaymentsScreen() {
               <Text style={[styles.emptyStateTitle, { color: colors.text }]}>
                 No billing history
               </Text>
-              <Text style={[styles.emptyStateSubtitle, { color: colors.secondaryText }]}>
+              <Text style={[styles.emptyStateSubtitle, { color: colors.textSecondary }]}>
                 Your payments and invoices will appear here
               </Text>
             </View>
@@ -584,7 +581,7 @@ export default function PaymentsScreen() {
               <Text style={[styles.emptyStateTitle, { color: colors.text }]}>
                 No transactions
               </Text>
-              <Text style={[styles.emptyStateSubtitle, { color: colors.secondaryText }]}>
+              <Text style={[styles.emptyStateSubtitle, { color: colors.textSecondary }]}>
                 Your wallet transactions will appear here
               </Text>
             </View>

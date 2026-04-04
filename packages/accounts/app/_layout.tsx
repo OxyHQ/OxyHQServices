@@ -1,16 +1,14 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
+import { ThemeProvider } from '@react-navigation/native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import 'react-native-reanimated';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { OxyProvider, ActingAsBanner } from '@oxyhq/services';
-// Note: Fonts are loaded automatically by OxyProvider via setupFonts()
+import { useTheme } from '@oxyhq/bloom/theme';
 
-import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ScrollProvider } from '@/contexts/scroll-context';
-import { ThemeProvider as AppThemeProvider } from '@/contexts/theme-context';
 import AppSplashScreen from '@/components/AppSplashScreen';
 import { AppInitializer } from '@/lib/appInitializer';
 import { AlertProvider } from '@/components/ui';
@@ -34,106 +32,87 @@ interface SplashState {
 }
 
 export default function RootLayout() {
-  return (
-    <AppThemeProvider>
-      <RootLayoutContent />
-    </AppThemeProvider>
-  );
-}
-
-function RootLayoutContent() {
-  const colorScheme = useColorScheme();
-
-  // State
-  const [appIsReady, setAppIsReady] = useState(false);
   const [splashState, setSplashState] = useState<SplashState>({
     initializationComplete: false,
     startFade: false,
     fadeComplete: false,
   });
 
-  // Fonts are now loaded automatically via FontLoader from @oxyhq/services
-  const [fontsLoaded, setFontsLoaded] = useState(false);
-
-  useEffect(() => {
-    // Fonts load in background via FontLoader, mark as ready immediately
-    setFontsLoaded(true);
-  }, []);
-
-  // Callbacks
   const handleSplashFadeComplete = useCallback(() => {
     setSplashState((prev) => ({ ...prev, fadeComplete: true }));
   }, []);
 
   const initializeApp = useCallback(async () => {
-    if (!fontsLoaded) return;
+    const result = await AppInitializer.initializeApp(true);
+    // Always mark complete (even on error) to unblock the app
+    setSplashState((prev) => ({ ...prev, initializationComplete: true }));
+    return result;
+  }, []);
 
-    const result = await AppInitializer.initializeApp(fontsLoaded);
+  // Derive splash progression from state
+  const startFade = splashState.initializationComplete;
+  const appIsReady = splashState.initializationComplete && splashState.fadeComplete;
 
-    if (result.success) {
-      setSplashState((prev) => ({ ...prev, initializationComplete: true }));
-    } else {
-      console.error('App initialization failed:', result.error);
-      // Still mark as complete to prevent blocking the app
-      setSplashState((prev) => ({ ...prev, initializationComplete: true }));
-    }
-  }, [fontsLoaded]);
-
-  useEffect(() => {
+  // Fire-and-forget initializer on first render
+  const [initCalled, setInitCalled] = useState(false);
+  if (!initCalled) {
+    setInitCalled(true);
     initializeApp();
-  }, [initializeApp]);
+  }
 
-  useEffect(() => {
-    if (fontsLoaded && splashState.initializationComplete && !splashState.startFade) {
-      setSplashState((prev) => ({ ...prev, startFade: true }));
-    }
-  }, [fontsLoaded, splashState.initializationComplete, splashState.startFade]);
-
-  // Set appIsReady only after both initialization and splash fade complete
-  useEffect(() => {
-    if (splashState.initializationComplete && splashState.fadeComplete && !appIsReady) {
-      setAppIsReady(true);
-    }
-  }, [splashState.initializationComplete, splashState.fadeComplete, appIsReady]);
-
-  // Memoize app content to prevent unnecessary re-renders
-  // OxyProvider must always be rendered so screens can use useOxy() hook
-  // Note: OxyProvider automatically loads Inter fonts via setupFonts()
-  const appContent = useMemo(() => {
-    return (
-      <KeyboardProvider>
-        <AlertProvider>
-          <OxyProvider baseURL={API_URL}>
-            {!appIsReady ? (
-              <AppSplashScreen
-                startFade={splashState.startFade}
-                onFadeComplete={handleSplashFadeComplete}
-              />
-            ) : (
-              <AppStackContent colorScheme={colorScheme} />
-            )}
-          </OxyProvider>
-        </AlertProvider>
-      </KeyboardProvider>
-    );
-  }, [
-    appIsReady,
-    splashState.startFade,
-    colorScheme,
-    handleSplashFadeComplete,
-  ]);
-
-  return appContent;
+  return (
+    <KeyboardProvider>
+      <AlertProvider>
+        <OxyProvider baseURL={API_URL} themeMode="system">
+          {!appIsReady ? (
+            <AppSplashScreen
+              startFade={startFade}
+              onFadeComplete={handleSplashFadeComplete}
+            />
+          ) : (
+            <AppStackContent />
+          )}
+        </OxyProvider>
+      </AlertProvider>
+    </KeyboardProvider>
+  );
 }
 
-// Component that uses onboarding status hook for routing decisions
-function AppStackContent({ colorScheme }: { colorScheme: 'light' | 'dark' | null }) {
+/** Build the react-navigation theme from Bloom's resolved colors. */
+function useNavigationTheme() {
+  const { mode, colors } = useTheme();
+  return useMemo(
+    () => ({
+      dark: mode === 'dark',
+      colors: {
+        primary: colors.primary,
+        background: colors.background,
+        card: colors.card,
+        text: colors.text,
+        border: colors.border,
+        notification: colors.error,
+      },
+      fonts: {
+        regular: { fontFamily: 'System', fontWeight: '400' as const },
+        medium: { fontFamily: 'System', fontWeight: '500' as const },
+        bold: { fontFamily: 'System', fontWeight: '700' as const },
+        heavy: { fontFamily: 'System', fontWeight: '900' as const },
+      },
+    }),
+    [mode, colors],
+  );
+}
+
+/** Renders the navigation stack once the app is ready. */
+function AppStackContent() {
+  // Must be called inside OxyProvider (which wraps BloomThemeProvider)
+  const navTheme = useNavigationTheme();
   const { needsAuth } = useOnboardingStatus();
 
   return (
     <SafeAreaProvider>
       <ScrollProvider>
-        <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+        <ThemeProvider value={navTheme}>
           <ActingAsBanner />
           <Stack>
             <Stack.Screen name="(tabs)" options={{ headerShown: false }} />

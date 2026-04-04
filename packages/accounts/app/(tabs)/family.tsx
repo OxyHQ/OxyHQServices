@@ -1,7 +1,6 @@
 import React, { useMemo } from 'react';
 import { View, StyleSheet, Platform, useWindowDimensions, Text, ActivityIndicator } from 'react-native';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/hooks/useColors';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { ScreenHeader } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
@@ -9,9 +8,8 @@ import { useOxy } from '@oxyhq/services';
 import { UnauthenticatedScreen } from '@/components/unauthenticated-screen';
 
 export default function ThirdPartyConnectionsScreen() {
-  const colorScheme = useColorScheme() ?? 'light';
+  const colors = useColors();
   const { width } = useWindowDimensions();
-  const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
   const isDesktop = Platform.OS === 'web' && width >= 768;
   const { isAuthenticated, isLoading: authLoading } = useOxy();
 

@@ -1,8 +1,8 @@
 import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { View, StyleSheet, Platform, useWindowDimensions, Text, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useTheme } from '@oxyhq/bloom/theme';
+import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
 import { Section } from '@/components/section';
 import { GroupedSection } from '@/components/grouped-section';
@@ -19,11 +19,10 @@ import { getEventIcon, getSeverityColor, getEventSeverity, formatEventDescriptio
 import type { MaterialCommunityIconName } from '@/types/icons';
 
 export default function SecurityScreen() {
-    const colorScheme = useColorScheme() ?? 'light';
+    const { mode } = useTheme();
+    const colors = useColors();
     const { width } = useWindowDimensions();
     const router = useRouter();
-
-    const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
     const isDesktop = Platform.OS === 'web' && width >= 768;
 
     // OxyServices integration
@@ -220,7 +219,7 @@ export default function SecurityScreen() {
                 id: 'suspicious-activity',
                 priority: 0,
                 icon: 'alert-octagon',
-                iconColor: colors.danger,
+                iconColor: colors.error,
                 title: `${recentSuspiciousActivity.length} critical security event${recentSuspiciousActivity.length !== 1 ? 's' : ''} detected`,
                 subtitle: 'Review your security activity immediately',
                 onPress: () => {
@@ -256,7 +255,7 @@ export default function SecurityScreen() {
             const eventIcon = getEventIcon(activity.eventType);
             // Use severity-based color for better consistency
             const severity = activity.severity || getEventSeverity(activity.eventType);
-            const eventColor = getSeverityColor(severity, colorScheme);
+            const eventColor = getSeverityColor(severity, mode);
             const description = formatEventDescription(activity);
             const deviceId = activity.deviceId;
 
@@ -301,7 +300,7 @@ export default function SecurityScreen() {
                 showChevron: true, // Always show chevron since we show details
             };
         });
-    }, [securityActivities, colorScheme, formatRelativeTime, router, alert, formatDate]);
+    }, [securityActivities, mode, formatRelativeTime, router, alert, formatDate]);
 
     // Sign-in items
     const signInItems = useMemo(() => {
@@ -454,13 +453,13 @@ export default function SecurityScreen() {
             items.push({
                 id: 'logout-all',
                 icon: 'logout',
-                iconColor: colors.danger,
+                iconColor: colors.error,
                 title: 'Sign out of all other devices',
                 subtitle: `Sign out of ${activeSessionsCount - 1} other active session${activeSessionsCount - 1 !== 1 ? 's' : ''}`,
                 onPress: handleLogoutAll,
                 showChevron: false,
                 customContent: isLoggingOutAll ? (
-                    <ActivityIndicator size="small" color="#FF3B30" />
+                    <ActivityIndicator size="small" color={colors.error} />
                 ) : undefined,
             });
         }

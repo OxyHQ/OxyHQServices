@@ -1,7 +1,6 @@
 import React, { useMemo, useCallback } from 'react';
 import { View, StyleSheet, ActivityIndicator } from 'react-native';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
 import { AccountCard, ScreenHeader } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
@@ -15,12 +14,10 @@ import { GroupedSection } from '@/components/grouped-section';
 import type { ExtendedUser } from '@/types/user';
 
 export default function PersonalInfoScreen() {
-  const colorScheme = useColorScheme() ?? 'light';
+  const colors = useColors();
 
   // OxyServices integration
   const { user, isLoading: oxyLoading, isAuthenticated, showBottomSheet } = useOxy();
-
-  const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
   const handlePressIn = useHapticPress();
   const handleEditField = useCallback((field: string) => {
     showBottomSheet?.({

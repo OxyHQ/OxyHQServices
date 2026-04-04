@@ -1,8 +1,7 @@
 import React, { useMemo, useCallback, useState, useEffect } from 'react';
 import { View, StyleSheet, Platform, useWindowDimensions, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
 import { GroupedSection } from '@/components/grouped-section';
 import { AccountCard, ScreenHeader, useAlert } from '@/components/ui';
@@ -26,11 +25,11 @@ interface Device {
 }
 
 export default function DevicesScreen() {
-  const colorScheme = useColorScheme() ?? 'light';
+  const colors = useColors();
   const { width } = useWindowDimensions();
   const router = useRouter();
 
-  const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
+  // colors already from useColors() above
   const isDesktop = Platform.OS === 'web' && width >= 768;
 
   // OxyServices integration

@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useColors } from '@/hooks/useColors';
 import { Button } from '@/components/ui';
 
 interface NotificationsStepProps {
@@ -23,6 +24,7 @@ export function NotificationsStep({
   backgroundColor,
   textColor,
 }: NotificationsStepProps) {
+  const colors = useColors();
   const insets = useSafeAreaInsets();
 
   const containerStyle = useMemo(
@@ -50,7 +52,7 @@ export function NotificationsStep({
           Don&apos;t miss messages from friends, transaction alerts, and feature updates.
         </Text>
 
-        {error && <Text style={styles.errorText}>{error}</Text>}
+        {error && <Text style={[styles.errorText, { color: colors.error }]}>{error}</Text>}
 
         <Button
           variant="primary"
@@ -91,7 +93,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   errorText: {
-    color: '#DC3545',
     fontSize: 14,
     marginTop: 8,
     textAlign: 'center',

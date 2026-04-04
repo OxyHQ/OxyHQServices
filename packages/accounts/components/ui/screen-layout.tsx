@@ -1,7 +1,6 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import { View, ScrollView, StyleSheet, Platform, useWindowDimensions } from 'react-native';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/hooks/useColors';
 import { DesktopSidebar } from './desktop-sidebar';
 
 interface ScreenLayoutProps {
@@ -11,9 +10,8 @@ interface ScreenLayoutProps {
 }
 
 export function ScreenLayout({ children, showTopBar = false, topBarContent }: ScreenLayoutProps) {
-  const colorScheme = useColorScheme() ?? 'light';
   const { width } = useWindowDimensions();
-  const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
+  const colors = useColors();
   const isDesktop = Platform.OS === 'web' && width >= 768;
 
   if (isDesktop) {

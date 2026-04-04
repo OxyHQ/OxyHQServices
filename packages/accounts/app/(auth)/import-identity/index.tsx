@@ -1,12 +1,11 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import { useRouter } from 'expo-router';
 import { RecoveryPhraseService } from '@oxyhq/core';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useColors } from '@/hooks/useColors';
 import { ImportPhraseStep } from '@/components/auth/ImportPhraseStep';
 import { extractAuthErrorMessage } from '@/utils/auth/errorUtils';
 import { RECOVERY_PHRASE_LENGTH } from '@/constants/auth';
 import { useAuthFlowContext } from '@/contexts/auth-flow-context';
-import { Colors } from '@/constants/theme';
 import { useIdentity } from '@/hooks/useIdentity';
 
 /**
@@ -16,19 +15,13 @@ import { useIdentity } from '@/hooks/useIdentity';
  */
 export default function ImportIdentityPhraseScreen() {
   const router = useRouter();
-  const colorScheme = useColorScheme() ?? 'light';
+  const colors = useColors();
   const { importIdentity } = useIdentity();
   const { error, setAuthError } = useAuthFlowContext();
   const [isLoading, setIsLoading] = useState(false);
 
-  const backgroundColor = useMemo(
-    () => (colorScheme === 'dark' ? Colors.dark.background : Colors.light.background),
-    [colorScheme]
-  );
-  const textColor = useMemo(
-    () => (colorScheme === 'dark' ? Colors.dark.text : Colors.light.text),
-    [colorScheme]
-  );
+  const backgroundColor = colors.background;
+  const textColor = colors.text;
 
   const [phraseWords, setPhraseWords] = useState<string[]>(new Array(RECOVERY_PHRASE_LENGTH).fill(''));
 
@@ -86,7 +79,6 @@ export default function ImportIdentityPhraseScreen() {
       isLoading={isLoading}
       backgroundColor={backgroundColor}
       textColor={textColor}
-      colorScheme={colorScheme}
     />
   );
 }

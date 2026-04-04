@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, TextInput, StyleSheet, TouchableOpacity } from 'react-native';
 import LottieView from 'lottie-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useColors } from '@/hooks/useColors';
 import { Button, KeyboardAwareScrollViewWrapper } from '@/components/ui';
 import { useUsernameValidation } from '@/hooks/auth/useUsernameValidation';
 import { sanitizeUsernameInput } from '@/utils/auth/usernameUtils';
@@ -13,12 +14,11 @@ interface UsernameStepProps {
   username: string;
   onUsernameChange: (username: string) => void;
   onContinue: () => void;
-  onSkip?: () => void; // Optional - username is mandatory when online
+  onSkip?: () => void;
   isOffline: boolean;
   oxyServices: OxyServices | null;
   backgroundColor: string;
   textColor: string;
-  colorScheme: 'light' | 'dark';
   isUpdating?: boolean;
   updateError?: string | null;
 }
@@ -35,10 +35,10 @@ export function UsernameStep({
   oxyServices,
   backgroundColor,
   textColor,
-  colorScheme,
   isUpdating = false,
   updateError = null,
 }: UsernameStepProps) {
+  const colors = useColors();
   const { showBottomSheet } = useOxy();
   const insets = useSafeAreaInsets();
   const validation = useUsernameValidation(username, oxyServices);
@@ -155,11 +155,11 @@ export function UsernameStep({
           <TextInput
             style={[styles.usernameInput, {
               color: textColor,
-              backgroundColor: colorScheme === 'dark' ? '#1C1C1E' : '#F5F5F5',
-              borderColor: validation.error ? '#DC3545' : (colorScheme === 'dark' ? '#2C2C2E' : '#E0E0E0')
+              backgroundColor: colors.card,
+              borderColor: validation.error ? colors.error : colors.border,
             }]}
             placeholder="Username"
-            placeholderTextColor={colorScheme === 'dark' ? '#8E8E93' : '#8E8E93'}
+            placeholderTextColor={colors.textSecondary}
             value={username}
             onChangeText={handleTextChange}
             autoCapitalize="none"
@@ -179,13 +179,13 @@ export function UsernameStep({
         )}
 
         {validation.isAvailable === true && !validation.isChecking && (
-          <Text style={[styles.availableText, { color: '#28A745' }]}>
+          <Text style={[styles.availableText, { color: colors.success }]}>
             ✓ Username is available
           </Text>
         )}
 
         {(validation.error || updateError) && (
-          <Text style={styles.errorText}>{validation.error || updateError}</Text>
+          <Text style={[styles.errorText, { color: colors.error }]}>{validation.error || updateError}</Text>
         )}
 
         <Button
@@ -280,7 +280,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   errorText: {
-    color: '#DC3545',
     fontSize: 14,
     marginTop: 8,
     textAlign: 'center',

@@ -1,14 +1,13 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter } from 'expo-router';
 import { useOxy, useAuthStore } from '@oxyhq/services';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useColors } from '@/hooks/useColors';
 import { UsernameStep } from '@/components/auth/UsernameStep';
 import { useNetworkStatus } from '@/hooks/auth/useNetworkStatus';
 import { generateSuggestedUsername } from '@/utils/auth/usernameUtils';
 import { useAuthFlowContext } from '@/contexts/auth-flow-context';
 import { checkIfOffline } from '@/utils/auth/networkUtils';
 import { extractAuthErrorMessage, isNetworkOrTimeoutError } from '@/utils/auth/errorUtils';
-import { Colors } from '@/constants/theme';
 
 /**
  * Create Identity - Username Screen
@@ -17,19 +16,13 @@ import { Colors } from '@/constants/theme';
  */
 export default function CreateIdentityUsernameScreen() {
   const router = useRouter();
-  const colorScheme = useColorScheme() ?? 'light';
+  const colors = useColors();
   const { oxyServices } = useOxy();
   const { isOffline } = useNetworkStatus();
   const { usernameRef } = useAuthFlowContext();
 
-  const backgroundColor = useMemo(
-    () => (colorScheme === 'dark' ? Colors.dark.background : Colors.light.background),
-    [colorScheme]
-  );
-  const textColor = useMemo(
-    () => (colorScheme === 'dark' ? Colors.dark.text : Colors.light.text),
-    [colorScheme]
-  );
+  const backgroundColor = colors.background;
+  const textColor = colors.text;
 
   const [username, setUsername] = useState<string>('');
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
@@ -89,7 +82,6 @@ export default function CreateIdentityUsernameScreen() {
       oxyServices={oxyServices}
       backgroundColor={backgroundColor}
       textColor={textColor}
-      colorScheme={colorScheme}
       isUpdating={isUpdatingProfile}
       updateError={updateError}
     />

@@ -2,8 +2,7 @@ import React, { useRef, useState, useCallback, useMemo } from 'react';
 import { View, ScrollView, StyleSheet, TouchableOpacity, Platform, type ColorValue } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useColors } from '@/hooks/useColors';
 import { useHapticPress } from '@/hooks/use-haptic-press';
 
 interface HorizontalScrollSectionProps {
@@ -23,8 +22,7 @@ export function HorizontalScrollSection({
   showArrows = true,
   arrowSize = 24,
 }: HorizontalScrollSectionProps) {
-  const colorScheme = useColorScheme() ?? 'light';
-  const colors = Colors[colorScheme];
+  const colors = useColors();
   const scrollViewRef = useRef<ScrollView>(null);
   const [showLeftArrow, setShowLeftArrow] = useState(false);
   const [showRightArrow, setShowRightArrow] = useState(true);

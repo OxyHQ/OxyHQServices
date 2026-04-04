@@ -2,8 +2,7 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { darkenColor } from '@/utils/color-utils';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useColors } from '@/hooks/useColors';
 import type { MaterialCommunityIconName } from '@/types/icons';
 
 export interface AccountInfoCard {
@@ -21,8 +20,7 @@ interface AccountInfoGridProps {
 }
 
 export function AccountInfoGrid({ cards, onPressIn }: AccountInfoGridProps) {
-  const colorScheme = useColorScheme() ?? 'light';
-  const colors = Colors[colorScheme];
+  const colors = useColors();
 
   return (
     <View style={styles.gridContainer}>
@@ -40,7 +38,7 @@ export function AccountInfoGrid({ cards, onPressIn }: AccountInfoGridProps) {
           </View>
           <View style={styles.spacer} />
           <View style={styles.textContainer}>
-            <Text style={[styles.accountInfoTitle, { color: colors.secondaryText }]}>{card.title}</Text>
+            <Text style={[styles.accountInfoTitle, { color: colors.textSecondary }]}>{card.title}</Text>
             <Text style={[styles.accountInfoValue, { color: colors.text }]}>{card.value}</Text>
           </View>
         </TouchableOpacity>

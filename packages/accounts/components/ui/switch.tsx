@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
-import { TouchableOpacity, Animated, StyleSheet, View, Platform } from 'react-native';
+import { TouchableOpacity, Animated, StyleSheet, Platform } from 'react-native';
 import * as Haptics from 'expo-haptics';
+import { useColors } from '@/hooks/useColors';
 
 interface SwitchProps {
   value: boolean;
@@ -10,6 +11,7 @@ interface SwitchProps {
 }
 
 export function Switch({ value, onValueChange, disabled, style }: SwitchProps) {
+  const colors = useColors();
   const translateX = useRef(new Animated.Value(value ? 1 : 0)).current;
 
   useEffect(() => {
@@ -28,9 +30,9 @@ export function Switch({ value, onValueChange, disabled, style }: SwitchProps) {
     }
   };
 
-  // iOS-style colors - flat design
-  const trackColorOff = Platform.OS === 'ios' ? '#3A3A3C' : '#E5E5EA';
-  const trackColorOn = '#34C759'; // Apple green
+  // Track colors from theme
+  const trackColorOff = Platform.OS === 'ios' ? '#3A3A3C' : colors.border;
+  const trackColorOn = colors.success;
   const thumbColor = '#FFFFFF';
 
   // Smaller switch dimensions: 42px wide, 24px tall, thumb is 20px

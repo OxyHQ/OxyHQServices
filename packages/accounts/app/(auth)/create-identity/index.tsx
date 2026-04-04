@@ -1,14 +1,13 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useRouter } from 'expo-router';
 import { useOxy } from '@oxyhq/services';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useColors } from '@/hooks/useColors';
 import { useOnboardingStatus } from '@/hooks/useOnboardingStatus';
 import { CreatingStep } from '@/components/auth/CreatingStep';
 import { checkIfOffline } from '@/utils/auth/networkUtils';
 import { extractAuthErrorMessage, isNetworkOrTimeoutError } from '@/utils/auth/errorUtils';
 import { CREATING_PROGRESS_INTERVAL_MS, CREATING_FINAL_DELAY_MS } from '@/constants/auth';
 import { useAuthFlowContext } from '@/contexts/auth-flow-context';
-import { Colors } from '@/constants/theme';
 import { useIdentity } from '@/hooks/useIdentity';
 
 /**
@@ -18,20 +17,14 @@ import { useIdentity } from '@/hooks/useIdentity';
  */
 export default function CreateIdentityScreen() {
   const router = useRouter();
-  const colorScheme = useColorScheme() ?? 'light';
+  const colors = useColors();
   const { isAuthenticated } = useOxy();
   const { createIdentity, syncIdentity } = useIdentity();
   const { status, hasIdentity } = useOnboardingStatus();
   const { setAuthError } = useAuthFlowContext();
 
-  const backgroundColor = useMemo(
-    () => (colorScheme === 'dark' ? Colors.dark.background : Colors.light.background),
-    [colorScheme]
-  );
-  const textColor = useMemo(
-    () => (colorScheme === 'dark' ? Colors.dark.text : Colors.light.text),
-    [colorScheme]
-  );
+  const backgroundColor = colors.background;
+  const textColor = colors.text;
 
   const [creatingProgress, setCreatingProgress] = useState(0);
   const creatingProgressRef = useRef<NodeJS.Timeout | null>(null);

@@ -1,8 +1,7 @@
 import React, { useMemo, useCallback, useState, useEffect } from 'react';
 import { View, StyleSheet, Text, ActivityIndicator, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/hooks/useColors';
 import { GroupedSection } from '@/components/grouped-section';
 import { Section } from '@/components/section';
 import { AccountCard, ScreenHeader, useAlert, Switch } from '@/components/ui';
@@ -12,8 +11,7 @@ import { UnauthenticatedScreen } from '@/components/unauthenticated-screen';
 import * as Contacts from 'expo-contacts';
 
 export default function PeopleAndSharingScreen() {
-  const colorScheme = useColorScheme() ?? 'light';
-  const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
+  const colors = useColors();
   const alert = useAlert();
   const router = useRouter();
   const { isAuthenticated, isLoading: authLoading, user, oxyServices, showBottomSheet } = useOxy();
@@ -234,7 +232,7 @@ export default function PeopleAndSharingScreen() {
     items.push({
       id: 'blocked',
       icon: 'account-cancel-outline',
-      iconColor: colors.danger,
+      iconColor: colors.error,
       title: 'Blocked users',
       subtitle: blockedCount > 0
         ? `${blockedCount} ${blockedCount === 1 ? 'user' : 'users'} blocked`

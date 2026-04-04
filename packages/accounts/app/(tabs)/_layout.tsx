@@ -1,14 +1,14 @@
 import { Slot, useRouter, usePathname } from 'expo-router';
 import { Drawer } from 'expo-router/drawer';
-import React, { useMemo, useRef, useCallback, useState } from 'react';
+import React, { useRef, useCallback, useState } from 'react';
 import { View, ScrollView, StyleSheet, Platform, useWindowDimensions, TextInput, TouchableOpacity } from 'react-native';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useTheme } from '@oxyhq/bloom/theme';
+import { useBloomTheme } from '@oxyhq/bloom/theme';
+import { useColors } from '@/hooks/useColors';
 import { DesktopSidebar, DrawerContent } from '@/components/ui';
 import { Header } from '@/components/header';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useScrollContext } from '@/contexts/scroll-context';
-import { useThemeContext } from '@/contexts/theme-context';
 import { useOxy } from '@oxyhq/services';
 import { useHapticPress } from '@/hooks/use-haptic-press';
 import { useSearchNavigation } from '@/hooks/use-search-navigation';
@@ -16,11 +16,12 @@ import { darkenColor } from '@/utils/color-utils';
 import Animated, { useAnimatedStyle, useDerivedValue, withTiming, runOnJS } from 'react-native-reanimated';
 
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
+  const { mode } = useTheme();
+  const { setMode } = useBloomTheme();
+  const colors = useColors();
   const { width } = useWindowDimensions();
   const router = useRouter();
   const pathname = usePathname();
-  const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
   const isDesktop = Platform.OS === 'web' && width >= 768;
 
   const searchInputRef = useRef<TextInput>(null);
@@ -28,7 +29,6 @@ export default function TabLayout() {
   // Use custom hook for search navigation management (has side effects)
   useSearchNavigation({ searchInputRef });
   const { setIsScrolled, scrollToTop, scrollY } = useScrollContext();
-  const { toggleColorScheme } = useThemeContext();
   const [showGoToTopButton, setShowGoToTopButton] = useState(false);
 
   const { showBottomSheet, refreshSessions } = useOxy();
@@ -40,8 +40,8 @@ export default function TabLayout() {
     if (!refreshSessions) return;
     try {
       await refreshSessions();
-    } catch (error) {
-      console.error('Failed to refresh sessions', error);
+    } catch {
+      // Refresh failed — swallow silently; the user can retry
     }
   }, [refreshSessions]);
 
@@ -56,6 +56,10 @@ export default function TabLayout() {
   const handleGoToTop = useCallback(() => {
     scrollToTop();
   }, [scrollToTop]);
+
+  const toggleColorScheme = useCallback(() => {
+    setMode(mode === 'dark' ? 'light' : 'dark');
+  }, [mode, setMode]);
 
   // Update showGoToTopButton state using runOnJS to avoid reading .value during render
   const updateShowGoToTopButton = useCallback((shouldShow: boolean) => {
@@ -86,7 +90,7 @@ export default function TabLayout() {
     };
   }, []);
 
-  const handleScroll = useCallback((event: any) => {
+  const handleScroll = useCallback((event: { nativeEvent: { contentOffset: { y: number } } }) => {
     const offsetY = event.nativeEvent.contentOffset.y;
     setIsScrolled(offsetY > 10);
   }, [setIsScrolled]);
@@ -136,7 +140,7 @@ export default function TabLayout() {
           </TouchableOpacity>
           <TouchableOpacity style={styles.circleButton} onPressIn={handlePressIn} onPress={toggleColorScheme}>
             <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconData }]}>
-              <MaterialCommunityIcons name={colorScheme === 'dark' ? 'weather-sunny' : 'weather-night'} size={22} color={darkenColor(colors.sidebarIconData)} />
+              <MaterialCommunityIcons name={mode === 'dark' ? 'weather-sunny' : 'weather-night'} size={22} color={darkenColor(colors.sidebarIconData)} />
             </View>
           </TouchableOpacity>
         </View>
@@ -283,7 +287,7 @@ export default function TabLayout() {
         </TouchableOpacity>
         <TouchableOpacity style={styles.circleButton} onPressIn={handlePressIn} onPress={toggleColorScheme}>
           <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconData }]}>
-            <MaterialCommunityIcons name={colorScheme === 'dark' ? 'weather-sunny' : 'weather-night'} size={22} color={darkenColor(colors.sidebarIconData)} />
+            <MaterialCommunityIcons name={mode === 'dark' ? 'weather-sunny' : 'weather-night'} size={22} color={darkenColor(colors.sidebarIconData)} />
           </View>
         </TouchableOpacity>
       </View>
@@ -297,14 +301,14 @@ export default function TabLayout() {
             onPress={showGoToTopButton ? handleGoToTop : handleScanQR}
             activeOpacity={0.8}
           >
-            <View style={[styles.fabIconContainer, { backgroundColor: colorScheme === 'dark' ? colors.text : colors.background }]}>
+            <View style={[styles.fabIconContainer, { backgroundColor: mode === 'dark' ? colors.text : colors.background }]}>
               {/* Scan Icon - shown when at top */}
               <Animated.View style={[styles.fabIconAbsolute, scanIconAnimatedStyle]}>
-                <MaterialCommunityIcons name="qrcode-scan" size={26} color={colorScheme === 'dark' ? colors.background : colors.text} />
+                <MaterialCommunityIcons name="qrcode-scan" size={26} color={mode === 'dark' ? colors.background : colors.text} />
               </Animated.View>
               {/* Go to Top Icon - shown when scrolling */}
               <Animated.View style={[styles.fabIconAbsolute, fabIconAnimatedStyle]}>
-                <MaterialCommunityIcons name="arrow-up" size={26} color={colorScheme === 'dark' ? colors.background : colors.text} />
+                <MaterialCommunityIcons name="arrow-up" size={26} color={mode === 'dark' ? colors.background : colors.text} />
               </Animated.View>
             </View>
           </TouchableOpacity>
@@ -353,14 +357,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 16,
     zIndex: 1000,
-    ...Platform.select({
-      web: {
-        position: 'fixed' as any,
-      },
-      default: {
-        position: 'absolute' as any,
-      },
-    }),
+    ...(Platform.select({
+      web: { position: 'fixed' },
+      default: { position: 'absolute' },
+    }) as { position: 'absolute' }),
   },
   circleButton: {
     alignItems: 'center',
@@ -377,14 +377,10 @@ const styles = StyleSheet.create({
     bottom: 32,
     right: 32,
     zIndex: 1000,
-    ...Platform.select({
-      web: {
-        position: 'fixed' as any,
-      },
-      default: {
-        position: 'absolute' as any,
-      },
-    }),
+    ...(Platform.select({
+      web: { position: 'fixed' },
+      default: { position: 'absolute' },
+    }) as { position: 'absolute' }),
   },
   fabIconContainer: {
     width: 56,
@@ -422,13 +418,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 12,
     zIndex: 1000,
-    ...Platform.select({
-      web: {
-        position: 'fixed' as any,
-      },
-      default: {
-        position: 'absolute' as any,
-      },
-    }),
+    ...(Platform.select({
+      web: { position: 'fixed' },
+      default: { position: 'absolute' },
+    }) as { position: 'absolute' }),
   },
 });

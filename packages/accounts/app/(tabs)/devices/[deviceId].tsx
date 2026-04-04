@@ -1,8 +1,7 @@
 import React, { useMemo, useCallback, useState, useEffect } from 'react';
 import { View, StyleSheet, Platform, useWindowDimensions, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
 import { Section } from '@/components/section';
 import { GroupedSection } from '@/components/grouped-section';
@@ -28,12 +27,12 @@ interface Device {
 }
 
 export default function DeviceDetailScreen() {
-  const colorScheme = useColorScheme() ?? 'light';
+  const colors = useColors();
   const { width } = useWindowDimensions();
   const router = useRouter();
   const params = useLocalSearchParams<{ deviceId: string }>();
 
-  const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
+  // colors already from useColors() above
   const isDesktop = Platform.OS === 'web' && width >= 768;
 
   // OxyServices integration
@@ -178,7 +177,7 @@ export default function DeviceDetailScreen() {
       {
         id: 'name',
         icon: getDeviceIcon(deviceType),
-        iconColor: isCurrent ? '#34C759' : colors.sidebarIconDevices,
+        iconColor: isCurrent ? colors.success : colors.sidebarIconDevices,
         title: deviceName,
         subtitle: isCurrent ? 'Current Device' : 'Other Device',
         customIcon: (
@@ -186,7 +185,7 @@ export default function DeviceDetailScreen() {
             <MaterialCommunityIcons
               name={getDeviceIcon(deviceType) as any}
               size={24}
-              color={isCurrent ? '#34C759' : colors.sidebarIconDevices}
+              color={isCurrent ? colors.success : colors.sidebarIconDevices}
             />
           </View>
         ),
@@ -295,7 +294,7 @@ export default function DeviceDetailScreen() {
               <GroupedSection items={[{
                 id: 'remove-device',
                 icon: 'delete-outline',
-                iconColor: '#FF3B30',
+                iconColor: colors.error,
                 title: 'Remove Device',
                 subtitle: 'Sign out all sessions on this device',
                 onPress: handleRemoveDevice,

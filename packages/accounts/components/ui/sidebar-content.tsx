@@ -2,8 +2,8 @@ import React, { useMemo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { useRouter, usePathname } from 'expo-router';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/hooks/useColors';
+import { useTheme } from '@oxyhq/bloom/theme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { darkenColor } from '@/utils/color-utils';
 import { useHapticPress } from '@/hooks/use-haptic-press';
@@ -44,8 +44,8 @@ interface SidebarContentProps {
 }
 
 export function SidebarContent({ onNavigate }: SidebarContentProps) {
-    const colorScheme = useColorScheme() ?? 'light';
-    const colors = Colors[colorScheme];
+    const colors = useColors();
+    const { mode } = useTheme();
     const router = useRouter();
     const pathname = usePathname();
 
@@ -108,7 +108,7 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
                         >
                             <BlurView
                                 intensity={isActive ? 80 : 50}
-                                tint={colorScheme === 'dark' ? 'dark' : 'light'}
+                                tint={mode === 'dark' ? 'dark' : 'light'}
                                 experimentalBlurMethod={Platform.OS === 'android' ? 'dimezisBlurView' : undefined}
                                 style={[
                                     styles.menuItem,

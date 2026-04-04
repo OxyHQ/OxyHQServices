@@ -1,4 +1,3 @@
-import { Alert } from 'react-native';
 import type { FileMetadata } from '@oxyhq/core';
 import { File as ExpoFile } from 'expo-file-system';
 import { toast } from '../../lib/sonner';
@@ -37,35 +36,6 @@ export function getFileIcon(contentType: string): string {
     if (contentType.includes('excel') || contentType.includes('sheet')) return 'grid';
     if (contentType.includes('zip') || contentType.includes('archive')) return 'archive';
     return 'document-outline';
-}
-
-/**
- * Unified confirmation dialog - uses Alert.alert for all platforms
- */
-export function confirmAction(
-    message: string,
-    title?: string,
-    confirmText = 'OK',
-    cancelText = 'Cancel'
-): Promise<boolean> {
-    return new Promise((resolve) => {
-        Alert.alert(
-            title || 'Confirm',
-            message,
-            [
-                {
-                    text: cancelText,
-                    style: 'cancel',
-                    onPress: () => resolve(false),
-                },
-                {
-                    text: confirmText,
-                    onPress: () => resolve(true),
-                },
-            ],
-            { cancelable: true, onDismiss: () => resolve(false) }
-        );
-    });
 }
 
 /**

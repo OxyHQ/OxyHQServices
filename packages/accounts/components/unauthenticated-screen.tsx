@@ -1,7 +1,6 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import { View, StyleSheet } from 'react-native';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { ScreenHeader } from '@/components/ui';
@@ -20,8 +19,7 @@ export function UnauthenticatedScreen({
   message,
   isAuthenticated,
 }: UnauthenticatedScreenProps) {
-  const colorScheme = useColorScheme() ?? 'light';
-  const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
+  const colors = useColors();
 
   // Don't render if authenticated
   if (isAuthenticated) {

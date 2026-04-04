@@ -1,5 +1,5 @@
 import type React from 'react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
     View,
     Text,
@@ -7,7 +7,6 @@ import {
     StyleSheet,
     ScrollView,
     ActivityIndicator,
-    Alert,
     Platform,
     Animated,
     Dimensions,
@@ -15,7 +14,8 @@ import {
 import type { BaseScreenProps } from '../types/navigation';
 import { fontFamilies } from '../styles/fonts';
 import { toast } from '../../lib/sonner';
-import { confirmAction } from '../utils/confirmAction';
+import * as Prompt from '@oxyhq/bloom/prompt';
+import { usePromptControl } from '@oxyhq/bloom/prompt';
 import { Ionicons } from '@expo/vector-icons';
 import Avatar from '../components/Avatar';
 import { useI18n } from '../hooks/useI18n';
@@ -80,9 +80,15 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
     const [billingInterval, setBillingInterval] = useState<'month' | 'year'>('month');
     const [activeTab, setActiveTab] = useState<'plans' | 'features'>('plans');
     const [currentAppPackage, setCurrentAppPackage] = useState<string>('mention'); // Default to mention for demo
+    const [pendingUnsubscribeFeatureId, setPendingUnsubscribeFeatureId] = useState<string | null>(null);
 
     const { t } = useI18n();
     const bloomTheme = useTheme();
+
+    // Prompt controls
+    const cancelSubscriptionPrompt = usePromptControl();
+    const unsubscribeFeaturePrompt = usePromptControl();
+
     // Extract commonly used colors for readability
     const textColor = bloomTheme.colors.text;
     const backgroundColor = bloomTheme.colors.background;
@@ -315,35 +321,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
     }, [currentAppPackage, user?.isPremium]);
 
     const detectCurrentApp = () => {
-        // In a real implementation, this would detect the actual app package name
-        // For now, we'll use a mock detection based on available methods
-
-        // Real app detection methods you could use:
-        // 1. Check bundle identifier in React Native: 
-        //    import DeviceInfo from 'react-native-device-info';
-        //    const bundleId = DeviceInfo.getBundleId();
-        //    Example: com.oxy.mention -> 'mention'
-
-        // 2. Environment variables or build configuration
-        //    const appPackage = __DEV__ ? process.env.APP_PACKAGE : 'mention';
-
-        // 3. Check specific app capabilities or modules
-        //    if (typeof MentionModule !== 'undefined') return 'mention';
-        //    if (typeof OxyWorkspaceModule !== 'undefined') return 'oxy-workspace';
-
-        // 4. Use build-time configuration with Metro or similar
-        //    const appPackage = require('../config/app.json').packageName;
-
-        // For demo purposes, we'll simulate different apps
-        // You would replace this with actual app detection logic
-
-        // IMPORTANT: This ensures subscription restrictions work properly:
-        // - Mention+ plan can only be subscribed to when app package == 'mention'
-        // - Other app-specific plans follow the same pattern
-        // - Ecosystem plans work across all apps
-
-        const detectedApp = 'mention'; // This would be dynamic in real implementation
-
+        const detectedApp = 'mention';
         setCurrentAppPackage(detectedApp);
     };
 
@@ -351,13 +329,11 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
         try {
             setLoading(true);
 
-            // Filter plans available for current app
             const availablePlans = mockPlans.filter(plan =>
                 plan.applicableApps.includes(currentAppPackage)
             );
             setPlans(availablePlans);
 
-            // Mock current subscription
             let currentSubscription: UserSubscription | null = null;
             if (user?.isPremium) {
                 currentSubscription = {
@@ -371,7 +347,6 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                 setSubscription(currentSubscription);
             }
 
-            // Filter features available for current app and update based on current subscription
             const availableFeatures = mockIndividualFeatures.filter(feature =>
                 feature.applicableApps.includes(currentAppPackage)
             );
@@ -383,7 +358,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                 return {
                     ...feature,
                     isIncludedInCurrentPlan,
-                    isSubscribed: !!isIncludedInCurrentPlan // Mock some individual subscriptions
+                    isSubscribed: !!isIncludedInCurrentPlan
                 };
             });
 
@@ -405,27 +380,21 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
 
     const handleSubscribe = async (planId: string) => {
         try {
-            // Check if plan is available for current app
             const selectedPlan = mockPlans.find(plan => plan.id === planId);
             if (!selectedPlan?.applicableApps.includes(currentAppPackage)) {
                 toast.error(t('premium.toasts.planUnavailable', { app: currentAppPackage }) || `This plan is not available for the current app (${currentAppPackage})`);
                 return;
             }
 
-            // Special restriction for Mention+ plan - only available in mention app
             if (planId === 'mention-plus' && currentAppPackage !== 'mention') {
                 toast.error(t('premium.toasts.mentionOnly') || 'Mention+ is only available in the Mention app');
                 return;
             }
 
             setProcessingPayment(true);
-
-            // Mock payment processing
             await new Promise(resolve => setTimeout(resolve, 2000));
-
             toast.success(t('premium.toasts.activated') || 'Subscription activated successfully!');
 
-            // Mock subscription update
             setSubscription({
                 id: `sub_${Date.now()}`,
                 planId,
@@ -435,7 +404,6 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                 cancelAtPeriodEnd: false
             });
 
-            // Reload data to update feature states
             loadSubscriptionData();
 
         } catch (error) {
@@ -448,23 +416,21 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
         }
     };
 
-    const handleCancelSubscription = () => {
-        confirmAction(
-            t('premium.confirms.cancelSub') || 'Are you sure you want to cancel your subscription? You will lose access to premium features at the end of your current billing period.',
-            async () => {
-                try {
-                    // Mock cancellation
-                    setSubscription(prev => prev ? {
-                        ...prev,
-                        cancelAtPeriodEnd: true
-                    } : null);
-                    toast.success(t('premium.toasts.willCancel') || 'Subscription will be canceled at the end of the billing period');
-                } catch (error) {
-                    toast.error(t('premium.toasts.cancelFailed') || 'Failed to cancel subscription');
-                }
-            }
-        );
-    };
+    const confirmCancelSubscription = useCallback(() => {
+        cancelSubscriptionPrompt.open();
+    }, [cancelSubscriptionPrompt]);
+
+    const handleCancelSubscription = useCallback(async () => {
+        try {
+            setSubscription(prev => prev ? {
+                ...prev,
+                cancelAtPeriodEnd: true
+            } : null);
+            toast.success(t('premium.toasts.willCancel') || 'Subscription will be canceled at the end of the billing period');
+        } catch (error) {
+            toast.error(t('premium.toasts.cancelFailed') || 'Failed to cancel subscription');
+        }
+    }, [t]);
 
     const handleReactivateSubscription = async () => {
         try {
@@ -479,7 +445,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
     };
 
     const formatPrice = (price: number, currency: string, interval: string) => {
-        const yearlyPrice = interval === 'year' ? price : price * 12 * 0.8; // 20% discount for yearly
+        const yearlyPrice = interval === 'year' ? price : price * 12 * 0.8;
         const displayPrice = billingInterval === 'year' ? yearlyPrice : price;
 
         return {
@@ -496,16 +462,13 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
 
     const handleFeatureSubscribe = async (featureId: string) => {
         try {
-            // Check if feature is available for current app
             const selectedFeature = mockIndividualFeatures.find(feature => feature.id === featureId);
             if (!selectedFeature?.applicableApps.includes(currentAppPackage)) {
                 toast.error(`This feature is not available for the current app (${currentAppPackage})`);
                 return;
             }
 
-            // Special restrictions for app-specific features
             if (selectedFeature.appScope === 'specific') {
-                // For features that are only available in specific apps, enforce strict matching
                 const hasExactMatch = selectedFeature.applicableApps.length === 1 &&
                     selectedFeature.applicableApps[0] === currentAppPackage;
                 if (!hasExactMatch && selectedFeature.applicableApps.length === 1) {
@@ -516,8 +479,6 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
             }
 
             setProcessingPayment(true);
-
-            // Mock feature subscription
             await new Promise(resolve => setTimeout(resolve, 1500));
 
             setIndividualFeatures(prev =>
@@ -541,26 +502,34 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
         }
     };
 
-    const handleFeatureUnsubscribe = async (featureId: string) => {
-        const feature = individualFeatures.find(f => f.id === featureId);
-        confirmAction(
-            (t('premium.confirms.unsubscribeFeature', { name: feature?.name ?? '' }) ?? `Are you sure you want to unsubscribe from ${feature?.name}?`),
-            async () => {
-                try {
-                    setIndividualFeatures(prev =>
-                        prev.map(f =>
-                            f.id === featureId
-                                ? { ...f, isSubscribed: false }
-                                : f
-                        )
-                    );
-                    toast.success((t('premium.toasts.featureUnsubscribed', { name: feature?.name ?? '' }) ?? `Unsubscribed from ${feature?.name}`));
-                } catch (error) {
-                    toast.error(t('premium.toasts.featureUnsubscribeFailed') || 'Failed to unsubscribe from feature');
-                }
-            }
-        );
-    };
+    const confirmFeatureUnsubscribe = useCallback((featureId: string) => {
+        setPendingUnsubscribeFeatureId(featureId);
+        unsubscribeFeaturePrompt.open();
+    }, [unsubscribeFeaturePrompt]);
+
+    const handleFeatureUnsubscribe = useCallback(async () => {
+        if (!pendingUnsubscribeFeatureId) return;
+        const feature = individualFeatures.find(f => f.id === pendingUnsubscribeFeatureId);
+        try {
+            setIndividualFeatures(prev =>
+                prev.map(f =>
+                    f.id === pendingUnsubscribeFeatureId
+                        ? { ...f, isSubscribed: false }
+                        : f
+                )
+            );
+            toast.success((t('premium.toasts.featureUnsubscribed', { name: feature?.name ?? '' }) ?? `Unsubscribed from ${feature?.name}`));
+        } catch (error) {
+            toast.error(t('premium.toasts.featureUnsubscribeFailed') || 'Failed to unsubscribe from feature');
+        } finally {
+            setPendingUnsubscribeFeatureId(null);
+        }
+    }, [pendingUnsubscribeFeatureId, individualFeatures, t]);
+
+    const pendingUnsubscribeFeature = useMemo(
+        () => individualFeatures.find(f => f.id === pendingUnsubscribeFeatureId),
+        [individualFeatures, pendingUnsubscribeFeatureId]
+    );
 
     const renderHeader = () => {
         const getAppDisplayName = (packageName: string) => {
@@ -649,7 +618,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                         ) : (
                             <TouchableOpacity
                                 style={[styles.actionButton, { backgroundColor: dangerColor }]}
-                                onPress={handleCancelSubscription}
+                                onPress={confirmCancelSubscription}
                             >
                                 <Text style={styles.actionButtonText}>{t('premium.actions.cancelSubBtn') || 'Cancel Subscription'}</Text>
                             </TouchableOpacity>
@@ -965,7 +934,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                         </View>
                         <TouchableOpacity
                             style={[styles.unsubscribeButton, { borderColor: dangerColor }]}
-                            onPress={() => handleFeatureUnsubscribe(feature.id)}
+                            onPress={() => confirmFeatureUnsubscribe(feature.id)}
                         >
                             <Text style={[styles.unsubscribeText, { color: dangerColor }]}>{t('premium.actions.unsubscribe') || 'Unsubscribe'}</Text>
                         </TouchableOpacity>
@@ -1144,6 +1113,22 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
 
                 <View style={styles.bottomSpacing} />
             </ScrollView>
+            <Prompt.Basic
+                control={cancelSubscriptionPrompt}
+                title={t('premium.confirms.cancelSubTitle') || 'Cancel Subscription'}
+                description={t('premium.confirms.cancelSub') || 'Are you sure you want to cancel your subscription? You will lose access to premium features at the end of your current billing period.'}
+                onConfirm={handleCancelSubscription}
+                confirmButtonCta={t('premium.actions.cancelSubBtn') || 'Cancel Subscription'}
+                confirmButtonColor='negative'
+            />
+            <Prompt.Basic
+                control={unsubscribeFeaturePrompt}
+                title={t('premium.confirms.unsubscribeFeatureTitle') || 'Unsubscribe from Feature'}
+                description={pendingUnsubscribeFeature ? (t('premium.confirms.unsubscribeFeature', { name: pendingUnsubscribeFeature.name }) ?? `Are you sure you want to unsubscribe from ${pendingUnsubscribeFeature.name}?`) : ''}
+                onConfirm={handleFeatureUnsubscribe}
+                confirmButtonCta={t('premium.actions.unsubscribe') || 'Unsubscribe'}
+                confirmButtonColor='negative'
+            />
         </View>
     );
 };
@@ -1396,7 +1381,6 @@ const styles = StyleSheet.create({
     bottomSpacing: {
         height: 40,
     },
-    // Tab Navigation Styles
     tabContainer: {
         flexDirection: 'row',
         borderBottomWidth: 1,
@@ -1412,7 +1396,6 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: '600',
     },
-    // Individual Feature Styles
     featureCard: {
         borderRadius: 12,
         borderWidth: 1,
@@ -1506,7 +1489,6 @@ const styles = StyleSheet.create({
         fontWeight: '600',
         marginBottom: 12,
     },
-    // New styles for enhanced feature cards
     featureNameRow: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -1554,7 +1536,6 @@ const styles = StyleSheet.create({
         fontWeight: '500',
         textAlign: 'center',
     },
-    // App-specific plan styles
     appSpecificBadge: {
         position: 'absolute',
         top: 16,
@@ -1584,7 +1565,6 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: '600',
     },
-    // App switcher styles (for development/testing)
     appSwitcher: {
         padding: 16,
         borderBottomWidth: 1,

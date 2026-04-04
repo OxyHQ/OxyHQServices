@@ -3,8 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native
 import { BlurView } from 'expo-blur';
 import Svg, { Defs, RadialGradient, Stop, Path, Filter, FeGaussianBlur } from 'react-native-svg';
 import Animated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming, Easing } from 'react-native-reanimated';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useColors } from '@/hooks/useColors';
 import { Avatar } from '@oxyhq/services';
 
 export interface IdCardProps {
@@ -122,8 +121,7 @@ const ConicGradientBackground = ({ cardWidth, cardHeight }: { cardWidth: number;
 };
 
 export function IdCard({ name, imageUrl, title, value, onPress, onPressIn }: IdCardProps) {
-  const colorScheme = useColorScheme() ?? 'light';
-  const colors = Colors[colorScheme];
+  const colors = useColors();
   const [cardDimensions, setCardDimensions] = React.useState({ width: 300, height: 200 });
 
   const handleLayout = (event: any) => {
@@ -161,7 +159,7 @@ export function IdCard({ name, imageUrl, title, value, onPress, onPressIn }: IdC
         </View>
         <View style={styles.spacer} />
         <View style={styles.textContainer}>
-          <Text style={[styles.idCardTitle, { color: colors.secondaryText }]}>{title}</Text>
+          <Text style={[styles.idCardTitle, { color: colors.textSecondary }]}>{title}</Text>
           <Text style={[styles.idCardValue, { color: colors.text }]}>{value}</Text>
         </View>
       </View>

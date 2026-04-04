@@ -1,11 +1,10 @@
 import React, { useMemo } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { useOxy } from '@oxyhq/services';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useColors } from '@/hooks/useColors';
 import { NotificationsStep } from '@/components/auth/NotificationsStep';
 import { useAuthHandlers } from '@/hooks/auth/useAuthHandlers';
 import { useAuthFlowContext } from '@/contexts/auth-flow-context';
-import { Colors } from '@/constants/theme';
 
 /**
  * Import Identity - Notifications Screen
@@ -13,18 +12,12 @@ import { Colors } from '@/constants/theme';
  * Requests push notification permissions and completes sign-in
  */
 export default function ImportIdentityNotificationsScreen() {
-  const colorScheme = useColorScheme() ?? 'light';
+  const colors = useColors();
   const { signIn, oxyServices, isAuthenticated } = useOxy();
   const { error, isSigningIn, setAuthError, setSigningIn, usernameRef } = useAuthFlowContext();
 
-  const backgroundColor = useMemo(
-    () => (colorScheme === 'dark' ? Colors.dark.background : Colors.light.background),
-    [colorScheme]
-  );
-  const textColor = useMemo(
-    () => (colorScheme === 'dark' ? Colors.dark.text : Colors.light.text),
-    [colorScheme]
-  );
+  const backgroundColor = colors.background;
+  const textColor = colors.text;
 
   // Shared auth handlers
   const { handleRequestNotifications, isRequestingNotifications } = useAuthHandlers({

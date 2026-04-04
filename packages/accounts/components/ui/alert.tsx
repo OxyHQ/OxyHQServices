@@ -12,8 +12,8 @@ import {
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
 import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/hooks/useColors';
+import { useTheme } from '@oxyhq/bloom/theme';
 
 export interface AlertButton {
   text: string;
@@ -30,8 +30,8 @@ interface AlertProps {
 }
 
 export function Alert({ visible, title, message, buttons = [], onDismiss }: AlertProps) {
-  const colorScheme = useColorScheme() ?? 'light';
-  const colors = Colors[colorScheme];
+  const colors = useColors();
+  const { mode } = useTheme();
   const insets = useSafeAreaInsets();
   const opacity = useSharedValue(0);
   const scale = useSharedValue(0.95);
@@ -78,7 +78,7 @@ export function Alert({ visible, title, message, buttons = [], onDismiss }: Aler
     onDismiss();
   };
 
-  const separatorColor = colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)';
+  const separatorColor = mode === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)';
 
   const renderButton = (button: AlertButton, index: number, isLast: boolean, showBorder: boolean) => {
     const isDestructive = button.style === 'destructive';
@@ -94,22 +94,22 @@ export function Alert({ visible, title, message, buttons = [], onDismiss }: Aler
     let textColor: string;
     
     if (isDestructive) {
-      backgroundColor = colorScheme === 'dark' ? 'rgba(255, 59, 48, 0.3)' : 'rgba(255, 59, 48, 0.25)';
-      textColor = '#FF3B30';
+      backgroundColor = mode === 'dark' ? 'rgba(255, 59, 48, 0.3)' : 'rgba(255, 59, 48, 0.25)';
+      textColor = colors.error;
     } else if (isCancel) {
-      backgroundColor = colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)';
-      textColor = colorScheme === 'dark' ? '#FFFFFF' : '#000000';
+      backgroundColor = mode === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)';
+      textColor = colors.text;
     } else {
-      // Default button - use more transparent blue
-      backgroundColor = colorScheme === 'dark' ? 'rgba(10, 132, 255, 0.3)' : 'rgba(0, 122, 255, 0.25)';
-      textColor = colorScheme === 'dark' ? '#0A84FF' : '#007AFF';
+      // Default button - primary color
+      backgroundColor = mode === 'dark' ? 'rgba(10, 132, 255, 0.3)' : 'rgba(0, 122, 255, 0.25)';
+      textColor = colors.primary;
     }
 
     return (
       <BlurView
         key={`button-${index}-${button.text}`}
         intensity={50}
-        tint={colorScheme === 'dark' ? 'dark' : 'light'}
+        tint={mode === 'dark' ? 'dark' : 'light'}
         style={[
           styles.button,
           { borderRadius: 18 },
@@ -170,12 +170,12 @@ export function Alert({ visible, title, message, buttons = [], onDismiss }: Aler
         >
           <BlurView
             intensity={100}
-            tint={colorScheme === 'dark' ? 'dark' : 'light'}
+            tint={mode === 'dark' ? 'dark' : 'light'}
             experimentalBlurMethod={Platform.OS === 'android' ? 'dimezisBlurView' : undefined}
             style={[
               styles.alertContent,
               {
-                backgroundColor: colorScheme === 'dark' 
+                backgroundColor: mode === 'dark' 
                   ? 'rgba(28, 28, 30, 0.95)' 
                   : 'rgba(248, 249, 250, 0.95)',
               },
@@ -193,7 +193,7 @@ export function Alert({ visible, title, message, buttons = [], onDismiss }: Aler
 
               {/* Message */}
               {message && (
-                <Text style={[styles.message, { color: colors.secondaryText }]}>{message}</Text>
+                <Text style={[styles.message, { color: colors.textSecondary }]}>{message}</Text>
               )}
             </ScrollView>
 

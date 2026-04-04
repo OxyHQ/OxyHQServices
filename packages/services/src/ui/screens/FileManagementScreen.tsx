@@ -6,7 +6,6 @@ import {
     StyleSheet,
     ScrollView,
     ActivityIndicator,
-    Alert,
     RefreshControl,
     TextInput,
     Image,
@@ -29,6 +28,8 @@ const loadDocumentPicker = async () => {
     }
 };
 import { toast } from '../../lib/sonner';
+import * as Prompt from '@oxyhq/bloom/prompt';
+import { usePromptControl } from '@oxyhq/bloom/prompt';
 import { Ionicons } from '@expo/vector-icons';
 // @ts-ignore - MaterialCommunityIcons is available at runtime
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -42,7 +43,6 @@ import { useOxy } from '../context/OxyContext';
 import { useI18n } from '../hooks/useI18n';
 import { useUploadFile } from '../hooks/mutations/useAccountMutations';
 import {
-    confirmAction,
     convertDocumentPickerAssetToFile,
     formatFileSize,
     getFileIcon,
@@ -134,6 +134,11 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     const { user, oxyServices } = useOxy();
     const { t } = useI18n();
     const uploadFileMutation = useUploadFile();
+    // Prompt controls
+    const fileDeletePrompt = usePromptControl();
+    const bulkDeletePrompt = usePromptControl();
+    const visibilityChangePrompt = usePromptControl();
+    const [pendingDeleteFile, setPendingDeleteFile] = useState<{ id: string; name: string } | null>(null);
     const files = useFiles();
     // Ensure containerWidth is a number (TypeScript guard)
     const safeContainerWidth: number = typeof containerWidth === 'number' ? containerWidth : 400;
@@ -890,18 +895,14 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         }
     };
 
-    const handleFileDelete = async (fileId: string, filename: string) => {
-        // Use platform-aware confirmation dialog
-        const confirmed = await confirmAction(
-            t('fileManagement.confirms.deleteFile', { filename }),
-            t('fileManagement.deleteFile'),
-            t('fileManagement.confirm'),
-            t('common.cancel')
-        );
+    const confirmFileDelete = useCallback((fileId: string, filename: string) => {
+        setPendingDeleteFile({ id: fileId, name: filename });
+        fileDeletePrompt.open();
+    }, [fileDeletePrompt]);
 
-        if (!confirmed) {
-            return;
-        }
+    const handleFileDelete = useCallback(async () => {
+        if (!pendingDeleteFile) return;
+        const { id: fileId } = pendingDeleteFile;
 
         try {
             storeSetDeleting(fileId);
@@ -928,24 +929,17 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             }
         } finally {
             storeSetDeleting(null);
+            setPendingDeleteFile(null);
         }
-    };
+    }, [pendingDeleteFile, storeSetDeleting, oxyServices, loadFiles, t]);
+
+    const confirmBulkDelete = useCallback(() => {
+        if (selectedIds.size === 0) return;
+        bulkDeletePrompt.open();
+    }, [selectedIds.size, bulkDeletePrompt]);
 
     const handleBulkDelete = useCallback(async () => {
         if (selectedIds.size === 0) return;
-
-        const fileMap: Record<string, FileMetadata> = {};
-        files.forEach(f => { fileMap[f.id] = f; });
-        const selectedFiles = Array.from(selectedIds).map(id => fileMap[id]).filter(Boolean);
-
-        const confirmed = await confirmAction(
-            t('fileManagement.confirms.deleteFiles', { count: selectedFiles.length }),
-            t('fileManagement.deleteFiles'),
-            t('fileManagement.confirm'),
-            t('common.cancel')
-        );
-
-        if (!confirmed) return;
 
         try {
             const deletePromises = Array.from(selectedIds).map(async (fileId) => {
@@ -1351,9 +1345,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         {/* Always show delete button for debugging */}
                         <TouchableOpacity
                             style={[fileManagementStyles.actionButton, { backgroundColor: bloomTheme.isDark ? '#400000' : '#FFEBEE' }]}
-                            onPress={() => {
-                                handleFileDelete(file.id, file.filename);
-                            }}
+                            onPress={() => confirmFileDelete(file.id, file.filename)}
                             disabled={deleting === file.id}
                         >
                             {deleting === file.id ? (
@@ -1481,7 +1473,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         </TouchableOpacity>
                         <TouchableOpacity
                             style={[fileManagementStyles.groupedActionBtn, { backgroundColor: bloomTheme.isDark ? '#400000' : '#FFEBEE' }]}
-                            onPress={() => handleFileDelete(file.id, file.filename)}
+                            onPress={() => confirmFileDelete(file.id, file.filename)}
                             disabled={deleting === file.id}
                         >
                             {deleting === file.id ? (
@@ -1499,7 +1491,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 ) : undefined,
             };
         });
-    }, [filteredFiles, theme, deleting, handleFileDownload, handleFileDelete, handleFileOpen, getSafeDownloadUrlCallback, selectMode, selectedIds]);
+    }, [filteredFiles, theme, deleting, handleFileDownload, confirmFileDelete, handleFileOpen, getSafeDownloadUrlCallback, selectMode, selectedIds]);
 
     // Scroll to selected file after selection
     useEffect(() => {
@@ -1953,14 +1945,14 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     onToggleDetails={() => setShowFileDetailsInViewer(!showFileDetailsInViewer)}
                     onClose={handleCloseFile}
                     onDownload={handleFileDownload}
-                    onDelete={handleFileDelete}
+                    onDelete={confirmFileDelete}
                     isOwner={user?.id === targetUserId}
                 />
                 <FileDetailsModal
                     control={fileDetailsControl}
                     file={selectedFile}
                     onDownload={handleFileDownload}
-                    onDelete={handleFileDelete}
+                    onDelete={confirmFileDelete}
                     isOwner={user?.id === targetUserId}
                 />
             </>
@@ -2018,24 +2010,14 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     {
                         key: 'delete',
                         text: t('fileManagement.delete', { count: selectedIds.size }),
-                        onPress: handleBulkDelete,
+                        onPress: confirmBulkDelete,
                         icon: 'delete',
                     },
                     {
                         key: 'visibility',
                         text: t('fileManagement.visibility'),
                         onPress: () => {
-                            // Show visibility options menu
-                            Alert.alert(
-                                t('fileManagement.changeVisibility'),
-                                t('fileManagement.changeVisibilityConfirm', { count: selectedIds.size }),
-                                [
-                                    { text: t('common.cancel'), style: 'cancel' },
-                                    { text: t('fileManagement.private'), onPress: () => handleBulkVisibilityChange('private') },
-                                    { text: t('fileManagement.public'), onPress: () => handleBulkVisibilityChange('public') },
-                                    { text: t('fileManagement.unlisted'), onPress: () => handleBulkVisibilityChange('unlisted') },
-                                ]
-                            );
+                            visibilityChangePrompt.open();
                         },
                         icon: 'eye',
                     }
@@ -2275,7 +2257,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     control={fileDetailsControl}
                     file={selectedFile}
                     onDownload={handleFileDownload}
-                    onDelete={handleFileDelete}
+                    onDelete={confirmFileDelete}
                     isOwner={user?.id === targetUserId}
                 />
             )}
@@ -2310,7 +2292,34 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
             {/* Selection bar removed; actions are now in header */}
             {/* Global loadingMore bar removed; now inline in scroll areas */}
-
+            <Prompt.Basic
+                control={fileDeletePrompt}
+                title={t('fileManagement.deleteFile') || 'Delete File'}
+                description={pendingDeleteFile ? t('fileManagement.confirms.deleteFile', { filename: pendingDeleteFile.name }) : ''}
+                onConfirm={handleFileDelete}
+                confirmButtonCta={t('fileManagement.confirm') || 'Delete'}
+                confirmButtonColor='negative'
+            />
+            <Prompt.Basic
+                control={bulkDeletePrompt}
+                title={t('fileManagement.deleteFiles') || 'Delete Files'}
+                description={t('fileManagement.confirms.deleteFiles', { count: selectedIds.size })}
+                onConfirm={handleBulkDelete}
+                confirmButtonCta={t('fileManagement.confirm') || 'Delete'}
+                confirmButtonColor='negative'
+            />
+            <Prompt.Outer control={visibilityChangePrompt}>
+                <Prompt.Content>
+                    <Prompt.TitleText>{t('fileManagement.changeVisibility') || 'Change Visibility'}</Prompt.TitleText>
+                    <Prompt.DescriptionText>{t('fileManagement.changeVisibilityConfirm', { count: selectedIds.size })}</Prompt.DescriptionText>
+                </Prompt.Content>
+                <Prompt.Actions>
+                    <Prompt.Action cta={t('fileManagement.private') || 'Private'} onPress={() => handleBulkVisibilityChange('private')} color='primary' />
+                    <Prompt.Action cta={t('fileManagement.public') || 'Public'} onPress={() => handleBulkVisibilityChange('public')} color='primary_subtle' />
+                    <Prompt.Action cta={t('fileManagement.unlisted') || 'Unlisted'} onPress={() => handleBulkVisibilityChange('unlisted')} color='primary_subtle' />
+                    <Prompt.Cancel cta={t('common.cancel') || 'Cancel'} />
+                </Prompt.Actions>
+            </Prompt.Outer>
         </View>
     );
 };

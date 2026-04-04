@@ -1,8 +1,8 @@
 import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { View, StyleSheet, Platform, useWindowDimensions, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useTheme } from '@oxyhq/bloom/theme';
+import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Section } from '@/components/section';
@@ -24,14 +24,13 @@ const FollowButton: React.FC<{
 }> = ImportedFollowButton;
 
 export default function SearchScreen() {
-  const colorScheme = useColorScheme() ?? 'light';
+  const { mode } = useTheme();
+  const colors = useColors();
   const { width } = useWindowDimensions();
   const router = useRouter();
   const params = useLocalSearchParams<{ q?: string }>();
   const searchQuery = params.q || '';
   const [localSearchQuery, setLocalSearchQuery] = useState(searchQuery);
-
-  const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
   const isDesktop = useMemo(() => Platform.OS === 'web' && width >= 768, [width]);
 
   // OxyServices integration
@@ -234,7 +233,7 @@ export default function SearchScreen() {
               userId={userId}
               initiallyFollowing={false}
               size="small"
-              theme={colorScheme}
+              theme={mode}
             />
           ),
           onPress: () => {
@@ -252,7 +251,7 @@ export default function SearchScreen() {
         };
       })
       .filter((item): item is NonNullable<typeof item> => item !== null);
-  }, [userSearchResults, oxyServices, colorScheme, extractUserId, showBottomSheet]);
+  }, [userSearchResults, oxyServices, mode, extractUserId, showBottomSheet]);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>

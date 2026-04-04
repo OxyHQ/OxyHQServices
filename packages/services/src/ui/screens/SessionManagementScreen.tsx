@@ -7,7 +7,6 @@ import {
     StyleSheet,
     ScrollView,
     ActivityIndicator,
-    Alert,
     Platform,
     RefreshControl,
 } from 'react-native';
@@ -15,7 +14,8 @@ import type { BaseScreenProps } from '../types/navigation';
 import { screenContentStyle } from '../constants/spacing';
 import { toast } from '../../lib/sonner';
 import type { ClientSession } from '@oxyhq/core';
-import { confirmAction } from '../utils/confirmAction';
+import * as Prompt from '@oxyhq/bloom/prompt';
+import { usePromptControl } from '@oxyhq/bloom/prompt';
 import { Header, GroupedSection } from '../components';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { useOxy } from '../context/OxyContext';
@@ -52,6 +52,12 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
     const [actionLoading, setActionLoading] = useState<string | null>(null);
     const [switchLoading, setSwitchLoading] = useState<string | null>(null);
     const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
+    const [pendingLogoutSessionId, setPendingLogoutSessionId] = useState<string | null>(null);
+
+    // Prompt controls
+    const logoutSessionPrompt = usePromptControl();
+    const logoutOtherSessionsPrompt = usePromptControl();
+    const logoutAllSessionsPrompt = usePromptControl();
 
     // Use bloom theme for non-style color props (ActivityIndicator, icon colors, etc.)
     const bloomTheme = useTheme();
@@ -75,39 +81,37 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
             if (__DEV__) {
                 console.error('Failed to load sessions:', error);
             }
-            if (Platform.OS === 'web') {
-                toast.error(t('sessionManagement.toasts.loadFailed'));
-            } else {
-                Alert.alert(
-                    'Error',
-                    t('sessionManagement.toasts.loadFailed'),
-                    [{ text: 'OK' }]
-                );
-            }
+            toast.error(t('sessionManagement.toasts.loadFailed'));
         } finally {
             setLoading(false);
             setRefreshing(false);
         }
     }, [refreshSessions]);
 
-    // Memoized logout session handler - prevents unnecessary re-renders
-    const handleLogoutSession = useCallback(async (sessionId: string) => {
-        confirmAction(t('sessionManagement.confirms.logoutSession'), async () => {
-            try {
-                setActionLoading(sessionId);
-                await logout(sessionId);
-                await refreshSessions();
-                toast.success(t('sessionManagement.toasts.logoutSuccess'));
-            } catch (error) {
-                if (__DEV__) {
-                    console.error('Logout session failed:', error);
-                }
-                toast.error(t('sessionManagement.toasts.logoutFailed'));
-            } finally {
-                setActionLoading(null);
+    // Confirm logout session - opens prompt
+    const confirmLogoutSession = useCallback((sessionId: string) => {
+        setPendingLogoutSessionId(sessionId);
+        logoutSessionPrompt.open();
+    }, [logoutSessionPrompt]);
+
+    // Handle logout session - executes after prompt confirmation
+    const handleLogoutSession = useCallback(async () => {
+        if (!pendingLogoutSessionId) return;
+        try {
+            setActionLoading(pendingLogoutSessionId);
+            await logout(pendingLogoutSessionId);
+            await refreshSessions();
+            toast.success(t('sessionManagement.toasts.logoutSuccess'));
+        } catch (error) {
+            if (__DEV__) {
+                console.error('Logout session failed:', error);
             }
-        });
-    }, [logout, refreshSessions]);
+            toast.error(t('sessionManagement.toasts.logoutFailed'));
+        } finally {
+            setActionLoading(null);
+            setPendingLogoutSessionId(null);
+        }
+    }, [pendingLogoutSessionId, logout, refreshSessions, t]);
 
     // Memoized bulk action items - prevents unnecessary re-renders when dependencies haven't changed
     const otherSessionsCount = useMemo(() =>
@@ -115,55 +119,55 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
         [userSessions, activeSessionId]
     );
 
-    // Memoized logout other sessions handler - prevents unnecessary re-renders
-    const handleLogoutOtherSessions = useCallback(async () => {
+    // Confirm logout other sessions - opens prompt
+    const confirmLogoutOtherSessions = useCallback(() => {
         if (otherSessionsCount === 0) {
             toast.info(t('sessionManagement.toasts.noOtherSessions'));
             return;
         }
-        confirmAction(
-            t('sessionManagement.confirms.logoutOthers', { count: otherSessionsCount }),
-            async () => {
-                try {
-                    setActionLoading('others');
-                    for (const session of userSessions) {
-                        if (session.sessionId !== activeSessionId) {
-                            await logout(session.sessionId);
-                        }
-                    }
-                    await refreshSessions();
-                    toast.success(t('sessionManagement.toasts.logoutOthersSuccess'));
-                } catch (error) {
-                    if (__DEV__) {
-                        console.error('Logout other sessions failed:', error);
-                    }
-                    toast.error(t('sessionManagement.toasts.logoutOthersFailed'));
-                } finally {
-                    setActionLoading(null);
-                }
-            }
-        );
-    }, [otherSessionsCount, userSessions, activeSessionId, logout, refreshSessions]);
+        logoutOtherSessionsPrompt.open();
+    }, [otherSessionsCount, logoutOtherSessionsPrompt, t]);
 
-    // Memoized logout all sessions handler - prevents unnecessary re-renders
-    const handleLogoutAllSessions = useCallback(async () => {
-        confirmAction(
-            t('sessionManagement.confirms.logoutAll'),
-            async () => {
-                try {
-                    setActionLoading('all');
-                    await logoutAll();
-                } catch (error) {
-                    if (__DEV__) {
-                        console.error('Logout all sessions failed:', error);
-                    }
-                    toast.error(t('sessionManagement.toasts.logoutAllFailed'));
-                } finally {
-                    setActionLoading(null);
+    // Handle logout other sessions - executes after prompt confirmation
+    const handleLogoutOtherSessions = useCallback(async () => {
+        try {
+            setActionLoading('others');
+            for (const session of userSessions) {
+                if (session.sessionId !== activeSessionId) {
+                    await logout(session.sessionId);
                 }
             }
-        );
-    }, [logoutAll]);
+            await refreshSessions();
+            toast.success(t('sessionManagement.toasts.logoutOthersSuccess'));
+        } catch (error) {
+            if (__DEV__) {
+                console.error('Logout other sessions failed:', error);
+            }
+            toast.error(t('sessionManagement.toasts.logoutOthersFailed'));
+        } finally {
+            setActionLoading(null);
+        }
+    }, [userSessions, activeSessionId, logout, refreshSessions, t]);
+
+    // Confirm logout all sessions - opens prompt
+    const confirmLogoutAllSessions = useCallback(() => {
+        logoutAllSessionsPrompt.open();
+    }, [logoutAllSessionsPrompt]);
+
+    // Handle logout all sessions - executes after prompt confirmation
+    const handleLogoutAllSessions = useCallback(async () => {
+        try {
+            setActionLoading('all');
+            await logoutAll();
+        } catch (error) {
+            if (__DEV__) {
+                console.error('Logout all sessions failed:', error);
+            }
+            toast.error(t('sessionManagement.toasts.logoutAllFailed'));
+        } finally {
+            setActionLoading(null);
+        }
+    }, [logoutAll, t]);
 
     // Memoized relative time formatter - prevents function recreation on every render
     const formatRelative = useCallback((dateString?: string) => {
@@ -240,7 +244,7 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
                             )}
                         </TouchableOpacity>
                         <TouchableOpacity
-                            onPress={() => handleLogoutSession(session.sessionId)}
+                            onPress={() => confirmLogoutSession(session.sessionId)}
                             style={[styles.sessionPillButton, { backgroundColor: isDarkTheme ? LOGOUT_BUTTON_BG.dark : LOGOUT_BUTTON_BG.light, borderColor: dangerColor }]}
                             disabled={actionLoading === session.sessionId || switchLoading === session.sessionId}
                         >
@@ -260,7 +264,7 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
                 dense: true,
             };
         });
-    }, [userSessions, activeSessionId, formatRelative, successColor, primaryColor, isDarkTheme, switchLoading, actionLoading, handleSwitchSession, handleLogoutSession, dangerColor]);
+    }, [userSessions, activeSessionId, formatRelative, successColor, primaryColor, isDarkTheme, switchLoading, actionLoading, handleSwitchSession, confirmLogoutSession, dangerColor]);
 
     const bulkItems = useMemo(() => [
         {
@@ -269,7 +273,7 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
             iconColor: primaryColor,
             title: t('sessionManagement.logoutOthers.title'),
             subtitle: otherSessionsCount === 0 ? t('sessionManagement.logoutOthers.noOtherSessions') : t('sessionManagement.logoutOthers.subtitle'),
-            onPress: handleLogoutOtherSessions,
+            onPress: confirmLogoutOtherSessions,
             showChevron: false,
             customContent: actionLoading === 'others' ? <ActivityIndicator size="small" color={primaryColor} /> : undefined,
             disabled: actionLoading === 'others' || otherSessionsCount === 0,
@@ -281,13 +285,13 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
             iconColor: dangerColor,
             title: t('sessionManagement.logoutAll.title'),
             subtitle: t('sessionManagement.logoutAll.subtitle'),
-            onPress: handleLogoutAllSessions,
+            onPress: confirmLogoutAllSessions,
             showChevron: false,
             customContent: actionLoading === 'all' ? <ActivityIndicator size="small" color={dangerColor} /> : undefined,
             disabled: actionLoading === 'all',
             dense: true,
         },
-    ], [otherSessionsCount, primaryColor, dangerColor, handleLogoutOtherSessions, handleLogoutAllSessions, actionLoading]);
+    ], [otherSessionsCount, primaryColor, dangerColor, confirmLogoutOtherSessions, confirmLogoutAllSessions, actionLoading]);
 
     if (loading) {
         return (
@@ -342,6 +346,30 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
                     <Text style={styles.closeButtonText} className="text-primary">{t('sessionManagement.close')}</Text>
                 </TouchableOpacity>
             </View>
+            <Prompt.Basic
+                control={logoutSessionPrompt}
+                title={t('sessionManagement.confirms.logoutSessionTitle') || 'Log Out Session'}
+                description={t('sessionManagement.confirms.logoutSession')}
+                onConfirm={handleLogoutSession}
+                confirmButtonCta={t('sessionManagement.logout') || 'Log Out'}
+                confirmButtonColor='negative'
+            />
+            <Prompt.Basic
+                control={logoutOtherSessionsPrompt}
+                title={t('sessionManagement.confirms.logoutOthersTitle') || 'Log Out Other Sessions'}
+                description={t('sessionManagement.confirms.logoutOthers', { count: otherSessionsCount })}
+                onConfirm={handleLogoutOtherSessions}
+                confirmButtonCta={t('sessionManagement.logoutOthers.title') || 'Log Out Others'}
+                confirmButtonColor='negative'
+            />
+            <Prompt.Basic
+                control={logoutAllSessionsPrompt}
+                title={t('sessionManagement.confirms.logoutAllTitle') || 'Log Out All Sessions'}
+                description={t('sessionManagement.confirms.logoutAll')}
+                onConfirm={handleLogoutAllSessions}
+                confirmButtonCta={t('sessionManagement.logoutAll.title') || 'Log Out All'}
+                confirmButtonColor='negative'
+            />
         </View>
     );
 };

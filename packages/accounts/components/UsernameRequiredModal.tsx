@@ -12,7 +12,8 @@ import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from '
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useColors } from '@/hooks/useColors';
+import { useTheme } from '@oxyhq/bloom/theme';
 import { useOxy } from '@oxyhq/services';
 
 interface UsernameRequiredModalProps {
@@ -27,18 +28,13 @@ const generateSuggestedUsername = (): string => {
 };
 
 export function UsernameRequiredModal({ visible, onComplete, onCancel }: UsernameRequiredModalProps) {
-    const colorScheme = useColorScheme() ?? 'light';
+    const themeColors = useColors();
+    const { mode } = useTheme();
     const insets = useSafeAreaInsets();
     const { oxyServices } = useOxy();
 
-    const backgroundColor = useMemo(() =>
-        colorScheme === 'dark' ? '#000000' : '#FFFFFF',
-        [colorScheme]
-    );
-    const textColor = useMemo(() =>
-        colorScheme === 'dark' ? '#FFFFFF' : '#000000',
-        [colorScheme]
-    );
+    const backgroundColor = themeColors.background;
+    const textColor = themeColors.text;
 
     const [username, setUsername] = useState<string>('');
     const [usernameError, setUsernameError] = useState<string | null>(null);
@@ -198,12 +194,12 @@ export function UsernameRequiredModal({ visible, onComplete, onCancel }: Usernam
                     >
                         <BlurView
                             intensity={100}
-                            tint={colorScheme === 'dark' ? 'dark' : 'light'}
+                            tint={mode === 'dark' ? 'dark' : 'light'}
                             experimentalBlurMethod={Platform.OS === 'android' ? 'dimezisBlurView' : undefined}
                             style={[
                                 styles.modalContent,
                                 {
-                                    backgroundColor: colorScheme === 'dark'
+                                    backgroundColor: mode === 'dark'
                                         ? 'rgba(0, 0, 0, 0.95)'
                                         : 'rgba(255, 255, 255, 0.95)',
                                 },
@@ -218,11 +214,11 @@ export function UsernameRequiredModal({ visible, onComplete, onCancel }: Usernam
                                 <TextInput
                                     style={[styles.usernameInput, {
                                         color: textColor,
-                                        backgroundColor: colorScheme === 'dark' ? '#1C1C1E' : '#F5F5F5',
-                                        borderColor: usernameError ? '#DC3545' : (colorScheme === 'dark' ? '#2C2C2E' : '#E0E0E0')
+                                        backgroundColor: themeColors.card,
+                                        borderColor: usernameError ? themeColors.error : themeColors.border,
                                     }]}
                                     placeholder="Username"
-                                    placeholderTextColor={colorScheme === 'dark' ? '#8E8E93' : '#8E8E93'}
+                                    placeholderTextColor={themeColors.textSecondary}
                                     value={username}
                                     onChangeText={(text) => {
                                         setUsername(text.toLowerCase().replace(/[^a-z0-9]/g, ''));
@@ -245,20 +241,20 @@ export function UsernameRequiredModal({ visible, onComplete, onCancel }: Usernam
                             )}
 
                             {usernameAvailable === true && !isCheckingUsername && (
-                                <Text style={[styles.availableText, { color: '#28A745' }]}>
+                                <Text style={[styles.availableText, { color: themeColors.success }]}>
                                     ✓ Username is available
                                 </Text>
                             )}
 
                             {usernameError && (
-                                <Text style={styles.errorText}>{usernameError}</Text>
+                                <Text style={[styles.errorText, { color: themeColors.error }]}>{usernameError}</Text>
                             )}
 
                             <TouchableOpacity
                                 style={[
                                     styles.primaryButton,
                                     {
-                                        backgroundColor: canContinue ? textColor : (colorScheme === 'dark' ? '#2C2C2E' : '#CCCCCC'),
+                                        backgroundColor: canContinue ? textColor : themeColors.card,
                                         opacity: canContinue ? 1 : 0.6,
                                     }
                                 ]}
@@ -267,7 +263,7 @@ export function UsernameRequiredModal({ visible, onComplete, onCancel }: Usernam
                             >
                                 <Text style={[
                                     styles.primaryButtonText,
-                                    { color: canContinue ? backgroundColor : (colorScheme === 'dark' ? '#8E8E93' : '#999999') }
+                                    { color: canContinue ? backgroundColor : themeColors.textSecondary }
                                 ]}>
                                     {isSaving ? 'Saving...' : 'Save Username'}
                                 </Text>
@@ -345,7 +341,6 @@ const styles = StyleSheet.create({
         fontWeight: '600',
     },
     errorText: {
-        color: '#DC3545',
         fontSize: 14,
         marginTop: 8,
         textAlign: 'center',

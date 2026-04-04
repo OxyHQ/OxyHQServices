@@ -7,7 +7,6 @@ import {
     StyleSheet,
     ActivityIndicator,
     ScrollView,
-    Alert,
     Platform,
     Image,
     Dimensions,
@@ -17,7 +16,8 @@ import type { ClientSession } from '@oxyhq/core';
 import { fontFamilies } from '../styles/fonts';
 import type { User } from '@oxyhq/core';
 import { toast } from '../../lib/sonner';
-import { confirmAction } from '../utils/confirmAction';
+import * as Prompt from '@oxyhq/bloom/prompt';
+import { usePromptControl } from '@oxyhq/bloom/prompt';
 import OxyIcon from '../components/icon/OxyIcon';
 import { Ionicons } from '@expo/vector-icons';
 import Avatar from '../components/Avatar';
@@ -76,6 +76,16 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
     const [loadingDeviceSessions, setLoadingDeviceSessions] = useState(false);
     const [remotingLogoutSessionId, setRemoteLogoutSessionId] = useState<string | null>(null);
     const [loggingOutAllDevices, setLoggingOutAllDevices] = useState(false);
+
+    // Pending state for prompts
+    const [pendingRemoveSession, setPendingRemoveSession] = useState<{ sessionId: string; displayName: string } | null>(null);
+    const [pendingRemoteLogout, setPendingRemoteLogout] = useState<{ sessionId: string; deviceName: string } | null>(null);
+
+    // Prompt controls
+    const removeSessionPrompt = usePromptControl();
+    const logoutAllPrompt = usePromptControl();
+    const remoteLogoutPrompt = usePromptControl();
+    const logoutAllDevicesPrompt = usePromptControl();
 
     const screenWidth = Dimensions.get('window').width;
     const { t } = useI18n();
@@ -171,47 +181,48 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
         }
     }, [activeSessionId, switchSession, onClose, t, switchingToUserId]);
 
-    const handleRemoveSession = useCallback(async (sessionId: string, displayName: string) => {
-        if (removingUserId) return; // Already removing
+    const confirmRemoveSession = useCallback((sessionId: string, displayName: string) => {
+        if (removingUserId) return;
+        setPendingRemoveSession({ sessionId, displayName });
+        removeSessionPrompt.open();
+    }, [removingUserId, removeSessionPrompt]);
 
-        confirmAction(
-            t('accountSwitcher.confirms.remove', { displayName }) || `Are you sure you want to remove ${displayName} from this device? You'll need to sign in again to access this account.`,
-            async () => {
-                setRemovingUserId(sessionId);
-                try {
-                    await removeSession(sessionId);
-                    toast.success(t('accountSwitcher.toasts.removeSuccess') || 'Account removed successfully!');
-                } catch (error) {
-                    if (__DEV__) {
-                        console.error('Remove session failed:', error);
-                    }
-                    toast.error(t('accountSwitcher.toasts.removeFailed') || 'There was a problem removing the account. Please try again.');
-                } finally {
-                    setRemovingUserId(null);
-                }
+    const handleRemoveSession = useCallback(async () => {
+        if (!pendingRemoveSession) return;
+        const { sessionId } = pendingRemoveSession;
+        setRemovingUserId(sessionId);
+        try {
+            await removeSession(sessionId);
+            toast.success(t('accountSwitcher.toasts.removeSuccess') || 'Account removed successfully!');
+        } catch (error) {
+            if (__DEV__) {
+                console.error('Remove session failed:', error);
             }
-        );
-    }, [removeSession, t, removingUserId]);
+            toast.error(t('accountSwitcher.toasts.removeFailed') || 'There was a problem removing the account. Please try again.');
+        } finally {
+            setRemovingUserId(null);
+            setPendingRemoveSession(null);
+        }
+    }, [pendingRemoveSession, removeSession, t]);
 
-    const handleLogoutAll = useCallback(() => {
-        confirmAction(
-            t('accountSwitcher.confirms.logoutAll') || 'Are you sure you want to sign out of all accounts? This will remove all saved accounts from this device.',
-            async () => {
-                try {
-                    await logoutAll();
-                    toast.success(t('accountSwitcher.toasts.signOutAllSuccess') || 'All accounts signed out successfully!');
-                    if (onClose) {
-                        onClose();
-                    }
-                } catch (error) {
-                    if (__DEV__) {
-                        console.error('Logout all failed:', error);
-                    }
-                    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-                    toast.error(t('accountSwitcher.toasts.signOutAllFailed', { error: errorMessage }) || `There was a problem signing out: ${errorMessage}`);
-                }
+    const confirmLogoutAll = useCallback(() => {
+        logoutAllPrompt.open();
+    }, [logoutAllPrompt]);
+
+    const handleLogoutAll = useCallback(async () => {
+        try {
+            await logoutAll();
+            toast.success(t('accountSwitcher.toasts.signOutAllSuccess') || 'All accounts signed out successfully!');
+            if (onClose) {
+                onClose();
             }
-        );
+        } catch (error) {
+            if (__DEV__) {
+                console.error('Logout all failed:', error);
+            }
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+            toast.error(t('accountSwitcher.toasts.signOutAllFailed', { error: errorMessage }) || `There was a problem signing out: ${errorMessage}`);
+        }
     }, [logoutAll, onClose, t]);
 
     const handleSwitchToManagedAccount = useCallback(async (accountId: string) => {
@@ -257,30 +268,32 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
         }
     }, [oxyServices, activeSessionId, t]);
 
-    const handleRemoteSessionLogout = useCallback((sessionId: string, deviceName: string) => {
-        if (remotingLogoutSessionId) return; // Already processing
+    const confirmRemoteSessionLogout = useCallback((sessionId: string, deviceName: string) => {
+        if (remotingLogoutSessionId) return;
+        setPendingRemoteLogout({ sessionId, deviceName });
+        remoteLogoutPrompt.open();
+    }, [remotingLogoutSessionId, remoteLogoutPrompt]);
 
-        confirmAction(
-            t('accountSwitcher.confirms.remoteLogout', { deviceName }) || `Are you sure you want to sign out from "${deviceName}"? This will end the session on that device.`,
-            async () => {
-                setRemoteLogoutSessionId(sessionId);
-                try {
-                    await oxyServices?.logoutSession((activeSessionId ?? null) || '', sessionId);
-                    await loadAllDeviceSessions();
-                    toast.success(t('accountSwitcher.toasts.remoteSignOutSuccess', { deviceName }) || `Signed out from ${deviceName} successfully!`);
-                } catch (error) {
-                    if (__DEV__) {
-                        console.error('Remote logout failed:', error);
-                    }
-                    toast.error(t('accountSwitcher.toasts.remoteSignOutFailed') || 'There was a problem signing out from the device. Please try again.');
-                } finally {
-                    setRemoteLogoutSessionId(null);
-                }
+    const handleRemoteSessionLogout = useCallback(async () => {
+        if (!pendingRemoteLogout) return;
+        const { sessionId } = pendingRemoteLogout;
+        setRemoteLogoutSessionId(sessionId);
+        try {
+            await oxyServices?.logoutSession((activeSessionId ?? null) || '', sessionId);
+            await loadAllDeviceSessions();
+            toast.success(t('accountSwitcher.toasts.remoteSignOutSuccess', { deviceName: pendingRemoteLogout.deviceName }) || `Signed out from ${pendingRemoteLogout.deviceName} successfully!`);
+        } catch (error) {
+            if (__DEV__) {
+                console.error('Remote logout failed:', error);
             }
-        );
-    }, [activeSessionId, oxyServices, loadAllDeviceSessions, t, remotingLogoutSessionId]);
+            toast.error(t('accountSwitcher.toasts.remoteSignOutFailed') || 'There was a problem signing out from the device. Please try again.');
+        } finally {
+            setRemoteLogoutSessionId(null);
+            setPendingRemoteLogout(null);
+        }
+    }, [pendingRemoteLogout, activeSessionId, oxyServices, loadAllDeviceSessions, t]);
 
-    const handleLogoutAllDevices = useCallback(() => {
+    const confirmLogoutAllDevices = useCallback(() => {
         const otherDevicesCount = deviceSessions.filter(session => !session.isCurrent).length;
 
         if (otherDevicesCount === 0) {
@@ -288,32 +301,35 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
             return;
         }
 
-        if (loggingOutAllDevices) return; // Already processing
+        if (loggingOutAllDevices) return;
+        logoutAllDevicesPrompt.open();
+    }, [deviceSessions, loggingOutAllDevices, logoutAllDevicesPrompt, t]);
 
-        confirmAction(
-            t('accountSwitcher.confirms.logoutOthers', { count: otherDevicesCount }) || `Are you sure you want to sign out from all ${otherDevicesCount} other device(s)? This will end sessions on all other devices except this one.`,
-            async () => {
-                setLoggingOutAllDevices(true);
-                try {
-                    await oxyServices?.logoutAllDeviceSessions((activeSessionId ?? null) || '');
-                    await loadAllDeviceSessions();
-                    toast.success(t('accountSwitcher.toasts.signOutOthersSuccess') || 'Signed out from all other devices successfully!');
-                } catch (error) {
-                    if (__DEV__) {
-                        console.error('Logout all devices failed:', error);
-                    }
-                    toast.error(t('accountSwitcher.toasts.signOutOthersFailed') || 'There was a problem signing out from other devices. Please try again.');
-                } finally {
-                    setLoggingOutAllDevices(false);
-                }
+    const handleLogoutAllDevices = useCallback(async () => {
+        setLoggingOutAllDevices(true);
+        try {
+            await oxyServices?.logoutAllDeviceSessions((activeSessionId ?? null) || '');
+            await loadAllDeviceSessions();
+            toast.success(t('accountSwitcher.toasts.signOutOthersSuccess') || 'Signed out from all other devices successfully!');
+        } catch (error) {
+            if (__DEV__) {
+                console.error('Logout all devices failed:', error);
             }
-        );
-    }, [deviceSessions, activeSessionId, oxyServices, loadAllDeviceSessions, t, loggingOutAllDevices]);
+            toast.error(t('accountSwitcher.toasts.signOutOthersFailed') || 'There was a problem signing out from other devices. Please try again.');
+        } finally {
+            setLoggingOutAllDevices(false);
+        }
+    }, [activeSessionId, oxyServices, loadAllDeviceSessions, t]);
 
     // Memoize filtered sessions for performance
     const otherSessions = useMemo(
         () => sessionsWithUsers.filter(s => s.sessionId !== (activeSessionId ?? null)),
         [sessionsWithUsers, activeSessionId]
+    );
+
+    const otherDevicesCount = useMemo(
+        () => deviceSessions.filter(session => !session.isCurrent).length,
+        [deviceSessions]
     );
 
     return (
@@ -440,7 +456,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                                                 </TouchableOpacity>
                                                 <TouchableOpacity
                                                     style={styles.removeButton}
-                                                    onPress={() => handleRemoveSession(sessionWithUser.sessionId, displayName)}
+                                                    onPress={() => confirmRemoveSession(sessionWithUser.sessionId, displayName)}
                                                     disabled={isSwitching || isRemoving}
                                                 >
                                                     {isRemoving ? (
@@ -629,7 +645,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                                         iconColor: '#FF3B30',
                                         title: 'Sign Out All Accounts',
                                         subtitle: 'Remove all accounts from this device',
-                                        onPress: handleLogoutAll,
+                                        onPress: confirmLogoutAll,
                                         disabled: sessionsWithUsers.length === 0,
                                     },
                                 ]}
@@ -681,12 +697,12 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                                             iconColor: session.isCurrent ? '#34C759' : '#8E8E93',
                                             title: `${session.deviceName} ${session.isCurrent ? `(${t('accountSwitcher.device.thisDevice') || 'This device'})` : ''}`,
                                             subtitle: t('accountSwitcher.device.lastActive', { date: new Date(session.lastActive).toLocaleDateString() }) || `Last active: ${new Date(session.lastActive).toLocaleDateString()}`,
-                                            onPress: session.isCurrent ? undefined : () => handleRemoteSessionLogout(session.sessionId, session.deviceName),
+                                            onPress: session.isCurrent ? undefined : () => confirmRemoteSessionLogout(session.sessionId, session.deviceName),
                                             disabled: session.isCurrent || remotingLogoutSessionId === session.sessionId,
                                             customContent: !session.isCurrent ? (
                                                 <TouchableOpacity
                                                     style={styles.removeButton}
-                                                    onPress={() => handleRemoteSessionLogout(session.sessionId, session.deviceName)}
+                                                    onPress={() => confirmRemoteSessionLogout(session.sessionId, session.deviceName)}
                                                     disabled={remotingLogoutSessionId === session.sessionId}
                                                 >
                                                     {remotingLogoutSessionId === session.sessionId ? (
@@ -739,6 +755,38 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                     </>
                 )}
             </ScrollView>
+            <Prompt.Basic
+                control={removeSessionPrompt}
+                title={t('accountSwitcher.confirms.removeTitle') || 'Remove Account'}
+                description={pendingRemoveSession ? (t('accountSwitcher.confirms.remove', { displayName: pendingRemoveSession.displayName }) || `Are you sure you want to remove ${pendingRemoveSession.displayName} from this device? You'll need to sign in again to access this account.`) : ''}
+                onConfirm={handleRemoveSession}
+                confirmButtonCta={t('common.remove') || 'Remove'}
+                confirmButtonColor='negative'
+            />
+            <Prompt.Basic
+                control={logoutAllPrompt}
+                title={t('accountSwitcher.confirms.logoutAllTitle') || 'Sign Out All'}
+                description={t('accountSwitcher.confirms.logoutAll') || 'Are you sure you want to sign out of all accounts? This will remove all saved accounts from this device.'}
+                onConfirm={handleLogoutAll}
+                confirmButtonCta={t('common.signOutAll') || 'Sign Out All'}
+                confirmButtonColor='negative'
+            />
+            <Prompt.Basic
+                control={remoteLogoutPrompt}
+                title={t('accountSwitcher.confirms.remoteLogoutTitle') || 'Remote Sign Out'}
+                description={pendingRemoteLogout ? (t('accountSwitcher.confirms.remoteLogout', { deviceName: pendingRemoteLogout.deviceName }) || `Are you sure you want to sign out from "${pendingRemoteLogout.deviceName}"? This will end the session on that device.`) : ''}
+                onConfirm={handleRemoteSessionLogout}
+                confirmButtonCta={t('common.signOut') || 'Sign Out'}
+                confirmButtonColor='negative'
+            />
+            <Prompt.Basic
+                control={logoutAllDevicesPrompt}
+                title={t('accountSwitcher.confirms.logoutOthersTitle') || 'Sign Out Other Devices'}
+                description={t('accountSwitcher.confirms.logoutOthers', { count: otherDevicesCount }) || `Are you sure you want to sign out from all ${otherDevicesCount} other device(s)? This will end sessions on all other devices except this one.`}
+                onConfirm={handleLogoutAllDevices}
+                confirmButtonCta={t('common.signOutAll') || 'Sign Out All'}
+                confirmButtonColor='negative'
+            />
         </View>
     );
 };

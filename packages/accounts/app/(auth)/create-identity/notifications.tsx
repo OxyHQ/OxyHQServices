@@ -4,10 +4,9 @@ import { useRouter } from 'expo-router';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import { useOxy } from '@oxyhq/services';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useColors } from '@/hooks/useColors';
 import { NotificationsStep } from '@/components/auth/NotificationsStep';
 import { useAuthFlowContext } from '@/contexts/auth-flow-context';
-import { Colors } from '@/constants/theme';
 
 /**
  * Check if running in Expo Go
@@ -31,19 +30,13 @@ const isExpoGo = (): boolean => {
  */
 export default function CreateIdentityNotificationsScreen() {
   const router = useRouter();
-  const colorScheme = useColorScheme() ?? 'light';
+  const colors = useColors();
   const { isAuthenticated } = useOxy();
   const { error, setAuthError } = useAuthFlowContext();
   const [isRequestingNotifications, setIsRequestingNotifications] = React.useState(false);
 
-  const backgroundColor = useMemo(
-    () => (colorScheme === 'dark' ? Colors.dark.background : Colors.light.background),
-    [colorScheme]
-  );
-  const textColor = useMemo(
-    () => (colorScheme === 'dark' ? Colors.dark.text : Colors.light.text),
-    [colorScheme]
-  );
+  const backgroundColor = colors.background;
+  const textColor = colors.text;
 
   /**
    * Handle notification permission request and complete onboarding

@@ -1,6 +1,10 @@
-import { useThemeContext } from '@/contexts/theme-context';
+/**
+ * Returns the resolved colour scheme ('light' | 'dark') from Bloom.
+ * Replaces the old ThemeContext-based hook.
+ */
+import { useTheme } from '@oxyhq/bloom/theme';
 
-export function useColorScheme() {
-  const { resolvedTheme } = useThemeContext();
-  return resolvedTheme;
+export function useColorScheme(): 'light' | 'dark' {
+  const { mode } = useTheme();
+  return mode;
 }

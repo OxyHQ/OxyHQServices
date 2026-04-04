@@ -4,8 +4,7 @@ import {
     StyleSheet,
     TextInput,
 } from 'react-native';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
 import { Button, ImportantBanner, useAlert } from '@/components/ui';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -32,8 +31,7 @@ export function EncryptedBackupGenerator({
     onComplete,
     onCancel,
 }: EncryptedBackupGeneratorProps) {
-    const colorScheme = useColorScheme() ?? 'light';
-    const colors = Colors[colorScheme];
+    const colors = useColors();
     const { oxyServices } = useOxy();
     const alert = useAlert();
 
@@ -256,7 +254,7 @@ Public Key: ${publicKey}`;
                 <ThemedText style={[styles.title, { color: colors.text }]}>
                     Create Encrypted Backup
                 </ThemedText>
-                <ThemedText style={[styles.subtitle, { color: colors.secondaryText }]}>
+                <ThemedText style={[styles.subtitle, { color: colors.textSecondary }]}>
                     Generate a password-protected backup file that you can store securely offline.
                 </ThemedText>
             </View>
@@ -269,7 +267,7 @@ Public Key: ${publicKey}`;
                 <View style={styles.inputContainer}>
                     <ThemedText style={[styles.label, { color: colors.text }]}>Password</ThemedText>
                     <View style={[styles.inputWrapper, {
-                        borderColor: password.length > 0 && !isPasswordValid ? '#FF3B30' : colors.border,
+                        borderColor: password.length > 0 && !isPasswordValid ? colors.error : colors.border,
                         backgroundColor: colors.card || 'rgba(0,0,0,0.02)',
                     }]}>
                         <TextInput
@@ -277,7 +275,7 @@ Public Key: ${publicKey}`;
                             value={password}
                             onChangeText={setPassword}
                             placeholder="Enter password (min 12 characters)"
-                            placeholderTextColor={colors.secondaryText}
+                            placeholderTextColor={colors.textSecondary}
                             secureTextEntry={!showPasswords}
                             autoCapitalize="none"
                             autoCorrect={false}
@@ -286,14 +284,14 @@ Public Key: ${publicKey}`;
                         <MaterialCommunityIcons
                             name={showPasswords ? 'eye-off' : 'eye'}
                             size={20}
-                            color={colors.secondaryText}
+                            color={colors.textSecondary}
                             onPress={() => setShowPasswords(!showPasswords)}
                             style={styles.eyeIcon}
                             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                         />
                     </View>
                     {password.length > 0 && !isPasswordValid && (
-                        <ThemedText style={[styles.errorText, { color: '#FF3B30' }]}>
+                        <ThemedText style={[styles.errorText, { color: colors.error }]}>
                             Password must be at least 12 characters
                         </ThemedText>
                     )}
@@ -302,7 +300,7 @@ Public Key: ${publicKey}`;
                 <View style={styles.inputContainer}>
                     <ThemedText style={[styles.label, { color: colors.text }]}>Confirm Password</ThemedText>
                     <View style={[styles.inputWrapper, {
-                        borderColor: confirmPassword.length > 0 && !doPasswordsMatch ? '#FF3B30' : colors.border,
+                        borderColor: confirmPassword.length > 0 && !doPasswordsMatch ? colors.error : colors.border,
                         backgroundColor: colors.card || 'rgba(0,0,0,0.02)',
                     }]}>
                         <TextInput
@@ -310,7 +308,7 @@ Public Key: ${publicKey}`;
                             value={confirmPassword}
                             onChangeText={setConfirmPassword}
                             placeholder="Confirm password"
-                            placeholderTextColor={colors.secondaryText}
+                            placeholderTextColor={colors.textSecondary}
                             secureTextEntry={!showPasswords}
                             autoCapitalize="none"
                             autoCorrect={false}
@@ -318,7 +316,7 @@ Public Key: ${publicKey}`;
                         />
                     </View>
                     {confirmPassword.length > 0 && !doPasswordsMatch && (
-                        <ThemedText style={[styles.errorText, { color: '#FF3B30' }]}>
+                        <ThemedText style={[styles.errorText, { color: colors.error }]}>
                             Passwords do not match
                         </ThemedText>
                     )}

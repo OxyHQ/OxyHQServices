@@ -2,8 +2,7 @@ import React from 'react';
 import { View, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { ThemedText } from '../themed-text';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/hooks/useColors';
 
 interface ImportantBannerProps {
     children: React.ReactNode;
@@ -24,8 +23,7 @@ export function ImportantBanner({
     icon = 'alert-circle',
     iconSize = 24,
 }: ImportantBannerProps) {
-    const colorScheme = useColorScheme() ?? 'light';
-    const colors = Colors[colorScheme];
+    const colors = useColors();
 
     return (
         <View

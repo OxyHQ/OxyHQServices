@@ -2,8 +2,7 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { darkenColor } from '@/utils/color-utils';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useColors } from '@/hooks/useColors';
 import { HorizontalScrollSection } from './horizontal-scroll-section';
 import type { MaterialCommunityIconName } from '@/types/icons';
 
@@ -21,8 +20,7 @@ interface QuickActionsSectionProps {
 }
 
 export function QuickActionsSection({ actions, onPressIn }: QuickActionsSectionProps) {
-  const colorScheme = useColorScheme() ?? 'light';
-  const colors = Colors[colorScheme];
+  const colors = useColors();
 
   return (
     <HorizontalScrollSection

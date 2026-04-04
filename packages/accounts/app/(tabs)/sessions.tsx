@@ -1,8 +1,7 @@
 import React, { useMemo, useCallback, useState } from 'react';
 import { View, StyleSheet, Text, TouchableOpacity, ActivityIndicator, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { ScreenHeader, useAlert } from '@/components/ui';
@@ -17,8 +16,7 @@ import type { ClientSession } from '@oxyhq/core';
 import { useHapticPress } from '@/hooks/use-haptic-press';
 
 export default function SessionsScreen() {
-    const colorScheme = useColorScheme() ?? 'light';
-    const colors = Colors[colorScheme];
+    const colors = useColors();
     const router = useRouter();
 
     // OxyServices integration

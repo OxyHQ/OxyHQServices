@@ -6,10 +6,9 @@ import Animated, {
   useAnimatedStyle,
 } from 'react-native-reanimated';
 import { useRouter } from 'expo-router';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useColors } from '@/hooks/useColors';
 import { StaggeredText, type StaggeredTextRef } from '@/components/staggered-text';
 import { RotatingTextAnimation } from '@/components/staggered-text/rotating-text';
-import { Colors } from '@/constants/theme';
 
 const humanTranslations = [
   'Human',
@@ -23,15 +22,9 @@ const humanTranslations = [
 
 export default function AuthIndexScreen() {
   const router = useRouter();
-  const colorScheme = useColorScheme() ?? 'light';
-  const backgroundColor = useMemo(
-    () => (colorScheme === 'dark' ? Colors.dark.background : Colors.light.background),
-    [colorScheme]
-  );
-  const textColor = useMemo(
-    () => (colorScheme === 'dark' ? Colors.dark.text : Colors.light.text),
-    [colorScheme]
-  );
+  const colors = useColors();
+  const backgroundColor = colors.background;
+  const textColor = colors.text;
 
   // Entrance animation values
   const helloOpacity = useSharedValue(0);

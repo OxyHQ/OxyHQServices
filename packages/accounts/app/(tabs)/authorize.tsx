@@ -9,8 +9,7 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useOxy } from '@oxyhq/services';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/hooks/useColors';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import { useAlert, Button } from '@/components/ui';
 import { IdentityCard } from '@/components/identity';
@@ -26,7 +25,7 @@ import { IdentityCard } from '@/components/identity';
 export default function AuthorizeScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ token: string }>();
-  const colorScheme = useColorScheme() ?? 'light';
+  const colors = useColors();
   const alert = useAlert();
   const { oxyServices, user, isAuthenticated, activeSessionId, isTokenReady } = useOxy();
 
@@ -151,15 +150,9 @@ export default function AuthorizeScreen() {
     return undefined;
   }, [user?.avatar, oxyServices]);
 
-  // Memoize colors for all states
-  const backgroundColor = useMemo(
-    () => (colorScheme === 'dark' ? Colors.dark.background : Colors.light.background),
-    [colorScheme]
-  );
-  const textColor = useMemo(
-    () => (colorScheme === 'dark' ? Colors.dark.text : Colors.light.text),
-    [colorScheme]
-  );
+  // Derive from theme
+  const backgroundColor = colors.background;
+  const textColor = colors.text;
 
   // Check if user is authenticated
   if (!isAuthenticated || !user) {
@@ -200,7 +193,7 @@ export default function AuthorizeScreen() {
     return (
       <View style={[styles.container, styles.centered, { backgroundColor }]}>
         <View style={styles.content}>
-          <MaterialCommunityIcons name="alert-circle-outline" size={48} color="#FF3B30" />
+          <MaterialCommunityIcons name="alert-circle-outline" size={48} color={colors.error} />
           <Text style={[styles.title, { color: textColor }]}>Authorization Error</Text>
           <Text style={[styles.errorText, { color: textColor, opacity: 0.8 }]}>{error}</Text>
           <Button

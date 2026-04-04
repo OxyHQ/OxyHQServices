@@ -1,7 +1,6 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/hooks/useColors';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useHapticPress } from '@/hooks/use-haptic-press';
 import type { MaterialCommunityIconName } from '@/types/icons';
@@ -14,8 +13,7 @@ interface LinkButtonProps {
 }
 
 export function LinkButton({ text, onPress, icon, count }: LinkButtonProps) {
-    const colorScheme = useColorScheme() ?? 'light';
-    const colors = Colors[colorScheme];
+    const colors = useColors();
 
     const handlePressIn = useHapticPress();
 
@@ -24,7 +22,7 @@ export function LinkButton({ text, onPress, icon, count }: LinkButtonProps) {
             {icon && <MaterialCommunityIcons name={icon} size={16} color={colors.tint} />}
             <Text style={[styles.linkText, { color: colors.tint }]}>{text}</Text>
             {count !== undefined && (
-                <Text style={[styles.linkCount, { color: colors.secondaryText }]}>{count}</Text>
+                <Text style={[styles.linkCount, { color: colors.textSecondary }]}>{count}</Text>
             )}
         </TouchableOpacity>
     );

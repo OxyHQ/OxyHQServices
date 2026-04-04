@@ -1,15 +1,13 @@
 import React from 'react';
 import { View, StyleSheet } from 'react-native';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/hooks/useColors';
 
 interface AccountCardProps {
     children: React.ReactNode;
 }
 
 export function AccountCard({ children }: AccountCardProps) {
-    const colorScheme = useColorScheme() ?? 'light';
-    const colors = Colors[colorScheme];
+    const colors = useColors();
 
     return (
         <View style={[styles.accountCard, { backgroundColor: colors.card }]}>

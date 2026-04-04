@@ -1,8 +1,7 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useColors } from '@/hooks/useColors';
 import { HorizontalScrollSection } from './horizontal-scroll-section';
 import { darkenColor } from '@/utils/color-utils';
 import type { MaterialCommunityIconName } from '@/types/icons';
@@ -22,8 +21,7 @@ interface RecentActivitySectionProps {
 }
 
 export function RecentActivitySection({ items, onPressIn }: RecentActivitySectionProps) {
-  const colorScheme = useColorScheme() ?? 'light';
-  const colors = Colors[colorScheme];
+  const colors = useColors();
 
   if (items.length === 0) {
     return null;
@@ -54,7 +52,7 @@ export function RecentActivitySection({ items, onPressIn }: RecentActivitySectio
             </Text>
             {item.subtitle && (
               <Text 
-                style={[styles.activitySubtitle, { color: colors.secondaryText }]}
+                style={[styles.activitySubtitle, { color: colors.textSecondary }]}
                 numberOfLines={1}
               >
                 {item.subtitle}

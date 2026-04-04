@@ -1,10 +1,9 @@
 import React, { memo, useMemo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/hooks/useColors';
 import { useHapticPress } from '@/hooks/use-haptic-press';
-import { darkenColor, normalizeColorScheme } from '@/utils/color-utils';
+import { darkenColor } from '@/utils/color-utils';
 import type { MaterialCommunityIconName } from '@/types/icons';
 
 
@@ -35,11 +34,7 @@ const GroupedItemComponent = ({
     customContent,
     customIcon,
 }: GroupedItemProps) => {
-    const hookColorScheme = useColorScheme();
-    const colorScheme = normalizeColorScheme(hookColorScheme);
-    // GroupedItem is a leaf component without a theme prop, so it should directly use Colors
-    // instead of useThemeStyles which expects a theme prop from screen components
-    const colors = Colors[colorScheme];
+    const colors = useColors();
     // Use fallback color when iconColor is not provided
     const finalIconColor = iconColor ?? colors.sidebarIconSecurity;
 
@@ -67,7 +62,7 @@ const GroupedItemComponent = ({
             <View style={styles.actionTextContainer}>
                 <Text style={[styles.actionButtonText, { color: colors.text }]}>{title}</Text>
                 {subtitle && (
-                    <Text style={[styles.actionButtonSubtext, { color: colors.secondaryText }]}>
+                    <Text style={[styles.actionButtonSubtext, { color: colors.textSecondary }]}>
                         {subtitle}
                     </Text>
                 )}

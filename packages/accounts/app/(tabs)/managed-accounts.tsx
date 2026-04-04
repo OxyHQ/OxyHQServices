@@ -1,7 +1,6 @@
 import React, { useMemo, useCallback, useState } from 'react';
 import { View, StyleSheet, Text, TouchableOpacity, ActivityIndicator, Platform } from 'react-native';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors, type AppColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { ScreenHeader, AccountCard, useAlert } from '@/components/ui';
@@ -14,7 +13,7 @@ import { darkenColor } from '@/utils/color-utils';
 import { useHapticPress } from '@/hooks/use-haptic-press';
 import type { ManagedAccount } from '@oxyhq/core';
 
-function getRoleBadgeColor(role: string, colors: typeof Colors.light): string {
+function getRoleBadgeColor(role: string, colors: AppColors): string {
   switch (role) {
     case 'owner':
       return colors.sidebarIconPersonalInfo;
@@ -46,8 +45,7 @@ function getUserRole(account: ManagedAccount, userId?: string): string {
 }
 
 export default function ManagedAccountsScreen() {
-  const colorScheme = useColorScheme() ?? 'light';
-  const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
+  const colors = useColors();
   const alert = useAlert();
   const handlePressIn = useHapticPress();
 
@@ -191,7 +189,7 @@ export default function ManagedAccountsScreen() {
                     onPress={() => handleDeleteAccount(account)}
                     activeOpacity={0.7}
                   >
-                    <MaterialCommunityIcons name="delete-outline" size={16} color={colors.danger} />
+                    <MaterialCommunityIcons name="delete-outline" size={16} color={colors.error} />
                   </TouchableOpacity>
                 )}
               </View>
