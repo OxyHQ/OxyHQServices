@@ -13,7 +13,16 @@ import { useOxy } from '@oxyhq/services';
 import { useHapticPress } from '@/hooks/use-haptic-press';
 import { useSearchNavigation } from '@/hooks/use-search-navigation';
 import { darkenColor } from '@/utils/color-utils';
-import Animated, { useAnimatedStyle, useDerivedValue, withTiming, runOnJS } from 'react-native-reanimated';
+import Animated, {
+  useAnimatedStyle,
+  useDerivedValue,
+  useSharedValue,
+  withTiming,
+  interpolateColor,
+  runOnJS,
+} from 'react-native-reanimated';
+
+const THEME_TRANSITION_MS = 280;
 
 export default function TabLayout() {
   const { mode } = useTheme();
@@ -23,6 +32,31 @@ export default function TabLayout() {
   const router = useRouter();
   const pathname = usePathname();
   const isDesktop = Platform.OS === 'web' && width >= 768;
+
+  // --- Animated background color transition ---
+  const prevBgRef = useRef(colors.background);
+  const bgProgress = useSharedValue(1);
+
+  // When background color changes, animate from old -> new
+  if (prevBgRef.current !== colors.background) {
+    prevBgRef.current = colors.background;
+    bgProgress.value = 0;
+    bgProgress.value = withTiming(1, { duration: THEME_TRANSITION_MS });
+  }
+
+  // Capture current colors as shared values so the worklet can access them
+  const fromColor = useSharedValue(colors.background);
+  const toColor = useSharedValue(colors.background);
+
+  // Update shared values when colors change (runs during render, before layout)
+  if (toColor.value !== colors.background) {
+    fromColor.value = toColor.value;
+    toColor.value = colors.background;
+  }
+
+  const animatedBgStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(bgProgress.value, [0, 1], [fromColor.value, toColor.value]),
+  }));
 
   const searchInputRef = useRef<TextInput>(null);
 
@@ -97,7 +131,7 @@ export default function TabLayout() {
 
   if (isDesktop) {
     return (
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <Animated.View style={[styles.container, animatedBgStyle]}>
         <Header />
 
         <View style={styles.desktopBody}>
@@ -144,12 +178,12 @@ export default function TabLayout() {
             </View>
           </TouchableOpacity>
         </View>
-      </View>
+      </Animated.View>
     );
   }
 
   return (
-    <View style={[styles.mobileContainer, { backgroundColor: colors.background }]}>
+    <Animated.View style={[styles.mobileContainer, animatedBgStyle]}>
       <Drawer
         drawerContent={(props) => <DrawerContent {...props} />}
         screenOptions={{
@@ -314,7 +348,7 @@ export default function TabLayout() {
           </TouchableOpacity>
         </View>
       )}
-    </View>
+    </Animated.View>
   );
 }
 
