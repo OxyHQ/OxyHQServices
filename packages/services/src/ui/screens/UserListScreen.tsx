@@ -208,7 +208,7 @@ const UserListScreen: React.FC<UserListScreenProps> = ({
 
   if (isLoading && users.length === 0) {
     return (
-      <View style={styles.container} className="bg-background">
+      <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
         <View style={styles.header} className="border-border">
           {goBack && (
             <TouchableOpacity onPress={goBack} style={styles.backButton}>
@@ -227,7 +227,7 @@ const UserListScreen: React.FC<UserListScreenProps> = ({
 
   if (error) {
     return (
-      <View style={styles.container} className="bg-background">
+      <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
         <View style={styles.header} className="border-border">
           {goBack && (
             <TouchableOpacity onPress={goBack} style={styles.backButton}>
@@ -249,7 +249,7 @@ const UserListScreen: React.FC<UserListScreenProps> = ({
   }
 
   return (
-    <View style={styles.container} className="bg-background">
+    <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
       <View style={styles.header} className="border-border">
         {goBack && (
           <TouchableOpacity onPress={goBack} style={styles.backButton}>

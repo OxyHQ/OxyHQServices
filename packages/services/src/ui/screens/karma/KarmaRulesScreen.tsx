@@ -29,7 +29,7 @@ const KarmaRulesScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
     }, [oxyServices]);
 
     return (
-        <View style={styles.container} className="bg-background">
+        <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
             <Header
                 title={t('karma.rules.title') || 'Karma Rules'}
                 subtitle={t('karma.rules.subtitle') || 'How to earn karma points'}

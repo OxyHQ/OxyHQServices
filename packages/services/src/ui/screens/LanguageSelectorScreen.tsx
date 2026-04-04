@@ -117,7 +117,7 @@ const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
 
 
     return (
-        <View style={styles.container} className="bg-background">
+        <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
             <Header
                 title=""
                 subtitle=""

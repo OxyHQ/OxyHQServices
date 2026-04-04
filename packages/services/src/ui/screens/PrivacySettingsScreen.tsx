@@ -264,7 +264,7 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
 
     if (isLoading) {
         return (
-            <View style={styles.container} className="bg-background">
+            <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
                 <Header
                     title={t('privacySettings.title') || 'Privacy Settings'}
                     onBack={goBack || onClose}
@@ -277,7 +277,7 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
     }
 
     return (
-        <View style={styles.container} className="bg-background">
+        <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
             <Header
                 title={t('privacySettings.title') || 'Privacy Settings'}
                 onBack={goBack || onClose}

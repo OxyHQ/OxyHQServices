@@ -74,7 +74,7 @@ const LearnMoreUsernamesScreen: React.FC<BaseScreenProps> = ({
     const styles = useMemo(() => createStyles(), []);
 
     return (
-        <View style={styles.container} className="bg-background">
+        <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
             <ScrollView
                 style={styles.content}
                 showsVerticalScrollIndicator={false}

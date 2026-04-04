@@ -50,7 +50,7 @@ const UserLinksScreen: React.FC<UserLinksScreenProps> = ({
     }));
 
     return (
-        <View style={styles.container} className="bg-background">
+        <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
             <Header
                 title={t('userLinks.title')}
                 subtitle={links.length !== 1 ? t('userLinks.linkCount_plural', { count: links.length }) : t('userLinks.linkCount', { count: links.length })}

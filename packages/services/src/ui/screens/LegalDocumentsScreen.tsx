@@ -95,7 +95,7 @@ const LegalDocumentsScreen: React.FC<BaseScreenProps> = ({
     // If a specific document type is requested, show loading state while opening
     if (documentType) {
         return (
-            <View style={styles.container} className="bg-background">
+            <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
                 <Header
                     title={getPolicyTitle(documentType)}
                     onBack={goBack || onClose}
@@ -112,7 +112,7 @@ const LegalDocumentsScreen: React.FC<BaseScreenProps> = ({
 
     // Default: show both options
     return (
-        <View style={styles.container} className="bg-background">
+        <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
             <Header
                 title={t('legal.title') || 'Legal Documents'}
                 onBack={goBack || onClose}

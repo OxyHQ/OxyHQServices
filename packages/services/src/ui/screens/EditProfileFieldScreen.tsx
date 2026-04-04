@@ -534,8 +534,7 @@ const EditProfileFieldScreen: React.FC<EditProfileFieldScreenProps> = ({
 
     return (
         <KeyboardAvoidingView
-            style={styles.container}
-            className="bg-background"
+            style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
             <Header

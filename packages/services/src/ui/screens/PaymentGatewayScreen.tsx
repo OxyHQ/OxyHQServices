@@ -280,7 +280,7 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
     };
 
     return (
-        <View style={styles.container} className="bg-background">
+        <View style={[styles.container, { backgroundColor: colors.background }]}>
             <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
                 {renderCurrentStep()}
             </ScrollView>

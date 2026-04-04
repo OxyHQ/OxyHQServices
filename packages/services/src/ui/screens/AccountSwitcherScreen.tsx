@@ -23,6 +23,7 @@ import { Ionicons } from '@expo/vector-icons';
 import Avatar from '../components/Avatar';
 import { Header, GroupedSection, LoadingState } from '../components';
 import { useI18n } from '../hooks/useI18n';
+import { useTheme } from '@oxyhq/bloom/theme';
 import { useOxy } from '../context/OxyContext';
 
 interface SessionWithUser extends ClientSession {
@@ -46,6 +47,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
     navigate,
     goBack,
 }) => {
+    const bloomTheme = useTheme();
     // Use useOxy() hook for OxyContext values
     const {
         oxyServices,
@@ -287,7 +289,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
     );
 
     return (
-        <View style={styles.container} className="bg-background">
+        <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
             {/* Header */}
             <Header
                 title={t('accountSwitcher.title') || 'Account Switcher'}

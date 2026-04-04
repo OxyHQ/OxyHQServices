@@ -320,7 +320,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
 
     if (!isAuthenticated) {
         return (
-            <View style={styles.container} className="bg-background">
+            <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
                 <Text style={styles.message} className="text-foreground">{t('common.status.notSignedIn')}</Text>
             </View>
         );
@@ -328,7 +328,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
 
     if (isLoading) {
         return (
-            <View style={[styles.container, { justifyContent: 'center' }]} className="bg-background">
+            <View style={[styles.container, { justifyContent: 'center', backgroundColor: bloomTheme.colors.background }]}>
                 <ActivityIndicator size="large" color={themeColors.primaryColor} />
             </View>
         );
@@ -336,7 +336,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
 
 
     return (
-        <View style={styles.container} className="bg-background">
+        <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
             <ScrollView
                 style={styles.content}
                 contentContainerStyle={styles.scrollContent}

@@ -65,7 +65,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
 
     if (!isAuthenticated) {
         return (
-            <View style={styles.container} className="bg-background">
+            <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
                 <Text style={styles.message} className="text-foreground">{t('common.status.notSignedIn') || 'Not signed in'}</Text>
             </View>
         );
@@ -73,14 +73,14 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
 
     if (isLoading) {
         return (
-            <View style={[styles.container, { justifyContent: 'center' }]} className="bg-background">
+            <View style={[styles.container, { justifyContent: 'center', backgroundColor: bloomTheme.colors.background }]}>
                 <ActivityIndicator size="large" color={bloomTheme.colors.primary} />
             </View>
         );
     }
 
     return (
-        <View style={styles.container} className="bg-background">
+        <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
             {/* Header with user profile */}
             {user && (
                 <ProfileCard

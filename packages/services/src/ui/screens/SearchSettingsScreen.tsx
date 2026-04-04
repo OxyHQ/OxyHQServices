@@ -78,7 +78,7 @@ const SearchSettingsScreen: React.FC<BaseScreenProps> = ({
 
     if (isLoading) {
         return (
-            <View style={styles.container} className="bg-background">
+            <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
                 <Header
                     title={t('searchSettings.title') || 'Search Settings'}
                     onBack={goBack || onClose}
@@ -91,7 +91,7 @@ const SearchSettingsScreen: React.FC<BaseScreenProps> = ({
     }
 
     return (
-        <View style={styles.container} className="bg-background">
+        <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
             <Header
                 title={t('searchSettings.title') || 'Search Settings'}
 

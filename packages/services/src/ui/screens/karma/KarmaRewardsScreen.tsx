@@ -332,7 +332,7 @@ const KarmaRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
 
     if (!isAuthenticated) {
         return (
-            <View style={styles.container} className="bg-background">
+            <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
                 <Header
                     title={t('karma.rewards.title') || 'Karma Rewards'}
                     subtitle={t('karma.rewards.subtitle') || 'Unlock special features and recognition'}
@@ -349,7 +349,7 @@ const KarmaRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
     }
 
     return (
-        <View style={styles.container} className="bg-background">
+        <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
             <Header
                 title={t('karma.rewards.title') || 'Karma Rewards'}
                 subtitle={t('karma.rewards.subtitle') || 'Unlock special features and recognition'}

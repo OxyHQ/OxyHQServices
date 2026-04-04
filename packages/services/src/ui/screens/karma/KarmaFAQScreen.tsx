@@ -54,7 +54,7 @@ const KarmaFAQScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
     }, []);
 
     return (
-        <View style={styles.container} className="bg-background">
+        <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
             <Header
                 title={t('karma.faq.title') || 'Karma FAQ'}
                 subtitle={t('karma.faq.subtitle') || 'Frequently asked questions about karma'}

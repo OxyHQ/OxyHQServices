@@ -400,7 +400,7 @@ const OxyAuthScreen: React.FC<BaseScreenProps> = ({
 
   if (isLoading) {
     return (
-      <View style={styles.container} className="bg-background">
+      <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
         <Loading size="large" />
         <Text style={styles.loadingText} className="text-muted-foreground">
           Preparing sign in...
@@ -411,7 +411,7 @@ const OxyAuthScreen: React.FC<BaseScreenProps> = ({
 
   if (error) {
     return (
-      <View style={styles.container} className="bg-background">
+      <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
         <Text style={styles.errorText} className="text-destructive">{error}</Text>
         <Button variant="primary" onPress={handleRefresh} style={{ width: '100%', borderRadius: 12 }}>
           Try Again
@@ -421,7 +421,7 @@ const OxyAuthScreen: React.FC<BaseScreenProps> = ({
   }
 
   return (
-    <View style={styles.container} className="bg-background">
+    <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
       {/* Header */}
       <View style={styles.header}>
         <OxyLogo variant="icon" size={48} />

@@ -70,7 +70,7 @@ const KarmaCenterScreen: React.FC<BaseScreenProps> = ({
 
     if (!isAuthenticated) {
         return (
-            <View style={styles.container} className="bg-background">
+            <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
                 <Text style={[styles.message, { color: bloomTheme.colors.text }]}>{t('common.status.notSignedIn') || 'Not signed in'}</Text>
             </View>
         );
@@ -78,14 +78,14 @@ const KarmaCenterScreen: React.FC<BaseScreenProps> = ({
 
     if (isLoading) {
         return (
-            <View style={[styles.container, { justifyContent: 'center' }]} className="bg-background">
+            <View style={[styles.container, { justifyContent: 'center', backgroundColor: bloomTheme.colors.background }]}>
                 <ActivityIndicator size="large" color={primaryColor} />
             </View>
         );
     }
 
     return (
-        <View style={styles.container} className="bg-background">
+        <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
             <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContainer}>
                 <View style={styles.walletHeader}>
                     <Text style={[styles.karmaAmount, { color: primaryColor }]}>{karmaTotal ?? 0}</Text>

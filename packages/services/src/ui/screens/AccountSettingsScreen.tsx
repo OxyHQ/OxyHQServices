@@ -316,14 +316,14 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
 
     if (userLoading || !isAuthenticated) {
         return (
-            <View style={[styles.container, { justifyContent: 'center' }]} className="bg-background">
+            <View style={[styles.container, { justifyContent: 'center', backgroundColor: bloomTheme.colors.background }]}>
                 <ActivityIndicator size="large" color={bloomTheme.colors.primary} />
             </View>
         );
     }
 
     return (
-        <View style={styles.container} className="bg-background">
+        <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
             <ScrollView
                 ref={scrollViewRef}
                 style={styles.content}

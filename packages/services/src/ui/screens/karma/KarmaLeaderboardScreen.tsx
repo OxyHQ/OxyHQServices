@@ -30,7 +30,7 @@ const KarmaLeaderboardScreen: React.FC<BaseScreenProps> = ({ goBack, theme, navi
     }, [oxyServices]);
 
     return (
-        <View style={styles.container} className="bg-background">
+        <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
             <Header
                 title={t('karma.leaderboard.title') || 'Karma Leaderboard'}
                 subtitle={t('karma.leaderboard.subtitle') || 'Top contributors in the community'}

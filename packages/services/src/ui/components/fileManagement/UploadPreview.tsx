@@ -40,7 +40,7 @@ const UploadPreviewContent: React.FC<{
     const totalSize = pendingFiles.reduce((sum, f) => sum + f.size, 0);
 
     return (
-        <View className="bg-background" style={fileManagementStyles.uploadPreviewContainer}>
+        <View style={[fileManagementStyles.uploadPreviewContainer, { backgroundColor: colors.background }]}>
             <View className="border-b border-border" style={fileManagementStyles.uploadPreviewHeader}>
                 <Text className="text-foreground" style={fileManagementStyles.uploadPreviewTitle}>
                     Review Files ({pendingFiles.length})

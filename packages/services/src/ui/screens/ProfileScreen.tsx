@@ -176,7 +176,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
 
     if (isLoading) {
         return (
-            <View style={[styles.container, { justifyContent: 'center' }]} className="bg-background">
+            <View style={[styles.container, { justifyContent: 'center', backgroundColor: bloomTheme.colors.background }]}>
                 <ActivityIndicator size="large" color={bloomTheme.colors.primary} />
             </View>
         );
@@ -184,7 +184,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
 
     if (error) {
         return (
-            <View style={styles.container} className="bg-background">
+            <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
                 <View style={styles.errorHeader}>
                     {goBack && (
                         <TouchableOpacity onPress={goBack} style={styles.backButton}>
@@ -205,7 +205,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
     }
 
     return (
-        <View style={styles.container} className="bg-background">
+        <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
             <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.scrollContainer}>
                 {/* Banner Image */}
                 <View style={styles.bannerContainer} className="bg-primary/20">

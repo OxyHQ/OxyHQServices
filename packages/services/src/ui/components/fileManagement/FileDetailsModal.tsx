@@ -36,7 +36,7 @@ export const FileDetailsModal: React.FC<FileDetailsModalProps> = ({
             presentationStyle="pageSheet"
             onRequestClose={onClose}
         >
-            <View className="bg-background" style={fileManagementStyles.modalContainer}>
+            <View style={[fileManagementStyles.modalContainer, { backgroundColor: colors.background }]}>
                 <View className="border-b border-border" style={fileManagementStyles.modalHeader}>
                     <TouchableOpacity
                         style={fileManagementStyles.modalCloseButton}

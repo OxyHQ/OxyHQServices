@@ -78,7 +78,7 @@ const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
                     activeOpacity={1}
                     onPress={handleClose}
                 />
-                <View className="bg-background" style={styles.modal}>
+                <View style={[styles.modal, { backgroundColor: theme.colors.background }]}>
                     <View style={styles.header}>
                         <OxyIcon name="alert" size={32} color={theme.colors.error} />
                         <Text className="text-destructive" style={styles.title}>

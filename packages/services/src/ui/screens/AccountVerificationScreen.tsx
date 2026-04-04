@@ -75,7 +75,7 @@ const AccountVerificationScreen: React.FC<BaseScreenProps> = ({
     }, [reason, evidence, oxyServices, t, goBack]);
 
     return (
-        <View style={styles.container} className="bg-background">
+        <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
             <Header
                 title={t('accountVerification.title') || 'Account Verification'}
 

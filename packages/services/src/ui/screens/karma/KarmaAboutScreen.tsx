@@ -13,7 +13,7 @@ const KarmaAboutScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
     const primaryColor = '#d169e5';
 
     return (
-        <View style={styles.container} className="bg-background">
+        <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
             <Header
                 title={t('karma.about.title') || 'About Karma'}
                 subtitle={t('karma.about.subtitle') || 'Learn about the karma system'}

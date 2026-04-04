@@ -93,7 +93,7 @@ const SavesCollectionsScreen: React.FC<BaseScreenProps> = ({
     };
 
     return (
-        <View style={styles.container} className="bg-background">
+        <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
             <Header
                 title={t('saves.title') || 'Saves & Collections'}
                 onBack={goBack || onClose}

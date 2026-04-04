@@ -96,7 +96,7 @@ const FAQScreen: React.FC<BaseScreenProps> = ({
     const styles = useMemo(() => createStyles(), []);
 
     return (
-        <View style={styles.container} className="bg-background">
+        <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
             <Header
                 title={t('faq.title') || 'FAQ'}
                 onBack={goBack || onClose}

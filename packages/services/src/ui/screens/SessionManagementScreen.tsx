@@ -291,7 +291,7 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
 
     if (loading) {
         return (
-            <View style={[styles.container, styles.centerContent]} className="bg-background">
+            <View style={[styles.container, styles.centerContent, { backgroundColor: bloomTheme.colors.background }]}>
                 <ActivityIndicator size="large" color={primaryColor} />
                 <Text style={styles.loadingText} className="text-foreground">{t('sessionManagement.loading')}</Text>
             </View>
@@ -299,7 +299,7 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
     }
 
     return (
-        <View style={styles.container} className="bg-background">
+        <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
             <Header
                 title={t('sessionManagement.title')}
                 subtitle={t('sessionManagement.subtitle')}

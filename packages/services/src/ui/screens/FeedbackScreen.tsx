@@ -489,8 +489,7 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
 
     return (
         <KeyboardAvoidingView
-            style={styles.container}
-            className="bg-background"
+            style={[styles.container, { backgroundColor: colors.background }]}
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
             <StatusBar
