@@ -60,11 +60,15 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
         refreshSessions,
         isLoading = false,
         isAuthenticated = false,
+        actingAs,
+        managedAccounts,
+        setActingAs,
     } = useOxy();
 
     const [sessionsWithUsers, setSessionsWithUsers] = useState<SessionWithUser[]>([]);
     const [switchingToUserId, setSwitchingToUserId] = useState<string | null>(null);
     const [removingUserId, setRemovingUserId] = useState<string | null>(null);
+    const [switchingManagedId, setSwitchingManagedId] = useState<string | null>(null);
 
     // Device session management state
     const [showDeviceManagement, setShowDeviceManagement] = useState(false);
@@ -209,6 +213,30 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
             }
         );
     }, [logoutAll, onClose, t]);
+
+    const handleSwitchToManagedAccount = useCallback(async (accountId: string) => {
+        if (actingAs === accountId) return; // Already acting as this account
+        if (switchingManagedId) return; // Already switching
+
+        setSwitchingManagedId(accountId);
+        try {
+            setActingAs(accountId);
+            toast.success(t('accountSwitcher.toasts.switchSuccess') || 'Switched identity successfully!');
+            onClose?.();
+        } catch (error) {
+            if (__DEV__) {
+                console.error('Switch managed account failed:', error);
+            }
+            toast.error('Failed to switch identity. Please try again.');
+        } finally {
+            setSwitchingManagedId(null);
+        }
+    }, [actingAs, switchingManagedId, setActingAs, t, onClose]);
+
+    const handleSwitchBackToPrimary = useCallback(() => {
+        setActingAs(null);
+        toast.success('Switched back to primary account');
+    }, [setActingAs]);
 
     // Device session management functions - optimized with useCallback
     const loadAllDeviceSessions = useCallback(async () => {
@@ -425,6 +453,151 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                                         </View>
                                     );
                                 })}
+                            </View>
+                        )}
+
+                        {/* Acting as banner - show switch-back when acting as a managed account */}
+                        {actingAs && (
+                            <View style={styles.section}>
+                                <TouchableOpacity
+                                    style={[styles.settingItem, styles.firstSettingItem, styles.lastSettingItem, styles.actingAsBanner]}
+                                    onPress={handleSwitchBackToPrimary}
+                                    activeOpacity={0.7}
+                                >
+                                    <View style={styles.settingInfo}>
+                                        <Text style={styles.settingLabel}>Switch back to primary account</Text>
+                                        <Text style={styles.settingDescription}>You are currently acting as another identity</Text>
+                                    </View>
+                                    <View style={styles.switchBackButton}>
+                                        <Text style={styles.switchBackButtonText}>Switch Back</Text>
+                                    </View>
+                                </TouchableOpacity>
+                            </View>
+                        )}
+
+                        {/* Managed Accounts */}
+                        {managedAccounts.length > 0 && (
+                            <View style={styles.section}>
+                                <Text style={styles.sectionTitle}>Managed Accounts</Text>
+                                <Text style={styles.sectionSubtitle}>Identities you manage</Text>
+
+                                {managedAccounts.map((managed, index) => {
+                                    const account = managed.account;
+                                    if (!account) return null;
+
+                                    const isActive = actingAs === managed.accountId;
+                                    const isSwitching = switchingManagedId === managed.accountId;
+                                    const isFirst = index === 0;
+                                    const isLast = index === managedAccounts.length - 1;
+
+                                    const managedDisplayName = typeof account.name === 'object'
+                                        ? account.name.full || account.name.first || account.username
+                                        : account.name || account.username || 'Unknown';
+
+                                    // Determine the manager role for badge display
+                                    const myRole = managed.managers?.find(
+                                        (m) => m.userId === user?.id
+                                    )?.role ?? 'owner';
+
+                                    return (
+                                        <TouchableOpacity
+                                            key={`managed-${managed.accountId}`}
+                                            style={[
+                                                styles.settingItem,
+                                                isFirst && styles.firstSettingItem,
+                                                isLast && styles.lastSettingItem,
+                                                isActive && styles.currentAccountCard,
+                                            ]}
+                                            onPress={() => handleSwitchToManagedAccount(managed.accountId)}
+                                            disabled={isActive || isSwitching}
+                                            activeOpacity={0.7}
+                                        >
+                                            <View style={styles.userIcon}>
+                                                {account.avatar ? (
+                                                    <Image source={{ uri: oxyServices.getFileDownloadUrl(account.avatar, 'thumb') }} style={styles.accountAvatarImage} />
+                                                ) : (
+                                                    <View style={[styles.accountAvatarFallback, styles.managedAvatarFallback]}>
+                                                        <Text style={styles.accountAvatarText}>
+                                                            {managedDisplayName.charAt(0).toUpperCase()}
+                                                        </Text>
+                                                    </View>
+                                                )}
+                                                {isActive && (
+                                                    <View style={styles.activeBadge}>
+                                                        <OxyIcon name="checkmark" size={12} color="#fff" />
+                                                    </View>
+                                                )}
+                                            </View>
+                                            <View style={styles.settingInfo}>
+                                                <View>
+                                                    <Text style={styles.settingLabel}>{managedDisplayName}</Text>
+                                                    <Text style={styles.settingDescription}>@{account.username}</Text>
+                                                </View>
+                                            </View>
+                                            <View style={styles.accountActions}>
+                                                <View style={styles.roleBadge}>
+                                                    <Text style={styles.roleBadgeText}>{myRole}</Text>
+                                                </View>
+                                                {isActive ? (
+                                                    <View style={styles.currentBadge}>
+                                                        <Text style={styles.currentBadgeText}>Current</Text>
+                                                    </View>
+                                                ) : (
+                                                    <TouchableOpacity
+                                                        style={styles.switchButton}
+                                                        onPress={() => handleSwitchToManagedAccount(managed.accountId)}
+                                                        disabled={isSwitching}
+                                                    >
+                                                        {isSwitching ? (
+                                                            <ActivityIndicator size="small" color="#fff" />
+                                                        ) : (
+                                                            <Text style={styles.switchButtonText}>Act As</Text>
+                                                        )}
+                                                    </TouchableOpacity>
+                                                )}
+                                            </View>
+                                        </TouchableOpacity>
+                                    );
+                                })}
+
+                                {/* Create New Identity */}
+                                <TouchableOpacity
+                                    style={[styles.settingItem, styles.firstSettingItem, styles.lastSettingItem, { marginTop: 8 }]}
+                                    onPress={() => navigate?.('CreateManagedAccount')}
+                                    activeOpacity={0.7}
+                                >
+                                    <View style={styles.userIcon}>
+                                        <View style={[styles.accountAvatarFallback, { backgroundColor: '#007AFF20' }]}>
+                                            <OxyIcon name="add" size={20} color="#007AFF" />
+                                        </View>
+                                    </View>
+                                    <View style={styles.settingInfo}>
+                                        <Text style={[styles.settingLabel, { color: '#007AFF' }]}>Create New Identity</Text>
+                                        <Text style={styles.settingDescription}>Add a managed sub-account</Text>
+                                    </View>
+                                </TouchableOpacity>
+                            </View>
+                        )}
+
+                        {/* Create first managed account (when none exist yet) */}
+                        {managedAccounts.length === 0 && isAuthenticated && (
+                            <View style={styles.section}>
+                                <Text style={styles.sectionTitle}>Managed Accounts</Text>
+                                <TouchableOpacity
+                                    style={[styles.settingItem, styles.firstSettingItem, styles.lastSettingItem]}
+                                    onPress={() => navigate?.('CreateManagedAccount')}
+                                    activeOpacity={0.7}
+                                >
+                                    <View style={styles.userIcon}>
+                                        <View style={[styles.accountAvatarFallback, { backgroundColor: '#007AFF20' }]}>
+                                            <OxyIcon name="add" size={20} color="#007AFF" />
+                                        </View>
+                                    </View>
+                                    <View style={styles.settingInfo}>
+                                        <Text style={[styles.settingLabel, { color: '#007AFF' }]}>Create New Identity</Text>
+                                        <Text style={styles.settingDescription}>Create a managed sub-account you control</Text>
+                                    </View>
+                                </TouchableOpacity>
                             </View>
                         )}
 
@@ -727,6 +900,42 @@ const styles = StyleSheet.create({
     addAccountButtonText: {
         color: '#fff',
         fontSize: 16,
+        fontWeight: '600',
+    },
+    sectionSubtitle: {
+        fontSize: 13,
+        color: '#888',
+        marginBottom: 12,
+    },
+    managedAvatarFallback: {
+        backgroundColor: '#5856D6',
+    },
+    roleBadge: {
+        backgroundColor: '#F2F2F7',
+        paddingHorizontal: 8,
+        paddingVertical: 3,
+        borderRadius: 8,
+    },
+    roleBadgeText: {
+        color: '#666',
+        fontSize: 11,
+        fontWeight: '500',
+        textTransform: 'capitalize',
+    },
+    actingAsBanner: {
+        borderWidth: 2,
+        borderColor: '#FF9500',
+        backgroundColor: '#FF950010',
+    },
+    switchBackButton: {
+        backgroundColor: '#FF9500',
+        paddingHorizontal: 14,
+        paddingVertical: 8,
+        borderRadius: 16,
+    },
+    switchBackButtonText: {
+        color: '#fff',
+        fontSize: 13,
         fontWeight: '600',
     },
 });

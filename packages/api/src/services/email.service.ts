@@ -1726,9 +1726,23 @@ class EmailService {
   // ─── Private helpers ──────────────────────────────────────────────
 
   private async getUserTier(userId: string): Promise<SubscriptionTier> {
-    // TODO: integrate with subscription service when ready
-    // For now default to free tier
-    return 'free';
+    try {
+      const BillingSubscription = mongoose.model('BillingSubscription');
+      const subscription = await BillingSubscription.findOne({
+        userId,
+        status: { $in: ['active', 'trialing'] },
+      }).select('plan.name').lean() as { plan?: { name?: string } } | null;
+
+      if (!subscription?.plan?.name) return 'free';
+
+      const planName = subscription.plan.name.toLowerCase();
+      if (planName === 'business') return 'business';
+      if (planName === 'pro') return 'pro';
+      return 'free';
+    } catch {
+      // Model not registered or DB error -- default to free
+      return 'free';
+    }
   }
 
   private async deleteMessageAttachments(message: any): Promise<void> {

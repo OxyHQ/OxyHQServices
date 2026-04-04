@@ -97,6 +97,9 @@ export type { AvatarProps } from './ui/components/Avatar';
 export { OxySignInButton } from './ui/components/OxySignInButton';
 export { OxyLogo, FollowButton } from './ui';
 
+// Acting-as banner for managed accounts
+export { default as ActingAsBanner } from './ui/components/ActingAsBanner';
+
 // Bottom sheet navigation
 export { showBottomSheet, closeBottomSheet } from './ui/navigation/bottomSheetManager';
 export type { RouteName } from './ui/navigation/routes';

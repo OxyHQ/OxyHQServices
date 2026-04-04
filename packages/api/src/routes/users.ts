@@ -21,11 +21,9 @@ import {
   ForbiddenError,
   ConflictError,
   BadRequestError,
-  ApiError,
 } from '../utils/error';
 import { userService } from '../services/user.service';
 import { UsersController } from '../controllers/users.controller';
-import { PaginationParams, UserStatistics } from '../types/user.types';
 import { resolveUserIdToObjectId } from '../utils/validation';
 import SignatureService from '../services/signature.service';
 import { emailService } from '../services/email.service';

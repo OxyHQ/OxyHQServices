@@ -7,7 +7,6 @@ import BillingTransaction from '../models/BillingTransaction';
 import { getOrCreateUserCredits } from './credits';
 import { logger } from '../utils/logger';
 import { isValidObjectId } from '../utils/validation';
-import { z } from 'zod';
 import { validate } from '../middleware/validate';
 import {
   checkoutCreditsSchema,
@@ -86,15 +85,9 @@ router.get('/plans', async (_req: Request, res: Response) => {
 });
 
 // Authenticated endpoints
-const createCheckoutSchema = z.object({
-  packageId: z.string(),
-  successUrl: z.string().url(),
-  cancelUrl: z.string().url(),
-});
-
 router.post('/checkout/credits', authMiddleware, validate({ body: checkoutCreditsSchema }), async (req: AuthRequest, res: Response) => {
   try {
-    const { packageId, successUrl, cancelUrl } = createCheckoutSchema.parse(req.body);
+    const { packageId, successUrl, cancelUrl } = req.body;
     const userId = req.user?._id?.toString();
     if (!userId) return res.status(401).json({ error: 'Authentication required' });
 
@@ -123,23 +116,14 @@ router.post('/checkout/credits', authMiddleware, validate({ body: checkoutCredit
 
     res.json({ sessionId: session.id, url: session.url });
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: 'Invalid input', details: error.errors });
-    }
     logger.error('Error creating checkout session:', error);
     res.status(500).json({ error: 'Failed to create checkout session' });
   }
 });
 
-const createSubscriptionSchema = z.object({
-  planId: z.string(),
-  successUrl: z.string().url(),
-  cancelUrl: z.string().url(),
-});
-
 router.post('/checkout/subscription', authMiddleware, validate({ body: checkoutSubscriptionSchema }), async (req: AuthRequest, res: Response) => {
   try {
-    const { planId, successUrl, cancelUrl } = createSubscriptionSchema.parse(req.body);
+    const { planId, successUrl, cancelUrl } = req.body;
     const userId = req.user?._id?.toString();
     if (!userId) return res.status(401).json({ error: 'Authentication required' });
 
@@ -161,9 +145,6 @@ router.post('/checkout/subscription', authMiddleware, validate({ body: checkoutS
 
     res.json({ sessionId: session.id, url: session.url });
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: 'Invalid input', details: error.errors });
-    }
     logger.error('Error creating subscription checkout:', error);
     res.status(500).json({ error: 'Failed to create subscription checkout' });
   }

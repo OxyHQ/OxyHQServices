@@ -11,6 +11,7 @@ import {
 } from 'react';
 import { OxyServices } from '@oxyhq/core';
 import type { User, ApiError, SessionLoginResponse } from '@oxyhq/core';
+import type { ManagedAccount, CreateManagedAccountInput } from '@oxyhq/core';
 import { KeyManager } from '@oxyhq/core';
 import type { ClientSession } from '@oxyhq/core';
 import { toast } from '../../lib/sonner';
@@ -85,6 +86,13 @@ export interface OxyContextState {
   useFollow?: UseFollowHook;
   showBottomSheet?: (screenOrConfig: RouteName | { screen: RouteName; props?: Record<string, unknown> }) => void;
   openAvatarPicker: () => void;
+
+  // Managed accounts (sub-accounts / managed identities)
+  actingAs: string | null;
+  managedAccounts: ManagedAccount[];
+  setActingAs: (userId: string | null) => void;
+  refreshManagedAccounts: () => Promise<void>;
+  createManagedAccount: (data: CreateManagedAccountInput) => Promise<ManagedAccount>;
 }
 
 const OxyContext = createContext<OxyContextState | null>(null);
@@ -645,6 +653,68 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     showBottomSheet: showBottomSheetForContext,
   });
 
+  // --- Managed accounts state ---
+  const [actingAs, setActingAsState] = useState<string | null>(null);
+  const [managedAccounts, setManagedAccounts] = useState<ManagedAccount[]>([]);
+
+  // Restore actingAs from storage on startup
+  useEffect(() => {
+    if (!storage || !initialized) return;
+    let mounted = true;
+    (async () => {
+      try {
+        const stored = await storage.getItem(`${storageKeyPrefix}_acting_as`);
+        if (mounted && stored) {
+          setActingAsState(stored);
+          oxyServices.setActingAs(stored);
+        }
+      } catch (err) {
+        if (__DEV__) {
+          loggerUtil.debug('Failed to restore actingAs from storage', { component: 'OxyContext' }, err as unknown);
+        }
+      }
+    })();
+    return () => { mounted = false; };
+  }, [storage, initialized, storageKeyPrefix, oxyServices]);
+
+  // Load managed accounts when authenticated
+  const refreshManagedAccounts = useCallback(async (): Promise<void> => {
+    if (!isAuthenticated) return;
+    try {
+      const accounts = await oxyServices.getManagedAccounts();
+      setManagedAccounts(accounts);
+    } catch (err) {
+      if (__DEV__) {
+        loggerUtil.debug('Failed to load managed accounts', { component: 'OxyContext' }, err as unknown);
+      }
+    }
+  }, [isAuthenticated, oxyServices]);
+
+  useEffect(() => {
+    if (isAuthenticated && initialized && tokenReady) {
+      refreshManagedAccounts();
+    }
+  }, [isAuthenticated, initialized, tokenReady, refreshManagedAccounts]);
+
+  const setActingAs = useCallback((userId: string | null) => {
+    oxyServices.setActingAs(userId);
+    setActingAsState(userId);
+    // Persist to storage
+    if (storage) {
+      if (userId) {
+        storage.setItem(`${storageKeyPrefix}_acting_as`, userId).catch(() => {});
+      } else {
+        storage.removeItem(`${storageKeyPrefix}_acting_as`).catch(() => {});
+      }
+    }
+  }, [oxyServices, storage, storageKeyPrefix]);
+
+  const createManagedAccountFn = useCallback(async (data: CreateManagedAccountInput): Promise<ManagedAccount> => {
+    const account = await oxyServices.createManagedAccount(data);
+    await refreshManagedAccounts();
+    return account;
+  }, [oxyServices, refreshManagedAccounts]);
+
   const contextValue: OxyContextState = useMemo(() => ({
     user,
     sessions,
@@ -678,6 +748,11 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     useFollow: useFollowHook,
     showBottomSheet: showBottomSheetForContext,
     openAvatarPicker,
+    actingAs,
+    managedAccounts,
+    setActingAs,
+    refreshManagedAccounts,
+    createManagedAccount: createManagedAccountFn,
   }), [
     activeSessionId,
     signIn,
@@ -709,6 +784,11 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     user,
     showBottomSheetForContext,
     openAvatarPicker,
+    actingAs,
+    managedAccounts,
+    setActingAs,
+    refreshManagedAccounts,
+    createManagedAccountFn,
   ]);
 
   return (
@@ -753,6 +833,11 @@ const LOADING_STATE: OxyContextState = {
   storageKeyPrefix: 'oxy_session',
   oxyServices: null as any,
   openAvatarPicker: () => {},
+  actingAs: null,
+  managedAccounts: [],
+  setActingAs: () => {},
+  refreshManagedAccounts: noop,
+  createManagedAccount: noop,
 };
 
 export const useOxy = (): OxyContextState => {

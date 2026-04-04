@@ -24,10 +24,6 @@ const CREATE_NOTIFICATION_SCHEMA = z.object({
 });
 
 // =============================================================================
-// CONSTANTS
-// =============================================================================
-
-// =============================================================================
 // UTILITY FUNCTIONS
 // =============================================================================
 
@@ -39,13 +35,26 @@ function validatePaginationParams(page: number, limit: number): boolean {
 }
 
 /**
- * Emits a real-time notification
+ * Emits a real-time notification via Socket.IO to the recipient's room.
  */
 async function emitNotification(req: Request, notification: any): Promise<void> {
   try {
-    // TODO: Implement real-time notification emission
-    // This could use WebSockets, Server-Sent Events, or a message queue
-    logger.info(`Notification emitted: ${notification.type} to ${notification.recipientId}`);
+    const io = req.app.get('io');
+    if (io && notification.recipientId) {
+      const room = `user:${notification.recipientId}`;
+      io.to(room).emit('notification', {
+        id: notification._id,
+        type: notification.type,
+        actorId: notification.actorId,
+        entityId: notification.entityId,
+        entityType: notification.entityType,
+        title: notification.title,
+        message: notification.message,
+        data: notification.data,
+        createdAt: notification.createdAt,
+      });
+    }
+    logger.debug('Notification emitted', { type: notification.type, recipientId: notification.recipientId });
   } catch (error) {
     logger.error('Error emitting notification:', error);
   }

@@ -32,7 +32,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
     navigate,
 }) => {
     // Use useOxy() hook for OxyContext values
-    const { user, logout, isLoading, sessions, isAuthenticated } = useOxy();
+    const { user, logout, isLoading, sessions, isAuthenticated, managedAccounts } = useOxy();
     const { t } = useI18n();
     const bloomTheme = useTheme();
     const colorScheme = useColorScheme();
@@ -177,6 +177,26 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                             title={t('accountCenter.items.addAccount.title') || 'Add Another Account'}
                             description={t('accountCenter.items.addAccount.subtitle') || 'Sign in with a different account'}
                             onPress={() => navigate?.('OxyAuth')}
+                        />
+                    </SettingsListGroup>
+                )}
+
+                {/* Managed Accounts */}
+                {isAuthenticated && (
+                    <SettingsListGroup title="Managed Accounts">
+                        <SettingsListItem
+                            icon={<SettingsIcon name="account-switch" color={colors.iconStorage} />}
+                            title="Manage Identities"
+                            description={managedAccounts.length > 0
+                                ? `${managedAccounts.length} managed ${managedAccounts.length === 1 ? 'identity' : 'identities'}`
+                                : 'Sub-accounts you control'}
+                            onPress={() => navigate?.('AccountSwitcher')}
+                        />
+                        <SettingsListItem
+                            icon={<SettingsIcon name="account-plus" color={colors.iconPersonalInfo} />}
+                            title="Create New Identity"
+                            description="Add a managed sub-account"
+                            onPress={() => navigate?.('CreateManagedAccount')}
                         />
                     </SettingsListGroup>
                 )}

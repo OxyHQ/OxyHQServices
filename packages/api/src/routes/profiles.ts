@@ -17,7 +17,6 @@ import {
 } from '../utils/error';
 import { userService } from '../services/user.service';
 import { federationService, isFediverseHandle } from '../services/federation.service';
-import { PaginationParams, UserProfile, UserStatistics } from '../types/user.types';
 import Follow, { FollowType } from '../models/Follow';
 import User from '../models/User';
 import { validate } from '../middleware/validate';

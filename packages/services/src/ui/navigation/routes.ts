@@ -39,7 +39,8 @@ export type RouteName =
     | 'AboutKarma'
     | 'KarmaFAQ'
     | 'FollowersList'  // List of user's followers
-    | 'FollowingList'; // List of users being followed
+    | 'FollowingList' // List of users being followed
+    | 'CreateManagedAccount'; // Create a new managed sub-account
 
 // Lazy screen loaders - functions that return screen components on-demand
 // This breaks the require cycle by deferring imports until screens are actually needed
@@ -80,6 +81,7 @@ const screenLoaders: Record<RouteName, () => ComponentType<BaseScreenProps>> = {
     // User list screens (followers/following)
     FollowersList: () => require('../screens/FollowersListScreen').default,
     FollowingList: () => require('../screens/FollowingListScreen').default,
+    CreateManagedAccount: () => require('../screens/CreateManagedAccountScreen').default,
 };
 
 // Cache loaded components to avoid re-requiring
