@@ -2,11 +2,14 @@
 
 ## Custom Agents
 
-Use these agents for OxyHQ work:
-
-- **oxy-services**: Any work within this repo
-- **mention-fixer**: When debugging issues that span Mention + Oxy
-- **git-ops**: Git commit, push, merge operations
+Use these agents for all implementation work:
+- `oxy-core` — @oxyhq/core: OxyServices client, mixins, crypto, types. NEVER import react/RN/expo.
+- `oxy-auth` — auth-sdk + auth app: FedCM, service tokens, sessions, 2FA. NEVER import RN/expo.
+- `oxy-api` — API backend: routes, models, services (email, billing, federation, S3, MongoDB)
+- `oxy-frontend` — Frontend apps: accounts (MyAccount), console (Cloud), inbox (Email), auth (FedCM IdP)
+- `oxy-services` — @oxyhq/services: Expo/RN components, screens, bottom sheets
+- `mention-fixer` — Cross-stack debugging (Mention ↔ Oxy)
+- `git-ops` — Git commit, push, merge operations
 
 ## Commands
 
