@@ -15,7 +15,6 @@ import { fontFamilies } from '../styles/fonts';
 import * as Prompt from '@oxyhq/bloom/prompt';
 import { usePromptControl } from '@oxyhq/bloom/prompt';
 import ProfileCard from '../components/ProfileCard';
-import Section from '../components/Section';
 import QuickActions from '../components/QuickActions';
 import { SettingsIcon } from '../components/SettingsIcon';
 import { useI18n } from '../hooks/useI18n';
@@ -84,7 +83,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
             )}
 
             <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
-                <Section title={t('accountCenter.sections.quickActions') || 'Quick Actions'} isFirst={true}>
+                <SettingsListGroup title={t('accountCenter.sections.quickActions') || 'Quick Actions'}>
                     <QuickActions
                         theme={normalizedTheme}
                         actions={useMemo(() => [
@@ -96,7 +95,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                             ...(sessions && sessions.length > 1 ? [{ id: 'switch', icon: 'swap-horizontal', iconColor: colors.iconStorage, title: t('accountCenter.quickActions.switch') || 'Switch', onPress: () => navigate?.('AccountSwitcher') }] : []),
                         ], [user?.isPremium, sessions, navigate, t, colors])}
                     />
-                </Section>
+                </SettingsListGroup>
 
                 <SettingsListGroup title={t('accountCenter.sections.accountManagement') || 'Account Management'}>
                     <SettingsListItem icon={<SettingsIcon name="account-circle" color={colors.iconSecurity} />} title={t('accountCenter.items.accountOverview.title') || 'Account Overview'} description={t('accountCenter.items.accountOverview.subtitle') || 'Complete account information'} onPress={() => navigate?.('AccountOverview')} />

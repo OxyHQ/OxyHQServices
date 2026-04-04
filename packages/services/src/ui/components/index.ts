@@ -1,14 +1,9 @@
 // Re-export all reusable UI components
 export { default as ProfileCard } from './ProfileCard';
-export { default as Section } from './Section';
-export { default as SectionTitle } from './SectionTitle';
-export { default as GroupedItem } from './GroupedItem';
-export { default as GroupedSection } from './GroupedSection';
 export { default as QuickActions } from './QuickActions';
 export { default as Header, getHeaderHeight } from './Header';
 export { default as LoadingState } from './LoadingState';
 export { default as EmptyState } from './EmptyState';
-export { default as SettingRow } from './SettingRow';
 export { SettingsIcon } from './SettingsIcon';
 
 // Re-export existing components

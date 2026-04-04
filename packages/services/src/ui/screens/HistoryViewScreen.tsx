@@ -2,7 +2,9 @@ import React, { useState, useCallback } from 'react';
 import { View, StyleSheet, ScrollView } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
 import { toast } from '../../lib/sonner';
-import { Header, Section, GroupedSection, LoadingState, EmptyState } from '../components';
+import { Header, LoadingState, EmptyState } from '../components';
+import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
+import { SettingsIcon } from '../components/SettingsIcon';
 import { useI18n } from '../hooks/useI18n';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { useColorScheme } from '../hooks/useColorScheme';
@@ -93,17 +95,34 @@ const HistoryViewScreen: React.FC<BaseScreenProps> = ({ onClose, theme, goBack }
         <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
             <Header title={t('history.title') || 'History'} onBack={goBack || onClose} variant="minimal" elevation="subtle" />
             <ScrollView style={styles.content}>
-                <Section title={t('history.actions') || 'Actions'} isFirst={true}>
-                    <GroupedSection items={[
-                        { id: 'delete-last-15', icon: 'clock-outline', iconColor: themeColors.iconStorage, title: t('history.deleteLast15Minutes.title') || 'Delete Last 15 Minutes', subtitle: t('history.deleteLast15Minutes.subtitle') || 'Remove recent history entries', onPress: () => deleteLast15Prompt.open(), disabled: isDeleting || history.length === 0 },
-                        { id: 'clear-all', icon: 'delete-outline', iconColor: themeColors.iconSharing, title: t('history.clearAll.title') || 'Clear All History', subtitle: t('history.clearAll.subtitle') || 'Remove all history entries', onPress: () => clearAllPrompt.open(), disabled: isDeleting || history.length === 0 },
-                    ]} />
-                </Section>
-                <Section title={t('history.recent') || 'Recent History'}>
+                <SettingsListGroup title={t('history.actions') || 'Actions'}>
+                    <SettingsListItem
+                        icon={<SettingsIcon name="clock-outline" color={themeColors.iconStorage} />}
+                        title={t('history.deleteLast15Minutes.title') || 'Delete Last 15 Minutes'}
+                        description={t('history.deleteLast15Minutes.subtitle') || 'Remove recent history entries'}
+                        onPress={() => deleteLast15Prompt.open()}
+                        disabled={isDeleting || history.length === 0}
+                    />
+                    <SettingsListItem
+                        icon={<SettingsIcon name="delete-outline" color={themeColors.iconSharing} />}
+                        title={t('history.clearAll.title') || 'Clear All History'}
+                        description={t('history.clearAll.subtitle') || 'Remove all history entries'}
+                        onPress={() => clearAllPrompt.open()}
+                        disabled={isDeleting || history.length === 0}
+                    />
+                </SettingsListGroup>
+                <SettingsListGroup title={t('history.recent') || 'Recent History'}>
                     {isLoading ? <LoadingState message={t('history.loading') || 'Loading history...'} color={bloomTheme.colors.text} />
                      : history.length === 0 ? <EmptyState message={t('history.empty') || 'No history yet'} textColor={bloomTheme.colors.text} />
-                     : <GroupedSection items={history.map(item => ({ id: item.id, icon: item.type === 'search' ? 'search' : 'globe', iconColor: item.type === 'search' ? themeColors.iconSecurity : themeColors.iconPersonalInfo, title: item.query, subtitle: formatTime(item.timestamp) }))} />}
-                </Section>
+                     : history.map(item => (
+                        <SettingsListItem
+                            key={item.id}
+                            icon={<SettingsIcon name={item.type === 'search' ? 'magnify' : 'earth'} color={item.type === 'search' ? themeColors.iconSecurity : themeColors.iconPersonalInfo} />}
+                            title={item.query}
+                            description={formatTime(item.timestamp)}
+                        />
+                    ))}
+                </SettingsListGroup>
             </ScrollView>
             <Prompt.Basic control={deleteLast15Prompt} title={t('history.deleteLast15Minutes.title') || 'Delete Last 15 Minutes'} description={t('history.deleteLast15Minutes.confirm') || 'Delete last 15 minutes of history?'} onConfirm={handleDeleteLast15Minutes} confirmButtonCta={t('common.actions.delete') || 'Delete'} confirmButtonColor="negative" />
             <Prompt.Basic control={clearAllPrompt} title={t('history.clearAll.title') || 'Clear All History'} description={t('history.clearAll.confirm') || 'Clear all history? This cannot be undone.'} onConfirm={handleClearAll} confirmButtonCta={t('history.clearAll.title') || 'Clear All'} confirmButtonColor="negative" />

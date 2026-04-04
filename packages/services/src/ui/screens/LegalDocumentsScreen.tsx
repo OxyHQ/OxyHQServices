@@ -7,7 +7,9 @@ import {
 } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
 import { toast } from '../../lib/sonner';
-import { Header, Section, GroupedSection, LoadingState } from '../components';
+import { Header, LoadingState } from '../components';
+import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
+import { SettingsIcon } from '../components/SettingsIcon';
 import { useI18n } from '../hooks/useI18n';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { useColorScheme } from '../hooks/useColorScheme';
@@ -121,69 +123,50 @@ const LegalDocumentsScreen: React.FC<BaseScreenProps> = ({
             />
 
             <ScrollView style={styles.content}>
-                <Section title={t('legal.policies') || 'Policies & Guidelines'}  isFirst={true}>
-                    <GroupedSection
-                        items={[
-                            {
-                                id: 'privacy-policy',
-                                icon: 'shield-check',
-                                iconColor: themeColors.iconPersonalInfo,
-                                title: t('legal.privacyPolicy.title') || 'Privacy Policy',
-                                subtitle: t('legal.privacyPolicy.subtitle') || 'How we handle your data',
-                                onPress: handleOpenPolicy('privacy'),
-                            },
-                            {
-                                id: 'terms-of-service',
-                                icon: 'file-document',
-                                iconColor: themeColors.iconSecurity,
-                                title: t('legal.termsOfService.title') || 'Terms of Service',
-                                subtitle: t('legal.termsOfService.subtitle') || 'Terms and conditions of use',
-                                onPress: handleOpenPolicy('terms'),
-                            },
-                            {
-                                id: 'community-guidelines',
-                                icon: 'account-group',
-                                iconColor: themeColors.iconData,
-                                title: t('legal.communityGuidelines.title') || 'Community Guidelines',
-                                subtitle: t('legal.communityGuidelines.subtitle') || 'Rules and expectations for our community',
-                                onPress: handleOpenPolicy('community'),
-                            },
-                            {
-                                id: 'data-retention',
-                                icon: 'clock',
-                                iconColor: themeColors.iconStorage,
-                                title: t('legal.dataRetention.title') || 'Data Retention Policy',
-                                subtitle: t('legal.dataRetention.subtitle') || 'How long we keep your data',
-                                onPress: handleOpenPolicy('dataRetention'),
-                            },
-                            {
-                                id: 'content-moderation',
-                                icon: 'eye',
-                                iconColor: themeColors.iconSharing,
-                                title: t('legal.contentModeration.title') || 'Content Moderation Policy',
-                                subtitle: t('legal.contentModeration.subtitle') || 'How we moderate content',
-                                onPress: handleOpenPolicy('contentModeration'),
-                            },
-                            {
-                                id: 'child-safety',
-                                icon: 'heart',
-                                iconColor: '#FF2D55',
-                                title: t('legal.childSafety.title') || 'Child Safety Policy',
-                                subtitle: t('legal.childSafety.subtitle') || 'Protecting minors on our platform',
-                                onPress: handleOpenPolicy('childSafety'),
-                            },
-                            {
-                                id: 'cookie-policy',
-                                icon: 'cookie',
-                                iconColor: '#8E8E93',
-                                title: t('legal.cookiePolicy.title') || 'Cookie Policy',
-                                subtitle: t('legal.cookiePolicy.subtitle') || 'How we use cookies and similar technologies',
-                                onPress: handleOpenPolicy('cookie'),
-                            },
-                        ]}
-                        
+                <SettingsListGroup title={t('legal.policies') || 'Policies & Guidelines'}>
+                    <SettingsListItem
+                        icon={<SettingsIcon name="shield-check" color={themeColors.iconPersonalInfo} />}
+                        title={t('legal.privacyPolicy.title') || 'Privacy Policy'}
+                        description={t('legal.privacyPolicy.subtitle') || 'How we handle your data'}
+                        onPress={handleOpenPolicy('privacy')}
                     />
-                </Section>
+                    <SettingsListItem
+                        icon={<SettingsIcon name="file-document" color={themeColors.iconSecurity} />}
+                        title={t('legal.termsOfService.title') || 'Terms of Service'}
+                        description={t('legal.termsOfService.subtitle') || 'Terms and conditions of use'}
+                        onPress={handleOpenPolicy('terms')}
+                    />
+                    <SettingsListItem
+                        icon={<SettingsIcon name="account-group" color={themeColors.iconData} />}
+                        title={t('legal.communityGuidelines.title') || 'Community Guidelines'}
+                        description={t('legal.communityGuidelines.subtitle') || 'Rules and expectations for our community'}
+                        onPress={handleOpenPolicy('community')}
+                    />
+                    <SettingsListItem
+                        icon={<SettingsIcon name="clock" color={themeColors.iconStorage} />}
+                        title={t('legal.dataRetention.title') || 'Data Retention Policy'}
+                        description={t('legal.dataRetention.subtitle') || 'How long we keep your data'}
+                        onPress={handleOpenPolicy('dataRetention')}
+                    />
+                    <SettingsListItem
+                        icon={<SettingsIcon name="eye" color={themeColors.iconSharing} />}
+                        title={t('legal.contentModeration.title') || 'Content Moderation Policy'}
+                        description={t('legal.contentModeration.subtitle') || 'How we moderate content'}
+                        onPress={handleOpenPolicy('contentModeration')}
+                    />
+                    <SettingsListItem
+                        icon={<SettingsIcon name="heart" color="#FF2D55" />}
+                        title={t('legal.childSafety.title') || 'Child Safety Policy'}
+                        description={t('legal.childSafety.subtitle') || 'Protecting minors on our platform'}
+                        onPress={handleOpenPolicy('childSafety')}
+                    />
+                    <SettingsListItem
+                        icon={<SettingsIcon name="cookie" color="#8E8E93" />}
+                        title={t('legal.cookiePolicy.title') || 'Cookie Policy'}
+                        description={t('legal.cookiePolicy.subtitle') || 'How we use cookies and similar technologies'}
+                        onPress={handleOpenPolicy('cookie')}
+                    />
+                </SettingsListGroup>
             </ScrollView>
         </View>
     );

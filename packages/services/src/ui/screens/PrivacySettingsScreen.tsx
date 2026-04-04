@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
     View,
     Text,
@@ -8,7 +8,9 @@ import {
 } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
 import { toast } from '../../lib/sonner';
-import { Header, Section, Avatar, SettingRow, LoadingState, EmptyState, GroupedSection } from '../components';
+import { Header, Avatar, LoadingState, EmptyState } from '../components';
+import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
+import { Switch } from '@oxyhq/bloom/switch';
 import { useI18n } from '../hooks/useI18n';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { useSettingToggles } from '../hooks/useSettingToggle';
@@ -197,71 +199,6 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
 
     const bloomTheme = useTheme();
 
-    // Convert blocked users to GroupedSection items
-    const blockedUserItems = useMemo(() => {
-        return blockedUsers.map((blocked) => {
-            const { userId, username, avatar } = extractUserInfo(blocked, 'blockedId');
-            const avatarUri = avatar && oxyServices 
-                ? oxyServices.getFileDownloadUrl(avatar, 'thumb') 
-                : undefined;
-            
-            return {
-                id: userId,
-                title: username,
-                customIcon: (
-                    <Avatar
-                        uri={avatarUri}
-                        name={username}
-                        size={40}
-                    />
-                ),
-                customContent: (
-                    <TouchableOpacity
-                        onPress={() => handleUnblock(userId)}
-                        style={[styles.actionButton, { backgroundColor: bloomTheme.colors.backgroundSecondary }]}
-                    >
-                        <Text style={[styles.actionButtonText, { color: bloomTheme.colors.error }]}>
-                            {t('privacySettings.unblock') || 'Unblock'}
-                        </Text>
-                    </TouchableOpacity>
-                ),
-            };
-        });
-    }, [blockedUsers, oxyServices, bloomTheme, handleUnblock, t]);
-
-    // Convert restricted users to GroupedSection items
-    const restrictedUserItems = useMemo(() => {
-        return restrictedUsers.map((restricted) => {
-            const { userId, username, avatar } = extractUserInfo(restricted, 'restrictedId');
-            const avatarUri = avatar && oxyServices 
-                ? oxyServices.getFileDownloadUrl(avatar, 'thumb') 
-                : undefined;
-            
-            return {
-                id: userId,
-                title: username,
-                subtitle: t('privacySettings.restrictedDescription') || 'Limited interactions',
-                customIcon: (
-                    <Avatar
-                        uri={avatarUri}
-                        name={username}
-                        size={40}
-                    />
-                ),
-                customContent: (
-                    <TouchableOpacity
-                        onPress={() => handleUnrestrict(userId)}
-                        style={[styles.actionButton, { backgroundColor: bloomTheme.colors.backgroundSecondary }]}
-                    >
-                        <Text style={[styles.actionButtonText, { color: bloomTheme.colors.primary }]}>
-                            {t('privacySettings.unrestrict') || 'Unrestrict'}
-                        </Text>
-                    </TouchableOpacity>
-                ),
-            };
-        });
-    }, [restrictedUsers, oxyServices, bloomTheme, handleUnrestrict, t]);
-
     if (isLoading) {
         return (
             <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
@@ -287,183 +224,103 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
 
             <ScrollView style={styles.content}>
                 {/* Account Privacy */}
-                <Section title={t('privacySettings.sections.account') || 'ACCOUNT PRIVACY'}  isFirst={true}>
-                    <SettingRow
+                <SettingsListGroup title={t('privacySettings.sections.account') || 'ACCOUNT PRIVACY'}>
+                    <SettingsListItem
                         title={t('privacySettings.isPrivateAccount') || 'Private Account'}
                         description={t('privacySettings.isPrivateAccountDesc') || 'Only approved followers can see your posts'}
-                        value={settings.isPrivateAccount}
-                        onValueChange={() => toggle('isPrivateAccount')}
-                        disabled={isSaving}
-                        textColor={bloomTheme.colors.text}
-                        mutedTextColor={bloomTheme.colors.textSecondary}
-                        borderColor={bloomTheme.colors.border}
+                        rightElement={<Switch value={settings.isPrivateAccount} onValueChange={() => toggle('isPrivateAccount')} disabled={isSaving} />}
                     />
-                    <SettingRow
+                    <SettingsListItem
                         title={t('privacySettings.profileVisibility') || 'Profile Visibility'}
                         description={t('privacySettings.profileVisibilityDesc') || 'Control who can view your profile'}
-                        value={settings.profileVisibility}
-                        onValueChange={() => toggle('profileVisibility')}
-                        disabled={isSaving}
-                        textColor={bloomTheme.colors.text}
-                        mutedTextColor={bloomTheme.colors.textSecondary}
-                        borderColor={bloomTheme.colors.border}
+                        rightElement={<Switch value={settings.profileVisibility} onValueChange={() => toggle('profileVisibility')} disabled={isSaving} />}
                     />
-                    <SettingRow
+                    <SettingsListItem
                         title={t('privacySettings.hideOnlineStatus') || 'Hide Online Status'}
                         description={t('privacySettings.hideOnlineStatusDesc') || 'Don\'t show when you\'re online'}
-                        value={settings.hideOnlineStatus}
-                        onValueChange={() => toggle('hideOnlineStatus')}
-                        disabled={isSaving}
-                        textColor={bloomTheme.colors.text}
-                        mutedTextColor={bloomTheme.colors.textSecondary}
-                        borderColor={bloomTheme.colors.border}
+                        rightElement={<Switch value={settings.hideOnlineStatus} onValueChange={() => toggle('hideOnlineStatus')} disabled={isSaving} />}
                     />
-                    <SettingRow
+                    <SettingsListItem
                         title={t('privacySettings.hideLastSeen') || 'Hide Last Seen'}
                         description={t('privacySettings.hideLastSeenDesc') || 'Don\'t show when you were last active'}
-                        value={settings.hideLastSeen}
-                        onValueChange={() => toggle('hideLastSeen')}
-                        disabled={isSaving}
-                        textColor={bloomTheme.colors.text}
-                        mutedTextColor={bloomTheme.colors.textSecondary}
-                        borderColor={bloomTheme.colors.border}
+                        rightElement={<Switch value={settings.hideLastSeen} onValueChange={() => toggle('hideLastSeen')} disabled={isSaving} />}
                     />
-                </Section>
+                </SettingsListGroup>
 
                 {/* Interactions */}
-                <Section title={t('privacySettings.sections.interactions') || 'INTERACTIONS'} >
-                    <SettingRow
+                <SettingsListGroup title={t('privacySettings.sections.interactions') || 'INTERACTIONS'}>
+                    <SettingsListItem
                         title={t('privacySettings.allowTagging') || 'Allow Tagging'}
                         description={t('privacySettings.allowTaggingDesc') || 'Let others tag you in posts'}
-                        value={settings.allowTagging}
-                        onValueChange={() => toggle('allowTagging')}
-                        disabled={isSaving}
-                        textColor={bloomTheme.colors.text}
-                        mutedTextColor={bloomTheme.colors.textSecondary}
-                        borderColor={bloomTheme.colors.border}
+                        rightElement={<Switch value={settings.allowTagging} onValueChange={() => toggle('allowTagging')} disabled={isSaving} />}
                     />
-                    <SettingRow
+                    <SettingsListItem
                         title={t('privacySettings.allowMentions') || 'Allow Mentions'}
                         description={t('privacySettings.allowMentionsDesc') || 'Let others mention you'}
-                        value={settings.allowMentions}
-                        onValueChange={() => toggle('allowMentions')}
-                        disabled={isSaving}
-                        textColor={bloomTheme.colors.text}
-                        mutedTextColor={bloomTheme.colors.textSecondary}
-                        borderColor={bloomTheme.colors.border}
+                        rightElement={<Switch value={settings.allowMentions} onValueChange={() => toggle('allowMentions')} disabled={isSaving} />}
                     />
-                    <SettingRow
+                    <SettingsListItem
                         title={t('privacySettings.allowDirectMessages') || 'Allow Direct Messages'}
                         description={t('privacySettings.allowDirectMessagesDesc') || 'Let others send you direct messages'}
-                        value={settings.allowDirectMessages}
-                        onValueChange={() => toggle('allowDirectMessages')}
-                        disabled={isSaving}
-                        textColor={bloomTheme.colors.text}
-                        mutedTextColor={bloomTheme.colors.textSecondary}
-                        borderColor={bloomTheme.colors.border}
+                        rightElement={<Switch value={settings.allowDirectMessages} onValueChange={() => toggle('allowDirectMessages')} disabled={isSaving} />}
                     />
-                    <SettingRow
+                    <SettingsListItem
                         title={t('privacySettings.hideReadReceipts') || 'Hide Read Receipts'}
                         description={t('privacySettings.hideReadReceiptsDesc') || 'Don\'t show read receipts in messages'}
-                        value={settings.hideReadReceipts}
-                        onValueChange={() => toggle('hideReadReceipts')}
-                        disabled={isSaving}
-                        textColor={bloomTheme.colors.text}
-                        mutedTextColor={bloomTheme.colors.textSecondary}
-                        borderColor={bloomTheme.colors.border}
+                        rightElement={<Switch value={settings.hideReadReceipts} onValueChange={() => toggle('hideReadReceipts')} disabled={isSaving} />}
                     />
-                </Section>
+                </SettingsListGroup>
 
                 {/* Activity & Data */}
-                <Section title={t('privacySettings.sections.activity') || 'ACTIVITY & DATA'} >
-                    <SettingRow
+                <SettingsListGroup title={t('privacySettings.sections.activity') || 'ACTIVITY & DATA'}>
+                    <SettingsListItem
                         title={t('privacySettings.showActivity') || 'Show Activity Status'}
                         description={t('privacySettings.showActivityDesc') || 'Display your activity on your profile'}
-                        value={settings.showActivity}
-                        onValueChange={() => toggle('showActivity')}
-                        disabled={isSaving}
-                        textColor={bloomTheme.colors.text}
-                        mutedTextColor={bloomTheme.colors.textSecondary}
-                        borderColor={bloomTheme.colors.border}
+                        rightElement={<Switch value={settings.showActivity} onValueChange={() => toggle('showActivity')} disabled={isSaving} />}
                     />
-                    <SettingRow
+                    <SettingsListItem
                         title={t('privacySettings.dataSharing') || 'Data Sharing'}
                         description={t('privacySettings.dataSharingDesc') || 'Allow sharing data for personalization'}
-                        value={settings.dataSharing}
-                        onValueChange={() => toggle('dataSharing')}
-                        disabled={isSaving}
-                        textColor={bloomTheme.colors.text}
-                        mutedTextColor={bloomTheme.colors.textSecondary}
-                        borderColor={bloomTheme.colors.border}
+                        rightElement={<Switch value={settings.dataSharing} onValueChange={() => toggle('dataSharing')} disabled={isSaving} />}
                     />
-                    <SettingRow
+                    <SettingsListItem
                         title={t('privacySettings.locationSharing') || 'Location Sharing'}
                         description={t('privacySettings.locationSharingDesc') || 'Share your location'}
-                        value={settings.locationSharing}
-                        onValueChange={() => toggle('locationSharing')}
-                        disabled={isSaving}
-                        textColor={bloomTheme.colors.text}
-                        mutedTextColor={bloomTheme.colors.textSecondary}
-                        borderColor={bloomTheme.colors.border}
+                        rightElement={<Switch value={settings.locationSharing} onValueChange={() => toggle('locationSharing')} disabled={isSaving} />}
                     />
-                    <SettingRow
+                    <SettingsListItem
                         title={t('privacySettings.analyticsSharing') || 'Analytics Sharing'}
                         description={t('privacySettings.analyticsSharingDesc') || 'Allow analytics data collection'}
-                        value={settings.analyticsSharing}
-                        onValueChange={() => toggle('analyticsSharing')}
-                        disabled={isSaving}
-                        textColor={bloomTheme.colors.text}
-                        mutedTextColor={bloomTheme.colors.textSecondary}
-                        borderColor={bloomTheme.colors.border}
+                        rightElement={<Switch value={settings.analyticsSharing} onValueChange={() => toggle('analyticsSharing')} disabled={isSaving} />}
                     />
-                </Section>
+                </SettingsListGroup>
 
                 {/* Content & Safety */}
-                <Section title={t('privacySettings.sections.content') || 'CONTENT & SAFETY'} >
-                    <SettingRow
+                <SettingsListGroup title={t('privacySettings.sections.content') || 'CONTENT & SAFETY'}>
+                    <SettingsListItem
                         title={t('privacySettings.sensitiveContent') || 'Show Sensitive Content'}
                         description={t('privacySettings.sensitiveContentDesc') || 'Allow sensitive or explicit content'}
-                        value={settings.sensitiveContent}
-                        onValueChange={() => toggle('sensitiveContent')}
-                        disabled={isSaving}
-                        textColor={bloomTheme.colors.text}
-                        mutedTextColor={bloomTheme.colors.textSecondary}
-                        borderColor={bloomTheme.colors.border}
+                        rightElement={<Switch value={settings.sensitiveContent} onValueChange={() => toggle('sensitiveContent')} disabled={isSaving} />}
                     />
-                    <SettingRow
+                    <SettingsListItem
                         title={t('privacySettings.autoFilter') || 'Auto Filter'}
                         description={t('privacySettings.autoFilterDesc') || 'Automatically filter inappropriate content'}
-                        value={settings.autoFilter}
-                        onValueChange={() => toggle('autoFilter')}
-                        disabled={isSaving}
-                        textColor={bloomTheme.colors.text}
-                        mutedTextColor={bloomTheme.colors.textSecondary}
-                        borderColor={bloomTheme.colors.border}
+                        rightElement={<Switch value={settings.autoFilter} onValueChange={() => toggle('autoFilter')} disabled={isSaving} />}
                     />
-                    <SettingRow
+                    <SettingsListItem
                         title={t('privacySettings.muteKeywords') || 'Mute Keywords'}
                         description={t('privacySettings.muteKeywordsDesc') || 'Hide posts containing muted keywords'}
-                        value={settings.muteKeywords}
-                        onValueChange={() => toggle('muteKeywords')}
-                        disabled={isSaving}
-                        textColor={bloomTheme.colors.text}
-                        mutedTextColor={bloomTheme.colors.textSecondary}
-                        borderColor={bloomTheme.colors.border}
+                        rightElement={<Switch value={settings.muteKeywords} onValueChange={() => toggle('muteKeywords')} disabled={isSaving} />}
                     />
-                    <SettingRow
+                    <SettingsListItem
                         title={t('privacySettings.blockScreenshots') || 'Block Screenshots'}
                         description={t('privacySettings.blockScreenshotsDesc') || 'Prevent screenshots of your content'}
-                        value={settings.blockScreenshots}
-                        onValueChange={() => toggle('blockScreenshots')}
-                        disabled={isSaving}
-                        textColor={bloomTheme.colors.text}
-                        mutedTextColor={bloomTheme.colors.textSecondary}
-                        borderColor={bloomTheme.colors.border}
+                        rightElement={<Switch value={settings.blockScreenshots} onValueChange={() => toggle('blockScreenshots')} disabled={isSaving} />}
                     />
-                </Section>
+                </SettingsListGroup>
 
                 {/* Blocked Users */}
-                <Section title={t('privacySettings.sections.blockedUsers') || 'BLOCKED USERS'}>
+                <SettingsListGroup title={t('privacySettings.sections.blockedUsers') || 'BLOCKED USERS'}>
                     {isLoadingUsers ? (
                         <LoadingState color={bloomTheme.colors.text} size="small" />
                     ) : blockedUsers.length === 0 ? (
@@ -472,12 +329,27 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                             textColor={bloomTheme.colors.textSecondary}
                         />
                     ) : (
-                        <GroupedSection items={blockedUserItems} />
+                        blockedUsers.map((blocked) => {
+                            const { userId, username, avatar } = extractUserInfo(blocked, 'blockedId');
+                            const avatarUri = avatar && oxyServices ? oxyServices.getFileDownloadUrl(avatar, 'thumb') : undefined;
+                            return (
+                                <SettingsListItem
+                                    key={userId}
+                                    icon={<Avatar uri={avatarUri} name={username} size={20} />}
+                                    title={username}
+                                    rightElement={
+                                        <TouchableOpacity onPress={() => handleUnblock(userId)} style={[styles.actionButton, { backgroundColor: bloomTheme.colors.backgroundSecondary }]}>
+                                            <Text style={[styles.actionButtonText, { color: bloomTheme.colors.error }]}>{t('privacySettings.unblock') || 'Unblock'}</Text>
+                                        </TouchableOpacity>
+                                    }
+                                />
+                            );
+                        })
                     )}
-                </Section>
+                </SettingsListGroup>
 
                 {/* Restricted Users */}
-                <Section title={t('privacySettings.sections.restrictedUsers') || 'RESTRICTED USERS'}>
+                <SettingsListGroup title={t('privacySettings.sections.restrictedUsers') || 'RESTRICTED USERS'}>
                     {isLoadingUsers ? (
                         <LoadingState color={bloomTheme.colors.text} size="small" />
                     ) : restrictedUsers.length === 0 ? (
@@ -486,9 +358,25 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                             textColor={bloomTheme.colors.textSecondary}
                         />
                     ) : (
-                        <GroupedSection items={restrictedUserItems} />
+                        restrictedUsers.map((restricted) => {
+                            const { userId, username, avatar } = extractUserInfo(restricted, 'restrictedId');
+                            const avatarUri = avatar && oxyServices ? oxyServices.getFileDownloadUrl(avatar, 'thumb') : undefined;
+                            return (
+                                <SettingsListItem
+                                    key={userId}
+                                    icon={<Avatar uri={avatarUri} name={username} size={20} />}
+                                    title={username}
+                                    description={t('privacySettings.restrictedDescription') || 'Limited interactions'}
+                                    rightElement={
+                                        <TouchableOpacity onPress={() => handleUnrestrict(userId)} style={[styles.actionButton, { backgroundColor: bloomTheme.colors.backgroundSecondary }]}>
+                                            <Text style={[styles.actionButtonText, { color: bloomTheme.colors.primary }]}>{t('privacySettings.unrestrict') || 'Unrestrict'}</Text>
+                                        </TouchableOpacity>
+                                    }
+                                />
+                            );
+                        })
                     )}
-                </Section>
+                </SettingsListGroup>
             </ScrollView>
         </View>
     );

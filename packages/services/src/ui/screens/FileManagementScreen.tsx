@@ -37,7 +37,7 @@ import type { FileMetadata } from '@oxyhq/core';
 import { useFileStore, useFiles, useUploading as useUploadingStore, useUploadAggregateProgress, useDeleting as useDeletingStore } from '../stores/fileStore';
 import Header from '../components/Header';
 import JustifiedPhotoGrid from '../components/photogrid/JustifiedPhotoGrid';
-import { GroupedSection } from '../components';
+import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { useOxy } from '../context/OxyContext';
 import { useI18n } from '../hooks/useI18n';
@@ -1360,8 +1360,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         );
     };
 
-    // GroupedSection-based file items (for 'all' view) replacing legacy flat list look
-    // biome-ignore lint/suspicious/noExplicitAny: GroupedSection items have dynamic props
+    // SettingsListItem-based file items (for 'all' view)
+    // biome-ignore lint/suspicious/noExplicitAny: file items have dynamic props
     const groupedFileItems: any[] = useMemo(() => {
         // filteredFiles is already sorted, so just use it directly
         const sortedFiles = filteredFiles;
@@ -1378,11 +1378,11 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             const hasPreview = isImage || isPDF || isVideo;
             const isSelected = selectedIds.has(file.id);
 
-            // Create customIcon for preview thumbnails (36x36 to match GroupedItem iconContainer)
-            let customIcon: React.ReactNode | undefined;
+            // Create icon for preview thumbnails (36x36)
+            let fileIcon: React.ReactNode | undefined;
             if (hasPreview) {
                 if (isImage) {
-                    customIcon = (
+                    fileIcon = (
                         <View style={{ width: 36, height: 36, borderRadius: 18, overflow: 'hidden' }}>
                             <ExpoImage
                                 source={{ uri: getSafeDownloadUrlCallback(file, 'thumb') }}
@@ -1398,7 +1398,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         </View>
                     );
                 } else if (isVideo) {
-                    customIcon = (
+                    fileIcon = (
                         <View style={{ width: 36, height: 36, borderRadius: 18, overflow: 'hidden', backgroundColor: '#000000', position: 'relative' }}>
                             <ExpoImage
                                 source={{ uri: getSafeDownloadUrlCallback(file, 'thumb') }}
@@ -1417,7 +1417,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         </View>
                     );
                 } else if (isPDF) {
-                    customIcon = (
+                    fileIcon = (
                         <View style={{ width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FF6B6B20' }}>
                             <Ionicons name="document" size={20} color={colors.primary} />
                         </View>
@@ -1427,12 +1427,9 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
             return {
                 id: file.id,
-                customIcon: customIcon,
-                icon: !hasPreview ? getFileIcon(file.contentType) : undefined,
-                iconColor: colors.primary,
+                icon: fileIcon ?? (!hasPreview ? <Ionicons name={getFileIcon(file.contentType)} size={20} color={colors.primary} /> : undefined),
                 title: file.filename,
-                subtitle: `${formatFileSize(file.length)} • ${new Date(file.uploadDate).toLocaleDateString()}`,
-                theme: theme as 'light' | 'dark',
+                description: `${formatFileSize(file.length)} • ${new Date(file.uploadDate).toLocaleDateString()}`,
                 onPress: () => {
                     // Support selection in regular mode with long press or if already selecting
                     if (!selectMode && selectedIds.size > 0) {
@@ -1442,20 +1439,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         handleFileOpen(file);
                     }
                 },
-                onLongPress: !selectMode ? () => {
-                    // Enable selection mode on long press
-                    if (selectedIds.size === 0) {
-                        setSelectedIds(new Set([file.id]));
-                    } else {
-                        toggleSelect(file);
-                    }
-                } : undefined,
-                showChevron: false,
-                dense: true,
-                multiRow: !!file.metadata?.description,
-                selected: (selectMode || selectedIds.size > 0) && isSelected,
                 // Hide action buttons when selecting (in selectMode or bulk operations mode)
-                customContent: (!selectMode && selectedIds.size === 0) ? (
+                rightElement: (!selectMode && selectedIds.size === 0) ? (
                     <View style={fileManagementStyles.groupedActions}>
                         {(isImage || isVideo || file.contentType.includes('pdf')) && (
                             <TouchableOpacity
@@ -1483,11 +1468,6 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                             )}
                         </TouchableOpacity>
                     </View>
-                ) : undefined,
-                customContentBelow: file.metadata?.description ? (
-                    <Text style={[fileManagementStyles.groupedDescription, { color: bloomTheme.isDark ? '#AAAAAA' : '#666666' }]} numberOfLines={2}>
-                        {file.metadata.description}
-                    </Text>
                 ) : undefined,
             };
         });
@@ -1836,7 +1816,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             );
         };
 
-        // Skeleton file item matching GroupedSection structure
+        // Skeleton file item matching SettingsListItem structure
         const SkeletonFileItem = ({ index }: { index: number }) => (
             <View
                 style={[
@@ -1908,7 +1888,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     ))}
                 </View>
 
-                {/* File List Skeleton - Matching GroupedSection */}
+                {/* File List Skeleton - Matching SettingsListItem */}
                 <ScrollView
                     style={fileManagementStyles.scrollView}
                     contentContainerStyle={fileManagementStyles.scrollContainer}
@@ -2240,7 +2220,19 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         </View>
                     ) : filteredFiles.length === 0 ? renderEmptyState() : (
                         <>
-                            <GroupedSection items={groupedFileItems} />
+                            <SettingsListGroup>
+                                {groupedFileItems.map(item => (
+                                    <SettingsListItem
+                                        key={item.id}
+                                        icon={item.icon}
+                                        title={item.title}
+                                        description={item.description}
+                                        onPress={item.onPress}
+                                        showChevron={false}
+                                        rightElement={item.rightElement}
+                                    />
+                                ))}
+                            </SettingsListGroup>
                             {paging.loadingMore && (
                                 <View style={fileManagementStyles.loadingMoreBar}>
                                     <ActivityIndicator size="small" color={colors.primary} />

@@ -1,8 +1,9 @@
 import type React from 'react';
 import { useMemo } from 'react';
 import { View, Text, Animated } from 'react-native';
-import { GroupedSection } from '../index';
-import GroupedPillButtons from '../internal/GroupedPillButtons';
+import { Ionicons } from '@expo/vector-icons';
+import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
+import { Button } from '@oxyhq/bloom/button';
 import { FAIRWalletIcon } from '../icon';
 import { createPaymentStyles } from './paymentStyles';
 import type { PaymentMethod, PaymentColors, PaymentStepAnimations } from './types';
@@ -49,42 +50,39 @@ const PaymentMethodStep: React.FC<PaymentMethodStepProps> = ({
             <View style={styles.section}>
                 <Text style={styles.sectionTitle}>{t('payment.method.title')}</Text>
 
-                <GroupedSection
-                    items={availablePaymentMethods.map(method => ({
-                        id: method.key,
-                        icon: method.key === 'faircoin' ? undefined : method.icon,
-                        iconColor: method.key === 'card' ? '#007AFF' :
+                <SettingsListGroup>
+                    {availablePaymentMethods.map(method => {
+                        const iconColor = method.key === 'card' ? '#007AFF' :
                             method.key === 'oxy' ? '#32D74B' :
-                                method.key === 'faircoin' ? '#9ffb50' : colors.primary,
-                        title: t(`payment.methods.${method.key}.label`),
-                        subtitle: t(`payment.methods.${method.key}.description`),
-                        onPress: () => onSelectMethod(method.key),
-                        selected: selectedMethod === method.key,
-                        showChevron: false,
-                        customIcon: method.key === 'faircoin' ? (
-                            <FAIRWalletIcon size={20} />
-                        ) : undefined,
-                    }))}
-                />
+                                method.key === 'faircoin' ? '#9ffb50' : colors.primary;
+                        const iconElement = method.key === 'faircoin'
+                            ? <FAIRWalletIcon size={20} />
+                            : <Ionicons name={method.icon} size={20} color={iconColor} />;
+                        return (
+                            <SettingsListItem
+                                key={method.key}
+                                icon={iconElement}
+                                title={t(`payment.methods.${method.key}.label`)}
+                                description={t(`payment.methods.${method.key}.description`)}
+                                onPress={() => onSelectMethod(method.key)}
+                                showChevron={false}
+                                rightElement={selectedMethod === method.key ? (
+                                    <Ionicons name="checkmark-circle" size={20} color={colors.primary} />
+                                ) : undefined}
+                            />
+                        );
+                    })}
+                </SettingsListGroup>
             </View>
 
-            <GroupedPillButtons
-                buttons={[
-                    {
-                        text: t('payment.actions.back'),
-                        onPress: onBack,
-                        icon: 'arrow-back',
-                        variant: 'transparent',
-                    },
-                    {
-                        text: t('payment.actions.continue'),
-                        onPress: onNext,
-                        icon: 'arrow-forward',
-                        variant: 'primary',
-                    },
-                ]}
-                colors={colors}
-            />
+            <View style={{ flexDirection: 'row', gap: 8, justifyContent: 'flex-end' }}>
+                <Button variant="secondary" onPress={onBack} size="small" icon={<Ionicons name="arrow-back" size={16} />}>
+                    {t('payment.actions.back')}
+                </Button>
+                <Button variant="primary" onPress={onNext} size="small" icon={<Ionicons name="arrow-forward" size={16} />} iconPosition="right">
+                    {t('payment.actions.continue')}
+                </Button>
+            </View>
         </Animated.View>
     );
 };

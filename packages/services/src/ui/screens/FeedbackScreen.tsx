@@ -17,7 +17,8 @@ import { normalizeTheme } from '../utils/themeUtils';
 import { Ionicons } from '@expo/vector-icons';
 import { toast } from '../../lib/sonner';
 import { packageInfo } from '@oxyhq/core';
-import { GroupedSection } from '../components';
+import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
+import { SettingsIcon } from '../components/SettingsIcon';
 import { useI18n } from '../hooks/useI18n';
 import { useOxy } from '../context/OxyContext';
 
@@ -143,40 +144,20 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
         }
     }, [feedbackData, user, isTypeStepValid, isDetailsStepValid, isContactStepValid, resetForm, setFeedbackState, t]);
 
-    const feedbackTypeItems = useMemo(() => FEEDBACK_TYPES.map(type => ({
-        id: type.id,
-        icon: type.icon,
-        iconColor: type.color,
-        title: type.label,
-        subtitle: type.description,
-        onPress: () => { updateField('type', type.id); updateField('category', ''); },
-        selected: feedbackData.type === type.id,
-        showChevron: false,
-        multiRow: true,
-        dense: true,
-    })), [feedbackData.type, updateField]);
+    const feedbackTypeData = useMemo(() => FEEDBACK_TYPES.map(type => ({
+        ...type,
+        isSelected: feedbackData.type === type.id,
+    })), [feedbackData.type]);
 
-    const categoryItems = useMemo(() => (feedbackData.type ? (CATEGORIES[feedbackData.type] || []).map(cat => ({
-        id: cat,
-        icon: feedbackData.category === cat ? 'check-circle' : 'ellipse-outline',
-        iconColor: feedbackData.category === cat ? colors.primary : colors.secondaryText,
-        title: cat,
-        onPress: () => updateField('category', cat),
-        selected: feedbackData.category === cat,
-        showChevron: false,
-        dense: true,
-    })) : []), [feedbackData.type, feedbackData.category, colors.primary, colors.secondaryText, updateField]);
+    const categoryData = useMemo(() => (feedbackData.type ? (CATEGORIES[feedbackData.type] || []).map(cat => ({
+        name: cat,
+        isSelected: feedbackData.category === cat,
+    })) : []), [feedbackData.type, feedbackData.category]);
 
-    const priorityItems = useMemo(() => PRIORITY_LEVELS.map(p => ({
-        id: p.id,
-        icon: p.icon,
-        iconColor: p.color,
-        title: p.label,
-        onPress: () => updateField('priority', p.id),
-        selected: feedbackData.priority === p.id,
-        showChevron: false,
-        dense: true,
-    })), [feedbackData.priority, updateField]);
+    const priorityData = useMemo(() => PRIORITY_LEVELS.map(p => ({
+        ...p,
+        isSelected: feedbackData.priority === p.id,
+    })), [feedbackData.priority]);
 
     const renderTypeStep = () => (
         <Animated.View style={[styles.stepContainer, { opacity: fadeAnim, transform: [{ translateX: slideAnim }] }]}>
@@ -189,7 +170,18 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
                 </Text>
             </View>
             <View style={styles.fullBleed}>
-                <GroupedSection items={feedbackTypeItems} />
+                <SettingsListGroup>
+                    {feedbackTypeData.map(type => (
+                        <SettingsListItem
+                            key={type.id}
+                            icon={<SettingsIcon name={type.icon} color={type.color} />}
+                            title={type.label}
+                            description={type.description}
+                            onPress={() => { updateField('type', type.id); updateField('category', ''); }}
+                            showChevron={false}
+                        />
+                    ))}
+                </SettingsListGroup>
             </View>
 
             {feedbackData.type && (
@@ -198,7 +190,17 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
                         {t('feedback.category.label') || 'Category'}
                     </Text>
                     <View style={styles.fullBleed}>
-                        <GroupedSection items={categoryItems} />
+                        <SettingsListGroup>
+                            {categoryData.map(cat => (
+                                <SettingsListItem
+                                    key={cat.name}
+                                    icon={<SettingsIcon name={cat.isSelected ? 'check-circle' : 'ellipse-outline'} color={cat.isSelected ? colors.primary : colors.secondaryText} />}
+                                    title={cat.name}
+                                    onPress={() => updateField('category', cat.name)}
+                                    showChevron={false}
+                                />
+                            ))}
+                        </SettingsListGroup>
                     </View>
                 </View>
             )}
@@ -274,7 +276,17 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
                     {t('feedback.priority.label') || 'Priority Level'}
                 </Text>
                 <View style={styles.fullBleed}>
-                    <GroupedSection items={priorityItems} />
+                    <SettingsListGroup>
+                        {priorityData.map(p => (
+                            <SettingsListItem
+                                key={p.id}
+                                icon={<SettingsIcon name={p.icon} color={p.color} />}
+                                title={p.label}
+                                onPress={() => updateField('priority', p.id)}
+                                showChevron={false}
+                            />
+                        ))}
+                    </SettingsListGroup>
                 </View>
             </View>
 

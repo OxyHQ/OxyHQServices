@@ -2,7 +2,7 @@ import type React from 'react';
 import { useMemo } from 'react';
 import { View, Text, Animated, TouchableOpacity, Clipboard, Linking } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import GroupedPillButtons from '../internal/GroupedPillButtons';
+import { Button } from '@oxyhq/bloom/button';
 import TextField from '../TextField';
 import { FAIRWalletIcon } from '../icon';
 import { createPaymentStyles } from './paymentStyles';
@@ -200,24 +200,21 @@ const PaymentDetailsStep: React.FC<PaymentDetailsStepProps> = ({
                 )}
             </View>
 
-            <GroupedPillButtons
-                buttons={[
-                    {
-                        text: t('payment.actions.back'),
-                        onPress: onBack,
-                        icon: 'arrow-back',
-                        variant: 'transparent',
-                    },
-                    {
-                        text: t('payment.actions.continue'),
-                        onPress: onNext,
-                        icon: 'arrow-forward',
-                        variant: 'primary',
-                        disabled: paymentMethod === 'card' && !isCardValid,
-                    },
-                ]}
-                colors={colors}
-            />
+            <View style={{ flexDirection: 'row', gap: 8, justifyContent: 'flex-end' }}>
+                <Button variant="secondary" onPress={onBack} size="small" icon={<Ionicons name="arrow-back" size={16} />}>
+                    {t('payment.actions.back')}
+                </Button>
+                <Button
+                    variant="primary"
+                    onPress={onNext}
+                    size="small"
+                    icon={<Ionicons name="arrow-forward" size={16} />}
+                    iconPosition="right"
+                    disabled={paymentMethod === 'card' && !isCardValid}
+                >
+                    {t('payment.actions.continue')}
+                </Button>
+            </View>
         </Animated.View>
     );
 };

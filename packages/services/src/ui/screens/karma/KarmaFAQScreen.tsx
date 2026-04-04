@@ -2,7 +2,8 @@ import React, { useState, useMemo, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, Platform, TextInput, LayoutAnimation } from 'react-native';
 import type { BaseScreenProps } from '../../types/navigation';
 import { Ionicons } from '@expo/vector-icons';
-import { Header, GroupedItem } from '../../components';
+import { Header } from '../../components';
+import { SettingsListItem } from '@oxyhq/bloom/settings-list';
 import { useI18n } from '../../hooks/useI18n';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { normalizeColorScheme } from '../../utils/themeUtils';
@@ -86,18 +87,15 @@ const KarmaFAQScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
                     <View style={styles.groupedSectionContainer}>
                         {filteredFaqs.map((faq, idx) => {
                             const isExpanded = expanded === faq.id;
-                            const isFirst = idx === 0;
                             const isLast = idx === filteredFaqs.length - 1;
 
                             return (
                                 <View key={faq.id} style={[styles.faqItemWrapper, { marginBottom: idx < filteredFaqs.length - 1 ? 4 : 0 }]}>
-                                    <GroupedItem
+                                    <SettingsListItem
                                         title={faq.q}
                                         onPress={() => handleToggle(faq.id)}
-                                        isFirst={isFirst}
-                                        isLast={isLast && !isExpanded}
                                         showChevron={false}
-                                        customContent={
+                                        rightElement={
                                             <Ionicons
                                                 name={isExpanded ? 'chevron-up' : 'chevron-down'}
                                                 size={20}

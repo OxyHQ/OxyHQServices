@@ -14,13 +14,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { BaseScreenProps } from '../types/navigation';
 import OxyLogo from '../components/OxyLogo';
 import Avatar from '../components/Avatar';
-import OxyIcon from '../components/icon/OxyIcon';
 import { fontFamilies } from '../styles/fonts';
 import { toast } from '../../lib/sonner';
 import { Ionicons } from '@expo/vector-icons';
 import * as Prompt from '@oxyhq/bloom/prompt';
 import { usePromptControl } from '@oxyhq/bloom/prompt';
-import { Section, GroupedSection, GroupedItem } from '../components';
 import { SettingsIcon } from '../components/SettingsIcon';
 import { useI18n } from '../hooks/useI18n';
 import { useTheme } from '@oxyhq/bloom/theme';
@@ -365,78 +363,59 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                     ) : null}
                 </SettingsListGroup>
 
-                {/* Additional Accounts - kept with GroupedSection due to custom avatar content */}
+                {/* Additional Accounts */}
                 {showMoreAccounts && (
-                    <Section title={`${t('accountOverview.sections.additionalAccounts') || 'Additional Accounts'}${additionalAccountsData.length > 0 ? ` (${additionalAccountsData.length})` : ''}`} >
+                    <SettingsListGroup title={`${t('accountOverview.sections.additionalAccounts') || 'Additional Accounts'}${additionalAccountsData.length > 0 ? ` (${additionalAccountsData.length})` : ''}`}>
                         {loadingAdditionalAccounts ? (
-                            <GroupedSection
-                                items={[
-                                    {
-                                        id: 'loading-accounts',
-                                        icon: 'sync',
-                                        iconColor: baseThemeColors.iconSecurity,
-                                        title: t('accountOverview.loadingAdditional.title') || 'Loading accounts...',
-                                        subtitle: t('accountOverview.loadingAdditional.subtitle') || 'Please wait while we load your additional accounts',
-                                        customContent: (
-                                            <View style={styles.loadingContainer}>
-                                                <ActivityIndicator size="small" color={baseThemeColors.iconSecurity} />
-                                                <Text style={styles.loadingText}>{t('accountOverview.loadingAdditional.title') || 'Loading accounts...'}</Text>
-                                            </View>
-                                        ),
-                                    },
-                                ]}
-
+                            <SettingsListItem
+                                icon={<SettingsIcon name="sync" color={baseThemeColors.iconSecurity} />}
+                                title={t('accountOverview.loadingAdditional.title') || 'Loading accounts...'}
+                                description={t('accountOverview.loadingAdditional.subtitle') || 'Please wait while we load your additional accounts'}
+                                rightElement={
+                                    <View style={styles.loadingContainer}>
+                                        <ActivityIndicator size="small" color={baseThemeColors.iconSecurity} />
+                                    </View>
+                                }
+                                showChevron={false}
                             />
                         ) : additionalAccountsData.length > 0 ? (
-                            <GroupedSection
-                                items={additionalAccountsData.map((account, index) => ({
-                                    id: `account-${account.id}`,
-                                    icon: 'account',
-                                    iconColor: baseThemeColors.iconData,
-                                    title: typeof account.name === 'object'
+                            additionalAccountsData.map((account) => (
+                                <SettingsListItem
+                                    key={`account-${account.id}`}
+                                    icon={
+                                        <View style={styles.userIcon}>
+                                            {account.avatar ? (
+                                                <Image
+                                                    source={{ uri: oxyServices.getFileDownloadUrl(account.avatar, 'thumb') }}
+                                                    style={styles.accountAvatarImage}
+                                                />
+                                            ) : (
+                                                <View style={styles.accountAvatarFallback}>
+                                                    <Text style={styles.accountAvatarText}>
+                                                        {account.username?.charAt(0).toUpperCase() || '?'}
+                                                    </Text>
+                                                </View>
+                                            )}
+                                        </View>
+                                    }
+                                    title={typeof account.name === 'object'
                                         ? account.name?.full || account.name?.first || account.username
-                                        : account.name || account.username,
-                                    subtitle: account.email || account.username,
-                                    onPress: () => {
+                                        : account.name || account.username}
+                                    description={account.email || account.username}
+                                    onPress={() => {
                                         toast.info(t('accountOverview.items.accountSwitcher.switchPrompt', { username: account.username }) || `Switch to ${account.username}?`);
-                                    },
-                                    customContent: (
-                                        <>
-                                            <View style={styles.userIcon}>
-                                                {account.avatar ? (
-                                                    <Image
-                                                        source={{ uri: oxyServices.getFileDownloadUrl(account.avatar, 'thumb') }}
-                                                        style={styles.accountAvatarImage}
-                                                    />
-                                                ) : (
-                                                    <View style={styles.accountAvatarFallback}>
-                                                        <Text style={styles.accountAvatarText}>
-                                                            {account.username?.charAt(0).toUpperCase() || '?'}
-                                                        </Text>
-                                                    </View>
-                                                )}
-                                            </View>
-                                            <OxyIcon name="chevron-forward" size={16} color="#ccc" />
-                                        </>
-                                    ),
-                                }))}
-
-                            />
+                                    }}
+                                />
+                            ))
                         ) : (
-                            <GroupedSection
-                                items={[
-                                    {
-                                        id: 'no-accounts',
-                                        icon: 'account-outline',
-                                        iconColor: '#ccc',
-                                        title: t('accountOverview.additional.noAccounts.title') || 'No other accounts',
-                                        subtitle: t('accountOverview.additional.noAccounts.subtitle') || 'Add another account to switch between them',
-                                    },
-                                ]}
-
+                            <SettingsListItem
+                                icon={<SettingsIcon name="account-outline" color="#ccc" />}
+                                title={t('accountOverview.additional.noAccounts.title') || 'No other accounts'}
+                                description={t('accountOverview.additional.noAccounts.subtitle') || 'Add another account to switch between them'}
+                                showChevron={false}
                             />
                         )}
-                    </Section>
+                    </SettingsListGroup>
                 )}
 
                 {/* Account Management */}

@@ -1,8 +1,9 @@
 import type React from 'react';
 import { useMemo } from 'react';
-import { View, Text, Animated } from 'react-native';
-import { GroupedSection } from '../index';
-import GroupedPillButtons from '../internal/GroupedPillButtons';
+import { View, Text, Animated, ActivityIndicator } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
+import { Button } from '@oxyhq/bloom/button';
 import { createPaymentStyles } from './paymentStyles';
 import { PAYMENT_METHODS, getCurrencySymbol } from './constants';
 import type { CardDetails, PaymentColors, PaymentStepAnimations } from './types';
@@ -56,72 +57,67 @@ const PaymentReviewStep: React.FC<PaymentReviewStepProps> = ({
             <View style={styles.section}>
                 <Text style={styles.sectionTitle}>{t('payment.review.title')}</Text>
 
-                <GroupedSection
-                    items={[
-                        {
-                            id: 'secure-payment',
-                            icon: 'shield-check',
-                            iconColor: colors.success || '#4BB543',
-                            title: t('payment.review.securePayment'),
-                            subtitle: t('payment.review.securePaymentDesc'),
-                        },
-                        {
-                            id: 'amount',
-                            icon: 'cash',
-                            iconColor: colors.primary,
-                            title: t('payment.review.amount'),
-                            subtitle: `${currencySymbol} ${amount}`,
-                        },
-                        {
-                            id: 'payment-method',
-                            icon: selectedMethod?.icon,
-                            iconColor: colors.primary,
-                            title: t('payment.review.paymentMethod'),
-                            subtitle: selectedMethod ? t(`payment.methods.${selectedMethod.key}.label`) : undefined,
-                        },
-                        ...(paymentMethod === 'card' ? [{
-                            id: 'card-details',
-                            icon: 'card' as const,
-                            iconColor: colors.primary,
-                            title: t('payment.review.card'),
-                            subtitle: cardDetails.number.replace(/.(?=.{4})/g, '*'),
-                        }] : []),
-                        ...(paymentMethod === 'oxy' ? [{
-                            id: 'oxy-balance',
-                            icon: 'wallet' as const,
-                            iconColor: colors.primary,
-                            title: t('payment.review.oxyPayAccount'),
-                            subtitle: t('payment.details.balance', { balance: '⊜ 123.45' }),
-                        }] : []),
-                        ...(paymentMethod === 'faircoin' ? [{
-                            id: 'faircoin-wallet',
-                            icon: 'qr-code' as const,
-                            iconColor: colors.primary,
-                            title: t('payment.review.faircoinWallet'),
-                            subtitle: t('payment.review.paidViaQR'),
-                        }] : []),
-                    ]}
-                />
+                <SettingsListGroup>
+                    <SettingsListItem
+                        icon={<Ionicons name="shield-checkmark" size={20} color={colors.success || '#4BB543'} />}
+                        title={t('payment.review.securePayment')}
+                        description={t('payment.review.securePaymentDesc')}
+                        showChevron={false}
+                    />
+                    <SettingsListItem
+                        icon={<Ionicons name="cash-outline" size={20} color={colors.primary} />}
+                        title={t('payment.review.amount')}
+                        description={`${currencySymbol} ${amount}`}
+                        showChevron={false}
+                    />
+                    <SettingsListItem
+                        icon={selectedMethod ? <Ionicons name={selectedMethod.icon} size={20} color={colors.primary} /> : undefined}
+                        title={t('payment.review.paymentMethod')}
+                        description={selectedMethod ? t(`payment.methods.${selectedMethod.key}.label`) : undefined}
+                        showChevron={false}
+                    />
+                    {paymentMethod === 'card' ? (
+                        <SettingsListItem
+                            icon={<Ionicons name="card-outline" size={20} color={colors.primary} />}
+                            title={t('payment.review.card')}
+                            description={cardDetails.number.replace(/.(?=.{4})/g, '*')}
+                            showChevron={false}
+                        />
+                    ) : null}
+                    {paymentMethod === 'oxy' ? (
+                        <SettingsListItem
+                            icon={<Ionicons name="wallet-outline" size={20} color={colors.primary} />}
+                            title={t('payment.review.oxyPayAccount')}
+                            description={t('payment.details.balance', { balance: '⊜ 123.45' })}
+                            showChevron={false}
+                        />
+                    ) : null}
+                    {paymentMethod === 'faircoin' ? (
+                        <SettingsListItem
+                            icon={<Ionicons name="qr-code-outline" size={20} color={colors.primary} />}
+                            title={t('payment.review.faircoinWallet')}
+                            description={t('payment.review.paidViaQR')}
+                            showChevron={false}
+                        />
+                    ) : null}
+                </SettingsListGroup>
             </View>
 
-            <GroupedPillButtons
-                buttons={[
-                    {
-                        text: t('payment.actions.back'),
-                        onPress: onBack,
-                        icon: 'arrow-back',
-                        variant: 'transparent',
-                    },
-                    {
-                        text: isPaying ? t('payment.review.processing') : t('payment.review.payNow'),
-                        onPress: onPay,
-                        icon: 'checkmark',
-                        variant: 'primary',
-                        loading: isPaying,
-                    },
-                ]}
-                colors={colors}
-            />
+            <View style={{ flexDirection: 'row', gap: 8, justifyContent: 'flex-end' }}>
+                <Button variant="secondary" onPress={onBack} size="small" disabled={isPaying} icon={<Ionicons name="arrow-back" size={16} />}>
+                    {t('payment.actions.back')}
+                </Button>
+                <Button
+                    variant="primary"
+                    onPress={onPay}
+                    size="small"
+                    disabled={isPaying}
+                    icon={isPaying ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Ionicons name="checkmark" size={16} />}
+                    iconPosition="right"
+                >
+                    {isPaying ? t('payment.review.processing') : t('payment.review.payNow')}
+                </Button>
+            </View>
         </Animated.View>
     );
 };

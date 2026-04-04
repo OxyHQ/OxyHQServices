@@ -1,8 +1,9 @@
 import type React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Linking } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { View, StyleSheet, ScrollView, Linking } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
-import { Header, GroupedSection } from '../components';
+import { Header } from '../components';
+import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
+import { SettingsIcon } from '../components/SettingsIcon';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { useI18n } from '../hooks/useI18n';
 
@@ -37,18 +38,6 @@ const UserLinksScreen: React.FC<UserLinksScreenProps> = ({
         }
     };
 
-    const groupedItems = links.map((link) => ({
-        id: link.id,
-        icon: link.image ? undefined : 'link',
-        iconColor: '#32D74B',
-        image: link.image || undefined,
-        imageSize: 40,
-        title: link.title || link.url,
-        subtitle: link.description || link.url,
-        onPress: () => handleLinkPress(link.url),
-        multiRow: true,
-    }));
-
     return (
         <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
             <Header
@@ -59,14 +48,17 @@ const UserLinksScreen: React.FC<UserLinksScreenProps> = ({
             />
 
             <ScrollView style={styles.content}>
-                <View style={styles.section}>
-                    <Text style={styles.sectionTitle} className="text-foreground">{t('userLinks.title')}</Text>
-
-                    <GroupedSection
-                        items={groupedItems}
-
-                    />
-                </View>
+                <SettingsListGroup title={t('userLinks.title')}>
+                    {links.map((link) => (
+                        <SettingsListItem
+                            key={link.id}
+                            icon={<SettingsIcon name="link" color="#32D74B" />}
+                            title={link.title || link.url}
+                            description={link.description || link.url}
+                            onPress={() => handleLinkPress(link.url)}
+                        />
+                    ))}
+                </SettingsListGroup>
             </ScrollView>
         </View>
     );
@@ -80,15 +72,6 @@ const styles = StyleSheet.create({
     content: {
         flex: 1,
         padding: 16,
-    },
-    section: {
-        marginBottom: 24,
-    },
-    sectionTitle: {
-        fontSize: 16,
-        fontWeight: '600',
-        color: '#333',
-        marginBottom: 12,
     },
 });
 

@@ -12,7 +12,8 @@ import type { BaseScreenProps } from '../types/navigation';
 import { toast } from '../../lib/sonner';
 import * as Prompt from '@oxyhq/bloom/prompt';
 import { usePromptControl } from '@oxyhq/bloom/prompt';
-import { Header, Section } from '../components';
+import { Header } from '../components';
+import { SettingsListGroup } from '@oxyhq/bloom/settings-list';
 import { useI18n } from '../hooks/useI18n';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { useOxy } from '../context/OxyContext';
@@ -86,13 +87,13 @@ const AccountVerificationScreen: React.FC<BaseScreenProps> = ({
             />
 
             <ScrollView style={styles.content}>
-                <Section  isFirst={true}>
+                <SettingsListGroup>
                     <Text style={styles.description} className="text-muted-foreground">
                         {t('accountVerification.description') || 'Request a verified badge for your account. Verified accounts help establish authenticity and credibility.'}
                     </Text>
-                </Section>
+                </SettingsListGroup>
 
-                <Section title={t('accountVerification.sections.request') || 'VERIFICATION REQUEST'} >
+                <SettingsListGroup title={t('accountVerification.sections.request') || 'VERIFICATION REQUEST'}>
                     <View style={styles.inputGroup}>
                         <Text style={styles.label} className="text-foreground">
                             {t('accountVerification.reasonLabel') || 'Reason for Verification *'}
@@ -134,9 +135,9 @@ const AccountVerificationScreen: React.FC<BaseScreenProps> = ({
                             editable={!isSubmitting}
                         />
                     </View>
-                </Section>
+                </SettingsListGroup>
 
-                <Section >
+                <SettingsListGroup>
                     <TouchableOpacity
                         style={styles.submitButton}
                         className={isSubmitting ? 'bg-muted-foreground' : 'bg-primary'}
@@ -151,13 +152,13 @@ const AccountVerificationScreen: React.FC<BaseScreenProps> = ({
                             </Text>
                         )}
                     </TouchableOpacity>
-                </Section>
+                </SettingsListGroup>
 
-                <Section >
+                <SettingsListGroup>
                     <Text style={styles.note} className="text-muted-foreground">
                         {t('accountVerification.note') || 'Note: Verification requests are reviewed manually and may take several days. We will notify you once your request has been reviewed.'}
                     </Text>
-                </Section>
+                </SettingsListGroup>
             </ScrollView>
             <Prompt.Basic
                 control={successPrompt}

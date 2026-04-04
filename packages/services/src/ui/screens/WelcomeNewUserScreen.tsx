@@ -10,7 +10,7 @@ import { useAuthStore } from '../stores/authStore';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { fontFamilies } from '../styles/fonts';
 import { normalizeTheme } from '../utils/themeUtils';
-import GroupedPillButtons from '../components/internal/GroupedPillButtons';
+import { Button } from '@oxyhq/bloom/button';
 import { useI18n } from '../hooks/useI18n';
 import { useOxy } from '../context/OxyContext';
 import { useUpdateProfile } from '../hooks/mutations/useAccountMutations';
@@ -177,30 +177,56 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
     }, [navigate, updateProfileMutation, oxyServices, currentStep, avatarStepIndex, animateToStepCallback, t]);
 
     const step = steps[currentStep];
-    const pillButtons = useMemo(() => {
+    const renderActionButtons = useCallback(() => {
         if (currentStep === totalSteps - 1) {
-            return [
-                { text: t('welcomeNew.actions.back') || 'Back', onPress: prevStep, icon: 'arrow-back', variant: 'transparent' },
-                { text: t('welcomeNew.actions.enter') || 'Enter', onPress: finish, icon: 'log-in-outline', variant: 'primary' },
-            ];
+            return (
+                <View style={{ flexDirection: 'row', gap: 8, justifyContent: 'flex-end' }}>
+                    <Button variant="secondary" onPress={prevStep} size="small" icon={<Ionicons name="arrow-back" size={16} />}>
+                        {t('welcomeNew.actions.back') || 'Back'}
+                    </Button>
+                    <Button variant="primary" onPress={finish} size="small" icon={<Ionicons name="log-in-outline" size={16} />} iconPosition="right">
+                        {t('welcomeNew.actions.enter') || 'Enter'}
+                    </Button>
+                </View>
+            );
         }
         if (currentStep === 0) {
-            const arr: any[] = [];
-            if (avatarStepIndex > 0) arr.push({ text: t('welcomeNew.actions.skip') || 'Skip', onPress: skipToAvatar, icon: 'play-skip-forward', variant: 'transparent' });
-            arr.push({ text: t('welcomeNew.actions.next') || 'Next', onPress: nextStep, icon: 'arrow-forward', variant: 'primary' });
-            return arr;
+            return (
+                <View style={{ flexDirection: 'row', gap: 8, justifyContent: 'flex-end' }}>
+                    {avatarStepIndex > 0 && (
+                        <Button variant="secondary" onPress={skipToAvatar} size="small" icon={<Ionicons name="play-skip-forward" size={16} />}>
+                            {t('welcomeNew.actions.skip') || 'Skip'}
+                        </Button>
+                    )}
+                    <Button variant="primary" onPress={nextStep} size="small" icon={<Ionicons name="arrow-forward" size={16} />} iconPosition="right">
+                        {t('welcomeNew.actions.next') || 'Next'}
+                    </Button>
+                </View>
+            );
         }
         if (step.showAvatar) {
-            return [
-                { text: t('welcomeNew.actions.back') || 'Back', onPress: prevStep, icon: 'arrow-back', variant: 'transparent' },
-                { text: avatarUri ? (t('welcomeNew.actions.continue') || 'Continue') : (t('welcomeNew.actions.skip') || 'Skip'), onPress: nextStep, icon: 'arrow-forward', variant: 'primary' },
-            ];
+            return (
+                <View style={{ flexDirection: 'row', gap: 8, justifyContent: 'flex-end' }}>
+                    <Button variant="secondary" onPress={prevStep} size="small" icon={<Ionicons name="arrow-back" size={16} />}>
+                        {t('welcomeNew.actions.back') || 'Back'}
+                    </Button>
+                    <Button variant="primary" onPress={nextStep} size="small" icon={<Ionicons name="arrow-forward" size={16} />} iconPosition="right">
+                        {avatarUri ? (t('welcomeNew.actions.continue') || 'Continue') : (t('welcomeNew.actions.skip') || 'Skip')}
+                    </Button>
+                </View>
+            );
         }
-        return [
-            { text: t('welcomeNew.actions.back') || 'Back', onPress: prevStep, icon: 'arrow-back', variant: 'transparent' },
-            { text: t('welcomeNew.actions.next') || 'Next', onPress: nextStep, icon: 'arrow-forward', variant: 'primary' },
-        ];
-    }, [currentStep, totalSteps, prevStep, nextStep, finish, skipToAvatar, avatarStepIndex, step.showAvatar, avatarUri]);
+        return (
+            <View style={{ flexDirection: 'row', gap: 8, justifyContent: 'flex-end' }}>
+                <Button variant="secondary" onPress={prevStep} size="small" icon={<Ionicons name="arrow-back" size={16} />}>
+                    {t('welcomeNew.actions.back') || 'Back'}
+                </Button>
+                <Button variant="primary" onPress={nextStep} size="small" icon={<Ionicons name="arrow-forward" size={16} />} iconPosition="right">
+                    {t('welcomeNew.actions.next') || 'Next'}
+                </Button>
+            </View>
+        );
+    }, [currentStep, totalSteps, prevStep, nextStep, finish, skipToAvatar, avatarStepIndex, step.showAvatar, avatarUri, t]);
 
     return (
         <View style={styles.container}>
@@ -247,7 +273,7 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
                         </View>
                     )}
                     <View style={styles.sectionSpacing}>
-                        <GroupedPillButtons buttons={pillButtons} colors={colors} />
+                        {renderActionButtons()}
                     </View>
                 </View>
             </Animated.View>

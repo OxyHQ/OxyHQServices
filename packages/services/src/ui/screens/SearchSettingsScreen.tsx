@@ -5,7 +5,9 @@ import {
     ScrollView,
 } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
-import { Header, Section, LoadingState, SettingRow } from '../components';
+import { Header, LoadingState } from '../components';
+import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
+import { Switch } from '@oxyhq/bloom/switch';
 import { useI18n } from '../hooks/useI18n';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { useSettingToggles } from '../hooks/useSettingToggle';
@@ -102,32 +104,22 @@ const SearchSettingsScreen: React.FC<BaseScreenProps> = ({
 
             <ScrollView style={styles.content}>
                 {/* SafeSearch */}
-                <Section title={t('searchSettings.safeSearch.title') || 'SafeSearch'} isFirst={true}>
-                    <SettingRow
+                <SettingsListGroup title={t('searchSettings.safeSearch.title') || 'SafeSearch'}>
+                    <SettingsListItem
                         title={t('searchSettings.safeSearch.label') || 'Enable SafeSearch'}
                         description={t('searchSettings.safeSearch.description') || 'Filter out explicit content from search results'}
-                        value={settings.safeSearch}
-                        onValueChange={() => toggle('safeSearch')}
-                        disabled={isSaving}
-                        textColor={bloomTheme.colors.text}
-                        mutedTextColor={bloomTheme.colors.textSecondary}
-                        borderColor={bloomTheme.colors.border}
+                        rightElement={<Switch value={settings.safeSearch} onValueChange={() => toggle('safeSearch')} disabled={isSaving} />}
                     />
-                </Section>
+                </SettingsListGroup>
 
                 {/* Search Personalization */}
-                <Section title={t('searchSettings.personalization.title') || 'Search Personalization'}>
-                    <SettingRow
+                <SettingsListGroup title={t('searchSettings.personalization.title') || 'Search Personalization'}>
+                    <SettingsListItem
                         title={t('searchSettings.personalization.label') || 'Personalized Search'}
                         description={t('searchSettings.personalization.description') || 'Use your activity to improve search results'}
-                        value={settings.searchPersonalization}
-                        onValueChange={() => toggle('searchPersonalization')}
-                        disabled={isSaving}
-                        textColor={bloomTheme.colors.text}
-                        mutedTextColor={bloomTheme.colors.textSecondary}
-                        borderColor={bloomTheme.colors.border}
+                        rightElement={<Switch value={settings.searchPersonalization} onValueChange={() => toggle('searchPersonalization')} disabled={isSaving} />}
                     />
-                </Section>
+                </SettingsListGroup>
             </ScrollView>
         </View>
     );

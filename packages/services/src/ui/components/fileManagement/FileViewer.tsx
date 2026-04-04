@@ -9,7 +9,7 @@ import type { FileMetadata } from '@oxyhq/core';
 import { formatFileSize } from '../../utils/fileManagement';
 import { fileManagementStyles } from './styles';
 import { Colors } from '../../constants/theme';
-import { GroupedSection } from '../GroupedSection';
+import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 
 interface FileViewerProps {
     file: FileMetadata;
@@ -105,53 +105,53 @@ export const FileViewer: React.FC<FileViewerProps> = ({
     }, [imageDimensions, containerWidth]);
 
     const fileDetailItems = useMemo(() => {
-        const items = [
+        const items: Array<{ id: string; iconName: string; iconColor: string; title: string; description: string }> = [
             {
                 id: 'filename',
-                icon: 'file-document',
+                iconName: 'file-document',
                 iconColor: constantColors.iconSecurity,
                 title: 'File Name',
-                subtitle: file.filename,
+                description: file.filename,
             },
             {
                 id: 'size',
-                icon: 'server',
+                iconName: 'server',
                 iconColor: constantColors.iconStorage,
                 title: 'Size',
-                subtitle: formatFileSize(file.length),
+                description: formatFileSize(file.length),
             },
             {
                 id: 'type',
-                icon: 'code-tags',
+                iconName: 'code-tags',
                 iconColor: constantColors.iconData,
                 title: 'Type',
-                subtitle: file.contentType,
+                description: file.contentType,
             },
             {
                 id: 'uploaded',
-                icon: 'clock',
+                iconName: 'clock',
                 iconColor: constantColors.iconPersonalInfo,
                 title: 'Uploaded',
-                subtitle: new Date(file.uploadDate).toLocaleString(),
+                description: new Date(file.uploadDate).toLocaleString(),
             },
         ];
 
         if (file.metadata?.description) {
             items.push({
                 id: 'description',
-                icon: 'text',
+                iconName: 'text',
                 iconColor: constantColors.iconData,
                 title: 'Description',
-                subtitle: file.metadata.description,
+                description: file.metadata.description,
             });
         }
 
         items.push({
             id: 'fileId',
-            icon: 'key',
+            iconName: 'key',
             iconColor: constantColors.iconSecurity,
             title: 'File ID',
-            subtitle: file.id,
+            description: file.id,
         });
 
         return items;
@@ -366,7 +366,17 @@ export const FileViewer: React.FC<FileViewerProps> = ({
                 {showFileDetailsInViewer && (
                     <>
                         <View style={fileManagementStyles.fileDetailsSectionContent}>
-                            <GroupedSection items={fileDetailItems} />
+                            <SettingsListGroup>
+                                {fileDetailItems.map((item) => (
+                                    <SettingsListItem
+                                        key={item.id}
+                                        icon={<MaterialCommunityIcons name={item.iconName} size={20} color={item.iconColor} />}
+                                        title={item.title}
+                                        description={item.description}
+                                        showChevron={false}
+                                    />
+                                ))}
+                            </SettingsListGroup>
                         </View>
 
                         {isOwner && (

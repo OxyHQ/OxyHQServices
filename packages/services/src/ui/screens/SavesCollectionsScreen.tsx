@@ -8,7 +8,9 @@ import {
 } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
 import { toast } from '../../lib/sonner';
-import { Header, Section, GroupedSection, LoadingState, EmptyState } from '../components';
+import { Header, LoadingState, EmptyState } from '../components';
+import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
+import { SettingsIcon } from '../components/SettingsIcon';
 import { useI18n } from '../hooks/useI18n';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { useColorScheme } from '../hooks/useColorScheme';
@@ -156,17 +158,16 @@ const SavesCollectionsScreen: React.FC<BaseScreenProps> = ({
                             textColor={bloomTheme.colors.text}
                         />
                     ) : (
-                        <Section title={t('saves.savedItems') || 'Saved Items'} isFirst={true}>
-                            <GroupedSection
-                                items={savedItems.map((item) => ({
-                                    id: item.id,
-                                    icon: item.type === 'post' ? 'document-text' : 'folder',
-                                    iconColor: item.type === 'post' ? themeColors.iconSecurity : themeColors.iconStorage,
-                                    title: item.title,
-                                    subtitle: formatDate(item.savedAt),
-                                }))}
-                            />
-                        </Section>
+                        <SettingsListGroup title={t('saves.savedItems') || 'Saved Items'}>
+                            {savedItems.map((item) => (
+                                <SettingsListItem
+                                    key={item.id}
+                                    icon={<SettingsIcon name={item.type === 'post' ? 'file-document-outline' : 'folder'} color={item.type === 'post' ? themeColors.iconSecurity : themeColors.iconStorage} />}
+                                    title={item.title}
+                                    description={formatDate(item.savedAt)}
+                                />
+                            ))}
+                        </SettingsListGroup>
                     )
                 ) : (
                     collections.length === 0 ? (
@@ -175,17 +176,16 @@ const SavesCollectionsScreen: React.FC<BaseScreenProps> = ({
                             textColor={bloomTheme.colors.text}
                         />
                     ) : (
-                        <Section title={t('saves.collections') || 'Collections'} isFirst={true}>
-                            <GroupedSection
-                                items={collections.map((collection) => ({
-                                    id: collection.id,
-                                    icon: 'folder',
-                                    iconColor: themeColors.iconStorage,
-                                    title: collection.name,
-                                    subtitle: `${collection.itemCount || 0} items`,
-                                }))}
-                            />
-                        </Section>
+                        <SettingsListGroup title={t('saves.collections') || 'Collections'}>
+                            {collections.map((collection) => (
+                                <SettingsListItem
+                                    key={collection.id}
+                                    icon={<SettingsIcon name="folder" color={themeColors.iconStorage} />}
+                                    title={collection.name}
+                                    description={`${collection.itemCount || 0} items`}
+                                />
+                            ))}
+                        </SettingsListGroup>
                     )
                 )}
             </ScrollView>

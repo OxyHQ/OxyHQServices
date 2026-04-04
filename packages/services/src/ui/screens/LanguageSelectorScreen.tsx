@@ -12,7 +12,8 @@ import { useTheme } from '@oxyhq/bloom/theme';
 import { normalizeTheme } from '../utils/themeUtils';
 import { Ionicons } from '@expo/vector-icons';
 import { toast } from '../../lib/sonner';
-import { Header, GroupedSection } from '../components';
+import { Header } from '../components';
+import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 import { useI18n } from '../hooks/useI18n';
 import { SUPPORTED_LANGUAGES } from '@oxyhq/core';
 import { useOxy } from '../context/OxyContext';
@@ -98,18 +99,17 @@ const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
             return {
                 id: language.id,
                 title: language.name,
-                subtitle: language.nativeName,
-                customIcon: (
+                description: language.nativeName,
+                icon: (
                     <View style={[styles.languageFlag, { backgroundColor: `${language.color}15` }]}>
                         <Text style={styles.flagEmoji}>{language.flag}</Text>
                     </View>
                 ),
-                iconColor: language.color,
-                selected: isSelected,
                 onPress: () => handleLanguageSelect(language.id),
-                customContent: isSelected ? (
+                rightElement: isSelected ? (
                     <Ionicons name="checkmark-circle" size={24} color={bloomTheme.colors.primary} />
                 ) : undefined,
+                showChevron: false,
             };
         }),
         [currentLanguage, handleLanguageSelect, bloomTheme]
@@ -150,7 +150,19 @@ const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
                     <View style={[styles.materialCard, {
                         backgroundColor: bloomTheme.colors.card,
                     }]}>
-                        <GroupedSection items={languageItems} />
+                        <SettingsListGroup>
+                            {languageItems.map(item => (
+                                <SettingsListItem
+                                    key={item.id}
+                                    icon={item.icon}
+                                    title={item.title}
+                                    description={item.description}
+                                    onPress={item.onPress}
+                                    rightElement={item.rightElement}
+                                    showChevron={false}
+                                />
+                            ))}
+                        </SettingsListGroup>
                     </View>
                 </View>
             </ScrollView>

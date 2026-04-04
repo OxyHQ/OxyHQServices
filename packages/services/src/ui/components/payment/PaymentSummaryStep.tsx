@@ -2,8 +2,8 @@ import type React from 'react';
 import { useMemo } from 'react';
 import { View, Text, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { GroupedSection } from '../index';
-import GroupedPillButtons from '../internal/GroupedPillButtons';
+import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
+import { Button } from '@oxyhq/bloom/button';
 import { createPaymentStyles } from './paymentStyles';
 import { getCurrencySymbol, CURRENCY_SYMBOLS } from './constants';
 import type { PaymentItem, PaymentColors, PaymentStepAnimations } from './types';
@@ -81,20 +81,22 @@ const PaymentSummaryStep: React.FC<PaymentSummaryStepProps> = ({
                         {paymentItems.length > 0 ? (
                             <>
                                 <View style={styles.summaryCardItems}>
-                                    <GroupedSection
-                                        items={paymentItems.map((item, idx) => ({
-                                            id: `item-${idx}`,
-                                            icon: getItemTypeIcon(item.type),
-                                            iconColor: colors.primary,
-                                            title: `${item.type === 'product' && item.quantity ? `${item.quantity} × ` : ''}${item.name}${item.type === 'subscription' && item.period ? ` (${item.period})` : ''}`,
-                                            subtitle: item.description || `${item.currency ? (CURRENCY_SYMBOLS[item.currency.toUpperCase()] || item.currency) : currencySymbol} ${item.price * (item.quantity ?? 1)}`,
-                                            customContent: (
-                                                <Text style={styles.summaryItemPrice}>
-                                                    {item.currency ? (CURRENCY_SYMBOLS[item.currency.toUpperCase()] || item.currency) : currencySymbol} {item.price * (item.quantity ?? 1)}
-                                                </Text>
-                                            ),
-                                        }))}
-                                    />
+                                    <SettingsListGroup>
+                                        {paymentItems.map((item, idx) => (
+                                            <SettingsListItem
+                                                key={`item-${idx}`}
+                                                icon={<Ionicons name={getItemTypeIcon(item.type)} size={20} color={colors.primary} />}
+                                                title={`${item.type === 'product' && item.quantity ? `${item.quantity} \u00d7 ` : ''}${item.name}${item.type === 'subscription' && item.period ? ` (${item.period})` : ''}`}
+                                                description={item.description || `${item.currency ? (CURRENCY_SYMBOLS[item.currency.toUpperCase()] || item.currency) : currencySymbol} ${item.price * (item.quantity ?? 1)}`}
+                                                showChevron={false}
+                                                rightElement={
+                                                    <Text style={styles.summaryItemPrice}>
+                                                        {item.currency ? (CURRENCY_SYMBOLS[item.currency.toUpperCase()] || item.currency) : currencySymbol} {item.price * (item.quantity ?? 1)}
+                                                    </Text>
+                                                }
+                                            />
+                                        ))}
+                                    </SettingsListGroup>
                                 </View>
 
                                 <View style={styles.summaryCardDivider} />
@@ -138,23 +140,14 @@ const PaymentSummaryStep: React.FC<PaymentSummaryStepProps> = ({
                 </View>
             </View>
 
-            <GroupedPillButtons
-                buttons={[
-                    {
-                        text: t('payment.actions.close'),
-                        onPress: onClose,
-                        icon: 'close',
-                        variant: 'transparent',
-                    },
-                    {
-                        text: t('payment.actions.continue'),
-                        onPress: onNext,
-                        icon: 'arrow-forward',
-                        variant: 'primary',
-                    },
-                ]}
-                colors={colors}
-            />
+            <View style={{ flexDirection: 'row', gap: 8, justifyContent: 'flex-end' }}>
+                <Button variant="secondary" onPress={onClose} size="small" icon={<Ionicons name="close" size={16} />}>
+                    {t('payment.actions.close')}
+                </Button>
+                <Button variant="primary" onPress={onNext} size="small" icon={<Ionicons name="arrow-forward" size={16} />} iconPosition="right">
+                    {t('payment.actions.continue')}
+                </Button>
+            </View>
         </Animated.View>
     );
 };

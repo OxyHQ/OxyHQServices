@@ -11,7 +11,8 @@ import {
 import type { BaseScreenProps } from '../types/navigation';
 import { useThemeColors } from '../styles';
 import { normalizeTheme } from '../utils/themeUtils';
-import GroupedPillButtons from '../components/internal/GroupedPillButtons';
+import { Button } from '@oxyhq/bloom/button';
+import { Ionicons } from '@expo/vector-icons';
 import { useI18n } from '../hooks/useI18n';
 import QRCode from 'react-native-qrcode-svg';
 
@@ -184,17 +185,15 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
         return (
             <View style={styles.errorContainer}>
                 <Text style={styles.errorText}>{t('payment.errors.invalidAmount')}</Text>
-                <GroupedPillButtons
-                    buttons={[
-                        {
-                            text: t('payment.actions.close'),
-                            onPress: handleClose,
-                            icon: 'close',
-                            variant: 'primary',
-                        },
-                    ]}
-                    colors={colors}
-                />
+                <Button
+                    variant="primary"
+                    onPress={handleClose}
+                    size="small"
+                    icon={<Ionicons name="close" size={16} />}
+                    iconPosition="right"
+                >
+                    {t('payment.actions.close')}
+                </Button>
             </View>
         );
     }

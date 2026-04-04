@@ -9,13 +9,14 @@ import {
     Platform,
     Image,
 } from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import type { BaseScreenProps } from '../types/navigation';
 import { toast } from '../../lib/sonner';
 import { fontFamilies } from '../styles/fonts';
 import * as Prompt from '@oxyhq/bloom/prompt';
 import { usePromptControl } from '@oxyhq/bloom/prompt';
 import { useAuthStore } from '../stores/authStore';
-import { GroupedSection } from '../components';
+import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 import { useI18n } from '../hooks/useI18n';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { useColorScheme } from '../hooks/useColorScheme';
@@ -362,64 +363,59 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                 {t('editProfile.sections.profilePicture') || 'PROFILE PICTURE'}
                             </Text>
                             <View style={styles.groupedSectionWrapper}>
-                                <GroupedSection
-                                    items={[
-                                        {
-                                            id: 'profile-photo',
-                                            customIcon: (optimisticAvatarId || avatarFileId) ? (
-                                                isUpdatingAvatar ? (
-                                                    <Animated.View style={{ position: 'relative', width: 36, height: 36 }}>
-                                                        <Animated.Image
-                                                            source={{ uri: oxyServices.getFileDownloadUrl(optimisticAvatarId || avatarFileId, 'thumb') }}
-                                                            style={{
-                                                                width: 36,
-                                                                height: 36,
-                                                                borderRadius: 18,
-                                                                opacity: 0.6
-                                                            }}
-                                                        />
-                                                        <View style={{
-                                                            position: 'absolute',
-                                                            top: 0,
-                                                            left: 0,
-                                                            right: 0,
-                                                            bottom: 0,
-                                                            justifyContent: 'center',
-                                                            alignItems: 'center',
-                                                            backgroundColor: colorScheme === 'dark' ? 'rgba(0, 0, 0, 0.4)' : 'rgba(255, 255, 255, 0.7)',
-                                                            borderRadius: 18,
-                                                        }}>
-                                                            <ActivityIndicator size="small" color={colors.tint} />
-                                                        </View>
-                                                    </Animated.View>
-                                                ) : (
-                                                    <Image
+                                <SettingsListGroup>
+                                    <SettingsListItem
+                                        icon={(optimisticAvatarId || avatarFileId) ? (
+                                            isUpdatingAvatar ? (
+                                                <Animated.View style={{ position: 'relative', width: 36, height: 36 }}>
+                                                    <Animated.Image
                                                         source={{ uri: oxyServices.getFileDownloadUrl(optimisticAvatarId || avatarFileId, 'thumb') }}
-                                                        style={{ width: 36, height: 36, borderRadius: 18 }}
+                                                        style={{
+                                                            width: 36,
+                                                            height: 36,
+                                                            borderRadius: 18,
+                                                            opacity: 0.6
+                                                        }}
                                                     />
-                                                )
-                                            ) : undefined,
-                                            icon: !(optimisticAvatarId || avatarFileId) ? 'account-outline' : undefined,
-                                            iconColor: colors.sidebarIconPersonalInfo,
-                                            title: 'Profile Photo',
-                                            subtitle: isUpdatingAvatar
-                                                ? 'Updating profile picture...'
-                                                : (avatarFileId ? 'Tap to change your profile picture' : 'Tap to add a profile picture'),
-                                            onPress: isUpdatingAvatar ? undefined : openAvatarPicker,
-                                            disabled: isUpdatingAvatar,
-                                        },
-                                        ...(avatarFileId && !isUpdatingAvatar ? [
-                                            {
-                                                id: 'remove-profile-photo',
-                                                icon: 'delete-outline',
-                                                iconColor: colors.sidebarIconSharing,
-                                                title: 'Remove Photo',
-                                                subtitle: 'Delete current profile picture',
-                                                onPress: handleAvatarRemove,
-                                            }
-                                        ] : []),
-                                    ]}
-                                />
+                                                    <View style={{
+                                                        position: 'absolute',
+                                                        top: 0,
+                                                        left: 0,
+                                                        right: 0,
+                                                        bottom: 0,
+                                                        justifyContent: 'center',
+                                                        alignItems: 'center',
+                                                        backgroundColor: colorScheme === 'dark' ? 'rgba(0, 0, 0, 0.4)' : 'rgba(255, 255, 255, 0.7)',
+                                                        borderRadius: 18,
+                                                    }}>
+                                                        <ActivityIndicator size="small" color={colors.tint} />
+                                                    </View>
+                                                </Animated.View>
+                                            ) : (
+                                                <Image
+                                                    source={{ uri: oxyServices.getFileDownloadUrl(optimisticAvatarId || avatarFileId, 'thumb') }}
+                                                    style={{ width: 36, height: 36, borderRadius: 18 }}
+                                                />
+                                            )
+                                        ) : (
+                                            <MaterialCommunityIcons name="account-outline" size={20} color={colors.sidebarIconPersonalInfo} />
+                                        )}
+                                        title="Profile Photo"
+                                        description={isUpdatingAvatar
+                                            ? 'Updating profile picture...'
+                                            : (avatarFileId ? 'Tap to change your profile picture' : 'Tap to add a profile picture')}
+                                        onPress={isUpdatingAvatar ? undefined : openAvatarPicker}
+                                        disabled={isUpdatingAvatar}
+                                    />
+                                    {avatarFileId && !isUpdatingAvatar ? (
+                                        <SettingsListItem
+                                            icon={<MaterialCommunityIcons name="delete-outline" size={20} color={colors.sidebarIconSharing} />}
+                                            title="Remove Photo"
+                                            description="Delete current profile picture"
+                                            onPress={handleAvatarRemove}
+                                        />
+                                    ) : null}
+                                </SettingsListGroup>
                             </View>
                         </View>
 
@@ -436,34 +432,26 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                 {t('editProfile.sections.basicInfo') || 'BASIC INFORMATION'}
                             </Text>
                             <View style={styles.groupedSectionWrapper}>
-                                <GroupedSection
-                                    items={[
-                                        {
-                                            id: 'display-name',
-                                            icon: 'account-outline',
-                                            iconColor: colors.sidebarIconPersonalInfo,
-                                            title: t('editProfile.items.displayName.title') || 'Display Name',
-                                            subtitle: [displayName, lastName].filter(Boolean).join(' ') || (t('editProfile.items.displayName.add') || 'Add your display name'),
-                                            onPress: handleOpenDisplayNameModal,
-                                        },
-                                        {
-                                            id: 'username',
-                                            icon: 'at',
-                                            iconColor: colors.sidebarIconData,
-                                            title: t('editProfile.items.username.title') || 'Username',
-                                            subtitle: username || (t('editProfile.items.username.choose') || 'Choose a username'),
-                                            onPress: handleOpenUsernameModal,
-                                        },
-                                        {
-                                            id: 'email',
-                                            icon: 'email-outline',
-                                            iconColor: colors.sidebarIconSecurity,
-                                            title: t('editProfile.items.email.title') || 'Email',
-                                            subtitle: email || (t('editProfile.items.email.add') || 'Add your email address'),
-                                            onPress: handleOpenEmailModal,
-                                        },
-                                    ]}
-                                />
+                                <SettingsListGroup>
+                                    <SettingsListItem
+                                        icon={<MaterialCommunityIcons name="account-outline" size={20} color={colors.sidebarIconPersonalInfo} />}
+                                        title={t('editProfile.items.displayName.title') || 'Display Name'}
+                                        description={[displayName, lastName].filter(Boolean).join(' ') || (t('editProfile.items.displayName.add') || 'Add your display name')}
+                                        onPress={handleOpenDisplayNameModal}
+                                    />
+                                    <SettingsListItem
+                                        icon={<MaterialCommunityIcons name="at" size={20} color={colors.sidebarIconData} />}
+                                        title={t('editProfile.items.username.title') || 'Username'}
+                                        description={username || (t('editProfile.items.username.choose') || 'Choose a username')}
+                                        onPress={handleOpenUsernameModal}
+                                    />
+                                    <SettingsListItem
+                                        icon={<MaterialCommunityIcons name="email-outline" size={20} color={colors.sidebarIconSecurity} />}
+                                        title={t('editProfile.items.email.title') || 'Email'}
+                                        description={email || (t('editProfile.items.email.add') || 'Add your email address')}
+                                        onPress={handleOpenEmailModal}
+                                    />
+                                </SettingsListGroup>
                             </View>
                         </View>
 
@@ -480,42 +468,34 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                 {t('editProfile.sections.about') || 'ABOUT YOU'}
                             </Text>
                             <View style={styles.groupedSectionWrapper}>
-                                <GroupedSection
-                                    items={[
-                                        {
-                                            id: 'bio',
-                                            icon: 'text-box-outline',
-                                            iconColor: colors.sidebarIconPersonalInfo,
-                                            title: t('editProfile.items.bio.title') || 'Bio',
-                                            subtitle: bio || (t('editProfile.items.bio.placeholder') || 'Tell people about yourself'),
-                                            onPress: handleOpenBioModal,
-                                        },
-                                        {
-                                            id: 'locations',
-                                            icon: 'map-marker-outline',
-                                            iconColor: colors.sidebarIconSharing,
-                                            title: t('editProfile.items.locations.title') || 'Locations',
-                                            subtitle: locations.length > 0
-                                                ? (locations.length === 1
-                                                    ? (t('editProfile.items.locations.count', { count: locations.length }) || `${locations.length} location added`)
-                                                    : (t('editProfile.items.locations.count_plural', { count: locations.length }) || `${locations.length} locations added`))
-                                                : (t('editProfile.items.locations.add') || 'Add your locations'),
-                                            onPress: handleOpenLocationModal,
-                                        },
-                                        {
-                                            id: 'links',
-                                            icon: 'link-variant',
-                                            iconColor: colors.sidebarIconSharing,
-                                            title: t('editProfile.items.links.title') || 'Links',
-                                            subtitle: linksMetadata.length > 0
-                                                ? (linksMetadata.length === 1
-                                                    ? (t('editProfile.items.links.count', { count: linksMetadata.length }) || `${linksMetadata.length} link added`)
-                                                    : (t('editProfile.items.links.count_plural', { count: linksMetadata.length }) || `${linksMetadata.length} links added`))
-                                                : (t('editProfile.items.links.add') || 'Add your links'),
-                                            onPress: handleOpenLinksModal,
-                                        },
-                                    ]}
-                                />
+                                <SettingsListGroup>
+                                    <SettingsListItem
+                                        icon={<MaterialCommunityIcons name="text-box-outline" size={20} color={colors.sidebarIconPersonalInfo} />}
+                                        title={t('editProfile.items.bio.title') || 'Bio'}
+                                        description={bio || (t('editProfile.items.bio.placeholder') || 'Tell people about yourself')}
+                                        onPress={handleOpenBioModal}
+                                    />
+                                    <SettingsListItem
+                                        icon={<MaterialCommunityIcons name="map-marker-outline" size={20} color={colors.sidebarIconSharing} />}
+                                        title={t('editProfile.items.locations.title') || 'Locations'}
+                                        description={locations.length > 0
+                                            ? (locations.length === 1
+                                                ? (t('editProfile.items.locations.count', { count: locations.length }) || `${locations.length} location added`)
+                                                : (t('editProfile.items.locations.count_plural', { count: locations.length }) || `${locations.length} locations added`))
+                                            : (t('editProfile.items.locations.add') || 'Add your locations')}
+                                        onPress={handleOpenLocationModal}
+                                    />
+                                    <SettingsListItem
+                                        icon={<MaterialCommunityIcons name="link-variant" size={20} color={colors.sidebarIconSharing} />}
+                                        title={t('editProfile.items.links.title') || 'Links'}
+                                        description={linksMetadata.length > 0
+                                            ? (linksMetadata.length === 1
+                                                ? (t('editProfile.items.links.count', { count: linksMetadata.length }) || `${linksMetadata.length} link added`)
+                                                : (t('editProfile.items.links.count_plural', { count: linksMetadata.length }) || `${linksMetadata.length} links added`))
+                                            : (t('editProfile.items.links.add') || 'Add your links')}
+                                        onPress={handleOpenLinksModal}
+                                    />
+                                </SettingsListGroup>
                             </View>
                         </View>
 
@@ -532,34 +512,26 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                 {t('editProfile.sections.quickActions') || 'QUICK ACTIONS'}
                             </Text>
                             <View style={styles.groupedSectionWrapper}>
-                                <GroupedSection
-                                    items={[
-                                        {
-                                            id: 'preview-profile',
-                                            icon: 'eye',
-                                            iconColor: colors.sidebarIconHome,
-                                            title: t('editProfile.items.previewProfile.title') || 'Preview Profile',
-                                            subtitle: t('editProfile.items.previewProfile.subtitle') || 'See how your profile looks to others',
-                                            onPress: () => navigate?.('Profile', { userId: finalUser?.id }),
-                                        },
-                                        {
-                                            id: 'privacy-settings',
-                                            icon: 'shield-check',
-                                            iconColor: colors.sidebarIconSecurity,
-                                            title: t('editProfile.items.privacySettings.title') || 'Privacy Settings',
-                                            subtitle: t('editProfile.items.privacySettings.subtitle') || 'Control who can see your profile',
-                                            onPress: () => navigate?.('PrivacySettings'),
-                                        },
-                                        {
-                                            id: 'verify-account',
-                                            icon: 'check-circle',
-                                            iconColor: colors.sidebarIconPersonalInfo,
-                                            title: t('editProfile.items.verifyAccount.title') || 'Verify Account',
-                                            subtitle: t('editProfile.items.verifyAccount.subtitle') || 'Get a verified badge',
-                                            onPress: () => navigate?.('AccountVerification'),
-                                        },
-                                    ]}
-                                />
+                                <SettingsListGroup>
+                                    <SettingsListItem
+                                        icon={<MaterialCommunityIcons name="eye" size={20} color={colors.sidebarIconHome} />}
+                                        title={t('editProfile.items.previewProfile.title') || 'Preview Profile'}
+                                        description={t('editProfile.items.previewProfile.subtitle') || 'See how your profile looks to others'}
+                                        onPress={() => navigate?.('Profile', { userId: finalUser?.id })}
+                                    />
+                                    <SettingsListItem
+                                        icon={<MaterialCommunityIcons name="shield-check" size={20} color={colors.sidebarIconSecurity} />}
+                                        title={t('editProfile.items.privacySettings.title') || 'Privacy Settings'}
+                                        description={t('editProfile.items.privacySettings.subtitle') || 'Control who can see your profile'}
+                                        onPress={() => navigate?.('PrivacySettings')}
+                                    />
+                                    <SettingsListItem
+                                        icon={<MaterialCommunityIcons name="check-circle" size={20} color={colors.sidebarIconPersonalInfo} />}
+                                        title={t('editProfile.items.verifyAccount.title') || 'Verify Account'}
+                                        description={t('editProfile.items.verifyAccount.subtitle') || 'Get a verified badge'}
+                                        onPress={() => navigate?.('AccountVerification')}
+                                    />
+                                </SettingsListGroup>
                             </View>
                         </View>
 

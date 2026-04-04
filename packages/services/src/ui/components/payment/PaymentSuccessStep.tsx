@@ -2,7 +2,7 @@ import type React from 'react';
 import { useMemo } from 'react';
 import { View, Text, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import GroupedPillButtons from '../internal/GroupedPillButtons';
+import { Button } from '@oxyhq/bloom/button';
 import { createPaymentStyles } from './paymentStyles';
 import type { PaymentColors, PaymentStepAnimations } from './types';
 import { useI18n } from '../../hooks/useI18n';
@@ -56,17 +56,9 @@ const PaymentSuccessStep: React.FC<PaymentSuccessStepProps> = ({
                 </View>
             </View>
 
-            <GroupedPillButtons
-                buttons={[
-                    {
-                        text: t('payment.actions.done'),
-                        onPress: onDone,
-                        icon: 'checkmark',
-                        variant: 'primary',
-                    },
-                ]}
-                colors={colors}
-            />
+            <Button variant="primary" onPress={onDone} size="small" icon={<Ionicons name="checkmark" size={16} />} iconPosition="right">
+                {t('payment.actions.done')}
+            </Button>
         </Animated.View>
     );
 };

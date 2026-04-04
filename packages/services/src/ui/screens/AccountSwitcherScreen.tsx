@@ -21,7 +21,9 @@ import { usePromptControl } from '@oxyhq/bloom/prompt';
 import OxyIcon from '../components/icon/OxyIcon';
 import { Ionicons } from '@expo/vector-icons';
 import Avatar from '../components/Avatar';
-import { Header, GroupedSection, LoadingState } from '../components';
+import { Header, LoadingState } from '../components';
+import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
+import { SettingsIcon } from '../components/SettingsIcon';
 import { useI18n } from '../hooks/useI18n';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { useOxy } from '../context/OxyContext';
@@ -619,38 +621,28 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
 
                         {/* Quick Actions */}
                         <View style={styles.section}>
-                            <Text style={styles.sectionTitle}>Quick Actions</Text>
-
-                            <GroupedSection
-                                items={[
-                                    {
-                                        id: 'add-account',
-                                        icon: 'account-plus',
-                                        iconColor: '#007AFF',
-                                        title: 'Add Another Account',
-                                        subtitle: 'Sign in with a different account',
-                                        onPress: () => navigate?.('OxyAuth'),
-                                    },
-                                    {
-                                        id: 'device-management',
-                                        icon: 'cellphone',
-                                        iconColor: '#5856D6',
-                                        title: `${showDeviceManagement ? 'Hide' : 'Manage'} Device Sessions`,
-                                        subtitle: 'View and manage sessions on other devices',
-                                        onPress: () => setShowDeviceManagement(!showDeviceManagement),
-                                    },
-                                    {
-                                        id: 'sign-out-all',
-                                        icon: 'logout',
-                                        iconColor: '#FF3B30',
-                                        title: 'Sign Out All Accounts',
-                                        subtitle: 'Remove all accounts from this device',
-                                        onPress: confirmLogoutAll,
-                                        disabled: sessionsWithUsers.length === 0,
-                                    },
-                                ]}
-
-                            />
+                            <SettingsListGroup title="Quick Actions">
+                                <SettingsListItem
+                                    icon={<SettingsIcon name="account-plus" color="#007AFF" />}
+                                    title="Add Another Account"
+                                    description="Sign in with a different account"
+                                    onPress={() => navigate?.('OxyAuth')}
+                                />
+                                <SettingsListItem
+                                    icon={<SettingsIcon name="cellphone" color="#5856D6" />}
+                                    title={`${showDeviceManagement ? 'Hide' : 'Manage'} Device Sessions`}
+                                    description="View and manage sessions on other devices"
+                                    onPress={() => setShowDeviceManagement(!showDeviceManagement)}
+                                />
+                                <SettingsListItem
+                                    icon={<SettingsIcon name="logout" color="#FF3B30" />}
+                                    title="Sign Out All Accounts"
+                                    description="Remove all accounts from this device"
+                                    onPress={confirmLogoutAll}
+                                    disabled={sessionsWithUsers.length === 0}
+                                    destructive={true}
+                                />
+                            </SettingsListGroup>
                         </View>
 
                         {/* Device Management Section */}
@@ -659,62 +651,53 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                                 <Text style={styles.sectionTitle}>{t('accountSwitcher.sections.deviceSessions') || 'Device Sessions'}</Text>
 
                                 {loadingDeviceSessions ? (
-                                    <GroupedSection
-                                        items={[
-                                            {
-                                                id: 'loading-device-sessions',
-                                                icon: 'sync',
-                                                iconColor: '#007AFF',
-                                                title: t('accountSwitcher.device.loadingTitle') || 'Loading device sessions...',
-                                                subtitle: t('accountSwitcher.device.loadingSubtitle') || 'Please wait while we fetch your device sessions',
-                                                disabled: true,
-                                                customContent: (
-                                                    <ActivityIndicator size="small" color="#007AFF" style={{ marginRight: 16 }} />
-                                                ),
-                                            },
-                                        ]}
-
-                                    />
+                                    <SettingsListGroup>
+                                        <SettingsListItem
+                                            icon={<SettingsIcon name="sync" color="#007AFF" />}
+                                            title={t('accountSwitcher.device.loadingTitle') || 'Loading device sessions...'}
+                                            description={t('accountSwitcher.device.loadingSubtitle') || 'Please wait while we fetch your device sessions'}
+                                            disabled={true}
+                                            rightElement={<ActivityIndicator size="small" color="#007AFF" />}
+                                            showChevron={false}
+                                        />
+                                    </SettingsListGroup>
                                 ) : deviceSessions.length === 0 ? (
-                                    <GroupedSection
-                                        items={[
-                                            {
-                                                id: 'no-device-sessions',
-                                                icon: 'cellphone',
-                                                iconColor: '#ccc',
-                                                title: t('accountSwitcher.device.noneTitle') || 'No device sessions found',
-                                                subtitle: t('accountSwitcher.device.noneSubtitle') || 'Device session management not available',
-                                                disabled: true,
-                                            },
-                                        ]}
-
-                                    />
+                                    <SettingsListGroup>
+                                        <SettingsListItem
+                                            icon={<SettingsIcon name="cellphone" color="#ccc" />}
+                                            title={t('accountSwitcher.device.noneTitle') || 'No device sessions found'}
+                                            description={t('accountSwitcher.device.noneSubtitle') || 'Device session management not available'}
+                                            disabled={true}
+                                            showChevron={false}
+                                        />
+                                    </SettingsListGroup>
                                 ) : (
-                                    <GroupedSection
-                                        items={deviceSessions.map((session, index) => ({
-                                            id: `device-session-${session.sessionId}`,
-                                            icon: session.isCurrent ? 'cellphone' : 'cellphone-basic',
-                                            iconColor: session.isCurrent ? '#34C759' : '#8E8E93',
-                                            title: `${session.deviceName} ${session.isCurrent ? `(${t('accountSwitcher.device.thisDevice') || 'This device'})` : ''}`,
-                                            subtitle: t('accountSwitcher.device.lastActive', { date: new Date(session.lastActive).toLocaleDateString() }) || `Last active: ${new Date(session.lastActive).toLocaleDateString()}`,
-                                            onPress: session.isCurrent ? undefined : () => confirmRemoteSessionLogout(session.sessionId, session.deviceName),
-                                            disabled: session.isCurrent || remotingLogoutSessionId === session.sessionId,
-                                            customContent: !session.isCurrent ? (
-                                                <TouchableOpacity
-                                                    style={styles.removeButton}
-                                                    onPress={() => confirmRemoteSessionLogout(session.sessionId, session.deviceName)}
-                                                    disabled={remotingLogoutSessionId === session.sessionId}
-                                                >
-                                                    {remotingLogoutSessionId === session.sessionId ? (
-                                                        <ActivityIndicator size="small" color="#FF3B30" />
-                                                    ) : (
-                                                        <OxyIcon name="log-out" size={16} color="#FF3B30" />
-                                                    )}
-                                                </TouchableOpacity>
-                                            ) : undefined,
-                                        }))}
-
-                                    />
+                                    <SettingsListGroup>
+                                        {deviceSessions.map((session) => (
+                                            <SettingsListItem
+                                                key={`device-session-${session.sessionId}`}
+                                                icon={<SettingsIcon name={session.isCurrent ? 'cellphone' : 'cellphone-basic'} color={session.isCurrent ? '#34C759' : '#8E8E93'} />}
+                                                title={`${session.deviceName} ${session.isCurrent ? `(${t('accountSwitcher.device.thisDevice') || 'This device'})` : ''}`}
+                                                description={t('accountSwitcher.device.lastActive', { date: new Date(session.lastActive).toLocaleDateString() }) || `Last active: ${new Date(session.lastActive).toLocaleDateString()}`}
+                                                onPress={session.isCurrent ? undefined : () => confirmRemoteSessionLogout(session.sessionId, session.deviceName)}
+                                                disabled={session.isCurrent || remotingLogoutSessionId === session.sessionId}
+                                                showChevron={false}
+                                                rightElement={!session.isCurrent ? (
+                                                    <TouchableOpacity
+                                                        style={styles.removeButton}
+                                                        onPress={() => confirmRemoteSessionLogout(session.sessionId, session.deviceName)}
+                                                        disabled={remotingLogoutSessionId === session.sessionId}
+                                                    >
+                                                        {remotingLogoutSessionId === session.sessionId ? (
+                                                            <ActivityIndicator size="small" color="#FF3B30" />
+                                                        ) : (
+                                                            <OxyIcon name="log-out" size={16} color="#FF3B30" />
+                                                        )}
+                                                    </TouchableOpacity>
+                                                ) : undefined}
+                                            />
+                                        ))}
+                                    </SettingsListGroup>
                                 )}
                             </View>
                         )}
@@ -722,34 +705,30 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                         {/* Empty State */}
                         {sessionsWithUsers.length === 0 && (
                             <View style={styles.section}>
-                                <GroupedSection
-                                    items={[
-                                        {
-                                            id: 'empty-state',
-                                            icon: 'account-outline',
-                                            iconColor: '#ccc',
-                                            title: t('accountSwitcher.empty.title') || 'No saved accounts',
-                                            subtitle: t('accountSwitcher.empty.subtitle') || 'Add another account to switch between them quickly',
-                                            onPress: () => navigate?.('OxyAuth'),
-                                            customContent: (
-                                                <View style={styles.emptyStateContainer}>
-                                                    <OxyIcon name="person-outline" size={48} color="#ccc" />
-                                                    <Text style={styles.emptyStateTitle}>{t('accountSwitcher.empty.title') || 'No saved accounts'}</Text>
-                                                    <Text style={styles.emptyStateDescription}>
-                                                        {t('accountSwitcher.empty.subtitle') || 'Add another account to switch between them quickly'}
-                                                    </Text>
-                                                    <TouchableOpacity
-                                                        style={styles.addAccountButton}
-                                                        onPress={() => navigate?.('OxyAuth')}
-                                                    >
-                                                        <Text style={styles.addAccountButtonText}>{t('accountCenter.sections.addAccount') || 'Add Account'}</Text>
-                                                    </TouchableOpacity>
-                                                </View>
-                                            ),
-                                        },
-                                    ]}
-
-                                />
+                                <SettingsListGroup>
+                                    <SettingsListItem
+                                        icon={<SettingsIcon name="account-outline" color="#ccc" />}
+                                        title={t('accountSwitcher.empty.title') || 'No saved accounts'}
+                                        description={t('accountSwitcher.empty.subtitle') || 'Add another account to switch between them quickly'}
+                                        onPress={() => navigate?.('OxyAuth')}
+                                        rightElement={
+                                            <View style={styles.emptyStateContainer}>
+                                                <OxyIcon name="person-outline" size={48} color="#ccc" />
+                                                <Text style={styles.emptyStateTitle}>{t('accountSwitcher.empty.title') || 'No saved accounts'}</Text>
+                                                <Text style={styles.emptyStateDescription}>
+                                                    {t('accountSwitcher.empty.subtitle') || 'Add another account to switch between them quickly'}
+                                                </Text>
+                                                <TouchableOpacity
+                                                    style={styles.addAccountButton}
+                                                    onPress={() => navigate?.('OxyAuth')}
+                                                >
+                                                    <Text style={styles.addAccountButtonText}>{t('accountCenter.sections.addAccount') || 'Add Account'}</Text>
+                                                </TouchableOpacity>
+                                            </View>
+                                        }
+                                        showChevron={false}
+                                    />
+                                </SettingsListGroup>
                             </View>
                         )}
                     </>

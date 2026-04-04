@@ -16,7 +16,9 @@ import { toast } from '../../lib/sonner';
 import type { ClientSession } from '@oxyhq/core';
 import * as Prompt from '@oxyhq/bloom/prompt';
 import { usePromptControl } from '@oxyhq/bloom/prompt';
-import { Header, GroupedSection } from '../components';
+import { Header } from '../components';
+import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
+import { SettingsIcon } from '../components/SettingsIcon';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { useOxy } from '../context/OxyContext';
 import { useI18n } from '../hooks/useI18n';
@@ -328,11 +330,35 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
                             <Text style={[styles.metaText, { color: '#777', marginBottom: 6 }]}>{t('sessionManagement.lastRefreshed', { time: formatRelative(lastRefreshed.toISOString()) })}</Text>
                         )}
                         <View style={styles.fullBleed}>
-                            <GroupedSection items={sessionItems} />
+                            <SettingsListGroup>
+                                {sessionItems.map(item => (
+                                    <SettingsListItem
+                                        key={item.id}
+                                        icon={<SettingsIcon name={item.icon} color={item.iconColor} />}
+                                        title={item.title}
+                                        description={item.subtitle}
+                                        showChevron={false}
+                                        rightElement={item.customContentBelow}
+                                    />
+                                ))}
+                            </SettingsListGroup>
                         </View>
                         <View style={styles.sectionSpacer} />
                         <View style={styles.fullBleed}>
-                            <GroupedSection items={bulkItems} />
+                            <SettingsListGroup>
+                                {bulkItems.map(item => (
+                                    <SettingsListItem
+                                        key={item.id}
+                                        icon={<SettingsIcon name={item.icon} color={item.iconColor} />}
+                                        title={item.title}
+                                        description={item.subtitle}
+                                        onPress={item.onPress}
+                                        showChevron={false}
+                                        disabled={item.disabled}
+                                        rightElement={item.customContent}
+                                    />
+                                ))}
+                            </SettingsListGroup>
                         </View>
                     </>
                 ) : (
