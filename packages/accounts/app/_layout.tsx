@@ -1,5 +1,6 @@
 import { ThemeProvider } from '@react-navigation/native';
 import { Stack } from 'expo-router';
+import Head from 'expo-router/head';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useCallback, useMemo, useState } from 'react';
@@ -63,6 +64,10 @@ export default function RootLayout() {
   return (
     <KeyboardProvider>
       <OxyProvider baseURL={API_URL} themeMode="system">
+        <Head>
+          <title>Oxy Account</title>
+          <meta name="description" content="Manage your Oxy account, security, and privacy settings" />
+        </Head>
         <AlertProvider>
           {!appIsReady ? (
             <AppSplashScreen
