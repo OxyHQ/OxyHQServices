@@ -1,13 +1,13 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { useRouter, usePathname } from 'expo-router';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
-import { ThemedText } from '@/components/themed-text';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { darkenColor } from '@/utils/color-utils';
 import { useHapticPress } from '@/hooks/use-haptic-press';
+import { useOxy } from '@oxyhq/services';
 import type { MaterialCommunityIconName } from '@/types/icons';
 
 export interface MenuItem {
@@ -25,6 +25,7 @@ const baseMenuItems: MenuItem[] = [
     { path: '/(tabs)/devices', icon: 'desktop-classic', label: 'Your devices', iconColor: 'sidebarIconDevices' },
     { path: '/(tabs)/data', icon: 'toggle-switch-outline', label: 'Data & privacy', iconColor: 'sidebarIconData' },
     { path: '/(tabs)/sharing', icon: 'account-group-outline', label: 'People & sharing', iconColor: 'sidebarIconSharing' },
+    { path: '/(tabs)/managed-accounts', icon: 'account-supervisor-outline', label: 'Your Identities', iconColor: 'sidebarIconSharing' },
     { path: '/(tabs)/family', icon: 'share-variant-outline', label: 'Third-party connections', iconColor: 'sidebarIconFamily' },
     { path: '/(tabs)/payments', icon: 'wallet-outline', label: 'Payments & subscriptions', iconColor: 'sidebarIconPayments' },
     { path: '/(tabs)/storage', icon: 'cloud-outline', label: 'Oxy storage', iconColor: 'sidebarIconStorage' },
@@ -49,6 +50,22 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
     const pathname = usePathname();
 
     const handlePressIn = useHapticPress();
+    const { actingAs, managedAccounts } = useOxy();
+
+    // Compute the acting-as display name for the indicator
+    const actingAsName = useMemo(() => {
+        if (!actingAs || !managedAccounts.length) return null;
+        const managed = managedAccounts.find((m) => m.accountId === actingAs);
+        if (!managed?.account) return null;
+        const account = managed.account;
+        if (typeof account.name === 'object' && account.name) {
+            const nameObj = account.name as { first?: string; full?: string };
+            if (nameObj.full) return nameObj.full;
+            if (nameObj.first) return nameObj.first;
+        }
+        if (typeof account.name === 'string' && account.name) return account.name;
+        return account.username || 'Managed Account';
+    }, [actingAs, managedAccounts]);
 
     const handleNavigate = (path: string) => {
         router.push(path as any);
@@ -57,6 +74,15 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
 
     return (
         <>
+            {/* Acting-as indicator */}
+            {actingAs && actingAsName && (
+                <View style={[styles.actingAsContainer, { backgroundColor: colors.sidebarIconSecurity + '14' }]}>
+                    <View style={[styles.actingAsDot, { backgroundColor: colors.success }]} />
+                    <Text style={[styles.actingAsText, { color: colors.sidebarIconSecurity }]} numberOfLines={1}>
+                        Acting as {actingAsName}
+                    </Text>
+                </View>
+            )}
             <View style={styles.menuContainer}>
                 {menuItems.map((item) => {
                     const isActive = pathname === item.path || (item.path === '/(tabs)' && (pathname === '/(tabs)' || pathname === '/(tabs)/'));
@@ -101,6 +127,25 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
 }
 
 const styles = StyleSheet.create({
+    actingAsContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 14,
+        paddingVertical: 8,
+        borderRadius: 20,
+        marginBottom: 12,
+        gap: 8,
+        alignSelf: 'flex-start',
+    },
+    actingAsDot: {
+        width: 8,
+        height: 8,
+        borderRadius: 4,
+    },
+    actingAsText: {
+        fontSize: 13,
+        fontWeight: '500',
+    },
     menuContainer: {
         gap: 4,
         alignItems: 'flex-start',
@@ -129,4 +174,3 @@ const styles = StyleSheet.create({
         fontWeight: '400',
     },
 });
-

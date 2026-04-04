@@ -1,6 +1,6 @@
 import type React from 'react';
-import { Platform, type StyleProp, type TextStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useTheme } from '@oxyhq/bloom/theme';
 
 export interface IconProps {
   name: string;
@@ -12,16 +12,17 @@ export interface IconProps {
 const OxyIcon: React.FC<IconProps> = ({
   name,
   size = 24,
-  color = '#000',
+  color,
   style
 }) => {
-  // Icon name is already properly typed as IoniconsGlyphs
+  const theme = useTheme();
+  const resolvedColor = color ?? theme.colors.icon;
 
   return (
     <Ionicons
       name={name as React.ComponentProps<typeof Ionicons>['name']}
       size={size}
-      color={color}
+      color={resolvedColor}
       style={style}
     />
   );

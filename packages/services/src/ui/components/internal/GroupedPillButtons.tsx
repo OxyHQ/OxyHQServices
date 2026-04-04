@@ -1,6 +1,7 @@
 import type React from 'react';
 import { View, TouchableOpacity, Text, ActivityIndicator, StyleSheet, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useTheme } from '@oxyhq/bloom/theme';
 
 type IoniconsName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -32,6 +33,8 @@ const GroupedPillButtons: React.FC<GroupedPillButtonsProps> = ({
     colors,
     gap = 8,
 }) => {
+    const theme = useTheme();
+
     const getButtonStyle = (button: ButtonConfig, index: number, totalButtons: number) => {
         const baseStyle = {
             flexDirection: 'row' as const,
@@ -87,16 +90,16 @@ const GroupedPillButtons: React.FC<GroupedPillButtonsProps> = ({
 
         switch (button.variant) {
             case 'primary':
-                backgroundColor = isDisabled ? '#CCCCCC' : colors.primary;
-                borderColor = isDisabled ? '#CCCCCC' : colors.primary;
+                backgroundColor = isDisabled ? theme.colors.borderLight : colors.primary;
+                borderColor = isDisabled ? theme.colors.borderLight : colors.primary;
                 break;
             case 'secondary':
-                backgroundColor = isDisabled ? '#CCCCCC' : (colors.secondary || colors.primary);
-                borderColor = isDisabled ? '#CCCCCC' : (colors.secondary || colors.primary);
+                backgroundColor = isDisabled ? theme.colors.borderLight : (colors.secondary || colors.primary);
+                borderColor = isDisabled ? theme.colors.borderLight : (colors.secondary || colors.primary);
                 break;
             default:
                 backgroundColor = 'transparent';
-                borderColor = isDisabled ? '#CCCCCC' : colors.border;
+                borderColor = isDisabled ? theme.colors.borderLight : colors.border;
                 break;
         }
 
@@ -119,14 +122,14 @@ const GroupedPillButtons: React.FC<GroupedPillButtonsProps> = ({
 
         const isDisabled = button.disabled || button.loading;
         let textColor = colors.text;
-        
+
         switch (button.variant) {
             case 'primary':
             case 'secondary':
-                textColor = isDisabled ? '#999999' : '#FFFFFF';
+                textColor = isDisabled ? theme.colors.textTertiary : '#FFFFFF';
                 break;
             default:
-                textColor = isDisabled ? '#999999' : colors.text;
+                textColor = isDisabled ? theme.colors.textTertiary : colors.text;
                 break;
         }
 
@@ -139,13 +142,13 @@ const GroupedPillButtons: React.FC<GroupedPillButtonsProps> = ({
 
     const getIconColor = (button: ButtonConfig, colors: GroupedPillButtonColors) => {
         const isDisabled = button.disabled || button.loading;
-        
+
         switch (button.variant) {
             case 'primary':
             case 'secondary':
-                return isDisabled ? '#999999' : '#FFFFFF';
+                return isDisabled ? theme.colors.textTertiary : '#FFFFFF';
             default:
-                return isDisabled ? '#999999' : colors.text;
+                return isDisabled ? theme.colors.textTertiary : colors.text;
         }
     };
 
@@ -247,4 +250,4 @@ const styles = StyleSheet.create({
     },
 });
 
-export default GroupedPillButtons; 
+export default GroupedPillButtons;

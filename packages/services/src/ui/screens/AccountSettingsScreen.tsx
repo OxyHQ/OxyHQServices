@@ -12,7 +12,8 @@ import {
 import type { BaseScreenProps } from '../types/navigation';
 import { toast } from '../../lib/sonner';
 import { fontFamilies } from '../styles/fonts';
-import { confirmAction } from '../utils/confirmAction';
+import * as Prompt from '@oxyhq/bloom/prompt';
+import { usePromptControl } from '@oxyhq/bloom/prompt';
 import { useAuthStore } from '../stores/authStore';
 import { GroupedSection } from '../components';
 import { useI18n } from '../hooks/useI18n';
@@ -53,6 +54,9 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
     // Use TanStack Query for user data
     const { data: user, isLoading: userLoading } = useCurrentUser({ enabled: isAuthenticated });
     const uploadAvatarMutation = useUploadAvatar();
+
+    // Prompt controls
+    const removeAvatarPrompt = usePromptControl();
 
     // Fallback to store for backward compatibility
     const userFromStore = useAuthStore((state) => state.user);
@@ -259,12 +263,14 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
         }
     }, [initialSection, sectionYPositions]);
 
-    const handleAvatarRemove = () => {
-        confirmAction(t('editProfile.confirms.removeAvatar') || 'Remove your profile picture?', () => {
-            setAvatarFileId('');
-            toast.success(t('editProfile.toasts.avatarRemoved') || 'Avatar removed');
-        });
-    };
+    const handleAvatarRemoveConfirmed = useCallback(() => {
+        setAvatarFileId('');
+        toast.success(t('editProfile.toasts.avatarRemoved') || 'Avatar removed');
+    }, [t]);
+
+    const handleAvatarRemove = useCallback(() => {
+        removeAvatarPrompt.open();
+    }, [removeAvatarPrompt]);
 
     const { openAvatarPicker } = useOxy();
 
@@ -573,6 +579,14 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                             </View>
                         </View>
             </ScrollView>
+            <Prompt.Basic
+                control={removeAvatarPrompt}
+                title={t('editProfile.confirms.removeAvatarTitle') || 'Remove Avatar'}
+                description={t('editProfile.confirms.removeAvatar') || 'Remove your profile picture?'}
+                onConfirm={handleAvatarRemoveConfirmed}
+                confirmButtonCta={t('common.remove') || 'Remove'}
+                confirmButtonColor='negative'
+            />
         </View>
     );
 };

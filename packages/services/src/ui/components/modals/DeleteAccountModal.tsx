@@ -1,31 +1,23 @@
 import type React from 'react';
 import { useState, useCallback } from 'react';
-import {
-    View,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    StyleSheet,
-    Modal,
-    KeyboardAvoidingView,
-    Platform,
-} from 'react-native';
+import { View, Text, TextInput, TouchableOpacity } from 'react-native';
+import * as Dialog from '@oxyhq/bloom/dialog';
+import type { DialogControlProps } from '@oxyhq/bloom/dialog';
+import * as Prompt from '@oxyhq/bloom/prompt';
 import OxyIcon from '../icon/OxyIcon';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { Loading } from '@oxyhq/bloom/loading';
 
 interface DeleteAccountModalProps {
-    visible: boolean;
+    control: DialogControlProps;
     username: string;
-    onClose: () => void;
     onDelete: (password: string) => Promise<void>;
     t: (key: string, params?: Record<string, string>) => string | undefined;
 }
 
 const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
-    visible,
+    control,
     username,
-    onClose,
     onDelete,
     t,
 }) => {
@@ -46,7 +38,7 @@ const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
 
         try {
             await onDelete(password);
-            // Modal will be closed by parent on success
+            // Dialog will be closed by parent on success
         } catch (err: unknown) {
             setError((err instanceof Error ? err.message : null) || t('deleteAccount.error') || 'Failed to delete account');
         } finally {
@@ -54,234 +46,100 @@ const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
         }
     }, [isValid, password, onDelete, t]);
 
-    const handleClose = useCallback(() => {
+    const handleCleanup = useCallback(() => {
         if (isDeleting) return;
         setPassword('');
         setConfirmUsername('');
         setError(null);
-        onClose();
-    }, [isDeleting, onClose]);
+        setShowPassword(false);
+    }, [isDeleting]);
 
     return (
-        <Modal
-            visible={visible}
-            transparent
-            animationType="fade"
-            onRequestClose={handleClose}
-        >
-            <KeyboardAvoidingView
-                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-                style={styles.overlay}
-            >
-                <TouchableOpacity
-                    style={[styles.backdrop, { backgroundColor: theme.colors.overlay }]}
-                    activeOpacity={1}
-                    onPress={handleClose}
-                />
-                <View style={[styles.modal, { backgroundColor: theme.colors.background }]}>
-                    <View style={styles.header}>
-                        <OxyIcon name="alert" size={32} color={theme.colors.error} />
-                        <Text className="text-destructive" style={styles.title}>
-                            {t('deleteAccount.title') || 'Delete Account'}
-                        </Text>
-                    </View>
-
-                    <Text className="text-foreground" style={styles.warning}>
-                        {t('deleteAccount.warning') || 'This action cannot be undone. Your account and all associated data will be permanently deleted.'}
+        <Dialog.Outer control={control} onClose={handleCleanup}>
+            <Dialog.Handle />
+            <Dialog.ScrollableInner label="Delete Account">
+                <View className="flex-row items-center mb-4 gap-3">
+                    <OxyIcon name="alert" size={32} color={theme.colors.error} />
+                    <Text className="text-destructive text-xl font-bold">
+                        {t('deleteAccount.title') || 'Delete Account'}
                     </Text>
+                </View>
 
-                    {error && (
-                        <View style={[styles.errorContainer, { backgroundColor: `${theme.colors.error}20` }]}>
-                            <Text className="text-destructive" style={styles.errorText}>
-                                {error}
-                            </Text>
-                        </View>
-                    )}
+                <Text className="text-foreground text-sm leading-5 mb-5">
+                    {t('deleteAccount.warning') || 'This action cannot be undone. Your account and all associated data will be permanently deleted.'}
+                </Text>
 
-                    <View style={styles.inputGroup}>
-                        <Text className="text-muted-foreground" style={styles.label}>
-                            {t('deleteAccount.passwordLabel') || 'Enter your password'}
+                {error && (
+                    <View
+                        className="p-3 rounded-lg mb-4"
+                        style={{ backgroundColor: `${theme.colors.error}20` }}
+                    >
+                        <Text className="text-destructive text-sm text-center">
+                            {error}
                         </Text>
-                        <View className="border-border bg-background" style={styles.inputContainer}>
-                            <TextInput
-                                className="text-foreground"
-                                style={styles.input}
-                                value={password}
-                                onChangeText={setPassword}
-                                placeholder={t('deleteAccount.passwordPlaceholder') || 'Password'}
-                                placeholderTextColor={theme.colors.textSecondary}
-                                secureTextEntry={!showPassword}
-                                autoCapitalize="none"
-                                editable={!isDeleting}
-                            />
-                            <TouchableOpacity
-                                onPress={() => setShowPassword(!showPassword)}
-                                style={styles.eyeButton}
-                            >
-                                <OxyIcon
-                                    name={showPassword ? 'eye-off' : 'eye'}
-                                    size={20}
-                                    color={theme.colors.textSecondary}
-                                />
-                            </TouchableOpacity>
-                        </View>
                     </View>
+                )}
 
-                    <View style={styles.inputGroup}>
-                        <Text className="text-muted-foreground" style={styles.label}>
-                            {t('deleteAccount.confirmLabel', { username }) || `Type "${username}" to confirm`}
-                        </Text>
+                <View className="mb-4">
+                    <Text className="text-muted-foreground text-[13px] mb-2">
+                        {t('deleteAccount.passwordLabel') || 'Enter your password'}
+                    </Text>
+                    <View className="flex-row items-center border border-border bg-background rounded-lg">
                         <TextInput
-                            className="text-foreground bg-background"
-                            style={[
-                                styles.input,
-                                styles.confirmInput,
-                                {
-                                    borderColor: confirmUsername === username ? theme.colors.success : theme.colors.border,
-                                },
-                            ]}
-                            value={confirmUsername}
-                            onChangeText={setConfirmUsername}
-                            placeholder={username}
+                            className="text-foreground flex-1 text-base py-3 px-4"
+                            value={password}
+                            onChangeText={setPassword}
+                            placeholder={t('deleteAccount.passwordPlaceholder') || 'Password'}
                             placeholderTextColor={theme.colors.textSecondary}
+                            secureTextEntry={!showPassword}
                             autoCapitalize="none"
-                            autoCorrect={false}
                             editable={!isDeleting}
                         />
-                    </View>
-
-                    <View style={styles.buttons}>
                         <TouchableOpacity
-                            className="border-border"
-                            style={[styles.button, styles.cancelButton]}
-                            onPress={handleClose}
-                            disabled={isDeleting}
+                            onPress={() => setShowPassword(!showPassword)}
+                            className="p-3"
                         >
-                            <Text className="text-foreground" style={styles.buttonText}>
-                                {t('common.cancel') || 'Cancel'}
-                            </Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                            style={[
-                                styles.button,
-                                styles.deleteButton,
-                                { backgroundColor: isValid ? theme.colors.error : `${theme.colors.error}50` },
-                            ]}
-                            onPress={handleDelete}
-                            disabled={!isValid || isDeleting}
-                        >
-                            {isDeleting ? (
-                                <Loading size="small" />
-                            ) : (
-                                <Text style={[styles.deleteButtonText, { color: theme.colors.card }]}>
-                                    {t('deleteAccount.confirm') || 'Delete Forever'}
-                                </Text>
-                            )}
+                            <OxyIcon
+                                name={showPassword ? 'eye-off' : 'eye'}
+                                size={20}
+                                color={theme.colors.textSecondary}
+                            />
                         </TouchableOpacity>
                     </View>
                 </View>
-            </KeyboardAvoidingView>
-        </Modal>
+
+                <View className="mb-4">
+                    <Text className="text-muted-foreground text-[13px] mb-2">
+                        {t('deleteAccount.confirmLabel', { username }) || `Type "${username}" to confirm`}
+                    </Text>
+                    <TextInput
+                        className="text-foreground bg-background text-base py-3 px-4 border rounded-lg"
+                        style={{
+                            borderColor: confirmUsername === username ? theme.colors.success : theme.colors.border,
+                        }}
+                        value={confirmUsername}
+                        onChangeText={setConfirmUsername}
+                        placeholder={username}
+                        placeholderTextColor={theme.colors.textSecondary}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                        editable={!isDeleting}
+                    />
+                </View>
+
+                <Prompt.Actions>
+                    <Prompt.Action
+                        onPress={handleDelete}
+                        color="negative"
+                        cta={isDeleting ? undefined : (t('deleteAccount.confirm') || 'Delete Forever')}
+                        disabled={!isValid || isDeleting}
+                        shouldCloseOnPress={false}
+                    />
+                    <Prompt.Cancel cta={t('common.cancel') || 'Cancel'} />
+                </Prompt.Actions>
+            </Dialog.ScrollableInner>
+        </Dialog.Outer>
     );
 };
-
-const styles = StyleSheet.create({
-    overlay: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    backdrop: {
-        ...StyleSheet.absoluteFillObject,
-    },
-    modal: {
-        width: '90%',
-        maxWidth: 400,
-        borderRadius: 16,
-        padding: 24,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
-        elevation: 8,
-    },
-    header: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: 16,
-        gap: 12,
-    },
-    title: {
-        fontSize: 20,
-        fontWeight: '700',
-    },
-    warning: {
-        fontSize: 14,
-        lineHeight: 20,
-        marginBottom: 20,
-    },
-    errorContainer: {
-        padding: 12,
-        borderRadius: 8,
-        marginBottom: 16,
-    },
-    errorText: {
-        fontSize: 14,
-        textAlign: 'center',
-    },
-    inputGroup: {
-        marginBottom: 16,
-    },
-    label: {
-        fontSize: 13,
-        marginBottom: 8,
-    },
-    inputContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        borderWidth: 1,
-        borderRadius: 8,
-    },
-    input: {
-        flex: 1,
-        fontSize: 16,
-        paddingVertical: 12,
-        paddingHorizontal: 16,
-    },
-    confirmInput: {
-        borderWidth: 1,
-        borderRadius: 8,
-    },
-    eyeButton: {
-        padding: 12,
-    },
-    buttons: {
-        flexDirection: 'row',
-        gap: 12,
-        marginTop: 8,
-    },
-    button: {
-        flex: 1,
-        paddingVertical: 14,
-        borderRadius: 8,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    cancelButton: {
-        borderWidth: 1,
-    },
-    deleteButton: {
-        minHeight: 48,
-    },
-    buttonText: {
-        fontSize: 16,
-        fontWeight: '600',
-    },
-    deleteButtonText: {
-        fontSize: 16,
-        fontWeight: '600',
-    },
-});
 
 export default DeleteAccountModal;

@@ -1,8 +1,9 @@
 import type React from 'react';
-import { useCallback, useState, useEffect } from 'react';
+import { useCallback, useState, useEffect, useMemo } from 'react';
 import { TouchableOpacity, Text, View, StyleSheet, type ViewStyle, type TextStyle, type StyleProp, Platform } from 'react-native';
 import { useAuthStore } from '../stores/authStore';
 import { useShallow } from 'zustand/react/shallow';
+import { useTheme } from '@oxyhq/bloom/theme';
 import { fontFamilies } from '../styles/fonts';
 import OxyLogo from './OxyLogo';
 import { showSignInModal, subscribeToSignInModal } from './SignInModal';
@@ -51,26 +52,25 @@ export interface OxySignInButtonProps {
 
 /**
  * A pre-styled button component for signing in with Oxy identity
- * 
+ *
  * This component opens the Oxy Auth flow which allows users to authenticate
  * using their Oxy Accounts identity (via QR code or deep link).
- * 
+ *
  * @example
  * ```tsx
  * // Basic usage
  * <OxySignInButton />
- * 
+ *
  * // Custom styling
- * <OxySignInButton 
- *   variant="contained" 
- *   style={{ marginTop: 20 }} 
- *   text="Login with Oxy" 
+ * <OxySignInButton
+ *   variant="contained"
+ *   style={{ marginTop: 20 }}
+ *   text="Login with Oxy"
  * />
- * 
+ *
  * // Custom handler
  * <OxySignInButton onPress={() => {
  *   // Custom authentication flow
- *   console.log('Custom auth flow initiated');
  * }} />
  * ```
  */
@@ -83,6 +83,7 @@ export const OxySignInButton: React.FC<OxySignInButtonProps> = ({
     disabled = false,
     showWhenAuthenticated = false,
 }) => {
+    const theme = useTheme();
     const { isAuthenticated, isLoading } = useAuthStore(
         useShallow((state) => ({ isAuthenticated: state.isAuthenticated, isLoading: state.isLoading }))
     );
@@ -105,6 +106,66 @@ export const OxySignInButton: React.FC<OxySignInButtonProps> = ({
         showSignInModal();
     }, [onPress]);
 
+    const themedStyles = useMemo(() => StyleSheet.create({
+        button: {
+            padding: 14,
+            borderRadius: 35,
+            alignItems: 'center',
+            justifyContent: 'center',
+        },
+        buttonDefault: {
+            backgroundColor: '#FFFFFF',
+            borderWidth: 1,
+            borderColor: theme.colors.borderLight,
+            ...Platform.select({
+                web: {
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                },
+                default: {
+                    shadowColor: '#000000',
+                    shadowOffset: { width: 0, height: 2 },
+                    shadowOpacity: 0.1,
+                    shadowRadius: 4,
+                    elevation: 2,
+                }
+            }),
+        },
+        buttonOutline: {
+            backgroundColor: 'transparent',
+            borderWidth: 1,
+            borderColor: theme.colors.primary,
+        },
+        buttonContained: {
+            backgroundColor: theme.colors.primary,
+        },
+        buttonDisabled: {
+            opacity: 0.6,
+        },
+        buttonContent: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+        },
+        text: {
+            fontFamily: fontFamilies.interSemiBold,
+            fontWeight: Platform.OS === 'web' ? '600' : undefined,
+            fontSize: 16,
+            marginLeft: 10,
+        },
+        textDefault: {
+            color: theme.colors.text,
+        },
+        textOutline: {
+            color: theme.colors.primary,
+        },
+        textContained: {
+            color: '#FFFFFF',
+        },
+        textDisabled: {
+            color: theme.colors.textTertiary,
+        },
+    }), [theme]);
+
     // Don't show the button if already authenticated (unless explicitly overridden)
     if (isAuthenticated && !showWhenAuthenticated) return null;
 
@@ -114,11 +175,11 @@ export const OxySignInButton: React.FC<OxySignInButtonProps> = ({
     const getButtonStyle = () => {
         switch (variant) {
             case 'outline':
-                return [styles.buttonOutline, style];
+                return [themedStyles.buttonOutline, style];
             case 'contained':
-                return [styles.buttonContained, style];
+                return [themedStyles.buttonContained, style];
             default:
-                return [styles.buttonDefault, style];
+                return [themedStyles.buttonDefault, style];
         }
     };
 
@@ -126,94 +187,34 @@ export const OxySignInButton: React.FC<OxySignInButtonProps> = ({
     const getTextStyle = () => {
         switch (variant) {
             case 'outline':
-                return [styles.textOutline, textStyle];
+                return [themedStyles.textOutline, textStyle];
             case 'contained':
-                return [styles.textContained, textStyle];
+                return [themedStyles.textContained, textStyle];
             default:
-                return [styles.textDefault, textStyle];
+                return [themedStyles.textDefault, textStyle];
         }
     };
 
     return (
         <TouchableOpacity
-            style={[styles.button, getButtonStyle(), isButtonDisabled && styles.buttonDisabled]}
+            style={[themedStyles.button, getButtonStyle(), isButtonDisabled && themedStyles.buttonDisabled]}
             onPress={handlePress}
             disabled={isButtonDisabled}
         >
-            <View style={styles.buttonContent}>
+            <View style={themedStyles.buttonContent}>
                 <OxyLogo
                     variant="icon"
                     size={20}
-                    fillColor={variant === 'contained' ? 'white' : '#d269e6'}
-                    innerFillColor={variant === 'contained' ? '#d269e6' : undefined}
+                    fillColor={variant === 'contained' ? 'white' : theme.colors.primary}
+                    innerFillColor={variant === 'contained' ? theme.colors.primary : undefined}
                     style={isButtonDisabled ? { opacity: 0.6 } : undefined}
                 />
-                <Text style={[styles.text, getTextStyle(), isButtonDisabled && styles.textDisabled]}>
+                <Text style={[themedStyles.text, getTextStyle(), isButtonDisabled && themedStyles.textDisabled]}>
                     {isLoading || isModalOpen ? 'Signing in...' : text}
                 </Text>
             </View>
         </TouchableOpacity>
     );
 };
-
-const styles = StyleSheet.create({
-    button: {
-        padding: 14,
-        borderRadius: 35,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    buttonDefault: {
-        backgroundColor: '#FFFFFF',
-        borderWidth: 1,
-        borderColor: '#DDDDDD',
-        ...Platform.select({
-            web: {
-                boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-            },
-            default: {
-                shadowColor: '#000000',
-                shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: 0.1,
-                shadowRadius: 4,
-                elevation: 2,
-            }
-        }),
-    },
-    buttonOutline: {
-        backgroundColor: 'transparent',
-        borderWidth: 1,
-        borderColor: '#d169e5',
-    },
-    buttonContained: {
-        backgroundColor: '#d169e5',
-    },
-    buttonDisabled: {
-        opacity: 0.6,
-    },
-    buttonContent: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    text: {
-        fontFamily: fontFamilies.interSemiBold,
-        fontWeight: Platform.OS === 'web' ? '600' : undefined,
-        fontSize: 16,
-        marginLeft: 10,
-    },
-    textDefault: {
-        color: '#333333',
-    },
-    textOutline: {
-        color: '#d169e5',
-    },
-    textContained: {
-        color: '#FFFFFF',
-    },
-    textDisabled: {
-        color: '#888888',
-    },
-});
 
 export default OxySignInButton;

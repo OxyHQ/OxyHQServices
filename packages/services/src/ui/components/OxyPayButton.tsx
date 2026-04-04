@@ -1,6 +1,7 @@
 import type React from 'react';
 import { useState } from 'react';
 import { TouchableOpacity, Text, View, StyleSheet, type ViewStyle, type TextStyle, type StyleProp, type LayoutChangeEvent } from 'react-native';
+import { useTheme } from '@oxyhq/bloom/theme';
 import { fontFamilies } from '../styles/fonts';
 import type { PaymentItem, PaymentGatewayResult } from '../screens/PaymentGatewayScreen';
 import OxyLogo from './OxyLogo';
@@ -42,13 +43,14 @@ const OxyPayButton: React.FC<OxyPayButtonProps> = ({
     color,
     variant = 'white',
 }) => {
+    const theme = useTheme();
     const [buttonHeight, setButtonHeight] = useState<number>(52);
     const handlePress = () => {
         console.warn('OxyPayButton: The bottom sheet payment flow has been removed. Provide a custom onPress handler.');
     };
     // Determine background and text color
-    const backgroundColor = color || (variant === 'black' ? '#111' : '#fff');
-    const textColor = variant === 'black' || (color && isColorDark(color)) ? '#fff' : '#1b1f0a';
+    const backgroundColor = color || (variant === 'black' ? theme.colors.text : theme.colors.background);
+    const textColor = variant === 'black' || (color && isColorDark(color)) ? theme.colors.background : '#1b1f0a';
     // Responsive sizing
     const logoWidth = Math.round(buttonHeight * 0.5); // 50% of button height
     const logoHeight = Math.round(buttonHeight * 0.25); // 25% of button height
@@ -120,4 +122,4 @@ const styles = StyleSheet.create({
     },
 });
 
-export default OxyPayButton; 
+export default OxyPayButton;

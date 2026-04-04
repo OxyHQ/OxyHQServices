@@ -7,10 +7,11 @@ import {
     TextInput,
     TouchableOpacity,
     ActivityIndicator,
-    Alert,
 } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
 import { toast } from '../../lib/sonner';
+import * as Prompt from '@oxyhq/bloom/prompt';
+import { usePromptControl } from '@oxyhq/bloom/prompt';
 import { Header, Section } from '../components';
 import { useI18n } from '../hooks/useI18n';
 import { useTheme } from '@oxyhq/bloom/theme';
@@ -27,8 +28,18 @@ const AccountVerificationScreen: React.FC<BaseScreenProps> = ({
     const [reason, setReason] = useState('');
     const [evidence, setEvidence] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [successMessage, setSuccessMessage] = useState('');
 
     const bloomTheme = useTheme();
+
+    // Prompt controls
+    const successPrompt = usePromptControl();
+
+    const handleSuccessAcknowledged = useCallback(() => {
+        setReason('');
+        setEvidence('');
+        goBack?.();
+    }, [goBack]);
 
     const handleSubmit = useCallback(async () => {
         if (!reason.trim()) {
@@ -48,20 +59,10 @@ const AccountVerificationScreen: React.FC<BaseScreenProps> = ({
                 evidence.trim() || undefined
             );
 
-            Alert.alert(
-                t('accountVerification.successTitle') || 'Request Submitted',
-                t('accountVerification.successMessage') || `Your verification request has been submitted. Request ID: ${result.requestId}`,
-                [
-                    {
-                        text: t('accountVerification.ok') || 'OK',
-                        onPress: () => {
-                            setReason('');
-                            setEvidence('');
-                            goBack?.();
-                        },
-                    },
-                ]
+            setSuccessMessage(
+                t('accountVerification.successMessage') || `Your verification request has been submitted. Request ID: ${result.requestId}`
             );
+            successPrompt.open();
         } catch (error: unknown) {
             if (__DEV__) {
                 console.error('Failed to submit verification request:', error);
@@ -72,7 +73,7 @@ const AccountVerificationScreen: React.FC<BaseScreenProps> = ({
         } finally {
             setIsSubmitting(false);
         }
-    }, [reason, evidence, oxyServices, t, goBack]);
+    }, [reason, evidence, oxyServices, t, successPrompt]);
 
     return (
         <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
@@ -158,6 +159,14 @@ const AccountVerificationScreen: React.FC<BaseScreenProps> = ({
                     </Text>
                 </Section>
             </ScrollView>
+            <Prompt.Basic
+                control={successPrompt}
+                title={t('accountVerification.successTitle') || 'Request Submitted'}
+                description={successMessage}
+                onConfirm={handleSuccessAcknowledged}
+                confirmButtonCta={t('accountVerification.ok') || 'OK'}
+                showCancel={false}
+            />
         </View>
     );
 };
@@ -214,4 +223,3 @@ const styles = StyleSheet.create({
 });
 
 export default React.memo(AccountVerificationScreen);
-

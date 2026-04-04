@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, Switch, StyleSheet } from 'react-native';
+import { useTheme } from '@oxyhq/bloom/theme';
 
 export interface SettingRowProps {
     title: string;
@@ -10,9 +11,9 @@ export interface SettingRowProps {
     textColor?: string;
     mutedTextColor?: string;
     borderColor?: string;
-    /** Active color for the switch track (default: #d169e5) */
+    /** Active color for the switch track */
     activeColor?: string;
-    /** Inactive color for the switch track (default: #767577) */
+    /** Inactive color for the switch track */
     inactiveColor?: string;
     /** Accessibility label for the switch */
     accessibilityLabel?: string;
@@ -31,10 +32,17 @@ const SettingRow: React.FC<SettingRowProps> = ({
     textColor,
     mutedTextColor,
     borderColor,
-    activeColor = '#d169e5',
-    inactiveColor = '#767577',
+    activeColor,
+    inactiveColor,
     accessibilityLabel,
 }) => {
+    const theme = useTheme();
+
+    const resolvedActiveColor = activeColor ?? theme.colors.primary;
+    const resolvedInactiveColor = inactiveColor ?? theme.colors.textTertiary;
+    const thumbOn = theme.colors.background;
+    const thumbOff = theme.colors.backgroundSecondary;
+
     return (
         <View
             style={[styles.settingRow, borderColor ? { borderBottomColor: borderColor } : undefined]}
@@ -60,8 +68,8 @@ const SettingRow: React.FC<SettingRowProps> = ({
                 value={value}
                 onValueChange={onValueChange}
                 disabled={disabled}
-                trackColor={{ false: inactiveColor, true: activeColor }}
-                thumbColor={value ? '#fff' : '#f4f3f4'}
+                trackColor={{ false: resolvedInactiveColor, true: resolvedActiveColor }}
+                thumbColor={value ? thumbOn : thumbOff}
                 accessibilityRole="switch"
                 accessibilityLabel={accessibilityLabel || title}
                 accessibilityState={{ checked: value, disabled }}
@@ -95,4 +103,3 @@ const styles = StyleSheet.create({
 });
 
 export default React.memo(SettingRow);
-

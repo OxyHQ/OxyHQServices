@@ -33,7 +33,7 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
 
   // OxyServices integration
-  const { user, isAuthenticated, oxyServices, isLoading: oxyLoading, showBottomSheet, refreshSessions, openAvatarPicker, sessions } = useOxy();
+  const { user, isAuthenticated, oxyServices, isLoading: oxyLoading, showBottomSheet, refreshSessions, openAvatarPicker, sessions, managedAccounts, actingAs } = useOxy();
   const { syncIdentity, isIdentitySynced, identitySyncState } = useIdentity();
   const alert = useAlert();
 
@@ -210,6 +210,14 @@ export default function HomeScreen() {
       router.push('/(tabs)/about-identity' as any);
     }
   }, [router]);
+
+  const handleManagedAccounts = useCallback(() => {
+    router.push('/(tabs)/managed-accounts' as any);
+  }, [router]);
+
+  const handleCreateManagedAccount = useCallback(() => {
+    showBottomSheet?.('CreateManagedAccount');
+  }, [showBottomSheet]);
 
   const handleSetUsername = useCallback(() => {
     showBottomSheet?.({
@@ -481,6 +489,57 @@ export default function HomeScreen() {
   }, [biometricEnabled, canEnableBiometric, hasBiometricHardware, biometricLoading, colors.sidebarIconSecurity, colors.sidebarIconPayments, colors.success, user?.email, router]);
 
 
+  // Managed accounts items for the identities section
+  const managedAccountItems = useMemo(() => {
+    const items: Array<{
+      id: string;
+      icon: string;
+      iconColor: string;
+      title: string;
+      subtitle?: string;
+      onPress?: () => void;
+      showChevron?: boolean;
+    }> = [];
+    if (managedAccounts.length > 0) {
+      items.push({
+        id: 'managed-count',
+        icon: 'account-group',
+        iconColor: colors.sidebarIconSharing,
+        title: `${managedAccounts.length} managed ${managedAccounts.length === 1 ? 'account' : 'accounts'}`,
+        subtitle: actingAs ? 'Currently acting as another identity' : 'Tap to view all',
+        onPress: handleManagedAccounts,
+        showChevron: true,
+      });
+      items.push({
+        id: 'create-identity',
+        icon: 'account-plus-outline',
+        iconColor: colors.sidebarIconPersonalInfo,
+        title: 'Create New Identity',
+        onPress: handleCreateManagedAccount,
+        showChevron: true,
+      });
+      items.push({
+        id: 'manage-all',
+        icon: 'account-cog-outline',
+        iconColor: colors.sidebarIconData,
+        title: 'Manage All',
+        onPress: handleManagedAccounts,
+        showChevron: true,
+      });
+    } else {
+      items.push({
+        id: 'no-managed',
+        icon: 'account-plus-outline',
+        iconColor: colors.sidebarIconSharing,
+        title: 'No managed accounts yet',
+        subtitle: 'Create identities for different contexts',
+        onPress: handleCreateManagedAccount,
+        showChevron: true,
+      });
+    }
+    return items;
+  }, [managedAccounts, actingAs, colors.sidebarIconSharing, colors.sidebarIconPersonalInfo, colors.sidebarIconData, handleManagedAccounts, handleCreateManagedAccount]);
+
   const content = useMemo(() => (
     <>
       {/* Recommendations Section */}
@@ -514,6 +573,14 @@ export default function HomeScreen() {
         <AccountInfoGrid cards={quickStatsCards} onPressIn={handlePressIn} />
       </Section>
 
+      {/* Managed Accounts Section */}
+      <Section title="Your Identities">
+        <ThemedText style={styles.subtitle}>Create and manage sub-accounts for different purposes.</ThemedText>
+        <AccountCard>
+          <GroupedSection items={managedAccountItems} />
+        </AccountCard>
+      </Section>
+
       {/* Security Overview - Card Layout */}
       {securityOverviewItems.length > 0 && (
         <Section title="Security">
@@ -543,7 +610,7 @@ export default function HomeScreen() {
         )}
       </Section>
     </>
-  ), [quickActions, accountCards, identityCards, recentActivityItems, quickStatsCards, securityOverviewItems, colors, handlePressIn, recommendations]);
+  ), [quickActions, accountCards, identityCards, recentActivityItems, quickStatsCards, securityOverviewItems, managedAccountItems, colors, handlePressIn, recommendations]);
 
 
   useEffect(() => {

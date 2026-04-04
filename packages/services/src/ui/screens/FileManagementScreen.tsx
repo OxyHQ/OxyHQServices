@@ -6,12 +6,12 @@ import {
     StyleSheet,
     ScrollView,
     ActivityIndicator,
+    Alert,
     RefreshControl,
     TextInput,
     Image,
     Animated,
     Easing,
-    Alert,
 } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import type { FileManagementScreenProps } from '../types/fileManagement';
@@ -51,6 +51,7 @@ import {
 import { FileViewer } from '../components/fileManagement/FileViewer';
 import { FileDetailsModal } from '../components/fileManagement/FileDetailsModal';
 import { UploadPreview } from '../components/fileManagement/UploadPreview';
+import { useDialogControl } from '@oxyhq/bloom/dialog';
 import { fileManagementStyles } from '../components/fileManagement/styles';
 import type { OnConfirmFileSelection } from '../types/fileManagement';
 
@@ -143,7 +144,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     const [refreshing, setRefreshing] = useState(false);
     const [paging, setPaging] = useState({ offset: 0, limit: 40, total: 0, hasMore: true, loadingMore: false });
     const [selectedFile, setSelectedFile] = useState<FileMetadata | null>(null);
-    const [showFileDetails, setShowFileDetails] = useState(false);
+    const fileDetailsControl = useDialogControl();
     // In selectMode we never open the detailed viewer
     const [openedFile, setOpenedFile] = useState<FileMetadata | null>(null);
     const [fileContent, setFileContent] = useState<string | null>(null);
@@ -1119,7 +1120,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
     const showFileDetailsModal = (file: FileMetadata) => {
         setSelectedFile(file);
-        setShowFileDetails(true);
+        fileDetailsControl.open();
     };
 
     const renderSimplePhotoItem = useCallback((photo: FileMetadata, index: number) => {
@@ -1956,9 +1957,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     isOwner={user?.id === targetUserId}
                 />
                 <FileDetailsModal
-                    visible={showFileDetails}
+                    control={fileDetailsControl}
                     file={selectedFile}
-                    onClose={() => setShowFileDetails(false)}
                     onDownload={handleFileDownload}
                     onDelete={handleFileDelete}
                     isOwner={user?.id === targetUserId}
@@ -1981,7 +1981,6 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     titleAlignment="left"
                 />
                 <UploadPreview
-                    visible={true}
                     pendingFiles={pendingFiles}
                     onConfirm={handleConfirmUpload}
                     onCancel={handleCancelUpload}
@@ -2273,9 +2272,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
             {!selectMode && (
                 <FileDetailsModal
-                    visible={showFileDetails}
+                    control={fileDetailsControl}
                     file={selectedFile}
-                    onClose={() => setShowFileDetails(false)}
                     onDownload={handleFileDownload}
                     onDelete={handleFileDelete}
                     isOwner={user?.id === targetUserId}
@@ -2312,6 +2310,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
             {/* Selection bar removed; actions are now in header */}
             {/* Global loadingMore bar removed; now inline in scroll areas */}
+
         </View>
     );
 };

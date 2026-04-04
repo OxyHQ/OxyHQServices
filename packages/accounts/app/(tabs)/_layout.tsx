@@ -234,6 +234,13 @@ export default function TabLayout() {
           }}
         />
         <Drawer.Screen
+          name="managed-accounts"
+          options={{
+            drawerLabel: 'Your Identities',
+            title: 'Your Identities',
+          }}
+        />
+        <Drawer.Screen
           name="sessions"
           options={{
             drawerItemStyle: { display: 'none' },

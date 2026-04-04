@@ -37,6 +37,7 @@ import {
     createScreenContentStyle,
 } from '../constants/spacing';
 import { DeleteAccountModal } from '../components/modals';
+import { useDialogControl } from '@oxyhq/bloom/dialog';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 
 // Optional Lottie import - gracefully handle if not available
@@ -87,7 +88,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
     const [showMoreAccounts, setShowMoreAccounts] = useState(false);
     const [additionalAccountsData, setAdditionalAccountsData] = useState<any[]>([]);
     const [loadingAdditionalAccounts, setLoadingAdditionalAccounts] = useState(false);
-    const [showDeleteModal, setShowDeleteModal] = useState(false);
+    const deleteAccountControl = useDialogControl();
     const lottieRef = useRef<any>(null);
     const hasPlayedRef = useRef(false);
     const insets = useSafeAreaInsets();
@@ -301,8 +302,8 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
             toast.error(t('accountOverview.items.deleteAccount.error') || 'User not available');
             return;
         }
-        setShowDeleteModal(true);
-    }, [user, t]);
+        deleteAccountControl.open();
+    }, [user, t, deleteAccountControl]);
 
     const handleConfirmDelete = useCallback(async (password: string) => {
         if (!oxyServices || !user) {
@@ -311,7 +312,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
 
         await oxyServices.deleteAccount(password);
         toast.success(t('accountOverview.items.deleteAccount.success') || 'Account deleted successfully');
-        setShowDeleteModal(false);
+        deleteAccountControl.close();
         await logout();
         if (onClose) {
             onClose();
@@ -626,12 +627,11 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                 </SettingsListGroup>
             </ScrollView>
 
-            {/* Delete Account Modal */}
+            {/* Delete Account Dialog */}
             {user && (
                 <DeleteAccountModal
-                    visible={showDeleteModal}
+                    control={deleteAccountControl}
                     username={user.username || ''}
-                    onClose={() => setShowDeleteModal(false)}
                     onDelete={handleConfirmDelete}
                     t={t}
                 />

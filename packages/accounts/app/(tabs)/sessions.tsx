@@ -1,5 +1,6 @@
 import React, { useMemo, useCallback, useState } from 'react';
 import { View, StyleSheet, Text, TouchableOpacity, ActivityIndicator, Platform } from 'react-native';
+import { useRouter } from 'expo-router';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { ThemedText } from '@/components/themed-text';
@@ -9,6 +10,7 @@ import { UnauthenticatedScreen } from '@/components/unauthenticated-screen';
 import { useOxy } from '@oxyhq/services';
 import { AccountCard } from '@/components/ui';
 import { GroupedSection } from '@/components/grouped-section';
+import { Section } from '@/components/section';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { formatDate } from '@/utils/date-utils';
 import type { ClientSession } from '@oxyhq/core';
@@ -17,13 +19,18 @@ import { useHapticPress } from '@/hooks/use-haptic-press';
 export default function SessionsScreen() {
     const colorScheme = useColorScheme() ?? 'light';
     const colors = Colors[colorScheme];
-    
+    const router = useRouter();
+
     // OxyServices integration
     const { sessions, activeSessionId, removeSession, switchSession, isLoading: oxyLoading, isAuthenticated, refreshSessions } = useOxy();
     const alert = useAlert();
     const [actionLoading, setActionLoading] = useState<string | null>(null);
 
     const handlePressIn = useHapticPress();
+
+    const handleGoToManagedAccounts = useCallback(() => {
+        router.push('/(tabs)/managed-accounts' as any);
+    }, [router]);
 
     // Format relative time for last active
     const formatRelativeTime = useCallback((dateString?: string) => {
@@ -32,7 +39,7 @@ export default function SessionsScreen() {
         const now = new Date();
         const diffMs = now.getTime() - date.getTime();
         const minutes = Math.floor(diffMs / 60000);
-        
+
         if (minutes < 1) return 'Just now';
         if (minutes < 60) return `${minutes}m ago`;
         const hours = Math.floor(minutes / 60);
@@ -107,8 +114,8 @@ export default function SessionsScreen() {
                 icon: 'devices',
                 iconColor: isActive ? colors.tint : colors.sidebarIconDevices,
                 title: `Session ${session.deviceId?.substring(0, 8) || session.sessionId.substring(0, 8)}`,
-                subtitle: isActive 
-                    ? 'Current session • ' + formatRelativeTime(session.lastActive)
+                subtitle: isActive
+                    ? 'Current session \u2022 ' + formatRelativeTime(session.lastActive)
                     : 'Last active: ' + formatRelativeTime(session.lastActive),
                 customContent: (
                     <View style={styles.sessionActions}>
@@ -175,8 +182,8 @@ export default function SessionsScreen() {
         <ScreenContentWrapper>
             <View style={[styles.container, { backgroundColor: colors.background }]}>
                 <View style={styles.content}>
-                    <ScreenHeader title="Sessions" subtitle="Manage your active sessions." />
-                    
+                    <ScreenHeader title="Login Sessions" subtitle="These are your active login sessions across devices. Each session represents a signed-in device." />
+
                     {sessionItems.length === 0 ? (
                         <View style={styles.placeholder}>
                             <ThemedText style={[styles.placeholderText, { color: colors.icon }]}>
@@ -188,6 +195,21 @@ export default function SessionsScreen() {
                             <GroupedSection items={sessionItems} />
                         </AccountCard>
                     )}
+
+                    {/* Link to managed accounts */}
+                    <Section title="">
+                        <AccountCard>
+                            <GroupedSection items={[{
+                                id: 'managed-accounts-link',
+                                icon: 'account-group-outline',
+                                iconColor: colors.sidebarIconSharing,
+                                title: 'Looking for managed accounts?',
+                                subtitle: 'Go to Your Identities to manage sub-accounts',
+                                onPress: handleGoToManagedAccounts,
+                                showChevron: true,
+                            }]} />
+                        </AccountCard>
+                    </Section>
                 </View>
             </View>
         </ScreenContentWrapper>

@@ -1,26 +1,17 @@
 /**
- * Below are the colors that are used in the app. The colors are defined in the light and dark mode.
- * There are many other ways to style your app. For example, [Nativewind](https://www.nativewind.dev/), [Tamagui](https://tamagui.dev/), [unistyles](https://reactnativeunistyles.vercel.app), etc.
+ * Domain-specific colors unique to the accounts app (sidebar icons, banners,
+ * identity badges, avatars).  Generic UI tokens (background, text, border, etc.)
+ * come from Bloom's ThemeColors via `useColors()`.
  */
 
 import { Platform } from 'react-native';
 
-const tintColorLight = '#0a7ea4';
-const tintColorDark = '#fff';
-
-export const Colors = {
+export const DomainColors = {
   light: {
-    text: '#11181C',
-    background: '#fff',
-    tint: tintColorLight,
-    icon: '#687076',
-    tabIconDefault: '#687076',
-    tabIconSelected: tintColorLight,
-    card: '#F2F2F7',
-    border: '#E5E5EA',
-    secondaryText: '#8E8E93',
+    // Avatar
     avatarBackground: '#0a7ea4',
     avatarText: '#FFFFFF',
+    // Sidebar icon tints
     sidebarBackground: '#F8F9FA',
     sidebarItemActiveBackground: '#E8F0FE',
     sidebarItemActiveText: '#1A73E8',
@@ -49,23 +40,12 @@ export const Colors = {
     // Identity icon colors
     identityIconSelfCustody: '#10B981',
     identityIconPublicKey: '#8B5CF6',
-    // Semantic colors
-    danger: '#FF3B30',
-    success: '#34C759',
-    warning: '#FF9500',
   },
   dark: {
-    text: '#ECEDEE',
-    background: '#000000',
-    tint: tintColorDark,
-    icon: '#9BA1A6',
-    tabIconDefault: '#9BA1A6',
-    tabIconSelected: tintColorDark,
-    card: '#1C1C1E',
-    border: '#2C2C2E',
-    secondaryText: '#8E8E93',
+    // Avatar
     avatarBackground: '#0a7ea4',
     avatarText: '#FFFFFF',
+    // Sidebar icon tints
     sidebarBackground: '#1C1C1E',
     sidebarItemActiveBackground: '#2D2E30',
     sidebarItemActiveText: '#8AB4F8',
@@ -94,12 +74,10 @@ export const Colors = {
     // Identity icon colors
     identityIconSelfCustody: '#34D399',
     identityIconPublicKey: '#A78BFA',
-    // Semantic colors
-    danger: '#FF453A',
-    success: '#30D158',
-    warning: '#FF9F0A',
   },
-};
+} as const;
+
+export type DomainColorKey = keyof typeof DomainColors.light;
 
 export const Fonts = Platform.select({
   ios: {

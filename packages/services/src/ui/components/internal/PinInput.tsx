@@ -1,5 +1,6 @@
 import React, { useRef, forwardRef, useImperativeHandle } from 'react';
 import { View, TextInput, StyleSheet, Platform, type NativeSyntheticEvent, type TextInputKeyPressEventData } from 'react-native';
+import { useTheme } from '@oxyhq/bloom/theme';
 
 interface PinInputColors {
     primary: string;
@@ -24,6 +25,7 @@ export interface PinInputHandle {
 }
 
 const PinInput = forwardRef<PinInputHandle, PinInputProps>(({ value, onChange, length = 6, disabled, autoFocus, colors }, ref) => {
+    const theme = useTheme();
     const inputs = useRef<Array<TextInput | null>>([]);
 
     useImperativeHandle(ref, () => ({
@@ -66,7 +68,7 @@ const PinInput = forwardRef<PinInputHandle, PinInputProps>(({ value, onChange, l
                     ref={(ref) => { inputs.current[idx] = ref; }}
                     style={[
                         styles.pinInput,
-                        { borderColor: colors.primary, color: colors.text, backgroundColor: colors.inputBackground },
+                        { borderColor: colors.primary, color: colors.text, backgroundColor: colors.inputBackground || theme.colors.backgroundSecondary },
                         value[idx] ? { borderWidth: 2 } : { borderWidth: 1 },
                     ]}
                     value={value[idx] || ''}
@@ -100,7 +102,6 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         fontSize: 28,
         fontWeight: '600',
-        backgroundColor: '#F5F5F5',
         textAlign: 'center',
         marginHorizontal: 2,
         ...Platform.select({
@@ -118,4 +119,4 @@ const styles = StyleSheet.create({
     },
 });
 
-export default PinInput; 
+export default PinInput;

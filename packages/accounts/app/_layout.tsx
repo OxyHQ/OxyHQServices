@@ -5,7 +5,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import 'react-native-reanimated';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
-import { OxyProvider } from '@oxyhq/services';
+import { OxyProvider, ActingAsBanner } from '@oxyhq/services';
 // Note: Fonts are loaded automatically by OxyProvider via setupFonts()
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -134,6 +134,7 @@ function AppStackContent({ colorScheme }: { colorScheme: 'light' | 'dark' | null
     <SafeAreaProvider>
       <ScrollProvider>
         <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+          <ActingAsBanner />
           <Stack>
             <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
             {/* Auth route redirects based on onboarding status */}

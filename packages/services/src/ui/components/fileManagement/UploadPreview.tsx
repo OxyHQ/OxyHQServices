@@ -1,7 +1,10 @@
 import type React from 'react';
-import { View, Text, TouchableOpacity, Modal, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
+import * as Dialog from '@oxyhq/bloom/dialog';
+import type { DialogControlProps } from '@oxyhq/bloom/dialog';
+import * as Prompt from '@oxyhq/bloom/prompt';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { formatFileSize, getFileIcon } from '../../utils/fileManagement';
 import { fileManagementStyles } from './styles';
@@ -15,14 +18,12 @@ interface PendingFile {
 }
 
 interface UploadPreviewProps {
-    visible: boolean;
+    control?: DialogControlProps;
     pendingFiles: PendingFile[];
     onConfirm: () => void;
     onCancel: () => void;
     onRemoveFile: (index: number) => void;
-    inline?: boolean; // New prop to support inline rendering without Modal
-    /** @deprecated No longer used. Colors are sourced from useTheme() internally. */
-    themeStyles?: unknown;
+    inline?: boolean;
 }
 
 const UploadPreviewContent: React.FC<{
@@ -30,11 +31,13 @@ const UploadPreviewContent: React.FC<{
     onConfirm: () => void;
     onCancel: () => void;
     onRemoveFile: (index: number) => void;
+    showActions?: boolean;
 }> = ({
     pendingFiles,
     onConfirm,
     onCancel,
     onRemoveFile,
+    showActions = true,
 }) => {
     const { colors, isDark } = useTheme();
     const totalSize = pendingFiles.reduce((sum, f) => sum + f.size, 0);
@@ -66,7 +69,7 @@ const UploadPreviewContent: React.FC<{
                                     contentFit="cover"
                                 />
                             ) : (
-                                <View style={[fileManagementStyles.uploadPreviewIconContainer, { backgroundColor: isDark ? '#333333' : '#F0F0F0' }]}>
+                                <View style={[fileManagementStyles.uploadPreviewIconContainer, { backgroundColor: colors.backgroundSecondary }]}>
                                     <Ionicons
                                         name={getFileIcon(pendingFile.type) as React.ComponentProps<typeof Ionicons>['name']}
                                         size={32}
@@ -102,44 +105,45 @@ const UploadPreviewContent: React.FC<{
                         {formatFileSize(totalSize)}
                     </Text>
                 </View>
-                <View style={fileManagementStyles.uploadPreviewActions}>
-                    <TouchableOpacity
-                        className="border-border"
-                        style={[
-                            fileManagementStyles.uploadPreviewCancelButton,
-                            { backgroundColor: 'transparent' }
-                        ]}
-                        onPress={onCancel}
-                    >
-                        <Text className="text-foreground" style={fileManagementStyles.uploadPreviewCancelText}>
-                            Cancel
-                        </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                        className="bg-primary"
-                        style={fileManagementStyles.uploadPreviewConfirmButton}
-                        onPress={onConfirm}
-                    >
-                        <Ionicons name="cloud-upload" size={20} color="#FFFFFF" />
-                        <Text style={fileManagementStyles.uploadPreviewConfirmText}>Upload</Text>
-                    </TouchableOpacity>
-                </View>
+                {showActions && (
+                    <View style={fileManagementStyles.uploadPreviewActions}>
+                        <TouchableOpacity
+                            className="border-border"
+                            style={[
+                                fileManagementStyles.uploadPreviewCancelButton,
+                                { backgroundColor: 'transparent' }
+                            ]}
+                            onPress={onCancel}
+                        >
+                            <Text className="text-foreground" style={fileManagementStyles.uploadPreviewCancelText}>
+                                Cancel
+                            </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            className="bg-primary"
+                            style={fileManagementStyles.uploadPreviewConfirmButton}
+                            onPress={onConfirm}
+                        >
+                            <Ionicons name="cloud-upload" size={20} color="#FFFFFF" />
+                            <Text style={fileManagementStyles.uploadPreviewConfirmText}>Upload</Text>
+                        </TouchableOpacity>
+                    </View>
+                )}
             </View>
         </View>
     );
 };
 
 export const UploadPreview: React.FC<UploadPreviewProps> = ({
-    visible,
+    control,
     pendingFiles,
     onConfirm,
     onCancel,
     onRemoveFile,
     inline = false,
 }) => {
-    // If inline mode, render content directly without Modal
+    // Inline mode: render content directly without Dialog
     if (inline) {
-        if (!visible) return null;
         return (
             <UploadPreviewContent
                 pendingFiles={pendingFiles}
@@ -150,21 +154,29 @@ export const UploadPreview: React.FC<UploadPreviewProps> = ({
         );
     }
 
-    // Default: render with Modal (for backward compatibility)
+    // Dialog mode: requires control prop
+    if (!control) return null;
+
     return (
-        <Modal
-            visible={visible}
-            animationType="slide"
-            presentationStyle="pageSheet"
-            onRequestClose={onCancel}
-        >
-            <UploadPreviewContent
-                pendingFiles={pendingFiles}
-                onConfirm={onConfirm}
-                onCancel={onCancel}
-                onRemoveFile={onRemoveFile}
-            />
-        </Modal>
+        <Dialog.Outer control={control} onClose={onCancel}>
+            <Dialog.Handle />
+            <Dialog.ScrollableInner label="Review Files">
+                <UploadPreviewContent
+                    pendingFiles={pendingFiles}
+                    onConfirm={onConfirm}
+                    onCancel={onCancel}
+                    onRemoveFile={onRemoveFile}
+                    showActions={false}
+                />
+                <Prompt.Actions>
+                    <Prompt.Action
+                        onPress={onConfirm}
+                        cta="Upload"
+                        color="primary"
+                    />
+                    <Prompt.Cancel cta="Cancel" />
+                </Prompt.Actions>
+            </Dialog.ScrollableInner>
+        </Dialog.Outer>
     );
 };
-
