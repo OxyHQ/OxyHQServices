@@ -14,7 +14,7 @@
   },
   "dependencies": {
     "@hono/node-server": "^1.14.3",
-    "@oxyhq/bloom": "0.1.25",
+    "@oxyhq/bloom": "0.1.27",
     "@base-ui/react": "^1.1.0",
     "@hugeicons/core-free-icons": "^3.1.1",
     "@hugeicons/react": "^1.1.4",

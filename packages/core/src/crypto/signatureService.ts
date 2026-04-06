@@ -40,9 +40,11 @@ async function sha256(message: string): Promise<string> {
   }
 
   // In Node.js, use Node's crypto module
+  // Variable indirection prevents bundlers (Vite, webpack) from statically resolving this
   if (isNodeJS()) {
     try {
-      const nodeCrypto = await import('crypto');
+      const cryptoModuleName = 'crypto';
+      const nodeCrypto = await import(cryptoModuleName);
       return nodeCrypto.createHash('sha256').update(message).digest('hex');
     } catch {
       // Fall through to Web Crypto API
