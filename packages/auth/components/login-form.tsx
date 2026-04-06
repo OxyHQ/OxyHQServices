@@ -3,7 +3,7 @@ import { useNavigate, Link } from "react-router-dom"
 import { toast } from "sonner"
 import { ArrowLeft } from "lucide-react"
 
-import { buildAuthUrl } from "@/lib/oxy-api-client"
+import { buildAuthUrl, buildApiUrl } from "@/lib/oxy-api-client"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import {
@@ -82,7 +82,7 @@ export function LoginForm({
     useEffect(() => {
         async function checkExistingSession() {
             try {
-                const response = await fetch(buildAuthUrl("/me"), {
+                const response = await fetch(buildApiUrl("/users/me"), {
                     credentials: "include",
                 })
                 const data = await response.json()

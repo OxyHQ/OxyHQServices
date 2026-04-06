@@ -9,21 +9,26 @@ import { ec as EC } from 'elliptic';
 import { KeyManager } from './keyManager';
 import { isReactNative, isNodeJS } from '../utils/platform';
 
-// Lazy import for expo-crypto
+// Lazy imports for platform-specific crypto
 let ExpoCrypto: typeof import('expo-crypto') | null = null;
+let NodeCrypto: typeof import('crypto') | null = null;
 
 const ec = new EC('secp256k1');
 
-/**
- * Initialize expo-crypto module
- */
 async function initExpoCrypto(): Promise<typeof import('expo-crypto')> {
   if (!ExpoCrypto) {
-    // Variable indirection prevents bundlers (Vite, webpack) from statically resolving this
     const moduleName = 'expo-crypto';
     ExpoCrypto = await import(moduleName);
   }
   return ExpoCrypto!;
+}
+
+async function initNodeCrypto(): Promise<typeof import('crypto')> {
+  if (!NodeCrypto) {
+    const moduleName = 'crypto';
+    NodeCrypto = await import(moduleName);
+  }
+  return NodeCrypto!;
 }
 
 /**
@@ -39,12 +44,9 @@ async function sha256(message: string): Promise<string> {
     );
   }
 
-  // In Node.js, use Node's crypto module
-  // Variable indirection prevents bundlers (Vite, webpack) from statically resolving this
   if (isNodeJS()) {
     try {
-      const cryptoModuleName = 'crypto';
-      const nodeCrypto = await import(cryptoModuleName);
+      const nodeCrypto = await initNodeCrypto();
       return nodeCrypto.createHash('sha256').update(message).digest('hex');
     } catch {
       // Fall through to Web Crypto API
@@ -87,12 +89,9 @@ export class SignatureService {
         .join('');
     }
 
-    // In Node.js, use Node's crypto module
-    // Variable indirection prevents bundlers (Vite, webpack) from statically resolving this
     if (isNodeJS()) {
       try {
-        const cryptoModuleName = 'crypto';
-        const nodeCrypto = await import(cryptoModuleName);
+        const nodeCrypto = await initNodeCrypto();
         return nodeCrypto.randomBytes(32).toString('hex');
       } catch {
         // Fall through to Web Crypto API
