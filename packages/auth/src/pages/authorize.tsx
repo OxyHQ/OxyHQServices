@@ -111,7 +111,7 @@ export function AuthorizePage() {
         if (storedToken) authHeaders["Authorization"] = `Bearer ${storedToken}`;
 
         try {
-          const meResponse = await fetch(buildAuthUrl("/me"), {
+          const meResponse = await fetch(buildApiUrl("/users/me"), {
             credentials: "include",
             headers: authHeaders,
           });
