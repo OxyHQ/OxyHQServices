@@ -29,6 +29,7 @@ import authLinkingRoutes from './routes/authLinking';
 import fedcmService from './services/fedcm.service';
 import emailRoutes from './routes/email';
 import emailProxyRoutes from './routes/emailProxy';
+import emailInboundRoutes from './routes/emailInbound';
 import aliaRoutes from './routes/alia';
 import creditsRoutes from './routes/credits';
 import billingRoutes from './routes/billing';
@@ -88,6 +89,8 @@ app.use(cookieParser());
 // Body parsing middleware - IMPORTANT: Add this before any routes
 // Stripe webhook needs raw body for signature verification (must be before express.json)
 app.use('/billing/webhook', express.raw({ type: 'application/json' }));
+// Email inbound webhook needs raw body for MIME parsing (must be before express.json)
+app.use('/email/inbound', express.raw({ type: '*/*', limit: '25mb' }));
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
@@ -422,6 +425,7 @@ app.use('/security', userRateLimiter, csrfProtection, securityRoutes);
 app.use('/subscription', userRateLimiter, csrfProtection, subscriptionRoutes);
 app.use('/fedcm', fedcmRoutes);
 app.use('/email/proxy', emailProxyRoutes); // public, no auth — must be before /email
+app.use('/email/inbound', emailInboundRoutes); // Cloudflare Email Routing webhook — must be before /email
 app.use('/email', userRateLimiter, csrfProtection, emailRoutes);
 app.use('/alia', userRateLimiter, aliaRoutes);
 app.use('/credits', userRateLimiter, csrfProtection, creditsRoutes);
