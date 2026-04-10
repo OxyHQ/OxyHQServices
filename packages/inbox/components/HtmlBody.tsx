@@ -16,21 +16,90 @@ interface HtmlBodyProps {
   html: string;
 }
 
-// Wrap HTML with basic styling and proxy external resources
+/**
+ * Wrap email HTML with styling and proxy external resources.
+ *
+ * Dark mode strategy:
+ * - Set `color-scheme: dark` so the browser knows the document is dark.
+ * - Apply dark background/text with `!important` on html/body to override
+ *   email sender stylesheets that hardcode `background: white`.
+ * - Invert bright inline-styled elements via a targeted CSS filter on common
+ *   container patterns (tables, divs with explicit bg) so marketing emails
+ *   don't produce a white flash inside the dark app shell.
+ * - Images are excluded from inversion to preserve their appearance.
+ */
 function wrapHtml(html: string, isDark: boolean): string {
-  const bgColor = isDark ? '#1a1a1a' : '#ffffff';
+  const bgColor = isDark ? '#000000' : '#ffffff';
   const textColor = isDark ? '#e8eaed' : '#202124';
+  const linkColor = isDark ? '#8ab4f8' : '#1a73e8';
+  const quoteBorderColor = isDark ? '#5f6368' : '#dadce0';
+  const quoteTextColor = isDark ? '#9aa0a6' : '#5f6368';
 
   // Transform external image/font URLs to go through our proxy
   const proxyBaseUrl = getProxyBaseUrl();
   const proxiedHtml = proxyExternalImages(html, proxyBaseUrl);
 
+  // Dark-mode-specific overrides that force dark appearance even when
+  // email senders hardcode white backgrounds via inline styles.
+  const darkOverrides = isDark
+    ? `
+      /* Force dark on root elements — !important overrides inline styles */
+      html, body {
+        background-color: ${bgColor} !important;
+        color: ${textColor} !important;
+      }
+      /* Override common email wrapper patterns with explicit white backgrounds */
+      body > div, body > table, body > center,
+      body > div > div, body > div > table,
+      body > table > tbody > tr > td {
+        background-color: transparent !important;
+        color: inherit !important;
+      }
+      /* Force text colors on common inline-styled elements */
+      p, span, li, td, th, h1, h2, h3, h4, h5, h6, div, center {
+        color: ${textColor} !important;
+      }
+      /* Preserve legibility for elements with very bright backgrounds by
+         making backgrounds transparent so the dark root shows through */
+      [style*="background-color: #fff"],
+      [style*="background-color: #FFF"],
+      [style*="background-color:#fff"],
+      [style*="background-color:#FFF"],
+      [style*="background-color: white"],
+      [style*="background-color:white"],
+      [style*="background-color: #ffffff"],
+      [style*="background-color: #FFFFFF"],
+      [style*="background-color:#ffffff"],
+      [style*="background-color:#FFFFFF"],
+      [style*="background: #fff"],
+      [style*="background: #FFF"],
+      [style*="background: white"],
+      [style*="background: #ffffff"],
+      [style*="background: #FFFFFF"],
+      [style*="background:#fff"],
+      [style*="background:#ffffff"],
+      [style*="background-color: rgb(255, 255, 255)"],
+      [style*="background-color: rgb(255,255,255)"] {
+        background-color: transparent !important;
+      }
+      /* Light gray backgrounds (f5f5f5, f8f8f8, fafafa, etc.) -> dark surface */
+      [style*="background-color: #f"],
+      [style*="background-color:#f"],
+      [style*="background: #f"] {
+        background-color: #1f1f1f !important;
+      }
+      /* Ensure images are NOT color-inverted */
+      img { filter: none !important; }
+    `
+    : '';
+
   return `
     <!DOCTYPE html>
-    <html>
+    <html${isDark ? ' style="color-scheme: dark;"' : ''}>
     <head>
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+      ${isDark ? '<meta name="color-scheme" content="dark">' : ''}
       <style>
         * { box-sizing: border-box; }
         html, body {
@@ -45,15 +114,16 @@ function wrapHtml(html: string, isDark: boolean): string {
           overflow-wrap: break-word;
         }
         img { max-width: 100%; height: auto; }
-        a { color: #1a73e8; }
+        a { color: ${linkColor}; }
         pre, code { white-space: pre-wrap; word-wrap: break-word; }
         table { max-width: 100%; }
         blockquote {
           margin: 0 0 0 8px;
           padding-left: 12px;
-          border-left: 3px solid ${isDark ? '#5f6368' : '#dadce0'};
-          color: ${isDark ? '#9aa0a6' : '#5f6368'};
+          border-left: 3px solid ${quoteBorderColor};
+          color: ${quoteTextColor};
         }
+        ${darkOverrides}
       </style>
     </head>
     <body>${proxiedHtml}</body>
