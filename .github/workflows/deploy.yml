@@ -80,6 +80,21 @@ jobs:
             echo "=== Recent logs ==="
             docker compose logs --tail=30 api
 
+            echo "=== SMTP Diagnostics ==="
+            echo "-- Docker port bindings:"
+            docker compose port api 25 2>/dev/null || echo "Port 25 not mapped"
+            docker compose port api 587 2>/dev/null || echo "Port 587 not mapped"
+            echo "-- Listening ports on host:"
+            ss -tlnp | grep -E ':25\b|:587\b' || echo "No SMTP ports listening on host"
+            echo "-- UFW status:"
+            sudo ufw status 2>/dev/null || echo "UFW not available or no sudo"
+            echo "-- iptables SMTP rules:"
+            sudo iptables -L -n 2>/dev/null | grep -E '25|587|smtp' || echo "No iptables SMTP rules found or no sudo"
+            echo "-- Docker iptables NAT rules for SMTP:"
+            sudo iptables -t nat -L -n 2>/dev/null | grep -E '25|587' || echo "No NAT rules for SMTP or no sudo"
+            echo "-- SMTP internal connectivity test:"
+            docker compose exec -T api sh -c 'wget -q -O - http://localhost:8080/health' 2>/dev/null || echo "Internal health check failed"
+
             echo "Deploy complete!"
         env:
           REDIS_URL: ${{ secrets.REDIS_URL }}
