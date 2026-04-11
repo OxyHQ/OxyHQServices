@@ -38,7 +38,7 @@ PushTokenSchema.index({ userId: 1, token: 1 }, { unique: true });
 PushTokenSchema.set('toJSON', {
   virtuals: true,
   versionKey: false,
-  transform(_doc: Record<string, unknown>, ret: Record<string, unknown>) {
+  transform(_doc: any, ret: any) {
     ret.id = (ret._id as mongoose.Types.ObjectId)?.toString();
     const { _id: _, ...rest } = ret;
     return rest;

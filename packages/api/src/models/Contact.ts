@@ -71,7 +71,7 @@ ContactSchema.index({ userId: 1, starred: 1 });
 ContactSchema.set('toJSON', {
   virtuals: true,
   versionKey: false,
-  transform(_doc: Record<string, unknown>, ret: Record<string, unknown>) {
+  transform(_doc: any, ret: any) {
     ret.id = String(ret._id);
     const { _id: _, ...rest } = ret;
     return rest;
