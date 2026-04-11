@@ -20,7 +20,7 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
-import { ArrowLeft01Icon, Moon01Icon, Sun01Icon } from '@hugeicons/core-free-icons';
+import { ArrowLeft01Icon, Moon01Icon, Sun01Icon, ComputerIcon } from '@hugeicons/core-free-icons';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useOxy, toast } from '@oxyhq/services';
@@ -58,7 +58,7 @@ export function SettingsPage({ section }: SettingsPageProps) {
   const colorScheme = useColorScheme();
   const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
   const { user } = useOxy();
-  const { toggleColorScheme } = useThemeContext();
+  const { themePreference, setThemePreference: setThemePref } = useThemeContext();
   const isDesktop = Platform.OS === 'web' && width >= 900;
 
   const { data: settingsData } = useSettings();
@@ -1133,22 +1133,46 @@ export function SettingsPage({ section }: SettingsPageProps) {
           <>
             <Text style={[styles.sectionTitle, { color: colors.primary }]}>Appearance</Text>
             <View style={[styles.card, { backgroundColor: colors.surface }]}>
-              <TouchableOpacity style={styles.switchRow} onPress={toggleColorScheme}>
-                <Text style={[styles.cardLabel, { color: colors.text }]}>Dark mode</Text>
-                {Platform.OS === 'web' ? (
-                  <HugeiconsIcon
-                    icon={(colorScheme === 'dark' ? Moon01Icon : Sun01Icon) as unknown as IconSvgElement}
-                    size={22}
-                    color={colors.icon}
-                  />
-                ) : (
-                  <MaterialCommunityIcons
-                    name={colorScheme === 'dark' ? 'weather-night' : 'weather-sunny'}
-                    size={22}
-                    color={colors.icon}
-                  />
-                )}
-              </TouchableOpacity>
+              <Text style={[styles.cardLabel, { color: colors.text, marginBottom: 8 }]}>Theme</Text>
+              <View style={styles.themeModePicker}>
+                {(['light', 'dark', 'system'] as const).map((mode) => {
+                  const isActive = themePreference === mode;
+                  return (
+                    <TouchableOpacity
+                      key={mode}
+                      style={[
+                        styles.themeModeOption,
+                        { borderColor: isActive ? colors.primary : colors.border },
+                        isActive && { backgroundColor: colors.primary + '18' },
+                      ]}
+                      onPress={() => setThemePref(mode)}
+                      activeOpacity={0.7}
+                    >
+                      {Platform.OS === 'web' ? (
+                        <HugeiconsIcon
+                          icon={(mode === 'dark' ? Moon01Icon : mode === 'light' ? Sun01Icon : ComputerIcon) as unknown as IconSvgElement}
+                          size={18}
+                          color={isActive ? colors.primary : colors.icon}
+                        />
+                      ) : (
+                        <MaterialCommunityIcons
+                          name={mode === 'dark' ? 'weather-night' : mode === 'light' ? 'weather-sunny' : 'monitor'}
+                          size={18}
+                          color={isActive ? colors.primary : colors.icon}
+                        />
+                      )}
+                      <Text
+                        style={[
+                          styles.themeModeLabel,
+                          { color: isActive ? colors.primary : colors.text },
+                        ]}
+                      >
+                        {mode.charAt(0).toUpperCase() + mode.slice(1)}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
             </View>
           </>
         )}
@@ -1497,5 +1521,23 @@ const styles = StyleSheet.create({
   importExportDivider: {
     borderTopWidth: StyleSheet.hairlineWidth,
     marginVertical: 4,
+  },
+  themeModePicker: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  themeModeOption: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1.5,
+  },
+  themeModeLabel: {
+    fontSize: 13,
+    fontWeight: '500',
   },
 });

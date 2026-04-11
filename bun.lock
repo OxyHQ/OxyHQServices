@@ -305,6 +305,7 @@
         "@expo/vector-icons": "^15.0.3",
         "@lottiefiles/dotlottie-react": "^0.13.5",
         "@lottiefiles/dotlottie-react-native": "^0.7.1",
+        "@oxyhq/bloom": "*",
         "@oxyhq/core": "*",
         "@oxyhq/services": "*",
         "@radix-ui/react-dropdown-menu": "^2.1.6",
@@ -5078,6 +5079,8 @@
     "import-fresh/resolve-from": ["resolve-from@4.0.0", "", {}, ""],
 
     "import-local/pkg-dir": ["pkg-dir@4.2.0", "", { "dependencies": { "find-up": "^4.0.0" } }, ""],
+
+    "inbox/@oxyhq/bloom": ["@oxyhq/bloom@0.1.29", "", { "dependencies": { "nanoid": "^5.1.5", "react-remove-scroll-bar": "^2.3.8" }, "peerDependencies": { "@gorhom/bottom-sheet": ">=5.0.0", "react": ">=18.0.0", "react-native": ">=0.73.0", "react-native-gesture-handler": ">=2.0.0", "react-native-reanimated": ">=3.0.0", "react-native-safe-area-context": ">=5.0.0", "react-native-svg": ">=13.0.0", "sonner": ">=2.0.0", "sonner-native": ">=0.17.0" }, "optionalPeers": ["@gorhom/bottom-sheet", "react-native-gesture-handler", "react-native-reanimated", "react-native-svg", "sonner", "sonner-native"] }, "sha512-x1PY0KmvUyKOd8D03d8EeJ5BE5zYf3Opsfw5fvixN4O47OsgEX/VJOR241BL3mIL+9IIKbrXexsVn+tbdmS7RQ=="],
 
     "inbox/@radix-ui/react-dropdown-menu": ["@radix-ui/react-dropdown-menu@2.1.16", "", { "dependencies": { "@radix-ui/primitive": "1.1.3", "@radix-ui/react-compose-refs": "1.1.2", "@radix-ui/react-context": "1.1.2", "@radix-ui/react-id": "1.1.1", "@radix-ui/react-menu": "2.1.16", "@radix-ui/react-primitive": "2.1.3", "@radix-ui/react-use-controllable-state": "1.2.2" }, "peerDependencies": { "@types/react": "*", "@types/react-dom": "*", "react": "^16.8 || ^17.0 || ^18.0 || ^19.0 || ^19.0.0-rc", "react-dom": "^16.8 || ^17.0 || ^18.0 || ^19.0 || ^19.0.0-rc" } }, ""],
 

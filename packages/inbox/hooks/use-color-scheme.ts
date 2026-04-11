@@ -1,6 +1,14 @@
-import { useThemeContext } from '@/contexts/theme-context';
+/**
+ * Returns the resolved color scheme ('light' | 'dark').
+ *
+ * Delegates to Bloom's theme system via the ThemeContext bridge.
+ * Backward-compatible: components using `const colorScheme = useColorScheme()`
+ * continue to work unchanged.
+ */
 
-export function useColorScheme() {
-  const { resolvedTheme } = useThemeContext();
-  return resolvedTheme;
+import { useTheme } from '@oxyhq/bloom/theme';
+
+export function useColorScheme(): 'light' | 'dark' {
+  const { mode } = useTheme();
+  return mode;
 }

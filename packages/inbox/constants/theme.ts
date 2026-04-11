@@ -1,19 +1,23 @@
-import { Platform } from 'react-native';
+/**
+ * Theme colors for the inbox app.
+ *
+ * Provides the `Colors` constant (light/dark palettes) and `useColors()` hook
+ * that merges Bloom's dynamic theme colors with inbox-specific domain colors.
+ *
+ * Components that already use `Colors[colorScheme]` continue to work.
+ * New components should prefer `useColors()` for dynamic Bloom integration.
+ */
 
-export const Colors = {
+import { useMemo } from 'react';
+import { Platform } from 'react-native';
+import { useTheme } from '@oxyhq/bloom/theme';
+
+// ── Inbox-specific domain colors (not in Bloom) ────────────────────
+
+const InboxDomainColors = {
   light: {
-    text: '#202124',
-    background: '#FFFFFF',
-    surface: '#F8F9FA',
-    surfaceVariant: '#F1F3F4',
-    tint: '#1A73E8',
-    icon: '#5F6368',
-    border: '#DADCE0',
-    secondaryText: '#5F6368',
     // Gmail-style colors
-    primary: '#1A73E8',
     primaryContainer: '#D2E3FC',
-    error: '#D93025',
     unread: '#202124',
     read: '#5F6368',
     starred: '#F4B400',
@@ -42,17 +46,7 @@ export const Colors = {
     selectedRow: '#E8F0FE',
   },
   dark: {
-    text: '#E8EAED',
-    background: '#000000',
-    surface: '#1F1F1F',
-    surfaceVariant: '#2D2D2D',
-    tint: '#8AB4F8',
-    icon: '#9AA0A6',
-    border: '#3C4043',
-    secondaryText: '#9AA0A6',
-    primary: '#8AB4F8',
     primaryContainer: '#004A77',
-    error: '#F28B82',
     unread: '#E8EAED',
     read: '#9AA0A6',
     starred: '#FDD663',
@@ -74,7 +68,68 @@ export const Colors = {
     swipeDelete: '#F28B82',
     selectedRow: '#1A3A5C',
   },
+} as const;
+
+// ── Static Colors constant (backward compat) ───────────────────────
+// Components that do `const colors = Colors[colorScheme]` still work.
+// These are fallback values; prefer `useColors()` for Bloom-aware colors.
+
+export const Colors = {
+  light: {
+    text: '#202124',
+    background: '#FFFFFF',
+    surface: '#F8F9FA',
+    surfaceVariant: '#F1F3F4',
+    tint: '#1A73E8',
+    icon: '#5F6368',
+    border: '#DADCE0',
+    secondaryText: '#5F6368',
+    primary: '#1A73E8',
+    error: '#D93025',
+    ...InboxDomainColors.light,
+  },
+  dark: {
+    text: '#E8EAED',
+    background: '#000000',
+    surface: '#1F1F1F',
+    surfaceVariant: '#2D2D2D',
+    tint: '#8AB4F8',
+    icon: '#9AA0A6',
+    border: '#3C4043',
+    secondaryText: '#9AA0A6',
+    primary: '#8AB4F8',
+    error: '#F28B82',
+    ...InboxDomainColors.dark,
+  },
 };
+
+// ── useColors() hook (Bloom-aware) ──────────────────────────────────
+// Merges Bloom's dynamic theme colors with inbox domain colors.
+
+export function useColors() {
+  const { mode, colors: bloom } = useTheme();
+
+  return useMemo(() => {
+    const domain = InboxDomainColors[mode];
+    return {
+      // Map Bloom's semantic tokens to the inbox color keys
+      text: bloom.text,
+      background: bloom.background,
+      surface: bloom.backgroundSecondary,
+      surfaceVariant: bloom.backgroundTertiary,
+      tint: bloom.primary,
+      icon: bloom.icon,
+      border: bloom.border,
+      secondaryText: bloom.textSecondary,
+      primary: bloom.primary,
+      error: bloom.error,
+      // Inbox-specific domain colors
+      ...domain,
+    };
+  }, [mode, bloom]);
+}
+
+// ── Fonts ───────────────────────────────────────────────────────────
 
 export const Fonts = Platform.select({
   ios: {
