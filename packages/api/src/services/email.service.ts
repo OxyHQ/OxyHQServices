@@ -30,9 +30,14 @@ import { logger } from '../utils/logger';
 import { NotFoundError, BadRequestError } from '../utils/error';
 import { v4 as uuidv4 } from 'uuid';
 import { Reminder } from '../models/Reminder';
+import { Contact } from '../models/Contact';
+import { EmailTemplate } from '../models/EmailTemplate';
+import { EmailFilter } from '../models/EmailFilter';
 import { aiLabelingService } from './aiLabeling.service';
 import { cardExtractionService } from './cardExtraction.service';
 import { smtpOutbound } from './smtp.outbound';
+import { pushService } from './push.service';
+import { simpleParser } from 'mailparser';
 
 // Dedicated S3 client for the email attachments bucket
 const emailS3 = new S3Client({
@@ -729,6 +734,7 @@ class EmailService {
       inReplyTo: params.inReplyTo,
       references: params.references ?? [],
       aliasTag: params.aliasTag,
+      readReceiptRequested: !!params.headers['disposition-notification-to'],
       date: params.date,
       receivedAt: new Date(),
     });
@@ -756,7 +762,92 @@ class EmailService {
       });
     }
 
+    // Fire-and-forget filter application (non-blocking)
+    const msgIdForFilters = message._id.toString();
+    this.applyFilters(userId, msgIdForFilters).catch((err) => {
+      logger.warn('Email filter application failed', { messageId: msgIdForFilters, error: String(err) });
+    });
+
+    // Fire-and-forget global auto-forwarding (non-blocking, only for non-spam)
+    if (!isSpam) {
+      this.applyGlobalAutoForward(userId, message._id.toString()).catch((err) => {
+        logger.warn('Global auto-forward failed', { userId, error: String(err) });
+      });
+    }
+
+    // Fire-and-forget push notification (non-blocking, only for non-spam)
+    if (!isSpam) {
+      const senderName = params.from.name || params.from.address;
+      const pushBody = params.subject || '(no subject)';
+      pushService.sendPushNotification(userId, senderName, pushBody, {
+        messageId: message._id.toString(),
+        mailboxId: mailbox._id.toString(),
+      }).catch((err) => {
+        logger.warn('Push notification failed', { userId, error: String(err) });
+      });
+    }
+
     return message.toJSON();
+  }
+
+  // ─── Read Receipt (MDN) ────────────────────────────────────────────
+
+  /**
+   * Send an MDN (Message Disposition Notification) for a message that requested one.
+   * RFC 3798 compliant: multipart/report with human-readable and machine-readable parts.
+   */
+  async sendReadReceipt(userId: string, messageId: string): Promise<void> {
+    const message = await Message.findOne({ _id: messageId, userId })
+      .select('+headers')
+      .lean();
+    if (!message) throw new NotFoundError('Message not found');
+
+    if (!message.readReceiptRequested) {
+      throw new BadRequestError('This message did not request a read receipt');
+    }
+    if (message.readReceiptSent) {
+      throw new BadRequestError('Read receipt has already been sent');
+    }
+
+    // Get the Disposition-Notification-To address from headers
+    const headers = message.headers as Record<string, string> | undefined;
+    const dntAddress = headers?.['disposition-notification-to'];
+    if (!dntAddress) {
+      throw new BadRequestError('Missing Disposition-Notification-To header');
+    }
+
+    // Parse the notification address (may be "Name <email>" or just "email")
+    const emailMatch = dntAddress.match(/<([^>]+)>/) || dntAddress.match(/([^\s,]+@[^\s,]+)/);
+    const notifyEmail = emailMatch ? emailMatch[1] : dntAddress.trim();
+
+    // Get user info for the From address
+    const user = await User.findById(userId).select('username name');
+    if (!user || !user.username) throw new BadRequestError('User must have a username');
+
+    const fromAddress = resolveEmailAddress(user.username);
+    const fromName = user.name?.first
+      ? `${user.name.first} ${user.name.last || ''}`.trim()
+      : user.username;
+
+    // Build and send the MDN message (RFC 3798)
+    const originalMessageId = message.messageId;
+    const originalSubject = message.subject;
+
+    await smtpOutbound.sendMdn({
+      from: { name: fromName, address: fromAddress },
+      to: notifyEmail,
+      originalRecipient: fromAddress,
+      originalMessageId,
+      originalSubject,
+    });
+
+    // Mark receipt as sent
+    await Message.updateOne(
+      { _id: messageId, userId },
+      { $set: { readReceiptSent: true } },
+    );
+
+    logger.info('Read receipt (MDN) sent', { userId, messageId, to: notifyEmail });
   }
 
   // ─── Compose & save draft / send ──────────────────────────────────
@@ -990,6 +1081,116 @@ class EmailService {
     return count;
   }
 
+  // ─── Schedule Send ──────────────────────────────────────────────────
+
+  /**
+   * Store a message in the Sent mailbox as a scheduled message (not yet dispatched).
+   * The cron job will send it when `scheduledAt` arrives.
+   */
+  async scheduleMessage(
+    userId: string,
+    params: {
+      from: IEmailAddress;
+      to: IEmailAddress[];
+      cc?: IEmailAddress[];
+      bcc?: IEmailAddress[];
+      subject: string;
+      text?: string;
+      html?: string;
+      inReplyTo?: string;
+      references?: string[];
+      attachments?: IAttachment[];
+      scheduledAt: Date;
+    }
+  ): Promise<any> {
+    await this.ensureMailboxes(userId);
+    const sentMailbox = await this.getMailboxBySpecialUse(userId, '\\Sent');
+    if (!sentMailbox) throw new NotFoundError('Sent mailbox not found');
+
+    const size = Buffer.byteLength(
+      (params.text || '') + (params.html || ''),
+      'utf8'
+    );
+
+    const message = await Message.create({
+      userId: new mongoose.Types.ObjectId(userId),
+      mailboxId: sentMailbox._id,
+      messageId: `<${uuidv4()}@${EMAIL_DOMAIN}>`,
+      from: params.from,
+      to: params.to,
+      cc: params.cc ?? [],
+      bcc: params.bcc ?? [],
+      subject: params.subject,
+      text: params.text,
+      html: params.html,
+      headers: {},
+      attachments: params.attachments ?? [],
+      flags: { seen: true, starred: false, answered: false, forwarded: false, draft: false },
+      size,
+      inReplyTo: params.inReplyTo,
+      references: params.references ?? [],
+      scheduledAt: params.scheduledAt,
+      date: new Date(),
+      receivedAt: new Date(),
+    });
+
+    await Mailbox.findByIdAndUpdate(sentMailbox._id, {
+      $inc: { totalMessages: 1, size },
+    });
+
+    logger.info('Message scheduled', {
+      userId,
+      messageId: message.messageId,
+      scheduledAt: params.scheduledAt.toISOString(),
+    });
+
+    return message.toJSON();
+  }
+
+  /**
+   * Process all scheduled messages whose send time has passed.
+   * Called by the scheduled send cron job every minute.
+   */
+  async processScheduledMessages(): Promise<number> {
+    const now = new Date();
+    const due = await Message.find({
+      scheduledAt: { $lte: now, $ne: null },
+    }).select('+text +html');
+
+    let count = 0;
+    for (const msg of due) {
+      try {
+        await smtpOutbound.sendRaw({
+          userId: msg.userId.toString(),
+          from: msg.from,
+          to: msg.to,
+          cc: msg.cc?.length ? msg.cc : undefined,
+          bcc: msg.bcc?.length ? msg.bcc : undefined,
+          subject: msg.subject,
+          text: msg.text ?? undefined,
+          html: msg.html ?? undefined,
+          inReplyTo: msg.inReplyTo ?? undefined,
+          references: msg.references?.length ? msg.references : undefined,
+          attachments: msg.attachments?.length ? msg.attachments : undefined,
+        });
+
+        // Clear scheduledAt to mark as sent
+        msg.scheduledAt = null;
+        await msg.save();
+        count++;
+      } catch (err) {
+        logger.error('Failed to send scheduled message', err instanceof Error ? err : new Error(String(err)), {
+          messageId: msg._id.toString(),
+        });
+      }
+    }
+
+    if (count > 0) {
+      logger.info('Scheduled send cron processed', { count });
+    }
+    return count;
+  }
+
   // ─── Thread / Conversation ─────────────────────────────────────────
 
   async getThread(userId: string, messageId: string): Promise<any[]> {
@@ -1126,6 +1327,522 @@ class EmailService {
     // Return the final state
     const message = await Message.findOne(filter).lean({ virtuals: true });
     return message;
+  }
+
+  // ─── Filters ─────────────────────────────────────────────────────────
+
+  async listFilters(userId: string): Promise<any[]> {
+    return EmailFilter.find({ userId }).sort({ order: 1, createdAt: 1 }).lean({ virtuals: true });
+  }
+
+  async createFilter(userId: string, data: {
+    name: string;
+    enabled: boolean;
+    conditions: Array<{ field: string; operator: string; value: string }>;
+    matchAll: boolean;
+    actions: Array<{ type: string; value?: string }>;
+    order: number;
+  }): Promise<any> {
+    const count = await EmailFilter.countDocuments({ userId });
+    const filter = await EmailFilter.create({
+      userId: new mongoose.Types.ObjectId(userId),
+      name: data.name,
+      enabled: data.enabled,
+      conditions: data.conditions,
+      matchAll: data.matchAll,
+      actions: data.actions,
+      order: data.order ?? count,
+    });
+    return filter.toJSON();
+  }
+
+  async updateFilter(userId: string, filterId: string, updates: Record<string, unknown>): Promise<any> {
+    const filter = await EmailFilter.findOneAndUpdate(
+      { _id: filterId, userId },
+      { $set: updates },
+      { new: true }
+    ).lean({ virtuals: true });
+    if (!filter) throw new NotFoundError('Filter not found');
+    return filter;
+  }
+
+  async deleteFilter(userId: string, filterId: string): Promise<void> {
+    const filter = await EmailFilter.findOne({ _id: filterId, userId });
+    if (!filter) throw new NotFoundError('Filter not found');
+    await EmailFilter.findByIdAndDelete(filterId);
+  }
+
+  /**
+   * Apply user's enabled email filters to an incoming message.
+   * Called after the message is stored in storeIncomingMessage().
+   * Batch-loads all enabled filters once, then evaluates each.
+   */
+  async applyFilters(userId: string, messageId: string): Promise<void> {
+    const filters = await EmailFilter.find({ userId, enabled: true })
+      .sort({ order: 1 })
+      .lean();
+
+    if (filters.length === 0) return;
+
+    const message = await Message.findOne({ _id: messageId, userId });
+    if (!message) return;
+
+    for (const filter of filters) {
+      const matches = this.evaluateFilterConditions(message, filter.conditions, filter.matchAll);
+      if (!matches) continue;
+
+      await this.executeFilterActions(userId, messageId, filter.actions);
+      // Continue to next filter — multiple filters may apply
+    }
+  }
+
+  /**
+   * Evaluate filter conditions against a message.
+   */
+  private evaluateFilterConditions(
+    message: any,
+    conditions: Array<{ field: string; operator: string; value: string }>,
+    matchAll: boolean,
+  ): boolean {
+    const results = conditions.map((cond) => this.evaluateCondition(message, cond));
+    return matchAll ? results.every(Boolean) : results.some(Boolean);
+  }
+
+  /**
+   * Evaluate a single filter condition against a message.
+   */
+  private evaluateCondition(
+    message: any,
+    condition: { field: string; operator: string; value: string },
+  ): boolean {
+    const { field, operator, value } = condition;
+
+    let fieldValue: string;
+
+    switch (field) {
+      case 'from':
+        fieldValue = `${message.from?.name || ''} ${message.from?.address || ''}`.toLowerCase();
+        break;
+      case 'to': {
+        const toAddrs = (message.to || []).map(
+          (a: { name?: string; address: string }) => `${a.name || ''} ${a.address}`.toLowerCase()
+        );
+        fieldValue = toAddrs.join(' ');
+        break;
+      }
+      case 'subject':
+        fieldValue = (message.subject || '').toLowerCase();
+        break;
+      case 'has-attachment':
+        // For has-attachment, operator is 'equals' and value is 'true' or 'false'
+        return value === 'true'
+          ? (message.attachments?.length ?? 0) > 0
+          : (message.attachments?.length ?? 0) === 0;
+      case 'size':
+        return this.evaluateNumericCondition(message.size || 0, operator, value);
+      default:
+        return false;
+    }
+
+    const lowerValue = value.toLowerCase();
+
+    switch (operator) {
+      case 'contains':
+        return fieldValue.includes(lowerValue);
+      case 'equals':
+        return fieldValue.trim() === lowerValue;
+      case 'not-contains':
+        return !fieldValue.includes(lowerValue);
+      case 'starts-with':
+        return fieldValue.startsWith(lowerValue);
+      case 'ends-with':
+        return fieldValue.endsWith(lowerValue);
+      default:
+        return false;
+    }
+  }
+
+  /**
+   * Evaluate a numeric condition (for size field).
+   */
+  private evaluateNumericCondition(actual: number, operator: string, value: string): boolean {
+    const target = Number(value);
+    if (Number.isNaN(target)) return false;
+
+    switch (operator) {
+      case 'greater-than':
+        return actual > target;
+      case 'less-than':
+        return actual < target;
+      case 'equals':
+        return actual === target;
+      default:
+        return false;
+    }
+  }
+
+  /**
+   * Execute filter actions on a message.
+   */
+  private async executeFilterActions(
+    userId: string,
+    messageId: string,
+    actions: Array<{ type: string; value?: string }>,
+  ): Promise<void> {
+    for (const action of actions) {
+      try {
+        switch (action.type) {
+          case 'move':
+            if (action.value) {
+              await this.moveMessage(userId, messageId, action.value);
+            }
+            break;
+          case 'label':
+            if (action.value) {
+              await this.updateMessageLabels(userId, messageId, [action.value], []);
+            }
+            break;
+          case 'star':
+            await this.updateMessageFlags(userId, messageId, { starred: true });
+            break;
+          case 'mark-read':
+            await this.updateMessageFlags(userId, messageId, { seen: true });
+            break;
+          case 'archive': {
+            const archive = await this.getMailboxBySpecialUse(userId, '\\Archive');
+            if (archive) {
+              await this.moveMessage(userId, messageId, archive._id.toString());
+            }
+            break;
+          }
+          case 'delete': {
+            await this.deleteMessage(userId, messageId, false);
+            break;
+          }
+          case 'forward':
+            // Forward is best-effort — fire-and-forget, log and continue on failure
+            if (action.value) {
+              this.forwardMessage(userId, messageId, action.value).catch((err) => {
+                logger.warn('Filter forward action failed', {
+                  userId,
+                  messageId,
+                  forwardTo: action.value,
+                  error: String(err),
+                });
+              });
+            }
+            break;
+        }
+      } catch (err) {
+        logger.warn('Filter action failed', {
+          userId,
+          messageId,
+          action: action.type,
+          error: String(err),
+        });
+      }
+    }
+  }
+
+  /**
+   * Forward a message to a target email address.
+   * Used by filter forward actions and global auto-forwarding.
+   * Preserves original headers and includes a "Forwarded by Oxy" indicator.
+   * Fire-and-forget — errors are logged but not thrown to callers.
+   */
+  async forwardMessage(userId: string, messageId: string, forwardTo: string): Promise<void> {
+    // Validate the forwarding address
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(forwardTo)) {
+      logger.warn('Invalid forwarding address', { userId, messageId, forwardTo });
+      return;
+    }
+
+    const message = await Message.findOne({ _id: messageId, userId })
+      .select('+text +html +headers')
+      .lean();
+    if (!message) {
+      logger.warn('Message not found for forwarding', { userId, messageId });
+      return;
+    }
+
+    // Resolve the sender (the user whose account is forwarding)
+    const user = await User.findById(userId).select('username name');
+    if (!user?.username) {
+      logger.warn('User not found for forwarding', { userId });
+      return;
+    }
+
+    const fromAddress = resolveEmailAddress(user.username);
+    const fromName = user.name?.first
+      ? `${user.name.first} ${user.name.last || ''}`.trim()
+      : user.username;
+
+    // Build forwarded subject
+    const subject = message.subject?.startsWith('Fwd:')
+      ? message.subject
+      : `Fwd: ${message.subject || '(no subject)'}`;
+
+    // Build forwarded body with original message attribution
+    const originalFrom = message.from?.name
+      ? `${message.from.name} <${message.from.address}>`
+      : message.from?.address || 'unknown';
+    const originalTo = (message.to || [])
+      .map((a: { name?: string; address: string }) => a.name ? `${a.name} <${a.address}>` : a.address)
+      .join(', ');
+    const originalDate = message.date ? new Date(message.date).toUTCString() : 'unknown';
+
+    const forwardHeader = [
+      '---------- Forwarded message ----------',
+      `From: ${originalFrom}`,
+      `Date: ${originalDate}`,
+      `Subject: ${message.subject || '(no subject)'}`,
+      `To: ${originalTo}`,
+      '',
+    ].join('\n');
+
+    const text = message.text
+      ? `${forwardHeader}\n${message.text}\n\n-- Forwarded by Oxy`
+      : `${forwardHeader}\n\n-- Forwarded by Oxy`;
+
+    const html = message.html
+      ? `<div style="margin-bottom:16px;padding:12px;border-left:2px solid #ccc;color:#555;font-size:13px;">
+          <strong>---------- Forwarded message ----------</strong><br/>
+          From: ${originalFrom}<br/>
+          Date: ${originalDate}<br/>
+          Subject: ${message.subject || '(no subject)'}<br/>
+          To: ${originalTo}
+        </div>
+        ${message.html}
+        <p style="color:#999;font-size:12px;margin-top:16px;">-- Forwarded by Oxy</p>`
+      : undefined;
+
+    await smtpOutbound.sendRaw({
+      userId,
+      from: { name: fromName, address: fromAddress },
+      to: [{ name: '', address: forwardTo }],
+      subject,
+      text,
+      html,
+      references: message.references?.length ? message.references : undefined,
+      attachments: message.attachments?.length ? message.attachments : undefined,
+    });
+
+    logger.info('Message forwarded', {
+      userId,
+      messageId,
+      forwardTo,
+      subject: message.subject,
+    });
+  }
+
+  /**
+   * Apply global auto-forwarding for a user.
+   * Checks if the user has autoForwardTo configured and forwards the message.
+   * If autoForwardKeepCopy is false, moves the message to Trash after forwarding.
+   */
+  private async applyGlobalAutoForward(userId: string, messageId: string): Promise<void> {
+    const user = await User.findById(userId).select('+autoForwardTo +autoForwardKeepCopy');
+    if (!user?.autoForwardTo) return;
+
+    const forwardTo = user.autoForwardTo.trim();
+    if (!forwardTo) return;
+
+    // Forward the message
+    await this.forwardMessage(userId, messageId, forwardTo);
+
+    // If keep copy is disabled, move to trash
+    if (user.autoForwardKeepCopy === false) {
+      try {
+        await this.deleteMessage(userId, messageId, false); // Move to Trash
+      } catch (err) {
+        logger.warn('Failed to move auto-forwarded message to trash', {
+          userId,
+          messageId,
+          error: String(err),
+        });
+      }
+    }
+  }
+
+  // ─── Export / Import ──────────────────────────────────────────────
+
+  /**
+   * Export a single message as RFC 5322 .eml format.
+   * Reconstructs headers and multipart body from stored message data.
+   */
+  async exportMessage(userId: string, messageId: string): Promise<string> {
+    const msg = await Message.findOne({ _id: messageId, userId })
+      .select('+text +html +headers')
+      .lean();
+    if (!msg) throw new NotFoundError('Message not found');
+
+    const formatAddr = (a: IEmailAddress) =>
+      a.name ? `"${a.name.replace(/"/g, '\\"')}" <${a.address}>` : a.address;
+
+    const lines: string[] = [];
+    lines.push(`From: ${formatAddr(msg.from)}`);
+    if (msg.to?.length) lines.push(`To: ${msg.to.map(formatAddr).join(', ')}`);
+    if (msg.cc?.length) lines.push(`Cc: ${msg.cc.map(formatAddr).join(', ')}`);
+    lines.push(`Subject: ${msg.subject || ''}`);
+    lines.push(`Date: ${new Date(msg.date).toUTCString()}`);
+    lines.push(`Message-ID: ${msg.messageId}`);
+    if (msg.inReplyTo) lines.push(`In-Reply-To: ${msg.inReplyTo}`);
+    if (msg.references?.length) lines.push(`References: ${msg.references.join(' ')}`);
+    lines.push(`MIME-Version: 1.0`);
+
+    const hasText = !!msg.text;
+    const hasHtml = !!msg.html;
+
+    if (hasText && hasHtml) {
+      const boundary = `----=_Part_${uuidv4().replace(/-/g, '')}`;
+      lines.push(`Content-Type: multipart/alternative; boundary="${boundary}"`);
+      lines.push('');
+      lines.push(`--${boundary}`);
+      lines.push('Content-Type: text/plain; charset=utf-8');
+      lines.push('Content-Transfer-Encoding: quoted-printable');
+      lines.push('');
+      lines.push(msg.text!);
+      lines.push(`--${boundary}`);
+      lines.push('Content-Type: text/html; charset=utf-8');
+      lines.push('Content-Transfer-Encoding: quoted-printable');
+      lines.push('');
+      lines.push(msg.html!);
+      lines.push(`--${boundary}--`);
+    } else if (hasHtml) {
+      lines.push('Content-Type: text/html; charset=utf-8');
+      lines.push('Content-Transfer-Encoding: quoted-printable');
+      lines.push('');
+      lines.push(msg.html!);
+    } else {
+      lines.push('Content-Type: text/plain; charset=utf-8');
+      lines.push('Content-Transfer-Encoding: quoted-printable');
+      lines.push('');
+      lines.push(msg.text || '');
+    }
+
+    return lines.join('\r\n');
+  }
+
+  /**
+   * Import .eml files by parsing them with mailparser and storing as incoming messages.
+   * Returns the number of successfully imported messages.
+   */
+  async importMessages(
+    userId: string,
+    files: Array<{ buffer: Buffer; originalname: string }>,
+  ): Promise<number> {
+    const user = await User.findById(userId);
+    if (!user || !user.username) throw new BadRequestError('User must have a username');
+
+    await this.ensureMailboxes(userId);
+    await this.ensureDefaultLabels(userId);
+
+    const inbox = await this.getMailboxBySpecialUse(userId, '\\Inbox');
+    if (!inbox) throw new NotFoundError('Inbox not found');
+
+    let imported = 0;
+
+    for (const file of files) {
+      try {
+        const parsed = await simpleParser(file.buffer);
+
+        const from: IEmailAddress = parsed.from?.value?.[0]
+          ? { name: parsed.from.value[0].name || '', address: parsed.from.value[0].address || '' }
+          : { name: '', address: 'unknown@unknown' };
+
+        const mapAddresses = (addrs: typeof parsed.to): IEmailAddress[] => {
+          if (!addrs) return [];
+          const addrArray = Array.isArray(addrs) ? addrs : [addrs];
+          return addrArray.flatMap((group) =>
+            (group.value || []).map((a) => ({
+              name: a.name || '',
+              address: a.address || '',
+            })),
+          );
+        };
+
+        const to = mapAddresses(parsed.to);
+        const cc = mapAddresses(parsed.cc);
+
+        const rawSize = file.buffer.length;
+
+        // Upload attachments to S3
+        const storedAttachments: IAttachment[] = [];
+        if (parsed.attachments?.length) {
+          for (const att of parsed.attachments) {
+            const s3Key = `${userId}/${uuidv4()}/${att.filename || 'attachment'}`;
+            await emailS3.send(
+              new PutObjectCommand({
+                Bucket: EMAIL_S3_CONFIG.bucket,
+                Key: s3Key,
+                Body: att.content,
+                ContentType: att.contentType || 'application/octet-stream',
+              }),
+            );
+            storedAttachments.push({
+              filename: att.filename || 'attachment',
+              contentType: att.contentType || 'application/octet-stream',
+              size: att.size,
+              s3Key,
+              contentId: att.contentId || undefined,
+              isInline: att.related ?? false,
+            });
+          }
+        }
+
+        const totalSize = rawSize + storedAttachments.reduce((sum, a) => sum + a.size, 0);
+
+        const message = await Message.create({
+          userId: new mongoose.Types.ObjectId(userId),
+          mailboxId: inbox._id,
+          messageId: parsed.messageId || `<imported-${uuidv4()}@${EMAIL_DOMAIN}>`,
+          from,
+          to,
+          cc,
+          bcc: [],
+          subject: parsed.subject || '(no subject)',
+          text: parsed.text || undefined,
+          html: parsed.html || undefined,
+          headers: {},
+          attachments: storedAttachments,
+          flags: { seen: true, starred: false, answered: false, forwarded: false, draft: false },
+          encrypted: false,
+          size: totalSize,
+          inReplyTo: parsed.inReplyTo as string | undefined,
+          references: Array.isArray(parsed.references)
+            ? parsed.references
+            : parsed.references
+              ? [parsed.references]
+              : [],
+          date: parsed.date || new Date(),
+          receivedAt: new Date(),
+        });
+
+        await Mailbox.findByIdAndUpdate(inbox._id, {
+          $inc: { totalMessages: 1, size: totalSize },
+        });
+
+        // Fire-and-forget AI processing
+        const msgId = message._id.toString();
+        aiLabelingService.classifyAndLabel(userId, msgId).catch((err) => {
+          logger.warn('AI labeling failed for imported message', { msgId, error: String(err) });
+        });
+        cardExtractionService.extractAndUpdate(userId, msgId).catch((err) => {
+          logger.warn('Card extraction failed for imported message', { msgId, error: String(err) });
+        });
+
+        imported++;
+      } catch (err) {
+        logger.warn('Failed to import .eml file', {
+          filename: file.originalname,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    logger.info('Email import completed', { userId, imported, total: files.length });
+    return imported;
   }
 
   // ─── Search ───────────────────────────────────────────────────────
@@ -1316,13 +2033,17 @@ class EmailService {
   async getEmailSettings(userId: string): Promise<{
     signature?: string;
     autoReply?: { enabled: boolean; subject?: string; body?: string; startDate?: Date; endDate?: Date };
+    autoForwardTo?: string;
+    autoForwardKeepCopy?: boolean;
     address: string;
   }> {
-    const user = await User.findById(userId).select('+emailSignature +autoReply +username');
+    const user = await User.findById(userId).select('+emailSignature +autoReply +autoForwardTo +autoForwardKeepCopy +username');
     if (!user) throw new NotFoundError('User not found');
     return {
       signature: user.emailSignature ?? '',
       autoReply: user.autoReply ?? { enabled: false },
+      autoForwardTo: user.autoForwardTo ?? '',
+      autoForwardKeepCopy: user.autoForwardKeepCopy ?? true,
       address: user.username ? resolveEmailAddress(user.username) : '',
     };
   }
@@ -1332,11 +2053,15 @@ class EmailService {
     settings: {
       signature?: string;
       autoReply?: { enabled: boolean; subject?: string; body?: string; startDate?: Date; endDate?: Date };
+      autoForwardTo?: string;
+      autoForwardKeepCopy?: boolean;
     }
   ): Promise<void> {
     const update: Record<string, unknown> = {};
     if (settings.signature !== undefined) update.emailSignature = settings.signature;
     if (settings.autoReply !== undefined) update.autoReply = settings.autoReply;
+    if (settings.autoForwardTo !== undefined) update.autoForwardTo = settings.autoForwardTo;
+    if (settings.autoForwardKeepCopy !== undefined) update.autoForwardKeepCopy = settings.autoForwardKeepCopy;
 
     await User.findByIdAndUpdate(userId, { $set: update });
   }
@@ -1989,6 +2714,210 @@ class EmailService {
     }
 
     return dueReminders.length;
+  }
+
+  // ─── Templates ──────────────────────────────────────────────────
+
+  async listTemplates(userId: string): Promise<any[]> {
+    return EmailTemplate.find({ userId }).sort({ order: 1, name: 1 }).lean({ virtuals: true });
+  }
+
+  async createTemplate(userId: string, data: { name: string; subject?: string; body: string }): Promise<any> {
+    const existing = await EmailTemplate.findOne({ userId, name: data.name }).collation({ locale: 'en', strength: 2 });
+    if (existing) throw new BadRequestError(`Template "${data.name}" already exists`);
+
+    const count = await EmailTemplate.countDocuments({ userId });
+    const template = await EmailTemplate.create({
+      userId: new mongoose.Types.ObjectId(userId),
+      name: data.name.trim(),
+      subject: data.subject || '',
+      body: data.body,
+      order: count,
+    });
+    return template.toJSON();
+  }
+
+  async updateTemplate(userId: string, templateId: string, updates: { name?: string; subject?: string; body?: string }): Promise<any> {
+    const cleanUpdates: Record<string, string> = {};
+    if (updates.name !== undefined) cleanUpdates.name = updates.name.trim();
+    if (updates.subject !== undefined) cleanUpdates.subject = updates.subject;
+    if (updates.body !== undefined) cleanUpdates.body = updates.body;
+
+    const template = await EmailTemplate.findOneAndUpdate(
+      { _id: templateId, userId },
+      { $set: cleanUpdates },
+      { new: true }
+    ).lean({ virtuals: true });
+    if (!template) throw new NotFoundError('Template not found');
+    return template;
+  }
+
+  async deleteTemplate(userId: string, templateId: string): Promise<void> {
+    const template = await EmailTemplate.findOne({ _id: templateId, userId });
+    if (!template) throw new NotFoundError('Template not found');
+    await EmailTemplate.findByIdAndDelete(templateId);
+  }
+
+  // ─── Contacts ──────────────────────────────────────────────────────
+
+  async listContacts(
+    userId: string,
+    options: { q?: string; starred?: boolean; limit?: number; offset?: number } = {},
+  ): Promise<{ data: unknown[]; total: number }> {
+    const { q, starred, limit = 50, offset = 0 } = options;
+
+    const filter: Record<string, unknown> = { userId: new mongoose.Types.ObjectId(userId) };
+
+    if (starred) {
+      filter.starred = true;
+    }
+
+    if (q && q.trim().length >= 1) {
+      const escaped = q.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      filter.$or = [
+        { name: { $regex: escaped, $options: 'i' } },
+        { email: { $regex: escaped, $options: 'i' } },
+        { company: { $regex: escaped, $options: 'i' } },
+      ];
+    }
+
+    const [data, total] = await Promise.all([
+      Contact.find(filter)
+        .sort({ starred: -1, name: 1 })
+        .skip(offset)
+        .limit(limit)
+        .lean({ virtuals: true }),
+      Contact.countDocuments(filter),
+    ]);
+
+    return { data, total };
+  }
+
+  async createContact(
+    userId: string,
+    data: { name: string; email: string; company?: string; notes?: string; starred?: boolean },
+  ) {
+    const existing = await Contact.findOne({
+      userId: new mongoose.Types.ObjectId(userId),
+      email: data.email.toLowerCase(),
+    });
+
+    if (existing) {
+      throw new BadRequestError('A contact with this email already exists');
+    }
+
+    const contact = await Contact.create({
+      userId: new mongoose.Types.ObjectId(userId),
+      name: data.name.trim(),
+      email: data.email.trim().toLowerCase(),
+      company: data.company?.trim() || undefined,
+      notes: data.notes?.trim() || undefined,
+      starred: data.starred ?? false,
+      autoCollected: false,
+    });
+
+    return contact.toJSON();
+  }
+
+  async updateContact(
+    userId: string,
+    contactId: string,
+    updates: { name?: string; email?: string; company?: string; notes?: string; starred?: boolean },
+  ) {
+    const updateData: Record<string, unknown> = {};
+    if (updates.name !== undefined) updateData.name = updates.name.trim();
+    if (updates.email !== undefined) updateData.email = updates.email.trim().toLowerCase();
+    if (updates.company !== undefined) updateData.company = updates.company.trim() || undefined;
+    if (updates.notes !== undefined) updateData.notes = updates.notes.trim() || undefined;
+    if (updates.starred !== undefined) updateData.starred = updates.starred;
+
+    const contact = await Contact.findOneAndUpdate(
+      { _id: contactId, userId },
+      { $set: updateData },
+      { new: true },
+    ).lean({ virtuals: true });
+    if (!contact) throw new NotFoundError('Contact not found');
+    return contact;
+  }
+
+  async deleteContact(userId: string, contactId: string): Promise<void> {
+    const result = await Contact.deleteOne({ _id: contactId, userId });
+    if (result.deletedCount === 0) throw new NotFoundError('Contact not found');
+  }
+
+  /**
+   * Auto-collect contacts from email addresses.
+   * Creates contacts with autoCollected: true for addresses that don't exist yet.
+   * Fire-and-forget — errors are logged but not thrown.
+   */
+  async autoCollectContacts(
+    userId: string,
+    addresses: Array<{ name?: string; address: string }>,
+  ): Promise<void> {
+    const userOid = new mongoose.Types.ObjectId(userId);
+
+    for (const addr of addresses) {
+      if (!addr.address) continue;
+      const email = addr.address.trim().toLowerCase();
+      if (!email) continue;
+
+      try {
+        // Use upsert to avoid race conditions; only set fields on insert
+        await Contact.updateOne(
+          { userId: userOid, email },
+          {
+            $setOnInsert: {
+              userId: userOid,
+              name: addr.name?.trim() || email.split('@')[0],
+              email,
+              autoCollected: true,
+              starred: false,
+            },
+            $set: {
+              lastContactedAt: new Date(),
+            },
+          },
+          { upsert: true },
+        );
+      } catch (err: unknown) {
+        // Ignore duplicate key errors (race condition safe)
+        const errObj = err as { code?: number; message?: string };
+        if (errObj.code !== 11000 && !errObj.message?.includes('E11000')) {
+          logger.warn('Failed to auto-collect contact', {
+            email,
+            error: String(err),
+          });
+        }
+      }
+    }
+  }
+
+  /**
+   * Search contacts for autocomplete suggestions.
+   * Returns contacts matching the query, ordered by relevance.
+   */
+  async searchContacts(
+    userId: string,
+    query: string,
+    limit: number = 10,
+  ): Promise<Array<{ name: string; address: string }>> {
+    if (!query || query.length < 2) return [];
+
+    const escaped = query.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+    const contacts = await Contact.find({
+      userId: new mongoose.Types.ObjectId(userId),
+      $or: [
+        { name: { $regex: escaped, $options: 'i' } },
+        { email: { $regex: escaped, $options: 'i' } },
+      ],
+    })
+      .sort({ starred: -1, lastContactedAt: -1, name: 1 })
+      .limit(limit)
+      .select('name email')
+      .lean();
+
+    return contacts.map((c) => ({ name: c.name, address: c.email }));
   }
 }
 

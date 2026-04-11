@@ -14,6 +14,11 @@ import {
   PaintBrush01Icon,
   ArrowLeft01Icon,
   LabelIcon,
+  NoteEditIcon,
+  ContactBookIcon,
+  FilterIcon,
+  MailSend01Icon,
+  ArrowDataTransferHorizontalIcon,
 } from '@hugeicons/core-free-icons';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -25,7 +30,12 @@ const SECTIONS = [
   { key: 'general', label: 'General', icon: 'cog-outline' as const, hugeIcon: Settings01Icon },
   { key: 'signature', label: 'Signature', icon: 'signature-text' as const, hugeIcon: SignatureIcon },
   { key: 'vacation', label: 'Vacation Responder', icon: 'beach' as const, hugeIcon: Beach02Icon },
+  { key: 'forwarding', label: 'Forwarding', icon: 'email-fast-outline' as const, hugeIcon: MailSend01Icon },
   { key: 'labels', label: 'Labels', icon: 'label-outline' as const, hugeIcon: LabelIcon },
+  { key: 'filters', label: 'Filters & Rules', icon: 'filter-outline' as const, hugeIcon: FilterIcon },
+  { key: 'contacts', label: 'Contacts', icon: 'contacts-outline' as const, hugeIcon: ContactBookIcon },
+  { key: 'templates', label: 'Templates', icon: 'file-document-edit-outline' as const, hugeIcon: NoteEditIcon },
+  { key: 'import-export', label: 'Import & Export', icon: 'import' as const, hugeIcon: ArrowDataTransferHorizontalIcon },
   { key: 'appearance', label: 'Appearance', icon: 'palette-outline' as const, hugeIcon: PaintBrush01Icon },
 ];
 

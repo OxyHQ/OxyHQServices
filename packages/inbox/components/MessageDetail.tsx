@@ -36,6 +36,7 @@ import {
   Mail01Icon,
   SpamIcon,
   LabelIcon,
+  PrinterIcon,
 } from '@hugeicons/core-free-icons';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -310,6 +311,161 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
     });
   }, [currentMessage, messageId, updateLabels]);
 
+  const handlePrint = useCallback(() => {
+    if (!currentMessage) return;
+    const subject = currentMessage.subject || '(no subject)';
+    const fromStr = currentMessage.from.name
+      ? `${currentMessage.from.name} <${currentMessage.from.address}>`
+      : currentMessage.from.address;
+    const toStr = currentMessage.to.map((a) => a.name ? `${a.name} <${a.address}>` : a.address).join(', ');
+    const ccStr = currentMessage.cc?.map((a) => a.name ? `${a.name} <${a.address}>` : a.address).join(', ') || '';
+    const dateStr = formatFullDate(currentMessage.date);
+    const bodyHtml = currentMessage.html || `<pre>${currentMessage.text || ''}</pre>`;
+
+    const printHtml = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>${subject}</title>
+<style>
+  body { margin: 0; padding: 24px; background: #fff; color: #000; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 14px; line-height: 1.5; }
+  .header { border-bottom: 1px solid #ddd; padding-bottom: 16px; margin-bottom: 16px; }
+  .subject { font-size: 20px; font-weight: 400; margin: 0 0 12px 0; }
+  .field { margin: 2px 0; }
+  .label { font-weight: 600; display: inline-block; min-width: 50px; }
+  .body { margin-top: 16px; }
+  img { max-width: 100%; height: auto; }
+  @media print { body { padding: 0; } }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1 class="subject">${subject}</h1>
+  <div class="field"><span class="label">From:</span> ${fromStr}</div>
+  <div class="field"><span class="label">To:</span> ${toStr}</div>
+  ${ccStr ? `<div class="field"><span class="label">Cc:</span> ${ccStr}</div>` : ''}
+  <div class="field"><span class="label">Date:</span> ${dateStr}</div>
+</div>
+<div class="body">${bodyHtml}</div>
+</body>
+</html>`;
+
+    if (Platform.OS === 'web') {
+      const printWindow = window.open('', '_blank');
+      if (printWindow) {
+        printWindow.document.write(printHtml);
+        printWindow.document.close();
+        printWindow.focus();
+        printWindow.print();
+      }
+    } else {
+      (async () => {
+        try {
+          const Print = require('expo-print');
+          await Print.printAsync({ html: printHtml });
+        } catch {
+          toast.error('Failed to print email.');
+        }
+      })();
+    }
+  }, [currentMessage]);
+
+  const handleDownloadEml = useCallback(() => {
+    if (!currentMessage) return;
+    setMoreMenuVisible(false);
+
+    const subject = currentMessage.subject || '(no subject)';
+    const fromStr = currentMessage.from.name
+      ? `${currentMessage.from.name} <${currentMessage.from.address}>`
+      : currentMessage.from.address;
+    const toStr = currentMessage.to.map((a) => a.name ? `${a.name} <${a.address}>` : a.address).join(', ');
+    const ccStr = currentMessage.cc?.map((a) => a.name ? `${a.name} <${a.address}>` : a.address).join(', ') || '';
+    const dateStr = new Date(currentMessage.date).toUTCString();
+    const msgId = currentMessage.messageId || `<${currentMessage._id}@inbox.oxy.so>`;
+    const boundary = `----=_Part_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+
+    const textBody = currentMessage.text || '';
+    const htmlBody = currentMessage.html || '';
+
+    let mimeBody: string;
+    if (htmlBody && textBody) {
+      mimeBody = [
+        `Content-Type: multipart/alternative; boundary="${boundary}"`,
+        '',
+        `--${boundary}`,
+        'Content-Type: text/plain; charset=UTF-8',
+        'Content-Transfer-Encoding: quoted-printable',
+        '',
+        textBody,
+        '',
+        `--${boundary}`,
+        'Content-Type: text/html; charset=UTF-8',
+        'Content-Transfer-Encoding: quoted-printable',
+        '',
+        htmlBody,
+        '',
+        `--${boundary}--`,
+      ].join('\r\n');
+    } else if (htmlBody) {
+      mimeBody = [
+        'Content-Type: text/html; charset=UTF-8',
+        'Content-Transfer-Encoding: quoted-printable',
+        '',
+        htmlBody,
+      ].join('\r\n');
+    } else {
+      mimeBody = [
+        'Content-Type: text/plain; charset=UTF-8',
+        'Content-Transfer-Encoding: quoted-printable',
+        '',
+        textBody || '',
+      ].join('\r\n');
+    }
+
+    const headers = [
+      `From: ${fromStr}`,
+      `To: ${toStr}`,
+      ...(ccStr ? [`Cc: ${ccStr}`] : []),
+      `Subject: ${subject}`,
+      `Date: ${dateStr}`,
+      `Message-ID: ${msgId}`,
+      'MIME-Version: 1.0',
+    ].join('\r\n');
+
+    const emlContent = `${headers}\r\n${mimeBody}`;
+
+    const safeSubject = subject.replace(/[^a-zA-Z0-9_\- ]/g, '_').slice(0, 60).trim();
+    const filename = `${safeSubject}.eml`;
+
+    if (Platform.OS === 'web') {
+      const blob = new Blob([emlContent], { type: 'message/rfc822' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } else {
+      (async () => {
+        try {
+          const FileSystem = require('expo-file-system');
+          const Sharing = require('expo-sharing');
+          const fileUri = `${FileSystem.documentDirectory}${filename}`;
+          await FileSystem.writeAsStringAsync(fileUri, emlContent, { encoding: FileSystem.EncodingType.UTF8 });
+          if (await Sharing.isAvailableAsync()) {
+            await Sharing.shareAsync(fileUri, { mimeType: 'message/rfc822', dialogTitle: 'Save email' });
+          } else {
+            toast.error('Sharing is not available on this device.');
+          }
+        } catch {
+          toast.error('Failed to download email.');
+        }
+      })();
+    }
+  }, [currentMessage]);
+
   // Label data for assigned labels (backend stores label names, not IDs)
   const assignedLabels = useMemo(() => {
     if (!currentMessage) return [];
@@ -435,6 +591,13 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
             <MaterialCommunityIcons name="clock-outline" size={22} color={colors.icon} />
           )}
         </TouchableOpacity>
+        <TouchableOpacity onPress={handlePrint} style={styles.iconButton}>
+          {Platform.OS === 'web' ? (
+            <HugeiconsIcon icon={PrinterIcon as unknown as IconSvgElement} size={22} color={colors.icon} />
+          ) : (
+            <MaterialCommunityIcons name="printer-outline" size={22} color={colors.icon} />
+          )}
+        </TouchableOpacity>
 
         {/* More menu */}
         <View style={styles.moreMenuAnchor}>
@@ -472,6 +635,14 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
                     <MaterialCommunityIcons name="label-outline" size={16} color={colors.icon} />
                   )}
                   <Text style={[styles.menuItemText, { color: colors.text }]}>Label</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.menuItem} onPress={handleDownloadEml} activeOpacity={0.6}>
+                  {Platform.OS === 'web' ? (
+                    <HugeiconsIcon icon={Mail01Icon as unknown as IconSvgElement} size={16} color={colors.icon} />
+                  ) : (
+                    <MaterialCommunityIcons name="email-arrow-right-outline" size={16} color={colors.icon} />
+                  )}
+                  <Text style={[styles.menuItemText, { color: colors.text }]}>Download .eml</Text>
                 </TouchableOpacity>
               </View>
             </>

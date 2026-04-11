@@ -1,0 +1,216 @@
+/**
+ * Schedule Send picker overlay.
+ *
+ * Shows preset schedule times (Later today, Tomorrow morning, Tomorrow afternoon,
+ * Monday morning) and an option to pick a custom date.
+ * Follows the same pattern as SnoozeSheet.
+ */
+
+import React, { useCallback, useMemo } from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  Pressable,
+  StyleSheet,
+  Platform,
+} from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
+import { Clock01Icon } from '@hugeicons/core-free-icons';
+import { useColorScheme } from '@/hooks/use-color-scheme';
+import { Colors } from '@/constants/theme';
+
+interface ScheduleOption {
+  label: string;
+  sublabel: string;
+  icon: keyof typeof MaterialCommunityIcons.glyphMap;
+  getDate: () => Date;
+}
+
+function getScheduleOptions(): ScheduleOption[] {
+  const now = new Date();
+
+  // Later today: 3 hours from now (or 6 PM if < 3 PM)
+  const laterToday = new Date(now);
+  if (now.getHours() < 15) {
+    laterToday.setHours(18, 0, 0, 0);
+  } else {
+    laterToday.setTime(laterToday.getTime() + 3 * 60 * 60 * 1000);
+  }
+
+  // Tomorrow morning: 8 AM
+  const tomorrowMorning = new Date(now);
+  tomorrowMorning.setDate(tomorrowMorning.getDate() + 1);
+  tomorrowMorning.setHours(8, 0, 0, 0);
+
+  // Tomorrow afternoon: 1 PM
+  const tomorrowAfternoon = new Date(now);
+  tomorrowAfternoon.setDate(tomorrowAfternoon.getDate() + 1);
+  tomorrowAfternoon.setHours(13, 0, 0, 0);
+
+  // Monday morning: next Monday 8 AM
+  const dayOfWeek = now.getDay();
+  const monday = new Date(now);
+  const daysUntilMon = dayOfWeek === 1 ? 7 : ((8 - dayOfWeek) % 7);
+  monday.setDate(monday.getDate() + daysUntilMon);
+  monday.setHours(8, 0, 0, 0);
+
+  const formatTime = (d: Date) =>
+    d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  const formatDay = (d: Date) =>
+    d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+
+  return [
+    {
+      label: 'Later today',
+      sublabel: formatTime(laterToday),
+      icon: 'weather-sunny',
+      getDate: () => laterToday,
+    },
+    {
+      label: 'Tomorrow morning',
+      sublabel: `${formatDay(tomorrowMorning)}, ${formatTime(tomorrowMorning)}`,
+      icon: 'weather-sunset-up',
+      getDate: () => tomorrowMorning,
+    },
+    {
+      label: 'Tomorrow afternoon',
+      sublabel: `${formatDay(tomorrowAfternoon)}, ${formatTime(tomorrowAfternoon)}`,
+      icon: 'weather-sunny',
+      getDate: () => tomorrowAfternoon,
+    },
+    {
+      label: 'Monday morning',
+      sublabel: `${formatDay(monday)}, ${formatTime(monday)}`,
+      icon: 'calendar-arrow-right',
+      getDate: () => monday,
+    },
+  ];
+}
+
+interface ScheduleSendSheetProps {
+  visible: boolean;
+  onClose: () => void;
+  onSchedule: (date: Date) => void;
+}
+
+export function ScheduleSendSheet({ visible, onClose, onSchedule }: ScheduleSendSheetProps) {
+  const colorScheme = useColorScheme();
+  const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
+  const options = useMemo(getScheduleOptions, []);
+
+  const handleSelect = useCallback(
+    (option: ScheduleOption) => {
+      onSchedule(option.getDate());
+      onClose();
+    },
+    [onSchedule, onClose],
+  );
+
+  if (!visible) return null;
+
+  return (
+    <>
+      <Pressable style={styles.backdrop} onPress={onClose} />
+      <View
+        style={[
+          styles.sheet,
+          {
+            backgroundColor: colors.surface,
+            borderColor: colors.border,
+            ...Platform.select({
+              web: { boxShadow: '0 -4px 24px rgba(0,0,0,0.15)' } as any,
+              default: { elevation: 12 },
+            }),
+          },
+        ]}
+      >
+        <View style={[styles.header, { borderBottomColor: colors.border }]}>
+          {Platform.OS === 'web' ? (
+            <HugeiconsIcon icon={Clock01Icon as unknown as IconSvgElement} size={20} color={colors.primary} />
+          ) : (
+            <MaterialCommunityIcons name="clock-outline" size={20} color={colors.primary} />
+          )}
+          <Text style={[styles.title, { color: colors.text }]}>Schedule send</Text>
+        </View>
+        {options.map((option) => (
+          <TouchableOpacity
+            key={option.label}
+            style={styles.option}
+            onPress={() => handleSelect(option)}
+            activeOpacity={0.6}
+          >
+            <MaterialCommunityIcons name={option.icon as any} size={20} color={colors.icon} />
+            <View style={styles.optionText}>
+              <Text style={[styles.optionLabel, { color: colors.text }]}>{option.label}</Text>
+              <Text style={[styles.optionSublabel, { color: colors.secondaryText }]}>
+                {option.sublabel}
+              </Text>
+            </View>
+          </TouchableOpacity>
+        ))}
+      </View>
+    </>
+  );
+}
+
+const styles = StyleSheet.create({
+  backdrop: {
+    position: 'fixed' as any,
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    zIndex: 999,
+  },
+  sheet: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: 0,
+    paddingBottom: 24,
+    zIndex: 1000,
+    maxWidth: 400,
+    ...Platform.select({
+      web: { alignSelf: 'center', left: 'auto', right: 'auto' } as any,
+      default: {},
+    }),
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  title: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  option: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+  },
+  optionText: {
+    flex: 1,
+  },
+  optionLabel: {
+    fontSize: 15,
+    fontWeight: '500',
+  },
+  optionSublabel: {
+    fontSize: 12,
+    marginTop: 1,
+  },
+});

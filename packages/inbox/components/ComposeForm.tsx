@@ -24,6 +24,7 @@ import {
   MailSend01Icon,
   ArrowDown01Icon,
   Attachment01Icon,
+  Clock01Icon,
 } from '@hugeicons/core-free-icons';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -32,10 +33,15 @@ import { useOxy, toast } from '@oxyhq/services';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { useEmailStore } from '@/hooks/useEmail';
-import { useSendMessageWithUndo, useSaveDraft } from '@/hooks/mutations/useMessageMutations';
+import { useSendMessageWithUndo, useSendMessage, useSaveDraft } from '@/hooks/mutations/useMessageMutations';
 import { useContactSuggestions } from '@/hooks/queries/useContactSuggestions';
 import { AiComposeToolbar } from '@/components/AiComposeToolbar';
-import type { Attachment, ContactSuggestion } from '@/services/emailApi';
+import { RichTextEditor, stripHtml, type RichTextEditorHandle } from '@/components/RichTextEditor';
+import { ScheduleSendSheet } from '@/components/ScheduleSendSheet';
+import { TemplatePicker } from '@/components/TemplatePicker';
+import type { Attachment, ContactSuggestion, EmailTemplate } from '@/services/emailApi';
+
+const isWeb = Platform.OS === 'web';
 
 interface ComposeFormProps {
   mode: 'standalone' | 'embedded';
@@ -55,8 +61,9 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
   const { user } = useOxy();
   const api = useEmailStore((s) => s._api);
   const { sendWithUndo, isPending: sendPending } = useSendMessageWithUndo();
+  const sendMessageMutation = useSendMessage();
   const saveDraftMutation = useSaveDraft();
-  const bodyRef = useRef<TextInput>(null);
+  const bodyRef = useRef<RichTextEditorHandle>(null);
 
   const [to, setTo] = useState(initialTo || '');
   const [cc, setCc] = useState(initialCc || '');
@@ -67,6 +74,8 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [uploading, setUploading] = useState(false);
   const [signatureLoaded, setSignatureLoaded] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragCounterRef = useRef(0);
 
   // Auto-insert signature from settings
   useEffect(() => {
@@ -106,7 +115,8 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
           cc: cc.trim() ? parseAddresses(cc) : undefined,
           bcc: bcc.trim() ? parseAddresses(bcc) : undefined,
           subject: subject || undefined,
-          text: body || undefined,
+          text: isWeb ? stripHtml(body) || undefined : body || undefined,
+          html: isWeb ? body || undefined : undefined,
           inReplyTo: replyTo,
           existingDraftId: draftIdRef.current ?? undefined,
         },
@@ -198,6 +208,20 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
     }
   }, [api]);
 
+  const handleDropFiles = useCallback(async (files: FileList) => {
+    if (!api || files.length === 0) return;
+    setUploading(true);
+    try {
+      for (const file of Array.from(files)) {
+        const attachment = await api.uploadAttachment(file, file.name);
+        setAttachments((prev) => [...prev, attachment]);
+      }
+    } catch {
+      toast.error('Failed to upload attachment.');
+    }
+    setUploading(false);
+  }, [api]);
+
   const handleRemoveAttachment = useCallback((index: number) => {
     setAttachments((prev) => prev.filter((_, i) => i !== index));
   }, []);
@@ -221,7 +245,8 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
         cc: cc.trim() ? parseAddresses(cc) : undefined,
         bcc: bcc.trim() ? parseAddresses(bcc) : undefined,
         subject,
-        text: body,
+        text: isWeb ? stripHtml(body) : body,
+        html: isWeb ? body : undefined,
         inReplyTo: replyTo,
         attachments: attachments.length > 0 ? attachments.map((a) => a.s3Key) : undefined,
       },
@@ -242,7 +267,8 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
         cc: cc.trim() ? parseAddresses(cc) : undefined,
         bcc: bcc.trim() ? parseAddresses(bcc) : undefined,
         subject,
-        text: body,
+        text: isWeb ? stripHtml(body) : body,
+        html: isWeb ? body : undefined,
         inReplyTo: replyTo,
         existingDraftId: draftIdRef.current ?? undefined,
       },
@@ -290,6 +316,121 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
     setSubject(suggestedSubject);
   }, []);
 
+  // Handle template selection — insert into compose fields
+  const handleTemplateSelect = useCallback((template: EmailTemplate) => {
+    if (!subject.trim() && template.subject) {
+      setSubject(template.subject);
+    }
+    if (!body.trim()) {
+      if (isWeb && bodyRef.current) {
+        bodyRef.current.setContent(template.body);
+      } else {
+        setBody(template.body);
+      }
+    } else {
+      // Append template body
+      const newBody = body + '\n' + template.body;
+      if (isWeb && bodyRef.current) {
+        bodyRef.current.setContent(newBody);
+      } else {
+        setBody(newBody);
+      }
+    }
+  }, [subject, body]);
+
+  // Handle body changes from AI toolbar — on web, insert into contentEditable
+  const handleAiBodyChange = useCallback((text: string) => {
+    if (isWeb && bodyRef.current) {
+      bodyRef.current.setContent(text);
+    } else {
+      setBody(text);
+    }
+  }, []);
+
+  // Schedule Send state
+  const [showScheduleSheet, setShowScheduleSheet] = useState(false);
+
+  const handleScheduleSend = useCallback((scheduledDate: Date) => {
+    if (!to.trim()) {
+      toast.error('Please add at least one recipient.');
+      return;
+    }
+
+    const toAddresses = parseAddresses(to);
+    if (toAddresses.length === 0) {
+      toast.error('Please enter a valid email address.');
+      return;
+    }
+
+    sentRef.current = true;
+    sendMessageMutation.mutate(
+      {
+        to: toAddresses,
+        cc: cc.trim() ? parseAddresses(cc) : undefined,
+        bcc: bcc.trim() ? parseAddresses(bcc) : undefined,
+        subject,
+        text: isWeb ? stripHtml(body) : body,
+        html: isWeb ? body : undefined,
+        inReplyTo: replyTo,
+        attachments: attachments.length > 0 ? attachments.map((a) => a.s3Key) : undefined,
+        scheduledAt: scheduledDate.toISOString(),
+      },
+      {
+        onSuccess: () => {
+          const timeStr = scheduledDate.toLocaleString(undefined, {
+            weekday: 'short',
+            month: 'short',
+            day: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit',
+          });
+          toast.success(`Email scheduled for ${timeStr}`);
+          router.back();
+        },
+        onError: (err: any) => {
+          sentRef.current = false;
+          toast.error(err.message || 'Failed to schedule email. Please try again.');
+        },
+      },
+    );
+  }, [to, cc, bcc, subject, body, replyTo, attachments, sendMessageMutation, router]);
+
+  // Web drag-and-drop event handlers
+  const webDropProps = useMemo(() => {
+    if (Platform.OS !== 'web') return {};
+    return {
+      onDragEnter: (e: { preventDefault(): void; stopPropagation(): void; dataTransfer?: DataTransfer }) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dragCounterRef.current += 1;
+        if (e.dataTransfer?.types?.includes('Files')) {
+          setIsDragging(true);
+        }
+      },
+      onDragOver: (e: { preventDefault(): void; stopPropagation(): void }) => {
+        e.preventDefault();
+        e.stopPropagation();
+      },
+      onDragLeave: (e: { preventDefault(): void; stopPropagation(): void }) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dragCounterRef.current -= 1;
+        if (dragCounterRef.current === 0) {
+          setIsDragging(false);
+        }
+      },
+      onDrop: (e: { preventDefault(): void; stopPropagation(): void; dataTransfer?: DataTransfer }) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dragCounterRef.current = 0;
+        setIsDragging(false);
+        if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
+          handleDropFiles(e.dataTransfer.files);
+        }
+      },
+    };
+  }, [handleDropFiles]);
+
   return (
     <KeyboardAvoidingView
       style={[
@@ -298,7 +439,24 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
         mode === 'standalone' && { paddingTop: insets.top },
       ]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      {...webDropProps}
     >
+      {/* Drop zone overlay (web only) */}
+      {Platform.OS === 'web' && isDragging && (
+        <View
+          style={[
+            styles.dropZoneOverlay,
+            { borderColor: colors.primary, backgroundColor: colors.surface },
+          ]}
+          pointerEvents="none"
+        >
+          <MaterialCommunityIcons name="tray-arrow-down" size={40} color={colors.primary} />
+          <Text style={[styles.dropZoneText, { color: colors.primary }]}>
+            Drop files to attach
+          </Text>
+        </View>
+      )}
+
       {/* Header */}
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
         {mode === 'standalone' && (
@@ -321,6 +479,7 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
             <MaterialCommunityIcons name="paperclip" size={22} color={uploading ? colors.secondaryText : colors.icon} />
           )}
         </TouchableOpacity>
+        <TemplatePicker onSelect={handleTemplateSelect} />
         <TouchableOpacity onPress={handleSaveDraft} style={styles.iconButton}>
           {Platform.OS === 'web' ? (
             <HugeiconsIcon icon={FloppyDiskIcon as unknown as IconSvgElement} size={22} color={colors.icon} />
@@ -337,6 +496,17 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
             <HugeiconsIcon icon={MailSend01Icon as unknown as IconSvgElement} size={20} color="#FFFFFF" />
           ) : (
             <MaterialCommunityIcons name="send" size={20} color="#FFFFFF" />
+          )}
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => setShowScheduleSheet(true)}
+          style={[styles.scheduleButton, { backgroundColor: colors.primary, opacity: sending ? 0.5 : 1 }]}
+          disabled={sending}
+        >
+          {Platform.OS === 'web' ? (
+            <HugeiconsIcon icon={Clock01Icon as unknown as IconSvgElement} size={16} color="#FFFFFF" />
+          ) : (
+            <MaterialCommunityIcons name="clock-outline" size={16} color="#FFFFFF" />
           )}
         </TouchableOpacity>
       </View>
@@ -498,22 +668,25 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
         {/* AI Compose Toolbar */}
         <AiComposeToolbar
           body={body}
-          onBodyChange={setBody}
+          onBodyChange={handleAiBodyChange}
           onSubjectSuggested={!subject.trim() ? handleSubjectSuggested : undefined}
         />
 
         {/* Body */}
-        <TextInput
+        <RichTextEditor
           ref={bodyRef}
-          style={[styles.bodyInput, { color: colors.text }]}
           value={body}
-          onChangeText={setBody}
+          onChange={setBody}
           placeholder="Compose email"
-          placeholderTextColor={colors.searchPlaceholder}
-          multiline
-          textAlignVertical="top"
         />
       </ScrollView>
+
+      {/* Schedule Send Sheet */}
+      <ScheduleSendSheet
+        visible={showScheduleSheet}
+        onClose={() => setShowScheduleSheet(false)}
+        onSchedule={handleScheduleSend}
+      />
     </KeyboardAvoidingView>
   );
 }
@@ -552,6 +725,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 22,
+  },
+  scheduleButton: {
+    width: 32,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 16,
+    marginLeft: -4,
   },
   form: {
     flex: 1,
@@ -603,13 +784,6 @@ const styles = StyleSheet.create({
   attachmentSize: {
     fontSize: 11,
   },
-  bodyInput: {
-    flex: 1,
-    fontSize: 15,
-    lineHeight: 24,
-    padding: 16,
-    minHeight: 300,
-  },
   suggestionsDropdown: {
     position: 'absolute',
     top: '100%',
@@ -640,5 +814,25 @@ const styles = StyleSheet.create({
   suggestionAddress: {
     fontSize: 13,
     flexShrink: 0,
+  },
+  dropZoneOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 100,
+    borderWidth: 2,
+    borderStyle: 'dashed',
+    borderRadius: 12,
+    margin: 8,
+    opacity: 0.9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  dropZoneText: {
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

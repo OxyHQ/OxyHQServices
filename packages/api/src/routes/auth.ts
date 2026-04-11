@@ -471,6 +471,58 @@ router.get('/check-username/:username', checkLimiter, validate({ params: checkUs
 
 /**
  * @openapi
+ * /auth/lookup/{username}:
+ *   get:
+ *     tags:
+ *       - Authentication
+ *     summary: Lookup user by username
+ *     description: Lightweight lookup that returns minimal public info for the login flow. Returns whether the user exists along with their color preset, avatar, and display name.
+ *     parameters:
+ *       - in: path
+ *         name: username
+ *         required: true
+ *         schema:
+ *           type: string
+ *           minLength: 3
+ *         example: nate
+ *     responses:
+ *       200:
+ *         description: Lookup result
+ *       429:
+ *         description: Rate limit exceeded
+ */
+router.get('/lookup/:username', checkLimiter, validate({ params: checkUsernameParams }), asyncHandler(async (req, res) => {
+  let { username } = req.params;
+
+  if (!username) {
+    throw new BadRequestError('Username is required');
+  }
+
+  username = username.trim().toLowerCase();
+
+  const user = await User.findOne({ username })
+    .select('username color avatar name')
+    .lean();
+
+  if (!user) {
+    throw new NotFoundError('User not found');
+  }
+
+  const displayName = user.name?.first
+    ? `${user.name.first}${user.name.last ? ` ${user.name.last}` : ''}`
+    : user.username;
+
+  sendSuccess(res, {
+    exists: true,
+    username: user.username,
+    color: user.color || null,
+    avatar: user.avatar || null,
+    displayName,
+  });
+}));
+
+/**
+ * @openapi
  * /auth/check-email/{email}:
  *   get:
  *     tags:

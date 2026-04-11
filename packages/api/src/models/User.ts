@@ -123,6 +123,8 @@ export interface IUser extends Document {
     startDate?: Date;
     endDate?: Date;
   };
+  autoForwardTo?: string; // If set, forward ALL incoming email to this address
+  autoForwardKeepCopy?: boolean; // If true, keep the message in inbox too (default true)
   _id: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
@@ -357,6 +359,16 @@ const UserSchema: Schema = new Schema(
       body: { type: String, default: '' },
       startDate: { type: Date, default: null },
       endDate: { type: Date, default: null },
+    },
+    autoForwardTo: {
+      type: String,
+      default: '',
+      select: false,
+    },
+    autoForwardKeepCopy: {
+      type: Boolean,
+      default: true,
+      select: false,
     },
     // Managed account (sub-account) support
     isManagedAccount: {

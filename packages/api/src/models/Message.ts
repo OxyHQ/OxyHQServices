@@ -75,6 +75,12 @@ export interface IMessage extends Document {
   snoozedUntil?: Date | null;
   /** Original mailbox before snoozing */
   snoozedFromMailbox?: mongoose.Types.ObjectId | null;
+  /** When set, the message is scheduled to be sent at this time */
+  scheduledAt?: Date | null;
+  /** True when the sender requested a read receipt (Disposition-Notification-To header present) */
+  readReceiptRequested: boolean;
+  /** True when we have sent the MDN back to the sender */
+  readReceiptSent: boolean;
   /** Date header from the original message */
   date: Date;
   /** When our server received the message */
@@ -266,6 +272,18 @@ const MessageSchema = new Schema(
       ref: 'Mailbox',
       default: null,
     },
+    scheduledAt: {
+      type: Date,
+      default: null,
+    },
+    readReceiptRequested: {
+      type: Boolean,
+      default: false,
+    },
+    readReceiptSent: {
+      type: Boolean,
+      default: false,
+    },
     date: {
       type: Date,
       required: true,
@@ -305,6 +323,8 @@ MessageSchema.index({ userId: 1, 'from.address': 1, date: -1 });
 MessageSchema.index({ userId: 1, 'flags.pinned': 1, date: -1 });
 // Snooze processing cron
 MessageSchema.index({ snoozedUntil: 1 }, { sparse: true });
+// Scheduled send processing cron
+MessageSchema.index({ scheduledAt: 1 }, { sparse: true });
 // Retention / cleanup
 MessageSchema.index({ mailboxId: 1, receivedAt: 1 });
 

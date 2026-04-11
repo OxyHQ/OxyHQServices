@@ -2,7 +2,7 @@
  * Gmail-style drawer sidebar listing mailboxes, starred, labels, and compose.
  */
 
-import React, { useMemo, useState, useCallback } from 'react';
+import React, { useMemo, useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,9 +11,11 @@ import {
   ScrollView,
   Pressable,
   Platform,
+  TextInput,
+  Alert,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useOxy } from '@oxyhq/services';
+import { useOxy, showSignInModal } from '@oxyhq/services';
 import { useRouter, usePathname } from 'expo-router';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import {
@@ -27,9 +29,8 @@ import {
   Archive01Icon,
   StarIcon as HugeStarIcon,
   Folder01Icon,
+  FolderAddIcon,
   LabelIcon,
-  Settings01Icon,
-  Logout01Icon,
   SidebarLeft01Icon,
   SidebarRight01Icon,
   PencilEdit01Icon,
@@ -37,6 +38,8 @@ import {
   ArrowUp01Icon,
   Mail01Icon,
   Clock01Icon,
+  Cancel01Icon,
+  Tick02Icon,
 } from '@hugeicons/core-free-icons';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
@@ -46,7 +49,9 @@ import { useMailboxes } from '@/hooks/queries/useMailboxes';
 import { useLabels } from '@/hooks/queries/useLabels';
 import { Avatar } from '@/components/Avatar';
 import type { Mailbox } from '@/services/emailApi';
+import { useCreateMailbox, useDeleteMailbox } from '@/hooks/mutations/useMailboxMutations';
 import { LogoIcon } from '@/assets/logo';
+import { AccountSwitcher } from '@/components/AccountSwitcher';
 
 const MAILBOX_ICONS_FALLBACK: Record<string, keyof typeof MaterialCommunityIcons.glyphMap> = {
   Inbox: 'inbox',
@@ -166,29 +171,27 @@ function NavItem({
 export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () => void; onToggle?: () => void; collapsed?: boolean }) {
   const colorScheme = useColorScheme();
   const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
-  const { user, logout } = useOxy();
+  const { user } = useOxy();
   const router = useRouter();
   const [menuVisible, setMenuVisible] = useState(false);
+  const [isCreatingFolder, setIsCreatingFolder] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
+  const [deletingMailboxId, setDeletingMailboxId] = useState<string | null>(null);
+  const newFolderInputRef = useRef<TextInput>(null);
+  const createMailbox = useCreateMailbox();
+  const deleteMailbox = useDeleteMailbox();
 
   const handleOpenMenu = useCallback(() => {
     setMenuVisible((v) => !v);
   }, []);
 
-  const handleMenuItem = useCallback(
-    (action: string) => {
-      setMenuVisible(false);
-      switch (action) {
-        case 'settings':
-          router.push('/settings');
-          onClose?.();
-          break;
-        case 'logout':
-          logout();
-          break;
-      }
-    },
-    [router, logout, onClose],
-  );
+  const handleAddAccount = useCallback(() => {
+    setMenuVisible(false);
+    // Open the sign-in modal to authenticate a new account.
+    // Once authenticated, OxyContext will add the new session, and
+    // the useAccountSwitcher hook will persist it to account storage.
+    showSignInModal();
+  }, []);
 
   const pathname = usePathname();
   const moreExpanded = useEmailStore((s) => s.moreExpanded);
@@ -291,6 +294,51 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
 
   const isStarredActive = currentView === 'starred';
   const isSubscriptionsActive = currentView === 'subscriptions';
+
+  const handleCreateFolder = useCallback(() => {
+    const trimmed = newFolderName.trim();
+    if (!trimmed) return;
+    createMailbox.mutate(
+      { name: trimmed },
+      {
+        onSuccess: () => {
+          setNewFolderName('');
+          setIsCreatingFolder(false);
+        },
+      },
+    );
+  }, [newFolderName, createMailbox]);
+
+  const handleCancelCreate = useCallback(() => {
+    setNewFolderName('');
+    setIsCreatingFolder(false);
+  }, []);
+
+  const handleDeleteFolder = useCallback(
+    (mailbox: Mailbox) => {
+      const doDelete = () => {
+        deleteMailbox.mutate({ mailboxId: mailbox._id });
+        setDeletingMailboxId(null);
+      };
+
+      if (Platform.OS === 'web') {
+        if (window.confirm(`Delete folder "${mailbox.name}"? Messages in this folder will be moved to Trash.`)) {
+          doDelete();
+        }
+      } else {
+        Alert.alert(
+          'Delete folder?',
+          `Delete "${mailbox.name}"? Messages in this folder will be moved to Trash.`,
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Delete', style: 'destructive', onPress: doDelete },
+          ],
+          { cancelable: true },
+        );
+      }
+    },
+    [deleteMailbox],
+  );
 
   return (
     <View style={[styles.container, { backgroundColor: colors.sidebarBackground }, collapsed && styles.containerCollapsed]}>
@@ -482,22 +530,130 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
         {/* Labels hidden when collapsed for cleaner UI */}
 
         {/* Custom mailboxes (non-system, non-label) */}
-        {!collapsed && customMailboxes.length > 0 && (
+        {!collapsed && (
           <>
-            <View style={[styles.divider, { backgroundColor: colors.border }]} />
-            <Text style={[styles.sectionTitle, { color: colors.secondaryText }]}>Folders</Text>
+            {(customMailboxes.length > 0 || isCreatingFolder) && (
+              <View style={[styles.divider, { backgroundColor: colors.border }]} />
+            )}
+            {(customMailboxes.length > 0 || isCreatingFolder) && (
+              <View style={styles.sectionHeader}>
+                <Text style={[styles.sectionTitle, { color: colors.secondaryText }]}>Folders</Text>
+              </View>
+            )}
             {customMailboxes.map((mailbox) => (
-              <NavItem
-                key={mailbox._id}
-                icon="folder-outline"
-                hugeIcon={Folder01Icon as unknown as IconSvgElement}
-                label={mailbox.name}
-                isActive={isMailboxActive(mailbox)}
-                colors={colors}
-                collapsed={collapsed}
-                onPress={() => handleSelect(mailbox)}
-              />
+              <View key={mailbox._id} style={styles.customMailboxRow}>
+                <View style={styles.customMailboxNav}>
+                  <NavItem
+                    icon="folder-outline"
+                    hugeIcon={Folder01Icon as unknown as IconSvgElement}
+                    label={mailbox.name}
+                    isActive={isMailboxActive(mailbox)}
+                    colors={colors}
+                    collapsed={collapsed}
+                    onPress={() => handleSelect(mailbox)}
+                  />
+                </View>
+                {deletingMailboxId === mailbox._id ? (
+                  <View style={styles.deleteActions}>
+                    <TouchableOpacity
+                      style={styles.deleteConfirmButton}
+                      onPress={() => handleDeleteFolder(mailbox)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.deleteConfirmText, { color: colors.danger }]}>Delete</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.deleteCancelButton}
+                      onPress={() => setDeletingMailboxId(null)}
+                      activeOpacity={0.7}
+                    >
+                      {Platform.OS === 'web' ? (
+                        <HugeiconsIcon icon={Cancel01Icon as unknown as IconSvgElement} size={16} color={colors.secondaryText} />
+                      ) : (
+                        <MaterialCommunityIcons name="close" size={16} color={colors.secondaryText} />
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <TouchableOpacity
+                    style={styles.deleteIconButton}
+                    onPress={() => setDeletingMailboxId(mailbox._id)}
+                    activeOpacity={0.7}
+                  >
+                    {Platform.OS === 'web' ? (
+                      <HugeiconsIcon icon={Delete01Icon as unknown as IconSvgElement} size={14} color={colors.secondaryText} />
+                    ) : (
+                      <MaterialCommunityIcons name="delete-outline" size={14} color={colors.secondaryText} />
+                    )}
+                  </TouchableOpacity>
+                )}
+              </View>
             ))}
+
+            {/* Inline create folder input */}
+            {isCreatingFolder && (
+              <View style={styles.createFolderRow}>
+                <View style={styles.createFolderInputWrapper}>
+                  {Platform.OS === 'web' ? (
+                    <HugeiconsIcon icon={Folder01Icon as unknown as IconSvgElement} size={18} color={colors.secondaryText} />
+                  ) : (
+                    <MaterialCommunityIcons name="folder-outline" size={18} color={colors.secondaryText} />
+                  )}
+                  <TextInput
+                    ref={newFolderInputRef}
+                    style={[styles.createFolderInput, { color: colors.text, borderColor: colors.border }]}
+                    placeholder="Folder name"
+                    placeholderTextColor={colors.secondaryText}
+                    value={newFolderName}
+                    onChangeText={setNewFolderName}
+                    onSubmitEditing={handleCreateFolder}
+                    autoFocus
+                    returnKeyType="done"
+                  />
+                </View>
+                <View style={styles.createFolderActions}>
+                  <TouchableOpacity
+                    style={[styles.createFolderConfirm, { opacity: newFolderName.trim() ? 1 : 0.4 }]}
+                    onPress={handleCreateFolder}
+                    disabled={!newFolderName.trim() || createMailbox.isPending}
+                    activeOpacity={0.7}
+                  >
+                    {Platform.OS === 'web' ? (
+                      <HugeiconsIcon icon={Tick02Icon as unknown as IconSvgElement} size={16} color={colors.primary} />
+                    ) : (
+                      <MaterialCommunityIcons name="check" size={16} color={colors.primary} />
+                    )}
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.createFolderCancel}
+                    onPress={handleCancelCreate}
+                    activeOpacity={0.7}
+                  >
+                    {Platform.OS === 'web' ? (
+                      <HugeiconsIcon icon={Cancel01Icon as unknown as IconSvgElement} size={16} color={colors.secondaryText} />
+                    ) : (
+                      <MaterialCommunityIcons name="close" size={16} color={colors.secondaryText} />
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+
+            {/* Create folder button */}
+            {!isCreatingFolder && (
+              <TouchableOpacity
+                style={styles.createFolderButton}
+                onPress={() => setIsCreatingFolder(true)}
+                activeOpacity={0.7}
+              >
+                {Platform.OS === 'web' ? (
+                  <HugeiconsIcon icon={FolderAddIcon as unknown as IconSvgElement} size={18} color={colors.secondaryText} />
+                ) : (
+                  <MaterialCommunityIcons name="folder-plus-outline" size={18} color={colors.secondaryText} />
+                )}
+                <Text style={[styles.createFolderLabel, { color: colors.secondaryText }]}>Create folder</Text>
+              </TouchableOpacity>
+            )}
           </>
         )}
       </ScrollView>
@@ -505,57 +661,19 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
       {/* Account section at bottom */}
       {!collapsed && (
         <View style={styles.footerWrapper}>
-          {/* Popover menu */}
+          {/* Account switcher popover */}
           {menuVisible && (
             <>
               <Pressable style={styles.menuBackdrop} onPress={() => setMenuVisible(false)} />
-              <View
-                style={[
-                  styles.menuContainer,
-                  {
-                    backgroundColor: colors.surface,
-                    borderColor: colors.border,
-                    ...Platform.select({
-                      web: { boxShadow: '0 4px 24px rgba(0,0,0,0.18)' } as any,
-                      default: {},
-                    }),
-                  },
-                ]}
-              >
-                {/* User info header */}
-                <View style={[styles.menuHeader, { borderBottomColor: colors.border }]}>
-                  <Avatar name={user?.name?.first || user?.username || '?'} size={36} />
-                  <View style={styles.menuHeaderInfo}>
-                    <Text style={[styles.menuHeaderName, { color: colors.text }]} numberOfLines={1}>
-                      {displayName}
-                    </Text>
-                    <Text style={[styles.menuHeaderEmail, { color: colors.secondaryText }]} numberOfLines={1}>
-                      {emailAddress}
-                    </Text>
-                  </View>
-                </View>
-
-                {/* Menu items */}
-                <View style={styles.menuItems}>
-                  <TouchableOpacity style={styles.menuItem} onPress={() => handleMenuItem('settings')} activeOpacity={0.6}>
-                    {Platform.OS === 'web' ? (
-                      <HugeiconsIcon icon={Settings01Icon as unknown as IconSvgElement} size={18} color={colors.icon} />
-                    ) : (
-                      <MaterialCommunityIcons name="cog-outline" size={18} color={colors.icon} />
-                    )}
-                    <Text style={[styles.menuItemText, { color: colors.text }]}>Settings</Text>
-                  </TouchableOpacity>
-                  <View style={[styles.menuDivider, { backgroundColor: colors.border }]} />
-                  <TouchableOpacity style={styles.menuItem} onPress={() => handleMenuItem('logout')} activeOpacity={0.6}>
-                    {Platform.OS === 'web' ? (
-                      <HugeiconsIcon icon={Logout01Icon as unknown as IconSvgElement} size={18} color={colors.icon} />
-                    ) : (
-                      <MaterialCommunityIcons name="logout" size={18} color={colors.icon} />
-                    )}
-                    <Text style={[styles.menuItemText, { color: colors.text }]}>Log out</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
+              <AccountSwitcher
+                onClose={() => setMenuVisible(false)}
+                onSettings={() => {
+                  setMenuVisible(false);
+                  router.push('/settings');
+                  onClose?.();
+                }}
+                onAddAccount={handleAddAccount}
+              />
             </>
           )}
 
@@ -735,6 +853,114 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     letterSpacing: 0.5,
   },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingRight: 8,
+  },
+  customMailboxRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  customMailboxNav: {
+    flex: 1,
+    minWidth: 0,
+  },
+  deleteIconButton: {
+    width: 28,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 14,
+    marginRight: 4,
+    opacity: 0,
+    ...Platform.select({
+      web: {
+        // Show on hover of parent row via CSS — fallback: always visible
+        opacity: 0.5,
+        // @ts-expect-error — web-only
+        transition: 'opacity 0.15s',
+      } as any,
+      default: { opacity: 0.6 },
+    }),
+  },
+  deleteActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    marginRight: 4,
+  },
+  deleteConfirmButton: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  deleteConfirmText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  deleteCancelButton: {
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+  },
+  createFolderButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 10,
+    borderRadius: 28,
+    marginVertical: 1,
+    gap: 12,
+  },
+  createFolderLabel: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  createFolderRow: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    gap: 6,
+  },
+  createFolderInputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  createFolderInput: {
+    flex: 1,
+    fontSize: 13,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 8,
+    ...Platform.select({
+      web: { outlineStyle: 'none' } as any,
+      default: {},
+    }),
+  },
+  createFolderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 4,
+  },
+  createFolderConfirm: {
+    width: 28,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 14,
+  },
+  createFolderCancel: {
+    width: 28,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 14,
+  },
   footerWrapper: {
     position: 'relative',
   },
@@ -775,54 +1001,5 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     zIndex: 99,
-  },
-  menuContainer: {
-    position: 'absolute',
-    bottom: '100%',
-    left: 8,
-    right: 8,
-    marginBottom: 4,
-    borderRadius: 10,
-    borderWidth: StyleSheet.hairlineWidth,
-    overflow: 'hidden',
-    zIndex: 100,
-  },
-  menuHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    gap: 10,
-  },
-  menuHeaderInfo: {
-    flex: 1,
-    minWidth: 0,
-  },
-  menuHeaderName: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  menuHeaderEmail: {
-    fontSize: 11,
-    marginTop: 1,
-  },
-  menuItems: {
-    paddingVertical: 4,
-  },
-  menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    gap: 10,
-  },
-  menuItemText: {
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  menuDivider: {
-    height: StyleSheet.hairlineWidth,
-    marginHorizontal: 14,
-    marginVertical: 2,
   },
 });

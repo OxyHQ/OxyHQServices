@@ -34,6 +34,8 @@ interface OutboundMessage {
   inReplyTo?: string;
   references?: string[];
   attachments?: IAttachment[];
+  /** When true, add Disposition-Notification-To header requesting a read receipt */
+  requestReadReceipt?: boolean;
 }
 
 interface QueuedMessage extends OutboundMessage {
@@ -98,6 +100,9 @@ class SmtpOutboundService {
       inReplyTo: message.inReplyTo,
       references: message.references?.join(' '),
       attachments: nmAttachments,
+      headers: message.requestReadReceipt
+        ? { 'Disposition-Notification-To': `${message.from.name || ''} <${message.from.address}>`.trim() }
+        : undefined,
     };
 
     try {
@@ -130,6 +135,116 @@ class SmtpOutboundService {
       await this.enqueue({ ...message, messageId });
       return { messageId, queued: true };
     }
+  }
+
+  /**
+   * Send a message via SMTP without storing it in the Sent mailbox.
+   * Used for scheduled messages that are already stored.
+   */
+  async sendRaw(message: OutboundMessage): Promise<void> {
+    const messageId = `<${uuidv4()}@${EMAIL_DOMAIN}>`;
+    const nmAttachments = await this.resolveAttachments(message.attachments || []);
+
+    const mailOptions = {
+      messageId,
+      from: `${message.from.name || ''} <${message.from.address}>`.trim(),
+      to: message.to.map((a) => (a.name ? `${a.name} <${a.address}>` : a.address)).join(', '),
+      cc: message.cc?.map((a) => (a.name ? `${a.name} <${a.address}>` : a.address)).join(', '),
+      bcc: message.bcc?.map((a) => (a.name ? `${a.name} <${a.address}>` : a.address)).join(', '),
+      subject: message.subject,
+      text: message.text,
+      html: message.html,
+      inReplyTo: message.inReplyTo,
+      references: message.references?.join(' '),
+      attachments: nmAttachments,
+    };
+
+    await this.transporter.sendMail(mailOptions);
+
+    logger.info('Scheduled email sent', {
+      messageId,
+      to: message.to.map((a) => a.address).join(', '),
+    });
+  }
+
+  /**
+   * Send an MDN (Message Disposition Notification) per RFC 3798.
+   * This is a multipart/report message with a human-readable part and a machine-readable
+   * disposition-notification part.
+   */
+  async sendMdn(params: {
+    from: IEmailAddress;
+    to: string;
+    originalRecipient: string;
+    originalMessageId: string;
+    originalSubject: string;
+  }): Promise<void> {
+    const mdnMessageId = `<${uuidv4()}@${EMAIL_DOMAIN}>`;
+    const boundary = `----=_MDN_${uuidv4().replace(/-/g, '')}`;
+    const reportingUA = 'inbox.oxy.so; Inbox by Oxy';
+    const now = new Date().toUTCString();
+
+    // Human-readable part
+    const humanText = [
+      `Your message was displayed to ${params.originalRecipient}.`,
+      '',
+      `  Subject: ${params.originalSubject}`,
+      `  Date: ${now}`,
+      '',
+      'This is a Message Disposition Notification (MDN) confirming that',
+      'the message was displayed by the recipient\'s mail client.',
+    ].join('\r\n');
+
+    // Machine-readable part (RFC 3798 Section 3.2.6)
+    const disposition = [
+      `Reporting-UA: ${reportingUA}`,
+      `Original-Recipient: rfc822;${params.originalRecipient}`,
+      `Final-Recipient: rfc822;${params.originalRecipient}`,
+      `Original-Message-ID: ${params.originalMessageId}`,
+      'Disposition: manual-action/MDN-sent-manually; displayed',
+    ].join('\r\n');
+
+    // Build the raw MIME message
+    const rawMessage = [
+      `From: ${params.from.name || ''} <${params.from.address}>`.trim(),
+      `To: ${params.to}`,
+      `Subject: Read: ${params.originalSubject}`,
+      `Date: ${now}`,
+      `Message-ID: ${mdnMessageId}`,
+      `In-Reply-To: ${params.originalMessageId}`,
+      `References: ${params.originalMessageId}`,
+      'MIME-Version: 1.0',
+      'Auto-Submitted: auto-replied',
+      `Content-Type: multipart/report; report-type=disposition-notification; boundary="${boundary}"`,
+      '',
+      `--${boundary}`,
+      'Content-Type: text/plain; charset=utf-8',
+      'Content-Transfer-Encoding: 7bit',
+      '',
+      humanText,
+      '',
+      `--${boundary}`,
+      'Content-Type: message/disposition-notification',
+      'Content-Transfer-Encoding: 7bit',
+      '',
+      disposition,
+      '',
+      `--${boundary}--`,
+    ].join('\r\n');
+
+    await this.transporter.sendMail({
+      envelope: {
+        from: params.from.address,
+        to: params.to,
+      },
+      raw: rawMessage,
+    });
+
+    logger.info('MDN sent', {
+      messageId: mdnMessageId,
+      to: params.to,
+      originalMessageId: params.originalMessageId,
+    });
   }
 
   private async resolveAttachments(

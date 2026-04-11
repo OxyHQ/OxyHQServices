@@ -306,7 +306,7 @@ export async function deleteLabel(req: AuthRequest, res: Response): Promise<void
 
 export async function sendMessage(req: AuthRequest, res: Response): Promise<void> {
   const userId = req.user!.id;
-  const { to, cc, bcc, subject, text, html, inReplyTo, references, attachments } = req.body;
+  const { to, cc, bcc, subject, text, html, inReplyTo, references, attachments, scheduledAt, requestReadReceipt } = req.body;
 
   if (!to || !Array.isArray(to) || to.length === 0) {
     throw new BadRequestError('At least one recipient (to) is required');
@@ -325,6 +325,59 @@ export async function sendMessage(req: AuthRequest, res: Response): Promise<void
   const fromName = user.name?.first
     ? `${user.name.first} ${user.name.last || ''}`.trim()
     : user.username;
+
+  // Handle scheduled send
+  if (scheduledAt) {
+    const scheduledDate = new Date(scheduledAt);
+    if (isNaN(scheduledDate.getTime()) || scheduledDate.getTime() <= Date.now()) {
+      throw new BadRequestError('scheduledAt must be a valid future date');
+    }
+
+    const scheduled = await emailService.scheduleMessage(userId, {
+      from: { name: fromName, address: fromAddress },
+      to: to.map((addr: string) => ({ address: addr })),
+      cc: cc?.map((addr: string) => ({ address: addr })),
+      bcc: bcc?.map((addr: string) => ({ address: addr })),
+      subject: subject || '',
+      text,
+      html,
+      inReplyTo,
+      references,
+      attachments,
+      scheduledAt: scheduledDate,
+    });
+
+    // If replying, mark original message as answered (best-effort)
+    if (inReplyTo) {
+      try {
+        const original = await Message.findOne({ userId, messageId: inReplyTo });
+        if (original) {
+          await emailService.updateMessageFlags(userId, original._id.toString(), { answered: true });
+        }
+      } catch {
+        // Best-effort
+      }
+    }
+
+    // Fire-and-forget: auto-collect contacts from recipients
+    const scheduledRecipients: Array<{ name?: string; address: string }> = [
+      ...(to || []).map((addr: string) => ({ address: addr })),
+      ...(cc || []).map((addr: string) => ({ address: addr })),
+      ...(bcc || []).map((addr: string) => ({ address: addr })),
+    ];
+    emailService.autoCollectContacts(userId, scheduledRecipients).catch(() => {
+      // Non-critical
+    });
+
+    res.status(202).json({
+      data: {
+        messageId: scheduled.messageId,
+        scheduledAt: scheduledDate.toISOString(),
+        message: 'Message scheduled for delivery',
+      },
+    });
+    return;
+  }
 
   const result = await smtpOutbound.send({
     userId,
@@ -351,6 +404,16 @@ export async function sendMessage(req: AuthRequest, res: Response): Promise<void
       // Best-effort: don't fail the send if we can't update the original
     }
   }
+
+  // Fire-and-forget: auto-collect contacts from recipients
+  const allRecipients: Array<{ name?: string; address: string }> = [
+    ...(to || []).map((addr: string) => ({ address: addr })),
+    ...(cc || []).map((addr: string) => ({ address: addr })),
+    ...(bcc || []).map((addr: string) => ({ address: addr })),
+  ];
+  emailService.autoCollectContacts(userId, allRecipients).catch(() => {
+    // Non-critical — don't slow down sending
+  });
 
   res.status(202).json({
     data: {
@@ -475,9 +538,9 @@ export async function getEmailSettings(req: AuthRequest, res: Response): Promise
 
 export async function updateEmailSettings(req: AuthRequest, res: Response): Promise<void> {
   const userId = req.user!.id;
-  const { signature, autoReply } = req.body;
+  const { signature, autoReply, autoForwardTo, autoForwardKeepCopy } = req.body;
 
-  await emailService.updateEmailSettings(userId, { signature, autoReply });
+  await emailService.updateEmailSettings(userId, { signature, autoReply, autoForwardTo, autoForwardKeepCopy });
   res.json({ data: { message: 'Settings updated' } });
 }
 
@@ -638,40 +701,272 @@ export async function suggestContacts(req: AuthRequest, res: Response): Promise<
   // Escape special regex characters for safe prefix matching
   const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-  const results = await Message.aggregate([
-    { $match: { userId } },
-    {
-      $project: {
-        contacts: {
-          $concatArrays: [
-            [{ name: '$from.name', address: '$from.address' }],
-            { $ifNull: ['$to', []] },
-            { $ifNull: ['$cc', []] },
+  // Search both the Contact model (address book) and message history in parallel
+  const [contactResults, messageResults] = await Promise.all([
+    emailService.searchContacts(userId, q, 10),
+    Message.aggregate([
+      { $match: { userId } },
+      {
+        $project: {
+          contacts: {
+            $concatArrays: [
+              [{ name: '$from.name', address: '$from.address' }],
+              { $ifNull: ['$to', []] },
+              { $ifNull: ['$cc', []] },
+            ],
+          },
+        },
+      },
+      { $unwind: '$contacts' },
+      {
+        $match: {
+          $or: [
+            { 'contacts.address': { $regex: escaped, $options: 'i' } },
+            { 'contacts.name': { $regex: escaped, $options: 'i' } },
           ],
         },
       },
-    },
-    { $unwind: '$contacts' },
-    {
-      $match: {
-        $or: [
-          { 'contacts.address': { $regex: escaped, $options: 'i' } },
-          { 'contacts.name': { $regex: escaped, $options: 'i' } },
-        ],
+      {
+        $group: {
+          _id: { $toLower: '$contacts.address' },
+          name: { $first: '$contacts.name' },
+          address: { $first: '$contacts.address' },
+          count: { $sum: 1 },
+        },
       },
-    },
-    {
-      $group: {
-        _id: { $toLower: '$contacts.address' },
-        name: { $first: '$contacts.name' },
-        address: { $first: '$contacts.address' },
-        count: { $sum: 1 },
-      },
-    },
-    { $sort: { count: -1 } },
-    { $limit: 10 },
-    { $project: { _id: 0, name: 1, address: 1 } },
+      { $sort: { count: -1 } },
+      { $limit: 10 },
+      { $project: { _id: 0, name: 1, address: 1 } },
+    ]),
   ]);
 
-  res.json({ data: results });
+  // Merge results: contacts from address book first, then message history
+  // Deduplicate by email address (lowercase)
+  const seen = new Set<string>();
+  const merged: Array<{ name: string | null; address: string }> = [];
+
+  for (const c of contactResults) {
+    const key = c.address.toLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+      merged.push(c);
+    }
+  }
+
+  for (const m of messageResults) {
+    const key = (m.address || '').toLowerCase();
+    if (key && !seen.has(key)) {
+      seen.add(key);
+      merged.push(m);
+    }
+  }
+
+  res.json({ data: merged.slice(0, 15) });
+}
+
+export async function listContacts(req: AuthRequest, res: Response): Promise<void> {
+  const userId = req.user!.id;
+  const q = req.query.q as string | undefined;
+  const starred = req.query.starred === 'true';
+  const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+  const offset = parseInt(req.query.offset as string) || 0;
+
+  const result = await emailService.listContacts(userId, { q, starred: starred || undefined, limit, offset });
+  res.json({
+    data: result.data,
+    pagination: {
+      total: result.total,
+      limit,
+      offset,
+      hasMore: offset + limit < result.total,
+    },
+  });
+}
+
+export async function createContact(req: AuthRequest, res: Response): Promise<void> {
+  const userId = req.user!.id;
+  const { name, email, company, notes, starred } = req.body;
+
+  if (!name || typeof name !== 'string') {
+    throw new BadRequestError('Contact name is required');
+  }
+  if (!email || typeof email !== 'string') {
+    throw new BadRequestError('Contact email is required');
+  }
+
+  const contact = await emailService.createContact(userId, {
+    name: name.trim(),
+    email: email.trim(),
+    company,
+    notes,
+    starred,
+  });
+  res.status(201).json({ data: contact });
+}
+
+export async function updateContact(req: AuthRequest, res: Response): Promise<void> {
+  const userId = req.user!.id;
+  const { contactId } = req.params;
+  const { name, email, company, notes, starred } = req.body;
+
+  const updates: Record<string, unknown> = {};
+  if (name !== undefined) updates.name = name;
+  if (email !== undefined) updates.email = email;
+  if (company !== undefined) updates.company = company;
+  if (notes !== undefined) updates.notes = notes;
+  if (starred !== undefined) updates.starred = starred;
+
+  const contact = await emailService.updateContact(userId, contactId, updates);
+  res.json({ data: contact });
+}
+
+export async function deleteContact(req: AuthRequest, res: Response): Promise<void> {
+  const userId = req.user!.id;
+  const { contactId } = req.params;
+
+  await emailService.deleteContact(userId, contactId);
+  res.json({ data: { message: 'Contact deleted' } });
+}
+
+// ─── Filters ──────────────────────────────────────────────────────
+
+export async function listFilters(req: AuthRequest, res: Response): Promise<void> {
+  const userId = req.user!.id;
+  const filters = await emailService.listFilters(userId);
+  res.json({ data: filters });
+}
+
+export async function createFilter(req: AuthRequest, res: Response): Promise<void> {
+  const userId = req.user!.id;
+  const { name, enabled, conditions, matchAll, actions, order } = req.body;
+
+  if (!name || typeof name !== 'string') {
+    throw new BadRequestError('Filter name is required');
+  }
+  if (!conditions || !Array.isArray(conditions) || conditions.length === 0) {
+    throw new BadRequestError('At least one condition is required');
+  }
+  if (!actions || !Array.isArray(actions) || actions.length === 0) {
+    throw new BadRequestError('At least one action is required');
+  }
+
+  const filter = await emailService.createFilter(userId, {
+    name: name.trim(),
+    enabled: enabled ?? true,
+    conditions,
+    matchAll: matchAll ?? true,
+    actions,
+    order: order ?? 0,
+  });
+  res.status(201).json({ data: filter });
+}
+
+export async function updateFilter(req: AuthRequest, res: Response): Promise<void> {
+  const userId = req.user!.id;
+  const { filterId } = req.params;
+  const { name, enabled, conditions, matchAll, actions, order } = req.body;
+
+  const updates: Record<string, unknown> = {};
+  if (name !== undefined) updates.name = name.trim();
+  if (enabled !== undefined) updates.enabled = enabled;
+  if (conditions !== undefined) updates.conditions = conditions;
+  if (matchAll !== undefined) updates.matchAll = matchAll;
+  if (actions !== undefined) updates.actions = actions;
+  if (order !== undefined) updates.order = order;
+
+  const filter = await emailService.updateFilter(userId, filterId, updates);
+  res.json({ data: filter });
+}
+
+export async function deleteFilter(req: AuthRequest, res: Response): Promise<void> {
+  const userId = req.user!.id;
+  const { filterId } = req.params;
+
+  await emailService.deleteFilter(userId, filterId);
+  res.json({ data: { message: 'Filter deleted' } });
+}
+
+// ─── Templates ──────────────────────────────────────────────────
+
+export async function listTemplates(req: AuthRequest, res: Response): Promise<void> {
+  const userId = req.user!.id;
+  const templates = await emailService.listTemplates(userId);
+  res.json({ data: templates });
+}
+
+export async function createTemplate(req: AuthRequest, res: Response): Promise<void> {
+  const userId = req.user!.id;
+  const { name, subject, body } = req.body;
+
+  if (!name || typeof name !== 'string') {
+    throw new BadRequestError('Template name is required');
+  }
+  if (!body || typeof body !== 'string') {
+    throw new BadRequestError('Template body is required');
+  }
+
+  const template = await emailService.createTemplate(userId, {
+    name: name.trim(),
+    subject: subject || '',
+    body,
+  });
+  res.status(201).json({ data: template });
+}
+
+export async function updateTemplate(req: AuthRequest, res: Response): Promise<void> {
+  const userId = req.user!.id;
+  const { templateId } = req.params;
+  const { name, subject, body } = req.body;
+
+  const updates: { name?: string; subject?: string; body?: string } = {};
+  if (name !== undefined) updates.name = name.trim();
+  if (subject !== undefined) updates.subject = subject;
+  if (body !== undefined) updates.body = body;
+
+  const template = await emailService.updateTemplate(userId, templateId, updates);
+  res.json({ data: template });
+}
+
+export async function deleteTemplate(req: AuthRequest, res: Response): Promise<void> {
+  const userId = req.user!.id;
+  const { templateId } = req.params;
+
+  await emailService.deleteTemplate(userId, templateId);
+  res.json({ data: { message: 'Template deleted' } });
+}
+
+// ─── Export / Import ────────────────────────────────────────────
+
+export async function exportMessage(req: AuthRequest, res: Response): Promise<void> {
+  const userId = req.user!.id;
+  const { messageId } = req.params;
+
+  const eml = await emailService.exportMessage(userId, messageId);
+
+  res.setHeader('Content-Type', 'message/rfc822');
+  res.setHeader('Content-Disposition', 'attachment; filename="message.eml"');
+  res.send(eml);
+}
+
+export async function importMessages(req: AuthRequest, res: Response): Promise<void> {
+  const userId = req.user!.id;
+  const files = req.files as Express.Multer.File[] | undefined;
+
+  if (!files || files.length === 0) {
+    throw new BadRequestError('At least one .eml file is required');
+  }
+
+  // Validate that all files are .eml
+  for (const file of files) {
+    if (!file.originalname.toLowerCase().endsWith('.eml')) {
+      throw new BadRequestError(`Invalid file type: ${file.originalname}. Only .eml files are accepted.`);
+    }
+  }
+
+  const imported = await emailService.importMessages(
+    userId,
+    files.map((f) => ({ buffer: f.buffer, originalname: f.originalname })),
+  );
+
+  res.json({ data: { imported, total: files.length } });
 }

@@ -14,14 +14,16 @@ export default function DrawerLayout() {
   const isDesktop = Platform.OS === 'web' && width >= 900;
   const { isAuthenticated, oxyServices } = useOxy();
   const _initApi = useEmailStore((s) => s._initApi);
+  const hasApi = useEmailStore((s) => s._api !== null);
   const sidebarCollapsed = useEmailStore((s) => s.sidebarCollapsed);
 
-  // Initialize email API with httpService when authenticated
+  // Initialize email API with httpService when authenticated.
+  // Also re-initializes after an account switch resets the store (_api becomes null).
   useEffect(() => {
-    if (isAuthenticated) {
+    if (isAuthenticated && !hasApi) {
       _initApi(oxyServices.httpService);
     }
-  }, [isAuthenticated, oxyServices, _initApi]);
+  }, [isAuthenticated, oxyServices, _initApi, hasApi]);
 
   const drawerWidth = isDesktop ? (sidebarCollapsed ? 64 : 280) : 300;
 

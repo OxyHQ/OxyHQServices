@@ -23,7 +23,11 @@ import { useEmailStore } from '@/hooks/useEmail';
 import { useSendMessageWithUndo } from '@/hooks/mutations/useMessageMutations';
 import { Avatar } from '@/components/Avatar';
 import { SmartReplyChips } from '@/components/SmartReplyChips';
-import type { Message, EmailAddress } from '@/services/emailApi';
+import { RichTextEditor, stripHtml, type RichTextEditorHandle } from '@/components/RichTextEditor';
+import { TemplatePicker } from '@/components/TemplatePicker';
+import type { Message, EmailAddress, EmailTemplate } from '@/services/emailApi';
+
+const isWeb = Platform.OS === 'web';
 
 function formatQuoteDate(dateStr: string): string {
   const date = new Date(dateStr);
@@ -60,7 +64,7 @@ export function InlineReply({ message, mode, onClose, onSent }: InlineReplyProps
   const { user } = useOxy();
   const api = useEmailStore((s) => s._api);
   const { sendWithUndo, isPending: sendPending } = useSendMessageWithUndo();
-  const bodyRef = useRef<TextInput>(null);
+  const bodyRef = useRef<RichTextEditorHandle>(null);
 
   // Compute initial recipients based on mode
   const initialTo = useMemo(() => {
@@ -157,7 +161,8 @@ export function InlineReply({ message, mode, onClose, onSent }: InlineReplyProps
         cc: cc.trim() ? parseAddresses(cc) : undefined,
         bcc: bcc.trim() ? parseAddresses(bcc) : undefined,
         subject: initialSubject,
-        text: fullBody,
+        text: isWeb ? stripHtml(fullBody) : fullBody,
+        html: isWeb ? fullBody : undefined,
         inReplyTo: mode !== 'forward' ? message._id : undefined,
         references: mode !== 'forward' && message.references ? [...message.references, message.messageId] : undefined,
       },
@@ -179,16 +184,39 @@ export function InlineReply({ message, mode, onClose, onSent }: InlineReplyProps
     setBody((prev) => {
       // If there's already content, add a newline before the smart reply
       if (prev.trim()) {
-        return text + '\n\n' + prev;
+        return `${text}\n\n${prev}`;
       }
       return text + prev;
     });
-    // Focus the body input after selection
+    // On web, also update the contentEditable editor
+    if (isWeb && bodyRef.current) {
+      // Get current body, prepend the smart reply
+      bodyRef.current.setContent(text);
+    }
     bodyRef.current?.focus();
   }, []);
 
   // Only show smart replies for reply/reply-all, not forward
   const showSmartReplies = mode !== 'forward';
+
+  // Handle template selection — insert into reply fields
+  const handleTemplateSelect = useCallback((template: EmailTemplate) => {
+    if (!body.trim()) {
+      if (isWeb && bodyRef.current) {
+        bodyRef.current.setContent(template.body);
+      } else {
+        setBody(template.body);
+      }
+    } else {
+      const newBody = body + '\n' + template.body;
+      if (isWeb && bodyRef.current) {
+        bodyRef.current.setContent(newBody);
+      } else {
+        setBody(newBody);
+      }
+    }
+    bodyRef.current?.focus();
+  }, [body]);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -257,18 +285,17 @@ export function InlineReply({ message, mode, onClose, onSent }: InlineReplyProps
         <SmartReplyChips message={message} onSelectReply={handleSmartReplySelect} />
       )}
 
-      {/* Body textarea */}
-      <TextInput
-        ref={bodyRef}
-        style={[styles.bodyInput, { color: colors.text, borderTopColor: colors.border }]}
-        value={body}
-        onChangeText={setBody}
-        placeholder="Write your reply..."
-        placeholderTextColor={colors.searchPlaceholder}
-        multiline
-        textAlignVertical="top"
-        autoFocus
-      />
+      {/* Body editor */}
+      <View style={[styles.bodyContainer, { borderTopColor: colors.border }]}>
+        <RichTextEditor
+          ref={bodyRef}
+          value={body}
+          onChange={setBody}
+          placeholder="Write your reply..."
+          autoFocus
+          style={styles.bodyEditor}
+        />
+      </View>
 
       {/* Quoted text indicator */}
       <TouchableOpacity style={[styles.quotedIndicator, { borderTopColor: colors.border }]} activeOpacity={0.7}>
@@ -289,7 +316,9 @@ export function InlineReply({ message, mode, onClose, onSent }: InlineReplyProps
           <MaterialCommunityIcons name="send" size={16} color="#FFFFFF" />
         </TouchableOpacity>
 
-        <View style={styles.footerActions} />
+        <View style={styles.footerActions}>
+          <TemplatePicker onSelect={handleTemplateSelect} />
+        </View>
 
         <TouchableOpacity onPress={onClose} style={styles.footerAction}>
           <MaterialCommunityIcons name="delete-outline" size={20} color={colors.icon} />
@@ -345,13 +374,12 @@ const styles = StyleSheet.create({
   closeButton: {
     padding: 4,
   },
-  bodyInput: {
-    fontSize: 14,
-    lineHeight: 22,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
+  bodyContainer: {
     minHeight: 120,
     borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  bodyEditor: {
+    minHeight: 120,
   },
   quotedIndicator: {
     flexDirection: 'row',

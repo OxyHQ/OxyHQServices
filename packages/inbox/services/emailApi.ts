@@ -75,6 +75,7 @@ export const MessageSchema = z.object({
   references: z.array(z.string()).optional(),
   aliasTag: z.string().nullable().optional(),
   snoozedUntil: z.string().nullable().optional(),
+  scheduledAt: z.string().nullable().optional(),
   threadCount: z.number().optional(),
   threadParticipants: z.array(z.string()).optional(),
   senderAvatarPath: z.string().nullable().optional(),
@@ -123,6 +124,8 @@ export const EmailSettingsSchema = z.object({
     startDate: z.string().nullable().optional(),
     endDate: z.string().nullable().optional(),
   }),
+  autoForwardTo: z.string().optional(),
+  autoForwardKeepCopy: z.boolean().optional(),
   address: z.string().optional(),
 });
 
@@ -173,6 +176,55 @@ export const ContactSuggestionSchema = z.object({
   address: z.string(),
 });
 
+export const ContactSchema = z.object({
+  _id: z.string(),
+  userId: z.string(),
+  name: z.string(),
+  email: z.string(),
+  company: z.string().optional(),
+  notes: z.string().optional(),
+  starred: z.boolean(),
+  autoCollected: z.boolean(),
+  lastContactedAt: z.string().nullable().optional(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+export const EmailFilterConditionSchema = z.object({
+  field: z.enum(['from', 'to', 'subject', 'has-attachment', 'size']),
+  operator: z.enum(['contains', 'equals', 'not-contains', 'starts-with', 'ends-with', 'greater-than', 'less-than']),
+  value: z.string(),
+});
+
+export const EmailFilterActionSchema = z.object({
+  type: z.enum(['move', 'label', 'star', 'mark-read', 'archive', 'delete', 'forward']),
+  value: z.string().optional(),
+});
+
+export const EmailFilterSchema = z.object({
+  _id: z.string(),
+  userId: z.string(),
+  name: z.string(),
+  enabled: z.boolean(),
+  conditions: z.array(EmailFilterConditionSchema),
+  matchAll: z.boolean(),
+  actions: z.array(EmailFilterActionSchema),
+  order: z.number(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+export const EmailTemplateSchema = z.object({
+  _id: z.string(),
+  userId: z.string(),
+  name: z.string(),
+  subject: z.string(),
+  body: z.string(),
+  order: z.number(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
 // ─── Inferred Types ────────────────────────────────────────────────
 
 export type EmailAddress = z.infer<typeof EmailAddressSchema>;
@@ -192,6 +244,11 @@ export type UnsubscribeResult = z.infer<typeof UnsubscribeResultSchema>;
 export type Bundle = z.infer<typeof BundleSchema>;
 export type Reminder = z.infer<typeof ReminderSchema>;
 export type ContactSuggestion = z.infer<typeof ContactSuggestionSchema>;
+export type Contact = z.infer<typeof ContactSchema>;
+export type EmailFilter = z.infer<typeof EmailFilterSchema>;
+export type EmailFilterCondition = z.infer<typeof EmailFilterConditionSchema>;
+export type EmailFilterAction = z.infer<typeof EmailFilterActionSchema>;
+export type EmailTemplate = z.infer<typeof EmailTemplateSchema>;
 
 // ─── Response Helpers ──────────────────────────────────────────────
 
@@ -357,6 +414,7 @@ export function createEmailApi(http: HttpService) {
       inReplyTo?: string;
       references?: string[];
       attachments?: string[];
+      scheduledAt?: string;
     }): Promise<{ messageId: string; queued: boolean; message: string }> {
       const res = await http.post('/email/messages', message);
       return z.object({
@@ -447,7 +505,12 @@ export function createEmailApi(http: HttpService) {
     },
 
     async updateSettings(
-      settings: { signature?: string; autoReply?: Partial<EmailSettings['autoReply']> },
+      settings: {
+        signature?: string;
+        autoReply?: Partial<EmailSettings['autoReply']>;
+        autoForwardTo?: string;
+        autoForwardKeepCopy?: boolean;
+      },
     ): Promise<void> {
       await http.put('/email/settings', settings);
     },
@@ -575,6 +638,143 @@ export function createEmailApi(http: HttpService) {
       });
       const parsed = z.object({ data: z.array(ContactSuggestionSchema) }).parse(res);
       return parsed.data;
+    },
+
+    async listContacts(
+      options: { q?: string; starred?: boolean; limit?: number; offset?: number } = {},
+    ): Promise<{ data: Contact[]; pagination: Pagination }> {
+      const params: Record<string, string> = {};
+      if (options.q) params.q = options.q;
+      if (options.starred) params.starred = 'true';
+      if (options.limit !== undefined) params.limit = String(options.limit);
+      if (options.offset !== undefined) params.offset = String(options.offset);
+
+      const res = (await http.get('/email/contacts', { params })) as PaginatedResult<Contact>;
+      return {
+        data: z.array(ContactSchema).parse(res.data),
+        pagination: PaginationSchema.parse(res.pagination),
+      };
+    },
+
+    async createContact(data: {
+      name: string;
+      email: string;
+      company?: string;
+      notes?: string;
+      starred?: boolean;
+    }): Promise<Contact> {
+      const res = await http.post('/email/contacts', data);
+      return ContactSchema.parse(res);
+    },
+
+    async updateContact(
+      contactId: string,
+      updates: { name?: string; email?: string; company?: string; notes?: string; starred?: boolean },
+    ): Promise<Contact> {
+      const res = await http.put(`/email/contacts/${contactId}`, updates);
+      return ContactSchema.parse(res);
+    },
+
+    async deleteContact(contactId: string): Promise<void> {
+      await http.delete(`/email/contacts/${contactId}`);
+    },
+
+    // ─── Templates ────────────────────────────────────────────────────
+
+    async listTemplates(): Promise<EmailTemplate[]> {
+      const res = await http.get('/email/templates');
+      return z.array(EmailTemplateSchema).parse(res);
+    },
+
+    async createTemplate(data: { name: string; subject?: string; body: string }): Promise<EmailTemplate> {
+      const res = await http.post('/email/templates', data);
+      return EmailTemplateSchema.parse(res);
+    },
+
+    async updateTemplate(templateId: string, updates: { name?: string; subject?: string; body?: string }): Promise<EmailTemplate> {
+      const res = await http.put(`/email/templates/${templateId}`, updates);
+      return EmailTemplateSchema.parse(res);
+    },
+
+    async deleteTemplate(templateId: string): Promise<void> {
+      await http.delete(`/email/templates/${templateId}`);
+    },
+
+    // ─── Filters ─────────────────────────────────────────────────────
+
+    async listFilters(): Promise<EmailFilter[]> {
+      const res = await http.get('/email/filters');
+      return z.array(EmailFilterSchema).parse(res);
+    },
+
+    async createFilter(data: {
+      name: string;
+      enabled?: boolean;
+      conditions: EmailFilterCondition[];
+      matchAll?: boolean;
+      actions: EmailFilterAction[];
+      order?: number;
+    }): Promise<EmailFilter> {
+      const res = await http.post('/email/filters', data);
+      return EmailFilterSchema.parse(res);
+    },
+
+    async updateFilter(
+      filterId: string,
+      updates: {
+        name?: string;
+        enabled?: boolean;
+        conditions?: EmailFilterCondition[];
+        matchAll?: boolean;
+        actions?: EmailFilterAction[];
+        order?: number;
+      },
+    ): Promise<EmailFilter> {
+      const res = await http.put(`/email/filters/${filterId}`, updates);
+      return EmailFilterSchema.parse(res);
+    },
+
+    async deleteFilter(filterId: string): Promise<void> {
+      await http.delete(`/email/filters/${filterId}`);
+    },
+
+    // ─── Import / Export ────────────────────────────────────────────
+
+    /**
+     * Export a message as .eml file. Returns the raw content as a string.
+     * The caller is responsible for triggering the download.
+     */
+    async exportMessage(messageId: string): Promise<{ content: string; filename: string }> {
+      const res = await http.get(`/email/messages/${messageId}/export`, {
+        responseType: 'text',
+        headers: { Accept: 'message/rfc822' },
+      });
+      return {
+        content: res as unknown as string,
+        filename: 'message.eml',
+      };
+    },
+
+    /**
+     * Import .eml files. Returns the count of successfully imported messages.
+     */
+    async importMessages(files: File[]): Promise<{ imported: number; total: number }> {
+      const formData = new FormData();
+      for (const file of files) {
+        formData.append('files', file, file.name);
+      }
+      const res = await http.post('/email/import', formData);
+      return z.object({ imported: z.number(), total: z.number() }).parse(res);
+    },
+
+    // ─── Push Notifications ─────────────────────────────────────────
+
+    async registerPushToken(token: string, platform: 'ios' | 'android' | 'web'): Promise<void> {
+      await http.post('/notifications/push-token', { token, platform });
+    },
+
+    async unregisterPushToken(token: string): Promise<void> {
+      await http.delete('/notifications/push-token', { data: { token } });
     },
   };
 }

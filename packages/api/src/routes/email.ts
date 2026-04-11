@@ -32,6 +32,15 @@ import {
   createReminderSchema,
   reminderIdParams,
   updateReminderSchema,
+  createFilterSchema,
+  filterIdParams,
+  updateFilterSchema,
+  createTemplateSchema,
+  templateIdParams,
+  updateTemplateSchema,
+  createContactSchema,
+  contactIdParams,
+  updateContactSchema,
 } from '../schemas/email.schemas';
 import {
   listMailboxes,
@@ -66,11 +75,25 @@ import {
   bulkUpdateFlags,
   bulkMoveMessages,
   suggestContacts,
+  listContacts,
+  createContact,
+  updateContact,
+  deleteContact,
   createReminder,
   listReminders,
   getReminder,
   updateReminder,
   deleteReminder,
+  listFilters,
+  createFilter,
+  updateFilter,
+  deleteFilter,
+  listTemplates,
+  createTemplate,
+  updateTemplate,
+  deleteTemplate,
+  exportMessage,
+  importMessages,
 } from '../controllers/email.controller';
 
 const router = Router();
@@ -96,6 +119,7 @@ router.get('/messages', asyncHandler(listMessages));
 router.get('/messages/bundled', asyncHandler(listBundledMessages));
 router.get('/messages/:messageId', validate({ params: messageIdParams }), asyncHandler(getMessage));
 router.get('/messages/:messageId/thread', validate({ params: messageIdParams }), asyncHandler(getThread));
+router.get('/messages/:messageId/export', validate({ params: messageIdParams }), asyncHandler(exportMessage));
 router.put('/messages/:messageId/flags', validate({ params: messageIdParams, body: updateFlagsSchema }), asyncHandler(updateMessageFlags));
 router.put('/messages/:messageId/labels', validate({ params: messageIdParams, body: updateLabelsSchema }), asyncHandler(updateMessageLabels));
 router.post('/messages/:messageId/move', validate({ params: messageIdParams, body: moveMessageSchema }), asyncHandler(moveMessage));
@@ -118,6 +142,10 @@ router.delete('/labels/:labelId', validate({ params: labelIdParams }), asyncHand
 // ─── Contacts ────────────────────────────────────────────────────
 
 router.get('/contacts/suggest', asyncHandler(suggestContacts));
+router.get('/contacts', asyncHandler(listContacts));
+router.post('/contacts', validate({ body: createContactSchema }), asyncHandler(createContact));
+router.put('/contacts/:contactId', validate({ params: contactIdParams, body: updateContactSchema }), asyncHandler(updateContact));
+router.delete('/contacts/:contactId', validate({ params: contactIdParams }), asyncHandler(deleteContact));
 
 // ─── Compose ──────────────────────────────────────────────────────
 
@@ -137,6 +165,10 @@ router.get('/quota', asyncHandler(getQuota));
 router.post('/attachments', upload.single('file'), asyncHandler(uploadAttachment));
 router.get('/attachments/:s3Key(*)', asyncHandler(getAttachmentUrl));
 
+// ─── Import ───────────────────────────────────────────────────────
+
+router.post('/import', upload.array('files', 50), asyncHandler(importMessages));
+
 // ─── Subscriptions ───────────────────────────────────────────
 
 router.get('/subscriptions', asyncHandler(listSubscriptions));
@@ -154,6 +186,20 @@ router.get('/reminders', asyncHandler(listReminders));
 router.get('/reminders/:reminderId', validate({ params: reminderIdParams }), asyncHandler(getReminder));
 router.put('/reminders/:reminderId', validate({ params: reminderIdParams, body: updateReminderSchema }), asyncHandler(updateReminder));
 router.delete('/reminders/:reminderId', validate({ params: reminderIdParams }), asyncHandler(deleteReminder));
+
+// ─── Filters ────────────────────────────────────────────────────
+
+router.get('/filters', asyncHandler(listFilters));
+router.post('/filters', validate({ body: createFilterSchema }), asyncHandler(createFilter));
+router.put('/filters/:filterId', validate({ params: filterIdParams, body: updateFilterSchema }), asyncHandler(updateFilter));
+router.delete('/filters/:filterId', validate({ params: filterIdParams }), asyncHandler(deleteFilter));
+
+// ─── Templates ──────────────────────────────────────────────────
+
+router.get('/templates', asyncHandler(listTemplates));
+router.post('/templates', validate({ body: createTemplateSchema }), asyncHandler(createTemplate));
+router.put('/templates/:templateId', validate({ params: templateIdParams, body: updateTemplateSchema }), asyncHandler(updateTemplate));
+router.delete('/templates/:templateId', validate({ params: templateIdParams }), asyncHandler(deleteTemplate));
 
 // ─── Settings ─────────────────────────────────────────────────────
 
