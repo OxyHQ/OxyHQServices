@@ -9,7 +9,7 @@
  */
 
 import React, { useCallback, useRef, useState, useEffect, useMemo } from 'react';
-import { Platform, StyleSheet, useColorScheme } from 'react-native';
+import { Platform, StyleSheet, useColorScheme, Linking } from 'react-native';
 import { proxyExternalImages, getProxyBaseUrl } from '../utils/htmlTransform';
 
 interface HtmlBodyProps {
@@ -99,6 +99,7 @@ function wrapHtml(html: string, isDark: boolean): string {
     <head>
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+      <base target="_blank">
       ${isDark ? '<meta name="color-scheme" content="dark">' : ''}
       <style>
         * { box-sizing: border-box; }
@@ -170,6 +171,21 @@ function HtmlBodyWeb({ html }: HtmlBodyProps) {
           img.addEventListener('error', updateHeight, { once: true });
         }
       });
+
+      // Intercept link clicks — open in new tab instead of navigating the iframe.
+      // The <base target="_blank"> handles most links, but this catches edge cases
+      // (e.g. links with explicit target, javascript: hrefs, etc.)
+      doc.addEventListener('click', (e: MouseEvent) => {
+        const anchor = (e.target as HTMLElement).closest?.('a');
+        if (!anchor) return;
+        const href = anchor.getAttribute('href');
+        if (!href || href.startsWith('#') || href.startsWith('javascript:')) {
+          e.preventDefault();
+          return;
+        }
+        e.preventDefault();
+        window.open(href, '_blank', 'noopener,noreferrer');
+      });
     };
 
     iframe.addEventListener('load', handleLoad);
@@ -191,7 +207,7 @@ function HtmlBodyWeb({ html }: HtmlBodyProps) {
         display: 'block',
         overflow: 'hidden',
       }}
-      sandbox="allow-same-origin"
+      sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
       title="Email content"
       scrolling="no"
     />
@@ -243,6 +259,20 @@ if (Platform.OS !== 'web') {
       }
     }, []);
 
+    // Open links in the system browser instead of navigating the WebView
+    const handleNavigation = useCallback((request: { url: string }) => {
+      const { url } = request;
+      // Allow the initial HTML load (about:blank or data: URLs)
+      if (url === 'about:blank' || url.startsWith('data:') || url.startsWith('about:')) {
+        return true;
+      }
+      // Open external links in system browser
+      if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('mailto:')) {
+        Linking.openURL(url);
+      }
+      return false; // Block navigation inside WebView
+    }, []);
+
     return (
       <WebView
         originWhitelist={['*']}
@@ -253,6 +283,7 @@ if (Platform.OS !== 'web') {
         showsVerticalScrollIndicator={false}
         showsHorizontalScrollIndicator={false}
         onMessage={handleMessage}
+        onShouldStartLoadWithRequest={handleNavigation}
         javaScriptEnabled
         domStorageEnabled={false}
         startInLoadingState={false}

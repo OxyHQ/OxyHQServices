@@ -909,10 +909,12 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
                 )}
               </View>
 
-              {/* Body - full width for HTML emails */}
+              {/* Body - full width with consistent padding */}
               <View style={styles.messageBody}>
                 {msg.html ? (
-                  <HtmlBody html={resolvedHtmlMap[msg._id] ?? msg.html ?? ''} />
+                  <View style={styles.contentPadded}>
+                    <HtmlBody html={resolvedHtmlMap[msg._id] ?? msg.html ?? ''} />
+                  </View>
                 ) : (
                   <View style={styles.contentPadded}>
                     <Text style={[styles.bodyText, { color: colors.text }]}>
