@@ -1,19 +1,18 @@
-import { useEffect, useState } from "react";
-import { useSearchParams, Link, useNavigate } from "react-router-dom";
+import { useEffect, useState, useRef } from "react";
+import { useSearchParams, Link, useNavigate, Navigate } from "react-router-dom";
+import { toast } from "sonner";
 import { Check, Shield } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { FieldDescription } from "@/components/ui/field";
-import { Card, CardContent } from "@/components/ui/card";
 import { Avatar } from "@oxyhq/bloom/avatar";
-import { ToastMessage } from "@/components/toast-message";
 import {
-  Empty,
-  EmptyActions,
-  EmptyDescription,
-  EmptyTitle,
-} from "@/components/ui/empty";
-import { Logo } from "@/components/logo";
+  AuthFormLayout,
+  AuthFormHeader,
+  LoadingSpinner,
+  isPopupWindow,
+  tryClosePopup,
+} from "@/components/auth-form-layout";
 import {
   getAvatarUrl,
   buildRelativeUrl,
@@ -265,6 +264,19 @@ export function AuthorizePage() {
     loadData();
   }, [token, redirectUri, state, status, urlError]);
 
+  // Auto-close popup when authorization is complete
+  useEffect(() => {
+    const effectiveStatus = data.sessionStatus;
+    if (
+      (effectiveStatus === "approved" || effectiveStatus === "denied") &&
+      isPopupWindow()
+    ) {
+      // Small delay so any pending redirects / postMessages can fire
+      const timer = setTimeout(() => tryClosePopup(), 800);
+      return () => clearTimeout(timer);
+    }
+  }, [data.sessionStatus]);
+
   async function handleDecision(decision: "approve" | "deny") {
     if (!token) return;
     setSubmitting(true);
@@ -401,40 +413,35 @@ export function AuthorizePage() {
   }
 
   if (loading) {
-    return (
-      <div className="flex flex-col gap-6 items-center justify-center min-h-[300px]">
-        <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" />
-      </div>
-    );
+    return <LoadingSpinner />;
   }
 
   if (!token) {
     return (
-      <div className="flex flex-col gap-6">
-        <Empty>
-          <EmptyTitle>No authorization request</EmptyTitle>
-          <EmptyDescription>
-            Open the app you want to sign in to and try again. The authorization
-            request starts there.
-          </EmptyDescription>
-          <EmptyActions>
-            <Button asChild>
-              <Link to="/login">Go to sign in</Link>
-            </Button>
-          </EmptyActions>
-        </Empty>
-      </div>
+      <AuthFormLayout>
+        <AuthFormHeader
+          title="No authorization request"
+          description="Open the app you want to sign in to and try again. The authorization request starts there."
+        />
+        <Button asChild size="lg">
+          <Link to="/login">Go to sign in</Link>
+        </Button>
+      </AuthFormLayout>
     );
   }
 
   if (!data.sessionId) {
     // No session - redirect to login
-    window.location.href = buildRelativeUrl("/login", {
-      token: token || undefined,
-      redirect_uri: redirectUri || undefined,
-      state: state || undefined,
-    });
-    return null;
+    return (
+      <Navigate
+        to={buildRelativeUrl("/login", {
+          token: token || undefined,
+          redirect_uri: redirectUri || undefined,
+          state: state || undefined,
+        })}
+        replace
+      />
+    );
   }
 
   const effectiveStatus = data.sessionStatus;
@@ -454,153 +461,119 @@ export function AuthorizePage() {
   });
 
   return (
-    <div className="flex flex-col gap-6 w-full max-w-md mx-auto">
-      {/* Logo */}
-      <div className="flex justify-center">
-        <Link to="/login" className="flex items-center gap-2">
-          <Logo />
-          <span className="sr-only">Oxy</span>
-        </Link>
-      </div>
-
-      <Card>
-        <CardContent className="pt-6 pb-6 px-6 flex flex-col gap-5">
-          {/* Status messages for completed flows */}
-          {effectiveStatus === "approved" ||
-          effectiveStatus === "denied" ? (
-            <div className="text-center space-y-2">
-              <h1 className="text-xl font-semibold">
-                {effectiveStatus === "approved"
-                  ? "Authorization complete"
-                  : "Authorization denied"}
-              </h1>
-              <p className="text-sm text-muted-foreground">
-                {effectiveStatus === "approved"
+    <AuthFormLayout>
+      {/* Status messages for completed flows */}
+      {effectiveStatus === "approved" ||
+      effectiveStatus === "denied" ? (
+        <>
+          <AuthFormHeader
+            title={effectiveStatus === "approved"
+              ? "Authorization complete"
+              : "Authorization denied"}
+            description={
+              isPopupWindow()
+                ? "This window will close automatically."
+                : effectiveStatus === "approved"
                   ? "You can close this window."
-                  : "The request was denied. You can close this window."}
-              </p>
-            </div>
-          ) : (
-            <>
-              {/* User identity badge */}
-              {currentUser ? (
-                <div className="flex items-center gap-3 rounded-lg border bg-muted/50 p-3">
-                  <Avatar
-                    source={
-                      currentUser.avatar
-                        ? getAvatarUrl(currentUser.avatar)
-                        : undefined
-                    }
-                    size={40}
-                  />
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium text-sm truncate">
-                      {displayName}
-                    </div>
-                    {userEmail && (
-                      <div className="text-xs text-muted-foreground truncate">
-                        {userEmail}
-                      </div>
-                    )}
-                  </div>
-                  <Link
-                    to={loginUrl}
-                    className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 shrink-0"
-                  >
-                    Not you?
-                  </Link>
+                  : "The request was denied. You can close this window."
+            }
+          />
+        </>
+      ) : (
+        <>
+          {/* User identity badge */}
+          {currentUser ? (
+            <div className="flex items-center gap-3 rounded-lg border bg-muted/50 p-3">
+              <Avatar
+                source={
+                  currentUser.avatar
+                    ? getAvatarUrl(currentUser.avatar)
+                    : undefined
+                }
+                size={40}
+              />
+              <div className="flex-1 min-w-0">
+                <div className="font-medium text-sm truncate">
+                  {displayName}
                 </div>
-              ) : null}
+                {userEmail && (
+                  <div className="text-xs text-muted-foreground truncate">
+                    {userEmail}
+                  </div>
+                )}
+              </div>
+              <Link
+                to={loginUrl}
+                className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 shrink-0"
+              >
+                Not you?
+              </Link>
+            </div>
+          ) : null}
 
-              {/* Heading */}
-              <div className="text-center space-y-1">
-                <h1 className="text-xl font-semibold">
-                  Sign in to{" "}
-                  <span className="text-primary">{appName}</span>
-                </h1>
-                <p className="text-sm text-muted-foreground">
-                  {appName} wants to access your Oxy account
-                </p>
+          {/* Heading */}
+          <AuthFormHeader
+            title={`Sign in to ${appName}`}
+            description={`${appName} wants to access your Oxy account`}
+          />
+
+          {/* Error state */}
+          {pageError && (
+            <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
+              {pageError}
+            </div>
+          )}
+
+          {/* Permissions section */}
+          {showActions ? (
+            <>
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                  <Shield className="size-4" />
+                  <span>This will allow {appName} to:</span>
+                </div>
+                <ul className="space-y-2 pl-1">
+                  <li className="flex items-start gap-2.5 text-sm">
+                    <Check className="size-4 text-primary shrink-0 mt-0.5" />
+                    <span>See your basic profile information</span>
+                  </li>
+                  <li className="flex items-start gap-2.5 text-sm">
+                    <Check className="size-4 text-primary shrink-0 mt-0.5" />
+                    <span>Access your account on your behalf</span>
+                  </li>
+                </ul>
               </div>
 
-              {/* Error state */}
-              {pageError ? (
-                <ToastMessage
-                  title="Authorization error"
-                  description={pageError}
-                  variant="error"
-                />
+              {expiresAt ? (
+                <FieldDescription className="text-xs">
+                  Request expires at {expiresAt}.
+                </FieldDescription>
               ) : null}
 
-              {/* Permissions section */}
-              {showActions ? (
-                <>
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                      <Shield className="size-4" />
-                      <span>This will allow {appName} to:</span>
-                    </div>
-                    <ul className="space-y-2 pl-1">
-                      <li className="flex items-start gap-2.5 text-sm">
-                        <Check className="size-4 text-primary shrink-0 mt-0.5" />
-                        <span>See your basic profile information</span>
-                      </li>
-                      <li className="flex items-start gap-2.5 text-sm">
-                        <Check className="size-4 text-primary shrink-0 mt-0.5" />
-                        <span>Access your account on your behalf</span>
-                      </li>
-                    </ul>
-                  </div>
-
-                  {expiresAt ? (
-                    <FieldDescription className="text-center text-xs">
-                      Request expires at {expiresAt}.
-                    </FieldDescription>
-                  ) : null}
-
-                  {/* Action buttons */}
-                  <div className="flex flex-col gap-2">
-                    <Button
-                      className="w-full"
-                      disabled={submitting}
-                      onClick={() => handleDecision("approve")}
-                    >
-                      {submitting ? "Authorizing..." : "Allow"}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      className="w-full"
-                      disabled={submitting}
-                      onClick={() => handleDecision("deny")}
-                    >
-                      Deny
-                    </Button>
-                  </div>
-                </>
-              ) : null}
+              {/* Action buttons — side by side pills, stack on tiny screens */}
+              <div className="flex flex-col sm:flex-row gap-3">
+                <Button
+                  variant="outline"
+                  size="lg"
+                  className="flex-1"
+                  disabled={submitting}
+                  onClick={() => handleDecision("deny")}
+                >
+                  Deny
+                </Button>
+                <Button
+                  size="lg"
+                  className="flex-1"
+                  disabled={submitting}
+                  onClick={() => handleDecision("approve")}
+                >
+                  {submitting ? "Authorizing..." : "Allow"}
+                </Button>
+              </div>
             </>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Footer */}
-      <p className="px-6 text-center text-xs text-muted-foreground">
-        By continuing, you agree to Oxy&apos;s{" "}
-        <a
-          href="https://oxy.so/company/transparency/policies/terms-of-service"
-          className="underline underline-offset-4 hover:text-primary"
-        >
-          Terms of Service
-        </a>{" "}
-        and{" "}
-        <a
-          href="https://oxy.so/company/transparency/policies/privacy"
-          className="underline underline-offset-4 hover:text-primary"
-        >
-          Privacy Policy
-        </a>
-        .
-      </p>
-    </div>
+          ) : null}
+        </>
+      )}
+    </AuthFormLayout>
   );
 }

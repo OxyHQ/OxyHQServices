@@ -8,7 +8,7 @@ export function Logo({
     <svg
       xmlns="http://www.w3.org/2000/svg"
       viewBox="80 263 1010 1003"
-      className={cn("h-10 text-primary", className)}
+      className={cn("h-14 text-primary", className)}
       fill="currentColor"
       {...props}
     >

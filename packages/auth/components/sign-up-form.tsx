@@ -1,13 +1,12 @@
-import { useEffect, useState } from "react"
+import { useState, useRef } from "react"
 import { useNavigate, Link } from "react-router-dom"
 import { toast } from "sonner"
 
 import { buildAuthUrl } from "@/lib/oxy-api-client"
-import { cn } from "@/lib/utils"
+import { setFedCMLoginStatus, buildPostLoginRedirect } from "@/lib/auth-utils"
 import { Button } from "@/components/ui/button"
 import {
     Field,
-    FieldDescription,
     FieldError,
     FieldGroup,
     FieldLabel,
@@ -16,7 +15,10 @@ import { Input } from "@/components/ui/input"
 import { PasswordInput } from "@/components/password-input"
 import { PasswordRequirements } from "@/components/password-requirements"
 import { SocialLoginButtons } from "@/components/social-login-buttons"
-import { Logo } from "@/components/logo"
+import {
+    AuthFormLayout,
+    AuthFormHeader,
+} from "@/components/auth-form-layout"
 import { validatePassword } from "@/lib/password-validation"
 
 type SignUpFormProps = React.ComponentProps<"div"> & {
@@ -35,22 +37,20 @@ export function SignUpForm({
     ...props
 }: SignUpFormProps) {
     const navigate = useNavigate()
-    const [errorMessage, setErrorMessage] = useState(error)
+    const [localError, setLocalError] = useState<string | undefined>()
     const [serverErrors, setServerErrors] = useState<string[]>([])
     const [isSubmitting, setIsSubmitting] = useState(false)
     const [password, setPassword] = useState("")
     const [passwordTouched, setPasswordTouched] = useState(false)
-    const formAction = buildAuthUrl("/signup")
 
-    useEffect(() => {
-        setErrorMessage(error)
-    }, [error])
+    const displayError = localError ?? error
 
-    useEffect(() => {
-        if (errorMessage) {
-            toast.error("Sign up failed", { description: errorMessage })
-        }
-    }, [errorMessage])
+    // Show error toast from URL param once
+    const errorShownRef = useRef(false)
+    if (error && !errorShownRef.current) {
+        errorShownRef.current = true
+        queueMicrotask(() => toast.error("Sign up failed", { description: error }))
+    }
 
     const handlePasswordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const value = e.target.value
@@ -63,7 +63,7 @@ export function SignUpForm({
 
     const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
         event.preventDefault()
-        setErrorMessage(undefined)
+        setLocalError(undefined)
         setServerErrors([])
         setIsSubmitting(true)
 
@@ -71,7 +71,6 @@ export function SignUpForm({
         const email = String(formData.get("email") || "").trim()
         const username = String(formData.get("username") || "").trim()
 
-        // Client-side password validation
         const clientErrors = validatePassword(password)
         if (clientErrors.length > 0) {
             setPasswordTouched(true)
@@ -84,9 +83,7 @@ export function SignUpForm({
         try {
             const response = await fetch(buildAuthUrl("/signup"), {
                 method: "POST",
-                headers: {
-                    "content-type": "application/json",
-                },
+                headers: { "content-type": "application/json" },
                 credentials: "include",
                 body: JSON.stringify({ email, username, password }),
             })
@@ -99,60 +96,27 @@ export function SignUpForm({
                 if (errors.length > 0) {
                     setServerErrors(errors)
                 } else {
-                    const message =
-                        typeof payload?.message === "string"
-                            ? payload.message
-                            : "Unable to sign up"
-                    setErrorMessage(message)
+                    const msg = typeof payload?.message === "string"
+                        ? payload.message
+                        : "Unable to sign up"
+                    setLocalError(msg)
+                    toast.error("Sign up failed", { description: msg })
                 }
                 return
             }
 
             if (!payload?.sessionId) {
-                setErrorMessage("Unable to sign up")
+                setLocalError("Unable to sign up")
                 return
             }
 
-            // Register session with the FedCM server for cross-domain SSO
-            fetch("/fedcm/set-session", {
-                method: "POST",
-                headers: { "content-type": "application/json" },
-                credentials: "include",
-                body: JSON.stringify({ sessionId: payload.sessionId, action: "login" }),
-            }).catch(() => {})
-
-            // Set FedCM login status via iframe
-            const loginStatusFrame = document.createElement("iframe")
-            loginStatusFrame.style.display = "none"
-            loginStatusFrame.src = "/fedcm/login-status"
-            document.body.appendChild(loginStatusFrame)
-            setTimeout(() => {
-                loginStatusFrame.remove()
-            }, 1000)
-
-            const nextUrl = new URL("/authorize", window.location.origin)
-            if (sessionToken) {
-                nextUrl.searchParams.set("token", sessionToken)
-            }
-            if (redirectUri) {
-                nextUrl.searchParams.set("redirect_uri", redirectUri)
-            }
-            if (state) {
-                nextUrl.searchParams.set("state", state)
-            }
-            if (!sessionToken && !redirectUri) {
-                nextUrl.searchParams.set(
-                    "error",
-                    "No authorization request found. Return to the app and try again."
-                )
-            }
-
+            setFedCMLoginStatus(payload.sessionId)
             didRedirect = true
-            navigate(`${nextUrl.pathname}${nextUrl.search}`)
+            navigate(buildPostLoginRedirect({ sessionToken, redirectUri, state }))
         } catch (err) {
-            setErrorMessage(
-                err instanceof Error ? err.message : "Unable to sign up"
-            )
+            const msg = err instanceof Error ? err.message : "Unable to sign up"
+            setLocalError(msg)
+            toast.error("Sign up failed", { description: msg })
         } finally {
             if (!didRedirect) {
                 setIsSubmitting(false)
@@ -161,29 +125,27 @@ export function SignUpForm({
     }
 
     return (
-        <div className={cn("flex flex-col gap-6", className)} {...props}>
-            <form method="post" action={formAction} onSubmit={handleSubmit}>
-                {sessionToken ? (
-                    <input type="hidden" name="session_token" value={sessionToken} />
-                ) : null}
-                {redirectUri ? (
-                    <input type="hidden" name="redirect_uri" value={redirectUri} />
-                ) : null}
-                {state ? <input type="hidden" name="state" value={state} /> : null}
+        <AuthFormLayout
+            className={className}
+            footer={
+                <SocialLoginButtons
+                    sessionToken={sessionToken}
+                    redirectUri={redirectUri}
+                    state={state}
+                />
+            }
+            {...props}
+        >
+            <form onSubmit={handleSubmit}>
                 <FieldGroup>
-                    <div className="flex flex-col items-center gap-2 text-center">
-                        <Link
-                            to="/login"
-                            className="flex flex-col items-center gap-2 font-medium"
-                        >
-                            <Logo />
-                            <span className="sr-only">Oxy</span>
-                        </Link>
-                        <h1 className="text-xl font-bold">Create your account</h1>
-                        <FieldDescription>
-                            Already have an account? <Link to="/login">Sign in</Link>
-                        </FieldDescription>
-                    </div>
+                    <AuthFormHeader
+                        title="Create your account"
+                        description={
+                            <>
+                                Already have an account? <Link to="/login">Sign in</Link>
+                            </>
+                        }
+                    />
                     <Field>
                         <FieldLabel htmlFor="email">Email</FieldLabel>
                         <Input
@@ -216,36 +178,21 @@ export function SignUpForm({
                             value={password}
                             onChange={handlePasswordChange}
                             onBlur={() => {
-                                if (password.length > 0) {
-                                    setPasswordTouched(true)
-                                }
+                                if (password.length > 0) setPasswordTouched(true)
                             }}
                         />
-                        {passwordTouched && (
-                            <PasswordRequirements password={password} />
-                        )}
+                        {passwordTouched && <PasswordRequirements password={password} />}
                         {serverErrors.length > 0 && (
-                            <FieldError
-                                errors={serverErrors.map((e) => ({ message: e }))}
-                            />
+                            <FieldError errors={serverErrors.map((e) => ({ message: e }))} />
                         )}
                     </Field>
                     <Field>
-                        <Button type="submit" className="w-full" disabled={isSubmitting}>
+                        <Button type="submit" size="lg" className="w-full" disabled={isSubmitting}>
                             {isSubmitting ? "Creating account..." : "Sign Up"}
                         </Button>
                     </Field>
                 </FieldGroup>
             </form>
-            <SocialLoginButtons
-                sessionToken={sessionToken}
-                redirectUri={redirectUri}
-                state={state}
-            />
-            <FieldDescription className="px-6 text-center">
-                By clicking continue, you agree to our{" "}
-                <a href="https://oxy.so/company/transparency/policies/terms-of-service">Terms of Service</a> and <a href="https://oxy.so/company/transparency/policies/privacy">Privacy Policy</a>.
-            </FieldDescription>
-        </div>
+        </AuthFormLayout>
     )
 }

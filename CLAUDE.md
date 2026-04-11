@@ -144,3 +144,31 @@ app.use('/internal', oxy.serviceAuth());
 - **WebOxyProvider** — Web React context provider (in auth)
 - **useOxy** — RN auth hook (services), **useWebOxy** — web auth hook (auth)
 - **Bottom sheet** — native modal navigation system in services (29+ screens)
+
+## Auth App (packages/auth)
+
+Standalone Vite app for authentication flows (sign in, sign up, authorize, recover, FedCM IdP).
+
+**Key patterns:**
+- `AuthFormLayout` + `AuthFormHeader` — shared layout for all auth screens
+- `AuthLayout` (route layout) — persistent logo/footer, route-level fade transitions via `useNavigationType()`
+- Login form multi-step: identifier → password → 2FA, with per-step animations
+- `applyColorPreset()` from `lib/bloom-css.ts` — applies user's Bloom color theme to CSS vars on `:root`
+- `OxyServices.lookupUsername()` — lightweight user lookup for login flow (validates existence + gets color)
+- Zod schemas in `lib/schemas.ts` for API response validation
+- Shared types in `lib/types.ts`
+
+**Anti-patterns to avoid:**
+- No `useEffect` for syncing props to state — derive from props during render
+- No `useEffect` for firing toasts — call `toast()` directly in event handlers
+- No `useEffect` for focus — use `requestAnimationFrame` in event handlers
+- No `Suspense` wrappers unless using `React.lazy()` or `use()`
+- No render-body side effects — use `useEffect` for `window.location.href`, or `<Navigate>` from react-router
+
+**API endpoints used:**
+- `GET /auth/lookup/:username` — lightweight username lookup (exists, color, avatar, displayName)
+- `POST /auth/login` — password login
+- `POST /auth/2fa/verify` — 2FA verification
+- `POST /auth/signup` — account creation
+- `POST /auth/recover/*` — password recovery flow
+- `GET /users/me` — current session check

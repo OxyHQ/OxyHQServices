@@ -1,10 +1,9 @@
-import { useEffect, useState } from "react"
+import { useState, useRef } from "react"
 import { useNavigate, Link } from "react-router-dom"
 import { toast } from "sonner"
 import { CheckCircle2 } from "lucide-react"
 
 import { buildAuthUrl } from "@/lib/oxy-api-client"
-import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import {
     Field,
@@ -15,7 +14,10 @@ import {
 import { Input } from "@/components/ui/input"
 import { PasswordInput } from "@/components/password-input"
 import { PasswordRequirements } from "@/components/password-requirements"
-import { Logo } from "@/components/logo"
+import {
+    AuthFormLayout,
+    AuthFormHeader,
+} from "@/components/auth-form-layout"
 import { validatePassword } from "@/lib/password-validation"
 
 type RecoverFormProps = React.ComponentProps<"div"> & {
@@ -36,27 +38,25 @@ export function RecoverForm({
     const recoveryStorageKey = "oxy_recovery_token"
     const navigate = useNavigate()
     const currentStep = step === "verify" || step === "reset" || step === "success" ? step : "request"
-    const [errorMessage, setErrorMessage] = useState(error)
+    const [localError, setLocalError] = useState<string | undefined>()
     const [isSubmitting, setIsSubmitting] = useState(false)
     const [identifierValue, setIdentifierValue] = useState(initialIdentifier || "")
 
-    // Password validation state for reset step
     const [password, setPassword] = useState("")
     const [passwordTouched, setPasswordTouched] = useState(false)
 
-    useEffect(() => {
-        setErrorMessage(error)
-    }, [error])
+    const displayError = localError ?? error
 
-    useEffect(() => {
-        if (errorMessage) {
-            toast.error("Recovery error", { description: errorMessage })
-        }
-    }, [errorMessage])
+    // Show error toast from URL param once
+    const errorShownRef = useRef(false)
+    if (error && !errorShownRef.current) {
+        errorShownRef.current = true
+        queueMicrotask(() => toast.error("Recovery error", { description: error }))
+    }
 
     const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
         event.preventDefault()
-        setErrorMessage(undefined)
+        setLocalError(undefined)
         setIsSubmitting(true)
 
         const formData = new FormData(event.currentTarget)
@@ -81,7 +81,7 @@ export function RecoverForm({
                         typeof payload?.message === "string"
                             ? payload.message
                             : "Unable to continue recovery"
-                    setErrorMessage(message)
+                    setLocalError(message)
                     return
                 }
 
@@ -116,12 +116,12 @@ export function RecoverForm({
                         typeof payload?.message === "string"
                             ? payload.message
                             : "Unable to continue recovery"
-                    setErrorMessage(message)
+                    setLocalError(message)
                     return
                 }
 
                 if (!payload?.recoveryToken) {
-                    setErrorMessage("Unable to continue recovery")
+                    setLocalError("Unable to continue recovery")
                     return
                 }
 
@@ -149,7 +149,7 @@ export function RecoverForm({
 
                 const recoveryToken = sessionStorage.getItem(recoveryStorageKey)
                 if (!recoveryToken) {
-                    setErrorMessage(
+                    setLocalError(
                         "Recovery session expired. Please request a new code."
                     )
                     return
@@ -170,7 +170,7 @@ export function RecoverForm({
                         typeof payload?.message === "string"
                             ? payload.message
                             : "Unable to reset password"
-                    setErrorMessage(message)
+                    setLocalError(message)
                     return
                 }
 
@@ -183,9 +183,9 @@ export function RecoverForm({
                 return
             }
 
-            setErrorMessage("Unable to continue recovery")
+            setLocalError("Unable to continue recovery")
         } catch (err) {
-            setErrorMessage(
+            setLocalError(
                 err instanceof Error ? err.message : "Unable to continue recovery"
             )
         } finally {
@@ -198,43 +198,38 @@ export function RecoverForm({
     // Success screen
     if (currentStep === "success") {
         return (
-            <div className={cn("flex flex-col gap-6", className)} {...props}>
-                <div className="flex flex-col items-center gap-4 text-center">
-                    <Logo />
+            <AuthFormLayout className={className} {...props}>
+                <div className="flex flex-col gap-4">
                     <CheckCircle2 className="size-12 text-green-600 dark:text-green-400" />
-                    <h1 className="text-xl font-bold">Password reset successful</h1>
-                    <FieldDescription>
+                    <h1 className="text-5xl font-extrabold tracking-tight">Password reset successful</h1>
+                    <FieldDescription className="text-lg">
                         Your password has been updated. You can now sign in with your new password.
                     </FieldDescription>
-                    <Button asChild className="w-full">
+                    <Button asChild size="lg" className="w-full">
                         <Link to="/login">Sign in</Link>
                     </Button>
                 </div>
-            </div>
+            </AuthFormLayout>
         )
     }
 
+    const stepDescriptions: Record<string, string> = {
+        request: "Enter your email or username to receive a recovery code",
+        verify: "Enter the recovery code we sent you",
+        reset: "Set a new password for your account",
+    }
+
     return (
-        <div className={cn("flex flex-col gap-6", className)} {...props}>
+        <AuthFormLayout
+            className={className}
+            {...props}
+        >
             <form onSubmit={handleSubmit}>
                 <FieldGroup>
-                    <div className="flex flex-col items-center gap-2 text-center">
-                        <Link
-                            to="/login"
-                            className="flex flex-col items-center gap-2 font-medium"
-                        >
-                            <Logo />
-                            <span className="sr-only">Oxy</span>
-                        </Link>
-                        <h1 className="text-xl font-bold">Recover your account</h1>
-                        <FieldDescription>
-                            {currentStep === "request"
-                                ? "Enter your email or username to receive a recovery code"
-                                : currentStep === "verify"
-                                    ? "Enter the recovery code we sent you"
-                                    : "Set a new password for your account"}
-                        </FieldDescription>
-                    </div>
+                    <AuthFormHeader
+                        title="Recover your account"
+                        description={stepDescriptions[currentStep]}
+                    />
                     {currentStep === "request" ? (
                         <>
                             <input type="hidden" name="step" value="request" />
@@ -252,7 +247,7 @@ export function RecoverForm({
                                 />
                             </Field>
                             <Field>
-                                <Button type="submit" className="w-full" disabled={isSubmitting}>
+                                <Button type="submit" size="lg" className="w-full" disabled={isSubmitting}>
                                     {isSubmitting ? "Sending..." : "Send Recovery Code"}
                                 </Button>
                             </Field>
@@ -278,7 +273,7 @@ export function RecoverForm({
                                 <FieldDescription>Dev code: {devCode}</FieldDescription>
                             ) : null}
                             <Field>
-                                <Button type="submit" className="w-full" disabled={isSubmitting}>
+                                <Button type="submit" size="lg" className="w-full" disabled={isSubmitting}>
                                     {isSubmitting ? "Verifying..." : "Verify Code"}
                                 </Button>
                             </Field>
@@ -314,7 +309,7 @@ export function RecoverForm({
                                 )}
                             </Field>
                             <Field>
-                                <Button type="submit" className="w-full" disabled={isSubmitting}>
+                                <Button type="submit" size="lg" className="w-full" disabled={isSubmitting}>
                                     {isSubmitting ? "Resetting..." : "Reset Password"}
                                 </Button>
                             </Field>
@@ -322,11 +317,6 @@ export function RecoverForm({
                     ) : null}
                 </FieldGroup>
             </form>
-            <FieldDescription className="px-6 text-center">
-                By clicking continue, you agree to our{" "}
-                <a href="https://oxy.so/company/transparency/policies/terms-of-service">Terms of Service</a> and{" "}
-                <a href="https://oxy.so/company/transparency/policies/privacy">Privacy Policy</a>.
-            </FieldDescription>
-        </div>
+        </AuthFormLayout>
     )
 }

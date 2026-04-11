@@ -25,6 +25,24 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
     }
 
     /**
+     * Lightweight username lookup for login flows.
+     * Returns minimal public info: exists, color, avatar, displayName.
+     * Faster than getProfileByUsername — no stats, no formatting.
+     */
+    async lookupUsername(username: string): Promise<{
+      exists: boolean;
+      username: string;
+      color: string | null;
+      avatar: string | null;
+      displayName: string;
+    }> {
+      return await this.makeRequest('GET', `/auth/lookup/${encodeURIComponent(username)}`, undefined, {
+        cache: true,
+        cacheTTL: 60 * 1000, // 1 minute cache
+      });
+    }
+
+    /**
      * Search user profiles
      */
     async searchProfiles(query: string, pagination?: PaginationParams): Promise<SearchProfilesResponse> {
