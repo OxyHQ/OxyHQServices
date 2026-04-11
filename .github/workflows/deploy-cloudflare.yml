@@ -10,6 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       accounts: ${{ steps.filter.outputs.accounts }}
+      auth: ${{ steps.filter.outputs.auth }}
       inbox: ${{ steps.filter.outputs.inbox }}
       console: ${{ steps.filter.outputs.console }}
     steps:
@@ -22,6 +23,9 @@ jobs:
               - 'packages/accounts/**'
               - 'packages/core/**'
               - 'packages/services/**'
+            auth:
+              - 'packages/auth/**'
+              - 'packages/core/**'
             inbox:
               - 'packages/inbox/**'
               - 'packages/core/**'
@@ -30,6 +34,24 @@ jobs:
               - 'packages/console/**'
               - 'packages/core/**'
               - 'packages/auth-sdk/**'
+
+  deploy-auth:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.auth == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+      - run: bun install --frozen-lockfile
+      - run: bun x turbo run build --filter=auth
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy packages/auth/dist --project-name=oxy-auth --branch=main
 
   deploy-accounts:
     needs: detect-changes
