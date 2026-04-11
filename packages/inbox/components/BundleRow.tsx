@@ -8,8 +8,7 @@
 import React, { useCallback, useMemo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/constants/theme';
 import type { Bundle, Message } from '@/services/emailApi';
 
 interface BundleRowProps {
@@ -21,8 +20,7 @@ interface BundleRowProps {
 }
 
 export function BundleRow({ bundle, messages, unreadCount, isExpanded, onToggle }: BundleRowProps) {
-  const colorScheme = useColorScheme();
-  const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
+  const colors = useColors();
 
   const latestPreview = useMemo(() => {
     if (messages.length === 0) return '';

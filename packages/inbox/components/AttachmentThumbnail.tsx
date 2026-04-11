@@ -3,13 +3,12 @@
  * Fetches a presigned S3 URL and renders a cached image.
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import { View, Image, StyleSheet, ActivityIndicator } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 import { useAttachmentUrl } from '@/hooks/queries/useAttachmentUrl';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/constants/theme';
 
 interface AttachmentThumbnailProps {
   s3Key: string;
@@ -17,8 +16,7 @@ interface AttachmentThumbnailProps {
 }
 
 export function AttachmentThumbnail({ s3Key, size = 48 }: AttachmentThumbnailProps) {
-  const colorScheme = useColorScheme();
-  const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
+  const colors = useColors();
   const { url, isLoading } = useAttachmentUrl(s3Key);
   const [errored, setErrored] = useState(false);
 

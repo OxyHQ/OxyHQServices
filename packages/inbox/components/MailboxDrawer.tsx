@@ -41,8 +41,7 @@ import {
   Cancel01Icon,
   Tick02Icon,
 } from '@hugeicons/core-free-icons';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/constants/theme';
 import { SPECIAL_USE } from '@/constants/mailbox';
 import { useEmailStore } from '@/hooks/useEmail';
 import { useMailboxes } from '@/hooks/queries/useMailboxes';
@@ -114,7 +113,7 @@ function NavItem({
   hugeIcon: IconSvgElement;
   label: string;
   isActive: boolean;
-  colors: (typeof Colors)['light'];
+  colors: ReturnType<typeof useColors>;
   badge?: number;
   collapsed?: boolean;
   bold?: boolean;
@@ -169,8 +168,7 @@ function NavItem({
 }
 
 export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () => void; onToggle?: () => void; collapsed?: boolean }) {
-  const colorScheme = useColorScheme();
-  const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
+  const colors = useColors();
   const { user } = useOxy();
   const router = useRouter();
   const [menuVisible, setMenuVisible] = useState(false);

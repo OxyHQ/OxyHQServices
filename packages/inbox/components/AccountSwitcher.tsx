@@ -25,8 +25,7 @@ import {
   Logout01Icon,
   Settings01Icon,
 } from '@hugeicons/core-free-icons';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/constants/theme';
 import { Avatar } from '@/components/Avatar';
 import { useAccountSwitcher } from '@/hooks/useAccountSwitcher';
 import type { StoredAccount } from '@/utils/accountStorage';
@@ -47,7 +46,7 @@ function AccountRow({
 }: {
   account: StoredAccount;
   isActive: boolean;
-  colors: (typeof Colors)['light'];
+  colors: ReturnType<typeof useColors>;
   onSwitch: () => void;
   onSignOut: () => void;
   isSwitching: boolean;
@@ -119,8 +118,7 @@ function AccountRow({
 }
 
 export function AccountSwitcher({ onClose, onSettings, onAddAccount }: AccountSwitcherProps) {
-  const colorScheme = useColorScheme();
-  const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
+  const colors = useColors();
   const { accounts, currentUserId, isSwitching, switchAccount, signOutAccount } =
     useAccountSwitcher();
 

@@ -5,7 +5,7 @@
  * Native: plain TextInput multiline fallback.
  */
 
-import React, { useRef, useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useRef, useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -16,8 +16,7 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/constants/theme';
 
 export interface RichTextEditorProps {
   value: string;
@@ -40,8 +39,7 @@ function WebRichTextEditor(
   { value, onChange, placeholder, style, autoFocus }: RichTextEditorProps,
   ref: React.Ref<RichTextEditorHandle>,
 ) {
-  const colorScheme = useColorScheme();
-  const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
+  const colors = useColors();
   const editorRef = useRef<HTMLDivElement | null>(null);
   const isComposing = useRef(false);
   const lastValueRef = useRef(value);
@@ -327,8 +325,7 @@ function NativeRichTextEditor(
   { value, onChange, placeholder, style, autoFocus }: RichTextEditorProps,
   ref: React.Ref<RichTextEditorHandle>,
 ) {
-  const colorScheme = useColorScheme();
-  const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
+  const colors = useColors();
   const inputRef = useRef<TextInput>(null);
 
   React.useImperativeHandle(ref, () => ({

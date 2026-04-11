@@ -5,11 +5,10 @@
  * Shows reminder text, time, and completion toggle.
  */
 
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/constants/theme';
 import type { Reminder } from '@/services/emailApi';
 
 interface ReminderRowProps {
@@ -34,8 +33,7 @@ function formatReminderTime(dateStr: string): string {
 }
 
 export function ReminderRow({ reminder, onToggleComplete, onPress, onDelete }: ReminderRowProps) {
-  const colorScheme = useColorScheme();
-  const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
+  const colors = useColors();
 
   const isOverdue = new Date(reminder.remindAt) < new Date() && !reminder.completed;
   const timeStr = formatReminderTime(reminder.remindAt);

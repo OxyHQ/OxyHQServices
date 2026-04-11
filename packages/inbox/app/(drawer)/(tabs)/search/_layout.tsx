@@ -5,18 +5,16 @@
  * Mobile: Stack navigation — index shows search list, conversation/[id] pushes on top.
  */
 
-import React, { useMemo } from 'react';
+import React from 'react';
 import { View, StyleSheet, Platform, useWindowDimensions } from 'react-native';
 import { Slot, Stack } from 'expo-router';
 
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/constants/theme';
 import { SearchList } from '@/components/SearchList';
 
 export default function SearchLayout() {
   const { width } = useWindowDimensions();
-  const colorScheme = useColorScheme();
-  const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
+  const colors = useColors();
   const isDesktop = Platform.OS === 'web' && width >= 900;
 
   if (isDesktop) {

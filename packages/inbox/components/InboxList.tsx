@@ -22,8 +22,7 @@ import { useNavigation, DrawerActions } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useOxy, OxySignInButton, toast } from '@oxyhq/services';
 
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/constants/theme';
 import { SPECIAL_USE } from '@/constants/mailbox';
 import { useEmailStore } from '@/hooks/useEmail';
 import { useMessages } from '@/hooks/queries/useMessages';
@@ -86,8 +85,7 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
   const router = useRouter();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-  const colorScheme = useColorScheme();
-  const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
+  const colors = useColors();
   const aliaChatRef = useRef<AliaChatSheetRef>(null);
   const { isAuthenticated } = useOxy();
 

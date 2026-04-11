@@ -30,8 +30,7 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useOxy, toast } from '@oxyhq/services';
 
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/constants/theme';
 import { useEmailStore } from '@/hooks/useEmail';
 import { useSendMessageWithUndo, useSendMessage, useSaveDraft } from '@/hooks/mutations/useMessageMutations';
 import { useContactSuggestions } from '@/hooks/queries/useContactSuggestions';
@@ -56,8 +55,7 @@ interface ComposeFormProps {
 export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initialCc, subject: initialSubject, body: initialBody }: ComposeFormProps) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const colorScheme = useColorScheme();
-  const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
+  const colors = useColors();
   const { user } = useOxy();
   const api = useEmailStore((s) => s._api);
   const { sendWithUndo, isPending: sendPending } = useSendMessageWithUndo();

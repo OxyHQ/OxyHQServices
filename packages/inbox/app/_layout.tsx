@@ -8,8 +8,8 @@ import 'react-native-reanimated';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { OxyProvider, toast } from '@oxyhq/services';
 import { QueryClientProvider } from '@tanstack/react-query';
+import { useTheme } from '@oxyhq/bloom/theme';
 
-import { useColorScheme } from '@/hooks/use-color-scheme';
 import { queryClient } from '@/hooks/queries/queryClient';
 import { ThemeProvider as AppThemeProvider } from '@/contexts/theme-context';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
@@ -32,7 +32,7 @@ export default function RootLayout() {
 }
 
 function RootLayoutContent() {
-  const colorScheme = useColorScheme();
+  const { mode } = useTheme();
   const [appIsReady, setAppIsReady] = useState(false);
 
   const initialize = useCallback(async () => {
@@ -77,7 +77,7 @@ function RootLayoutContent() {
         <KeyboardProvider>
           <OxyProvider baseURL={API_URL}>
             <SafeAreaProvider>
-              <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+              <ThemeProvider value={mode === 'dark' ? DarkTheme : DefaultTheme}>
                 <Stack>
                   <Stack.Screen name="(drawer)" options={{ headerShown: false }} />
                   <Stack.Screen name="+not-found" options={{ headerShown: false }} />
@@ -89,7 +89,7 @@ function RootLayoutContent() {
         </KeyboardProvider>
       </QueryClientProvider>
     ),
-    [colorScheme],
+    [mode],
   );
 
   if (!appIsReady) return null;

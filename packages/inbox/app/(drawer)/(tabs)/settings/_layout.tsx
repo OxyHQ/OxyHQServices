@@ -5,18 +5,16 @@
  * Mobile: Stack navigation — index shows full settings page.
  */
 
-import React, { useMemo } from 'react';
+import React from 'react';
 import { View, StyleSheet, Platform, useWindowDimensions } from 'react-native';
 import { Slot, Stack, usePathname } from 'expo-router';
 
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/constants/theme';
 import { SettingsNav } from '@/components/SettingsNav';
 
 export default function SettingsLayout() {
   const { width } = useWindowDimensions();
-  const colorScheme = useColorScheme();
-  const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
+  const colors = useColors();
   const isDesktop = Platform.OS === 'web' && width >= 900;
   const pathname = usePathname();
 

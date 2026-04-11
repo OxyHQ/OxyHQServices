@@ -4,7 +4,7 @@
  * Centered with max width, used on both inbox (as a button) and search (as an input).
  */
 
-import React, { useMemo, forwardRef } from 'react';
+import React, { forwardRef } from 'react';
 import {
   View,
   Text,
@@ -23,8 +23,7 @@ const HUGE_ICON_MAP: Record<string, IconSvgElement> = {
   'arrow-left': ArrowLeft01Icon as unknown as IconSvgElement,
 };
 
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/constants/theme';
 
 interface SearchHeaderProps {
   /** Left icon action (e.g. open drawer, go back) */
@@ -62,8 +61,7 @@ export const SearchHeader = forwardRef<TextInput, SearchHeaderProps>(function Se
   ref,
 ) {
   const insets = useSafeAreaInsets();
-  const colorScheme = useColorScheme();
-  const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
+  const colors = useColors();
 
   const isInputMode = onChangeText !== undefined;
 

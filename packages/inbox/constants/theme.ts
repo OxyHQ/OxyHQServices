@@ -70,39 +70,6 @@ const InboxDomainColors = {
   },
 } as const;
 
-// ── Static Colors constant (backward compat) ───────────────────────
-// Components that do `const colors = Colors[colorScheme]` still work.
-// These are fallback values; prefer `useColors()` for Bloom-aware colors.
-
-export const Colors = {
-  light: {
-    text: '#202124',
-    background: '#FFFFFF',
-    surface: '#F8F9FA',
-    surfaceVariant: '#F1F3F4',
-    tint: '#1A73E8',
-    icon: '#5F6368',
-    border: '#DADCE0',
-    secondaryText: '#5F6368',
-    primary: '#1A73E8',
-    error: '#D93025',
-    ...InboxDomainColors.light,
-  },
-  dark: {
-    text: '#E8EAED',
-    background: '#000000',
-    surface: '#1F1F1F',
-    surfaceVariant: '#2D2D2D',
-    tint: '#8AB4F8',
-    icon: '#9AA0A6',
-    border: '#3C4043',
-    secondaryText: '#9AA0A6',
-    primary: '#8AB4F8',
-    error: '#F28B82',
-    ...InboxDomainColors.dark,
-  },
-};
-
 // ── useColors() hook (Bloom-aware) ──────────────────────────────────
 // Merges Bloom's dynamic theme colors with inbox domain colors.
 

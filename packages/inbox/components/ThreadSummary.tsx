@@ -5,7 +5,7 @@
  * Collapsible by default with expand/collapse functionality.
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -23,8 +23,7 @@ import {
   ArrowUp01Icon,
 } from '@hugeicons/core-free-icons';
 
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/constants/theme';
 import { useThreadSummary, type ActionItem } from '@/hooks/queries/useThreadSummary';
 import type { Message } from '@/services/emailApi';
 
@@ -38,7 +37,7 @@ function ActionItemRow({
   colors,
 }: {
   item: ActionItem;
-  colors: ReturnType<typeof Colors['light']>;
+  colors: ReturnType<typeof useColors>;
 }) {
   return (
     <View style={styles.actionItem}>
@@ -71,8 +70,7 @@ function ActionItemRow({
 }
 
 export function ThreadSummary({ messages, minMessages = 4 }: ThreadSummaryProps) {
-  const colorScheme = useColorScheme();
-  const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
+  const colors = useColors();
   const [expanded, setExpanded] = useState(true);
 
   const { summary, keyPoints, actionItems, isLoading, error } = useThreadSummary(

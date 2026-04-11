@@ -5,14 +5,13 @@
  * that appears to need a reply.
  */
 
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import { Clock01Icon, Cancel01Icon, MailReply01Icon } from '@hugeicons/core-free-icons';
 
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/constants/theme';
 import type { StaleThreadInfo } from '@/hooks/queries/useStaleThread';
 
 interface StaleThreadBannerProps {
@@ -22,8 +21,7 @@ interface StaleThreadBannerProps {
 }
 
 export function StaleThreadBanner({ staleInfo, onReply, onDismiss }: StaleThreadBannerProps) {
-  const colorScheme = useColorScheme();
-  const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
+  const colors = useColors();
   const [dismissed, setDismissed] = useState(false);
 
   if (!staleInfo || dismissed) return null;

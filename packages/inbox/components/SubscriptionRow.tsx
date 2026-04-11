@@ -3,7 +3,7 @@
  * Shows sender avatar, name, email, message count, and an unsubscribe/block button.
  */
 
-import React, { useMemo } from 'react';
+import React from 'react';
 import {
   View,
   Text,
@@ -11,8 +11,7 @@ import {
   StyleSheet,
   ActivityIndicator,
 } from 'react-native';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/constants/theme';
 import { SenderAvatar } from '@/components/Avatar';
 import type { Subscription } from '@/services/emailApi';
 
@@ -31,8 +30,7 @@ export function SubscriptionRow({
   onUnsubscribe: (senderAddress: string, method?: 'list-unsubscribe' | 'block') => void;
   isUnsubscribing: boolean;
 }) {
-  const colorScheme = useColorScheme();
-  const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
+  const colors = useColors();
 
   const isBlockOnly = subscription.type === 'frequent';
   const buttonLabel = isBlockOnly ? 'Block' : 'Unsubscribe';

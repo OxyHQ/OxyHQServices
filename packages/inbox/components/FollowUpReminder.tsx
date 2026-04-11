@@ -6,14 +6,13 @@
  * - Sent emails that haven't received a reply
  */
 
-import React, { useMemo } from 'react';
+import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import { Alert01Icon, Clock01Icon, CheckmarkCircle01Icon } from '@hugeicons/core-free-icons';
 
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/constants/theme';
 import type { Commitment } from '@/hooks/queries/useCommitmentDetection';
 import type { Message } from '@/services/emailApi';
 
@@ -47,8 +46,7 @@ export function FollowUpReminder({
   onView,
   onMarkDone,
 }: FollowUpReminderProps) {
-  const colorScheme = useColorScheme();
-  const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
+  const colors = useColors();
 
   // Get the most urgent commitment
   const urgentCommitment = commitments.find((c) => c.isPast) || commitments.find((c) => c.isUrgent) || commitments[0];

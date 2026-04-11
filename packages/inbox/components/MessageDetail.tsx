@@ -42,8 +42,7 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useOxy } from '@oxyhq/services';
 
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/constants/theme';
 import { SPECIAL_USE } from '@/constants/mailbox';
 import { useEmailStore } from '@/hooks/useEmail';
 import { useMessage } from '@/hooks/queries/useMessage';
@@ -111,8 +110,7 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const colorScheme = useColorScheme();
-  const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
+  const colors = useColors();
 
   const { data: currentMessage, isLoading } = useMessage(messageId);
   const { data: threadMessages = [] } = useThread(messageId);

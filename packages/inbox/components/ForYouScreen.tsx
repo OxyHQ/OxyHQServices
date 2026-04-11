@@ -33,8 +33,7 @@ import { useRouter } from 'expo-router';
 import { useNavigation, DrawerActions } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/constants/theme';
 import { SPECIAL_USE } from '@/constants/mailbox';
 import { useMessages } from '@/hooks/queries/useMessages';
 import { useMailboxes } from '@/hooks/queries/useMailboxes';
@@ -94,7 +93,7 @@ function HorizontalSection({
   icon: keyof typeof MaterialCommunityIcons.glyphMap;
   items: Message[];
   iconColor: string;
-  colors: typeof Colors['light'];
+  colors: ReturnType<typeof useColors>;
   onMessagePress: (id: string) => void;
   onStar: (id: string) => void;
   labelColorMap?: Map<string, string>;
@@ -208,8 +207,7 @@ export function ForYouScreen() {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const colorScheme = useColorScheme();
-  const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
+  const colors = useColors();
   const isDesktop = Platform.OS === 'web' && width >= 900;
 
   const { data: mailboxes = [] } = useMailboxes();

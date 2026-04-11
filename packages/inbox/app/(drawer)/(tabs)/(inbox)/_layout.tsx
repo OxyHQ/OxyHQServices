@@ -9,8 +9,7 @@ import React, { useMemo, useCallback } from 'react';
 import { View, StyleSheet, Platform, useWindowDimensions } from 'react-native';
 import { Slot, Stack, useRouter } from 'expo-router';
 
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/constants/theme';
 import { SPECIAL_USE } from '@/constants/mailbox';
 import { InboxList } from '@/components/InboxList';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
@@ -22,8 +21,7 @@ import { useToggleStar, useToggleRead, useArchiveMessage, useDeleteMessage } fro
 export default function InboxLayout() {
   const { width } = useWindowDimensions();
   const router = useRouter();
-  const colorScheme = useColorScheme();
-  const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
+  const colors = useColors();
   const isDesktop = Platform.OS === 'web' && width >= 900;
 
   const currentMailbox = useEmailStore((s) => s.currentMailbox);

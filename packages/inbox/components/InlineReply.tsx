@@ -17,8 +17,7 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useOxy, toast } from '@oxyhq/services';
 
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/constants/theme';
 import { useEmailStore } from '@/hooks/useEmail';
 import { useSendMessageWithUndo } from '@/hooks/mutations/useMessageMutations';
 import { Avatar } from '@/components/Avatar';
@@ -59,8 +58,7 @@ interface InlineReplyProps {
 }
 
 export function InlineReply({ message, mode, onClose, onSent }: InlineReplyProps) {
-  const colorScheme = useColorScheme();
-  const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
+  const colors = useColors();
   const { user } = useOxy();
   const api = useEmailStore((s) => s._api);
   const { sendWithUndo, isPending: sendPending } = useSendMessageWithUndo();

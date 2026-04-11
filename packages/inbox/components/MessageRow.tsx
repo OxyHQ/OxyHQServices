@@ -5,7 +5,7 @@
  * Supports multi-select via avatar checkbox (web hover / native long-press).
  */
 
-import React, { useCallback, useMemo, useState, useRef } from 'react';
+import React, { useCallback, useState, useRef } from 'react';
 import { View, Text, Pressable, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -31,8 +31,7 @@ import { ImportanceBadge } from './ImportanceBadge';
 import { SentimentIndicator } from './SentimentIndicator';
 import type { SentimentResult } from '@/hooks/queries/useSentimentAnalysis';
 import { CardPreview } from './cards/CardPreview';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/constants/theme';
 import type { Message, Attachment } from '@/services/emailApi';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'https://api.oxy.so';
@@ -138,8 +137,7 @@ function MessageRowInner({
   labelColorMap,
   sentiment,
 }: MessageRowProps) {
-  const colorScheme = useColorScheme();
-  const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
+  const colors = useColors();
   const isUnread = !message.flags.seen;
   const [avatarHovered, setAvatarHovered] = useState(false);
   const queryClient = useQueryClient();

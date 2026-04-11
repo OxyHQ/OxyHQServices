@@ -32,8 +32,8 @@ import {
   Attachment01Icon,
 } from '@hugeicons/core-free-icons';
 
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useTheme } from '@oxyhq/bloom/theme';
+import { useColors } from '@/constants/theme';
 import { SPECIAL_USE } from '@/constants/mailbox';
 import { useMessages } from '@/hooks/queries/useMessages';
 import { useMailboxes } from '@/hooks/queries/useMailboxes';
@@ -88,9 +88,9 @@ export function HomeScreen() {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
-  const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
+  const { mode } = useTheme();
+  const isDark = mode === 'dark';
+  const colors = useColors();
   const isDesktop = Platform.OS === 'web' && width >= 900;
   const { user } = useOxy();
 

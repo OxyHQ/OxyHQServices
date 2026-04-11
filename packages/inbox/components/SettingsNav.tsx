@@ -3,7 +3,7 @@
  * Shows category links that navigate to setting sub-routes.
  */
 
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
@@ -23,8 +23,7 @@ import {
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/constants/theme';
 
 const SECTIONS = [
   { key: 'general', label: 'General', icon: 'cog-outline' as const, hugeIcon: Settings01Icon },
@@ -46,8 +45,7 @@ interface SettingsNavProps {
 export function SettingsNav({ activeSection }: SettingsNavProps) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const colorScheme = useColorScheme();
-  const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
+  const colors = useColors();
 
   const handleBack = useCallback(() => {
     router.back();

@@ -1,16 +1,14 @@
 import { Drawer } from 'expo-router/drawer';
-import React, { useMemo, useEffect } from 'react';
+import React, { useEffect } from 'react';
 import { View, StyleSheet, Platform, useWindowDimensions } from 'react-native';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/constants/theme';
 import { MailboxDrawer } from '@/components/MailboxDrawer';
 import { useOxy } from '@oxyhq/services';
 import { useEmailStore } from '@/hooks/useEmail';
 
 export default function DrawerLayout() {
-  const colorScheme = useColorScheme();
   const { width } = useWindowDimensions();
-  const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
+  const colors = useColors();
   const isDesktop = Platform.OS === 'web' && width >= 900;
   const { isAuthenticated, oxyServices } = useOxy();
   const _initApi = useEmailStore((s) => s._initApi);

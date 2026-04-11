@@ -5,7 +5,7 @@
  * Tapping a chip inserts the text into the reply composer.
  */
 
-import React, { useMemo } from 'react';
+import React from 'react';
 import {
   View,
   Text,
@@ -18,8 +18,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import { AiMail01Icon } from '@hugeicons/core-free-icons';
 
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/constants/theme';
 import { useSmartReplies } from '@/hooks/queries/useSmartReplies';
 import type { Message } from '@/services/emailApi';
 
@@ -29,8 +28,7 @@ interface SmartReplyChipsProps {
 }
 
 export function SmartReplyChips({ message, onSelectReply }: SmartReplyChipsProps) {
-  const colorScheme = useColorScheme();
-  const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
+  const colors = useColors();
   const { replies, isLoading } = useSmartReplies(message);
 
   // Don't render anything if no suggestions and not loading

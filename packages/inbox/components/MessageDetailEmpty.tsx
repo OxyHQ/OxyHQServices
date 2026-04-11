@@ -1,12 +1,10 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/constants/theme';
 import { EmptyIllustration } from '@/components/EmptyIllustration';
 
 export function MessageDetailEmpty() {
-  const colorScheme = useColorScheme();
-  const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
+  const colors = useColors();
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>

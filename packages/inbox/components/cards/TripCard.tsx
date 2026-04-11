@@ -1,16 +1,14 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/constants/theme';
 
 interface TripCardProps {
   data: Record<string, any>;
 }
 
 export function TripCard({ data }: TripCardProps) {
-  const colorScheme = useColorScheme();
-  const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
+  const colors = useColors();
 
   const departureTime = data.departureTime
     ? new Date(data.departureTime).toLocaleString(undefined, {

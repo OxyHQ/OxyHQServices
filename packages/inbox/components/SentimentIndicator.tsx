@@ -9,14 +9,13 @@
  * - Action requested (blue)
  */
 
-import React, { useMemo } from 'react';
+import React from 'react';
 import { View, Text, StyleSheet, Platform } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import { Alert01Icon, ThumbsUpIcon, SentIcon } from '@hugeicons/core-free-icons';
 
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/constants/theme';
 import type { SentimentResult } from '@/hooks/queries/useSentimentAnalysis';
 
 interface SentimentIndicatorProps {
@@ -30,8 +29,7 @@ export function SentimentIndicator({
   size = 'small',
   showLabel = false,
 }: SentimentIndicatorProps) {
-  const colorScheme = useColorScheme();
-  const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
+  const colors = useColors();
 
   if (!sentiment) return null;
 

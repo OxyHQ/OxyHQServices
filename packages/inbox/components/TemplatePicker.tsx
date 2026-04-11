@@ -3,7 +3,7 @@
  * into compose forms and inline replies.
  */
 
-import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -16,8 +16,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import { NoteEditIcon } from '@hugeicons/core-free-icons';
 
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/constants/theme';
 import { useTemplates } from '@/hooks/queries/useTemplates';
 import type { EmailTemplate } from '@/services/emailApi';
 
@@ -26,8 +25,7 @@ interface TemplatePickerProps {
 }
 
 export function TemplatePicker({ onSelect }: TemplatePickerProps) {
-  const colorScheme = useColorScheme();
-  const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
+  const colors = useColors();
   const { data: templates = [] } = useTemplates();
   const [open, setOpen] = useState(false);
   const containerRef = useRef<View>(null);

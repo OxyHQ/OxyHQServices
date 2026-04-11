@@ -18,8 +18,7 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import { Clock01Icon } from '@hugeicons/core-free-icons';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/constants/theme';
 
 interface ScheduleOption {
   label: string;
@@ -96,8 +95,7 @@ interface ScheduleSendSheetProps {
 }
 
 export function ScheduleSendSheet({ visible, onClose, onSchedule }: ScheduleSendSheetProps) {
-  const colorScheme = useColorScheme();
-  const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
+  const colors = useColors();
   const options = useMemo(getScheduleOptions, []);
 
   const handleSelect = useCallback(

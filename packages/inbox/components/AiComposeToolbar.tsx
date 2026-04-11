@@ -8,7 +8,7 @@
  * - Tone dropdown - Professional, Casual, Friendly, Formal
  */
 
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -30,8 +30,7 @@ import {
   SmileIcon,
 } from '@hugeicons/core-free-icons';
 
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/constants/theme';
 import { useAiCompose, type ComposeTone } from '@/hooks/mutations/useAiCompose';
 
 interface AiComposeToolbarProps {
@@ -48,8 +47,7 @@ const TONE_OPTIONS: { value: ComposeTone; label: string; icon: string }[] = [
 ];
 
 export function AiComposeToolbar({ body, onBodyChange, onSubjectSuggested }: AiComposeToolbarProps) {
-  const colorScheme = useColorScheme();
-  const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
+  const colors = useColors();
   const { draft, streamDraft, polish, changeTone, adjustLength, suggestSubject, isLoading } = useAiCompose();
 
   const [showDraftModal, setShowDraftModal] = useState(false);

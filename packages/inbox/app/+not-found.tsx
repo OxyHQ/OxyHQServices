@@ -1,12 +1,10 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import { View, Text, StyleSheet, Platform, useWindowDimensions } from 'react-native';
 import { Link, Stack } from 'expo-router';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/constants/theme';
 
 export default function NotFoundScreen() {
-  const colorScheme = useColorScheme();
-  const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
+  const colors = useColors();
   const { width } = useWindowDimensions();
   const isDesktop = Platform.OS === 'web' && width >= 900;
 

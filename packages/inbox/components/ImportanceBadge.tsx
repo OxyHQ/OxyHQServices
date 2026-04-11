@@ -9,8 +9,8 @@ import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useTheme } from '@oxyhq/bloom/theme';
+import { useColors } from '@/constants/theme';
 import type { Message } from '@/services/emailApi';
 
 export type ImportanceLevel = 'urgent' | 'action' | 'important' | 'fyi' | null;
@@ -101,8 +101,8 @@ const BADGE_CONFIG: Record<Exclude<ImportanceLevel, null>, {
 };
 
 export function ImportanceBadge({ message, onPress }: ImportanceBadgeProps) {
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
+  const { mode } = useTheme();
+  const isDark = mode === 'dark';
 
   const importance = useMemo(() => detectImportance(message), [message]);
 

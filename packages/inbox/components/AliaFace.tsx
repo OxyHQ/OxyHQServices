@@ -3,7 +3,7 @@
  * Ported from ~/Alia/apps/app/components/alia-face.tsx for the inbox app.
  */
 
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect } from 'react';
 import { View } from 'react-native';
 import Svg, { Path, Ellipse } from 'react-native-svg';
 import Animated, {
@@ -17,8 +17,8 @@ import Animated, {
   cancelAnimation,
   Easing,
 } from 'react-native-reanimated';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useTheme } from '@oxyhq/bloom/theme';
+import { useColors } from '@/constants/theme';
 
 const AnimatedPath = Animated.createAnimatedComponent(Path);
 const AnimatedEllipse = Animated.createAnimatedComponent(Ellipse);
@@ -117,9 +117,9 @@ const DEFAULT_EXPRESSION: AliaExpression = 'Idle A';
 const MORPH_CONFIG = { duration: 600, easing: Easing.bezier(0.4, 0, 0.2, 1) };
 
 export function AliaFace({ expression = DEFAULT_EXPRESSION, size = 120 }: AliaFaceProps) {
-  const colorScheme = useColorScheme();
-  const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
-  const isDark = colorScheme === 'dark';
+  const { mode } = useTheme();
+  const colors = useColors();
+  const isDark = mode === 'dark';
 
   const strokeColor = isDark ? '#ffffff' : '#000000';
   const circleBg = colors.background;

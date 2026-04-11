@@ -3,7 +3,7 @@
  * Replaces SearchHeader with count + bulk action buttons.
  */
 
-import React, { useMemo } from 'react';
+import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
@@ -15,8 +15,7 @@ import {
   MailOpen01Icon,
 } from '@hugeicons/core-free-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/constants/theme';
 
 interface SelectionToolbarProps {
   count: number;
@@ -58,8 +57,7 @@ export function SelectionToolbar({
   onMarkRead,
 }: SelectionToolbarProps) {
   const insets = useSafeAreaInsets();
-  const colorScheme = useColorScheme();
-  const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
+  const colors = useColors();
 
   return (
     <View style={[styles.wrapper, { paddingTop: insets.top + 8, backgroundColor: colors.background }]}>

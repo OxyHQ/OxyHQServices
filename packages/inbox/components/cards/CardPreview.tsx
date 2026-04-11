@@ -3,11 +3,10 @@
  * Shows an icon + short summary text below the message snippet.
  */
 
-import React, { useMemo } from 'react';
+import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/constants/theme';
 import type { MessageCard } from '@/services/emailApi';
 
 interface CardPreviewProps {
@@ -76,8 +75,7 @@ function getSummary(card: MessageCard): string {
 }
 
 export function CardPreview({ card }: CardPreviewProps) {
-  const colorScheme = useColorScheme();
-  const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
+  const colors = useColors();
   const config = CARD_CONFIG[card.type] || { icon: 'card-outline', color: colors.secondaryText };
   const summary = getSummary(card);
 

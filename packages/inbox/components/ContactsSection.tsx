@@ -5,7 +5,7 @@
  * star toggle, and auto-collected badge.
  */
 
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -17,8 +17,7 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { toast } from '@oxyhq/services';
 
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/constants/theme';
 import { useContacts } from '@/hooks/queries/useContacts';
 import {
   useCreateContact,
@@ -28,8 +27,7 @@ import {
 import type { Contact } from '@/services/emailApi';
 
 export function ContactsSection() {
-  const colorScheme = useColorScheme();
-  const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
+  const colors = useColors();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [starredOnly, setStarredOnly] = useState(false);

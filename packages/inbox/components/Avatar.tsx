@@ -8,8 +8,7 @@ import { View, Text, Image, StyleSheet, Platform } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import { Tick02Icon } from '@hugeicons/core-free-icons';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/constants/theme';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'https://api.oxy.so';
 
@@ -34,8 +33,7 @@ export function Avatar({
   isChecked?: boolean;
   avatarUrl?: string | null;
 }) {
-  const colorScheme = useColorScheme();
-  const colors = Colors[colorScheme ?? 'light'];
+  const colors = useColors();
 
   const initial = useMemo(() => {
     const trimmed = name.trim();

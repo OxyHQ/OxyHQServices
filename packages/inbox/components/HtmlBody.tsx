@@ -9,7 +9,8 @@
  */
 
 import React, { useCallback, useRef, useState, useEffect, useMemo } from 'react';
-import { Platform, StyleSheet, useColorScheme, Linking } from 'react-native';
+import { Platform, StyleSheet, Linking } from 'react-native';
+import { useTheme } from '@oxyhq/bloom/theme';
 import { proxyExternalImages, getProxyBaseUrl } from '../utils/htmlTransform';
 
 interface HtmlBodyProps {
@@ -135,8 +136,8 @@ function wrapHtml(html: string, isDark: boolean): string {
 function HtmlBodyWeb({ html }: HtmlBodyProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState<number | null>(null);
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
+  const { mode } = useTheme();
+  const isDark = mode === 'dark';
 
   const wrappedHtml = useMemo(() => wrapHtml(html, isDark), [html, isDark]);
 
@@ -243,8 +244,8 @@ if (Platform.OS !== 'web') {
 
   HtmlBodyNative = function HtmlBodyNativeComponent({ html }: HtmlBodyProps) {
     const [height, setHeight] = useState<number | null>(null);
-    const colorScheme = useColorScheme();
-    const isDark = colorScheme === 'dark';
+    const { mode } = useTheme();
+    const isDark = mode === 'dark';
 
     const wrappedHtml = useMemo(() => wrapHtml(html, isDark) + HEIGHT_SCRIPT, [html, isDark]);
 

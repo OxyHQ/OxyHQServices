@@ -15,8 +15,7 @@ import {
   KeyboardAvoidingView,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/constants/theme';
 
 interface CreateReminderSheetProps {
   visible: boolean;
@@ -60,8 +59,7 @@ function getPresetTimes(): Array<{ label: string; date: Date; icon: string }> {
 }
 
 export function CreateReminderSheet({ visible, onClose, onCreate }: CreateReminderSheetProps) {
-  const colorScheme = useColorScheme();
-  const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
+  const colors = useColors();
   const [text, setText] = useState('');
   const [selectedTime, setSelectedTime] = useState<Date | null>(null);
 

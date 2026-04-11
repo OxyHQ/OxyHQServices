@@ -18,8 +18,7 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import { Clock01Icon } from '@hugeicons/core-free-icons';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/constants/theme';
 
 interface SnoozeOption {
   label: string;
@@ -97,8 +96,7 @@ interface SnoozeSheetProps {
 }
 
 export function SnoozeSheet({ visible, onClose, onSnooze }: SnoozeSheetProps) {
-  const colorScheme = useColorScheme();
-  const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
+  const colors = useColors();
   const options = useMemo(getSnoozeOptions, []);
 
   const handleSelect = useCallback(

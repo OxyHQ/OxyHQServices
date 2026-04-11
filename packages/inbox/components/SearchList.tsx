@@ -15,8 +15,7 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/constants/theme';
 import { SPECIAL_USE } from '@/constants/mailbox';
 import type { Message } from '@/services/emailApi';
 import { MessageRow } from '@/components/MessageRow';
@@ -110,8 +109,7 @@ interface SearchListProps {
 
 export function SearchList({ replaceNavigation }: SearchListProps) {
   const router = useRouter();
-  const colorScheme = useColorScheme();
-  const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
+  const colors = useColors();
   const inputRef = useRef<TextInput>(null);
   const selectedMessageId = useEmailStore((s) => s.selectedMessageId);
   const toggleStar = useToggleStar();

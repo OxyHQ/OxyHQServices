@@ -1,8 +1,7 @@
-import React, { useMemo, useCallback } from 'react';
+import React, { useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Platform, Linking } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/constants/theme';
 
 interface EventCardProps {
   data: Record<string, any>;
@@ -78,8 +77,7 @@ function buildGoogleCalendarUrl(data: Record<string, any>): string {
 }
 
 export function EventCard({ data }: EventCardProps) {
-  const colorScheme = useColorScheme();
-  const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
+  const colors = useColors();
 
   const startTime = data.startTime
     ? new Date(data.startTime).toLocaleString(undefined, {

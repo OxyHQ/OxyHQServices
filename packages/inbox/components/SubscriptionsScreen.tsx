@@ -28,8 +28,7 @@ import { useRouter } from 'expo-router';
 import { useNavigation, DrawerActions } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { useColors } from '@/constants/theme';
 import { useSubscriptions } from '@/hooks/queries/useSubscriptions';
 import { useUnsubscribe } from '@/hooks/mutations/useUnsubscribe';
 import { SubscriptionRow } from '@/components/SubscriptionRow';
@@ -40,8 +39,7 @@ export function SubscriptionsScreen() {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const colorScheme = useColorScheme();
-  const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
+  const colors = useColors();
   const isDesktop = Platform.OS === 'web' && width >= 900;
 
   const {
