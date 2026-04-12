@@ -10,10 +10,10 @@ import {
   TouchableOpacity,
   StyleSheet,
   Platform,
-  ActivityIndicator,
   RefreshControl,
 } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
+import { Loading } from '@oxyhq/bloom/loading';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import { PencilEdit01Icon } from '@hugeicons/core-free-icons';
@@ -525,10 +525,10 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
     if (!isFetchingNextPage) return null;
     return (
       <View style={styles.footer}>
-        <ActivityIndicator size="small" color={colors.primary} />
+        <Loading variant="inline" size="small" />
       </View>
     );
-  }, [isFetchingNextPage, colors.primary]);
+  }, [isFetchingNextPage]);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -588,7 +588,7 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
 
       {isLoading && messages.length === 0 && (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.primary} />
+          <Loading />
         </View>
       )}
 
@@ -597,6 +597,7 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
         renderItem={renderItem}
         keyExtractor={keyExtractor}
         getItemType={getItemType}
+        estimatedItemSize={72}
         ItemSeparatorComponent={renderSeparator}
         ListEmptyComponent={renderEmpty}
         ListFooterComponent={renderFooter}
