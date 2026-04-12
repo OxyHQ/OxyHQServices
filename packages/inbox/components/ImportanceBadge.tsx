@@ -6,11 +6,9 @@
  */
 
 import React, { useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { TouchableOpacity } from 'react-native';
+import { Badge } from '@oxyhq/bloom/badge';
 
-import { useTheme } from '@oxyhq/bloom/theme';
-import { useColors } from '@/constants/theme';
 import type { Message } from '@/services/emailApi';
 
 export type ImportanceLevel = 'urgent' | 'action' | 'important' | 'fyi' | null;
@@ -70,40 +68,27 @@ interface ImportanceBadgeProps {
 
 const BADGE_CONFIG: Record<Exclude<ImportanceLevel, null>, {
   label: string;
-  icon: string;
-  bgColor: string;
-  textColor: string;
+  color: 'error' | 'warning' | 'primary' | 'default';
 }> = {
   urgent: {
     label: 'Urgent',
-    icon: 'alert-circle',
-    bgColor: '#FFEBEE',
-    textColor: '#D32F2F',
+    color: 'error',
   },
   action: {
     label: 'Action needed',
-    icon: 'checkbox-marked-circle-outline',
-    bgColor: '#FFF3E0',
-    textColor: '#E65100',
+    color: 'warning',
   },
   important: {
     label: 'Important',
-    icon: 'star-circle',
-    bgColor: '#E3F2FD',
-    textColor: '#1565C0',
+    color: 'primary',
   },
   fyi: {
     label: 'FYI',
-    icon: 'information',
-    bgColor: '#F5F5F5',
-    textColor: '#757575',
+    color: 'default',
   },
 };
 
 export function ImportanceBadge({ message, onPress }: ImportanceBadgeProps) {
-  const { mode } = useTheme();
-  const isDark = mode === 'dark';
-
   const importance = useMemo(() => detectImportance(message), [message]);
 
   if (!importance) {
@@ -112,43 +97,22 @@ export function ImportanceBadge({ message, onPress }: ImportanceBadgeProps) {
 
   const config = BADGE_CONFIG[importance];
 
-  // Adjust colors for dark mode
-  const bgColor = isDark ? config.textColor + '25' : config.bgColor;
-  const textColor = isDark ? config.textColor : config.textColor;
-
-  const content = (
-    <View style={[styles.badge, { backgroundColor: bgColor }]}>
-      <MaterialCommunityIcons
-        name={config.icon as any}
-        size={12}
-        color={textColor}
-      />
-      <Text style={[styles.label, { color: textColor }]}>{config.label}</Text>
-    </View>
+  const badge = (
+    <Badge
+      variant="subtle"
+      color={config.color}
+      content={config.label}
+      size="small"
+    />
   );
 
   if (onPress) {
     return (
       <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
-        {content}
+        {badge}
       </TouchableOpacity>
     );
   }
 
-  return content;
+  return badge;
 }
-
-const styles = StyleSheet.create({
-  badge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 10,
-  },
-  label: {
-    fontSize: 10,
-    fontWeight: '600',
-  },
-});

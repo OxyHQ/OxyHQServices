@@ -9,11 +9,11 @@ import React from 'react';
 import {
   View,
   Text,
-  TouchableOpacity,
   StyleSheet,
-  ActivityIndicator,
   Platform,
 } from 'react-native';
+import { Loading } from '@oxyhq/bloom/loading';
+import { Chip } from '@oxyhq/bloom/chip';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import { AiMail01Icon } from '@hugeicons/core-free-icons';
@@ -56,7 +56,7 @@ export function SmartReplyChips({ message, onSelectReply }: SmartReplyChipsProps
           Quick replies
         </Text>
         {isLoading && (
-          <ActivityIndicator size="small" color={colors.primary} style={styles.loader} />
+          <Loading variant="inline" size="small" />
         )}
       </View>
 
@@ -70,25 +70,14 @@ export function SmartReplyChips({ message, onSelectReply }: SmartReplyChipsProps
           </>
         ) : (
           replies.map((reply, index) => (
-            <TouchableOpacity
+            <Chip
               key={index}
-              style={[
-                styles.chip,
-                {
-                  borderColor: colors.primary + '40',
-                  backgroundColor: colors.primary + '08',
-                },
-              ]}
+              variant="outlined"
+              color="primary"
               onPress={() => onSelectReply(reply)}
-              activeOpacity={0.7}
             >
-              <Text
-                style={[styles.chipText, { color: colors.primary }]}
-                numberOfLines={1}
-              >
-                {reply}
-              </Text>
-            </TouchableOpacity>
+              {reply}
+            </Chip>
           ))
         )}
       </View>
@@ -111,24 +100,10 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
   },
-  loader: {
-    marginLeft: 4,
-  },
   chips: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
-  },
-  chip: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 18,
-    borderWidth: 1,
-    maxWidth: '100%',
-  },
-  chipText: {
-    fontSize: 13,
-    fontWeight: '500',
   },
   chipSkeleton: {
     height: 34,

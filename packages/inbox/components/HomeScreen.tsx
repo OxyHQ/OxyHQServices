@@ -13,9 +13,9 @@ import {
   StyleSheet,
   Platform,
   useWindowDimensions,
-  ActivityIndicator,
   ImageBackground,
 } from 'react-native';
+import { Loading } from '@oxyhq/bloom/loading';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useNavigation, DrawerActions } from '@react-navigation/native';
@@ -33,6 +33,8 @@ import {
 } from '@hugeicons/core-free-icons';
 
 import { useTheme } from '@oxyhq/bloom/theme';
+import { Divider } from '@oxyhq/bloom/divider';
+import { Badge } from '@oxyhq/bloom/badge';
 import { useColors } from '@/constants/theme';
 import { SPECIAL_USE } from '@/constants/mailbox';
 import { useMessages } from '@/hooks/queries/useMessages';
@@ -299,7 +301,7 @@ export function HomeScreen() {
 
         {isLoading ? (
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#FFFFFF" />
+            <Loading />
           </View>
         ) : (
           <>
@@ -346,7 +348,7 @@ export function HomeScreen() {
 
                 {briefLoading ? (
                   <View style={styles.briefLoadingRow}>
-                    <ActivityIndicator size="small" color={colors.primary} />
+                    <Loading variant="inline" size="small" />
                     <Text style={[styles.digestText, { color: colors.secondaryText }]}>
                       Alia is analyzing your inbox...
                     </Text>
@@ -384,9 +386,7 @@ export function HomeScreen() {
                     <Text style={[styles.sectionTitle, { color: colors.text }]}>
                       Needs Response
                     </Text>
-                    <View style={[styles.countBadge, { backgroundColor: colors.primary + '20' }]}>
-                      <Text style={[styles.countBadgeText, { color: colors.primary }]}>{needsResponseCount}</Text>
-                    </View>
+                    <Badge variant="subtle" color="primary" content={needsResponseCount} size="small" />
                   </View>
                   {Platform.OS === 'web' ? (
                     <HugeiconsIcon
@@ -408,7 +408,7 @@ export function HomeScreen() {
                     {needsResponseMessages.map((msg, index) => (
                       <React.Fragment key={msg._id}>
                         {index > 0 && (
-                          <View style={[styles.separator, { backgroundColor: colors.border }]} />
+                           <Divider />
                         )}
                         <MessageRow
                           message={msg}
@@ -436,9 +436,7 @@ export function HomeScreen() {
                     <Text style={[styles.sectionTitle, { color: colors.text }]}>
                       Follow Up
                     </Text>
-                    <View style={[styles.countBadge, { backgroundColor: colors.starred + '20' }]}>
-                      <Text style={[styles.countBadgeText, { color: colors.starred }]}>{followUpCount}</Text>
-                    </View>
+                    <Badge variant="subtle" color="warning" content={followUpCount} size="small" />
                   </View>
                   {Platform.OS === 'web' ? (
                     <HugeiconsIcon
@@ -460,7 +458,7 @@ export function HomeScreen() {
                     {followUpMessages.map((msg, index) => (
                       <React.Fragment key={msg._id}>
                         {index > 0 && (
-                          <View style={[styles.separator, { backgroundColor: colors.border }]} />
+                           <Divider />
                         )}
                         <MessageRow
                           message={msg}
@@ -506,7 +504,7 @@ export function HomeScreen() {
                     recentMessages.map((msg, index) => (
                       <React.Fragment key={msg._id}>
                         {index > 0 && (
-                          <View style={[styles.separator, { backgroundColor: colors.border }]} />
+                           <Divider />
                         )}
                         <MessageRow
                           message={msg}
@@ -784,20 +782,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-  },
-  countBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 10,
-    minWidth: 24,
-    alignItems: 'center',
-  },
-  countBadgeText: {
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  separator: {
-    height: StyleSheet.hairlineWidth,
   },
   // Empty
   emptyContainer: {

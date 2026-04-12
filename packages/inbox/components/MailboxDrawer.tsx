@@ -18,6 +18,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useOxy, showSignInModal } from '@oxyhq/services';
 import { useRouter, usePathname } from 'expo-router';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
+import { Badge } from '@oxyhq/bloom/badge';
 import {
   Home01Icon,
   FavouriteIcon,
@@ -42,6 +43,7 @@ import {
   Tick02Icon,
 } from '@hugeicons/core-free-icons';
 import { useColors } from '@/constants/theme';
+import { Divider } from '@oxyhq/bloom/divider';
 import { SPECIAL_USE } from '@/constants/mailbox';
 import { useEmailStore } from '@/hooks/useEmail';
 import { useMailboxes } from '@/hooks/queries/useMailboxes';
@@ -151,15 +153,7 @@ function NavItem({
             {label}
           </Text>
           {badge != null && badge > 0 && (
-            <Text
-              style={[
-                styles.badge,
-                { color: isActive ? colors.sidebarItemActiveText : colors.secondaryText },
-                bold && { fontWeight: '700' },
-              ]}
-            >
-              {badge}
-            </Text>
+            <Badge variant="subtle" color="default" content={badge} size="small" />
           )}
         </>
       )}
@@ -508,7 +502,7 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
         {/* Labels (from Label model, not custom mailboxes) */}
         {!collapsed && labels.length > 0 && (
           <>
-            <View style={[styles.divider, { backgroundColor: colors.border }]} />
+            <Divider />
             <Text style={[styles.sectionTitle, { color: colors.secondaryText }]}>Labels</Text>
             {labels.map((lbl) => (
               <NavItem
@@ -531,7 +525,7 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
         {!collapsed && (
           <>
             {(customMailboxes.length > 0 || isCreatingFolder) && (
-              <View style={[styles.divider, { backgroundColor: colors.border }]} />
+              <Divider />
             )}
             {(customMailboxes.length > 0 || isCreatingFolder) && (
               <View style={styles.sectionHeader}>
@@ -819,10 +813,6 @@ const styles = StyleSheet.create({
   itemLabelActive: {
     fontWeight: '700',
   },
-  badge: {
-    fontSize: 11,
-    fontWeight: '600',
-  },
   colorDot: {
     width: 10,
     height: 10,
@@ -837,11 +827,6 @@ const styles = StyleSheet.create({
   moreToggleText: {
     fontSize: 12,
     fontWeight: '600',
-  },
-  divider: {
-    height: StyleSheet.hairlineWidth,
-    marginVertical: 4,
-    marginHorizontal: 14,
   },
   sectionTitle: {
     fontSize: 11,

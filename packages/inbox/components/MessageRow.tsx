@@ -25,6 +25,8 @@ import {
   File01Icon,
   Attachment01Icon,
 } from '@hugeicons/core-free-icons';
+import { Chip } from '@oxyhq/bloom/chip';
+import { Badge } from '@oxyhq/bloom/badge';
 import { Avatar } from './Avatar';
 import { AttachmentThumbnail } from './AttachmentThumbnail';
 import { ImportanceBadge } from './ImportanceBadge';
@@ -243,11 +245,7 @@ function MessageRowInner({
             {senderName}
           </Text>
           {(message.threadCount ?? 0) > 1 && (
-            <View style={[styles.threadBadge, { backgroundColor: colors.surfaceVariant }]}>
-              <Text style={[styles.threadBadgeText, { color: colors.secondaryText }]}>
-                {message.threadCount}
-              </Text>
-            </View>
+            <Badge variant="subtle" color="default" content={message.threadCount!} size="small" />
           )}
           {showSnoozeTime && message.snoozedUntil ? (
             <View style={styles.snoozeTimeRow}>
@@ -338,17 +336,14 @@ function MessageRowInner({
         {message.labels.length > 0 && (
           <View style={styles.labelChipRow}>
             {message.labels.slice(0, 3).map((labelName) => {
-              const color = labelColorMap?.get(labelName) || '#5F6368';
               return (
-                <View
+                <Chip
                   key={labelName}
-                  style={[styles.labelChipSmall, { backgroundColor: color + '20' }]}
+                  variant="soft"
+                  size="small"
                 >
-                  <View style={[styles.labelChipDotSmall, { backgroundColor: color }]} />
-                  <Text style={[styles.labelChipTextSmall, { color }]} numberOfLines={1}>
-                    {labelName}
-                  </Text>
-                </View>
+                  {labelName}
+                </Chip>
               );
             })}
             {message.labels.length > 3 && (
@@ -399,20 +394,20 @@ function MessageRowInner({
                 <View style={styles.attachmentRow}>
                   {otherAtts.slice(0, 3).map((att, i) => {
                     const info = getAttachmentInfo(att);
+                    const icon = Platform.OS === 'web' ? (
+                      <HugeiconsIcon icon={info.hugeIcon} size={14} color={info.color} />
+                    ) : (
+                      <MaterialCommunityIcons name={info.icon as any} size={14} color={info.color} />
+                    );
                     return (
-                      <View
+                      <Chip
                         key={i}
-                        style={[styles.attachmentCard, { borderColor: colors.border }]}
+                        variant="outlined"
+                        size="small"
+                        startIcon={icon}
                       >
-                        {Platform.OS === 'web' ? (
-                          <HugeiconsIcon icon={info.hugeIcon} size={14} color={info.color} />
-                        ) : (
-                          <MaterialCommunityIcons name={info.icon as any} size={14} color={info.color} />
-                        )}
-                        <Text style={[styles.attachmentLabel, { color: colors.text }]} numberOfLines={1}>
-                          {info.label}
-                        </Text>
-                      </View>
+                        {info.label}
+                      </Chip>
                     );
                   })}
                   {otherAtts.length > 3 && (
@@ -521,20 +516,6 @@ const styles = StyleSheet.create({
     gap: 6,
     marginTop: 6,
   },
-  attachmentCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
-    borderWidth: 1,
-    maxWidth: 140,
-  },
-  attachmentLabel: {
-    fontSize: 11,
-    flex: 1,
-  },
   moreAttachments: {
     fontSize: 11,
     alignSelf: 'center',
@@ -558,37 +539,8 @@ const styles = StyleSheet.create({
     gap: 4,
     marginTop: 2,
   },
-  labelChipSmall: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-    borderRadius: 8,
-    maxWidth: 100,
-  },
-  labelChipDotSmall: {
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
-  },
-  labelChipTextSmall: {
-    fontSize: 10,
-    fontWeight: '500',
-  },
   moreLabelText: {
     fontSize: 10,
     alignSelf: 'center',
-  },
-  threadBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-    borderRadius: 8,
-    minWidth: 20,
-    alignItems: 'center',
-  },
-  threadBadgeText: {
-    fontSize: 11,
-    fontWeight: '600',
   },
 });

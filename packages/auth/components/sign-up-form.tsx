@@ -1,24 +1,17 @@
-import { useState, useRef } from "react"
+import { useState, useRef, useCallback } from "react"
 import { useNavigate, Link } from "react-router-dom"
 import { toast } from "sonner"
+import { Check, X, Loader2 } from "lucide-react"
 
-import { buildAuthUrl } from "@/lib/oxy-api-client"
+import { buildAuthUrl, buildApiUrl } from "@/lib/oxy-api-client"
 import { setFedCMLoginStatus, buildPostLoginRedirect } from "@/lib/auth-utils"
 import { Button } from "@/components/ui/button"
-import {
-    Field,
-    FieldError,
-    FieldGroup,
-    FieldLabel,
-} from "@/components/ui/field"
+import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { PasswordInput } from "@/components/password-input"
 import { PasswordRequirements } from "@/components/password-requirements"
 import { SocialLoginButtons } from "@/components/social-login-buttons"
-import {
-    AuthFormLayout,
-    AuthFormHeader,
-} from "@/components/auth-form-layout"
+import { AuthFormLayout, AuthFormHeader } from "@/components/auth-form-layout"
 import { validatePassword } from "@/lib/password-validation"
 
 type SignUpFormProps = React.ComponentProps<"div"> & {
@@ -26,6 +19,54 @@ type SignUpFormProps = React.ComponentProps<"div"> & {
     sessionToken?: string
     redirectUri?: string
     state?: string
+}
+
+type AvailabilityStatus = "idle" | "checking" | "available" | "taken"
+
+function useAvailabilityCheck(endpoint: string) {
+    const [status, setStatus] = useState<AvailabilityStatus>("idle")
+    const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const controllerRef = useRef<AbortController | null>(null)
+
+    const check = useCallback((value: string) => {
+        if (timerRef.current) clearTimeout(timerRef.current)
+        if (controllerRef.current) controllerRef.current.abort()
+
+        if (!value || value.length < 3) {
+            setStatus("idle")
+            return
+        }
+
+        setStatus("checking")
+        timerRef.current = setTimeout(async () => {
+            controllerRef.current = new AbortController()
+            try {
+                const res = await fetch(
+                    buildApiUrl(`${endpoint}/${encodeURIComponent(value)}`),
+                    { signal: controllerRef.current.signal }
+                )
+                const data = await res.json().catch(() => ({}))
+                setStatus(data?.data?.available ? "available" : "taken")
+            } catch {
+                // Aborted or network error — don't update status
+            }
+        }, 400)
+    }, [endpoint])
+
+    const reset = useCallback(() => {
+        if (timerRef.current) clearTimeout(timerRef.current)
+        if (controllerRef.current) controllerRef.current.abort()
+        setStatus("idle")
+    }, [])
+
+    return { status, check, reset }
+}
+
+function AvailabilityIndicator({ status, takenMessage }: { status: AvailabilityStatus; takenMessage: string }) {
+    if (status === "idle") return null
+    if (status === "checking") return <span className="text-xs text-muted-foreground flex items-center gap-1"><Loader2 className="size-3 animate-spin" /> Checking...</span>
+    if (status === "available") return <span className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1"><Check className="size-3" /> Available</span>
+    return <span className="text-xs text-destructive flex items-center gap-1"><X className="size-3" /> {takenMessage}</span>
 }
 
 export function SignUpForm({
@@ -45,31 +86,24 @@ export function SignUpForm({
 
     const displayError = localError ?? error
 
-    // Show error toast from URL param once
+    const username = useAvailabilityCheck("/auth/check-username")
+    const email = useAvailabilityCheck("/auth/check-email")
+
     const errorShownRef = useRef(false)
     if (error && !errorShownRef.current) {
         errorShownRef.current = true
         queueMicrotask(() => toast.error("Sign up failed", { description: error }))
     }
 
-    const handlePasswordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const value = e.target.value
-        setPassword(value)
-        setServerErrors([])
-        if (!passwordTouched && value.length > 0) {
-            setPasswordTouched(true)
-        }
-    }
-
-    const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
         event.preventDefault()
         setLocalError(undefined)
         setServerErrors([])
         setIsSubmitting(true)
 
         const formData = new FormData(event.currentTarget)
-        const email = String(formData.get("email") || "").trim()
-        const username = String(formData.get("username") || "").trim()
+        const emailValue = String(formData.get("email") || "").trim()
+        const usernameValue = String(formData.get("username") || "").trim()
 
         const clientErrors = validatePassword(password)
         if (clientErrors.length > 0) {
@@ -85,20 +119,21 @@ export function SignUpForm({
                 method: "POST",
                 headers: { "content-type": "application/json" },
                 credentials: "include",
-                body: JSON.stringify({ email, username, password }),
+                body: JSON.stringify({ email: emailValue, username: usernameValue, password }),
             })
             const payload = await response.json().catch(() => ({}))
 
             if (!response.ok) {
-                const errors = Array.isArray(payload?.errors)
-                    ? (payload.errors as string[])
-                    : []
+                if (response.status === 429) {
+                    setLocalError("Too many attempts. Please try again later.")
+                    setIsSubmitting(false)
+                    return
+                }
+                const errors = Array.isArray(payload?.errors) ? (payload.errors as string[]) : []
                 if (errors.length > 0) {
                     setServerErrors(errors)
                 } else {
-                    const msg = typeof payload?.message === "string"
-                        ? payload.message
-                        : "Unable to sign up"
+                    const msg = typeof payload?.message === "string" ? payload.message : "Unable to sign up"
                     setLocalError(msg)
                     toast.error("Sign up failed", { description: msg })
                 }
@@ -118,33 +153,21 @@ export function SignUpForm({
             setLocalError(msg)
             toast.error("Sign up failed", { description: msg })
         } finally {
-            if (!didRedirect) {
-                setIsSubmitting(false)
-            }
+            if (!didRedirect) setIsSubmitting(false)
         }
     }
 
     return (
         <AuthFormLayout
             className={className}
-            footer={
-                <SocialLoginButtons
-                    sessionToken={sessionToken}
-                    redirectUri={redirectUri}
-                    state={state}
-                />
-            }
+            footer={<SocialLoginButtons sessionToken={sessionToken} redirectUri={redirectUri} state={state} />}
             {...props}
         >
             <form onSubmit={handleSubmit}>
                 <FieldGroup>
                     <AuthFormHeader
                         title="Create your account"
-                        description={
-                            <>
-                                Already have an account? <Link to="/login">Sign in</Link>
-                            </>
-                        }
+                        description={<>Already have an account? <Link to="/login">Sign in</Link></>}
                     />
                     <Field>
                         <FieldLabel htmlFor="email">Email</FieldLabel>
@@ -155,7 +178,9 @@ export function SignUpForm({
                             placeholder="m@example.com"
                             autoComplete="email"
                             required
+                            onChange={(e) => email.check(e.target.value.trim())}
                         />
+                        <AvailabilityIndicator status={email.status} takenMessage="This email is already registered" />
                     </Field>
                     <Field>
                         <FieldLabel htmlFor="username">Username</FieldLabel>
@@ -166,7 +191,9 @@ export function SignUpForm({
                             placeholder="yourname"
                             autoComplete="username"
                             required
+                            onChange={(e) => username.check(e.target.value.trim())}
                         />
+                        <AvailabilityIndicator status={username.status} takenMessage="This username is taken" />
                     </Field>
                     <Field>
                         <FieldLabel htmlFor="password">Password</FieldLabel>
@@ -176,18 +203,23 @@ export function SignUpForm({
                             autoComplete="new-password"
                             required
                             value={password}
-                            onChange={handlePasswordChange}
-                            onBlur={() => {
-                                if (password.length > 0) setPasswordTouched(true)
+                            onChange={(e) => {
+                                setPassword(e.target.value)
+                                setServerErrors([])
+                                if (!passwordTouched && e.target.value.length > 0) setPasswordTouched(true)
                             }}
+                            onBlur={() => { if (password.length > 0) setPasswordTouched(true) }}
                         />
                         {passwordTouched && <PasswordRequirements password={password} />}
-                        {serverErrors.length > 0 && (
-                            <FieldError errors={serverErrors.map((e) => ({ message: e }))} />
-                        )}
+                        {serverErrors.length > 0 && <FieldError errors={serverErrors.map((e) => ({ message: e }))} />}
                     </Field>
                     <Field>
-                        <Button type="submit" size="lg" className="w-full" disabled={isSubmitting}>
+                        <Button
+                            type="submit"
+                            size="lg"
+                            className="w-full"
+                            disabled={isSubmitting || username.status === "taken" || email.status === "taken"}
+                        >
                             {isSubmitting ? "Creating account..." : "Sign Up"}
                         </Button>
                     </Field>

@@ -1,6 +1,7 @@
 import React, { useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Platform, Linking } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Card, CardHeader, CardBody } from '@oxyhq/bloom/card';
 import { useColors } from '@/constants/theme';
 
 interface EventCardProps {
@@ -140,65 +141,68 @@ export function EventCard({ data }: EventCardProps) {
   }, [data]);
 
   return (
-    <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-      <View style={[styles.header, { backgroundColor: '#EA433520' }]}>
-        <MaterialCommunityIcons name="calendar" size={18} color="#EA4335" />
-        <Text style={[styles.headerText, { color: '#EA4335' }]}>Event</Text>
-      </View>
-      <View style={styles.body}>
-        {data.title && (
-          <Text style={[styles.title, { color: colors.text }]}>{data.title}</Text>
-        )}
-        {startTime && (
-          <View style={styles.row}>
-            <MaterialCommunityIcons name="clock-outline" size={14} color={colors.secondaryText} />
-            <Text style={[styles.time, { color: colors.secondaryText }]}>
-              {startTime}{endTime ? ` – ${endTime}` : ''}
-            </Text>
-          </View>
-        )}
-        {data.location && (
-          <View style={styles.row}>
-            <MaterialCommunityIcons name="map-marker-outline" size={14} color={colors.secondaryText} />
-            <Text style={[styles.location, { color: colors.secondaryText }]}>{data.location}</Text>
-          </View>
-        )}
-        {data.organizer && (
-          <View style={styles.row}>
-            <MaterialCommunityIcons name="account-outline" size={14} color={colors.secondaryText} />
-            <Text style={[styles.organizer, { color: colors.secondaryText }]}>{data.organizer}</Text>
-          </View>
-        )}
-
-        {/* Calendar action buttons */}
-        <View style={styles.actions}>
-          <TouchableOpacity
-            style={[styles.actionButton, { backgroundColor: colors.border }]}
-            onPress={handleAddToCalendar}
-            activeOpacity={0.7}
-          >
-            <MaterialCommunityIcons name="calendar-plus" size={16} color={colors.text} />
-            <Text style={[styles.actionText, { color: colors.text }]}>Add to Calendar</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.actionButton, { backgroundColor: colors.border }]}
-            onPress={handleOpenGoogleCalendar}
-            activeOpacity={0.7}
-          >
-            <MaterialCommunityIcons name="google" size={16} color={colors.text} />
-            <Text style={[styles.actionText, { color: colors.text }]}>Google Calendar</Text>
-          </TouchableOpacity>
+    <Card variant="outlined">
+      <CardHeader>
+        <View style={[styles.header, { backgroundColor: '#EA433520' }]}>
+          <MaterialCommunityIcons name="calendar" size={18} color="#EA4335" />
+          <Text style={[styles.headerText, { color: '#EA4335' }]}>Event</Text>
         </View>
-      </View>
-    </View>
+      </CardHeader>
+      <CardBody>
+        <View style={styles.body}>
+          {data.title && (
+            <Text style={[styles.title, { color: colors.text }]}>{data.title}</Text>
+          )}
+          {startTime && (
+            <View style={styles.row}>
+              <MaterialCommunityIcons name="clock-outline" size={14} color={colors.secondaryText} />
+              <Text style={[styles.time, { color: colors.secondaryText }]}>
+                {startTime}{endTime ? ` – ${endTime}` : ''}
+              </Text>
+            </View>
+          )}
+          {data.location && (
+            <View style={styles.row}>
+              <MaterialCommunityIcons name="map-marker-outline" size={14} color={colors.secondaryText} />
+              <Text style={[styles.location, { color: colors.secondaryText }]}>{data.location}</Text>
+            </View>
+          )}
+          {data.organizer && (
+            <View style={styles.row}>
+              <MaterialCommunityIcons name="account-outline" size={14} color={colors.secondaryText} />
+              <Text style={[styles.organizer, { color: colors.secondaryText }]}>{data.organizer}</Text>
+            </View>
+          )}
+
+          {/* Calendar action buttons */}
+          <View style={styles.actions}>
+            <TouchableOpacity
+              style={[styles.actionButton, { backgroundColor: colors.border }]}
+              onPress={handleAddToCalendar}
+              activeOpacity={0.7}
+            >
+              <MaterialCommunityIcons name="calendar-plus" size={16} color={colors.text} />
+              <Text style={[styles.actionText, { color: colors.text }]}>Add to Calendar</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.actionButton, { backgroundColor: colors.border }]}
+              onPress={handleOpenGoogleCalendar}
+              activeOpacity={0.7}
+            >
+              <MaterialCommunityIcons name="google" size={16} color={colors.text} />
+              <Text style={[styles.actionText, { color: colors.text }]}>Google Calendar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </CardBody>
+    </Card>
   );
 }
 
 const styles = StyleSheet.create({
-  card: { borderRadius: 12, borderWidth: 1, overflow: 'hidden' },
   header: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8 },
   headerText: { fontSize: 13, fontWeight: '600' },
-  body: { padding: 12, gap: 8 },
+  body: { gap: 8 },
   title: { fontSize: 15, fontWeight: '600' },
   row: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   time: { fontSize: 13 },

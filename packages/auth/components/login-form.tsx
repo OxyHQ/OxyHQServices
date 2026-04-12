@@ -1,12 +1,14 @@
 import { useState, useRef, useMemo } from "react"
 import { useNavigate, Link } from "react-router-dom"
 import { toast } from "sonner"
-import { ArrowLeft } from "lucide-react"
+import { ArrowLeft, ShieldAlert } from "lucide-react"
 import { OxyServices } from "@oxyhq/core"
 import type { AppColorName } from "@oxyhq/bloom/theme"
-import { buildAuthUrl, buildApiUrl, getApiBaseUrl } from "@/lib/oxy-api-client"
+import { Avatar } from "@oxyhq/bloom/avatar"
+import { buildAuthUrl, buildApiUrl, getApiBaseUrl, getAvatarUrl } from "@/lib/oxy-api-client"
 import { setFedCMLoginStatus, buildPostLoginRedirect } from "@/lib/auth-utils"
 import { applyColorPreset } from "@/lib/bloom-css"
+import { useLayoutContext } from "@/lib/layout-context"
 import { meResponseSchema, loginResponseSchema, safeParse } from "@/lib/schemas"
 import type { Account } from "@/lib/types"
 import { Button } from "@/components/ui/button"
@@ -28,7 +30,14 @@ type LoginFormProps = React.ComponentProps<"div"> & {
     clientId?: string
 }
 
-type LoginStep = "identifier" | "password" | "2fa"
+type LoginStep = "identifier" | "password" | "2fa" | "security-alert"
+
+type LookupResult = {
+    username: string
+    displayName: string
+    avatar: string | null
+    color: string | null
+}
 
 export function LoginForm({
     className,
@@ -44,9 +53,11 @@ export function LoginForm({
     const isOAuthFlow = responseType === "token" && redirectUri
     const navigate = useNavigate()
     const oxy = useMemo(() => new OxyServices({ baseURL: getApiBaseUrl() }), [])
+    const { setHideLogo } = useLayoutContext()
 
     const [localError, setLocalError] = useState<string | undefined>()
-    const displayError = localError ?? error
+    const [rateLimitSeconds, setRateLimitSeconds] = useState(0)
+    const displayError = rateLimitSeconds > 0 ? `Too many attempts. Try again in ${rateLimitSeconds}s.` : (localError ?? error)
 
     const [isSubmitting, setIsSubmitting] = useState(false)
     const [isLoading, setIsLoading] = useState(true)
@@ -61,15 +72,18 @@ export function LoginForm({
     const { step, direction } = stepState
 
     const [identifier, setIdentifier] = useState("")
+    const [lookupResult, setLookupResult] = useState<LookupResult | null>(null)
     const [loginToken, setLoginToken] = useState("")
     const [otpValue, setOtpValue] = useState("")
     const [useBackupCode, setUseBackupCode] = useState(false)
     const [backupCode, setBackupCode] = useState("")
+    const [securityAlert, setSecurityAlert] = useState<string | null>(null)
+    const [pendingRedirect, setPendingRedirect] = useState<{ sessionId: string; accessToken?: string; expiresAt?: string } | null>(null)
 
     const passwordRef = useRef<HTMLInputElement>(null)
     const identifierRef = useRef<HTMLInputElement>(null)
 
-    // Reset color to default on mount (e.g. navigating back from another page)
+    // Reset color on mount
     const mountedRef = useRef(false)
     if (!mountedRef.current) {
         mountedRef.current = true
@@ -93,10 +107,7 @@ export function LoginForm({
     if (!sessionCheckedRef.current) {
         sessionCheckedRef.current = true
         fetch(buildApiUrl("/users/me"), { credentials: "include" })
-            .then((res) => {
-                if (!res.ok) return null
-                return res.json()
-            })
+            .then((res) => res.ok ? res.json() : null)
             .then((data) => {
                 const parsed = safeParse(meResponseSchema, data)
                 if (parsed?.user && parsed.sessionId) {
@@ -108,9 +119,40 @@ export function LoginForm({
             .finally(() => setIsLoading(false))
     }
 
+    // Rate limit countdown
+    const rateLimitTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+    function startRateLimitCountdown(seconds: number) {
+        setRateLimitSeconds(seconds)
+        if (rateLimitTimerRef.current) clearInterval(rateLimitTimerRef.current)
+        rateLimitTimerRef.current = setInterval(() => {
+            setRateLimitSeconds((prev) => {
+                if (prev <= 1) {
+                    if (rateLimitTimerRef.current) clearInterval(rateLimitTimerRef.current)
+                    return 0
+                }
+                return prev - 1
+            })
+        }, 1000)
+    }
+
+    function handleApiError(response: Response, payload: Record<string, unknown> | null): string {
+        if (response.status === 429) {
+            const retryAfter = Number(response.headers.get("retry-after")) || 60
+            startRateLimitCountdown(retryAfter)
+            return `Too many attempts. Try again in ${retryAfter}s.`
+        }
+        return typeof payload?.message === "string" ? payload.message : "Something went wrong"
+    }
+
     function goToStep(next: LoginStep, dir: "forward" | "back" = "forward") {
         setLocalError(undefined)
-        if (next === "identifier") applyColorPreset("oxy")
+        if (next === "identifier") {
+            applyColorPreset("oxy")
+            setLookupResult(null)
+            setHideLogo(false)
+        } else {
+            setHideLogo(true)
+        }
         setStepState({ step: next, direction: dir })
         requestAnimationFrame(() => {
             if (next === "password") passwordRef.current?.focus()
@@ -121,13 +163,19 @@ export function LoginForm({
     async function handleIdentifierSubmit(e: React.FormEvent<HTMLFormElement>) {
         e.preventDefault()
         const username = identifier.trim()
-        if (!username) return
+        if (!username || rateLimitSeconds > 0) return
 
         setLocalError(undefined)
         setIsSubmitting(true)
 
         try {
             const result = await oxy.lookupUsername(username)
+            setLookupResult({
+                username: result.username,
+                displayName: result.displayName,
+                avatar: result.avatar,
+                color: result.color,
+            })
             if (result.color) applyColorPreset(result.color as AppColorName)
             setIsSubmitting(false)
             goToStep("password", "forward")
@@ -156,6 +204,16 @@ export function LoginForm({
         navigate(buildPostLoginRedirect({ sessionToken, redirectUri, state }))
     }
 
+    function completeLogin(sessionId: string, accessToken?: string, expiresAt?: string, alert?: string) {
+        if (alert) {
+            setSecurityAlert(alert)
+            setPendingRedirect({ sessionId, accessToken, expiresAt })
+            goToStep("security-alert", "forward")
+            return
+        }
+        redirectAfterLogin(sessionId, accessToken, expiresAt)
+    }
+
     async function handlePasswordSubmit(e: React.FormEvent<HTMLFormElement>) {
         e.preventDefault()
         setLocalError(undefined)
@@ -170,33 +228,39 @@ export function LoginForm({
                 credentials: "include",
                 body: JSON.stringify({ identifier: identifier.trim(), password }),
             })
-            const payload = safeParse(loginResponseSchema, await response.json().catch(() => ({})))
+            const payload = await response.json().catch(() => ({}))
 
-            if (!response.ok || !payload) {
-                const msg = payload?.message ?? "Unable to sign in"
+            if (!response.ok) {
+                const msg = handleApiError(response, payload)
                 setLocalError(msg)
-                toast.error("Sign in failed", { description: msg })
+                if (response.status !== 429) toast.error("Sign in failed", { description: msg })
                 setIsSubmitting(false)
                 return
             }
 
-            if (payload.twoFactorRequired && payload.loginToken) {
-                setLoginToken(payload.loginToken)
-                setIsSubmitting(false)
-                goToStep("2fa", "forward")
-                return
-            }
-
-            if (!payload.sessionId) {
+            const parsed = safeParse(loginResponseSchema, payload)
+            if (!parsed) {
                 setLocalError("Unable to sign in")
                 setIsSubmitting(false)
                 return
             }
 
-            redirectAfterLogin(payload.sessionId, payload.accessToken, payload.expiresAt)
+            if (parsed.twoFactorRequired && parsed.loginToken) {
+                setLoginToken(parsed.loginToken)
+                setIsSubmitting(false)
+                goToStep("2fa", "forward")
+                return
+            }
+
+            if (!parsed.sessionId) {
+                setLocalError("Unable to sign in")
+                setIsSubmitting(false)
+                return
+            }
+
+            completeLogin(parsed.sessionId, parsed.accessToken, parsed.expiresAt, payload.securityAlert)
         } catch (err) {
-            const msg = err instanceof Error ? err.message : "Unable to sign in"
-            setLocalError(msg)
+            setLocalError(err instanceof Error ? err.message : "Unable to sign in")
             setIsSubmitting(false)
         }
     }
@@ -211,32 +275,33 @@ export function LoginForm({
         else body.token = otpValue
 
         try {
-            const response = await fetch(buildAuthUrl("/2fa/verify"), {
+            // Correct endpoint: /security/2fa/verify-login (creates session)
+            const response = await fetch(buildApiUrl("/security/2fa/verify-login"), {
                 method: "POST",
                 headers: { "content-type": "application/json" },
                 credentials: "include",
                 body: JSON.stringify(body),
             })
-            const payload = safeParse(loginResponseSchema, await response.json().catch(() => ({})))
+            const payload = await response.json().catch(() => ({}))
 
-            if (!response.ok || !payload) {
-                const msg = payload?.message ?? "Invalid code"
+            if (!response.ok) {
+                const msg = handleApiError(response, payload)
                 setLocalError(msg)
-                toast.error("Verification failed", { description: msg })
+                if (response.status !== 429) toast.error("Verification failed", { description: msg })
                 setIsSubmitting(false)
                 return
             }
 
-            if (!payload.sessionId) {
+            const parsed = safeParse(loginResponseSchema, payload)
+            if (!parsed?.sessionId) {
                 setLocalError("Unable to verify")
                 setIsSubmitting(false)
                 return
             }
 
-            redirectAfterLogin(payload.sessionId, payload.accessToken, payload.expiresAt)
+            completeLogin(parsed.sessionId, parsed.accessToken, parsed.expiresAt, payload.securityAlert)
         } catch (err) {
-            const msg = err instanceof Error ? err.message : "Unable to verify"
-            setLocalError(msg)
+            setLocalError(err instanceof Error ? err.message : "Unable to verify")
             setIsSubmitting(false)
         }
     }
@@ -265,6 +330,15 @@ export function LoginForm({
         }
     }
 
+    function handleSecurityAlertDismiss() {
+        if (pendingRedirect) {
+            redirectAfterLogin(pendingRedirect.sessionId, pendingRedirect.accessToken, pendingRedirect.expiresAt)
+        }
+    }
+
+    // Resolve app context for OAuth flows
+    const appContext = sessionToken ? "Sign in to continue" : "Use your Oxy account"
+
     if (isLoading) return <LoadingSpinner className={className} />
 
     if (existingAccount && existingSessionId && !showLoginForm) {
@@ -290,10 +364,11 @@ export function LoginForm({
             ) : undefined}
             {...props}
         >
+            {/* Step 1: Username */}
             {step === "identifier" && (
                 <form onSubmit={handleIdentifierSubmit} key="identifier" className={animationClass}>
                     <FieldGroup>
-                        <AuthFormHeader title="Sign in" description="Use your Oxy account" />
+                        <AuthFormHeader title="Sign in" description={appContext} />
                         <Field data-invalid={displayError ? true : undefined}>
                             <FieldLabel htmlFor="identifier">Username</FieldLabel>
                             <Input
@@ -310,6 +385,7 @@ export function LoginForm({
                                 }}
                                 required
                                 autoFocus
+                                disabled={rateLimitSeconds > 0}
                             />
                             {displayError && <FieldError>{displayError}</FieldError>}
                         </Field>
@@ -318,7 +394,7 @@ export function LoginForm({
                             <Link to="/signup">Create account</Link>
                         </FieldDescription>
                         <Field>
-                            <Button type="submit" size="lg" className="w-full" disabled={isSubmitting}>
+                            <Button type="submit" size="lg" className="w-full" disabled={isSubmitting || rateLimitSeconds > 0}>
                                 {isSubmitting ? "Looking up..." : "Next"}
                             </Button>
                         </Field>
@@ -326,17 +402,22 @@ export function LoginForm({
                 </form>
             )}
 
+            {/* Step 2: Password — shows avatar + display name */}
             {step === "password" && (
                 <form onSubmit={handlePasswordSubmit} key="password" className={animationClass}>
                     <FieldGroup>
-                        <AuthFormHeader
-                            title="Welcome"
-                            description={
-                                <span className="inline-flex items-center gap-2 rounded-full bg-muted px-3 py-1 text-sm text-muted-foreground">
-                                    {identifier}
-                                </span>
-                            }
-                        />
+                        <div className="flex items-center gap-4">
+                            <Avatar
+                                source={lookupResult?.avatar ? getAvatarUrl(lookupResult.avatar) : undefined}
+                                size={56}
+                            />
+                            <div className="min-w-0">
+                                <h1 className="text-3xl font-extrabold tracking-tight">
+                                    Welcome, {(lookupResult?.displayName || identifier).split(" ")[0]}!
+                                </h1>
+                                <p className="text-sm text-muted-foreground">@{identifier}</p>
+                            </div>
+                        </div>
                         <Field data-invalid={displayError ? true : undefined}>
                             <FieldLabel htmlFor="password">Enter your password</FieldLabel>
                             <PasswordInput ref={passwordRef} id="password" name="password" placeholder="Password" autoComplete="current-password" required />
@@ -351,7 +432,7 @@ export function LoginForm({
                             <Button type="button" variant="outline" size="lg" onClick={() => goToStep("identifier", "back")} className="shrink-0">
                                 <ArrowLeft className="size-4" />
                             </Button>
-                            <Button type="submit" size="lg" className="flex-1 min-w-0" disabled={isSubmitting}>
+                            <Button type="submit" size="lg" className="flex-1 min-w-0" disabled={isSubmitting || rateLimitSeconds > 0}>
                                 {isSubmitting ? "Signing in..." : "Sign in"}
                             </Button>
                         </div>
@@ -359,6 +440,7 @@ export function LoginForm({
                 </form>
             )}
 
+            {/* Step 3: 2FA */}
             {step === "2fa" && (
                 <form onSubmit={handle2FASubmit} key="2fa" className={animationClass}>
                     <FieldGroup>
@@ -394,12 +476,35 @@ export function LoginForm({
                             <Button type="button" variant="outline" size="lg" onClick={() => { setOtpValue(""); setBackupCode(""); setLoginToken(""); goToStep("password", "back") }} className="shrink-0">
                                 <ArrowLeft className="size-4" />
                             </Button>
-                            <Button type="submit" size="lg" className="flex-1 min-w-0" disabled={isSubmitting}>
+                            <Button type="submit" size="lg" className="flex-1 min-w-0" disabled={isSubmitting || rateLimitSeconds > 0}>
                                 {isSubmitting ? "Verifying..." : "Verify"}
                             </Button>
                         </div>
                     </FieldGroup>
                 </form>
+            )}
+
+            {/* Step 4: Security alert (new device, unusual location, etc.) */}
+            {step === "security-alert" && (
+                <div key="security-alert" className={animationClass}>
+                    <FieldGroup>
+                        <div className="flex flex-col items-center gap-4 text-center">
+                            <div className="size-16 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
+                                <ShieldAlert className="size-8 text-amber-600 dark:text-amber-400" />
+                            </div>
+                            <h1 className="text-3xl font-extrabold tracking-tight">New sign-in detected</h1>
+                            <p className="text-base text-muted-foreground">{securityAlert}</p>
+                        </div>
+                        <div className="flex flex-col sm:flex-row gap-3">
+                            <Button variant="outline" size="lg" className="flex-1" onClick={() => { setPendingRedirect(null); goToStep("identifier", "back") }}>
+                                That wasn&apos;t me
+                            </Button>
+                            <Button size="lg" className="flex-1" onClick={handleSecurityAlertDismiss}>
+                                Yes, it was me
+                            </Button>
+                        </div>
+                    </FieldGroup>
+                </div>
             )}
         </AuthFormLayout>
     )

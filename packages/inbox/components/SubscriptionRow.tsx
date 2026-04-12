@@ -9,8 +9,8 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
-  ActivityIndicator,
 } from 'react-native';
+import { Loading } from '@oxyhq/bloom/loading';
 import { useColors } from '@/constants/theme';
 import { SenderAvatar } from '@/components/Avatar';
 import type { Subscription } from '@/services/emailApi';
@@ -70,7 +70,7 @@ export function SubscriptionRow({
         activeOpacity={0.7}
       >
         {isUnsubscribing ? (
-          <ActivityIndicator size="small" color={buttonColor} />
+          <Loading variant="inline" size="small" />
         ) : (
           <Text style={[styles.buttonText, { color: buttonColor }]}>
             {buttonLabel}

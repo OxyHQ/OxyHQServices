@@ -15,8 +15,9 @@ import {
   TouchableOpacity,
   StyleSheet,
   Platform,
-  ActivityIndicator,
 } from 'react-native';
+import { Loading } from '@oxyhq/bloom/loading';
+import { Divider } from '@oxyhq/bloom/divider';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import {
@@ -184,14 +185,14 @@ export function AccountSwitcher({ onClose, onSettings, onAddAccount }: AccountSw
       {/* Switching indicator */}
       {isSwitching && (
         <View style={styles.switchingRow}>
-          <ActivityIndicator size="small" color={colors.primary} />
+          <Loading variant="inline" size="small" />
           <Text style={[styles.switchingText, { color: colors.secondaryText }]}>
             Switching account...
           </Text>
         </View>
       )}
 
-      <View style={[styles.divider, { backgroundColor: colors.border }]} />
+      <Divider />
 
       {/* Add account */}
       <TouchableOpacity
@@ -211,7 +212,7 @@ export function AccountSwitcher({ onClose, onSettings, onAddAccount }: AccountSw
         <Text style={[styles.actionText, { color: colors.text }]}>Add another account</Text>
       </TouchableOpacity>
 
-      <View style={[styles.divider, { backgroundColor: colors.border }]} />
+      <Divider />
 
       {/* Settings */}
       <TouchableOpacity style={styles.actionRow} onPress={onSettings} activeOpacity={0.6}>
@@ -305,10 +306,6 @@ const styles = StyleSheet.create({
   switchingText: {
     fontSize: 12,
     fontWeight: '500',
-  },
-  divider: {
-    height: StyleSheet.hairlineWidth,
-    marginHorizontal: 14,
   },
   actionRow: {
     flexDirection: 'row',

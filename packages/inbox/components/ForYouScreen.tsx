@@ -14,10 +14,10 @@ import {
   StyleSheet,
   Platform,
   useWindowDimensions,
-  ActivityIndicator,
   type NativeSyntheticEvent,
   type NativeScrollEvent,
 } from 'react-native';
+import { Loading } from '@oxyhq/bloom/loading';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import {
@@ -275,7 +275,7 @@ export function ForYouScreen() {
 
       {isLoading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.primary} />
+          <Loading />
         </View>
       ) : (
         <ScrollView

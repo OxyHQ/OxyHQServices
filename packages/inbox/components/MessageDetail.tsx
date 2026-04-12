@@ -13,12 +13,13 @@ import {
   ScrollView,
   TouchableOpacity,
   StyleSheet,
-  ActivityIndicator,
   useWindowDimensions,
   Platform,
   Linking,
   Pressable,
 } from 'react-native';
+import { Loading } from '@oxyhq/bloom/loading';
+import { Chip } from '@oxyhq/bloom/chip';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import {
@@ -491,7 +492,7 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
           </View>
         )}
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.primary} />
+          <Loading />
         </View>
       </View>
     );
@@ -698,13 +699,14 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
           {assignedLabels.length > 0 && (
             <View style={styles.labelChips}>
               {assignedLabels.map((lbl) => (
-                <View key={lbl._id} style={[styles.labelChip, { backgroundColor: lbl.color + '20', borderColor: lbl.color + '40' }]}>
-                  <View style={[styles.labelChipDot, { backgroundColor: lbl.color }]} />
-                  <Text style={[styles.labelChipText, { color: colors.text }]}>{lbl.name}</Text>
-                  <TouchableOpacity onPress={() => handleToggleLabel(lbl.name)} hitSlop={4}>
-                    <MaterialCommunityIcons name="close" size={12} color={colors.secondaryText} />
-                  </TouchableOpacity>
-                </View>
+                <Chip
+                  key={lbl._id}
+                  variant="soft"
+                  size="small"
+                  onClose={() => handleToggleLabel(lbl.name)}
+                >
+                  {lbl.name}
+                </Chip>
               ))}
             </View>
           )}
@@ -1129,24 +1131,6 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 6,
     marginBottom: 12,
-  },
-  labelChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 12,
-    borderWidth: 1,
-  },
-  labelChipDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  labelChipText: {
-    fontSize: 11,
-    fontWeight: '500',
   },
   cardSection: {
     paddingHorizontal: 16,

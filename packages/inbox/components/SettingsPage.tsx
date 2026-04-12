@@ -13,11 +13,11 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  Switch,
   Platform,
   useWindowDimensions,
-  ActivityIndicator,
 } from 'react-native';
+import { Switch } from '@oxyhq/bloom/switch';
+import { Loading } from '@oxyhq/bloom/loading';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import { ArrowLeft01Icon, Moon01Icon, Sun01Icon, ComputerIcon } from '@hugeicons/core-free-icons';
@@ -559,8 +559,6 @@ export function SettingsPage({ section }: SettingsPageProps) {
                 <Switch
                   value={autoReplyEnabled}
                   onValueChange={setAutoReplyEnabled}
-                  trackColor={{ false: colors.border, true: colors.primaryContainer }}
-                  thumbColor={autoReplyEnabled ? colors.primary : colors.icon}
                 />
               </View>
               {autoReplyEnabled && (
@@ -614,8 +612,6 @@ export function SettingsPage({ section }: SettingsPageProps) {
                   <Switch
                     value={autoForwardKeepCopy}
                     onValueChange={setAutoForwardKeepCopy}
-                    trackColor={{ false: colors.border, true: colors.primaryContainer }}
-                    thumbColor={autoForwardKeepCopy ? colors.primary : colors.icon}
                   />
                 </View>
               )}
@@ -753,9 +749,6 @@ export function SettingsPage({ section }: SettingsPageProps) {
                       <Switch
                         value={f.enabled}
                         onValueChange={(val) => handleToggleFilterEnabled(f._id, val)}
-                        trackColor={{ false: colors.border, true: colors.primaryContainer }}
-                        thumbColor={f.enabled ? colors.primary : colors.icon}
-                        style={styles.filterSwitch}
                       />
                       <TouchableOpacity onPress={() => handleEditFilter(f)}>
                         <MaterialCommunityIcons name="pencil-outline" size={18} color={colors.icon} />
@@ -920,8 +913,6 @@ export function SettingsPage({ section }: SettingsPageProps) {
                     <Switch
                       value={filterEnabled}
                       onValueChange={setFilterEnabled}
-                      trackColor={{ false: colors.border, true: colors.primaryContainer }}
-                      thumbColor={filterEnabled ? colors.primary : colors.icon}
                     />
                   </View>
 
@@ -1105,7 +1096,7 @@ export function SettingsPage({ section }: SettingsPageProps) {
                 disabled={importing}
               >
                 {importing ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
+                  <Loading variant="inline" size="small" />
                 ) : (
                   <MaterialCommunityIcons name="file-import-outline" size={18} color="#FFFFFF" />
                 )}
@@ -1427,9 +1418,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-  },
-  filterSwitch: {
-    transform: [{ scale: 0.8 }],
   },
   filterForm: {
     borderTopWidth: StyleSheet.hairlineWidth,

@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Card, CardHeader, CardBody } from '@oxyhq/bloom/card';
 import { useColors } from '@/constants/theme';
 
 interface PackageCardProps {
@@ -19,44 +20,48 @@ export function PackageCard({ data }: PackageCardProps) {
     : null;
 
   return (
-    <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-      <View style={[styles.header, { backgroundColor: '#9334E620' }]}>
-        <MaterialCommunityIcons name="package-variant" size={18} color="#9334E6" />
-        <Text style={[styles.headerText, { color: '#9334E6' }]}>Package</Text>
-      </View>
-      <View style={styles.body}>
-        {data.merchant && (
-          <Text style={[styles.merchant, { color: colors.text }]}>{data.merchant}</Text>
-        )}
-        {data.status && (
-          <View style={[styles.statusBadge, { backgroundColor: getStatusColor(data.status) + '20' }]}>
-            <Text style={[styles.statusText, { color: getStatusColor(data.status) }]}>
-              {data.status}
-            </Text>
-          </View>
-        )}
-        {data.carrier && (
-          <View style={styles.row}>
-            <MaterialCommunityIcons name="truck-outline" size={14} color={colors.secondaryText} />
-            <Text style={[styles.carrier, { color: colors.secondaryText }]}>{data.carrier}</Text>
-          </View>
-        )}
-        {data.trackingNumber && (
-          <View style={styles.row}>
-            <Text style={[styles.label, { color: colors.secondaryText }]}>Tracking</Text>
-            <Text style={[styles.tracking, { color: colors.text }]}>{data.trackingNumber}</Text>
-          </View>
-        )}
-        {estimatedDelivery && (
-          <View style={styles.row}>
-            <MaterialCommunityIcons name="calendar-check-outline" size={14} color={colors.secondaryText} />
-            <Text style={[styles.delivery, { color: colors.secondaryText }]}>
-              Est. {estimatedDelivery}
-            </Text>
-          </View>
-        )}
-      </View>
-    </View>
+    <Card variant="outlined">
+      <CardHeader>
+        <View style={[styles.header, { backgroundColor: '#9334E620' }]}>
+          <MaterialCommunityIcons name="package-variant" size={18} color="#9334E6" />
+          <Text style={[styles.headerText, { color: '#9334E6' }]}>Package</Text>
+        </View>
+      </CardHeader>
+      <CardBody>
+        <View style={styles.body}>
+          {data.merchant && (
+            <Text style={[styles.merchant, { color: colors.text }]}>{data.merchant}</Text>
+          )}
+          {data.status && (
+            <View style={[styles.statusBadge, { backgroundColor: getStatusColor(data.status) + '20' }]}>
+              <Text style={[styles.statusText, { color: getStatusColor(data.status) }]}>
+                {data.status}
+              </Text>
+            </View>
+          )}
+          {data.carrier && (
+            <View style={styles.row}>
+              <MaterialCommunityIcons name="truck-outline" size={14} color={colors.secondaryText} />
+              <Text style={[styles.carrier, { color: colors.secondaryText }]}>{data.carrier}</Text>
+            </View>
+          )}
+          {data.trackingNumber && (
+            <View style={styles.row}>
+              <Text style={[styles.label, { color: colors.secondaryText }]}>Tracking</Text>
+              <Text style={[styles.tracking, { color: colors.text }]}>{data.trackingNumber}</Text>
+            </View>
+          )}
+          {estimatedDelivery && (
+            <View style={styles.row}>
+              <MaterialCommunityIcons name="calendar-check-outline" size={14} color={colors.secondaryText} />
+              <Text style={[styles.delivery, { color: colors.secondaryText }]}>
+                Est. {estimatedDelivery}
+              </Text>
+            </View>
+          )}
+        </View>
+      </CardBody>
+    </Card>
   );
 }
 
@@ -69,10 +74,9 @@ function getStatusColor(status: string): string {
 }
 
 const styles = StyleSheet.create({
-  card: { borderRadius: 12, borderWidth: 1, overflow: 'hidden' },
   header: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8 },
   headerText: { fontSize: 13, fontWeight: '600' },
-  body: { padding: 12, gap: 8 },
+  body: { gap: 8 },
   merchant: { fontSize: 15, fontWeight: '600' },
   statusBadge: { alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
   statusText: { fontSize: 12, fontWeight: '600' },

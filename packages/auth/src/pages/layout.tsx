@@ -1,28 +1,32 @@
 import { Outlet, useLocation, useNavigationType, Link } from "react-router-dom"
 import { Logo } from "@/components/logo"
 import { TermsFooter } from "@/components/auth-form-layout"
+import { useLayoutContext } from "@/lib/layout-context"
 
 export function AuthLayout() {
-  const location = useLocation()
-  const navigationType = useNavigationType()
+    const location = useLocation()
+    const navigationType = useNavigationType()
+    const { hideLogo } = useLayoutContext()
 
-  const direction = navigationType === "POP" ? "back" : "forward"
-  const animationClass = direction === "forward" ? "auth-step-forward" : "auth-step-back"
+    const direction = navigationType === "POP" ? "back" : "forward"
+    const animationClass = direction === "forward" ? "auth-step-forward" : "auth-step-back"
 
-  return (
-    <div className="bg-background flex min-h-svh flex-col items-center justify-center gap-6 p-6 md:p-10">
-      <div className="w-full max-w-md flex flex-col gap-6">
-        <Link to="/login" className="flex items-center gap-2 font-medium">
-          <Logo />
-          <span className="sr-only">Oxy</span>
-        </Link>
+    return (
+        <div className="bg-background flex min-h-svh flex-col items-center justify-center gap-6 p-6 md:p-10">
+            <div className="w-full max-w-md flex flex-col gap-6">
+                {!hideLogo && (
+                    <Link to="/login" className="flex items-center gap-2 font-medium">
+                        <Logo />
+                        <span className="sr-only">Oxy</span>
+                    </Link>
+                )}
 
-        <div key={location.pathname} className={animationClass}>
-          <Outlet />
+                <div key={location.pathname} className={animationClass}>
+                    <Outlet />
+                </div>
+
+                <TermsFooter />
+            </div>
         </div>
-
-        <TermsFooter />
-      </div>
-    </div>
-  )
+    )
 }
