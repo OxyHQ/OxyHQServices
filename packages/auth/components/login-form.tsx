@@ -492,7 +492,7 @@ export function LoginForm({
                             <div className="size-16 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
                                 <ShieldAlert className="size-8 text-amber-600 dark:text-amber-400" />
                             </div>
-                            <h1 className="text-3xl font-extrabold tracking-tight">New sign-in detected</h1>
+                            <h1 className="text-3xl font-extrabold tracking-tight font-display">New sign-in detected</h1>
                             <p className="text-base text-muted-foreground">{securityAlert}</p>
                         </div>
                         <div className="flex flex-col sm:flex-row gap-3">

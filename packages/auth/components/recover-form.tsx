@@ -201,7 +201,7 @@ export function RecoverForm({
             <AuthFormLayout className={className} {...props}>
                 <div className="flex flex-col gap-4">
                     <CheckCircle2 className="size-12 text-green-600 dark:text-green-400" />
-                    <h1 className="text-5xl font-extrabold tracking-tight">Password reset successful</h1>
+                    <h1 className="text-5xl font-extrabold tracking-tight font-display">Password reset successful</h1>
                     <FieldDescription className="text-lg">
                         Your password has been updated. You can now sign in with your new password.
                     </FieldDescription>

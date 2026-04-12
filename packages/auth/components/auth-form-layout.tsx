@@ -37,7 +37,7 @@ export function AuthFormHeader({
 }) {
     return (
         <div className="flex flex-col gap-2 max-w-[90%]">
-            <h1 className="text-5xl font-extrabold tracking-tight">{title}</h1>
+            <h1 className="text-5xl font-extrabold tracking-tight font-display">{title}</h1>
             {description && (
                 <FieldDescription className="text-lg">
                     {description}
