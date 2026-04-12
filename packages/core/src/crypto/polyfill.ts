@@ -44,7 +44,7 @@ function startExpoCryptoLoad(): void {
   expoCryptoLoadPromise = (async () => {
     try {
       const moduleName = 'expo-crypto';
-      expoCryptoModule = await import(moduleName);
+      expoCryptoModule = await import(/* @vite-ignore */ moduleName);
     } catch {
       // expo-crypto not available — expected in non-RN environments
     }

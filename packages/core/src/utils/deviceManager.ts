@@ -44,7 +44,7 @@ export class DeviceManager {
       try {
         // Variable indirection prevents bundlers (Vite, webpack) from statically resolving this
         const moduleName = '@react-native-async-storage/async-storage';
-        const asyncStorageModule = await import(moduleName);
+        const asyncStorageModule = await import(/* @vite-ignore */ moduleName);
         const storage = asyncStorageModule.default as unknown as { getItem: (key: string) => Promise<string | null>; setItem: (key: string, value: string) => Promise<void>; removeItem: (key: string) => Promise<void> };
         return {
           getItem: storage.getItem.bind(storage),

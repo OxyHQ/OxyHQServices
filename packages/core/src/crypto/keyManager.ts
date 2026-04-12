@@ -52,7 +52,7 @@ async function initSecureStore(): Promise<typeof import('expo-secure-store')> {
     try {
       // Variable indirection prevents bundlers (Vite, webpack) from statically resolving this
       const moduleName = 'expo-secure-store';
-      SecureStore = await import(moduleName);
+      SecureStore = await import(/* @vite-ignore */ moduleName);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       throw new Error(`Failed to load expo-secure-store: ${errorMessage}. Make sure expo-secure-store is installed and properly configured.`);
@@ -76,7 +76,7 @@ async function initExpoCrypto(): Promise<typeof import('expo-crypto')> {
   if (!ExpoCrypto) {
     // Variable indirection prevents bundlers (Vite, webpack) from statically resolving this
     const moduleName = 'expo-crypto';
-    ExpoCrypto = await import(moduleName);
+    ExpoCrypto = await import(/* @vite-ignore */ moduleName);
   }
   return ExpoCrypto!;
 }
@@ -105,7 +105,7 @@ async function getSecureRandomBytes(length: number): Promise<Uint8Array> {
   // Variable indirection prevents bundlers (Vite, webpack) from statically resolving this
   try {
     const cryptoModuleName = 'crypto';
-    const nodeCrypto = await import(cryptoModuleName);
+    const nodeCrypto = await import(/* @vite-ignore */ cryptoModuleName);
     return new Uint8Array(nodeCrypto.randomBytes(length));
   } catch (error) {
     // Fallback to expo-crypto if Node crypto fails

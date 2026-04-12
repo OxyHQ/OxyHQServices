@@ -18,7 +18,7 @@ const ec = new EC('secp256k1');
 async function initExpoCrypto(): Promise<typeof import('expo-crypto')> {
   if (!ExpoCrypto) {
     const moduleName = 'expo-crypto';
-    ExpoCrypto = await import(moduleName);
+    ExpoCrypto = await import(/* @vite-ignore */ moduleName);
   }
   return ExpoCrypto!;
 }
@@ -26,7 +26,7 @@ async function initExpoCrypto(): Promise<typeof import('expo-crypto')> {
 async function initNodeCrypto(): Promise<typeof import('crypto')> {
   if (!NodeCrypto) {
     const moduleName = 'crypto';
-    NodeCrypto = await import(moduleName);
+    NodeCrypto = await import(/* @vite-ignore */ moduleName);
   }
   return NodeCrypto!;
 }
