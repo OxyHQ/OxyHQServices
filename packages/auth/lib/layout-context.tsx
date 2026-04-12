@@ -1,21 +1,25 @@
 import { createContext, useCallback, useContext, useState } from "react"
 
-type LayoutContextValue = {
-    hideLogo: boolean
-    setHideLogo: (hide: boolean) => void
+type LayoutOverride = {
+    /** React node to render in place of the logo */
+    logoSlot: React.ReactNode | null
+}
+
+type LayoutContextValue = LayoutOverride & {
+    setLogoSlot: (node: React.ReactNode | null) => void
 }
 
 const LayoutContext = createContext<LayoutContextValue>({
-    hideLogo: false,
-    setHideLogo: () => {},
+    logoSlot: null,
+    setLogoSlot: () => {},
 })
 
 export function LayoutProvider({ children }: { children: React.ReactNode }) {
-    const [hideLogo, setHideLogoState] = useState(false)
-    const setHideLogo = useCallback((hide: boolean) => setHideLogoState(hide), [])
+    const [logoSlot, setLogoSlotState] = useState<React.ReactNode | null>(null)
+    const setLogoSlot = useCallback((node: React.ReactNode | null) => setLogoSlotState(node), [])
 
     return (
-        <LayoutContext.Provider value={{ hideLogo, setHideLogo }}>
+        <LayoutContext.Provider value={{ logoSlot, setLogoSlot }}>
             {children}
         </LayoutContext.Provider>
     )

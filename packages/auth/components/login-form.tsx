@@ -53,7 +53,7 @@ export function LoginForm({
     const isOAuthFlow = responseType === "token" && redirectUri
     const navigate = useNavigate()
     const oxy = useMemo(() => new OxyServices({ baseURL: getApiBaseUrl() }), [])
-    const { setHideLogo } = useLayoutContext()
+    const { setLogoSlot } = useLayoutContext()
 
     const [localError, setLocalError] = useState<string | undefined>()
     const [rateLimitSeconds, setRateLimitSeconds] = useState(0)
@@ -149,15 +149,22 @@ export function LoginForm({
         if (next === "identifier") {
             applyColorPreset("oxy")
             setLookupResult(null)
-            setHideLogo(false)
-        } else {
-            setHideLogo(true)
+            setLogoSlot(null)
         }
         setStepState({ step: next, direction: dir })
         requestAnimationFrame(() => {
             if (next === "password") passwordRef.current?.focus()
             else if (next === "identifier") identifierRef.current?.focus()
         })
+    }
+
+    function setAvatarAsLogo(avatar: string | null) {
+        setLogoSlot(
+            <Avatar
+                source={avatar ? getAvatarUrl(avatar) : undefined}
+                size={56}
+            />
+        )
     }
 
     async function handleIdentifierSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -177,6 +184,7 @@ export function LoginForm({
                 color: result.color,
             })
             if (result.color) applyColorPreset(result.color as AppColorName)
+            setAvatarAsLogo(result.avatar)
             setIsSubmitting(false)
             goToStep("password", "forward")
         } catch {
@@ -402,22 +410,14 @@ export function LoginForm({
                 </form>
             )}
 
-            {/* Step 2: Password — shows avatar + display name */}
+            {/* Step 2: Password */}
             {step === "password" && (
                 <form onSubmit={handlePasswordSubmit} key="password" className={animationClass}>
                     <FieldGroup>
-                        <div className="flex items-center gap-4">
-                            <Avatar
-                                source={lookupResult?.avatar ? getAvatarUrl(lookupResult.avatar) : undefined}
-                                size={56}
-                            />
-                            <div className="min-w-0">
-                                <h1 className="text-3xl font-extrabold tracking-tight">
-                                    Welcome, {(lookupResult?.displayName || identifier).split(" ")[0]}!
-                                </h1>
-                                <p className="text-sm text-muted-foreground">@{identifier}</p>
-                            </div>
-                        </div>
+                        <AuthFormHeader
+                            title={`Welcome, ${(lookupResult?.displayName || identifier).split(" ")[0]}!`}
+                            description={<span className="text-muted-foreground">@{identifier}</span>}
+                        />
                         <Field data-invalid={displayError ? true : undefined}>
                             <FieldLabel htmlFor="password">Enter your password</FieldLabel>
                             <PasswordInput ref={passwordRef} id="password" name="password" placeholder="Password" autoComplete="current-password" required />

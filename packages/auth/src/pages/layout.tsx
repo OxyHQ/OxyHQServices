@@ -6,7 +6,7 @@ import { useLayoutContext } from "@/lib/layout-context"
 export function AuthLayout() {
     const location = useLocation()
     const navigationType = useNavigationType()
-    const { hideLogo } = useLayoutContext()
+    const { logoSlot } = useLayoutContext()
 
     const direction = navigationType === "POP" ? "back" : "forward"
     const animationClass = direction === "forward" ? "auth-step-forward" : "auth-step-back"
@@ -14,7 +14,7 @@ export function AuthLayout() {
     return (
         <div className="bg-background flex min-h-svh flex-col items-center justify-center gap-6 p-6 md:p-10">
             <div className="w-full max-w-md flex flex-col gap-6">
-                {!hideLogo && (
+                {logoSlot ?? (
                     <Link to="/login" className="flex items-center gap-2 font-medium">
                         <Logo />
                         <span className="sr-only">Oxy</span>
