@@ -694,6 +694,7 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    minHeight: 0,
   },
   loadingContainer: {
     flex: 1,

@@ -201,13 +201,16 @@ const styles = StyleSheet.create({
   splitContainer: {
     flex: 1,
     flexDirection: 'row',
+    minHeight: 0,
   },
   listPane: {
     flex: 1,
     maxWidth: 380,
+    minHeight: 0,
     borderRightWidth: StyleSheet.hairlineWidth,
   },
   detailPane: {
     flex: 1,
+    minHeight: 0,
   },
 });
