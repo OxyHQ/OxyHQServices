@@ -69,6 +69,7 @@
   },
   "dependencies": {
     "@expo/metro-runtime": "~55.0.6",
+    "@fontsource-variable/phudu": "^5.2.10",
     "expo-contacts": "~55.0.9",
     "is-arrayish": "^0.3.2"
   }
