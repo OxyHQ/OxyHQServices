@@ -592,29 +592,31 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
         </View>
       )}
 
-      <FlashList
-        data={listItems}
-        renderItem={renderItem}
-        keyExtractor={keyExtractor}
-        getItemType={getItemType}
-        estimatedItemSize={72}
-        ItemSeparatorComponent={renderSeparator}
-        ListEmptyComponent={renderEmpty}
-        ListFooterComponent={renderFooter}
-        onEndReached={handleLoadMore}
-        onEndReachedThreshold={0.3}
-        extraData={selectedMessageIds}
-        refreshControl={
-          <RefreshControl
-            refreshing={isRefetching && !isFetchingNextPage}
-            onRefresh={handleRefresh}
-            tintColor={colors.primary}
-            colors={[colors.primary]}
-          />
-        }
-        contentContainerStyle={listItems.length === 0 ? styles.emptyListContent : undefined}
-        showsVerticalScrollIndicator={false}
-      />
+      <View style={styles.listContainer}>
+        <FlashList
+          data={listItems}
+          renderItem={renderItem}
+          keyExtractor={keyExtractor}
+          getItemType={getItemType}
+          estimatedItemSize={72}
+          ItemSeparatorComponent={renderSeparator}
+          ListEmptyComponent={renderEmpty}
+          ListFooterComponent={renderFooter}
+          onEndReached={handleLoadMore}
+          onEndReachedThreshold={0.3}
+          extraData={selectedMessageIds}
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefetching && !isFetchingNextPage}
+              onRefresh={handleRefresh}
+              tintColor={colors.primary}
+              colors={[colors.primary]}
+            />
+          }
+          contentContainerStyle={listItems.length === 0 ? styles.emptyListContent : undefined}
+          showsVerticalScrollIndicator={false}
+        />
+      </View>
 
       {!isSelectionMode && (
         <TouchableOpacity
@@ -693,6 +695,10 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
 
 const styles = StyleSheet.create({
   container: {
+    flex: 1,
+    minHeight: 0,
+  },
+  listContainer: {
     flex: 1,
     minHeight: 0,
   },
