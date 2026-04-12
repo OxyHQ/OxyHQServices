@@ -1,19 +1,19 @@
 /**
- * Bottom sheet / modal for creating a reminder.
+ * Bottom sheet for creating a reminder.
  * Shows a text input and time picker with presets.
+ * Uses Bloom BottomSheet with gesture dismissal, keyboard avoidance,
+ * and animated transitions.
  */
 
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import {
   View,
   Text,
   TextInput,
   TouchableOpacity,
-  Pressable,
   StyleSheet,
-  Platform,
-  KeyboardAvoidingView,
 } from 'react-native';
+import { BottomSheet, type BottomSheetRef } from '@oxyhq/bloom/bottom-sheet';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useColors } from '@/constants/theme';
 
@@ -62,8 +62,17 @@ export function CreateReminderSheet({ visible, onClose, onCreate }: CreateRemind
   const colors = useColors();
   const [text, setText] = useState('');
   const [selectedTime, setSelectedTime] = useState<Date | null>(null);
+  const sheetRef = useRef<BottomSheetRef>(null);
 
   const presets = useMemo(() => getPresetTimes(), []);
+
+  useEffect(() => {
+    if (visible) {
+      sheetRef.current?.present();
+    } else {
+      sheetRef.current?.dismiss();
+    }
+  }, [visible]);
 
   const handleCreate = useCallback(() => {
     if (!text.trim() || !selectedTime) return;
@@ -78,123 +87,93 @@ export function CreateReminderSheet({ visible, onClose, onCreate }: CreateRemind
     onClose();
   }, [onClose]);
 
-  if (!visible) return null;
-
   const canSubmit = text.trim().length > 0 && selectedTime !== null;
 
   return (
-    <Pressable style={styles.backdrop} onPress={handleClose}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={styles.keyboardView}
-      >
-        <Pressable
-          style={[styles.sheet, { backgroundColor: colors.surface, borderColor: colors.border }]}
-          onPress={(e) => e.stopPropagation()}
-        >
-          <View style={styles.header}>
-            <MaterialCommunityIcons name="bell-plus-outline" size={20} color={colors.primary} />
-            <Text style={[styles.title, { color: colors.text }]}>Create reminder</Text>
-            <TouchableOpacity onPress={handleClose} hitSlop={8}>
-              <MaterialCommunityIcons name="close" size={20} color={colors.secondaryText} />
-            </TouchableOpacity>
-          </View>
-
-          <TextInput
-            style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
-            placeholder="What do you want to be reminded about?"
-            placeholderTextColor={colors.secondaryText}
-            value={text}
-            onChangeText={setText}
-            multiline
-            maxLength={500}
-            autoFocus
-          />
-
-          <Text style={[styles.sectionLabel, { color: colors.secondaryText }]}>When?</Text>
-          <View style={styles.presets}>
-            {presets.map((preset) => {
-              const isSelected = selectedTime?.getTime() === preset.date.getTime();
-              return (
-                <TouchableOpacity
-                  key={preset.label}
-                  style={[
-                    styles.presetButton,
-                    { borderColor: isSelected ? colors.primary : colors.border },
-                    isSelected && { backgroundColor: colors.primary + '15' },
-                  ]}
-                  onPress={() => setSelectedTime(preset.date)}
-                  activeOpacity={0.7}
-                >
-                  <MaterialCommunityIcons
-                    name={preset.icon as any}
-                    size={16}
-                    color={isSelected ? colors.primary : colors.secondaryText}
-                  />
-                  <Text
-                    style={[
-                      styles.presetLabel,
-                      { color: isSelected ? colors.primary : colors.text },
-                    ]}
-                  >
-                    {preset.label}
-                  </Text>
-                  <Text
-                    style={[
-                      styles.presetTime,
-                      { color: isSelected ? colors.primary : colors.secondaryText },
-                    ]}
-                  >
-                    {preset.date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          <TouchableOpacity
-            style={[
-              styles.createButton,
-              { backgroundColor: canSubmit ? colors.primary : colors.border },
-            ]}
-            onPress={handleCreate}
-            disabled={!canSubmit}
-            activeOpacity={0.8}
-          >
-            <Text style={[styles.createButtonText, { color: canSubmit ? '#fff' : colors.secondaryText }]}>
-              Create reminder
-            </Text>
+    <BottomSheet ref={sheetRef} onDismiss={handleClose} detached>
+      <View style={styles.content}>
+        <View style={styles.header}>
+          <MaterialCommunityIcons name="bell-plus-outline" size={20} color={colors.primary} />
+          <Text style={[styles.title, { color: colors.text }]}>Create reminder</Text>
+          <TouchableOpacity onPress={handleClose} hitSlop={8}>
+            <MaterialCommunityIcons name="close" size={20} color={colors.secondaryText} />
           </TouchableOpacity>
-        </Pressable>
-      </KeyboardAvoidingView>
-    </Pressable>
+        </View>
+
+        <TextInput
+          style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
+          placeholder="What do you want to be reminded about?"
+          placeholderTextColor={colors.secondaryText}
+          value={text}
+          onChangeText={setText}
+          multiline
+          maxLength={500}
+          autoFocus
+        />
+
+        <Text style={[styles.sectionLabel, { color: colors.secondaryText }]}>When?</Text>
+        <View style={styles.presets}>
+          {presets.map((preset) => {
+            const isSelected = selectedTime?.getTime() === preset.date.getTime();
+            return (
+              <TouchableOpacity
+                key={preset.label}
+                style={[
+                  styles.presetButton,
+                  { borderColor: isSelected ? colors.primary : colors.border },
+                  isSelected && { backgroundColor: colors.primary + '15' },
+                ]}
+                onPress={() => setSelectedTime(preset.date)}
+                activeOpacity={0.7}
+              >
+                <MaterialCommunityIcons
+                  name={preset.icon as any}
+                  size={16}
+                  color={isSelected ? colors.primary : colors.secondaryText}
+                />
+                <Text
+                  style={[
+                    styles.presetLabel,
+                    { color: isSelected ? colors.primary : colors.text },
+                  ]}
+                >
+                  {preset.label}
+                </Text>
+                <Text
+                  style={[
+                    styles.presetTime,
+                    { color: isSelected ? colors.primary : colors.secondaryText },
+                  ]}
+                >
+                  {preset.date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        <TouchableOpacity
+          style={[
+            styles.createButton,
+            { backgroundColor: canSubmit ? colors.primary : colors.border },
+          ]}
+          onPress={handleCreate}
+          disabled={!canSubmit}
+          activeOpacity={0.8}
+        >
+          <Text style={[styles.createButtonText, { color: canSubmit ? '#fff' : colors.secondaryText }]}>
+            Create reminder
+          </Text>
+        </TouchableOpacity>
+      </View>
+    </BottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'flex-end',
-    zIndex: 200,
-  },
-  keyboardView: {
-    justifyContent: 'flex-end',
-  },
-  sheet: {
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    borderTopWidth: StyleSheet.hairlineWidth,
+  content: {
     padding: 20,
     gap: 16,
-    ...Platform.select({
-      web: { maxWidth: 480, alignSelf: 'center', width: '100%', borderRadius: 16, marginBottom: 20, boxShadow: '0 8px 32px rgba(0,0,0,0.2)' } as any,
-      default: {},
-    }),
   },
   header: {
     flexDirection: 'row',

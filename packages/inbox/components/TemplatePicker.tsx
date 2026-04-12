@@ -3,7 +3,7 @@
  * into compose forms and inline replies.
  */
 
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useCallback } from 'react';
 import {
   View,
   Text,
@@ -15,6 +15,7 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import { NoteEditIcon } from '@hugeicons/core-free-icons';
+import * as Dialog from '@oxyhq/bloom/dialog';
 
 import { useColors } from '@/constants/theme';
 import { useTemplates } from '@/hooks/queries/useTemplates';
@@ -27,37 +28,22 @@ interface TemplatePickerProps {
 export function TemplatePicker({ onSelect }: TemplatePickerProps) {
   const colors = useColors();
   const { data: templates = [] } = useTemplates();
-  const [open, setOpen] = useState(false);
-  const containerRef = useRef<View>(null);
-
-  // Close dropdown when clicking outside (web only)
-  useEffect(() => {
-    if (Platform.OS !== 'web' || !open) return;
-    const handleClick = (e: MouseEvent) => {
-      // Check if click is outside the dropdown
-      const el = containerRef.current as unknown as HTMLElement | null;
-      if (el && !el.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, [open]);
+  const control = Dialog.useDialogControl();
 
   const handleSelect = useCallback(
     (template: EmailTemplate) => {
       onSelect(template);
-      setOpen(false);
+      control.close();
     },
-    [onSelect],
+    [onSelect, control],
   );
 
   if (templates.length === 0) return null;
 
   return (
-    <View ref={containerRef} style={styles.container}>
+    <View style={styles.container}>
       <TouchableOpacity
-        onPress={() => setOpen((v) => !v)}
+        onPress={() => control.open()}
         style={styles.button}
         hitSlop={4}
       >
@@ -76,16 +62,9 @@ export function TemplatePicker({ onSelect }: TemplatePickerProps) {
         )}
       </TouchableOpacity>
 
-      {open && (
-        <View
-          style={[
-            styles.dropdown,
-            {
-              backgroundColor: colors.surface,
-              borderColor: colors.border,
-            },
-          ]}
-        >
+      <Dialog.Outer control={control}>
+        <Dialog.Handle />
+        <Dialog.Inner label="Insert Template" contentContainerStyle={{ padding: 0 }}>
           <Text style={[styles.dropdownTitle, { color: colors.secondaryText }]}>
             Insert Template
           </Text>
@@ -105,8 +84,8 @@ export function TemplatePicker({ onSelect }: TemplatePickerProps) {
               </TouchableOpacity>
             ))}
           </ScrollView>
-        </View>
-      )}
+        </Dialog.Inner>
+      </Dialog.Outer>
     </View>
   );
 }
@@ -121,20 +100,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 18,
-  },
-  dropdown: {
-    position: 'absolute',
-    top: '100%',
-    right: 0,
-    minWidth: 240,
-    maxWidth: 320,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 8,
-    overflow: 'hidden',
-    zIndex: 50,
-    ...(Platform.OS === 'web'
-      ? { boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }
-      : { elevation: 4 }),
   },
   dropdownTitle: {
     fontSize: 11,

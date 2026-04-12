@@ -1,10 +1,13 @@
 /**
  * Gmail-style avatar with initials and color based on sender name.
  * Supports optional checkbox overlay for multi-select mode.
+ *
+ * Uses Bloom's Avatar as the base for image loading, error handling, and sizing.
  */
 
-import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, Image, StyleSheet, Platform } from 'react-native';
+import React, { useMemo } from 'react';
+import { View, Text, StyleSheet, Platform } from 'react-native';
+import { Avatar as BloomAvatar } from '@oxyhq/bloom/avatar';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import { Tick02Icon } from '@hugeicons/core-free-icons';
@@ -46,16 +49,17 @@ export function Avatar({
     return palette[hashCode(name) % palette.length];
   }, [name, colors.avatarColors]);
 
-  const [imageLoaded, setImageLoaded] = useState(false);
-  const [imageError, setImageError] = useState(false);
-  useEffect(() => { setImageLoaded(false); setImageError(false); }, [avatarUrl]);
+  const placeholderIcon = useMemo(
+    () => <Text style={[styles.initial, { fontSize: size * 0.42 }]}>{initial}</Text>,
+    [initial, size],
+  );
 
   if (showCheckbox) {
     if (isChecked) {
       return (
         <View
           style={[
-            styles.container,
+            styles.checkboxContainer,
             {
               width: size,
               height: size,
@@ -75,7 +79,7 @@ export function Avatar({
     return (
       <View
         style={[
-          styles.container,
+          styles.checkboxContainer,
           {
             width: size,
             height: size,
@@ -89,34 +93,13 @@ export function Avatar({
     );
   }
 
-  if (avatarUrl && !imageError) {
-    return (
-      <View style={[styles.container, { width: size, height: size, borderRadius: size / 2, backgroundColor: imageLoaded ? colors.background : bgColor, overflow: 'hidden' }]}>
-        {!imageLoaded && <Text style={[styles.initial, { fontSize: size * 0.42 }]}>{initial}</Text>}
-        <Image
-          source={{ uri: avatarUrl }}
-          style={[styles.image, { width: size, height: size, borderRadius: size / 2 }]}
-          onLoad={() => setImageLoaded(true)}
-          onError={() => { setImageLoaded(false); setImageError(true); }}
-        />
-      </View>
-    );
-  }
-
   return (
-    <View
-      style={[
-        styles.container,
-        {
-          width: size,
-          height: size,
-          borderRadius: size / 2,
-          backgroundColor: bgColor,
-        },
-      ]}
-    >
-      <Text style={[styles.initial, { fontSize: size * 0.42 }]}>{initial}</Text>
-    </View>
+    <BloomAvatar
+      source={avatarUrl}
+      size={size}
+      placeholderColor={bgColor}
+      placeholderIcon={placeholderIcon}
+    />
   );
 }
 
@@ -130,15 +113,12 @@ export function SenderAvatar({ avatarPath, name, size }: { avatarPath?: string |
 }
 
 const styles = StyleSheet.create({
-  container: {
+  checkboxContainer: {
     alignItems: 'center',
     justifyContent: 'center',
   },
   initial: {
     color: '#FFFFFF',
     fontWeight: '600',
-  },
-  image: {
-    position: 'absolute',
   },
 });

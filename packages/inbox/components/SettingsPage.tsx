@@ -20,7 +20,8 @@ import { Switch } from '@oxyhq/bloom/switch';
 import { Loading } from '@oxyhq/bloom/loading';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
-import { ArrowLeft01Icon, Moon01Icon, Sun01Icon, ComputerIcon } from '@hugeicons/core-free-icons';
+import { ArrowLeft01Icon } from '@hugeicons/core-free-icons';
+import * as SegmentedControl from '@oxyhq/bloom/segmented-control';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useOxy, toast } from '@oxyhq/services';
@@ -1123,45 +1124,22 @@ export function SettingsPage({ section }: SettingsPageProps) {
             <Text style={[styles.sectionTitle, { color: colors.primary }]}>Appearance</Text>
             <View style={[styles.card, { backgroundColor: colors.surface }]}>
               <Text style={[styles.cardLabel, { color: colors.text, marginBottom: 8 }]}>Theme</Text>
-              <View style={styles.themeModePicker}>
-                {(['light', 'dark', 'system'] as const).map((mode) => {
-                  const isActive = themePreference === mode;
-                  return (
-                    <TouchableOpacity
-                      key={mode}
-                      style={[
-                        styles.themeModeOption,
-                        { borderColor: isActive ? colors.primary : colors.border },
-                        isActive && { backgroundColor: colors.primary + '18' },
-                      ]}
-                      onPress={() => setThemePref(mode)}
-                      activeOpacity={0.7}
-                    >
-                      {Platform.OS === 'web' ? (
-                        <HugeiconsIcon
-                          icon={(mode === 'dark' ? Moon01Icon : mode === 'light' ? Sun01Icon : ComputerIcon) as unknown as IconSvgElement}
-                          size={18}
-                          color={isActive ? colors.primary : colors.icon}
-                        />
-                      ) : (
-                        <MaterialCommunityIcons
-                          name={mode === 'dark' ? 'weather-night' : mode === 'light' ? 'weather-sunny' : 'monitor'}
-                          size={18}
-                          color={isActive ? colors.primary : colors.icon}
-                        />
-                      )}
-                      <Text
-                        style={[
-                          styles.themeModeLabel,
-                          { color: isActive ? colors.primary : colors.text },
-                        ]}
-                      >
-                        {mode.charAt(0).toUpperCase() + mode.slice(1)}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
+              <SegmentedControl.Root
+                label="Theme mode"
+                type="radio"
+                value={themePreference}
+                onChange={setThemePref}
+              >
+                <SegmentedControl.Item value="light">
+                  <SegmentedControl.ItemText>Light</SegmentedControl.ItemText>
+                </SegmentedControl.Item>
+                <SegmentedControl.Item value="dark">
+                  <SegmentedControl.ItemText>Dark</SegmentedControl.ItemText>
+                </SegmentedControl.Item>
+                <SegmentedControl.Item value="system">
+                  <SegmentedControl.ItemText>System</SegmentedControl.ItemText>
+                </SegmentedControl.Item>
+              </SegmentedControl.Root>
             </View>
           </>
         )}
@@ -1507,23 +1485,5 @@ const styles = StyleSheet.create({
   importExportDivider: {
     borderTopWidth: StyleSheet.hairlineWidth,
     marginVertical: 4,
-  },
-  themeModePicker: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  themeModeOption: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 10,
-    borderRadius: 10,
-    borderWidth: 1.5,
-  },
-  themeModeLabel: {
-    fontSize: 13,
-    fontWeight: '500',
   },
 });

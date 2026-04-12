@@ -2,19 +2,19 @@
  * Snooze picker overlay.
  *
  * Shows preset snooze times (Later today, Tomorrow, This weekend, Next week)
- * and an option to pick a custom date. Uses a modal overlay approach since
- * the inbox app doesn't have a bottom sheet library.
+ * and an option to pick a custom date. Uses Bloom BottomSheet with gesture
+ * dismissal and animated transitions.
  */
 
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
-  Pressable,
   StyleSheet,
   Platform,
 } from 'react-native';
+import { BottomSheet, type BottomSheetRef } from '@oxyhq/bloom/bottom-sheet';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import { Clock01Icon } from '@hugeicons/core-free-icons';
@@ -98,6 +98,15 @@ interface SnoozeSheetProps {
 export function SnoozeSheet({ visible, onClose, onSnooze }: SnoozeSheetProps) {
   const colors = useColors();
   const options = useMemo(getSnoozeOptions, []);
+  const sheetRef = useRef<BottomSheetRef>(null);
+
+  useEffect(() => {
+    if (visible) {
+      sheetRef.current?.present();
+    } else {
+      sheetRef.current?.dismiss();
+    }
+  }, [visible]);
 
   const handleSelect = useCallback(
     (option: SnoozeOption) => {
@@ -107,24 +116,9 @@ export function SnoozeSheet({ visible, onClose, onSnooze }: SnoozeSheetProps) {
     [onSnooze, onClose],
   );
 
-  if (!visible) return null;
-
   return (
-    <>
-      <Pressable style={styles.backdrop} onPress={onClose} />
-      <View
-        style={[
-          styles.sheet,
-          {
-            backgroundColor: colors.surface,
-            borderColor: colors.border,
-            ...Platform.select({
-              web: { boxShadow: '0 -4px 24px rgba(0,0,0,0.15)' } as any,
-              default: { elevation: 12 },
-            }),
-          },
-        ]}
-      >
+    <BottomSheet ref={sheetRef} onDismiss={onClose} detached>
+      <View style={styles.content}>
         <View style={[styles.header, { borderBottomColor: colors.border }]}>
           {Platform.OS === 'web' ? (
             <HugeiconsIcon icon={Clock01Icon as unknown as IconSvgElement} size={20} color={colors.primary} />
@@ -150,36 +144,13 @@ export function SnoozeSheet({ visible, onClose, onSnooze }: SnoozeSheetProps) {
           </TouchableOpacity>
         ))}
       </View>
-    </>
+    </BottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
-    position: 'fixed' as any,
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.3)',
-    zIndex: 999,
-  },
-  sheet: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderBottomWidth: 0,
+  content: {
     paddingBottom: 24,
-    zIndex: 1000,
-    maxWidth: 400,
-    ...Platform.select({
-      web: { alignSelf: 'center', left: 'auto', right: 'auto' } as any,
-      default: {},
-    }),
   },
   header: {
     flexDirection: 'row',

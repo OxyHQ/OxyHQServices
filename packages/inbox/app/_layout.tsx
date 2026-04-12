@@ -9,6 +9,7 @@ import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { OxyProvider, toast } from '@oxyhq/services';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { useTheme } from '@oxyhq/bloom/theme';
+import { Provider as PortalProvider, Outlet as PortalOutlet } from '@oxyhq/bloom/portal';
 
 import { queryClient } from '@/hooks/queries/queryClient';
 import { ThemeProvider as AppThemeProvider } from '@/contexts/theme-context';
@@ -71,19 +72,36 @@ function RootLayoutContent() {
     return unsubscribe;
   }, []);
 
+  // Inject Bloom Dialog CSS keyframe animations on web
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const style = document.createElement('style');
+    style.textContent = [
+      '@keyframes bloomDialogFadeIn { from { opacity: 0; } to { opacity: 1; } }',
+      '@keyframes bloomDialogFadeOut { from { opacity: 1; } to { opacity: 0; } }',
+      '@keyframes bloomDialogZoomFadeIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }',
+      '@keyframes bloomDialogZoomFadeOut { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(0.95); } }',
+    ].join('\n');
+    document.head.appendChild(style);
+    return () => { document.head.removeChild(style); };
+  }, []);
+
   const content = useMemo(
     () => (
       <QueryClientProvider client={queryClient}>
         <KeyboardProvider>
           <OxyProvider baseURL={API_URL}>
             <SafeAreaProvider>
-              <ThemeProvider value={mode === 'dark' ? DarkTheme : DefaultTheme}>
-                <Stack>
-                  <Stack.Screen name="(drawer)" options={{ headerShown: false }} />
-                  <Stack.Screen name="+not-found" options={{ headerShown: false }} />
-                </Stack>
-                <StatusBar style="auto" />
-              </ThemeProvider>
+              <PortalProvider>
+                <ThemeProvider value={mode === 'dark' ? DarkTheme : DefaultTheme}>
+                  <Stack>
+                    <Stack.Screen name="(drawer)" options={{ headerShown: false }} />
+                    <Stack.Screen name="+not-found" options={{ headerShown: false }} />
+                  </Stack>
+                  <StatusBar style="auto" />
+                </ThemeProvider>
+                <PortalOutlet />
+              </PortalProvider>
             </SafeAreaProvider>
           </OxyProvider>
         </KeyboardProvider>

@@ -159,11 +159,6 @@ export function AccountSwitcher({ onClose, onSettings, onAddAccount }: AccountSw
         styles.container,
         {
           backgroundColor: colors.surface,
-          borderColor: colors.border,
-          ...Platform.select({
-            web: { boxShadow: '0 4px 24px rgba(0,0,0,0.18)' } as Record<string, string>,
-            default: {},
-          }),
         },
       ]}
     >
@@ -253,15 +248,8 @@ export function AccountSwitcher({ onClose, onSettings, onAddAccount }: AccountSw
 
 const styles = StyleSheet.create({
   container: {
-    position: 'absolute',
-    bottom: '100%',
-    left: 8,
-    right: 8,
-    marginBottom: 4,
     borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
     overflow: 'hidden',
-    zIndex: 100,
   },
   accountsList: {
     paddingVertical: 4,

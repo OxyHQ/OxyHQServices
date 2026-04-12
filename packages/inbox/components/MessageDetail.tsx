@@ -16,10 +16,10 @@ import {
   useWindowDimensions,
   Platform,
   Linking,
-  Pressable,
 } from 'react-native';
 import { Loading } from '@oxyhq/bloom/loading';
 import { Chip } from '@oxyhq/bloom/chip';
+import * as Dialog from '@oxyhq/bloom/dialog';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import {
@@ -135,6 +135,10 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
   const [expandedMessages, setExpandedMessages] = useState<Set<string>>(new Set([messageId]));
   const [messageMenuId, setMessageMenuId] = useState<string | null>(null);
 
+  const moreMenuControl = Dialog.useDialogControl();
+  const labelPickerControl = Dialog.useDialogControl();
+  const messageMenuControl = Dialog.useDialogControl();
+
   // Sentiment analysis for the current message
   const sentiment = useSentimentAnalysis(currentMessage);
 
@@ -151,7 +155,10 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
     setReplyTargetId(null);
     setExpandedMessages(new Set([messageId]));
     setMessageMenuId(null);
-  }, [messageId]);
+    moreMenuControl.close();
+    labelPickerControl.close();
+    messageMenuControl.close();
+  }, [messageId, moreMenuControl, labelPickerControl, messageMenuControl]);
 
   // Auto-mark message as read when opened
   const toggleReadMutate = toggleRead.mutate;
@@ -207,9 +214,9 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
   const handleMarkUnread = useCallback(() => {
     if (!messageId) return;
     toggleRead.mutate({ messageId, seen: false });
-    setMoreMenuVisible(false);
+    moreMenuControl.close();
     if (mode === 'standalone') router.back();
-  }, [messageId, toggleRead, router, mode]);
+  }, [messageId, toggleRead, router, mode, moreMenuControl]);
 
   const handleMarkSpam = useCallback(() => {
     if (!messageId) return;
@@ -217,9 +224,9 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
     if (spamBox) {
       archiveMutation.mutate({ messageId, archiveMailboxId: spamBox._id });
     }
-    setMoreMenuVisible(false);
+    moreMenuControl.close();
     if (mode === 'standalone') router.back();
-  }, [messageId, mailboxes, archiveMutation, router, mode]);
+  }, [messageId, mailboxes, archiveMutation, router, mode, moreMenuControl]);
 
   const handleReply = useCallback((targetMsgId?: string) => {
     if (!currentMessage) return;
@@ -371,7 +378,7 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
 
   const handleDownloadEml = useCallback(() => {
     if (!currentMessage) return;
-    setMoreMenuVisible(false);
+    moreMenuControl.close();
 
     const subject = currentMessage.subject || '(no subject)';
     const fromStr = currentMessage.from.name
@@ -599,85 +606,81 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
         </TouchableOpacity>
 
         {/* More menu */}
-        <View style={styles.moreMenuAnchor}>
-          <TouchableOpacity onPress={() => setMoreMenuVisible(!moreMenuVisible)} style={styles.iconButton}>
-            {Platform.OS === 'web' ? (
-              <HugeiconsIcon icon={MoreHorizontalIcon as unknown as IconSvgElement} size={22} color={colors.icon} />
-            ) : (
-              <MaterialCommunityIcons name="dots-vertical" size={22} color={colors.icon} />
-            )}
-          </TouchableOpacity>
-          {moreMenuVisible && (
-            <>
-              <Pressable style={styles.menuBackdrop} onPress={() => setMoreMenuVisible(false)} />
-              <View style={[styles.moreMenu, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                <TouchableOpacity style={styles.menuItem} onPress={handleMarkUnread} activeOpacity={0.6}>
-                  {Platform.OS === 'web' ? (
-                    <HugeiconsIcon icon={Mail01Icon as unknown as IconSvgElement} size={16} color={colors.icon} />
-                  ) : (
-                    <MaterialCommunityIcons name="email-mark-as-unread" size={16} color={colors.icon} />
-                  )}
-                  <Text style={[styles.menuItemText, { color: colors.text }]}>Mark unread</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.menuItem} onPress={handleMarkSpam} activeOpacity={0.6}>
-                  {Platform.OS === 'web' ? (
-                    <HugeiconsIcon icon={SpamIcon as unknown as IconSvgElement} size={16} color={colors.icon} />
-                  ) : (
-                    <MaterialCommunityIcons name="alert-octagon-outline" size={16} color={colors.icon} />
-                  )}
-                  <Text style={[styles.menuItemText, { color: colors.text }]}>Report spam</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.menuItem} onPress={() => { setMoreMenuVisible(false); setLabelMenuVisible(true); }} activeOpacity={0.6}>
-                  {Platform.OS === 'web' ? (
-                    <HugeiconsIcon icon={LabelIcon as unknown as IconSvgElement} size={16} color={colors.icon} />
-                  ) : (
-                    <MaterialCommunityIcons name="label-outline" size={16} color={colors.icon} />
-                  )}
-                  <Text style={[styles.menuItemText, { color: colors.text }]}>Label</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.menuItem} onPress={handleDownloadEml} activeOpacity={0.6}>
-                  {Platform.OS === 'web' ? (
-                    <HugeiconsIcon icon={Mail01Icon as unknown as IconSvgElement} size={16} color={colors.icon} />
-                  ) : (
-                    <MaterialCommunityIcons name="email-arrow-right-outline" size={16} color={colors.icon} />
-                  )}
-                  <Text style={[styles.menuItemText, { color: colors.text }]}>Download .eml</Text>
-                </TouchableOpacity>
-              </View>
-            </>
+        <TouchableOpacity onPress={() => moreMenuControl.open()} style={styles.iconButton}>
+          {Platform.OS === 'web' ? (
+            <HugeiconsIcon icon={MoreHorizontalIcon as unknown as IconSvgElement} size={22} color={colors.icon} />
+          ) : (
+            <MaterialCommunityIcons name="dots-vertical" size={22} color={colors.icon} />
           )}
-        </View>
+        </TouchableOpacity>
       </View>
 
-      {/* Label picker overlay */}
-      {labelMenuVisible && (
-        <>
-          <Pressable style={styles.menuBackdrop} onPress={() => setLabelMenuVisible(false)} />
-          <View style={[styles.labelPicker, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <Text style={[styles.labelPickerTitle, { color: colors.text }]}>Labels</Text>
-            {labels.length === 0 && (
-              <Text style={[styles.labelPickerEmpty, { color: colors.secondaryText }]}>No labels yet</Text>
+      {/* More menu dialog */}
+      <Dialog.Outer control={moreMenuControl}>
+        <Dialog.Handle />
+        <Dialog.Inner label="More actions" contentContainerStyle={{ padding: 0 }}>
+          <TouchableOpacity style={styles.menuItem} onPress={handleMarkUnread} activeOpacity={0.6}>
+            {Platform.OS === 'web' ? (
+              <HugeiconsIcon icon={Mail01Icon as unknown as IconSvgElement} size={16} color={colors.icon} />
+            ) : (
+              <MaterialCommunityIcons name="email-mark-as-unread" size={16} color={colors.icon} />
             )}
-            {labels.map((lbl) => {
-              const isAssigned = currentMessage.labels.includes(lbl.name);
-              return (
-                <TouchableOpacity
-                  key={lbl._id}
-                  style={styles.labelPickerItem}
-                  onPress={() => handleToggleLabel(lbl.name)}
-                  activeOpacity={0.6}
-                >
-                  <View style={[styles.labelDot, { backgroundColor: lbl.color }]} />
-                  <Text style={[styles.labelPickerItemText, { color: colors.text }]}>{lbl.name}</Text>
-                  {isAssigned && (
-                    <MaterialCommunityIcons name="check" size={16} color={colors.primary} />
-                  )}
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </>
-      )}
+            <Text style={[styles.menuItemText, { color: colors.text }]}>Mark unread</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.menuItem} onPress={handleMarkSpam} activeOpacity={0.6}>
+            {Platform.OS === 'web' ? (
+              <HugeiconsIcon icon={SpamIcon as unknown as IconSvgElement} size={16} color={colors.icon} />
+            ) : (
+              <MaterialCommunityIcons name="alert-octagon-outline" size={16} color={colors.icon} />
+            )}
+            <Text style={[styles.menuItemText, { color: colors.text }]}>Report spam</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.menuItem} onPress={() => { moreMenuControl.close(); labelPickerControl.open(); }} activeOpacity={0.6}>
+            {Platform.OS === 'web' ? (
+              <HugeiconsIcon icon={LabelIcon as unknown as IconSvgElement} size={16} color={colors.icon} />
+            ) : (
+              <MaterialCommunityIcons name="label-outline" size={16} color={colors.icon} />
+            )}
+            <Text style={[styles.menuItemText, { color: colors.text }]}>Label</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.menuItem} onPress={handleDownloadEml} activeOpacity={0.6}>
+            {Platform.OS === 'web' ? (
+              <HugeiconsIcon icon={Mail01Icon as unknown as IconSvgElement} size={16} color={colors.icon} />
+            ) : (
+              <MaterialCommunityIcons name="email-arrow-right-outline" size={16} color={colors.icon} />
+            )}
+            <Text style={[styles.menuItemText, { color: colors.text }]}>Download .eml</Text>
+          </TouchableOpacity>
+        </Dialog.Inner>
+      </Dialog.Outer>
+
+      {/* Label picker dialog */}
+      <Dialog.Outer control={labelPickerControl}>
+        <Dialog.Handle />
+        <Dialog.Inner label="Labels" contentContainerStyle={{ padding: 0 }}>
+          <Text style={[styles.labelPickerTitle, { color: colors.text }]}>Labels</Text>
+          {labels.length === 0 && (
+            <Text style={[styles.labelPickerEmpty, { color: colors.secondaryText }]}>No labels yet</Text>
+          )}
+          {labels.map((lbl) => {
+            const isAssigned = currentMessage.labels.includes(lbl.name);
+            return (
+              <TouchableOpacity
+                key={lbl._id}
+                style={styles.labelPickerItem}
+                onPress={() => handleToggleLabel(lbl.name)}
+                activeOpacity={0.6}
+              >
+                <View style={[styles.labelDot, { backgroundColor: lbl.color }]} />
+                <Text style={[styles.labelPickerItemText, { color: colors.text }]}>{lbl.name}</Text>
+                {isAssigned && (
+                  <MaterialCommunityIcons name="check" size={16} color={colors.primary} />
+                )}
+              </TouchableOpacity>
+            );
+          })}
+        </Dialog.Inner>
+      </Dialog.Outer>
 
       <ScrollView
         style={styles.body}
@@ -838,50 +841,20 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
                         <MaterialCommunityIcons name="reply" size={18} color={colors.icon} />
                       )}
                     </TouchableOpacity>
-                    <View style={styles.messageMenuAnchor}>
-                      <TouchableOpacity
-                        style={styles.messageActionButton}
-                        onPress={() => setMessageMenuId(messageMenuId === msg._id ? null : msg._id)}
-                        activeOpacity={0.7}
-                      >
-                        {Platform.OS === 'web' ? (
-                          <HugeiconsIcon icon={MoreHorizontalIcon as unknown as IconSvgElement} size={18} color={colors.icon} />
-                        ) : (
-                          <MaterialCommunityIcons name="dots-vertical" size={18} color={colors.icon} />
-                        )}
-                      </TouchableOpacity>
-                      {messageMenuId === msg._id && (
-                        <>
-                          <Pressable style={styles.menuBackdrop} onPress={() => setMessageMenuId(null)} />
-                          <View style={[styles.messageMenu, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                            <TouchableOpacity style={styles.menuItem} onPress={() => handleReply(msg._id)} activeOpacity={0.6}>
-                              {Platform.OS === 'web' ? (
-                                <HugeiconsIcon icon={MailReply01Icon as unknown as IconSvgElement} size={16} color={colors.icon} />
-                              ) : (
-                                <MaterialCommunityIcons name="reply" size={16} color={colors.icon} />
-                              )}
-                              <Text style={[styles.menuItemText, { color: colors.text }]}>Reply</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity style={styles.menuItem} onPress={() => handleReplyAll(msg._id)} activeOpacity={0.6}>
-                              {Platform.OS === 'web' ? (
-                                <HugeiconsIcon icon={MailReplyAll01Icon as unknown as IconSvgElement} size={16} color={colors.icon} />
-                              ) : (
-                                <MaterialCommunityIcons name="reply-all" size={16} color={colors.icon} />
-                              )}
-                              <Text style={[styles.menuItemText, { color: colors.text }]}>Reply all</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity style={styles.menuItem} onPress={() => handleForward(msg._id)} activeOpacity={0.6}>
-                              {Platform.OS === 'web' ? (
-                                <HugeiconsIcon icon={Forward01Icon as unknown as IconSvgElement} size={16} color={colors.icon} />
-                              ) : (
-                                <MaterialCommunityIcons name="share" size={16} color={colors.icon} />
-                              )}
-                              <Text style={[styles.menuItemText, { color: colors.text }]}>Forward</Text>
-                            </TouchableOpacity>
-                          </View>
-                        </>
+                    <TouchableOpacity
+                      style={styles.messageActionButton}
+                      onPress={() => {
+                        setMessageMenuId(msg._id);
+                        messageMenuControl.open();
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      {Platform.OS === 'web' ? (
+                        <HugeiconsIcon icon={MoreHorizontalIcon as unknown as IconSvgElement} size={18} color={colors.icon} />
+                      ) : (
+                        <MaterialCommunityIcons name="dots-vertical" size={18} color={colors.icon} />
                       )}
-                    </View>
+                    </TouchableOpacity>
                   </View>
                 </View>
 
@@ -945,6 +918,37 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
         onClose={() => setSnoozeVisible(false)}
         onSnooze={handleSnooze}
       />
+
+      {/* Per-message action dialog */}
+      <Dialog.Outer control={messageMenuControl} onClose={() => setMessageMenuId(null)}>
+        <Dialog.Handle />
+        <Dialog.Inner label="Message actions" contentContainerStyle={{ padding: 0 }}>
+          <TouchableOpacity style={styles.menuItem} onPress={() => handleReply(messageMenuId ?? undefined)} activeOpacity={0.6}>
+            {Platform.OS === 'web' ? (
+              <HugeiconsIcon icon={MailReply01Icon as unknown as IconSvgElement} size={16} color={colors.icon} />
+            ) : (
+              <MaterialCommunityIcons name="reply" size={16} color={colors.icon} />
+            )}
+            <Text style={[styles.menuItemText, { color: colors.text }]}>Reply</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.menuItem} onPress={() => handleReplyAll(messageMenuId ?? undefined)} activeOpacity={0.6}>
+            {Platform.OS === 'web' ? (
+              <HugeiconsIcon icon={MailReplyAll01Icon as unknown as IconSvgElement} size={16} color={colors.icon} />
+            ) : (
+              <MaterialCommunityIcons name="reply-all" size={16} color={colors.icon} />
+            )}
+            <Text style={[styles.menuItemText, { color: colors.text }]}>Reply all</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.menuItem} onPress={() => handleForward(messageMenuId ?? undefined)} activeOpacity={0.6}>
+            {Platform.OS === 'web' ? (
+              <HugeiconsIcon icon={Forward01Icon as unknown as IconSvgElement} size={16} color={colors.icon} />
+            ) : (
+              <MaterialCommunityIcons name="share" size={16} color={colors.icon} />
+            )}
+            <Text style={[styles.menuItemText, { color: colors.text }]}>Forward</Text>
+          </TouchableOpacity>
+        </Dialog.Inner>
+      </Dialog.Outer>
 
       {/* Sticky reply buttons at bottom */}
       {!replyMode && (
@@ -1021,31 +1025,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderRadius: 22,
   },
-  moreMenuAnchor: {
-    position: 'relative',
-  },
-  menuBackdrop: {
-    position: 'fixed' as any,
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    zIndex: 99,
-  },
-  moreMenu: {
-    position: 'absolute',
-    top: 44,
-    right: 0,
-    minWidth: 180,
-    borderRadius: 8,
-    borderWidth: StyleSheet.hairlineWidth,
-    paddingVertical: 4,
-    zIndex: 100,
-    ...Platform.select({
-      web: { boxShadow: '0 4px 16px rgba(0,0,0,0.15)' } as any,
-      default: { elevation: 8 },
-    }),
-  },
   menuItem: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1056,21 +1035,6 @@ const styles = StyleSheet.create({
   menuItemText: {
     fontSize: 13,
     fontWeight: '500',
-  },
-  labelPicker: {
-    position: 'absolute',
-    top: 56,
-    right: 16,
-    minWidth: 200,
-    maxWidth: 280,
-    borderRadius: 8,
-    borderWidth: StyleSheet.hairlineWidth,
-    paddingVertical: 8,
-    zIndex: 100,
-    ...Platform.select({
-      web: { boxShadow: '0 4px 16px rgba(0,0,0,0.15)' } as any,
-      default: { elevation: 8 },
-    }),
   },
   labelPickerTitle: {
     fontSize: 13,
@@ -1186,23 +1150,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 16,
-  },
-  messageMenuAnchor: {
-    position: 'relative',
-  },
-  messageMenu: {
-    position: 'absolute',
-    top: 32,
-    right: 0,
-    minWidth: 160,
-    borderRadius: 8,
-    borderWidth: StyleSheet.hairlineWidth,
-    paddingVertical: 4,
-    zIndex: 100,
-    ...Platform.select({
-      web: { boxShadow: '0 4px 16px rgba(0,0,0,0.15)' } as any,
-      default: { elevation: 8 },
-    }),
   },
   senderNameRow: {
     flexDirection: 'row',

@@ -9,16 +9,16 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  Pressable,
   Platform,
   TextInput,
-  Alert,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useOxy, showSignInModal } from '@oxyhq/services';
 import { useRouter, usePathname } from 'expo-router';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import { Badge } from '@oxyhq/bloom/badge';
+import * as Prompt from '@oxyhq/bloom/prompt';
+import * as Dialog from '@oxyhq/bloom/dialog';
 import {
   Home01Icon,
   FavouriteIcon,
@@ -165,25 +165,27 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
   const colors = useColors();
   const { user } = useOxy();
   const router = useRouter();
-  const [menuVisible, setMenuVisible] = useState(false);
+  const accountSwitcherControl = Dialog.useDialogControl();
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [deletingMailboxId, setDeletingMailboxId] = useState<string | null>(null);
+  const [folderToDelete, setFolderToDelete] = useState<Mailbox | null>(null);
+  const deleteFolderPrompt = Prompt.usePromptControl();
   const newFolderInputRef = useRef<TextInput>(null);
   const createMailbox = useCreateMailbox();
   const deleteMailbox = useDeleteMailbox();
 
   const handleOpenMenu = useCallback(() => {
-    setMenuVisible((v) => !v);
-  }, []);
+    accountSwitcherControl.open();
+  }, [accountSwitcherControl]);
 
   const handleAddAccount = useCallback(() => {
-    setMenuVisible(false);
+    accountSwitcherControl.close();
     // Open the sign-in modal to authenticate a new account.
     // Once authenticated, OxyContext will add the new session, and
     // the useAccountSwitcher hook will persist it to account storage.
     showSignInModal();
-  }, []);
+  }, [accountSwitcherControl]);
 
   const pathname = usePathname();
   const moreExpanded = useEmailStore((s) => s.moreExpanded);
@@ -308,29 +310,19 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
 
   const handleDeleteFolder = useCallback(
     (mailbox: Mailbox) => {
-      const doDelete = () => {
-        deleteMailbox.mutate({ mailboxId: mailbox._id });
-        setDeletingMailboxId(null);
-      };
-
-      if (Platform.OS === 'web') {
-        if (window.confirm(`Delete folder "${mailbox.name}"? Messages in this folder will be moved to Trash.`)) {
-          doDelete();
-        }
-      } else {
-        Alert.alert(
-          'Delete folder?',
-          `Delete "${mailbox.name}"? Messages in this folder will be moved to Trash.`,
-          [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Delete', style: 'destructive', onPress: doDelete },
-          ],
-          { cancelable: true },
-        );
-      }
+      setFolderToDelete(mailbox);
+      deleteFolderPrompt.open();
     },
-    [deleteMailbox],
+    [deleteFolderPrompt],
   );
+
+  const handleConfirmDeleteFolder = useCallback(() => {
+    if (folderToDelete) {
+      deleteMailbox.mutate({ mailboxId: folderToDelete._id });
+      setDeletingMailboxId(null);
+      setFolderToDelete(null);
+    }
+  }, [folderToDelete, deleteMailbox]);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.sidebarBackground }, collapsed && styles.containerCollapsed]}>
@@ -653,22 +645,6 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
       {/* Account section at bottom */}
       {!collapsed && (
         <View style={styles.footerWrapper}>
-          {/* Account switcher popover */}
-          {menuVisible && (
-            <>
-              <Pressable style={styles.menuBackdrop} onPress={() => setMenuVisible(false)} />
-              <AccountSwitcher
-                onClose={() => setMenuVisible(false)}
-                onSettings={() => {
-                  setMenuVisible(false);
-                  router.push('/settings');
-                  onClose?.();
-                }}
-                onAddAccount={handleAddAccount}
-              />
-            </>
-          )}
-
           {/* Account button */}
           <View style={[styles.footer, { borderTopColor: colors.border }]}>
             <TouchableOpacity
@@ -703,6 +679,32 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
           </TouchableOpacity>
         </View>
       )}
+
+      {/* Account switcher dialog */}
+      <Dialog.Outer control={accountSwitcherControl}>
+        <Dialog.Handle />
+        <Dialog.Inner label="Account Switcher">
+          <AccountSwitcher
+            onClose={() => accountSwitcherControl.close()}
+            onSettings={() => {
+              accountSwitcherControl.close();
+              router.push('/settings');
+              onClose?.();
+            }}
+            onAddAccount={handleAddAccount}
+          />
+        </Dialog.Inner>
+      </Dialog.Outer>
+
+      {/* Delete folder confirmation */}
+      <Prompt.Basic
+        control={deleteFolderPrompt}
+        title="Delete folder?"
+        description={`Delete "${folderToDelete?.name ?? ''}"? Messages in this folder will be moved to Trash.`}
+        confirmButtonCta="Delete"
+        confirmButtonColor="negative"
+        onConfirm={handleConfirmDeleteFolder}
+      />
     </View>
   );
 }
@@ -976,13 +978,5 @@ const styles = StyleSheet.create({
   accountEmail: {
     fontSize: 11,
     marginTop: 1,
-  },
-  menuBackdrop: {
-    position: 'fixed' as any,
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    zIndex: 99,
   },
 });

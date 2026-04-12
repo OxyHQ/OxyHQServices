@@ -14,8 +14,8 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
-  Alert,
 } from 'react-native';
+import * as Prompt from '@oxyhq/bloom/prompt';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import {
@@ -279,29 +279,15 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
     );
   }, [to, cc, bcc, subject, body, replyTo, saveDraftMutation, router]);
 
+  const saveDraftPrompt = Prompt.usePromptControl();
+
   const handleClose = useCallback(() => {
     if (hasContent) {
-      if (Platform.OS === 'web') {
-        if (window.confirm('Save as draft?')) {
-          handleSaveDraft();
-        } else {
-          router.back();
-        }
-      } else {
-        Alert.alert(
-          'Save draft?',
-          'Do you want to save this message as a draft?',
-          [
-            { text: 'Discard', style: 'destructive', onPress: () => router.back() },
-            { text: 'Save', onPress: handleSaveDraft },
-          ],
-          { cancelable: true },
-        );
-      }
+      saveDraftPrompt.open();
     } else {
       router.back();
     }
-  }, [hasContent, handleSaveDraft, router]);
+  }, [hasContent, saveDraftPrompt, router]);
 
   const formatSize = (bytes: number) => {
     if (bytes < 1024) return `${bytes} B`;
@@ -685,6 +671,19 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
         onClose={() => setShowScheduleSheet(false)}
         onSchedule={handleScheduleSend}
       />
+
+      {/* Save as draft confirmation */}
+      <Prompt.Outer control={saveDraftPrompt} onClose={() => router.back()}>
+        <Prompt.Content>
+          <Prompt.TitleText>Save draft?</Prompt.TitleText>
+          <Prompt.DescriptionText>Do you want to save this message as a draft?</Prompt.DescriptionText>
+        </Prompt.Content>
+        <Prompt.Actions>
+          <Prompt.Action cta="Save" onPress={handleSaveDraft} color="primary" />
+          <Prompt.Action cta="Discard" onPress={() => router.back()} color="negative" />
+          <Prompt.Cancel />
+        </Prompt.Actions>
+      </Prompt.Outer>
     </KeyboardAvoidingView>
   );
 }

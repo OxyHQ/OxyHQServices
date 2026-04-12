@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { Loading } from '@oxyhq/bloom/loading';
 import { Chip } from '@oxyhq/bloom/chip';
+import * as Skeleton from '@oxyhq/bloom/skeleton';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import { AiMail01Icon } from '@hugeicons/core-free-icons';
@@ -64,9 +65,9 @@ export function SmartReplyChips({ message, onSelectReply }: SmartReplyChipsProps
         {isLoading ? (
           // Skeleton loading state
           <>
-            <View style={[styles.chipSkeleton, { backgroundColor: colors.border }]} />
-            <View style={[styles.chipSkeleton, styles.chipSkeletonMedium, { backgroundColor: colors.border }]} />
-            <View style={[styles.chipSkeleton, styles.chipSkeletonShort, { backgroundColor: colors.border }]} />
+            <Skeleton.Pill size={34} style={styles.chipSkeletonPill} />
+            <Skeleton.Pill size={34} style={styles.chipSkeletonPillMedium} />
+            <Skeleton.Pill size={34} style={styles.chipSkeletonPillShort} />
           </>
         ) : (
           replies.map((reply, index) => (
@@ -105,16 +106,13 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 8,
   },
-  chipSkeleton: {
-    height: 34,
+  chipSkeletonPill: {
     width: 120,
-    borderRadius: 18,
-    opacity: 0.3,
   },
-  chipSkeletonMedium: {
+  chipSkeletonPillMedium: {
     width: 160,
   },
-  chipSkeletonShort: {
+  chipSkeletonPillShort: {
     width: 90,
   },
 });
