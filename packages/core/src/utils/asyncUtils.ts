@@ -48,10 +48,37 @@ export async function parallelWithErrorHandling<T>(
 }
 
 /**
+ * Extract an HTTP status code from an error value, tolerating both the
+ * axios-style nested shape (`error.response.status`) and the flat shape
+ * produced by {@link handleHttpError} / fetch-based clients (`error.status`).
+ *
+ * Centralising this lookup prevents retry predicates from silently falling
+ * through when one of the two shapes is missing, which previously caused
+ * @oxyhq/core to retry 4xx responses and turn sub-10ms failures into
+ * multi-second stalls for every missing-resource lookup.
+ */
+function extractHttpStatus(error: unknown): number | undefined {
+  if (!error || typeof error !== 'object') return undefined;
+  const candidate = error as {
+    status?: unknown;
+    response?: { status?: unknown } | null;
+  };
+  const flat = candidate.status;
+  if (typeof flat === 'number' && Number.isFinite(flat)) return flat;
+  const nested = candidate.response?.status;
+  if (typeof nested === 'number' && Number.isFinite(nested)) return nested;
+  return undefined;
+}
+
+/**
  * Retry an async operation with exponential backoff
- * 
- * By default, does not retry on 4xx errors (client errors).
- * Use shouldRetry callback to customize retry behavior.
+ *
+ * By default, does not retry on 4xx errors (client errors). The default
+ * predicate accepts both the axios-style `error.response.status` and the
+ * flat `error.status` shape produced by {@link handleHttpError}, so callers
+ * never accidentally retry a deterministic client failure.
+ *
+ * Use the `shouldRetry` callback to customize retry behavior.
  */
 export async function retryAsync<T>(
   operation: () => Promise<T>,
@@ -60,16 +87,19 @@ export async function retryAsync<T>(
   shouldRetry?: (error: any) => boolean
 ): Promise<T> {
   let lastError: any;
-  
-  // Default shouldRetry: don't retry on 4xx errors
-  const defaultShouldRetry = (error: any): boolean => {
-    // Don't retry on 4xx errors (client errors)
-    if (error?.response?.status >= 400 && error?.response?.status < 500) {
+
+  // Default shouldRetry: don't retry on 4xx errors (client errors).
+  // Checks BOTH `error.status` (flat shape from handleHttpError / fetch
+  // clients) AND `error.response.status` (axios-style shape) so neither
+  // representation can leak a client error into the retry loop.
+  const defaultShouldRetry = (error: unknown): boolean => {
+    const status = extractHttpStatus(error);
+    if (status !== undefined && status >= 400 && status < 500) {
       return false;
     }
     return true;
   };
-  
+
   const retryCheck = shouldRetry || defaultShouldRetry;
   
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
