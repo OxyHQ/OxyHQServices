@@ -304,6 +304,10 @@ function CodeBlockContent({ code, language, showLineNumbers = false }: CodeBlock
         '[&_code]:!bg-transparent [&_.shiki]:!bg-transparent',
         showLineNumbers && '[&_.line]::before:content-[counter(line)] [&_.line]::before:mr-4 [&_.line]::before:text-muted-foreground/50 [&_.line]::before:text-right [&_.line]::before:w-4 [&_.line]::before:inline-block [&_pre]:counter-reset-[line] [&_.line]:counter-increment-[line]'
       )}
+      // Safe: Shiki's codeToHtml escapes the input `code` string before
+      // wrapping it in highlight spans; the fallback path runs the code
+      // through escapeHtml(). Theme and language strings are controlled by
+      // this component, not user input.
       dangerouslySetInnerHTML={{ __html: html }}
     />
   );

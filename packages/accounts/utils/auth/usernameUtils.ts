@@ -9,7 +9,11 @@ import {
 
 /**
  * Generate a random username suggestion
- * 
+ *
+ * Math.random() is intentional here: this produces a *suggestion* that the user
+ * sees and freely edits or replaces. Uniqueness is enforced server-side at
+ * registration time. No secret/security boundary depends on this value.
+ *
  * @param publicKey - Optional public key (currently unused, kept for backward compatibility)
  * @returns A random username suggestion
  */

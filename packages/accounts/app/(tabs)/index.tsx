@@ -119,7 +119,8 @@ export default function HomeScreen() {
               setShowUsernameModal(true);
             } else {
               // Silent fail for other errors - will try again later
-              console.log('[Home] Auto-sync failed:', err);
+              // Auto-sync will retry on next mount/focus; surface for diagnostics.
+              console.warn('[Home] Auto-sync failed:', err);
             }
           }
         }

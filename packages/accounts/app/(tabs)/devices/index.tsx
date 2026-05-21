@@ -122,9 +122,9 @@ export default function DevicesScreen() {
               // Refresh devices list
               const devicesData = await oxyServices?.getUserDevices();
               setDevices(devicesData || []);
-              if (Platform.OS === 'web') {
-                console.log('Device removed successfully');
-              } else {
+              // On web, the refreshed list is the user-facing confirmation;
+              // a second modal on top of the confirmation dialog feels redundant.
+              if (Platform.OS !== 'web') {
                 alert('Success', 'Device removed successfully');
               }
             } catch (err: any) {

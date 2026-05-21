@@ -94,8 +94,12 @@ const WorkspaceContext = React.createContext<WorkspaceContextValue | null>(null)
 const STORAGE_KEY = 'oxy-workspaces';
 const CURRENT_WORKSPACE_KEY = 'oxy-current-workspace';
 
+// Workspace, invite, and member IDs are persisted to localStorage as the
+// canonical client-side identifiers (no server-generated ID replaces them),
+// so we use crypto.randomUUID() for proper uniqueness. Available in all
+// modern browsers and Node 19+.
 function generateId() {
-  return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  return crypto.randomUUID();
 }
 
 function generateSlug(name: string) {

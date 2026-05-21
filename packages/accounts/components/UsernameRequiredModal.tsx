@@ -22,7 +22,9 @@ interface UsernameRequiredModalProps {
     onCancel?: () => void;
 }
 
-// Generate a random suggested username
+// Generate a random suggested username (4-digit numeric placeholder).
+// Math.random() is intentional: this is a cosmetic suggestion the user edits
+// before submitting; uniqueness/availability is checked server-side.
 const generateSuggestedUsername = (): string => {
     return Math.floor(1000 + Math.random() * 9000).toString();
 };

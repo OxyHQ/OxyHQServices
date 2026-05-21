@@ -100,7 +100,7 @@ function PlaygroundPage() {
   const [usage, setUsage] = useState<UsageStats | null>(null);
 
   // Settings state
-  const [selectedModel, setSelectedModel] = useState('alia-lite'); // TODO: update default model for Oxy
+  const [selectedModel, setSelectedModel] = useState('alia-lite');
   const [temperature, setTemperature] = useState([0.7]);
   const [maxTokens, setMaxTokens] = useState(1024);
 

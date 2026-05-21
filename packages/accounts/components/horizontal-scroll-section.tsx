@@ -1,9 +1,21 @@
 import React, { useRef, useState, useCallback, useMemo } from 'react';
-import { View, ScrollView, StyleSheet, TouchableOpacity, Platform, type ColorValue } from 'react-native';
+import {
+  View,
+  ScrollView,
+  StyleSheet,
+  TouchableOpacity,
+  Platform,
+  type ColorValue,
+  type NativeMethods,
+} from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 import { useHapticPress } from '@/hooks/use-haptic-press';
+
+// ScrollView's runtime ref inherits native instance methods (measure, etc.)
+// that aren't reflected on the React.Component type, so we intersect them in.
+type ScrollViewRef = ScrollView & NativeMethods;
 
 interface HorizontalScrollSectionProps {
   children: React.ReactNode;
@@ -23,7 +35,7 @@ export function HorizontalScrollSection({
   arrowSize = 24,
 }: HorizontalScrollSectionProps) {
   const colors = useColors();
-  const scrollViewRef = useRef<ScrollView>(null);
+  const scrollViewRef = useRef<ScrollViewRef>(null);
   const [showLeftArrow, setShowLeftArrow] = useState(false);
   const [showRightArrow, setShowRightArrow] = useState(true);
   const currentScrollX = useRef(0);
@@ -44,8 +56,7 @@ export function HorizontalScrollSection({
   }, [checkScrollPosition]);
 
   const handleContentSizeChange = useCallback((contentWidth: number, _contentHeight: number) => {
-    const scrollView = scrollViewRef.current as any;
-    scrollView?.measure((_x: number, _y: number, width: number, _height: number, _pageX: number, _pageY: number) => {
+    scrollViewRef.current?.measure((_x, _y, width) => {
       if (contentWidth > width) {
         setShowRightArrow(true);
       } else {
@@ -61,8 +72,7 @@ export function HorizontalScrollSection({
   }, [handlePressIn, onPressIn]);
 
   const scrollRight = useCallback(() => {
-    const scrollView = scrollViewRef.current as any;
-    scrollView?.measure((_x: number, _y: number, _width: number) => {
+    scrollViewRef.current?.measure(() => {
       scrollViewRef.current?.scrollToEnd({ animated: true });
     });
     handlePressIn();
