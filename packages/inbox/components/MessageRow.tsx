@@ -213,15 +213,15 @@ function MessageRowInner({
       onPress={handlePress}
       onLongPress={handleLongPress}
       delayLongPress={500}
-      {...(Platform.OS === 'web' ? { onMouseEnter: handleMouseEnter } as any : {})}
+      {...(Platform.OS === 'web' ? ({ onMouseEnter: handleMouseEnter } as { onMouseEnter?: () => void }) : {})}
     >
       <Pressable
         onPress={showCheckbox ? handleAvatarPress : undefined}
         hitSlop={4}
-        {...(Platform.OS === 'web' ? {
+        {...(Platform.OS === 'web' ? ({
           onMouseEnter: () => setAvatarHovered(true),
           onMouseLeave: () => setAvatarHovered(false),
-        } as any : {})}
+        } as { onMouseEnter?: () => void; onMouseLeave?: () => void }) : {})}
       >
         <Avatar
           name={senderName}
@@ -397,7 +397,7 @@ function MessageRowInner({
                     const icon = Platform.OS === 'web' ? (
                       <HugeiconsIcon icon={info.hugeIcon} size={14} color={info.color} />
                     ) : (
-                      <MaterialCommunityIcons name={info.icon as any} size={14} color={info.color} />
+                      <MaterialCommunityIcons name={info.icon} size={14} color={info.color} />
                     );
                     return (
                       <Chip

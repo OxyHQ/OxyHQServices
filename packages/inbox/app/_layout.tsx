@@ -1,5 +1,6 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack } from 'expo-router';
+import Head from 'expo-router/head';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -25,11 +26,13 @@ const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'https://api.oxy.so';
 export default function RootLayout() {
   return (
     <ErrorBoundary>
-      <BloomThemeProvider mode="system" colorPreset="oxy">
-        <AppThemeProvider>
-          <RootLayoutContent />
-        </AppThemeProvider>
-      </BloomThemeProvider>
+      <Head.Provider>
+        <BloomThemeProvider mode="system" colorPreset="oxy">
+          <AppThemeProvider>
+            <RootLayoutContent />
+          </AppThemeProvider>
+        </BloomThemeProvider>
+      </Head.Provider>
     </ErrorBoundary>
   );
 }

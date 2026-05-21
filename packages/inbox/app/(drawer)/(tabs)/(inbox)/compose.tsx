@@ -1,5 +1,6 @@
 import { Platform, useWindowDimensions } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
+import Head from 'expo-router/head';
 
 import { ComposeForm } from '@/components/ComposeForm';
 
@@ -16,15 +17,24 @@ export default function ComposeRoute() {
     body?: string;
   }>();
 
+  const pageTitle = params.subject
+    ? `${params.subject} · Compose · Oxy`
+    : 'Compose · Inbox · Oxy';
+
   return (
-    <ComposeForm
-      mode={isDesktop ? 'embedded' : 'standalone'}
-      replyTo={params.replyTo}
-      forward={params.forward}
-      to={params.to}
-      cc={params.cc}
-      subject={params.subject}
-      body={params.body}
-    />
+    <>
+      <Head>
+        <title>{pageTitle}</title>
+      </Head>
+      <ComposeForm
+        mode={isDesktop ? 'embedded' : 'standalone'}
+        replyTo={params.replyTo}
+        forward={params.forward}
+        to={params.to}
+        cc={params.cc}
+        subject={params.subject}
+        body={params.body}
+      />
+    </>
   );
 }

@@ -110,8 +110,7 @@ async function fetchThreadSummary(messages: Message[], token: string): Promise<T
           }))
         : [],
     };
-  } catch (err) {
-    console.warn('Thread summary generation failed:', err);
+  } catch {
     return {
       summary: '',
       keyPoints: [],

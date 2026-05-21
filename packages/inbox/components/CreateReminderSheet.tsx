@@ -5,7 +5,7 @@
  * and animated transitions.
  */
 
-import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef, type ComponentProps } from 'react';
 import {
   View,
   Text,
@@ -17,6 +17,8 @@ import { BottomSheet, type BottomSheetRef } from '@oxyhq/bloom/bottom-sheet';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useColors } from '@/constants/theme';
 
+type MaterialCommunityIconName = ComponentProps<typeof MaterialCommunityIcons>['name'];
+
 interface CreateReminderSheetProps {
   visible: boolean;
   onClose: () => void;
@@ -24,9 +26,9 @@ interface CreateReminderSheetProps {
   relatedMessageId?: string;
 }
 
-function getPresetTimes(): Array<{ label: string; date: Date; icon: string }> {
+function getPresetTimes(): Array<{ label: string; date: Date; icon: MaterialCommunityIconName }> {
   const now = new Date();
-  const presets: Array<{ label: string; date: Date; icon: string }> = [];
+  const presets: Array<{ label: string; date: Date; icon: MaterialCommunityIconName }> = [];
 
   // Later today (6 PM or +3h)
   const laterToday = new Date(now);
@@ -127,7 +129,7 @@ export function CreateReminderSheet({ visible, onClose, onCreate }: CreateRemind
                 activeOpacity={0.7}
               >
                 <MaterialCommunityIcons
-                  name={preset.icon as any}
+                  name={preset.icon}
                   size={16}
                   color={isSelected ? colors.primary : colors.secondaryText}
                 />

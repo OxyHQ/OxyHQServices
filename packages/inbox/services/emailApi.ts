@@ -269,9 +269,9 @@ function parseMessages(items: unknown): Message[] {
     const result = MessageSchema.safeParse(item);
     if (result.success) {
       acc.push(result.data);
-    } else if (typeof console !== 'undefined') {
-      console.warn('[emailApi] Skipping invalid message:', result.error.issues);
     }
+    // Invalid messages are silently skipped — the response shape is validated
+    // server-side; any failures here are usually stale-cache items.
     return acc;
   }, []);
 }

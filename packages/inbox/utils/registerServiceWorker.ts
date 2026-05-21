@@ -39,8 +39,8 @@ export function registerServiceWorker(onUpdate?: () => void): void {
           }
         });
       });
-    } catch (err) {
-      console.warn('[SW] Registration failed:', err);
+    } catch {
+      // SW registration failure is non-fatal; the app still works without it.
     }
   });
 }

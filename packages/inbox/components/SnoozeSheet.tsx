@@ -134,7 +134,7 @@ export function SnoozeSheet({ visible, onClose, onSnooze }: SnoozeSheetProps) {
             onPress={() => handleSelect(option)}
             activeOpacity={0.6}
           >
-            <MaterialCommunityIcons name={option.icon as any} size={20} color={colors.icon} />
+            <MaterialCommunityIcons name={option.icon} size={20} color={colors.icon} />
             <View style={styles.optionText}>
               <Text style={[styles.optionLabel, { color: colors.text }]}>{option.label}</Text>
               <Text style={[styles.optionSublabel, { color: colors.secondaryText }]}>

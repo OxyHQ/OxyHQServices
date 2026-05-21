@@ -5,11 +5,13 @@
  * Taps to expand inline, showing bundled messages.
  */
 
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, type ComponentProps } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useColors } from '@/constants/theme';
 import type { Bundle, Message } from '@/services/emailApi';
+
+type MaterialCommunityIconName = ComponentProps<typeof MaterialCommunityIcons>['name'];
 
 interface BundleRowProps {
   bundle: Bundle;
@@ -38,7 +40,7 @@ export function BundleRow({ bundle, messages, unreadCount, isExpanded, onToggle 
     >
       <View style={[styles.iconCircle, { backgroundColor: bundle.color + '20' }]}>
         <MaterialCommunityIcons
-          name={(bundle.icon || 'folder-outline') as any}
+          name={(bundle.icon || 'folder-outline') as MaterialCommunityIconName}
           size={20}
           color={bundle.color}
         />

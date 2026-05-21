@@ -35,7 +35,12 @@ function finish(code) {
   done = true;
   try {
     process.kill(-child.pid, 'SIGKILL'); // kill entire process group
-  } catch (_) {}
+  } catch (err) {
+    // ESRCH (already exited) is fine; anything else is worth surfacing.
+    if (err && err.code !== 'ESRCH') {
+      console.error('export-web cleanup failed:', err);
+    }
+  }
   process.exit(code);
 }
 

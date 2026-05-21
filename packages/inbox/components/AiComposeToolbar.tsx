@@ -8,7 +8,7 @@
  * - Tone dropdown - Professional, Casual, Friendly, Formal
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, type ComponentProps } from 'react';
 import {
   View,
   Text,
@@ -22,6 +22,8 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
+
+type MaterialCommunityIconName = ComponentProps<typeof MaterialCommunityIcons>['name'];
 import {
   AiBeautifyIcon,
   TextWrapIcon,
@@ -39,7 +41,7 @@ interface AiComposeToolbarProps {
   onSubjectSuggested?: (subject: string) => void;
 }
 
-const TONE_OPTIONS: { value: ComposeTone; label: string; icon: string }[] = [
+const TONE_OPTIONS: { value: ComposeTone; label: string; icon: MaterialCommunityIconName }[] = [
   { value: 'professional', label: 'Professional', icon: 'briefcase-outline' },
   { value: 'casual', label: 'Casual', icon: 'coffee-outline' },
   { value: 'friendly', label: 'Friendly', icon: 'emoticon-happy-outline' },
@@ -195,7 +197,7 @@ export function AiComposeToolbar({ body, onBodyChange, onSubjectSuggested }: AiC
           {Platform.OS === 'web' ? (
             <HugeiconsIcon icon={SmileIcon as unknown as IconSvgElement} size={16} color={colors.icon} />
           ) : (
-            <MaterialCommunityIcons name={currentTone?.icon as any || 'emoticon-outline'} size={16} color={colors.icon} />
+            <MaterialCommunityIcons name={currentTone?.icon ?? 'emoticon-outline'} size={16} color={colors.icon} />
           )}
           <Text style={[styles.buttonText, { color: colors.text }]}>{currentTone?.label || 'Tone'}</Text>
           <MaterialCommunityIcons name="chevron-down" size={14} color={colors.secondaryText} />
@@ -342,7 +344,7 @@ export function AiComposeToolbar({ body, onBodyChange, onSubjectSuggested }: AiC
                 activeOpacity={0.7}
               >
                 <MaterialCommunityIcons
-                  name={tone.icon as any}
+                  name={tone.icon}
                   size={20}
                   color={selectedTone === tone.value ? colors.primary : colors.icon}
                 />
@@ -426,7 +428,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 20,
     ...Platform.select({
-      web: { boxShadow: '0 4px 20px rgba(0,0,0,0.15)' } as any,
+      web: { boxShadow: '0 4px 20px rgba(0,0,0,0.15)' },
       default: { elevation: 8 },
     }),
   },
@@ -503,7 +505,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingVertical: 8,
     ...Platform.select({
-      web: { boxShadow: '0 4px 20px rgba(0,0,0,0.15)' } as any,
+      web: { boxShadow: '0 4px 20px rgba(0,0,0,0.15)' },
       default: { elevation: 8 },
     }),
   },

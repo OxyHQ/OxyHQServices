@@ -226,7 +226,7 @@ export function SearchList({ replaceNavigation }: SearchListProps) {
 
   const handleMessagePress = useCallback(
     (messageId: string) => {
-      const path = `/search/conversation/${messageId}` as any;
+      const path = `/search/conversation/${messageId}`;
       if (replaceNavigation) {
         router.replace(path);
       } else {

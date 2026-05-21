@@ -3,17 +3,19 @@
  * Shows an icon + short summary text below the message snippet.
  */
 
-import React from 'react';
+import React, { type ComponentProps } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useColors } from '@/constants/theme';
 import type { MessageCard } from '@/services/emailApi';
 
+type MaterialCommunityIconName = ComponentProps<typeof MaterialCommunityIcons>['name'];
+
 interface CardPreviewProps {
   card: MessageCard;
 }
 
-const CARD_CONFIG: Record<string, { icon: string; color: string }> = {
+const CARD_CONFIG: Record<string, { icon: MaterialCommunityIconName; color: string }> = {
   trip: { icon: 'airplane', color: '#1A73E8' },
   purchase: { icon: 'shopping-outline', color: '#34A853' },
   event: { icon: 'calendar', color: '#EA4335' },
@@ -83,7 +85,7 @@ export function CardPreview({ card }: CardPreviewProps) {
 
   return (
     <View style={[styles.container, { backgroundColor: config.color + '10', borderColor: config.color + '30' }]}>
-      <MaterialCommunityIcons name={config.icon as any} size={14} color={config.color} />
+      <MaterialCommunityIcons name={config.icon} size={14} color={config.color} />
       <Text style={[styles.text, { color: config.color }]} numberOfLines={1}>
         {summary}
       </Text>

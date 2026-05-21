@@ -13,6 +13,7 @@
  * - s: Star/unstar selected email
  * - u: Mark as unread
  * - /: Focus search
+ * - ?: Show keyboard shortcut help
  */
 
 import { useEffect, useCallback } from 'react';
@@ -30,6 +31,7 @@ interface KeyboardShortcutsConfig {
   onToggleStar?: () => void;
   onMarkUnread?: () => void;
   onFocusSearch?: () => void;
+  onShowHelp?: () => void;
   enabled?: boolean;
 }
 
@@ -46,6 +48,7 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig) {
     onToggleStar,
     onMarkUnread,
     onFocusSearch,
+    onShowHelp,
     enabled = true,
   } = config;
 
@@ -131,6 +134,11 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig) {
           onFocusSearch?.();
           break;
 
+        case '?':
+          event.preventDefault();
+          onShowHelp?.();
+          break;
+
         default:
           break;
       }
@@ -147,6 +155,7 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig) {
       onToggleStar,
       onMarkUnread,
       onFocusSearch,
+      onShowHelp,
     ],
   );
 

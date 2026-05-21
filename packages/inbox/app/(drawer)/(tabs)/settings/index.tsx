@@ -7,6 +7,7 @@
 
 import React from 'react';
 import { Platform, useWindowDimensions } from 'react-native';
+import Head from 'expo-router/head';
 
 import { SettingsPage } from '@/components/SettingsPage';
 
@@ -16,5 +17,12 @@ export default function SettingsIndex() {
 
   // On desktop, show general section in the content pane
   // On mobile, show the full settings page
-  return <SettingsPage section={isDesktop ? 'general' : undefined} />;
+  return (
+    <>
+      <Head>
+        <title>Settings · Inbox · Oxy</title>
+      </Head>
+      <SettingsPage section={isDesktop ? 'general' : undefined} />
+    </>
+  );
 }

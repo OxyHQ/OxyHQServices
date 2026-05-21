@@ -126,7 +126,6 @@ export function useDailyBrief(messages: Message[], userName: string) {
         });
       }
     } catch (err) {
-      console.error('[Alia] Daily brief generation failed:', err);
       if (!abortRef.current) {
         setError(err instanceof Error ? err : new Error('Brief generation failed'));
       }

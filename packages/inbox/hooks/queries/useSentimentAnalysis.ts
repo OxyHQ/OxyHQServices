@@ -9,15 +9,18 @@
  */
 
 import { useMemo } from 'react';
+import type { ComponentProps } from 'react';
+import type { MaterialCommunityIcons } from '@expo/vector-icons';
 import type { Message } from '@/services/emailApi';
 
 export type SentimentType = 'urgent' | 'frustrated' | 'positive' | 'neutral' | 'formal' | 'request';
+type MaterialCommunityIconName = ComponentProps<typeof MaterialCommunityIcons>['name'];
 
 export interface SentimentResult {
   type: SentimentType;
   confidence: number; // 0-1
   label: string;
-  icon: string;
+  icon: MaterialCommunityIconName;
   color: string;
 }
 

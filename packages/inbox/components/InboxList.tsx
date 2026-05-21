@@ -115,16 +115,11 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
     isLoading,
     isRefetching,
     isFetchingNextPage,
-    error,
     refetch,
     fetchNextPage,
     hasNextPage,
   } = useMessages(messagesOptions);
 
-  // Surface query errors for debugging
-  useEffect(() => {
-    if (error) console.error('[InboxList] Messages query error:', error);
-  }, [error]);
   const { data: mailboxes = [] } = useMailboxes();
   const { data: labels = [] } = useLabels();
   const labelColorMap = useMemo(() => {
@@ -220,9 +215,12 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
         let matched = false;
         for (const b of enabledBundles) {
           if (b.matchLabels.some((l) => msg.labels.includes(l))) {
-            bundleMap.get(b._id)!.push(msg);
-            matched = true;
-            break;
+            const bucket = bundleMap.get(b._id);
+            if (bucket) {
+              bucket.push(msg);
+              matched = true;
+              break;
+            }
           }
         }
         if (!matched) primaryMsgs.push(msg);
@@ -634,7 +632,7 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
                 shadowRadius: 8,
               },
               android: { elevation: 6 },
-              web: { boxShadow: '0 2px 10px rgba(0,0,0,0.2)' } as any,
+              web: { boxShadow: '0 2px 10px rgba(0,0,0,0.2)' },
             }),
           ]}
           onPress={handleCompose}
@@ -789,7 +787,7 @@ const styles = StyleSheet.create({
     right: 16,
     zIndex: 100,
     ...Platform.select({
-      web: { boxShadow: '0 4px 16px rgba(0,0,0,0.2)' } as any,
+      web: { boxShadow: '0 4px 16px rgba(0,0,0,0.2)' },
       default: { elevation: 8 },
     }),
     borderRadius: 28,

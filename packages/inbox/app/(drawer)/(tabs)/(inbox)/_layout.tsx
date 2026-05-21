@@ -8,10 +8,12 @@
 import React, { useMemo, useCallback } from 'react';
 import { View, StyleSheet, Platform, useWindowDimensions } from 'react-native';
 import { Slot, Stack, useRouter } from 'expo-router';
+import { usePromptControl } from '@oxyhq/bloom/prompt';
 
 import { useColors } from '@/constants/theme';
 import { SPECIAL_USE } from '@/constants/mailbox';
 import { InboxList } from '@/components/InboxList';
+import { KeyboardShortcutsHelp } from '@/components/KeyboardShortcutsHelp';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { useEmailStore } from '@/hooks/useEmail';
 import { useMessages } from '@/hooks/queries/useMessages';
@@ -50,9 +52,9 @@ export default function InboxLayout() {
 
   const handleCompose = useCallback(() => {
     if (isDesktop) {
-      router.replace('/compose' as any);
+      router.replace('/compose');
     } else {
-      router.push('/compose' as any);
+      router.push('/compose');
     }
   }, [router, isDesktop]);
 
@@ -68,7 +70,7 @@ export default function InboxLayout() {
               ? currentMessage.subject
               : `Re: ${currentMessage.subject}`,
           },
-        } as any);
+        });
       }
     }
   }, [selectedMessageId, currentMessage, router, isDesktop]);
@@ -88,7 +90,7 @@ export default function InboxLayout() {
               ? currentMessage.subject
               : `Re: ${currentMessage.subject}`,
           },
-        } as any);
+        });
       }
     }
   }, [selectedMessageId, currentMessage, router, isDesktop]);
@@ -104,7 +106,7 @@ export default function InboxLayout() {
               ? currentMessage.subject
               : `Fwd: ${currentMessage.subject}`,
           },
-        } as any);
+        });
       }
     }
   }, [selectedMessageId, currentMessage, router, isDesktop]);
@@ -131,7 +133,7 @@ export default function InboxLayout() {
       const nextMessage = messages[currentIndex + 1];
       useEmailStore.setState({ selectedMessageId: nextMessage._id });
       if (isDesktop) {
-        router.replace(`/conversation/${nextMessage._id}` as any);
+        router.replace(`/conversation/${nextMessage._id}`);
       }
     }
   }, [currentIndex, messages, router, isDesktop]);
@@ -141,7 +143,7 @@ export default function InboxLayout() {
       const prevMessage = messages[currentIndex - 1];
       useEmailStore.setState({ selectedMessageId: prevMessage._id });
       if (isDesktop) {
-        router.replace(`/conversation/${prevMessage._id}` as any);
+        router.replace(`/conversation/${prevMessage._id}`);
       }
     }
   }, [currentIndex, messages, router, isDesktop]);
@@ -158,6 +160,11 @@ export default function InboxLayout() {
     }
   }, [selectedMessageId, toggleRead]);
 
+  const helpControl = usePromptControl();
+  const handleShowHelp = useCallback(() => {
+    helpControl.open();
+  }, [helpControl]);
+
   // Register keyboard shortcuts (web only)
   useKeyboardShortcuts({
     onCompose: handleCompose,
@@ -170,6 +177,7 @@ export default function InboxLayout() {
     onPrevMessage: handlePrevMessage,
     onToggleStar: handleToggleStar,
     onMarkUnread: handleMarkUnread,
+    onShowHelp: handleShowHelp,
     enabled: isDesktop,
   });
 
@@ -182,6 +190,7 @@ export default function InboxLayout() {
         <View style={styles.detailPane}>
           <Slot />
         </View>
+        <KeyboardShortcutsHelp control={helpControl} />
       </View>
     );
   }

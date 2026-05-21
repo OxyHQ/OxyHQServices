@@ -41,6 +41,7 @@ import {
   Clock01Icon,
   Cancel01Icon,
   Tick02Icon,
+  Search01Icon,
 } from '@hugeicons/core-free-icons';
 import { useColors } from '@/constants/theme';
 import { Divider } from '@oxyhq/bloom/divider';
@@ -232,17 +233,17 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
   };
 
   const handleSelect = (mailbox: Mailbox) => {
-    router.push(getMailboxRoute(mailbox) as any);
+    router.push(getMailboxRoute(mailbox));
     onClose?.();
   };
 
   const handleStarred = () => {
-    router.push('/starred' as any);
+    router.push('/starred');
     onClose?.();
   };
 
   const handleLabelSelect = (labelId: string, labelName: string) => {
-    router.push(`/label-${labelName.toLowerCase()}` as any);
+    router.push(`/label-${labelName.toLowerCase()}`);
     onClose?.();
   };
 
@@ -262,7 +263,12 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
   };
 
   const handleSubscriptions = () => {
-    router.push('/subscriptions' as any);
+    router.push('/subscriptions');
+    onClose?.();
+  };
+
+  const handleSearch = () => {
+    router.push('/search');
     onClose?.();
   };
 
@@ -386,6 +392,43 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
               <HugeiconsIcon icon={PencilEdit01Icon as unknown as IconSvgElement} size={20} color={colors.composeFabIcon} />
             ) : (
               <MaterialCommunityIcons name="pencil" size={20} color={colors.composeFabIcon} />
+            )}
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Search button — always reachable from the sidebar on desktop. */}
+      {!collapsed && (
+        <View style={styles.searchWrapper}>
+          <TouchableOpacity
+            style={[styles.searchButton, { backgroundColor: colors.searchBackground }]}
+            onPress={handleSearch}
+            activeOpacity={0.7}
+            accessibilityLabel="Search mail"
+            accessibilityRole="search"
+          >
+            {Platform.OS === 'web' ? (
+              <HugeiconsIcon icon={Search01Icon as unknown as IconSvgElement} size={18} color={colors.searchPlaceholder} />
+            ) : (
+              <MaterialCommunityIcons name="magnify" size={18} color={colors.searchPlaceholder} />
+            )}
+            <Text style={[styles.searchLabel, { color: colors.searchPlaceholder }]}>Search mail</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+      {collapsed && (
+        <View style={styles.composeWrapperCollapsed}>
+          <TouchableOpacity
+            style={[styles.composeButtonCollapsed, { backgroundColor: colors.searchBackground }]}
+            onPress={handleSearch}
+            activeOpacity={0.7}
+            accessibilityLabel="Search mail"
+            accessibilityRole="search"
+          >
+            {Platform.OS === 'web' ? (
+              <HugeiconsIcon icon={Search01Icon as unknown as IconSvgElement} size={18} color={colors.searchPlaceholder} />
+            ) : (
+              <MaterialCommunityIcons name="magnify" size={18} color={colors.searchPlaceholder} />
             )}
           </TouchableOpacity>
         </View>
@@ -786,6 +829,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  searchWrapper: {
+    paddingHorizontal: 12,
+    paddingBottom: 8,
+  },
+  searchButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 40,
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    gap: 10,
+  },
+  searchLabel: {
+    fontSize: 14,
+    flex: 1,
+  },
   list: {
     flex: 1,
     paddingHorizontal: 8,
@@ -859,14 +918,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderRadius: 14,
     marginRight: 4,
-    opacity: 0,
+    // Visible as a faded affordance; CSS :hover on the parent row in the web
+    // build raises this to full opacity via `transition`. `transition` is
+    // declared in types/react-native-web.d.ts as a ViewStyle augmentation.
     ...Platform.select({
-      web: {
-        // Show on hover of parent row via CSS — fallback: always visible
-        opacity: 0.5,
-        // @ts-expect-error — web-only
-        transition: 'opacity 0.15s',
-      } as any,
+      web: { opacity: 0.5, transition: 'opacity 0.15s' },
       default: { opacity: 0.6 },
     }),
   },
@@ -921,10 +977,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: 8,
-    ...Platform.select({
-      web: { outlineStyle: 'none' } as any,
+    // outlineStyle 'none' is valid CSS for TextInput on web, but react-native's
+    // TextStyle type only declares 'solid' | 'dotted' | 'dashed'. Augmenting
+    // TextStyle conflicts with bloom's icon style usage, so we cast inline.
+    ...Platform.select<{ outlineStyle?: string }>({
+      web: { outlineStyle: 'none' },
       default: {},
-    }),
+    }) as { outlineStyle?: 'solid' | 'dotted' | 'dashed' },
   },
   createFolderActions: {
     flexDirection: 'row',

@@ -105,8 +105,7 @@ async function fetchSmartReplies(message: Message, token: string): Promise<strin
       .slice(0, 3)
       .map((r: unknown) => (typeof r === 'string' ? r.trim() : ''))
       .filter((r: string) => r.length > 0 && r.length <= 80);
-  } catch (err) {
-    console.warn('Smart replies generation failed:', err);
+  } catch {
     return [];
   }
 }

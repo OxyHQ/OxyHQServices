@@ -333,7 +333,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     ...Platform.select({
-      web: { boxShadow: '0 1px 3px rgba(0,0,0,0.12)' } as any,
+      web: { boxShadow: '0 1px 3px rgba(0,0,0,0.12)' },
       default: { elevation: 2 },
     }),
   },

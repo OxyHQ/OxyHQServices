@@ -68,7 +68,7 @@ export function SentimentIndicator({
         default:
           return (
             <MaterialCommunityIcons
-              name={sentiment.icon as any}
+              name={sentiment.icon}
               size={iconSize}
               color={sentiment.color}
             />
@@ -78,7 +78,7 @@ export function SentimentIndicator({
 
     return (
       <MaterialCommunityIcons
-        name={sentiment.icon as any}
+        name={sentiment.icon}
         size={iconSize}
         color={sentiment.color}
       />

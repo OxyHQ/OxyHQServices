@@ -1,4 +1,5 @@
 import { Drawer } from 'expo-router/drawer';
+import { DrawerActions } from '@react-navigation/native';
 import React, { useEffect } from 'react';
 import { View, StyleSheet, Platform, useWindowDimensions } from 'react-native';
 import { useColors } from '@/constants/theme';
@@ -33,7 +34,7 @@ export default function DrawerLayout() {
             collapsed={isDesktop && sidebarCollapsed}
             onToggle={() => useEmailStore.getState().toggleSidebar()}
             onClose={() => {
-              (props.navigation as any).closeDrawer();
+              props.navigation.dispatch(DrawerActions.closeDrawer());
             }}
           />
         )}
