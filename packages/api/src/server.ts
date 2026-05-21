@@ -447,7 +447,8 @@ app.get('/ap/actor', async (_req: any, res: Response) => {
     const actor = await getInstanceActor();
     res.setHeader('Content-Type', 'application/activity+json');
     res.json(actor);
-  } catch {
+  } catch (err) {
+    logger.error('[ap/actor] failed to build instance actor:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

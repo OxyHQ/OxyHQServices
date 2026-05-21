@@ -1,160 +1,63 @@
 /**
- * ⚠️ WARNING: STUB IMPLEMENTATION - NOT PRODUCTION READY ⚠️
+ * Payment controller.
  *
- * This payment controller contains MOCK implementations only.
- * DO NOT use in production without integrating a real payment processor.
+ * Real payment processing lives in `routes/billing.ts` (Stripe-backed checkout, subscriptions,
+ * and webhook handling). The legacy `processPayment` / `validatePaymentMethod` /
+ * `getPaymentMethods` endpoints were never integrated with a real payment processor and
+ * now return 501 Not Implemented.
  *
- * Current limitations:
- * - processPayment: Uses Math.random() for success/failure (90% success rate)
- * - validatePaymentMethod: Random validation for non-card types
- * - getPaymentMethods: Always returns empty array
- * - No PCI-DSS compliance
- * - No actual payment processor integration (Stripe, PayPal, etc.)
- *
- * Required for production:
- * 1. Integrate with payment processor (Stripe recommended)
- * 2. Implement proper PCI-DSS compliant card handling
- * 3. Add webhook handling for payment status updates
- * 4. Implement proper error handling and retry logic
- * 5. Add payment method storage and retrieval
- * 6. Implement refunds and dispute handling
+ * `getUserPayments` remains a real read-only endpoint that returns the authenticated user's
+ * payment transaction history.
  */
 
-import { Request, Response } from 'express';
-import { z } from 'zod';
-import { AuthRequest } from '../middleware/auth';
+import type { Request, Response } from 'express';
+import type { AuthRequest } from '../middleware/auth';
 import Transaction from '../models/Transaction';
 import { logger } from '../utils/logger';
 import { sendSuccess } from '../utils/asyncHandler';
 import { UnauthorizedError, InternalServerError } from '../utils/error';
 
-// Validation schemas
-const paymentMethodSchema = z.object({
-  type: z.enum(['card', 'applePay', 'googlePay']),
-  cardNumber: z.string().optional(),
-  expiryMonth: z.string().optional(),
-  expiryYear: z.string().optional(),
-  cvc: z.string().optional(),
-  token: z.string().optional(),
-});
-
-const processPaymentSchema = z.object({
-  userId: z.string(),
-  plan: z.string(),
-  paymentMethod: paymentMethodSchema,
-  platform: z.string(),
-});
+const NOT_IMPLEMENTED_RESPONSE = {
+  error: 'NOT_IMPLEMENTED',
+  message: 'Use /billing endpoints (Stripe-backed) instead.',
+} as const;
 
 /**
- * ⚠️ STUB IMPLEMENTATION - DO NOT USE IN PRODUCTION ⚠️
- *
- * This function uses Math.random() to simulate payment success/failure.
- * Replace with actual payment processor integration before production use.
+ * Removed stub. Real checkout flow is `POST /billing/checkout/credits` or
+ * `POST /billing/checkout/subscription`.
  */
-export const processPayment = async (req: Request, res: Response) => {
-  logger.warn('⚠️ STUB: processPayment called - using mock implementation');
-
-  try {
-    const paymentData = processPaymentSchema.parse(req.body);
-
-    // STUB IMPLEMENTATION: Uses Math.random() for testing only
-    // TODO: Integrate with actual payment processor (Stripe, etc.)
-    const success = Math.random() > 0.1; // 90% success rate for testing
-
-    if (success) {
-      res.json({
-        success: true,
-        transactionId: `trans_${Date.now()}`,
-        warning: 'STUB_IMPLEMENTATION',
-      });
-    } else {
-      res.status(400).json({
-        success: false,
-        error: 'Payment processing failed',
-        warning: 'STUB_IMPLEMENTATION',
-      });
-    }
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      res.status(400).json({ message: 'Invalid payment data', errors: error.errors });
-    } else {
-      res.status(500).json({ message: 'Payment processing failed', error });
-    }
-  }
+export const processPayment = async (_req: Request, res: Response): Promise<void> => {
+  res.status(501).json(NOT_IMPLEMENTED_RESPONSE);
 };
 
 /**
- * ⚠️ STUB IMPLEMENTATION - DO NOT USE IN PRODUCTION ⚠️
- *
- * Non-card payment methods use Math.random() for validation.
- * Card validation uses basic Luhn algorithm without processor verification.
+ * Removed stub. Stripe Elements / Stripe Checkout handles payment-method validation
+ * server-side via webhooks. Clients should not call this endpoint.
  */
-export const validatePaymentMethod = async (req: Request, res: Response) => {
-  logger.warn('⚠️ STUB: validatePaymentMethod called - using mock implementation');
-
-  try {
-    const { paymentMethod } = req.body;
-    const validatedPaymentMethod = paymentMethodSchema.parse(paymentMethod);
-
-    // STUB IMPLEMENTATION: Random validation for non-card types
-    // TODO: Integrate with payment processor for actual validation
-    const isValid = validatedPaymentMethod.type === 'card' ?
-      isValidCard(validatedPaymentMethod) :
-      Math.random() > 0.1;
-
-    res.json({
-      valid: isValid,
-      warning: 'STUB_IMPLEMENTATION',
-    });
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      res.status(400).json({ message: 'Invalid payment method data', errors: error.errors });
-    } else {
-      res.status(500).json({ message: 'Validation failed', error });
-    }
-  }
+export const validatePaymentMethod = async (_req: Request, res: Response): Promise<void> => {
+  res.status(501).json(NOT_IMPLEMENTED_RESPONSE);
 };
 
 /**
- * ⚠️ STUB IMPLEMENTATION - DO NOT USE IN PRODUCTION ⚠️
- *
- * Always returns empty array. No payment method storage implemented.
+ * Removed stub. Stripe-backed payment methods are managed via the Stripe Customer Portal
+ * (`POST /billing/portal`). Clients should not call this endpoint.
  */
-export const getPaymentMethods = async (req: Request, res: Response) => {
-  logger.warn('⚠️ STUB: getPaymentMethods called - always returns empty array');
-
-  try {
-    const { userId } = req.body;
-    if (!userId) {
-      return res.status(400).json({ message: 'User ID is required' });
-    }
-
-    // STUB IMPLEMENTATION: Always returns empty
-    // TODO: Integrate with payment processor to get saved payment methods
-    res.json({
-      methods: [],
-      warning: 'STUB_IMPLEMENTATION',
-    });
-  } catch (error) {
-    res.status(500).json({ message: 'Failed to fetch payment methods', error });
-  }
+export const getPaymentMethods = async (_req: Request, res: Response): Promise<void> => {
+  res.status(501).json(NOT_IMPLEMENTED_RESPONSE);
 };
 
 /**
- * Get all payments for the authenticated user
- * @param req - Express request with authentication
- * @param res - Express response
+ * Get all payments for the authenticated user.
+ * Reads `Transaction` records of type `deposit` or `purchase`.
  */
 export const getUserPayments = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    // Validate user authentication
     if (!req.user) {
       throw new UnauthorizedError('Authentication required');
     }
 
     const userId = req.user._id.toString();
 
-    // Fetch payment-related transactions (deposit and purchase types)
     const transactions = await Transaction.find({
       userId,
       type: { $in: ['deposit', 'purchase'] },
@@ -162,7 +65,6 @@ export const getUserPayments = async (req: AuthRequest, res: Response): Promise<
       .sort({ createdAt: -1 })
       .lean();
 
-    // Format transactions for response
     const payments = transactions.map((transaction) => ({
       id: transaction._id.toString(),
       userId: transaction.userId.toString(),
@@ -185,48 +87,3 @@ export const getUserPayments = async (req: AuthRequest, res: Response): Promise<
     throw new InternalServerError('Server error when fetching user payments');
   }
 };
-
-// Helper function for basic card validation
-function isValidCard(paymentMethod: z.infer<typeof paymentMethodSchema>) {
-  if (!paymentMethod.cardNumber || !paymentMethod.expiryMonth || !paymentMethod.expiryYear || !paymentMethod.cvc) {
-    return false;
-  }
-
-  // Basic Luhn algorithm check for card number
-  const number = paymentMethod.cardNumber.replace(/\D/g, '');
-  let sum = 0;
-  let isEven = false;
-
-  for (let i = number.length - 1; i >= 0; i--) {
-    let digit = parseInt(number[i], 10);
-
-    if (isEven) {
-      digit *= 2;
-      if (digit > 9) {
-        digit -= 9;
-      }
-    }
-
-    sum += digit;
-    isEven = !isEven;
-  }
-
-  // Check expiry date
-  const currentDate = new Date();
-  const currentYear = currentDate.getFullYear() % 100;
-  const currentMonth = currentDate.getMonth() + 1;
-  const expYear = parseInt(paymentMethod.expiryYear, 10);
-  const expMonth = parseInt(paymentMethod.expiryMonth, 10);
-
-  if (expYear < currentYear || (expYear === currentYear && expMonth < currentMonth)) {
-    return false;
-  }
-
-  // Check CVC
-  const cvc = paymentMethod.cvc.replace(/\D/g, '');
-  if (cvc.length < 3 || cvc.length > 4) {
-    return false;
-  }
-
-  return sum % 10 === 0;
-}
