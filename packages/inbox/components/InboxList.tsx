@@ -220,9 +220,12 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
         let matched = false;
         for (const b of enabledBundles) {
           if (b.matchLabels.some((l) => msg.labels.includes(l))) {
-            bundleMap.get(b._id)!.push(msg);
-            matched = true;
-            break;
+            const bucket = bundleMap.get(b._id);
+            if (bucket) {
+              bucket.push(msg);
+              matched = true;
+              break;
+            }
           }
         }
         if (!matched) primaryMsgs.push(msg);

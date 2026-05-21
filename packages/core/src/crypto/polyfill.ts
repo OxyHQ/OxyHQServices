@@ -43,8 +43,9 @@ function startExpoCryptoLoad(): void {
   if (expoCryptoLoadPromise) return;
   expoCryptoLoadPromise = (async () => {
     try {
-      const moduleName = 'expo-crypto';
-      expoCryptoModule = await import(/* @vite-ignore */ moduleName);
+      // Literal-string import: Hermes/Metro require static strings in
+      // production bundles. `/* @vite-ignore */` skips Vite's static analysis.
+      expoCryptoModule = await import(/* @vite-ignore */ 'expo-crypto');
     } catch {
       // expo-crypto not available — expected in non-RN environments
     }

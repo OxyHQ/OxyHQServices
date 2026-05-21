@@ -146,9 +146,10 @@ export default function DeviceDetailScreen() {
               await oxyServices.removeDevice(deviceId);
               // Navigate back to devices list after successful removal
               router.back();
-              if (Platform.OS === 'web') {
-                console.log('Device removed successfully');
-              } else {
+              // On web, returning to the device list (which no longer contains
+              // this device) is the user-facing confirmation; a second modal
+              // dialog on top of the confirmation feels redundant.
+              if (Platform.OS !== 'web') {
                 alert('Success', 'Device removed successfully');
               }
             } catch (err: any) {

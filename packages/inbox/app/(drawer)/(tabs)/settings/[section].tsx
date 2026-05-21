@@ -6,10 +6,21 @@
 
 import React from 'react';
 import { useLocalSearchParams } from 'expo-router';
+import Head from 'expo-router/head';
 
 import { SettingsPage } from '@/components/SettingsPage';
 
 export default function SettingsSectionScreen() {
   const { section } = useLocalSearchParams<{ section: string }>();
-  return <SettingsPage section={section} />;
+  const sectionLabel = section
+    ? section.charAt(0).toUpperCase() + section.slice(1)
+    : 'Settings';
+  return (
+    <>
+      <Head>
+        <title>{`${sectionLabel} · Settings · Oxy`}</title>
+      </Head>
+      <SettingsPage section={section} />
+    </>
+  );
 }

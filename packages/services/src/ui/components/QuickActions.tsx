@@ -17,7 +17,7 @@ interface QuickActionsProps {
 }
 
 const QuickActions: React.FC<QuickActionsProps> = ({ actions, theme }) => {
-    const { isDark } = useTheme();
+    const { isDark, colors } = useTheme();
 
     return (
         <View
@@ -40,7 +40,7 @@ const QuickActions: React.FC<QuickActionsProps> = ({ actions, theme }) => {
                         >
                             <Ionicons name={action.icon as React.ComponentProps<typeof Ionicons>['name']} size={24} color={action.iconColor} />
                         </TouchableOpacity>
-                        <Text className="text-foreground" style={styles.quickActionText}>{action.title}</Text>
+                        <Text style={[styles.quickActionText, { color: colors.text }]}>{action.title}</Text>
                     </View>
                 ))}
             </View>

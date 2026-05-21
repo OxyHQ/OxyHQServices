@@ -22,12 +22,10 @@
         "android.permission.USE_BIOMETRIC",
         "android.permission.USE_FINGERPRINT"
       ],
-      "package": "so.oxy.accounts",
-      "jsEngine": "jsc"
+      "package": "so.oxy.accounts"
     },
     "ios": {
-      "supportsTablet": true,
-      "jsEngine": "jsc"
+      "supportsTablet": true
     },
     "web": {
       "output": "static",
@@ -59,7 +57,8 @@
           "android": {
             "enableProguardInReleaseBuilds": true,
             "enableShrinkResourcesInReleaseBuilds": true,
-            "useLegacyPackaging": true
+            "useLegacyPackaging": true,
+            "extraProguardRules": "# JNA library pulls in java.awt classes that don't exist on Android.\n# These warnings are safe to suppress; AWT code paths never execute on Android.\n-dontwarn java.awt.**\n-dontwarn java.beans.**\n"
           }
         }
       ],

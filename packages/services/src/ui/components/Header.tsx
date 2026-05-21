@@ -236,11 +236,11 @@ const Header: React.FC<HeaderProps> = ({
                 getTitleAlignment(),
                 variant === 'minimal' && styles.titleContainerMinimal
             ]}>
-                <Text className="text-foreground" style={titleStyle}>
+                <Text style={[titleStyle, { color: colors.text }]}>
                     {title}
                 </Text>
                 {subtitle ? (
-                    <Text className="text-muted-foreground" style={subtitleStyle}>
+                    <Text style={[subtitleStyle, { color: colors.textSecondary }]}>
                         {subtitle}
                     </Text>
                 ) : null}

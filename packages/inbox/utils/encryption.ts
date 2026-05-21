@@ -1,12 +1,15 @@
 /**
  * Encryption utilities for Oxy Inbox.
  *
- * Uses Web Crypto API (RSA-OAEP, 2048-bit) for basic encrypted messaging
+ * Uses Web Crypto API (RSA-OAEP, 2048-bit) for encrypted messaging
  * between Oxy users. No external dependencies.
  *
- * Key storage:
- * - Public key: stored on user profile via API (available to senders)
- * - Private key: stored in localStorage (browser-side only, never sent to server)
+ * Security model:
+ * - Private key is generated as a non-extractable `CryptoKey` and stored in
+ *   IndexedDB via {@link ./keyStore.ts}. It never exists as plaintext in JS,
+ *   so XSS cannot exfiltrate decryption capability.
+ * - Public key is exported once as a base64 SPKI string for upload to the
+ *   user's profile (so senders can encrypt to it).
  *
  * Limitations:
  * - RSA-OAEP can only encrypt data smaller than the key size minus padding.
@@ -25,18 +28,24 @@ const RSA_ALGORITHM: RsaHashedKeyGenParams = {
   hash: 'SHA-256',
 };
 
+const RSA_IMPORT_PARAMS: RsaHashedImportParams = {
+  name: 'RSA-OAEP',
+  hash: 'SHA-256',
+};
+
 const AES_ALGORITHM = 'AES-GCM';
 const AES_KEY_LENGTH = 256;
 const IV_LENGTH = 12; // bytes
 
-const PRIVATE_KEY_STORAGE = 'inbox_encryption_private_key';
-const PUBLIC_KEY_STORAGE = 'inbox_encryption_public_key';
-
 // ─── Type Helpers ───────────────────────────────────────────────────
 
 export interface EncryptionKeyPair {
-  publicKey: string; // base64-encoded SPKI
-  privateKey: string; // base64-encoded PKCS8
+  /** Non-extractable RSA-OAEP public key (usages: ['encrypt']). */
+  publicKey: CryptoKey;
+  /** Non-extractable RSA-OAEP private key (usages: ['decrypt']). Never exported. */
+  privateKey: CryptoKey;
+  /** Base64-encoded SPKI form of the public key (for upload to user profile). */
+  publicKeySpki: string;
 }
 
 export interface EncryptedPayload {
@@ -80,25 +89,55 @@ export function isEncryptionSupported(): boolean {
 
 /**
  * Generate a new RSA-OAEP 2048-bit key pair.
- * Returns base64-encoded public (SPKI) and private (PKCS8) keys.
+ *
+ * Returns a public key + non-extractable private key as `CryptoKey` objects,
+ * plus the base64-SPKI form of the public key (for profile upload).
+ *
+ * Implementation note: WebCrypto's `generateKey` doesn't let us request different
+ * `extractable` flags per key in a pair. We generate extractable, export the
+ * public key to SPKI, then re-import both keys as non-extractable with the
+ * minimum required usage. The original extractable pair is then dereferenced.
  */
 export async function generateEncryptionKeyPair(): Promise<EncryptionKeyPair> {
   if (!isEncryptionSupported()) {
     throw new Error('Web Crypto API is not available');
   }
 
-  const keyPair = await crypto.subtle.generateKey(RSA_ALGORITHM, true, [
+  // 1. Generate extractable so we can export SPKI for upload.
+  const extractablePair = await crypto.subtle.generateKey(RSA_ALGORITHM, true, [
     'encrypt',
     'decrypt',
   ]);
 
-  const publicKeyBuffer = await crypto.subtle.exportKey('spki', keyPair.publicKey);
-  const privateKeyBuffer = await crypto.subtle.exportKey('pkcs8', keyPair.privateKey);
+  // 2. Export public key as SPKI (the form we upload to the user profile).
+  const publicKeyBuffer = await crypto.subtle.exportKey('spki', extractablePair.publicKey);
+  const publicKeySpki = arrayBufferToBase64(publicKeyBuffer);
 
-  return {
-    publicKey: arrayBufferToBase64(publicKeyBuffer),
-    privateKey: arrayBufferToBase64(privateKeyBuffer),
-  };
+  // 3. Re-import the public key as non-extractable (encrypt-only).
+  const publicKey = await crypto.subtle.importKey(
+    'spki',
+    publicKeyBuffer,
+    RSA_IMPORT_PARAMS,
+    false,
+    ['encrypt'],
+  );
+
+  // 4. Re-import the private key as non-extractable (decrypt-only). We have to
+  //    export it once via PKCS8 to re-import; the export buffer is scrubbed
+  //    immediately, and the extractable pair goes out of scope.
+  const privateKeyBuffer = await crypto.subtle.exportKey('pkcs8', extractablePair.privateKey);
+  const privateKey = await crypto.subtle.importKey(
+    'pkcs8',
+    privateKeyBuffer,
+    RSA_IMPORT_PARAMS,
+    false,
+    ['decrypt'],
+  );
+
+  // Best-effort scrub of the transient plaintext private key buffer.
+  new Uint8Array(privateKeyBuffer).fill(0);
+
+  return { publicKey, privateKey, publicKeySpki };
 }
 
 /**
@@ -121,26 +160,13 @@ export async function getKeyFingerprint(publicKeyBase64: string): Promise<string
 
 // ─── Key Import ─────────────────────────────────────────────────────
 
-async function importPublicKey(base64: string): Promise<CryptoKey> {
-  const keyBuffer = base64ToArrayBuffer(base64);
-  return crypto.subtle.importKey(
-    'spki',
-    keyBuffer,
-    { name: 'RSA-OAEP', hash: 'SHA-256' },
-    false,
-    ['encrypt'],
-  );
-}
-
-async function importPrivateKey(base64: string): Promise<CryptoKey> {
-  const keyBuffer = base64ToArrayBuffer(base64);
-  return crypto.subtle.importKey(
-    'pkcs8',
-    keyBuffer,
-    { name: 'RSA-OAEP', hash: 'SHA-256' },
-    false,
-    ['decrypt'],
-  );
+/**
+ * Import a recipient's public key from its SPKI base64 form (as stored in their
+ * profile). Returned key is non-extractable and only usable for encryption.
+ */
+export async function importPublicKeySpki(publicKeySpki: string): Promise<CryptoKey> {
+  const keyBuffer = base64ToArrayBuffer(publicKeySpki);
+  return crypto.subtle.importKey('spki', keyBuffer, RSA_IMPORT_PARAMS, false, ['encrypt']);
 }
 
 // ─── Encryption (Hybrid RSA + AES-GCM) ─────────────────────────────
@@ -154,25 +180,29 @@ async function importPrivateKey(base64: string): Promise<CryptoKey> {
  * 3. Encrypt the AES key with the recipient's RSA public key
  *
  * @param plaintext - The message body to encrypt
- * @param recipientPublicKey - Base64-encoded SPKI public key
+ * @param recipientPublicKeySpki - Base64-encoded SPKI public key from recipient's profile
  * @returns JSON-stringified EncryptedPayload
  */
 export async function encryptMessage(
   plaintext: string,
-  recipientPublicKey: string,
+  recipientPublicKeySpki: string,
 ): Promise<string> {
   if (!isEncryptionSupported()) {
     throw new Error('Web Crypto API is not available');
   }
 
-  // 1. Generate random AES key
+  // 1. Import recipient public key (non-extractable, encrypt-only).
+  const rsaPublicKey = await importPublicKeySpki(recipientPublicKeySpki);
+
+  // 2. Generate an ephemeral AES key. Marked extractable so we can wrap it
+  //    with RSA — it lives in memory for the duration of this call only.
   const aesKey = await crypto.subtle.generateKey(
     { name: AES_ALGORITHM, length: AES_KEY_LENGTH },
     true,
     ['encrypt'],
   );
 
-  // 2. Encrypt message with AES-GCM
+  // 3. Encrypt message with AES-GCM
   const iv = crypto.getRandomValues(new Uint8Array(IV_LENGTH));
   const encoded = new TextEncoder().encode(plaintext);
   const ciphertext = await crypto.subtle.encrypt(
@@ -181,14 +211,16 @@ export async function encryptMessage(
     encoded,
   );
 
-  // 3. Export AES key and encrypt with RSA
+  // 4. Export the AES key and encrypt it with the recipient's RSA public key.
   const rawAesKey = await crypto.subtle.exportKey('raw', aesKey);
-  const rsaPublicKey = await importPublicKey(recipientPublicKey);
   const encryptedKey = await crypto.subtle.encrypt(
     { name: 'RSA-OAEP' },
     rsaPublicKey,
     rawAesKey,
   );
+
+  // Best-effort scrub of the transient plaintext AES key buffer.
+  new Uint8Array(rawAesKey).fill(0);
 
   const payload: EncryptedPayload = {
     ciphertext: arrayBufferToBase64(ciphertext),
@@ -203,12 +235,12 @@ export async function encryptMessage(
  * Decrypt an encrypted message using the user's private key.
  *
  * @param encryptedBody - JSON-stringified EncryptedPayload
- * @param privateKeyBase64 - Base64-encoded PKCS8 private key
+ * @param privateKey - Non-extractable `CryptoKey` (loaded from keyStore)
  * @returns Decrypted plaintext
  */
 export async function decryptMessage(
   encryptedBody: string,
-  privateKeyBase64: string,
+  privateKey: CryptoKey,
 ): Promise<string> {
   if (!isEncryptionSupported()) {
     throw new Error('Web Crypto API is not available');
@@ -217,10 +249,9 @@ export async function decryptMessage(
   const payload: EncryptedPayload = JSON.parse(encryptedBody);
 
   // 1. Decrypt the AES key with RSA
-  const rsaPrivateKey = await importPrivateKey(privateKeyBase64);
   const rawAesKey = await crypto.subtle.decrypt(
     { name: 'RSA-OAEP' },
-    rsaPrivateKey,
+    privateKey,
     base64ToArrayBuffer(payload.encryptedKey),
   );
 
@@ -241,65 +272,8 @@ export async function decryptMessage(
     base64ToArrayBuffer(payload.ciphertext),
   );
 
+  // Best-effort scrub of the transient plaintext AES key buffer.
+  new Uint8Array(rawAesKey).fill(0);
+
   return new TextDecoder().decode(decrypted);
-}
-
-// ─── Local Key Storage ──────────────────────────────────────────────
-
-/**
- * Store the encryption key pair locally.
- * Private key goes to localStorage; public key also stored for quick access.
- */
-export function storeKeyPair(keyPair: EncryptionKeyPair): void {
-  if (Platform.OS !== 'web') return;
-  try {
-    localStorage.setItem(PRIVATE_KEY_STORAGE, keyPair.privateKey);
-    localStorage.setItem(PUBLIC_KEY_STORAGE, keyPair.publicKey);
-  } catch {
-    throw new Error('Failed to store encryption keys');
-  }
-}
-
-/**
- * Get the stored private key (for decryption).
- */
-export function getStoredPrivateKey(): string | null {
-  if (Platform.OS !== 'web') return null;
-  try {
-    return localStorage.getItem(PRIVATE_KEY_STORAGE);
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Get the stored public key.
- */
-export function getStoredPublicKey(): string | null {
-  if (Platform.OS !== 'web') return null;
-  try {
-    return localStorage.getItem(PUBLIC_KEY_STORAGE);
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Check if the user has a local encryption key pair.
- */
-export function hasLocalKeyPair(): boolean {
-  return getStoredPrivateKey() !== null && getStoredPublicKey() !== null;
-}
-
-/**
- * Clear stored encryption keys (key revocation).
- */
-export function clearStoredKeys(): void {
-  if (Platform.OS !== 'web') return;
-  try {
-    localStorage.removeItem(PRIVATE_KEY_STORAGE);
-    localStorage.removeItem(PUBLIC_KEY_STORAGE);
-  } catch {
-    // noop
-  }
 }

@@ -7,6 +7,7 @@ import BillingTransaction from '../models/BillingTransaction';
 import { getOrCreateUserCredits } from './credits';
 import { logger } from '../utils/logger';
 import { isValidObjectId } from '../utils/validation';
+import { isAllowedRedirect } from '../utils/redirectAllowlist';
 import { validate } from '../middleware/validate';
 import {
   checkoutCreditsSchema,
@@ -14,6 +15,16 @@ import {
   portalSchema,
   transactionsQuerySchema,
 } from '../schemas/billing.schemas';
+
+const INVALID_REDIRECT_RESPONSE = {
+  error: 'INVALID_REDIRECT_URL',
+  message: 'successUrl/cancelUrl must be on an allowed domain',
+} as const;
+
+const INVALID_RETURN_URL_RESPONSE = {
+  error: 'INVALID_REDIRECT_URL',
+  message: 'returnUrl must be on an allowed domain',
+} as const;
 
 const router = Router();
 
@@ -91,6 +102,15 @@ router.post('/checkout/credits', authMiddleware, validate({ body: checkoutCredit
     const userId = req.user?._id?.toString();
     if (!userId) return res.status(401).json({ error: 'Authentication required' });
 
+    if (!isAllowedRedirect(successUrl) || !isAllowedRedirect(cancelUrl)) {
+      logger.warn('Rejected checkout/credits request with disallowed redirect URL', {
+        userId,
+        successUrl,
+        cancelUrl,
+      });
+      return res.status(400).json(INVALID_REDIRECT_RESPONSE);
+    }
+
     const pkg = CREDIT_PACKAGES.find((p) => p.id === packageId);
     if (!pkg) return res.status(400).json({ error: 'Invalid package ID' });
 
@@ -126,6 +146,15 @@ router.post('/checkout/subscription', authMiddleware, validate({ body: checkoutS
     const { planId, successUrl, cancelUrl } = req.body;
     const userId = req.user?._id?.toString();
     if (!userId) return res.status(401).json({ error: 'Authentication required' });
+
+    if (!isAllowedRedirect(successUrl) || !isAllowedRedirect(cancelUrl)) {
+      logger.warn('Rejected checkout/subscription request with disallowed redirect URL', {
+        userId,
+        successUrl,
+        cancelUrl,
+      });
+      return res.status(400).json(INVALID_REDIRECT_RESPONSE);
+    }
 
     const plan = SUBSCRIPTION_PLANS.find((p) => p.id === planId);
     if (!plan || !plan.stripePriceId) return res.status(400).json({ error: 'Invalid plan ID' });
@@ -219,6 +248,12 @@ router.post('/portal', authMiddleware, validate({ body: portalSchema }), async (
     if (!userId) return res.status(401).json({ error: 'Authentication required' });
 
     const { returnUrl } = req.body;
+
+    if (!isAllowedRedirect(returnUrl)) {
+      logger.warn('Rejected portal request with disallowed return URL', { userId, returnUrl });
+      return res.status(400).json(INVALID_RETURN_URL_RESPONSE);
+    }
+
     const email = req.user?.email;
     const customerId = await getOrCreateStripeCustomer(userId, email);
 

@@ -19,7 +19,7 @@ const isWeb = Platform.OS === 'web';
 // The .then() extracts + casts the default export so that `lazy()` sees
 // `Promise<{ default: ComponentType }>` instead of the full module namespace.
 const LazyBottomSheetRouter = lazy((): Promise<{ default: ComponentType }> =>
-    import('./BottomSheetRouter.js').then(
+    import('./BottomSheetRouter').then(
         (mod) => ({ default: mod.default as unknown as ComponentType }),
         (error) => {
             if (__DEV__) {
@@ -31,7 +31,7 @@ const LazyBottomSheetRouter = lazy((): Promise<{ default: ComponentType }> =>
 );
 
 const LazySignInModal = lazy((): Promise<{ default: ComponentType }> =>
-    import('./SignInModal.js').then(
+    import('./SignInModal').then(
         (mod) => ({ default: mod.default as unknown as ComponentType }),
         () => ({ default: (() => null) as FC }),
     ),
@@ -83,12 +83,13 @@ const OxyProvider: FC<OxyProviderProps> = ({
     colorPreset,
 }) => {
 
-    // Dynamic KeyboardProvider for native (avoids require() for ESM compatibility)
+    // Dynamic KeyboardProvider for native (avoids require() for ESM compatibility).
+    // Literal-string import: Hermes/Metro require static strings in production
+    // bundles, not variable expressions or webpackIgnore comments.
     const [KBProvider, setKBProvider] = useState<FC<{ children: ReactNode }> | null>(null);
     useEffect(() => {
         if (isWeb) return;
-        const moduleName = 'react-native-keyboard-controller';
-        import(/* webpackIgnore: true */ moduleName)
+        import('react-native-keyboard-controller')
             .then((mod) => setKBProvider(() => mod.KeyboardProvider))
             .catch(() => { /* KeyboardProvider not available */ });
     }, []);

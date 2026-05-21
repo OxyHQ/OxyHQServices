@@ -11,6 +11,7 @@ import {
   ScrollView,
   Platform,
   TextInput,
+  type ViewStyle,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useOxy, showSignInModal } from '@oxyhq/services';
@@ -861,12 +862,14 @@ const styles = StyleSheet.create({
     marginRight: 4,
     opacity: 0,
     ...Platform.select({
+      // `transition` is a react-native-web extension to ViewStyle; the upstream
+      // type lives outside the bundled @types/react-native, so we widen with a
+      // structural shape rather than suppressing the typecheck.
       web: {
         // Show on hover of parent row via CSS — fallback: always visible
         opacity: 0.5,
-        // @ts-expect-error — web-only
         transition: 'opacity 0.15s',
-      } as any,
+      } as ViewStyle & { transition: string },
       default: { opacity: 0.6 },
     }),
   },

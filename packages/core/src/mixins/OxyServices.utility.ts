@@ -297,9 +297,15 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
               return res.status(403).json(error);
             }
 
-            // Verify JWT signature (not just decode)
+            // Verify JWT signature (not just decode).
+            // Node's built-in `crypto` module: use `new Function('m','return import(m)')`
+            // to hide the import from all bundlers. Literal `import('crypto')` would
+            // be statically resolved by Metro and crash in RN bundles. The whole
+            // auth() middleware path is Node-only (server-side), so this branch
+            // never runs in RN — but the import would still be pulled into the graph.
             try {
-              const { createHmac } = await import('crypto');
+              const dynamicImport = new Function('m', 'return import(m)') as (m: string) => Promise<typeof import('crypto')>;
+              const { createHmac, timingSafeEqual } = await dynamicImport('crypto');
               const [headerB64, payloadB64, signatureB64] = token.split('.');
               if (!headerB64 || !payloadB64 || !signatureB64) {
                 throw new Error('Invalid token structure');
@@ -314,7 +320,6 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
               // Timing-safe comparison
               const sigBuf = Buffer.from(signatureB64);
               const expectedBuf = Buffer.from(expectedSig);
-              const { timingSafeEqual } = await import('crypto');
               if (sigBuf.length !== expectedBuf.length || !timingSafeEqual(sigBuf, expectedBuf)) {
                 throw new Error('Invalid signature');
               }
@@ -339,8 +344,8 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
               return res.status(401).json(error);
             }
 
-            // Check expiration
-            if (decoded.exp && decoded.exp < Math.floor(Date.now() / 1000)) {
+            // Check expiration — reject tokens at exact expiry second (use <=)
+            if (decoded.exp && decoded.exp <= Math.floor(Date.now() / 1000)) {
               if (optional) {
                 req.userId = null;
                 req.user = null;
@@ -400,7 +405,8 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
           }
 
           // Check token expiration locally first (fast path)
-          if (decoded.exp && decoded.exp < Math.floor(Date.now() / 1000)) {
+          // Reject tokens at exact expiry second (use <=)
+          if (decoded.exp && decoded.exp <= Math.floor(Date.now() / 1000)) {
             if (optional) {
               req.userId = null;
               req.user = null;
@@ -578,8 +584,8 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
             return next(new Error('Invalid token payload'));
           }
 
-          // Check expiration
-          if (decoded.exp && decoded.exp < Math.floor(Date.now() / 1000)) {
+          // Check expiration — reject tokens at exact expiry second (use <=)
+          if (decoded.exp && decoded.exp <= Math.floor(Date.now() / 1000)) {
             return next(new Error('Token expired'));
           }
 

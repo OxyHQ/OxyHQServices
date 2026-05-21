@@ -8,15 +8,17 @@
  * Mobile: shows the inbox list
  */
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { Platform, useWindowDimensions } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
+import Head from 'expo-router/head';
 
 import { InboxList } from '@/components/InboxList';
 import { MessageDetailEmpty } from '@/components/MessageDetailEmpty';
 import { useEmailStore } from '@/hooks/useEmail';
 import { useMailboxes } from '@/hooks/queries/useMailboxes';
 import { useLabels } from '@/hooks/queries/useLabels';
+import { useMessages } from '@/hooks/queries/useMessages';
 import { SPECIAL_USE } from '@/constants/mailbox';
 
 const VIEW_TO_SPECIAL_USE: Record<string, string> = {
@@ -39,6 +41,29 @@ export default function MailboxViewRoute() {
   const selectMailbox = useEmailStore((s) => s.selectMailbox);
   const selectStarred = useEmailStore((s) => s.selectStarred);
   const selectLabel = useEmailStore((s) => s.selectLabel);
+  const currentMailbox = useEmailStore((s) => s.currentMailbox);
+
+  const { data: messagesData } = useMessages({ mailboxId: currentMailbox?._id });
+
+  const viewLabel = useMemo(() => {
+    if (!view) return 'Inbox';
+    const viewLower = view.toLowerCase();
+    if (viewLower.startsWith('label-')) {
+      const labelName = view.slice(6);
+      return labelName.charAt(0).toUpperCase() + labelName.slice(1);
+    }
+    return view.charAt(0).toUpperCase() + view.slice(1);
+  }, [view]);
+
+  const unreadCount = useMemo(() => {
+    const messages = messagesData?.pages.flatMap((p) => p.data) ?? [];
+    return messages.filter((m) => !m.flags?.seen).length;
+  }, [messagesData]);
+
+  const pageTitle = useMemo(() => {
+    if (unreadCount > 0) return `(${unreadCount}) ${viewLabel} · Oxy`;
+    return `${viewLabel} · Oxy`;
+  }, [unreadCount, viewLabel]);
 
   // Sync route to Zustand state
   useEffect(() => {
@@ -66,9 +91,12 @@ export default function MailboxViewRoute() {
     }
   }, [view, mailboxes, labels, selectMailbox, selectStarred, selectLabel]);
 
-  if (isDesktop) {
-    return <MessageDetailEmpty />;
-  }
-
-  return <InboxList />;
+  return (
+    <>
+      <Head>
+        <title>{pageTitle}</title>
+      </Head>
+      {isDesktop ? <MessageDetailEmpty /> : <InboxList />}
+    </>
+  );
 }

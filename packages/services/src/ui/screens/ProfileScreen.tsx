@@ -191,12 +191,12 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                             <Ionicons name="arrow-back" size={24} color={bloomTheme.colors.text} />
                         </TouchableOpacity>
                     )}
-                    <Text style={styles.errorTitle} className="text-foreground">Profile Error</Text>
+                    <Text style={[styles.errorTitle, { color: bloomTheme.colors.text }]}>Profile Error</Text>
                 </View>
                 <View style={styles.errorContent}>
                     <Ionicons name="alert-circle" size={48} color={bloomTheme.colors.error} style={styles.errorIcon} />
-                    <Text style={styles.errorText} className="text-destructive">{error}</Text>
-                    <Text style={styles.errorSubtext} className="text-muted-foreground">
+                    <Text style={[styles.errorText, { color: bloomTheme.colors.error }]}>{error}</Text>
+                    <Text style={[styles.errorSubtext, { color: bloomTheme.colors.textSecondary }]}>
                         This could happen if the user doesn't exist or the profile service is unavailable.
                     </Text>
                 </View>
@@ -247,21 +247,21 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                 </View>
                 {/* Profile Info */}
                 <View style={styles.header}>
-                    <Text style={styles.displayName} className="text-foreground">
+                    <Text style={[styles.displayName, { color: bloomTheme.colors.text }]}>
                         {(profile && 'displayName' in profile && typeof profile.displayName === 'string' ? profile.displayName : null) || profile?.username || username || profile?.id || ''}
                     </Text>
                     {profile?.username && (
-                        <Text style={styles.subText} className="text-muted-foreground">@{profile.username}</Text>
+                        <Text style={[styles.subText, { color: bloomTheme.colors.textSecondary }]}>@{profile.username}</Text>
                     )}
                     {/* Bio placeholder */}
-                    <Text style={styles.bio} className="text-foreground">{profile?.bio || (t('profile.noBio') || 'This user has no bio yet.')}</Text>
+                    <Text style={[styles.bio, { color: bloomTheme.colors.text }]}>{profile?.bio || (t('profile.noBio') || 'This user has no bio yet.')}</Text>
 
                     {/* Info Grid Row */}
                     <View style={styles.infoGrid}>
                         {profile?.createdAt && (
                             <View style={styles.infoGridItem}>
                                 <Ionicons name="calendar-outline" size={16} color={bloomTheme.colors.textSecondary} style={{ marginRight: 6 }} />
-                                <Text style={styles.infoGridText} className="text-muted-foreground">
+                                <Text style={[styles.infoGridText, { color: bloomTheme.colors.textSecondary }]}>
                                     {t('profile.joinedOn', { date: new Date(profile.createdAt).toLocaleDateString() }) || `Joined ${new Date(profile.createdAt).toLocaleDateString()}`}
                                 </Text>
                             </View>
@@ -269,37 +269,37 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                         {profile?.location && (
                             <View style={styles.infoGridItem}>
                                 <Ionicons name="location-outline" size={16} color={bloomTheme.colors.textSecondary} style={{ marginRight: 6 }} />
-                                <Text style={styles.infoGridText} className="text-muted-foreground" numberOfLines={1}>{profile.location}</Text>
+                                <Text style={[styles.infoGridText, { color: bloomTheme.colors.textSecondary }]} numberOfLines={1}>{profile.location}</Text>
                             </View>
                         )}
                         {profile?.website && (
                             <View style={styles.infoGridItem}>
                                 <Ionicons name="globe-outline" size={16} color={bloomTheme.colors.textSecondary} style={{ marginRight: 6 }} />
-                                <Text style={styles.infoGridText} className="text-muted-foreground" numberOfLines={1}>{profile.website}</Text>
+                                <Text style={[styles.infoGridText, { color: bloomTheme.colors.textSecondary }]} numberOfLines={1}>{profile.website}</Text>
                             </View>
                         )}
                         {profile && 'company' in profile && typeof profile.company === 'string' && profile.company && (
                             <View style={styles.infoGridItem}>
                                 <Ionicons name="business-outline" size={16} color={bloomTheme.colors.textSecondary} style={{ marginRight: 6 }} />
-                                <Text style={styles.infoGridText} className="text-muted-foreground" numberOfLines={1}>{profile.company}</Text>
+                                <Text style={[styles.infoGridText, { color: bloomTheme.colors.textSecondary }]} numberOfLines={1}>{profile.company}</Text>
                             </View>
                         )}
                         {profile && 'jobTitle' in profile && typeof profile.jobTitle === 'string' && profile.jobTitle && (
                             <View style={styles.infoGridItem}>
                                 <Ionicons name="briefcase-outline" size={16} color={bloomTheme.colors.textSecondary} style={{ marginRight: 6 }} />
-                                <Text style={styles.infoGridText} className="text-muted-foreground" numberOfLines={1}>{profile.jobTitle}</Text>
+                                <Text style={[styles.infoGridText, { color: bloomTheme.colors.textSecondary }]} numberOfLines={1}>{profile.jobTitle}</Text>
                             </View>
                         )}
                         {profile && 'education' in profile && typeof profile.education === 'string' && profile.education && (
                             <View style={styles.infoGridItem}>
                                 <Ionicons name="school-outline" size={16} color={bloomTheme.colors.textSecondary} style={{ marginRight: 6 }} />
-                                <Text style={styles.infoGridText} className="text-muted-foreground" numberOfLines={1}>{profile.education}</Text>
+                                <Text style={[styles.infoGridText, { color: bloomTheme.colors.textSecondary }]} numberOfLines={1}>{profile.education}</Text>
                             </View>
                         )}
                         {profile && 'birthday' in profile && typeof profile.birthday === 'string' && profile.birthday && (
                             <View style={styles.infoGridItem}>
                                 <Ionicons name="gift-outline" size={16} color={bloomTheme.colors.textSecondary} style={{ marginRight: 6 }} />
-                                <Text style={styles.infoGridText} className="text-muted-foreground">
+                                <Text style={[styles.infoGridText, { color: bloomTheme.colors.textSecondary }]}>
                                     {t('profile.bornOn', { date: new Date(profile.birthday).toLocaleDateString() }) || `Born ${new Date(profile.birthday).toLocaleDateString()}`}
                                 </Text>
                             </View>
@@ -310,11 +310,11 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                                 onPress={() => navigate?.('UserLinks', { userId, links })}
                             >
                                 <Ionicons name="link-outline" size={16} color={bloomTheme.colors.textSecondary} style={{ marginRight: 6 }} />
-                                <Text style={styles.infoGridText} className="text-muted-foreground" numberOfLines={1}>
+                                <Text style={[styles.infoGridText, { color: bloomTheme.colors.textSecondary }]} numberOfLines={1}>
                                     {links[0].url}
                                 </Text>
                                 {links.length > 1 && (
-                                    <Text style={styles.linksMore} className="text-muted-foreground">
+                                    <Text style={[styles.linksMore, { color: bloomTheme.colors.textSecondary }]}>
                                         {t('profile.more', { count: links.length - 1 }) || `+ ${links.length - 1} more`}
                                     </Text>
                                 )}
@@ -327,23 +327,23 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                     <View style={styles.statsRow}>
                         <View style={styles.statItem}>
                             <Text style={styles.karmaAmount} className="text-primary">{karmaTotal !== null && karmaTotal !== undefined ? karmaTotal : '--'}</Text>
-                            <Text style={styles.karmaLabel} className="text-muted-foreground">{t('profile.karma') || 'Karma'}</Text>
+                            <Text style={[styles.karmaLabel, { color: bloomTheme.colors.textSecondary }]}>{t('profile.karma') || 'Karma'}</Text>
                         </View>
                         <View style={styles.statItem}>
                             {isLoadingCounts ? (
                                 <ActivityIndicator size="small" color={bloomTheme.colors.text} />
                             ) : (
-                                <Text style={styles.karmaAmount} className="text-foreground">{followerCount !== null ? followerCount : '--'}</Text>
+                                <Text style={[styles.karmaAmount, { color: bloomTheme.colors.text }]}>{followerCount !== null ? followerCount : '--'}</Text>
                             )}
-                            <Text style={styles.karmaLabel} className="text-muted-foreground">{t('profile.followers') || 'Followers'}</Text>
+                            <Text style={[styles.karmaLabel, { color: bloomTheme.colors.textSecondary }]}>{t('profile.followers') || 'Followers'}</Text>
                         </View>
                         <View style={styles.statItem}>
                             {isLoadingCounts ? (
                                 <ActivityIndicator size="small" color={bloomTheme.colors.text} />
                             ) : (
-                                <Text style={styles.karmaAmount} className="text-foreground">{followingCount !== null ? followingCount : '--'}</Text>
+                                <Text style={[styles.karmaAmount, { color: bloomTheme.colors.text }]}>{followingCount !== null ? followingCount : '--'}</Text>
                             )}
-                            <Text style={styles.karmaLabel} className="text-muted-foreground">{t('profile.following') || 'Following'}</Text>
+                            <Text style={[styles.karmaLabel, { color: bloomTheme.colors.textSecondary }]}>{t('profile.following') || 'Following'}</Text>
                         </View>
                     </View>
                 </View>

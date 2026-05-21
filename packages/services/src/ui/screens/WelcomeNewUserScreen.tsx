@@ -243,15 +243,15 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
             <Animated.View style={{ opacity: fadeAnim, transform: [{ translateX: slideAnim }] }}>
                 <View style={[styles.scrollInner, styles.contentContainer]}>
                     <View style={[styles.header, styles.sectionSpacing]}>
-                        <Text style={styles.title} className="text-foreground">{step.title}</Text>
-                        {step.body && <Text style={styles.body} className="text-muted-foreground">{step.body}</Text>}
+                        <Text style={[styles.title, { color: bloomTheme.colors.text }]}>{step.title}</Text>
+                        {step.body && <Text style={[styles.body, { color: bloomTheme.colors.textSecondary }]}>{step.body}</Text>}
                     </View>
                     {Array.isArray(step.bullets) && step.bullets.length > 0 && (
                         <View style={[styles.bulletContainer, styles.sectionSpacing]}>
                             {step.bullets.map(b => (
                                 <View key={b} style={styles.bulletRow}>
                                     <Ionicons name="ellipse" size={8} color={colors.primary} style={{ marginTop: 6 }} />
-                                    <Text style={styles.bulletText} className="text-muted-foreground">{b}</Text>
+                                    <Text style={[styles.bulletText, { color: bloomTheme.colors.textSecondary }]}>{b}</Text>
                                 </View>
                             ))}
                         </View>

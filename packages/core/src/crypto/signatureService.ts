@@ -8,6 +8,8 @@
 import { ec as EC } from 'elliptic';
 import { KeyManager } from './keyManager';
 import { isReactNative, isNodeJS } from '../utils/platform';
+import { logger } from '../utils/loggerUtils';
+import { isDev } from '../shared/utils/debugUtils';
 
 // Lazy imports for platform-specific crypto
 let ExpoCrypto: typeof import('expo-crypto') | null = null;
@@ -17,16 +19,21 @@ const ec = new EC('secp256k1');
 
 async function initExpoCrypto(): Promise<typeof import('expo-crypto')> {
   if (!ExpoCrypto) {
-    const moduleName = 'expo-crypto';
-    ExpoCrypto = await import(/* @vite-ignore */ moduleName);
+    // Literal-string import: Hermes/Metro require static strings, not variable
+    // expressions. `/* @vite-ignore */` tells Vite to skip static analysis (so
+    // the optional expo-crypto module isn't required in web builds).
+    ExpoCrypto = await import(/* @vite-ignore */ 'expo-crypto');
   }
   return ExpoCrypto!;
 }
 
 async function initNodeCrypto(): Promise<typeof import('crypto')> {
   if (!NodeCrypto) {
-    const moduleName = 'crypto';
-    NodeCrypto = await import(/* @vite-ignore */ moduleName);
+    // Node's built-in `crypto` module: use `new Function('m','return import(m)')`
+    // to hide the import from all bundlers (Vite, Hermes, Metro). Literal
+    // `import('crypto')` would be pulled into RN bundles and crash at runtime.
+    const dynamicImport = new Function('m', 'return import(m)') as (m: string) => Promise<typeof import('crypto')>;
+    NodeCrypto = await dynamicImport('crypto');
   }
   return NodeCrypto!;
 }
@@ -48,8 +55,9 @@ async function sha256(message: string): Promise<string> {
     try {
       const nodeCrypto = await initNodeCrypto();
       return nodeCrypto.createHash('sha256').update(message).digest('hex');
-    } catch {
-      // Fall through to Web Crypto API
+    } catch (error) {
+      // Node crypto failed to load — log and fall through to Web Crypto API
+      logger.warn('[oxy.crypto] Node crypto unavailable, falling back to Web Crypto', { component: 'SignatureService' }, error);
     }
   }
 
@@ -93,8 +101,9 @@ export class SignatureService {
       try {
         const nodeCrypto = await initNodeCrypto();
         return nodeCrypto.randomBytes(32).toString('hex');
-      } catch {
-        // Fall through to Web Crypto API
+      } catch (error) {
+        // Node crypto failed to load — log and fall through to Web Crypto API
+        logger.warn('[oxy.crypto] Node crypto unavailable, falling back to Web Crypto', { component: 'SignatureService' }, error);
       }
     }
 
@@ -141,13 +150,20 @@ export class SignatureService {
 
   /**
    * Verify a signature against a message and public key
+   *
+   * Returns false on any error (invalid signature, malformed input, etc.).
+   * Errors are logged at debug level so they're available when troubleshooting
+   * signature mismatches but don't surface to the caller.
    */
   static async verify(message: string, signature: string, publicKey: string): Promise<boolean> {
     try {
       const key = ec.keyFromPublic(publicKey, 'hex');
       const messageHash = await sha256(message);
       return key.verify(messageHash, signature);
-    } catch {
+    } catch (error) {
+      if (isDev()) {
+        logger.debug('[oxy.crypto] verify() returned false', { component: 'SignatureService' }, error);
+      }
       return false;
     }
   }
@@ -173,7 +189,10 @@ export class SignatureService {
       const key = ec.keyFromPublic(publicKey, 'hex');
       const messageHash = crypto.createHash('sha256').update(message).digest('hex');
       return key.verify(messageHash, signature);
-    } catch {
+    } catch (error) {
+      if (isDev()) {
+        logger.debug('[oxy.crypto] verifySync() returned false', { component: 'SignatureService' }, error);
+      }
       return false;
     }
   }

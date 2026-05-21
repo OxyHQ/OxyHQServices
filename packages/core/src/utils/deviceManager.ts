@@ -42,9 +42,9 @@ export class DeviceManager {
   }> {
     if (this.isReactNative()) {
       try {
-        // Variable indirection prevents bundlers (Vite, webpack) from statically resolving this
-        const moduleName = '@react-native-async-storage/async-storage';
-        const asyncStorageModule = await import(/* @vite-ignore */ moduleName);
+        // Literal-string import: Hermes/Metro require static strings in
+        // production bundles. `/* @vite-ignore */` skips Vite's static analysis.
+        const asyncStorageModule = await import(/* @vite-ignore */ '@react-native-async-storage/async-storage');
         const storage = asyncStorageModule.default as unknown as { getItem: (key: string) => Promise<string | null>; setItem: (key: string, value: string) => Promise<void>; removeItem: (key: string) => Promise<void> };
         return {
           getItem: storage.getItem.bind(storage),

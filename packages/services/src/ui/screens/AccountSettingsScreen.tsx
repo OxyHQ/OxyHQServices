@@ -339,10 +339,10 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
             >
                 {/* Title and Subtitle Header */}
                 <View style={[styles.headerContainer, styles.headerSection]}>
-                            <Text style={[styles.modernTitle, { marginBottom: 0, marginTop: 0 }]} className="text-foreground">
+                            <Text style={[styles.modernTitle, { marginBottom: 0, marginTop: 0, color: bloomTheme.colors.text }]}>
                                 {t('accountOverview.items.editProfile.title') || t('editProfile.title') || 'Edit Profile'}
                             </Text>
-                            <Text style={[styles.modernSubtitle, { marginBottom: 0, marginTop: 0 }]} className="text-muted-foreground">
+                            <Text style={[styles.modernSubtitle, { marginBottom: 0, marginTop: 0, color: bloomTheme.colors.textSecondary }]}>
                                 {t('accountOverview.items.editProfile.subtitle') || t('editProfile.subtitle') || 'Manage your profile and preferences'}
                             </Text>
                         </View>
@@ -359,7 +359,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                 setProfilePictureSectionY(y);
                             }}
                         >
-                            <Text style={styles.sectionTitle} className="text-muted-foreground">
+                            <Text style={[styles.sectionTitle, { color: bloomTheme.colors.textSecondary }]}>
                                 {t('editProfile.sections.profilePicture') || 'PROFILE PICTURE'}
                             </Text>
                             <View style={styles.groupedSectionWrapper}>
@@ -428,7 +428,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                 setBasicInfoSectionY(y);
                             }}
                         >
-                            <Text style={styles.sectionTitle} className="text-muted-foreground">
+                            <Text style={[styles.sectionTitle, { color: bloomTheme.colors.textSecondary }]}>
                                 {t('editProfile.sections.basicInfo') || 'BASIC INFORMATION'}
                             </Text>
                             <View style={styles.groupedSectionWrapper}>
@@ -464,7 +464,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                 setAboutSectionY(y);
                             }}
                         >
-                            <Text style={styles.sectionTitle} className="text-muted-foreground">
+                            <Text style={[styles.sectionTitle, { color: bloomTheme.colors.textSecondary }]}>
                                 {t('editProfile.sections.about') || 'ABOUT YOU'}
                             </Text>
                             <View style={styles.groupedSectionWrapper}>
@@ -508,7 +508,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                 setQuickActionsSectionY(y);
                             }}
                         >
-                            <Text style={styles.sectionTitle} className="text-muted-foreground">
+                            <Text style={[styles.sectionTitle, { color: bloomTheme.colors.textSecondary }]}>
                                 {t('editProfile.sections.quickActions') || 'QUICK ACTIONS'}
                             </Text>
                             <View style={styles.groupedSectionWrapper}>
@@ -544,7 +544,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                 setSecuritySectionY(y);
                             }}
                         >
-                            <Text style={styles.sectionTitle} className="text-muted-foreground">
+                            <Text style={[styles.sectionTitle, { color: bloomTheme.colors.textSecondary }]}>
                                 {t('editProfile.sections.security') || 'SECURITY'}
                             </Text>
                             <View style={styles.groupedSectionWrapper}>

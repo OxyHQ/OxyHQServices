@@ -47,6 +47,12 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
     /** @internal */ _serviceTokenExp: number = 0;
     /** @internal */ _serviceApiKey: string | null = null;
     /** @internal */ _serviceApiSecret: string | null = null;
+    /**
+     * In-flight promise for service token fetch. Used to deduplicate concurrent
+     * calls to getServiceToken() — pattern mirrors AuthManager.refreshToken().
+     * @internal
+     */
+    _serviceTokenPromise: Promise<string> | null = null;
 
     constructor(...args: any[]) {
       super(...(args as [any]));
@@ -72,6 +78,9 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
      * Get a service token for internal service-to-service communication.
      * Tokens are short-lived (1h) and automatically cached/refreshed.
      *
+     * Concurrent callers share a single in-flight request to avoid hammering
+     * `/auth/service-token` when the cache is empty or expired.
+     *
      * @param apiKey - DeveloperApp API key (optional if configureServiceAuth was called)
      * @param apiSecret - DeveloperApp API secret (optional if configureServiceAuth was called)
      */
@@ -88,6 +97,25 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
         return this._serviceToken;
       }
 
+      // If a fetch is already in-flight, share the same promise
+      if (this._serviceTokenPromise) {
+        return this._serviceTokenPromise;
+      }
+
+      this._serviceTokenPromise = this._doFetchServiceToken(key, secret);
+      try {
+        return await this._serviceTokenPromise;
+      } finally {
+        this._serviceTokenPromise = null;
+      }
+    }
+
+    /**
+     * Perform the actual /auth/service-token request and cache the result.
+     * Separated so getServiceToken() can deduplicate concurrent calls.
+     * @internal
+     */
+    async _doFetchServiceToken(key: string, secret: string): Promise<string> {
       const response = await this.makeRequest<ServiceTokenResponse>(
         'POST',
         '/auth/service-token',

@@ -50,9 +50,9 @@ const ANDROID_ACCOUNT_TYPE = 'com.oxy.account';
 async function initSecureStore(): Promise<typeof import('expo-secure-store')> {
   if (!SecureStore) {
     try {
-      // Variable indirection prevents bundlers (Vite, webpack) from statically resolving this
-      const moduleName = 'expo-secure-store';
-      SecureStore = await import(/* @vite-ignore */ moduleName);
+      // Literal-string import: Hermes/Metro require static strings in
+      // production bundles. `/* @vite-ignore */` skips Vite's static analysis.
+      SecureStore = await import(/* @vite-ignore */ 'expo-secure-store');
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       throw new Error(`Failed to load expo-secure-store: ${errorMessage}. Make sure expo-secure-store is installed and properly configured.`);
@@ -74,9 +74,9 @@ function isWebPlatform(): boolean {
 
 async function initExpoCrypto(): Promise<typeof import('expo-crypto')> {
   if (!ExpoCrypto) {
-    // Variable indirection prevents bundlers (Vite, webpack) from statically resolving this
-    const moduleName = 'expo-crypto';
-    ExpoCrypto = await import(/* @vite-ignore */ moduleName);
+    // Literal-string import: Hermes/Metro require static strings in
+    // production bundles. `/* @vite-ignore */` skips Vite's static analysis.
+    ExpoCrypto = await import(/* @vite-ignore */ 'expo-crypto');
   }
   return ExpoCrypto!;
 }
@@ -101,11 +101,15 @@ async function getSecureRandomBytes(length: number): Promise<Uint8Array> {
     return Crypto.getRandomBytes(length);
   }
   
-  // In Node.js, use Node's crypto module
-  // Variable indirection prevents bundlers (Vite, webpack) from statically resolving this
+  // In Node.js, use Node's crypto module.
+  // `new Function('m', 'return import(m)')` is used to dynamically import
+  // Node's built-in `crypto` module without exposing the import to static
+  // analyzers (Vite, Hermes, Metro). Variable indirection with `import(var)`
+  // alone is NOT safe for Hermes — the Hermes compiler rejects non-literal
+  // dynamic imports. Wrapping in `new Function` makes it a runtime construct.
   try {
-    const cryptoModuleName = 'crypto';
-    const nodeCrypto = await import(/* @vite-ignore */ cryptoModuleName);
+    const dynamicImport = new Function('m', 'return import(m)') as (m: string) => Promise<{ randomBytes: (length: number) => Uint8Array }>;
+    const nodeCrypto = await dynamicImport('crypto');
     return new Uint8Array(nodeCrypto.randomBytes(length));
   } catch (error) {
     // Fallback to expo-crypto if Node crypto fails
@@ -912,18 +916,29 @@ export class KeyManager {
 
   /**
    * Validate that a string is a valid public key
+   *
+   * Returns false on parse errors (invalid input is the expected fail mode here).
+   * Errors are logged at debug level so they're available when troubleshooting
+   * but don't pollute production logs.
    */
   static isValidPublicKey(publicKey: string): boolean {
     try {
       ec.keyFromPublic(publicKey, 'hex');
       return true;
-    } catch {
+    } catch (error) {
+      if (isDev()) {
+        logger.debug('[oxy.crypto] isValidPublicKey rejected input', { component: 'KeyManager' }, error);
+      }
       return false;
     }
   }
 
   /**
    * Validate that a string is a valid private key
+   *
+   * Returns false on parse errors (invalid input is the expected fail mode here).
+   * Errors are logged at debug level so they're available when troubleshooting
+   * but don't pollute production logs.
    */
   static isValidPrivateKey(privateKey: string): boolean {
     try {
@@ -931,7 +946,10 @@ export class KeyManager {
       // Verify it can derive a public key
       keyPair.getPublic('hex');
       return true;
-    } catch {
+    } catch (error) {
+      if (isDev()) {
+        logger.debug('[oxy.crypto] isValidPrivateKey rejected input', { component: 'KeyManager' }, error);
+      }
       return false;
     }
   }

@@ -6,6 +6,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useCallback, useMemo, useState } from 'react';
 import 'react-native-reanimated';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { OxyProvider, ActingAsBanner } from '@oxyhq/services';
 import { useTheme } from '@oxyhq/bloom/theme';
 
@@ -73,24 +74,26 @@ function RootLayoutInner() {
   }
 
   return (
-    <KeyboardProvider>
-      <OxyProvider baseURL={API_URL} themeMode={themeMode}>
-        <Head>
-          <title>Oxy Account</title>
-          <meta name="description" content="Manage your Oxy account, security, and privacy settings" />
-        </Head>
-        <AlertProvider>
-          {!appIsReady ? (
-            <AppSplashScreen
-              startFade={startFade}
-              onFadeComplete={handleSplashFadeComplete}
-            />
-          ) : (
-            <AppStackContent />
-          )}
-        </AlertProvider>
-      </OxyProvider>
-    </KeyboardProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <KeyboardProvider>
+        <OxyProvider baseURL={API_URL} themeMode={themeMode}>
+          <Head>
+            <title>Oxy Account</title>
+            <meta name="description" content="Manage your Oxy account, security, and privacy settings" />
+          </Head>
+          <AlertProvider>
+            {!appIsReady ? (
+              <AppSplashScreen
+                startFade={startFade}
+                onFadeComplete={handleSplashFadeComplete}
+              />
+            ) : (
+              <AppStackContent />
+            )}
+          </AlertProvider>
+        </OxyProvider>
+      </KeyboardProvider>
+    </GestureHandlerRootView>
   );
 }
 

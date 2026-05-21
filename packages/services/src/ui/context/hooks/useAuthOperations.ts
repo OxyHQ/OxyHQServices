@@ -131,9 +131,10 @@ export const useAuthOperations = ({
           logger('Creating offline session');
         }
 
-        // Generate a local session ID using cryptographically secure randomness
-        const cryptoModule = 'expo-crypto';
-        const Crypto = await import(/* webpackIgnore: true */ cryptoModule);
+        // Generate a local session ID using cryptographically secure randomness.
+        // Literal-string import: Hermes/Metro require static strings, not variable
+        // expressions or webpackIgnore comments.
+        const Crypto = await import('expo-crypto');
         const localSessionId = `offline_${Crypto.getRandomUUID()}`;
         const localDeviceId = `device_${Crypto.getRandomUUID()}`;
         const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(); // 7 days

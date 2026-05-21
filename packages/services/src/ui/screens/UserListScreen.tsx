@@ -145,16 +145,16 @@ const UserListScreen: React.FC<UserListScreenProps> = ({
             size={48}
           />
           <View style={styles.userInfo}>
-            <Text style={styles.userName} className="text-foreground" numberOfLines={1}>
+            <Text style={[styles.userName, { color: bloomTheme.colors.text }]} numberOfLines={1}>
               {item.name?.full || item.username || 'Unknown User'}
             </Text>
             {item.username && (
-              <Text style={styles.userHandle} className="text-muted-foreground" numberOfLines={1}>
+              <Text style={[styles.userHandle, { color: bloomTheme.colors.textSecondary }]} numberOfLines={1}>
                 @{item.username}
               </Text>
             )}
             {description ? (
-              <Text style={styles.userBio} className="text-foreground" numberOfLines={2}>
+              <Text style={[styles.userBio, { color: bloomTheme.colors.text }]} numberOfLines={2}>
                 {description}
               </Text>
             ) : null}
@@ -179,12 +179,12 @@ const UserListScreen: React.FC<UserListScreenProps> = ({
           size={64}
           color={bloomTheme.colors.textSecondary}
         />
-        <Text style={styles.emptyTitle} className="text-foreground">
+        <Text style={[styles.emptyTitle, { color: bloomTheme.colors.text }]}>
           {mode === 'followers'
             ? t('userList.noFollowers') || 'No followers yet'
             : t('userList.noFollowing') || 'Not following anyone'}
         </Text>
-        <Text style={styles.emptySubtitle} className="text-muted-foreground">
+        <Text style={[styles.emptySubtitle, { color: bloomTheme.colors.textSecondary }]}>
           {mode === 'followers'
             ? t('userList.noFollowersDesc') || 'When people follow this user, they will appear here.'
             : t('userList.noFollowingDesc') || 'When this user follows people, they will appear here.'}
@@ -215,7 +215,7 @@ const UserListScreen: React.FC<UserListScreenProps> = ({
               <Ionicons name="arrow-back" size={24} color={bloomTheme.colors.text} />
             </TouchableOpacity>
           )}
-          <Text style={styles.headerTitle} className="text-foreground">{title}</Text>
+          <Text style={[styles.headerTitle, { color: bloomTheme.colors.text }]}>{title}</Text>
           <View style={styles.headerRight} />
         </View>
         <View style={styles.loadingContainer}>
@@ -234,12 +234,12 @@ const UserListScreen: React.FC<UserListScreenProps> = ({
               <Ionicons name="arrow-back" size={24} color={bloomTheme.colors.text} />
             </TouchableOpacity>
           )}
-          <Text style={styles.headerTitle} className="text-foreground">{title}</Text>
+          <Text style={[styles.headerTitle, { color: bloomTheme.colors.text }]}>{title}</Text>
           <View style={styles.headerRight} />
         </View>
         <View style={styles.errorContainer}>
           <Ionicons name="alert-circle" size={48} color={bloomTheme.colors.error} />
-          <Text style={styles.errorText} className="text-destructive">{error}</Text>
+          <Text style={[styles.errorText, { color: bloomTheme.colors.error }]}>{error}</Text>
           <TouchableOpacity style={styles.retryButton} className="bg-primary" onPress={() => fetchUsers(0)}>
             <Text style={styles.retryButtonText}>{t('common.retry') || 'Retry'}</Text>
           </TouchableOpacity>
@@ -257,8 +257,8 @@ const UserListScreen: React.FC<UserListScreenProps> = ({
           </TouchableOpacity>
         )}
         <View style={styles.headerTitleContainer}>
-          <Text style={styles.headerTitle} className="text-foreground">{title}</Text>
-          {total > 0 && <Text style={styles.headerCount} className="text-muted-foreground">{total}</Text>}
+          <Text style={[styles.headerTitle, { color: bloomTheme.colors.text }]}>{title}</Text>
+          {total > 0 && <Text style={[styles.headerCount, { color: bloomTheme.colors.textSecondary }]}>{total}</Text>}
         </View>
         <View style={styles.headerRight} />
       </View>

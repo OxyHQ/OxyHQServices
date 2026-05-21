@@ -118,8 +118,8 @@ export default function HomeScreen() {
             if (err?.code === 'USERNAME_REQUIRED' || err?.message === 'USERNAME_REQUIRED') {
               setShowUsernameModal(true);
             } else {
-              // Silent fail for other errors - will try again later
-              console.log('[Home] Auto-sync failed:', err);
+              // Auto-sync will retry on next mount/focus; surface for diagnostics.
+              console.warn('[Home] Auto-sync failed:', err);
             }
           }
         }

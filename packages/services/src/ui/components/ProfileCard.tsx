@@ -52,9 +52,9 @@ const ProfileCard: React.FC<ProfileCardProps> = ({
                         theme={theme}
                     />
                     <View style={styles.userInfo}>
-                        <Text className="text-foreground" style={styles.userName}>{user.username}</Text>
+                        <Text style={[styles.userName, { color: colors.text }]}>{user.username}</Text>
                         {user.email && (
-                            <Text className="text-muted-foreground" style={styles.userEmail}>
+                            <Text style={[styles.userEmail, { color: colors.textSecondary }]}>
                                 {user.email}
                             </Text>
                         )}

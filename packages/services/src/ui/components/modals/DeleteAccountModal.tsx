@@ -60,12 +60,12 @@ const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
             <Dialog.ScrollableInner label="Delete Account">
                 <View className="flex-row items-center mb-4 gap-3">
                     <OxyIcon name="alert" size={32} color={theme.colors.error} />
-                    <Text className="text-destructive text-xl font-bold">
+                    <Text className="text-xl font-bold" style={{ color: theme.colors.error }}>
                         {t('deleteAccount.title') || 'Delete Account'}
                     </Text>
                 </View>
 
-                <Text className="text-foreground text-sm leading-5 mb-5">
+                <Text className="text-sm leading-5 mb-5" style={{ color: theme.colors.text }}>
                     {t('deleteAccount.warning') || 'This action cannot be undone. Your account and all associated data will be permanently deleted.'}
                 </Text>
 
@@ -74,19 +74,20 @@ const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
                         className="p-3 rounded-lg mb-4"
                         style={{ backgroundColor: `${theme.colors.error}20` }}
                     >
-                        <Text className="text-destructive text-sm text-center">
+                        <Text className="text-sm text-center" style={{ color: theme.colors.error }}>
                             {error}
                         </Text>
                     </View>
                 )}
 
                 <View className="mb-4">
-                    <Text className="text-muted-foreground text-[13px] mb-2">
+                    <Text className="text-[13px] mb-2" style={{ color: theme.colors.textSecondary }}>
                         {t('deleteAccount.passwordLabel') || 'Enter your password'}
                     </Text>
                     <View className="flex-row items-center border border-border bg-background rounded-lg">
                         <TextInput
-                            className="text-foreground flex-1 text-base py-3 px-4"
+                            className="flex-1 text-base py-3 px-4"
+                            style={{ color: theme.colors.text }}
                             value={password}
                             onChangeText={setPassword}
                             placeholder={t('deleteAccount.passwordPlaceholder') || 'Password'}
@@ -109,12 +110,13 @@ const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
                 </View>
 
                 <View className="mb-4">
-                    <Text className="text-muted-foreground text-[13px] mb-2">
+                    <Text className="text-[13px] mb-2" style={{ color: theme.colors.textSecondary }}>
                         {t('deleteAccount.confirmLabel', { username }) || `Type "${username}" to confirm`}
                     </Text>
                     <TextInput
-                        className="text-foreground bg-background text-base py-3 px-4 border rounded-lg"
+                        className="bg-background text-base py-3 px-4 border rounded-lg"
                         style={{
+                            color: theme.colors.text,
                             borderColor: confirmUsername === username ? theme.colors.success : theme.colors.border,
                         }}
                         value={confirmUsername}

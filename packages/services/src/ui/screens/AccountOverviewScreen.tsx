@@ -257,7 +257,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
     if (!isAuthenticated) {
         return (
             <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
-                <Text style={styles.message} className="text-foreground">{t('common.status.notSignedIn')}</Text>
+                <Text style={[styles.message, { color: bloomTheme.colors.text }]}>{t('common.status.notSignedIn')}</Text>
             </View>
         );
     }
@@ -306,10 +306,10 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                                 </TouchableOpacity>
                             </View>
                             <View style={styles.nameWrapper}>
-                                <Text style={styles.welcomeText} className="text-foreground">
+                                <Text style={[styles.welcomeText, { color: bloomTheme.colors.text }]}>
                                     {displayName}
                                 </Text>
-                                <Text style={styles.welcomeSubtext} className="text-muted-foreground">
+                                <Text style={[styles.welcomeSubtext, { color: bloomTheme.colors.textSecondary }]}>
                                     Manage your Oxy account.
                                 </Text>
                             </View>

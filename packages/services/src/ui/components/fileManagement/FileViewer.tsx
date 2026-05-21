@@ -203,7 +203,7 @@ export const FileViewer: React.FC<FileViewerProps> = ({
                 {loadingFileContent ? (
                     <View style={fileManagementStyles.fileViewerLoading}>
                         <ActivityIndicator size="large" color={colors.primary} />
-                        <Text className="text-foreground" style={fileManagementStyles.fileViewerLoadingText}>
+                        <Text style={[fileManagementStyles.fileViewerLoadingText, { color: colors.text }]}>
                             Loading file content...
                         </Text>
                     </View>
@@ -245,7 +245,7 @@ export const FileViewer: React.FC<FileViewerProps> = ({
                 ) : isText && fileContent ? (
                     <View className="bg-card" style={fileManagementStyles.textContainer}>
                         <ScrollView style={{ flex: 1 }} nestedScrollEnabled>
-                            <Text className="text-foreground" style={fileManagementStyles.textContent}>
+                            <Text style={[fileManagementStyles.textContent, { color: colors.text }]}>
                                 {fileContent}
                             </Text>
                         </ScrollView>
@@ -257,10 +257,10 @@ export const FileViewer: React.FC<FileViewerProps> = ({
                             size={64}
                             color={colors.textSecondary}
                         />
-                        <Text className="text-foreground" style={fileManagementStyles.unsupportedFileTitle}>
+                        <Text style={[fileManagementStyles.unsupportedFileTitle, { color: colors.text }]}>
                             PDF Preview Not Available
                         </Text>
-                        <Text className="text-muted-foreground" style={fileManagementStyles.unsupportedFileDescription}>
+                        <Text style={[fileManagementStyles.unsupportedFileDescription, { color: colors.textSecondary }]}>
                             PDF files cannot be previewed in this viewer.{'\n'}
                             Download the file to view its contents.
                         </Text>
@@ -280,10 +280,10 @@ export const FileViewer: React.FC<FileViewerProps> = ({
                             size={64}
                             color={colors.textSecondary}
                         />
-                        <Text className="text-foreground" style={fileManagementStyles.unsupportedFileTitle}>
+                        <Text style={[fileManagementStyles.unsupportedFileTitle, { color: colors.text }]}>
                             Video Playback Not Available
                         </Text>
-                        <Text className="text-muted-foreground" style={fileManagementStyles.unsupportedFileDescription}>
+                        <Text style={[fileManagementStyles.unsupportedFileDescription, { color: colors.textSecondary }]}>
                             Video playback is not supported in this viewer.{'\n'}
                             Download the file to view it.
                         </Text>
@@ -303,10 +303,10 @@ export const FileViewer: React.FC<FileViewerProps> = ({
                             size={64}
                             color={colors.textSecondary}
                         />
-                        <Text className="text-foreground" style={fileManagementStyles.unsupportedFileTitle}>
+                        <Text style={[fileManagementStyles.unsupportedFileTitle, { color: colors.text }]}>
                             Audio Playback Not Available
                         </Text>
-                        <Text className="text-muted-foreground" style={fileManagementStyles.unsupportedFileDescription}>
+                        <Text style={[fileManagementStyles.unsupportedFileDescription, { color: colors.textSecondary }]}>
                             Audio playback is not supported in this viewer.{'\n'}
                             Download the file to listen to it.
                         </Text>
@@ -326,10 +326,10 @@ export const FileViewer: React.FC<FileViewerProps> = ({
                             size={64}
                             color={colors.textSecondary}
                         />
-                        <Text className="text-foreground" style={fileManagementStyles.unsupportedFileTitle}>
+                        <Text style={[fileManagementStyles.unsupportedFileTitle, { color: colors.text }]}>
                             Preview Not Available
                         </Text>
-                        <Text className="text-muted-foreground" style={fileManagementStyles.unsupportedFileDescription}>
+                        <Text style={[fileManagementStyles.unsupportedFileDescription, { color: colors.textSecondary }]}>
                             This file type cannot be previewed.{'\n'}
                             Download the file to view its contents.
                         </Text>
@@ -348,7 +348,7 @@ export const FileViewer: React.FC<FileViewerProps> = ({
             {/* File Details Section - at bottom */}
             <View className="bg-card" style={fileManagementStyles.fileDetailsSection}>
                 <View style={fileManagementStyles.fileDetailsSectionHeader}>
-                    <Text className="text-foreground" style={fileManagementStyles.fileDetailsSectionTitle}>
+                    <Text style={[fileManagementStyles.fileDetailsSectionTitle, { color: colors.text }]}>
                         File Details
                     </Text>
                     <TouchableOpacity

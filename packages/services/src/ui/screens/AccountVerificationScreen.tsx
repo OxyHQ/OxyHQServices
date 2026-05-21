@@ -88,22 +88,23 @@ const AccountVerificationScreen: React.FC<BaseScreenProps> = ({
 
             <ScrollView style={styles.content}>
                 <SettingsListGroup>
-                    <Text style={styles.description} className="text-muted-foreground">
+                    <Text style={[styles.description, { color: bloomTheme.colors.textSecondary }]}>
                         {t('accountVerification.description') || 'Request a verified badge for your account. Verified accounts help establish authenticity and credibility.'}
                     </Text>
                 </SettingsListGroup>
 
                 <SettingsListGroup title={t('accountVerification.sections.request') || 'VERIFICATION REQUEST'}>
                     <View style={styles.inputGroup}>
-                        <Text style={styles.label} className="text-foreground">
+                        <Text style={[styles.label, { color: bloomTheme.colors.text }]}>
                             {t('accountVerification.reasonLabel') || 'Reason for Verification *'}
                         </Text>
                         <TextInput
                             style={[
                                 styles.textInput,
                                 styles.textArea,
+                                { color: bloomTheme.colors.text },
                             ]}
-                            className="bg-secondary text-foreground border-border"
+                            className="bg-secondary border-border"
                             value={reason}
                             onChangeText={setReason}
                             placeholder={t('accountVerification.reasonPlaceholder') || 'Explain why you need a verified badge (e.g., public figure, brand, organization)'}
@@ -116,15 +117,16 @@ const AccountVerificationScreen: React.FC<BaseScreenProps> = ({
                     </View>
 
                     <View style={styles.inputGroup}>
-                        <Text style={styles.label} className="text-foreground">
+                        <Text style={[styles.label, { color: bloomTheme.colors.text }]}>
                             {t('accountVerification.evidenceLabel') || 'Evidence (Optional)'}
                         </Text>
                         <TextInput
                             style={[
                                 styles.textInput,
                                 styles.textArea,
+                                { color: bloomTheme.colors.text },
                             ]}
-                            className="bg-secondary text-foreground border-border"
+                            className="bg-secondary border-border"
                             value={evidence}
                             onChangeText={setEvidence}
                             placeholder={t('accountVerification.evidencePlaceholder') || 'Provide any supporting documentation or links (e.g., official website, social media profiles)'}
@@ -155,7 +157,7 @@ const AccountVerificationScreen: React.FC<BaseScreenProps> = ({
                 </SettingsListGroup>
 
                 <SettingsListGroup>
-                    <Text style={styles.note} className="text-muted-foreground">
+                    <Text style={[styles.note, { color: bloomTheme.colors.textSecondary }]}>
                         {t('accountVerification.note') || 'Note: Verification requests are reviewed manually and may take several days. We will notify you once your request has been reviewed.'}
                     </Text>
                 </SettingsListGroup>

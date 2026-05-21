@@ -19,6 +19,7 @@ import {
     Dimensions,
     Platform,
     Linking,
+    useWindowDimensions,
 } from 'react-native';
 import Animated, {
     useSharedValue,
@@ -32,6 +33,7 @@ import QRCode from 'react-native-qrcode-svg';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { Button } from '@oxyhq/bloom/button';
 import { Loading } from '@oxyhq/bloom/loading';
+import { BottomSheet, type BottomSheetRef } from '@oxyhq/bloom/bottom-sheet';
 import { useOxy } from '../context/OxyContext';
 import OxyLogo from './OxyLogo';
 import { createDebugLogger } from '@oxyhq/core';
@@ -84,8 +86,11 @@ export const subscribeToSignInModal = (listener: (visible: boolean) => void): ((
     return () => visibilityListeners.delete(listener);
 };
 
+type ModalView = 'main' | 'qr';
+
 const SignInModal: React.FC = () => {
     const [visible, setVisible] = useState(false);
+    const [view, setView] = useState<ModalView>('main');
     const [authSession, setAuthSession] = useState<AuthSession | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -93,11 +98,14 @@ const SignInModal: React.FC = () => {
 
     const insets = useSafeAreaInsets();
     const theme = useTheme();
+    const { width: windowWidth } = useWindowDimensions();
+    const isWide = windowWidth >= 768;
     const { oxyServices, switchSession } = useOxy();
 
     const socketRef = useRef<Socket | null>(null);
     const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const isProcessingRef = useRef(false);
+    const sheetRef = useRef<BottomSheetRef>(null);
 
     // Animation values
     const opacity = useSharedValue(0);
@@ -117,12 +125,15 @@ const SignInModal: React.FC = () => {
         if (visible) {
             opacity.value = withTiming(1, { duration: 250 });
             scale.value = withTiming(1, { duration: 250 });
+            setView('main');
             generateAuthSession();
+            if (!isWide) sheetRef.current?.present();
         } else {
             opacity.value = withTiming(0, { duration: 200 });
             scale.value = withTiming(0.9, { duration: 200 });
+            if (!isWide) sheetRef.current?.dismiss();
         }
-    }, [visible]);
+    }, [visible, isWide]);
 
     const backdropStyle = useAnimatedStyle(() => ({
         opacity: opacity.value,
@@ -137,6 +148,16 @@ const SignInModal: React.FC = () => {
     const handleAuthSuccess = useCallback(async (sessionId: string) => {
         if (isProcessingRef.current) return;
         isProcessingRef.current = true;
+
+        // Dismiss the in-app browser (if any) so the user returns to the app.
+        if (Platform.OS !== 'web') {
+            try {
+                const WebBrowser = await import('expo-web-browser');
+                WebBrowser.dismissBrowser();
+            } catch {
+                /* expo-web-browser not available */
+            }
+        }
 
         try {
             if (switchSession) {
@@ -169,6 +190,11 @@ const SignInModal: React.FC = () => {
 
     // Connect to socket for real-time updates
     const connectSocket = useCallback((sessionToken: string) => {
+        // Disconnect any pre-existing socket to avoid duplicates on re-renders.
+        if (socketRef.current) {
+            socketRef.current.disconnect();
+            socketRef.current = null;
+        }
         const baseURL = oxyServices.getBaseURL();
 
         const socket = io(`${baseURL}/auth-session`, {
@@ -181,8 +207,16 @@ const SignInModal: React.FC = () => {
         socketRef.current = socket;
 
         socket.on('connect', () => {
-            debug.log('Auth socket connected');
+            debug.log('Auth socket connected, joining room with token:', sessionToken.substring(0, 8) + '...');
             socket.emit('join', sessionToken);
+        });
+
+        socket.on('joined', (payload: unknown) => {
+            debug.log('Joined room:', payload);
+        });
+
+        socket.on('disconnect', (reason: string) => {
+            debug.log('Auth socket disconnected:', reason);
         });
 
         socket.on('auth_update', (payload: AuthUpdatePayload) => {
@@ -318,10 +352,25 @@ const SignInModal: React.FC = () => {
                 `width=${width},height=${height},left=${left},top=${top},popup=1`
             );
         } else {
-            // Open in browser on native
-            Linking.openURL(webUrl.toString());
+            // Open in in-app browser on native via expo-web-browser. Falls back
+            // to system browser if expo-web-browser is not available.
+            try {
+                const WebBrowser = await import('expo-web-browser');
+                // Belt-and-suspenders: also start HTTP polling while the browser is
+                // open. The websocket can drop while the app is backgrounded; polling
+                // ensures we still see the authorized state on return.
+                if (!pollingIntervalRef.current && authSession) {
+                    startPolling(authSession.sessionToken);
+                }
+                await WebBrowser.openBrowserAsync(webUrl.toString(), {
+                    presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET,
+                    dismissButtonStyle: 'close',
+                });
+            } catch {
+                Linking.openURL(webUrl.toString());
+            }
         }
-    }, [authSession, oxyServices]);
+    }, [authSession, oxyServices, startPolling]);
 
     // Refresh session
     const handleRefresh = useCallback(() => {
@@ -342,43 +391,45 @@ const SignInModal: React.FC = () => {
         };
     }, [cleanup]);
 
-    if (!visible) return null;
+    if (!visible && isWide) return null;
 
-    return (
-        <Modal visible={visible} transparent animationType="none" statusBarTranslucent onRequestClose={handleClose}>
-            <Animated.View style={[styles.backdrop, { backgroundColor: theme.colors.overlay }, backdropStyle]}>
-                <TouchableOpacity style={StyleSheet.absoluteFill} onPress={handleClose} activeOpacity={1} />
+    const innerContent = (
+        <>
+            {!isWide && view === 'qr' ? (
+                <TouchableOpacity style={styles.backButton} onPress={() => setView('main')} accessibilityLabel="Back">
+                    <Text style={styles.backButtonText}>‹</Text>
+                </TouchableOpacity>
+            ) : null}
+            {isWide ? (
+                <TouchableOpacity style={styles.closeButton} onPress={handleClose} accessibilityLabel="Close">
+                    <Text style={styles.closeButtonText}>×</Text>
+                </TouchableOpacity>
+            ) : null}
 
-                <Animated.View style={[styles.content, contentStyle, { paddingTop: insets.top + 20, paddingBottom: insets.bottom + 20 }]}>
-                    {/* Close button */}
-                    <TouchableOpacity style={styles.closeButton} onPress={handleClose}>
-                        <Text style={styles.closeButtonText}>×</Text>
-                    </TouchableOpacity>
-
-                    {/* Header */}
-                    <View style={styles.header}>
-                        <OxyLogo variant="icon" size={56} />
-                        <Text className="text-foreground" style={styles.title}>Sign in with Oxy</Text>
-                        <Text className="text-muted-foreground" style={styles.subtitle}>
-                            Scan with Oxy Accounts app or use the button below
-                        </Text>
-                    </View>
-
-                    {isLoading ? (
+            {isLoading ? (
                         <View style={styles.loadingContainer}>
+                            <OxyLogo variant="icon" size={56} />
                             <Loading size="large" />
-                            <Text className="text-muted-foreground" style={styles.loadingText}>
+                            <Text style={[styles.loadingText, { color: theme.colors.textSecondary }]}>
                                 Preparing sign in...
                             </Text>
                         </View>
                     ) : error ? (
                         <View style={styles.errorContainer}>
-                            <Text className="text-destructive" style={styles.errorText}>{error}</Text>
+                            <OxyLogo variant="icon" size={56} />
+                            <Text style={[styles.errorText, { color: theme.colors.error }]}>{error}</Text>
                             <Button onPress={handleRefresh}>Try Again</Button>
                         </View>
-                    ) : (
+                    ) : isWide ? (
                         <>
-                            {/* QR Code */}
+                            <View style={styles.header}>
+                                <OxyLogo variant="icon" size={56} />
+                                <Text style={[styles.title, { color: theme.colors.text }]}>Sign in with Oxy</Text>
+                                <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]}>
+                                    Scan with Oxy Accounts app or use the button below
+                                </Text>
+                            </View>
+
                             <View style={[styles.qrContainer, { backgroundColor: 'white' }]}>
                                 {authSession ? (
                                     <QRCode
@@ -392,14 +443,12 @@ const SignInModal: React.FC = () => {
                                 )}
                             </View>
 
-                            {/* Divider */}
                             <View style={styles.dividerContainer}>
-                                <View style={[styles.divider, { backgroundColor: 'rgba(255,255,255,0.3)' }]} />
-                                <Text style={[styles.dividerText, { color: 'rgba(255,255,255,0.7)' }]}>or</Text>
-                                <View style={[styles.divider, { backgroundColor: 'rgba(255,255,255,0.3)' }]} />
+                                <View style={[styles.divider, { backgroundColor: theme.colors.border }]} />
+                                <Text style={[styles.dividerText, { color: theme.colors.textTertiary }]}>or</Text>
+                                <View style={[styles.divider, { backgroundColor: theme.colors.border }]} />
                             </View>
 
-                            {/* Open Auth Popup Button */}
                             <Button
                                 onPress={handleOpenAuthPopup}
                                 icon={<OxyLogo variant="icon" size={20} fillColor={theme.colors.card} />}
@@ -407,17 +456,94 @@ const SignInModal: React.FC = () => {
                                 Open Oxy Auth
                             </Button>
 
-                            {/* Status */}
                             {isWaiting && (
                                 <View style={styles.statusContainer}>
                                     <Loading size="small" />
-                                    <Text style={styles.statusText}>
-                                        Waiting for authorization...
+                                    <Text style={[styles.statusText, { color: theme.colors.textSecondary }]}>
+                                        Waiting for authorization…
+                                    </Text>
+                                </View>
+                            )}
+                        </>
+                    ) : view === 'main' ? (
+                        <>
+                            <View style={styles.header}>
+                                <OxyLogo variant="icon" size={56} />
+                                <Text style={[styles.title, { color: theme.colors.text }]}>Sign in with Oxy</Text>
+                                <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]}>
+                                    One account for the whole Oxy ecosystem. Continue to authorize this device.
+                                </Text>
+                            </View>
+
+                            <View style={styles.actions}>
+                                <Button
+                                    onPress={handleOpenAuthPopup}
+                                    icon={<OxyLogo variant="icon" size={20} fillColor={theme.colors.card} />}
+                                >
+                                    Continue with Oxy
+                                </Button>
+
+                                <Button variant="ghost" onPress={() => setView('qr')}>
+                                    Scan QR code instead
+                                </Button>
+                            </View>
+                        </>
+                    ) : (
+                        <>
+                            <View style={styles.header}>
+                                <Text style={[styles.title, { color: theme.colors.text }]}>Scan QR</Text>
+                                <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]}>
+                                    Open the Oxy Accounts app on another device and scan this code.
+                                </Text>
+                            </View>
+
+                            <View style={[styles.qrContainer, { backgroundColor: 'white' }]}>
+                                {authSession ? (
+                                    <QRCode
+                                        value={getQRData()}
+                                        size={220}
+                                        backgroundColor="white"
+                                        color="black"
+                                    />
+                                ) : (
+                                    <Loading size="large" />
+                                )}
+                            </View>
+
+                            {isWaiting && (
+                                <View style={styles.statusContainer}>
+                                    <Loading size="small" />
+                                    <Text style={[styles.statusText, { color: theme.colors.textSecondary }]}>
+                                        Waiting for authorization…
                                     </Text>
                                 </View>
                             )}
                         </>
                     )}
+        </>
+    );
+
+    if (!isWide) {
+        return (
+            <BottomSheet
+                ref={sheetRef}
+                onDismiss={handleClose}
+                enablePanDownToClose
+            >
+                <View style={[styles.sheetContent, { paddingBottom: insets.bottom + 24 }]}>
+                    {innerContent}
+                </View>
+            </BottomSheet>
+        );
+    }
+
+    return (
+        <Modal visible={visible} transparent animationType="none" statusBarTranslucent onRequestClose={handleClose}>
+            <Animated.View style={[styles.backdrop, { backgroundColor: theme.colors.overlay }, backdropStyle]}>
+                <TouchableOpacity style={StyleSheet.absoluteFill} onPress={handleClose} activeOpacity={1} />
+
+                <Animated.View style={[styles.content, contentStyle, { paddingTop: insets.top + 20, paddingBottom: insets.bottom + 20 }]}>
+                    {innerContent}
                 </Animated.View>
             </Animated.View>
         </Modal>
@@ -454,19 +580,51 @@ const styles = StyleSheet.create({
         fontWeight: '300',
         lineHeight: 32,
     },
+    backButton: {
+        position: 'absolute',
+        top: 16,
+        left: 16,
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 10,
+    },
+    backButtonText: {
+        color: 'white',
+        fontSize: 32,
+        fontWeight: '300',
+        lineHeight: 32,
+        marginRight: 2,
+    },
+    actions: {
+        width: '100%',
+        gap: 12,
+    },
+    sheetContent: {
+        paddingHorizontal: 24,
+        paddingTop: 48,
+        paddingBottom: 32,
+        alignItems: 'center',
+        gap: 24,
+        width: '100%',
+    },
     header: {
         alignItems: 'center',
-        marginBottom: 32,
+        gap: 8,
     },
     title: {
-        fontSize: 28,
-        fontWeight: 'bold',
-        marginTop: 16,
+        fontSize: 24,
+        fontWeight: '700',
+        marginTop: 8,
     },
     subtitle: {
-        fontSize: 15,
-        marginTop: 8,
+        fontSize: 14,
         textAlign: 'center',
+        lineHeight: 20,
+        maxWidth: 320,
     },
     qrContainer: {
         padding: 20,

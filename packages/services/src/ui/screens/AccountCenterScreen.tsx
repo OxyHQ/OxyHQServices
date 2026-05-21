@@ -57,7 +57,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
     if (!isAuthenticated) {
         return (
             <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
-                <Text style={styles.message} className="text-foreground">{t('common.status.notSignedIn') || 'Not signed in'}</Text>
+                <Text style={[styles.message, { color: bloomTheme.colors.text }]}>{t('common.status.notSignedIn') || 'Not signed in'}</Text>
             </View>
         );
     }
@@ -150,7 +150,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                 </SettingsListGroup>
 
                 <View style={styles.versionContainer}>
-                    <Text style={styles.versionText} className="text-muted-foreground">
+                    <Text style={[styles.versionText, { color: bloomTheme.colors.textSecondary }]}>
                         {t('accountCenter.version', { version: packageInfo.version }) || `Version ${packageInfo.version}`}
                     </Text>
                 </View>
