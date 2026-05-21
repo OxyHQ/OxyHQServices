@@ -8,7 +8,7 @@ import 'react-native-reanimated';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { OxyProvider, toast } from '@oxyhq/services';
 import { QueryClientProvider } from '@tanstack/react-query';
-import { useTheme } from '@oxyhq/bloom/theme';
+import { BloomThemeProvider, useTheme } from '@oxyhq/bloom/theme';
 import { Provider as PortalProvider, Outlet as PortalOutlet } from '@oxyhq/bloom/portal';
 
 import { queryClient } from '@/hooks/queries/queryClient';
@@ -25,9 +25,11 @@ const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'https://api.oxy.so';
 export default function RootLayout() {
   return (
     <ErrorBoundary>
-      <AppThemeProvider>
-        <RootLayoutContent />
-      </AppThemeProvider>
+      <BloomThemeProvider mode="system" colorPreset="oxy">
+        <AppThemeProvider>
+          <RootLayoutContent />
+        </AppThemeProvider>
+      </BloomThemeProvider>
     </ErrorBoundary>
   );
 }
