@@ -6,11 +6,11 @@
 import React from 'react';
 import {
   View,
-  Text,
   TouchableOpacity,
   StyleSheet,
 } from 'react-native';
 import { Loading } from '@oxyhq/bloom/loading';
+import { Text } from '@oxyhq/bloom/typography';
 import { useColors } from '@/constants/theme';
 import { SenderAvatar } from '@/components/Avatar';
 import type { Subscription } from '@/services/emailApi';

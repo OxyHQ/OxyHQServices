@@ -70,7 +70,12 @@ export const SearchHeader = forwardRef<TextInput, SearchHeaderProps>(function Se
       <View style={styles.bar}>
         {isInputMode ? (
           <>
-            <TouchableOpacity onPress={onLeftIcon} style={styles.iconButton}>
+            <TouchableOpacity
+              accessibilityLabel={leftIcon === 'menu' ? 'Open menu' : 'Go back'}
+              accessibilityRole="button"
+              onPress={onLeftIcon}
+              style={styles.iconButton}
+            >
               {Platform.OS === 'web' && HUGE_ICON_MAP[leftIcon] ? (
                 <HugeiconsIcon icon={HUGE_ICON_MAP[leftIcon]} size={24} color={colors.icon} />
               ) : (
@@ -91,7 +96,12 @@ export const SearchHeader = forwardRef<TextInput, SearchHeaderProps>(function Se
               autoCorrect={false}
             />
             {value && value.length > 0 && onClear && (
-              <TouchableOpacity onPress={onClear} style={styles.iconButton}>
+              <TouchableOpacity
+                accessibilityLabel="Clear search"
+                accessibilityRole="button"
+                onPress={onClear}
+                style={styles.iconButton}
+              >
                 {Platform.OS === 'web' ? (
                   <HugeiconsIcon icon={Cancel01Icon as unknown as IconSvgElement} size={20} color={colors.icon} />
                 ) : (
@@ -102,11 +112,18 @@ export const SearchHeader = forwardRef<TextInput, SearchHeaderProps>(function Se
           </>
         ) : (
           <TouchableOpacity
+            accessibilityLabel={placeholder}
+            accessibilityRole="search"
             style={[styles.pillButton, { backgroundColor: colors.searchBackground }]}
             onPress={onPress}
             activeOpacity={0.8}
           >
-            <TouchableOpacity onPress={onLeftIcon} activeOpacity={0.7}>
+            <TouchableOpacity
+              accessibilityLabel={leftIcon === 'menu' ? 'Open menu' : 'Go back'}
+              accessibilityRole="button"
+              onPress={onLeftIcon}
+              activeOpacity={0.7}
+            >
               {Platform.OS === 'web' && HUGE_ICON_MAP[leftIcon] ? (
                 <HugeiconsIcon icon={HUGE_ICON_MAP[leftIcon]} size={24} color={colors.icon} />
               ) : (

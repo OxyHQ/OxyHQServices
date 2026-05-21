@@ -618,6 +618,8 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
 
       {!isSelectionMode && (
         <TouchableOpacity
+          accessibilityLabel="Compose new email"
+          accessibilityRole="button"
           style={[
             styles.fab,
             {

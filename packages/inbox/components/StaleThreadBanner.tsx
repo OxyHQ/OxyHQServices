@@ -6,10 +6,11 @@
  */
 
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import { View, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import { Clock01Icon, Cancel01Icon, MailReply01Icon } from '@hugeicons/core-free-icons';
+import { Text } from '@oxyhq/bloom/typography';
 
 import { useColors } from '@/constants/theme';
 import type { StaleThreadInfo } from '@/hooks/queries/useStaleThread';

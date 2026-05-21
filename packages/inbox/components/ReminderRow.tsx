@@ -6,8 +6,9 @@
  */
 
 import React, { useCallback } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import { View, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Text } from '@oxyhq/bloom/typography';
 import { useColors } from '@/constants/theme';
 import type { Reminder } from '@/services/emailApi';
 

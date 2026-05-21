@@ -1,7 +1,8 @@
 import React, { useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Platform, Linking } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Platform, Linking } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Card, CardHeader, CardBody } from '@oxyhq/bloom/card';
+import { Text } from '@oxyhq/bloom/typography';
 import { useColors } from '@/constants/theme';
 
 interface EventCardProps {

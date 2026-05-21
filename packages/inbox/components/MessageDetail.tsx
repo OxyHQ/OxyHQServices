@@ -527,21 +527,36 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
           </TouchableOpacity>
         )}
         <View style={styles.toolbarSpacer} />
-        <TouchableOpacity onPress={handleArchive} style={styles.iconButton}>
+        <TouchableOpacity
+          accessibilityLabel="Archive"
+          accessibilityRole="button"
+          onPress={handleArchive}
+          style={styles.iconButton}
+        >
           {Platform.OS === 'web' ? (
             <HugeiconsIcon icon={Archive01Icon as unknown as IconSvgElement} size={22} color={colors.icon} />
           ) : (
             <MaterialCommunityIcons name="archive-outline" size={22} color={colors.icon} />
           )}
         </TouchableOpacity>
-        <TouchableOpacity onPress={handleDelete} style={styles.iconButton}>
+        <TouchableOpacity
+          accessibilityLabel="Delete"
+          accessibilityRole="button"
+          onPress={handleDelete}
+          style={styles.iconButton}
+        >
           {Platform.OS === 'web' ? (
             <HugeiconsIcon icon={Delete01Icon as unknown as IconSvgElement} size={22} color={colors.icon} />
           ) : (
             <MaterialCommunityIcons name="delete-outline" size={22} color={colors.icon} />
           )}
         </TouchableOpacity>
-        <TouchableOpacity onPress={handleMarkUnread} style={styles.iconButton}>
+        <TouchableOpacity
+          accessibilityLabel="Mark as unread"
+          accessibilityRole="button"
+          onPress={handleMarkUnread}
+          style={styles.iconButton}
+        >
           {Platform.OS === 'web' ? (
             <HugeiconsIcon icon={Mail01Icon as unknown as IconSvgElement} size={22} color={colors.icon} />
           ) : (
@@ -549,6 +564,9 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
           )}
         </TouchableOpacity>
         <TouchableOpacity
+          accessibilityLabel={currentMessage.flags.pinned ? 'Unpin message' : 'Pin message'}
+          accessibilityRole="button"
+          accessibilityState={{ selected: currentMessage.flags.pinned }}
           onPress={handlePin}
           style={[styles.iconButton, togglePin.isPending && { opacity: 0.5 }]}
           disabled={togglePin.isPending}
@@ -570,6 +588,9 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
           )}
         </TouchableOpacity>
         <TouchableOpacity
+          accessibilityLabel={currentMessage.flags.starred ? 'Unstar message' : 'Star message'}
+          accessibilityRole="button"
+          accessibilityState={{ selected: currentMessage.flags.starred }}
           onPress={handleStar}
           style={[styles.iconButton, toggleStar.isPending && { opacity: 0.5 }]}
           disabled={toggleStar.isPending}
@@ -963,6 +984,8 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
           ]}
         >
           <TouchableOpacity
+            accessibilityLabel="Reply"
+            accessibilityRole="button"
             style={[styles.replyButton, { borderColor: colors.border }]}
             onPress={() => handleReply()}
             activeOpacity={0.7}
@@ -975,6 +998,8 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
             <Text style={[styles.replyButtonText, { color: colors.text }]}>Reply</Text>
           </TouchableOpacity>
           <TouchableOpacity
+            accessibilityLabel="Reply all"
+            accessibilityRole="button"
             style={[styles.replyButton, { borderColor: colors.border }]}
             onPress={() => handleReplyAll()}
             activeOpacity={0.7}
@@ -987,6 +1012,8 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
             <Text style={[styles.replyButtonText, { color: colors.text }]}>Reply All</Text>
           </TouchableOpacity>
           <TouchableOpacity
+            accessibilityLabel="Forward"
+            accessibilityRole="button"
             style={[styles.replyButton, { borderColor: colors.border }]}
             onPress={() => handleForward()}
             activeOpacity={0.7}

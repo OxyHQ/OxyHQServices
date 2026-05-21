@@ -7,10 +7,11 @@
  */
 
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import { View, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import { Alert01Icon, Clock01Icon, CheckmarkCircle01Icon } from '@hugeicons/core-free-icons';
+import { Text } from '@oxyhq/bloom/typography';
 
 import { useColors } from '@/constants/theme';
 import type { Commitment } from '@/hooks/queries/useCommitmentDetection';

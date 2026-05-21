@@ -1,7 +1,8 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Card, CardHeader, CardBody } from '@oxyhq/bloom/card';
+import { Text } from '@oxyhq/bloom/typography';
 import { useColors } from '@/constants/theme';
 
 interface PurchaseCardProps {

@@ -6,10 +6,11 @@
  */
 
 import React, { useCallback, useState, useRef } from 'react';
-import { View, Text, Pressable, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import { View, Pressable, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
+import { Text } from '@oxyhq/bloom/typography';
 import {
   StarIcon,
   PinIcon,

@@ -6,8 +6,9 @@
  */
 
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import * as Prompt from '@oxyhq/bloom/prompt';
+import { Text } from '@oxyhq/bloom/typography';
 import { useColors } from '@/constants/theme';
 
 interface ShortcutRow {

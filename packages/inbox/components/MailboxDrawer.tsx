@@ -124,8 +124,12 @@ function NavItem({
   onPress: () => void;
 }) {
   const iconColor = isActive ? colors.sidebarItemActiveText : colors.icon;
+  const accessibilityLabel = badge != null && badge > 0 ? `${label}, ${badge} unread` : label;
   return (
     <TouchableOpacity
+      accessibilityLabel={accessibilityLabel}
+      accessibilityRole="link"
+      accessibilityState={{ selected: isActive }}
       style={[
         styles.item,
         isActive && { backgroundColor: colors.sidebarItemActive },
@@ -335,7 +339,13 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
       {/* Header */}
       <View style={[styles.header, { borderBottomColor: colors.border }, collapsed && styles.headerCollapsed]}>
         {collapsed ? (
-          <TouchableOpacity onPress={onToggle} style={styles.collapseButtonCenter} activeOpacity={0.7}>
+          <TouchableOpacity
+            accessibilityLabel="Expand sidebar"
+            accessibilityRole="button"
+            onPress={onToggle}
+            style={styles.collapseButtonCenter}
+            activeOpacity={0.7}
+          >
             {Platform.OS === 'web' ? (
               <HugeiconsIcon icon={SidebarRight01Icon as unknown as IconSvgElement} size={20} color={colors.icon} />
             ) : (
@@ -350,7 +360,13 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
                 <Text style={[styles.appTitle, { color: colors.primary }]}>Inbox</Text>
               </View>
               {onToggle && (
-                <TouchableOpacity onPress={onToggle} style={styles.collapseButton} activeOpacity={0.7}>
+                <TouchableOpacity
+                  accessibilityLabel="Collapse sidebar"
+                  accessibilityRole="button"
+                  onPress={onToggle}
+                  style={styles.collapseButton}
+                  activeOpacity={0.7}
+                >
                   {Platform.OS === 'web' ? (
                     <HugeiconsIcon icon={SidebarLeft01Icon as unknown as IconSvgElement} size={20} color={colors.icon} />
                   ) : (
@@ -368,6 +384,8 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
       {!collapsed && (
         <View style={styles.composeWrapper}>
           <TouchableOpacity
+            accessibilityLabel="Compose new email"
+            accessibilityRole="button"
             style={[styles.composeButton, { backgroundColor: colors.composeFab }]}
             onPress={handleCompose}
             activeOpacity={0.8}
@@ -384,6 +402,8 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
       {collapsed && (
         <View style={styles.composeWrapperCollapsed}>
           <TouchableOpacity
+            accessibilityLabel="Compose new email"
+            accessibilityRole="button"
             style={[styles.composeButtonCollapsed, { backgroundColor: colors.composeFab }]}
             onPress={handleCompose}
             activeOpacity={0.8}

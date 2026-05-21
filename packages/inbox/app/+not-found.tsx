@@ -1,6 +1,7 @@
 import React from 'react';
-import { View, Text, StyleSheet, Platform, useWindowDimensions } from 'react-native';
+import { View, StyleSheet, Platform, useWindowDimensions } from 'react-native';
 import { Link, Stack } from 'expo-router';
+import { Text, H1, H4 } from '@oxyhq/bloom/typography';
 import { useColors } from '@/constants/theme';
 
 export default function NotFoundScreen() {
@@ -12,8 +13,8 @@ export default function NotFoundScreen() {
     <>
       <Stack.Screen options={{ headerShown: false }} />
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <Text style={[styles.code, { color: colors.border }]}>404</Text>
-        <Text style={[styles.title, { color: colors.text }]}>Page not found</Text>
+        <H1 style={[styles.code, { color: colors.border }]}>404</H1>
+        <H4 style={[styles.title, { color: colors.text }]}>Page not found</H4>
         <Text style={[styles.description, { color: colors.secondaryText }]}>
           The page you're looking for doesn't exist or has been moved.
         </Text>
