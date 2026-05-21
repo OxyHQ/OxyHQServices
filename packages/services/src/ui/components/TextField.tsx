@@ -185,7 +185,7 @@ interface CompoundedComponent
     Props & React.RefAttributes<TextFieldHandles>
   > {
   Icon: React.FunctionComponent<TextFieldIconProps>;
-  Affix: React.FunctionComponent<Partial<TextFieldAffixProps>>;
+  Affix: React.FunctionComponent<TextFieldAffixProps>;
 }
 
 type TextFieldHandles = Pick<
@@ -568,7 +568,6 @@ const TextField = forwardRef<TextFieldHandles, Props>(
 TextField.Icon = TextFieldIcon;
 
 // @component ./TextField/Adornment/TextFieldAffix.tsx
-// @ts-ignore Types of property 'theme' are incompatible.
 TextField.Affix = TextFieldAffix;
 
 export default TextField;

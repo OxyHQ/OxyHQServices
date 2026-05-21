@@ -4,6 +4,9 @@ import {
   Image,
   type ImageSourcePropType,
   Platform,
+  type StyleProp,
+  type ImageStyle,
+  type TextStyle,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useInternalTheme } from './theming';
@@ -19,13 +22,15 @@ export type IconSource =
   | Readonly<{ source: IconSourceBase; direction: 'rtl' | 'ltr' | 'auto' }>
   | ((props: IconProps & { color: string }) => React.ReactNode);
 
+type IconStyle = StyleProp<ImageStyle> | StyleProp<TextStyle>;
+
 type IconProps = {
   /**
    * Size of icon.
    */
   size: number;
   allowFontScaling?: boolean;
-  style?: any;
+  style?: IconStyle;
 };
 
 const isImageSource = (source: any) =>
@@ -150,7 +155,10 @@ const Icon = ({
     );
   }if (typeof s === 'string') {
     // String icons - use MaterialCommunityIcons from @expo/vector-icons
-    // This is the default icon library used by react-native-paper
+    // This is the default icon library used by react-native-paper.
+    // The package ships a literal-union for `name`, but the local
+    // module augmentation in src/types/expo-vector-icons.d.ts widens it
+    // to `string` so dynamic names compile without a cast.
     const styleArray = Array.isArray(rest.style)
       ? rest.style
       : rest.style
@@ -158,8 +166,7 @@ const Icon = ({
         : [];
     return (
       <MaterialCommunityIcons
-        // biome-ignore lint/suspicious/noExplicitAny: MaterialCommunityIcons name expects literal union; dynamic icon names require cast
-        name={s as any}
+        name={s}
         size={size}
         color={iconColor}
         style={[
@@ -167,8 +174,7 @@ const Icon = ({
             transform: [{ scaleX: direction === 'rtl' ? -1 : 1 }],
           },
           ...styleArray,
-          // biome-ignore lint/suspicious/noExplicitAny: style array type incompatibility with MaterialCommunityIcons style prop
-        ] as any}
+        ]}
         testID={testID}
         {...accessibilityProps}
       />

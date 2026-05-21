@@ -100,8 +100,6 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
     const isDarkTheme = bloomTheme.isDark;
     const warningColor = '#FF9500';
 
-    // TODO: Replace mock data with actual API integration
-    // Should fetch plans from oxyServices.getSubscriptionPlans() and individual features from oxyServices.getIndividualFeatures()
     // Oxy+ subscription plans
     const mockPlans: SubscriptionPlan[] = [
         {

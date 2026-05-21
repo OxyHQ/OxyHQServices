@@ -1,7 +1,6 @@
 import type React from 'react';
 import { useEffect, useRef } from 'react';
 import { TouchableOpacity, Animated, Easing } from 'react-native';
-// @ts-ignore - MaterialCommunityIcons is available at runtime
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 interface AnimatedButtonProps {

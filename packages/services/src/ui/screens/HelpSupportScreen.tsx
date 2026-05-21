@@ -43,7 +43,6 @@ const HelpSupportScreen: React.FC<BaseScreenProps> = ({
     }, [navigate, t]);
 
     const handleReportBug = useMemo(() => () => {
-        // TODO: Consider implementing a dedicated bug report form instead of just email
         Linking.openURL('mailto:bugs@oxy.so?subject=Bug Report').catch(() => {
             toast.error(t('help.reportError') || 'Failed to open email client');
         });

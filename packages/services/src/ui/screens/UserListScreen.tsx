@@ -70,12 +70,21 @@ const UserListScreen: React.FC<UserListScreenProps> = ({
         }
         setError(null);
 
-        const response =
-          mode === 'followers'
-            ? await oxyServices.getUserFollowers(userId, { limit: PAGE_SIZE, offset })
-            : await oxyServices.getUserFollowing(userId, { limit: PAGE_SIZE, offset });
+        let newUsers: User[];
+        let total: number;
+        let hasMore: boolean;
 
-        const newUsers = mode === 'followers' ? response.followers : response.following;
+        if (mode === 'followers') {
+          const result = await oxyServices.getUserFollowers(userId, { limit: PAGE_SIZE, offset });
+          newUsers = result.followers;
+          total = result.total;
+          hasMore = result.hasMore;
+        } else {
+          const result = await oxyServices.getUserFollowing(userId, { limit: PAGE_SIZE, offset });
+          newUsers = result.following;
+          total = result.total;
+          hasMore = result.hasMore;
+        }
 
         if (offset === 0 || isRefresh) {
           setUsers(newUsers);
@@ -83,8 +92,8 @@ const UserListScreen: React.FC<UserListScreenProps> = ({
           setUsers((prev) => [...prev, ...newUsers]);
         }
 
-        setTotal(response.total);
-        setHasMore(response.hasMore);
+        setTotal(total);
+        setHasMore(hasMore);
       } catch (err) {
         logger.error(`Failed to fetch ${mode}`, err instanceof Error ? err : new Error(String(err)), {
           component: 'UserListScreen',

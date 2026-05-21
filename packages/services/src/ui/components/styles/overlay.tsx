@@ -28,25 +28,34 @@ export const isAnimatedValue = (
   it: number | string | Animated.AnimatedInterpolation<number | string>
 ): it is Animated.Value => it instanceof Animated.Value;
 
-export default function overlay<T extends Animated.Value | number>(
-  elevation: T,
+// Overloaded signatures so each call site gets the right return type
+// without the conditional-type narrowing that TS cannot infer inside the
+// implementation body.
+function overlay(
+  elevation: number,
+  surfaceColor?: string
+): string;
+function overlay(
+  elevation: Animated.Value,
+  surfaceColor?: string
+): Animated.AnimatedInterpolation<number | string>;
+function overlay(
+  elevation: Animated.Value | number,
   surfaceColor = '#121212'
-): T extends number ? string : Animated.AnimatedInterpolation<number | string> {
+): string | Animated.AnimatedInterpolation<number | string> {
   if (isAnimatedValue(elevation)) {
     const inputRange = [0, 1, 2, 3, 8, 24];
 
-    // @ts-expect-error: TS doesn't seem to refine the type correctly
     return elevation.interpolate({
       inputRange,
-      outputRange: inputRange.map((elevation) => {
-        return calculateColor(surfaceColor, elevation);
-      }),
+      outputRange: inputRange.map((e) => calculateColor(surfaceColor, e)),
     });
   }
 
-  // @ts-expect-error: TS doesn't seem to refine the type correctly
   return calculateColor(surfaceColor, elevation);
 }
+
+export default overlay;
 
 function calculateColor(surfaceColor: string, elevation = 1) {
   let overlayTransparency: number;

@@ -153,7 +153,7 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
         }
     }, [currentStep, progressAnim, animateTransition]);
 
-    // Pay handler - TODO: Replace with actual payment API
+    // Pay handler — placeholder for payment integration
     const handlePay = useCallback(() => {
         setIsPaying(true);
         setTimeout(() => {
@@ -198,7 +198,7 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
         );
     }
 
-    // FairCoin address - TODO: Replace with dynamic address from backend
+    // FairCoin address placeholder — replaced when integration is wired up.
     const faircoinAddress = 'f1abc1234FAIRCOINADDRESS';
     const { width: windowWidth } = useWindowDimensions();
     const isMobile = windowWidth < 600;

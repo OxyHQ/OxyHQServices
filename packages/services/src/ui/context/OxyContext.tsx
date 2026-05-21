@@ -800,7 +800,23 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
 export const OxyContextProvider = OxyProvider;
 
-const noop = () => Promise.resolve() as any;
+/**
+ * Loading-state stub used when `useOxy()` is called outside an OxyProvider.
+ * All async methods reject with a clear error so misuse is caught early
+ * instead of silently no-oping and leaving the UI in a bad state.
+ */
+const PROVIDER_MISSING_ERROR_MESSAGE =
+  'OxyProvider is not mounted. Wrap your app in <OxyProvider> before calling useOxy() methods.';
+
+const rejectMissingProvider = <T,>(): Promise<T> =>
+  Promise.reject(new Error(PROVIDER_MISSING_ERROR_MESSAGE));
+
+// A stub OxyServices instance so the public type contract is preserved.
+// Calling network methods on it before a provider mounts will fail with
+// a descriptive baseURL — preferable to a null-pointer crash at the call site.
+const LOADING_STATE_OXY_SERVICES = new OxyServices({
+  baseURL: 'about:blank',
+});
 
 const LOADING_STATE: OxyContextState = {
   user: null,
@@ -812,32 +828,32 @@ const LOADING_STATE: OxyContextState = {
   isStorageReady: false,
   error: null,
   currentLanguage: 'en',
-  currentLanguageMetadata: {} as any,
+  currentLanguageMetadata: null,
   currentLanguageName: 'English',
   currentNativeLanguageName: 'English',
   hasIdentity: () => Promise.resolve(false),
   getPublicKey: () => Promise.resolve(null),
-  signIn: noop,
-  handlePopupSession: noop,
-  logout: noop,
-  logoutAll: noop,
-  switchSession: noop,
-  removeSession: noop,
-  refreshSessions: noop,
-  setLanguage: noop,
+  signIn: () => rejectMissingProvider<User>(),
+  handlePopupSession: () => rejectMissingProvider<void>(),
+  logout: () => rejectMissingProvider<void>(),
+  logoutAll: () => rejectMissingProvider<void>(),
+  switchSession: () => rejectMissingProvider<void>(),
+  removeSession: () => rejectMissingProvider<void>(),
+  refreshSessions: () => rejectMissingProvider<void>(),
+  setLanguage: () => rejectMissingProvider<void>(),
   getDeviceSessions: () => Promise.resolve([]),
-  logoutAllDeviceSessions: noop,
-  updateDeviceName: noop,
-  clearSessionState: noop,
-  clearAllAccountData: noop,
+  logoutAllDeviceSessions: () => rejectMissingProvider<void>(),
+  updateDeviceName: () => rejectMissingProvider<void>(),
+  clearSessionState: () => rejectMissingProvider<void>(),
+  clearAllAccountData: () => rejectMissingProvider<void>(),
   storageKeyPrefix: 'oxy_session',
-  oxyServices: null as any,
+  oxyServices: LOADING_STATE_OXY_SERVICES,
   openAvatarPicker: () => {},
   actingAs: null,
   managedAccounts: [],
   setActingAs: () => {},
-  refreshManagedAccounts: noop,
-  createManagedAccount: noop,
+  refreshManagedAccounts: () => rejectMissingProvider<void>(),
+  createManagedAccount: () => rejectMissingProvider<ManagedAccount>(),
 };
 
 export const useOxy = (): OxyContextState => {

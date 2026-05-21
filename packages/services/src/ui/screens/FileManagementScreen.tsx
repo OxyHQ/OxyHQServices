@@ -30,9 +30,7 @@ const loadDocumentPicker = async () => {
 import { toast } from '../../lib/sonner';
 import * as Prompt from '@oxyhq/bloom/prompt';
 import { usePromptControl } from '@oxyhq/bloom/prompt';
-import { Ionicons } from '@expo/vector-icons';
-// @ts-ignore - MaterialCommunityIcons is available at runtime
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import type { FileMetadata } from '@oxyhq/core';
 import { useFileStore, useFiles, useUploading as useUploadingStore, useUploadAggregateProgress, useDeleting as useDeletingStore } from '../stores/fileStore';
 import Header from '../components/Header';
@@ -263,7 +261,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     linkContext.entityType,
                     linkContext.entityId,
                     defaultVisibility,
-                    (linkContext as Record<string, unknown>).webhookUrl
+                    linkContext.webhookUrl
                 );
             } catch (error) {
                 // Continue anyway - selection shouldn't fail if linking fails
@@ -322,7 +320,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         linkContext.entityType,
                         linkContext.entityId,
                         defaultVisibility,
-                        (linkContext as Record<string, unknown>).webhookUrl
+                        linkContext.webhookUrl
                     );
                 } catch (error) {
                     // File linking failed, continue with selection
@@ -383,15 +381,15 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             const currentPaging = mode === 'more' ? (prevPagingRef.current ?? paging) : paging;
             const effectiveOffset = mode === 'more' ? currentPaging.offset + currentPaging.limit : 0;
             const response = await oxyServices.listUserFiles(currentPaging.limit, effectiveOffset);
-            const assets: FileMetadata[] = (response.files || []).map((f: Record<string, unknown>) => ({
+            const assets: FileMetadata[] = (response.files || []).map((f: { id: string; originalName?: string; sha256?: string; mime?: string; size?: number; createdAt?: string; metadata?: Record<string, unknown>; variants?: unknown[] }) => ({
                 id: f.id,
-                filename: f.originalName || f.sha256,
-                contentType: f.mime,
-                length: f.size,
+                filename: f.originalName ?? f.sha256 ?? '',
+                contentType: f.mime ?? '',
+                length: f.size ?? 0,
                 chunkSize: 0,
-                uploadDate: f.createdAt,
-                metadata: f.metadata || {},
-                variants: f.variants || [],
+                uploadDate: f.createdAt ?? '',
+                metadata: f.metadata ?? {},
+                variants: (f.variants ?? []) as FileMetadata['variants'],
             }));
             if (mode === 'more') {
                 // append

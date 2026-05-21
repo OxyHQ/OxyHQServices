@@ -153,7 +153,7 @@ const KarmaRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
             category: 'contribution',
             icon: 'bug',
             iconColor: '#FF9500',
-            unlocked: false, // TODO: Check actual bug reports
+            unlocked: false,
             rarity: 'rare',
         },
         {
@@ -163,7 +163,7 @@ const KarmaRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
             category: 'contribution',
             icon: 'hand-left',
             iconColor: '#34C759',
-            unlocked: false, // TODO: Check help actions
+            unlocked: false,
             rarity: 'common',
         },
         {
@@ -173,7 +173,7 @@ const KarmaRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
             category: 'streak',
             icon: 'flash',
             iconColor: '#FFD700',
-            unlocked: false, // TODO: Check streak
+            unlocked: false,
             rarity: 'epic',
         },
     ], [t, karmaTotal, colors]);
