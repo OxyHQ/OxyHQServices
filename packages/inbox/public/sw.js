@@ -1,20 +1,42 @@
 /**
  * Service Worker for Inbox by Oxy
  *
- * Strategies:
- * - App shell (HTML, JS, CSS): cache on install, network-first on fetch
- * - Static assets (images, fonts): cache-first
- * - API calls: network-first, fall back to cached response
- * - Offline mutations: queued via Background Sync
+ * Caching strategies (chosen for an email client that has to feel instant
+ * but also stay fresh):
+ *
+ * - App shell (HTML, navigation): network-first
+ *   Always try the network so a deploy is visible on the next page load.
+ *   Fall back to the cached `/index.html` shell when offline so the SPA
+ *   can still mount and surface the offline state instead of a browser
+ *   error page.
+ *
+ * - Static assets (.js, .css, fonts, images): stale-while-revalidate
+ *   Serve from cache for instant paint, then update the cache in the
+ *   background. Versioned filenames (hash-suffixed by Metro) make a
+ *   change safe to pick up on the next reload without manual cache
+ *   busting.
+ *
+ * - API calls (api.oxy.so, /api/*): network-first
+ *   Always show fresh inbox state when online; serve last known
+ *   response (good enough for read-only views) when offline.
+ *
+ * - Mutations: not cached. Offline mutations are queued by
+ *   `utils/offlineQueue.ts` in app state and replayed when the
+ *   `offline-mutations` background-sync tag fires (see below).
+ *
+ * Bumping `CACHE_NAME` / `API_CACHE` invalidates the corresponding cache
+ * on the next `activate` event (old caches are deleted there).
  */
 
 const CACHE_NAME = 'inbox-v1';
 const API_CACHE = 'inbox-api-v1';
 
-// App shell files cached on install
+// App shell files cached on install. Keep this list short — large entries
+// here block the install step. Anything else gets cached on first fetch.
 const APP_SHELL = [
   '/',
   '/index.html',
+  '/manifest.json',
 ];
 
 // ─── Install ────────────────────────────────────────────────────────
@@ -52,6 +74,13 @@ self.addEventListener('activate', (event) => {
 
 /**
  * Determine the caching strategy for a request.
+ *
+ * Returns one of:
+ *  - `'network-only'` — let the browser handle it (mutations, cross-origin
+ *    POST etc.)
+ *  - `'stale-while-revalidate'` — serve cache immediately, refresh in
+ *    background. Best for versioned static assets.
+ *  - `'network-first'` — try network, fall back to cache.
  */
 function getStrategy(request) {
   const url = new URL(request.url);
@@ -64,13 +93,15 @@ function getStrategy(request) {
     return 'network-first';
   }
 
-  // Static assets: cache-first
+  // Static assets: stale-while-revalidate. Metro hashes filenames so old
+  // entries are safe to keep until a new fetch replaces them.
   if (
     url.pathname.match(/\.(js|css|woff2?|ttf|otf|png|jpg|jpeg|gif|svg|ico|webp)$/) ||
+    url.pathname.startsWith('/_expo/') ||
     url.pathname.startsWith('/_next/static/') ||
     url.pathname.startsWith('/assets/')
   ) {
-    return 'cache-first';
+    return 'stale-while-revalidate';
   }
 
   // Navigation / HTML: network-first (app shell fallback)
@@ -108,22 +139,26 @@ async function networkFirst(request, cacheName) {
 }
 
 /**
- * Cache-first: try cache, fall back to network.
+ * Stale-while-revalidate: respond with the cached value immediately (if any)
+ * while kicking off a background fetch that refreshes the cache for next time.
  */
-async function cacheFirst(request) {
-  const cached = await caches.match(request);
-  if (cached) return cached;
+async function staleWhileRevalidate(request) {
+  const cache = await caches.open(CACHE_NAME);
+  const cached = await cache.match(request);
 
-  try {
-    const response = await fetch(request);
-    if (response.ok) {
-      const cache = await caches.open(CACHE_NAME);
-      cache.put(request, response.clone());
-    }
-    return response;
-  } catch {
-    return new Response('Offline', { status: 503, statusText: 'Service Unavailable' });
-  }
+  const fetchPromise = fetch(request)
+    .then((response) => {
+      if (response.ok) {
+        cache.put(request, response.clone());
+      }
+      return response;
+    })
+    .catch(() => null);
+
+  if (cached) return cached;
+  const fresh = await fetchPromise;
+  if (fresh) return fresh;
+  return new Response('Offline', { status: 503, statusText: 'Service Unavailable' });
 }
 
 self.addEventListener('fetch', (event) => {
@@ -131,8 +166,8 @@ self.addEventListener('fetch', (event) => {
 
   if (strategy === 'network-only') return; // Let the browser handle it
 
-  if (strategy === 'cache-first') {
-    event.respondWith(cacheFirst(event.request));
+  if (strategy === 'stale-while-revalidate') {
+    event.respondWith(staleWhileRevalidate(event.request));
     return;
   }
 
