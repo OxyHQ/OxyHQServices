@@ -21,6 +21,7 @@ config.watchFolders = [
   servicesRoot,
   servicesSrc,
   servicesNodeModules,
+  path.resolve(monorepoRoot, 'node_modules'),
 ];
 
 // 2. Let Metro know where to resolve packages and in what order
@@ -40,6 +41,18 @@ config.resolver.sourceExts = [
   'tsx',
 ];
 
+// 4a. Register `woff2`/`woff` as asset extensions so Metro can resolve the
+// font files bundled by `@oxyhq/bloom`. Metro's default `assetExts` includes
+// `ttf` and `otf` but not the web font formats; Bloom's web variant imports
+// `.woff2` files, which Metro must treat as static assets when building
+// `expo export --platform web` (otherwise the bundle fails with
+// `Unable to resolve module ./assets/X.woff2`).
+config.resolver.assetExts = [
+  ...config.resolver.assetExts,
+  'woff2',
+  'woff',
+];
+
 // 5. Extra module resolution for local packages
 config.resolver.extraNodeModules = {
   '@oxyhq/core': path.resolve(coreRoot, 'src', 'index.ts'),
@@ -50,7 +63,41 @@ config.resolver.extraNodeModules = {
 // 6. Enable better platform resolution
 config.resolver.platforms = ['native', 'android', 'ios', 'tsx', 'ts', 'web'];
 
-// 7. Ensure Fast Refresh is enabled (default in Expo, but explicit for clarity)
+// 7. Force `@oxyhq/bloom` to resolve to a SINGLE physical instance.
+//
+// In this monorepo the same Bloom version ends up duplicated under both
+// `node_modules/@oxyhq/bloom` (hoisted) and `packages/test-app-expo/
+// node_modules/@oxyhq/bloom` (local). When `@oxyhq/services` (which lives
+// under root `node_modules`) imports `@oxyhq/bloom`, Node-style resolution
+// would pick up the hoisted copy, while test-app-expo code resolves to its
+// own local copy. Each copy creates its own React Context object — so
+// `<BloomThemeProvider>` rendered by `OxyProvider` (services bloom) does NOT
+// satisfy `useTheme()` called from app code (app bloom).
+//
+// We use a custom `resolveRequest` to rewrite the `originModulePath` of
+// every `@oxyhq/bloom[/subpath]` import to test-app-expo' own package root,
+// so Metro's default resolver picks up the package from the local install
+// every time instead of finding the hoisted duplicate first.
+const originalResolveRequest = config.resolver.resolveRequest;
+config.resolver.resolveRequest = (context, moduleName, platform) => {
+  if (moduleName === '@oxyhq/bloom' || moduleName.startsWith('@oxyhq/bloom/')) {
+    const rewrittenContext = {
+      ...context,
+      originModulePath: path.join(__dirname, 'package.json'),
+    };
+    if (originalResolveRequest) {
+      return originalResolveRequest(rewrittenContext, moduleName, platform);
+    }
+    return context.resolveRequest(rewrittenContext, moduleName, platform);
+  }
+
+  if (originalResolveRequest) {
+    return originalResolveRequest(context, moduleName, platform);
+  }
+  return context.resolveRequest(context, moduleName, platform);
+};
+
+// 8. Ensure Fast Refresh is enabled (default in Expo, but explicit for clarity)
 config.server = {
   ...config.server,
   enhanceMiddleware: (middleware) => {
@@ -58,7 +105,7 @@ config.server = {
   },
 };
 
-// 8. Optimize cache for better hot reload performance
+// 9. Optimize cache for better hot reload performance
 config.cacheStores = config.cacheStores || [];
 
 module.exports = config;

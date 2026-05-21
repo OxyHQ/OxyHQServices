@@ -71,7 +71,6 @@
   },
   "dependencies": {
     "@lottiefiles/dotlottie-react": "^0.13.5",
-    "@oxyhq/bloom": "0.1.27",
     "@oxyhq/core": "*",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-community/netinfo": "^11.4.1",
@@ -122,6 +121,7 @@
   },
   "peerDependencies": {
     "@expo/vector-icons": "^15.0.3",
+    "@oxyhq/bloom": ">=0.3.0",
     "@react-navigation/native": "^7.1.8",
     "@types/react": "*",
     "@types/react-native": "*",
