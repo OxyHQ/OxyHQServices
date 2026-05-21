@@ -19,7 +19,8 @@ const MEMORY_STORAGE = (): StorageInterface => {
 
   return {
     async getItem(key: string) {
-      return store.has(key) ? store.get(key)! : null;
+      const value = store.get(key);
+      return value === undefined ? null : value;
     },
     async setItem(key: string, value: string) {
       store.set(key, value);
@@ -46,35 +47,64 @@ const createWebStorage = (): StorageInterface => {
     async getItem(key: string) {
       try {
         return window.localStorage.getItem(key);
-      } catch {
+      } catch (err) {
+        console.warn('[oxy.storage] localStorage.getItem failed:', err);
         return null;
       }
     },
     async setItem(key: string, value: string) {
       try {
         window.localStorage.setItem(key, value);
-      } catch {
-        // Ignore quota or access issues for now.
+      } catch (err) {
+        // Quota exceeded or storage disabled (e.g., Safari private mode).
+        // Surface to logs so it is debuggable, but do not throw so callers
+        // can keep functioning with degraded persistence.
+        console.warn('[oxy.storage] localStorage.setItem failed:', err);
       }
     },
     async removeItem(key: string) {
       try {
         window.localStorage.removeItem(key);
-      } catch {
-        // Ignore failures.
+      } catch (err) {
+        console.warn('[oxy.storage] localStorage.removeItem failed:', err);
       }
     },
     async clear() {
       try {
         window.localStorage.clear();
-      } catch {
-        // Ignore failures.
+      } catch (err) {
+        console.warn('[oxy.storage] localStorage.clear failed:', err);
       }
     },
   };
 };
 
 let asyncStorageInstance: StorageInterface | null = null;
+
+/**
+ * Structural type for the React Native AsyncStorage default export.
+ * Only includes the methods this SDK uses.
+ */
+interface AsyncStorageLike {
+  getItem: (key: string) => Promise<string | null>;
+  setItem: (key: string, value: string) => Promise<void>;
+  removeItem: (key: string) => Promise<void>;
+  clear: () => Promise<void>;
+}
+
+/**
+ * Type guard verifying that an imported value exposes the AsyncStorage API.
+ */
+const isAsyncStorageLike = (value: unknown): value is AsyncStorageLike => {
+  if (typeof value !== 'object' || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.getItem === 'function' &&
+    typeof candidate.setItem === 'function' &&
+    typeof candidate.removeItem === 'function' &&
+    typeof candidate.clear === 'function'
+  );
+};
 
 /**
  * Lazily import React Native AsyncStorage implementation.
@@ -87,8 +117,17 @@ const createNativeStorage = async (): Promise<StorageInterface> => {
   try {
     // Variable indirection prevents bundlers (Vite, webpack) from statically resolving this
     const moduleName = '@react-native-async-storage/async-storage';
-    const asyncStorageModule = await import(moduleName);
-    asyncStorageInstance = asyncStorageModule.default as unknown as StorageInterface;
+    const asyncStorageModule = (await import(moduleName)) as { default?: unknown };
+    const candidate = asyncStorageModule.default;
+    if (!isAsyncStorageLike(candidate)) {
+      throw new Error('AsyncStorage default export does not match expected API');
+    }
+    asyncStorageInstance = {
+      getItem: (key) => candidate.getItem(key),
+      setItem: (key, value) => candidate.setItem(key, value),
+      removeItem: (key) => candidate.removeItem(key),
+      clear: () => candidate.clear(),
+    };
     return asyncStorageInstance;
   } catch (error) {
     if (process.env.NODE_ENV !== 'production') {

@@ -27,12 +27,40 @@ function readTokenFromStorage(): string | null {
   if (typeof window === 'undefined') return null;
   try {
     return window.localStorage.getItem(LS_ACCESS_TOKEN_KEY);
-  } catch {
+  } catch (err) {
+    console.warn('[oxy.session-socket] localStorage read failed:', err);
     return null;
   }
 }
 
-type SocketIOFactory = (uri: string, opts?: Record<string, unknown>) => unknown;
+/**
+ * Minimal subset of the socket.io-client Socket API used by this hook.
+ * We avoid importing socket.io-client types directly because the package
+ * is an optional peer dependency.
+ *
+ * `on()` uses a generic per-call handler signature because each socket event
+ * carries its own payload shape.
+ */
+interface MinimalSocket {
+  id?: string;
+  disconnected: boolean;
+  connect: () => void;
+  disconnect: () => void;
+  on<Args extends unknown[] = unknown[]>(
+    event: string,
+    handler: (...args: Args) => void
+  ): void;
+}
+
+/**
+ * Socket extended with a private property used to track the cross-tab
+ * storage event listener so cleanup can remove it.
+ */
+interface SocketWithStorageHandler extends MinimalSocket {
+  __oxyStorageHandler?: (event: StorageEvent) => void;
+}
+
+type SocketIOFactory = (uri: string, opts?: Record<string, unknown>) => MinimalSocket;
 
 let _io: SocketIOFactory | null = null;
 let _ioLoadAttempted = false;
@@ -42,11 +70,14 @@ async function getSocketIO(): Promise<SocketIOFactory | null> {
   if (_ioLoadAttempted) return null;
   _ioLoadAttempted = true;
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const mod: any = await import('socket.io-client');
-    _io = (mod.io ?? mod.default) as SocketIOFactory;
+    const mod = (await import('socket.io-client')) as {
+      io?: SocketIOFactory;
+      default?: SocketIOFactory;
+    };
+    _io = mod.io ?? mod.default ?? null;
     return _io;
-  } catch {
+  } catch (err) {
+    console.warn('[oxy.session-socket] socket.io-client import failed:', err);
     debug.warn('socket.io-client is not installed. useSessionSocket will be disabled. Install it with: bun add socket.io-client');
     return null;
   }
@@ -72,7 +103,7 @@ export function useSessionSocket(options?: UseSessionSocketOptions) {
     return active?.deviceId ?? null;
   }, [sessions, activeSessionId]);
 
-  const socketRef = useRef<any>(null);
+  const socketRef = useRef<SocketWithStorageHandler | null>(null);
 
   // Store callbacks and values in refs to avoid reconnecting when they change
   const clearSessionStateRef = useRef(clearSessionState);
@@ -128,7 +159,7 @@ export function useSessionSocket(options?: UseSessionSocketOptions) {
       // If no token is available at all, we skip the initial connect and let
       // the storage listener or retry logic connect when a token appears.
       const token = resolveToken();
-      socketRef.current = ioFn(baseURL, {
+      const socket: SocketWithStorageHandler = ioFn(baseURL, {
         transports: ['websocket'],
         autoConnect: !!token, // don't auto-connect when there is no token
         auth: (cb: (data: { token: string }) => void) => {
@@ -145,7 +176,7 @@ export function useSessionSocket(options?: UseSessionSocketOptions) {
           cb({ token: resolved });
         },
       });
-      const socket = socketRef.current;
+      socketRef.current = socket;
 
       // Server auto-joins the user to `user:<userId>` room on connection
       const handleConnect = () => {
@@ -311,7 +342,7 @@ export function useSessionSocket(options?: UseSessionSocketOptions) {
       if (typeof window !== 'undefined') {
         window.addEventListener('storage', handleStorageEvent);
         // Store the handler so cleanup can remove it
-        (socket as any).__oxyStorageHandler = handleStorageEvent;
+        socket.__oxyStorageHandler = handleStorageEvent;
       }
     });
 
@@ -320,12 +351,14 @@ export function useSessionSocket(options?: UseSessionSocketOptions) {
       if (authRetryTimer) {
         clearTimeout(authRetryTimer);
       }
-      if (socketRef.current) {
+      const currentSocket = socketRef.current;
+      if (currentSocket) {
         // Remove cross-tab storage listener
-        if (typeof window !== 'undefined' && (socketRef.current as any).__oxyStorageHandler) {
-          window.removeEventListener('storage', (socketRef.current as any).__oxyStorageHandler);
+        const storageHandler = currentSocket.__oxyStorageHandler;
+        if (typeof window !== 'undefined' && storageHandler) {
+          window.removeEventListener('storage', storageHandler);
         }
-        socketRef.current.disconnect();
+        currentSocket.disconnect();
         socketRef.current = null;
       }
     };
