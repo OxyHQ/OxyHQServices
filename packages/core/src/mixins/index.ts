@@ -26,8 +26,50 @@ import { OxyServicesFeaturesMixin } from './OxyServices.features';
 import { OxyServicesTopicsMixin } from './OxyServices.topics';
 import { OxyServicesManagedAccountsMixin } from './OxyServices.managedAccounts';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type MixinFunction = (Base: any) => any;
+/**
+ * Instance shape of every mixin in the pipeline, intersected. The runtime
+ * `composeOxyServices()` produces a class whose instances expose all of
+ * these methods; we surface that to TypeScript via this intersection so the
+ * `extends` site in `OxyServices.ts` can avoid an `as any` cast.
+ *
+ * If you add a new mixin to `MIXIN_PIPELINE`, add it here too so its methods
+ * are visible without a cast.
+ */
+type AllMixinInstances =
+  & InstanceType<ReturnType<typeof OxyServicesAuthMixin<typeof OxyServicesBase>>>
+  & InstanceType<ReturnType<typeof OxyServicesFedCMMixin<typeof OxyServicesBase>>>
+  & InstanceType<ReturnType<typeof OxyServicesPopupAuthMixin<typeof OxyServicesBase>>>
+  & InstanceType<ReturnType<typeof OxyServicesRedirectAuthMixin<typeof OxyServicesBase>>>
+  & InstanceType<ReturnType<typeof OxyServicesUserMixin<typeof OxyServicesBase>>>
+  & InstanceType<ReturnType<typeof OxyServicesPrivacyMixin<typeof OxyServicesBase>>>
+  & InstanceType<ReturnType<typeof OxyServicesLanguageMixin<typeof OxyServicesBase>>>
+  & InstanceType<ReturnType<typeof OxyServicesPaymentMixin<typeof OxyServicesBase>>>
+  & InstanceType<ReturnType<typeof OxyServicesKarmaMixin<typeof OxyServicesBase>>>
+  & InstanceType<ReturnType<typeof OxyServicesAssetsMixin<typeof OxyServicesBase>>>
+  & InstanceType<ReturnType<typeof OxyServicesDeveloperMixin<typeof OxyServicesBase>>>
+  & InstanceType<ReturnType<typeof OxyServicesLocationMixin<typeof OxyServicesBase>>>
+  & InstanceType<ReturnType<typeof OxyServicesAnalyticsMixin<typeof OxyServicesBase>>>
+  & InstanceType<ReturnType<typeof OxyServicesDevicesMixin<typeof OxyServicesBase>>>
+  & InstanceType<ReturnType<typeof OxyServicesSecurityMixin<typeof OxyServicesBase>>>
+  & InstanceType<ReturnType<typeof OxyServicesFeaturesMixin<typeof OxyServicesBase>>>
+  & InstanceType<ReturnType<typeof OxyServicesTopicsMixin<typeof OxyServicesBase>>>
+  & InstanceType<ReturnType<typeof OxyServicesManagedAccountsMixin<typeof OxyServicesBase>>>
+  & InstanceType<ReturnType<typeof OxyServicesUtilityMixin<typeof OxyServicesBase>>>;
+
+/**
+ * Constructor type for the fully composed mixin pipeline. Each mixin returns
+ * a new constructor that augments its input; reducing across the pipeline
+ * yields an instance with every mixin's methods.
+ */
+export type ComposedOxyServicesConstructor = new (config: import('../OxyServices.base').OxyConfig) => AllMixinInstances;
+
+/**
+ * A mixin function: takes a constructor and returns an augmented constructor.
+ * Each individual mixin uses a `<T extends typeof OxyServicesBase>` generic
+ * to preserve its specific augmentations, but those refinements are
+ * intentionally collapsed across the `reduce` call below.
+ */
+type MixinFunction = (Base: new (...args: unknown[]) => OxyServicesBase) => new (...args: unknown[]) => OxyServicesBase;
 
 /**
  * Mixin pipeline - applied in order from first to last.
@@ -79,15 +121,21 @@ const MIXIN_PIPELINE: MixinFunction[] = [
  * Composes all OxyServices mixins using a pipeline pattern.
  *
  * This is equivalent to the nested calls but more readable and maintainable.
- * Adding a new mixin: just add it to MIXIN_PIPELINE at the appropriate position.
+ * Adding a new mixin: add it to MIXIN_PIPELINE at the appropriate position
+ * AND extend `AllMixinInstances` so its methods are visible to consumers.
  *
- * @returns The fully composed OxyServices class with all mixins applied
+ * The cast through `unknown` carries the runtime augmentation chain into the
+ * static type system. `Array.reduce` cannot track each mixin's generic
+ * refinement, so we assert the final shape exposed by all mixins together.
+ *
+ * @returns The fully composed OxyServices constructor with all mixins applied
  */
-export function composeOxyServices() {
-    return MIXIN_PIPELINE.reduce(
+export function composeOxyServices(): ComposedOxyServicesConstructor {
+    const composed = MIXIN_PIPELINE.reduce(
         (Base, mixin) => mixin(Base),
-        OxyServicesBase as unknown as ReturnType<MixinFunction>
+        OxyServicesBase as unknown as new (...args: unknown[]) => OxyServicesBase
     );
+    return composed as unknown as ComposedOxyServicesConstructor;
 }
 
 // Export the pipeline for testing/debugging

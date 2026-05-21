@@ -99,11 +99,16 @@ import { composeOxyServices } from './mixins';
  * });
  * ```
  */
-// Compose all mixins into the final OxyServices class
+// Compose all mixins into the final OxyServices class. The composed runtime
+// class augments OxyServicesBase with every mixin's methods (see mixins/index.ts).
+// Statically, TypeScript sees this as a constructor producing OxyServicesBase;
+// the additional methods are exposed via interface merging on `OxyServices` below.
 const OxyServicesComposed = composeOxyServices();
 
-// Export as a named class to avoid TypeScript issues with anonymous class types
-export class OxyServices extends (OxyServicesComposed as any) {
+// Export as a named class to avoid TypeScript issues with anonymous class types.
+// We extend the composed constructor directly — its public surface is broadened
+// to the full mixin set via the interface declaration that follows.
+export class OxyServices extends OxyServicesComposed {
   constructor(config: OxyConfig) {
     super(config);
   }

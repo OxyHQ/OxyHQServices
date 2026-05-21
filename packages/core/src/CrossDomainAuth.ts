@@ -130,7 +130,7 @@ export class CrossDomainAuth {
    * Best method - browser-native, no popups, Google-like experience
    */
   async signInWithFedCM(options: CrossDomainAuthOptions = {}): Promise<SessionLoginResponse> {
-    return (this.oxyServices as any).signInWithFedCM({
+    return this.oxyServices.signInWithFedCM({
       context: options.isSignup ? 'signup' : 'signin',
     });
   }
@@ -141,7 +141,7 @@ export class CrossDomainAuth {
    * Good method - preserves app state, no full page reload
    */
   async signInWithPopup(options: CrossDomainAuthOptions = {}): Promise<SessionLoginResponse> {
-    return (this.oxyServices as any).signInWithPopup({
+    return this.oxyServices.signInWithPopup({
       mode: options.isSignup ? 'signup' : 'login',
       width: options.popupDimensions?.width,
       height: options.popupDimensions?.height,
@@ -154,7 +154,7 @@ export class CrossDomainAuth {
    * Fallback method - works everywhere but loses app state
    */
   signInWithRedirect(options: CrossDomainAuthOptions = {}): void {
-    (this.oxyServices as any).signInWithRedirect({
+    this.oxyServices.signInWithRedirect({
       redirectUri: options.redirectUri,
       mode: options.isSignup ? 'signup' : 'login',
     });
@@ -166,7 +166,7 @@ export class CrossDomainAuth {
    * Call this on app startup to check if we're returning from auth redirect
    */
   handleRedirectCallback(): SessionLoginResponse | null {
-    return (this.oxyServices as any).handleAuthCallback();
+    return this.oxyServices.handleAuthCallback();
   }
 
   /**
@@ -181,7 +181,7 @@ export class CrossDomainAuth {
     // Try FedCM silent sign-in first (if supported)
     if (this.isFedCMSupported()) {
       try {
-        const session = await (this.oxyServices as any).silentSignInWithFedCM();
+        const session = await this.oxyServices.silentSignInWithFedCM();
         if (session) {
           return session;
         }
@@ -192,7 +192,7 @@ export class CrossDomainAuth {
 
     // Fallback to iframe-based silent auth
     try {
-      return await (this.oxyServices as any).silentSignIn();
+      return await this.oxyServices.silentSignIn();
     } catch (error) {
       console.warn('[CrossDomainAuth] Silent sign-in failed:', error);
       return null;
@@ -205,14 +205,16 @@ export class CrossDomainAuth {
    * For redirect method - restores previously authenticated session from localStorage
    */
   restoreSession(): boolean {
-    return (this.oxyServices as any).restoreSession?.() || false;
+    return this.oxyServices.restoreSession?.() || false;
   }
 
   /**
    * Check if FedCM is supported in current browser
    */
   isFedCMSupported(): boolean {
-    return (this.oxyServices as any).constructor.isFedCMSupported?.() || false;
+    // FedCM support is exposed both as a static and an instance method on
+    // OxyServices; the instance method is reliable across mixin composition.
+    return this.oxyServices.isFedCMSupported?.() || false;
   }
 
   /**
@@ -263,10 +265,10 @@ export class CrossDomainAuth {
     if (restored) {
       // Verify session is still valid by fetching user
       try {
-        const user = await (this.oxyServices as any).getCurrentUser();
+        const user = await this.oxyServices.getCurrentUser();
         if (user) {
           return {
-            sessionId: (this.oxyServices as any).getStoredSessionId?.() || '',
+            sessionId: this.oxyServices.getStoredSessionId?.() || '',
             deviceId: '',
             expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
             user,

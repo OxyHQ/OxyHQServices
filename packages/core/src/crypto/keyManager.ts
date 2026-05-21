@@ -912,18 +912,29 @@ export class KeyManager {
 
   /**
    * Validate that a string is a valid public key
+   *
+   * Returns false on parse errors (invalid input is the expected fail mode here).
+   * Errors are logged at debug level so they're available when troubleshooting
+   * but don't pollute production logs.
    */
   static isValidPublicKey(publicKey: string): boolean {
     try {
       ec.keyFromPublic(publicKey, 'hex');
       return true;
-    } catch {
+    } catch (error) {
+      if (isDev()) {
+        logger.debug('[oxy.crypto] isValidPublicKey rejected input', { component: 'KeyManager' }, error);
+      }
       return false;
     }
   }
 
   /**
    * Validate that a string is a valid private key
+   *
+   * Returns false on parse errors (invalid input is the expected fail mode here).
+   * Errors are logged at debug level so they're available when troubleshooting
+   * but don't pollute production logs.
    */
   static isValidPrivateKey(privateKey: string): boolean {
     try {
@@ -931,7 +942,10 @@ export class KeyManager {
       // Verify it can derive a public key
       keyPair.getPublic('hex');
       return true;
-    } catch {
+    } catch (error) {
+      if (isDev()) {
+        logger.debug('[oxy.crypto] isValidPrivateKey rejected input', { component: 'KeyManager' }, error);
+      }
       return false;
     }
   }

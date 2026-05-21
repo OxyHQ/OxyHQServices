@@ -177,12 +177,16 @@ export function OxyServicesRedirectAuthMixin<T extends typeof OxyServicesBase>(B
     this.storeTokens(accessToken, sessionId);
     this.httpService.setTokens(accessToken);
 
-    // Build session response (minimal - we'll fetch full user data separately)
+    // Build session response (minimal — full user data is fetched separately
+    // by the caller via getCurrentUser() once tokens are stored).
     const session: SessionLoginResponse = {
       sessionId,
       deviceId: '', // Not available in redirect flow
       expiresAt: expiresAt || new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-      user: {} as any, // Will be fetched separately
+      // Placeholder user — caller MUST fetch real user data via getCurrentUser()
+      // before exposing this session to the application. The empty id signals
+      // that the user payload has not yet been populated.
+      user: { id: '', username: '' },
     };
 
     // Clean up URL (remove auth parameters)

@@ -339,8 +339,8 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
               return res.status(401).json(error);
             }
 
-            // Check expiration
-            if (decoded.exp && decoded.exp < Math.floor(Date.now() / 1000)) {
+            // Check expiration — reject tokens at exact expiry second (use <=)
+            if (decoded.exp && decoded.exp <= Math.floor(Date.now() / 1000)) {
               if (optional) {
                 req.userId = null;
                 req.user = null;
@@ -400,7 +400,8 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
           }
 
           // Check token expiration locally first (fast path)
-          if (decoded.exp && decoded.exp < Math.floor(Date.now() / 1000)) {
+          // Reject tokens at exact expiry second (use <=)
+          if (decoded.exp && decoded.exp <= Math.floor(Date.now() / 1000)) {
             if (optional) {
               req.userId = null;
               req.user = null;
@@ -578,8 +579,8 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
             return next(new Error('Invalid token payload'));
           }
 
-          // Check expiration
-          if (decoded.exp && decoded.exp < Math.floor(Date.now() / 1000)) {
+          // Check expiration — reject tokens at exact expiry second (use <=)
+          if (decoded.exp && decoded.exp <= Math.floor(Date.now() / 1000)) {
             return next(new Error('Token expired'));
           }
 
