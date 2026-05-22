@@ -38,7 +38,7 @@ jobs:
           node-version: '20.x'
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: bun install
 
       - name: Run linter
         run: bun run lint
@@ -99,7 +99,7 @@ jobs:
           node-version: '20.x'
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: bun install
 
       - name: Build TypeScript
         run: bun run build
