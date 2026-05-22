@@ -71,7 +71,11 @@ jobs:
             docker compose build api
 
             echo "=== Restarting ==="
-            docker compose up -d caddy api
+            # Remove any stale containers using the same name (orphans from
+            # interrupted deploys cause "container name already in use"
+            # conflicts on the next docker compose up).
+            docker rm -f $(docker ps -aq --filter "name=oxy-api") 2>/dev/null || true
+            docker compose up -d --force-recreate caddy api
 
             echo "=== Cleanup ==="
             docker image prune -f
