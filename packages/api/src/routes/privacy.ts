@@ -7,6 +7,7 @@ import { authMiddleware } from '../middleware/auth';
 import { asyncHandler } from '../utils/asyncHandler';
 import { BadRequestError, NotFoundError, ConflictError, UnauthorizedError } from '../utils/error';
 import { resolveUserIdToObjectId } from '../utils/validation';
+import userCache from '../utils/userCache';
 import { z } from "zod";
 import { validate } from '../middleware/validate';
 import { privacyUserIdParams, targetIdParams } from '../schemas/privacy.schemas';
@@ -96,6 +97,11 @@ const updatePrivacySettings = asyncHandler(async (req: Request, res: Response) =
   if (!user) {
     throw new NotFoundError('User not found');
   }
+
+  // Bust the in-memory user cache so the next getUserBySession serves the
+  // fresh privacy settings instead of the stale snapshot. Without this the
+  // client refetch on mutation success silently reverts the toggle.
+  userCache.invalidate(objectId);
 
   res.json(user.privacySettings);
 });

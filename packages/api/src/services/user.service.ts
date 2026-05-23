@@ -9,6 +9,7 @@ import User, { IUser } from '../models/User';
 import Follow, { FollowType } from '../models/Follow';
 import { logger } from '../utils/logger';
 import { Types } from 'mongoose';
+import userCache from '../utils/userCache';
 import securityActivityService from './securityActivityService';
 import { sanitizeProfileUpdate } from '../utils/sanitize';
 import { Request } from 'express';
@@ -161,6 +162,13 @@ export class UserService {
 
     // Save the document - this ensures all Mongoose middleware and validation runs
     await user.save();
+
+    // Invalidate the in-memory user cache so the next session-bound lookup
+    // (getUserBySession, validateSessionById) re-reads from MongoDB and
+    // serves the just-updated avatar/name/etc. Without this, the cache
+    // returns the pre-write document and clients see their update silently
+    // revert on the next refetch.
+    userCache.invalidate(userId);
 
     // Log security events
     try {

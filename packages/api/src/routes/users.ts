@@ -25,6 +25,7 @@ import {
 import { userService } from '../services/user.service';
 import { UsersController } from '../controllers/users.controller';
 import { resolveUserIdToObjectId } from '../utils/validation';
+import userCache from '../utils/userCache';
 import SignatureService from '../services/signature.service';
 import { emailService } from '../services/email.service';
 import { validate } from '../middleware/validate';
@@ -538,6 +539,10 @@ router.put(
     if (!updatedUser) {
       throw new NotFoundError('User not found');
     }
+
+    // Bust the in-memory user cache so subsequent session-bound lookups
+    // return the fresh privacy state instead of the stale pre-write doc.
+    userCache.invalidate(userId);
 
     logger.info('User privacy settings updated', { userId });
 
