@@ -882,6 +882,22 @@ export class KeyManager {
       if (hasIdentity) {
         KeyManager.cachedPublicKey = publicKey;
       }
+      // Diagnostic breadcrumb (dev only). Logs lengths + validity flags so we
+      // can tell from `adb logcat` exactly WHY hasIdentity returned what it
+      // did. Never log the key material itself.
+      if (isDev()) {
+        logger.debug(
+          'KeyManager.hasIdentity result',
+          { component: 'KeyManager' },
+          {
+            privateLen: privateKey?.length ?? 0,
+            publicLen: publicKey?.length ?? 0,
+            privateValid: privateKey ? KeyManager.isValidPrivateKey(privateKey) : null,
+            publicValid: publicKey ? KeyManager.isValidPublicKey(publicKey) : null,
+            derived: hasIdentity,
+          },
+        );
+      }
       return hasIdentity;
     } catch (error) {
       // If we can't check, assume no identity (safer default)

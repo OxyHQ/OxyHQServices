@@ -5,11 +5,12 @@ import Animated, {
   withTiming,
   useAnimatedStyle,
 } from 'react-native-reanimated';
-import { useRouter } from 'expo-router';
+import { Redirect, useRouter } from 'expo-router';
 import { useColors } from '@/hooks/useColors';
 import { StaggeredText, type StaggeredTextRef } from '@/components/staggered-text';
 import { RotatingTextAnimation } from '@/components/staggered-text/rotating-text';
 import { useTranslation } from '@/lib/i18n';
+import { useOnboardingStatus } from '@/hooks/useOnboardingStatus';
 
 const humanTranslations = [
   'Human',
@@ -27,6 +28,7 @@ export default function AuthIndexScreen() {
   const backgroundColor = colors.background;
   const textColor = colors.text;
   const { t } = useTranslation();
+  const { status, hasIdentity } = useOnboardingStatus();
 
   // Entrance animation values
   const helloOpacity = useSharedValue(0);
@@ -84,6 +86,22 @@ export default function AuthIndexScreen() {
   const handlePress = useCallback(() => {
     router.push('./welcome');
   }, [router]);
+
+  // CRITICAL: when an identity already exists on this device but the user
+  // has no active session (e.g., they closed and re-opened the app), we
+  // MUST NOT show the marketing "Hello / Human / Tap to continue" splash
+  // — that screen looks identical to a fresh install and leads users to
+  // believe their account is lost. Redirect straight into the create-identity
+  // flow, which detects the existing identity, auto-runs syncIdentity(), and
+  // routes to the username step or `(tabs)`.
+  //
+  // This check runs AFTER all hooks above to preserve hook order across
+  // renders. We only redirect when status has settled to `'in_progress'`
+  // (which implies hasIdentity is true) — never during `'checking'`,
+  // because that would race with the identity detection effect.
+  if (hasIdentity && status === 'in_progress') {
+    return <Redirect href="/(auth)/create-identity" />;
+  }
 
   return (
     <Pressable
