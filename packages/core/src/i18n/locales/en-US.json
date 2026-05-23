@@ -1328,9 +1328,20 @@
     "loadingMore": "Loading more...",
     "loadingPhotoLayout": "Loading photo layout...",
     "uploading": "Uploading",
+    "upload": "Upload",
     "uploadPhotos": "Upload Photos",
     "uploadFiles": "Upload Files",
     "clearSearch": "Clear Search",
+    "a11y": {
+      "viewAll": "Show all files",
+      "viewPhotos": "Show photos only",
+      "viewVideos": "Show videos only",
+      "viewDocuments": "Show documents only",
+      "viewAudio": "Show audio only",
+      "sortBy": "Sort by {{field}}, {{order}}",
+      "uploadFile": "Upload file from device",
+      "uploadFromDevice": "Upload photo from device"
+    },
     "emptyPhotos": {
       "title": "No Photos Yet",
       "ownDescription": "Upload photos to get started. You can select multiple photos at once.",

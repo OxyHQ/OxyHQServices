@@ -68,6 +68,26 @@ export const fileManagementStyles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
     },
+    /**
+     * Expanded variant of the upload button shown in image-only picker mode,
+     * where surfacing "Upload" prominently helps users when they have no files.
+     */
+    uploadButtonExtended: {
+        width: 'auto',
+        minWidth: 44,
+        paddingHorizontal: 14,
+    },
+    uploadButtonContent: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+    },
+    uploadButtonLabel: {
+        color: '#FFFFFF',
+        fontSize: 14,
+        fontWeight: '600',
+        fontFamily: fontFamilies.interSemiBold,
+    },
     uploadProgress: {
         alignItems: 'center',
         justifyContent: 'center',

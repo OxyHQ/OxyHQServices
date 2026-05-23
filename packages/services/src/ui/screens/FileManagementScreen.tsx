@@ -103,7 +103,8 @@ const AnimatedButton: React.FC<{
     primaryColor: string;
     textColor: string;
     style: Record<string, unknown>;
-}> = ({ isSelected, onPress, icon, primaryColor, textColor, style }) => {
+    accessibilityLabel: string;
+}> = ({ isSelected, onPress, icon, primaryColor, textColor, style, accessibilityLabel }) => {
     const animatedValue = useRef(new Animated.Value(isSelected ? 1 : 0)).current;
 
     useEffect(() => {
@@ -120,13 +121,14 @@ const AnimatedButton: React.FC<{
         outputRange: ['transparent', primaryColor],
     });
 
-    const iconColor = animatedValue.interpolate({
-        inputRange: [0, 1],
-        outputRange: [textColor, '#FFFFFF'],
-    });
-
     return (
-        <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
+        <TouchableOpacity
+            onPress={onPress}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel={accessibilityLabel}
+            accessibilityState={{ selected: isSelected }}
+        >
             <Animated.View
                 style={[
                     style,
@@ -192,7 +194,24 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     const [loadingFileContent, setLoadingFileContent] = useState(false);
     const [showFileDetailsInViewer, setShowFileDetailsInViewer] = useState(false);
     const [isPickingDocument, setIsPickingDocument] = useState(false);
-    const [viewMode, setViewMode] = useState<'all' | 'photos' | 'videos' | 'documents' | 'audio'>('all');
+    // Image-only picker mode: when the consumer restricts to image MIME types
+    // (e.g. avatar picker), photos grid is the more useful default view.
+    const isImageOnlyPicker = useMemo(() => {
+        if (!selectMode) return false;
+        if (disabledMimeTypes.length === 0) return false;
+        const blocksVideos = disabledMimeTypes.some(mt => mt === 'video/' || mt.startsWith('video/'));
+        const blocksAudio = disabledMimeTypes.some(mt => mt === 'audio/' || mt.startsWith('audio/'));
+        const blocksDocs = disabledMimeTypes.some(mt =>
+            mt === 'application/pdf' ||
+            mt === 'application/' ||
+            mt.startsWith('application/')
+        );
+        return blocksVideos && blocksAudio && blocksDocs;
+    }, [disabledMimeTypes, selectMode]);
+
+    const [viewMode, setViewMode] = useState<'all' | 'photos' | 'videos' | 'documents' | 'audio'>(
+        isImageOnlyPicker ? 'photos' : 'all',
+    );
     const [searchQuery, setSearchQuery] = useState('');
     const [sortBy, setSortBy] = useState<'date' | 'size' | 'name' | 'type'>('date');
     const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
@@ -2068,6 +2087,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                             primaryColor={colors.primary}
                             textColor={colors.text}
                             style={fileManagementStyles.viewModeButton}
+                            accessibilityLabel={t('fileManagement.a11y.viewAll') || 'Show all files'}
                         />
                         <AnimatedButton
                             isSelected={viewMode === 'photos'}
@@ -2076,37 +2096,50 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                             primaryColor={colors.primary}
                             textColor={colors.text}
                             style={fileManagementStyles.viewModeButton}
+                            accessibilityLabel={t('fileManagement.a11y.viewPhotos') || 'Show photos only'}
                         />
-                        <AnimatedButton
-                            isSelected={viewMode === 'videos'}
-                            onPress={() => setViewMode('videos')}
-                            icon={viewMode === 'videos' ? 'video' : 'video-outline'}
-                            primaryColor={colors.primary}
-                            textColor={colors.text}
-                            style={fileManagementStyles.viewModeButton}
-                        />
-                        <AnimatedButton
-                            isSelected={viewMode === 'documents'}
-                            onPress={() => setViewMode('documents')}
-                            icon={viewMode === 'documents' ? 'file-document' : 'file-document-outline'}
-                            primaryColor={colors.primary}
-                            textColor={colors.text}
-                            style={fileManagementStyles.viewModeButton}
-                        />
-                        <AnimatedButton
-                            isSelected={viewMode === 'audio'}
-                            onPress={() => setViewMode('audio')}
-                            icon={viewMode === 'audio' ? 'music-note' : 'music-note-outline'}
-                            primaryColor={colors.primary}
-                            textColor={colors.text}
-                            style={fileManagementStyles.viewModeButton}
-                        />
+                        {!isImageOnlyPicker && (
+                            <>
+                                <AnimatedButton
+                                    isSelected={viewMode === 'videos'}
+                                    onPress={() => setViewMode('videos')}
+                                    icon={viewMode === 'videos' ? 'video' : 'video-outline'}
+                                    primaryColor={colors.primary}
+                                    textColor={colors.text}
+                                    style={fileManagementStyles.viewModeButton}
+                                    accessibilityLabel={t('fileManagement.a11y.viewVideos') || 'Show videos only'}
+                                />
+                                <AnimatedButton
+                                    isSelected={viewMode === 'documents'}
+                                    onPress={() => setViewMode('documents')}
+                                    icon={viewMode === 'documents' ? 'file-document' : 'file-document-outline'}
+                                    primaryColor={colors.primary}
+                                    textColor={colors.text}
+                                    style={fileManagementStyles.viewModeButton}
+                                    accessibilityLabel={t('fileManagement.a11y.viewDocuments') || 'Show documents only'}
+                                />
+                                <AnimatedButton
+                                    isSelected={viewMode === 'audio'}
+                                    onPress={() => setViewMode('audio')}
+                                    icon={viewMode === 'audio' ? 'music-note' : 'music-note-outline'}
+                                    primaryColor={colors.primary}
+                                    textColor={colors.text}
+                                    style={fileManagementStyles.viewModeButton}
+                                    accessibilityLabel={t('fileManagement.a11y.viewAudio') || 'Show audio only'}
+                                />
+                            </>
+                        )}
                     </View>
                 </ScrollView>
                 <TouchableOpacity
                     style={[fileManagementStyles.sortButton, {
                         backgroundColor: colors.card,
                     }]}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('fileManagement.a11y.sortBy', {
+                        field: sortBy,
+                        order: sortOrder === 'asc' ? 'ascending' : 'descending',
+                    }) || `Sort by ${sortBy}, ${sortOrder === 'asc' ? 'ascending' : 'descending'}`}
                     onPress={() => {
                         // Cycle through sort options: date -> size -> name -> type -> date
                         const sortOrder: Array<'date' | 'size' | 'name' | 'type'> = ['date', 'size', 'name', 'type'];
@@ -2136,9 +2169,20 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 </TouchableOpacity>
                 {user?.id === targetUserId && (!selectMode || (selectMode && allowUploadInSelectMode)) && (
                     <TouchableOpacity
-                        style={[fileManagementStyles.uploadButton, { backgroundColor: colors.primary }]}
+                        style={[
+                            fileManagementStyles.uploadButton,
+                            isImageOnlyPicker && fileManagementStyles.uploadButtonExtended,
+                            { backgroundColor: colors.primary },
+                        ]}
                         onPress={handleFileUpload}
                         disabled={uploading || isPickingDocument}
+                        accessibilityRole="button"
+                        accessibilityLabel={
+                            isImageOnlyPicker
+                                ? (t('fileManagement.a11y.uploadFromDevice') || 'Upload photo from device')
+                                : (t('fileManagement.a11y.uploadFile') || 'Upload file')
+                        }
+                        accessibilityState={{ busy: uploading || isPickingDocument }}
                     >
                         {uploading ? (
                             <View style={fileManagementStyles.uploadProgress}>
@@ -2151,6 +2195,13 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                             </View>
                         ) : isPickingDocument ? (
                             <ActivityIndicator size="small" color="#FFFFFF" />
+                        ) : isImageOnlyPicker ? (
+                            <View style={fileManagementStyles.uploadButtonContent}>
+                                <Ionicons name="cloud-upload" size={18} color="#FFFFFF" />
+                                <Text style={fileManagementStyles.uploadButtonLabel} numberOfLines={1}>
+                                    {t('fileManagement.upload') || 'Upload'}
+                                </Text>
+                            </View>
                         ) : (
                             <Ionicons name="add" size={22} color="#FFFFFF" />
                         )}

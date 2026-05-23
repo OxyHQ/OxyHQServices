@@ -290,26 +290,70 @@ const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
         return { width: VIEWPORT_SIZE, height: VIEWPORT_SIZE / ratio };
     }, [naturalSize]);
 
+    // Track in-flight measurement to avoid duplicate Image.getSize calls when
+    // the component re-renders before the previous getSize callback fires.
+    const measuringUriRef = useRef<string | null>(null);
+    /** Failure state for measurement, surfaced to the user via the empty UI. */
+    const [measureError, setMeasureError] = useState<string | null>(null);
+
     const handleImageMeasured = useCallback(
         (uri: string) => {
+            if (measuringUriRef.current === uri) return;
+            measuringUriRef.current = uri;
+            if (__DEV__) {
+                console.log('[AvatarCropScreen] Measuring image:', uri);
+            }
             Image.getSize(
                 uri,
-                (w, h) => setNaturalSize({ width: w, height: h }),
-                () => {
-                    toast.error(
-                        t('editProfile.toasts.cropMeasureFailed') || 'Could not measure the image',
-                    );
+                (w, h) => {
+                    if (__DEV__) {
+                        console.log('[AvatarCropScreen] Image measured:', { uri, width: w, height: h });
+                    }
+                    if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) {
+                        const message = t('editProfile.toasts.cropMeasureFailed') ||
+                            'Could not measure the image';
+                        setMeasureError(message);
+                        toast.error(message);
+                        measuringUriRef.current = null;
+                        return;
+                    }
+                    setMeasureError(null);
+                    setNaturalSize({ width: w, height: h });
+                },
+                (err) => {
+                    if (__DEV__) {
+                        console.error('[AvatarCropScreen] Image.getSize failed:', uri, err);
+                    }
+                    const message = t('editProfile.toasts.cropMeasureFailed') ||
+                        'Could not measure the image';
+                    setMeasureError(message);
+                    toast.error(message);
+                    measuringUriRef.current = null;
                 },
             );
         },
         [t],
     );
 
-    // Trigger measurement once if we don't already know the natural size.
-    if (!naturalSize && imageUri) {
-        // Safe: Image.getSize is idempotent and we guard with naturalSize state.
+    // Kick off measurement once per imageUri. Using useEffect (not a render-body
+    // side effect) so the call is scheduled exactly when the URI changes,
+    // rather than being re-fired on every parent re-render.
+    useEffect(() => {
+        if (!imageUri) return;
+        if (sourceWidth && sourceHeight) return;
+        if (naturalSize) return;
         handleImageMeasured(imageUri);
-    }
+    }, [handleImageMeasured, imageUri, naturalSize, sourceHeight, sourceWidth]);
+
+    // Dev-only one-time mount log so we can confirm the URI we received.
+    useEffect(() => {
+        if (!__DEV__) return;
+        console.log('[AvatarCropScreen] mount', {
+            imageUri,
+            sourceWidth,
+            sourceHeight,
+        });
+    }, [imageUri, sourceHeight, sourceWidth]);
 
     // Detect reduce-motion preference once on mount + subscribe to changes.
     useEffect(() => {
@@ -378,14 +422,22 @@ const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
         );
     }, [zoomChipOpacity]);
 
+    /** Dev-only ping fired once per gesture start so we can confirm in logs. */
+    const logGestureStart = useCallback((kind: 'pan' | 'pinch') => {
+        if (!__DEV__) return;
+        console.log(`[AvatarCropScreen] gesture start: ${kind}`);
+    }, []);
+
     const panGesture = useMemo(
         () =>
             Gesture.Pan()
+                .minDistance(2)
                 .onStart(() => {
                     'worklet';
                     savedTranslateX.value = translateX.value;
                     savedTranslateY.value = translateY.value;
                     runOnJS(showGrid)();
+                    runOnJS(logGestureStart)('pan');
                 })
                 .onUpdate((event) => {
                     'worklet';
@@ -409,6 +461,7 @@ const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
             baseFit,
             commitTransform,
             hideGrid,
+            logGestureStart,
             savedTranslateX,
             savedTranslateY,
             scale,
@@ -449,6 +502,7 @@ const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
                     runOnJS(showGrid)();
                     runOnJS(showZoomChip)();
                     runOnJS(resetPinchBounds)();
+                    runOnJS(logGestureStart)('pinch');
                 })
                 .onUpdate((event) => {
                     'worklet';
@@ -485,6 +539,7 @@ const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
             commitTransform,
             hideGrid,
             hideZoomChip,
+            logGestureStart,
             notifyMaxBoundHit,
             notifyMinBoundHit,
             resetPinchBounds,
@@ -541,6 +596,16 @@ const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
      * crop + resize to 512x512 JPEG.
      */
     const handleConfirm = useCallback(async () => {
+        if (__DEV__) {
+            console.log('[AvatarCropScreen] handleConfirm start', {
+                imageUri,
+                baseFit,
+                naturalSize,
+                committedScale: committedScale.current,
+                committedTranslateX: committedTranslateX.current,
+                committedTranslateY: committedTranslateY.current,
+            });
+        }
         if (!imageUri || !baseFit || !naturalSize) {
             toast.error(
                 t('editProfile.toasts.cropNotReady') || 'Image not ready yet',
@@ -579,6 +644,16 @@ const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
                 throw new Error('Computed crop region is invalid');
             }
 
+            if (__DEV__) {
+                console.log('[AvatarCropScreen] manipulateAsync input', {
+                    imageUri,
+                    cropX,
+                    cropY,
+                    cropSize,
+                    OUTPUT_SIZE,
+                });
+            }
+
             const result = await manipulateAsync(
                 imageUri,
                 [
@@ -595,6 +670,10 @@ const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
                 { format: SaveFormat.JPEG, compress: 0.85 },
             );
 
+            if (__DEV__) {
+                console.log('[AvatarCropScreen] manipulateAsync result', result);
+            }
+
             void hapticNotification('success');
 
             await onConfirm?.({
@@ -608,6 +687,9 @@ const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
             // success toast (uploads typically toast their own outcome).
             onClose?.();
         } catch (err) {
+            if (__DEV__) {
+                console.error('[AvatarCropScreen] handleConfirm failed', err);
+            }
             const message = err instanceof Error ? err.message : undefined;
             void hapticNotification('error');
             toast.error(
@@ -830,8 +912,11 @@ const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
     // transform. Use derived display state to avoid mounting/unmounting jank.
     const resetLinkOpacity = isModified ? 1 : 0;
 
-    // No image supplied — render a minimal empty state with the same top bar.
-    if (!imageUri) {
+    // No image supplied OR measurement failed — render a minimal empty state.
+    if (!imageUri || measureError) {
+        const emptyMessage = !imageUri
+            ? (t('editProfile.crop.noImage') || 'No image to crop')
+            : measureError;
         return (
             <View style={styles.container}>
                 <View style={styles.topBar}>
@@ -854,9 +939,7 @@ const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
                     <View style={styles.cancelBtn} />
                 </View>
                 <View style={styles.emptyState}>
-                    <Text style={styles.emptyLabel}>
-                        {t('editProfile.crop.noImage') || 'No image to crop'}
-                    </Text>
+                    <Text style={styles.emptyLabel}>{emptyMessage}</Text>
                 </View>
             </View>
         );

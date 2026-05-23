@@ -184,68 +184,164 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
         scrollTo,
     }), [present, dismiss, scrollTo]);
 
+    // Native gesture wrapping the inner ScrollView. We let the pan gesture run
+    // simultaneously with it so the user can:
+    //   • Drag the handle/sheet at any time → pan wins.
+    //   • Scroll content downward when not at top → scroll wins (pan no-ops in
+    //     `onUpdate` because `allowPanClose` was false at gesture start).
+    //   • Pull down at scroll offset 0 → pan takes over to dismiss the sheet.
     const nativeGesture = useMemo(() => Gesture.Native(), []);
 
-    const panGesture = Gesture.Pan()
-        .enabled(enablePanDownToClose)
-        .simultaneousWithExternalGesture(nativeGesture)
-        .onStart(() => {
-            'worklet';
-            context.value = { y: translateY.value };
-            allowPanClose.value = scrollOffsetY.value <= 8;
-        })
-        .onUpdate((event) => {
-            'worklet';
-            if (!allowPanClose.value) {
-                return;
-            }
-            const newTranslateY = context.value.y + event.translationY;
-            // If user is scrolling down while content isn't at (or near) the top, let ScrollView handle it
-            const atTopOrNearTop = scrollOffsetY.value <= 8; // slightly larger tolerance for smoother handoff
-            if (event.translationY > 0 && !atTopOrNearTop) {
-                return;
-            }
-            if (newTranslateY >= 0) {
-                translateY.value = newTranslateY;
-            } else if (detached) {
-                // Only allow overdrag (pulling up beyond top) when detached
-                translateY.value = newTranslateY * 0.3;
-            } else {
-                // In normal mode, prevent overdrag - clamp to 0
-                translateY.value = 0;
-            }
-        })
-        .onEnd((event) => {
-            'worklet';
-            if (!allowPanClose.value) {
-                return;
-            }
-            const velocity = event.velocityY;
-            const distance = translateY.value;
-            // Require a deeper pull to close (more like native bottom sheets)
-            const closeThreshold = Math.max(140, SCREEN_HEIGHT * 0.25);
-            const fastSwipeThreshold = 900;
-            const shouldClose =
-                velocity > fastSwipeThreshold ||
-                (distance > closeThreshold && velocity > -300);
-
-            if (shouldClose) {
-                translateY.value = withSpring(SCREEN_HEIGHT, {
-                    ...SPRING_CONFIG,
-                    velocity: velocity,
-                });
-                opacity.value = withTiming(0, { duration: 250 }, (finished) => {
-                    if (finished) {
-                        runOnJS(finishClose)();
+    // The pan gesture must be allowed to recognize concurrently with the native
+    // scroll gesture, otherwise on Android the ScrollView consumes the touch
+    // first and the sheet is undraggable. `simultaneousWithExternalGesture` is
+    // the correct API in react-native-gesture-handler 2.x.
+    //
+    // We also configure a small `activeOffsetY` so vertical pans are detected
+    // promptly but horizontal swipes (rare here, but common in nested content)
+    // don't accidentally trigger sheet dismissal.
+    const panGesture = useMemo(
+        () =>
+            Gesture.Pan()
+                .enabled(enablePanDownToClose)
+                .simultaneousWithExternalGesture(nativeGesture)
+                .activeOffsetY([-12, 12])
+                .failOffsetX([-30, 30])
+                .onStart(() => {
+                    'worklet';
+                    context.value = { y: translateY.value };
+                    // If the user starts dragging while the inner content is
+                    // not at the top, defer to the ScrollView (pan no-ops).
+                    allowPanClose.value = scrollOffsetY.value <= 8;
+                })
+                .onUpdate((event) => {
+                    'worklet';
+                    if (!allowPanClose.value) {
+                        return;
                     }
-                });
-            } else {
-                translateY.value = withSpring(0, {
-                    ...SPRING_CONFIG,
-                    velocity: velocity,
-                });
-            }
-        });
+                    const newTranslateY = context.value.y + event.translationY;
+                    // If user is scrolling down while content isn't at (or near) the top, let ScrollView handle it
+                    const atTopOrNearTop = scrollOffsetY.value <= 8; // slightly larger tolerance for smoother handoff
+                    if (event.translationY > 0 && !atTopOrNearTop) {
+                        return;
+                    }
+                    if (newTranslateY >= 0) {
+                        translateY.value = newTranslateY;
+                    } else if (detached) {
+                        // Only allow overdrag (pulling up beyond top) when detached
+                        translateY.value = newTranslateY * 0.3;
+                    } else {
+                        // In normal mode, prevent overdrag - clamp to 0
+                        translateY.value = 0;
+                    }
+                })
+                .onEnd((event) => {
+                    'worklet';
+                    if (!allowPanClose.value) {
+                        return;
+                    }
+                    const velocity = event.velocityY;
+                    const distance = translateY.value;
+                    // Require a deeper pull to close (more like native bottom sheets)
+                    const closeThreshold = Math.max(140, SCREEN_HEIGHT * 0.25);
+                    const fastSwipeThreshold = 900;
+                    const shouldClose =
+                        velocity > fastSwipeThreshold ||
+                        (distance > closeThreshold && velocity > -300);
+
+                    if (shouldClose) {
+                        translateY.value = withSpring(SCREEN_HEIGHT, {
+                            ...SPRING_CONFIG,
+                            velocity: velocity,
+                        });
+                        opacity.value = withTiming(0, { duration: 250 }, (finished) => {
+                            if (finished) {
+                                runOnJS(finishClose)();
+                            }
+                        });
+                    } else {
+                        translateY.value = withSpring(0, {
+                            ...SPRING_CONFIG,
+                            velocity: velocity,
+                        });
+                    }
+                }),
+        [
+            allowPanClose,
+            context,
+            detached,
+            enablePanDownToClose,
+            finishClose,
+            nativeGesture,
+            opacity,
+            scrollOffsetY,
+            translateY,
+        ],
+    );
+
+    // Dedicated pan for the handle. It is unconditional — touching the handle
+    // always drags the sheet, regardless of inner scroll state. This guarantees
+    // the user can dismiss even when the ScrollView is mid-scroll.
+    const handlePanGesture = useMemo(
+        () =>
+            Gesture.Pan()
+                .enabled(enablePanDownToClose && enableHandlePanningGesture)
+                .activeOffsetY([-8, 8])
+                .onStart(() => {
+                    'worklet';
+                    context.value = { y: translateY.value };
+                    // Handle drags ALWAYS get to move the sheet.
+                    allowPanClose.value = true;
+                })
+                .onUpdate((event) => {
+                    'worklet';
+                    const newTranslateY = context.value.y + event.translationY;
+                    if (newTranslateY >= 0) {
+                        translateY.value = newTranslateY;
+                    } else if (detached) {
+                        translateY.value = newTranslateY * 0.3;
+                    } else {
+                        translateY.value = 0;
+                    }
+                })
+                .onEnd((event) => {
+                    'worklet';
+                    const velocity = event.velocityY;
+                    const distance = translateY.value;
+                    const closeThreshold = Math.max(140, SCREEN_HEIGHT * 0.25);
+                    const fastSwipeThreshold = 900;
+                    const shouldClose =
+                        velocity > fastSwipeThreshold ||
+                        (distance > closeThreshold && velocity > -300);
+
+                    if (shouldClose) {
+                        translateY.value = withSpring(SCREEN_HEIGHT, {
+                            ...SPRING_CONFIG,
+                            velocity: velocity,
+                        });
+                        opacity.value = withTiming(0, { duration: 250 }, (finished) => {
+                            if (finished) {
+                                runOnJS(finishClose)();
+                            }
+                        });
+                    } else {
+                        translateY.value = withSpring(0, {
+                            ...SPRING_CONFIG,
+                            velocity: velocity,
+                        });
+                    }
+                }),
+        [
+            allowPanClose,
+            context,
+            detached,
+            enableHandlePanningGesture,
+            enablePanDownToClose,
+            finishClose,
+            opacity,
+            translateY,
+        ],
+    );
 
     const backdropStyle = useAnimatedStyle(() => ({
         opacity: opacity.value,
@@ -330,7 +426,18 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
                     <Animated.View style={[dynamicStyles.sheet, sheetMarginStyle, sheetStyle, sheetHeightStyle]}>
                         {backgroundComponent?.({ style: styles.background })}
 
-                        <View style={dynamicStyles.handle} />
+                        {/*
+                         * Handle area — wrapped in its own dedicated pan gesture
+                         * so dragging the handle ALWAYS moves the sheet, even
+                         * while the inner ScrollView is mid-scroll. We size the
+                         * touch target generously (full sheet width, 28dp tall)
+                         * so it's easy to grab on phones.
+                         */}
+                        <GestureDetector gesture={handlePanGesture}>
+                            <View style={styles.handleHitArea} accessible accessibilityRole="adjustable">
+                                <View style={dynamicStyles.handle} />
+                            </View>
+                        </GestureDetector>
 
                         <GestureDetector gesture={nativeGesture}>
                             <Animated.ScrollView
@@ -392,15 +499,21 @@ const styles = StyleSheet.create({
         borderTopLeftRadius: 24,
         borderTopRightRadius: 24,
     },
+    /**
+     * Hit area for the drag handle — full sheet width and tall enough that the
+     * thumb can grab it comfortably. The visible pill sits centered inside.
+     */
+    handleHitArea: {
+        width: '100%',
+        height: 28,
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 100,
+    },
     handle: {
-        position: 'absolute',
-        top: 10,
-        left: '50%',
-        marginLeft: -18,
         width: 36,
         height: 5,
         borderRadius: 3,
-        zIndex: 100,
     },
     background: {
         ...StyleSheet.absoluteFill,

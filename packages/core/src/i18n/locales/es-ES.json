@@ -1316,9 +1316,20 @@
     "loadingMore": "Cargando más...",
     "loadingPhotoLayout": "Cargando diseño de fotos...",
     "uploading": "Subiendo",
+    "upload": "Subir",
     "uploadPhotos": "Subir fotos",
     "uploadFiles": "Subir archivos",
     "clearSearch": "Limpiar búsqueda",
+    "a11y": {
+      "viewAll": "Mostrar todos los archivos",
+      "viewPhotos": "Mostrar solo fotos",
+      "viewVideos": "Mostrar solo vídeos",
+      "viewDocuments": "Mostrar solo documentos",
+      "viewAudio": "Mostrar solo audio",
+      "sortBy": "Ordenar por {{field}}, {{order}}",
+      "uploadFile": "Subir archivo desde el dispositivo",
+      "uploadFromDevice": "Subir foto desde el dispositivo"
+    },
     "emptyPhotos": {
       "title": "Aún no hay fotos",
       "ownDescription": "Sube fotos para empezar. Puedes seleccionar varias fotos a la vez.",
