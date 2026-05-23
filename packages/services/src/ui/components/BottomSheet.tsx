@@ -197,12 +197,68 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
         scrollTo,
     }), [present, dismiss, scrollTo]);
 
-    // iOS-style sheet model: the handle is the ONLY surface that drags the
-    // sheet. The inner ScrollView gets full ownership of vertical touches in
-    // the content area, so scroll and drag never fight each other (which was
-    // breaking scroll on Android — the outer pan was claiming touches even
-    // when allowPanClose=false in onStart).
-    //
+    // Body pan-to-dismiss. Coordinated with the inner ScrollView via
+    // `simultaneousWithExternalGesture(scrollViewRef)`: both gestures run, and
+    // we gate the pan's effect on scroll position. The pan only acts when the
+    // user is at the top of the content AND pulls down (translationY > 0), so
+    // mid-scroll the ScrollView keeps full control of vertical touches.
+    const panGesture = useMemo(
+        () =>
+            Gesture.Pan()
+                .enabled(enablePanDownToClose)
+                .simultaneousWithExternalGesture(scrollViewRef)
+                .activeOffsetY(8)
+                .failOffsetX([-25, 25])
+                .onStart(() => {
+                    'worklet';
+                    context.value = { y: translateY.value };
+                    allowPanClose.value = scrollOffsetY.value <= 4;
+                })
+                .onUpdate((event) => {
+                    'worklet';
+                    if (!allowPanClose.value) return;
+                    if (event.translationY < 0) return; // never drag upward
+                    if (scrollOffsetY.value > 4) {
+                        // user scrolled away from top mid-gesture → release
+                        allowPanClose.value = false;
+                        return;
+                    }
+                    const newTranslateY = context.value.y + event.translationY;
+                    if (newTranslateY >= 0) {
+                        translateY.value = newTranslateY;
+                    }
+                })
+                .onEnd((event) => {
+                    'worklet';
+                    if (!allowPanClose.value) return;
+                    const velocity = event.velocityY;
+                    const distance = translateY.value;
+                    const closeThreshold = Math.max(140, SCREEN_HEIGHT * 0.25);
+                    const fastSwipeThreshold = 900;
+                    const shouldClose =
+                        velocity > fastSwipeThreshold ||
+                        (distance > closeThreshold && velocity > -300);
+
+                    if (shouldClose) {
+                        translateY.value = withSpring(SCREEN_HEIGHT, { ...SPRING_CONFIG, velocity });
+                        opacity.value = withTiming(0, { duration: 250 }, (finished) => {
+                            if (finished) runOnJS(finishClose)();
+                        });
+                    } else {
+                        translateY.value = withSpring(0, { ...SPRING_CONFIG, velocity });
+                    }
+                }),
+        [
+            allowPanClose,
+            context,
+            enablePanDownToClose,
+            finishClose,
+            opacity,
+            scrollOffsetY,
+            translateY,
+        ],
+    );
+
     // Dedicated pan for the handle — unconditional, always drags.
     const handlePanGesture = useMemo(
         () =>
@@ -353,16 +409,15 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
                     )}
                 </Animated.View>
 
-                <Animated.View style={[dynamicStyles.sheet, sheetMarginStyle, sheetStyle, sheetHeightStyle]}>
+                <GestureDetector gesture={panGesture}>
+                    <Animated.View style={[dynamicStyles.sheet, sheetMarginStyle, sheetStyle, sheetHeightStyle]}>
                         {backgroundComponent?.({ style: styles.background })}
 
                         {/*
-                         * Handle area — the DEDICATED drag surface. iOS-style:
-                         * the handle is the only place the sheet can be dragged
-                         * to dismiss, so the inner ScrollView keeps full control
-                         * of vertical scroll without fighting an outer pan
-                         * gesture. We size the touch target generously (full
-                         * sheet width, 28dp tall) so it's easy to grab on phones.
+                         * Handle area — dedicated pan that always drags the
+                         * sheet, even when content is mid-scroll. The outer
+                         * body pan above gates on scroll position; this one
+                         * is unconditional.
                          */}
                         <GestureDetector gesture={handlePanGesture}>
                             <View style={styles.handleHitArea} accessible accessibilityRole="adjustable">
@@ -406,6 +461,7 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
                             <View style={styles.nonScrollableContent}>{children}</View>
                         )}
                     </Animated.View>
+                </GestureDetector>
             </GestureHandlerRootView>
         </Modal>
     );
