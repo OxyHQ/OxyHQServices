@@ -42,6 +42,13 @@ export default function CreateIdentityScreen() {
   // twice. The module-level lock in useIdentity also protects us, but a
   // local guard here keeps the UI consistent (no double-progress bar).
   const hasStartedCreateRef = useRef(false);
+  // Guards against issuing the resume-redirect twice within the same mount.
+  // The status-change effect can re-run for unrelated dependency changes
+  // (router/setAuthError references), and we only want exactly one
+  // `replace('/username')` per resume. Note: this does NOT survive remounts;
+  // protection against a remount-induced bounce relies on the SDK-side
+  // cache invalidation in `updateProfile` keeping `hasUsername` stable.
+  const hasNavigatedResumeRef = useRef(false);
 
   // Cleanup function for all timers
   const cleanupTimers = useCallback(() => {
@@ -72,6 +79,9 @@ export default function CreateIdentityScreen() {
     // through the recovery-phrase screen because we no longer have the
     // mnemonic in memory — the user must view it from settings instead.
     if (status === 'in_progress' && hasIdentity) {
+      if (hasNavigatedResumeRef.current) return;
+      hasNavigatedResumeRef.current = true;
+
       const checkAndNavigate = async () => {
         const offline = await checkIfOffline();
         if (!isMountedRef.current) return;

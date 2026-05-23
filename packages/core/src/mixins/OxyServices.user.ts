@@ -208,12 +208,33 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
     }
 
     /**
-     * Update user profile
-     * TanStack Query handles offline queuing automatically
+     * Update user profile.
+     *
+     * Invalidates the SDK-side response cache for every endpoint that
+     * returns the current user (`GET /users/me`, `GET /session/user/*`,
+     * `GET /users/<id>`, `GET /profiles/username/*`) so the next read
+     * doesn't return a stale snapshot. Without this, a follow-up
+     * `getUserBySession` call inside the 2-minute cache window can return
+     * the pre-update user — most visibly during onboarding, where it
+     * causes the username step to flicker back as if nothing was saved.
+     *
+     * TanStack Query handles offline queuing automatically.
      */
     async updateProfile(updates: Record<string, any>): Promise<User> {
       try {
-        return await this.makeRequest<User>('PUT', '/users/me', updates, { cache: false });
+        const result = await this.makeRequest<User>('PUT', '/users/me', updates, { cache: false });
+
+        // Bust every cached representation of the current user. We use a
+        // prefix sweep rather than an enumeration because the SDK never
+        // tracks the set of active session IDs centrally.
+        this.clearCacheByPrefix('GET:/session/user/');
+        this.clearCacheByPrefix('GET:/users/me');
+        this.clearCacheByPrefix('GET:/profiles/username/');
+        if (result?.id) {
+          this.clearCacheEntry(`GET:/users/${result.id}`);
+        }
+
+        return result;
       } catch (error) {
         const errorAny = error as any;
         const errorMessage = error instanceof Error ? error.message : String(error);

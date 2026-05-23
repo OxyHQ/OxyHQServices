@@ -880,6 +880,25 @@ export class HttpService {
     this.cache.delete(key);
   }
 
+  /**
+   * Delete every cache entry whose key starts with `prefix`.
+   *
+   * Used by mutations that don't know the exact downstream cache keys —
+   * e.g. `updateProfile` invalidating all `GET:/session/user/*` entries
+   * without having to track every active session ID. Returns the number of
+   * deleted entries (for observability in tests).
+   */
+  clearCacheByPrefix(prefix: string): number {
+    let removed = 0;
+    for (const key of this.cache.keys()) {
+      if (key.startsWith(prefix)) {
+        this.cache.delete(key);
+        removed++;
+      }
+    }
+    return removed;
+  }
+
   getCacheStats() {
     const cacheStats = this.cache.getStats();
     const total = this.requestMetrics.cacheHits + this.requestMetrics.cacheMisses;

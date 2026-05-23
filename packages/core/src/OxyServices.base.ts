@@ -107,6 +107,16 @@ export class OxyServicesBase {
   }
 
   /**
+   * Clear every cache entry whose key starts with `prefix`.
+   * Useful for mutations that invalidate a family of GET responses
+   * without enumerating each one (e.g. all session-user lookups after
+   * a profile update).
+   */
+  public clearCacheByPrefix(prefix: string): number {
+    return this.httpService.clearCacheByPrefix(prefix);
+  }
+
+  /**
    * Get cache statistics
    */
   public getCacheStats() {

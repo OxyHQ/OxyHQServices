@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'expo-router';
-import { useOxy, useAuthStore } from '@oxyhq/services';
+import { useOxy, useUpdateProfile } from '@oxyhq/services';
 import { useColors } from '@/hooks/useColors';
 import { UsernameStep } from '@/components/auth/UsernameStep';
 import { useNetworkStatus } from '@/hooks/auth/useNetworkStatus';
@@ -11,67 +11,95 @@ import { extractAuthErrorMessage, isNetworkOrTimeoutError } from '@/utils/auth/e
 
 /**
  * Create Identity - Username Screen
- * 
- * Allows user to choose a username (mandatory when online)
+ *
+ * Allows the user to choose a username (mandatory when online).
+ *
+ * IMPORTANT: We route the username update through the `useUpdateProfile`
+ * mutation hook (NOT a direct `oxyServices.updateProfile` call). The
+ * mutation performs an optimistic cache update that:
+ *  1. Writes the new username into `queryKeys.accounts.current()` immediately.
+ *  2. Mirrors it into `useAuthStore` via `onSuccess`.
+ *  3. Invalidates related queries on success so other consumers refetch.
+ *
+ * Without the optimistic step a race exists where:
+ *  - The server PUT resolves and we navigate to `/notifications`.
+ *  - Concurrently, `useCurrentUser` refetches and (briefly) returns the
+ *    cached pre-update user, which mirrors `username: undefined` into the
+ *    auth store via `useCurrentUser`'s effect.
+ *  - `useOnboardingStatus` then sees `hasUsername=false`, flips
+ *    `needsAuth=true`, and the root guard kicks us back to `(auth)`.
+ *  - `create-identity/index.tsx` redirects to `/username` and the screen
+ *    remounts — the suggested username regenerates and looks "reset".
+ *
+ * The optimistic cache update closes that window: the cache has the new
+ * username by the time we navigate, so the guard never flips.
  */
 export default function CreateIdentityUsernameScreen() {
   const router = useRouter();
   const colors = useColors();
-  const { oxyServices } = useOxy();
+  const { oxyServices, user } = useOxy();
   const { isOffline } = useNetworkStatus();
   const { usernameRef } = useAuthFlowContext();
+  const updateProfile = useUpdateProfile();
 
   const backgroundColor = colors.background;
   const textColor = colors.text;
 
-  const [username, setUsername] = useState<string>('');
-  const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
+  // Initialise once per mount. If the user already has a username (resuming
+  // after a network failure or a remount), prefer it; otherwise generate a
+  // suggestion. Using the lazy initialiser form keeps the value stable across
+  // re-renders so navigation hiccups never visibly regenerate the suggestion.
+  const [username, setUsername] = useState<string>(
+    () => user?.username || usernameRef.current || generateSuggestedUsername(null),
+  );
   const [updateError, setUpdateError] = useState<string | null>(null);
 
-  // Generate random suggested username on mount
-  useEffect(() => {
-    setUsername(generateSuggestedUsername(null));
-  }, []);
-
-  // Update username ref whenever username changes
+  // Keep the ref in sync so other steps (e.g. import-identity recovery) can
+  // observe what the user typed if they back-navigate.
   useEffect(() => {
     usernameRef.current = username;
   }, [username, usernameRef]);
+
+  const isUpdatingProfile = updateProfile.isPending;
 
   const handleContinue = useCallback(async () => {
     if (!oxyServices || !username.trim()) {
       return;
     }
 
-    setIsUpdatingProfile(true);
     setUpdateError(null);
 
-    try {
-      // Sync should have already happened in the previous step, so we should
-      // have a valid token. Just update the profile — if the token is missing,
-      // updateProfile will surface a clear error and we will not advance.
-      const updatedUser = await oxyServices.updateProfile({ username: username.trim() });
+    if (__DEV__) {
+      console.log('[create-identity/username] continue start', { username });
+    }
 
-      if (updatedUser) {
-        useAuthStore.getState().setUser(updatedUser);
-        usernameRef.current = username.trim();
-        router.push('/(auth)/create-identity/notifications');
-      } else {
-        setUpdateError('Failed to update profile. Please try again.');
-        setIsUpdatingProfile(false);
+    try {
+      // mutateAsync triggers the optimistic onMutate FIRST, which:
+      //  - cancels in-flight queries on accounts.current()
+      //  - writes the new username into the query cache (and via onSuccess
+      //    into useAuthStore)
+      // …so by the time the await resolves with the server response, the
+      // root-layout onboarding guard has already observed `hasUsername=true`.
+      const updatedUser = await updateProfile.mutateAsync({ username: username.trim() });
+      usernameRef.current = username.trim();
+
+      if (__DEV__) {
+        console.log('[create-identity/username] update succeeded', {
+          username: updatedUser?.username,
+        });
       }
+
+      router.push('/(auth)/create-identity/notifications');
     } catch (err: unknown) {
       const errorMessage = extractAuthErrorMessage(err, 'Failed to update username. Please try again.');
 
       // Critical: keep the user on this step until the username is actually
-      // persisted server-side. Previously we would advance to `/notifications`
-      // on transient network errors, which left the account permanently
-      // username-less and rendered every list row as "@unknown". The new
-      // onboarding guard in `_layout.tsx` would catch this and bounce them
-      // back, but it's cleaner to block here.
+      // persisted server-side. Previously we would advance on transient
+      // network errors, which left the account permanently username-less.
       const offline = await checkIfOffline();
       const isNetwork = isNetworkOrTimeoutError(err);
       usernameRef.current = username.trim();
+
       if (offline && isNetwork) {
         setUpdateError(
           'You are offline. Reconnect and tap continue to save your username.',
@@ -79,9 +107,12 @@ export default function CreateIdentityUsernameScreen() {
       } else {
         setUpdateError(errorMessage);
       }
-      setIsUpdatingProfile(false);
+
+      if (__DEV__) {
+        console.warn('[create-identity/username] update failed', { errorMessage });
+      }
     }
-  }, [username, oxyServices, router, usernameRef]);
+  }, [username, oxyServices, router, usernameRef, updateProfile]);
 
   return (
     <UsernameStep
@@ -98,4 +129,3 @@ export default function CreateIdentityUsernameScreen() {
     />
   );
 }
-
