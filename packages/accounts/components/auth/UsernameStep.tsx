@@ -133,6 +133,9 @@ export function UsernameStep({
             onPress={handleAnimationPress}
             activeOpacity={0.8}
             disabled={isAnimationPlaying || shouldLoop || validation.isChecking || isConfirming}
+            accessibilityRole="button"
+            accessibilityLabel="Play animation"
+            accessibilityState={{ disabled: isAnimationPlaying || shouldLoop || validation.isChecking || isConfirming }}
           >
             <LottieView
               ref={lottieRef}
@@ -244,7 +247,6 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 38,
-    fontFamily: 'Inter-SemiBold',
     fontWeight: '600',
     marginBottom: 8,
     textAlign: 'center',

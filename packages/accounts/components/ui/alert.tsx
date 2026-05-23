@@ -14,6 +14,7 @@ import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { useTheme } from '@oxyhq/bloom/theme';
+import { useTranslation } from '@/lib/i18n';
 
 export interface AlertButton {
   text: string;
@@ -35,6 +36,7 @@ export function Alert({ visible, title, message, buttons = [], onDismiss }: Aler
   const insets = useSafeAreaInsets();
   const opacity = useSharedValue(0);
   const scale = useSharedValue(0.95);
+  const { t } = useTranslation();
 
   useEffect(() => {
     if (visible) {
@@ -67,7 +69,7 @@ export function Alert({ visible, title, message, buttons = [], onDismiss }: Aler
   }));
 
   // Default buttons if none provided
-  const alertButtons = buttons.length > 0 ? buttons : [{ text: 'OK', style: 'default' as const }];
+  const alertButtons = buttons.length > 0 ? buttons : [{ text: t('common.ok'), style: 'default' as const }];
 
   // Separate cancel and other buttons
   const cancelButton = alertButtons.find(btn => btn.style === 'cancel');
@@ -123,6 +125,8 @@ export function Alert({ visible, title, message, buttons = [], onDismiss }: Aler
           ]}
           onPress={() => handleButtonPress(button)}
           activeOpacity={0.8}
+          accessibilityRole="button"
+          accessibilityLabel={button.text}
         >
           <Text
             style={[
@@ -154,6 +158,8 @@ export function Alert({ visible, title, message, buttons = [], onDismiss }: Aler
           style={StyleSheet.absoluteFill}
           activeOpacity={1}
           onPress={onDismiss}
+          accessibilityRole="button"
+          accessibilityLabel={t('a11y.close')}
         />
         <Animated.View
           style={[
@@ -171,7 +177,6 @@ export function Alert({ visible, title, message, buttons = [], onDismiss }: Aler
           <BlurView
             intensity={100}
             tint={mode === 'dark' ? 'dark' : 'light'}
-            experimentalBlurMethod={Platform.OS === 'android' ? 'dimezisBlurView' : undefined}
             style={[
               styles.alertContent,
               {
@@ -219,7 +224,7 @@ const maxHeight = height * 0.7; // Max 70% of screen height
 
 const styles = StyleSheet.create({
   overlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',

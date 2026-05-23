@@ -13,6 +13,8 @@ import { useColors } from '@/hooks/useColors';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import { useAlert, Button } from '@/components/ui';
 import { IdentityCard } from '@/components/identity';
+import { getDisplayName } from '@/utils/date-utils';
+import { useTranslation } from '@/lib/i18n';
 
 /**
  * Authorize Screen
@@ -27,6 +29,7 @@ export default function AuthorizeScreen() {
   const params = useLocalSearchParams<{ token: string }>();
   const colors = useColors();
   const alert = useAlert();
+  const { locale } = useTranslation();
   const { oxyServices, user, isAuthenticated, activeSessionId, isTokenReady } = useOxy();
 
   const [isLoading, setIsLoading] = useState(true);
@@ -134,13 +137,8 @@ export default function AuthorizeScreen() {
     router.back();
   }, [params.token, oxyServices, router]);
 
-  // Get user display name
-  const displayName = useMemo(() => {
-    if (user?.name?.full) return user.name.full;
-    if (user?.name?.first) return user.name.first;
-    if (user?.username) return user.username;
-    return 'User';
-  }, [user]);
+  // Get user display name via the canonical helper.
+  const displayName = useMemo(() => getDisplayName(user, locale), [user, locale]);
 
   // Get avatar URL
   const avatarUrl = useMemo(() => {
@@ -321,7 +319,6 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 42,
-    fontFamily: Platform.OS === 'web' ? 'Inter' : 'Inter-Bold',
     fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
     textAlign: 'center',
     marginTop: 24,
@@ -341,7 +338,6 @@ const styles = StyleSheet.create({
   },
   appName: {
     fontSize: 42,
-    fontFamily: Platform.OS === 'web' ? 'Inter' : 'Inter-Bold',
     fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
     marginTop: 20,
     marginBottom: 12,
@@ -367,7 +363,6 @@ const styles = StyleSheet.create({
   },
   permissionsTitle: {
     fontSize: 18,
-    fontFamily: Platform.OS === 'web' ? 'Inter' : 'Inter-SemiBold',
     fontWeight: Platform.OS === 'web' ? '600' : undefined,
     marginLeft: 8,
     letterSpacing: -0.5,

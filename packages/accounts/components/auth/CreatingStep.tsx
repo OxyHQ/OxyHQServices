@@ -10,8 +10,8 @@ import Animated, {
   interpolate,
   Easing
 } from 'react-native-reanimated';
-import { CREATING_PROGRESS_MESSAGES, CREATING_SUBTITLE } from '@/constants/auth';
 import hedgehogAnimation from '@/assets/lottie/Hedgehog.json';
+import { useTranslation } from '@/lib/i18n';
 
 interface CreatingStepProps {
   progress: number;
@@ -22,23 +22,30 @@ interface CreatingStepProps {
 }
 
 const TOTAL_PROGRESS_STEPS = 3; // 0, 1, 2
+const PROGRESS_MESSAGE_KEYS = [
+  'auth.creating.messages.0',
+  'auth.creating.messages.1',
+  'auth.creating.messages.2',
+] as const;
 
 /**
  * Creating step component showing progress during identity creation, sync, and sign-in
  */
 export function CreatingStep({ progress, backgroundColor, textColor, isSyncing, isSigningIn }: CreatingStepProps) {
+  const { t } = useTranslation();
   // Determine message based on current state
   let currentMessage: string;
-  let subtitle: string = CREATING_SUBTITLE;
+  let subtitle: string = t('auth.creating.subtitle');
 
   if (isSigningIn) {
-    currentMessage = 'Signing in...';
-    subtitle = 'Almost there!';
+    currentMessage = t('auth.creating.signingIn');
+    subtitle = t('auth.creating.signingInSubtitle');
   } else if (isSyncing) {
-    currentMessage = 'Syncing your identity...';
-    subtitle = 'Connecting to Oxy servers';
+    currentMessage = t('auth.creating.syncing');
+    subtitle = t('auth.creating.syncingSubtitle');
   } else {
-    currentMessage = CREATING_PROGRESS_MESSAGES[progress] || CREATING_PROGRESS_MESSAGES[0];
+    const key = PROGRESS_MESSAGE_KEYS[progress] ?? PROGRESS_MESSAGE_KEYS[0];
+    currentMessage = t(key);
   }
 
   const progressValue = useSharedValue(0);
@@ -140,7 +147,6 @@ const styles = StyleSheet.create({
   },
   creatingTitle: {
     fontSize: 20,
-    fontFamily: 'Inter-SemiBold',
     fontWeight: '600',
     marginTop: 20,
     textAlign: 'center',

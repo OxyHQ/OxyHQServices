@@ -1,21 +1,34 @@
-import React, { useMemo } from 'react';
-import { View, StyleSheet, Platform, type ColorValue } from 'react-native';
+import { useMemo } from 'react';
+import { View, ScrollView, StyleSheet, type ColorValue } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useColors } from '@/hooks/useColors';
 import { useTheme } from '@oxyhq/bloom/theme';
-import { DrawerContentScrollView, DrawerContentComponentProps } from '@react-navigation/drawer';
 import { SidebarContent } from './sidebar-content';
 
-export function DrawerContent(props: DrawerContentComponentProps) {
-    const colors = useColors();
+// The drawer navigator spreads its full `DrawerContentComponentProps` bag
+// (state, descriptors, navigation, etc.) into this component. We only
+// consume `navigation.closeDrawer`. Importing the upstream type directly
+// causes identity conflicts because expo-router bundles its own copy of
+// `@react-navigation/drawer`; structurally typing only the surface we use
+// avoids that mismatch and still rejects bad call sites.
+interface DrawerNavigation {
+    closeDrawer: () => void;
+}
+interface DrawerContentProps {
+    navigation: DrawerNavigation;
+    state?: unknown;
+    descriptors?: unknown;
+}
+
+export function DrawerContent({ navigation }: DrawerContentProps) {
     const { mode } = useTheme();
+    const insets = useSafeAreaInsets();
 
     const gradientColors = useMemo((): readonly [ColorValue, ColorValue, ColorValue] => {
         if (mode === 'dark') {
             return ['rgba(0, 0, 0, 0.9)', 'rgba(0, 0, 0, 0.5)', 'transparent'] as const;
-        } else {
-            return ['rgba(255, 255, 255, 0.9)', 'rgba(255, 255, 255, 0.5)', 'transparent'] as const;
         }
+        return ['rgba(255, 255, 255, 0.9)', 'rgba(255, 255, 255, 0.5)', 'transparent'] as const;
     }, [mode]);
 
     return (
@@ -27,13 +40,15 @@ export function DrawerContent(props: DrawerContentComponentProps) {
                 end={{ x: 1, y: 0 }}
                 style={StyleSheet.absoluteFill}
             />
-            <DrawerContentScrollView
-                {...props}
-                contentContainerStyle={styles.drawerContent}
+            <ScrollView
                 style={styles.scrollView}
+                contentContainerStyle={[
+                    styles.drawerContent,
+                    { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 16 },
+                ]}
             >
-                <SidebarContent onNavigate={() => props.navigation.closeDrawer()} />
-            </DrawerContentScrollView>
+                <SidebarContent onNavigate={() => navigation.closeDrawer()} />
+            </ScrollView>
         </View>
     );
 }
@@ -52,4 +67,3 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
     },
 });
-

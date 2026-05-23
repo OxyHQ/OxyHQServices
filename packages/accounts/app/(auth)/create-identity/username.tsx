@@ -47,12 +47,14 @@ export default function CreateIdentityUsernameScreen() {
     setUpdateError(null);
 
     try {
-      // Sync should have already happened in the previous step, so we should have a valid token
-      // Just update the profile - if token is missing, updateProfile will handle the error
+      // Sync should have already happened in the previous step, so we should
+      // have a valid token. Just update the profile — if the token is missing,
+      // updateProfile will surface a clear error and we will not advance.
       const updatedUser = await oxyServices.updateProfile({ username: username.trim() });
 
       if (updatedUser) {
         useAuthStore.getState().setUser(updatedUser);
+        usernameRef.current = username.trim();
         router.push('/(auth)/create-identity/notifications');
       } else {
         setUpdateError('Failed to update profile. Please try again.');
@@ -61,14 +63,23 @@ export default function CreateIdentityUsernameScreen() {
     } catch (err: unknown) {
       const errorMessage = extractAuthErrorMessage(err, 'Failed to update username. Please try again.');
 
+      // Critical: keep the user on this step until the username is actually
+      // persisted server-side. Previously we would advance to `/notifications`
+      // on transient network errors, which left the account permanently
+      // username-less and rendered every list row as "@unknown". The new
+      // onboarding guard in `_layout.tsx` would catch this and bounce them
+      // back, but it's cleaner to block here.
       const offline = await checkIfOffline();
-      if (offline && isNetworkOrTimeoutError(err)) {
-        usernameRef.current = username.trim();
-        router.push('/(auth)/create-identity/notifications');
+      const isNetwork = isNetworkOrTimeoutError(err);
+      usernameRef.current = username.trim();
+      if (offline && isNetwork) {
+        setUpdateError(
+          'You are offline. Reconnect and tap continue to save your username.',
+        );
       } else {
         setUpdateError(errorMessage);
-        setIsUpdatingProfile(false);
       }
+      setIsUpdatingProfile(false);
     }
   }, [username, oxyServices, router, usernameRef]);
 

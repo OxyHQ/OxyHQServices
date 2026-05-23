@@ -13,7 +13,9 @@ import { darkenColor } from '@/utils/color-utils';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { useOxy, FollowButton as ImportedFollowButton } from '@oxyhq/services';
 import type { User, BlockedUser, RestrictedUser } from '@oxyhq/core';
+import { getAccountDisplayName, getAccountFallbackHandle } from '@oxyhq/core';
 import { Avatar } from '@oxyhq/services';
+import { useTranslation } from '@/lib/i18n';
 
 // Explicit type annotation to avoid implicit any when services source has transient TS errors
 const FollowButton: React.FC<{
@@ -32,6 +34,7 @@ export default function SearchScreen() {
   const searchQuery = params.q || '';
   const [localSearchQuery, setLocalSearchQuery] = useState(searchQuery);
   const isDesktop = useMemo(() => Platform.OS === 'web' && width >= 768, [width]);
+  const { t, locale } = useTranslation();
 
   // OxyServices integration
   const { user, oxyServices, isAuthenticated, showBottomSheet } = useOxy();
@@ -39,6 +42,7 @@ export default function SearchScreen() {
   // User search state
   const [userSearchResults, setUserSearchResults] = useState<User[]>([]);
   const [isSearchingUsers, setIsSearchingUsers] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const userSearchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [blockedUsers, setBlockedUsers] = useState<BlockedUser[]>([]);
   const [restrictedUsers, setRestrictedUsers] = useState<RestrictedUser[]>([]);
@@ -180,15 +184,41 @@ export default function SearchScreen() {
     router.setParams({ q: text || '' });
   };
 
+  const handleRefresh = useCallback(async () => {
+    if (!isAuthenticated) return;
+    setRefreshing(true);
+    try {
+      // Refresh blocked/restricted lists and re-run active search in parallel
+      const refreshPromises: Array<Promise<unknown>> = [];
+      if (oxyServices && user?.id) {
+        refreshPromises.push(
+          Promise.all([
+            oxyServices.getBlockedUsers(),
+            oxyServices.getRestrictedUsers(),
+          ]).then(([blocked, restricted]) => {
+            setBlockedUsers(blocked || []);
+            setRestrictedUsers(restricted || []);
+          }),
+        );
+      }
+      if (searchQuery.trim().length >= 2) {
+        refreshPromises.push(searchUsers(searchQuery));
+      }
+      await Promise.all(refreshPromises);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [isAuthenticated, oxyServices, user?.id, searchQuery, searchUsers]);
+
   const filteredItems = useMemo(() => {
     if (!searchQuery.trim()) {
       return [];
     }
     const query = searchQuery.toLowerCase();
     return menuItems.filter(item =>
-      item.label.toLowerCase().includes(query)
+      t(item.labelKey).toLowerCase().includes(query)
     );
-  }, [searchQuery]);
+  }, [searchQuery, t]);
 
   const groupedItems = useMemo(() => {
     return filteredItems.map((item) => {
@@ -197,12 +227,12 @@ export default function SearchScreen() {
         id: item.path,
         icon: item.icon,
         iconColor: iconColor,
-        title: item.label,
-        onPress: () => router.push(item.path as any),
+        title: t(item.labelKey),
+        onPress: () => router.push(item.path),
         showChevron: true,
       };
     });
-  }, [filteredItems, colors, router]);
+  }, [filteredItems, colors, router, t]);
 
   // Transform user search results to GroupedSection items with FollowButton
   const userSearchResultItems = useMemo(() => {
@@ -211,8 +241,12 @@ export default function SearchScreen() {
         const userId = extractUserId(user);
         if (!userId) return null; // Skip invalid users
 
-        const username = user.username || user.name?.full || user.name?.first || 'Unknown';
+        // Always derive a friendly display name from the canonical helper so
+        // partially-onboarded accounts (publicKey only) read as
+        // `Account 0x12345678…` rather than the harsh "Unknown".
+        const username = getAccountDisplayName(user, locale);
         const userUsername = user.username || undefined;
+        const fallbackHandle = getAccountFallbackHandle(user);
         const avatarUrl = user.avatar && oxyServices
           ? oxyServices.getFileDownloadUrl(user.avatar, 'thumb')
           : undefined;
@@ -220,7 +254,8 @@ export default function SearchScreen() {
         return {
           id: userId,
           title: username,
-          subtitle: user.name?.full || user.bio || username,
+          subtitle: user.bio
+            || (fallbackHandle ? (user.username ? `@${fallbackHandle}` : fallbackHandle) : username),
           customIcon: (
             <Avatar
               name={username}
@@ -251,11 +286,11 @@ export default function SearchScreen() {
         };
       })
       .filter((item): item is NonNullable<typeof item> => item !== null);
-  }, [userSearchResults, oxyServices, mode, extractUserId, showBottomSheet]);
+  }, [userSearchResults, oxyServices, mode, extractUserId, showBottomSheet, locale]);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <ScreenContentWrapper>
+      <ScreenContentWrapper refreshing={refreshing} onRefresh={handleRefresh}>
         <View style={[styles.content, isDesktop && styles.desktopContent]}>
           {!searchQuery.trim() ? (
             <View style={styles.startSearchContainer}>
@@ -267,13 +302,13 @@ export default function SearchScreen() {
                   style={styles.startSearchIcon}
                 />
                 <View style={styles.titleDescriptionWrapper}>
-                  <ThemedText style={[styles.startSearchTitle, { color: colors.text }]}>Start searching</ThemedText>
+                  <ThemedText style={[styles.startSearchTitle, { color: colors.text }]}>{t('search.startTitle')}</ThemedText>
                   <ThemedText style={[styles.startSearchSubtitle, { color: colors.text }]}>
-                    Type in the search bar above to find screens and navigate to different sections of your account.
+                    {t('search.startSubtitle')}
                   </ThemedText>
                 </View>
                 <View style={styles.suggestionsContainer}>
-                  <ThemedText style={[styles.suggestionsTitle, { color: colors.text }]}>Try searching for:</ThemedText>
+                  <ThemedText style={[styles.suggestionsTitle, { color: colors.text }]}>{t('search.suggestionsTitle')}</ThemedText>
                   <View style={styles.suggestionsList}>
                     {menuItems.slice(0, 6).map((item) => {
                       const iconColor = colors[item.iconColor as keyof typeof colors] as string;
@@ -281,13 +316,15 @@ export default function SearchScreen() {
                         <TouchableOpacity
                           key={item.path}
                           style={[styles.suggestionItem, { backgroundColor: colors.card }]}
-                          onPress={() => router.push(item.path as any)}
+                          onPress={() => router.push(item.path)}
                           activeOpacity={0.7}
+                          accessibilityRole="button"
+                          accessibilityLabel={t('a11y.suggestion', { title: t(item.labelKey) })}
                         >
                           <View style={[styles.suggestionIcon, { backgroundColor: iconColor }]}>
                             <MaterialCommunityIcons name={item.icon} size={20} color={darkenColor(iconColor)} />
                           </View>
-                          <ThemedText style={[styles.suggestionText, { color: colors.text }]}>{item.label}</ThemedText>
+                          <ThemedText style={[styles.suggestionText, { color: colors.text }]}>{t(item.labelKey)}</ThemedText>
                         </TouchableOpacity>
                       );
                     })}
@@ -299,7 +336,7 @@ export default function SearchScreen() {
             <>
               <View style={styles.header}>
                 <ThemedText style={styles.subtitle}>
-                  {filteredItems.length + userSearchResultItems.length} {(filteredItems.length + userSearchResultItems.length) === 1 ? 'result' : 'results'} for "{searchQuery}"
+                  {t('search.resultsCount', { count: filteredItems.length + userSearchResultItems.length, query: searchQuery })}
                 </ThemedText>
               </View>
               {filteredItems.length === 0 && userSearchResultItems.length === 0 && !isSearchingUsers ? (
@@ -310,16 +347,16 @@ export default function SearchScreen() {
                     color={colors.icon}
                     style={styles.emptyIcon}
                   />
-                  <ThemedText style={styles.emptyText}>No results found</ThemedText>
+                  <ThemedText style={styles.emptyText}>{t('search.noResults')}</ThemedText>
                   <ThemedText style={styles.emptySubtext}>
-                    Try searching for something else
+                    {t('search.noResultsSubtitle')}
                   </ThemedText>
                 </View>
               ) : (
                 <>
                   {filteredItems.length > 0 && (
                     <Section isFirst>
-                      <ThemedText style={[styles.sectionTitle, { color: colors.text }]}>Screens</ThemedText>
+                      <ThemedText style={[styles.sectionTitle, { color: colors.text }]}>{t('search.screens')}</ThemedText>
                       <AccountCard>
                         <GroupedSection items={groupedItems} />
                       </AccountCard>
@@ -329,13 +366,13 @@ export default function SearchScreen() {
                     <Section isFirst={filteredItems.length === 0}>
                       <View style={styles.loadingContainer}>
                         <ActivityIndicator size="small" color={colors.tint} />
-                        <ThemedText style={[styles.loadingText, { color: colors.text }]}>Searching users...</ThemedText>
+                        <ThemedText style={[styles.loadingText, { color: colors.text }]}>{t('search.searchingUsers')}</ThemedText>
                       </View>
                     </Section>
                   )}
                   {userSearchResultItems.length > 0 && (
                     <Section isFirst={filteredItems.length === 0}>
-                      <ThemedText style={[styles.sectionTitle, { color: colors.text }]}>People</ThemedText>
+                      <ThemedText style={[styles.sectionTitle, { color: colors.text }]}>{t('search.people')}</ThemedText>
                       <AccountCard>
                         <GroupedSection items={userSearchResultItems} />
                       </AccountCard>
@@ -403,7 +440,6 @@ const styles = StyleSheet.create({
   startSearchTitle: {
     fontSize: Platform.OS === 'web' ? 56 : 36,
     fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
-    fontFamily: Platform.OS === 'web' ? 'Inter' : 'Inter-Bold',
     marginBottom: 16,
     textAlign: 'left',
     lineHeight: Platform.OS === 'web' ? 64 : 44,

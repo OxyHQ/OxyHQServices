@@ -1,9 +1,10 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
     View,
     StyleSheet,
     TextInput,
 } from 'react-native';
+import { useRouter } from 'expo-router';
 import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
 import { Button, ImportantBanner, useAlert } from '@/components/ui';
@@ -14,6 +15,8 @@ import * as Sharing from 'expo-sharing';
 import { useOxy } from '@oxyhq/services';
 import { KeyManager } from '@oxyhq/core';
 import JSZip from 'jszip';
+
+type IdentityStatus = 'checking' | 'present' | 'missing';
 
 interface EncryptedBackupGeneratorProps {
     publicKey: string | null;
@@ -32,6 +35,7 @@ export function EncryptedBackupGenerator({
     onCancel,
 }: EncryptedBackupGeneratorProps) {
     const colors = useColors();
+    const router = useRouter();
     const { oxyServices } = useOxy();
     const alert = useAlert();
 
@@ -39,6 +43,19 @@ export function EncryptedBackupGenerator({
     const [confirmPassword, setConfirmPassword] = useState('');
     const [isGenerating, setIsGenerating] = useState(false);
     const [showPasswords, setShowPasswords] = useState(false);
+    const [identityStatus, setIdentityStatus] = useState<IdentityStatus>('checking');
+
+    // Pre-flight: confirm the device has an identity before showing inputs.
+    // Without a private key, the backup is meaningless — there's nothing to encrypt.
+    useEffect(() => {
+        let mounted = true;
+        (async () => {
+            const hasIdentity = await KeyManager.hasIdentity();
+            if (!mounted) return;
+            setIdentityStatus(hasIdentity ? 'present' : 'missing');
+        })();
+        return () => { mounted = false; };
+    }, []);
 
     // Separate validation for better performance and clarity
     const isPasswordValid = password.length >= 12;
@@ -193,13 +210,14 @@ Public Key: ${publicKey}`;
 
             const fileName = `oxy-identity-backup-${dateStr}.zip`;
 
-            // Log backup creation to security activity
-            if (oxyServices && typeof (oxyServices as any).logBackupCreated === 'function') {
+            // Log backup creation to security activity (best-effort; never blocks the backup itself).
+            if (oxyServices) {
                 try {
-                    await (oxyServices as any).logBackupCreated();
+                    await oxyServices.logBackupCreated();
                 } catch (logError) {
-                    // Log error but don't fail the backup
-                    console.error('Failed to log security event:', logError);
+                    if (__DEV__) {
+                        console.warn('[backup] Failed to log security event:', logError);
+                    }
                 }
             }
 
@@ -240,12 +258,58 @@ Public Key: ${publicKey}`;
                 alert('Error', 'Sharing is not available on this platform');
             }
         } catch (error) {
-            console.error('Failed to generate backup:', error);
+            if (__DEV__) {
+                console.warn('[backup] Failed to generate backup:', error);
+            }
             alert('Error', error instanceof Error ? error.message : 'Failed to generate backup file');
         } finally {
             setIsGenerating(false);
         }
     }, [password, publicKey, isPasswordValid, doPasswordsMatch, oxyServices, onComplete]);
+
+    if (identityStatus === 'checking') {
+        return (
+            <View style={[styles.container, styles.centeredContainer, { backgroundColor: colors.background }]}>
+                <ThemedText style={{ color: colors.textSecondary }}>Checking identity...</ThemedText>
+            </View>
+        );
+    }
+
+    if (identityStatus === 'missing') {
+        return (
+            <View style={[styles.container, { backgroundColor: colors.background }]}>
+                <View style={styles.header}>
+                    <MaterialCommunityIcons name="key-alert-outline" size={32} color={colors.error} />
+                    <ThemedText style={[styles.title, { color: colors.text }]}>
+                        No identity on this device
+                    </ThemedText>
+                    <ThemedText style={[styles.subtitle, { color: colors.textSecondary }]}>
+                        We could not find a private key on this device. Backups encrypt the identity
+                        key stored locally, so you need to create or import your identity first.
+                    </ThemedText>
+                </View>
+
+                <ImportantBanner iconSize={20}>
+                    If you already have an identity on another device, sign in there and create the backup from that device.
+                </ImportantBanner>
+
+                <View style={styles.buttonContainer}>
+                    {onCancel && (
+                        <Button variant="secondary" onPress={onCancel} style={styles.cancelButton}>
+                            Go back
+                        </Button>
+                    )}
+                    <Button
+                        variant="primary"
+                        onPress={() => router.replace('/(auth)/welcome')}
+                        style={styles.generateButton}
+                    >
+                        Set up identity
+                    </Button>
+                </View>
+            </View>
+        );
+    }
 
     return (
         <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -352,6 +416,10 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
         padding: 20,
+    },
+    centeredContainer: {
+        justifyContent: 'center',
+        alignItems: 'center',
     },
     header: {
         alignItems: 'center',

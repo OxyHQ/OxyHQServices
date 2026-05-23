@@ -1,4 +1,4 @@
-import React, { useMemo, useCallback, useState, useEffect } from 'react';
+import React, { useMemo, useCallback, useState } from 'react';
 import { View, StyleSheet, Platform, useWindowDimensions, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useColors } from '@/hooks/useColors';
@@ -7,9 +7,10 @@ import { GroupedSection } from '@/components/grouped-section';
 import { AccountCard, ScreenHeader, useAlert } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { UnauthenticatedScreen } from '@/components/unauthenticated-screen';
-import { useOxy } from '@oxyhq/services';
+import { useOxy, useUserDevices } from '@oxyhq/services';
 import { formatDate } from '@/utils/date-utils';
 import { useHapticPress } from '@/hooks/use-haptic-press';
+import { useTranslation } from '@/lib/i18n';
 import type { MaterialCommunityIconName } from '@/types/icons';
 
 interface Device {
@@ -28,6 +29,7 @@ export default function DevicesScreen() {
   const colors = useColors();
   const { width } = useWindowDimensions();
   const router = useRouter();
+  const { t } = useTranslation();
 
   // colors already from useColors() above
   const isDesktop = Platform.OS === 'web' && width >= 768;
@@ -35,31 +37,20 @@ export default function DevicesScreen() {
   // OxyServices integration
   const { oxyServices, isAuthenticated, isLoading: oxyLoading } = useOxy();
   const alert = useAlert();
-  const [devices, setDevices] = useState<Device[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const {
+    data: devicesData,
+    isLoading: loading,
+    isFetching,
+    error: queryError,
+    refetch,
+  } = useUserDevices({ enabled: isAuthenticated });
+  const devices = (devicesData ?? []) as Device[];
+  const error = queryError instanceof Error ? queryError.message : null;
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
-  // Fetch devices when authenticated
-  useEffect(() => {
-    const fetchDevices = async () => {
-      if (!isAuthenticated || !oxyServices) return;
-
-      setLoading(true);
-      setError(null);
-      try {
-        const devicesData = await oxyServices.getUserDevices();
-        setDevices(devicesData || []);
-      } catch (err: any) {
-        console.error('Failed to fetch devices:', err);
-        setError(err?.message || 'Failed to load devices');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchDevices();
-  }, [isAuthenticated, oxyServices]);
+  const handleRefresh = useCallback(async () => {
+    await refetch();
+  }, [refetch]);
 
   const handlePressIn = useHapticPress();
 
@@ -120,16 +111,15 @@ export default function DevicesScreen() {
               setActionLoading(deviceId);
               await oxyServices?.removeDevice(deviceId);
               // Refresh devices list
-              const devicesData = await oxyServices?.getUserDevices();
-              setDevices(devicesData || []);
+              await refetch();
               // On web, the refreshed list is the user-facing confirmation;
               // a second modal on top of the confirmation dialog feels redundant.
               if (Platform.OS !== 'web') {
                 alert('Success', 'Device removed successfully');
               }
-            } catch (err: any) {
-              console.error('Failed to remove device:', err);
-              alert('Error', err?.message || 'Failed to remove device. Please try again.');
+            } catch (err: unknown) {
+              const message = err instanceof Error ? err.message : 'Failed to remove device. Please try again.';
+              alert('Error', message);
             } finally {
               setActionLoading(null);
             }
@@ -137,7 +127,7 @@ export default function DevicesScreen() {
         },
       ]
     );
-  }, [oxyServices, alert]);
+  }, [oxyServices, alert, refetch]);
 
   // Transform devices for UI
   const deviceItems = useMemo(() => {
@@ -160,7 +150,7 @@ export default function DevicesScreen() {
         subtitle: isCurrent
           ? 'This device • Last active: ' + formatRelativeTime(lastActive)
           : 'Last active: ' + formatRelativeTime(lastActive),
-        onPress: () => router.push(`/(tabs)/devices/${deviceId}` as any),
+        onPress: () => router.push({ pathname: '/(tabs)/devices/[deviceId]', params: { deviceId } }),
         showChevron: true,
         customContent: (
           <View style={styles.deviceActions}>
@@ -174,6 +164,9 @@ export default function DevicesScreen() {
                 onPressIn={handlePressIn}
                 onPress={() => handleRemoveDevice(deviceId, deviceName, isCurrent)}
                 disabled={isLoading}
+                accessibilityRole="button"
+                accessibilityLabel={t('a11y.removeDevice')}
+                accessibilityState={{ disabled: isLoading }}
               >
                 {isLoading ? (
                   <ActivityIndicator size="small" color={colors.text} />
@@ -226,21 +219,9 @@ export default function DevicesScreen() {
               <TouchableOpacity
                 style={[styles.retryButton, { backgroundColor: colors.tint }]}
                 onPressIn={handlePressIn}
-                onPress={() => {
-                  setError(null);
-                  if (oxyServices) {
-                    setLoading(true);
-                    oxyServices.getUserDevices()
-                      .then((devicesData: Device[]) => {
-                        setDevices(devicesData || []);
-                        setLoading(false);
-                      })
-                      .catch((err: Error) => {
-                        setError(err?.message || 'Failed to load devices');
-                        setLoading(false);
-                      });
-                  }
-                }}
+                onPress={() => { void refetch(); }}
+                accessibilityRole="button"
+                accessibilityLabel={t('a11y.retry')}
               >
                 <Text style={[styles.retryButtonText, { color: '#FFFFFF' }]}>Retry</Text>
               </TouchableOpacity>
@@ -271,7 +252,7 @@ export default function DevicesScreen() {
   }
 
   return (
-    <ScreenContentWrapper>
+    <ScreenContentWrapper refreshing={isFetching && !loading} onRefresh={handleRefresh}>
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         <View style={styles.mobileContent}>
           <ScreenHeader title="Your devices" subtitle="Manage devices that have access to your account." />
@@ -355,7 +336,6 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 32,
     fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
-    fontFamily: Platform.OS === 'web' ? 'Inter' : 'Inter-Bold',
     marginBottom: 8,
   },
   subtitle: {
@@ -385,7 +365,6 @@ const styles = StyleSheet.create({
   mobileTitle: {
     fontSize: 28,
     fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
-    fontFamily: Platform.OS === 'web' ? 'Inter' : 'Inter-Bold',
     marginBottom: 6,
   },
   mobileSubtitle: {

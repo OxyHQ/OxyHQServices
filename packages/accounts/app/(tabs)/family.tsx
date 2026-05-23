@@ -6,19 +6,21 @@ import { ScreenHeader } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { useOxy } from '@oxyhq/services';
 import { UnauthenticatedScreen } from '@/components/unauthenticated-screen';
+import { useTranslation } from '@/lib/i18n';
 
 export default function ThirdPartyConnectionsScreen() {
   const colors = useColors();
   const { width } = useWindowDimensions();
   const isDesktop = Platform.OS === 'web' && width >= 768;
   const { isAuthenticated, isLoading: authLoading } = useOxy();
+  const { t } = useTranslation();
 
   if (authLoading) {
     return (
       <ScreenContentWrapper>
         <View style={[styles.container, styles.loadingContainer, { backgroundColor: colors.background }]}>
           <ActivityIndicator size="large" color={colors.tint} />
-          <Text style={[styles.loadingText, { color: colors.text }]}>Loading...</Text>
+          <Text style={[styles.loadingText, { color: colors.text }]}>{t('common.loadingShort')}</Text>
         </View>
       </ScreenContentWrapper>
     );
@@ -27,9 +29,9 @@ export default function ThirdPartyConnectionsScreen() {
   if (!isAuthenticated) {
     return (
       <UnauthenticatedScreen
-        title="Third-party connections"
-        subtitle="Manage apps and services connected to your account."
-        message="Please sign in to manage your third-party connections."
+        title={t('family.title')}
+        subtitle={t('family.subtitle')}
+        message={t('family.signInRequired')}
         isAuthenticated={isAuthenticated}
       />
     );
@@ -43,10 +45,10 @@ export default function ThirdPartyConnectionsScreen() {
         color={colors.icon}
       />
       <Text style={[styles.emptyTitle, { color: colors.text }]}>
-        No connected apps yet
+        {t('family.emptyTitle')}
       </Text>
       <Text style={[styles.emptySubtitle, { color: colors.text }]}>
-        When you grant third-party apps access to your Oxy account, they will appear here.
+        {t('family.emptySubtitle')}
       </Text>
     </View>
   );
@@ -54,7 +56,7 @@ export default function ThirdPartyConnectionsScreen() {
   if (isDesktop) {
     return (
       <>
-        <ScreenHeader title="Third-party connections" subtitle="Manage apps and services connected to your account." />
+        <ScreenHeader title={t('family.title')} subtitle={t('family.subtitle')} />
         {renderContent()}
       </>
     );
@@ -64,7 +66,7 @@ export default function ThirdPartyConnectionsScreen() {
     <ScreenContentWrapper>
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         <View style={styles.mobileContent}>
-          <ScreenHeader title="Third-party connections" subtitle="Manage apps and services connected to your account." />
+          <ScreenHeader title={t('family.title')} subtitle={t('family.subtitle')} />
           {renderContent()}
         </View>
       </View>
@@ -95,7 +97,6 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 18,
     fontWeight: Platform.OS === 'web' ? '600' : undefined,
-    fontFamily: Platform.OS === 'web' ? 'Inter' : 'Inter-SemiBold',
     textAlign: 'center',
   },
   emptySubtitle: {

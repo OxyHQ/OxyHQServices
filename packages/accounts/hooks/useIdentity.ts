@@ -1,7 +1,13 @@
 import { useCallback, useEffect } from 'react';
 import { Platform } from 'react-native';
 import { useOxy, useAuthStore, handleAuthError } from '@oxyhq/services';
-import { KeyManager, RecoveryPhraseService, SignatureService } from '@oxyhq/core';
+import {
+  KeyManager,
+  RecoveryPhraseService,
+  SignatureService,
+  IdentityAlreadyExistsError,
+  IdentityPersistError,
+} from '@oxyhq/core';
 import type { User } from '@oxyhq/core';
 import { useBiometricSignIn } from './useBiometricSignIn';
 import { useIdentityStore, persistIdentitySyncState, getIdentitySyncStateFromStorage } from './identity/identityStore';
@@ -11,6 +17,19 @@ import { useNetworkReconnect } from './identity/useNetworkReconnect';
 import { isAlreadyRegisteredError } from './identity/errorUtils';
 
 const REGISTER_ERROR_CODE = 'REGISTER_ERROR';
+
+/**
+ * Module-scoped promise used to serialize identity-creation across React
+ * re-renders / strict-mode double invocations / accidental double-taps.
+ *
+ * Without this lock, two concurrent `createIdentity()` calls would both
+ * call `RecoveryPhraseService.generateIdentityWithRecovery()` and the
+ * second would silently overwrite the first identity (and its recovery
+ * phrase would be the only valid one) — catastrophic account loss for
+ * any user whose flow re-fires the effect.
+ */
+let inFlightCreateIdentity: Promise<{ recoveryPhrase: string[]; synced: boolean; user?: User }> | null = null;
+let inFlightImportIdentity: Promise<{ synced: boolean }> | null = null;
 
 export interface UseIdentityResult {
   /** Create a new identity locally (offline-first) and optionally sync with server */
@@ -106,20 +125,57 @@ export const useIdentity = (): UseIdentityResult => {
       if (!oxyServices) throw new Error('OxyServices not initialized');
       if (!signIn) throw new Error('signIn not available');
 
-      try {
-        const { words, publicKey } = await RecoveryPhraseService.generateIdentityWithRecovery();
-        
+      // Serialize concurrent calls. Without this guard a fast double-tap
+      // or React strict-mode double effect would generate (and persist)
+      // two separate identities, losing access to the first one. The
+      // recovery phrase shown to the user would only match the LAST one
+      // written, so a user who already wrote down the first phrase would
+      // be locked out.
+      if (inFlightCreateIdentity) {
+        return inFlightCreateIdentity;
+      }
+
+      const run = async (): Promise<{ recoveryPhrase: string[]; synced: boolean; user?: User }> => {
+        // Pre-flight: if a complete identity already exists on this device,
+        // we MUST NOT overwrite it without explicit user consent (a written
+        // recovery phrase). Surface a typed error so the caller can route
+        // to the "you already have an identity, sign in or destroy it" UI
+        // instead of silently clobbering.
+        const existingPublicKey = await KeyManager.getPublicKey();
+        if (existingPublicKey) {
+          // Caller is expected to handle this — typically by routing to
+          // sign-in or to a confirmation screen.
+          throw new IdentityAlreadyExistsError(existingPublicKey);
+        }
+
+        let words: string[];
+        let publicKey: string;
+        try {
+          const result = await RecoveryPhraseService.generateIdentityWithRecovery();
+          words = result.words;
+          publicKey = result.publicKey;
+        } catch (genError) {
+          // Generation/persistence failed — there is no identity stored
+          // locally, no phrase the user could have written down, and no
+          // server state. Safe to surface the error as-is.
+          console.error('[useIdentity] Failed to generate identity', genError);
+          throw genError;
+        }
+
+        // From this point on, the identity exists locally. If we throw,
+        // we MUST still return the phrase to the caller so it can be
+        // shown to the user — losing it permanently would lock them out
+        // the next time they wipe the app.
         setSynced(false);
         await persistIdentitySyncState(false);
 
-        // Register and sign in
         try {
           const { signature, timestamp } = await SignatureService.createRegistrationSignature();
 
           try {
             await oxyServices.register(publicKey, signature, timestamp);
           } catch (registerError: unknown) {
-            // Already registered is not an error - continue to sign in
+            // 409 means already registered — that's fine, just sign in.
             if (!isAlreadyRegisteredError(registerError)) {
               throw registerError;
             }
@@ -135,21 +191,34 @@ export const useIdentity = (): UseIdentityResult => {
             synced: true,
             user,
           };
-        } catch {
-          // Sync failed - identity created locally, will sync when online
+        } catch (syncError) {
+          // Sync failed — identity exists locally, but the server doesn't
+          // know about it yet. Log the underlying cause so devs can
+          // distinguish a transient network blip from a real server
+          // failure (the previous version silently swallowed all sync
+          // errors which made debugging account-loss reports impossible).
+          console.error('[useIdentity] Identity created locally but server sync failed', syncError);
           return { recoveryPhrase: words, synced: false };
         }
-      } catch (error) {
-        setSynced(false);
-        await persistIdentitySyncState(false).catch(() => {});
+      };
 
-        handleAuthError(error, {
-          defaultMessage: 'Failed to create identity',
-          code: REGISTER_ERROR_CODE,
-          setAuthError: (msg: string) => useAuthStore.setState({ error: msg }),
-          logger: __DEV__ ? console.warn : undefined,
-        });
+      inFlightCreateIdentity = run();
+      try {
+        return await inFlightCreateIdentity;
+      } catch (error) {
+        if (!(error instanceof IdentityAlreadyExistsError)) {
+          handleAuthError(error, {
+            defaultMessage: 'Failed to create identity',
+            code: REGISTER_ERROR_CODE,
+            setAuthError: (msg: string) => useAuthStore.setState({ error: msg }),
+            logger: __DEV__ ? console.warn : undefined,
+          });
+        }
+        setSynced(false);
+        await persistIdentitySyncState(false).catch(() => undefined);
         throw error;
+      } finally {
+        inFlightCreateIdentity = null;
       }
     },
     [oxyServices, signIn, setSynced],
@@ -159,15 +228,30 @@ export const useIdentity = (): UseIdentityResult => {
     async (phrase: string): Promise<{ synced: boolean }> => {
       if (!oxyServices) throw new Error('OxyServices not initialized');
 
-      try {
+      // Serialize concurrent imports for the same reasons as createIdentity.
+      if (inFlightImportIdentity) {
+        return inFlightImportIdentity;
+      }
+
+      const run = async (): Promise<{ synced: boolean }> => {
+        // If we already have an identity that does NOT match this phrase,
+        // refuse to overwrite without an explicit confirmation handled
+        // upstream. KeyManager.importKeyPair will also enforce this, but
+        // checking first gives us a clearer error.
+        const existingPublicKey = await KeyManager.getPublicKey();
+        const incomingPublicKey = await RecoveryPhraseService.derivePublicKeyFromPhrase(phrase);
+        if (existingPublicKey && existingPublicKey !== incomingPublicKey) {
+          throw new IdentityAlreadyExistsError(existingPublicKey);
+        }
+
         const publicKey = await RecoveryPhraseService.restoreFromPhrase(phrase);
-        
+
         setSynced(false);
         await persistIdentitySyncState(false);
 
         try {
           const { registered } = await oxyServices.checkPublicKeyRegistered(publicKey);
-          
+
           if (!registered) {
             try {
               const { signature, timestamp } = await SignatureService.createRegistrationSignature();
@@ -178,22 +262,31 @@ export const useIdentity = (): UseIdentityResult => {
               }
             }
           }
-          
+
           setSynced(true);
           await persistIdentitySyncState(true);
           return { synced: true };
-        } catch {
-          // Sync failed - identity imported locally, will sync when online
+        } catch (syncError) {
+          console.error('[useIdentity] Identity imported locally but server sync failed', syncError);
           return { synced: false };
         }
+      };
+
+      inFlightImportIdentity = run();
+      try {
+        return await inFlightImportIdentity;
       } catch (error) {
-        handleAuthError(error, {
-          defaultMessage: 'Failed to import identity',
-          code: REGISTER_ERROR_CODE,
-          setAuthError: (msg: string) => useAuthStore.setState({ error: msg }),
-          logger: __DEV__ ? console.warn : undefined,
-        });
+        if (!(error instanceof IdentityAlreadyExistsError) && !(error instanceof IdentityPersistError)) {
+          handleAuthError(error, {
+            defaultMessage: 'Failed to import identity',
+            code: REGISTER_ERROR_CODE,
+            setAuthError: (msg: string) => useAuthStore.setState({ error: msg }),
+            logger: __DEV__ ? console.warn : undefined,
+          });
+        }
         throw error;
+      } finally {
+        inFlightImportIdentity = null;
       }
     },
     [oxyServices, setSynced],
@@ -202,7 +295,13 @@ export const useIdentity = (): UseIdentityResult => {
   const hasIdentity = useCallback(() => KeyManager.hasIdentity(), []);
   const getPublicKey = useCallback(() => KeyManager.getPublicKey(), []);
 
-  // Identity integrity check and backup restoration (native only)
+  // Identity integrity check and backup restoration (native only).
+  //
+  // Runs once on mount. Verifies the stored identity can actually
+  // sign + verify; if not, attempts to restore from the local backup
+  // copy. We log every branch — silent failures here previously
+  // masked real account-loss bugs because there was no breadcrumb in
+  // the dev console.
   useEffect(() => {
     if (Platform.OS === 'web') return;
 
@@ -212,15 +311,35 @@ export const useIdentity = (): UseIdentityResult => {
         if (hasIdentityValue) {
           const isValid = await KeyManager.verifyIdentityIntegrity();
           if (!isValid) {
-            await KeyManager.restoreIdentityFromBackup();
+            console.error('[useIdentity] Identity integrity check FAILED — attempting backup restore');
+            const restored = await KeyManager.restoreIdentityFromBackup();
+            if (!restored) {
+              console.error('[useIdentity] Backup restore FAILED — identity is unrecoverable from this device');
+            } else {
+              console.warn('[useIdentity] Identity restored from on-device backup');
+            }
           } else {
-            await KeyManager.backupIdentity();
+            // Healthy identity — refresh the backup copy so it tracks the
+            // current keys. Important for the case where a user just
+            // imported a new identity: without refreshing, the backup is
+            // stale (or empty) and the next integrity failure would have
+            // nothing to restore.
+            const backedUp = await KeyManager.backupIdentity();
+            if (!backedUp) {
+              console.warn('[useIdentity] Failed to refresh on-device identity backup');
+            }
           }
         } else {
-          await KeyManager.restoreIdentityFromBackup();
+          // No identity in primary storage — see if the on-device backup
+          // can rescue us (e.g., the user re-installed the app on the
+          // same device with the keychain still intact).
+          const restored = await KeyManager.restoreIdentityFromBackup();
+          if (restored) {
+            console.warn('[useIdentity] No primary identity found, restored from on-device backup');
+          }
         }
-      } catch {
-        // Silent fail - identity integrity is best-effort
+      } catch (error) {
+        console.error('[useIdentity] checkAndRestoreIdentity threw unexpectedly', error);
       }
     };
 

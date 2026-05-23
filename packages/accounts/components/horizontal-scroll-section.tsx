@@ -116,6 +116,8 @@ export function HorizontalScrollSection({
             style={[styles.arrowButton, styles.leftArrow, { backgroundColor: colors.card, borderColor: colors.border }]}
             onPress={() => scrollBy('left')}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Scroll left"
           >
             <MaterialCommunityIcons name="chevron-left" size={arrowSize} color={colors.text} />
           </TouchableOpacity>
@@ -149,6 +151,8 @@ export function HorizontalScrollSection({
             style={[styles.arrowButton, styles.rightArrow, { backgroundColor: colors.card, borderColor: colors.border }]}
             onPress={() => scrollBy('right')}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Scroll right"
           >
             <MaterialCommunityIcons name="chevron-right" size={arrowSize} color={colors.text} />
           </TouchableOpacity>

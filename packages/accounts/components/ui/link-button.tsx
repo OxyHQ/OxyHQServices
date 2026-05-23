@@ -18,7 +18,13 @@ export function LinkButton({ text, onPress, icon, count }: LinkButtonProps) {
     const handlePressIn = useHapticPress();
 
     return (
-        <TouchableOpacity style={styles.linkButton} onPressIn={handlePressIn} onPress={onPress}>
+        <TouchableOpacity
+            style={styles.linkButton}
+            onPressIn={handlePressIn}
+            onPress={onPress}
+            accessibilityRole="button"
+            accessibilityLabel={count !== undefined ? `${text} ${count}` : text}
+        >
             {icon && <MaterialCommunityIcons name={icon} size={16} color={colors.tint} />}
             <Text style={[styles.linkText, { color: colors.tint }]}>{text}</Text>
             {count !== undefined && (

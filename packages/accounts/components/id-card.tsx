@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { BlurView } from 'expo-blur';
 import Svg, { Defs, RadialGradient, Stop, Path, Filter, FeGaussianBlur } from 'react-native-svg';
 import Animated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming, Easing } from 'react-native-reanimated';
@@ -139,6 +139,9 @@ export function IdCard({ name, imageUrl, title, value, onPress, onPressIn }: IdC
       activeOpacity={1}
       disabled={!onPress}
       onLayout={handleLayout}
+      accessibilityRole={onPress ? 'button' : undefined}
+      accessibilityLabel={title ? `${title}, ${value ?? ''}, ${name}` : name}
+      accessibilityState={{ disabled: !onPress }}
     >
       {/* Conic gradient background */}
       <ConicGradientBackground cardWidth={cardDimensions.width} cardHeight={cardDimensions.height} />
@@ -149,7 +152,6 @@ export function IdCard({ name, imageUrl, title, value, onPress, onPressIn }: IdC
         tint="light"
         style={[StyleSheet.absoluteFill, styles.blurOverlay]}
         pointerEvents="none"
-        experimentalBlurMethod={Platform.OS === 'android' ? 'dimezisBlurView' : undefined}
       />
 
       {/* Content container - positioned relative, on top, not blurred */}
@@ -202,7 +204,6 @@ const styles = StyleSheet.create({
   idCardValue: {
     fontSize: 20,
     fontWeight: 'bold',
-    fontFamily: Platform.OS === 'web' ? 'Inter' : 'Inter-Bold',
   } as const,
 });
 

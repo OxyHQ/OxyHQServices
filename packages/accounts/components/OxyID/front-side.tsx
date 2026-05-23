@@ -107,7 +107,11 @@ export const FrontSide: React.FC<FrontSideProps> = ({
                     <View style={styles.field}>
                         <Text style={styles.fieldLabel}>FULL NAME</Text>
                         <Text style={styles.fieldValue} numberOfLines={2}>
-                            {displayName || 'Unknown User'}
+                            {/* The caller (`IdentityCard`) computes a friendly */}
+                            {/* fallback via core's `getAccountDisplayName`, so */}
+                            {/* this defensive fallback only fires for genuinely */}
+                            {/* blank cards. */}
+                            {displayName || publicKeyShort || '—'}
                         </Text>
                     </View>
 

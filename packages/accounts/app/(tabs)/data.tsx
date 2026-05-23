@@ -1,6 +1,9 @@
 import React, { useMemo, useCallback, useState } from 'react';
 import { View, StyleSheet, Platform, useWindowDimensions, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
+import { File } from 'expo-file-system';
+import * as FileSystemLegacy from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
 import { Section } from '@/components/section';
@@ -9,6 +12,7 @@ import { AccountCard, ScreenHeader, Switch, useAlert } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { UnauthenticatedScreen } from '@/components/unauthenticated-screen';
 import { useOxy, usePrivacySettings, useUpdatePrivacySettings } from '@oxyhq/services';
+import { useTranslation } from '@/lib/i18n';
 
 export default function DataScreen() {
   const colors = useColors();
@@ -16,7 +20,9 @@ export default function DataScreen() {
   const alert = useAlert();
   const router = useRouter();
   const [isDownloading, setIsDownloading] = useState(false);
+  const [pendingPrivacyKey, setPendingPrivacyKey] = useState<string | null>(null);
   const isDesktop = Platform.OS === 'web' && width >= 768;
+  const { t } = useTranslation();
 
   // OxyServices integration
   const { user, isAuthenticated, isLoading: oxyLoading, oxyServices } = useOxy();
@@ -38,100 +44,90 @@ export default function DataScreen() {
   const handlePrivacyUpdate = useCallback(async (key: string, value: boolean) => {
     if (!user?.id) return;
 
+    setPendingPrivacyKey(key);
     try {
       await updatePrivacyMutation.mutateAsync({
         settings: { [key]: value },
         userId: user.id,
       });
-    } catch (error: any) {
-      alert('Error', error?.message || 'Failed to update privacy setting');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t('data.privacy.updateFailed');
+      alert(t('common.error'), message);
+    } finally {
+      setPendingPrivacyKey((current) => (current === key ? null : current));
     }
-  }, [user?.id, updatePrivacyMutation, alert]);
+  }, [user?.id, updatePrivacyMutation, alert, t]);
 
-  // Handle download data
+  // Save a downloaded blob to the user's device. Web uses an anchor download;
+  // native writes to the cache directory and opens the OS share sheet so the
+  // user can save it to Files, send via email, etc.
+  const saveBlob = useCallback(async (blob: Blob, filename: string, mimeType: string) => {
+    if (Platform.OS === 'web') {
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      return;
+    }
+
+    // Native: convert blob → Uint8Array → write to cache → open share sheet
+    const arrayBuffer = await blob.arrayBuffer();
+    const bytes = new Uint8Array(arrayBuffer);
+
+    const cacheDir = FileSystemLegacy.cacheDirectory ?? '';
+    if (!cacheDir) {
+      throw new Error(t('data.download.noCacheDir'));
+    }
+    const fileUri = `${cacheDir}${filename}`;
+    const file = new File(fileUri);
+    await file.write(bytes);
+
+    if (!(await Sharing.isAvailableAsync())) {
+      throw new Error(t('data.download.noSharing'));
+    }
+    await Sharing.shareAsync(fileUri, {
+      mimeType,
+      dialogTitle: t('data.download.saveTitle'),
+    });
+  }, [t]);
+
+  const downloadFormat = useCallback(async (format: 'json' | 'csv') => {
+    if (!oxyServices) return;
+    setIsDownloading(true);
+    try {
+      const blob = await oxyServices.downloadAccountData(format);
+      const filename = `account-data-${Date.now()}.${format}`;
+      const mimeType = format === 'json' ? 'application/json' : 'text/csv';
+      await saveBlob(blob, filename, mimeType);
+      alert(t('data.download.successTitle'), t('data.download.successMessage'));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t('data.download.failedDefault');
+      alert(t('data.download.failedTitle'), message);
+    } finally {
+      setIsDownloading(false);
+    }
+  }, [oxyServices, saveBlob, alert, t]);
+
   const handleDownloadData = useCallback(() => {
     alert(
-      'Download Your Data',
-      'Choose a format for your data export:',
+      t('data.download.promptTitle'),
+      t('data.download.promptMessage'),
       [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'JSON',
-          onPress: async () => {
-            if (!oxyServices) return;
-            setIsDownloading(true);
-            try {
-              const blob = await oxyServices.downloadAccountData('json');
-              if (Platform.OS === 'web') {
-                const url = URL.createObjectURL(blob);
-                const link = document.createElement('a');
-                link.href = url;
-                link.download = `account-data-${Date.now()}.json`;
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-                URL.revokeObjectURL(url);
-              }
-              alert('Download Complete', 'Your data has been downloaded successfully.');
-            } catch (error: any) {
-              alert('Download Failed', error?.message || 'Failed to download your data. Please try again.');
-            } finally {
-              setIsDownloading(false);
-            }
-          },
-        },
-        {
-          text: 'CSV',
-          onPress: async () => {
-            if (!oxyServices) return;
-            setIsDownloading(true);
-            try {
-              const blob = await oxyServices.downloadAccountData('csv');
-              if (Platform.OS === 'web') {
-                const url = URL.createObjectURL(blob);
-                const link = document.createElement('a');
-                link.href = url;
-                link.download = `account-data-${Date.now()}.csv`;
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-                URL.revokeObjectURL(url);
-              }
-              alert('Download Complete', 'Your data has been downloaded successfully.');
-            } catch (error: any) {
-              alert('Download Failed', error?.message || 'Failed to download your data. Please try again.');
-            } finally {
-              setIsDownloading(false);
-            }
-          },
-        },
+        { text: t('common.cancel'), style: 'cancel' },
+        { text: 'JSON', onPress: () => downloadFormat('json') },
+        { text: 'CSV', onPress: () => downloadFormat('csv') },
       ]
     );
-  }, [alert, oxyServices]);
+  }, [alert, downloadFormat, t]);
 
-  // Handle delete account
+  // Handle delete account — open dedicated screen with confirmation flow
   const handleDeleteAccount = useCallback(() => {
-    alert(
-      'Delete Account',
-      'This will permanently delete your account and all associated data. This action cannot be undone.\n\nTo proceed, you will need to enter your password for verification.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Continue',
-          style: 'destructive',
-          onPress: () => {
-            // For proper account deletion, we need a dedicated screen with password input
-            // Navigate to a delete account flow or show a modal
-            alert(
-              'Password Required',
-              'Account deletion requires password verification. Please use the Oxy Services app or contact support to delete your account securely.',
-              [{ text: 'OK' }]
-            );
-          },
-        },
-      ]
-    );
-  }, [alert]);
+    router.push('/(tabs)/delete-account');
+  }, [router]);
 
   // Data download section
   const dataDownloadItems = useMemo(() => [
@@ -139,12 +135,12 @@ export default function DataScreen() {
       id: 'download',
       icon: 'download-outline',
       iconColor: colors.sidebarIconData,
-      title: 'Download your data',
-      subtitle: 'Get a copy of your data in a portable format',
+      title: t('data.download.title'),
+      subtitle: t('data.download.subtitle'),
       onPress: handleDownloadData,
       showChevron: true,
     },
-  ], [colors, handleDownloadData]);
+  ], [colors, handleDownloadData, t]);
 
   // Privacy controls section
   const privacyControlItems = useMemo(() => [
@@ -152,13 +148,13 @@ export default function DataScreen() {
       id: 'data-sharing',
       icon: 'share-variant-outline',
       iconColor: colors.sidebarIconData,
-      title: 'Data sharing',
-      subtitle: 'Allow data sharing for improved services',
+      title: t('data.privacy.dataSharing'),
+      subtitle: t('data.privacy.dataSharingSubtitle'),
       customContent: (
         <Switch
           value={dataSharing}
           onValueChange={(value) => handlePrivacyUpdate('dataSharing', value)}
-          disabled={updatePrivacyMutation.isPending}
+          disabled={pendingPrivacyKey === 'dataSharing'}
         />
       ),
     },
@@ -166,13 +162,13 @@ export default function DataScreen() {
       id: 'location-sharing',
       icon: 'map-marker-outline',
       iconColor: colors.sidebarIconData,
-      title: 'Location sharing',
-      subtitle: 'Share your location for location-based features',
+      title: t('data.privacy.locationSharing'),
+      subtitle: t('data.privacy.locationSharingSubtitle'),
       customContent: (
         <Switch
           value={locationSharing}
           onValueChange={(value) => handlePrivacyUpdate('locationSharing', value)}
-          disabled={updatePrivacyMutation.isPending}
+          disabled={pendingPrivacyKey === 'locationSharing'}
         />
       ),
     },
@@ -180,13 +176,13 @@ export default function DataScreen() {
       id: 'analytics-sharing',
       icon: 'chart-line-variant',
       iconColor: colors.sidebarIconData,
-      title: 'Analytics & diagnostics',
-      subtitle: 'Help improve our services by sharing usage data',
+      title: t('data.privacy.analytics'),
+      subtitle: t('data.privacy.analyticsSubtitle'),
       customContent: (
         <Switch
           value={analyticsSharing}
           onValueChange={(value) => handlePrivacyUpdate('analyticsSharing', value)}
-          disabled={updatePrivacyMutation.isPending}
+          disabled={pendingPrivacyKey === 'analyticsSharing'}
         />
       ),
     },
@@ -194,42 +190,49 @@ export default function DataScreen() {
       id: 'show-activity',
       icon: 'eye-outline',
       iconColor: colors.sidebarIconData,
-      title: 'Show activity status',
-      subtitle: 'Let others see when you\'re active',
+      title: t('data.privacy.showActivity'),
+      subtitle: t('data.privacy.showActivitySubtitle'),
       customContent: (
         <Switch
           value={showActivity}
           onValueChange={(value) => handlePrivacyUpdate('showActivity', value)}
-          disabled={updatePrivacyMutation.isPending}
+          disabled={pendingPrivacyKey === 'showActivity'}
         />
       ),
     },
-  ], [colors, dataSharing, locationSharing, analyticsSharing, showActivity, handlePrivacyUpdate, updatePrivacyMutation.isPending]);
+  ], [colors, dataSharing, locationSharing, analyticsSharing, showActivity, handlePrivacyUpdate, pendingPrivacyKey, t]);
 
   // Handle clear history
   const handleClearHistory = useCallback(async (type: 'activity' | 'location') => {
-    const title = type === 'activity' ? 'Clear Activity History' : 'Clear Location History';
+    const title = type === 'activity' ? t('data.activity.clearActivityTitle') : t('data.activity.clearLocationTitle');
     const message = type === 'activity'
-      ? 'This will permanently delete all your activity history. This action cannot be undone.'
-      : 'This will permanently delete all your location history. This action cannot be undone.';
+      ? t('data.activity.clearActivityMessage')
+      : t('data.activity.clearLocationMessage');
 
     alert(title, message, [
-      { text: 'Cancel', style: 'cancel' },
+      { text: t('common.cancel'), style: 'cancel' },
       {
-        text: 'Clear',
+        text: t('data.activity.clear'),
         style: 'destructive',
         onPress: async () => {
           if (!oxyServices) return;
           try {
             await oxyServices.clearUserHistory();
-            alert('History Cleared', `Your ${type} history has been cleared.`);
-          } catch (error: any) {
-            alert('Error', error?.message || `Failed to clear ${type} history.`);
+            const successMessage = type === 'activity'
+              ? t('data.activity.clearedActivity')
+              : t('data.activity.clearedLocation');
+            alert(t('data.activity.clearedTitle'), successMessage);
+          } catch (error) {
+            const fallback = type === 'activity'
+              ? t('data.activity.clearFailedActivity')
+              : t('data.activity.clearFailedLocation');
+            const message = error instanceof Error ? error.message : fallback;
+            alert(t('common.error'), message);
           }
         },
       },
     ]);
-  }, [alert, oxyServices]);
+  }, [alert, oxyServices, t]);
 
   // Activity management section
   const activityItems = useMemo(() => [
@@ -237,8 +240,8 @@ export default function DataScreen() {
       id: 'activity-history',
       icon: 'history',
       iconColor: colors.sidebarIconData,
-      title: 'Activity history',
-      subtitle: 'View and manage your activity history',
+      title: t('data.activity.activityHistory'),
+      subtitle: t('data.activity.activityHistorySubtitle'),
       onPress: () => handleClearHistory('activity'),
       showChevron: true,
     },
@@ -246,12 +249,12 @@ export default function DataScreen() {
       id: 'location-history',
       icon: 'map-marker-outline',
       iconColor: colors.sidebarIconData,
-      title: 'Location history',
-      subtitle: 'View and manage your location data',
+      title: t('data.activity.locationHistory'),
+      subtitle: t('data.activity.locationHistorySubtitle'),
       onPress: () => handleClearHistory('location'),
       showChevron: true,
     },
-  ], [colors, handleClearHistory]);
+  ], [colors, handleClearHistory, t]);
 
   // Account management section
   const accountManagementItems = useMemo(() => [
@@ -259,12 +262,12 @@ export default function DataScreen() {
       id: 'delete-account',
       icon: 'delete-outline',
       iconColor: colors.error,
-      title: 'Delete account',
-      subtitle: 'Permanently delete your account and all data',
+      title: t('data.deleteAccount.title'),
+      subtitle: t('data.deleteAccount.subtitle'),
       onPress: handleDeleteAccount,
       showChevron: false,
     },
-  ], [colors.error, handleDeleteAccount]);
+  ], [colors.error, handleDeleteAccount, t]);
 
 
   // Show loading state
@@ -273,7 +276,7 @@ export default function DataScreen() {
       <ScreenContentWrapper>
         <View style={[styles.container, styles.loadingContainer, { backgroundColor: colors.background }]}>
           <ActivityIndicator size="large" color={colors.tint} />
-          <ThemedText style={[styles.loadingText, { color: colors.text }]}>Loading privacy settings...</ThemedText>
+          <ThemedText style={[styles.loadingText, { color: colors.text }]}>{t('data.loading')}</ThemedText>
         </View>
       </ScreenContentWrapper>
     );
@@ -283,9 +286,9 @@ export default function DataScreen() {
   if (!isAuthenticated) {
     return (
       <UnauthenticatedScreen
-        title="Data & privacy"
-        subtitle="Manage your data and privacy settings."
-        message="Please sign in to view your privacy settings."
+        title={t('data.title')}
+        subtitle={t('data.subtitle')}
+        message={t('data.signInRequired')}
         isAuthenticated={isAuthenticated}
       />
     );
@@ -293,29 +296,29 @@ export default function DataScreen() {
 
   const renderContent = () => (
     <>
-      <Section title="Download your data">
-        <ThemedText style={styles.sectionSubtitle}>Get a copy of your account data</ThemedText>
+      <Section title={t('data.sections.download')}>
+        <ThemedText style={styles.sectionSubtitle}>{t('data.sections.downloadSubtitle')}</ThemedText>
         <AccountCard>
           <GroupedSection items={dataDownloadItems} />
         </AccountCard>
       </Section>
 
-      <Section title="Privacy controls">
-        <ThemedText style={styles.sectionSubtitle}>Control how your data is used and shared</ThemedText>
+      <Section title={t('data.sections.privacy')}>
+        <ThemedText style={styles.sectionSubtitle}>{t('data.sections.privacySubtitle')}</ThemedText>
         <AccountCard>
           <GroupedSection items={privacyControlItems} />
         </AccountCard>
       </Section>
 
-      <Section title="Activity management">
-        <ThemedText style={styles.sectionSubtitle}>Manage your activity and location data</ThemedText>
+      <Section title={t('data.sections.activity')}>
+        <ThemedText style={styles.sectionSubtitle}>{t('data.sections.activitySubtitle')}</ThemedText>
         <AccountCard>
           <GroupedSection items={activityItems} />
         </AccountCard>
       </Section>
 
-      <Section title="Account management">
-        <ThemedText style={styles.sectionSubtitle}>Dangerous actions that affect your account</ThemedText>
+      <Section title={t('data.sections.account')}>
+        <ThemedText style={styles.sectionSubtitle}>{t('data.sections.accountSubtitle')}</ThemedText>
         <AccountCard>
           <GroupedSection items={accountManagementItems} />
         </AccountCard>
@@ -326,7 +329,7 @@ export default function DataScreen() {
   if (isDesktop) {
     return (
       <>
-        <ScreenHeader title="Data & privacy" subtitle="Manage your data and privacy settings." />
+        <ScreenHeader title={t('data.title')} subtitle={t('data.subtitle')} />
         {renderContent()}
       </>
     );
@@ -336,7 +339,7 @@ export default function DataScreen() {
     <ScreenContentWrapper>
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         <View style={styles.mobileContent}>
-          <ScreenHeader title="Data & privacy" subtitle="Manage your data and privacy settings." />
+          <ScreenHeader title={t('data.title')} subtitle={t('data.subtitle')} />
           {renderContent()}
         </View>
       </View>

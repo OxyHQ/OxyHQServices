@@ -12,9 +12,11 @@ import { AccountInfoGrid, type AccountInfoCard } from '@/components/account-info
 import { Section } from '@/components/section';
 import { GroupedSection } from '@/components/grouped-section';
 import type { ExtendedUser } from '@/types/user';
+import { useTranslation } from '@/lib/i18n';
 
 export default function PersonalInfoScreen() {
   const colors = useColors();
+  const { t } = useTranslation();
 
   // OxyServices integration
   const { user, isLoading: oxyLoading, isAuthenticated, showBottomSheet } = useOxy();
@@ -28,7 +30,7 @@ export default function PersonalInfoScreen() {
 
   // Compute user data
   const displayName = useMemo(() => getDisplayName(user), [user]);
-  const userEmail = useMemo(() => user?.email ?? 'No email set', [user?.email]);
+  const userEmail = useMemo(() => user?.email ?? t('personalInfo.fields.noEmail'), [user?.email, t]);
   const extendedUser = user as ExtendedUser | undefined;
   const userPhone = useMemo(() => extendedUser?.phone ?? null, [extendedUser]);
   const userAddress = useMemo(() => user?.location ?? extendedUser?.address ?? null, [user, extendedUser]);
@@ -42,15 +44,15 @@ export default function PersonalInfoScreen() {
       id: 'name',
       icon: 'account-outline',
       iconColor: colors.sidebarIconPersonalInfo,
-      title: 'Full name',
-      value: displayName ?? 'Not set',
+      title: t('personalInfo.fields.fullName'),
+      value: displayName ?? t('common.notSet'),
       onPress: () => handleEditField('displayName'),
     },
     {
       id: 'email',
       icon: 'email-outline',
       iconColor: colors.sidebarIconSecurity,
-      title: 'Email',
+      title: t('personalInfo.fields.email'),
       value: userEmail,
       onPress: () => handleEditField('email'),
     },
@@ -58,41 +60,41 @@ export default function PersonalInfoScreen() {
       id: 'phone',
       icon: 'phone-outline',
       iconColor: colors.sidebarIconPersonalInfo,
-      title: 'Phone number',
-      value: userPhone ?? 'Not set',
+      title: t('personalInfo.fields.phone'),
+      value: userPhone ?? t('common.notSet'),
       onPress: () => handleEditField('phone'),
     },
     {
       id: 'address',
       icon: 'map-marker-outline',
       iconColor: colors.sidebarIconData,
-      title: 'Address',
-      value: userAddress ?? 'Not set',
+      title: t('personalInfo.fields.address'),
+      value: userAddress ?? t('common.notSet'),
       onPress: () => handleEditField('address'),
     },
     {
       id: 'birthday',
       icon: 'calendar-star',
       iconColor: colors.sidebarIconFamily,
-      title: 'Birthday',
-      value: userBirthday ?? 'Not set',
+      title: t('personalInfo.fields.birthday'),
+      value: userBirthday ?? t('common.notSet'),
       onPress: () => handleEditField('birthday'),
     },
     {
       id: 'created',
       icon: 'calendar-outline',
       iconColor: colors.sidebarIconData,
-      title: 'Account created',
-      value: user?.createdAt ? formatDate(user.createdAt) : 'Unknown',
+      title: t('personalInfo.fields.accountCreated'),
+      value: user?.createdAt ? formatDate(user.createdAt) : t('common.unknown'),
     },
-  ], [colors.sidebarIconPersonalInfo, colors.sidebarIconSecurity, colors.sidebarIconData, colors.sidebarIconFamily, displayName, userEmail, userPhone, userAddress, userBirthday, user?.createdAt, handleEditField]);
+  ], [colors.sidebarIconPersonalInfo, colors.sidebarIconSecurity, colors.sidebarIconData, colors.sidebarIconFamily, displayName, userEmail, userPhone, userAddress, userBirthday, user?.createdAt, handleEditField, t]);
 
   const contactItems = useMemo(() => [
     {
       id: 'email',
       icon: 'email-outline',
       iconColor: colors.sidebarIconSecurity,
-      title: 'Email',
+      title: t('personalInfo.fields.email'),
       subtitle: userEmail,
       showChevron: false,
       onPress: () => handleEditField('email'),
@@ -101,8 +103,8 @@ export default function PersonalInfoScreen() {
       id: 'phone',
       icon: 'phone-outline',
       iconColor: colors.sidebarIconPersonalInfo,
-      title: 'Phone number',
-      subtitle: userPhone ?? 'Not set',
+      title: t('personalInfo.fields.phone'),
+      subtitle: userPhone ?? t('common.notSet'),
       showChevron: false,
       onPress: () => handleEditField('phone'),
     },
@@ -110,8 +112,8 @@ export default function PersonalInfoScreen() {
       id: 'address',
       icon: 'map-marker-outline',
       iconColor: colors.sidebarIconData,
-      title: 'Address',
-      subtitle: userAddress ?? 'Not set',
+      title: t('personalInfo.fields.address'),
+      subtitle: userAddress ?? t('common.notSet'),
       showChevron: false,
       onPress: () => handleEditField('address'),
     },
@@ -119,20 +121,20 @@ export default function PersonalInfoScreen() {
       id: 'birthday',
       icon: 'calendar-star',
       iconColor: colors.sidebarIconFamily,
-      title: 'Birthday',
-      subtitle: userBirthday ?? 'Not set',
+      title: t('personalInfo.fields.birthday'),
+      subtitle: userBirthday ?? t('common.notSet'),
       showChevron: false,
       onPress: () => handleEditField('birthday'),
     },
-  ], [colors.sidebarIconSecurity, colors.sidebarIconPersonalInfo, colors.sidebarIconData, colors.sidebarIconFamily, userEmail, userPhone, userAddress, userBirthday, handleEditField]);
+  ], [colors.sidebarIconSecurity, colors.sidebarIconPersonalInfo, colors.sidebarIconData, colors.sidebarIconFamily, userEmail, userPhone, userAddress, userBirthday, handleEditField, t]);
 
   const actionsItems = useMemo(() => [
     {
       id: 'manage-sessions',
       icon: 'monitor-lock',
       iconColor: colors.sidebarIconSecurity,
-      title: 'Manage devices & sessions',
-      subtitle: 'Review active devices and sign out',
+      title: t('personalInfo.actions.manageSessions'),
+      subtitle: t('personalInfo.actions.manageSessionsSubtitle'),
       onPress: () => showBottomSheet?.('SessionManagement'),
       showChevron: true,
     },
@@ -140,8 +142,8 @@ export default function PersonalInfoScreen() {
       id: 'subscription',
       icon: 'credit-card-outline',
       iconColor: colors.sidebarIconPayments,
-      title: 'Payments & subscription',
-      subtitle: 'Manage billing and plan',
+      title: t('personalInfo.actions.subscription'),
+      subtitle: t('personalInfo.actions.subscriptionSubtitle'),
       onPress: () => showBottomSheet?.('PremiumSubscription'),
       showChevron: true,
     },
@@ -149,12 +151,12 @@ export default function PersonalInfoScreen() {
       id: 'account-overview',
       icon: 'shield-key',
       iconColor: colors.sidebarIconSecurity,
-      title: 'Identity & security',
-      subtitle: 'Keys, recovery, and account status',
+      title: t('personalInfo.actions.identitySecurity'),
+      subtitle: t('personalInfo.actions.identitySecuritySubtitle'),
       onPress: () => showBottomSheet?.('AccountOverview'),
       showChevron: true,
     },
-  ], [colors.sidebarIconSecurity, colors.sidebarIconPayments, showBottomSheet]);
+  ], [colors.sidebarIconSecurity, colors.sidebarIconPayments, showBottomSheet, t]);
 
   // Show loading state while OxyServices is initializing
   if (oxyLoading) {
@@ -162,7 +164,7 @@ export default function PersonalInfoScreen() {
       <ScreenContentWrapper>
         <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
           <ActivityIndicator size="large" color={colors.tint} />
-          <ThemedText style={[styles.loadingText, { color: colors.text }]}>Loading...</ThemedText>
+          <ThemedText style={[styles.loadingText, { color: colors.text }]}>{t('common.loadingShort')}</ThemedText>
         </View>
       </ScreenContentWrapper>
     );
@@ -172,9 +174,9 @@ export default function PersonalInfoScreen() {
   if (!isAuthenticated) {
     return (
       <UnauthenticatedScreen
-        title="Personal info"
-        subtitle="Manage your personal information and profile details."
-        message="Please sign in to view your personal information."
+        title={t('personalInfo.title')}
+        subtitle={t('personalInfo.subtitle')}
+        message={t('personalInfo.signInRequired')}
         isAuthenticated={isAuthenticated}
       />
     );
@@ -184,16 +186,16 @@ export default function PersonalInfoScreen() {
     <ScreenContentWrapper>
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         <View style={styles.content}>
-          <ScreenHeader title="Personal info" subtitle="Manage your personal information and profile details." />
-          <Section title="Profile summary">
+          <ScreenHeader title={t('personalInfo.title')} subtitle={t('personalInfo.subtitle')} />
+          <Section title={t('personalInfo.sections.profileSummary')}>
             <AccountInfoGrid cards={personalInfoCards} onPressIn={handlePressIn} />
           </Section>
-          <Section title="Contact & details">
+          <Section title={t('personalInfo.sections.contactDetails')}>
             <AccountCard>
               <GroupedSection items={contactItems} />
             </AccountCard>
           </Section>
-          <Section title="Actions">
+          <Section title={t('personalInfo.sections.actions')}>
             <AccountCard>
               <GroupedSection items={actionsItems} />
             </AccountCard>

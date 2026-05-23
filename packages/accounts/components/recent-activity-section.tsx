@@ -39,6 +39,8 @@ export function RecentActivitySection({ items, onPressIn }: RecentActivitySectio
           onPressIn={onPressIn}
           onPress={item.onPress}
           activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel={item.subtitle ? `${item.title}, ${item.subtitle}` : item.title}
         >
           <View style={[styles.activityIcon, { backgroundColor: item.iconColor }]}>
             <MaterialCommunityIcons name={item.icon} size={20} color={darkenColor(item.iconColor)} />

@@ -1,5 +1,5 @@
 import React, { useMemo, useCallback, useState } from 'react';
-import { View, StyleSheet, Text, TouchableOpacity, ActivityIndicator, Platform } from 'react-native';
+import { View, StyleSheet, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useColors, type AppColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
@@ -11,7 +11,9 @@ import { useOxy, Avatar } from '@oxyhq/services';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { darkenColor } from '@/utils/color-utils';
 import { useHapticPress } from '@/hooks/use-haptic-press';
+import { useTranslation } from '@/lib/i18n';
 import type { ManagedAccount } from '@oxyhq/core';
+import { getAccountDisplayName as coreGetAccountDisplayName, getAccountFallbackHandle } from '@oxyhq/core';
 
 function getRoleBadgeColor(role: string, colors: AppColors): string {
   switch (role) {
@@ -26,16 +28,8 @@ function getRoleBadgeColor(role: string, colors: AppColors): string {
   }
 }
 
-function getAccountDisplayName(account: ManagedAccount): string {
-  const user = account.account;
-  if (!user) return 'Unknown';
-  if (typeof user.name === 'object' && user.name) {
-    const { first, last, full } = user.name as { first?: string; last?: string; full?: string };
-    if (full) return full;
-    if (first || last) return [first, last].filter(Boolean).join(' ');
-  }
-  if (typeof user.name === 'string' && user.name) return user.name;
-  return user.username || 'Unnamed';
+function getAccountDisplayName(account: ManagedAccount, locale?: string): string {
+  return coreGetAccountDisplayName(account.account ?? null, locale);
 }
 
 function getUserRole(account: ManagedAccount, userId?: string): string {
@@ -48,6 +42,7 @@ export default function ManagedAccountsScreen() {
   const colors = useColors();
   const alert = useAlert();
   const handlePressIn = useHapticPress();
+  const { t, locale } = useTranslation();
 
   const {
     user,
@@ -98,7 +93,7 @@ export default function ManagedAccountsScreen() {
   }, [setActingAs, showBottomSheet]);
 
   const handleDeleteAccount = useCallback((account: ManagedAccount) => {
-    const name = getAccountDisplayName(account);
+    const name = getAccountDisplayName(account, locale);
     alert(
       'Delete Managed Account',
       `Are you sure you want to permanently delete "${name}"? This action cannot be undone.`,
@@ -129,8 +124,12 @@ export default function ManagedAccountsScreen() {
 
   const accountListItems = useMemo(() => {
     return managedAccounts.map((account) => {
-      const name = getAccountDisplayName(account);
+      const name = getAccountDisplayName(account, locale);
       const username = account.account?.username;
+      // When a managed account has no username yet (e.g. mid-onboarding) we
+      // fall back to a truncated `publicKey` handle so the row still feels
+      // like an identifiable identity instead of showing "No username set".
+      const fallbackHandle = getAccountFallbackHandle(account.account ?? null);
       const role = getUserRole(account, userId);
       const isActingAs = actingAs === account.accountId;
       const isDeleting = deletingId === account.accountId;
@@ -142,7 +141,9 @@ export default function ManagedAccountsScreen() {
       return {
         id: account.accountId,
         title: name,
-        subtitle: username ? `@${username}` : 'No username set',
+        subtitle: username
+          ? `@${username}`
+          : (fallbackHandle ?? t('managedAccounts.noUsernameYet') ?? 'No username set'),
         customIcon: (
           <View style={styles.avatarContainer}>
             <Avatar name={name} uri={avatarUri} size={40} />
@@ -167,6 +168,9 @@ export default function ManagedAccountsScreen() {
                   onPressIn={handlePressIn}
                   onPress={() => handleActAs(account.accountId)}
                   activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel={isActingAs ? t('a11y.stopActingAs') : t('a11y.actAs')}
+                  accessibilityState={{ selected: isActingAs }}
                 >
                   <MaterialCommunityIcons
                     name={isActingAs ? 'account-check' : 'account-switch'}
@@ -179,6 +183,8 @@ export default function ManagedAccountsScreen() {
                   onPressIn={handlePressIn}
                   onPress={() => handleEditProfile(account.accountId)}
                   activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('a11y.editProfile')}
                 >
                   <MaterialCommunityIcons name="pencil-outline" size={16} color={colors.text} />
                 </TouchableOpacity>
@@ -188,6 +194,8 @@ export default function ManagedAccountsScreen() {
                     onPressIn={handlePressIn}
                     onPress={() => handleDeleteAccount(account)}
                     activeOpacity={0.7}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('a11y.deleteAccount')}
                   >
                     <MaterialCommunityIcons name="delete-outline" size={16} color={colors.error} />
                   </TouchableOpacity>
@@ -199,7 +207,7 @@ export default function ManagedAccountsScreen() {
         onPress: () => handleActAs(account.accountId),
       };
     });
-  }, [managedAccounts, userId, actingAs, deletingId, oxyServices, colors, handlePressIn, handleActAs, handleEditProfile, handleDeleteAccount]);
+  }, [managedAccounts, userId, actingAs, deletingId, oxyServices, colors, handlePressIn, handleActAs, handleEditProfile, handleDeleteAccount, t, locale]);
 
   if (oxyLoading) {
     return (
@@ -238,6 +246,8 @@ export default function ManagedAccountsScreen() {
               onPressIn={handlePressIn}
               onPress={handleCreateAccount}
               activeOpacity={0.8}
+              accessibilityRole="button"
+              accessibilityLabel="Create New Identity"
             >
               <MaterialCommunityIcons name="account-plus-outline" size={20} color="#FFFFFF" />
               <Text style={styles.createButtonText}>Create New Identity</Text>
@@ -315,7 +325,6 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
-    fontFamily: Platform.OS === 'web' ? 'Inter' : 'Inter-SemiBold',
   },
   avatarContainer: {
     position: 'relative',
@@ -356,7 +365,6 @@ const styles = StyleSheet.create({
   roleBadgeText: {
     fontSize: 11,
     fontWeight: '600',
-    fontFamily: Platform.OS === 'web' ? 'Inter' : 'Inter-SemiBold',
     textTransform: 'capitalize',
   },
   emptyState: {
@@ -376,7 +384,6 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 20,
     fontWeight: '600',
-    fontFamily: Platform.OS === 'web' ? 'Inter' : 'Inter-SemiBold',
     marginBottom: 8,
     textAlign: 'center',
   },

@@ -13,6 +13,8 @@ import { useOxy } from '@oxyhq/services';
 import { useHapticPress } from '@/hooks/use-haptic-press';
 import { useSearchNavigation } from '@/hooks/use-search-navigation';
 import { darkenColor } from '@/utils/color-utils';
+import { useTranslation } from '@/lib/i18n';
+import { ErrorFallback } from '@/components/error-fallback';
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -54,6 +56,7 @@ export default function TabLayout() {
   const router = useRouter();
   const pathname = usePathname();
   const isDesktop = Platform.OS === 'web' && width >= 768;
+  const { t } = useTranslation();
 
   // --- Animated background color transition ---
   const prevBgRef = useRef(colors.background);
@@ -178,23 +181,47 @@ export default function TabLayout() {
 
         <View style={styles.desktopBottomActions}>
           {Platform.OS !== 'web' && (
-            <TouchableOpacity style={styles.circleButton} onPressIn={handlePressIn} onPress={handleScanQR}>
+            <TouchableOpacity
+              style={styles.circleButton}
+              onPressIn={handlePressIn}
+              onPress={handleScanQR}
+              accessibilityRole="button"
+              accessibilityLabel={t('a11y.scanQr')}
+            >
               <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconSecurity }]}>
                 <MaterialCommunityIcons name="qrcode-scan" size={22} color={darkenColor(colors.sidebarIconSecurity)} />
               </View>
             </TouchableOpacity>
           )}
-          <TouchableOpacity style={styles.circleButton} onPressIn={handlePressIn} onPress={handleReload}>
+          <TouchableOpacity
+            style={styles.circleButton}
+            onPressIn={handlePressIn}
+            onPress={handleReload}
+            accessibilityRole="button"
+            accessibilityLabel={t('a11y.refresh')}
+          >
             <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconSecurity }]}>
               <MaterialCommunityIcons name="reload" size={22} color={darkenColor(colors.sidebarIconSecurity)} />
             </View>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.circleButton} onPressIn={handlePressIn} onPress={handleDevices}>
+          <TouchableOpacity
+            style={styles.circleButton}
+            onPressIn={handlePressIn}
+            onPress={handleDevices}
+            accessibilityRole="button"
+            accessibilityLabel={t('drawer.devices')}
+          >
             <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconDevices }]}>
               <MaterialCommunityIcons name="desktop-classic" size={22} color={darkenColor(colors.sidebarIconDevices)} />
             </View>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.circleButton} onPressIn={handlePressIn} onPress={toggleColorScheme}>
+          <TouchableOpacity
+            style={styles.circleButton}
+            onPressIn={handlePressIn}
+            onPress={toggleColorScheme}
+            accessibilityRole="button"
+            accessibilityLabel={t('a11y.themeToggle')}
+          >
             <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconData }]}>
               <Animated.View key={mode} entering={themeIconEntering}>
                 <MaterialCommunityIcons name={mode === 'dark' ? 'weather-sunny' : 'weather-night'} size={22} color={darkenColor(colors.sidebarIconData)} />
@@ -226,80 +253,87 @@ export default function TabLayout() {
         <Drawer.Screen
           name="index"
           options={{
-            drawerLabel: 'Home',
-            title: 'Home',
+            drawerLabel: t('drawer.home'),
+            title: t('drawer.home'),
           }}
         />
         <Drawer.Screen
           name="personal-info"
           options={{
-            drawerLabel: 'Personal info',
-            title: 'Personal info',
+            drawerLabel: t('drawer.personalInfo'),
+            title: t('drawer.personalInfo'),
           }}
         />
         <Drawer.Screen
           name="security"
           options={{
-            drawerLabel: 'Security & sign-in',
-            title: 'Security & sign-in',
+            drawerLabel: t('drawer.security'),
+            title: t('drawer.security'),
+          }}
+        />
+        <Drawer.Screen
+          name="activity"
+          options={{
+            drawerLabel: t('drawer.activity'),
+            title: t('drawer.activity'),
           }}
         />
         {Platform.OS !== 'web' && (
           <Drawer.Screen
             name="about-identity"
             options={{
-              drawerLabel: 'About Your Identity',
-              title: 'About Your Identity',
+              drawerLabel: t('drawer.aboutIdentity'),
+              title: t('drawer.aboutIdentity'),
             }}
           />
         )}
         <Drawer.Screen
           name="devices"
           options={{
-            drawerLabel: 'Your devices',
-            title: 'Your devices',
+            drawerLabel: t('drawer.devices'),
+            title: t('drawer.devices'),
           }}
         />
         <Drawer.Screen
           name="data"
           options={{
-            drawerLabel: 'Data & privacy',
-            title: 'Data & privacy',
+            drawerLabel: t('drawer.data'),
+            title: t('drawer.data'),
           }}
         />
         <Drawer.Screen
           name="sharing"
           options={{
-            drawerLabel: 'People & sharing',
-            title: 'People & sharing',
+            drawerLabel: t('drawer.sharing'),
+            title: t('drawer.sharing'),
           }}
         />
         <Drawer.Screen
           name="family"
           options={{
-            drawerLabel: 'Third-party connections',
-            title: 'Third-party connections',
+            drawerLabel: t('drawer.thirdParty'),
+            title: t('drawer.thirdParty'),
           }}
         />
         <Drawer.Screen
           name="payments"
           options={{
-            drawerLabel: 'Payments & subscriptions',
-            title: 'Payments & subscriptions',
+            drawerLabel: t('drawer.payments'),
+            title: t('drawer.payments'),
           }}
         />
         <Drawer.Screen
           name="storage"
           options={{
-            drawerLabel: 'Oxy storage',
-            title: 'Oxy storage',
+            drawerLabel: t('drawer.storage'),
+            title: t('drawer.storage'),
           }}
         />
         <Drawer.Screen
           name="managed-accounts"
           options={{
-            drawerLabel: 'Your Identities',
-            title: 'Your Identities',
+            drawerLabel: t('drawer.yourIdentities'),
+            title: t('drawer.yourIdentities'),
           }}
         />
         <Drawer.Screen
@@ -318,32 +352,64 @@ export default function TabLayout() {
           name="authorize"
           options={{
             drawerItemStyle: { display: 'none' },
-            title: 'Authorize',
+            title: t('drawer.authorize'),
           }}
         />
         <Drawer.Screen
           name="scan-qr"
           options={{
             drawerItemStyle: { display: 'none' },
-            title: 'Scan QR Code',
+            title: t('drawer.scanQr'),
             headerShown: false,
+          }}
+        />
+        <Drawer.Screen
+          name="delete-account"
+          options={{
+            drawerItemStyle: { display: 'none' },
+            title: t('drawer.deleteAccount'),
+          }}
+        />
+        <Drawer.Screen
+          name="create-backup"
+          options={{
+            drawerItemStyle: { display: 'none' },
+            title: t('drawer.createBackup'),
           }}
         />
       </Drawer>
 
       {/* Bottom actions - Mobile: keep parity with desktop quick actions */}
       <View style={styles.mobileBottomActions}>
-        <TouchableOpacity style={styles.circleButton} onPressIn={handlePressIn} onPress={handleReload}>
+        <TouchableOpacity
+          style={styles.circleButton}
+          onPressIn={handlePressIn}
+          onPress={handleReload}
+          accessibilityRole="button"
+          accessibilityLabel={t('a11y.refresh')}
+        >
           <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconSecurity }]}>
             <MaterialCommunityIcons name="reload" size={22} color={darkenColor(colors.sidebarIconSecurity)} />
           </View>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.circleButton} onPressIn={handlePressIn} onPress={handleDevices}>
+        <TouchableOpacity
+          style={styles.circleButton}
+          onPressIn={handlePressIn}
+          onPress={handleDevices}
+          accessibilityRole="button"
+          accessibilityLabel={t('drawer.devices')}
+        >
           <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconDevices }]}>
             <MaterialCommunityIcons name="desktop-classic" size={22} color={darkenColor(colors.sidebarIconDevices)} />
           </View>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.circleButton} onPressIn={handlePressIn} onPress={toggleColorScheme}>
+        <TouchableOpacity
+          style={styles.circleButton}
+          onPressIn={handlePressIn}
+          onPress={toggleColorScheme}
+          accessibilityRole="button"
+          accessibilityLabel={t('a11y.themeToggle')}
+        >
           <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconData }]}>
             <MaterialCommunityIcons name={mode === 'dark' ? 'weather-sunny' : 'weather-night'} size={22} color={darkenColor(colors.sidebarIconData)} />
           </View>
@@ -358,6 +424,8 @@ export default function TabLayout() {
             onPressIn={handlePressIn}
             onPress={showGoToTopButton ? handleGoToTop : handleScanQR}
             activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel={showGoToTopButton ? t('a11y.scrollToTop') : t('a11y.scanQr')}
           >
             <View style={[styles.fabIconContainer, { backgroundColor: mode === 'dark' ? colors.text : colors.background }]}>
               {/* Scan Icon - shown when at top */}
@@ -374,6 +442,15 @@ export default function TabLayout() {
       )}
     </Animated.View>
   );
+}
+
+/**
+ * Route-level error boundary. expo-router calls this when a render error
+ * bubbles up from any screen inside `(tabs)`. Keeps the user on the route
+ * with a retry action instead of falling back to the LogBox screen.
+ */
+export function ErrorBoundary(props: { error: Error; retry: () => void }) {
+  return <ErrorFallback {...props} />;
 }
 
 const styles = StyleSheet.create({

@@ -14,20 +14,33 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { formatDate } from '@/utils/date-utils';
 import type { ClientSession } from '@oxyhq/core';
 import { useHapticPress } from '@/hooks/use-haptic-press';
+import { useTranslation } from '@/lib/i18n';
 
 export default function SessionsScreen() {
     const colors = useColors();
     const router = useRouter();
+    const { t } = useTranslation();
 
     // OxyServices integration
     const { sessions, activeSessionId, removeSession, switchSession, isLoading: oxyLoading, isAuthenticated, refreshSessions } = useOxy();
     const alert = useAlert();
     const [actionLoading, setActionLoading] = useState<string | null>(null);
+    const [refreshing, setRefreshing] = useState(false);
 
     const handlePressIn = useHapticPress();
 
+    const handleRefresh = useCallback(async () => {
+        if (!refreshSessions) return;
+        setRefreshing(true);
+        try {
+            await refreshSessions();
+        } finally {
+            setRefreshing(false);
+        }
+    }, [refreshSessions]);
+
     const handleGoToManagedAccounts = useCallback(() => {
-        router.push('/(tabs)/managed-accounts' as any);
+        router.push('/(tabs)/managed-accounts');
     }, [router]);
 
     // Format relative time for last active
@@ -129,6 +142,9 @@ export default function SessionsScreen() {
                                     onPressIn={handlePressIn}
                                     onPress={() => handleSwitchSession(session.sessionId)}
                                     disabled={isLoading}
+                                    accessibilityRole="button"
+                                    accessibilityLabel={t('a11y.switchSession')}
+                                    accessibilityState={{ disabled: isLoading }}
                                 >
                                     {isLoading ? (
                                         <ActivityIndicator size="small" color={colors.text} />
@@ -141,6 +157,9 @@ export default function SessionsScreen() {
                                     onPressIn={handlePressIn}
                                     onPress={() => handleRemoveSession(session.sessionId, isActive)}
                                     disabled={isLoading}
+                                    accessibilityRole="button"
+                                    accessibilityLabel={t('a11y.removeSession')}
+                                    accessibilityState={{ disabled: isLoading }}
                                 >
                                     <MaterialCommunityIcons name="delete-outline" size={16} color={colors.text} />
                                 </TouchableOpacity>
@@ -177,7 +196,7 @@ export default function SessionsScreen() {
     }
 
     return (
-        <ScreenContentWrapper>
+        <ScreenContentWrapper refreshing={refreshing} onRefresh={handleRefresh}>
             <View style={[styles.container, { backgroundColor: colors.background }]}>
                 <View style={styles.content}>
                     <ScreenHeader title="Login Sessions" subtitle="These are your active login sessions across devices. Each session represents a signed-in device." />
@@ -230,7 +249,6 @@ const styles = StyleSheet.create({
     title: {
         fontSize: 32,
         fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
-        fontFamily: Platform.OS === 'web' ? 'Inter' : 'Inter-Bold',
         marginBottom: 8,
     },
     subtitle: {

@@ -1,22 +1,27 @@
 import React, { useMemo, useRef, useCallback, useEffect } from 'react';
 import { View, TouchableOpacity, StyleSheet, Platform, useWindowDimensions } from 'react-native';
 import { BlurView } from 'expo-blur';
-import { useNavigation, DrawerActions } from '@react-navigation/native';
-import type { DrawerNavigationProp } from '@react-navigation/drawer';
-import { useRouter } from 'expo-router';
+import { useNavigation, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { Avatar } from '@oxyhq/services';
+import { Avatar, LogoIcon } from '@oxyhq/services';
 import { useScrollContext } from '@/contexts/scroll-context';
-import { LogoIcon } from '@/assets/logo';
 import { useOxy } from '@oxyhq/services';
 import { getDisplayName } from '@/utils/date-utils';
 import { useHapticPress } from '@/hooks/use-haptic-press';
 import { darkenColor } from '@/utils/color-utils';
+import { useTranslation } from '@/lib/i18n';
 import * as Haptics from 'expo-haptics';
 import Animated, { useAnimatedStyle, withTiming, useDerivedValue } from 'react-native-reanimated';
+
+interface DrawerNavigation {
+    openDrawer?: () => void;
+    closeDrawer?: () => void;
+    toggleDrawer?: () => void;
+    dispatch?: (action: unknown) => void;
+}
 
 interface HeaderProps {
 }
@@ -39,7 +44,7 @@ const getHapticStyle = (intensity: number): Haptics.ImpactFeedbackStyle => {
 };
 
 export function Header({ }: HeaderProps) {
-    const navigation = useNavigation<DrawerNavigationProp<any>>();
+    const navigation = useNavigation<DrawerNavigation>();
     const router = useRouter();
     const colors = useColors();
     const { mode } = useTheme();
@@ -47,6 +52,7 @@ export function Header({ }: HeaderProps) {
     const { width } = useWindowDimensions();
     const { isScrolled, scrollToTop, scrollY, scrollDirection } = useScrollContext();
     const isDesktop = Platform.OS === 'web' && width >= 768;
+    const { t } = useTranslation();
 
     const { user, oxyServices, showBottomSheet, isAuthenticated, refreshSessions } = useOxy();
 
@@ -92,16 +98,14 @@ export function Header({ }: HeaderProps) {
     }, [showBottomSheet]);
 
     const handleMenuPress = useCallback(() => {
-        try {
-            if (navigation.openDrawer) {
-                navigation.openDrawer();
-            } else {
-                navigation.dispatch(DrawerActions.openDrawer());
-            }
-        } catch (error) {
-            console.error('Failed to open drawer:', error);
-            navigation.dispatch(DrawerActions.openDrawer());
+        // Fallback: synthesize the DrawerActions.openDrawer payload inline so
+        // we don't import from `@react-navigation/*` directly (expo-router 56
+        // rejects direct react-navigation imports).
+        if (navigation.openDrawer) {
+            navigation.openDrawer();
+            return;
         }
+        navigation.dispatch?.({ type: 'OPEN_DRAWER' });
     }, [navigation]);
 
     const handleLogoPress = useCallback(() => {
@@ -117,7 +121,7 @@ export function Header({ }: HeaderProps) {
             // Single press - navigate to home after delay
             lastPressRef.current = now;
             pressTimeoutRef.current = setTimeout(() => {
-                router.push('/(tabs)' as any);
+                router.push('/(tabs)');
                 lastPressRef.current = 0;
             }, DOUBLE_PRESS_DELAY);
         }
@@ -144,7 +148,7 @@ export function Header({ }: HeaderProps) {
         setTimeout(() => {
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         }, HAPTIC_COMPLETION_DELAY_MS);
-        router.push('/(tabs)/easter-egg' as any);
+        router.push('/(tabs)/easter-egg');
     }, [router, stopHapticFeedback]);
 
     const handleLogoPressOut = useCallback(() => {
@@ -222,7 +226,6 @@ export function Header({ }: HeaderProps) {
             <BlurView
                 intensity={isScrolled ? 50 : 0}
                 tint={mode === 'dark' ? 'dark' : 'light'}
-                experimentalBlurMethod={Platform.OS === 'android' ? 'dimezisBlurView' : undefined}
                 style={[headerStyle, !isDesktop && styles.headerColumn]}
             >
                 <View style={styles.headerRow}>
@@ -232,6 +235,9 @@ export function Header({ }: HeaderProps) {
                                 onPressIn={handlePressIn}
                                 onPress={handleMenuPress}
                                 style={styles.menuButton}
+                                accessibilityRole="button"
+                                accessibilityLabel={t('a11y.menu')}
+                                accessibilityHint={t('a11y.menuHint')}
                             >
                                 <Ionicons name="menu" size={24} color={colors.text} />
                             </TouchableOpacity>
@@ -243,6 +249,9 @@ export function Header({ }: HeaderProps) {
                                 onLongPress={handleLogoLongPressStart}
                                 onPressOut={handleLogoPressOut}
                                 activeOpacity={0.7}
+                                accessibilityRole="button"
+                                accessibilityLabel={t('a11y.logo')}
+                                accessibilityHint={t('a11y.logoHint')}
                             >
                                 <LogoIcon height={32} />
                             </TouchableOpacity>
@@ -257,8 +266,11 @@ export function Header({ }: HeaderProps) {
                                 onLongPress={handleLogoLongPressStart}
                                 onPressOut={handleLogoPressOut}
                                 activeOpacity={0.7}
+                                accessibilityRole="button"
+                                accessibilityLabel={t('a11y.logo')}
+                                accessibilityHint={t('a11y.logoHint')}
                             >
-                                <LogoIcon height={24} />
+                                <LogoIcon height={28} />
                             </TouchableOpacity>
                         </View>
                     )}
@@ -268,6 +280,9 @@ export function Header({ }: HeaderProps) {
                             onPressIn={handlePressIn}
                             onPress={handleAvatarPress}
                             activeOpacity={0.7}
+                            accessibilityRole="button"
+                            accessibilityLabel={t('a11y.avatar')}
+                            accessibilityHint={t('a11y.avatarHint')}
                         >
                             {isAuthenticated ? (
                                 <Avatar name={displayName} uri={avatarUrl} size={avatarSize} />

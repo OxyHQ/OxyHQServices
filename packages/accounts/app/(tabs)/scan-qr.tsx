@@ -181,6 +181,8 @@ export default function ScanQRScreen() {
           <TouchableOpacity
             style={[styles.button, { backgroundColor: colors.tint, marginTop: 24 }]}
             onPress={handleClose}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
           >
             <Text style={styles.buttonText}>Go Back</Text>
           </TouchableOpacity>
@@ -228,12 +230,16 @@ export default function ScanQRScreen() {
         <TouchableOpacity
           style={[styles.button, { backgroundColor: colors.tint }]}
           onPress={requestPermission}
+          accessibilityRole="button"
+          accessibilityLabel="Grant camera permission"
         >
           <Text style={styles.buttonText}>Grant Permission</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.linkButton]}
           onPress={openSettings}
+          accessibilityRole="button"
+          accessibilityLabel="Open device settings"
         >
           <Text style={[styles.linkText, { color: colors.tint }]}>
             Open Settings
@@ -242,6 +248,8 @@ export default function ScanQRScreen() {
         <TouchableOpacity
           style={[styles.linkButton]}
           onPress={handleClose}
+          accessibilityRole="button"
+          accessibilityLabel="Cancel"
         >
           <Text style={[styles.linkText, { color: colors.textSecondary }]}>
             Cancel
@@ -291,6 +299,9 @@ export default function ScanQRScreen() {
               <TouchableOpacity
                 style={styles.controlButton}
                 onPress={toggleFlash}
+                accessibilityRole="button"
+                accessibilityLabel={flashOn ? 'Turn flash off' : 'Turn flash on'}
+                accessibilityState={{ selected: flashOn }}
               >
                 <MaterialCommunityIcons
                   name={flashOn ? 'flash' : 'flash-off'}
@@ -306,6 +317,8 @@ export default function ScanQRScreen() {
                 <TouchableOpacity
                   style={styles.controlButton}
                   onPress={() => setScanned(false)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Scan again"
                 >
                   <MaterialCommunityIcons
                     name="refresh"
@@ -323,6 +336,8 @@ export default function ScanQRScreen() {
         <TouchableOpacity
           style={styles.closeButton}
           onPress={handleClose}
+          accessibilityRole="button"
+          accessibilityLabel="Close scanner"
         >
           <MaterialCommunityIcons name="close" size={28} color="#fff" />
         </TouchableOpacity>

@@ -12,17 +12,20 @@ import { UnauthenticatedScreen } from '@/components/unauthenticated-screen';
 import { useOxy } from '@oxyhq/services';
 import type { AccountStorageUsageResponse } from '@oxyhq/core';
 import { formatDate } from '@/utils/date-utils';
+import { useTranslation } from '@/lib/i18n';
 
 export default function StorageScreen() {
   const colors = useColors();
   const { width } = useWindowDimensions();
   const router = useRouter();
   const isDesktop = Platform.OS === 'web' && width >= 768;
+  const { t } = useTranslation();
 
   const { oxyServices, isAuthenticated, isLoading: oxyLoading } = useOxy();
   const alert = useAlert();
   const [usage, setUsage] = useState<AccountStorageUsageResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const loadUsage = useCallback(async () => {
@@ -32,13 +35,29 @@ export default function StorageScreen() {
     try {
       const res = await oxyServices.getAccountStorageUsage();
       setUsage(res);
-    } catch (err: any) {
-      setError(err?.message || 'Failed to load storage usage');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : t('storage.loadFailed');
+      setError(message);
       setUsage(null);
     } finally {
       setLoading(false);
     }
-  }, [isAuthenticated, oxyServices]);
+  }, [isAuthenticated, oxyServices, t]);
+
+  const handleRefresh = useCallback(async () => {
+    if (!isAuthenticated || !oxyServices) return;
+    setRefreshing(true);
+    setError(null);
+    try {
+      const res = await oxyServices.getAccountStorageUsage();
+      setUsage(res);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : t('storage.loadFailed');
+      setError(message);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [isAuthenticated, oxyServices, t]);
 
   useEffect(() => {
     void loadUsage();
@@ -65,20 +84,20 @@ export default function StorageScreen() {
   }, []);
 
   const formatRelativeTime = useCallback((dateString?: string) => {
-    if (!dateString) return 'Never';
+    if (!dateString) return t('storage.info.never');
     const date = new Date(dateString);
     const now = new Date();
     const diffMs = now.getTime() - date.getTime();
     const minutes = Math.floor(diffMs / 60000);
 
-    if (minutes < 1) return 'Just now';
-    if (minutes < 60) return `${minutes}m ago`;
+    if (minutes < 1) return t('home.activity.justNow');
+    if (minutes < 60) return t('home.activity.minutesAgo', { count: minutes });
     const hours = Math.floor(minutes / 60);
-    if (hours < 24) return `${hours}h ago`;
+    if (hours < 24) return t('home.activity.hoursAgo', { count: hours });
     const days = Math.floor(hours / 24);
-    if (days < 7) return `${days}d ago`;
+    if (days < 7) return t('home.activity.daysAgo', { count: days });
     return formatDate(dateString);
-  }, []);
+  }, [t]);
 
   const usagePercentage = useMemo(() => {
     if (!usage || usage.totalLimitBytes === 0) return 0;
@@ -89,8 +108,8 @@ export default function StorageScreen() {
     if (!usage) return '';
     const used = formatBytes(usage.totalUsedBytes).text;
     const total = formatBytes(usage.totalLimitBytes).text;
-    return `${used} of ${total} used`;
-  }, [formatBytes, usage]);
+    return t('storage.usageSummary', { used, total });
+  }, [formatBytes, usage, t]);
 
   const planDisplayName = useMemo(() => {
     if (!usage) return '';
@@ -128,70 +147,83 @@ export default function StorageScreen() {
 
   const handleCategoryPress = useCallback((categoryId: string, categoryName: string, bytes: number, count: number) => {
     const sizeText = formatBytes(bytes).text;
-    const countText = `${count.toLocaleString()} ${categoryId === 'mail' ? 'message' : categoryId === 'photosVideos' ? 'item' : categoryId === 'recordings' ? 'recording' : 'file'}${count !== 1 ? 's' : ''}`;
-    const percentage = usage && usage.totalLimitBytes > 0 
-      ? Math.round((bytes / usage.totalLimitBytes) * 100) 
+    const countTextKey = categoryId === 'mail'
+      ? 'storage.categories.messages'
+      : categoryId === 'photosVideos'
+        ? 'storage.categories.items'
+        : categoryId === 'recordings'
+          ? 'storage.categories.recordingsCount'
+          : 'storage.categories.files';
+    const countText = t(countTextKey, { count });
+    const percentage = usage && usage.totalLimitBytes > 0
+      ? Math.round((bytes / usage.totalLimitBytes) * 100)
       : 0;
-    
+
     alert(
       categoryName,
-      `${sizeText} (${countText})\n\nThis category uses ${percentage}% of your total storage.`,
-      [{ text: 'OK' }]
+      t('storage.detail.summary', { size: sizeText, count: countText, percent: percentage }),
+      [{ text: t('common.ok') }]
     );
-  }, [alert, formatBytes, usage]);
+  }, [alert, formatBytes, usage, t]);
 
   const storageDetails = useMemo(() => {
     const cats = usage?.categories;
     const safe = (v?: number) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
     const safeCount = (v?: number) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 
+    const docsCount = safeCount(cats?.documents?.count);
+    const mailCount = safeCount(cats?.mail?.count);
+    const photosCount = safeCount(cats?.photosVideos?.count);
+    const recCount = safeCount(cats?.recordings?.count);
+    const famCount = safeCount(cats?.family?.count);
+
     const items = [
       {
         id: 'documents',
         icon: 'file-document-outline',
         iconColor: colors.sidebarIconSecurity,
-        title: 'Documents',
-        subtitle: `${safeCount(cats?.documents?.count).toLocaleString()} file${safeCount(cats?.documents?.count) !== 1 ? 's' : ''}`,
+        title: t('storage.categories.documents'),
+        subtitle: t('storage.categories.files', { count: docsCount }),
         bytes: safe(cats?.documents?.bytes),
-        onPress: () => handleCategoryPress('documents', 'Documents', safe(cats?.documents?.bytes), safeCount(cats?.documents?.count)),
+        onPress: () => handleCategoryPress('documents', t('storage.categories.documents'), safe(cats?.documents?.bytes), docsCount),
         showChevron: false,
       },
       {
         id: 'mail',
         icon: 'email-outline',
         iconColor: colors.sidebarIconSharing,
-        title: 'Oxy Mail',
-        subtitle: `${safeCount(cats?.mail?.count).toLocaleString()} message${safeCount(cats?.mail?.count) !== 1 ? 's' : ''}`,
+        title: t('storage.categories.mail'),
+        subtitle: t('storage.categories.messages', { count: mailCount }),
         bytes: safe(cats?.mail?.bytes),
-        onPress: () => handleCategoryPress('mail', 'Oxy Mail', safe(cats?.mail?.bytes), safeCount(cats?.mail?.count)),
+        onPress: () => handleCategoryPress('mail', t('storage.categories.mail'), safe(cats?.mail?.bytes), mailCount),
         showChevron: false,
       },
       {
         id: 'photosVideos',
         icon: 'image-outline',
         iconColor: colors.sidebarIconPayments,
-        title: 'Photos & Videos',
-        subtitle: `${safeCount(cats?.photosVideos?.count).toLocaleString()} item${safeCount(cats?.photosVideos?.count) !== 1 ? 's' : ''}`,
+        title: t('storage.categories.photosVideos'),
+        subtitle: t('storage.categories.items', { count: photosCount }),
         bytes: safe(cats?.photosVideos?.bytes),
-        onPress: () => handleCategoryPress('photosVideos', 'Photos & Videos', safe(cats?.photosVideos?.bytes), safeCount(cats?.photosVideos?.count)),
+        onPress: () => handleCategoryPress('photosVideos', t('storage.categories.photosVideos'), safe(cats?.photosVideos?.bytes), photosCount),
         showChevron: false,
       },
       {
         id: 'recordings',
         icon: 'microphone-outline',
         iconColor: colors.sidebarIconData,
-        title: 'Recordings',
-        subtitle: `${safeCount(cats?.recordings?.count).toLocaleString()} recording${safeCount(cats?.recordings?.count) !== 1 ? 's' : ''}`,
+        title: t('storage.categories.recordings'),
+        subtitle: t('storage.categories.recordingsCount', { count: recCount }),
         bytes: safe(cats?.recordings?.bytes),
-        onPress: () => handleCategoryPress('recordings', 'Recordings', safe(cats?.recordings?.bytes), safeCount(cats?.recordings?.count)),
+        onPress: () => handleCategoryPress('recordings', t('storage.categories.recordings'), safe(cats?.recordings?.bytes), recCount),
         showChevron: false,
       },
       {
         id: 'family',
         icon: 'account-group-outline',
         iconColor: colors.sidebarIconPersonalInfo,
-        title: 'Family storage',
-        subtitle: `${safeCount(cats?.family?.count).toLocaleString()} file${safeCount(cats?.family?.count) !== 1 ? 's' : ''}`,
+        title: t('storage.categories.family'),
+        subtitle: t('storage.categories.files', { count: famCount }),
         bytes: safe(cats?.family?.bytes),
         onPress: () => router.push('/(tabs)/family'),
         showChevron: true,
@@ -200,20 +232,21 @@ export default function StorageScreen() {
 
     // Add "Other" category if it has data
     if (safe(cats?.other?.bytes) > 0) {
+      const otherCount = safeCount(cats?.other?.count);
       items.push({
         id: 'other',
         icon: 'folder-outline',
         iconColor: colors.textSecondary,
-        title: 'Other',
-        subtitle: `${safeCount(cats?.other?.count).toLocaleString()} file${safeCount(cats?.other?.count) !== 1 ? 's' : ''}`,
+        title: t('storage.categories.other'),
+        subtitle: t('storage.categories.files', { count: otherCount }),
         bytes: safe(cats?.other?.bytes),
-        onPress: () => handleCategoryPress('other', 'Other', safe(cats?.other?.bytes), safeCount(cats?.other?.count)),
+        onPress: () => handleCategoryPress('other', t('storage.categories.other'), safe(cats?.other?.bytes), otherCount),
         showChevron: false,
       });
     }
 
     return items;
-  }, [colors.sidebarIconData, colors.sidebarIconPayments, colors.sidebarIconPersonalInfo, colors.sidebarIconSecurity, colors.sidebarIconSharing, colors.textSecondary, handleCategoryPress, router, usage]);
+  }, [colors.sidebarIconData, colors.sidebarIconPayments, colors.sidebarIconPersonalInfo, colors.sidebarIconSecurity, colors.sidebarIconSharing, colors.textSecondary, handleCategoryPress, router, usage, t]);
 
   const accountInfoItems = useMemo(() => {
     if (!usage) return [];
@@ -222,7 +255,7 @@ export default function StorageScreen() {
         id: 'plan',
         icon: 'crown-outline',
         iconColor: colors.sidebarIconPayments,
-        title: 'Storage plan',
+        title: t('storage.info.plan'),
         subtitle: planDisplayName,
         showChevron: false,
       },
@@ -230,19 +263,19 @@ export default function StorageScreen() {
         id: 'updated',
         icon: 'clock-outline',
         iconColor: colors.textSecondary,
-        title: 'Last updated',
+        title: t('storage.info.updated'),
         subtitle: formatRelativeTime(usage.updatedAt),
         showChevron: false,
       },
     ];
-  }, [colors.sidebarIconPayments, colors.textSecondary, formatRelativeTime, planDisplayName, usage]);
+  }, [colors.sidebarIconPayments, colors.textSecondary, formatRelativeTime, planDisplayName, usage, t]);
 
   if (!isAuthenticated && !oxyLoading) {
     return (
       <UnauthenticatedScreen
-        title="Oxy storage"
-        subtitle="Manage your storage usage and files."
-        message="Sign in to see your storage usage."
+        title={t('storage.title')}
+        subtitle={t('storage.subtitle')}
+        message={t('storage.signInRequired')}
         isAuthenticated={isAuthenticated}
       />
     );
@@ -250,15 +283,15 @@ export default function StorageScreen() {
 
   const content = (
     <>
-      <ScreenHeader title="Oxy storage" subtitle="Manage your storage usage and files." />
+      <ScreenHeader title={t('storage.title')} subtitle={t('storage.subtitle')} />
 
-      <Section title="Storage overview">
+      <Section title={t('storage.sections.overview')}>
         <AccountCard>
           <View style={styles.overviewContainer}>
             {loading || oxyLoading ? (
               <View style={styles.loadingContainer}>
                 <ActivityIndicator size="large" color={colors.tint} />
-                <ThemedText style={[styles.loadingText, { color: colors.text }]}>Loading storage usage…</ThemedText>
+                <ThemedText style={[styles.loadingText, { color: colors.text }]}>{t('storage.loading')}</ThemedText>
               </View>
             ) : error ? (
               <View style={styles.errorContainer}>
@@ -267,8 +300,10 @@ export default function StorageScreen() {
                 <TouchableOpacity
                   style={[styles.retryButton, { backgroundColor: colors.tint }]}
                   onPress={loadUsage}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('storage.retry')}
                 >
-                  <Text style={styles.retryButtonText}>Retry</Text>
+                  <Text style={styles.retryButtonText}>{t('storage.retry')}</Text>
                 </TouchableOpacity>
               </View>
             ) : usage ? (
@@ -278,7 +313,7 @@ export default function StorageScreen() {
                     {usageSummaryText}
                   </ThemedText>
                   <ThemedText style={[styles.usagePercentage, { color: colors.textSecondary }]}>
-                    {usagePercentage}% used
+                    {t('storage.usagePercentage', { percent: usagePercentage })}
                   </ThemedText>
                 </View>
 
@@ -297,7 +332,7 @@ export default function StorageScreen() {
                 </View>
 
                 <ThemedText style={[styles.usageSubtitle, { color: colors.textSecondary }]}>
-                  Your storage is shared across Oxy Photos, Oxy Drive, and Oxy Mail.
+                  {t('storage.usageShared')}
                 </ThemedText>
               </>
             ) : null}
@@ -307,13 +342,13 @@ export default function StorageScreen() {
 
       {usage && (
         <>
-          <Section title="Account information">
+          <Section title={t('storage.sections.accountInfo')}>
             <AccountCard>
               <GroupedSection items={accountInfoItems} />
             </AccountCard>
           </Section>
 
-          <Section title="Storage by category">
+          <Section title={t('storage.sections.byCategory')}>
             <AccountCard>
               <GroupedSection
                 items={storageDetails.map((item) => ({
@@ -332,7 +367,7 @@ export default function StorageScreen() {
 
           <Section>
             <View style={{ marginTop: -8 }}>
-              <LinkButton text="Clean up space" onPress={() => router.push('/(tabs)/data')} />
+              <LinkButton text={t('storage.cleanUp')} onPress={() => router.push('/(tabs)/data')} />
             </View>
           </Section>
         </>
@@ -346,7 +381,7 @@ export default function StorageScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <ScreenContentWrapper>
+      <ScreenContentWrapper refreshing={refreshing} onRefresh={handleRefresh}>
         <View style={styles.mobileContent}>{content}</View>
       </ScreenContentWrapper>
     </View>

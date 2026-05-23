@@ -1,12 +1,13 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback } from 'react';
 import { useRouter } from 'expo-router';
-import { RecoveryPhraseService } from '@oxyhq/core';
+import { RecoveryPhraseService, IdentityAlreadyExistsError } from '@oxyhq/core';
 import { useColors } from '@/hooks/useColors';
 import { ImportPhraseStep } from '@/components/auth/ImportPhraseStep';
 import { extractAuthErrorMessage } from '@/utils/auth/errorUtils';
 import { RECOVERY_PHRASE_LENGTH } from '@/constants/auth';
 import { useAuthFlowContext } from '@/contexts/auth-flow-context';
 import { useIdentity } from '@/hooks/useIdentity';
+import { useIdentityStore } from '@/hooks/identity/identityStore';
 
 /**
  * Import Identity - Phrase Screen (Index)
@@ -18,6 +19,9 @@ export default function ImportIdentityPhraseScreen() {
   const colors = useColors();
   const { importIdentity } = useIdentity();
   const { error, setAuthError } = useAuthFlowContext();
+  const setRecoveryPhraseAcknowledgedPersisted = useIdentityStore(
+    (state) => state.setRecoveryPhraseAcknowledged,
+  );
   const [isLoading, setIsLoading] = useState(false);
 
   const backgroundColor = colors.background;
@@ -56,6 +60,12 @@ export default function ImportIdentityPhraseScreen() {
       const result = await importIdentity(phrase);
       const wasOffline = !result.synced;
 
+      // The user just typed the phrase by hand, so they unambiguously
+      // already have it written down somewhere. Mark it as acknowledged
+      // so the security screen doesn't nag them about a backup they
+      // already possess.
+      setRecoveryPhraseAcknowledgedPersisted(true);
+
       // Check if offline - if so, skip username step
       if (wasOffline) {
         router.replace('/(auth)/import-identity/notifications');
@@ -63,11 +73,21 @@ export default function ImportIdentityPhraseScreen() {
         router.replace('/(auth)/import-identity/username');
       }
     } catch (err: unknown) {
-      setAuthError(extractAuthErrorMessage(err, 'Failed to import identity'));
+      if (err instanceof IdentityAlreadyExistsError) {
+        // The user is trying to import a different identity on top of an
+        // existing one. We don't quietly clobber — they must use the
+        // settings UI to remove the current identity (with a written
+        // recovery phrase warning) before importing a new one.
+        setAuthError(
+          'An identity already exists on this device. Sign in with your existing identity or remove it from settings before importing a new one.',
+        );
+      } else {
+        setAuthError(extractAuthErrorMessage(err, 'Failed to import identity'));
+      }
     } finally {
       setIsLoading(false);
     }
-  }, [phraseWords, importIdentity, router, setAuthError]);
+  }, [phraseWords, importIdentity, router, setAuthError, setRecoveryPhraseAcknowledgedPersisted]);
 
   return (
     <ImportPhraseStep

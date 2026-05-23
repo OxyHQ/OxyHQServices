@@ -35,6 +35,8 @@ export function QuickActionsSection({ actions, onPressIn }: QuickActionsSectionP
           onPressIn={onPressIn}
           onPress={action.onPress}
           activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel={action.title}
         >
           <View style={[styles.chipIcon, { backgroundColor: action.iconColor }]}>
             <MaterialCommunityIcons name={action.icon} size={20} color={darkenColor(action.iconColor)} />

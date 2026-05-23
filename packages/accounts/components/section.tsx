@@ -69,6 +69,5 @@ const styles = StyleSheet.create({
     sectionTitle: {
         fontSize: 18,
         fontWeight: Platform.OS === 'web' ? '600' : undefined,
-        fontFamily: Platform.OS === 'web' ? 'Inter' : 'Inter-SemiBold',
     },
 });

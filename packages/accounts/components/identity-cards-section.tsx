@@ -41,6 +41,8 @@ export function IdentityCardsSection({ cards, onPressIn }: IdentityCardsSectionP
           onPressIn={onPressIn}
           onPress={card.onPress}
           activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel={`${card.title}, ${card.subtitle}`}
         >
           {card.customIcon}
           <Text style={[styles.identityCardTitle, { color: colors.text }]}>{card.title}</Text>

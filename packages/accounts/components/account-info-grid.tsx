@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { darkenColor } from '@/utils/color-utils';
 import { useColors } from '@/hooks/useColors';
@@ -32,6 +32,9 @@ export function AccountInfoGrid({ cards, onPressIn }: AccountInfoGridProps) {
           onPress={card.onPress}
           activeOpacity={card.onPress ? 0.7 : 1}
           disabled={!card.onPress}
+          accessibilityRole={card.onPress ? 'button' : undefined}
+          accessibilityLabel={`${card.title}, ${card.value}`}
+          accessibilityState={{ disabled: !card.onPress }}
         >
           <View style={[styles.accountInfoIcon, { backgroundColor: card.iconColor }]}>
             <MaterialCommunityIcons name={card.icon} size={20} color={darkenColor(card.iconColor)} />
@@ -82,7 +85,6 @@ const styles = StyleSheet.create({
   accountInfoValue: {
     fontSize: 20,
     fontWeight: 'bold',
-    fontFamily: Platform.OS === 'web' ? 'Inter' : 'Inter-Bold',
   } as const,
 });
 

@@ -6,7 +6,6 @@ import {
     TouchableOpacity,
     StyleSheet,
     Modal,
-    Platform,
 } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
@@ -15,6 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { useOxy } from '@oxyhq/services';
+import { useTranslation } from '@/lib/i18n';
 
 interface UsernameRequiredModalProps {
     visible: boolean;
@@ -34,6 +34,7 @@ export function UsernameRequiredModal({ visible, onComplete, onCancel }: Usernam
     const { mode } = useTheme();
     const insets = useSafeAreaInsets();
     const { oxyServices } = useOxy();
+    const { t } = useTranslation();
 
     const backgroundColor = themeColors.background;
     const textColor = themeColors.text;
@@ -88,7 +89,7 @@ export function UsernameRequiredModal({ visible, onComplete, onCancel }: Usernam
 
         // Validate format
         if (!/^[a-z0-9]+$/i.test(username)) {
-            setUsernameError('You can use a-z, 0-9. Minimum length is 4 characters.');
+            setUsernameError(t('auth.usernameRequired.errorFormat'));
             setUsernameAvailable(false);
             return;
         }
@@ -104,10 +105,10 @@ export function UsernameRequiredModal({ visible, onComplete, onCancel }: Usernam
                 const result = await oxyServices.checkUsernameAvailability(username);
                 setUsernameAvailable(result.available);
                 if (!result.available) {
-                    setUsernameError(result.message || 'Username is already taken');
+                    setUsernameError(result.message || t('auth.usernameRequired.errorTaken'));
                 }
-            } catch (err: any) {
-                const errorMsg = err?.message || '';
+            } catch (err: unknown) {
+                const errorMsg = err instanceof Error ? err.message : '';
                 // Handle timeout and network errors gracefully
                 if (
                     errorMsg.includes('network') ||
@@ -120,7 +121,7 @@ export function UsernameRequiredModal({ visible, onComplete, onCancel }: Usernam
                     setUsernameAvailable(true);
                 } else {
                     setUsernameAvailable(false);
-                    setUsernameError(errorMsg || 'Failed to check username availability');
+                    setUsernameError(errorMsg || t('auth.usernameRequired.errorCheckFailed'));
                 }
             } finally {
                 setIsCheckingUsername(false);
@@ -128,11 +129,11 @@ export function UsernameRequiredModal({ visible, onComplete, onCancel }: Usernam
         }, 500);
 
         return () => clearTimeout(timer);
-    }, [username, oxyServices]);
+    }, [username, oxyServices, t]);
 
     const handleSave = useCallback(async () => {
         if (!username || username.length < 4 || !/^[a-z0-9]+$/i.test(username)) {
-            setUsernameError('Please enter a valid username (4+ characters, a-z and 0-9 only)');
+            setUsernameError(t('auth.usernameRequired.errorInvalid'));
             return;
         }
 
@@ -146,12 +147,13 @@ export function UsernameRequiredModal({ visible, onComplete, onCancel }: Usernam
                 await oxyServices.updateProfile({ username });
             }
             onComplete();
-        } catch (err: any) {
-            setUsernameError(err?.message || 'Failed to save username');
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : t('auth.usernameRequired.errorSaveFailed');
+            setUsernameError(message);
         } finally {
             setIsSaving(false);
         }
-    }, [username, usernameAvailable, isCheckingUsername, oxyServices, onComplete]);
+    }, [username, usernameAvailable, isCheckingUsername, oxyServices, onComplete, t]);
 
     const overlayStyle = useAnimatedStyle(() => ({
         opacity: opacity.value,
@@ -176,6 +178,8 @@ export function UsernameRequiredModal({ visible, onComplete, onCancel }: Usernam
                     style={StyleSheet.absoluteFill}
                     activeOpacity={1}
                     onPress={onCancel}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('common.close')}
                 />
                 <Animated.View
                     style={[
@@ -197,7 +201,6 @@ export function UsernameRequiredModal({ visible, onComplete, onCancel }: Usernam
                         <BlurView
                             intensity={100}
                             tint={mode === 'dark' ? 'dark' : 'light'}
-                            experimentalBlurMethod={Platform.OS === 'android' ? 'dimezisBlurView' : undefined}
                             style={[
                                 styles.modalContent,
                                 {
@@ -207,9 +210,9 @@ export function UsernameRequiredModal({ visible, onComplete, onCancel }: Usernam
                                 },
                             ]}
                         >
-                            <Text style={[styles.title, { color: textColor }]}>Username Required</Text>
+                            <Text style={[styles.title, { color: textColor }]}>{t('auth.usernameRequired.title')}</Text>
                             <Text style={[styles.subtitle, { color: textColor, opacity: 0.6 }]}>
-                                You need to set a username before you can sync your identity
+                                {t('auth.usernameRequired.subtitle')}
                             </Text>
 
                             <View style={styles.inputWrapper}>
@@ -219,7 +222,7 @@ export function UsernameRequiredModal({ visible, onComplete, onCancel }: Usernam
                                         backgroundColor: themeColors.card,
                                         borderColor: usernameError ? themeColors.error : themeColors.border,
                                     }]}
-                                    placeholder="Username"
+                                    placeholder={t('auth.usernameRequired.placeholder')}
                                     placeholderTextColor={themeColors.textSecondary}
                                     value={username}
                                     onChangeText={(text) => {
@@ -229,22 +232,23 @@ export function UsernameRequiredModal({ visible, onComplete, onCancel }: Usernam
                                     autoCapitalize="none"
                                     autoCorrect={false}
                                     autoFocus
+                                    accessibilityLabel={t('auth.usernameRequired.placeholder')}
                                 />
                             </View>
 
                             <Text style={[styles.inputHint, { color: textColor, opacity: 0.6 }]}>
-                                You can use a-z, 0-9. Minimum length is 4 characters.
+                                {t('auth.usernameRequired.hint')}
                             </Text>
 
                             {isCheckingUsername && (
                                 <Text style={[styles.checkingText, { color: textColor, opacity: 0.6 }]}>
-                                    Checking availability...
+                                    {t('auth.usernameRequired.checking')}
                                 </Text>
                             )}
 
                             {usernameAvailable === true && !isCheckingUsername && (
                                 <Text style={[styles.availableText, { color: themeColors.success }]}>
-                                    ✓ Username is available
+                                    ✓ {t('auth.usernameRequired.available')}
                                 </Text>
                             )}
 
@@ -262,12 +266,15 @@ export function UsernameRequiredModal({ visible, onComplete, onCancel }: Usernam
                                 ]}
                                 onPress={handleSave}
                                 disabled={!canContinue}
+                                accessibilityRole="button"
+                                accessibilityLabel={isSaving ? t('auth.usernameRequired.saving') : t('auth.usernameRequired.save')}
+                                accessibilityState={{ disabled: !canContinue, busy: isSaving }}
                             >
                                 <Text style={[
                                     styles.primaryButtonText,
                                     { color: canContinue ? backgroundColor : themeColors.textSecondary }
                                 ]}>
-                                    {isSaving ? 'Saving...' : 'Save Username'}
+                                    {isSaving ? t('auth.usernameRequired.saving') : t('auth.usernameRequired.save')}
                                 </Text>
                             </TouchableOpacity>
 
@@ -275,9 +282,11 @@ export function UsernameRequiredModal({ visible, onComplete, onCancel }: Usernam
                                 <TouchableOpacity
                                     style={styles.cancelButton}
                                     onPress={onCancel}
+                                    accessibilityRole="button"
+                                    accessibilityLabel={t('common.cancel')}
                                 >
                                     <Text style={[styles.cancelText, { color: textColor, opacity: 0.6 }]}>
-                                        Cancel
+                                        {t('common.cancel')}
                                     </Text>
                                 </TouchableOpacity>
                             )}
@@ -307,7 +316,6 @@ const styles = StyleSheet.create({
     },
     title: {
         fontSize: 28,
-        fontFamily: 'Inter-SemiBold',
         fontWeight: '600',
         marginBottom: 8,
         textAlign: 'center',
@@ -357,7 +365,6 @@ const styles = StyleSheet.create({
     },
     primaryButtonText: {
         fontSize: 16,
-        fontFamily: 'Inter-SemiBold',
         fontWeight: '600',
     },
     cancelButton: {

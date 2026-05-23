@@ -1,6 +1,6 @@
 import React, { useEffect, useCallback, useMemo, useRef } from 'react';
 import { View, Animated, StyleSheet } from 'react-native';
-import { LogoIcon } from '@/assets/logo';
+import { LogoIcon } from '@oxyhq/services';
 import { LoadingSpinner } from '@/components/ui/Loading';
 import { useTheme } from '@/hooks/useTheme';
 
@@ -20,6 +20,12 @@ const AppSplashScreen: React.FC<AppSplashScreenProps> = ({
   const theme = useTheme();
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const animationRef = useRef<Animated.CompositeAnimation | null>(null);
+
+  // Splash renders before bloom theme mount in some flows, so we resolve
+  // colors explicitly from the OS-level theme rather than the bloom theme.
+  const isDark = theme?.mode === 'dark';
+  const logoColor = isDark ? '#ffffff' : '#000000';
+  const letterColor = isDark ? '#000000' : '#ffffff';
 
   const handleFadeComplete = useCallback(
     (finished: boolean) => {
@@ -53,20 +59,11 @@ const AppSplashScreen: React.FC<AppSplashScreenProps> = ({
   }, [startFade, fadeAnim, handleFadeComplete]);
 
   // Memoized styles
-  const backgroundColor = useMemo(
-    () => theme?.mode === 'dark' ? '#000000' : '#ffffff',
-    [theme?.mode]
-  );
+  const backgroundColor = isDark ? '#000000' : '#ffffff';
 
   const containerStyle = useMemo(
     () => [styles.container, { opacity: fadeAnim, backgroundColor }],
     [fadeAnim, backgroundColor]
-  );
-
-  // Spinner and logo colors - white on dark, black on light
-  const iconColor = useMemo(
-    () => theme?.mode === 'dark' ? '#ffffff' : '#000000',
-    [theme?.mode]
   );
 
   return (
@@ -75,10 +72,11 @@ const AppSplashScreen: React.FC<AppSplashScreenProps> = ({
         <View style={styles.logoContainer}>
           <LogoIcon
             height={LOGO_SIZE}
-            color={theme?.mode === 'dark' ? '#000000' : undefined}
+            color={logoColor}
+            letterColor={letterColor}
           />
           <View style={styles.spinnerContainer}>
-            <LoadingSpinner iconSize={SPINNER_SIZE} color={iconColor} showText={false} />
+            <LoadingSpinner iconSize={SPINNER_SIZE} color={logoColor} showText={false} />
           </View>
         </View>
       </View>

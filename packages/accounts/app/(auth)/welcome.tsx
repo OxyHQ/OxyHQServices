@@ -11,30 +11,34 @@ import { useColors } from '@/hooks/useColors';
 import { StaggeredText, type StaggeredTextRef } from '@/components/staggered-text';
 import { RotatingTextAnimation } from '@/components/staggered-text/rotating-text';
 import { Button } from '@/components/ui';
+import { useTranslation } from '@/lib/i18n';
 
-const rotatingTexts = [
-  'human ID',
-  'digital identity',
-  'privacy-first account',
-  'secure identity',
-  'gateway to ethical apps',
-  'foundation for digital trust',
-  'account for the Oxy ecosystem',
-  'key to human-first technology',
-  'passport to a fair digital world',
-  'identity without passwords',
-  'trust layer for modern apps',
-  'connection to a human network',
-  'access to ethical technology',
-  'ownership over your data',
-  'unique identity for many apps',
-];
-
-
+const ROTATING_TEXT_KEYS = [
+  'auth.welcome.rotating.humanId',
+  'auth.welcome.rotating.digitalIdentity',
+  'auth.welcome.rotating.privacyAccount',
+  'auth.welcome.rotating.secureIdentity',
+  'auth.welcome.rotating.ethicalAppsGateway',
+  'auth.welcome.rotating.digitalTrustFoundation',
+  'auth.welcome.rotating.ecosystemAccount',
+  'auth.welcome.rotating.humanTechKey',
+  'auth.welcome.rotating.fairDigitalPassport',
+  'auth.welcome.rotating.noPasswordsIdentity',
+  'auth.welcome.rotating.trustLayer',
+  'auth.welcome.rotating.humanNetworkConnection',
+  'auth.welcome.rotating.ethicalTechAccess',
+  'auth.welcome.rotating.dataOwnership',
+  'auth.welcome.rotating.uniqueAppsIdentity',
+] as const;
 
 export default function WelcomeScreen() {
   const router = useRouter();
   const colors = useColors();
+  const { t } = useTranslation();
+  const rotatingTexts = useMemo(
+    () => ROTATING_TEXT_KEYS.map((key) => t(key)),
+    [t],
+  );
 
   const backgroundColor = colors.background;
   const textColor = colors.text;
@@ -122,7 +126,7 @@ export default function WelcomeScreen() {
           {/* "Oxy is your" text */}
           <Animated.View style={entranceOxyStyle}>
             <StaggeredText
-              text="Oxy is your"
+              text={t('auth.welcome.lead')}
               ref={oxyRef}
               fontSize={38}
               textStyle={textStyleMemo}
@@ -156,9 +160,12 @@ export default function WelcomeScreen() {
             style={styles.checkboxTextContainer}
             onPress={toggleTermsAccepted}
             activeOpacity={0.7}
+            accessibilityRole="checkbox"
+            accessibilityLabel={t('auth.welcome.termsAgree')}
+            accessibilityState={{ checked: termsAccepted }}
           >
             <Text style={checkboxTextStyleMemo}>
-              I agree with Oxy User Terms And Conditions and acknowledge the Privacy notice
+              {t('auth.welcome.termsAgree')}
             </Text>
           </TouchableOpacity>
         </View>
@@ -169,7 +176,7 @@ export default function WelcomeScreen() {
             onPress={handleDecline}
             style={styles.button}
           >
-            Decline
+            {t('auth.welcome.decline')}
           </Button>
 
           <Button
@@ -178,7 +185,7 @@ export default function WelcomeScreen() {
             disabled={!termsAccepted}
             style={styles.button}
           >
-            Accept
+            {t('auth.welcome.accept')}
           </Button>
         </View>
       </Animated.View>
@@ -205,8 +212,7 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   text: {
-    fontFamily: 'Inter-SemiBold',
-    fontWeight: '600',
+    fontWeight: '900',
     letterSpacing: -0.5,
   },
   footer: {

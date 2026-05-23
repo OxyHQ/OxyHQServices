@@ -17,6 +17,11 @@ import type { ClientSession, SecurityActivity } from '@oxyhq/core';
 import { useBiometricSettings } from '@/hooks/useBiometricSettings';
 import { getEventIcon, getSeverityColor, getEventSeverity, formatEventDescription } from '@/utils/security-utils';
 import type { MaterialCommunityIconName } from '@/types/icons';
+import { useTranslation } from '@/lib/i18n';
+import { LanguageSelector } from '@/components/language-selector';
+import { getNativeLanguageName } from '@oxyhq/core';
+import { useIdentityStore } from '@/hooks/identity/identityStore';
+import { useOnboardingStatus } from '@/hooks/useOnboardingStatus';
 
 export default function SecurityScreen() {
     const { mode } = useTheme();
@@ -24,11 +29,17 @@ export default function SecurityScreen() {
     const { width } = useWindowDimensions();
     const router = useRouter();
     const isDesktop = Platform.OS === 'web' && width >= 768;
+    const { t, locale } = useTranslation();
 
     // OxyServices integration
-    const { user, isAuthenticated, isLoading: oxyLoading, sessions, hasIdentity, getPublicKey, logoutAll, oxyServices } = useOxy();
+    const { user, isAuthenticated, isLoading: oxyLoading, sessions, getPublicKey, logoutAll, oxyServices } = useOxy();
+    // hasIdentity from useOxy is a function; pull the reactive boolean from
+    // the onboarding status hook instead so we can use it in dependency
+    // arrays and conditional rendering.
+    const { hasIdentity: hasIdentityBoolean } = useOnboardingStatus();
     const alert = useAlert();
     const [isLoggingOutAll, setIsLoggingOutAll] = useState(false);
+    const [languageModalVisible, setLanguageModalVisible] = useState(false);
 
     // Device type for typing the query result
     interface DeviceRecord {
@@ -65,6 +76,15 @@ export default function SecurityScreen() {
         refreshCapabilities,
     } = useBiometricSettings();
 
+    // Whether the user has acknowledged writing down their recovery phrase.
+    // If false on native (where identity exists), we surface a high-priority
+    // backup recommendation. This is the single most important security
+    // recommendation in the entire app — without a phrase backup, account
+    // loss is irreversible.
+    const recoveryPhraseAcknowledged = useIdentityStore(
+        (state) => state.recoveryPhraseAcknowledged,
+    );
+
     // Format relative time for dates
     const formatRelativeTime = useCallback((dateString?: string) => {
         if (!dateString) return '';
@@ -73,14 +93,14 @@ export default function SecurityScreen() {
         const diffMs = now.getTime() - date.getTime();
         const minutes = Math.floor(diffMs / 60000);
 
-        if (minutes < 1) return 'Just now';
-        if (minutes < 60) return `${minutes}m ago`;
+        if (minutes < 1) return t('home.activity.justNow');
+        if (minutes < 60) return t('home.activity.minutesAgo', { count: minutes });
         const hours = Math.floor(minutes / 60);
-        if (hours < 24) return `${hours}h ago`;
+        if (hours < 24) return t('home.activity.hoursAgo', { count: hours });
         const days = Math.floor(hours / 24);
-        if (days < 7) return `${days}d ago`;
+        if (days < 7) return t('home.activity.daysAgo', { count: days });
         return formatDate(dateString);
-    }, []);
+    }, [t]);
 
     // Get device icon based on type
     const getDeviceIcon = useCallback((deviceType?: string): MaterialCommunityIconName => {
@@ -102,6 +122,23 @@ export default function SecurityScreen() {
     const securityRecommendations = useMemo(() => {
         const recommendations: any[] = [];
 
+        // 0. CRITICAL: Recommend backing up the recovery phrase if the user
+        //    has not acknowledged it. Without this, account loss is
+        //    irreversible — Oxy cannot recover the account. We render this
+        //    only on native because there is no identity to back up on web.
+        if (Platform.OS !== 'web' && hasIdentityBoolean && !recoveryPhraseAcknowledged) {
+            recommendations.push({
+                id: 'recovery-phrase-backup',
+                priority: 0,
+                icon: 'shield-key-outline',
+                iconColor: colors.error,
+                title: t('security.recommendations.recoveryPhraseBackup'),
+                subtitle: t('security.recommendations.recoveryPhraseBackupSubtitle'),
+                onPress: () => router.push('/(tabs)/create-backup'),
+                showChevron: true,
+            });
+        }
+
         // 1. Recommend biometric if available but not enabled (High priority)
         if (canEnableBiometric && !biometricEnabled && !biometricLoading) {
             recommendations.push({
@@ -109,17 +146,17 @@ export default function SecurityScreen() {
                 priority: 1,
                 icon: Platform.OS === 'ios' ? 'face-recognition' : 'fingerprint',
                 iconColor: colors.warning,
-                title: 'Enable biometric authentication',
-                subtitle: 'Add an extra layer of security to your account',
+                title: t('security.recommendations.biometric'),
+                subtitle: t('security.recommendations.biometricSubtitle'),
                 onPress: () => {
                     // Navigate to biometric section and show toggle
                     alert(
-                        'Enable Biometric Authentication',
-                        'You can enable biometric authentication in the "How you sign in" section below. This adds an extra layer of security to your account.',
+                        t('security.recommendations.biometricAlertTitle'),
+                        t('security.recommendations.biometricAlertMessage'),
                         [
-                            { text: 'Cancel', style: 'cancel' },
+                            { text: t('common.cancel'), style: 'cancel' },
                             {
-                                text: 'Go to Settings',
+                                text: t('security.recommendations.biometricGoToSettings'),
                                 onPress: () => {
                                     // Scroll to biometric section (user can enable it there)
                                     // For now, just show the section is below
@@ -139,23 +176,23 @@ export default function SecurityScreen() {
                 priority: 1,
                 icon: 'email-alert-outline',
                 iconColor: colors.warning,
-                title: 'Add a recovery email',
-                subtitle: 'Help secure your account and enable account recovery',
+                title: t('security.recommendations.recoveryEmail'),
+                subtitle: t('security.recommendations.recoveryEmailSubtitle'),
                 onPress: () => {
                     alert(
-                        'Add Recovery Email',
-                        'A recovery email helps you regain access to your account if you lose your keys. Would you like to add one now?',
+                        t('security.recommendations.recoveryEmailAlertTitle'),
+                        t('security.recommendations.recoveryEmailAlertMessage'),
                         [
-                            { text: 'Cancel', style: 'cancel' },
+                            { text: t('common.cancel'), style: 'cancel' },
                             {
-                                text: 'Add Email',
+                                text: t('security.recommendations.recoveryEmailAddCta'),
                                 onPress: async () => {
                                     // Prompt for email
                                     alert(
-                                        'Add Email',
-                                        'Please go to your Profile settings to add an email address.',
+                                        t('security.recommendations.recoveryEmailAddCta'),
+                                        t('security.recommendations.recoveryEmailGoToProfile'),
                                         [
-                                            { text: 'OK', onPress: () => router.push('/(tabs)/personal-info') },
+                                            { text: t('common.ok'), onPress: () => router.push('/(tabs)/personal-info') },
                                         ]
                                     );
                                 },
@@ -182,8 +219,8 @@ export default function SecurityScreen() {
                 priority: 2,
                 icon: 'clock-alert-outline',
                 iconColor: colors.warning,
-                title: `Review ${oldSessions.length} inactive session${oldSessions.length !== 1 ? 's' : ''}`,
-                subtitle: `Some sessions haven't been used in over 30 days`,
+                title: t('security.recommendations.oldSessions', { count: oldSessions.length }),
+                subtitle: t('security.recommendations.oldSessionsSubtitle'),
                 onPress: () => {
                     router.push('/(tabs)/devices');
                 },
@@ -198,8 +235,8 @@ export default function SecurityScreen() {
                 priority: 3,
                 icon: 'devices',
                 iconColor: colors.sidebarIconDevices,
-                title: `You're signed in on ${devices.length} devices`,
-                subtitle: 'Review your active devices to ensure they\'re all yours',
+                title: t('security.recommendations.manyDevices', { count: devices.length }),
+                subtitle: t('security.recommendations.manyDevicesSubtitle'),
                 onPress: () => {
                     router.push('/(tabs)/devices');
                 },
@@ -220,13 +257,13 @@ export default function SecurityScreen() {
                 priority: 0,
                 icon: 'alert-octagon',
                 iconColor: colors.error,
-                title: `${recentSuspiciousActivity.length} critical security event${recentSuspiciousActivity.length !== 1 ? 's' : ''} detected`,
-                subtitle: 'Review your security activity immediately',
+                title: t('security.recommendations.suspicious', { count: recentSuspiciousActivity.length }),
+                subtitle: t('security.recommendations.suspiciousSubtitle'),
                 onPress: () => {
                     alert(
-                        'Critical Security Events',
-                        `You have ${recentSuspiciousActivity.length} critical security event(s). Please review your security activity below and consider changing your password or signing out of all devices if you notice any suspicious activity.`,
-                        [{ text: 'OK', style: 'default' }]
+                        t('security.recommendations.suspiciousAlertTitle'),
+                        t('security.recommendations.suspiciousAlertMessage', { count: recentSuspiciousActivity.length }),
+                        [{ text: t('common.ok'), style: 'default' }]
                     );
                 },
                 showChevron: true,
@@ -236,6 +273,8 @@ export default function SecurityScreen() {
         // Sort by priority (lower number = higher priority)
         return recommendations.sort((a, b) => a.priority - b.priority);
     }, [
+        hasIdentityBoolean,
+        recoveryPhraseAcknowledged,
         canEnableBiometric,
         biometricEnabled,
         biometricLoading,
@@ -245,6 +284,10 @@ export default function SecurityScreen() {
         securityActivities,
         router,
         alert,
+        t,
+        colors.warning,
+        colors.error,
+        colors.sidebarIconDevices,
     ]);
 
     // Recent activity from security events
@@ -262,16 +305,16 @@ export default function SecurityScreen() {
             // Show details on press - include IP, device info, etc.
             const onPress = () => {
                 const details = [
-                    `Type: ${activity.eventType}`,
-                    `Severity: ${severity}`,
-                    activity.ipAddress ? `IP: ${activity.ipAddress}` : null,
+                    `${t('security.activity.detailType')}: ${activity.eventType}`,
+                    `${t('security.activity.detailSeverity')}: ${severity}`,
+                    activity.ipAddress ? `${t('security.activity.detailIp')}: ${activity.ipAddress}` : null,
                     activity.deviceId && activity.metadata?.deviceName
-                        ? `Device: ${activity.metadata.deviceName}`
+                        ? `${t('security.activity.detailDevice')}: ${activity.metadata.deviceName}`
                         : activity.deviceId
-                            ? `Device ID: ${activity.deviceId}`
+                            ? `${t('security.activity.detailDeviceId')}: ${activity.deviceId}`
                             : null,
-                    activity.userAgent ? `Browser: ${activity.userAgent.substring(0, 50)}${activity.userAgent.length > 50 ? '...' : ''}` : null,
-                    `Time: ${formatDate(activity.timestamp)}`,
+                    activity.userAgent ? `${t('security.activity.detailBrowser')}: ${activity.userAgent.substring(0, 50)}${activity.userAgent.length > 50 ? '...' : ''}` : null,
+                    `${t('security.activity.detailTime')}: ${formatDate(activity.timestamp)}`,
                 ].filter(Boolean).join('\n');
 
                 alert(
@@ -281,11 +324,11 @@ export default function SecurityScreen() {
                         // Add navigation to device if available
                         ...(deviceId && (activity.eventType === 'device_added' || activity.eventType === 'device_removed' || activity.eventType === 'sign_in')
                             ? [{
-                                text: 'View Device',
-                                onPress: () => router.push(`/(tabs)/devices/${deviceId}` as any),
+                                text: t('security.activity.viewDevice'),
+                                onPress: () => router.push({ pathname: '/(tabs)/devices/[deviceId]', params: { deviceId } }),
                             }]
                             : []),
-                        { text: 'OK', style: 'default' },
+                        { text: t('common.ok'), style: 'default' },
                     ]
                 );
             };
@@ -300,7 +343,7 @@ export default function SecurityScreen() {
                 showChevron: true, // Always show chevron since we show details
             };
         });
-    }, [securityActivities, mode, formatRelativeTime, router, alert, formatDate]);
+    }, [securityActivities, mode, formatRelativeTime, router, alert, t]);
 
     // Sign-in items
     const signInItems = useMemo(() => {
@@ -310,26 +353,26 @@ export default function SecurityScreen() {
         if (Platform.OS !== 'web') {
             let biometricSubtitle = '';
             if (biometricLoading) {
-                biometricSubtitle = 'Checking...';
+                biometricSubtitle = t('security.signIn.biometricChecking');
             } else if (!hasBiometricHardware) {
-                biometricSubtitle = 'Not available on this device';
+                biometricSubtitle = t('security.signIn.biometricNoHardware');
             } else if (!isBiometricEnrolled) {
-                biometricSubtitle = 'Not set up - configure in device settings';
+                biometricSubtitle = t('security.signIn.biometricNotEnrolled');
             } else if (biometricEnabled) {
                 biometricSubtitle = biometricTypes.length > 0
-                    ? `Enabled (${biometricTypes.join(', ')})`
-                    : 'Enabled';
+                    ? t('security.signIn.biometricEnabledWithTypes', { types: biometricTypes.join(', ') })
+                    : t('security.signIn.biometricEnabled');
             } else {
                 biometricSubtitle = canEnableBiometric
-                    ? 'Available - tap to enable'
-                    : 'Not available';
+                    ? t('security.signIn.biometricAvailableToggle')
+                    : t('security.signIn.biometricNotAvailable');
             }
 
             items.push({
                 id: 'biometric',
                 icon: Platform.OS === 'ios' ? 'face-recognition' : 'fingerprint',
                 iconColor: biometricEnabled ? colors.success : colors.sidebarIconSecurity,
-                title: Platform.OS === 'ios' ? 'Face ID / Touch ID' : 'Biometric Authentication',
+                title: Platform.OS === 'ios' ? t('security.signIn.faceTouchId') : t('security.signIn.biometricAuthTitle'),
                 subtitle: biometricSubtitle,
                 customContent: canEnableBiometric ? (
                     <Switch
@@ -350,8 +393,8 @@ export default function SecurityScreen() {
             id: 'public-key-auth',
             icon: 'key-outline',
             iconColor: colors.success,
-            title: 'Public key authentication',
-            subtitle: 'Your account uses cryptographic keys for secure sign-in',
+            title: t('security.signIn.publicKeyAuth'),
+            subtitle: t('security.signIn.publicKeyAuthSubtitle'),
             showChevron: false,
         });
 
@@ -368,6 +411,7 @@ export default function SecurityScreen() {
         biometricSaving,
         toggleBiometricLogin,
         router,
+        t,
     ]);
 
     // Device items grouped by type
@@ -406,7 +450,7 @@ export default function SecurityScreen() {
                 id: `device-${type}`,
                 icon: icon,
                 iconColor: colors.sidebarIconDevices,
-                title: `${group.count} device${group.count !== 1 ? 's' : ''} (${typeLabel})`,
+                title: t('security.devices.groupTitle', { count: group.count, type: typeLabel }),
                 subtitle,
                 onPress: () => router.push('/(tabs)/devices'),
                 showChevron: true,
@@ -414,26 +458,28 @@ export default function SecurityScreen() {
         });
 
         return items;
-    }, [devices, colors, getDeviceIcon, router]);
+    }, [devices, colors, getDeviceIcon, router, t]);
 
 
     // Handle logout all sessions
     const handleLogoutAll = useCallback(async () => {
+        const sessionCount = sessions?.length || 0;
         alert(
-            'Sign out of all devices?',
-            `This will sign you out of all ${sessions?.length || 0} active session${sessions?.length !== 1 ? 's' : ''} except this one. You'll need to sign in again on other devices.`,
+            t('security.sessions.logoutAllConfirmTitle'),
+            t('security.sessions.logoutAllConfirmMessage', { count: sessionCount }),
             [
-                { text: 'Cancel', style: 'cancel' },
+                { text: t('common.cancel'), style: 'cancel' },
                 {
-                    text: 'Sign out all',
+                    text: t('security.sessions.logoutAllAction'),
                     style: 'destructive',
                     onPress: async () => {
                         try {
                             setIsLoggingOutAll(true);
                             await logoutAll();
-                            alert('Success', 'Signed out of all other devices');
-                        } catch (error: any) {
-                            alert('Error', error?.message || 'Failed to sign out of all devices');
+                            alert(t('common.success'), t('security.sessions.logoutAllSuccess'));
+                        } catch (error: unknown) {
+                            const message = error instanceof Error ? error.message : t('security.sessions.logoutAllFailed');
+                            alert(t('common.error'), message);
                         } finally {
                             setIsLoggingOutAll(false);
                         }
@@ -441,7 +487,7 @@ export default function SecurityScreen() {
                 },
             ]
         );
-    }, [logoutAll, sessions?.length, alert]);
+    }, [logoutAll, sessions?.length, alert, t]);
 
 
     // Active sessions management
@@ -454,8 +500,8 @@ export default function SecurityScreen() {
                 id: 'logout-all',
                 icon: 'logout',
                 iconColor: colors.error,
-                title: 'Sign out of all other devices',
-                subtitle: `Sign out of ${activeSessionsCount - 1} other active session${activeSessionsCount - 1 !== 1 ? 's' : ''}`,
+                title: t('security.sessions.logoutAll'),
+                subtitle: t('security.sessions.logoutAllSubtitle', { count: activeSessionsCount - 1 }),
                 onPress: handleLogoutAll,
                 showChevron: false,
                 customContent: isLoggingOutAll ? (
@@ -465,8 +511,19 @@ export default function SecurityScreen() {
         }
 
         return items;
-    }, [sessions, handleLogoutAll, isLoggingOutAll]);
+    }, [sessions, handleLogoutAll, isLoggingOutAll, colors.error, t]);
 
+
+    // Language section items
+    const languageItems = useMemo(() => [{
+        id: 'app-language',
+        icon: 'translate' as MaterialCommunityIconName,
+        iconColor: colors.sidebarIconData,
+        title: t('security.language.label'),
+        subtitle: getNativeLanguageName(locale) || locale,
+        onPress: () => setLanguageModalVisible(true),
+        showChevron: true,
+    }], [colors.sidebarIconData, t, locale]);
 
     // Show loading state
     if (oxyLoading || loading) {
@@ -474,7 +531,7 @@ export default function SecurityScreen() {
             <ScreenContentWrapper>
                 <View style={[styles.container, styles.loadingContainer, { backgroundColor: colors.background }]}>
                     <ActivityIndicator size="large" color={colors.tint} />
-                    <ThemedText style={[styles.loadingText, { color: colors.text }]}>Loading security settings...</ThemedText>
+                    <ThemedText style={[styles.loadingText, { color: colors.text }]}>{t('security.loading')}</ThemedText>
                 </View>
             </ScreenContentWrapper>
         );
@@ -484,9 +541,9 @@ export default function SecurityScreen() {
     if (!isAuthenticated) {
         return (
             <UnauthenticatedScreen
-                title="Security & sign-in"
-                subtitle="Manage your security settings and sign-in methods."
-                message="Please sign in to view your security settings."
+                title={t('security.title')}
+                subtitle={t('security.subtitle')}
+                message={t('security.signInRequired')}
                 isAuthenticated={isAuthenticated}
             />
         );
@@ -495,20 +552,20 @@ export default function SecurityScreen() {
     const renderContent = () => (
         <>
             {securityRecommendations.length > 0 && (
-                <Section title="Security recommendations">
+                <Section title={t('security.sections.recommendations')}>
                     <AccountCard>
                         <GroupedSection items={securityRecommendations} />
                     </AccountCard>
                 </Section>
             )}
 
-            <Section title="Recent security activity">
+            <Section title={t('security.sections.recentActivity')}>
                 {securityActivityLoading ? (
                     <AccountCard>
                         <View style={styles.emptyStateContainer}>
                             <ActivityIndicator size="small" color={colors.tint} />
                             <ThemedText style={[styles.emptyStateSubtitle, { color: colors.text, marginTop: 12 }]}>
-                                Loading security activity...
+                                {t('security.activity.loading')}
                             </ThemedText>
                         </View>
                     </AccountCard>
@@ -519,8 +576,8 @@ export default function SecurityScreen() {
                         </AccountCard>
                         <View style={{ marginTop: -8 }}>
                             <LinkButton
-                                text="Review security activity"
-                                count={securityActivities.length > 5 ? `${securityActivities.length - 5} more` : undefined}
+                                text={t('security.activity.reviewCta')}
+                                count={securityActivities.length > 5 ? t('security.activity.moreCount', { count: securityActivities.length - 5 }) : undefined}
                                 onPress={() => {
                                     // Show all activities in an alert with details
                                     const allActivities = securityActivities.map((activity: SecurityActivity) => {
@@ -529,9 +586,9 @@ export default function SecurityScreen() {
                                     }).join('\n\n');
 
                                     alert(
-                                        'Security Activity',
-                                        allActivities || 'No security activity found.',
-                                        [{ text: 'OK', style: 'default' }]
+                                        t('security.activity.allTitle'),
+                                        allActivities || t('security.activity.allEmpty'),
+                                        [{ text: t('common.ok'), style: 'default' }]
                                     );
                                 }}
                             />
@@ -547,33 +604,40 @@ export default function SecurityScreen() {
                                 style={styles.emptyStateIcon}
                             />
                             <ThemedText style={[styles.emptyStateTitle, { color: colors.text }]}>
-                                No recent activity
+                                {t('security.activity.noActivity')}
                             </ThemedText>
                             <ThemedText style={[styles.emptyStateSubtitle, { color: colors.text }]}>
-                                Your recent sign-ins and security events will appear here
+                                {t('security.activity.noActivitySubtitle')}
                             </ThemedText>
                         </View>
                     </AccountCard>
                 )}
             </Section>
 
-            <Section title="How you sign in to Oxy">
-                <ThemedText style={styles.sectionSubtitle}>Make sure you can always access your Oxy Account by keeping this information up to date</ThemedText>
+            <Section title={t('security.sections.howYouSignIn')}>
+                <ThemedText style={styles.sectionSubtitle}>{t('security.sections.howYouSignInSubtitle')}</ThemedText>
                 <AccountCard>
                     <GroupedSection items={signInItems} />
                 </AccountCard>
             </Section>
 
+            <Section title={t('security.sections.language')}>
+                <ThemedText style={styles.sectionSubtitle}>{t('security.sections.languageSubtitle')}</ThemedText>
+                <AccountCard>
+                    <GroupedSection items={languageItems} />
+                </AccountCard>
+            </Section>
+
             {Platform.OS !== 'web' && (
-                <Section title="Account recovery">
-                    <ThemedText style={styles.sectionSubtitle}>Manage your recovery options</ThemedText>
+                <Section title={t('security.sections.accountRecovery')}>
+                    <ThemedText style={styles.sectionSubtitle}>{t('security.sections.accountRecoverySubtitle')}</ThemedText>
                     <AccountCard>
                         <GroupedSection items={[{
                             id: 'manage-recovery',
                             icon: 'shield-key-outline',
                             iconColor: colors.warning,
-                            title: 'Recovery phrase & settings',
-                            subtitle: 'View recovery phrase and manage account settings',
+                            title: t('security.recovery.title'),
+                            subtitle: t('security.recovery.subtitle'),
                             onPress: () => router.push('/(tabs)/about-identity'),
                             showChevron: true,
                         }]} />
@@ -581,9 +645,9 @@ export default function SecurityScreen() {
                 </Section>
             )}
 
-            <Section title="Your devices">
+            <Section title={t('security.sections.yourDevices')}>
                 <ThemedText style={styles.sectionSubtitle}>
-                    Where you're signed in ({devices.length} device{devices.length !== 1 ? 's' : ''} total)
+                    {t('security.sections.yourDevicesSubtitle', { count: devices.length })}
                 </ThemedText>
                 {deviceItems.length > 0 ? (
                     <>
@@ -592,7 +656,7 @@ export default function SecurityScreen() {
                         </AccountCard>
                         <View style={{ marginTop: -8 }}>
                             <LinkButton
-                                text="Manage all devices"
+                                text={t('security.devices.manageAll')}
                                 count={devices.length.toString()}
                                 onPress={() => router.push('/(tabs)/devices')}
                             />
@@ -608,10 +672,10 @@ export default function SecurityScreen() {
                                 style={styles.emptyStateIcon}
                             />
                             <ThemedText style={[styles.emptyStateTitle, { color: colors.text }]}>
-                                No devices found
+                                {t('security.devices.noDevices')}
                             </ThemedText>
                             <ThemedText style={[styles.emptyStateSubtitle, { color: colors.text }]}>
-                                Devices you sign in on will appear here
+                                {t('security.devices.noDevicesSubtitle')}
                             </ThemedText>
                         </View>
                     </AccountCard>
@@ -619,9 +683,9 @@ export default function SecurityScreen() {
             </Section>
 
             {activeSessionsItems.length > 0 && (
-                <Section title="Active sessions">
+                <Section title={t('security.sections.activeSessions')}>
                     <ThemedText style={styles.sectionSubtitle}>
-                        Manage your active sign-in sessions across all devices
+                        {t('security.sections.activeSessionsSubtitle')}
                     </ThemedText>
                     <AccountCard>
                         <GroupedSection items={activeSessionsItems} />
@@ -635,8 +699,12 @@ export default function SecurityScreen() {
     if (isDesktop) {
         return (
             <>
-                <ScreenHeader title="Security & sign-in" subtitle="Manage your security settings and sign-in methods." />
+                <ScreenHeader title={t('security.title')} subtitle={t('security.subtitle')} />
                 {renderContent()}
+                <LanguageSelector
+                    visible={languageModalVisible}
+                    onClose={() => setLanguageModalVisible(false)}
+                />
             </>
         );
     }
@@ -645,10 +713,14 @@ export default function SecurityScreen() {
         <ScreenContentWrapper>
             <View style={[styles.container, { backgroundColor: colors.background }]}>
                 <View style={styles.mobileContent}>
-                    <ScreenHeader title="Security & sign-in" subtitle="Manage your security settings and sign-in methods." />
+                    <ScreenHeader title={t('security.title')} subtitle={t('security.subtitle')} />
                     {renderContent()}
                 </View>
             </View>
+            <LanguageSelector
+                visible={languageModalVisible}
+                onClose={() => setLanguageModalVisible(false)}
+            />
         </ScreenContentWrapper>
     );
 }
@@ -674,7 +746,6 @@ const styles = StyleSheet.create({
     title: {
         fontSize: 32,
         fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
-        fontFamily: Platform.OS === 'web' ? 'Inter' : 'Inter-Bold',
         marginBottom: 8,
     },
     recommendationIconContainer: {

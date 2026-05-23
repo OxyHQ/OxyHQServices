@@ -1,34 +1,42 @@
 import React, { useMemo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { BlurView } from 'expo-blur';
-import { useRouter, usePathname } from 'expo-router';
+import { useRouter, usePathname, type Href } from 'expo-router';
 import { useColors } from '@/hooks/useColors';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { darkenColor } from '@/utils/color-utils';
 import { useHapticPress } from '@/hooks/use-haptic-press';
 import { useOxy } from '@oxyhq/services';
+import { getAccountDisplayName } from '@oxyhq/core';
 import type { MaterialCommunityIconName } from '@/types/icons';
+import { useTranslation } from '@/lib/i18n';
+
+// Narrow to the string variant of Href so menu items can be used as React
+// keys and compared to `pathname` strings without casting.
+type MenuPath = Extract<Href, string>;
 
 export interface MenuItem {
-    path: string;
+    path: MenuPath;
     icon: MaterialCommunityIconName;
-    label: string;
+    /** Translation key under `drawer.*`. */
+    labelKey: string;
     iconColor: string;
 }
 
 const baseMenuItems: MenuItem[] = [
-    { path: '/(tabs)', icon: 'home-variant', label: 'Home', iconColor: 'sidebarIconHome' },
-    { path: '/(tabs)/personal-info', icon: 'card-account-details-outline', label: 'Personal info', iconColor: 'sidebarIconPersonalInfo' },
-    { path: '/(tabs)/about-identity', icon: 'shield-key', label: 'About Your Identity', iconColor: 'sidebarIconSecurity' },
-    { path: '/(tabs)/security', icon: 'lock-outline', label: 'Security & sign-in', iconColor: 'sidebarIconSecurity' },
-    { path: '/(tabs)/devices', icon: 'desktop-classic', label: 'Your devices', iconColor: 'sidebarIconDevices' },
-    { path: '/(tabs)/data', icon: 'toggle-switch-outline', label: 'Data & privacy', iconColor: 'sidebarIconData' },
-    { path: '/(tabs)/sharing', icon: 'account-group-outline', label: 'People & sharing', iconColor: 'sidebarIconSharing' },
-    { path: '/(tabs)/managed-accounts', icon: 'account-supervisor-outline', label: 'Your Identities', iconColor: 'sidebarIconSharing' },
-    { path: '/(tabs)/family', icon: 'share-variant-outline', label: 'Third-party connections', iconColor: 'sidebarIconFamily' },
-    { path: '/(tabs)/payments', icon: 'wallet-outline', label: 'Payments & subscriptions', iconColor: 'sidebarIconPayments' },
-    { path: '/(tabs)/storage', icon: 'cloud-outline', label: 'Oxy storage', iconColor: 'sidebarIconStorage' },
+    { path: '/(tabs)', icon: 'home-variant', labelKey: 'drawer.home', iconColor: 'sidebarIconHome' },
+    { path: '/(tabs)/personal-info', icon: 'card-account-details-outline', labelKey: 'drawer.personalInfo', iconColor: 'sidebarIconPersonalInfo' },
+    { path: '/(tabs)/about-identity', icon: 'shield-key', labelKey: 'drawer.aboutIdentity', iconColor: 'sidebarIconSecurity' },
+    { path: '/(tabs)/security', icon: 'lock-outline', labelKey: 'drawer.security', iconColor: 'sidebarIconSecurity' },
+    { path: '/(tabs)/activity', icon: 'pulse', labelKey: 'drawer.activity', iconColor: 'sidebarIconActivity' },
+    { path: '/(tabs)/devices', icon: 'desktop-classic', labelKey: 'drawer.devices', iconColor: 'sidebarIconDevices' },
+    { path: '/(tabs)/data', icon: 'toggle-switch-outline', labelKey: 'drawer.data', iconColor: 'sidebarIconData' },
+    { path: '/(tabs)/sharing', icon: 'account-group-outline', labelKey: 'drawer.sharing', iconColor: 'sidebarIconSharing' },
+    { path: '/(tabs)/managed-accounts', icon: 'account-supervisor-outline', labelKey: 'drawer.yourIdentities', iconColor: 'sidebarIconSharing' },
+    { path: '/(tabs)/family', icon: 'share-variant-outline', labelKey: 'drawer.thirdParty', iconColor: 'sidebarIconFamily' },
+    { path: '/(tabs)/payments', icon: 'wallet-outline', labelKey: 'drawer.payments', iconColor: 'sidebarIconPayments' },
+    { path: '/(tabs)/storage', icon: 'cloud-outline', labelKey: 'drawer.storage', iconColor: 'sidebarIconStorage' },
 ];
 
 // Filter menu items based on platform - about-identity only on native
@@ -48,27 +56,23 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
     const { mode } = useTheme();
     const router = useRouter();
     const pathname = usePathname();
+    const { t, locale } = useTranslation();
 
     const handlePressIn = useHapticPress();
     const { actingAs, managedAccounts } = useOxy();
 
-    // Compute the acting-as display name for the indicator
+    // Compute the acting-as display name for the indicator using the canonical
+    // helper so the fallback chain (name → username → publicKey → "Unnamed")
+    // is identical across the app.
     const actingAsName = useMemo(() => {
         if (!actingAs || !managedAccounts.length) return null;
         const managed = managedAccounts.find((m) => m.accountId === actingAs);
         if (!managed?.account) return null;
-        const account = managed.account;
-        if (typeof account.name === 'object' && account.name) {
-            const nameObj = account.name as { first?: string; full?: string };
-            if (nameObj.full) return nameObj.full;
-            if (nameObj.first) return nameObj.first;
-        }
-        if (typeof account.name === 'string' && account.name) return account.name;
-        return account.username || 'Managed Account';
-    }, [actingAs, managedAccounts]);
+        return getAccountDisplayName(managed.account, locale);
+    }, [actingAs, managedAccounts, locale]);
 
-    const handleNavigate = (path: string) => {
-        router.push(path as any);
+    const handleNavigate = (path: MenuPath) => {
+        router.push(path);
         onNavigate?.();
     };
 
@@ -79,7 +83,7 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
                 <View style={[styles.actingAsContainer, { backgroundColor: colors.sidebarIconSecurity + '14' }]}>
                     <View style={[styles.actingAsDot, { backgroundColor: colors.success }]} />
                     <Text style={[styles.actingAsText, { color: colors.sidebarIconSecurity }]} numberOfLines={1}>
-                        Acting as {actingAsName}
+                        {t('sidebar.actingAs', { name: actingAsName })}
                     </Text>
                 </View>
             )}
@@ -94,7 +98,7 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
                                 <MaterialCommunityIcons name={item.icon} size={22} color={darkenColor(iconColor)} />
                             </View>
                             <Text style={[styles.menuItemText, { color: isActive ? colors.sidebarItemActiveText : colors.text }]}>
-                                {item.label}
+                                {t(item.labelKey)}
                             </Text>
                         </>
                     );
@@ -105,11 +109,13 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
                             onPressIn={handlePressIn}
                             onPress={() => handleNavigate(item.path)}
                             activeOpacity={0.7}
+                            accessibilityRole="button"
+                            accessibilityLabel={t(item.labelKey)}
+                            accessibilityState={{ selected: isActive }}
                         >
                             <BlurView
                                 intensity={isActive ? 80 : 50}
                                 tint={mode === 'dark' ? 'dark' : 'light'}
-                                experimentalBlurMethod={Platform.OS === 'android' ? 'dimezisBlurView' : undefined}
                                 style={[
                                     styles.menuItem,
                                     isActive ? styles.menuItemActive : null,

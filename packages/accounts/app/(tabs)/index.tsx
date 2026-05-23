@@ -24,6 +24,7 @@ import { AccountInfoGrid, type AccountInfoCard } from '@/components/account-info
 import { IdentityCardsSection, type IdentityCard } from '@/components/identity-cards-section';
 import { RecentActivitySection, type RecentActivityItem } from '@/components/recent-activity-section';
 import { UsernameRequiredModal } from '@/components/UsernameRequiredModal';
+import { useTranslation } from '@/lib/i18n';
 
 export default function HomeScreen() {
   const { mode } = useTheme();
@@ -32,6 +33,7 @@ export default function HomeScreen() {
   const lottieRef = useRef<LottieView>(null);
   const hasPlayedRef = useRef(false);
   const [refreshing, setRefreshing] = useState(false);
+  const { t } = useTranslation();
 
   // OxyServices integration
   const { user, isAuthenticated, oxyServices, isLoading: oxyLoading, showBottomSheet, refreshSessions, openAvatarPicker, sessions, managedAccounts, actingAs } = useOxy();
@@ -61,14 +63,14 @@ export default function HomeScreen() {
     const diffMs = now.getTime() - date.getTime();
     const minutes = Math.floor(diffMs / 60000);
 
-    if (minutes < 1) return 'Just now';
-    if (minutes < 60) return `${minutes}m ago`;
+    if (minutes < 1) return t('home.activity.justNow');
+    if (minutes < 60) return t('home.activity.minutesAgo', { count: minutes });
     const hours = Math.floor(minutes / 60);
-    if (hours < 24) return `${hours}h ago`;
+    if (hours < 24) return t('home.activity.hoursAgo', { count: hours });
     const days = Math.floor(hours / 24);
-    if (days < 7) return `${days}d ago`;
+    if (days < 7) return t('home.activity.daysAgo', { count: days });
     return formatDate(dateString);
-  }, []);
+  }, [t]);
 
   // Use reactive state from identity store (with defaults)
   const { isSynced } = identitySyncState || { isSynced: true };
@@ -135,11 +137,12 @@ export default function HomeScreen() {
     if (syncIdentity) {
       try {
         await syncIdentity();
-      } catch (err: any) {
-        alert('Sync Failed', err.message || 'Could not sync with server. Please check your internet connection.');
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : t('home.syncFailedMessage');
+        alert(t('home.syncFailed'), message);
       }
     }
-  }, [syncIdentity, alert]);
+  }, [syncIdentity, alert, t]);
 
   const handleReload = useCallback(async () => {
     if (!refreshSessions) return;
@@ -168,7 +171,7 @@ export default function HomeScreen() {
   }, [refreshSessions, syncIdentity, isSynced]);
 
   const handleDevices = useCallback(() => {
-    router.push('/(tabs)/devices' as any);
+    router.push('/(tabs)/devices');
   }, [router]);
 
   const handleMenu = useCallback(() => {
@@ -176,45 +179,45 @@ export default function HomeScreen() {
   }, [showBottomSheet]);
 
   const handlePersonalInfo = useCallback(() => {
-    router.push('/(tabs)/personal-info' as any);
+    router.push('/(tabs)/personal-info');
   }, [router]);
 
   const handleDataPrivacy = useCallback(() => {
-    router.push('/(tabs)/data' as any);
+    router.push('/(tabs)/data');
   }, [router]);
 
   const handleSharing = useCallback(() => {
-    router.push('/(tabs)/sharing' as any);
+    router.push('/(tabs)/sharing');
   }, [router]);
 
   const handleSearch = useCallback((query?: string) => {
     if (query) {
-      router.push({ pathname: '/(tabs)/search', params: { q: query } } as any);
+      router.push({ pathname: '/(tabs)/search', params: { q: query } });
     } else {
-      router.push('/(tabs)/search' as any);
+      router.push('/(tabs)/search');
     }
   }, [router]);
 
   const handlePayments = useCallback(() => {
-    router.push('/(tabs)/payments' as any);
+    router.push('/(tabs)/payments');
   }, [router]);
 
   const handleStorage = useCallback(() => {
-    router.push('/(tabs)/storage' as any);
+    router.push('/(tabs)/storage');
   }, [router]);
 
   const handleFamily = useCallback(() => {
-    router.push('/(tabs)/family' as any);
+    router.push('/(tabs)/family');
   }, [router]);
 
   const handleAboutIdentity = useCallback(() => {
     if (Platform.OS !== 'web') {
-      router.push('/(tabs)/about-identity' as any);
+      router.push('/(tabs)/about-identity');
     }
   }, [router]);
 
   const handleManagedAccounts = useCallback(() => {
-    router.push('/(tabs)/managed-accounts' as any);
+    router.push('/(tabs)/managed-accounts');
   }, [router]);
 
   const handleCreateManagedAccount = useCallback(() => {
@@ -239,8 +242,8 @@ export default function HomeScreen() {
         priority: 1,
         icon: 'account-outline',
         iconColor: colors.warning,
-        title: 'Set your username',
-        subtitle: 'A username is needed to use the Oxy ecosystem. Without it, you can only use Oxy Identity accounts app.',
+        title: t('home.recommendations.setUsername'),
+        subtitle: t('home.recommendations.setUsernameSubtitle'),
         onPress: handleSetUsername,
         showChevron: true,
       });
@@ -248,7 +251,7 @@ export default function HomeScreen() {
 
     // Sort by priority (lower number = higher priority)
     return recs.sort((a, b) => a.priority - b.priority);
-  }, [user?.username, colors.warning, handleSetUsername]);
+  }, [user?.username, colors.warning, handleSetUsername, t]);
 
   // Quick action cards for horizontal scroll
   const quickActions = useMemo<QuickAction[]>(() => [
@@ -256,56 +259,56 @@ export default function HomeScreen() {
       id: 'personal-info',
       icon: 'card-account-details-outline',
       iconColor: colors.sidebarIconPersonalInfo,
-      title: 'Personal Info',
+      title: t('home.quickActions.personalInfo'),
       onPress: handlePersonalInfo,
     },
     {
       id: 'security',
       icon: 'shield-check-outline',
       iconColor: colors.sidebarIconSecurity,
-      title: 'Security',
-      onPress: () => router.push('/(tabs)/security' as any),
+      title: t('home.quickActions.security'),
+      onPress: () => router.push('/(tabs)/security'),
     },
     {
       id: 'devices',
       icon: 'desktop-classic',
       iconColor: colors.sidebarIconDevices,
-      title: 'Devices',
+      title: t('home.quickActions.devices'),
       onPress: handleDevices,
     },
     {
       id: 'data',
       icon: 'toggle-switch-outline',
       iconColor: colors.sidebarIconData,
-      title: 'Data & Privacy',
+      title: t('home.quickActions.data'),
       onPress: handleDataPrivacy,
     },
     {
       id: 'sharing',
       icon: 'account-group-outline',
       iconColor: colors.sidebarIconSharing,
-      title: 'Sharing',
+      title: t('home.quickActions.sharing'),
       onPress: handleSharing,
     },
     {
       id: 'payments',
       icon: 'wallet-outline',
       iconColor: colors.sidebarIconPayments,
-      title: 'Payments',
+      title: t('home.quickActions.payments'),
       onPress: handlePayments,
     },
     {
       id: 'storage',
       icon: 'cloud-outline',
       iconColor: colors.sidebarIconStorage,
-      title: 'Storage',
+      title: t('home.quickActions.storage'),
       onPress: handleStorage,
     },
     {
       id: 'family',
       icon: 'home-group',
       iconColor: colors.sidebarIconFamily,
-      title: 'Family',
+      title: t('home.quickActions.family'),
       onPress: handleFamily,
     },
   ], [
@@ -325,6 +328,7 @@ export default function HomeScreen() {
     handleStorage,
     handleFamily,
     router,
+    t,
   ]);
 
   // Account info cards for grid layout
@@ -333,7 +337,7 @@ export default function HomeScreen() {
       id: 'name',
       icon: 'account-outline',
       iconColor: colors.sidebarIconPersonalInfo,
-      title: 'Full name',
+      title: t('home.accountInfo.fullName'),
       value: displayName,
       onPress: handleEditName,
     },
@@ -341,10 +345,10 @@ export default function HomeScreen() {
       id: 'created',
       icon: 'calendar-outline',
       iconColor: colors.sidebarIconData,
-      title: 'Account created',
-      value: accountCreatedDate || 'Unknown',
+      title: t('home.accountInfo.accountCreated'),
+      value: accountCreatedDate || t('common.unknown'),
     },
-  ], [colors.sidebarIconPersonalInfo, colors.sidebarIconData, displayName, accountCreatedDate, handleEditName]);
+  ], [colors.sidebarIconPersonalInfo, colors.sidebarIconData, displayName, accountCreatedDate, handleEditName, t]);
 
   const identityCards = useMemo<IdentityCard[]>(() => {
     // Only show identity items on native platforms
@@ -359,8 +363,8 @@ export default function HomeScreen() {
             <MaterialCommunityIcons name="shield-key" size={22} color={darkenColor(colors.identityIconSelfCustody)} />
           </View>
         ),
-        title: 'Self-Custody Identity',
-        subtitle: 'You own your keys. No passwords needed.',
+        title: t('home.identity.selfCustody'),
+        subtitle: t('home.identity.selfCustodySubtitle'),
         onPress: handleAboutIdentity,
         showChevron: true,
       },
@@ -371,13 +375,13 @@ export default function HomeScreen() {
             <MaterialCommunityIcons name="key-variant" size={22} color={darkenColor(colors.identityIconPublicKey)} />
           </View>
         ),
-        title: 'Your Public Key',
-        subtitle: 'View and share your unique identifier',
+        title: t('home.identity.publicKey'),
+        subtitle: t('home.identity.publicKeySubtitle'),
         onPress: handleAboutIdentity,
         showChevron: true,
       },
     ];
-  }, [handleAboutIdentity, colors.identityIconSelfCustody, colors.identityIconPublicKey]);
+  }, [handleAboutIdentity, colors.identityIconSelfCustody, colors.identityIconPublicKey, t]);
 
   // Recent activity items - use real security activities
   const recentActivityItems = useMemo<RecentActivityItem[]>(() => {
@@ -387,9 +391,9 @@ export default function HomeScreen() {
         id: 'no-activity',
         icon: 'shield-check-outline',
         iconColor: colors.sidebarIconSecurity,
-        title: 'No recent activity',
-        subtitle: 'Your security events will appear here',
-        onPress: () => router.push('/(tabs)/security' as any),
+        title: t('home.activity.noActivity'),
+        subtitle: t('home.activity.noActivitySubtitle'),
+        onPress: () => router.push('/(tabs)/security'),
       }];
     }
 
@@ -404,38 +408,42 @@ export default function HomeScreen() {
         iconColor: eventColor,
         title: description,
         subtitle: formatRelativeTime(activity.timestamp),
-        onPress: () => router.push('/(tabs)/security' as any),
+        onPress: () => router.push('/(tabs)/security'),
       };
     });
-  }, [securityActivities, colors.sidebarIconSecurity, mode, formatRelativeTime, router]);
+  }, [securityActivities, colors.sidebarIconSecurity, mode, formatRelativeTime, router, t]);
 
   // Quick stats cards
-  const quickStatsCards = useMemo<AccountInfoCard[]>(() => [
-    {
-      id: 'devices-count',
-      icon: 'devices',
-      iconColor: colors.sidebarIconDevices,
-      title: 'Active Devices',
-      value: `${devices.length || 0} device${devices.length !== 1 ? 's' : ''}`,
-      onPress: handleDevices,
-    },
-    {
-      id: 'sessions-count',
-      icon: 'account-multiple-outline',
-      iconColor: colors.sidebarIconSecurity,
-      title: 'Active Sessions',
-      value: `${sessions?.filter((s: any) => s.isActive !== false).length || 0} session${(sessions?.filter((s: any) => s.isActive !== false).length || 0) !== 1 ? 's' : ''}`,
-      onPress: () => router.push('/(tabs)/security' as any),
-    },
-    {
-      id: 'username-status',
-      icon: 'account-check-outline',
-      iconColor: colors.sidebarIconPersonalInfo,
-      title: 'Username',
-      value: user?.username ? `@${user.username}` : 'Not set',
-      onPress: user?.username ? handlePersonalInfo : handleSetUsername,
-    },
-  ], [devices.length, sessions, user?.username, colors.sidebarIconDevices, colors.sidebarIconSecurity, colors.sidebarIconPersonalInfo, handleDevices, router, handlePersonalInfo, handleSetUsername]);
+  const quickStatsCards = useMemo<AccountInfoCard[]>(() => {
+    const deviceCount = devices.length || 0;
+    const sessionCount = sessions?.filter((s: any) => s.isActive !== false).length || 0;
+    return [
+      {
+        id: 'devices-count',
+        icon: 'devices',
+        iconColor: colors.sidebarIconDevices,
+        title: t('home.stats.activeDevices'),
+        value: t('home.stats.activeDevicesValue', { count: deviceCount }),
+        onPress: handleDevices,
+      },
+      {
+        id: 'sessions-count',
+        icon: 'account-multiple-outline',
+        iconColor: colors.sidebarIconSecurity,
+        title: t('home.stats.activeSessions'),
+        value: t('home.stats.activeSessionsValue', { count: sessionCount }),
+        onPress: () => router.push('/(tabs)/security'),
+      },
+      {
+        id: 'username-status',
+        icon: 'account-check-outline',
+        iconColor: colors.sidebarIconPersonalInfo,
+        title: t('home.stats.username'),
+        value: user?.username ? `@${user.username}` : t('common.notSet'),
+        onPress: user?.username ? handlePersonalInfo : handleSetUsername,
+      },
+    ];
+  }, [devices.length, sessions, user?.username, colors.sidebarIconDevices, colors.sidebarIconSecurity, colors.sidebarIconPersonalInfo, handleDevices, router, handlePersonalInfo, handleSetUsername, t]);
 
   // Security overview items - use real data
   const securityOverviewItems = useMemo(() => {
@@ -445,24 +453,24 @@ export default function HomeScreen() {
     if (Platform.OS !== 'web') {
       let biometricSubtitle = '';
       if (biometricLoading) {
-        biometricSubtitle = 'Checking...';
+        biometricSubtitle = t('home.securityOverview.biometricChecking');
       } else if (!hasBiometricHardware) {
-        biometricSubtitle = 'Not available';
+        biometricSubtitle = t('home.securityOverview.biometricNotAvailable');
       } else if (biometricEnabled) {
-        biometricSubtitle = 'Enabled';
+        biometricSubtitle = t('home.securityOverview.biometricEnabled');
       } else if (canEnableBiometric) {
-        biometricSubtitle = 'Available';
+        biometricSubtitle = t('home.securityOverview.biometricAvailable');
       } else {
-        biometricSubtitle = 'Not set up';
+        biometricSubtitle = t('home.securityOverview.biometricNotSetUp');
       }
 
       items.push({
         id: 'biometric',
         icon: Platform.OS === 'ios' ? 'face-recognition' : 'fingerprint',
         iconColor: biometricEnabled ? colors.success : colors.sidebarIconSecurity,
-        title: Platform.OS === 'ios' ? 'Face ID / Touch ID' : 'Biometric Auth',
+        title: Platform.OS === 'ios' ? t('home.securityOverview.faceTouchId') : t('home.securityOverview.biometricAuth'),
         subtitle: biometricSubtitle,
-        onPress: () => router.push('/(tabs)/security' as any),
+        onPress: () => router.push('/(tabs)/security'),
       });
     }
 
@@ -471,9 +479,9 @@ export default function HomeScreen() {
       id: 'recovery-email',
       icon: 'email-check-outline',
       iconColor: user?.email ? colors.success : colors.sidebarIconSecurity,
-      title: 'Recovery Email',
-      subtitle: user?.email ? 'Set' : 'Not set',
-      onPress: () => router.push('/(tabs)/security' as any),
+      title: t('home.securityOverview.recoveryEmail'),
+      subtitle: user?.email ? t('common.set') : t('common.notSet'),
+      onPress: () => router.push('/(tabs)/security'),
     });
 
     // Security status based on recommendations
@@ -482,13 +490,13 @@ export default function HomeScreen() {
       id: 'security-status',
       icon: 'shield-lock-outline',
       iconColor: hasSecurityIssues ? colors.sidebarIconPayments : colors.success,
-      title: 'Security Status',
-      subtitle: hasSecurityIssues ? 'Needs attention' : 'Protected',
-      onPress: () => router.push('/(tabs)/security' as any),
+      title: t('home.securityOverview.securityStatus'),
+      subtitle: hasSecurityIssues ? t('home.securityOverview.needsAttention') : t('home.securityOverview.protected'),
+      onPress: () => router.push('/(tabs)/security'),
     });
 
     return items;
-  }, [biometricEnabled, canEnableBiometric, hasBiometricHardware, biometricLoading, colors.sidebarIconSecurity, colors.sidebarIconPayments, colors.success, user?.email, router]);
+  }, [biometricEnabled, canEnableBiometric, hasBiometricHardware, biometricLoading, colors.sidebarIconSecurity, colors.sidebarIconPayments, colors.success, user?.email, router, t]);
 
 
   // Managed accounts items for the identities section
@@ -507,8 +515,8 @@ export default function HomeScreen() {
         id: 'managed-count',
         icon: 'account-group',
         iconColor: colors.sidebarIconSharing,
-        title: `${managedAccounts.length} managed ${managedAccounts.length === 1 ? 'account' : 'accounts'}`,
-        subtitle: actingAs ? 'Currently acting as another identity' : 'Tap to view all',
+        title: t('home.identities.managedCount', { count: managedAccounts.length }),
+        subtitle: actingAs ? t('home.identities.managedActingAs') : t('home.identities.managedSubtitle'),
         onPress: handleManagedAccounts,
         showChevron: true,
       });
@@ -516,7 +524,7 @@ export default function HomeScreen() {
         id: 'create-identity',
         icon: 'account-plus-outline',
         iconColor: colors.sidebarIconPersonalInfo,
-        title: 'Create New Identity',
+        title: t('home.identities.createNew'),
         onPress: handleCreateManagedAccount,
         showChevron: true,
       });
@@ -524,7 +532,7 @@ export default function HomeScreen() {
         id: 'manage-all',
         icon: 'account-cog-outline',
         iconColor: colors.sidebarIconData,
-        title: 'Manage All',
+        title: t('home.identities.manageAll'),
         onPress: handleManagedAccounts,
         showChevron: true,
       });
@@ -533,20 +541,20 @@ export default function HomeScreen() {
         id: 'no-managed',
         icon: 'account-plus-outline',
         iconColor: colors.sidebarIconSharing,
-        title: 'No managed accounts yet',
-        subtitle: 'Create identities for different contexts',
+        title: t('home.identities.noManaged'),
+        subtitle: t('home.identities.noManagedSubtitle'),
         onPress: handleCreateManagedAccount,
         showChevron: true,
       });
     }
     return items;
-  }, [managedAccounts, actingAs, colors.sidebarIconSharing, colors.sidebarIconPersonalInfo, colors.sidebarIconData, handleManagedAccounts, handleCreateManagedAccount]);
+  }, [managedAccounts, actingAs, colors.sidebarIconSharing, colors.sidebarIconPersonalInfo, colors.sidebarIconData, handleManagedAccounts, handleCreateManagedAccount, t]);
 
   const content = useMemo(() => (
     <>
       {/* Recommendations Section */}
       {recommendations.length > 0 && (
-        <Section title="Recommendations" isFirst>
+        <Section title={t('home.sections.recommendations')} isFirst>
           <AccountCard>
             <GroupedSection items={recommendations} />
           </AccountCard>
@@ -554,30 +562,30 @@ export default function HomeScreen() {
       )}
 
       {/* Quick Actions - Horizontal Scroll */}
-      <Section title="Quick Actions" isFirst={recommendations.length === 0}>
+      <Section title={t('home.sections.quickActions')} isFirst={recommendations.length === 0}>
         <QuickActionsSection actions={quickActions} onPressIn={handlePressIn} />
       </Section>
 
       {/* Account Info - Grid Layout */}
-      <Section title="Account Info">
+      <Section title={t('home.sections.accountInfo')}>
         <AccountInfoGrid cards={accountCards} onPressIn={handlePressIn} />
       </Section>
 
       {/* Recent Activity - Horizontal Scroll */}
       {recentActivityItems.length > 0 && recentActivityItems[0].id !== 'no-activity' && (
-        <Section title="Recent Activity">
+        <Section title={t('home.sections.recentActivity')}>
           <RecentActivitySection items={recentActivityItems} onPressIn={handlePressIn} />
         </Section>
       )}
 
       {/* Quick Stats - Grid Layout */}
-      <Section title="Overview">
+      <Section title={t('home.sections.overview')}>
         <AccountInfoGrid cards={quickStatsCards} onPressIn={handlePressIn} />
       </Section>
 
       {/* Managed Accounts Section */}
-      <Section title="Your Identities">
-        <ThemedText style={styles.subtitle}>Create and manage sub-accounts for different purposes.</ThemedText>
+      <Section title={t('home.sections.yourIdentities')}>
+        <ThemedText style={styles.subtitle}>{t('home.sections.yourIdentitiesSubtitle')}</ThemedText>
         <AccountCard>
           <GroupedSection items={managedAccountItems} />
         </AccountCard>
@@ -585,7 +593,7 @@ export default function HomeScreen() {
 
       {/* Security Overview - Card Layout */}
       {securityOverviewItems.length > 0 && (
-        <Section title="Security">
+        <Section title={t('home.sections.security')}>
           <AccountCard>
             <GroupedSection items={securityOverviewItems} />
           </AccountCard>
@@ -593,16 +601,16 @@ export default function HomeScreen() {
       )}
 
       {/* Self-Custody Identity Section */}
-      <Section title="Your Identity">
-        <ThemedText style={styles.subtitle}>Your identity is secured by cryptography. You control your keys.</ThemedText>
+      <Section title={t('home.sections.yourIdentity')}>
+        <ThemedText style={styles.subtitle}>{t('home.sections.yourIdentitySubtitle')}</ThemedText>
         {Platform.OS === 'web' ? (
           <View style={[styles.infoBanner, { backgroundColor: colors.bannerInfoBackground, borderColor: colors.bannerInfoBorder }]}>
             <View style={styles.infoBannerContent}>
               <MaterialCommunityIcons name="cellphone-key" size={24} color={colors.bannerInfoIcon} />
               <View style={styles.infoBannerText}>
-                <Text style={[styles.infoBannerTitle, { color: colors.bannerInfoText }]}>Identity Available on Mobile</Text>
+                <Text style={[styles.infoBannerTitle, { color: colors.bannerInfoText }]}>{t('home.identity.webBannerTitle')}</Text>
                 <Text style={[styles.infoBannerSubtitle, { color: colors.bannerInfoSubtext }]}>
-                  Your self-custody identity and keys are stored on your mobile device. Access your identity settings from the Oxy app on your phone or tablet.
+                  {t('home.identity.webBannerSubtitle')}
                 </Text>
               </View>
             </View>
@@ -612,7 +620,7 @@ export default function HomeScreen() {
         )}
       </Section>
     </>
-  ), [quickActions, accountCards, identityCards, recentActivityItems, quickStatsCards, securityOverviewItems, managedAccountItems, colors, handlePressIn, recommendations]);
+  ), [quickActions, accountCards, identityCards, recentActivityItems, quickStatsCards, securityOverviewItems, managedAccountItems, colors, handlePressIn, recommendations, t]);
 
 
   useEffect(() => {
@@ -646,7 +654,7 @@ export default function HomeScreen() {
       <ScreenContentWrapper>
         <View style={[styles.container, styles.loadingContainer, { backgroundColor: colors.background }]}>
           <ActivityIndicator size="large" color={colors.tint} />
-          <ThemedText style={[styles.loadingText, { color: colors.text }]}>Loading...</ThemedText>
+          <ThemedText style={[styles.loadingText, { color: colors.text }]}>{t('common.loadingShort')}</ThemedText>
         </View>
       </ScreenContentWrapper>
     );
@@ -658,7 +666,7 @@ export default function HomeScreen() {
       <ScreenContentWrapper>
         <View style={[styles.container, styles.loadingContainer, { backgroundColor: colors.background }]}>
           <ActivityIndicator size="large" color={colors.tint} />
-          <ThemedText style={[styles.loadingText, { color: colors.text }]}>Loading...</ThemedText>
+          <ThemedText style={[styles.loadingText, { color: colors.text }]}>{t('common.loadingShort')}</ThemedText>
         </View>
       </ScreenContentWrapper>
     );
@@ -684,13 +692,16 @@ export default function HomeScreen() {
                     onPressIn={handlePressIn}
                     onPress={handleAvatarPress}
                     activeOpacity={0.8}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('a11y.avatar')}
+                    accessibilityHint={t('a11y.avatarHint')}
                   >
                     <Avatar name={displayName} uri={avatarUrl} size={100} />
                   </TouchableOpacity>
                 </View>
                 <View style={styles.nameWrapper}>
                   <ThemedText style={styles.welcomeText}>{displayName}</ThemedText>
-                  <ThemedText style={styles.welcomeSubtext}>Manage your Oxy account.</ThemedText>
+                  <ThemedText style={styles.welcomeSubtext}>{t('home.subtitle')}</ThemedText>
                 </View>
                 {/* Search Bar */}
                 <TouchableOpacity
@@ -698,19 +709,22 @@ export default function HomeScreen() {
                   onPress={() => handleSearch()}
                   onPressIn={handlePressIn}
                   activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('home.search')}
+                  accessibilityHint={t('a11y.searchHint')}
                 >
                   <Ionicons name="search" size={20} color={colors.icon} />
-                  <Text style={[styles.searchPlaceholder, { color: colors.icon }]}>Search Oxy Account</Text>
+                  <Text style={[styles.searchPlaceholder, { color: colors.icon }]}>{t('home.search')}</Text>
                 </TouchableOpacity>
                 {/* Quick Search Chips */}
                 <View style={styles.searchChipsContainer}>
                   {[
-                    { label: 'Password', query: 'password' },
-                    { label: 'Devices', query: 'devices' },
-                    { label: 'Security', query: 'security' },
-                    { label: 'Activity', query: 'activity' },
-                    { label: 'Email', query: 'email' },
-                    { label: 'Alia', query: 'alia' },
+                    { label: t('home.searchChips.password'), query: 'password' },
+                    { label: t('home.searchChips.devices'), query: 'devices' },
+                    { label: t('home.searchChips.security'), query: 'security' },
+                    { label: t('home.searchChips.activity'), query: 'activity' },
+                    { label: t('home.searchChips.email'), query: 'email' },
+                    { label: t('home.searchChips.alia'), query: 'alia' },
                   ].map((chip) => (
                     <TouchableOpacity
                       key={chip.query}
@@ -718,6 +732,8 @@ export default function HomeScreen() {
                       onPress={() => handleSearch(chip.query)}
                       onPressIn={handlePressIn}
                       activeOpacity={0.7}
+                      accessibilityRole="button"
+                      accessibilityLabel={t('a11y.suggestion', { title: chip.label })}
                     >
                       <Text style={[styles.searchChipText, { color: colors.text }]}>{chip.label}</Text>
                     </TouchableOpacity>
@@ -729,17 +745,35 @@ export default function HomeScreen() {
 
             {/* Bottom action buttons */}
             <View style={styles.bottomActions}>
-              <TouchableOpacity style={styles.circleButton} onPressIn={handlePressIn} onPress={handleReload}>
+              <TouchableOpacity
+                style={styles.circleButton}
+                onPressIn={handlePressIn}
+                onPress={handleReload}
+                accessibilityRole="button"
+                accessibilityLabel={t('a11y.refresh')}
+              >
                 <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconSecurity }]}>
                   <MaterialCommunityIcons name="reload" size={22} color={darkenColor(colors.sidebarIconSecurity)} />
                 </View>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.circleButton} onPressIn={handlePressIn} onPress={handleDevices}>
+              <TouchableOpacity
+                style={styles.circleButton}
+                onPressIn={handlePressIn}
+                onPress={handleDevices}
+                accessibilityRole="button"
+                accessibilityLabel={t('drawer.devices')}
+              >
                 <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconDevices }]}>
                   <MaterialCommunityIcons name="desktop-classic" size={22} color={darkenColor(colors.sidebarIconDevices)} />
                 </View>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.circleButton} onPressIn={handlePressIn} onPress={handleMenu}>
+              <TouchableOpacity
+                style={styles.circleButton}
+                onPressIn={handlePressIn}
+                onPress={handleMenu}
+                accessibilityRole="button"
+                accessibilityLabel={t('a11y.menu')}
+              >
                 <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconData }]}>
                   <MaterialCommunityIcons name="menu" size={22} color={darkenColor(colors.sidebarIconData)} />
                 </View>
@@ -827,7 +861,6 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: '600',
     marginBottom: 8,
-    fontFamily: Platform.OS === 'web' ? 'Inter' : 'Inter-Bold',
   } as const,
   welcomeSubtext: {
     fontSize: 16,

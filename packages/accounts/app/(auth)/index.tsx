@@ -9,6 +9,7 @@ import { useRouter } from 'expo-router';
 import { useColors } from '@/hooks/useColors';
 import { StaggeredText, type StaggeredTextRef } from '@/components/staggered-text';
 import { RotatingTextAnimation } from '@/components/staggered-text/rotating-text';
+import { useTranslation } from '@/lib/i18n';
 
 const humanTranslations = [
   'Human',
@@ -25,6 +26,7 @@ export default function AuthIndexScreen() {
   const colors = useColors();
   const backgroundColor = colors.background;
   const textColor = colors.text;
+  const { t } = useTranslation();
 
   // Entrance animation values
   const helloOpacity = useSharedValue(0);
@@ -84,13 +86,18 @@ export default function AuthIndexScreen() {
   }, [router]);
 
   return (
-    <Pressable style={[styles.container, { backgroundColor }]} onPress={handlePress}>
+    <Pressable
+      style={[styles.container, { backgroundColor }]}
+      onPress={handlePress}
+      accessibilityRole="button"
+      accessibilityLabel={t('auth.indexTapToContinue')}
+    >
       <View style={styles.content}>
         <View style={styles.textContainer}>
           {/* "Hello" text with entrance animation */}
           <Animated.View style={entranceHelloStyle}>
             <StaggeredText
-              text="Hello"
+              text={t('auth.indexHello')}
               ref={helloRef}
               fontSize={48}
               textStyle={[styles.text, { color: textColor }]}
@@ -114,7 +121,7 @@ export default function AuthIndexScreen() {
       {/* Footer */}
       <Animated.View style={[styles.footer, footerStyle]}>
         <StaggeredText
-          text="Tap to continue"
+          text={t('auth.indexTapToContinue')}
           ref={tapToContinueRef}
           fontSize={16}
           textStyle={[styles.tapText, { color: textColor }]}
@@ -143,8 +150,7 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   text: {
-    fontFamily: 'Inter-SemiBold',
-    fontWeight: '600',
+    fontWeight: '900',
     letterSpacing: -0.5,
   },
   footer: {
@@ -153,7 +159,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   tapText: {
-    fontFamily: 'Inter-Regular',
     fontWeight: '400',
     opacity: 0.6,
   },

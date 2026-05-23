@@ -77,12 +77,16 @@ const GroupedItemComponent = ({
     const handlePressIn = useHapticPress();
 
     if (onPress && !disabled) {
+        const a11yLabel = subtitle ? `${title}, ${subtitle}` : title;
         return (
             <TouchableOpacity
                 style={itemStyles}
                 onPressIn={disabled ? undefined : handlePressIn}
                 onPress={onPress}
                 activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel={a11yLabel}
+                accessibilityState={{ disabled }}
             >
                 {content}
             </TouchableOpacity>

@@ -264,6 +264,8 @@ export default function DeviceDetailScreen() {
                   style={[styles.backButton, { backgroundColor: colors.tint }]}
                   onPressIn={handlePressIn}
                   onPress={() => router.back()}
+                  accessibilityRole="button"
+                  accessibilityLabel="Go back"
                 >
                   <Text style={styles.backButtonText}>Go Back</Text>
                 </TouchableOpacity>

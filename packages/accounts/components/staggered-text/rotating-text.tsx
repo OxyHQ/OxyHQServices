@@ -288,7 +288,7 @@ const AnimatedTextItem = React.memo(function AnimatedTextItem({
 
         return {
             opacity,
-            transform: [{ rotateX: `${rotationX}deg` as any }],
+            transform: [{ rotateX: `${rotationX}deg` }],
         };
     });
 

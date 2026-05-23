@@ -32,12 +32,25 @@ async function initSecureStore(): Promise<typeof import('expo-secure-store') | n
 
 /** Storage key for identity sync state */
 export const IDENTITY_SYNC_STORAGE_KEY = 'oxy_identity_synced';
+/**
+ * Storage key for "user has acknowledged their recovery phrase" flag.
+ *
+ * Set to `'true'` once the user has tapped "I have written down my
+ * recovery phrase" during onboarding. Used by the security screen to
+ * surface a high-priority recommendation when the user has not yet
+ * confirmed they have a backup of their phrase.
+ *
+ * The phrase itself is NEVER stored — only this acknowledgement flag.
+ */
+export const RECOVERY_PHRASE_ACK_STORAGE_KEY = 'oxy_recovery_phrase_acknowledged';
 
 export interface IdentityState {
   /** Whether identity is synced with server */
   isSynced: boolean;
   /** Whether sync is currently in progress */
   isSyncing: boolean;
+  /** Whether the user has acknowledged writing down their recovery phrase */
+  recoveryPhraseAcknowledged: boolean;
 }
 
 export interface IdentityStore extends IdentityState {
@@ -45,6 +58,8 @@ export interface IdentityStore extends IdentityState {
   setSynced: (synced: boolean) => void;
   /** Set syncing status */
   setSyncing: (syncing: boolean) => void;
+  /** Mark the recovery phrase as acknowledged (persists). */
+  setRecoveryPhraseAcknowledged: (acknowledged: boolean) => void;
   /** Initialize store from secure storage */
   hydrate: () => Promise<void>;
   /** Reset store state */
@@ -54,6 +69,7 @@ export interface IdentityStore extends IdentityState {
 const defaultState: IdentityState = {
   isSynced: false, // Not synced until confirmed by server registration
   isSyncing: false,
+  recoveryPhraseAcknowledged: false,
 };
 
 /**
@@ -72,22 +88,36 @@ export const useIdentityStore = create<IdentityStore>((set: (state: Partial<Iden
     set({ isSyncing: syncing });
   },
 
+  setRecoveryPhraseAcknowledged: (acknowledged: boolean) => {
+    set({ recoveryPhraseAcknowledged: acknowledged });
+    // Fire-and-forget persistence. Errors are logged but never block
+    // the UI — losing this flag is safe (it just means we re-nag the
+    // user on the next launch).
+    void persistRecoveryPhraseAcknowledged(acknowledged).catch((error) => {
+      console.error('[IdentityStore] Failed to persist recovery phrase acknowledgement', error);
+    });
+  },
+
   hydrate: async () => {
     try {
       const store = await initSecureStore();
       if (!store) {
-        set({ isSynced: defaultState.isSynced });
+        set({ isSynced: defaultState.isSynced, recoveryPhraseAcknowledged: defaultState.recoveryPhraseAcknowledged });
         return;
       }
 
-      const synced = await store.getItemAsync(IDENTITY_SYNC_STORAGE_KEY);
-      // Only consider synced if explicitly stored as 'true'
-      set({ isSynced: synced === 'true' });
+      const [synced, ack] = await Promise.all([
+        store.getItemAsync(IDENTITY_SYNC_STORAGE_KEY),
+        store.getItemAsync(RECOVERY_PHRASE_ACK_STORAGE_KEY),
+      ]);
+      // Only consider synced / acknowledged if explicitly stored as 'true'
+      set({
+        isSynced: synced === 'true',
+        recoveryPhraseAcknowledged: ack === 'true',
+      });
     } catch (error) {
-      if (__DEV__) {
-        console.warn('[IdentityStore] Failed to hydrate from secure storage:', error);
-      }
-      set({ isSynced: defaultState.isSynced });
+      console.error('[IdentityStore] Failed to hydrate from secure storage', error);
+      set({ isSynced: defaultState.isSynced, recoveryPhraseAcknowledged: defaultState.recoveryPhraseAcknowledged });
     }
   },
 
@@ -108,9 +138,22 @@ export const persistIdentitySyncState = async (isSynced: boolean): Promise<void>
     }
     await store.setItemAsync(IDENTITY_SYNC_STORAGE_KEY, isSynced ? 'true' : 'false');
   } catch (error) {
-    if (__DEV__) {
-      console.warn('[IdentityStore] Failed to persist sync state:', error);
+    console.error('[IdentityStore] Failed to persist sync state', error);
+  }
+};
+
+/**
+ * Persist the "user has acknowledged their recovery phrase" flag.
+ */
+export const persistRecoveryPhraseAcknowledged = async (acknowledged: boolean): Promise<void> => {
+  try {
+    const store = await initSecureStore();
+    if (!store) {
+      return;
     }
+    await store.setItemAsync(RECOVERY_PHRASE_ACK_STORAGE_KEY, acknowledged ? 'true' : 'false');
+  } catch (error) {
+    console.error('[IdentityStore] Failed to persist recovery phrase acknowledgement', error);
   }
 };
 
@@ -128,9 +171,24 @@ export const getIdentitySyncStateFromStorage = async (): Promise<boolean> => {
     // Only consider synced if explicitly stored as 'true'
     return synced === 'true';
   } catch (error) {
-    if (__DEV__) {
-      console.warn('[IdentityStore] Failed to read sync state:', error);
-    }
+    console.error('[IdentityStore] Failed to read sync state', error);
     return false; // Not synced on error
+  }
+};
+
+/**
+ * Read the recovery-phrase-acknowledged flag directly.
+ */
+export const getRecoveryPhraseAcknowledgedFromStorage = async (): Promise<boolean> => {
+  try {
+    const store = await initSecureStore();
+    if (!store) {
+      return false;
+    }
+    const ack = await store.getItemAsync(RECOVERY_PHRASE_ACK_STORAGE_KEY);
+    return ack === 'true';
+  } catch (error) {
+    console.error('[IdentityStore] Failed to read recovery phrase acknowledgement', error);
+    return false;
   }
 };
