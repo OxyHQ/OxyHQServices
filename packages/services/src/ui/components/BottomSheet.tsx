@@ -197,104 +197,13 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
         scrollTo,
     }), [present, dismiss, scrollTo]);
 
-    // Native gesture wrapping the inner ScrollView. We let the pan gesture run
-    // simultaneously with it so the user can:
-    //   • Drag the handle/sheet at any time → pan wins.
-    //   • Scroll content downward when not at top → scroll wins (pan no-ops in
-    //     `onUpdate` because `allowPanClose` was false at gesture start).
-    //   • Pull down at scroll offset 0 → pan takes over to dismiss the sheet.
-    const nativeGesture = useMemo(() => Gesture.Native(), []);
-
-    // The pan gesture must be allowed to recognize concurrently with the native
-    // scroll gesture, otherwise on Android the ScrollView consumes the touch
-    // first and the sheet is undraggable. `simultaneousWithExternalGesture` is
-    // the correct API in react-native-gesture-handler 2.x.
+    // iOS-style sheet model: the handle is the ONLY surface that drags the
+    // sheet. The inner ScrollView gets full ownership of vertical touches in
+    // the content area, so scroll and drag never fight each other (which was
+    // breaking scroll on Android — the outer pan was claiming touches even
+    // when allowPanClose=false in onStart).
     //
-    // We also configure a small `activeOffsetY` so vertical pans are detected
-    // promptly but horizontal swipes (rare here, but common in nested content)
-    // don't accidentally trigger sheet dismissal.
-    const panGesture = useMemo(
-        () =>
-            Gesture.Pan()
-                .enabled(enablePanDownToClose)
-                .simultaneousWithExternalGesture(nativeGesture)
-                .activeOffsetY([-12, 12])
-                .failOffsetX([-30, 30])
-                .onStart(() => {
-                    'worklet';
-                    context.value = { y: translateY.value };
-                    // If the user starts dragging while the inner content is
-                    // not at the top, defer to the ScrollView (pan no-ops).
-                    allowPanClose.value = scrollOffsetY.value <= 8;
-                })
-                .onUpdate((event) => {
-                    'worklet';
-                    if (!allowPanClose.value) {
-                        return;
-                    }
-                    const newTranslateY = context.value.y + event.translationY;
-                    // If user is scrolling down while content isn't at (or near) the top, let ScrollView handle it
-                    const atTopOrNearTop = scrollOffsetY.value <= 8; // slightly larger tolerance for smoother handoff
-                    if (event.translationY > 0 && !atTopOrNearTop) {
-                        return;
-                    }
-                    if (newTranslateY >= 0) {
-                        translateY.value = newTranslateY;
-                    } else if (detached) {
-                        // Only allow overdrag (pulling up beyond top) when detached
-                        translateY.value = newTranslateY * 0.3;
-                    } else {
-                        // In normal mode, prevent overdrag - clamp to 0
-                        translateY.value = 0;
-                    }
-                })
-                .onEnd((event) => {
-                    'worklet';
-                    if (!allowPanClose.value) {
-                        return;
-                    }
-                    const velocity = event.velocityY;
-                    const distance = translateY.value;
-                    // Require a deeper pull to close (more like native bottom sheets)
-                    const closeThreshold = Math.max(140, SCREEN_HEIGHT * 0.25);
-                    const fastSwipeThreshold = 900;
-                    const shouldClose =
-                        velocity > fastSwipeThreshold ||
-                        (distance > closeThreshold && velocity > -300);
-
-                    if (shouldClose) {
-                        translateY.value = withSpring(SCREEN_HEIGHT, {
-                            ...SPRING_CONFIG,
-                            velocity: velocity,
-                        });
-                        opacity.value = withTiming(0, { duration: 250 }, (finished) => {
-                            if (finished) {
-                                runOnJS(finishClose)();
-                            }
-                        });
-                    } else {
-                        translateY.value = withSpring(0, {
-                            ...SPRING_CONFIG,
-                            velocity: velocity,
-                        });
-                    }
-                }),
-        [
-            allowPanClose,
-            context,
-            detached,
-            enablePanDownToClose,
-            finishClose,
-            nativeGesture,
-            opacity,
-            scrollOffsetY,
-            translateY,
-        ],
-    );
-
-    // Dedicated pan for the handle. It is unconditional — touching the handle
-    // always drags the sheet, regardless of inner scroll state. This guarantees
-    // the user can dismiss even when the ScrollView is mid-scroll.
+    // Dedicated pan for the handle — unconditional, always drags.
     const handlePanGesture = useMemo(
         () =>
             Gesture.Pan()
@@ -444,16 +353,16 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
                     )}
                 </Animated.View>
 
-                <GestureDetector gesture={panGesture}>
-                    <Animated.View style={[dynamicStyles.sheet, sheetMarginStyle, sheetStyle, sheetHeightStyle]}>
+                <Animated.View style={[dynamicStyles.sheet, sheetMarginStyle, sheetStyle, sheetHeightStyle]}>
                         {backgroundComponent?.({ style: styles.background })}
 
                         {/*
-                         * Handle area — wrapped in its own dedicated pan gesture
-                         * so dragging the handle ALWAYS moves the sheet, even
-                         * while the inner ScrollView is mid-scroll. We size the
-                         * touch target generously (full sheet width, 28dp tall)
-                         * so it's easy to grab on phones.
+                         * Handle area — the DEDICATED drag surface. iOS-style:
+                         * the handle is the only place the sheet can be dragged
+                         * to dismiss, so the inner ScrollView keeps full control
+                         * of vertical scroll without fighting an outer pan
+                         * gesture. We size the touch target generously (full
+                         * sheet width, 28dp tall) so it's easy to grab on phones.
                          */}
                         <GestureDetector gesture={handlePanGesture}>
                             <View style={styles.handleHitArea} accessible accessibilityRole="adjustable">
@@ -462,8 +371,7 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
                         </GestureDetector>
 
                         {scrollable ? (
-                            <GestureDetector gesture={nativeGesture}>
-                                <Animated.ScrollView
+                            <Animated.ScrollView
                                     ref={scrollViewRef}
                                     style={[
                                         styles.scrollView,
@@ -486,34 +394,18 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
                                 >
                                     {children}
                                 </Animated.ScrollView>
-                            </GestureDetector>
                         ) : (
                             /*
-                             * Non-scrollable mode: the screen manages its own
-                             * scrolling (e.g. via a FlatList). Wrapping it in
-                             * an internal ScrollView would nest VirtualizedLists
-                             * and break windowing.
-                             *
-                             * We still wrap children in the same
-                             * `nativeGesture` so the outer pan-to-close gesture
-                             * keeps `simultaneousWithExternalGesture(nativeGesture)`
-                             * coordination with whatever scrolling primitive the
-                             * screen uses inside (the FlatList's native scroll
-                             * recognizer is captured by `Gesture.Native()`).
-                             *
-                             * `scrollOffsetY` stays at 0 here — there's no
-                             * scroll handler — so the pan-to-close logic that
-                             * gates on "at top or near top" naturally remains
-                             * permissive, which matches the screen's design
-                             * (drag-down anywhere on the sheet closes it; the
-                             * inner FlatList handles its own scroll gesture).
+                             * Non-scrollable mode: the screen owns its own
+                             * scrolling primitive (e.g. a FlatList). No outer
+                             * pan/native gesture wrapping needed — the handle
+                             * area above is the dedicated drag-to-dismiss
+                             * surface, and the screen's own scroller is the
+                             * only consumer of touches in this region.
                              */
-                            <GestureDetector gesture={nativeGesture}>
-                                <View style={styles.nonScrollableContent}>{children}</View>
-                            </GestureDetector>
+                            <View style={styles.nonScrollableContent}>{children}</View>
                         )}
                     </Animated.View>
-                </GestureDetector>
             </GestureHandlerRootView>
         </Modal>
     );
