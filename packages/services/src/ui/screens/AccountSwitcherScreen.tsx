@@ -15,6 +15,7 @@ import type { BaseScreenProps } from '../types/navigation';
 import type { ClientSession } from '@oxyhq/core';
 import { fontFamilies } from '../styles/fonts';
 import type { User } from '@oxyhq/core';
+import { getAccountDisplayName, getAccountFallbackHandle } from '@oxyhq/core';
 import { toast } from '../../lib/sonner';
 import * as Prompt from '@oxyhq/bloom/prompt';
 import { usePromptControl } from '@oxyhq/bloom/prompt';
@@ -90,7 +91,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
     const logoutAllDevicesPrompt = usePromptControl();
 
     const screenWidth = Dimensions.get('window').width;
-    const { t } = useI18n();
+    const { t, locale } = useI18n();
 
     // Refresh sessions when screen loads
     useEffect(() => {
@@ -101,6 +102,22 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
 
     // Memoize session IDs to prevent unnecessary re-renders
     const sessionIds = useMemo(() => sessions.map(s => s.sessionId).join(','), [sessions]);
+
+    // Re-load the session profiles whenever the active user's identity
+    // changes (e.g. the user just picked a username in the onboarding flow).
+    // Without this, the cached batch result still has the pre-username state
+    // and `@unknown` shows in the switcher even though the username is saved.
+    const activeUserSignature = useMemo(() => {
+        if (!user) return '';
+        const username = typeof user.username === 'string' ? user.username : '';
+        const avatar = typeof user.avatar === 'string' ? user.avatar : '';
+        const displayName = typeof user.name === 'string'
+            ? user.name
+            : typeof user.name === 'object' && user.name !== null
+                ? (user.name.full || user.name.first || '')
+                : '';
+        return `${username}|${avatar}|${displayName}`;
+    }, [user]);
 
     // Load user profiles for sessions
     // Production-ready: Optimized with batching, memoization, and error handling
@@ -126,7 +143,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
 
                 // Create a map for O(1) lookup
                 const userProfileMap = new Map<string, User | null>();
-                batchResults.forEach(({ sessionId, user }: { sessionId: string; user: any }) => {
+                batchResults.forEach(({ sessionId, user }: { sessionId: string; user: User | null }) => {
                     userProfileMap.set(sessionId, user);
                 });
 
@@ -160,7 +177,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
         return () => {
             cancelled = true;
         };
-    }, [sessionIds, oxyServices, sessions]);
+    }, [sessionIds, oxyServices, sessions, activeUserSignature]);
 
     const handleSwitchSession = useCallback(async (sessionId: string) => {
         if (sessionId === (activeSessionId ?? null)) return; // Already active session
@@ -360,39 +377,44 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                 ) : (
                     <>
                         {/* Current Account */}
-                        {isAuthenticated && user && (
-                            <View style={styles.section}>
-                                <Text style={styles.sectionTitle}>{t('accountSwitcher.sections.current') || 'Current Account'}</Text>
+                        {isAuthenticated && user && (() => {
+                            const currentDisplayName = getAccountDisplayName(user, locale);
+                            const currentHandle = getAccountFallbackHandle(user);
+                            const avatarInitial = currentDisplayName.charAt(0).toUpperCase();
+                            return (
+                                <View style={styles.section}>
+                                    <Text style={styles.sectionTitle}>{t('accountSwitcher.sections.current') || 'Current Account'}</Text>
 
-                                <View style={[styles.settingItem, styles.firstSettingItem, styles.lastSettingItem, styles.currentAccountCard]}>
-                                    <View style={styles.userIcon}>
-                                        {user.avatar ? (
-                                            <Image source={{ uri: oxyServices.getFileDownloadUrl(user.avatar, 'thumb') }} style={styles.accountAvatarImage} />
-                                        ) : (
-                                            <View style={styles.accountAvatarFallback}>
-                                                <Text style={styles.accountAvatarText}>
-                                                    {(typeof user.name === 'string' ? user.name : user.name?.first || user.username)?.charAt(0).toUpperCase()}
-                                                </Text>
+                                    <View style={[styles.settingItem, styles.firstSettingItem, styles.lastSettingItem, styles.currentAccountCard]}>
+                                        <View style={styles.userIcon}>
+                                            {user.avatar ? (
+                                                <Image source={{ uri: oxyServices.getFileDownloadUrl(user.avatar, 'thumb') }} style={styles.accountAvatarImage} />
+                                            ) : (
+                                                <View style={styles.accountAvatarFallback}>
+                                                    <Text style={styles.accountAvatarText}>{avatarInitial}</Text>
+                                                </View>
+                                            )}
+                                            <View style={styles.activeBadge}>
+                                                <OxyIcon name="checkmark" size={12} color="#fff" />
                                             </View>
-                                        )}
-                                        <View style={styles.activeBadge}>
-                                            <OxyIcon name="checkmark" size={12} color="#fff" />
                                         </View>
-                                    </View>
-                                    <View style={styles.settingInfo}>
-                                        <View>
-                                            <Text style={styles.settingLabel}>
-                                                {typeof user.name === 'string' ? user.name : user.name?.full || user.name?.first || user.username}
-                                            </Text>
-                                            <Text style={styles.settingDescription}>{user.email || user.username}</Text>
+                                        <View style={styles.settingInfo}>
+                                            <View>
+                                                <Text style={styles.settingLabel}>{currentDisplayName}</Text>
+                                                {user.email || currentHandle ? (
+                                                    <Text style={styles.settingDescription}>
+                                                        {user.email || (currentHandle && user.username ? `@${currentHandle}` : currentHandle)}
+                                                    </Text>
+                                                ) : null}
+                                            </View>
                                         </View>
-                                    </View>
-                                    <View style={styles.currentBadge}>
-                                        <Text style={styles.currentBadgeText}>{t('accountSwitcher.currentBadge') || 'Current'}</Text>
+                                        <View style={styles.currentBadge}>
+                                            <Text style={styles.currentBadgeText}>{t('accountSwitcher.currentBadge') || 'Current'}</Text>
+                                        </View>
                                     </View>
                                 </View>
-                            </View>
-                        )}
+                            );
+                        })()}
 
                         {/* Other Accounts */}
                         {otherSessions.length > 0 && (
@@ -408,9 +430,11 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                                     const isRemoving = removingUserId === sessionWithUser.sessionId;
                                     const { userProfile, isLoadingProfile } = sessionWithUser;
 
-                                    const displayName = typeof userProfile?.name === 'object'
-                                        ? userProfile.name.full || userProfile.name.first || userProfile.username
-                                        : userProfile?.name || userProfile?.username || 'Unknown User';
+                                    // Use the shared core helper so the fallback chain
+                                    // (name → username → publicKey → translated "Unnamed")
+                                    // is identical across every UI surface.
+                                    const displayName = getAccountDisplayName(userProfile, locale);
+                                    const fallbackHandle = getAccountFallbackHandle(userProfile);
 
                                     return (
                                         <View
@@ -439,9 +463,11 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                                             <View style={styles.settingInfo}>
                                                 <View>
                                                     <Text style={styles.settingLabel}>{displayName}</Text>
-                                                    <Text style={styles.settingDescription}>
-                                                        @{userProfile?.username || 'unknown'}
-                                                    </Text>
+                                                    {fallbackHandle ? (
+                                                        <Text style={styles.settingDescription}>
+                                                            {userProfile?.username ? `@${fallbackHandle}` : fallbackHandle}
+                                                        </Text>
+                                                    ) : null}
                                                 </View>
                                             </View>
                                             <View style={styles.accountActions}>
@@ -508,9 +534,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                                     const isFirst = index === 0;
                                     const isLast = index === managedAccounts.length - 1;
 
-                                    const managedDisplayName = typeof account.name === 'object'
-                                        ? account.name.full || account.name.first || account.username
-                                        : account.name || account.username || 'Unknown';
+                                    const managedDisplayName = getAccountDisplayName(account, locale);
 
                                     // Determine the manager role for badge display
                                     const myRole = managed.managers?.find(
@@ -549,7 +573,14 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                                             <View style={styles.settingInfo}>
                                                 <View>
                                                     <Text style={styles.settingLabel}>{managedDisplayName}</Text>
-                                                    <Text style={styles.settingDescription}>@{account.username}</Text>
+                                                    {(() => {
+                                                        const handle = getAccountFallbackHandle(account);
+                                                        return handle ? (
+                                                            <Text style={styles.settingDescription}>
+                                                                {account.username ? `@${handle}` : handle}
+                                                            </Text>
+                                                        ) : null;
+                                                    })()}
                                                 </View>
                                             </View>
                                             <View style={styles.accountActions}>

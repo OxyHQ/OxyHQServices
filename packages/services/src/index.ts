@@ -63,7 +63,7 @@ export {
   useUserById, useUserByUsername, useUsersBySessions,
   usePrivacySettings, useSessions, useSession,
   useDeviceSessions, useUserDevices, useSecurityInfo,
-  useSecurityActivity, useRecentSecurityActivity,
+  useSecurityActivity, useRecentSecurityActivity, useInfiniteSecurityActivity,
 } from './ui/hooks/queries';
 
 // Mutation hooks
@@ -79,6 +79,13 @@ export {
 export type {
   ProfileMutationConfig, GenericMutationConfig,
 } from './ui/hooks/mutations/mutationFactory';
+
+// Stable mutation keys for the offline queue
+export { mutationKeys } from './ui/hooks/mutations/mutationKeys';
+
+// Mutation status aggregator (for "Syncing..." indicators)
+export { useMutationStatus } from './ui/hooks/useMutationStatus';
+export type { MutationStatus } from './ui/hooks/useMutationStatus';
 
 // Error handlers
 export {
@@ -96,6 +103,8 @@ export { default as Avatar } from './ui/components/Avatar';
 export type { AvatarProps } from './ui/components/Avatar';
 export { OxySignInButton } from './ui/components/OxySignInButton';
 export { OxyLogo, FollowButton } from './ui';
+export { LogoIcon } from './ui/components/logo/LogoIcon';
+export { LogoText } from './ui/components/logo/LogoText';
 
 // Acting-as banner for managed accounts
 export { default as ActingAsBanner } from './ui/components/ActingAsBanner';

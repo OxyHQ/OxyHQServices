@@ -31,7 +31,8 @@ import { toast } from '../../lib/sonner';
 import * as Prompt from '@oxyhq/bloom/prompt';
 import { usePromptControl } from '@oxyhq/bloom/prompt';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import type { FileMetadata } from '@oxyhq/core';
+import type { AssetUploadInput, FileMetadata, RNFileDescriptor } from '@oxyhq/core';
+import { getErrorMessage as getOxyErrorMessage } from '@oxyhq/core';
 import { useFileStore, useFiles, useUploading as useUploadingStore, useUploadAggregateProgress, useDeleting as useDeletingStore } from '../stores/fileStore';
 import Header from '../components/Header';
 import JustifiedPhotoGrid from '../components/photogrid/JustifiedPhotoGrid';
@@ -53,9 +54,46 @@ import { useDialogControl } from '@oxyhq/bloom/dialog';
 import { fileManagementStyles } from '../components/fileManagement/styles';
 import type { OnConfirmFileSelection } from '../types/fileManagement';
 
-/** Extract error message from unknown error type */
-const getErrorMessage = (error: unknown): string | undefined =>
-    error instanceof Error ? getErrorMessage(error) : typeof error === 'string' ? error : undefined;
+/**
+ * Extract error message from unknown error type.
+ * Delegates to the canonical `getErrorMessage` in `@oxyhq/core` and returns
+ * `undefined` for empty results (so callers can fall back to a translated
+ * message via `||`).
+ */
+const getErrorMessage = (error: unknown): string | undefined => {
+    if (error == null) return undefined;
+    const message = getOxyErrorMessage(error, '');
+    return message ? message : undefined;
+};
+
+/**
+ * A picker-produced file ready to upload. On web this is a real `File`
+ * (carrying an optional `uri` for preview). On native, it's an
+ * {@link RNFileDescriptor} — passed straight to FormData by `assetUpload`.
+ */
+type UploadCandidate = (File & { uri?: string }) | RNFileDescriptor;
+
+/** Returns the display name for either a web File or an RN descriptor. */
+const candidateName = (candidate: UploadCandidate, fallback: string): string =>
+    (candidate.name && typeof candidate.name === 'string' ? candidate.name : fallback);
+
+/** Returns the byte size for either a web File or an RN descriptor (0 if unknown). */
+const candidateSize = (candidate: UploadCandidate): number => {
+    const size = (candidate as { size?: number }).size;
+    return typeof size === 'number' && Number.isFinite(size) ? size : 0;
+};
+
+/** Returns the mime type for either a web File or an RN descriptor. */
+const candidateType = (candidate: UploadCandidate): string => {
+    const value = (candidate as { type?: string }).type;
+    return typeof value === 'string' && value.length > 0 ? value : 'application/octet-stream';
+};
+
+/** Returns the preview URI for an upload candidate, if available. */
+const candidateUri = (candidate: UploadCandidate): string | undefined => {
+    const uri = (candidate as { uri?: string }).uri;
+    return typeof uri === 'string' && uri.length > 0 ? uri : undefined;
+};
 
 // Animated button component for smooth transitions
 const AnimatedButton: React.FC<{
@@ -158,7 +196,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     const [searchQuery, setSearchQuery] = useState('');
     const [sortBy, setSortBy] = useState<'date' | 'size' | 'name' | 'type'>('date');
     const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
-    const [pendingFiles, setPendingFiles] = useState<Array<{ file: File | Blob; preview?: string; size: number; name: string; type: string }>>([]);
+    const [pendingFiles, setPendingFiles] = useState<Array<{ file: UploadCandidate; preview?: string; size: number; name: string; type: string }>>([]);
     const [showUploadPreview, setShowUploadPreview] = useState(false);
     // Derived filtered and sorted files (avoid setState loops)
     const filteredFiles = useMemo(() => {
@@ -498,16 +536,16 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         return rows;
     }, []);
 
-    const processFileUploads = async (selectedFiles: File[]): Promise<FileMetadata[]> => {
+    const processFileUploads = async (selectedFiles: UploadCandidate[]): Promise<FileMetadata[]> => {
         if (selectedFiles.length === 0) return [];
         if (!targetUserId) return []; // Guard clause to ensure userId is defined
         const uploadedFiles: FileMetadata[] = [];
         try {
             storeSetUploadProgress({ current: 0, total: selectedFiles.length });
             const maxSize = 50 * 1024 * 1024; // 50MB
-            const oversizedFiles = selectedFiles.filter(file => file.size > maxSize);
+            const oversizedFiles = selectedFiles.filter(file => candidateSize(file) > maxSize);
             if (oversizedFiles.length > 0) {
-                const fileList = oversizedFiles.map(f => f.name).join(', ');
+                const fileList = oversizedFiles.map(f => candidateName(f, 'file')).join(', ');
                 toast.error(t('fileManagement.toasts.filesTooLarge', { files: fileList }));
                 return [];
             }
@@ -517,12 +555,14 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             for (let i = 0; i < selectedFiles.length; i++) {
                 storeSetUploadProgress({ current: i + 1, total: selectedFiles.length });
                 const raw = selectedFiles[i];
-                const fileName = raw.name || `file-${i + 1}`;
+                const fileName = candidateName(raw, `file-${i + 1}`);
+                const fileSize = candidateSize(raw);
+                const fileType = candidateType(raw);
                 const optimisticId = `temp-${Date.now()}-${i}-${Math.random().toString(36).substr(2, 9)}`; // Unique ID per file
 
                 try {
                     // Validate file before upload
-                    if (!raw || !raw.name || raw.size === undefined || raw.size <= 0) {
+                    if (!raw || !fileName || fileSize <= 0) {
                         const errorMsg = `Invalid file: ${fileName}`;
                         if (__DEV__) {
                             console.error('Upload validation failed:', { file: raw, error: errorMsg });
@@ -534,9 +574,9 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
                     const optimisticFile: FileMetadata = {
                         id: optimisticId,
-                        filename: raw.name,
-                        contentType: raw.type || 'application/octet-stream',
-                        length: raw.size,
+                        filename: fileName,
+                        contentType: fileType,
+                        length: fileSize,
                         chunkSize: 0,
                         uploadDate: new Date().toISOString(),
                         metadata: { uploading: true },
@@ -546,7 +586,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
                     // Use the mutation hook with authentication handling
                     const result = await uploadFileMutation.mutateAsync({
-                        file: raw,
+                        file: raw as AssetUploadInput,
                         visibility: defaultVisibility,
                     });
 
@@ -555,9 +595,9 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     if (f) {
                         const merged: FileMetadata = {
                             id: f.id,
-                            filename: f.originalName || f.sha256 || raw.name,
-                            contentType: f.mime || raw.type || 'application/octet-stream',
-                            length: f.size || raw.size,
+                            filename: f.originalName || f.sha256 || fileName,
+                            contentType: f.mime || fileType,
+                            length: f.size || fileSize,
                             chunkSize: 0,
                             uploadDate: f.createdAt || new Date().toISOString(),
                             metadata: f.metadata || {},
@@ -579,14 +619,14 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     }
                 } catch (error: unknown) {
                     failureCount++;
-                    const errorMessage = getErrorMessage(error) || String(error) || 'Upload failed';
+                    const errorMessage = getErrorMessage(error) || 'Upload failed';
                     const fullError = `${fileName}: ${errorMessage}`;
                     errors.push(fullError);
                     if (__DEV__) {
                         console.error('File upload failed:', {
                             fileName,
-                            fileSize: raw.size,
-                            fileType: raw.type,
+                            fileSize,
+                            fileType,
                             error: errorMessage,
                             stack: (error instanceof Error) ? error.stack : undefined
                         });
@@ -618,10 +658,9 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         return uploadedFiles;
     };
 
-    // biome-ignore lint/suspicious/noExplicitAny: Files from document picker may have extra properties like uri
-    const handleFileSelection = useCallback(async (selectedFiles: Array<File | any>) => {
+    const handleFileSelection = useCallback(async (selectedFiles: UploadCandidate[]) => {
         const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
-        const processedFiles: Array<{ file: File | Blob; preview?: string; size: number; name: string; type: string }> = [];
+        const processedFiles: Array<{ file: UploadCandidate; preview?: string; size: number; name: string; type: string }> = [];
 
         for (const file of selectedFiles) {
             // Validate file has required properties
@@ -633,7 +672,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 continue;
             }
 
-            if (!file.name || typeof file.name !== 'string') {
+            const name = candidateName(file, '');
+            if (!name) {
                 if (__DEV__) {
                     console.error('Invalid file: missing or invalid name property', file);
                 }
@@ -641,46 +681,47 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 continue;
             }
 
-            if (file.size === undefined || file.size === null || Number.isNaN(file.size)) {
+            const size = (file as { size?: number }).size;
+            if (size === undefined || size === null || Number.isNaN(size)) {
                 if (__DEV__) {
                     console.error('Invalid file: missing or invalid size property', file);
                 }
-                toast.error(t('fileManagement.toasts.invalidFileSize', { name: file.name || 'unknown' }));
+                toast.error(t('fileManagement.toasts.invalidFileSize', { name }));
                 continue;
             }
 
-            if (file.size <= 0) {
+            if (size <= 0) {
                 if (__DEV__) {
                     console.error('Invalid file: file size is zero or negative', file);
                 }
-                toast.error(t('fileManagement.toasts.fileEmpty', { name: file.name }));
+                toast.error(t('fileManagement.toasts.fileEmpty', { name }));
                 continue;
             }
 
             // Validate file size
-            if (file.size > MAX_FILE_SIZE) {
-                toast.error(t('fileManagement.toasts.fileTooLarge', { name: file.name, maxSize: formatFileSize(MAX_FILE_SIZE) }));
+            if (size > MAX_FILE_SIZE) {
+                toast.error(t('fileManagement.toasts.fileTooLarge', { name, maxSize: formatFileSize(MAX_FILE_SIZE) }));
                 continue;
             }
 
-            // Ensure file has a type property
-            const fileType = file.type || 'application/octet-stream';
+            const fileType = candidateType(file);
 
             // Generate preview for images - unified approach
             let preview: string | undefined;
             if (fileType.startsWith('image/')) {
                 // Try to use file URI from expo-document-picker if available (works on all platforms)
-                const fileUri = (file as File & { uri?: string }).uri;
-                if (fileUri && typeof fileUri === 'string' &&
+                const fileUri = candidateUri(file);
+                if (fileUri &&
                     (fileUri.startsWith('file://') || fileUri.startsWith('content://') ||
                         fileUri.startsWith('http://') || fileUri.startsWith('https://') ||
                         fileUri.startsWith('blob:'))) {
                     preview = fileUri;
                 } else {
-                    // Fallback: create blob URL if possible (works on web)
+                    // Fallback: create blob URL if possible (works on web only)
                     try {
-                        if ((file as object) instanceof File || (file as object) instanceof Blob) {
-                            preview = URL.createObjectURL(file);
+                        if ((typeof File !== 'undefined' && file instanceof File) ||
+                            (typeof Blob !== 'undefined' && file instanceof Blob)) {
+                            preview = URL.createObjectURL(file as Blob);
                         }
                     } catch (error: unknown) {
                         if (__DEV__) {
@@ -694,8 +735,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             processedFiles.push({
                 file,
                 preview,
-                size: file.size,
-                name: file.name,
+                size,
+                name,
                 type: fileType
             });
         }
@@ -708,7 +749,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         // Show preview modal for user to review files before upload
         setPendingFiles(processedFiles);
         setShowUploadPreview(true);
-    }, []);
+    }, [t]);
 
     const handleConfirmUpload = async () => {
         if (pendingFiles.length === 0) return;
@@ -719,7 +760,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         storeSetUploadProgress(null);
 
         try {
-            const filesToUpload = pendingFiles.map(pf => pf.file as File);
+            const filesToUpload = pendingFiles.map(pf => pf.file);
             storeSetUploadProgress({ current: 0, total: filesToUpload.length });
             const uploadedFiles = await processFileUploads(filesToUpload);
 
@@ -828,17 +869,17 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             // - size: file size in bytes
             // - mimeType: MIME type of the file
             // - file: (optional) native File object (usually only on web)
-            const files: File[] = [];
+            const files: UploadCandidate[] = [];
             const errors: string[] = [];
 
             // Process files in parallel for better performance
             // This allows multiple files to be converted simultaneously
             const conversionPromises = result.assets.map((doc, index) =>
                 convertDocumentPickerAssetToFile(doc, index)
-                    .then((file) => {
+                    .then((file): UploadCandidate | null => {
                         if (file) {
                             // Validate file has required properties before adding
-                            if (!file.name || file.size === undefined) {
+                            if (!file.name || (file as { size?: number }).size === undefined) {
                                 errors.push(`File "${doc.name || 'file'}" is invalid: missing required properties`);
                                 return null;
                             }

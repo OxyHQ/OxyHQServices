@@ -40,7 +40,8 @@ export type RouteName =
     | 'KarmaFAQ'
     | 'FollowersList'  // List of user's followers
     | 'FollowingList' // List of users being followed
-    | 'CreateManagedAccount'; // Create a new managed sub-account
+    | 'CreateManagedAccount' // Create a new managed sub-account
+    | 'AvatarCrop'; // Square-crop editor presented before avatar upload
 
 // Lazy screen loaders - functions that return screen components on-demand
 // This breaks the require cycle by deferring imports until screens are actually needed
@@ -82,6 +83,7 @@ const screenLoaders: Record<RouteName, () => ComponentType<BaseScreenProps>> = {
     FollowersList: () => require('../screens/FollowersListScreen').default,
     FollowingList: () => require('../screens/FollowingListScreen').default,
     CreateManagedAccount: () => require('../screens/CreateManagedAccountScreen').default,
+    AvatarCrop: () => require('../screens/AvatarCropScreen').default,
 };
 
 // Cache loaded components to avoid re-requiring

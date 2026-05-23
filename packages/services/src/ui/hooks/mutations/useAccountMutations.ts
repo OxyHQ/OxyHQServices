@@ -1,7 +1,8 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { authenticatedApiCall } from '@oxyhq/core';
-import type { User } from '@oxyhq/core';
-import { queryKeys, invalidateAccountQueries, invalidateUserQueries } from '../queries/queryKeys';
+import type { AssetUploadInput, User } from '@oxyhq/core';
+import { queryKeys, invalidateAccountQueries, invalidateUserQueries, invalidateSessionQueries } from '../queries/queryKeys';
+import { mutationKeys } from './mutationKeys';
 import { useOxy } from '../../context/OxyContext';
 import { toast } from '../../../lib/sonner';
 import { refreshAvatarInStore } from '../../utils/avatarUtils';
@@ -15,6 +16,7 @@ export const useUpdateProfile = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
+    mutationKey: [...mutationKeys.account.updateProfile],
     mutationFn: async (updates: Partial<User>) => {
       return authenticatedApiCall<User>(
         oxyServices,
@@ -48,12 +50,31 @@ export const useUpdateProfile = () => {
 
       return { previousUser };
     },
-    // On error, rollback
+    // On error, rollback ONLY the keys this mutation tried to change
     onError: (error, updates, context) => {
-      if (context?.previousUser) {
-        queryClient.setQueryData(queryKeys.accounts.current(), context.previousUser);
+      if (context?.previousUser && updates) {
+        const previousUser = context.previousUser;
+        const changedKeys = Object.keys(updates) as Array<keyof User>;
+        const partialRollback = changedKeys.reduce<Partial<User>>((acc, key) => {
+          (acc as Record<string, unknown>)[key as string] = previousUser[key];
+          return acc;
+        }, {});
+
+        const current = queryClient.getQueryData<User>(queryKeys.accounts.current());
+        if (current) {
+          queryClient.setQueryData<User>(queryKeys.accounts.current(), {
+            ...current,
+            ...partialRollback,
+          });
+        }
         if (activeSessionId) {
-          queryClient.setQueryData(queryKeys.users.profile(activeSessionId), context.previousUser);
+          const currentProfile = queryClient.getQueryData<User>(queryKeys.users.profile(activeSessionId));
+          if (currentProfile) {
+            queryClient.setQueryData<User>(queryKeys.users.profile(activeSessionId), {
+              ...currentProfile,
+              ...partialRollback,
+            });
+          }
         }
       }
       toast.error(error instanceof Error ? error.message : 'Failed to update profile');
@@ -65,18 +86,22 @@ export const useUpdateProfile = () => {
       if (activeSessionId) {
         queryClient.setQueryData(queryKeys.users.profile(activeSessionId), data);
       }
-      
+
       // Update authStore so frontend components see the changes immediately
       useAuthStore.getState().setUser(data);
-      
+
       // If avatar was updated, refresh accountStore with cache-busted URL
       if (updates.avatar && activeSessionId && oxyServices) {
         refreshAvatarInStore(activeSessionId, updates.avatar, oxyServices);
       }
-      
-      // Invalidate all related queries to refresh everywhere
+
+      // Invalidate all related queries so every consumer (AccountSwitcher,
+      // session lists, managed accounts, etc.) refetches the fresh profile.
+      // This is critical right after `username` is set the first time, when
+      // every cached "session profile" still reports the user as unnamed.
       invalidateUserQueries(queryClient);
       invalidateAccountQueries(queryClient);
+      invalidateSessionQueries(queryClient);
     },
   });
 };
@@ -89,6 +114,7 @@ export const useUploadAvatar = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
+    mutationKey: [...mutationKeys.account.uploadAvatar],
     mutationFn: async (file: { uri: string; type?: string; name?: string; size?: number }) => {
       return authenticatedApiCall<User>(oxyServices, activeSessionId, async () => {
         const uploadResult = await oxyServices.assetUpload(file, 'public');
@@ -120,11 +146,25 @@ export const useUploadAvatar = () => {
 
       return { previousUser };
     },
-    onError: (error, file, context) => {
+    onError: (error, _file, context) => {
+      // Avatar upload only mutates the `avatar` field — restore only that key
       if (context?.previousUser) {
-        queryClient.setQueryData(queryKeys.accounts.current(), context.previousUser);
+        const previousAvatar = context.previousUser.avatar;
+        const current = queryClient.getQueryData<User>(queryKeys.accounts.current());
+        if (current) {
+          queryClient.setQueryData<User>(queryKeys.accounts.current(), {
+            ...current,
+            avatar: previousAvatar,
+          });
+        }
         if (activeSessionId) {
-          queryClient.setQueryData(queryKeys.users.profile(activeSessionId), context.previousUser);
+          const currentProfile = queryClient.getQueryData<User>(queryKeys.users.profile(activeSessionId));
+          if (currentProfile) {
+            queryClient.setQueryData<User>(queryKeys.users.profile(activeSessionId), {
+              ...currentProfile,
+              avatar: previousAvatar,
+            });
+          }
         }
       }
       toast.error(error instanceof Error ? error.message : 'Failed to upload avatar');
@@ -142,25 +182,51 @@ export const useUploadAvatar = () => {
       if (data?.avatar && activeSessionId && oxyServices) {
         refreshAvatarInStore(activeSessionId, data.avatar, oxyServices);
       }
-      
-      // Invalidate all related queries to refresh everywhere
+
+      // Invalidate all related queries to refresh everywhere, including the
+      // sessions cache so other-account avatars update too.
       invalidateUserQueries(queryClient);
       invalidateAccountQueries(queryClient);
+      invalidateSessionQueries(queryClient);
       toast.success('Avatar updated successfully');
     },
   });
 };
 
 /**
- * Update account settings
+ * Update account settings (privacy preferences).
+ *
+ * Privacy settings are not part of the `PUT /users/me` allow-list; the API
+ * would silently drop them. Route through `updatePrivacySettings` so the
+ * dedicated `PATCH /privacy/:id/privacy` endpoint performs a dot-path merge
+ * and returns the updated `privacySettings` object.
  */
 export const useUpdateAccountSettings = () => {
-  const { oxyServices, activeSessionId } = useOxy();
+  const { oxyServices, activeSessionId, user } = useOxy();
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (settings: Record<string, any>) => {
-      return await oxyServices.updateProfile({ privacySettings: settings });
+    mutationKey: [...mutationKeys.account.updateSettings],
+    mutationFn: async (settings: Record<string, unknown>) => {
+      const userId = user?.id;
+      if (!userId) {
+        throw new Error('User ID is required to update account settings');
+      }
+      const updatedPrivacy = await authenticatedApiCall<Record<string, unknown>>(
+        oxyServices,
+        activeSessionId,
+        () => oxyServices.updatePrivacySettings(settings, userId)
+      );
+      // Reflect the merged privacy block back onto the user object so cache
+      // consumers that key off `User.privacySettings` see the change.
+      const currentUser = queryClient.getQueryData<User>(queryKeys.accounts.current());
+      if (currentUser) {
+        return {
+          ...currentUser,
+          privacySettings: updatedPrivacy as { [key: string]: unknown },
+        };
+      }
+      return { privacySettings: updatedPrivacy } as unknown as User;
     },
     onMutate: async (settings) => {
       await queryClient.cancelQueries({ queryKey: queryKeys.accounts.settings() });
@@ -179,8 +245,25 @@ export const useUpdateAccountSettings = () => {
       return { previousUser };
     },
     onError: (error, settings, context) => {
-      if (context?.previousUser) {
-        queryClient.setQueryData(queryKeys.accounts.current(), context.previousUser);
+      // Restore only the privacySettings keys this mutation tried to change
+      if (context?.previousUser && settings) {
+        const previousPrivacy = (context.previousUser.privacySettings ?? {}) as Record<string, unknown>;
+        const changedKeys = Object.keys(settings);
+        const partialPrivacyRollback = changedKeys.reduce<Record<string, unknown>>((acc, key) => {
+          acc[key] = previousPrivacy[key];
+          return acc;
+        }, {});
+
+        const current = queryClient.getQueryData<User>(queryKeys.accounts.current());
+        if (current) {
+          queryClient.setQueryData<User>(queryKeys.accounts.current(), {
+            ...current,
+            privacySettings: {
+              ...(current.privacySettings ?? {}),
+              ...partialPrivacyRollback,
+            } as { [key: string]: unknown },
+          });
+        }
       }
       toast.error(error instanceof Error ? error.message : 'Failed to update settings');
     },
@@ -207,7 +290,8 @@ export const useUpdatePrivacySettings = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ settings, userId }: { settings: Record<string, any>; userId?: string }) => {
+    mutationKey: [...mutationKeys.account.updatePrivacySettings],
+    mutationFn: async ({ settings, userId }: { settings: Record<string, unknown>; userId?: string }) => {
       const targetUserId = userId || user?.id;
       if (!targetUserId) {
         throw new Error('User ID is required');
@@ -253,15 +337,49 @@ export const useUpdatePrivacySettings = () => {
 
       return { previousPrivacySettings, previousUser };
     },
-    // On error, rollback
-    onError: (error, { userId }, context) => {
+    // On error, rollback ONLY the privacy keys this mutation tried to change.
+    // Restoring the entire previous object would wipe out other concurrent
+    // optimistic updates (e.g. user toggles two privacy switches in quick
+    // succession; failure on one must not revert the other).
+    onError: (error, { settings, userId }, context) => {
       const targetUserId = userId || user?.id;
-      if (context?.previousPrivacySettings && targetUserId) {
-        queryClient.setQueryData(queryKeys.privacy.settings(targetUserId), context.previousPrivacySettings);
+      const changedKeys = settings ? Object.keys(settings) : [];
+
+      // Rollback the privacy.settings query (partial)
+      if (context?.previousPrivacySettings && targetUserId && changedKeys.length > 0) {
+        const previousPrivacy = context.previousPrivacySettings as Record<string, unknown>;
+        const partialPrivacyRollback = changedKeys.reduce<Record<string, unknown>>((acc, key) => {
+          acc[key] = previousPrivacy[key];
+          return acc;
+        }, {});
+        const currentPrivacy = queryClient.getQueryData<Record<string, unknown>>(queryKeys.privacy.settings(targetUserId));
+        if (currentPrivacy) {
+          queryClient.setQueryData(queryKeys.privacy.settings(targetUserId), {
+            ...currentPrivacy,
+            ...partialPrivacyRollback,
+          });
+        }
       }
-      if (context?.previousUser) {
-        queryClient.setQueryData(queryKeys.accounts.current(), context.previousUser);
+
+      // Rollback the accounts.current() user.privacySettings (partial)
+      if (context?.previousUser && changedKeys.length > 0) {
+        const previousPrivacy = (context.previousUser.privacySettings ?? {}) as Record<string, unknown>;
+        const partialPrivacyRollback = changedKeys.reduce<Record<string, unknown>>((acc, key) => {
+          acc[key] = previousPrivacy[key];
+          return acc;
+        }, {});
+        const current = queryClient.getQueryData<User>(queryKeys.accounts.current());
+        if (current) {
+          queryClient.setQueryData<User>(queryKeys.accounts.current(), {
+            ...current,
+            privacySettings: {
+              ...(current.privacySettings ?? {}),
+              ...partialPrivacyRollback,
+            } as { [key: string]: unknown },
+          });
+        }
       }
+
       toast.error(error instanceof Error ? error.message : 'Failed to update privacy settings');
     },
     // On success, invalidate and refetch
@@ -321,15 +439,16 @@ export const useUploadFile = () => {
   const { oxyServices, activeSessionId } = useOxy();
 
   return useMutation({
+    mutationKey: [...mutationKeys.account.uploadFile],
     mutationFn: async ({
       file,
       visibility,
       metadata,
-      onProgress
+      onProgress,
     }: {
-      file: File;
+      file: AssetUploadInput;
       visibility?: 'private' | 'public' | 'unlisted';
-      metadata?: Record<string, any>;
+      metadata?: Record<string, unknown>;
       onProgress?: (progress: number) => void;
     }) => {
       return authenticatedApiCall<UploadResult>(

@@ -1,17 +1,16 @@
 import type React from 'react';
 import { useState, useCallback } from 'react';
-import { View, Text, TextInput, TouchableOpacity } from 'react-native';
+import { View, Text, TextInput } from 'react-native';
 import * as Dialog from '@oxyhq/bloom/dialog';
 import type { DialogControlProps } from '@oxyhq/bloom/dialog';
 import * as Prompt from '@oxyhq/bloom/prompt';
 import OxyIcon from '../icon/OxyIcon';
 import { useTheme } from '@oxyhq/bloom/theme';
-import { Loading } from '@oxyhq/bloom/loading';
 
 interface DeleteAccountModalProps {
     control: DialogControlProps;
     username: string;
-    onDelete: (password: string) => Promise<void>;
+    onDelete: (confirmText: string) => Promise<void>;
     t: (key: string, params?: Record<string, string>) => string | undefined;
 }
 
@@ -22,13 +21,11 @@ const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
     t,
 }) => {
     const theme = useTheme();
-    const [password, setPassword] = useState('');
     const [confirmUsername, setConfirmUsername] = useState('');
     const [isDeleting, setIsDeleting] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [showPassword, setShowPassword] = useState(false);
 
-    const isValid = password.length > 0 && confirmUsername === username;
+    const isValid = confirmUsername === username;
 
     const handleDelete = useCallback(async () => {
         if (!isValid) return;
@@ -37,21 +34,19 @@ const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
         setIsDeleting(true);
 
         try {
-            await onDelete(password);
+            await onDelete(confirmUsername);
             // Dialog will be closed by parent on success
         } catch (err: unknown) {
             setError((err instanceof Error ? err.message : null) || t('deleteAccount.error') || 'Failed to delete account');
         } finally {
             setIsDeleting(false);
         }
-    }, [isValid, password, onDelete, t]);
+    }, [isValid, confirmUsername, onDelete, t]);
 
     const handleCleanup = useCallback(() => {
         if (isDeleting) return;
-        setPassword('');
         setConfirmUsername('');
         setError(null);
-        setShowPassword(false);
     }, [isDeleting]);
 
     return (
@@ -79,34 +74,6 @@ const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
                         </Text>
                     </View>
                 )}
-
-                <View className="mb-4">
-                    <Text className="text-muted-foreground text-[13px] mb-2">
-                        {t('deleteAccount.passwordLabel') || 'Enter your password'}
-                    </Text>
-                    <View className="flex-row items-center border border-border bg-background rounded-lg">
-                        <TextInput
-                            className="text-foreground flex-1 text-base py-3 px-4"
-                            value={password}
-                            onChangeText={setPassword}
-                            placeholder={t('deleteAccount.passwordPlaceholder') || 'Password'}
-                            placeholderTextColor={theme.colors.textSecondary}
-                            secureTextEntry={!showPassword}
-                            autoCapitalize="none"
-                            editable={!isDeleting}
-                        />
-                        <TouchableOpacity
-                            onPress={() => setShowPassword(!showPassword)}
-                            className="p-3"
-                        >
-                            <OxyIcon
-                                name={showPassword ? 'eye-off' : 'eye'}
-                                size={20}
-                                color={theme.colors.textSecondary}
-                            />
-                        </TouchableOpacity>
-                    </View>
-                </View>
 
                 <View className="mb-4">
                     <Text className="text-muted-foreground text-[13px] mb-2">

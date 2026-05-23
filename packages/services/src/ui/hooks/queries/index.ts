@@ -29,6 +29,7 @@ export {
 export {
   useSecurityActivity,
   useRecentSecurityActivity,
+  useInfiniteSecurityActivity,
 } from './useSecurityQueries';
 
 // Query keys and invalidation helpers (for advanced usage)

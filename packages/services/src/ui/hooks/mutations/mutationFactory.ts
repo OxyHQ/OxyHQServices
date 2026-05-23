@@ -21,6 +21,11 @@ import { useAuthStore } from '../../stores/authStore';
 export interface ProfileMutationConfig<TData, TVariables> {
   /** The mutation function that makes the API call */
   mutationFn: (variables: TVariables) => Promise<TData>;
+  /**
+   * Stable mutation key for the offline queue. Required so TanStack Query
+   * can correlate paused mutations across refetches/resume cycles.
+   */
+  mutationKey: readonly unknown[];
   /** Query keys to cancel before mutation */
   cancelQueryKeys?: unknown[][];
   /** Function to apply optimistic update to the user data */
@@ -45,6 +50,7 @@ export interface ProfileMutationConfig<TData, TVariables> {
  * @example
  * ```ts
  * const updateProfile = createProfileMutation({
+ *   mutationKey: mutationKeys.account.updateProfile,
  *   mutationFn: (updates) => oxyServices.updateProfile(updates),
  *   optimisticUpdate: (user, updates) => updates,
  *   errorMessage: 'Failed to update profile',
@@ -58,6 +64,7 @@ export function createProfileMutation<TVariables>(
 ): UseMutationOptions<User, Error, TVariables, { previousUser?: User }> {
   const {
     mutationFn,
+    mutationKey,
     cancelQueryKeys = [],
     optimisticUpdate,
     errorMessage = 'Operation failed',
@@ -69,6 +76,7 @@ export function createProfileMutation<TVariables>(
   } = config;
 
   return {
+    mutationKey: [...mutationKey],
     mutationFn,
 
     onMutate: async (variables) => {
@@ -151,6 +159,11 @@ export function createProfileMutation<TVariables>(
 export interface GenericMutationConfig<TData, TVariables, TContext> {
   /** The mutation function */
   mutationFn: (variables: TVariables) => Promise<TData>;
+  /**
+   * Stable mutation key for the offline queue. Required so TanStack Query
+   * can correlate paused mutations across refetches/resume cycles.
+   */
+  mutationKey: readonly unknown[];
   /** Query key for optimistic data */
   queryKey: unknown[];
   /** Function to create optimistic data */
@@ -172,6 +185,7 @@ export function createGenericMutation<TData, TVariables>(
 ): UseMutationOptions<TData, Error, TVariables, { previous?: TData }> {
   const {
     mutationFn,
+    mutationKey,
     queryKey,
     optimisticData,
     errorMessage = 'Operation failed',
@@ -180,6 +194,7 @@ export function createGenericMutation<TData, TVariables>(
   } = config;
 
   return {
+    mutationKey: [...mutationKey],
     mutationFn,
 
     onMutate: async (variables) => {

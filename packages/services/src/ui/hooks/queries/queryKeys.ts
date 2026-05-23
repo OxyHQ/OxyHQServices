@@ -62,6 +62,8 @@ export const queryKeys = {
       [...queryKeys.security.all, 'activity', limit, offset, eventType] as const,
     recent: (limit: number) =>
       [...queryKeys.security.all, 'recent', limit] as const,
+    infinite: (limit: number, eventType?: string) =>
+      [...queryKeys.security.all, 'infinite', limit, eventType] as const,
   },
 } as const;
 

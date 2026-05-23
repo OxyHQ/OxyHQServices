@@ -15,6 +15,7 @@ import { useI18n } from '../hooks/useI18n';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { useSettingToggles } from '../hooks/useSettingToggle';
 import type { BlockedUser, RestrictedUser } from '@oxyhq/core';
+import { getAccountDisplayName } from '@oxyhq/core';
 import { useOxy } from '../context/OxyContext';
 
 interface PrivacySettings {
@@ -67,7 +68,7 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
     goBack,
 }) => {
     const { oxyServices, user } = useOxy();
-    const { t } = useI18n();
+    const { t, locale } = useI18n();
     const [isLoading, setIsLoading] = useState(true);
     const [blockedUsers, setBlockedUsers] = useState<BlockedUser[]>([]);
     const [restrictedUsers, setRestrictedUsers] = useState<RestrictedUser[]>([]);
@@ -167,35 +168,36 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
         }
     }, [oxyServices, t]);
 
-    // Helper to extract user info from blocked/restricted objects
+    // Helper to extract user info from blocked/restricted objects.
+    // Display names go through the canonical helper so the fallback chain is
+    // identical across every UI surface (name → username → publicKey → "Unnamed").
     const extractUserInfo = useCallback((
         item: BlockedUser | RestrictedUser,
         idField: 'blockedId' | 'restrictedId'
     ) => {
         let userIdField: string | { _id: string; username?: string; avatar?: string };
-        let username: string;
+        let userShape: { username?: string };
         let avatar: string | undefined;
 
         if (idField === 'blockedId' && 'blockedId' in item) {
             userIdField = item.blockedId;
-            username = typeof item.blockedId === 'string'
-                ? (item.username || 'Unknown')
-                : (item.blockedId.username || 'Unknown');
+            userShape = typeof item.blockedId === 'string'
+                ? { username: item.username }
+                : { username: item.blockedId.username };
             avatar = typeof item.blockedId === 'string' ? item.avatar : item.blockedId.avatar;
         } else if (idField === 'restrictedId' && 'restrictedId' in item) {
             userIdField = item.restrictedId;
-            username = typeof item.restrictedId === 'string'
-                ? (item.username || 'Unknown')
-                : (item.restrictedId.username || 'Unknown');
+            userShape = typeof item.restrictedId === 'string'
+                ? { username: item.username }
+                : { username: item.restrictedId.username };
             avatar = typeof item.restrictedId === 'string' ? item.avatar : item.restrictedId.avatar;
         } else {
-            // Fallback (should not happen)
-            return { userId: '', username: 'Unknown', avatar: undefined };
+            return { userId: '', displayName: getAccountDisplayName(null, locale), avatar: undefined };
         }
 
         const userId = typeof userIdField === 'string' ? userIdField : userIdField._id;
-        return { userId, username, avatar };
-    }, []);
+        return { userId, displayName: getAccountDisplayName(userShape, locale), avatar };
+    }, [locale]);
 
     const bloomTheme = useTheme();
 
@@ -330,13 +332,13 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                         />
                     ) : (
                         blockedUsers.map((blocked) => {
-                            const { userId, username, avatar } = extractUserInfo(blocked, 'blockedId');
+                            const { userId, displayName, avatar } = extractUserInfo(blocked, 'blockedId');
                             const avatarUri = avatar && oxyServices ? oxyServices.getFileDownloadUrl(avatar, 'thumb') : undefined;
                             return (
                                 <SettingsListItem
                                     key={userId}
-                                    icon={<Avatar uri={avatarUri} name={username} size={20} />}
-                                    title={username}
+                                    icon={<Avatar uri={avatarUri} name={displayName} size={20} />}
+                                    title={displayName}
                                     rightElement={
                                         <TouchableOpacity onPress={() => handleUnblock(userId)} style={[styles.actionButton, { backgroundColor: bloomTheme.colors.backgroundSecondary }]}>
                                             <Text style={[styles.actionButtonText, { color: bloomTheme.colors.error }]}>{t('privacySettings.unblock') || 'Unblock'}</Text>
@@ -359,13 +361,13 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                         />
                     ) : (
                         restrictedUsers.map((restricted) => {
-                            const { userId, username, avatar } = extractUserInfo(restricted, 'restrictedId');
+                            const { userId, displayName, avatar } = extractUserInfo(restricted, 'restrictedId');
                             const avatarUri = avatar && oxyServices ? oxyServices.getFileDownloadUrl(avatar, 'thumb') : undefined;
                             return (
                                 <SettingsListItem
                                     key={userId}
-                                    icon={<Avatar uri={avatarUri} name={username} size={20} />}
-                                    title={username}
+                                    icon={<Avatar uri={avatarUri} name={displayName} size={20} />}
+                                    title={displayName}
                                     description={t('privacySettings.restrictedDescription') || 'Limited interactions'}
                                     rightElement={
                                         <TouchableOpacity onPress={() => handleUnrestrict(userId)} style={[styles.actionButton, { backgroundColor: bloomTheme.colors.backgroundSecondary }]}>

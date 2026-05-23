@@ -23,6 +23,7 @@ import { SettingsIcon } from '../components/SettingsIcon';
 import { useI18n } from '../hooks/useI18n';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { getDisplayName, getShortDisplayName } from '../utils/userUtils';
+import { getAccountDisplayName, getAccountFallbackHandle } from '@oxyhq/core';
 import { useColorScheme } from '../hooks/useColorScheme';
 import { Colors } from '../constants/theme';
 import { normalizeColorScheme, normalizeTheme } from '../utils/themeUtils';
@@ -82,7 +83,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
         isAuthenticated,
         openAvatarPicker,
     } = useOxy();
-    const { t } = useI18n();
+    const { t, locale } = useI18n();
     const [showMoreAccounts, setShowMoreAccounts] = useState(false);
     const [additionalAccountsData, setAdditionalAccountsData] = useState<any[]>([]);
     const [loadingAdditionalAccounts, setLoadingAdditionalAccounts] = useState(false);
@@ -149,27 +150,13 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
 
     React.useEffect(() => {
         if (usersData && usersData.length > 0) {
-            const accountsData = usersData.map(({ sessionId, user: userProfile }: { sessionId: string; user: any }) => {
-                if (!userProfile) {
-                    return {
-                        id: sessionId,
-                        sessionId,
-                        username: 'Unknown User',
-                        email: 'No email available',
-                        avatar: null,
-                        userProfile: null
-                    };
-                }
-                return {
-                    id: sessionId,
-                    sessionId,
-                    username: userProfile.username,
-                    email: userProfile.email,
-                    name: userProfile.name,
-                    avatar: userProfile.avatar,
-                    userProfile
-                };
-            });
+            const accountsData = usersData.map(({ sessionId, user: userProfile }: { sessionId: string; user: any }) => ({
+                id: sessionId,
+                sessionId,
+                userProfile: userProfile ?? null,
+                avatar: userProfile?.avatar ?? null,
+                email: userProfile?.email,
+            }));
             setAdditionalAccountsData(accountsData);
             setLoadingAdditionalAccounts(false);
         } else if (additionalAccounts.length === 0) {
@@ -240,12 +227,12 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
         deleteAccountControl.open();
     }, [user, t, deleteAccountControl]);
 
-    const handleConfirmDelete = useCallback(async (password: string) => {
+    const handleConfirmDelete = useCallback(async (confirmText: string) => {
         if (!oxyServices || !user) {
             throw new Error(t('accountOverview.items.deleteAccount.error') || 'Service not available');
         }
 
-        await oxyServices.deleteAccount(password);
+        await oxyServices.deleteAccount(confirmText);
         toast.success(t('accountOverview.items.deleteAccount.success') || 'Account deleted successfully');
         deleteAccountControl.close();
         await logout();
@@ -322,7 +309,13 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                     <SettingsListItem
                         icon={<SettingsIcon name="account" color={baseThemeColors.iconSecurity} />}
                         title={displayName}
-                        description={user ? (user.email || user.username) : (t('common.status.loading') || 'Loading...')}
+                        description={(() => {
+                            if (!user) return t('common.status.loading') || 'Loading...';
+                            if (user.email) return user.email;
+                            const handle = getAccountFallbackHandle(user);
+                            if (!handle) return '';
+                            return user.username ? `@${handle}` : handle;
+                        })()}
                         onPress={() => navigate?.('AccountSettings', { activeTab: 'profile' })}
                     />
                 </SettingsListGroup>
@@ -379,34 +372,39 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                                 showChevron={false}
                             />
                         ) : additionalAccountsData.length > 0 ? (
-                            additionalAccountsData.map((account) => (
-                                <SettingsListItem
-                                    key={`account-${account.id}`}
-                                    icon={
-                                        <View style={styles.userIcon}>
-                                            {account.avatar ? (
-                                                <Image
-                                                    source={{ uri: oxyServices.getFileDownloadUrl(account.avatar, 'thumb') }}
-                                                    style={styles.accountAvatarImage}
-                                                />
-                                            ) : (
-                                                <View style={styles.accountAvatarFallback}>
-                                                    <Text style={styles.accountAvatarText}>
-                                                        {account.username?.charAt(0).toUpperCase() || '?'}
-                                                    </Text>
-                                                </View>
-                                            )}
-                                        </View>
-                                    }
-                                    title={typeof account.name === 'object'
-                                        ? account.name?.full || account.name?.first || account.username
-                                        : account.name || account.username}
-                                    description={account.email || account.username}
-                                    onPress={() => {
-                                        toast.info(t('accountOverview.items.accountSwitcher.switchPrompt', { username: account.username }) || `Switch to ${account.username}?`);
-                                    }}
-                                />
-                            ))
+                            additionalAccountsData.map((account) => {
+                                const accountDisplayName = getAccountDisplayName(account.userProfile, locale);
+                                const accountHandle = getAccountFallbackHandle(account.userProfile);
+                                const description = account.email
+                                    ?? (accountHandle && account.userProfile?.username ? `@${accountHandle}` : accountHandle)
+                                    ?? '';
+                                return (
+                                    <SettingsListItem
+                                        key={`account-${account.id}`}
+                                        icon={
+                                            <View style={styles.userIcon}>
+                                                {account.avatar ? (
+                                                    <Image
+                                                        source={{ uri: oxyServices.getFileDownloadUrl(account.avatar, 'thumb') }}
+                                                        style={styles.accountAvatarImage}
+                                                    />
+                                                ) : (
+                                                    <View style={styles.accountAvatarFallback}>
+                                                        <Text style={styles.accountAvatarText}>
+                                                            {accountDisplayName.charAt(0).toUpperCase()}
+                                                        </Text>
+                                                    </View>
+                                                )}
+                                            </View>
+                                        }
+                                        title={accountDisplayName}
+                                        description={description}
+                                        onPress={() => {
+                                            toast.info(t('accountOverview.items.accountSwitcher.switchPrompt', { username: accountDisplayName }) || `Switch to ${accountDisplayName}?`);
+                                        }}
+                                    />
+                                );
+                            })
                         ) : (
                             <SettingsListItem
                                 icon={<SettingsIcon name="account-outline" color="#ccc" />}

@@ -1,4 +1,4 @@
-import { QueryClient } from '@tanstack/react-query';
+import { QueryClient, onlineManager } from '@tanstack/react-query';
 import { isDev } from '@oxyhq/core';
 import type { StorageInterface } from '../utils/storageHelpers';
 
@@ -66,9 +66,18 @@ export const createPersistenceAdapter = (storage: StorageInterface) => {
 };
 
 /**
- * Create a QueryClient with offline-first configuration
+ * Create a QueryClient with offline-first configuration.
+ *
+ * Mutations marked with `networkMode: 'offlineFirst'` are queued by TanStack
+ * Query when offline (status "paused") and resumed automatically when
+ * `onlineManager` transitions back to online. Network monitoring wiring lives
+ * in `OxyProvider.tsx`.
+ *
+ * NOTE: This is in-memory queueing only. The queue does not survive an app
+ * restart while offline — for cross-restart persistence add
+ * `@tanstack/react-query-persist-client` with an async storage persister.
  */
-export const createQueryClient = (storage?: StorageInterface | null): QueryClient => {
+export const createQueryClient = (_storage?: StorageInterface | null): QueryClient => {
   const client = new QueryClient({
     defaultOptions: {
       queries: {
@@ -95,10 +104,24 @@ export const createQueryClient = (storage?: StorageInterface | null): QueryClien
     },
   });
 
-  // Note: Persistence is handled by TanStack Query's built-in persistence
-  // For now, we rely on the query client's default behavior with networkMode: 'offlineFirst'
-  // The cache will be available in memory and queries will use cached data when offline
-  // Full persistence to AsyncStorage can be added later with @tanstack/react-query-persist-client if needed
+  // Defensive: explicitly resume paused mutations whenever the network
+  // transitions back to online. TanStack Query does this internally too,
+  // but wiring it here keeps the behaviour robust if a custom onlineManager
+  // implementation is swapped in by the host app.
+  const unsubscribe = onlineManager.subscribe((isOnline) => {
+    if (isOnline) {
+      void client.getMutationCache().resumePausedMutations();
+    }
+  });
+
+  // Stash the unsubscribe so callers (tests) can clean up if they replace
+  // the client. We attach via a typed extension instead of `as any`.
+  Object.defineProperty(client, '__oxyOnlineUnsubscribe', {
+    value: unsubscribe,
+    enumerable: false,
+    configurable: true,
+    writable: false,
+  });
 
   return client;
 };

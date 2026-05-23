@@ -1,5 +1,6 @@
-import type { FileMetadata } from '@oxyhq/core';
+import type { AssetUploadInput, FileMetadata, RNFileDescriptor } from '@oxyhq/core';
 import { File as ExpoFile } from 'expo-file-system';
+import { Platform } from 'react-native';
 import { toast } from '../../lib/sonner';
 import type { RouteName } from '../navigation/routes';
 import { updateAvatarVisibility } from '@oxyhq/core';
@@ -11,6 +12,32 @@ import { updateAvatarVisibility } from '@oxyhq/core';
  */
 interface FileWithUri extends File {
   uri?: string;
+}
+
+/**
+ * Picker descriptor as returned by expo-document-picker / expo-image-picker.
+ * Carries enough info to either build a web `File` from the URI or pass the
+ * descriptor straight to FormData on React Native.
+ */
+export interface PickerAsset {
+  file?: File | Blob;
+  uri?: string;
+  name?: string | null;
+  mimeType?: string | null;
+  size?: number | null;
+}
+
+/**
+ * Type guard — returns true if the input is a React Native file descriptor
+ * (carries a URI but is not a real DOM `File` / `Blob` instance).
+ */
+export function isRNFileDescriptor(input: unknown): input is RNFileDescriptor {
+  if (!input || typeof input !== 'object') return false;
+  const obj = input as Record<string, unknown>;
+  if (typeof obj.uri !== 'string') return false;
+  if (typeof File !== 'undefined' && input instanceof File) return false;
+  if (typeof Blob !== 'undefined' && input instanceof Blob) return false;
+  return true;
 }
 
 /**
@@ -39,65 +66,66 @@ export function getFileIcon(contentType: string): string {
 }
 
 /**
- * Convert DocumentPicker asset to File object
- * Handles both web (native File API) and mobile (URI-based) file sources
- * Expo 54 compatible - works across all platforms
+ * Convert a document/image picker asset into a value that
+ * `OxyServices.assetUpload` can accept.
+ *
+ * - On the web, builds a real `File` (with the `uri` field preserved for
+ *   preview rendering) by fetching the asset as a Blob.
+ * - On React Native (iOS/Android), returns the picker descriptor directly
+ *   ({ uri, type, name, size }). RN's `FormData` reads the file from disk
+ *   during the multipart upload — no in-JS Blob conversion needed. Attempting
+ *   to wrap an ArrayBuffer in a Blob fails on Hermes ("Creating blobs from
+ *   'ArrayBuffer' and 'ArrayBufferView' are not supported").
  */
 export async function convertDocumentPickerAssetToFile(
-    doc: { file?: File | Blob; uri?: string; name?: string | null; mimeType?: string | null; size?: number | null },
+    doc: PickerAsset,
     index: number
-): Promise<File | null> {
+): Promise<FileWithUri | RNFileDescriptor | null> {
+    const fileName = doc.name || `file-${index + 1}`;
+    const fileType = doc.mimeType || 'application/octet-stream';
+
+    // React Native path — return the descriptor as-is. FormData handles it.
+    if (Platform.OS !== 'web') {
+        if (!doc.uri) {
+            throw new Error('Missing file data (no uri property)');
+        }
+        return {
+            uri: doc.uri,
+            type: fileType,
+            name: fileName,
+            size: typeof doc.size === 'number' ? doc.size : undefined,
+        };
+    }
+
     try {
         let file: FileWithUri | null = null;
 
-        // Priority 1: Use doc.file if available (web native File API)
-        // This is the most efficient path as it doesn't require fetching
-        if (doc.file && doc.file instanceof globalThis.File) {
+        // Priority 1: Use doc.file if available (web native File API).
+        // This is the most efficient path as it doesn't require fetching.
+        if (doc.file && typeof globalThis.File !== 'undefined' && doc.file instanceof globalThis.File) {
             file = doc.file as FileWithUri;
             // Ensure file has required properties
             if (!file.name && doc.name) {
                 // Create new File with proper name if missing
-                file = new globalThis.File([file], doc.name, { type: file.type || doc.mimeType || 'application/octet-stream' });
+                file = new globalThis.File([file], doc.name, { type: file.type || fileType });
             }
-            // Preserve URI for preview if available (useful for mobile previews)
+            // Preserve URI for preview if available
             if (doc.uri) {
                 file.uri = doc.uri;
             }
             return file;
         }
 
-        // Priority 2: Use uri to create File using Expo 54 FileSystem API
-        // This path handles mobile file URIs (file://, content://) and web blob URLs
+        // Priority 2: Build File from URI (web blob URLs or http(s) URLs).
         if (doc.uri) {
             try {
-                // Check if it's a web blob URL - use fetch for those
-                if (doc.uri.startsWith('blob:') || doc.uri.startsWith('http://') || doc.uri.startsWith('https://')) {
-                    const response = await fetch(doc.uri);
-                    if (!response.ok) {
-                        throw new Error(`Failed to fetch file: ${response.statusText}`);
-                    }
-                    const blob = await response.blob();
-                    const fileName = doc.name || `file-${index + 1}`;
-                    const fileType = doc.mimeType || blob.type || 'application/octet-stream';
-                    file = new globalThis.File([blob], fileName, { type: fileType }) as FileWithUri;
-                    // Preserve URI for preview
-                    file.uri = doc.uri;
-                    return file;
-                }
-
-                // For mobile file URIs (file://, content://), use fetch to get blob
-                // React Native's Blob doesn't support Uint8Array directly, so we use fetch
-                const fileName = doc.name || `file-${index + 1}`;
-                const fileType = doc.mimeType || 'application/octet-stream';
-
-                // Use fetch to get the file as a blob (works with file:// and content:// URIs in React Native)
                 const response = await fetch(doc.uri);
                 if (!response.ok) {
                     throw new Error(`Failed to fetch file: ${response.statusText}`);
                 }
                 const blob = await response.blob();
-                file = new globalThis.File([blob], fileName, { type: fileType }) as FileWithUri;
-                // Preserve URI for preview (especially important for mobile)
+                const resolvedType = doc.mimeType || blob.type || 'application/octet-stream';
+                file = new globalThis.File([blob], fileName, { type: resolvedType }) as FileWithUri;
                 file.uri = doc.uri;
                 return file;
             } catch (error: unknown) {
@@ -162,7 +190,7 @@ export function getSafeDownloadUrl(
  * Upload file raw - helper function for file uploads
  */
 export async function uploadFileRaw(
-    file: File | Blob,
+    file: AssetUploadInput,
     userId: string,
     // biome-ignore lint/suspicious/noExplicitAny: OxyServices type cannot be fully resolved due to mixin composition pattern
     oxyServices: any,

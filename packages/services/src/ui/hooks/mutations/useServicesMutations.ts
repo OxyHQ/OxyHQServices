@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import type { User, ClientSession } from '@oxyhq/core';
+import type { ClientSession } from '@oxyhq/core';
 import { queryKeys, invalidateSessionQueries } from '../queries/queryKeys';
+import { mutationKeys } from './mutationKeys';
 import { useOxy } from '../../context/OxyContext';
 import { toast } from '../../../lib/sonner';
 
@@ -8,10 +9,11 @@ import { toast } from '../../../lib/sonner';
  * Switch active session
  */
 export const useSwitchSession = () => {
-  const { switchSession, activeSessionId } = useOxy();
+  const { switchSession } = useOxy();
   const queryClient = useQueryClient();
 
   return useMutation({
+    mutationKey: [...mutationKeys.session.switch],
     mutationFn: async (sessionId: string) => {
       return await switchSession(sessionId);
     },
@@ -35,10 +37,11 @@ export const useSwitchSession = () => {
  * Logout from a session
  */
 export const useLogoutSession = () => {
-  const { oxyServices, activeSessionId, sessions } = useOxy();
+  const { oxyServices, activeSessionId } = useOxy();
   const queryClient = useQueryClient();
 
   return useMutation({
+    mutationKey: [...mutationKeys.session.logout],
     mutationFn: async (targetSessionId?: string) => {
       if (!activeSessionId) {
         throw new Error('No active session');
@@ -92,6 +95,7 @@ export const useLogoutAll = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
+    mutationKey: [...mutationKeys.session.logoutAll],
     mutationFn: async () => {
       if (!activeSessionId) {
         throw new Error('No active session');
@@ -119,6 +123,7 @@ export const useUpdateDeviceName = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
+    mutationKey: [...mutationKeys.session.updateDeviceName],
     mutationFn: async (deviceName: string) => {
       if (!activeSessionId) {
         throw new Error('No active session');
@@ -146,6 +151,7 @@ export const useRemoveDevice = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
+    mutationKey: [...mutationKeys.session.removeDevice],
     mutationFn: async (deviceId: string) => {
       await oxyServices.removeDevice(deviceId);
       return deviceId;

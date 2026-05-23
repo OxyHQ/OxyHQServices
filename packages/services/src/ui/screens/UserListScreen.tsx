@@ -16,7 +16,7 @@ import { FollowButton } from '../components';
 import { Ionicons } from '@expo/vector-icons';
 import { useI18n } from '../hooks/useI18n';
 import { useOxy } from '../context/OxyContext';
-import { logger } from '@oxyhq/core';
+import { logger, getAccountDisplayName, getAccountFallbackHandle } from '@oxyhq/core';
 import type { User } from '@oxyhq/core';
 
 type ListMode = 'followers' | 'following';
@@ -48,7 +48,7 @@ const UserListScreen: React.FC<UserListScreenProps> = ({
 
   const bloomTheme = useTheme();
   const styles = createStyles();
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
 
   const currentUserId = currentUser?.id || (currentUser?._id as string | undefined);
 
@@ -150,18 +150,21 @@ const UserListScreen: React.FC<UserListScreenProps> = ({
                 ? oxyServices.getFileDownloadUrl(item.avatar, 'thumb')
                 : undefined
             }
-            name={item.username || item.name?.full}
+            name={getAccountDisplayName(item, locale)}
             size={48}
           />
           <View style={styles.userInfo}>
             <Text style={styles.userName} className="text-foreground" numberOfLines={1}>
-              {item.name?.full || item.username || 'Unknown User'}
+              {getAccountDisplayName(item, locale)}
             </Text>
-            {item.username && (
-              <Text style={styles.userHandle} className="text-muted-foreground" numberOfLines={1}>
-                @{item.username}
-              </Text>
-            )}
+            {(() => {
+              const handle = getAccountFallbackHandle(item);
+              return handle ? (
+                <Text style={styles.userHandle} className="text-muted-foreground" numberOfLines={1}>
+                  {item.username ? `@${handle}` : handle}
+                </Text>
+              ) : null;
+            })()}
             {description ? (
               <Text style={styles.userBio} className="text-foreground" numberOfLines={2}>
                 {description}
@@ -176,7 +179,7 @@ const UserListScreen: React.FC<UserListScreenProps> = ({
         </TouchableOpacity>
       );
     },
-    [bloomTheme, styles, handleUserPress, currentUserId, oxyServices]
+    [bloomTheme, styles, handleUserPress, currentUserId, oxyServices, locale]
   );
 
   const renderEmpty = useCallback(() => {

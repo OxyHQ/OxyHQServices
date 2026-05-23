@@ -14,7 +14,7 @@ import { Button } from '@oxyhq/bloom/button';
 import { useI18n } from '../hooks/useI18n';
 import { useOxy } from '../context/OxyContext';
 import { useUpdateProfile } from '../hooks/mutations/useAccountMutations';
-import { updateAvatarVisibility } from '@oxyhq/core';
+import { updateAvatarVisibility, getAccountDisplayName } from '@oxyhq/core';
 
 const GAP = 12;
 const INNER_GAP = 8;
@@ -65,7 +65,7 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
 }) => {
     // Use useOxy() hook for OxyContext values
     const { user, oxyServices } = useOxy();
-    const { t } = useI18n();
+    const { t, locale } = useI18n();
     const updateProfileMutation = useUpdateProfile();
     const currentUser = user || newUser; // fallback
     const bloomTheme = useTheme();
@@ -95,9 +95,11 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
 
     const avatarUri = selectedAvatarId ? oxyServices.getFileDownloadUrl(selectedAvatarId, 'thumb') : undefined;
 
-    // Steps content
-    const welcomeTitle = currentUser?.username
-        ? (t('welcomeNew.welcome.titleWithName', { username: currentUser.username }) || `Welcome, ${currentUser.username} 👋`)
+    // Steps content. Use the canonical helper so partially-onboarded accounts
+    // (publicKey only) still get a friendly greeting instead of a blank one.
+    const welcomeName = getAccountDisplayName(currentUser ?? null, locale);
+    const welcomeTitle = currentUser
+        ? (t('welcomeNew.welcome.titleWithName', { username: welcomeName }) || `Welcome, ${welcomeName} 👋`)
         : (t('welcomeNew.welcome.title') || 'Welcome 👋');
     const steps: Array<{ key: string; title: string; bullets?: string[]; body?: string; showAvatar?: boolean; }> = [
         { key: 'welcome', title: welcomeTitle, body: t('welcomeNew.welcome.body') || "You just created an account in a calm, ethical space. A few quick things — then you're in." },
@@ -260,7 +262,7 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
                         <View style={[styles.avatarSection, styles.sectionSpacing]}>
                             <Avatar
                                 size={120}
-                                name={currentUser?.name?.full || currentUser?.name?.first || currentUser?.username}
+                                name={welcomeName}
                                 uri={avatarUri}
 
                                 backgroundColor={`${colors.primary}20`}

@@ -7,12 +7,14 @@ import Avatar from './Avatar';
 import { useOxy } from '../context/OxyContext';
 import { useFileDownloadUrl } from '../hooks';
 import { fontFamilies } from '../styles/fonts';
+import { getAccountDisplayName, getAccountFallbackHandle } from '@oxyhq/core';
 
 interface ProfileCardProps {
     user: {
-        username: string;
+        username?: string;
         email?: string;
-        name?: { full?: string };
+        name?: { full?: string; first?: string; last?: string };
+        publicKey?: string;
         avatar?: string; // file id
     };
     theme: 'light' | 'dark';
@@ -30,9 +32,12 @@ const ProfileCard: React.FC<ProfileCardProps> = ({
 }) => {
     const { colors } = useTheme();
     const { oxyServices } = useOxy();
-    const { t } = useI18n();
+    const { t, locale } = useI18n();
 
     const avatarUrl = useFileDownloadUrl(oxyServices, user?.avatar, { variant: 'thumb' }).url || undefined;
+    const displayName = getAccountDisplayName(user, locale);
+    const handle = getAccountFallbackHandle(user);
+    const secondaryLine = user?.email ?? (handle && user?.username ? `@${handle}` : handle) ?? null;
 
     return (
         <View style={styles.headerSection}>
@@ -47,17 +52,17 @@ const ProfileCard: React.FC<ProfileCardProps> = ({
                 <View style={styles.userProfile}>
                     <Avatar
                         uri={user?.avatar ? avatarUrl : undefined}
-                        name={user?.name?.full || user?.username}
+                        name={displayName}
                         size={60}
                         theme={theme}
                     />
                     <View style={styles.userInfo}>
-                        <Text className="text-foreground" style={styles.userName}>{user.username}</Text>
-                        {user.email && (
+                        <Text className="text-foreground" style={styles.userName}>{displayName}</Text>
+                        {secondaryLine ? (
                             <Text className="text-muted-foreground" style={styles.userEmail}>
-                                {user.email}
+                                {secondaryLine}
                             </Text>
-                        )}
+                        ) : null}
                         {onEditPress && (
                             <TouchableOpacity
                                 style={styles.editProfileButton}

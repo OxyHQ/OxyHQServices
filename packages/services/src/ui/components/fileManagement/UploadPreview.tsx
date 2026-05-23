@@ -6,11 +6,12 @@ import * as Dialog from '@oxyhq/bloom/dialog';
 import type { DialogControlProps } from '@oxyhq/bloom/dialog';
 import * as Prompt from '@oxyhq/bloom/prompt';
 import { useTheme } from '@oxyhq/bloom/theme';
+import type { RNFileDescriptor } from '@oxyhq/core';
 import { formatFileSize, getFileIcon } from '../../utils/fileManagement';
 import { fileManagementStyles } from './styles';
 
 interface PendingFile {
-    file: File | Blob;
+    file: File | Blob | RNFileDescriptor;
     preview?: string;
     size: number;
     name: string;

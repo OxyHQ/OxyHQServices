@@ -15,11 +15,15 @@ setupFonts();
 // Detect if running on web
 const isWeb = Platform.OS === 'web';
 
+// Variable indirection: the module name is computed at runtime so Metro's
+// static analyzer cannot trace this into the web bundle. Native-only.
+const KEYBOARD_CONTROLLER_MODULE = 'react-native-keyboard-controller';
+
 // Lazy-load optional components (avoids require() for ESM compatibility).
 // The .then() extracts + casts the default export so that `lazy()` sees
 // `Promise<{ default: ComponentType }>` instead of the full module namespace.
 const LazyBottomSheetRouter = lazy((): Promise<{ default: ComponentType }> =>
-    import('./BottomSheetRouter.js').then(
+    import('./BottomSheetRouter').then(
         (mod) => ({ default: mod.default as unknown as ComponentType }),
         (error) => {
             if (__DEV__) {
@@ -31,7 +35,7 @@ const LazyBottomSheetRouter = lazy((): Promise<{ default: ComponentType }> =>
 );
 
 const LazySignInModal = lazy((): Promise<{ default: ComponentType }> =>
-    import('./SignInModal.js').then(
+    import('./SignInModal').then(
         (mod) => ({ default: mod.default as unknown as ComponentType }),
         () => ({ default: (() => null) as FC }),
     ),
@@ -83,14 +87,21 @@ const OxyProvider: FC<OxyProviderProps> = ({
     colorPreset,
 }) => {
 
-    // Dynamic KeyboardProvider for native (avoids require() for ESM compatibility)
+    // Dynamic KeyboardProvider for native. Uses variable indirection
+    // (KEYBOARD_CONTROLLER_MODULE) so Metro's static analyzer cannot trace
+    // the import into the web bundle. On web, the runtime guard short-circuits
+    // before the import runs.
     const [KBProvider, setKBProvider] = useState<FC<{ children: ReactNode }> | null>(null);
     useEffect(() => {
         if (isWeb) return;
-        const moduleName = 'react-native-keyboard-controller';
-        import(/* webpackIgnore: true */ moduleName)
+        const moduleName = KEYBOARD_CONTROLLER_MODULE;
+        import(moduleName)
             .then((mod) => setKBProvider(() => mod.KeyboardProvider))
-            .catch(() => { /* KeyboardProvider not available */ });
+            .catch((error) => {
+                if (__DEV__) {
+                    console.warn('[OxyProvider] react-native-keyboard-controller not available, skipping keyboard support', error);
+                }
+            });
     }, []);
     const KeyboardWrapper: FC<{ children: ReactNode }> = KBProvider ?? (({ children }) => <>{children}</>);
 
@@ -219,6 +230,12 @@ const OxyProvider: FC<OxyProviderProps> = ({
     // Core content: QueryClient + OxyContext + UI overlays
     const coreContent = (
         <QueryClientProvider client={queryClient}>
+            {/*
+              * OxyProvider mounts BloomThemeProvider internally as a convenience —
+              * consumers do NOT need to wrap their own BloomThemeProvider. Any
+              * outer BloomThemeProvider from the consuming app will be shadowed
+              * by this one. Pass `themeMode` and `colorPreset` props instead.
+              */}
             <BloomThemeProvider mode={themeMode} colorPreset={colorPreset}>
                 <OxyContextProvider
                     oxyServices={oxyServices as OxyContextProviderProps['oxyServices']}
