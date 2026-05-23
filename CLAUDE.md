@@ -95,9 +95,11 @@ When splitting imports: use `import type` for type-only imports, regular `import
 - `packages/core/src/index.ts` — all public core exports
 - `packages/core/src/utils/avatarUtils.ts` — shared avatar visibility logic (platform-agnostic)
 - `packages/core/src/utils/accountUtils.ts` — shared account helpers (`buildAccountsArray`, `createQuickAccount`)
+- `packages/core/src/utils/displayUtils.ts` — `getAccountDisplayName`, `getAccountFallbackHandle`, `formatPublicKeyHandle` (canonical display, falls back to `Account 0x12345678…`)
+- `packages/core/src/mixins/OxyServices.contacts.ts` — `contacts.discoverContacts(hashedEmails, hashedPhones)` privacy-first contact discovery
 - `packages/auth-sdk/src/index.ts` — all public auth exports
 - `packages/auth-sdk/src/WebOxyProvider.tsx` — web auth context provider
-- `packages/services/src/index.ts` — RN-specific exports only
+- `packages/services/src/index.ts` — RN-specific exports only; includes `LogoIcon`, `LogoText`
 - `packages/services/src/ui/context/OxyContext.tsx` — React Native auth context
 - `packages/services/src/ui/components/OxyProvider.tsx` — RN provider component
 
@@ -137,6 +139,43 @@ const result = await oxy.makeServiceRequest('POST', '/some/endpoint', data, user
 app.use('/internal', oxy.serviceAuth());
 ```
 
+## KeyManager Safety (core — critical)
+
+- `createIdentity` / `importKeyPair` throw `IdentityAlreadyExistsError` if an identity already exists. Pass `{ overwrite: true }` to replace.
+- Writes use `_persistIdentityAtomic`: backup written first, primary second, followed by a sign/verify probe. Rolls back to backup on failure.
+- `hasIdentity()` requires both keys present, well-formed, and matching (not just key existence).
+- `verifyIdentityIntegrity()` performs a full sign/verify probe, not just byte parsing.
+- `restoreIdentityFromBackup()` refuses to clobber a healthy primary or switch users (mismatched backup rejected).
+- Strict hex/length/range validation on all private/public key material.
+
+## Contact Discovery (api + core)
+
+- Endpoint: `POST /contacts/discover` — accepts `{ hashedEmails: string[], hashedPhones: string[] }` (SHA-256 on client before sending; no PII stored server-side)
+- Rate limited: 200 hashes per request, 5 requests/min/user
+- Core mixin: `oxy.contacts.discoverContacts(hashedEmails, hashedPhones)`
+- `User` model has `hashedEmail`, `hashedPhone`, `phone` fields; `hashedEmail` / `hashedPhone` auto-computed via pre-validate hook
+
+## Accounts App Patterns (packages/accounts)
+
+- **i18n**: `LocaleProvider` + `useTranslation` hook in `packages/accounts/lib/i18n/`; 11 locales (EN + ES fully populated); device locale via `Intl.DateTimeFormat().resolvedOptions().locale` (no `expo-localization` native module needed)
+- **Typed routes**: `typedRoutes: true` in `app.json` — all `router.push()` calls must use typed path strings, no `as any` casts
+- **Error boundaries**: at root, `(tabs)`, and `(auth)` layout levels using an `ErrorFallback` component
+- **Activity History**: `/(tabs)/activity.tsx` using `GET /security/activity` with infinite scroll
+- **Recovery phrase**: mandatory acknowledgement screen at `/(auth)/create-identity/recovery-phrase` before identity creation completes; persistent reminder in Security screen until acknowledged
+- **Delete account**: `delete-account.tsx` — signed deletion + `KeyManager.hasIdentity()` pre-flight + username confirmation
+- **Font**: do NOT set `fontFamily: 'Inter-*'` — `BloomThemeProvider` sets Inter as `Text.defaultProps` globally
+- **expo-router v56**: no `@react-navigation/*` direct imports; synthesize `{ type: 'OPEN_DRAWER' }` payloads inline
+- **Test coverage**: 142 jest tests in accounts; 64 in core; 39 in api
+
+## HttpService (services)
+
+- On React Native (Expo 56), FormData uploads route through `XMLHttpRequest` — do NOT use fetch for multipart uploads on RN (Expo 56's fetch rejects RN file descriptors).
+
+## Offline Mutation Queue (services)
+
+- React Query `networkMode: 'offlineFirst'` with stable `mutationKey` on all mutations
+- `useMutationStatus` aggregator hook surfaces "Syncing…" indicators across the app
+
 ## Terminology
 
 - **OxyServices** — main API client class (in core)
@@ -144,6 +183,7 @@ app.use('/internal', oxy.serviceAuth());
 - **WebOxyProvider** — Web React context provider (in auth)
 - **useOxy** — RN auth hook (services), **useWebOxy** — web auth hook (auth)
 - **Bottom sheet** — native modal navigation system in services (29+ screens)
+- **LogoIcon / LogoText** — Bloom-themed logo exports from `@oxyhq/services`
 
 ## Auth App (packages/auth)
 
