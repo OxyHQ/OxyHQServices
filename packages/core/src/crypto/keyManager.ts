@@ -185,8 +185,11 @@ export class KeyManager {
    */
   static generateKeyPairSync(): KeyPair {
     const keyPair = ec.genKeyPair();
+    // Pad to canonical 64 hex chars. `elliptic`'s `getPrivate('hex')` strips
+    // leading zero bytes which would otherwise corrupt strict-length checks
+    // and signature derivation on the read path.
     return {
-      privateKey: keyPair.getPrivate('hex'),
+      privateKey: keyPair.getPrivate('hex').padStart(64, '0'),
       publicKey: keyPair.getPublic('hex'),
     };
   }
@@ -198,9 +201,9 @@ export class KeyManager {
     const randomBytes = await getSecureRandomBytes(32);
     const privateKeyHex = uint8ArrayToHex(randomBytes);
     const keyPair = ec.keyFromPrivate(privateKeyHex);
-    
+
     return {
-      privateKey: keyPair.getPrivate('hex'),
+      privateKey: keyPair.getPrivate('hex').padStart(64, '0'),
       publicKey: keyPair.getPublic('hex'),
     };
   }
@@ -846,7 +849,10 @@ export class KeyManager {
       if (privateKey && publicKey) {
         if (KeyManager.isValidPrivateKey(privateKey) && KeyManager.isValidPublicKey(publicKey)) {
           try {
-            const derived = ec.keyFromPrivate(privateKey).getPublic('hex');
+            // Pad the private key to canonical 64-hex-char form before
+            // deriving (elliptic strips leading zeros on storage).
+            const paddedPrivate = privateKey.padStart(64, '0');
+            const derived = ec.keyFromPrivate(paddedPrivate).getPublic('hex');
             hasIdentity = derived === publicKey;
             if (!hasIdentity) {
               logger.warn(
@@ -1181,12 +1187,17 @@ export class KeyManager {
     if (!/^[0-9a-fA-F]+$/.test(privateKey)) {
       return false;
     }
-    // secp256k1 private keys must be exactly 32 bytes (64 hex chars).
-    if (privateKey.length !== 64) {
+    // secp256k1 private keys are 32 bytes (64 hex chars). `elliptic`'s
+    // `getPrivate('hex')` strips leading zero bytes, so a valid key whose
+    // leading byte is 0 ends up as 62 hex chars in storage. Accept any
+    // length from 1..64 here — we re-pad before deriving below — and
+    // reject longer than 64.
+    if (privateKey.length > 64) {
       return false;
     }
+    const padded = privateKey.padStart(64, '0');
     try {
-      const keyPair = ec.keyFromPrivate(privateKey);
+      const keyPair = ec.keyFromPrivate(padded);
       // Verify it can derive a public key
       const pub = keyPair.getPublic('hex');
       if (!pub || pub.length === 0) {
