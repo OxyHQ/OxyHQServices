@@ -37,6 +37,7 @@ import modelsStatsRoutes from './routes/models-stats';
 import platformStatsRoutes from './routes/platform-stats';
 import topicsRoutes from './routes/topics.routes';
 import managedAccountsRouter from './routes/managedAccounts';
+import contactsRouter from './routes/contacts';
 import { startSmtpInbound, stopSmtpInbound } from './services/smtp.inbound';
 import { smtpOutbound } from './services/smtp.outbound';
 import { startSnoozeCron, stopSnoozeCron } from './cron/snooze.cron';
@@ -434,6 +435,7 @@ app.use('/models', modelsStatsRoutes);
 app.use('/platform-stats', platformStatsRoutes);
 app.use('/topics', topicsRoutes);
 app.use('/managed-accounts', userRateLimiter, csrfProtection, authMiddleware, managedAccountsRouter);
+app.use('/contacts', userRateLimiter, csrfProtection, contactsRouter);
 
 // ActivityPub endpoints — serves actor profiles and public keys for federation.
 import { getInstanceActor, getUserActor, getUserKeyPair } from './services/federation.service';

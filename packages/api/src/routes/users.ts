@@ -517,10 +517,19 @@ router.put(
       throw new NotFoundError('User not found');
     }
 
+    // Merge only the provided fields into privacySettings using dot-path
+    // updates. Using `{ $set: { privacySettings: ... } }` would replace the
+    // whole subdocument and wipe any fields the client did not include.
+    const incoming = req.body.privacySettings as Record<string, unknown>;
+    const setOps: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(incoming)) {
+      setOps[`privacySettings.${key}`] = value;
+    }
+
     // Update privacy settings
     const updatedUser = await User.findByIdAndUpdate(
       userId,
-      { $set: { privacySettings: req.body.privacySettings } },
+      Object.keys(setOps).length > 0 ? { $set: setOps } : {},
       { new: true, runValidators: true }
     )
       .select('-password -refreshToken')

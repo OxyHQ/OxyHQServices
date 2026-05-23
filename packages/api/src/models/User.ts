@@ -1,4 +1,5 @@
 import mongoose, { Document, Schema } from "mongoose";
+import { maybeHashEmail, maybeHashPhone } from "../utils/contactHash";
 
 /**
  * Represents an authentication method linked to a user account.
@@ -17,6 +18,19 @@ export interface AuthMethod {
 export interface IUser extends Document {
   username?: string;
   email?: string;
+  phone?: string; // E.164-style phone number (optional). Raw form is private and never returned by public profile endpoints.
+  /**
+   * SHA-256 hex digest of the lowercased+trimmed email. Auto-maintained by a
+   * pre-validate hook whenever `email` changes. Indexed for contact discovery
+   * lookups via `POST /contacts/discover`.
+   */
+  hashedEmail?: string;
+  /**
+   * SHA-256 hex digest of the normalized E.164 phone number. Auto-maintained
+   * by a pre-validate hook whenever `phone` changes. Indexed for contact
+   * discovery lookups via `POST /contacts/discover`.
+   */
+  hashedPhone?: string;
   publicKey?: string; // ECDSA secp256k1 public key (hex) - primary identifier for local identity
   password?: string; // Hashed password for password-based accounts
   refreshToken?: string | null;
@@ -195,6 +209,32 @@ const UserSchema: Schema = new Schema(
       trim: true,
       lowercase: true,
       select: true,
+    },
+    // Optional phone number stored in raw form for the owner's own use.
+    // Never returned by public profile endpoints — use `hashedPhone` for matching.
+    phone: {
+      type: String,
+      required: false,
+      trim: true,
+      select: false,
+    },
+    // SHA-256 hex digest of normalized email. Maintained by a pre-validate hook
+    // — do not set directly. See utils/contactHash.ts for canonicalization.
+    hashedEmail: {
+      type: String,
+      required: false,
+      lowercase: true,
+      trim: true,
+      select: false,
+    },
+    // SHA-256 hex digest of E.164-normalized phone. Maintained by a pre-validate
+    // hook — do not set directly. See utils/contactHash.ts for canonicalization.
+    hashedPhone: {
+      type: String,
+      required: false,
+      lowercase: true,
+      trim: true,
+      select: false,
     },
     publicKey: {
       type: String,
@@ -422,6 +462,9 @@ UserSchema.set("toJSON", {
     ret.id = ret.publicKey || ret.id || ret._id?.toString();
     delete ret.password;
     delete ret._id;
+    // Strip contact-discovery internals — these must never leak to clients.
+    delete ret.hashedEmail;
+    delete ret.hashedPhone;
     return ret;
   },
 });
@@ -433,6 +476,9 @@ UserSchema.set("toObject", {
     ret.id = ret.publicKey || ret.id || ret._id?.toString();
     delete ret.password;
     delete ret._id;
+    // Strip contact-discovery internals — these must never leak to clients.
+    delete ret.hashedEmail;
+    delete ret.hashedPhone;
     return ret;
   },
 });
@@ -444,6 +490,30 @@ UserSchema.set("toObject", {
 // Social graph indexes
 UserSchema.index({ following: 1 });
 UserSchema.index({ followers: 1 });
+
+// Contact discovery indexes — sparse because most older users won't have a phone
+// and federated/agent users may have neither field set.
+UserSchema.index({ hashedEmail: 1 }, { sparse: true });
+UserSchema.index({ hashedPhone: 1 }, { sparse: true });
+
+/**
+ * Keep `hashedEmail` and `hashedPhone` in sync with their canonical sources
+ * whenever a user document is created or its `email`/`phone` field changes.
+ *
+ * This is the single source of truth for hash maintenance — all entry points
+ * (signup, social auth, profile update, identity linking, managed accounts)
+ * use `.save()` and therefore flow through this hook.
+ */
+UserSchema.pre('validate', function syncContactHashes() {
+  if (this.isNew || this.isModified('email')) {
+    const email = this.get('email');
+    this.set('hashedEmail', typeof email === 'string' ? maybeHashEmail(email) : undefined);
+  }
+  if (this.isNew || this.isModified('phone')) {
+    const phone = this.get('phone');
+    this.set('hashedPhone', typeof phone === 'string' ? maybeHashPhone(phone) : undefined);
+  }
+});
 
 // Note: username and email are now optional, so we don't need compound index with username
 // Email already has sparse unique index in schema

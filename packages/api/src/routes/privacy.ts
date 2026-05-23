@@ -82,9 +82,14 @@ const updatePrivacySettings = asyncHandler(async (req: Request, res: Response) =
     throw new BadRequestError('Not authorized to update these settings');
   }
 
+  const setOps: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(settings)) {
+    setOps[`privacySettings.${key}`] = value;
+  }
+
   const user = await User.findByIdAndUpdate(
     objectId,
-    { $set: { privacySettings: settings } },
+    Object.keys(setOps).length > 0 ? { $set: setOps } : {},
     { new: true }
   ).select('privacySettings');
 
