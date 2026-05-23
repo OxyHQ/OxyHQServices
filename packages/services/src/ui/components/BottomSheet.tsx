@@ -197,32 +197,44 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
         scrollTo,
     }), [present, dismiss, scrollTo]);
 
-    // Body pan-to-dismiss. Coordinated with the inner ScrollView via
-    // `simultaneousWithExternalGesture(scrollViewRef)`: both gestures run, and
-    // we gate the pan's effect on scroll position. The pan only acts when the
-    // user is at the top of the content AND pulls down (translationY > 0), so
-    // mid-scroll the ScrollView keeps full control of vertical touches.
+    // Body pan-to-dismiss. The pan uses `manualActivation` and only flips
+    // itself to active when (a) the inner ScrollView is at the top AND (b) the
+    // user is moving their finger downward beyond a small threshold. In every
+    // other case (mid-scroll, upward pulls) it fails and the ScrollView keeps
+    // full ownership of the touch. This is the same coordination model
+    // @gorhom/bottom-sheet uses and is the only RNGH 2.x pattern that does
+    // not steal vertical events from the inner scroller on Android.
+    const touchStartY = useSharedValue(0);
     const panGesture = useMemo(
         () =>
             Gesture.Pan()
                 .enabled(enablePanDownToClose)
+                .manualActivation(true)
                 .simultaneousWithExternalGesture(scrollViewRef)
-                .activeOffsetY(8)
-                .failOffsetX([-25, 25])
-                .onStart(() => {
+                .onTouchesDown((e) => {
                     'worklet';
+                    const t = e.changedTouches[0];
+                    if (t) touchStartY.value = t.absoluteY;
                     context.value = { y: translateY.value };
-                    allowPanClose.value = scrollOffsetY.value <= 4;
+                })
+                .onTouchesMove((e, state) => {
+                    'worklet';
+                    const t = e.changedTouches[0];
+                    if (!t) return;
+                    const dy = t.absoluteY - touchStartY.value;
+                    const atTop = scrollOffsetY.value <= 4;
+                    // Activate only when (at scroll top) AND (finger has moved
+                    // downward by > 8dp). Any other motion: fail so the
+                    // ScrollView claims the gesture.
+                    if (atTop && dy > 8) {
+                        state.activate();
+                    } else if (dy < -4 || !atTop) {
+                        state.fail();
+                    }
                 })
                 .onUpdate((event) => {
                     'worklet';
-                    if (!allowPanClose.value) return;
-                    if (event.translationY < 0) return; // never drag upward
-                    if (scrollOffsetY.value > 4) {
-                        // user scrolled away from top mid-gesture → release
-                        allowPanClose.value = false;
-                        return;
-                    }
+                    if (event.translationY < 0) return;
                     const newTranslateY = context.value.y + event.translationY;
                     if (newTranslateY >= 0) {
                         translateY.value = newTranslateY;
@@ -230,7 +242,6 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
                 })
                 .onEnd((event) => {
                     'worklet';
-                    if (!allowPanClose.value) return;
                     const velocity = event.velocityY;
                     const distance = translateY.value;
                     const closeThreshold = Math.max(140, SCREEN_HEIGHT * 0.25);
@@ -249,12 +260,12 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
                     }
                 }),
         [
-            allowPanClose,
             context,
             enablePanDownToClose,
             finishClose,
             opacity,
             scrollOffsetY,
+            touchStartY,
             translateY,
         ],
     );
