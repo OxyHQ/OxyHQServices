@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useQuery, useQueries } from '@tanstack/react-query';
 import { authenticatedApiCall } from '@oxyhq/core';
 import type { User } from '@oxyhq/core';
@@ -51,23 +52,33 @@ export const useUserProfiles = (sessionIds: string[], options?: { enabled?: bool
 export const useCurrentUser = (options?: { enabled?: boolean }) => {
   const { oxyServices, activeSessionId, isAuthenticated } = useOxy();
 
-  return useQuery({
+  const query = useQuery({
     queryKey: queryKeys.accounts.current(),
     queryFn: async () => {
       if (!activeSessionId) {
         throw new Error('No active session');
       }
-      const fresh = await oxyServices.getUserBySession(activeSessionId);
-      // Mirror into the auth store so any consumer reading `useOxy().user`
-      // sees the latest record from the server (createdAt, updatedAt, etc.)
-      // without each screen having to call this hook explicitly.
-      useAuthStore.getState().setUser(fresh);
-      return fresh;
+      return await oxyServices.getUserBySession(activeSessionId);
     },
     enabled: (options?.enabled !== false) && isAuthenticated && !!activeSessionId,
     staleTime: 1 * 60 * 1000, // 1 minute for current user
     gcTime: 30 * 60 * 1000,
   });
+
+  // Mirror fresh server-side user into the auth store so consumers reading
+  // useOxy().user pick up newly-arriving fields (createdAt, updatedAt, etc.).
+  // Done in an effect — never inside queryFn, which must remain pure.
+  // Compares by reference: TanStack returns a stable reference when nothing
+  // changed, so this only fires on actual data updates and never clobbers
+  // more recent optimistic store writes on every background refetch.
+  const data = query.data;
+  useEffect(() => {
+    if (data) {
+      useAuthStore.getState().setUser(data);
+    }
+  }, [data]);
+
+  return query;
 };
 
 /**

@@ -380,6 +380,14 @@ export const useUpdatePrivacySettings = () => {
         }
       }
 
+      // After partial rollback, force a fresh fetch from the server so any
+      // concurrent-mutation state we may have failed to restore correctly
+      // gets reconciled with the source of truth. Targeted at privacy.settings
+      // only — NOT onSettled, which would defeat the merge fix on success.
+      if (targetUserId) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.privacy.settings(targetUserId) });
+      }
+
       toast.error(error instanceof Error ? error.message : 'Failed to update privacy settings');
     },
     // On success, MERGE the server response into the cached state. Older
@@ -392,13 +400,34 @@ export const useUpdatePrivacySettings = () => {
       const incoming = (data ?? {}) as Record<string, unknown>;
       const requested = (settings ?? {}) as Record<string, unknown>;
 
+      // Detect server-side overrides: cases where the server validated the
+      // request but persisted a value different from what was requested
+      // (e.g. a policy rule clamped the toggle). The user would otherwise
+      // see the switch silently flip back. Surface via dev-only warn — a
+      // user toast is too noisy for normal flows; UI will reflect the
+      // server value below since the server is authoritative.
+      if (__DEV__) {
+        const overrides: string[] = [];
+        for (const key of Object.keys(requested)) {
+          if (key in incoming && incoming[key] !== requested[key]) {
+            overrides.push(key);
+          }
+        }
+        if (overrides.length > 0) {
+          console.warn(
+            '[useUpdatePrivacySettings] Server overrode requested values for keys:',
+            overrides,
+          );
+        }
+      }
+
       if (targetUserId) {
         queryClient.setQueryData<Record<string, unknown>>(
           queryKeys.privacy.settings(targetUserId),
           (previous) => ({
             ...(previous ?? {}),
             ...requested,
-            ...incoming,
+            ...incoming, // server wins for fields it explicitly returned
           }),
         );
       }
@@ -416,12 +445,11 @@ export const useUpdatePrivacySettings = () => {
         queryClient.setQueryData<User>(queryKeys.accounts.current(), updatedUser);
         useAuthStore.getState().setUser(updatedUser);
       }
-      invalidateAccountQueries(queryClient);
+      // Deliberately NOT invalidating any queries here. invalidateAccountQueries
+      // invalidates accounts.all which is the prefix for accounts.current(),
+      // triggering a background refetch of useCurrentUser that would overwrite
+      // the merged state above. The onSuccess merge is the source of truth.
     },
-    // Deliberately NOT invalidating the privacy.settings cache here. A
-    // background refetch against a backend that overwrites partial updates
-    // would re-fetch a wiped subdocument and revert the user's toggle. The
-    // onSuccess merge above is the source of truth.
   });
 };
 

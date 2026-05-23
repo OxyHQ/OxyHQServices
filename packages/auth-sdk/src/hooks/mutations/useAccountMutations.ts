@@ -11,7 +11,7 @@ import { useAuthStore } from '../../stores/authStore';
  * Update user profile with optimistic updates and offline queue support
  */
 export const useUpdateProfile = () => {
-  const { oxyServices, activeSessionId, user } = useWebOxy();
+  const { oxyServices, activeSessionId } = useWebOxy();
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -48,12 +48,31 @@ export const useUpdateProfile = () => {
 
       return { previousUser };
     },
-    // On error, rollback
+    // On error, rollback ONLY the keys this mutation tried to change
     onError: (error, updates, context) => {
-      if (context?.previousUser) {
-        queryClient.setQueryData(queryKeys.accounts.current(), context.previousUser);
+      if (context?.previousUser && updates) {
+        const previousUser = context.previousUser;
+        const changedKeys = Object.keys(updates) as Array<keyof User>;
+        const partialRollback = changedKeys.reduce<Partial<User>>((acc, key) => {
+          (acc as Record<string, unknown>)[key as string] = previousUser[key];
+          return acc;
+        }, {});
+
+        const current = queryClient.getQueryData<User>(queryKeys.accounts.current());
+        if (current) {
+          queryClient.setQueryData<User>(queryKeys.accounts.current(), {
+            ...current,
+            ...partialRollback,
+          });
+        }
         if (activeSessionId) {
-          queryClient.setQueryData(queryKeys.users.profile(activeSessionId), context.previousUser);
+          const currentProfile = queryClient.getQueryData<User>(queryKeys.users.profile(activeSessionId));
+          if (currentProfile) {
+            queryClient.setQueryData<User>(queryKeys.users.profile(activeSessionId), {
+              ...currentProfile,
+              ...partialRollback,
+            });
+          }
         }
       }
       toast.error(error instanceof Error ? error.message : 'Failed to update profile');
@@ -126,11 +145,25 @@ export const useUploadAvatar = () => {
 
       return { previousUser };
     },
-    onError: (error, file, context) => {
+    onError: (error, _file, context) => {
+      // Avatar upload only mutates the `avatar` field — restore only that key
       if (context?.previousUser) {
-        queryClient.setQueryData(queryKeys.accounts.current(), context.previousUser);
+        const previousAvatar = context.previousUser.avatar;
+        const current = queryClient.getQueryData<User>(queryKeys.accounts.current());
+        if (current) {
+          queryClient.setQueryData<User>(queryKeys.accounts.current(), {
+            ...current,
+            avatar: previousAvatar,
+          });
+        }
         if (activeSessionId) {
-          queryClient.setQueryData(queryKeys.users.profile(activeSessionId), context.previousUser);
+          const currentProfile = queryClient.getQueryData<User>(queryKeys.users.profile(activeSessionId));
+          if (currentProfile) {
+            queryClient.setQueryData<User>(queryKeys.users.profile(activeSessionId), {
+              ...currentProfile,
+              avatar: previousAvatar,
+            });
+          }
         }
       }
       toast.error(error instanceof Error ? error.message : 'Failed to upload avatar');
@@ -177,7 +210,13 @@ export const useUpdateAccountSettings = () => {
       if (!userId) {
         throw new Error('User ID is required to update account settings');
       }
-      const updatedPrivacy = await oxyServices.updatePrivacySettings(settings, userId);
+      const updatedPrivacy = await authenticatedApiCall<Record<string, unknown>>(
+        oxyServices,
+        activeSessionId,
+        () => oxyServices.updatePrivacySettings(settings, userId)
+      );
+      // Reflect the merged privacy block back onto the user object so cache
+      // consumers that key off `User.privacySettings` see the change.
       const currentUser = queryClient.getQueryData<User>(queryKeys.accounts.current());
       if (currentUser) {
         return {
@@ -204,8 +243,25 @@ export const useUpdateAccountSettings = () => {
       return { previousUser };
     },
     onError: (error, settings, context) => {
-      if (context?.previousUser) {
-        queryClient.setQueryData(queryKeys.accounts.current(), context.previousUser);
+      // Restore only the privacySettings keys this mutation tried to change
+      if (context?.previousUser && settings) {
+        const previousPrivacy = (context.previousUser.privacySettings ?? {}) as Record<string, unknown>;
+        const changedKeys = Object.keys(settings);
+        const partialPrivacyRollback = changedKeys.reduce<Record<string, unknown>>((acc, key) => {
+          acc[key] = previousPrivacy[key];
+          return acc;
+        }, {});
+
+        const current = queryClient.getQueryData<User>(queryKeys.accounts.current());
+        if (current) {
+          queryClient.setQueryData<User>(queryKeys.accounts.current(), {
+            ...current,
+            privacySettings: {
+              ...(current.privacySettings ?? {}),
+              ...partialPrivacyRollback,
+            } as { [key: string]: unknown },
+          });
+        }
       }
       toast.error(error instanceof Error ? error.message : 'Failed to update settings');
     },
@@ -232,7 +288,7 @@ export const useUpdatePrivacySettings = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ settings, userId }: { settings: Record<string, any>; userId?: string }) => {
+    mutationFn: async ({ settings, userId }: { settings: Record<string, unknown>; userId?: string }) => {
       const targetUserId = userId || user?.id;
       if (!targetUserId) {
         throw new Error('User ID is required');
@@ -278,45 +334,97 @@ export const useUpdatePrivacySettings = () => {
 
       return { previousPrivacySettings, previousUser };
     },
-    // On error, rollback
-    onError: (error, { userId }, context) => {
+    // On error, rollback ONLY the privacy keys this mutation tried to change.
+    // Restoring the entire previous object would wipe out other concurrent
+    // optimistic updates (e.g. user toggles two privacy switches in quick
+    // succession; failure on one must not revert the other).
+    onError: (error, { settings, userId }, context) => {
       const targetUserId = userId || user?.id;
-      if (context?.previousPrivacySettings && targetUserId) {
-        queryClient.setQueryData(queryKeys.privacy.settings(targetUserId), context.previousPrivacySettings);
+      const changedKeys = settings ? Object.keys(settings) : [];
+
+      // Rollback the privacy.settings query (partial)
+      if (context?.previousPrivacySettings && targetUserId && changedKeys.length > 0) {
+        const previousPrivacy = context.previousPrivacySettings as Record<string, unknown>;
+        const partialPrivacyRollback = changedKeys.reduce<Record<string, unknown>>((acc, key) => {
+          acc[key] = previousPrivacy[key];
+          return acc;
+        }, {});
+        const currentPrivacy = queryClient.getQueryData<Record<string, unknown>>(queryKeys.privacy.settings(targetUserId));
+        if (currentPrivacy) {
+          queryClient.setQueryData(queryKeys.privacy.settings(targetUserId), {
+            ...currentPrivacy,
+            ...partialPrivacyRollback,
+          });
+        }
       }
-      if (context?.previousUser) {
-        queryClient.setQueryData(queryKeys.accounts.current(), context.previousUser);
+
+      // Rollback the accounts.current() user.privacySettings (partial)
+      if (context?.previousUser && changedKeys.length > 0) {
+        const previousPrivacy = (context.previousUser.privacySettings ?? {}) as Record<string, unknown>;
+        const partialPrivacyRollback = changedKeys.reduce<Record<string, unknown>>((acc, key) => {
+          acc[key] = previousPrivacy[key];
+          return acc;
+        }, {});
+        const current = queryClient.getQueryData<User>(queryKeys.accounts.current());
+        if (current) {
+          queryClient.setQueryData<User>(queryKeys.accounts.current(), {
+            ...current,
+            privacySettings: {
+              ...(current.privacySettings ?? {}),
+              ...partialPrivacyRollback,
+            } as { [key: string]: unknown },
+          });
+        }
       }
+
+      // After partial rollback, reconcile against the server so the cache
+      // converges to the authoritative state for the failed keys.
+      if (targetUserId) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.privacy.settings(targetUserId) });
+      }
+
       toast.error(error instanceof Error ? error.message : 'Failed to update privacy settings');
     },
-    // On success, invalidate and refetch
-    onSuccess: (data, { userId }) => {
+    // On success, MERGE the server response into the cached state. Older
+    // API builds returned only the changed field (or wiped the privacySettings
+    // subdocument when handed a partial update), which would clobber every
+    // other toggle if we blindly replaced. Defensive merge means the UI stays
+    // consistent regardless of server behaviour.
+    onSuccess: (data, { userId, settings }) => {
       const targetUserId = userId || user?.id;
+      const incoming = (data ?? {}) as Record<string, unknown>;
+      const requested = (settings ?? {}) as Record<string, unknown>;
+
       if (targetUserId) {
-        queryClient.setQueryData(queryKeys.privacy.settings(targetUserId), data);
+        queryClient.setQueryData<Record<string, unknown>>(
+          queryKeys.privacy.settings(targetUserId),
+          (previous) => ({
+            ...(previous ?? {}),
+            ...requested,
+            ...incoming,
+          }),
+        );
       }
-      // Also update account query if it contains privacy settings
+
       const currentUser = queryClient.getQueryData<User>(queryKeys.accounts.current());
       if (currentUser) {
         const updatedUser: User = {
           ...currentUser,
-          privacySettings: data as { [key: string]: unknown },
+          privacySettings: {
+            ...((currentUser.privacySettings as Record<string, unknown> | undefined) ?? {}),
+            ...requested,
+            ...incoming,
+          },
         };
         queryClient.setQueryData<User>(queryKeys.accounts.current(), updatedUser);
-
-        // Update authStore so frontend components see the changes immediately
         useAuthStore.getState().setUser(updatedUser);
       }
       invalidateAccountQueries(queryClient);
     },
-    // Always refetch after error or success
-    onSettled: (data, error, { userId }) => {
-      const targetUserId = userId || user?.id;
-      if (targetUserId) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.privacy.settings(targetUserId) });
-      }
-      queryClient.invalidateQueries({ queryKey: queryKeys.accounts.current() });
-    },
+    // Deliberately NOT invalidating the privacy.settings cache on success. A
+    // background refetch against a backend that overwrites partial updates
+    // would re-fetch a wiped subdocument and revert the user's toggle. The
+    // onSuccess merge above is the source of truth.
   });
 };
 
@@ -354,7 +462,7 @@ export const useUploadFile = () => {
     }: {
       file: File;
       visibility?: 'private' | 'public' | 'unlisted';
-      metadata?: Record<string, any>;
+      metadata?: Record<string, unknown>;
       onProgress?: (progress: number) => void;
     }) => {
       return authenticatedApiCall<UploadResult>(

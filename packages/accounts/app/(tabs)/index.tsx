@@ -351,7 +351,7 @@ export default function HomeScreen() {
       icon: 'calendar-outline',
       iconColor: colors.sidebarIconData,
       title: t('home.accountInfo.accountCreated'),
-      value: accountCreatedDate,
+      value: accountCreatedDate || '—',
     },
   ], [colors.sidebarIconPersonalInfo, colors.sidebarIconData, displayName, accountCreatedDate, handleEditName, t]);
 

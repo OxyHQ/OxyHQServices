@@ -180,6 +180,22 @@ export class KeyManager {
   }
 
   /**
+   * Lowercase and pad to canonical 64-hex-char form.
+   *
+   * Tolerates the 1-in-256 leading-zero-strip that elliptic's
+   * `getPrivate('hex')` produces, and the externally-imported uppercase-hex
+   * legacy keys. EVERY `ec.keyFromPrivate(...)` call site in this file must
+   * canonicalize first so that derivation is stable regardless of storage
+   * representation.
+   *
+   * Private (used only inside KeyManager) — public consumers should not need
+   * to think about hex representation.
+   */
+  private static canonicalPrivateKey(key: string): string {
+    return key.toLowerCase().padStart(64, '0');
+  }
+
+  /**
    * Generate a new ECDSA secp256k1 key pair
    * Returns the keys in hexadecimal format
    */
@@ -200,7 +216,7 @@ export class KeyManager {
   static async generateKeyPair(): Promise<KeyPair> {
     const randomBytes = await getSecureRandomBytes(32);
     const privateKeyHex = uint8ArrayToHex(randomBytes);
-    const keyPair = ec.keyFromPrivate(privateKeyHex);
+    const keyPair = ec.keyFromPrivate(KeyManager.canonicalPrivateKey(privateKeyHex));
 
     return {
       privateKey: keyPair.getPrivate('hex').padStart(64, '0'),
@@ -395,11 +411,15 @@ export class KeyManager {
     }
 
     const store = await initSecureStore();
-    const keyPair = ec.keyFromPrivate(privateKey);
+    // Canonicalize incoming key BEFORE storage so the stored value is always
+    // in canonical 64-hex-char lowercase form going forward. Without this,
+    // legacy short keys would derive a different public key on the read path.
+    const canonicalPrivate = KeyManager.canonicalPrivateKey(privateKey);
+    const keyPair = ec.keyFromPrivate(canonicalPrivate);
     const publicKey = keyPair.getPublic('hex');
 
     if (isIOS()) {
-      await store.setItemAsync(STORAGE_KEYS.SHARED_PRIVATE_KEY, privateKey, {
+      await store.setItemAsync(STORAGE_KEYS.SHARED_PRIVATE_KEY, canonicalPrivate, {
         keychainAccessible: store.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
         keychainAccessGroup: IOS_KEYCHAIN_GROUP,
       } as any);
@@ -408,7 +428,7 @@ export class KeyManager {
         keychainAccessGroup: IOS_KEYCHAIN_GROUP,
       } as any);
     } else if (isAndroid()) {
-      await store.setItemAsync(STORAGE_KEYS.SHARED_PRIVATE_KEY, privateKey, {
+      await store.setItemAsync(STORAGE_KEYS.SHARED_PRIVATE_KEY, canonicalPrivate, {
         keychainAccessible: store.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
       });
 
@@ -622,13 +642,22 @@ export class KeyManager {
   ): Promise<void> {
     const store = await initSecureStore();
 
+    // Canonicalize BEFORE persistence so the stored value is always in
+    // canonical 64-hex-char lowercase form going forward. This is the single
+    // place all primary writes flow through, so once a value lands here all
+    // subsequent reads see a stable representation.
+    const canonicalPrivate = KeyManager.canonicalPrivateKey(privateKey);
+    const canonicalPublic = publicKey.toLowerCase();
+
     // Step 1: Backup BEFORE touching primary storage so we always have a
-    // recoverable copy even if the device crashes mid-write.
+    // recoverable copy even if the device crashes mid-write. Store the
+    // backup in canonical form too so a backup-restore cycle preserves
+    // canonicalization.
     try {
-      await store.setItemAsync(STORAGE_KEYS.BACKUP_PRIVATE_KEY, privateKey, {
+      await store.setItemAsync(STORAGE_KEYS.BACKUP_PRIVATE_KEY, canonicalPrivate, {
         keychainAccessible: store.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
       });
-      await store.setItemAsync(STORAGE_KEYS.BACKUP_PUBLIC_KEY, publicKey);
+      await store.setItemAsync(STORAGE_KEYS.BACKUP_PUBLIC_KEY, canonicalPublic);
       await store.setItemAsync(STORAGE_KEYS.BACKUP_TIMESTAMP, Date.now().toString());
     } catch (error) {
       logger.error('Failed to write identity backup before primary', error, { component: 'KeyManager' });
@@ -638,8 +667,8 @@ export class KeyManager {
     // Step 2 + 3: Write primary keys. Public first so that if private write
     // fails we are still missing the most critical bit.
     try {
-      await store.setItemAsync(STORAGE_KEYS.PUBLIC_KEY, publicKey);
-      await store.setItemAsync(STORAGE_KEYS.PRIVATE_KEY, privateKey, {
+      await store.setItemAsync(STORAGE_KEYS.PUBLIC_KEY, canonicalPublic);
+      await store.setItemAsync(STORAGE_KEYS.PRIVATE_KEY, canonicalPrivate, {
         keychainAccessible: store.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
       });
     } catch (error) {
@@ -664,7 +693,13 @@ export class KeyManager {
       throw new IdentityPersistError('Failed to verify identity after write', error);
     }
 
-    if (readBackPrivate !== privateKey || readBackPublic !== publicKey) {
+    // Hex comparisons are case-insensitive — normalize on both sides so a
+    // store that uppercases on round-trip (some keychain backends) doesn't
+    // trigger a spurious mismatch.
+    if (
+      readBackPrivate?.toLowerCase() !== canonicalPrivate ||
+      readBackPublic?.toLowerCase() !== canonicalPublic
+    ) {
       logger.error('Identity round-trip mismatch after write', undefined, { component: 'KeyManager' });
       throw new IdentityPersistError('Identity write was not persisted correctly (round-trip mismatch).');
     }
@@ -674,9 +709,9 @@ export class KeyManager {
     // corruption immediately rather than the next time the user tries to
     // sign in.
     try {
-      const keyPair = ec.keyFromPrivate(readBackPrivate);
+      const keyPair = ec.keyFromPrivate(KeyManager.canonicalPrivateKey(readBackPrivate));
       const derived = keyPair.getPublic('hex');
-      if (derived !== readBackPublic) {
+      if (derived.toLowerCase() !== readBackPublic.toLowerCase()) {
         throw new IdentityPersistError('Stored public key does not match derived public key.');
       }
       // Sign/verify roundtrip using a known test vector
@@ -692,7 +727,7 @@ export class KeyManager {
     }
 
     // Update cache only after we are certain the identity is durable.
-    KeyManager.cachedPublicKey = publicKey;
+    KeyManager.cachedPublicKey = canonicalPublic;
     KeyManager.cachedHasIdentity = true;
   }
 
@@ -746,13 +781,18 @@ export class KeyManager {
       throw new Error('Invalid private key supplied to importKeyPair.');
     }
 
-    const keyPair = ec.keyFromPrivate(privateKey);
+    // Canonicalize the incoming private key so the stored value (and the
+    // derived public key) are always in canonical form. Without this, an
+    // externally-imported short or uppercase key would derive one public
+    // key here and a different one when later read back unpadded.
+    const canonicalPrivate = KeyManager.canonicalPrivateKey(privateKey);
+    const keyPair = ec.keyFromPrivate(canonicalPrivate);
     const publicKey = keyPair.getPublic('hex');
 
     // Refuse silent overwrite — see createIdentity() for rationale.
     if (!options?.overwrite) {
       const existing = await KeyManager.getPublicKey();
-      if (existing && existing !== publicKey) {
+      if (existing && existing.toLowerCase() !== publicKey.toLowerCase()) {
         throw new IdentityAlreadyExistsError(existing);
       }
       // If existing === publicKey, the device already has this exact identity;
@@ -760,7 +800,7 @@ export class KeyManager {
       // is up to date.
     }
 
-    await KeyManager._persistIdentityAtomic(privateKey, publicKey);
+    await KeyManager._persistIdentityAtomic(canonicalPrivate, publicKey);
     return publicKey;
   }
 
@@ -834,78 +874,88 @@ export class KeyManager {
       return KeyManager.cachedHasIdentity;
     }
 
+    let privateKey: string | null;
+    let publicKey: string | null;
     try {
       const store = await initSecureStore();
-      const [privateKey, publicKey] = await Promise.all([
+      [privateKey, publicKey] = await Promise.all([
         store.getItemAsync(STORAGE_KEYS.PRIVATE_KEY),
         store.getItemAsync(STORAGE_KEYS.PUBLIC_KEY),
       ]);
+    } catch (error) {
+      // Storage threw — could be a transient keychain lock (e.g., background
+      // fetch before the device is unlocked). Do NOT cache `false`: if we
+      // did, the next call would skip storage entirely and return false even
+      // after the device is unlocked. Just return false and let the next
+      // call retry from storage.
+      logger.error('Failed to read identity from secure storage', error, { component: 'KeyManager' });
+      return false;
+    }
 
+    // Storage succeeded. Now classify the result. From here onward, any
+    // outcome is stable and safe to cache (the bytes won't change between
+    // calls).
+    let hasIdentity = false;
+    if (privateKey && publicKey) {
       // Require BOTH bytes-present AND parseable AND matching. Any weaker
       // check would let a half-written identity (private without public)
       // pretend to be a real one, which then fails opaquely later in the
       // sign-in flow when SignatureService.sign() can't find the keypair.
-      let hasIdentity = false;
-      if (privateKey && publicKey) {
-        if (KeyManager.isValidPrivateKey(privateKey) && KeyManager.isValidPublicKey(publicKey)) {
-          try {
-            // Pad the private key to canonical 64-hex-char form before
-            // deriving (elliptic strips leading zeros on storage).
-            const paddedPrivate = privateKey.padStart(64, '0');
-            const derived = ec.keyFromPrivate(paddedPrivate).getPublic('hex');
-            hasIdentity = derived === publicKey;
-            if (!hasIdentity) {
-              logger.warn(
-                'KeyManager.hasIdentity: stored public key does not match derived public key',
-                { component: 'KeyManager' },
-              );
-            }
-          } catch (error) {
+      if (KeyManager.isValidPrivateKey(privateKey) && KeyManager.isValidPublicKey(publicKey)) {
+        try {
+          const derived = ec
+            .keyFromPrivate(KeyManager.canonicalPrivateKey(privateKey))
+            .getPublic('hex');
+          // Hex equality is case-insensitive; normalize on both sides to
+          // tolerate legacy uppercase-stored public keys.
+          hasIdentity = derived.toLowerCase() === publicKey.toLowerCase();
+          if (!hasIdentity) {
             logger.warn(
-              'KeyManager.hasIdentity: failed to derive public key from stored private key',
+              'KeyManager.hasIdentity: stored public key does not match derived public key',
               { component: 'KeyManager' },
-              error,
             );
           }
-        } else {
+        } catch (error) {
           logger.warn(
-            'KeyManager.hasIdentity: stored key material is malformed',
+            'KeyManager.hasIdentity: failed to derive public key from stored private key',
             { component: 'KeyManager' },
+            error,
           );
         }
-      }
-
-      // Cache result. We intentionally cache false when partial state is
-      // detected so the next call doesn't re-read the same bytes — callers
-      // should run integrity-recovery (restore from backup) explicitly.
-      KeyManager.cachedHasIdentity = hasIdentity;
-      if (hasIdentity) {
-        KeyManager.cachedPublicKey = publicKey;
-      }
-      // Diagnostic breadcrumb (dev only). Logs lengths + validity flags so we
-      // can tell from `adb logcat` exactly WHY hasIdentity returned what it
-      // did. Never log the key material itself.
-      if (isDev()) {
-        logger.debug(
-          'KeyManager.hasIdentity result',
+      } else {
+        logger.warn(
+          'KeyManager.hasIdentity: stored key material is malformed',
           { component: 'KeyManager' },
-          {
-            privateLen: privateKey?.length ?? 0,
-            publicLen: publicKey?.length ?? 0,
-            privateValid: privateKey ? KeyManager.isValidPrivateKey(privateKey) : null,
-            publicValid: publicKey ? KeyManager.isValidPublicKey(publicKey) : null,
-            derived: hasIdentity,
-          },
         );
       }
-      return hasIdentity;
-    } catch (error) {
-      // If we can't check, assume no identity (safer default)
-      // Cache false to avoid repeated failed attempts
-      KeyManager.cachedHasIdentity = false;
-      logger.error('Failed to check identity', error, { component: 'KeyManager' });
-      return false;
     }
+
+    // Cache result. Storage succeeded, so this verdict is stable:
+    //   - true  → identity exists and round-trips cleanly
+    //   - false → storage is empty / partial / malformed (a stable result;
+    //             callers should run integrity-recovery / restore from
+    //             backup explicitly)
+    KeyManager.cachedHasIdentity = hasIdentity;
+    if (hasIdentity && publicKey) {
+      KeyManager.cachedPublicKey = publicKey;
+    }
+    // Diagnostic breadcrumb (dev only). Logs lengths + validity flags so we
+    // can tell from `adb logcat` exactly WHY hasIdentity returned what it
+    // did. Never log the key material itself.
+    if (isDev()) {
+      logger.debug(
+        'KeyManager.hasIdentity result',
+        { component: 'KeyManager' },
+        {
+          privateLen: privateKey?.length ?? 0,
+          publicLen: publicKey?.length ?? 0,
+          privateValid: privateKey ? KeyManager.isValidPrivateKey(privateKey) : null,
+          publicValid: publicKey ? KeyManager.isValidPublicKey(publicKey) : null,
+          derived: hasIdentity,
+        },
+      );
+    }
+    return hasIdentity;
   }
 
   /**
@@ -1031,16 +1081,18 @@ export class KeyManager {
         return false;
       }
 
-      // Verify public key derives from private key
+      // Verify public key derives from private key (case-insensitive
+      // because hex is case-insensitive — legacy uppercase stored values
+      // must still validate).
       const derivedPublicKey = KeyManager.derivePublicKey(privateKey);
-      if (derivedPublicKey !== publicKey) {
+      if (derivedPublicKey.toLowerCase() !== publicKey.toLowerCase()) {
         return false; // Keys don't match
       }
 
       // Full sign/verify probe — proves the keypair is functional, not just
       // bytewise parseable. A previous version of this method would return
       // true even when the underlying elliptic curve state was wedged.
-      const keyPair = ec.keyFromPrivate(privateKey);
+      const keyPair = ec.keyFromPrivate(KeyManager.canonicalPrivateKey(privateKey));
       const probeHash = '0'.repeat(64);
       const signature = keyPair.sign(probeHash);
       if (!keyPair.verify(probeHash, signature)) {
@@ -1097,9 +1149,11 @@ export class KeyManager {
         return false;
       }
 
-      // Verify backup keys derive consistently
+      // Verify backup keys derive consistently. Hex is case-insensitive so
+      // normalize both sides — a legacy uppercase-stored backup must still
+      // be considered valid.
       const derivedPublicKey = KeyManager.derivePublicKey(backupPrivateKey);
-      if (derivedPublicKey !== backupPublicKey) {
+      if (derivedPublicKey.toLowerCase() !== backupPublicKey.toLowerCase()) {
         logger.warn('Backup public key does not match derived; refusing to restore', { component: 'KeyManager' });
         return false;
       }
@@ -1109,7 +1163,10 @@ export class KeyManager {
       // different identity. Better to surface a corrupted state than
       // silently switch the user to a different account.
       const currentPrimaryPublic = await store.getItemAsync(STORAGE_KEYS.PUBLIC_KEY).catch(() => null);
-      if (currentPrimaryPublic && currentPrimaryPublic !== backupPublicKey) {
+      if (
+        currentPrimaryPublic &&
+        currentPrimaryPublic.toLowerCase() !== backupPublicKey.toLowerCase()
+      ) {
         logger.error(
           'Primary identity is corrupted AND does not match the backup. Refusing to restore to avoid switching accounts.',
           undefined,
@@ -1145,14 +1202,14 @@ export class KeyManager {
     }
     const privateKey = await KeyManager.getPrivateKey();
     if (!privateKey) return null;
-    return ec.keyFromPrivate(privateKey);
+    return ec.keyFromPrivate(KeyManager.canonicalPrivateKey(privateKey));
   }
 
   /**
    * Derive public key from a private key (without storing)
    */
   static derivePublicKey(privateKey: string): string {
-    const keyPair = ec.keyFromPrivate(privateKey);
+    const keyPair = ec.keyFromPrivate(KeyManager.canonicalPrivateKey(privateKey));
     return keyPair.getPublic('hex');
   }
 
@@ -1211,18 +1268,27 @@ export class KeyManager {
     if (privateKey.length > 64) {
       return false;
     }
-    const padded = privateKey.padStart(64, '0');
+    const padded = privateKey.padStart(64, '0').toLowerCase();
+    // After padding, require minimum entropy: reject obvious low-scalar
+    // keys. A scalar that fits in 8 hex chars (~32 bits of entropy) is a
+    // degenerate / accidental key, not a real one. The existing isZero()
+    // check below covers literal 0; this also rejects trivially small
+    // scalars like '1', '2', etc. that would otherwise pad to a valid but
+    // weak key whose public point is trivially derivable.
+    if (/^0{56}/.test(padded)) {
+      return false;
+    }
     try {
       const keyPair = ec.keyFromPrivate(padded);
+      const priv = keyPair.getPrivate();
+      // Private key must be > 0 and < curve order n. elliptic doesn't
+      // enforce this on keyFromPrivate, so we do it here.
+      if (priv.isZero() || priv.cmp(ec.curve.n) >= 0) {
+        return false;
+      }
       // Verify it can derive a public key
       const pub = keyPair.getPublic('hex');
       if (!pub || pub.length === 0) {
-        return false;
-      }
-      // Additional sanity: private key must be > 0 and < curve order n.
-      // elliptic doesn't enforce this on keyFromPrivate, so we do it here.
-      const priv = keyPair.getPrivate();
-      if (priv.isZero() || priv.cmp(ec.curve.n) >= 0) {
         return false;
       }
       return true;

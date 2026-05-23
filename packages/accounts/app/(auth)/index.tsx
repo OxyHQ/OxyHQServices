@@ -55,12 +55,15 @@ export default function AuthIndexScreen() {
 
   // Initial entrance animation
   useEffect(() => {
+    const innerHello: { current: ReturnType<typeof setTimeout> | null } = { current: null };
+    const innerTap: { current: ReturnType<typeof setTimeout> | null } = { current: null };
+
     // "Hello" appears first
     const t1 = setTimeout(() => {
       helloOpacity.value = withTiming(1, { duration: 600 });
       helloTranslateY.value = withTiming(0, { duration: 600 });
       helloRef.current?.reset();
-      setTimeout(() => helloRef.current?.animate(), 200);
+      innerHello.current = setTimeout(() => helloRef.current?.animate(), 200);
     }, 200);
 
     // Human text appears
@@ -72,13 +75,15 @@ export default function AuthIndexScreen() {
     const t3 = setTimeout(() => {
       footerOpacity.value = withTiming(1, { duration: 600 });
       tapToContinueRef.current?.reset();
-      setTimeout(() => tapToContinueRef.current?.animate(), 200);
+      innerTap.current = setTimeout(() => tapToContinueRef.current?.animate(), 200);
     }, 1500);
 
     return () => {
       clearTimeout(t1);
       clearTimeout(t2);
       clearTimeout(t3);
+      if (innerHello.current) clearTimeout(innerHello.current);
+      if (innerTap.current) clearTimeout(innerTap.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -99,6 +104,12 @@ export default function AuthIndexScreen() {
   // renders. We only redirect when status has settled to `'in_progress'`
   // (which implies hasIdentity is true) — never during `'checking'`,
   // because that would race with the identity detection effect.
+  // Fully-onboarded users should never land on the marketing splash. If they
+  // do (deep link, stale route history), bounce them into the app shell.
+  if (status === 'complete') {
+    return <Redirect href="/(tabs)" />;
+  }
+
   if (hasIdentity && status === 'in_progress') {
     return <Redirect href="/(auth)/create-identity" />;
   }
