@@ -241,6 +241,21 @@
     "confirms": {
       "removeAvatar": "¿Eliminar tu foto de perfil?"
     },
+    "crop": {
+      "title": "Recortar avatar",
+      "subtitle": "Pellizca para acercar, arrastra para colocar",
+      "noImage": "No hay imagen para recortar",
+      "reset": "Restablecer",
+      "resetToCenter": "Restablecer al centro",
+      "confirm": "Usar foto",
+      "cancel": "Cancelar",
+      "saving": "Guardando…",
+      "helper": "El círculo recortado es lo que aparecerá en tu perfil. Pellizca para acercar, arrastra para colocar.",
+      "zoom": "{{value}}×",
+      "a11yImage": "Vista previa del recorte. Pellizca para acercar y arrastra para reposicionar la imagen.",
+      "a11yReset": "Restablecer el recorte a la posición predeterminada",
+      "a11yResetAnnouncement": "Recorte restablecido"
+    },
     "toasts": {
       "profileUpdated": "Perfil actualizado correctamente",
       "updateFailed": "Error al actualizar el perfil",
@@ -250,7 +265,10 @@
       "avatarSelected": "Avatar seleccionado",
       "avatarUpdated": "Avatar actualizado",
       "updateAvatarFailed": "Error al actualizar el avatar",
-      "noActiveSession": "No hay sesión activa"
+      "noActiveSession": "No hay sesión activa",
+      "cropMeasureFailed": "No se pudo medir la imagen",
+      "cropNotReady": "La imagen aún no está lista",
+      "cropFailed": "No se pudo recortar la imagen"
     }
   },
   "common": {

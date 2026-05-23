@@ -655,6 +655,21 @@
     "confirms": {
       "removeAvatar": "Remove your profile picture?"
     },
+    "crop": {
+      "title": "Crop avatar",
+      "subtitle": "Pinch to zoom, drag to position",
+      "noImage": "No image to crop",
+      "reset": "Reset",
+      "resetToCenter": "Reset to center",
+      "confirm": "Use photo",
+      "cancel": "Cancel",
+      "saving": "Saving…",
+      "helper": "The cropped circle is what will appear on your profile. Pinch to zoom, drag to position.",
+      "zoom": "{{value}}×",
+      "a11yImage": "Crop preview. Pinch to zoom and drag to reposition the image.",
+      "a11yReset": "Reset crop to default position",
+      "a11yResetAnnouncement": "Crop reset"
+    },
     "toasts": {
       "profileUpdated": "Profile updated successfully",
       "updateFailed": "Failed to update profile",
@@ -664,7 +679,10 @@
       "avatarSelected": "Avatar selected",
       "avatarUpdated": "Avatar updated",
       "updateAvatarFailed": "Failed to update avatar",
-      "noActiveSession": "No active session"
+      "noActiveSession": "No active session",
+      "cropMeasureFailed": "Could not measure the image",
+      "cropNotReady": "Image not ready yet",
+      "cropFailed": "Failed to crop image"
     }
   },
   "accountOverview": {

@@ -1,19 +1,27 @@
 /**
  * AvatarCropScreen
  *
- * Square-crop editor presented after the user picks an image but before the
- * avatar is uploaded. Renders the source image inside a fixed square viewport
- * with pan + pinch gestures (Reanimated + Gesture Handler — already on the
- * services dependency graph), and then calls `expo-image-manipulator` to
- * produce a 512x512 JPEG before invoking `onConfirm` with the cropped file.
+ * Flagship-grade circular crop editor presented after the user picks an image
+ * but before the avatar is uploaded. Inspired by iOS Photos, Google Photos and
+ * Instagram crop tools.
  *
- * `expo-image-manipulator` is an optional peer dependency — it is loaded with
- * `await import(...)` and a clear error is surfaced if the consuming app has
- * not installed it.
+ * Architecture:
+ *  - Full-bleed black canvas, independent of theme, so photos always read well.
+ *  - Translucent top bar with Cancel / Title / Done (primary CTA).
+ *  - Circular viewport with white ring, outer 50% black mask, and a 3x3
+ *    rule-of-thirds grid that appears during gestures and fades after 800ms.
+ *  - Floating zoom chip during pinch.
+ *  - Pan + pinch via Gesture Handler, transform driven by Reanimated.
+ *  - Reduced-motion aware entrance animation.
+ *  - Haptics on milestones via dynamically imported expo-haptics (optional).
+ *
+ * `expo-image-manipulator` and `expo-haptics` are optional peer dependencies —
+ * loaded with `await import(...)`. A missing manipulator surfaces a clear
+ * error; missing haptics simply degrades silently.
  */
 
 import type React from 'react';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     View,
     Text,
@@ -21,16 +29,22 @@ import {
     ActivityIndicator,
     TouchableOpacity,
     Image,
+    Platform,
+    AccessibilityInfo,
+    Pressable,
 } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
+    Easing,
     runOnJS,
     useAnimatedStyle,
     useSharedValue,
+    withDelay,
+    withSpring,
     withTiming,
 } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@oxyhq/bloom/theme';
-import { Header } from '../components';
 import { fontFamilies } from '../styles/fonts';
 import { useI18n } from '../hooks/useI18n';
 import { toast } from '../../lib/sonner';
@@ -66,6 +80,16 @@ const VIEWPORT_SIZE = 320;
 const OUTPUT_SIZE = 512;
 const MIN_SCALE = 1;
 const MAX_SCALE = 4;
+/** Duration (ms) that the rule-of-thirds grid lingers after a gesture ends. */
+const GRID_FADE_DELAY_MS = 800;
+const GRID_FADE_DURATION_MS = 220;
+/** Duration the zoom chip stays visible after a pinch ends. */
+const ZOOM_CHIP_FADE_DELAY_MS = 600;
+const ZOOM_CHIP_FADE_DURATION_MS = 200;
+/** Backdrop color is fixed independent of theme so the photo always reads well. */
+const CANVAS_BG = '#000000';
+const RING_COLOR = '#ffffff';
+const RING_WIDTH = 2;
 
 /**
  * Clamp the translation so the image edges never leave the viewport at any
@@ -127,6 +151,79 @@ async function loadImageManipulator(): Promise<ImageManipulatorModule> {
     }
 }
 
+/**
+ * Haptic feedback wrapper. `expo-haptics` is an optional dependency — when not
+ * installed (or on web), all calls degrade silently. We resolve the module once
+ * and cache the promise so subsequent calls don't repeat the dynamic import.
+ */
+type HapticImpact = 'light' | 'medium' | 'heavy';
+type HapticNotification = 'success' | 'warning' | 'error';
+interface HapticsModule {
+    impactAsync: (style: unknown) => Promise<void>;
+    notificationAsync: (type: unknown) => Promise<void>;
+    selectionAsync: () => Promise<void>;
+    ImpactFeedbackStyle: { Light: unknown; Medium: unknown; Heavy: unknown };
+    NotificationFeedbackType: { Success: unknown; Warning: unknown; Error: unknown };
+}
+
+let hapticsModulePromise: Promise<HapticsModule | null> | null = null;
+function getHaptics(): Promise<HapticsModule | null> {
+    if (Platform.OS === 'web') return Promise.resolve(null);
+    if (hapticsModulePromise) return hapticsModulePromise;
+    hapticsModulePromise = (async () => {
+        try {
+            const mod = (await import('expo-haptics')) as unknown as HapticsModule;
+            if (!mod || typeof mod.impactAsync !== 'function') return null;
+            return mod;
+        } catch {
+            return null;
+        }
+    })();
+    return hapticsModulePromise;
+}
+
+async function hapticImpact(style: HapticImpact): Promise<void> {
+    const h = await getHaptics();
+    if (!h) return;
+    const styleEnum =
+        style === 'heavy'
+            ? h.ImpactFeedbackStyle.Heavy
+            : style === 'medium'
+                ? h.ImpactFeedbackStyle.Medium
+                : h.ImpactFeedbackStyle.Light;
+    try {
+        await h.impactAsync(styleEnum);
+    } catch {
+        // Silent — haptics are non-critical UX polish.
+    }
+}
+
+async function hapticNotification(type: HapticNotification): Promise<void> {
+    const h = await getHaptics();
+    if (!h) return;
+    const typeEnum =
+        type === 'error'
+            ? h.NotificationFeedbackType.Error
+            : type === 'warning'
+                ? h.NotificationFeedbackType.Warning
+                : h.NotificationFeedbackType.Success;
+    try {
+        await h.notificationAsync(typeEnum);
+    } catch {
+        // Silent.
+    }
+}
+
+async function hapticSelection(): Promise<void> {
+    const h = await getHaptics();
+    if (!h) return;
+    try {
+        await h.selectionAsync();
+    } catch {
+        // Silent.
+    }
+}
+
 const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
     goBack,
     onClose,
@@ -138,6 +235,7 @@ const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
 }) => {
     const theme = useTheme();
     const { t } = useI18n();
+    const insets = useSafeAreaInsets();
 
     // Natural size of the source image. May be known up front (passed in) or
     // measured lazily via Image.getSize once the image loads.
@@ -145,11 +243,21 @@ const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
         sourceWidth && sourceHeight ? { width: sourceWidth, height: sourceHeight } : null,
     );
     const [isProcessing, setIsProcessing] = useState(false);
+    const [zoomLabel, setZoomLabel] = useState('1.0');
+    /** True when scale != MIN_SCALE OR translate != 0 — used to reveal the reset link. */
+    const [isModified, setIsModified] = useState(false);
+    const [reduceMotion, setReduceMotion] = useState(false);
 
     // Shared values for the active gesture transform.
     const scale = useSharedValue(MIN_SCALE);
     const translateX = useSharedValue(0);
     const translateY = useSharedValue(0);
+
+    // Entrance scale of the crop circle (pulse-in on mount).
+    const entrance = useSharedValue(reduceMotion ? 1 : 0.95);
+    /** 0..1 opacity for the rule-of-thirds grid and zoom chip. */
+    const gridOpacity = useSharedValue(0);
+    const zoomChipOpacity = useSharedValue(0);
 
     // Refs that mirror the latest committed shared values so the JS-side
     // confirm handler can read them without an extra `useSharedValue → react`
@@ -162,6 +270,11 @@ const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
     const savedScale = useSharedValue(MIN_SCALE);
     const savedTranslateX = useSharedValue(0);
     const savedTranslateY = useSharedValue(0);
+
+    // Track whether we've already announced a min/max bound during the current
+    // pinch so selection haptics don't fire on every frame.
+    const hitMinRef = useRef(false);
+    const hitMaxRef = useRef(false);
 
     // The image is rendered at "cover" relative to the viewport. We compute
     // `baseScale` so 1.0x means the image exactly covers the square; everything
@@ -198,11 +311,72 @@ const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
         handleImageMeasured(imageUri);
     }
 
+    // Detect reduce-motion preference once on mount + subscribe to changes.
+    useEffect(() => {
+        let cancelled = false;
+        AccessibilityInfo.isReduceMotionEnabled()
+            .then((enabled) => {
+                if (cancelled) return;
+                setReduceMotion(enabled);
+                if (enabled) {
+                    entrance.value = 1;
+                }
+            })
+            .catch(() => {
+                // Best-effort — fall back to motion enabled.
+            });
+        const sub = AccessibilityInfo.addEventListener('reduceMotionChanged', (enabled) => {
+            setReduceMotion(enabled);
+            if (enabled) entrance.value = 1;
+        });
+        return () => {
+            cancelled = true;
+            sub.remove();
+        };
+    }, [entrance]);
+
+    // Play the entrance pulse exactly once when motion is allowed.
+    useEffect(() => {
+        if (reduceMotion) return;
+        entrance.value = withSpring(1, {
+            damping: 14,
+            stiffness: 180,
+            mass: 0.9,
+        });
+    }, [entrance, reduceMotion]);
+
     const commitTransform = useCallback((s: number, tx: number, ty: number) => {
         committedScale.current = s;
         committedTranslateX.current = tx;
         committedTranslateY.current = ty;
+        const modified =
+            Math.abs(s - MIN_SCALE) > 0.001 || Math.abs(tx) > 0.5 || Math.abs(ty) > 0.5;
+        setIsModified(modified);
+        setZoomLabel(s.toFixed(1));
     }, []);
+
+    /** Show the rule-of-thirds grid; called from gesture worklets via runOnJS-free path. */
+    const showGrid = useCallback(() => {
+        gridOpacity.value = withTiming(1, { duration: 120, easing: Easing.out(Easing.quad) });
+    }, [gridOpacity]);
+
+    const hideGrid = useCallback(() => {
+        gridOpacity.value = withDelay(
+            GRID_FADE_DELAY_MS,
+            withTiming(0, { duration: GRID_FADE_DURATION_MS, easing: Easing.in(Easing.quad) }),
+        );
+    }, [gridOpacity]);
+
+    const showZoomChip = useCallback(() => {
+        zoomChipOpacity.value = withTiming(1, { duration: 100 });
+    }, [zoomChipOpacity]);
+
+    const hideZoomChip = useCallback(() => {
+        zoomChipOpacity.value = withDelay(
+            ZOOM_CHIP_FADE_DELAY_MS,
+            withTiming(0, { duration: ZOOM_CHIP_FADE_DURATION_MS }),
+        );
+    }, [zoomChipOpacity]);
 
     const panGesture = useMemo(
         () =>
@@ -211,6 +385,7 @@ const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
                     'worklet';
                     savedTranslateX.value = translateX.value;
                     savedTranslateY.value = translateY.value;
+                    runOnJS(showGrid)();
                 })
                 .onUpdate((event) => {
                     'worklet';
@@ -228,9 +403,42 @@ const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
                 .onEnd(() => {
                     'worklet';
                     runOnJS(commitTransform)(scale.value, translateX.value, translateY.value);
+                    runOnJS(hideGrid)();
                 }),
-        [baseFit, commitTransform, savedTranslateX, savedTranslateY, scale, translateX, translateY],
+        [
+            baseFit,
+            commitTransform,
+            hideGrid,
+            savedTranslateX,
+            savedTranslateY,
+            scale,
+            showGrid,
+            translateX,
+            translateY,
+        ],
     );
+
+    /** Imperative helpers invoked from worklets via runOnJS. Stable refs. */
+    const resetPinchBounds = useCallback((): void => {
+        hitMinRef.current = false;
+        hitMaxRef.current = false;
+    }, []);
+
+    const updateZoomLabel = useCallback((s: number): void => {
+        setZoomLabel(s.toFixed(1));
+    }, []);
+
+    const notifyMinBoundHit = useCallback((): void => {
+        if (hitMinRef.current) return;
+        hitMinRef.current = true;
+        void hapticSelection();
+    }, []);
+
+    const notifyMaxBoundHit = useCallback((): void => {
+        if (hitMaxRef.current) return;
+        hitMaxRef.current = true;
+        void hapticSelection();
+    }, []);
 
     const pinchGesture = useMemo(
         () =>
@@ -238,14 +446,15 @@ const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
                 .onStart(() => {
                     'worklet';
                     savedScale.value = scale.value;
+                    runOnJS(showGrid)();
+                    runOnJS(showZoomChip)();
+                    runOnJS(resetPinchBounds)();
                 })
                 .onUpdate((event) => {
                     'worklet';
                     if (!baseFit) return;
-                    const nextScale = Math.min(
-                        MAX_SCALE,
-                        Math.max(MIN_SCALE, savedScale.value * event.scale),
-                    );
+                    const raw = savedScale.value * event.scale;
+                    const nextScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, raw));
                     scale.value = nextScale;
                     // Re-clamp translation since the bounds depend on scale.
                     const clamped = clampTranslation(
@@ -257,12 +466,36 @@ const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
                     );
                     translateX.value = clamped.tx;
                     translateY.value = clamped.ty;
+                    runOnJS(updateZoomLabel)(nextScale);
+                    // Selection haptic on first frame at min/max.
+                    if (nextScale <= MIN_SCALE + 0.001 && raw < MIN_SCALE) {
+                        runOnJS(notifyMinBoundHit)();
+                    } else if (nextScale >= MAX_SCALE - 0.001 && raw > MAX_SCALE) {
+                        runOnJS(notifyMaxBoundHit)();
+                    }
                 })
                 .onEnd(() => {
                     'worklet';
                     runOnJS(commitTransform)(scale.value, translateX.value, translateY.value);
+                    runOnJS(hideGrid)();
+                    runOnJS(hideZoomChip)();
                 }),
-        [baseFit, commitTransform, savedScale, scale, translateX, translateY],
+        [
+            baseFit,
+            commitTransform,
+            hideGrid,
+            hideZoomChip,
+            notifyMaxBoundHit,
+            notifyMinBoundHit,
+            resetPinchBounds,
+            savedScale,
+            scale,
+            showGrid,
+            showZoomChip,
+            translateX,
+            translateY,
+            updateZoomLabel,
+        ],
     );
 
     const composedGesture = useMemo(
@@ -278,12 +511,29 @@ const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
         ],
     }));
 
+    const cropFrameAnimatedStyle = useAnimatedStyle(() => ({
+        transform: [{ scale: entrance.value }],
+    }));
+
+    const gridAnimatedStyle = useAnimatedStyle(() => ({
+        opacity: gridOpacity.value,
+    }));
+
+    const zoomChipAnimatedStyle = useAnimatedStyle(() => ({
+        opacity: zoomChipOpacity.value,
+    }));
+
     const resetTransform = useCallback(() => {
-        scale.value = withTiming(MIN_SCALE, { duration: 180 });
-        translateX.value = withTiming(0, { duration: 180 });
-        translateY.value = withTiming(0, { duration: 180 });
+        const duration = reduceMotion ? 0 : 220;
+        scale.value = withTiming(MIN_SCALE, { duration });
+        translateX.value = withTiming(0, { duration });
+        translateY.value = withTiming(0, { duration });
         commitTransform(MIN_SCALE, 0, 0);
-    }, [commitTransform, scale, translateX, translateY]);
+        void hapticImpact('light');
+        AccessibilityInfo.announceForAccessibility(
+            t('editProfile.crop.a11yResetAnnouncement') || 'Crop reset',
+        );
+    }, [commitTransform, reduceMotion, scale, t, translateX, translateY]);
 
     /**
      * Convert the on-screen transform into pixel-space crop coordinates
@@ -345,6 +595,8 @@ const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
                 { format: SaveFormat.JPEG, compress: 0.85 },
             );
 
+            void hapticNotification('success');
+
             await onConfirm?.({
                 uri: result.uri,
                 width: result.width,
@@ -357,6 +609,7 @@ const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
             onClose?.();
         } catch (err) {
             const message = err instanceof Error ? err.message : undefined;
+            void hapticNotification('error');
             toast.error(
                 message || t('editProfile.toasts.cropFailed') || 'Failed to crop image',
             );
@@ -370,26 +623,96 @@ const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
         goBack?.();
     }, [goBack, onCancel]);
 
+    const topInset = Platform.OS === 'ios' ? Math.max(insets.top, 12) : Math.max(insets.top, 16);
+    const bottomInset = Math.max(insets.bottom, 16);
+
     const styles = useMemo(
         () =>
             StyleSheet.create({
                 container: {
                     flex: 1,
-                    backgroundColor: theme.colors.background,
+                    backgroundColor: CANVAS_BG,
+                },
+                topBar: {
+                    paddingTop: topInset,
+                    paddingHorizontal: 12,
+                    paddingBottom: 10,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    backgroundColor: 'rgba(0,0,0,0.6)',
+                    zIndex: 10,
+                },
+                topBarTitleWrap: {
+                    flex: 1,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    paddingHorizontal: 4,
+                },
+                topBarTitle: {
+                    color: '#ffffff',
+                    fontFamily: fontFamilies.interSemiBold,
+                    fontSize: 17,
+                    letterSpacing: -0.2,
+                    ...(Platform.OS === 'web' ? { fontWeight: '600' as const } : null),
+                },
+                cancelBtn: {
+                    minWidth: 64,
+                    paddingHorizontal: 10,
+                    paddingVertical: 8,
+                    borderRadius: 18,
+                    alignItems: 'flex-start',
+                    justifyContent: 'center',
+                },
+                cancelLabel: {
+                    color: '#ffffff',
+                    fontFamily: fontFamilies.interMedium,
+                    fontSize: 15,
+                    opacity: 0.85,
+                },
+                doneBtn: {
+                    minWidth: 76,
+                    paddingHorizontal: 14,
+                    paddingVertical: 8,
+                    borderRadius: 18,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    backgroundColor: theme.colors.primary,
+                },
+                doneBtnDisabled: {
+                    opacity: 0.5,
+                },
+                doneLabel: {
+                    color: '#ffffff',
+                    fontFamily: fontFamilies.interSemiBold,
+                    fontSize: 15,
+                    letterSpacing: -0.1,
+                    ...(Platform.OS === 'web' ? { fontWeight: '600' as const } : null),
+                },
+                doneLabelLoading: {
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 8,
                 },
                 stage: {
                     flex: 1,
                     alignItems: 'center',
                     justifyContent: 'center',
                     paddingHorizontal: 16,
-                    paddingVertical: 24,
+                },
+                cropFrame: {
+                    width: VIEWPORT_SIZE,
+                    height: VIEWPORT_SIZE,
+                    alignItems: 'center',
+                    justifyContent: 'center',
                 },
                 viewport: {
                     width: VIEWPORT_SIZE,
                     height: VIEWPORT_SIZE,
                     overflow: 'hidden',
                     borderRadius: VIEWPORT_SIZE / 2,
-                    backgroundColor: theme.colors.backgroundSecondary,
+                    backgroundColor: '#1a1a1a',
                     alignItems: 'center',
                     justifyContent: 'center',
                 },
@@ -397,60 +720,95 @@ const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
                     width: baseFit?.width ?? VIEWPORT_SIZE,
                     height: baseFit?.height ?? VIEWPORT_SIZE,
                 },
-                helper: {
-                    marginTop: 16,
-                    fontFamily: fontFamilies.inter,
-                    fontSize: 13,
-                    color: theme.colors.textSecondary,
-                    textAlign: 'center',
-                    maxWidth: 320,
+                // Outer mask: large square that overlays the canvas, with a
+                // round transparent cutout in the middle. We achieve this with
+                // four edge boxes around the circle (top/bottom/left/right) so
+                // there's no need for SVG. Each box is 50% black.
+                ringOverlay: {
+                    position: 'absolute',
+                    width: VIEWPORT_SIZE,
+                    height: VIEWPORT_SIZE,
+                    borderRadius: VIEWPORT_SIZE / 2,
+                    borderWidth: RING_WIDTH,
+                    borderColor: RING_COLOR,
+                    // Subtle inner shadow approximated with a thin secondary border.
+                    ...Platform.select({
+                        web: {
+                            boxShadow: 'inset 0 0 14px rgba(0,0,0,0.45)',
+                        },
+                        default: {},
+                    }),
                 },
-                actions: {
-                    flexDirection: 'row',
-                    justifyContent: 'space-between',
-                    paddingHorizontal: 16,
-                    paddingBottom: 16,
-                    gap: 12,
+                gridOverlay: {
+                    position: 'absolute',
+                    width: VIEWPORT_SIZE,
+                    height: VIEWPORT_SIZE,
+                    borderRadius: VIEWPORT_SIZE / 2,
+                    overflow: 'hidden',
+                    pointerEvents: 'none',
                 },
-                button: {
-                    flex: 1,
-                    paddingVertical: 14,
-                    borderRadius: 24,
+                gridLineH: {
+                    position: 'absolute',
+                    left: 0,
+                    right: 0,
+                    height: StyleSheet.hairlineWidth,
+                    backgroundColor: 'rgba(255,255,255,0.45)',
+                },
+                gridLineV: {
+                    position: 'absolute',
+                    top: 0,
+                    bottom: 0,
+                    width: StyleSheet.hairlineWidth,
+                    backgroundColor: 'rgba(255,255,255,0.45)',
+                },
+                zoomChip: {
+                    position: 'absolute',
+                    top: -44,
+                    alignSelf: 'center',
+                    paddingHorizontal: 12,
+                    paddingVertical: 6,
+                    borderRadius: 999,
+                    backgroundColor: 'rgba(0,0,0,0.7)',
+                    minWidth: 56,
                     alignItems: 'center',
                     justifyContent: 'center',
                 },
-                buttonSecondary: {
-                    backgroundColor: theme.colors.backgroundSecondary,
+                zoomChipText: {
+                    color: '#ffffff',
+                    fontFamily: Platform.select({
+                        ios: 'Menlo',
+                        android: 'monospace',
+                        default: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                    }),
+                    fontSize: 12,
+                    letterSpacing: 0.2,
                 },
-                buttonPrimary: {
-                    backgroundColor: theme.colors.primary,
+                helperBlock: {
+                    paddingHorizontal: 24,
+                    paddingTop: 24,
+                    paddingBottom: bottomInset,
+                    alignItems: 'center',
+                    justifyContent: 'flex-end',
+                    gap: 10,
                 },
-                buttonPrimaryDisabled: {
-                    opacity: 0.6,
+                helper: {
+                    fontFamily: fontFamilies.inter,
+                    fontSize: 13,
+                    lineHeight: 18,
+                    color: 'rgba(255,255,255,0.6)',
+                    textAlign: 'center',
+                    maxWidth: 320,
                 },
-                buttonLabelSecondary: {
-                    fontFamily: fontFamilies.interSemiBold,
-                    fontSize: 15,
-                    color: theme.colors.text,
-                },
-                buttonLabelPrimary: {
-                    fontFamily: fontFamilies.interSemiBold,
-                    fontSize: 15,
-                    color: '#fff',
-                },
-                resetButton: {
-                    position: 'absolute',
-                    top: 12,
-                    right: 12,
+                resetLink: {
                     paddingHorizontal: 12,
                     paddingVertical: 6,
-                    borderRadius: 16,
-                    backgroundColor: theme.colors.backgroundSecondary,
                 },
-                resetLabel: {
+                resetLinkText: {
                     fontFamily: fontFamilies.interMedium,
-                    fontSize: 12,
-                    color: theme.colors.text,
+                    fontSize: 13,
+                    color: '#ffffff',
+                    opacity: 0.85,
+                    textDecorationLine: 'underline',
                 },
                 emptyState: {
                     flex: 1,
@@ -461,21 +819,40 @@ const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
                 emptyLabel: {
                     fontFamily: fontFamilies.inter,
                     fontSize: 14,
-                    color: theme.colors.textSecondary,
+                    color: 'rgba(255,255,255,0.7)',
                     textAlign: 'center',
                 },
             }),
-        [baseFit, theme],
+        [baseFit, bottomInset, theme, topInset],
     );
 
+    // Reset link reveal — only show when the image is not at the default
+    // transform. Use derived display state to avoid mounting/unmounting jank.
+    const resetLinkOpacity = isModified ? 1 : 0;
+
+    // No image supplied — render a minimal empty state with the same top bar.
     if (!imageUri) {
         return (
             <View style={styles.container}>
-                <Header
-                    title={t('editProfile.crop.title') || 'Crop avatar'}
-                    onBack={handleCancel}
-                    onClose={onClose}
-                />
+                <View style={styles.topBar}>
+                    <TouchableOpacity
+                        accessibilityLabel={t('editProfile.crop.cancel') || 'Cancel'}
+                        accessibilityRole="button"
+                        style={styles.cancelBtn}
+                        onPress={handleCancel}
+                        activeOpacity={0.6}
+                    >
+                        <Text style={styles.cancelLabel}>
+                            {t('editProfile.crop.cancel') || 'Cancel'}
+                        </Text>
+                    </TouchableOpacity>
+                    <View style={styles.topBarTitleWrap}>
+                        <Text style={styles.topBarTitle}>
+                            {t('editProfile.crop.title') || 'Crop avatar'}
+                        </Text>
+                    </View>
+                    <View style={styles.cancelBtn} />
+                </View>
                 <View style={styles.emptyState}>
                     <Text style={styles.emptyLabel}>
                         {t('editProfile.crop.noImage') || 'No image to crop'}
@@ -487,14 +864,61 @@ const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
 
     return (
         <View style={styles.container}>
-            <Header
-                title={t('editProfile.crop.title') || 'Crop avatar'}
-                subtitle={t('editProfile.crop.subtitle') || 'Pinch to zoom, drag to position'}
-                onBack={handleCancel}
-                onClose={onClose}
-            />
+            <View style={styles.topBar}>
+                <TouchableOpacity
+                    accessibilityLabel={t('editProfile.crop.cancel') || 'Cancel'}
+                    accessibilityRole="button"
+                    style={styles.cancelBtn}
+                    onPress={handleCancel}
+                    disabled={isProcessing}
+                    activeOpacity={0.6}
+                >
+                    <Text style={styles.cancelLabel}>
+                        {t('editProfile.crop.cancel') || 'Cancel'}
+                    </Text>
+                </TouchableOpacity>
+                <View style={styles.topBarTitleWrap}>
+                    <Text style={styles.topBarTitle} numberOfLines={1}>
+                        {t('editProfile.crop.title') || 'Crop avatar'}
+                    </Text>
+                </View>
+                <TouchableOpacity
+                    accessibilityLabel={t('editProfile.crop.confirm') || 'Use photo'}
+                    accessibilityRole="button"
+                    accessibilityState={{ disabled: isProcessing || !baseFit, busy: isProcessing }}
+                    style={[
+                        styles.doneBtn,
+                        (isProcessing || !baseFit) && styles.doneBtnDisabled,
+                    ]}
+                    onPress={handleConfirm}
+                    disabled={isProcessing || !baseFit}
+                    activeOpacity={0.85}
+                >
+                    {isProcessing ? (
+                        <View style={styles.doneLabelLoading}>
+                            <ActivityIndicator size="small" color="#ffffff" />
+                            <Text style={styles.doneLabel}>
+                                {t('editProfile.crop.saving') || 'Saving…'}
+                            </Text>
+                        </View>
+                    ) : (
+                        <Text style={styles.doneLabel}>
+                            {t('editProfile.crop.confirm') || 'Use photo'}
+                        </Text>
+                    )}
+                </TouchableOpacity>
+            </View>
+
             <View style={styles.stage}>
-                <View>
+                <Animated.View
+                    style={[styles.cropFrame, cropFrameAnimatedStyle]}
+                    accessible
+                    accessibilityRole="image"
+                    accessibilityLabel={
+                        t('editProfile.crop.a11yImage') ||
+                        'Crop preview. Pinch to zoom and drag to reposition the image.'
+                    }
+                >
                     <GestureDetector gesture={composedGesture}>
                         <View style={styles.viewport}>
                             {baseFit ? (
@@ -504,56 +928,54 @@ const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
                                     resizeMode="cover"
                                 />
                             ) : (
-                                <ActivityIndicator color={theme.colors.primary} />
+                                <ActivityIndicator color="#ffffff" />
                             )}
                         </View>
                     </GestureDetector>
-                    <TouchableOpacity
-                        accessibilityLabel={t('editProfile.crop.reset') || 'Reset'}
-                        style={styles.resetButton}
-                        onPress={resetTransform}
+
+                    {/* White ring + inner shadow around the circle. */}
+                    <View pointerEvents="none" style={styles.ringOverlay} />
+
+                    {/* Rule-of-thirds grid overlay (fades in during gesture). */}
+                    <Animated.View
+                        pointerEvents="none"
+                        style={[styles.gridOverlay, gridAnimatedStyle]}
                     >
-                        <Text style={styles.resetLabel}>
-                            {t('editProfile.crop.reset') || 'Reset'}
+                        <View style={[styles.gridLineH, { top: VIEWPORT_SIZE / 3 }]} />
+                        <View style={[styles.gridLineH, { top: (VIEWPORT_SIZE * 2) / 3 }]} />
+                        <View style={[styles.gridLineV, { left: VIEWPORT_SIZE / 3 }]} />
+                        <View style={[styles.gridLineV, { left: (VIEWPORT_SIZE * 2) / 3 }]} />
+                    </Animated.View>
+
+                    {/* Floating zoom chip during pinch. */}
+                    <Animated.View
+                        pointerEvents="none"
+                        style={[styles.zoomChip, zoomChipAnimatedStyle]}
+                    >
+                        <Text style={styles.zoomChipText}>
+                            {t('editProfile.crop.zoom', { value: zoomLabel }) || `${zoomLabel}×`}
                         </Text>
-                    </TouchableOpacity>
-                </View>
+                    </Animated.View>
+                </Animated.View>
+            </View>
+
+            <View style={styles.helperBlock}>
                 <Text style={styles.helper}>
                     {t('editProfile.crop.helper') ||
-                        'The visible square will become your new avatar.'}
+                        'The cropped circle is what will appear on your profile. Pinch to zoom, drag to position.'}
                 </Text>
-            </View>
-            <View style={styles.actions}>
-                <TouchableOpacity
-                    accessibilityLabel={t('common.cancel') || 'Cancel'}
+                <Pressable
+                    accessibilityLabel={t('editProfile.crop.a11yReset') || 'Reset crop to default position'}
                     accessibilityRole="button"
-                    style={[styles.button, styles.buttonSecondary]}
-                    onPress={handleCancel}
-                    disabled={isProcessing}
+                    accessibilityState={{ disabled: !isModified || isProcessing }}
+                    onPress={resetTransform}
+                    disabled={!isModified || isProcessing}
+                    style={[styles.resetLink, { opacity: isProcessing ? 0.3 : resetLinkOpacity }]}
                 >
-                    <Text style={styles.buttonLabelSecondary}>
-                        {t('common.cancel') || 'Cancel'}
+                    <Text style={styles.resetLinkText}>
+                        {t('editProfile.crop.resetToCenter') || 'Reset to center'}
                     </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                    accessibilityLabel={t('editProfile.crop.confirm') || 'Use photo'}
-                    accessibilityRole="button"
-                    style={[
-                        styles.button,
-                        styles.buttonPrimary,
-                        isProcessing && styles.buttonPrimaryDisabled,
-                    ]}
-                    onPress={handleConfirm}
-                    disabled={isProcessing || !baseFit}
-                >
-                    {isProcessing ? (
-                        <ActivityIndicator color="#fff" />
-                    ) : (
-                        <Text style={styles.buttonLabelPrimary}>
-                            {t('editProfile.crop.confirm') || 'Use photo'}
-                        </Text>
-                    )}
-                </TouchableOpacity>
+                </Pressable>
             </View>
         </View>
     );
