@@ -3,6 +3,7 @@ import { authenticatedApiCall } from '@oxyhq/core';
 import type { User } from '@oxyhq/core';
 import { queryKeys } from './queryKeys';
 import { useOxy } from '../../context/OxyContext';
+import { useAuthStore } from '../../stores/authStore';
 
 /**
  * Get user profile by session ID
@@ -56,7 +57,12 @@ export const useCurrentUser = (options?: { enabled?: boolean }) => {
       if (!activeSessionId) {
         throw new Error('No active session');
       }
-      return await oxyServices.getUserBySession(activeSessionId);
+      const fresh = await oxyServices.getUserBySession(activeSessionId);
+      // Mirror into the auth store so any consumer reading `useOxy().user`
+      // sees the latest record from the server (createdAt, updatedAt, etc.)
+      // without each screen having to call this hook explicitly.
+      useAuthStore.getState().setUser(fresh);
+      return fresh;
     },
     enabled: (options?.enabled !== false) && isAuthenticated && !!activeSessionId,
     staleTime: 1 * 60 * 1000, // 1 minute for current user

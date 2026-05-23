@@ -13,7 +13,7 @@ import lottieAnimation from '@/assets/lottie/welcomeheader_background_op1.json';
 import { darkenColor } from '@/utils/color-utils';
 import { AccountCard, useAlert } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
-import { useOxy, useUserDevices, useRecentSecurityActivity } from '@oxyhq/services';
+import { useOxy, useUserDevices, useRecentSecurityActivity, useCurrentUser } from '@oxyhq/services';
 import { formatDate, getDisplayName } from '@/utils/date-utils';
 import { useIdentity } from '@/hooks/useIdentity';
 import { useHapticPress } from '@/hooks/use-haptic-press';
@@ -37,6 +37,11 @@ export default function HomeScreen() {
 
   // OxyServices integration
   const { user, isAuthenticated, oxyServices, isLoading: oxyLoading, showBottomSheet, refreshSessions, openAvatarPicker, sessions, managedAccounts, actingAs } = useOxy();
+  // Hydrate the user record from the server (createdAt + any fields that were
+  // missing from a cached signIn response). useCurrentUser handles staleness
+  // via TanStack Query and re-fetches on mount / staleTime expiry, then
+  // OxyContext picks up the fresh record from the same cache key.
+  useCurrentUser({ enabled: isAuthenticated });
   const { syncIdentity, isIdentitySynced, identitySyncState } = useIdentity();
   const alert = useAlert();
 
