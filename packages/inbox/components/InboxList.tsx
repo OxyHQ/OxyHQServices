@@ -17,8 +17,7 @@ import { Loading } from '@oxyhq/bloom/loading';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import { PencilEdit01Icon } from '@hugeicons/core-free-icons';
-import { useRouter } from 'expo-router';
-import { useNavigation, DrawerActions } from '@react-navigation/native';
+import { useRouter, useNavigation } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useOxy, OxySignInButton, toast } from '@oxyhq/services';
 
@@ -81,9 +80,14 @@ interface InboxListProps {
   replaceNavigation?: boolean;
 }
 
+interface DrawerNavigation {
+  openDrawer?: () => void;
+  dispatch?: (action: unknown) => void;
+}
+
 export function InboxList({ replaceNavigation }: InboxListProps) {
   const router = useRouter();
-  const navigation = useNavigation();
+  const navigation = useNavigation<DrawerNavigation>();
   const insets = useSafeAreaInsets();
   const colors = useColors();
   const aliaChatRef = useRef<AliaChatSheetRef>(null);
@@ -341,7 +345,13 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
   );
 
   const handleOpenDrawer = useCallback(() => {
-    navigation.dispatch(DrawerActions.openDrawer());
+    // Synthesize the DrawerActions.openDrawer payload inline — expo-router v56
+    // rejects direct `@react-navigation/*` imports.
+    if (navigation.openDrawer) {
+      navigation.openDrawer();
+      return;
+    }
+    navigation.dispatch?.({ type: 'OPEN_DRAWER' });
   }, [navigation]);
 
   const handleCompose = useCallback(() => {

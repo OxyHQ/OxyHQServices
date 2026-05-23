@@ -17,8 +17,7 @@ import {
 } from 'react-native';
 import { Loading } from '@oxyhq/bloom/loading';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import { useNavigation, DrawerActions } from '@react-navigation/native';
+import { useRouter, useNavigation } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useOxy } from '@oxyhq/services';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
@@ -85,9 +84,14 @@ function isSameDay(a: Date, b: Date) {
 /** Max number of recent emails to show on home */
 const HOME_EMAIL_LIMIT = 10;
 
+interface DrawerNavigation {
+  openDrawer?: () => void;
+  dispatch?: (action: unknown) => void;
+}
+
 export function HomeScreen() {
   const router = useRouter();
-  const navigation = useNavigation();
+  const navigation = useNavigation<DrawerNavigation>();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const { mode } = useTheme();
@@ -145,7 +149,13 @@ export function HomeScreen() {
   const attachmentCount = useMemo(() => dayMessages.filter((m) => m.attachments.length > 0).length, [dayMessages]);
 
   const handleOpenDrawer = useCallback(() => {
-    navigation.dispatch(DrawerActions.openDrawer());
+    // Synthesize the DrawerActions.openDrawer payload inline — expo-router v56
+    // rejects direct `@react-navigation/*` imports.
+    if (navigation.openDrawer) {
+      navigation.openDrawer();
+      return;
+    }
+    navigation.dispatch?.({ type: 'OPEN_DRAWER' });
   }, [navigation]);
 
   const handleMessagePress = useCallback(

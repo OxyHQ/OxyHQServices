@@ -29,8 +29,7 @@ import {
   Menu01Icon,
   InboxIcon,
 } from '@hugeicons/core-free-icons';
-import { useRouter } from 'expo-router';
-import { useNavigation, DrawerActions } from '@react-navigation/native';
+import { useRouter, useNavigation } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useColors } from '@/constants/theme';
@@ -202,9 +201,14 @@ function HorizontalSection({
   );
 }
 
+interface DrawerNavigation {
+  openDrawer?: () => void;
+  dispatch?: (action: unknown) => void;
+}
+
 export function ForYouScreen() {
   const router = useRouter();
-  const navigation = useNavigation();
+  const navigation = useNavigation<DrawerNavigation>();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const colors = useColors();
@@ -233,7 +237,15 @@ export function ForYouScreen() {
     [messages],
   );
 
-  const handleOpenDrawer = () => navigation.dispatch(DrawerActions.openDrawer());
+  const handleOpenDrawer = useCallback(() => {
+    // Synthesize the DrawerActions.openDrawer payload inline — expo-router v56
+    // rejects direct `@react-navigation/*` imports.
+    if (navigation.openDrawer) {
+      navigation.openDrawer();
+      return;
+    }
+    navigation.dispatch?.({ type: 'OPEN_DRAWER' });
+  }, [navigation]);
 
   const handleMessagePress = useCallback(
     (messageId: string) => {

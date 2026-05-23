@@ -1,5 +1,4 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { Stack } from 'expo-router';
+import { Stack, ThemeProvider } from 'expo-router';
 import Head from 'expo-router/head';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -37,8 +36,37 @@ export default function RootLayout() {
   );
 }
 
+/**
+ * Build the react-navigation theme from Bloom's resolved colors so we don't
+ * have to import DarkTheme/DefaultTheme constants from `@react-navigation/*`
+ * (expo-router v56 rejects direct react-navigation imports).
+ */
+function useNavigationTheme() {
+  const { mode, colors } = useTheme();
+  return useMemo(
+    () => ({
+      dark: mode === 'dark',
+      colors: {
+        primary: colors.primary,
+        background: colors.background,
+        card: colors.card,
+        text: colors.text,
+        border: colors.border,
+        notification: colors.error,
+      },
+      fonts: {
+        regular: { fontFamily: 'System', fontWeight: '400' as const },
+        medium: { fontFamily: 'System', fontWeight: '500' as const },
+        bold: { fontFamily: 'System', fontWeight: '700' as const },
+        heavy: { fontFamily: 'System', fontWeight: '900' as const },
+      },
+    }),
+    [mode, colors],
+  );
+}
+
 function RootLayoutContent() {
-  const { mode } = useTheme();
+  const navTheme = useNavigationTheme();
   const [appIsReady, setAppIsReady] = useState(false);
 
   const initialize = useCallback(async () => {
@@ -98,7 +126,7 @@ function RootLayoutContent() {
           <OxyProvider baseURL={API_URL}>
             <SafeAreaProvider>
               <PortalProvider>
-                <ThemeProvider value={mode === 'dark' ? DarkTheme : DefaultTheme}>
+                <ThemeProvider value={navTheme}>
                   <Stack>
                     <Stack.Screen name="(drawer)" options={{ headerShown: false }} />
                     <Stack.Screen name="+not-found" options={{ headerShown: false }} />
@@ -112,7 +140,7 @@ function RootLayoutContent() {
         </KeyboardProvider>
       </QueryClientProvider>
     ),
-    [mode],
+    [navTheme],
   );
 
   if (!appIsReady) return null;
