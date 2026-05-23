@@ -1317,9 +1317,17 @@
     "loadingPhotoLayout": "Cargando diseño de fotos...",
     "uploading": "Subiendo",
     "upload": "Subir",
+    "uploadPhoto": "Subir foto",
     "uploadPhotos": "Subir fotos",
     "uploadFiles": "Subir archivos",
     "clearSearch": "Limpiar búsqueda",
+    "choosePhoto": "Elegir foto",
+    "done": "Listo",
+    "doneWithCount": "Listo ({{count}})",
+    "photoPicker": {
+      "emptyTitle": "Aún no hay fotos",
+      "emptySubtitle": "Sube desde tu dispositivo para empezar"
+    },
     "a11y": {
       "viewAll": "Mostrar todos los archivos",
       "viewPhotos": "Mostrar solo fotos",
@@ -1328,7 +1336,13 @@
       "viewAudio": "Mostrar solo audio",
       "sortBy": "Ordenar por {{field}}, {{order}}",
       "uploadFile": "Subir archivo desde el dispositivo",
-      "uploadFromDevice": "Subir foto desde el dispositivo"
+      "uploadFromDevice": "Subir foto desde el dispositivo",
+      "photoCellSelected": "Foto {{name}}, seleccionada",
+      "photoCellUnselected": "Foto {{name}}, no seleccionada",
+      "selectionCount": "{{count}} foto seleccionada",
+      "selectionCount_plural": "{{count}} fotos seleccionadas",
+      "cancelPicker": "Cancelar selección de foto",
+      "confirmSelection": "Confirmar selección"
     },
     "emptyPhotos": {
       "title": "Aún no hay fotos",

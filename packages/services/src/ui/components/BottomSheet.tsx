@@ -10,7 +10,7 @@ import {
     type ViewStyle,
     type StyleProp,
 } from 'react-native';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, {
     interpolate,
     runOnJS,
@@ -411,7 +411,16 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
 
     return (
         <Modal visible={rendered} transparent animationType="none" statusBarTranslucent onRequestClose={dismiss}>
-            <View style={StyleSheet.absoluteFill}>
+            {/*
+             * On native, RN's <Modal> renders into its own window — the
+             * GestureHandlerRootView at the app root does NOT extend into
+             * the Modal's view hierarchy, so every gesture inside it would
+             * die silently. Re-mounting a GestureHandlerRootView at the
+             * Modal root scopes gesture-handler correctly to the sheet's
+             * subtree. (Web renders Modal inline, so it's a no-op there.)
+             * See: https://docs.swmansion.com/react-native-gesture-handler/docs/installation
+             */}
+            <GestureHandlerRootView style={StyleSheet.absoluteFill}>
                 <Animated.View style={[styles.backdrop, { backgroundColor: theme.colors.overlay }, backdropStyle]}>
                     {backdropComponent ? (
                         backdropComponent({ onPress: handleBackdropPress })
@@ -466,7 +475,7 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
                         </GestureDetector>
                     </Animated.View>
                 </GestureDetector>
-            </View>
+            </GestureHandlerRootView>
         </Modal>
     );
 });
@@ -500,11 +509,16 @@ const styles = StyleSheet.create({
         borderTopRightRadius: 24,
     },
     /**
-     * Hit area for the drag handle — full sheet width and tall enough that the
-     * thumb can grab it comfortably. The visible pill sits centered inside.
+     * Hit area for the drag handle. Absolutely positioned at the top of the
+     * sheet so the area visually "floats" above the content — content scrolls
+     * up underneath it (no layout offset) while the thumb can still grab the
+     * full-width 28dp strip to drag. The visible pill sits centered inside.
      */
     handleHitArea: {
-        width: '100%',
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
         height: 28,
         alignItems: 'center',
         justifyContent: 'center',

@@ -1329,9 +1329,17 @@
     "loadingPhotoLayout": "Loading photo layout...",
     "uploading": "Uploading",
     "upload": "Upload",
+    "uploadPhoto": "Upload Photo",
     "uploadPhotos": "Upload Photos",
     "uploadFiles": "Upload Files",
     "clearSearch": "Clear Search",
+    "choosePhoto": "Choose Photo",
+    "done": "Done",
+    "doneWithCount": "Done ({{count}})",
+    "photoPicker": {
+      "emptyTitle": "No photos yet",
+      "emptySubtitle": "Upload from your device to get started"
+    },
     "a11y": {
       "viewAll": "Show all files",
       "viewPhotos": "Show photos only",
@@ -1340,7 +1348,13 @@
       "viewAudio": "Show audio only",
       "sortBy": "Sort by {{field}}, {{order}}",
       "uploadFile": "Upload file from device",
-      "uploadFromDevice": "Upload photo from device"
+      "uploadFromDevice": "Upload photo from device",
+      "photoCellSelected": "Photo {{name}}, selected",
+      "photoCellUnselected": "Photo {{name}}, not selected",
+      "selectionCount": "{{count}} photo selected",
+      "selectionCount_plural": "{{count}} photos selected",
+      "cancelPicker": "Cancel photo selection",
+      "confirmSelection": "Confirm selection"
     },
     "emptyPhotos": {
       "title": "No Photos Yet",

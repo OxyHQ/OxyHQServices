@@ -878,3 +878,195 @@ export const fileManagementStyles = StyleSheet.create({
     },
 });
 
+/**
+ * Styles for the dedicated photo picker view used when `selectMode + image-only`
+ * is active (e.g. the avatar picker context). This view is intentionally
+ * flagship-grade: black backdrop, translucent header, edge-to-edge grid.
+ *
+ * Kept in a separate StyleSheet so the rest of `fileManagementStyles` does not
+ * carry a black-background bias when used elsewhere.
+ */
+export const photoPickerStyles = StyleSheet.create({
+    root: {
+        flex: 1,
+        backgroundColor: '#000000',
+    },
+    headerSpacer: {
+        // Reserved for the absolute header so content does not sit underneath it.
+        backgroundColor: '#000000',
+    },
+    header: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        backgroundColor: 'rgba(0,0,0,0.92)',
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingHorizontal: 12,
+        zIndex: 30,
+    },
+    headerRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        width: '100%',
+        height: 48,
+    },
+    headerSide: {
+        flexBasis: 0,
+        flexGrow: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    headerSideRight: {
+        justifyContent: 'flex-end',
+    },
+    headerSideLeft: {
+        justifyContent: 'flex-start',
+    },
+    headerTitle: {
+        fontSize: 17,
+        fontWeight: '600',
+        fontFamily: fontFamilies.interSemiBold,
+        color: '#FFFFFF',
+        letterSpacing: -0.2,
+        textAlign: 'center',
+    },
+    headerCancel: {
+        paddingHorizontal: 6,
+        paddingVertical: 8,
+        minHeight: 36,
+        minWidth: 44,
+        justifyContent: 'center',
+    },
+    headerCancelText: {
+        fontSize: 17,
+        fontWeight: '500',
+        fontFamily: fontFamilies.interMedium,
+        color: '#FFFFFF',
+    },
+    headerPrimaryPill: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        paddingHorizontal: 14,
+        paddingVertical: 8,
+        borderRadius: 999,
+        minHeight: 36,
+    },
+    headerPrimaryPillIconOnly: {
+        paddingHorizontal: 8,
+        width: 36,
+        justifyContent: 'center',
+    },
+    headerPrimaryText: {
+        color: '#FFFFFF',
+        fontSize: 15,
+        fontWeight: '600',
+        fontFamily: fontFamilies.interSemiBold,
+    },
+    headerProgressBarTrack: {
+        position: 'absolute',
+        left: 0,
+        right: 0,
+        bottom: 0,
+        height: 2,
+        backgroundColor: 'rgba(255,255,255,0.12)',
+    },
+    headerProgressBarFill: {
+        height: '100%',
+    },
+    grid: {
+        flex: 1,
+    },
+    gridContent: {
+        // Top inset is set dynamically (header height + safe area).
+        paddingBottom: 24,
+    },
+    cellWrapper: {
+        position: 'relative',
+        // width/height set dynamically per device
+    },
+    cellInner: {
+        flex: 1,
+        borderRadius: 8,
+        overflow: 'hidden',
+        backgroundColor: '#111111',
+    },
+    cellImage: {
+        width: '100%',
+        height: '100%',
+    },
+    cellRing: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        borderRadius: 8,
+        borderWidth: 3,
+    },
+    cellDim: {
+        opacity: 0.6,
+    },
+    cellBadge: {
+        position: 'absolute',
+        top: 6,
+        right: 6,
+        minWidth: 22,
+        height: 22,
+        paddingHorizontal: 6,
+        borderRadius: 11,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    cellBadgeText: {
+        color: '#FFFFFF',
+        fontSize: 12,
+        fontWeight: '700',
+        fontFamily: fontFamilies.interBold,
+        lineHeight: 14,
+    },
+    empty: {
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingHorizontal: 32,
+    },
+    emptyIconWrap: {
+        opacity: 0.3,
+        marginBottom: 16,
+    },
+    emptyTitle: {
+        fontSize: 17,
+        fontWeight: '600',
+        fontFamily: fontFamilies.interSemiBold,
+        textAlign: 'center',
+        marginBottom: 6,
+    },
+    emptySubtitle: {
+        fontSize: 14,
+        fontWeight: '400',
+        fontFamily: fontFamilies.inter,
+        textAlign: 'center',
+        opacity: 0.7,
+        marginBottom: 24,
+    },
+    emptyCta: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        paddingHorizontal: 22,
+        paddingVertical: 12,
+        borderRadius: 999,
+    },
+    emptyCtaText: {
+        color: '#FFFFFF',
+        fontSize: 15,
+        fontWeight: '600',
+        fontFamily: fontFamilies.interSemiBold,
+    },
+});
+
