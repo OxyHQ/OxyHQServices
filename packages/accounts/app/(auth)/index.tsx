@@ -103,6 +103,15 @@ export default function AuthIndexScreen() {
     return <Redirect href="/(auth)/create-identity" />;
   }
 
+  // While the onboarding status is still resolving on cold start, render a
+  // plain backdrop instead of the rotating-text marketing splash. Otherwise
+  // returning users see "Hello / Human / Tap to continue" for ~100ms before
+  // the Redirect fires above — visually identical to a fresh install and
+  // alarming for anyone with an existing identity.
+  if (status === 'checking') {
+    return <View style={[styles.container, { backgroundColor }]} />;
+  }
+
   return (
     <Pressable
       style={[styles.container, { backgroundColor }]}

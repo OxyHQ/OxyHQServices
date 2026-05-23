@@ -38,5 +38,7 @@ export function formatUserResponse(user: UserLike) {
     locations: user.locations,
     links: user.links,
     linksMetadata: user.linksMetadata,
+    createdAt: user.createdAt,
+    updatedAt: user.updatedAt,
   };
 }
