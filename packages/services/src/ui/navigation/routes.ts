@@ -119,3 +119,56 @@ export const getScreenComponent = (routeName: RouteName): ComponentType<BaseScre
 export const isValidRoute = (routeName: string): routeName is RouteName => {
     return routeName in screenLoaders;
 };
+
+/**
+ * Configuration that BottomSheetRouter applies to the underlying BottomSheet
+ * for a given route. Right now this only controls scrolling, but more options
+ * (e.g. detached, custom snap points) can land here over time.
+ */
+export interface SheetRouteConfig {
+    /**
+     * When `false`, BottomSheet skips its internal ScrollView and lets the
+     * screen own scrolling. Required for screens that render a FlatList,
+     * SectionList, or any other VirtualizedList — nesting one inside a
+     * plain ScrollView breaks windowing and triggers a RN warning.
+     */
+    scrollable: boolean;
+}
+
+/**
+ * Predicate matching FileManagementScreen's internal `isImageOnlyPicker`
+ * derivation. When the consumer restricts to image MIME types (no videos,
+ * no audio, no documents), FileManagement renders the flagship PhotoPickerView
+ * which owns its own FlatList. The sheet must therefore stop scrolling
+ * children. Kept in sync with `FileManagementScreen` — both check the same
+ * disabled MIME type families.
+ */
+const isFileManagementImageOnlyPicker = (props: Record<string, unknown>): boolean => {
+    if (!props.selectMode) return false;
+    const disabled = props.disabledMimeTypes;
+    if (!Array.isArray(disabled) || disabled.length === 0) return false;
+    const has = (predicate: (mt: string) => boolean): boolean =>
+        disabled.some((mt) => typeof mt === 'string' && predicate(mt));
+    const blocksVideos = has((mt) => mt === 'video/' || mt.startsWith('video/'));
+    const blocksAudio = has((mt) => mt === 'audio/' || mt.startsWith('audio/'));
+    const blocksDocs = has(
+        (mt) => mt === 'application/pdf' || mt === 'application/' || mt.startsWith('application/'),
+    );
+    return blocksVideos && blocksAudio && blocksDocs;
+};
+
+/**
+ * Returns the bottom-sheet configuration for a route. Defaults to a scrollable
+ * sheet (existing behavior); routes opt out by returning `scrollable: false`
+ * either unconditionally or conditionally on the supplied `screenProps`.
+ */
+export const getSheetConfig = (
+    routeName: RouteName | null,
+    screenProps: Record<string, unknown>,
+): SheetRouteConfig => {
+    if (!routeName) return { scrollable: true };
+    if (routeName === 'FileManagement' && isFileManagementImageOnlyPicker(screenProps)) {
+        return { scrollable: false };
+    }
+    return { scrollable: true };
+};

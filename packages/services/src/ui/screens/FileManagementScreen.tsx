@@ -25,7 +25,6 @@ import Reanimated, {
     withSpring,
     withTiming,
 } from 'react-native-reanimated';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { fontFamilies } from '../styles/fonts';
 import type { FileManagementScreenProps } from '../types/fileManagement';
 
@@ -431,7 +430,6 @@ const PhotoPickerView: React.FC<PhotoPickerViewProps> = ({
     onConfirm,
     t,
 }) => {
-    const insets = useSafeAreaInsets();
     const { width: windowWidth, height: windowHeight } = useWindowDimensions();
 
     // Layout: 3 columns phone portrait, 2 columns phone landscape,
@@ -467,8 +465,15 @@ const PhotoPickerView: React.FC<PhotoPickerViewProps> = ({
     // Compact icon-only upload pill on narrow screens; full pill otherwise.
     const showUploadLabel = windowWidth >= 360;
 
-    // Total header height: status bar inset + 48px control row + (optional 2px progress).
-    const headerHeight = insets.top + 48;
+    // The bottom sheet renders below the status bar already (its `maxHeight`
+    // is capped by `SCREEN_HEIGHT - insets.top`), so the picker MUST NOT add
+    // an additional safe-area inset to the header. Header layout:
+    //   • 28dp drag-handle hit area floats at the very top of the sheet
+    //   • 56dp app bar sits immediately below the handle
+    // Total header zone = 28 + 56 = 84dp from sheet top.
+    const HANDLE_ZONE = 28;
+    const APP_BAR_HEIGHT = 56;
+    const headerHeight = HANDLE_ZONE + APP_BAR_HEIGHT;
     const contentPaddingTop = headerHeight + 4;
 
     const isEmpty = photos.length === 0;
@@ -642,11 +647,14 @@ const PhotoPickerView: React.FC<PhotoPickerViewProps> = ({
                 />
             )}
 
-            {/* Translucent black header */}
+            {/* Translucent black header. The bottom sheet already sits below
+                the status bar, so we do NOT add `insets.top` here — that would
+                double-pad. `paddingTop: HANDLE_ZONE` clears the 28dp drag
+                handle floating at the top of the sheet. */}
             <View
                 style={[
                     photoPickerStyles.header,
-                    { paddingTop: insets.top, minHeight: headerHeight },
+                    { paddingTop: HANDLE_ZONE, minHeight: headerHeight },
                 ]}
             >
                 <View style={photoPickerStyles.headerRow}>

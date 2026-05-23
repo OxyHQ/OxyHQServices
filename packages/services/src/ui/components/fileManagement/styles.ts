@@ -912,7 +912,9 @@ export const photoPickerStyles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'space-between',
         width: '100%',
-        height: 48,
+        // Material 3 top app bar height — leaves a generous tap target for
+        // the Cancel / Upload pills without crowding the title.
+        height: 56,
     },
     headerSide: {
         flexBasis: 0,

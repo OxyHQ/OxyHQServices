@@ -2,7 +2,7 @@ import React, { useRef, useEffect, useCallback, useMemo, type ErrorInfo } from '
 import { BackHandler, View, StyleSheet, Text, type StyleProp, type ViewStyle } from 'react-native';
 import { useStore } from 'zustand';
 import type { RouteName } from '../navigation/routes';
-import { getScreenComponent, isValidRoute } from '../navigation/routes';
+import { getScreenComponent, getSheetConfig, isValidRoute } from '../navigation/routes';
 import type { BaseScreenProps } from '../types/navigation';
 import { useTheme } from '@oxyhq/bloom/theme';
 import BottomSheet, { type BottomSheetRef } from './BottomSheet';
@@ -209,6 +209,13 @@ const BottomSheetRouter: React.FC<BottomSheetRouterProps> = ({ onScreenChange, o
         };
     }, [navigate, handleGoBack, theme.mode, currentScreen, currentStep, screenProps, handleStepChange, scrollTo]);
 
+    // Route-level sheet config (e.g. whether the sheet provides its own
+    // ScrollView or yields scrolling to a VirtualizedList inside the screen).
+    const sheetConfig = useMemo(
+        () => getSheetConfig(currentScreen, screenProps),
+        [currentScreen, screenProps],
+    );
+
     return (
         <BottomSheet
             ref={sheetRef}
@@ -218,6 +225,7 @@ const BottomSheetRouter: React.FC<BottomSheetRouterProps> = ({ onScreenChange, o
             style={styles.container}
             onDismiss={handleDismiss}
             onDismissAttempt={handleDismissAttempt}
+            scrollable={sheetConfig.scrollable}
         >
             {ScreenComponent && currentScreen && (
                 <ScreenErrorBoundary screenName={currentScreen}>

@@ -61,6 +61,18 @@ export interface BottomSheetProps {
     enableHandlePanningGesture?: boolean;
     onDismissAttempt?: () => boolean;
     detached?: boolean; // If true, shows with margins and rounded corners. If false, full width with rounded top only.
+    /**
+     * When `true` (default), children are wrapped in an internal scrollable
+     * container — convenient for vertical content that can overflow.
+     *
+     * Set to `false` when the screen owns its own scrolling primitive
+     * (e.g. a `FlatList`, `SectionList`, or any other VirtualizedList).
+     * Nesting a VirtualizedList inside the internal ScrollView would break
+     * windowing/keyboard handling and trigger a React Native warning. In
+     * non-scrollable mode the screen receives the full available height
+     * (minus the drag handle) and must manage its own overflow.
+     */
+    scrollable?: boolean;
 }
 
 const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef<BottomSheetRef>) => {
@@ -74,6 +86,7 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
         enableHandlePanningGesture = true,
         onDismissAttempt,
         detached = false,
+        scrollable = true,
     } = props;
 
     const insets = useSafeAreaInsets();
@@ -448,31 +461,57 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
                             </View>
                         </GestureDetector>
 
-                        <GestureDetector gesture={nativeGesture}>
-                            <Animated.ScrollView
-                                ref={scrollViewRef}
-                                style={[
-                                    styles.scrollView,
-                                    Platform.OS === 'web' && ({
-                                        scrollbarWidth: 'thin',
-                                        scrollbarColor: `${theme.colors.border} transparent`,
-                                    } as ViewStyle),
-                                ]}
-                                contentContainerStyle={dynamicStyles.scrollContent}
-                                showsVerticalScrollIndicator={false}
-                                keyboardShouldPersistTaps="handled"
-                                onScroll={scrollHandler}
-                                scrollEventThrottle={16}
-                                {...(Platform.OS === 'web' ? { className: 'bottom-sheet-scrollview' } : undefined)}
-                                onLayout={() => {
-                                    if (Platform.OS === 'web') {
-                                        createWebScrollbarStyle(theme.colors.border);
-                                    }
-                                }}
-                            >
-                                {children}
-                            </Animated.ScrollView>
-                        </GestureDetector>
+                        {scrollable ? (
+                            <GestureDetector gesture={nativeGesture}>
+                                <Animated.ScrollView
+                                    ref={scrollViewRef}
+                                    style={[
+                                        styles.scrollView,
+                                        Platform.OS === 'web' && ({
+                                            scrollbarWidth: 'thin',
+                                            scrollbarColor: `${theme.colors.border} transparent`,
+                                        } as ViewStyle),
+                                    ]}
+                                    contentContainerStyle={dynamicStyles.scrollContent}
+                                    showsVerticalScrollIndicator={false}
+                                    keyboardShouldPersistTaps="handled"
+                                    onScroll={scrollHandler}
+                                    scrollEventThrottle={16}
+                                    {...(Platform.OS === 'web' ? { className: 'bottom-sheet-scrollview' } : undefined)}
+                                    onLayout={() => {
+                                        if (Platform.OS === 'web') {
+                                            createWebScrollbarStyle(theme.colors.border);
+                                        }
+                                    }}
+                                >
+                                    {children}
+                                </Animated.ScrollView>
+                            </GestureDetector>
+                        ) : (
+                            /*
+                             * Non-scrollable mode: the screen manages its own
+                             * scrolling (e.g. via a FlatList). Wrapping it in
+                             * an internal ScrollView would nest VirtualizedLists
+                             * and break windowing.
+                             *
+                             * We still wrap children in the same
+                             * `nativeGesture` so the outer pan-to-close gesture
+                             * keeps `simultaneousWithExternalGesture(nativeGesture)`
+                             * coordination with whatever scrolling primitive the
+                             * screen uses inside (the FlatList's native scroll
+                             * recognizer is captured by `Gesture.Native()`).
+                             *
+                             * `scrollOffsetY` stays at 0 here — there's no
+                             * scroll handler — so the pan-to-close logic that
+                             * gates on "at top or near top" naturally remains
+                             * permissive, which matches the screen's design
+                             * (drag-down anywhere on the sheet closes it; the
+                             * inner FlatList handles its own scroll gesture).
+                             */
+                            <GestureDetector gesture={nativeGesture}>
+                                <View style={styles.nonScrollableContent}>{children}</View>
+                            </GestureDetector>
+                        )}
                     </Animated.View>
                 </GestureDetector>
             </GestureHandlerRootView>
@@ -512,7 +551,9 @@ const styles = StyleSheet.create({
      * Hit area for the drag handle. Absolutely positioned at the top of the
      * sheet so the area visually "floats" above the content — content scrolls
      * up underneath it (no layout offset) while the thumb can still grab the
-     * full-width 28dp strip to drag. The visible pill sits centered inside.
+     * full-width 28dp strip to drag. The visible pill sits near the top of
+     * the area (`paddingTop: 6`) so headers can sit immediately below the
+     * 28dp hit-area boundary with no visible overlap.
      */
     handleHitArea: {
         position: 'absolute',
@@ -521,7 +562,8 @@ const styles = StyleSheet.create({
         right: 0,
         height: 28,
         alignItems: 'center',
-        justifyContent: 'center',
+        justifyContent: 'flex-start',
+        paddingTop: 6,
         zIndex: 100,
     },
     handle: {
@@ -537,6 +579,9 @@ const styles = StyleSheet.create({
     },
     scrollContent: {
         flexGrow: 1,
+    },
+    nonScrollableContent: {
+        flex: 1,
     },
 });
 
