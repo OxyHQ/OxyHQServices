@@ -382,34 +382,46 @@ export const useUpdatePrivacySettings = () => {
 
       toast.error(error instanceof Error ? error.message : 'Failed to update privacy settings');
     },
-    // On success, invalidate and refetch
-    onSuccess: (data, { userId }) => {
+    // On success, MERGE the server response into the cached state. Older
+    // API builds returned only the changed field (or wiped the privacySettings
+    // subdocument when handed a partial update), which would clobber every
+    // other toggle if we blindly replaced. Defensive merge means the UI stays
+    // consistent regardless of server behaviour.
+    onSuccess: (data, { userId, settings }) => {
       const targetUserId = userId || user?.id;
+      const incoming = (data ?? {}) as Record<string, unknown>;
+      const requested = (settings ?? {}) as Record<string, unknown>;
+
       if (targetUserId) {
-        queryClient.setQueryData(queryKeys.privacy.settings(targetUserId), data);
+        queryClient.setQueryData<Record<string, unknown>>(
+          queryKeys.privacy.settings(targetUserId),
+          (previous) => ({
+            ...(previous ?? {}),
+            ...requested,
+            ...incoming,
+          }),
+        );
       }
-      // Also update account query if it contains privacy settings
+
       const currentUser = queryClient.getQueryData<User>(queryKeys.accounts.current());
       if (currentUser) {
         const updatedUser: User = {
           ...currentUser,
-          privacySettings: data as { [key: string]: unknown },
+          privacySettings: {
+            ...((currentUser.privacySettings as Record<string, unknown> | undefined) ?? {}),
+            ...requested,
+            ...incoming,
+          },
         };
         queryClient.setQueryData<User>(queryKeys.accounts.current(), updatedUser);
-
-        // Update authStore so frontend components see the changes immediately
         useAuthStore.getState().setUser(updatedUser);
       }
       invalidateAccountQueries(queryClient);
     },
-    // Always refetch after error or success
-    onSettled: (data, error, { userId }) => {
-      const targetUserId = userId || user?.id;
-      if (targetUserId) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.privacy.settings(targetUserId) });
-      }
-      queryClient.invalidateQueries({ queryKey: queryKeys.accounts.current() });
-    },
+    // Deliberately NOT invalidating the privacy.settings cache here. A
+    // background refetch against a backend that overwrites partial updates
+    // would re-fetch a wiped subdocument and revert the user's toggle. The
+    // onSuccess merge above is the source of truth.
   });
 };
 
