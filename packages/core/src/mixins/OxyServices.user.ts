@@ -1,7 +1,7 @@
 /**
  * User Management Methods Mixin
  */
-import type { User, Notification, SearchProfilesResponse, PaginationInfo } from '../models/interfaces';
+import type { User, Notification, SearchProfilesResponse, PaginationInfo, PrivacySettings } from '../models/interfaces';
 import type { OxyServicesBase } from '../OxyServices.base';
 import { buildSearchParams, buildPaginationParams, type PaginationParams } from '../utils/apiUtils';
 import { KeyManager } from '../crypto/keyManager';
@@ -220,7 +220,7 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
      *
      * TanStack Query handles offline queuing automatically.
      */
-    async updateProfile(updates: Record<string, any>): Promise<User> {
+    async updateProfile(updates: Partial<User>): Promise<User> {
       try {
         const result = await this.makeRequest<User>('PUT', '/users/me', updates, { cache: false });
 
@@ -260,10 +260,10 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
      * Get privacy settings for a user
      * @param userId - The user ID (defaults to current user)
      */
-    async getPrivacySettings(userId?: string): Promise<any> {
+    async getPrivacySettings(userId?: string): Promise<PrivacySettings> {
       try {
         const id = userId || (await this.getCurrentUser()).id;
-        return await this.makeRequest<any>('GET', `/privacy/${id}/privacy`, undefined, {
+        return await this.makeRequest<PrivacySettings>('GET', `/privacy/${id}/privacy`, undefined, {
           cache: true,
           cacheTTL: 2 * 60 * 1000, // 2 minutes cache
         });
@@ -277,10 +277,10 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
      * @param settings - Partial privacy settings object
      * @param userId - The user ID (defaults to current user)
      */
-    async updatePrivacySettings(settings: Record<string, any>, userId?: string): Promise<any> {
+    async updatePrivacySettings(settings: Partial<PrivacySettings>, userId?: string): Promise<PrivacySettings> {
       try {
         const id = userId || (await this.getCurrentUser()).id;
-        return await this.makeRequest<any>('PATCH', `/privacy/${id}/privacy`, settings, {
+        return await this.makeRequest<PrivacySettings>('PATCH', `/privacy/${id}/privacy`, settings, {
           cache: false,
         });
       } catch (error) {

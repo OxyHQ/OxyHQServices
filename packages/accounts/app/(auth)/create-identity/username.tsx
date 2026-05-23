@@ -69,10 +69,6 @@ export default function CreateIdentityUsernameScreen() {
 
     setUpdateError(null);
 
-    if (__DEV__) {
-      console.log('[create-identity/username] continue start', { username });
-    }
-
     try {
       // mutateAsync triggers the optimistic onMutate FIRST, which:
       //  - cancels in-flight queries on accounts.current()
@@ -80,14 +76,8 @@ export default function CreateIdentityUsernameScreen() {
       //    into useAuthStore)
       // …so by the time the await resolves with the server response, the
       // root-layout onboarding guard has already observed `hasUsername=true`.
-      const updatedUser = await updateProfile.mutateAsync({ username: username.trim() });
+      await updateProfile.mutateAsync({ username: username.trim() });
       usernameRef.current = username.trim();
-
-      if (__DEV__) {
-        console.log('[create-identity/username] update succeeded', {
-          username: updatedUser?.username,
-        });
-      }
 
       router.push('/(auth)/create-identity/notifications');
     } catch (err: unknown) {
@@ -106,10 +96,6 @@ export default function CreateIdentityUsernameScreen() {
         );
       } else {
         setUpdateError(errorMessage);
-      }
-
-      if (__DEV__) {
-        console.warn('[create-identity/username] update failed', { errorMessage });
       }
     }
   }, [username, oxyServices, router, usernameRef, updateProfile]);

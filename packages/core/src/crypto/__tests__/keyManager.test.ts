@@ -65,6 +65,21 @@ jest.mock(
   { virtual: true },
 );
 
+// Production code routes platform-specific dynamic imports through
+// `bundlerOpaqueImport`, which uses a `new Function(...)`-built `import()`
+// to hide the specifier from every bundler's static analyzer. Jest, however,
+// can only apply `jest.mock(...)` overrides to literal `import()` /
+// `require()` calls it can statically transform. By mocking the helper here
+// to delegate to a regular `require(...)`, the virtual mocks above
+// (`expo-secure-store`, `expo-crypto`) are picked up correctly.
+jest.mock('../../utils/dynamicImport', () => ({
+  __esModule: true,
+  bundlerOpaqueImport: async (specifier: string) => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    return require(specifier);
+  },
+}));
+
 describe('KeyManager safety invariants', () => {
   let KeyManager: typeof import('../keyManager').KeyManager;
   let IdentityAlreadyExistsError: typeof import('../keyManager').IdentityAlreadyExistsError;

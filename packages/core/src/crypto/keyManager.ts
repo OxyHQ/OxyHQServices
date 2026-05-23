@@ -8,6 +8,7 @@
 import { ec as EC } from 'elliptic';
 import type { ECKeyPair } from 'elliptic';
 import { isWeb, isIOS, isAndroid, isReactNative, isNodeJS } from '../utils/platform';
+import { bundlerOpaqueImport } from '../utils/dynamicImport';
 import { logger } from '../utils/loggerUtils';
 import { isDev } from '../shared/utils/debugUtils';
 
@@ -85,9 +86,10 @@ const ANDROID_ACCOUNT_TYPE = 'com.oxy.account';
 async function initSecureStore(): Promise<typeof import('expo-secure-store')> {
   if (!SecureStore) {
     try {
-      // Variable indirection prevents bundlers (Vite, webpack) from statically resolving this
-      const moduleName = 'expo-secure-store';
-      SecureStore = await import(/* @vite-ignore */ moduleName);
+      // bundlerOpaqueImport hides the specifier from every bundler's static
+      // analyzer (Metro/Vite/webpack/esbuild/Rollup) so this only resolves
+      // at runtime in a React Native host where expo-secure-store exists.
+      SecureStore = await bundlerOpaqueImport<typeof import('expo-secure-store')>('expo-secure-store');
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       throw new Error(`Failed to load expo-secure-store: ${errorMessage}. Make sure expo-secure-store is installed and properly configured.`);
@@ -109,9 +111,9 @@ function isWebPlatform(): boolean {
 
 async function initExpoCrypto(): Promise<typeof import('expo-crypto')> {
   if (!ExpoCrypto) {
-    // Variable indirection prevents bundlers (Vite, webpack) from statically resolving this
-    const moduleName = 'expo-crypto';
-    ExpoCrypto = await import(/* @vite-ignore */ moduleName);
+    // bundlerOpaqueImport hides the specifier from every bundler's static
+    // analyzer so this only resolves at runtime in a React Native host.
+    ExpoCrypto = await bundlerOpaqueImport<typeof import('expo-crypto')>('expo-crypto');
   }
   return ExpoCrypto!;
 }
@@ -136,11 +138,11 @@ async function getSecureRandomBytes(length: number): Promise<Uint8Array> {
     return Crypto.getRandomBytes(length);
   }
   
-  // In Node.js, use Node's crypto module
-  // Variable indirection prevents bundlers (Vite, webpack) from statically resolving this
+  // In Node.js, use Node's crypto module.
+  // bundlerOpaqueImport hides the 'crypto' specifier from every bundler's
+  // static analyzer so RN/web builds don't try to resolve Node's built-in.
   try {
-    const cryptoModuleName = 'crypto';
-    const nodeCrypto = await import(/* @vite-ignore */ cryptoModuleName);
+    const nodeCrypto = await bundlerOpaqueImport<typeof import('crypto')>('crypto');
     return new Uint8Array(nodeCrypto.randomBytes(length));
   } catch (error) {
     // Fallback to expo-crypto if Node crypto fails

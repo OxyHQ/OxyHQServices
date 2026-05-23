@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { authenticatedApiCall } from '@oxyhq/core';
-import type { AssetUploadInput, User } from '@oxyhq/core';
+import type { AssetUploadInput, PrivacySettings, User } from '@oxyhq/core';
 import { queryKeys, invalidateAccountQueries, invalidateUserQueries, invalidateSessionQueries } from '../queries/queryKeys';
 import { mutationKeys } from './mutationKeys';
 import { useOxy } from '../../context/OxyContext';
@@ -207,26 +207,30 @@ export const useUpdateAccountSettings = () => {
 
   return useMutation({
     mutationKey: [...mutationKeys.account.updateSettings],
-    mutationFn: async (settings: Record<string, unknown>) => {
+    mutationFn: async (settings: Partial<PrivacySettings>) => {
       const userId = user?.id;
       if (!userId) {
         throw new Error('User ID is required to update account settings');
       }
-      const updatedPrivacy = await authenticatedApiCall<Record<string, unknown>>(
+      const updatedPrivacy = await authenticatedApiCall<PrivacySettings>(
         oxyServices,
         activeSessionId,
         () => oxyServices.updatePrivacySettings(settings, userId)
       );
       // Reflect the merged privacy block back onto the user object so cache
-      // consumers that key off `User.privacySettings` see the change.
+      // consumers that key off `User.privacySettings` see the change. We
+      // REQUIRE the current user to be present in cache — fabricating a
+      // skeleton `{ privacySettings }` here would later be written into
+      // `accounts.current()` and `useAuthStore`, wiping every other user
+      // field (id, username, email, etc.). Bail loudly instead.
       const currentUser = queryClient.getQueryData<User>(queryKeys.accounts.current());
-      if (currentUser) {
-        return {
-          ...currentUser,
-          privacySettings: updatedPrivacy as { [key: string]: unknown },
-        };
+      if (!currentUser) {
+        throw new Error('Cannot update account settings: no current user in cache');
       }
-      return { privacySettings: updatedPrivacy } as unknown as User;
+      return {
+        ...currentUser,
+        privacySettings: updatedPrivacy,
+      };
     },
     onMutate: async (settings) => {
       await queryClient.cancelQueries({ queryKey: queryKeys.accounts.settings() });
@@ -247,10 +251,10 @@ export const useUpdateAccountSettings = () => {
     onError: (error, settings, context) => {
       // Restore only the privacySettings keys this mutation tried to change
       if (context?.previousUser && settings) {
-        const previousPrivacy = (context.previousUser.privacySettings ?? {}) as Record<string, unknown>;
-        const changedKeys = Object.keys(settings);
-        const partialPrivacyRollback = changedKeys.reduce<Record<string, unknown>>((acc, key) => {
-          acc[key] = previousPrivacy[key];
+        const previousPrivacy = context.previousUser.privacySettings ?? {};
+        const changedKeys = Object.keys(settings) as Array<keyof PrivacySettings>;
+        const partialPrivacyRollback = changedKeys.reduce<Partial<PrivacySettings>>((acc, key) => {
+          (acc as Record<string, unknown>)[key as string] = (previousPrivacy as Record<string, unknown>)[key as string];
           return acc;
         }, {});
 
@@ -261,7 +265,7 @@ export const useUpdateAccountSettings = () => {
             privacySettings: {
               ...(current.privacySettings ?? {}),
               ...partialPrivacyRollback,
-            } as { [key: string]: unknown },
+            },
           });
         }
       }
@@ -291,13 +295,13 @@ export const useUpdatePrivacySettings = () => {
 
   return useMutation({
     mutationKey: [...mutationKeys.account.updatePrivacySettings],
-    mutationFn: async ({ settings, userId }: { settings: Record<string, unknown>; userId?: string }) => {
+    mutationFn: async ({ settings, userId }: { settings: Partial<PrivacySettings>; userId?: string }) => {
       const targetUserId = userId || user?.id;
       if (!targetUserId) {
         throw new Error('User ID is required');
       }
 
-      return authenticatedApiCall<Record<string, unknown>>(
+      return authenticatedApiCall<PrivacySettings>(
         oxyServices,
         activeSessionId,
         () => oxyServices.updatePrivacySettings(settings, targetUserId)
@@ -318,8 +322,8 @@ export const useUpdatePrivacySettings = () => {
 
       // Optimistically update privacy settings
       if (previousPrivacySettings) {
-        queryClient.setQueryData(queryKeys.privacy.settings(targetUserId), {
-          ...previousPrivacySettings,
+        queryClient.setQueryData<PrivacySettings>(queryKeys.privacy.settings(targetUserId), {
+          ...(previousPrivacySettings as PrivacySettings),
           ...settings,
         });
       }
@@ -343,18 +347,18 @@ export const useUpdatePrivacySettings = () => {
     // succession; failure on one must not revert the other).
     onError: (error, { settings, userId }, context) => {
       const targetUserId = userId || user?.id;
-      const changedKeys = settings ? Object.keys(settings) : [];
+      const changedKeys = settings ? (Object.keys(settings) as Array<keyof PrivacySettings>) : [];
 
       // Rollback the privacy.settings query (partial)
       if (context?.previousPrivacySettings && targetUserId && changedKeys.length > 0) {
         const previousPrivacy = context.previousPrivacySettings as Record<string, unknown>;
-        const partialPrivacyRollback = changedKeys.reduce<Record<string, unknown>>((acc, key) => {
-          acc[key] = previousPrivacy[key];
+        const partialPrivacyRollback = changedKeys.reduce<Partial<PrivacySettings>>((acc, key) => {
+          (acc as Record<string, unknown>)[key as string] = previousPrivacy[key as string];
           return acc;
         }, {});
-        const currentPrivacy = queryClient.getQueryData<Record<string, unknown>>(queryKeys.privacy.settings(targetUserId));
+        const currentPrivacy = queryClient.getQueryData<PrivacySettings>(queryKeys.privacy.settings(targetUserId));
         if (currentPrivacy) {
-          queryClient.setQueryData(queryKeys.privacy.settings(targetUserId), {
+          queryClient.setQueryData<PrivacySettings>(queryKeys.privacy.settings(targetUserId), {
             ...currentPrivacy,
             ...partialPrivacyRollback,
           });
@@ -364,8 +368,8 @@ export const useUpdatePrivacySettings = () => {
       // Rollback the accounts.current() user.privacySettings (partial)
       if (context?.previousUser && changedKeys.length > 0) {
         const previousPrivacy = (context.previousUser.privacySettings ?? {}) as Record<string, unknown>;
-        const partialPrivacyRollback = changedKeys.reduce<Record<string, unknown>>((acc, key) => {
-          acc[key] = previousPrivacy[key];
+        const partialPrivacyRollback = changedKeys.reduce<Partial<PrivacySettings>>((acc, key) => {
+          (acc as Record<string, unknown>)[key as string] = previousPrivacy[key as string];
           return acc;
         }, {});
         const current = queryClient.getQueryData<User>(queryKeys.accounts.current());
@@ -375,7 +379,7 @@ export const useUpdatePrivacySettings = () => {
             privacySettings: {
               ...(current.privacySettings ?? {}),
               ...partialPrivacyRollback,
-            } as { [key: string]: unknown },
+            },
           });
         }
       }
@@ -395,49 +399,33 @@ export const useUpdatePrivacySettings = () => {
     // subdocument when handed a partial update), which would clobber every
     // other toggle if we blindly replaced. Defensive merge means the UI stays
     // consistent regardless of server behaviour.
+    //
+    // BOTH the privacy.settings query AND the accounts.current() user are
+    // gated on `targetUserId`. If it's missing (no userId param, no logged-in
+    // user) the optimistic update in onMutate would have early-returned too,
+    // so neither cache was ever touched — there's nothing to reconcile here.
     onSuccess: (data, { userId, settings }) => {
       const targetUserId = userId || user?.id;
-      const incoming = (data ?? {}) as Record<string, unknown>;
-      const requested = (settings ?? {}) as Record<string, unknown>;
+      if (!targetUserId) return;
 
-      // Detect server-side overrides: cases where the server validated the
-      // request but persisted a value different from what was requested
-      // (e.g. a policy rule clamped the toggle). The user would otherwise
-      // see the switch silently flip back. Surface via dev-only warn — a
-      // user toast is too noisy for normal flows; UI will reflect the
-      // server value below since the server is authoritative.
-      if (__DEV__) {
-        const overrides: string[] = [];
-        for (const key of Object.keys(requested)) {
-          if (key in incoming && incoming[key] !== requested[key]) {
-            overrides.push(key);
-          }
-        }
-        if (overrides.length > 0) {
-          console.warn(
-            '[useUpdatePrivacySettings] Server overrode requested values for keys:',
-            overrides,
-          );
-        }
-      }
+      const incoming = (data ?? {}) as PrivacySettings;
+      const requested = (settings ?? {}) as Partial<PrivacySettings>;
 
-      if (targetUserId) {
-        queryClient.setQueryData<Record<string, unknown>>(
-          queryKeys.privacy.settings(targetUserId),
-          (previous) => ({
-            ...(previous ?? {}),
-            ...requested,
-            ...incoming, // server wins for fields it explicitly returned
-          }),
-        );
-      }
+      queryClient.setQueryData<PrivacySettings>(
+        queryKeys.privacy.settings(targetUserId),
+        (previous) => ({
+          ...(previous ?? {}),
+          ...requested,
+          ...incoming, // server wins for fields it explicitly returned
+        }),
+      );
 
       const currentUser = queryClient.getQueryData<User>(queryKeys.accounts.current());
       if (currentUser) {
         const updatedUser: User = {
           ...currentUser,
           privacySettings: {
-            ...((currentUser.privacySettings as Record<string, unknown> | undefined) ?? {}),
+            ...(currentUser.privacySettings ?? {}),
             ...requested,
             ...incoming,
           },

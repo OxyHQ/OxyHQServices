@@ -10,7 +10,7 @@ import {
     type ViewStyle,
     type StyleProp,
 } from 'react-native';
-import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
+import { Gesture, GestureDetector, GestureHandlerRootView, type GestureType } from 'react-native-gesture-handler';
 import Animated, {
     interpolate,
     runOnJS,
@@ -100,10 +100,15 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
     const translateY = useSharedValue(SCREEN_HEIGHT);
     const opacity = useSharedValue(0);
     const scrollOffsetY = useSharedValue(0);
-    const isScrollAtTop = useSharedValue(true);
-    const allowPanClose = useSharedValue(true);
     const keyboardHeight = useSharedValue(0);
     const context = useSharedValue({ y: 0 });
+
+    // Refs used to mark the handle pan and the body pan as mutually
+    // simultaneous. Without this RNGH treats them as racing gestures and a
+    // touch that begins in the handle area could be claimed by whichever
+    // recognizer activates first — leading to inconsistent drag start.
+    const bodyPanRef = useRef<GestureType | undefined>(undefined);
+    const handlePanRef = useRef<GestureType | undefined>(undefined);
 
     useKeyboardHandler({
         onMove: (e) => {
@@ -209,8 +214,9 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
         () =>
             Gesture.Pan()
                 .enabled(enablePanDownToClose)
+                .withRef(bodyPanRef)
                 .manualActivation(true)
-                .simultaneousWithExternalGesture(scrollViewRef)
+                .simultaneousWithExternalGesture(scrollViewRef, handlePanRef)
                 .onTouchesDown((e) => {
                     'worklet';
                     const t = e.changedTouches[0];
@@ -275,12 +281,12 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
         () =>
             Gesture.Pan()
                 .enabled(enablePanDownToClose && enableHandlePanningGesture)
+                .withRef(handlePanRef)
+                .simultaneousWithExternalGesture(bodyPanRef)
                 .activeOffsetY([-8, 8])
                 .onStart(() => {
                     'worklet';
                     context.value = { y: translateY.value };
-                    // Handle drags ALWAYS get to move the sheet.
-                    allowPanClose.value = true;
                 })
                 .onUpdate((event) => {
                     'worklet';
@@ -321,7 +327,6 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
                     }
                 }),
         [
-            allowPanClose,
             context,
             detached,
             enableHandlePanningGesture,
@@ -332,9 +337,21 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
         ],
     );
 
-    const backdropStyle = useAnimatedStyle(() => ({
-        opacity: opacity.value,
-    }));
+    // Backdrop dims proportionally as the sheet is dragged downward (iOS
+    // Photos-style). The base `opacity` value controls the open/close fade;
+    // we multiply it by a drag-distance factor so partial pulls also dim the
+    // overlay, snapping back when the user releases.
+    const backdropStyle = useAnimatedStyle(() => {
+        const dragFactor = interpolate(
+            translateY.value,
+            [0, SCREEN_HEIGHT * 0.4],
+            [1, 0.3],
+            'clamp',
+        );
+        return {
+            opacity: opacity.value * dragFactor,
+        };
+    });
 
     const sheetStyle = useAnimatedStyle(() => {
         const scale = interpolate(translateY.value, [0, SCREEN_HEIGHT], [1, 0.95]);
@@ -373,7 +390,6 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
     const scrollHandler = useAnimatedScrollHandler({
         onScroll: (event) => {
             scrollOffsetY.value = event.contentOffset.y;
-            isScrollAtTop.value = event.contentOffset.y <= 0;
         },
     });
 

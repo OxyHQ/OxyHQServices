@@ -9,6 +9,7 @@
  */
 
 import { Buffer } from 'buffer';
+import { bundlerOpaqueImport } from '../utils/dynamicImport';
 
 const getGlobalObject = (): typeof globalThis => {
   if (typeof globalThis !== 'undefined') return globalThis;
@@ -36,15 +37,17 @@ let expoCryptoLoadPromise: Promise<void> | null = null;
 /**
  * Eagerly start loading expo-crypto. The module is cached once resolved so
  * the synchronous getRandomValues shim can read from it immediately.
- * Uses dynamic import with variable indirection to prevent ESM bundlers
- * (Vite, webpack) from statically resolving the specifier.
+ *
+ * Uses `bundlerOpaqueImport` so the specifier is invisible to every
+ * bundler's static analyzer (Metro, Vite, webpack, esbuild, Rollup). It
+ * only resolves at runtime in a React Native host where `expo-crypto`
+ * actually exists.
  */
 function startExpoCryptoLoad(): void {
   if (expoCryptoLoadPromise) return;
   expoCryptoLoadPromise = (async () => {
     try {
-      const moduleName = 'expo-crypto';
-      expoCryptoModule = await import(/* @vite-ignore */ moduleName);
+      expoCryptoModule = await bundlerOpaqueImport<{ getRandomBytes: (count: number) => Uint8Array }>('expo-crypto');
     } catch {
       // expo-crypto not available — expected in non-RN environments
     }

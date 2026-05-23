@@ -7,6 +7,7 @@
 import { jwtDecode } from 'jwt-decode';
 import type { ApiError, User } from '../models/interfaces';
 import type { OxyServicesBase } from '../OxyServices.base';
+import { bundlerOpaqueImport } from '../utils/dynamicImport';
 import { CACHE_TIMES } from './mixinHelpers';
 
 interface JwtPayload {
@@ -297,9 +298,14 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
               return res.status(403).json(error);
             }
 
-            // Verify JWT signature (not just decode)
+            // Verify JWT signature (not just decode).
+            // This middleware only runs on a Node Express server, but the file
+            // is bundled by Metro/Vite for RN/web consumers. bundlerOpaqueImport
+            // hides the 'crypto' specifier from every bundler's static analyzer
+            // so the bundle never tries to resolve Node's built-in.
             try {
-              const { createHmac } = await import('crypto');
+              const nodeCrypto = await bundlerOpaqueImport<typeof import('crypto')>('crypto');
+              const { createHmac, timingSafeEqual } = nodeCrypto;
               const [headerB64, payloadB64, signatureB64] = token.split('.');
               if (!headerB64 || !payloadB64 || !signatureB64) {
                 throw new Error('Invalid token structure');
@@ -314,7 +320,6 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
               // Timing-safe comparison
               const sigBuf = Buffer.from(signatureB64);
               const expectedBuf = Buffer.from(expectedSig);
-              const { timingSafeEqual } = await import('crypto');
               if (sigBuf.length !== expectedBuf.length || !timingSafeEqual(sigBuf, expectedBuf)) {
                 throw new Error('Invalid signature');
               }

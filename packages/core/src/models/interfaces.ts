@@ -23,6 +23,41 @@ export interface OxyConfig {
   onRequestError?: (url: string, method: string, error: Error) => void;
 }
 
+/**
+ * Privacy settings for a user account.
+ *
+ * All fields are optional because:
+ *  - Updates are dot-path partial PATCHes — clients send only changed keys.
+ *  - The server may return a partial subdocument depending on the API
+ *    build (older builds returned only the field that changed).
+ *  - User accounts created before a new toggle was introduced won't
+ *    have that key persisted yet.
+ *
+ * Mirrors `IPrivacySettings` from `packages/api/src/types/privacy.types.ts`,
+ * but with every field marked optional.
+ */
+export interface PrivacySettings {
+  isPrivateAccount?: boolean;
+  hideOnlineStatus?: boolean;
+  hideLastSeen?: boolean;
+  profileVisibility?: boolean;
+  loginAlerts?: boolean;
+  blockScreenshots?: boolean;
+  login?: boolean;
+  biometricLogin?: boolean;
+  showActivity?: boolean;
+  allowTagging?: boolean;
+  allowMentions?: boolean;
+  hideReadReceipts?: boolean;
+  allowDirectMessages?: boolean;
+  dataSharing?: boolean;
+  locationSharing?: boolean;
+  analyticsSharing?: boolean;
+  sensitiveContent?: boolean;
+  autoFilter?: boolean;
+  muteKeywords?: boolean;
+}
+
 export interface User {
   id: string;
   publicKey: string;
@@ -33,9 +68,7 @@ export interface User {
   // Named color preset (e.g. 'teal', 'blue', 'purple')
   color?: string;
   // Privacy and security settings
-  privacySettings?: {
-    [key: string]: unknown;
-  };
+  privacySettings?: PrivacySettings;
   name?: {
     first?: string;
     last?: string;

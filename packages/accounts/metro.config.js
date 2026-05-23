@@ -39,20 +39,6 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
     return { type: 'empty' };
   }
 
-  // `@oxyhq/core` reaches for Node's `crypto` via `await import('crypto')`
-  // when running in a Node.js environment. Its TS source uses variable
-  // indirection (`const moduleName = 'crypto'; await import(moduleName)`)
-  // to hide the literal from bundlers, but the tsc-compiled output that
-  // Metro consumes inlines the literal again — so Metro tries to resolve
-  // `crypto` on every platform. The runtime gate (`isNodeJS()`) prevents
-  // the dynamic import from executing on RN/web, but Metro still needs a
-  // resolution at bundle time. Shim to empty on ALL platforms — Node's
-  // built-in crypto is only ever needed in a Node host, not RN or the
-  // browser bundle.
-  if (moduleName === 'crypto' || moduleName === 'node:crypto') {
-    return { type: 'empty' };
-  }
-
   if (moduleName === '@oxyhq/bloom' || moduleName.startsWith('@oxyhq/bloom/')) {
     // Pretend the import originated from accounts' own root, so Metro applies
     // the package's `react-native` field / exports map from the canonical

@@ -8,6 +8,7 @@
 import { ec as EC } from 'elliptic';
 import { KeyManager } from './keyManager';
 import { isReactNative, isNodeJS } from '../utils/platform';
+import { bundlerOpaqueImport } from '../utils/dynamicImport';
 import { logger } from '../utils/loggerUtils';
 import { isDev } from '../shared/utils/debugUtils';
 
@@ -19,16 +20,14 @@ const ec = new EC('secp256k1');
 
 async function initExpoCrypto(): Promise<typeof import('expo-crypto')> {
   if (!ExpoCrypto) {
-    const moduleName = 'expo-crypto';
-    ExpoCrypto = await import(/* @vite-ignore */ moduleName);
+    ExpoCrypto = await bundlerOpaqueImport<typeof import('expo-crypto')>('expo-crypto');
   }
   return ExpoCrypto!;
 }
 
 async function initNodeCrypto(): Promise<typeof import('crypto')> {
   if (!NodeCrypto) {
-    const moduleName = 'crypto';
-    NodeCrypto = await import(/* @vite-ignore */ moduleName);
+    NodeCrypto = await bundlerOpaqueImport<typeof import('crypto')>('crypto');
   }
   return NodeCrypto!;
 }
