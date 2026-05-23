@@ -1,6 +1,6 @@
 /**
  * Key Manager - ECDSA secp256k1 Key Generation and Storage
- * 
+ *
  * Handles secure generation, storage, and retrieval of cryptographic keys.
  * Private keys are stored securely using expo-secure-store and never leave the device.
  */
@@ -10,6 +10,41 @@ import type { ECKeyPair } from 'elliptic';
 import { isWeb, isIOS, isAndroid, isReactNative, isNodeJS } from '../utils/platform';
 import { logger } from '../utils/loggerUtils';
 import { isDev } from '../shared/utils/debugUtils';
+
+/**
+ * Thrown when an identity-mutating operation (createIdentity / importKeyPair)
+ * is invoked while a valid identity already exists on the device.
+ *
+ * The local private key IS the user's identity — overwriting it without
+ * explicit consent permanently loses access to their account (unless
+ * they previously saved their recovery phrase). This error forces callers
+ * to make an explicit, audited decision instead of silently clobbering.
+ */
+export class IdentityAlreadyExistsError extends Error {
+  override readonly name = 'IdentityAlreadyExistsError';
+  readonly existingPublicKey: string;
+  constructor(existingPublicKey: string) {
+    super(
+      'An identity already exists on this device. Refusing to overwrite without explicit consent. ' +
+        'If you really want to replace it, ensure the user has saved their recovery phrase, then call ' +
+        'the operation with { overwrite: true }.'
+    );
+    this.existingPublicKey = existingPublicKey;
+  }
+}
+
+/**
+ * Thrown when a freshly written identity cannot be read back, parsed, or
+ * round-tripped through sign/verify. Indicates a storage failure or
+ * corruption that would otherwise silently leave the user with an
+ * unusable account.
+ */
+export class IdentityPersistError extends Error {
+  override readonly name = 'IdentityPersistError';
+  constructor(message: string, readonly cause?: unknown) {
+    super(message);
+  }
+}
 
 // Lazy imports for React Native specific modules
 let SecureStore: typeof import('expo-secure-store') | null = null;
@@ -563,50 +598,166 @@ export class KeyManager {
   // ==================== END SHARED IDENTITY METHODS ====================
 
   /**
-   * Generate and securely store a new key pair on the device
-   * Returns only the public key (private key is stored securely)
+   * Atomically persist a key pair to secure storage with verification + backup.
+   *
+   * Write order is critical:
+   *   1. Backup (BACKUP_PRIVATE_KEY + BACKUP_PUBLIC_KEY + BACKUP_TIMESTAMP)
+   *   2. Primary public key
+   *   3. Primary private key (last so a partial write leaves us in a known
+   *      "no identity yet" state — easier to retry than a half-written one)
+   *   4. Read back + sign/verify to confirm the storage round-trip works
+   *
+   * If any step throws, the caller sees the error AND any partial state is
+   * cleaned up so the device is left either fully consistent or fully empty.
+   * It never leaves an unusable half-identity that would fool `hasIdentity()`.
+   *
+   * @internal
    */
-  static async createIdentity(): Promise<string> {
+  private static async _persistIdentityAtomic(
+    privateKey: string,
+    publicKey: string,
+  ): Promise<void> {
+    const store = await initSecureStore();
+
+    // Step 1: Backup BEFORE touching primary storage so we always have a
+    // recoverable copy even if the device crashes mid-write.
+    try {
+      await store.setItemAsync(STORAGE_KEYS.BACKUP_PRIVATE_KEY, privateKey, {
+        keychainAccessible: store.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+      });
+      await store.setItemAsync(STORAGE_KEYS.BACKUP_PUBLIC_KEY, publicKey);
+      await store.setItemAsync(STORAGE_KEYS.BACKUP_TIMESTAMP, Date.now().toString());
+    } catch (error) {
+      logger.error('Failed to write identity backup before primary', error, { component: 'KeyManager' });
+      throw new IdentityPersistError('Failed to write identity backup', error);
+    }
+
+    // Step 2 + 3: Write primary keys. Public first so that if private write
+    // fails we are still missing the most critical bit.
+    try {
+      await store.setItemAsync(STORAGE_KEYS.PUBLIC_KEY, publicKey);
+      await store.setItemAsync(STORAGE_KEYS.PRIVATE_KEY, privateKey, {
+        keychainAccessible: store.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+      });
+    } catch (error) {
+      logger.error('Failed to write primary identity to secure store', error, { component: 'KeyManager' });
+      // Roll back the public-key half-write so hasIdentity() doesn't lie later.
+      try { await store.deleteItemAsync(STORAGE_KEYS.PUBLIC_KEY); } catch { /* best effort */ }
+      try { await store.deleteItemAsync(STORAGE_KEYS.PRIVATE_KEY); } catch { /* best effort */ }
+      throw new IdentityPersistError('Failed to write identity to secure store', error);
+    }
+
+    // Step 4: Verify round-trip. If the store silently drops our writes
+    // (e.g., a misconfigured keychain access group), we MUST surface it
+    // before declaring success — otherwise the caller will think the
+    // identity was saved and discard the in-memory copy.
+    let readBackPrivate: string | null;
+    let readBackPublic: string | null;
+    try {
+      readBackPrivate = await store.getItemAsync(STORAGE_KEYS.PRIVATE_KEY);
+      readBackPublic = await store.getItemAsync(STORAGE_KEYS.PUBLIC_KEY);
+    } catch (error) {
+      logger.error('Failed to read identity back after write', error, { component: 'KeyManager' });
+      throw new IdentityPersistError('Failed to verify identity after write', error);
+    }
+
+    if (readBackPrivate !== privateKey || readBackPublic !== publicKey) {
+      logger.error('Identity round-trip mismatch after write', undefined, { component: 'KeyManager' });
+      throw new IdentityPersistError('Identity write was not persisted correctly (round-trip mismatch).');
+    }
+
+    // Final sanity: derive public from the stored private and confirm the
+    // pair signs/verifies cleanly. Catches a (theoretical) elliptic library
+    // corruption immediately rather than the next time the user tries to
+    // sign in.
+    try {
+      const keyPair = ec.keyFromPrivate(readBackPrivate);
+      const derived = keyPair.getPublic('hex');
+      if (derived !== readBackPublic) {
+        throw new IdentityPersistError('Stored public key does not match derived public key.');
+      }
+      // Sign/verify roundtrip using a known test vector
+      const probeHash = '0'.repeat(64);
+      const signature = keyPair.sign(probeHash);
+      if (!keyPair.verify(probeHash, signature)) {
+        throw new IdentityPersistError('Sign/verify roundtrip failed for newly stored identity.');
+      }
+    } catch (error) {
+      if (error instanceof IdentityPersistError) throw error;
+      logger.error('Identity sign/verify probe failed', error, { component: 'KeyManager' });
+      throw new IdentityPersistError('Stored identity failed crypto self-test', error);
+    }
+
+    // Update cache only after we are certain the identity is durable.
+    KeyManager.cachedPublicKey = publicKey;
+    KeyManager.cachedHasIdentity = true;
+  }
+
+  /**
+   * Generate and securely store a new key pair on the device.
+   *
+   * Refuses to overwrite an existing identity unless `options.overwrite === true`.
+   * Returns the public key. The private key never leaves secure storage.
+   *
+   * @throws IdentityAlreadyExistsError if an identity already exists and overwrite is not set
+   * @throws IdentityPersistError if the key cannot be durably written
+   */
+  static async createIdentity(options?: { overwrite?: boolean }): Promise<string> {
     if (isWebPlatform()) {
       throw new Error('Identity creation is only available on native platforms (iOS/Android). Please use the native app to create your identity.');
     }
-    const store = await initSecureStore();
+
+    // CRITICAL SAFEGUARD: never silently overwrite an existing identity.
+    // The local key IS the account — clobbering it without consent is
+    // catastrophic. Callers must opt in explicitly when they have already
+    // confirmed (via UI) that the user has saved their recovery phrase.
+    if (!options?.overwrite) {
+      const existing = await KeyManager.getPublicKey();
+      if (existing) {
+        throw new IdentityAlreadyExistsError(existing);
+      }
+    }
+
     const { privateKey, publicKey } = await KeyManager.generateKeyPair();
-
-    await store.setItemAsync(STORAGE_KEYS.PRIVATE_KEY, privateKey, {
-      keychainAccessible: store.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
-    });
-
-    await store.setItemAsync(STORAGE_KEYS.PUBLIC_KEY, publicKey);
-
-    // Update cache
-    KeyManager.cachedPublicKey = publicKey;
-    KeyManager.cachedHasIdentity = true;
-
+    await KeyManager._persistIdentityAtomic(privateKey, publicKey);
     return publicKey;
   }
 
   /**
-   * Import an existing key pair (e.g., from recovery phrase)
+   * Import an existing key pair (e.g., from recovery phrase).
+   *
+   * Refuses to overwrite an existing identity unless `options.overwrite === true`.
+   *
+   * @throws IdentityAlreadyExistsError if an identity already exists and overwrite is not set
+   * @throws IdentityPersistError if the key cannot be durably written
    */
-  static async importKeyPair(privateKey: string): Promise<string> {
+  static async importKeyPair(
+    privateKey: string,
+    options?: { overwrite?: boolean },
+  ): Promise<string> {
     if (isWebPlatform()) {
       throw new Error('Identity import is only available on native platforms (iOS/Android). Please use the native app to import your identity.');
     }
-    const store = await initSecureStore();
-    
+
+    if (!KeyManager.isValidPrivateKey(privateKey)) {
+      throw new Error('Invalid private key supplied to importKeyPair.');
+    }
+
     const keyPair = ec.keyFromPrivate(privateKey);
     const publicKey = keyPair.getPublic('hex');
 
-    await store.setItemAsync(STORAGE_KEYS.PRIVATE_KEY, privateKey, {
-      keychainAccessible: store.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
-    });
-    await store.setItemAsync(STORAGE_KEYS.PUBLIC_KEY, publicKey);
+    // Refuse silent overwrite — see createIdentity() for rationale.
+    if (!options?.overwrite) {
+      const existing = await KeyManager.getPublicKey();
+      if (existing && existing !== publicKey) {
+        throw new IdentityAlreadyExistsError(existing);
+      }
+      // If existing === publicKey, the device already has this exact identity;
+      // re-persisting is a no-op but harmless. Fall through to ensure backup
+      // is up to date.
+    }
 
-    // Update cache
-    KeyManager.cachedPublicKey = publicKey;
-    KeyManager.cachedHasIdentity = true;
-
+    await KeyManager._persistIdentityAtomic(privateKey, publicKey);
     return publicKey;
   }
 
@@ -662,7 +813,15 @@ export class KeyManager {
   }
 
   /**
-   * Check if an identity (key pair) exists on this device (cached for performance)
+   * Check if a complete, parseable identity exists on this device.
+   *
+   * Returns `true` only when BOTH the private and public keys are present,
+   * both are well-formed, AND the public key derives from the private key.
+   * A partially-written or corrupted identity returns `false` so that
+   * downstream code can resume the create / restore flow correctly.
+   *
+   * Note: this does NOT perform the full sign/verify roundtrip — call
+   * `verifyIdentityIntegrity()` for that.
    */
   static async hasIdentity(): Promise<boolean> {
     if (isWebPlatform()) {
@@ -673,20 +832,56 @@ export class KeyManager {
     }
 
     try {
-      const privateKey = await KeyManager.getPrivateKey();
-      const hasIdentity = privateKey !== null;
-      
-      // Cache result
+      const store = await initSecureStore();
+      const [privateKey, publicKey] = await Promise.all([
+        store.getItemAsync(STORAGE_KEYS.PRIVATE_KEY),
+        store.getItemAsync(STORAGE_KEYS.PUBLIC_KEY),
+      ]);
+
+      // Require BOTH bytes-present AND parseable AND matching. Any weaker
+      // check would let a half-written identity (private without public)
+      // pretend to be a real one, which then fails opaquely later in the
+      // sign-in flow when SignatureService.sign() can't find the keypair.
+      let hasIdentity = false;
+      if (privateKey && publicKey) {
+        if (KeyManager.isValidPrivateKey(privateKey) && KeyManager.isValidPublicKey(publicKey)) {
+          try {
+            const derived = ec.keyFromPrivate(privateKey).getPublic('hex');
+            hasIdentity = derived === publicKey;
+            if (!hasIdentity) {
+              logger.warn(
+                'KeyManager.hasIdentity: stored public key does not match derived public key',
+                { component: 'KeyManager' },
+              );
+            }
+          } catch (error) {
+            logger.warn(
+              'KeyManager.hasIdentity: failed to derive public key from stored private key',
+              { component: 'KeyManager' },
+              error,
+            );
+          }
+        } else {
+          logger.warn(
+            'KeyManager.hasIdentity: stored key material is malformed',
+            { component: 'KeyManager' },
+          );
+        }
+      }
+
+      // Cache result. We intentionally cache false when partial state is
+      // detected so the next call doesn't re-read the same bytes — callers
+      // should run integrity-recovery (restore from backup) explicitly.
       KeyManager.cachedHasIdentity = hasIdentity;
-      
+      if (hasIdentity) {
+        KeyManager.cachedPublicKey = publicKey;
+      }
       return hasIdentity;
     } catch (error) {
       // If we can't check, assume no identity (safer default)
       // Cache false to avoid repeated failed attempts
       KeyManager.cachedHasIdentity = false;
-      if (isDev()) {
-        logger.warn('Failed to check identity', { component: 'KeyManager' }, error);
-      }
+      logger.error('Failed to check identity', error, { component: 'KeyManager' });
       return false;
     }
   }
@@ -787,7 +982,12 @@ export class KeyManager {
   }
 
   /**
-   * Verify identity integrity - checks if keys are valid and accessible
+   * Verify identity integrity — checks keys are valid, accessible, derive
+   * consistently, AND can sign + verify a probe message.
+   *
+   * Returns true only when the full sign/verify roundtrip succeeds. Use
+   * this on app start to detect silent corruption before the user finds
+   * out by failing to sign in.
    */
   static async verifyIdentityIntegrity(): Promise<boolean> {
     if (isWebPlatform()) {
@@ -801,39 +1001,50 @@ export class KeyManager {
         return false;
       }
 
-      // Validate private key format
+      // Validate formats
       if (!KeyManager.isValidPrivateKey(privateKey)) {
         return false;
       }
-
-      // Validate public key format
       if (!KeyManager.isValidPublicKey(publicKey)) {
         return false;
       }
 
-      // Verify public key can be derived from private key
+      // Verify public key derives from private key
       const derivedPublicKey = KeyManager.derivePublicKey(privateKey);
       if (derivedPublicKey !== publicKey) {
         return false; // Keys don't match
       }
 
-      // Verify we can create a key pair object (tests elliptic curve operations)
-      const keyPair = await KeyManager.getKeyPairObject();
-      if (!keyPair) {
+      // Full sign/verify probe — proves the keypair is functional, not just
+      // bytewise parseable. A previous version of this method would return
+      // true even when the underlying elliptic curve state was wedged.
+      const keyPair = ec.keyFromPrivate(privateKey);
+      const probeHash = '0'.repeat(64);
+      const signature = keyPair.sign(probeHash);
+      if (!keyPair.verify(probeHash, signature)) {
+        logger.error('Identity sign/verify probe failed during integrity check', undefined, { component: 'KeyManager' });
         return false;
       }
 
       return true;
     } catch (error) {
-      if (isDev()) {
-        logger.error('Identity integrity check failed', error, { component: 'KeyManager' });
-      }
+      logger.error('Identity integrity check failed', error, { component: 'KeyManager' });
       return false;
     }
   }
 
   /**
-   * Restore identity from backup if primary storage is corrupted
+   * Restore identity from backup if primary storage is corrupted.
+   *
+   * SAFETY: this method will NEVER overwrite a verifying primary identity.
+   * If the primary passes a sign/verify probe, the backup is left untouched
+   * and `false` is returned — this protects against a transient
+   * `verifyIdentityIntegrity()` blip clobbering valid keys with stale
+   * backup keys (e.g., from a previous account before an import).
+   *
+   * Additionally, if the backup public key does NOT match the (still-
+   * present-but-failing) primary public key, we refuse to overwrite — the
+   * backup may belong to a different identity entirely.
    */
   static async restoreIdentityFromBackup(): Promise<boolean> {
     if (isWebPlatform()) {
@@ -841,7 +1052,15 @@ export class KeyManager {
     }
     try {
       const store = await initSecureStore();
-      
+
+      // First: if the primary still works, do nothing. Returning true here
+      // would be misleading; returning false (no restore needed) is the
+      // honest answer.
+      const primaryOk = await KeyManager.verifyIdentityIntegrity();
+      if (primaryOk) {
+        return false;
+      }
+
       // Check if backup exists
       const backupPrivateKey = await store.getItemAsync(STORAGE_KEYS.BACKUP_PRIVATE_KEY);
       const backupPublicKey = await store.getItemAsync(STORAGE_KEYS.BACKUP_PUBLIC_KEY);
@@ -851,40 +1070,45 @@ export class KeyManager {
       }
 
       // Verify backup integrity
-      if (!KeyManager.isValidPrivateKey(backupPrivateKey)) {
+      if (!KeyManager.isValidPrivateKey(backupPrivateKey) || !KeyManager.isValidPublicKey(backupPublicKey)) {
+        logger.warn('Backup identity is malformed; refusing to restore', { component: 'KeyManager' });
         return false;
       }
 
-      if (!KeyManager.isValidPublicKey(backupPublicKey)) {
-        return false;
-      }
-
-      // Verify keys match
+      // Verify backup keys derive consistently
       const derivedPublicKey = KeyManager.derivePublicKey(backupPrivateKey);
       if (derivedPublicKey !== backupPublicKey) {
-        return false; // Backup keys don't match
+        logger.warn('Backup public key does not match derived; refusing to restore', { component: 'KeyManager' });
+        return false;
       }
 
-      await store.setItemAsync(STORAGE_KEYS.PRIVATE_KEY, backupPrivateKey, {
-        keychainAccessible: store.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
-      });
-      await store.setItemAsync(STORAGE_KEYS.PUBLIC_KEY, backupPublicKey);
-
-      const restored = await KeyManager.verifyIdentityIntegrity();
-      if (restored) {
-        // Update cache
-        KeyManager.cachedPublicKey = backupPublicKey;
-        KeyManager.cachedHasIdentity = true;
-
-        await store.setItemAsync(STORAGE_KEYS.BACKUP_TIMESTAMP, Date.now().toString());
-        return true;
+      // CRITICAL: if there is still a (broken) primary public key present
+      // that does NOT match the backup, the backup may be from a completely
+      // different identity. Better to surface a corrupted state than
+      // silently switch the user to a different account.
+      const currentPrimaryPublic = await store.getItemAsync(STORAGE_KEYS.PUBLIC_KEY).catch(() => null);
+      if (currentPrimaryPublic && currentPrimaryPublic !== backupPublicKey) {
+        logger.error(
+          'Primary identity is corrupted AND does not match the backup. Refusing to restore to avoid switching accounts.',
+          undefined,
+          { component: 'KeyManager' },
+        );
+        return false;
       }
 
-      return false;
+      // Safe to restore: rebuild the primary using the same atomic write
+      // path createIdentity uses, including verification.
+      try {
+        await KeyManager._persistIdentityAtomic(backupPrivateKey, backupPublicKey);
+      } catch (error) {
+        logger.error('Failed to persist identity restored from backup', error, { component: 'KeyManager' });
+        return false;
+      }
+
+      await store.setItemAsync(STORAGE_KEYS.BACKUP_TIMESTAMP, Date.now().toString());
+      return true;
     } catch (error) {
-      if (isDev()) {
-        logger.error('Failed to restore identity from backup', error, { component: 'KeyManager' });
-      }
+      logger.error('Failed to restore identity from backup', error, { component: 'KeyManager' });
       return false;
     }
   }
@@ -918,6 +1142,19 @@ export class KeyManager {
    * but don't pollute production logs.
    */
   static isValidPublicKey(publicKey: string): boolean {
+    if (typeof publicKey !== 'string' || publicKey.length === 0) {
+      return false;
+    }
+    // secp256k1 public keys are either uncompressed (130 hex chars, starts with 04)
+    // or compressed (66 hex chars, starts with 02 or 03). Anything else is
+    // clearly bogus; reject up front so we never silently widen the trust
+    // boundary by accepting whatever BN(...) parses out of junk input.
+    if (!/^[0-9a-fA-F]+$/.test(publicKey)) {
+      return false;
+    }
+    if (publicKey.length !== 130 && publicKey.length !== 66) {
+      return false;
+    }
     try {
       ec.keyFromPublic(publicKey, 'hex');
       return true;
@@ -930,17 +1167,37 @@ export class KeyManager {
   }
 
   /**
-   * Validate that a string is a valid private key
+   * Validate that a string is a valid private key.
    *
-   * Returns false on parse errors (invalid input is the expected fail mode here).
-   * Errors are logged at debug level so they're available when troubleshooting
-   * but don't pollute production logs.
+   * secp256k1 private keys are 256-bit, so 64 hex chars. We require strict
+   * hex-only input because `elliptic`'s underlying `BN(input, 16)` happily
+   * accepts non-hex characters (treating them as zero), which would let
+   * "not-hex" pass through as a valid (but compromised, near-zero) key.
    */
   static isValidPrivateKey(privateKey: string): boolean {
+    if (typeof privateKey !== 'string' || privateKey.length === 0) {
+      return false;
+    }
+    if (!/^[0-9a-fA-F]+$/.test(privateKey)) {
+      return false;
+    }
+    // secp256k1 private keys must be exactly 32 bytes (64 hex chars).
+    if (privateKey.length !== 64) {
+      return false;
+    }
     try {
       const keyPair = ec.keyFromPrivate(privateKey);
       // Verify it can derive a public key
-      keyPair.getPublic('hex');
+      const pub = keyPair.getPublic('hex');
+      if (!pub || pub.length === 0) {
+        return false;
+      }
+      // Additional sanity: private key must be > 0 and < curve order n.
+      // elliptic doesn't enforce this on keyFromPrivate, so we do it here.
+      const priv = keyPair.getPrivate();
+      if (priv.isZero() || priv.cmp(ec.curve.n) >= 0) {
+        return false;
+      }
       return true;
     } catch (error) {
       if (isDev()) {

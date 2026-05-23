@@ -1,4 +1,4 @@
-import type { AccountStorageUsageResponse, AssetUrlResponse, AssetVariant } from '../models/interfaces';
+import type { AccountStorageUsageResponse, AssetUploadInput, AssetUrlResponse, AssetVariant, RNFileDescriptor } from '../models/interfaces';
 import type { OxyServicesBase } from '../OxyServices.base';
 
 export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T) {
@@ -155,8 +155,8 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
     /**
      * Upload raw file data
      */
-    async uploadRawFile(file: File | Blob, visibility?: 'private' | 'public' | 'unlisted', metadata?: Record<string, any>): Promise<any> {
-      return this.assetUpload(file as File, visibility, metadata);
+    async uploadRawFile(file: AssetUploadInput, visibility?: 'private' | 'public' | 'unlisted', metadata?: Record<string, any>): Promise<any> {
+      return this.assetUpload(file, visibility, metadata);
     }
 
     /**
@@ -166,20 +166,24 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
      * ({uri, type, name, size}). RN descriptors are passed directly to
      * FormData.append, which handles them natively.
      */
-    async assetUpload(file: File | { uri: string; type?: string; name?: string; size?: number }, visibility?: 'private' | 'public' | 'unlisted', metadata?: Record<string, any>, onProgress?: (progress: number) => void): Promise<any> {
+    async assetUpload(file: AssetUploadInput, visibility?: 'private' | 'public' | 'unlisted', metadata?: Record<string, any>, onProgress?: (progress: number) => void): Promise<any> {
       const fileName = 'name' in file && file.name ? file.name : 'unknown';
       const fileSize = 'size' in file && file.size ? file.size : 0;
 
       try {
         const formData = new FormData();
 
-        if ('uri' in file && typeof file.uri === 'string') {
-          // React Native file descriptor — RN's FormData handles {uri, type, name} natively
-          formData.append('file', file as unknown as Blob, fileName);
-        } else if (file instanceof Blob) {
+        if (typeof File !== 'undefined' && file instanceof File) {
           formData.append('file', file, fileName);
+        } else if (typeof Blob !== 'undefined' && file instanceof Blob) {
+          formData.append('file', file, fileName);
+        } else if ('uri' in file && typeof (file as RNFileDescriptor).uri === 'string') {
+          // React Native file descriptor — RN's FormData handles {uri, type, name} natively.
+          // It reads the file from disk during the multipart request — no in-JS Blob
+          // conversion (which would fail on Hermes for ArrayBuffer-backed Blobs).
+          formData.append('file', file as unknown as Blob, fileName);
         } else {
-          formData.append('file', new Blob([file as unknown as BlobPart], { type: 'application/octet-stream' }), fileName);
+          throw new Error('Unsupported file input: expected File, Blob, or { uri, type?, name?, size? } descriptor');
         }
         if (visibility) {
           formData.append('visibility', visibility);
@@ -350,7 +354,7 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
       }
     }
 
-    async uploadAvatar(file: File, userId: string, app: string = 'profiles'): Promise<any> {
+    async uploadAvatar(file: AssetUploadInput, userId: string, app: string = 'profiles'): Promise<any> {
       try {
         const asset = await this.assetUpload(file, 'public');
         await this.assetLink(asset.file.id, app, 'avatar', userId, 'public');
@@ -360,7 +364,7 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
       }
     }
 
-    async uploadProfileBanner(file: File, userId: string, app: string = 'profiles'): Promise<any> {
+    async uploadProfileBanner(file: AssetUploadInput, userId: string, app: string = 'profiles'): Promise<any> {
       try {
         const asset = await this.assetUpload(file, 'public');
         await this.assetLink(asset.file.id, app, 'profile-banner', userId, 'public');

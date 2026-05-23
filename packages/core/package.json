@@ -62,6 +62,7 @@
     "build:types": "tsc -p tsconfig.types.json",
     "clean": "rm -rf dist",
     "typescript": "tsc --noEmit",
+    "test": "jest --passWithNoTests",
     "lint": "biome lint --error-on-warnings ./src"
   },
   "dependencies": {

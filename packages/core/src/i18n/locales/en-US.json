@@ -1046,6 +1046,8 @@
     "save": "Save",
     "saved": "Saved successfully",
     "saving": "Saving...",
+    "unnamed": "Unnamed",
+    "accountFallback": "Account {{handle}}",
     "links": {
       "recoverAccount": "Recover your account",
       "signUp": "Sign Up"

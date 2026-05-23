@@ -18,7 +18,7 @@ import { RequestDeduplicator, RequestQueue, SimpleLogger } from './utils/request
 import { retryAsync } from './utils/asyncUtils';
 import { handleHttpError } from './utils/errorUtils';
 import { jwtDecode } from 'jwt-decode';
-import { isNative, getPlatformOS } from './utils/platform';
+import { isNative, isReactNative, getPlatformOS } from './utils/platform';
 import type { OxyConfig } from './models/interfaces';
 
 /**
@@ -314,17 +314,27 @@ export class HttpService {
           });
         }
 
-        const bodyValue = method !== 'GET' && data 
-            ? (isFormData ? data : JSON.stringify(data)) 
+        const bodyValue = method !== 'GET' && data
+            ? (isFormData ? data : JSON.stringify(data))
             : undefined;
-        
-        const response = await fetch(fullUrl, {
-          method,
-          headers,
-          body: bodyValue as BodyInit | null | undefined,
-          signal: controller.signal,
-          credentials: 'include', // Include cookies for cross-origin requests (CSRF, session)
-        });
+
+        // React Native FormData workaround:
+        // Expo SDK 56's "winter fetch" rejects RN file descriptors `{uri, type, name}`
+        // in FormDataPart conversion (`Unsupported FormDataPart implementation`).
+        // RN's native XMLHttpRequest handles those descriptors correctly, so we
+        // route multipart uploads through XHR on RN only. JSON, text, etc. still
+        // use fetch on every platform.
+        const useXhrForUpload = isFormData && isReactNative() && typeof XMLHttpRequest !== 'undefined';
+
+        const response = useXhrForUpload
+          ? await this.uploadViaXHR(fullUrl, method, headers, bodyValue as FormData, controller.signal, timeout)
+          : await fetch(fullUrl, {
+              method,
+              headers,
+              body: bodyValue as BodyInit | null | undefined,
+              signal: controller.signal,
+              credentials: 'include', // Include cookies for cross-origin requests (CSRF, session)
+            });
 
         if (timeoutId) clearTimeout(timeoutId);
 
@@ -471,6 +481,116 @@ export class HttpService {
     }
 
     return result;
+  }
+
+  /**
+   * Upload via XMLHttpRequest (React Native FormData workaround).
+   *
+   * Expo SDK 56's "winter fetch" cannot serialize RN file descriptors
+   * (`{uri, type, name}`) — `convertFormDataAsync` rejects them as
+   * `Unsupported FormDataPart implementation`. RN's native XHR streams
+   * the file from disk correctly, so multipart uploads go through XHR
+   * on RN only.
+   *
+   * Returns a standard `Response` so downstream parsing in `request()`
+   * (status checks, 401/403 retries, JSON/blob/text parsing) is identical
+   * to the fetch path.
+   */
+  private uploadViaXHR(
+    url: string,
+    method: string,
+    headers: Record<string, string>,
+    body: FormData,
+    abortSignal: AbortSignal,
+    timeout: number,
+  ): Promise<Response> {
+    return new Promise<Response>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open(method, url, true);
+      // withCredentials mirrors fetch's `credentials: 'include'` so the
+      // session cookie and CSRF cookie continue to flow.
+      xhr.withCredentials = true;
+
+      // Forward headers but skip Content-Type — XHR sets the multipart
+      // boundary automatically and overriding it breaks the upload.
+      for (const [key, value] of Object.entries(headers)) {
+        if (key.toLowerCase() === 'content-type') continue;
+        try {
+          xhr.setRequestHeader(key, value);
+        } catch (headerError) {
+          // Some headers (e.g. forbidden header names) cannot be set —
+          // log and continue rather than failing the whole upload.
+          this.logger.warn('XHR setRequestHeader failed:', key, headerError);
+        }
+      }
+
+      xhr.responseType = 'text';
+      if (timeout > 0) {
+        xhr.timeout = timeout;
+      }
+
+      const onAbort = (): void => {
+        try { xhr.abort(); } catch { /* xhr already finished */ }
+      };
+      if (abortSignal.aborted) {
+        reject(new DOMException('The user aborted a request.', 'AbortError'));
+        return;
+      }
+      abortSignal.addEventListener('abort', onAbort);
+
+      const cleanup = (): void => {
+        abortSignal.removeEventListener('abort', onAbort);
+      };
+
+      xhr.onload = (): void => {
+        cleanup();
+        const responseHeaders = HttpService.parseXHRHeaders(xhr.getAllResponseHeaders());
+        resolve(new Response(xhr.responseText, {
+          status: xhr.status,
+          statusText: xhr.statusText,
+          headers: responseHeaders,
+        }));
+      };
+      xhr.onerror = (): void => {
+        cleanup();
+        reject(new TypeError('Network request failed'));
+      };
+      xhr.ontimeout = (): void => {
+        cleanup();
+        reject(new DOMException('The request timed out.', 'TimeoutError'));
+      };
+      xhr.onabort = (): void => {
+        cleanup();
+        reject(new DOMException('The user aborted a request.', 'AbortError'));
+      };
+
+      xhr.send(body);
+    });
+  }
+
+  /**
+   * Parse raw header string from `XMLHttpRequest.getAllResponseHeaders()`
+   * into a `Headers`-compatible object.
+   */
+  private static parseXHRHeaders(rawHeaders: string): Headers {
+    const headers = new Headers();
+    if (!rawHeaders) return headers;
+    // RFC 7230 line terminator is CRLF; some XHR implementations use LF only.
+    const lines = rawHeaders.trim().split(/\r?\n/);
+    for (const line of lines) {
+      const colonIndex = line.indexOf(':');
+      if (colonIndex <= 0) continue;
+      const key = line.slice(0, colonIndex).trim();
+      const value = line.slice(colonIndex + 1).trim();
+      if (key) {
+        try {
+          headers.append(key, value);
+        } catch {
+          // Invalid header name/value — skip.
+        }
+      }
+    }
+    return headers;
   }
 
   /**

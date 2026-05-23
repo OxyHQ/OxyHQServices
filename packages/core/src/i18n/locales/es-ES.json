@@ -270,6 +270,8 @@
     "save": "Guardar",
     "saved": "Guardado correctamente",
     "saving": "Guardando...",
+    "unnamed": "Sin nombre",
+    "accountFallback": "Cuenta {{handle}}",
     "links": {
       "recoverAccount": "Recuperar tu cuenta",
       "signUp": "Registrarse"

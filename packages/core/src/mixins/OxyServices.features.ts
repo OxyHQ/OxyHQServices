@@ -412,17 +412,7 @@ export function OxyServicesFeaturesMixin<T extends typeof OxyServicesBase>(Base:
             }
         }
 
-        // ==================
-        // ACCOUNT
-        // ==================
-
-        /**
-         * Delete user account (requires password confirmation)
-         */
-        async deleteAccount(password: string): Promise<void> {
-            return this.withAuthRetry(async () => {
-                await this.makeRequest('DELETE', '/account', { password }, { cache: false });
-            }, 'deleteAccount');
-        }
+        // Account deletion lives in OxyServices.user mixin — it requires
+        // an identity-key signature (not just a password) and hits DELETE /users/me.
     };
 }

@@ -33,9 +33,16 @@ export type { RedirectAuthOptions } from './mixins/OxyServices.redirect';
 export type { ServiceTokenResponse } from './mixins/OxyServices.auth';
 export type { ServiceApp } from './mixins/OxyServices.utility';
 export type { CreateManagedAccountInput, ManagedAccountManager, ManagedAccount } from './mixins/OxyServices.managedAccounts';
+export type { ContactDiscoveryMatch, ContactDiscoveryResponse } from './mixins/OxyServices.contacts';
 
 // --- Crypto / Identity ---
-export { KeyManager, SignatureService, RecoveryPhraseService } from './crypto';
+export {
+  KeyManager,
+  SignatureService,
+  RecoveryPhraseService,
+  IdentityAlreadyExistsError,
+  IdentityPersistError,
+} from './crypto';
 export type { KeyPair, SignedMessage, AuthChallenge, RecoveryPhraseResult } from './crypto';
 
 // --- Models & Types ---
@@ -170,8 +177,14 @@ export type { LogContext } from './utils/loggerUtils';
 export { updateAvatarVisibility } from './utils/avatarUtils';
 
 // --- Account Utilities ---
-export { buildAccountsArray, createQuickAccount } from './utils/accountUtils';
-export type { QuickAccount } from './utils/accountUtils';
+export {
+  buildAccountsArray,
+  createQuickAccount,
+  getAccountDisplayName,
+  getAccountFallbackHandle,
+  formatPublicKeyHandle,
+} from './utils/accountUtils';
+export type { QuickAccount, DisplayNameUserShape } from './utils/accountUtils';
 
 // Default export
 import { OxyServices } from './OxyServices';

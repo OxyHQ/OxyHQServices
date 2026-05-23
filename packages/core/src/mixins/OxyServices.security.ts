@@ -24,19 +24,29 @@ export function OxyServicesSecurityMixin<T extends typeof OxyServicesBase>(Base:
       eventType?: SecurityEventType
     ): Promise<SecurityActivityResponse> {
       try {
-        const params: any = {};
+        const params: Record<string, unknown> = {};
         if (limit !== undefined) params.limit = limit;
         if (offset !== undefined) params.offset = offset;
         if (eventType) params.eventType = eventType;
 
-        const response = await this.makeRequest<SecurityActivityResponse>(
-          'GET',
-          '/security/activity',
-          params,
-          { cache: false }
-        );
+        // The API responds with the standard paginated envelope:
+        //   { data: SecurityActivity[], pagination: { total, limit, offset, hasMore } }
+        // SecurityActivityResponse is the flattened shape consumers expect.
+        const raw = await this.makeRequest<{
+          data: SecurityActivity[];
+          pagination: { total: number; limit: number; offset: number; hasMore: boolean };
+        }>('GET', '/security/activity', params, { cache: false });
 
-        return response;
+        const requestedLimit = typeof params.limit === 'number' ? params.limit : 0;
+        const requestedOffset = typeof params.offset === 'number' ? params.offset : 0;
+
+        return {
+          data: raw.data ?? [],
+          total: raw.pagination?.total ?? raw.data?.length ?? 0,
+          limit: raw.pagination?.limit ?? requestedLimit,
+          offset: raw.pagination?.offset ?? requestedOffset,
+          hasMore: raw.pagination?.hasMore ?? false,
+        };
       } catch (error) {
         throw this.handleError(error);
       }

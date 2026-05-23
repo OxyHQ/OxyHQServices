@@ -28,25 +28,48 @@ export interface RecoveryPhraseResult {
   publicKey: string;
 }
 
+export interface GenerateIdentityOptions {
+  /**
+   * Pass `true` to allow overwriting an existing on-device identity.
+   *
+   * Defaults to `false`. When false, this method throws
+   * `IdentityAlreadyExistsError` if a complete identity already exists,
+   * preventing accidental account loss. UI flows MUST only set this to
+   * `true` after explicitly confirming the user has saved their previous
+   * recovery phrase (or has otherwise been warned).
+   */
+  overwrite?: boolean;
+}
+
 export class RecoveryPhraseService {
   /**
-   * Generate a new identity with a recovery phrase
-   * Returns the mnemonic phrase (should only be shown once to the user)
+   * Generate a new identity with a recovery phrase.
+   * The mnemonic phrase MUST be shown to the user exactly once after this
+   * call resolves — if it is lost, the account becomes unrecoverable.
+   *
+   * Refuses to overwrite an existing identity unless `options.overwrite === true`.
+   *
+   * @throws IdentityAlreadyExistsError if an identity already exists and overwrite is not set
    */
-  static async generateIdentityWithRecovery(): Promise<RecoveryPhraseResult> {
+  static async generateIdentityWithRecovery(
+    options?: GenerateIdentityOptions,
+  ): Promise<RecoveryPhraseResult> {
     // Generate 128-bit entropy for 12-word mnemonic
     const mnemonic = bip39.generateMnemonic(128);
-    
+
     // Derive private key from mnemonic
     // Using the seed directly as the private key (simplified approach)
     const seed = await bip39.mnemonicToSeed(mnemonic);
-    
+
     // Use first 32 bytes of seed as private key
     const seedSlice = seed.subarray ? seed.subarray(0, 32) : seed.slice(0, 32);
     const privateKeyHex = toHex(seedSlice);
-    
-    // Import the derived key pair
-    const publicKey = await KeyManager.importKeyPair(privateKeyHex);
+
+    // Import the derived key pair. KeyManager.importKeyPair will refuse to
+    // clobber an existing identity unless overwrite is explicitly requested.
+    const publicKey = await KeyManager.importKeyPair(privateKeyHex, {
+      overwrite: options?.overwrite === true,
+    });
 
     return {
       phrase: mnemonic,
@@ -56,16 +79,22 @@ export class RecoveryPhraseService {
   }
 
   /**
-   * Generate a 24-word recovery phrase for higher security
+   * Generate a 24-word recovery phrase for higher security.
+   *
+   * Same overwrite-protection semantics as `generateIdentityWithRecovery`.
    */
-  static async generateIdentityWithRecovery24(): Promise<RecoveryPhraseResult> {
+  static async generateIdentityWithRecovery24(
+    options?: GenerateIdentityOptions,
+  ): Promise<RecoveryPhraseResult> {
     // Generate 256-bit entropy for 24-word mnemonic
     const mnemonic = bip39.generateMnemonic(256);
-    
+
     const seed = await bip39.mnemonicToSeed(mnemonic);
     const seedSlice = seed.subarray ? seed.subarray(0, 32) : seed.slice(0, 32);
     const privateKeyHex = toHex(seedSlice);
-    const publicKey = await KeyManager.importKeyPair(privateKeyHex);
+    const publicKey = await KeyManager.importKeyPair(privateKeyHex, {
+      overwrite: options?.overwrite === true,
+    });
 
     return {
       phrase: mnemonic,
@@ -75,12 +104,20 @@ export class RecoveryPhraseService {
   }
 
   /**
-   * Restore an identity from a recovery phrase
+   * Restore an identity from a recovery phrase.
+   *
+   * Refuses to overwrite a DIFFERENT existing identity unless
+   * `options.overwrite === true`. Re-importing the same phrase that
+   * matches the current identity is always allowed (it's a no-op refresh
+   * of the backup record).
    */
-  static async restoreFromPhrase(phrase: string): Promise<string> {
+  static async restoreFromPhrase(
+    phrase: string,
+    options?: GenerateIdentityOptions,
+  ): Promise<string> {
     // Normalize and validate the phrase
     const normalizedPhrase = phrase.trim().toLowerCase();
-    
+
     if (!bip39.validateMnemonic(normalizedPhrase)) {
       throw new Error('Invalid recovery phrase. Please check the words and try again.');
     }
@@ -89,9 +126,11 @@ export class RecoveryPhraseService {
     const seed = await bip39.mnemonicToSeed(normalizedPhrase);
     const seedSlice = seed.subarray ? seed.subarray(0, 32) : seed.slice(0, 32);
     const privateKeyHex = toHex(seedSlice);
-    
+
     // Import and store the key pair
-    const publicKey = await KeyManager.importKeyPair(privateKeyHex);
+    const publicKey = await KeyManager.importKeyPair(privateKeyHex, {
+      overwrite: options?.overwrite === true,
+    });
 
     return publicKey;
   }

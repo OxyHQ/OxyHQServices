@@ -290,6 +290,35 @@ export interface FileDeleteResponse {
 }
 
 /**
+ * React Native file descriptor accepted by FormData.
+ *
+ * On React Native, the multipart upload reads the file from disk via the URI
+ * during the network request — no in-JS Blob construction is required (and
+ * doing so would fail on Hermes since RN's BlobManager cannot wrap an
+ * ArrayBuffer/ArrayBufferView).
+ *
+ * This shape matches what `expo-document-picker` and `expo-image-picker`
+ * return for selected assets, and is what `OxyServices.assetUpload` accepts
+ * on native platforms.
+ */
+export interface RNFileDescriptor {
+  uri: string;
+  type?: string;
+  name?: string;
+  size?: number;
+}
+
+/**
+ * Asset upload input — accepted by `OxyServices.assetUpload` and `uploadRawFile`.
+ *
+ * - `File` / `Blob`: standard web browser path. `assetUpload` appends the
+ *   Blob to FormData directly.
+ * - {@link RNFileDescriptor}: React Native path. FormData reads the file from
+ *   disk via the URI during the multipart request.
+ */
+export type AssetUploadInput = File | Blob | RNFileDescriptor;
+
+/**
  * Central Asset Service interfaces
  */
 

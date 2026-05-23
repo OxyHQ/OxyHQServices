@@ -8,7 +8,12 @@
 // Import polyfills first - this ensures Buffer is available for bip39 and other libraries
 import './polyfill';
 
-export { KeyManager, type KeyPair } from './keyManager';
+export {
+  KeyManager,
+  IdentityAlreadyExistsError,
+  IdentityPersistError,
+  type KeyPair,
+} from './keyManager';
 export { 
   SignatureService, 
   type SignedMessage, 

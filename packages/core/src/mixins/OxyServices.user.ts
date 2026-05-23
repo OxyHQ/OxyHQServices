@@ -4,6 +4,8 @@
 import type { User, Notification, SearchProfilesResponse, PaginationInfo } from '../models/interfaces';
 import type { OxyServicesBase } from '../OxyServices.base';
 import { buildSearchParams, buildPaginationParams, type PaginationParams } from '../utils/apiUtils';
+import { KeyManager } from '../crypto/keyManager';
+import { SignatureService } from '../crypto/signatureService';
 
 export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) {
   return class extends Base {
@@ -299,14 +301,31 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
     }
 
     /**
-     * Delete account permanently
-     * @param password - User password for confirmation
-     * @param confirmText - Confirmation text (usually username)
+     * Delete account permanently.
+     *
+     * Signs `delete:{publicKey}:{timestamp}` with the locally-stored identity
+     * private key and submits the signature alongside the confirmation text
+     * (must equal the user's username). The signature is the cryptographic
+     * proof of ownership — only the device holding the private key can issue
+     * a valid signature, so no password is required.
+     *
+     * @param confirmText - Must equal the user's username (verified server-side)
+     * @throws If no identity is stored on this device, or signing fails
      */
-    async deleteAccount(password: string, confirmText: string): Promise<{ message: string }> {
+    async deleteAccount(confirmText: string): Promise<{ message: string }> {
       try {
+        const publicKey = await KeyManager.getPublicKey();
+        if (!publicKey) {
+          throw new Error('No identity found on this device. Account deletion requires the device that holds your identity key.');
+        }
+
+        const timestamp = Date.now();
+        const message = `delete:${publicKey}:${timestamp}`;
+        const signature = await SignatureService.sign(message);
+
         return await this.makeRequest<{ message: string }>('DELETE', '/users/me', {
-          password,
+          signature,
+          timestamp,
           confirmText,
         }, { cache: false });
       } catch (error) {
