@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { authenticatedApiCall } from '@oxyhq/core';
 import type { User } from '@oxyhq/core';
-import { queryKeys, invalidateAccountQueries, invalidateUserQueries } from '../queries/queryKeys';
+import { queryKeys, invalidateAccountQueries, invalidateUserQueries, invalidateSessionQueries } from '../queries/queryKeys';
 import { useWebOxy } from '../../WebOxyProvider';
 import { toast } from 'sonner';
 import { refreshAvatarInStore } from '../../utils/avatarUtils';
@@ -65,18 +65,22 @@ export const useUpdateProfile = () => {
       if (activeSessionId) {
         queryClient.setQueryData(queryKeys.users.profile(activeSessionId), data);
       }
-      
+
       // Update authStore so frontend components see the changes immediately
       useAuthStore.getState().setUser(data);
-      
+
       // If avatar was updated, refresh accountStore with cache-busted URL
       if (updates.avatar && activeSessionId && oxyServices) {
         refreshAvatarInStore(activeSessionId, updates.avatar, oxyServices);
       }
-      
-      // Invalidate all related queries to refresh everywhere
+
+      // Invalidate all related queries so every consumer (AccountSwitcher,
+      // session lists, managed accounts, etc.) refetches the fresh profile.
+      // Critical right after `username` is set the first time, when every
+      // cached "session profile" still reports the user as unnamed.
       invalidateUserQueries(queryClient);
       invalidateAccountQueries(queryClient);
+      invalidateSessionQueries(queryClient);
     },
   });
 };
@@ -144,25 +148,44 @@ export const useUploadAvatar = () => {
       if (data?.avatar && activeSessionId && oxyServices) {
         refreshAvatarInStore(activeSessionId, data.avatar, oxyServices);
       }
-      
-      // Invalidate all related queries to refresh everywhere
+
+      // Invalidate all related queries to refresh everywhere, including the
+      // sessions cache so other-account avatars update too.
       invalidateUserQueries(queryClient);
       invalidateAccountQueries(queryClient);
+      invalidateSessionQueries(queryClient);
       toast.success('Avatar updated successfully');
     },
   });
 };
 
 /**
- * Update account settings
+ * Update account settings (privacy preferences).
+ *
+ * Privacy settings are not part of the `PUT /users/me` allow-list; the API
+ * would silently drop them. Route through `updatePrivacySettings` so the
+ * dedicated `PATCH /privacy/:id/privacy` endpoint performs a dot-path merge
+ * and returns the updated `privacySettings` object.
  */
 export const useUpdateAccountSettings = () => {
-  const { oxyServices, activeSessionId } = useWebOxy();
+  const { oxyServices, activeSessionId, user } = useWebOxy();
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (settings: Record<string, any>) => {
-      return await oxyServices.updateProfile({ privacySettings: settings });
+    mutationFn: async (settings: Record<string, unknown>) => {
+      const userId = user?.id;
+      if (!userId) {
+        throw new Error('User ID is required to update account settings');
+      }
+      const updatedPrivacy = await oxyServices.updatePrivacySettings(settings, userId);
+      const currentUser = queryClient.getQueryData<User>(queryKeys.accounts.current());
+      if (currentUser) {
+        return {
+          ...currentUser,
+          privacySettings: updatedPrivacy as { [key: string]: unknown },
+        };
+      }
+      return { privacySettings: updatedPrivacy } as unknown as User;
     },
     onMutate: async (settings) => {
       await queryClient.cancelQueries({ queryKey: queryKeys.accounts.settings() });
