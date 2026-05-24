@@ -8,7 +8,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { toast } from '../../lib/sonner';
 import { useAuthStore } from '../stores/authStore';
 import { useTheme } from '@oxyhq/bloom/theme';
-import { fontFamilies } from '../styles/fonts';
 import { Button } from '@oxyhq/bloom/button';
 import { useI18n } from '../hooks/useI18n';
 import { useOxy } from '../context/OxyContext';
@@ -306,7 +305,6 @@ const createStyles = (colors: ReturnType<typeof useTheme>['colors']) => {
         },
         title: {
             fontSize: 42,
-            fontFamily: fontFamilies.interBold,
             fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
             letterSpacing: -1,
             textAlign: 'left',

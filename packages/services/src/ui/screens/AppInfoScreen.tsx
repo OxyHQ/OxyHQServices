@@ -52,8 +52,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
     const colorScheme = useColorScheme();
     const normalizedColorScheme = normalizeColorScheme(colorScheme);
     const themeColors = Colors[normalizedColorScheme];
-    // AppInfoScreen uses a slightly different light background
-    const backgroundColor = bloomTheme.isDark ? bloomTheme.colors.background : '#f2f2f2';
+    const backgroundColor = bloomTheme.colors.background;
     const primaryColor = themeColors.iconSecurity;
 
     useEffect(() => {
