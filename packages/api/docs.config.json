@@ -1,0 +1,11 @@
+{
+  "package": "@oxyhq/api",
+  "displayName": "Oxy REST API",
+  "shortName": "api",
+  "repo": "https://github.com/OxyHQ/OxyHQServices",
+  "category": "service",
+  "versions": ["main"],
+  "defaultVersion": "main",
+  "docsPath": "docs/",
+  "description": "REST API reference for the Oxy platform — auth, accounts, files, billing."
+}

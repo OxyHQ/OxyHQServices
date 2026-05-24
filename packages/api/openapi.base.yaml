@@ -1,0 +1,82 @@
+openapi: 3.1.0
+info:
+  title: Oxy REST API
+  version: 1.0.0
+  description: REST API for the Oxy platform. Authentication, accounts, files, billing, notifications, and developer tooling.
+servers:
+  - url: https://api.oxy.so
+    description: Production
+  - url: http://localhost:3001
+    description: Local development
+tags:
+  - name: auth
+    description: Authentication, session management, FedCM, public-key challenge.
+  - name: users
+    description: User profile, identity, settings, lookup.
+  - name: profiles
+    description: Public profile reads (no auth required).
+  - name: session
+    description: Session refresh, current session info.
+  - name: privacy
+    description: Privacy settings per user.
+  - name: security
+    description: Activity log, devices, 2FA.
+  - name: devices
+    description: Per-device session management.
+  - name: developer
+    description: Developer apps, API keys, webhooks.
+  - name: payments
+    description: Stripe payments and saved methods.
+  - name: subscription
+    description: Plans, billing cycles, customer portal.
+  - name: billing
+    description: Stripe webhooks, invoices.
+  - name: credits
+    description: Credit ledger and grants.
+  - name: storage
+    description: User file storage, uploads, downloads.
+  - name: assets
+    description: Public CDN-style assets.
+  - name: email
+    description: Email accounts, messages, threads.
+  - name: notifications
+    description: In-app notifications.
+  - name: contacts
+    description: Privacy-first contact discovery via hashed identifiers.
+  - name: search
+    description: Full-text search.
+  - name: misc
+    description: Miscellaneous endpoints.
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT access token obtained from /auth/login or /auth/verify, or service token from /auth/service-token.
+    csrfToken:
+      type: apiKey
+      in: header
+      name: X-CSRF-Token
+      description: Required for state-changing requests against CSRF-protected routes.
+  schemas:
+    Error:
+      type: object
+      required:
+        - error
+        - message
+      properties:
+        error:
+          type: string
+          description: Machine-readable error code.
+          example: BAD_REQUEST
+        message:
+          type: string
+          description: Human-readable error message.
+          example: Validation failed
+        details:
+          type: object
+          description: Additional error details (optional).
+          additionalProperties: true
+security:
+  - bearerAuth: []

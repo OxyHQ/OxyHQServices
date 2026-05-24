@@ -1,0 +1,11 @@
+{
+  "package": "@oxyhq/inbox",
+  "displayName": "Inbox",
+  "shortName": "inbox",
+  "repo": "https://github.com/OxyHQ/OxyHQServices",
+  "category": "app",
+  "versions": ["main"],
+  "defaultVersion": "main",
+  "docsPath": "docs/",
+  "description": "Email app with end-to-end encryption and offline-first sync."
+}

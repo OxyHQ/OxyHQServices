@@ -1,0 +1,12 @@
+{
+  "package": "@oxyhq/core",
+  "displayName": "@oxyhq/core",
+  "shortName": "core",
+  "repo": "https://github.com/OxyHQ/OxyHQServices",
+  "category": "sdk",
+  "versions": ["main"],
+  "defaultVersion": "main",
+  "docsPath": "docs/",
+  "typedoc": { "entry": "src/index.ts" },
+  "description": "Platform-agnostic OxyServices client, mixins, and crypto. Zero React/RN."
+}

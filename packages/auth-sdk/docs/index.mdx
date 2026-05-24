@@ -1,0 +1,40 @@
+---
+title: '@oxyhq/auth'
+description: Web authentication SDK with React hooks, FedCM, and WebOxyProvider.
+order: 0
+---
+
+# @oxyhq/auth
+
+Web-only authentication SDK. Provides `WebOxyProvider`, `useAuth`, `useWebOxy`, and integrates with the browser's FedCM API.
+
+<Badge variant="success">SDK</Badge> <Badge>MIT</Badge>
+
+## Install
+
+```sh
+bun add @oxyhq/auth @oxyhq/core
+```
+
+## Quick start
+
+```tsx
+import { WebOxyProvider, useWebOxy } from '@oxyhq/auth';
+
+function App() {
+  return (
+    <WebOxyProvider baseURL="https://api.oxy.so">
+      <Routes />
+    </WebOxyProvider>
+  );
+}
+```
+
+## Hooks
+
+- `useWebOxy()` — returns `{ oxyServices, isAuthenticated, user, signIn, signOut }`.
+- `useAuth()` — lower-level auth manager + access-token getter.
+
+## Stub
+
+Full hook reference and FedCM integration guide are scaffolded for follow-up.

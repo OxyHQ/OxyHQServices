@@ -1,0 +1,42 @@
+---
+title: '@oxyhq/services'
+description: Expo / React Native SDK with components, screens, and bottom-sheet navigation.
+order: 0
+---
+
+# @oxyhq/services
+
+Expo / React Native SDK. Provides `OxyProvider`, `useOxy`, a bottom-sheet navigation system with 29+ pre-built screens, and native UI components (sign-in button, account switcher, photo picker, etc.).
+
+<Badge variant="success">SDK</Badge> <Badge>MIT</Badge>
+
+## Install
+
+```sh
+bun add @oxyhq/services @oxyhq/core
+```
+
+## Quick start
+
+```tsx
+import { OxyProvider, OxySignInButton } from '@oxyhq/services';
+
+export default function Root() {
+  return (
+    <OxyProvider baseURL="https://api.oxy.so">
+      <OxySignInButton />
+    </OxyProvider>
+  );
+}
+```
+
+## What's inside
+
+- **`OxyProvider`** — RN auth context provider.
+- **`useOxy()`** — RN hook returning `{ user, oxyServices, signIn, signOut, ... }`.
+- **Bottom-sheet navigation** — 29+ screens covering profile, security, devices, files, payments.
+- **`LogoIcon` / `LogoText`** — Bloom-themed logo exports.
+
+## Stub
+
+Component reference and screen catalog are scaffolded for follow-up.

@@ -1,0 +1,35 @@
+---
+title: REST API
+description: Browse the OpenAPI-rendered reference for the Oxy platform REST API.
+order: 0
+---
+
+# Oxy REST API
+
+The Oxy REST API powers every official Oxy app and is open to third-party integrations via the developer apps program.
+
+<Badge variant="success">Service</Badge> <Badge>OpenAPI 3.1</Badge>
+
+## Reference
+
+Browse the full OpenAPI reference here: [**/docs/api**](/docs/api). The reference is rendered by [Scalar](https://github.com/scalar/scalar) from a generated OpenAPI document.
+
+## Base URL
+
+```
+https://api.oxy.so
+```
+
+## Authentication
+
+The API supports three auth flavors:
+
+| Type | Header | Use case |
+|------|--------|----------|
+| User session JWT | `Authorization: Bearer <token>` | First-party Oxy apps (web, mobile). |
+| API key + secret | `Authorization: Bearer <token>` (after `/auth/service-token` exchange) | Server-to-server (internal Oxy services). |
+| Developer app token | `Authorization: Bearer <token>` | Third-party integrations registered in the developer console. |
+
+## Stub
+
+Full guides (rate limits, webhook signatures, pagination conventions) will land in a follow-up. For now the live OpenAPI reference is the source of truth.

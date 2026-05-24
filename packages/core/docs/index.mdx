@@ -1,0 +1,40 @@
+---
+title: '@oxyhq/core'
+description: Platform-agnostic OxyServices client, mixins, and cryptographic primitives.
+order: 0
+---
+
+# @oxyhq/core
+
+The platform-agnostic foundation of the Oxy SDK. **Zero React, zero React Native, zero Expo dependencies** — it runs identically in Node, Bun, Vite, Next.js, Cloudflare Workers, and React Native.
+
+<Badge variant="success">SDK</Badge> <Badge>MIT</Badge>
+
+## Install
+
+```sh
+bun add @oxyhq/core
+```
+
+## Quick start
+
+```ts
+import { OxyServices } from '@oxyhq/core';
+import type { User } from '@oxyhq/core';
+
+const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
+
+const me: User | null = await oxy.users.getMe();
+```
+
+## What's inside
+
+- **`OxyServices`** — composable API client with namespaced mixins (`auth`, `users`, `files`, `billing`, `contacts`, …).
+- **Crypto utilities** — `KeyManager`, identity helpers, signed-request signing.
+- **Avatar utilities** — `avatarUtils`, `accountUtils`, `displayUtils` (canonical display names, public-key fallbacks).
+- **Contact discovery** — privacy-first hashed lookup (`oxy.contacts.discoverContacts(...)`).
+- **Service tokens** — internal service-to-service auth (`configureServiceAuth`, `getServiceToken`).
+
+## Stub
+
+This package's docs are scaffolded. Detailed pages for each mixin will land in a follow-up.

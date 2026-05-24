@@ -1,0 +1,11 @@
+{
+  "package": "@oxyhq/console",
+  "displayName": "Console",
+  "shortName": "console",
+  "repo": "https://github.com/OxyHQ/OxyHQServices",
+  "category": "app",
+  "versions": ["main"],
+  "defaultVersion": "main",
+  "docsPath": "docs/",
+  "description": "Developer console — manage apps, API keys, webhooks, and usage."
+}

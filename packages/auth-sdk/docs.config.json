@@ -1,0 +1,12 @@
+{
+  "package": "@oxyhq/auth",
+  "displayName": "@oxyhq/auth",
+  "shortName": "auth-sdk",
+  "repo": "https://github.com/OxyHQ/OxyHQServices",
+  "category": "sdk",
+  "versions": ["main"],
+  "defaultVersion": "main",
+  "docsPath": "docs/",
+  "typedoc": { "entry": "src/index.ts" },
+  "description": "Web auth SDK: React hooks, FedCM, WebOxyProvider, session management."
+}

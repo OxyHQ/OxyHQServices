@@ -1,0 +1,11 @@
+{
+  "package": "@oxyhq/accounts",
+  "displayName": "Accounts",
+  "shortName": "accounts",
+  "repo": "https://github.com/OxyHQ/OxyHQServices",
+  "category": "app",
+  "versions": ["main"],
+  "defaultVersion": "main",
+  "docsPath": "docs/",
+  "description": "MyAccount app — identity, security, recovery, payment methods."
+}

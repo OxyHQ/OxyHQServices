@@ -1,0 +1,12 @@
+{
+  "package": "@oxyhq/services",
+  "displayName": "@oxyhq/services",
+  "shortName": "services",
+  "repo": "https://github.com/OxyHQ/OxyHQServices",
+  "category": "sdk",
+  "versions": ["main"],
+  "defaultVersion": "main",
+  "docsPath": "docs/",
+  "typedoc": { "entry": "src/index.ts" },
+  "description": "Expo / React Native SDK: components, screens, bottom-sheet navigation."
+}
