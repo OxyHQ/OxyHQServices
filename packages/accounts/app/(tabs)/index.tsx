@@ -11,9 +11,10 @@ import { Avatar } from '@oxyhq/services';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import lottieAnimation from '@/assets/lottie/welcomeheader_background_op1.json';
 import { darkenColor } from '@/utils/color-utils';
-import { AccountCard, useAlert } from '@/components/ui';
+import { AccountCard } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { useOxy, useUserDevices, useRecentSecurityActivity, useCurrentUser } from '@oxyhq/services';
+import { toast } from '@oxyhq/bloom';
 import { formatDate, getDisplayName } from '@/utils/date-utils';
 import { useIdentity } from '@/hooks/useIdentity';
 import { useHapticPress } from '@/hooks/use-haptic-press';
@@ -43,7 +44,6 @@ export default function HomeScreen() {
   // OxyContext picks up the fresh record from the same cache key.
   useCurrentUser();
   const { syncIdentity, isIdentitySynced, identitySyncState } = useIdentity();
-  const alert = useAlert();
 
   // Fetch devices for stats
   const { data: devicesData } = useUserDevices();
@@ -144,10 +144,10 @@ export default function HomeScreen() {
         await syncIdentity();
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : t('home.syncFailedMessage');
-        alert(t('home.syncFailed'), message);
+        toast.error(message);
       }
     }
-  }, [syncIdentity, alert, t]);
+  }, [syncIdentity, t]);
 
   const handleReload = useCallback(async () => {
     if (!refreshSessions) return;

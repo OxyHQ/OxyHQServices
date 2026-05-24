@@ -8,16 +8,16 @@ import { Section } from '@/components/section';
 import { GroupedSection } from '@/components/grouped-section';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import { darkenColor } from '@/utils/color-utils';
-import { LinkButton, AccountCard, Switch, ScreenHeader, useAlert } from '@/components/ui';
+import { LinkButton, AccountCard, Switch, ScreenHeader } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
-import { useOxy, useUserDevices, useRecentSecurityActivity, useUpdateProfile } from '@oxyhq/services';
+import { useOxy, useUserDevices, useRecentSecurityActivity, useUpdateProfile, showBottomSheet } from '@oxyhq/services';
+import { alert, toast } from '@oxyhq/bloom';
 import { formatDate } from '@/utils/date-utils';
 import type { ClientSession, SecurityActivity } from '@oxyhq/core';
 import { useBiometricSettings } from '@/hooks/useBiometricSettings';
 import { getEventIcon, getSeverityColor, getEventSeverity, formatEventDescription } from '@/utils/security-utils';
 import type { MaterialCommunityIconName } from '@/types/icons';
 import { useTranslation } from '@/lib/i18n';
-import { LanguageSelector } from '@/components/language-selector';
 import { getNativeLanguageName } from '@oxyhq/core';
 import { useIdentityStore } from '@/hooks/identity/identityStore';
 import { useOnboardingStatus } from '@/hooks/useOnboardingStatus';
@@ -36,9 +36,7 @@ export default function SecurityScreen() {
     // the onboarding status hook instead so we can use it in dependency
     // arrays and conditional rendering.
     const { hasIdentity: hasIdentityBoolean } = useOnboardingStatus();
-    const alert = useAlert();
     const [isLoggingOutAll, setIsLoggingOutAll] = useState(false);
-    const [languageModalVisible, setLanguageModalVisible] = useState(false);
 
     // Device type for typing the query result
     interface DeviceRecord {
@@ -177,23 +175,16 @@ export default function SecurityScreen() {
                 title: t('security.recommendations.recoveryEmail'),
                 subtitle: t('security.recommendations.recoveryEmailSubtitle'),
                 onPress: () => {
+                    // Single prompt: confirm → route straight to the profile
+                    // screen where the email field lives. No nested alerts.
                     alert(
                         t('security.recommendations.recoveryEmailAlertTitle'),
-                        t('security.recommendations.recoveryEmailAlertMessage'),
+                        t('security.recommendations.recoveryEmailGoToProfile'),
                         [
                             { text: t('common.cancel'), style: 'cancel' },
                             {
                                 text: t('security.recommendations.recoveryEmailAddCta'),
-                                onPress: async () => {
-                                    // Prompt for email
-                                    alert(
-                                        t('security.recommendations.recoveryEmailAddCta'),
-                                        t('security.recommendations.recoveryEmailGoToProfile'),
-                                        [
-                                            { text: t('common.ok'), onPress: () => router.push('/(tabs)/personal-info') },
-                                        ]
-                                    );
-                                },
+                                onPress: () => router.push('/(tabs)/personal-info'),
                             },
                         ]
                     );
@@ -474,10 +465,10 @@ export default function SecurityScreen() {
                         try {
                             setIsLoggingOutAll(true);
                             await logoutAll();
-                            alert(t('common.success'), t('security.sessions.logoutAllSuccess'));
+                            toast.success(t('security.sessions.logoutAllSuccess'));
                         } catch (error: unknown) {
                             const message = error instanceof Error ? error.message : t('security.sessions.logoutAllFailed');
-                            alert(t('common.error'), message);
+                            toast.error(message);
                         } finally {
                             setIsLoggingOutAll(false);
                         }
@@ -519,7 +510,7 @@ export default function SecurityScreen() {
         iconColor: colors.sidebarIconData,
         title: t('security.language.label'),
         subtitle: getNativeLanguageName(locale) || locale,
-        onPress: () => setLanguageModalVisible(true),
+        onPress: () => showBottomSheet('LanguageSelector'),
         showChevron: true,
     }], [colors.sidebarIconData, t, locale]);
 
@@ -687,10 +678,6 @@ export default function SecurityScreen() {
             <>
                 <ScreenHeader title={t('security.title')} subtitle={t('security.subtitle')} />
                 {renderContent()}
-                <LanguageSelector
-                    visible={languageModalVisible}
-                    onClose={() => setLanguageModalVisible(false)}
-                />
             </>
         );
     }
@@ -703,10 +690,6 @@ export default function SecurityScreen() {
                     {renderContent()}
                 </View>
             </View>
-            <LanguageSelector
-                visible={languageModalVisible}
-                onClose={() => setLanguageModalVisible(false)}
-            />
         </ScreenContentWrapper>
     );
 }

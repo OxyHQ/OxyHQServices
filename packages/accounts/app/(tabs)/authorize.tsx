@@ -9,9 +9,10 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useOxy } from '@oxyhq/services';
+import { toast } from '@oxyhq/bloom';
 import { useColors } from '@/hooks/useColors';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
-import { useAlert, Button } from '@/components/ui';
+import { Button } from '@/components/ui';
 import { IdentityCard } from '@/components/identity';
 import { getDisplayName } from '@/utils/date-utils';
 import { useTranslation } from '@/lib/i18n';
@@ -28,7 +29,6 @@ export default function AuthorizeScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ token: string }>();
   const colors = useColors();
-  const alert = useAlert();
   const { locale } = useTranslation();
   // Auth is enforced by the `(tabs)` layout — assume a session here.
   const { oxyServices, user, activeSessionId, isTokenReady } = useOxy();
@@ -107,22 +107,16 @@ export default function AuthorizeScreen() {
         },
       });
 
-      alert(
-        'Authorization Successful',
-        `You have authorized ${sessionInfo?.appId || 'the app'} to access your Oxy identity.`,
-        [
-          {
-            text: 'OK',
-            onPress: () => router.back(),
-          },
-        ]
+      toast.success(
+        `Authorized ${sessionInfo?.appId || 'the app'} to access your Oxy identity.`,
       );
+      router.back();
     } catch (err: any) {
       setError(err.message || 'Failed to authorize');
     } finally {
       setIsAuthorizing(false);
     }
-  }, [params.token, activeSessionId, oxyServices, sessionInfo, router, alert]);
+  }, [params.token, activeSessionId, oxyServices, sessionInfo, router]);
 
   const handleDeny = useCallback(async () => {
     if (!params.token) return;

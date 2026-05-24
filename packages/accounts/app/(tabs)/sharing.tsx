@@ -4,9 +4,10 @@ import { useRouter } from 'expo-router';
 import { useColors } from '@/hooks/useColors';
 import { GroupedSection } from '@/components/grouped-section';
 import { Section } from '@/components/section';
-import { AccountCard, ScreenHeader, useAlert, Switch } from '@/components/ui';
+import { AccountCard, ScreenHeader, Switch } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { useOxy, useFollow, usePrivacySettings, useUpdatePrivacySettings } from '@oxyhq/services';
+import { toast } from '@oxyhq/bloom';
 import * as Contacts from 'expo-contacts';
 import { useTranslation } from '@/lib/i18n';
 import type { User } from '@oxyhq/core';
@@ -15,7 +16,6 @@ import { ContactMatchesList } from '@/components/contact-matches-list';
 
 export default function PeopleAndSharingScreen() {
   const colors = useColors();
-  const alert = useAlert();
   const router = useRouter();
   // Auth is enforced by the `(tabs)` layout — assume a session here.
   const { isLoading: authLoading, user, oxyServices, showBottomSheet } = useOxy();
@@ -129,7 +129,7 @@ export default function PeopleAndSharingScreen() {
       }
 
       if (status !== 'granted') {
-        alert(t('sharing.contacts.permissionTitle'), t('sharing.contacts.permissionMessage'));
+        toast.warning(t('sharing.contacts.permissionMessage'));
         return;
       }
 
@@ -145,7 +145,7 @@ export default function PeopleAndSharingScreen() {
       });
 
       if (deviceContacts.length === 0) {
-        alert(t('sharing.contacts.noContactsTitle'), t('sharing.contacts.noContactsMessage'));
+        toast.info(t('sharing.contacts.noContactsMessage'));
         setIsSyncingContacts(false);
         return;
       }
@@ -212,11 +212,11 @@ export default function PeopleAndSharingScreen() {
       setContactMatches(resolved);
     } catch {
       // Non-fatal — surface a friendly message and let the user retry.
-      alert(t('common.error'), t('sharing.contacts.syncFailed'));
+      toast.error(t('sharing.contacts.syncFailed'));
     } finally {
       setIsSyncingContacts(false);
     }
-  }, [alert, oxyServices, t]);
+  }, [oxyServices, t]);
 
   // Handle privacy setting updates
   const handlePrivacyUpdate = useCallback(async (key: string, value: boolean) => {
@@ -230,11 +230,11 @@ export default function PeopleAndSharingScreen() {
       });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : t('sharing.privacy.updateFailed');
-      alert(t('common.error'), message);
+      toast.error(message);
     } finally {
       setPendingPrivacyKey((current) => (current === key ? null : current));
     }
-  }, [userId, updatePrivacyMutation, alert, t]);
+  }, [userId, updatePrivacyMutation, t]);
 
   // Fetch blocked/restricted counts
   useEffect(() => {

@@ -12,9 +12,10 @@ import { ThemedText } from '@/components/themed-text';
 import { Section } from '@/components/section';
 import { GroupedSection } from '@/components/grouped-section';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { AccountCard, ScreenHeader, useAlert, Button, ImportantBanner } from '@/components/ui';
+import { AccountCard, ScreenHeader, Button, ImportantBanner } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { useOxy } from '@oxyhq/services';
+import { alert, toast } from '@oxyhq/bloom';
 import { KeyManager } from '@oxyhq/core';
 import { useIdentity } from '@/hooks/useIdentity';
 import * as Print from 'expo-print';
@@ -25,7 +26,6 @@ import { IdentityCard } from '@/components/identity';
 export default function AboutIdentityScreen() {
   const colors = useColors();
   const router = useRouter();
-  const alert = useAlert();
   // Auth is enforced by the `(tabs)` layout — assume a session here.
   const { user, isLoading: oxyLoading, oxyServices, showBottomSheet } = useOxy();
   const { getPublicKey } = useIdentity();
@@ -113,9 +113,9 @@ export default function AboutIdentityScreen() {
     if (Platform.OS === 'web') {
       try {
         await navigator.clipboard.writeText(publicKey);
-        alert('Copied', 'Public key copied to clipboard');
+        toast.success('Public key copied to clipboard');
       } catch {
-        alert('Error', 'Failed to copy');
+        toast.error('Failed to copy');
       }
     } else {
       try {
@@ -124,7 +124,7 @@ export default function AboutIdentityScreen() {
         // Cancelled - don't show error
       }
     }
-  }, [publicKey, alert]);
+  }, [publicKey]);
 
   // Format expiration setting for display
   const formatExpirationSetting = useCallback((days: number | null | undefined): string => {
@@ -147,14 +147,14 @@ export default function AboutIdentityScreen() {
       setIsSavingExpiration(true);
       await oxyServices.updateProfile({ accountExpiresAfterInactivityDays: selectedDays });
       // User object from useOxy should update automatically via the context
-      alert('Success', 'Account expiration setting updated successfully');
+      toast.success('Account expiration setting updated');
     } catch (error: any) {
       console.error('Failed to update expiration setting:', error);
-      alert('Error', error?.message || 'Failed to update account expiration setting. Please try again.');
+      toast.error(error?.message || 'Failed to update account expiration setting. Please try again.');
     } finally {
       setIsSavingExpiration(false);
     }
-  }, [oxyServices, user, alert]);
+  }, [oxyServices, user]);
 
   // Show expiration selection dialog
   const showExpirationPicker = useCallback(() => {
@@ -212,7 +212,7 @@ export default function AboutIdentityScreen() {
               // Get private key
               const privateKey = await KeyManager.getPrivateKey();
               if (!privateKey) {
-                alert('Error', 'No private key found on this device');
+                toast.error('No private key found on this device');
                 return;
               }
 
@@ -359,10 +359,10 @@ export default function AboutIdentityScreen() {
                 }
               }
 
-              alert('Success', 'Private key has been sent to printer');
+              toast.success('Private key has been sent to printer');
             } catch (error: any) {
               console.error('Failed to export private key:', error);
-              alert('Error', error?.message || 'Failed to export private key. Please try again.');
+              toast.error(error?.message || 'Failed to export private key. Please try again.');
             } finally {
               setIsExporting(false);
             }

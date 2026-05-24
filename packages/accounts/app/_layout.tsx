@@ -24,7 +24,6 @@ import { ScrollProvider } from '@/contexts/scroll-context';
 import { ThemeModeProvider, useThemeMode } from '@/contexts/theme-mode-context';
 import AppSplashScreen from '@/components/AppSplashScreen';
 import { AppInitializer } from '@/lib/appInitializer';
-import { AlertProvider } from '@/components/ui';
 import { useOnboardingStatus } from '@/hooks/useOnboardingStatus';
 import { LocaleProvider, useTranslation } from '@/lib/i18n';
 import { MinimalErrorFallback } from '@/components/error-fallback';
@@ -109,16 +108,14 @@ function RootLayoutInner() {
         <OxyProvider baseURL={API_URL} themeMode={themeMode}>
           <LocaleProvider>
             <AppHead />
-            <AlertProvider>
-              {!appIsReady ? (
-                <AppSplashScreen
-                  startFade={startFade}
-                  onFadeComplete={handleSplashFadeComplete}
-                />
-              ) : (
-                <AppStackContent />
-              )}
-            </AlertProvider>
+            {!appIsReady ? (
+              <AppSplashScreen
+                startFade={startFade}
+                onFadeComplete={handleSplashFadeComplete}
+              />
+            ) : (
+              <AppStackContent />
+            )}
           </LocaleProvider>
         </OxyProvider>
       </KeyboardProvider>

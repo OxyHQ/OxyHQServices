@@ -1,6 +1,5 @@
 import { useState, useCallback, useRef } from 'react';
 import { useRouter } from 'expo-router';
-import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import type { OxyServices } from '@oxyhq/core';
 import { useAuthStore } from '@oxyhq/services';
@@ -204,6 +203,7 @@ export function useAuthHandlers({
       setIsRequestingNotifications(true);
       setAuthError(null);
 
+      const Notifications: typeof import('expo-notifications') = await import('expo-notifications');
       const { status: existingStatus } = await Notifications.getPermissionsAsync();
 
       if (existingStatus === 'granted') {

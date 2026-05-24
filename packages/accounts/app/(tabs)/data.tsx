@@ -8,15 +8,15 @@ import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
 import { Section } from '@/components/section';
 import { GroupedSection } from '@/components/grouped-section';
-import { AccountCard, ScreenHeader, Switch, useAlert } from '@/components/ui';
+import { AccountCard, ScreenHeader, Switch } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { useOxy, usePrivacySettings, useUpdatePrivacySettings } from '@oxyhq/services';
+import { alert, toast } from '@oxyhq/bloom';
 import { useTranslation } from '@/lib/i18n';
 
 export default function DataScreen() {
   const colors = useColors();
   const { width } = useWindowDimensions();
-  const alert = useAlert();
   const router = useRouter();
   const [isDownloading, setIsDownloading] = useState(false);
   const [pendingPrivacyKey, setPendingPrivacyKey] = useState<string | null>(null);
@@ -51,11 +51,11 @@ export default function DataScreen() {
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : t('data.privacy.updateFailed');
-      alert(t('common.error'), message);
+      toast.error(message);
     } finally {
       setPendingPrivacyKey((current) => (current === key ? null : current));
     }
-  }, [user?.id, updatePrivacyMutation, alert, t]);
+  }, [user?.id, updatePrivacyMutation, t]);
 
   // Save a downloaded blob to the user's device. Web uses an anchor download;
   // native writes to the cache directory and opens the OS share sheet so the
@@ -102,14 +102,14 @@ export default function DataScreen() {
       const filename = `account-data-${Date.now()}.${format}`;
       const mimeType = format === 'json' ? 'application/json' : 'text/csv';
       await saveBlob(blob, filename, mimeType);
-      alert(t('data.download.successTitle'), t('data.download.successMessage'));
+      toast.success(t('data.download.successMessage'));
     } catch (error) {
       const message = error instanceof Error ? error.message : t('data.download.failedDefault');
-      alert(t('data.download.failedTitle'), message);
+      toast.error(message);
     } finally {
       setIsDownloading(false);
     }
-  }, [oxyServices, saveBlob, alert, t]);
+  }, [oxyServices, saveBlob, t]);
 
   const handleDownloadData = useCallback(() => {
     alert(
@@ -220,13 +220,13 @@ export default function DataScreen() {
             const successMessage = type === 'activity'
               ? t('data.activity.clearedActivity')
               : t('data.activity.clearedLocation');
-            alert(t('data.activity.clearedTitle'), successMessage);
+            toast.success(successMessage);
           } catch (error) {
             const fallback = type === 'activity'
               ? t('data.activity.clearFailedActivity')
               : t('data.activity.clearFailedLocation');
             const message = error instanceof Error ? error.message : fallback;
-            alert(t('common.error'), message);
+            toast.error(message);
           }
         },
       },

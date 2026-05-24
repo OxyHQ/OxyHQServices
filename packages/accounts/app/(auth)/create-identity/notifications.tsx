@@ -1,7 +1,6 @@
 import React, { useMemo, useCallback } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
-import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import { useOxy } from '@oxyhq/services';
 import { useColors } from '@/hooks/useColors';
@@ -60,6 +59,7 @@ export default function CreateIdentityNotificationsScreen() {
       setIsRequestingNotifications(true);
       setAuthError(null);
 
+      const Notifications: typeof import('expo-notifications') = await import('expo-notifications');
       const { status: existingStatus } = await Notifications.getPermissionsAsync();
 
       if (existingStatus === 'granted') {

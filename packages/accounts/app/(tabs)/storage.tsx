@@ -4,7 +4,7 @@ import { useRouter } from 'expo-router';
 import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { AccountCard, ScreenHeader, LinkButton, useAlert } from '@/components/ui';
+import { AccountCard, ScreenHeader, LinkButton } from '@/components/ui';
 import { Section } from '@/components/section';
 import { GroupedSection } from '@/components/grouped-section';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
@@ -12,6 +12,7 @@ import { useOxy } from '@oxyhq/services';
 import type { AccountStorageUsageResponse } from '@oxyhq/core';
 import { formatDate } from '@/utils/date-utils';
 import { useTranslation } from '@/lib/i18n';
+import { alert } from '@oxyhq/bloom';
 
 export default function StorageScreen() {
   const colors = useColors();
@@ -22,7 +23,6 @@ export default function StorageScreen() {
 
   // Auth is enforced by the `(tabs)` layout — assume a session here.
   const { oxyServices, isLoading: oxyLoading } = useOxy();
-  const alert = useAlert();
   const [usage, setUsage] = useState<AccountStorageUsageResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);

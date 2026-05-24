@@ -7,12 +7,13 @@ import {
 import { useRouter } from 'expo-router';
 import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
-import { Button, ImportantBanner, useAlert } from '@/components/ui';
+import { Button, ImportantBanner } from '@/components/ui';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { File } from 'expo-file-system';
 import * as FileSystemLegacy from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { useOxy } from '@oxyhq/services';
+import { toast } from '@oxyhq/bloom';
 import { KeyManager } from '@oxyhq/core';
 import JSZip from 'jszip';
 
@@ -37,7 +38,6 @@ export function EncryptedBackupGenerator({
     const colors = useColors();
     const router = useRouter();
     const { oxyServices } = useOxy();
-    const alert = useAlert();
 
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
@@ -64,17 +64,17 @@ export function EncryptedBackupGenerator({
 
     const generateBackupFile = useCallback(async () => {
         if (!publicKey) {
-            alert('Error', 'Public key not available');
+            toast.error('Public key not available');
             return;
         }
 
         if (!isPasswordValid) {
-            alert('Invalid Password', 'Password must be at least 12 characters long');
+            toast.error('Password must be at least 12 characters long');
             return;
         }
 
         if (!doPasswordsMatch) {
-            alert('Invalid Password', 'Passwords do not match');
+            toast.error('Passwords do not match');
             return;
         }
 
@@ -153,7 +153,7 @@ export function EncryptedBackupGenerator({
             // Get private key
             const privateKey = await KeyManager.getPrivateKey();
             if (!privateKey) {
-                alert('Error', 'No private key found on this device');
+                toast.error('No private key found on this device');
                 setIsGenerating(false);
                 return;
             }
@@ -240,28 +240,20 @@ Public Key: ${publicKey}`;
                     UTI: 'public.zip-archive', // Recommended for iOS
                 });
 
-                alert(
-                    'Success',
+                toast.success(
                     'Backup file ready. Save it to a secure location like your password manager, encrypted drive, or offline storage.',
-                    [
-                        {
-                            text: 'OK',
-                            onPress: () => {
-                                setPassword('');
-                                setConfirmPassword('');
-                                onComplete?.();
-                            },
-                        },
-                    ]
                 );
+                setPassword('');
+                setConfirmPassword('');
+                onComplete?.();
             } else {
-                alert('Error', 'Sharing is not available on this platform');
+                toast.error('Sharing is not available on this platform');
             }
         } catch (error) {
             if (__DEV__) {
                 console.warn('[backup] Failed to generate backup:', error);
             }
-            alert('Error', error instanceof Error ? error.message : 'Failed to generate backup file');
+            toast.error(error instanceof Error ? error.message : 'Failed to generate backup file');
         } finally {
             setIsGenerating(false);
         }

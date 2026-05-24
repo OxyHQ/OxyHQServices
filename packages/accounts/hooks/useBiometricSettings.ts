@@ -12,7 +12,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useOxy, usePrivacySettings, useUpdatePrivacySettings } from '@oxyhq/services';
-import { useAlert } from '@/components/ui';
+import { alert, toast } from '@oxyhq/bloom';
+
 import {
   canUseBiometrics,
   hasBiometricHardware,
@@ -36,7 +37,6 @@ export interface BiometricSettingsState {
 
 export function useBiometricSettings() {
   const { user } = useOxy();
-  const alert = useAlert();
   const [canEnable, setCanEnable] = useState(false);
   const [hasHardware, setHasHardware] = useState(false);
   const [isEnrolled, setIsEnrolled] = useState(false);
@@ -121,7 +121,7 @@ export function useBiometricSettings() {
    */
   const toggleBiometricLogin = useCallback(async (value: boolean) => {
     if (!user?.id) {
-      alert('Error', 'User not available');
+      toast.error('User not available');
       return;
     }
 
@@ -130,14 +130,14 @@ export function useBiometricSettings() {
       try {
         setError(null);
         await updatePrivacyMutation.mutateAsync({ settings: { biometricLogin: false }, userId: user.id });
-        
+
         // Remove local preference
         await AsyncStorage.removeItem('oxy_biometric_enabled');
       } catch (err) {
         console.error('[useBiometricSettings] Failed to disable biometric login:', err);
         const errorMsg = err instanceof Error ? err.message : 'Failed to disable biometric login';
         setError(errorMsg);
-        alert('Error', errorMsg);
+        toast.error(errorMsg);
       }
       return;
     }
@@ -145,10 +145,7 @@ export function useBiometricSettings() {
     // If enabling, check if biometrics can be used
     if (!canEnable) {
       if (!hasHardware) {
-        alert(
-          'Not Available',
-          'Biometric authentication is not available on this device.'
-        );
+        toast.error('Biometric authentication is not available on this device.');
         return;
       }
       if (!isEnrolled) {
@@ -158,9 +155,10 @@ export function useBiometricSettings() {
           [
             { text: 'Cancel', style: 'cancel' },
             { text: 'Open Settings', onPress: () => {
-              // On native, this would typically open device settings
-              // For now, just show a message
-              alert('Settings', 'Go to your device settings to set up biometric authentication.');
+              // Surface guidance as a non-blocking toast — opening device
+              // settings programmatically is platform-specific and out of
+              // scope here.
+              toast.info('Go to your device settings to set up biometric authentication.');
             }},
           ]
         );
@@ -179,20 +177,20 @@ export function useBiometricSettings() {
       if (!authResult.success) {
         const errorMsg = getErrorMessage(authResult.error);
         setError(errorMsg);
-        alert('Authentication Failed', errorMsg);
+        toast.error(errorMsg);
         return;
       }
 
       // Save the setting using mutation
       await updatePrivacyMutation.mutateAsync({ settings: { biometricLogin: true }, userId: user.id });
-      
+
       // Also store locally for quick access during sign-in
       await AsyncStorage.setItem('oxy_biometric_enabled', 'true');
     } catch (err) {
       console.error('[useBiometricSettings] Failed to enable biometric login:', err);
       const errorMsg = err instanceof Error ? err.message : 'Failed to enable biometric login';
       setError(errorMsg);
-      alert('Error', errorMsg);
+      toast.error(errorMsg);
     }
   }, [user?.id, updatePrivacyMutation, canEnable, hasHardware, isEnrolled, alert]);
 

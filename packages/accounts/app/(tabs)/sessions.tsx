@@ -4,8 +4,9 @@ import { useRouter } from 'expo-router';
 import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
-import { ScreenHeader, useAlert } from '@/components/ui';
+import { ScreenHeader } from '@/components/ui';
 import { useOxy } from '@oxyhq/services';
+import { alert, toast } from '@oxyhq/bloom';
 import { AccountCard } from '@/components/ui';
 import { GroupedSection } from '@/components/grouped-section';
 import { Section } from '@/components/section';
@@ -23,7 +24,6 @@ export default function SessionsScreen() {
     // OxyServices integration — auth is enforced by the `(tabs)` layout, so
     // we can assume the session exists here.
     const { sessions, activeSessionId, removeSession, switchSession, isLoading: oxyLoading, refreshSessions } = useOxy();
-    const alert = useAlert();
     const [actionLoading, setActionLoading] = useState<string | null>(null);
     const [refreshing, setRefreshing] = useState(false);
 
@@ -63,11 +63,7 @@ export default function SessionsScreen() {
     // Handle session removal
     const handleRemoveSession = useCallback(async (sessionId: string, isActive: boolean) => {
         if (isActive) {
-            alert(
-                'Cannot remove active session',
-                'You cannot remove your current active session. Please switch to another session first.',
-                [{ text: 'OK' }]
-            );
+            toast.warning('You cannot remove your current active session. Switch to another session first.');
             return;
         }
 
@@ -83,10 +79,10 @@ export default function SessionsScreen() {
                         try {
                             setActionLoading(sessionId);
                             await removeSession(sessionId);
-                            alert('Success', 'Session removed successfully');
+                            toast.success('Session removed');
                         } catch (error) {
                             console.error('Failed to remove session:', error);
-                            alert('Error', 'Failed to remove session. Please try again.');
+                            toast.error('Failed to remove session. Please try again.');
                         } finally {
                             setActionLoading(null);
                         }
@@ -103,14 +99,14 @@ export default function SessionsScreen() {
         try {
             setActionLoading(sessionId);
             await switchSession(sessionId);
-            alert('Success', 'Session switched successfully');
+            toast.success('Session switched');
         } catch (error) {
             console.error('Failed to switch session:', error);
-            alert('Error', 'Failed to switch session. Please try again.');
+            toast.error('Failed to switch session. Please try again.');
         } finally {
             setActionLoading(null);
         }
-    }, [switchSession, activeSessionId, alert]);
+    }, [switchSession, activeSessionId]);
 
     // Format session items for display
     const sessionItems = useMemo(() => {

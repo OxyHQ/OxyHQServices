@@ -5,9 +5,10 @@ import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
 import { Section } from '@/components/section';
 import { GroupedSection } from '@/components/grouped-section';
-import { AccountCard, ScreenHeader, useAlert } from '@/components/ui';
+import { AccountCard, ScreenHeader } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { useOxy } from '@oxyhq/services';
+import { alert, toast } from '@oxyhq/bloom';
 import { formatDate } from '@/utils/date-utils';
 import { useHapticPress } from '@/hooks/use-haptic-press';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -36,7 +37,6 @@ export default function DeviceDetailScreen() {
 
   // OxyServices integration — auth is enforced by the `(tabs)` layout.
   const { oxyServices, isLoading: oxyLoading } = useOxy();
-  const alert = useAlert();
   const [device, setDevice] = useState<Device | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -116,11 +116,7 @@ export default function DeviceDetailScreen() {
     const isCurrent = Boolean(device.isCurrent);
 
     if (isCurrent) {
-      alert(
-        'Cannot remove current device',
-        'You cannot remove your current device. Please use another device to remove this one.',
-        [{ text: 'OK' }]
-      );
+      toast.warning('You cannot remove your current device. Use another device to remove this one.');
       return;
     }
 
@@ -136,7 +132,7 @@ export default function DeviceDetailScreen() {
             // Explicitly check if oxyServices exists before attempting operations
             if (!oxyServices) {
               console.error('Failed to remove device: oxyServices is not available');
-              alert('Error', 'Service unavailable. Please try again.');
+              toast.error('Service unavailable. Please try again.');
               return;
             }
 
@@ -145,15 +141,13 @@ export default function DeviceDetailScreen() {
               await oxyServices.removeDevice(deviceId);
               // Navigate back to devices list after successful removal
               router.back();
-              // On web, returning to the device list (which no longer contains
-              // this device) is the user-facing confirmation; a second modal
-              // dialog on top of the confirmation feels redundant.
+              // On native, surface a success toast (web's list pop is its own confirmation).
               if (Platform.OS !== 'web') {
-                alert('Success', 'Device removed successfully');
+                toast.success('Device removed');
               }
             } catch (err: any) {
               console.error('Failed to remove device:', err);
-              alert('Error', err?.message || 'Failed to remove device. Please try again.');
+              toast.error(err?.message || 'Failed to remove device. Please try again.');
             } finally {
               setActionLoading(false);
             }

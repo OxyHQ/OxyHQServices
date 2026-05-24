@@ -4,9 +4,10 @@ import { useRouter } from 'expo-router';
 import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
 import { GroupedSection } from '@/components/grouped-section';
-import { AccountCard, ScreenHeader, useAlert } from '@/components/ui';
+import { AccountCard, ScreenHeader } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { useOxy, useUserDevices } from '@oxyhq/services';
+import { alert, toast } from '@oxyhq/bloom';
 import { formatDate } from '@/utils/date-utils';
 import { useHapticPress } from '@/hooks/use-haptic-press';
 import { useTranslation } from '@/lib/i18n';
@@ -35,7 +36,6 @@ export default function DevicesScreen() {
 
   // OxyServices integration — auth is enforced by the `(tabs)` layout.
   const { oxyServices, isLoading: oxyLoading } = useOxy();
-  const alert = useAlert();
   const {
     data: devicesData,
     isLoading: loading,
@@ -89,11 +89,7 @@ export default function DevicesScreen() {
   // Handle device removal
   const handleRemoveDevice = useCallback(async (deviceId: string, deviceName: string, isCurrent: boolean) => {
     if (isCurrent) {
-      alert(
-        'Cannot remove current device',
-        'You cannot remove your current device. Please use another device to remove this one.',
-        [{ text: 'OK' }]
-      );
+      toast.warning('You cannot remove your current device. Use another device to remove this one.');
       return;
     }
 
@@ -111,14 +107,13 @@ export default function DevicesScreen() {
               await oxyServices?.removeDevice(deviceId);
               // Refresh devices list
               await refetch();
-              // On web, the refreshed list is the user-facing confirmation;
-              // a second modal on top of the confirmation dialog feels redundant.
+              // On native, surface a success toast (web's list refresh is its own confirmation).
               if (Platform.OS !== 'web') {
-                alert('Success', 'Device removed successfully');
+                toast.success('Device removed');
               }
             } catch (err: unknown) {
               const message = err instanceof Error ? err.message : 'Failed to remove device. Please try again.';
-              alert('Error', message);
+              toast.error(message);
             } finally {
               setActionLoading(null);
             }

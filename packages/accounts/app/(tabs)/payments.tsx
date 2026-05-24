@@ -3,10 +3,11 @@ import { View, StyleSheet, Platform, useWindowDimensions, Text, TouchableOpacity
 import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
 import { GroupedSection } from '@/components/grouped-section';
-import { AccountCard, ScreenHeader, useAlert } from '@/components/ui';
+import { AccountCard, ScreenHeader } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { Section } from '@/components/section';
 import { useOxy } from '@oxyhq/services';
+import { toast } from '@oxyhq/bloom';
 import { formatDate } from '@/utils/date-utils';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { darkenColor } from '@/utils/color-utils';
@@ -16,7 +17,6 @@ import { useTranslation } from '@/lib/i18n';
 export default function PaymentsScreen() {
   const colors = useColors();
   const { width } = useWindowDimensions();
-  const alert = useAlert();
   const isDesktop = Platform.OS === 'web' && width >= 768;
   const { t } = useTranslation();
 
@@ -183,13 +183,9 @@ export default function PaymentsScreen() {
     
     Linking.openURL(walletUrl).catch((err) => {
       console.error('Failed to open FAIRWallet URL:', err);
-      alert(
-        t('payments.fairCoinBanner.openTitle'),
-        t('payments.fairCoinBanner.openMessage'),
-        [{ text: t('common.ok') }]
-      );
+      toast.error(t('payments.fairCoinBanner.openMessage'));
     });
-  }, [alert, t]);
+  }, [t]);
 
   // Subscription section items
   const subscriptionItems = useMemo(() => {

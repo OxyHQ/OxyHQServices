@@ -13,7 +13,8 @@ import { useRouter } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 import { useOxy } from '@oxyhq/services';
-import { useAlert } from '@/components/ui';
+import { alert } from '@oxyhq/bloom';
+
 
 /**
  * QR Scanner Screen
@@ -24,7 +25,6 @@ import { useAlert } from '@/components/ui';
 export default function ScanQRScreen() {
   const router = useRouter();
   const colors = useColors();
-  const alert = useAlert();
   const { hasIdentity, isLoading, isStorageReady } = useOxy();
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);

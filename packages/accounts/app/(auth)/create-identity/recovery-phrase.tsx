@@ -4,9 +4,10 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { useColors } from '@/hooks/useColors';
 import { RecoveryPhraseStep } from '@/components/auth/RecoveryPhraseStep';
 import { useAuthFlowContext } from '@/contexts/auth-flow-context';
-import { useAlert } from '@/components/ui';
+
 import { useTranslation } from '@/lib/i18n';
 import { useIdentityStore } from '@/hooks/identity/identityStore';
+import { alert } from '@oxyhq/bloom';
 
 /**
  * Recovery Phrase Reveal Screen.
@@ -27,7 +28,6 @@ import { useIdentityStore } from '@/hooks/identity/identityStore';
 export default function RecoveryPhraseScreen() {
   const router = useRouter();
   const colors = useColors();
-  const alert = useAlert();
   const { t } = useTranslation();
   const {
     recoveryPhraseRef,

@@ -3,10 +3,11 @@ import { View, StyleSheet, Text, TouchableOpacity, ActivityIndicator } from 'rea
 import { useColors, type AppColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
-import { ScreenHeader, AccountCard, useAlert } from '@/components/ui';
+import { ScreenHeader, AccountCard } from '@/components/ui';
 import { Section } from '@/components/section';
 import { GroupedSection } from '@/components/grouped-section';
 import { useOxy, Avatar } from '@oxyhq/services';
+import { alert, toast } from '@oxyhq/bloom';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { darkenColor } from '@/utils/color-utils';
 import { useHapticPress } from '@/hooks/use-haptic-press';
@@ -39,7 +40,6 @@ function getUserRole(account: ManagedAccount, userId?: string): string {
 
 export default function ManagedAccountsScreen() {
   const colors = useColors();
-  const alert = useAlert();
   const handlePressIn = useHapticPress();
   const { t, locale } = useTranslation();
 
@@ -111,7 +111,7 @@ export default function ManagedAccountsScreen() {
               await refreshManagedAccounts();
             } catch (error) {
               console.error('Failed to delete managed account', error);
-              alert('Error', 'Failed to delete managed account. Please try again.');
+              toast.error('Failed to delete managed account. Please try again.');
             } finally {
               setDeletingId(null);
             }

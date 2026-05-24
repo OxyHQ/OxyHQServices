@@ -5,9 +5,10 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
 import { Section } from '@/components/section';
-import { Button, ImportantBanner, ScreenHeader, useAlert } from '@/components/ui';
+import { Button, ImportantBanner, ScreenHeader } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { useOxy } from '@oxyhq/services';
+import { alert, toast } from '@oxyhq/bloom';
 import { KeyManager } from '@oxyhq/core';
 import { useTranslation } from '@/lib/i18n';
 
@@ -21,7 +22,6 @@ import { useTranslation } from '@/lib/i18n';
 export default function DeleteAccountScreen() {
   const colors = useColors();
   const router = useRouter();
-  const alert = useAlert();
   // Auth is enforced by the `(tabs)` layout — assume a session here.
   const { user, isLoading: oxyLoading, oxyServices, logoutAll } = useOxy();
   const { t } = useTranslation();
@@ -56,7 +56,7 @@ export default function DeleteAccountScreen() {
       const message = error instanceof Error
         ? error.message
         : t('data.deleteAccount.failedDefault');
-      alert(t('data.deleteAccount.failedTitle'), message);
+      toast.error(message);
     } finally {
       setIsDeleting(false);
     }
