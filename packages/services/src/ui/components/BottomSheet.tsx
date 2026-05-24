@@ -96,12 +96,30 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
     const closeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const hasClosedRef = useRef(false);
     const scrollViewRef = useRef<Animated.ScrollView>(null);
+    /**
+     * Monotonically increasing counter that identifies "the current close
+     * attempt". Bumped every time the user re-opens the sheet so that any
+     * in-flight `withTiming` completion callback or fallback timer from a
+     * PREVIOUS close cycle becomes a no-op. Without this guard, a stale
+     * `runOnJS(finishClose)` from an aborted close would fire `onDismiss`
+     * and unmount the sheet immediately after the user opens it again,
+     * causing "tap to open does nothing" reports in production.
+     *
+     * Implemented as a JS ref (mutated from React) AND mirrored into a
+     * SharedValue so gesture worklets can read the up-to-date value on the
+     * UI thread without needing to be re-memoized after every reopen.
+     */
+    const closeGenerationRef = useRef(0);
 
     const translateY = useSharedValue(SCREEN_HEIGHT);
     const opacity = useSharedValue(0);
     const scrollOffsetY = useSharedValue(0);
     const keyboardHeight = useSharedValue(0);
     const context = useSharedValue({ y: 0 });
+    // Mirror of `closeGenerationRef` for worklet access. Bumped from the JS
+    // thread in lockstep with the ref so gesture worklets always see the
+    // current generation when they snapshot it on `onEnd`.
+    const closeGeneration = useSharedValue(0);
 
     // Refs used to mark the handle pan and the body pan as mutually
     // simultaneous. Without this RNGH treats them as racing gestures and a
@@ -130,7 +148,19 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
         }
     }, [onDismiss, onDismissAttempt]);
 
-    const finishClose = useCallback(() => {
+    /**
+     * Commit a close. Two guards prevent stale callbacks from firing:
+     *   1. `hasClosedRef` — protects against the fallback timer AND the
+     *      animation callback both racing to call us within a single close
+     *      cycle.
+     *   2. `generation` — protects against a callback from a PREVIOUS close
+     *      cycle firing AFTER the user reopened. If the live generation has
+     *      advanced past the one captured when the close started, this
+     *      callback is from a cycle that the user has implicitly cancelled
+     *      by reopening — silently drop it.
+     */
+    const finishClose = useCallback((generation: number) => {
+        if (closeGenerationRef.current !== generation) return;
         if (hasClosedRef.current) return;
         hasClosedRef.current = true;
         safeClose();
@@ -145,22 +175,32 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
                 closeTimeoutRef.current = null;
             }
             hasClosedRef.current = false;
+            // Bump generation: any pending close-completion callback from a
+            // prior cycle (animation or fallback timer) will now no-op when
+            // it eventually fires, because its captured generation is stale.
+            closeGenerationRef.current += 1;
+            closeGeneration.value = closeGenerationRef.current;
             opacity.value = withTiming(1, { duration: 250 });
             translateY.value = withSpring(0, SPRING_CONFIG);
         } else if (rendered) {
+            // Capture the generation for THIS close cycle so the animation
+            // callback (running on the UI thread, scheduled back to JS) and
+            // the fallback timer agree on which cycle they belong to.
+            const generation = closeGenerationRef.current;
             opacity.value = withTiming(0, { duration: 250 }, (finished) => {
                 if (finished) {
-                    runOnJS(finishClose)();
+                    runOnJS(finishClose)(generation);
                 }
             });
             translateY.value = withSpring(SCREEN_HEIGHT, { ...SPRING_CONFIG, stiffness: 250 });
 
-            // Fallback timer to ensure close completes (especially on web)
+            // Fallback timer to ensure close completes (especially on web
+            // where reanimated callbacks occasionally drop on tab blur).
             if (closeTimeoutRef.current) {
                 clearTimeout(closeTimeoutRef.current);
             }
             closeTimeoutRef.current = setTimeout(() => {
-                finishClose();
+                finishClose(generation);
                 closeTimeoutRef.current = null;
             }, 300);
         }
@@ -257,15 +297,21 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
                         (distance > closeThreshold && velocity > -300);
 
                     if (shouldClose) {
+                        // Snapshot the generation on the UI thread at the
+                        // moment the close gesture commits. The completion
+                        // callback only fires `finishClose` if no reopen
+                        // bumped the generation in between.
+                        const generation = closeGeneration.value;
                         translateY.value = withSpring(SCREEN_HEIGHT, { ...SPRING_CONFIG, velocity });
                         opacity.value = withTiming(0, { duration: 250 }, (finished) => {
-                            if (finished) runOnJS(finishClose)();
+                            if (finished) runOnJS(finishClose)(generation);
                         });
                     } else {
                         translateY.value = withSpring(0, { ...SPRING_CONFIG, velocity });
                     }
                 }),
         [
+            closeGeneration,
             context,
             enablePanDownToClose,
             finishClose,
@@ -310,13 +356,14 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
                         (distance > closeThreshold && velocity > -300);
 
                     if (shouldClose) {
+                        const generation = closeGeneration.value;
                         translateY.value = withSpring(SCREEN_HEIGHT, {
                             ...SPRING_CONFIG,
                             velocity: velocity,
                         });
                         opacity.value = withTiming(0, { duration: 250 }, (finished) => {
                             if (finished) {
-                                runOnJS(finishClose)();
+                                runOnJS(finishClose)(generation);
                             }
                         });
                     } else {
@@ -327,6 +374,7 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
                     }
                 }),
         [
+            closeGeneration,
             context,
             detached,
             enableHandlePanningGesture,

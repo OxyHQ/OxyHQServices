@@ -1,17 +1,38 @@
 import { useEffect, useRef } from 'react';
-import io from 'socket.io-client';
+import io, { type Socket } from 'socket.io-client';
 import { toast } from '../../lib/sonner';
 import { logger } from '@oxyhq/core';
 import { createDebugLogger } from '@oxyhq/core';
 
 const debug = createDebugLogger('SessionSocket');
 
+/**
+ * Server-emitted event types on the `session_update` channel.
+ *
+ * `session_removed`, `device_removed`, `sessions_removed` are the ONLY
+ * events that may sign the user out. Anything else (e.g. `session_created`
+ * fired right after a successful sign-in) MUST NOT trigger sign-out — see
+ * the comment on the `default` branch below.
+ */
+type SessionEventType =
+  | 'session_removed'
+  | 'device_removed'
+  | 'sessions_removed'
+  | 'session_created'
+  | 'session_update';
+
+interface SessionUpdatePayload {
+  type: SessionEventType | string;
+  sessionId?: string;
+  deviceId?: string;
+  sessionIds?: string[];
+}
+
 interface UseSessionSocketProps {
   userId: string | null | undefined;
   activeSessionId: string | null | undefined;
   currentDeviceId: string | null | undefined;
   refreshSessions: () => Promise<void>;
-  logout: () => Promise<void>;
   clearSessionState: () => Promise<void>;
   baseURL: string;
   getAccessToken: () => string | null;
@@ -19,12 +40,21 @@ interface UseSessionSocketProps {
   onSessionRemoved?: (sessionId: string) => void;
 }
 
-export function useSessionSocket({ userId, activeSessionId, currentDeviceId, refreshSessions, logout, clearSessionState, baseURL, getAccessToken, onRemoteSignOut, onSessionRemoved }: UseSessionSocketProps) {
-  const socketRef = useRef<any>(null);
+export function useSessionSocket({
+  userId,
+  activeSessionId,
+  currentDeviceId,
+  refreshSessions,
+  clearSessionState,
+  baseURL,
+  getAccessToken,
+  onRemoteSignOut,
+  onSessionRemoved,
+}: UseSessionSocketProps) {
+  const socketRef = useRef<Socket | null>(null);
 
   // Store callbacks in refs to avoid reconnecting when they change
   const refreshSessionsRef = useRef(refreshSessions);
-  const logoutRef = useRef(logout);
   const clearSessionStateRef = useRef(clearSessionState);
   const onRemoteSignOutRef = useRef(onRemoteSignOut);
   const onSessionRemovedRef = useRef(onSessionRemoved);
@@ -35,14 +65,13 @@ export function useSessionSocket({ userId, activeSessionId, currentDeviceId, ref
   // Update refs when callbacks change
   useEffect(() => {
     refreshSessionsRef.current = refreshSessions;
-    logoutRef.current = logout;
     clearSessionStateRef.current = clearSessionState;
     onRemoteSignOutRef.current = onRemoteSignOut;
     onSessionRemovedRef.current = onSessionRemoved;
     activeSessionIdRef.current = activeSessionId;
     currentDeviceIdRef.current = currentDeviceId;
     getAccessTokenRef.current = getAccessToken;
-  }, [refreshSessions, logout, clearSessionState, onRemoteSignOut, onSessionRemoved, activeSessionId, currentDeviceId, getAccessToken]);
+  }, [refreshSessions, clearSessionState, onRemoteSignOut, onSessionRemoved, activeSessionId, currentDeviceId, getAccessToken]);
 
   useEffect(() => {
     if (!userId || !baseURL) {
@@ -75,138 +104,119 @@ export function useSessionSocket({ userId, activeSessionId, currentDeviceId, ref
       debug.log('Socket connected:', socket.id);
     };
 
-    const handleSessionUpdate = async (data: {
-      type: string;
-      sessionId?: string;
-      deviceId?: string;
-      sessionIds?: string[]
-    }) => {
-      debug.log('Received session_update:', data);
-      
-      const currentActiveSessionId = activeSessionIdRef.current;
-      const currentDeviceId = currentDeviceIdRef.current;
-      
-      // Handle different event types
-      if (data.type === 'session_removed') {
-        // Track removed session
-        if (data.sessionId && onSessionRemovedRef.current) {
-          onSessionRemovedRef.current(data.sessionId);
+    const refreshSessionsSafe = () => {
+      refreshSessionsRef.current().catch((error: unknown) => {
+        // Refresh errors shouldn't break the socket handler. They happen
+        // routinely when sessions are removed mid-fetch — log and move on.
+        if (__DEV__) {
+          logger.debug(
+            'Failed to refresh sessions after session_update',
+            { component: 'useSessionSocket' },
+            error,
+          );
         }
-        
-        // If the removed sessionId matches the current activeSessionId, immediately clear state
-        if (data.sessionId === currentActiveSessionId) {
-          if (onRemoteSignOutRef.current) {
-            onRemoteSignOutRef.current();
-          } else {
-            toast.info('You have been signed out remotely.');
-          }
-          // Use clearSessionState since session was already removed server-side
-          // Await to ensure storage cleanup completes before continuing
-          try {
-            await clearSessionStateRef.current();
-          } catch (error) {
-            if (__DEV__) {
-              logger.error('Failed to clear session state after session_removed', error instanceof Error ? error : new Error(String(error)), { component: 'useSessionSocket' });
-            }
-          }
-        } else {
-          // Otherwise, just refresh the sessions list (with error handling)
-          refreshSessionsRef.current().catch((error) => {
-            // Silently handle errors from refresh - they're expected if sessions were removed
-            if (__DEV__) {
-              logger.debug('Failed to refresh sessions after session_removed', { component: 'useSessionSocket' }, error as unknown);
-            }
-          });
-        }
-      } else if (data.type === 'device_removed') {
-        // Track all removed sessions from this device
-        if (data.sessionIds && onSessionRemovedRef.current) {
-          for (const sessionId of data.sessionIds) {
-            onSessionRemovedRef.current(sessionId);
-          }
-        }
-        
-        // If the removed deviceId matches the current device, immediately clear state
-        if (data.deviceId && data.deviceId === currentDeviceId) {
-          if (onRemoteSignOutRef.current) {
-            onRemoteSignOutRef.current();
-          } else {
-            toast.info('This device has been removed. You have been signed out.');
-          }
-          // Use clearSessionState since sessions were already removed server-side
-          // Await to ensure storage cleanup completes before continuing
-          try {
-            await clearSessionStateRef.current();
-          } catch (error) {
-            if (__DEV__) {
-              logger.error('Failed to clear session state after device_removed', error instanceof Error ? error : new Error(String(error)), { component: 'useSessionSocket' });
-            }
-          }
-        } else {
-          // Otherwise, refresh sessions and device list (with error handling)
-          refreshSessionsRef.current().catch((error) => {
-            // Silently handle errors from refresh - they're expected if sessions were removed
-            if (__DEV__) {
-              logger.debug('Failed to refresh sessions after device_removed', { component: 'useSessionSocket' }, error as unknown);
-            }
-          });
-        }
-      } else if (data.type === 'sessions_removed') {
-        // Track all removed sessions
-        if (data.sessionIds && onSessionRemovedRef.current) {
-          for (const sessionId of data.sessionIds) {
-            onSessionRemovedRef.current(sessionId);
-          }
-        }
-        
-        // If the current activeSessionId is in the removed sessionIds list, immediately clear state
-        if (data.sessionIds && currentActiveSessionId && data.sessionIds.includes(currentActiveSessionId)) {
-          if (onRemoteSignOutRef.current) {
-            onRemoteSignOutRef.current();
-          } else {
-            toast.info('You have been signed out remotely.');
-          }
-          // Use clearSessionState since sessions were already removed server-side
-          // Await to ensure storage cleanup completes before continuing
-          try {
-            await clearSessionStateRef.current();
-          } catch (error) {
-            if (__DEV__) {
-              logger.error('Failed to clear session state after sessions_removed', error instanceof Error ? error : new Error(String(error)), { component: 'useSessionSocket' });
-            }
-          }
-        } else {
-          // Otherwise, refresh sessions list (with error handling)
-          refreshSessionsRef.current().catch((error) => {
-            // Silently handle errors from refresh - they're expected if sessions were removed
-            if (__DEV__) {
-              logger.debug('Failed to refresh sessions after sessions_removed', { component: 'useSessionSocket' }, error as unknown);
-            }
-          });
-        }
+      });
+    };
+
+    const triggerLocalSignOut = async (toastMessage: string, errorContext: string) => {
+      if (onRemoteSignOutRef.current) {
+        onRemoteSignOutRef.current();
       } else {
-        // For other event types (e.g., session_created), refresh sessions (with error handling)
-        refreshSessionsRef.current().catch((error) => {
-          // Log but don't throw - refresh errors shouldn't break the socket handler
-          if (__DEV__) {
-            logger.debug('Failed to refresh sessions after session_update', { component: 'useSessionSocket' }, error as unknown);
+        toast.info(toastMessage);
+      }
+      // Clear local state since the server has already removed the session.
+      // Await so storage cleanup completes before any subsequent navigation.
+      try {
+        await clearSessionStateRef.current();
+      } catch (error) {
+        if (__DEV__) {
+          logger.error(
+            `Failed to clear session state after ${errorContext}`,
+            error instanceof Error ? error : new Error(String(error)),
+            { component: 'useSessionSocket' },
+          );
+        }
+      }
+    };
+
+    const handleSessionUpdate = async (data: SessionUpdatePayload) => {
+      debug.log('Received session_update:', data);
+
+      const currentActiveSessionId = activeSessionIdRef.current;
+      const currentDeviceIdValue = currentDeviceIdRef.current;
+
+      // Strict whitelist. Every event type that may sign the user out must
+      // appear in the switch. Anything unknown falls through to `default`,
+      // which is intentionally a no-op for session lifecycle — it only logs
+      // in dev. This guards against future server-side event additions
+      // (e.g. `session_created`) accidentally triggering sign-out via a
+      // "legacy fallback" branch.
+      switch (data.type) {
+        case 'session_removed': {
+          if (data.sessionId && onSessionRemovedRef.current) {
+            onSessionRemovedRef.current(data.sessionId);
           }
-        });
-        
-        // If the current session was logged out (legacy behavior), handle it specially
-        if (data.sessionId === currentActiveSessionId) {
-          if (onRemoteSignOutRef.current) {
-            onRemoteSignOutRef.current();
+          if (data.sessionId && data.sessionId === currentActiveSessionId) {
+            await triggerLocalSignOut('You have been signed out remotely.', 'session_removed');
           } else {
-            toast.info('You have been signed out remotely.');
+            refreshSessionsSafe();
           }
-          // Use clearSessionState since session was already removed server-side
-          // Await to ensure storage cleanup completes before continuing
-          try {
-            await clearSessionStateRef.current();
-          } catch (error) {
-            debug.error('Failed to clear session state after session_update:', error);
+          break;
+        }
+        case 'device_removed': {
+          if (data.sessionIds && onSessionRemovedRef.current) {
+            for (const sessionId of data.sessionIds) {
+              onSessionRemovedRef.current(sessionId);
+            }
           }
+          if (data.deviceId && currentDeviceIdValue && data.deviceId === currentDeviceIdValue) {
+            await triggerLocalSignOut(
+              'This device has been removed. You have been signed out.',
+              'device_removed',
+            );
+          } else {
+            refreshSessionsSafe();
+          }
+          break;
+        }
+        case 'sessions_removed': {
+          if (data.sessionIds && onSessionRemovedRef.current) {
+            for (const sessionId of data.sessionIds) {
+              onSessionRemovedRef.current(sessionId);
+            }
+          }
+          if (
+            data.sessionIds &&
+            currentActiveSessionId &&
+            data.sessionIds.includes(currentActiveSessionId)
+          ) {
+            await triggerLocalSignOut('You have been signed out remotely.', 'sessions_removed');
+          } else {
+            refreshSessionsSafe();
+          }
+          break;
+        }
+        case 'session_created':
+        case 'session_update': {
+          // Lifecycle event for the current user. Just resync the sessions
+          // list — never sign out. Historically this branch had a legacy
+          // fallback that compared `data.sessionId === currentActiveSessionId`
+          // and signed the user out if true, which was catastrophic: a
+          // `session_created` event fired immediately after a successful
+          // sign-in carries the user's NEW (now-active) session id, which
+          // matched and triggered an instant remote sign-out toast on every
+          // login. Whitelist explicitly; never fall through.
+          refreshSessionsSafe();
+          break;
+        }
+        default: {
+          if (__DEV__) {
+            logger.warn('Unknown session socket event type', {
+              component: 'useSessionSocket',
+              type: data.type,
+            });
+          }
+          break;
         }
       }
     };
@@ -221,4 +231,4 @@ export function useSessionSocket({ userId, activeSessionId, currentDeviceId, ref
       socketRef.current = null;
     };
   }, [userId, baseURL]); // Only depend on userId and baseURL - callbacks are in refs
-} 
+}

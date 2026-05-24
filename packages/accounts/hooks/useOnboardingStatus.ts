@@ -1,7 +1,7 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Platform } from 'react-native';
 import { useOxy } from '@oxyhq/services';
-import { KeyManager } from '@oxyhq/core';
+import { KeyManager, logger } from '@oxyhq/core';
 
 export type OnboardingStatus = 'checking' | 'none' | 'in_progress' | 'complete';
 
@@ -14,96 +14,132 @@ export interface OnboardingState {
 }
 
 /**
- * Centralized hook for managing onboarding state
- * 
- * Provides a single source of truth for onboarding status.
- * This hook:
- * - Checks if identity exists
- * - Checks if user has completed onboarding (has username)
- * - Determines routing decisions
- * - Handles all edge cases efficiently
- * 
+ * Centralized hook for managing onboarding state.
+ *
+ * Combines three signals into a single resolved status:
+ *   - `KeyManager.hasIdentity()`: identity material in secure storage
+ *   - `isAuthenticated`: an active server session exists
+ *   - `user.username`: the user has completed the username step
+ *
  * Used by:
- * - _layout.tsx for routing decisions
- * - create-identity.tsx for flow initialization
- * 
- * @returns OnboardingState with status, needsAuth flag, and loading state
+ *   - `_layout.tsx` for routing decisions (`needsAuth`)
+ *   - `(auth)/index.tsx` to redirect existing identities away from the
+ *     marketing splash on cold start
+ *   - `create-identity.tsx` for flow initialization
+ *
+ * Correctness invariants:
+ *   1. An active session implies identity exists. We never report
+ *      `status === 'none'` while `isAuthenticated` is true — that would
+ *      flash the welcome screen at returning users when the secure-store
+ *      lookup races behind the session restore.
+ *   2. `status === 'checking'` only renders while the answer is genuinely
+ *      unknown. We never flip BACK to `'checking'` once resolved, which
+ *      would cause the blank backdrop to re-flash mid-flow.
+ *   3. The KeyManager identity check is re-run when `isAuthenticated`
+ *      transitions from `false` to `true` (a fresh sign-in may have
+ *      created an identity that the initial check missed). It is NOT
+ *      re-run on other auth state changes, since `KeyManager.hasIdentity`
+ *      uses an internal cache that is invalidated explicitly by
+ *      `createIdentity` and `clearIdentity` — there's no other way for
+ *      the answer to change.
  */
 export function useOnboardingStatus(): OnboardingState {
   const { user, isAuthenticated, isLoading: oxyLoading } = useOxy();
   const [identityExists, setIdentityExists] = useState<boolean | null>(null);
-  const [isChecking, setIsChecking] = useState(true);
 
-  // Check identity existence (only once, cached)
+  // We use a dedicated `isResolving` flag (rather than `identityExists === null`)
+  // so a second check triggered by `isAuthenticated` flipping does NOT regress
+  // us to "checking" — we keep the previously-resolved value while the next
+  // check is in flight. This prevents a backdrop flash on sign-in completion.
+  const [isResolving, setIsResolving] = useState(true);
+
   useEffect(() => {
     if (oxyLoading) return;
 
-    let mounted = true;
-    const check = async () => {
-      try {
-        setIsChecking(true);
-        const exists = await KeyManager.hasIdentity();
-        if (mounted) {
-          setIdentityExists(exists);
-        }
-      } catch (error) {
-        console.error('Error checking identity:', error);
-        if (mounted) {
-          setIdentityExists(false);
-        }
-      } finally {
-        if (mounted) {
-          setIsChecking(false);
-        }
-      }
-    };
+    // Read `isAuthenticated` for its side effect of binding into the
+    // dependency list. A flip from `false` to `true` (successful sign-in)
+    // can create an identity that an earlier `hasIdentity()` call missed,
+    // so we must re-check. The value itself is not used in the body —
+    // the check below is unconditional. Without this read, Biome's
+    // exhaustive-deps rule flags `isAuthenticated` as unnecessary.
+    void isAuthenticated;
 
-    check();
+    let cancelled = false;
+    KeyManager.hasIdentity()
+      .then((exists) => {
+        if (cancelled) return;
+        setIdentityExists(exists);
+      })
+      .catch((error) => {
+        // Storage threw — typically a transient keychain unlock issue.
+        // Treat as "no identity" so the welcome flow can run, but never
+        // silently swallow the error.
+        logger.error(
+          'useOnboardingStatus: KeyManager.hasIdentity threw',
+          error instanceof Error ? error : new Error(String(error)),
+          { component: 'useOnboardingStatus' },
+        );
+        if (cancelled) return;
+        setIdentityExists(false);
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setIsResolving(false);
+      });
+
     return () => {
-      mounted = false;
+      cancelled = true;
     };
-  }, [oxyLoading]);
+  }, [oxyLoading, isAuthenticated]);
 
-  // Compute onboarding status
   const status = useMemo<OnboardingStatus>(() => {
-    if (isChecking || identityExists === null || oxyLoading) {
+    // Genuinely unknown — still resolving the initial answer.
+    if (oxyLoading || (isResolving && identityExists === null)) {
       return 'checking';
+    }
+
+    // INVARIANT: an active session can only exist if identity material is
+    // on the device. If `hasIdentity()` said "no" but the session says
+    // "authenticated", the storage lookup was a transient false-negative
+    // (typical at cold-start before keychain unlock). Trust the session.
+    if (isAuthenticated && user) {
+      return user.username ? 'complete' : 'in_progress';
     }
 
     if (!identityExists) {
       return 'none';
     }
 
-    // Identity exists - check if onboarding is complete
-    if (isAuthenticated && user?.username) {
-      return 'complete';
-    }
-
-    // Identity exists but no username - onboarding in progress
+    // Identity exists locally but no active session — resume onboarding.
     return 'in_progress';
-  }, [identityExists, isChecking, isAuthenticated, user, oxyLoading]);
+  }, [identityExists, isResolving, isAuthenticated, user, oxyLoading]);
 
-  // Determine if auth flow is needed
   const needsAuth = useMemo(() => {
-    // On web, always redirect away from auth
+    // On web, the (auth) flow is not the native entry point —
+    // accounts.oxy.so/web bounces to the external sign-in flow.
     if (Platform.OS === 'web') {
       return false;
     }
 
-    // If checking, default to showing auth (safer)
+    // Default to "show auth" while resolving — better to briefly show a
+    // blank backdrop inside the auth stack than to flash the tab bar at
+    // a user whose session is still being restored.
     if (status === 'checking') {
       return true;
     }
 
-    // Show auth if no identity or onboarding in progress
     return status === 'none' || status === 'in_progress';
   }, [status]);
 
   return {
     status,
     needsAuth,
-    isLoading: isChecking || oxyLoading,
-    hasIdentity: identityExists ?? false,
-    hasUsername: !!(isAuthenticated && user?.username),
+    isLoading: isResolving || oxyLoading,
+    // An active session implies identity exists — keep this in lockstep
+    // with the `status` invariant above so consumers that gate on
+    // `hasIdentity` (e.g. the redirect in `(auth)/index.tsx`) don't fall
+    // out of sync during the transient false-negative window.
+    hasIdentity: (isAuthenticated && Boolean(user)) || (identityExists ?? false),
+    hasUsername: Boolean(isAuthenticated && user?.username),
   };
 }

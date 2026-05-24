@@ -612,7 +612,6 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     activeSessionId,
     currentDeviceId,
     refreshSessions: refreshSessionsWithUser,
-    logout,
     clearSessionState,
     baseURL: oxyServices.getBaseURL(),
     getAccessToken: () => oxyServices.getAccessToken(),
