@@ -12,7 +12,7 @@
 import type { QueryClient, UseMutationOptions } from '@tanstack/react-query';
 import type { User } from '@oxyhq/core';
 import { queryKeys, invalidateAccountQueries, invalidateUserQueries } from '../queries/queryKeys';
-import { toast } from '../../../lib/sonner';
+import { toast } from '@oxyhq/bloom';
 import { useAuthStore } from '../../stores/authStore';
 
 /**

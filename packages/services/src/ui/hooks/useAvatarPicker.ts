@@ -18,7 +18,7 @@ import { useCallback } from 'react';
 import type { FileMetadata, OxyServices } from '@oxyhq/core';
 import { translate, updateAvatarVisibility } from '@oxyhq/core';
 import type { QueryClient } from '@tanstack/react-query';
-import { toast } from '../../lib/sonner';
+import { toast } from '@oxyhq/bloom';
 import type { RouteName } from '../navigation/routes';
 import { updateProfileWithAvatar } from '../utils/avatarUtils';
 import type { AvatarCropResult } from '../screens/AvatarCropScreen';

@@ -9,9 +9,7 @@ import {
     ActivityIndicator,
 } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
-import { toast } from '../../lib/sonner';
-import * as Prompt from '@oxyhq/bloom/prompt';
-import { usePromptControl } from '@oxyhq/bloom/prompt';
+import { Dialog, toast, useDialogControl } from '@oxyhq/bloom';
 import { Header } from '../components';
 import { SettingsListGroup } from '@oxyhq/bloom/settings-list';
 import { useI18n } from '../hooks/useI18n';
@@ -33,8 +31,8 @@ const AccountVerificationScreen: React.FC<BaseScreenProps> = ({
 
     const bloomTheme = useTheme();
 
-    // Prompt controls
-    const successPrompt = usePromptControl();
+    // Dialog controls
+    const successDialog = useDialogControl();
 
     const handleSuccessAcknowledged = useCallback(() => {
         setReason('');
@@ -63,7 +61,7 @@ const AccountVerificationScreen: React.FC<BaseScreenProps> = ({
             setSuccessMessage(
                 t('accountVerification.successMessage') || `Your verification request has been submitted. Request ID: ${result.requestId}`
             );
-            successPrompt.open();
+            successDialog.open();
         } catch (error: unknown) {
             if (__DEV__) {
                 console.error('Failed to submit verification request:', error);
@@ -74,7 +72,7 @@ const AccountVerificationScreen: React.FC<BaseScreenProps> = ({
         } finally {
             setIsSubmitting(false);
         }
-    }, [reason, evidence, oxyServices, t, successPrompt]);
+    }, [reason, evidence, oxyServices, t, successDialog]);
 
     return (
         <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
@@ -160,13 +158,16 @@ const AccountVerificationScreen: React.FC<BaseScreenProps> = ({
                     </Text>
                 </SettingsListGroup>
             </ScrollView>
-            <Prompt.Basic
-                control={successPrompt}
+            <Dialog
+                control={successDialog}
                 title={t('accountVerification.successTitle') || 'Request Submitted'}
                 description={successMessage}
-                onConfirm={handleSuccessAcknowledged}
-                confirmButtonCta={t('accountVerification.ok') || 'OK'}
-                showCancel={false}
+                actions={[
+                    {
+                        label: t('accountVerification.ok') || 'OK',
+                        onPress: handleSuccessAcknowledged,
+                    },
+                ]}
             />
         </View>
     );

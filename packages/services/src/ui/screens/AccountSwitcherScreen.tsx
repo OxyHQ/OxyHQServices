@@ -15,9 +15,7 @@ import type { BaseScreenProps } from '../types/navigation';
 import type { ClientSession } from '@oxyhq/core';
 import type { User } from '@oxyhq/core';
 import { getAccountDisplayName, getAccountFallbackHandle } from '@oxyhq/core';
-import { toast } from '../../lib/sonner';
-import * as Prompt from '@oxyhq/bloom/prompt';
-import { usePromptControl } from '@oxyhq/bloom/prompt';
+import { Dialog, toast, useDialogControl } from '@oxyhq/bloom';
 import OxyIcon from '../components/icon/OxyIcon';
 import { Ionicons } from '@expo/vector-icons';
 import Avatar from '../components/Avatar';
@@ -84,10 +82,10 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
     const [pendingRemoteLogout, setPendingRemoteLogout] = useState<{ sessionId: string; deviceName: string } | null>(null);
 
     // Prompt controls
-    const removeSessionPrompt = usePromptControl();
-    const logoutAllPrompt = usePromptControl();
-    const remoteLogoutPrompt = usePromptControl();
-    const logoutAllDevicesPrompt = usePromptControl();
+    const removeSessionDialog = useDialogControl();
+    const logoutAllDialog = useDialogControl();
+    const remoteLogoutDialog = useDialogControl();
+    const logoutAllDevicesDialog = useDialogControl();
 
     const screenWidth = Dimensions.get('window').width;
     const { t, locale } = useI18n();
@@ -203,8 +201,8 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
     const confirmRemoveSession = useCallback((sessionId: string, displayName: string) => {
         if (removingUserId) return;
         setPendingRemoveSession({ sessionId, displayName });
-        removeSessionPrompt.open();
-    }, [removingUserId, removeSessionPrompt]);
+        removeSessionDialog.open();
+    }, [removingUserId, removeSessionDialog]);
 
     const handleRemoveSession = useCallback(async () => {
         if (!pendingRemoveSession) return;
@@ -225,8 +223,8 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
     }, [pendingRemoveSession, removeSession, t]);
 
     const confirmLogoutAll = useCallback(() => {
-        logoutAllPrompt.open();
-    }, [logoutAllPrompt]);
+        logoutAllDialog.open();
+    }, [logoutAllDialog]);
 
     const handleLogoutAll = useCallback(async () => {
         try {
@@ -290,8 +288,8 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
     const confirmRemoteSessionLogout = useCallback((sessionId: string, deviceName: string) => {
         if (remotingLogoutSessionId) return;
         setPendingRemoteLogout({ sessionId, deviceName });
-        remoteLogoutPrompt.open();
-    }, [remotingLogoutSessionId, remoteLogoutPrompt]);
+        remoteLogoutDialog.open();
+    }, [remotingLogoutSessionId, remoteLogoutDialog]);
 
     const handleRemoteSessionLogout = useCallback(async () => {
         if (!pendingRemoteLogout) return;
@@ -321,8 +319,8 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
         }
 
         if (loggingOutAllDevices) return;
-        logoutAllDevicesPrompt.open();
-    }, [deviceSessions, loggingOutAllDevices, logoutAllDevicesPrompt, t]);
+        logoutAllDevicesDialog.open();
+    }, [deviceSessions, loggingOutAllDevices, logoutAllDevicesDialog, t]);
 
     const handleLogoutAllDevices = useCallback(async () => {
         setLoggingOutAllDevices(true);
@@ -765,37 +763,41 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                     </>
                 )}
             </ScrollView>
-            <Prompt.Basic
-                control={removeSessionPrompt}
+            <Dialog
+                control={removeSessionDialog}
                 title={t('accountSwitcher.confirms.removeTitle') || 'Remove Account'}
                 description={pendingRemoveSession ? (t('accountSwitcher.confirms.remove', { displayName: pendingRemoveSession.displayName }) || `Are you sure you want to remove ${pendingRemoveSession.displayName} from this device? You'll need to sign in again to access this account.`) : ''}
-                onConfirm={handleRemoveSession}
-                confirmButtonCta={t('common.remove') || 'Remove'}
-                confirmButtonColor='negative'
+                actions={[
+                    { label: t('common.remove') || 'Remove', color: 'destructive', onPress: handleRemoveSession },
+                    { label: t('common.cancel') || 'Cancel', color: 'cancel' },
+                ]}
             />
-            <Prompt.Basic
-                control={logoutAllPrompt}
+            <Dialog
+                control={logoutAllDialog}
                 title={t('accountSwitcher.confirms.logoutAllTitle') || 'Sign Out All'}
                 description={t('accountSwitcher.confirms.logoutAll') || 'Are you sure you want to sign out of all accounts? This will remove all saved accounts from this device.'}
-                onConfirm={handleLogoutAll}
-                confirmButtonCta={t('common.signOutAll') || 'Sign Out All'}
-                confirmButtonColor='negative'
+                actions={[
+                    { label: t('common.signOutAll') || 'Sign Out All', color: 'destructive', onPress: handleLogoutAll },
+                    { label: t('common.cancel') || 'Cancel', color: 'cancel' },
+                ]}
             />
-            <Prompt.Basic
-                control={remoteLogoutPrompt}
+            <Dialog
+                control={remoteLogoutDialog}
                 title={t('accountSwitcher.confirms.remoteLogoutTitle') || 'Remote Sign Out'}
                 description={pendingRemoteLogout ? (t('accountSwitcher.confirms.remoteLogout', { deviceName: pendingRemoteLogout.deviceName }) || `Are you sure you want to sign out from "${pendingRemoteLogout.deviceName}"? This will end the session on that device.`) : ''}
-                onConfirm={handleRemoteSessionLogout}
-                confirmButtonCta={t('common.signOut') || 'Sign Out'}
-                confirmButtonColor='negative'
+                actions={[
+                    { label: t('common.signOut') || 'Sign Out', color: 'destructive', onPress: handleRemoteSessionLogout },
+                    { label: t('common.cancel') || 'Cancel', color: 'cancel' },
+                ]}
             />
-            <Prompt.Basic
-                control={logoutAllDevicesPrompt}
+            <Dialog
+                control={logoutAllDevicesDialog}
                 title={t('accountSwitcher.confirms.logoutOthersTitle') || 'Sign Out Other Devices'}
                 description={t('accountSwitcher.confirms.logoutOthers', { count: otherDevicesCount }) || `Are you sure you want to sign out from all ${otherDevicesCount} other device(s)? This will end sessions on all other devices except this one.`}
-                onConfirm={handleLogoutAllDevices}
-                confirmButtonCta={t('common.signOutAll') || 'Sign Out All'}
-                confirmButtonColor='negative'
+                actions={[
+                    { label: t('common.signOutAll') || 'Sign Out All', color: 'destructive', onPress: handleLogoutAllDevices },
+                    { label: t('common.cancel') || 'Cancel', color: 'cancel' },
+                ]}
             />
         </View>
     );

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import io, { type Socket } from 'socket.io-client';
-import { toast } from '../../lib/sonner';
+import { toast } from '@oxyhq/bloom';
 import { logger } from '@oxyhq/core';
 import { createDebugLogger } from '@oxyhq/core';
 

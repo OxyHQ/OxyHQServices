@@ -19,8 +19,7 @@ import { Button } from '@oxyhq/bloom/button';
 import { Text } from '@oxyhq/bloom/typography';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { Admonition } from '@oxyhq/bloom/admonition';
-import * as Prompt from '@oxyhq/bloom/prompt';
-import { usePromptControl } from '@oxyhq/bloom/prompt';
+import { Dialog, useDialogControl } from '@oxyhq/bloom';
 import {
   Pin_Stroke2_Corner0_Rounded,
   Pencil_Stroke2_Corner0_Rounded,
@@ -29,7 +28,7 @@ import {
   CircleCheck_Stroke2_Corner0_Rounded,
   ColorPalette_Stroke2_Corner0_Rounded,
 } from '@oxyhq/bloom/icons';
-import { toast } from '@oxyhq/services';
+import { toast } from '@oxyhq/bloom';
 
 import { useColors } from '@/constants/theme';
 import { SectionHeader } from '@/components/settings/SectionHeader';
@@ -60,7 +59,7 @@ export function LabelsSection() {
   const [editingLabelId, setEditingLabelId] = useState<string | null>(null);
   const [editingLabelName, setEditingLabelName] = useState('');
 
-  const deleteConfirm = usePromptControl();
+  const deleteConfirm = useDialogControl();
   const [labelPendingDelete, setLabelPendingDelete] = useState<{ id: string; name: string } | null>(null);
 
   const handleCreate = useCallback(() => {
@@ -256,7 +255,7 @@ export function LabelsSection() {
         </Button>
       </View>
 
-      <Prompt.Basic
+      <Dialog
         control={deleteConfirm}
         title="Delete label?"
         description={
@@ -264,10 +263,10 @@ export function LabelsSection() {
             ? `"${labelPendingDelete.name}" will be removed from any messages it's applied to.`
             : ''
         }
-        confirmButtonCta="Delete"
-        cancelButtonCta="Cancel"
-        confirmButtonColor="negative"
-        onConfirm={handleDelete}
+        actions={[
+          { label: 'Delete', color: 'destructive', onPress: handleDelete },
+          { label: 'Cancel', color: 'cancel' },
+        ]}
       />
     </KeyboardAvoidingView>
   );

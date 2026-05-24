@@ -73,7 +73,7 @@ const KarmaFAQScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
                     <TextInput
                         style={[styles.searchInput, { color: bloomTheme.colors.text }]}
                         placeholder={t('karma.faq.search') || 'Search FAQ...'}
-                        placeholderTextColor={bloomTheme.isDark ? '#BBBBBB' : '#888888'}
+                        placeholderTextColor={bloomTheme.colors.textTertiary}
                         value={search}
                         onChangeText={setSearch}
                         returnKeyType="search"

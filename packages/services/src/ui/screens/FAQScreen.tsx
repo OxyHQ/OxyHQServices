@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { BaseScreenProps } from '../types/navigation';
-import { toast } from '../../lib/sonner';
+import { toast } from '@oxyhq/bloom';
 import { Header, LoadingState, EmptyState } from '../components';
 import { useI18n } from '../hooks/useI18n';
 import { useTheme } from '@oxyhq/bloom/theme';

@@ -16,7 +16,7 @@ import { Header } from '../components';
 import { useI18n } from '../hooks/useI18n';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { useOxy } from '../context/OxyContext';
-import { toast } from '../../lib/sonner';
+import { toast } from '@oxyhq/bloom';
 import { screenContentStyle } from '../constants/spacing';
 
 type UsernameStatus = 'idle' | 'checking' | 'available' | 'taken' | 'invalid';

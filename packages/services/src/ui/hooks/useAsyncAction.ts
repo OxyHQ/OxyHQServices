@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { toast } from '../../lib/sonner';
+import { toast } from '@oxyhq/bloom';
 
 interface UseAsyncActionOptions<T> {
     /** Function to execute */
@@ -63,7 +63,7 @@ export function useAsyncAction<T = void>(
         setError(null);
 
         if (showLoadingToast && loadingMessage) {
-            toast.loading(loadingMessage);
+            toast.info(loadingMessage);
         }
 
         try {
@@ -111,7 +111,7 @@ export async function executeWithToast<T>(
     const { successMessage, errorMessage, loadingMessage } = options || {};
 
     if (loadingMessage) {
-        toast.loading(loadingMessage);
+        toast.info(loadingMessage);
     }
 
     try {

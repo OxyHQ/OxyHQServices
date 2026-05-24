@@ -15,7 +15,8 @@ import {
   Platform,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useOxy, toast } from '@oxyhq/services';
+import { useOxy } from '@oxyhq/services';
+import { toast } from '@oxyhq/bloom';
 
 import { useColors } from '@/constants/theme';
 import { useEmailStore } from '@/hooks/useEmail';

@@ -41,7 +41,7 @@ const KarmaLeaderboardScreen: React.FC<BaseScreenProps> = ({ goBack, theme, navi
             {isLoading ? (
                 <ActivityIndicator size="large" color={primaryColor} style={{ marginTop: 40 }} />
             ) : error ? (
-                <Text style={[styles.error, { color: '#D32F2F' }]}>{error}</Text>
+                <Text style={[styles.error, { color: bloomTheme.colors.error }]}>{error}</Text>
             ) : (
                 <ScrollView contentContainerStyle={styles.listContainer}>
                     {leaderboard.length === 0 ? (
@@ -50,7 +50,7 @@ const KarmaLeaderboardScreen: React.FC<BaseScreenProps> = ({ goBack, theme, navi
                         leaderboard.map((entry, idx) => (
                             <TouchableOpacity
                                 key={entry.userId}
-                                style={[styles.row, idx < 3 && { backgroundColor: '#f7eaff' }]}
+                                style={[styles.row, { borderColor: bloomTheme.colors.border }, idx < 3 && { backgroundColor: bloomTheme.colors.primarySubtle }]}
                                 onPress={() => navigate?.('Profile', { userId: entry.userId, username: entry.username })}
                                 activeOpacity={0.7}
                             >
@@ -76,13 +76,12 @@ const styles = StyleSheet.create({
         paddingVertical: 12,
         paddingHorizontal: 20,
         borderBottomWidth: 1,
-        borderColor: '#eee',
     },
     rank: { fontSize: 20, width: 32, textAlign: 'center', fontWeight: 'bold' },
     avatar: { marginHorizontal: 8 },
     username: { flex: 1, fontSize: 16, marginLeft: 8 },
     karma: { fontSize: 18, fontWeight: 'bold', marginLeft: 12 },
-    placeholder: { fontSize: 16, color: '#888', textAlign: 'center', marginTop: 40 },
+    placeholder: { fontSize: 16, textAlign: 'center', marginTop: 40 },
     error: { fontSize: 16, textAlign: 'center', marginTop: 40 },
 });
 

@@ -47,7 +47,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { logger } from '@oxyhq/core';
 import { useI18n } from '../hooks/useI18n';
-import { toast } from '../../lib/sonner';
+import { toast } from '@oxyhq/bloom';
 import type { BaseScreenProps } from '../types/navigation';
 
 /** Component name used in `logger` context for filtered diagnostics. */

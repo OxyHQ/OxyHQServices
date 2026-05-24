@@ -14,8 +14,9 @@ import {
 import type { BaseScreenProps } from '../types/navigation';
 import { useThemeColors } from '../styles';
 import { normalizeTheme } from '../utils/themeUtils';
+import { useTheme } from '@oxyhq/bloom/theme';
 import { Ionicons } from '@expo/vector-icons';
-import { toast } from '../../lib/sonner';
+import { toast } from '@oxyhq/bloom';
 import { packageInfo } from '@oxyhq/core';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 import { SettingsIcon } from '../components/SettingsIcon';
@@ -41,6 +42,7 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
     const { user, oxyServices } = useOxy();
     const normalizedTheme = normalizeTheme(theme);
     const colors = useThemeColors(normalizedTheme);
+    const bloomTheme = useTheme();
     const { t } = useI18n();
 
     const { feedbackData, feedbackState, setFeedbackState, updateField, resetForm } = useFeedbackForm();
@@ -225,8 +227,8 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
                     accessibilityRole="button"
                     accessibilityLabel="Continue to next step"
                 >
-                    <Text style={[styles.navButtonText, { color: '#FFFFFF' }]}>{t('common.actions.next') || 'Next'}</Text>
-                    <Ionicons name="arrow-forward" size={16} color="#FFFFFF" />
+                    <Text style={[styles.navButtonText, { color: bloomTheme.colors.negativeForeground }]}>{t('common.actions.next') || 'Next'}</Text>
+                    <Ionicons name="arrow-forward" size={16} color={bloomTheme.colors.negativeForeground} />
                 </TouchableOpacity>
             </View>
         </Animated.View>
@@ -310,8 +312,8 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
                     accessibilityRole="button"
                     accessibilityLabel="Continue to next step"
                 >
-                    <Text style={[styles.navButtonText, { color: '#FFFFFF' }]}>{t('common.actions.next') || 'Next'}</Text>
-                    <Ionicons name="arrow-forward" size={16} color="#FFFFFF" />
+                    <Text style={[styles.navButtonText, { color: bloomTheme.colors.negativeForeground }]}>{t('common.actions.next') || 'Next'}</Text>
+                    <Ionicons name="arrow-forward" size={16} color={bloomTheme.colors.negativeForeground} />
                 </TouchableOpacity>
             </View>
         </Animated.View>
@@ -355,7 +357,7 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
                     accessibilityState={{ checked: feedbackData.systemInfo }}
                     accessibilityLabel="Include system information"
                 >
-                    {feedbackData.systemInfo && <Ionicons name="checkmark" size={16} color="#FFFFFF" />}
+                    {feedbackData.systemInfo && <Ionicons name="checkmark" size={16} color={bloomTheme.colors.negativeForeground} />}
                 </TouchableOpacity>
                 <Text style={styles.checkboxText} className="text-foreground">
                     {t('feedback.contact.includeSystemInfo') || 'Include system information to help us better understand your issue'}
@@ -382,8 +384,8 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
                     accessibilityRole="button"
                     accessibilityLabel="Continue to summary"
                 >
-                    <Text style={[styles.navButtonText, { color: '#FFFFFF' }]}>Next</Text>
-                    <Ionicons name="arrow-forward" size={16} color="#FFFFFF" />
+                    <Text style={[styles.navButtonText, { color: bloomTheme.colors.negativeForeground }]}>Next</Text>
+                    <Ionicons name="arrow-forward" size={16} color={bloomTheme.colors.negativeForeground} />
                 </TouchableOpacity>
             </View>
         </Animated.View>
@@ -439,11 +441,11 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
                 accessibilityLabel="Submit feedback"
             >
                 {feedbackState.status === 'submitting' ? (
-                    <ActivityIndicator color="#FFFFFF" size="small" />
+                    <ActivityIndicator color={bloomTheme.colors.negativeForeground} size="small" />
                 ) : (
                     <>
                         <Text style={styles.buttonText}>{t('feedback.actions.submit') || 'Submit Feedback'}</Text>
-                        <Ionicons name="send" size={20} color="#FFFFFF" />
+                        <Ionicons name="send" size={20} color={bloomTheme.colors.negativeForeground} />
                     </>
                 )}
             </TouchableOpacity>

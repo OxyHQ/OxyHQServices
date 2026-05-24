@@ -35,7 +35,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BottomSheet, type BottomSheetRef } from '@oxyhq/bloom/bottom-sheet';
-import * as Dialog from '@oxyhq/bloom/dialog';
+import { Dialog, useDialogControl } from '@oxyhq/bloom';
 import { H2, P, Text } from '@oxyhq/bloom/typography';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { OxySignInButton, useOxy } from '@oxyhq/services';
@@ -111,7 +111,7 @@ function AuthGateSheet() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function AuthGateDialog() {
-  const control = Dialog.useDialogControl();
+  const control = useDialogControl();
 
   // Open the dialog on mount. The control object is stable across renders
   // (refs from `useDialogControl`), so this only fires once.
@@ -124,25 +124,21 @@ function AuthGateDialog() {
   // becomes authenticated, so this loop terminates cleanly at that moment.
   const handleClose = useCallback(() => {
     // Defer to next macrotask so the open happens after the close lifecycle
-    // settles inside Dialog.Outer (avoids fighting the close animation).
+    // settles inside Dialog (avoids fighting the close animation).
     setTimeout(() => {
       control.open();
     }, 0);
   }, [control]);
 
   return (
-    <Dialog.Outer
+    <Dialog
       control={control}
       onClose={handleClose}
-      webOptions={{ alignCenter: true }}
+      label="Sign in required"
+      style={styles.dialogInner}
     >
-      <Dialog.Inner
-        label="Sign in required"
-        contentContainerStyle={styles.dialogInner}
-      >
-        <AuthGateContent variant="dialog" />
-      </Dialog.Inner>
-    </Dialog.Outer>
+      <AuthGateContent variant="dialog" />
+    </Dialog>
   );
 }
 

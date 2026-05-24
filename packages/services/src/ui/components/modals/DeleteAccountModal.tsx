@@ -1,9 +1,7 @@
 import type React from 'react';
 import { useState, useCallback } from 'react';
 import { View, Text, TextInput } from 'react-native';
-import * as Dialog from '@oxyhq/bloom/dialog';
-import type { DialogControlProps } from '@oxyhq/bloom/dialog';
-import * as Prompt from '@oxyhq/bloom/prompt';
+import { Dialog, type DialogControlProps } from '@oxyhq/bloom';
 import OxyIcon from '../icon/OxyIcon';
 import { useTheme } from '@oxyhq/bloom/theme';
 
@@ -50,62 +48,62 @@ const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
     }, [isDeleting]);
 
     return (
-        <Dialog.Outer control={control} onClose={handleCleanup}>
-            <Dialog.Handle />
-            <Dialog.ScrollableInner label="Delete Account">
-                <View className="flex-row items-center mb-4 gap-3">
-                    <OxyIcon name="alert" size={32} color={theme.colors.error} />
-                    <Text className="text-destructive text-xl font-bold">
-                        {t('deleteAccount.title') || 'Delete Account'}
-                    </Text>
-                </View>
-
-                <Text className="text-foreground text-sm leading-5 mb-5">
-                    {t('deleteAccount.warning') || 'This action cannot be undone. Your account and all associated data will be permanently deleted.'}
+        <Dialog
+            control={control}
+            onClose={handleCleanup}
+            label="Delete Account"
+            actions={[
+                {
+                    label: t('deleteAccount.confirm') || 'Delete Forever',
+                    color: 'destructive',
+                    onPress: handleDelete,
+                    disabled: !isValid || isDeleting,
+                    shouldCloseOnPress: false,
+                },
+                { label: t('common.cancel') || 'Cancel', color: 'cancel' },
+            ]}
+        >
+            <View className="flex-row items-center mb-4 gap-3">
+                <OxyIcon name="alert" size={32} color={theme.colors.error} />
+                <Text className="text-destructive text-xl font-bold">
+                    {t('deleteAccount.title') || 'Delete Account'}
                 </Text>
+            </View>
 
-                {error && (
-                    <View
-                        className="p-3 rounded-lg mb-4"
-                        style={{ backgroundColor: `${theme.colors.error}20` }}
-                    >
-                        <Text className="text-destructive text-sm text-center">
-                            {error}
-                        </Text>
-                    </View>
-                )}
+            <Text className="text-foreground text-sm leading-5 mb-5">
+                {t('deleteAccount.warning') || 'This action cannot be undone. Your account and all associated data will be permanently deleted.'}
+            </Text>
 
-                <View className="mb-4">
-                    <Text className="text-muted-foreground text-[13px] mb-2">
-                        {t('deleteAccount.confirmLabel', { username }) || `Type "${username}" to confirm`}
+            {error && (
+                <View
+                    className="p-3 rounded-lg mb-4"
+                    style={{ backgroundColor: `${theme.colors.error}20` }}
+                >
+                    <Text className="text-destructive text-sm text-center">
+                        {error}
                     </Text>
-                    <TextInput
-                        className="text-foreground bg-background text-base py-3 px-4 border rounded-lg"
-                        style={{
-                            borderColor: confirmUsername === username ? theme.colors.success : theme.colors.border,
-                        }}
-                        value={confirmUsername}
-                        onChangeText={setConfirmUsername}
-                        placeholder={username}
-                        placeholderTextColor={theme.colors.textSecondary}
-                        autoCapitalize="none"
-                        autoCorrect={false}
-                        editable={!isDeleting}
-                    />
                 </View>
+            )}
 
-                <Prompt.Actions>
-                    <Prompt.Action
-                        onPress={handleDelete}
-                        color="negative"
-                        cta={isDeleting ? undefined : (t('deleteAccount.confirm') || 'Delete Forever')}
-                        disabled={!isValid || isDeleting}
-                        shouldCloseOnPress={false}
-                    />
-                    <Prompt.Cancel cta={t('common.cancel') || 'Cancel'} />
-                </Prompt.Actions>
-            </Dialog.ScrollableInner>
-        </Dialog.Outer>
+            <View className="mb-4">
+                <Text className="text-muted-foreground text-[13px] mb-2">
+                    {t('deleteAccount.confirmLabel', { username }) || `Type "${username}" to confirm`}
+                </Text>
+                <TextInput
+                    className="text-foreground bg-background text-base py-3 px-4 border rounded-lg"
+                    style={{
+                        borderColor: confirmUsername === username ? theme.colors.success : theme.colors.border,
+                    }}
+                    value={confirmUsername}
+                    onChangeText={setConfirmUsername}
+                    placeholder={username}
+                    placeholderTextColor={theme.colors.textSecondary}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    editable={!isDeleting}
+                />
+            </View>
+        </Dialog>
     );
 };
 

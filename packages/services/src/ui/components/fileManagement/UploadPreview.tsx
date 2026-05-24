@@ -2,9 +2,7 @@ import type React from 'react';
 import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
-import * as Dialog from '@oxyhq/bloom/dialog';
-import type { DialogControlProps } from '@oxyhq/bloom/dialog';
-import * as Prompt from '@oxyhq/bloom/prompt';
+import { Dialog, type DialogControlProps } from '@oxyhq/bloom';
 import { useTheme } from '@oxyhq/bloom/theme';
 import type { RNFileDescriptor } from '@oxyhq/core';
 import { formatFileSize, getFileIcon } from '../../utils/fileManagement';
@@ -125,7 +123,7 @@ const UploadPreviewContent: React.FC<{
                             style={fileManagementStyles.uploadPreviewConfirmButton}
                             onPress={onConfirm}
                         >
-                            <Ionicons name="cloud-upload" size={20} color="#FFFFFF" />
+                            <Ionicons name="cloud-upload" size={20} color={colors.negativeForeground} />
                             <Text style={fileManagementStyles.uploadPreviewConfirmText}>Upload</Text>
                         </TouchableOpacity>
                     </View>
@@ -159,25 +157,22 @@ export const UploadPreview: React.FC<UploadPreviewProps> = ({
     if (!control) return null;
 
     return (
-        <Dialog.Outer control={control} onClose={onCancel}>
-            <Dialog.Handle />
-            <Dialog.ScrollableInner label="Review Files">
-                <UploadPreviewContent
-                    pendingFiles={pendingFiles}
-                    onConfirm={onConfirm}
-                    onCancel={onCancel}
-                    onRemoveFile={onRemoveFile}
-                    showActions={false}
-                />
-                <Prompt.Actions>
-                    <Prompt.Action
-                        onPress={onConfirm}
-                        cta="Upload"
-                        color="primary"
-                    />
-                    <Prompt.Cancel cta="Cancel" />
-                </Prompt.Actions>
-            </Dialog.ScrollableInner>
-        </Dialog.Outer>
+        <Dialog
+            control={control}
+            onClose={onCancel}
+            label="Review Files"
+            actions={[
+                { label: 'Upload', onPress: onConfirm },
+                { label: 'Cancel', color: 'cancel' },
+            ]}
+        >
+            <UploadPreviewContent
+                pendingFiles={pendingFiles}
+                onConfirm={onConfirm}
+                onCancel={onCancel}
+                onRemoveFile={onRemoveFile}
+                showActions={false}
+            />
+        </Dialog>
     );
 };

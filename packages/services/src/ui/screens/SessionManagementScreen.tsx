@@ -12,10 +12,8 @@ import {
 } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
 import { screenContentStyle } from '../constants/spacing';
-import { toast } from '../../lib/sonner';
+import { Dialog, toast, useDialogControl } from '@oxyhq/bloom';
 import type { ClientSession } from '@oxyhq/core';
-import * as Prompt from '@oxyhq/bloom/prompt';
-import { usePromptControl } from '@oxyhq/bloom/prompt';
 import { Header } from '../components';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 import { SettingsIcon } from '../components/SettingsIcon';
@@ -47,9 +45,9 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
     const [pendingLogoutSessionId, setPendingLogoutSessionId] = useState<string | null>(null);
 
     // Prompt controls
-    const logoutSessionPrompt = usePromptControl();
-    const logoutOtherSessionsPrompt = usePromptControl();
-    const logoutAllSessionsPrompt = usePromptControl();
+    const logoutSessionDialog = useDialogControl();
+    const logoutOtherSessionsDialog = useDialogControl();
+    const logoutAllSessionsDialog = useDialogControl();
 
     // Use bloom theme for non-style color props (ActivityIndicator, icon colors, etc.)
     const bloomTheme = useTheme();
@@ -82,8 +80,8 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
     // Confirm logout session - opens prompt
     const confirmLogoutSession = useCallback((sessionId: string) => {
         setPendingLogoutSessionId(sessionId);
-        logoutSessionPrompt.open();
-    }, [logoutSessionPrompt]);
+        logoutSessionDialog.open();
+    }, [logoutSessionDialog]);
 
     // Handle logout session - executes after prompt confirmation
     const handleLogoutSession = useCallback(async () => {
@@ -116,8 +114,8 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
             toast.info(t('sessionManagement.toasts.noOtherSessions'));
             return;
         }
-        logoutOtherSessionsPrompt.open();
-    }, [otherSessionsCount, logoutOtherSessionsPrompt, t]);
+        logoutOtherSessionsDialog.open();
+    }, [otherSessionsCount, logoutOtherSessionsDialog, t]);
 
     // Handle logout other sessions - executes after prompt confirmation
     const handleLogoutOtherSessions = useCallback(async () => {
@@ -142,8 +140,8 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
 
     // Confirm logout all sessions - opens prompt
     const confirmLogoutAllSessions = useCallback(() => {
-        logoutAllSessionsPrompt.open();
-    }, [logoutAllSessionsPrompt]);
+        logoutAllSessionsDialog.open();
+    }, [logoutAllSessionsDialog]);
 
     // Handle logout all sessions - executes after prompt confirmation
     const handleLogoutAllSessions = useCallback(async () => {
@@ -361,29 +359,32 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
                     <Text style={styles.closeButtonText} className="text-primary">{t('sessionManagement.close')}</Text>
                 </TouchableOpacity>
             </View>
-            <Prompt.Basic
-                control={logoutSessionPrompt}
+            <Dialog
+                control={logoutSessionDialog}
                 title={t('sessionManagement.confirms.logoutSessionTitle') || 'Log Out Session'}
                 description={t('sessionManagement.confirms.logoutSession')}
-                onConfirm={handleLogoutSession}
-                confirmButtonCta={t('sessionManagement.logout') || 'Log Out'}
-                confirmButtonColor='negative'
+                actions={[
+                    { label: t('sessionManagement.logout') || 'Log Out', color: 'destructive', onPress: handleLogoutSession },
+                    { label: t('common.cancel') || 'Cancel', color: 'cancel' },
+                ]}
             />
-            <Prompt.Basic
-                control={logoutOtherSessionsPrompt}
+            <Dialog
+                control={logoutOtherSessionsDialog}
                 title={t('sessionManagement.confirms.logoutOthersTitle') || 'Log Out Other Sessions'}
                 description={t('sessionManagement.confirms.logoutOthers', { count: otherSessionsCount })}
-                onConfirm={handleLogoutOtherSessions}
-                confirmButtonCta={t('sessionManagement.logoutOthers.title') || 'Log Out Others'}
-                confirmButtonColor='negative'
+                actions={[
+                    { label: t('sessionManagement.logoutOthers.title') || 'Log Out Others', color: 'destructive', onPress: handleLogoutOtherSessions },
+                    { label: t('common.cancel') || 'Cancel', color: 'cancel' },
+                ]}
             />
-            <Prompt.Basic
-                control={logoutAllSessionsPrompt}
+            <Dialog
+                control={logoutAllSessionsDialog}
                 title={t('sessionManagement.confirms.logoutAllTitle') || 'Log Out All Sessions'}
                 description={t('sessionManagement.confirms.logoutAll')}
-                onConfirm={handleLogoutAllSessions}
-                confirmButtonCta={t('sessionManagement.logoutAll.title') || 'Log Out All'}
-                confirmButtonColor='negative'
+                actions={[
+                    { label: t('sessionManagement.logoutAll.title') || 'Log Out All', color: 'destructive', onPress: handleLogoutAllSessions },
+                    { label: t('common.cancel') || 'Cancel', color: 'cancel' },
+                ]}
             />
         </View>
     );

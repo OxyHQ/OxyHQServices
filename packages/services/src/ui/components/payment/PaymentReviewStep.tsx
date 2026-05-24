@@ -59,7 +59,7 @@ const PaymentReviewStep: React.FC<PaymentReviewStepProps> = ({
 
                 <SettingsListGroup>
                     <SettingsListItem
-                        icon={<Ionicons name="shield-checkmark" size={20} color={colors.success || '#4BB543'} />}
+                        icon={<Ionicons name="shield-checkmark" size={20} color={colors.success} />}
                         title={t('payment.review.securePayment')}
                         description={t('payment.review.securePaymentDesc')}
                         showChevron={false}

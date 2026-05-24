@@ -8,7 +8,7 @@
 import React, { useMemo, useCallback } from 'react';
 import { View, StyleSheet, Platform, useWindowDimensions } from 'react-native';
 import { Slot, Stack, useRouter } from 'expo-router';
-import { usePromptControl } from '@oxyhq/bloom/prompt';
+import { useDialogControl } from '@oxyhq/bloom';
 
 import { useColors } from '@/constants/theme';
 import { SPECIAL_USE } from '@/constants/mailbox';
@@ -160,7 +160,7 @@ export default function InboxLayout() {
     }
   }, [selectedMessageId, toggleRead]);
 
-  const helpControl = usePromptControl();
+  const helpControl = useDialogControl();
   const handleShowHelp = useCallback(() => {
     helpControl.open();
   }, [helpControl]);

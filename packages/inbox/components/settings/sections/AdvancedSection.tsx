@@ -30,8 +30,7 @@ import { Switch } from '@oxyhq/bloom/switch';
 import { Text } from '@oxyhq/bloom/typography';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { Admonition } from '@oxyhq/bloom/admonition';
-import * as Prompt from '@oxyhq/bloom/prompt';
-import { usePromptControl } from '@oxyhq/bloom/prompt';
+import { Dialog, useDialogControl } from '@oxyhq/bloom';
 import {
   Filter_Stroke2_Corner0_Rounded,
   PageText_Stroke2_Corner0_Rounded,
@@ -40,7 +39,7 @@ import {
   PlusSmall_Stroke2_Corner0_Rounded,
   Loader_Stroke2_Corner0_Rounded,
 } from '@oxyhq/bloom/icons';
-import { toast } from '@oxyhq/services';
+import { toast } from '@oxyhq/bloom';
 
 import { useColors } from '@/constants/theme';
 import { SectionHeader } from '@/components/settings/SectionHeader';
@@ -76,8 +75,8 @@ export function AdvancedSection() {
   const [newTemplateSubject, setNewTemplateSubject] = useState('');
   const [newTemplateBody, setNewTemplateBody] = useState('');
 
-  const filterDelete = usePromptControl();
-  const templateDelete = usePromptControl();
+  const filterDelete = useDialogControl();
+  const templateDelete = useDialogControl();
   const [filterPendingDelete, setFilterPendingDelete] = useState<{ id: string; name: string } | null>(null);
   const [templatePendingDelete, setTemplatePendingDelete] = useState<{ id: string; name: string } | null>(null);
 
@@ -339,7 +338,7 @@ export function AdvancedSection() {
         </View>
       ) : null}
 
-      <Prompt.Basic
+      <Dialog
         control={filterDelete}
         title="Delete filter?"
         description={
@@ -347,12 +346,13 @@ export function AdvancedSection() {
             ? `"${filterPendingDelete.name}" will no longer run on new messages.`
             : ''
         }
-        confirmButtonCta="Delete"
-        confirmButtonColor="negative"
-        onConfirm={handleDeleteFilter}
+        actions={[
+          { label: 'Delete', color: 'destructive', onPress: handleDeleteFilter },
+          { label: 'Cancel', color: 'cancel' },
+        ]}
       />
 
-      <Prompt.Basic
+      <Dialog
         control={templateDelete}
         title="Delete template?"
         description={
@@ -360,9 +360,10 @@ export function AdvancedSection() {
             ? `"${templatePendingDelete.name}" will be removed from your saved templates.`
             : ''
         }
-        confirmButtonCta="Delete"
-        confirmButtonColor="negative"
-        onConfirm={handleDeleteTemplate}
+        actions={[
+          { label: 'Delete', color: 'destructive', onPress: handleDeleteTemplate },
+          { label: 'Cancel', color: 'cancel' },
+        ]}
       />
     </KeyboardAvoidingView>
   );

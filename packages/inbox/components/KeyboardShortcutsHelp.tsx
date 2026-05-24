@@ -7,7 +7,7 @@
 
 import React from 'react';
 import { View, StyleSheet } from 'react-native';
-import * as Prompt from '@oxyhq/bloom/prompt';
+import { Dialog, type DialogControlProps } from '@oxyhq/bloom';
 import { Text } from '@oxyhq/bloom/typography';
 import { useColors } from '@/constants/theme';
 
@@ -32,31 +32,30 @@ const SHORTCUTS: ShortcutRow[] = [
 ];
 
 interface KeyboardShortcutsHelpProps {
-  control: Prompt.PromptControlProps;
+  control: DialogControlProps;
 }
 
 export function KeyboardShortcutsHelp({ control }: KeyboardShortcutsHelpProps) {
   const colors = useColors();
 
   return (
-    <Prompt.Outer control={control} testID="keyboard-shortcuts-help">
-      <Prompt.Content>
-        <Prompt.TitleText>Keyboard shortcuts</Prompt.TitleText>
-        <View style={styles.list}>
-          {SHORTCUTS.map((row) => (
-            <View key={row.key} style={styles.row}>
-              <View style={[styles.kbd, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                <Text style={[styles.kbdLabel, { color: colors.text }]}>{row.key}</Text>
-              </View>
-              <Text style={[styles.action, { color: colors.text }]}>{row.action}</Text>
+    <Dialog
+      control={control}
+      testID="keyboard-shortcuts-help"
+      title="Keyboard shortcuts"
+      actions={[{ label: 'Close', color: 'cancel' }]}
+    >
+      <View style={styles.list}>
+        {SHORTCUTS.map((row) => (
+          <View key={row.key} style={styles.row}>
+            <View style={[styles.kbd, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <Text style={[styles.kbdLabel, { color: colors.text }]}>{row.key}</Text>
             </View>
-          ))}
-        </View>
-      </Prompt.Content>
-      <Prompt.Actions>
-        <Prompt.Cancel cta="Close" />
-      </Prompt.Actions>
-    </Prompt.Outer>
+            <Text style={[styles.action, { color: colors.text }]}>{row.action}</Text>
+          </View>
+        ))}
+      </View>
+    </Dialog>
   );
 }
 

@@ -11,9 +11,7 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import type { BaseScreenProps } from '../types/navigation';
-import { toast } from '../../lib/sonner';
-import * as Prompt from '@oxyhq/bloom/prompt';
-import { usePromptControl } from '@oxyhq/bloom/prompt';
+import { Dialog, toast, useDialogControl } from '@oxyhq/bloom';
 import { useAuthStore } from '../stores/authStore';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 import { useI18n } from '../hooks/useI18n';
@@ -55,8 +53,8 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
     const { data: user, isLoading: userLoading } = useCurrentUser({ enabled: isAuthenticated });
     const uploadAvatarMutation = useUploadAvatar();
 
-    // Prompt controls
-    const removeAvatarPrompt = usePromptControl();
+    // Dialog controls
+    const removeAvatarDialog = useDialogControl();
 
     // Fall back to the auth store while the query is loading so the screen
     // can render immediately with cached profile data on subsequent visits.
@@ -270,8 +268,8 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
     }, [t]);
 
     const handleAvatarRemove = useCallback(() => {
-        removeAvatarPrompt.open();
-    }, [removeAvatarPrompt]);
+        removeAvatarDialog.open();
+    }, [removeAvatarDialog]);
 
     const { openAvatarPicker } = useOxy();
 
@@ -385,7 +383,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                                         bottom: 0,
                                                         justifyContent: 'center',
                                                         alignItems: 'center',
-                                                        backgroundColor: colorScheme === 'dark' ? 'rgba(0, 0, 0, 0.4)' : 'rgba(255, 255, 255, 0.7)',
+                                                        backgroundColor: bloomTheme.colors.overlay,
                                                         borderRadius: 18,
                                                     }}>
                                                         <ActivityIndicator size="small" color={colors.tint} />
@@ -551,13 +549,18 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                             </View>
                         </View>
             </ScrollView>
-            <Prompt.Basic
-                control={removeAvatarPrompt}
+            <Dialog
+                control={removeAvatarDialog}
                 title={t('editProfile.confirms.removeAvatarTitle') || 'Remove Avatar'}
                 description={t('editProfile.confirms.removeAvatar') || 'Remove your profile picture?'}
-                onConfirm={handleAvatarRemoveConfirmed}
-                confirmButtonCta={t('common.remove') || 'Remove'}
-                confirmButtonColor='negative'
+                actions={[
+                    {
+                        label: t('common.remove') || 'Remove',
+                        color: 'destructive',
+                        onPress: handleAvatarRemoveConfirmed,
+                    },
+                    { label: t('common.cancel') || 'Cancel', color: 'cancel' },
+                ]}
             />
         </View>
     );

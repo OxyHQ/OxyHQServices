@@ -19,7 +19,7 @@ import { Header } from '../components';
 import { useI18n } from '../hooks/useI18n';
 import { useOxy } from '../context/OxyContext';
 import { useProfileEditing } from '../hooks/useProfileEditing';
-import { toast } from '../../lib/sonner';
+import { toast } from '@oxyhq/bloom';
 import { EMAIL_REGEX } from '@oxyhq/core';
 
 /**

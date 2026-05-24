@@ -12,9 +12,7 @@ import {
     Dimensions,
 } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
-import { toast } from '../../lib/sonner';
-import * as Prompt from '@oxyhq/bloom/prompt';
-import { usePromptControl } from '@oxyhq/bloom/prompt';
+import { Dialog, toast, useDialogControl } from '@oxyhq/bloom';
 import { Ionicons } from '@expo/vector-icons';
 import Avatar from '../components/Avatar';
 import { useI18n } from '../hooks/useI18n';
@@ -85,8 +83,8 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
     const bloomTheme = useTheme();
 
     // Prompt controls
-    const cancelSubscriptionPrompt = usePromptControl();
-    const unsubscribeFeaturePrompt = usePromptControl();
+    const cancelSubscriptionDialog = useDialogControl();
+    const unsubscribeFeatureDialog = useDialogControl();
 
     // Extract commonly used colors for readability
     const textColor = bloomTheme.colors.text;
@@ -414,8 +412,8 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
     };
 
     const confirmCancelSubscription = useCallback(() => {
-        cancelSubscriptionPrompt.open();
-    }, [cancelSubscriptionPrompt]);
+        cancelSubscriptionDialog.open();
+    }, [cancelSubscriptionDialog]);
 
     const handleCancelSubscription = useCallback(async () => {
         try {
@@ -501,8 +499,8 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
 
     const confirmFeatureUnsubscribe = useCallback((featureId: string) => {
         setPendingUnsubscribeFeatureId(featureId);
-        unsubscribeFeaturePrompt.open();
-    }, [unsubscribeFeaturePrompt]);
+        unsubscribeFeatureDialog.open();
+    }, [unsubscribeFeatureDialog]);
 
     const handleFeatureUnsubscribe = useCallback(async () => {
         if (!pendingUnsubscribeFeatureId) return;
@@ -1110,21 +1108,23 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
 
                 <View style={styles.bottomSpacing} />
             </ScrollView>
-            <Prompt.Basic
-                control={cancelSubscriptionPrompt}
+            <Dialog
+                control={cancelSubscriptionDialog}
                 title={t('premium.confirms.cancelSubTitle') || 'Cancel Subscription'}
                 description={t('premium.confirms.cancelSub') || 'Are you sure you want to cancel your subscription? You will lose access to premium features at the end of your current billing period.'}
-                onConfirm={handleCancelSubscription}
-                confirmButtonCta={t('premium.actions.cancelSubBtn') || 'Cancel Subscription'}
-                confirmButtonColor='negative'
+                actions={[
+                    { label: t('premium.actions.cancelSubBtn') || 'Cancel Subscription', color: 'destructive', onPress: handleCancelSubscription },
+                    { label: t('common.cancel') || 'Cancel', color: 'cancel' },
+                ]}
             />
-            <Prompt.Basic
-                control={unsubscribeFeaturePrompt}
+            <Dialog
+                control={unsubscribeFeatureDialog}
                 title={t('premium.confirms.unsubscribeFeatureTitle') || 'Unsubscribe from Feature'}
                 description={pendingUnsubscribeFeature ? (t('premium.confirms.unsubscribeFeature', { name: pendingUnsubscribeFeature.name }) ?? `Are you sure you want to unsubscribe from ${pendingUnsubscribeFeature.name}?`) : ''}
-                onConfirm={handleFeatureUnsubscribe}
-                confirmButtonCta={t('premium.actions.unsubscribe') || 'Unsubscribe'}
-                confirmButtonColor='negative'
+                actions={[
+                    { label: t('premium.actions.unsubscribe') || 'Unsubscribe', color: 'destructive', onPress: handleFeatureUnsubscribe },
+                    { label: t('common.cancel') || 'Cancel', color: 'cancel' },
+                ]}
             />
         </View>
     );

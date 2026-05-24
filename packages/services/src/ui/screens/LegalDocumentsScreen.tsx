@@ -6,7 +6,7 @@ import {
     Linking,
 } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
-import { toast } from '../../lib/sonner';
+import { toast } from '@oxyhq/bloom';
 import { Header, LoadingState } from '../components';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 import { SettingsIcon } from '../components/SettingsIcon';

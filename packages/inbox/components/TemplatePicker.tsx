@@ -15,7 +15,7 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import { NoteEditIcon } from '@hugeicons/core-free-icons';
-import * as Dialog from '@oxyhq/bloom/dialog';
+import { Dialog, useDialogControl } from '@oxyhq/bloom';
 
 import { useColors } from '@/constants/theme';
 import { useTemplates } from '@/hooks/queries/useTemplates';
@@ -28,7 +28,7 @@ interface TemplatePickerProps {
 export function TemplatePicker({ onSelect }: TemplatePickerProps) {
   const colors = useColors();
   const { data: templates = [] } = useTemplates();
-  const control = Dialog.useDialogControl();
+  const control = useDialogControl();
 
   const handleSelect = useCallback(
     (template: EmailTemplate) => {
@@ -62,30 +62,27 @@ export function TemplatePicker({ onSelect }: TemplatePickerProps) {
         )}
       </TouchableOpacity>
 
-      <Dialog.Outer control={control}>
-        <Dialog.Handle />
-        <Dialog.Inner label="Insert Template" contentContainerStyle={{ padding: 0 }}>
-          <Text style={[styles.dropdownTitle, { color: colors.secondaryText }]}>
-            Insert Template
-          </Text>
-          <ScrollView style={styles.dropdownScroll} bounces={false}>
-            {templates.map((tpl) => (
-              <TouchableOpacity
-                key={tpl._id}
-                style={[styles.dropdownItem, { borderBottomColor: colors.border }]}
-                onPress={() => handleSelect(tpl)}
-              >
-                <Text style={[styles.itemName, { color: colors.text }]} numberOfLines={1}>
-                  {tpl.name}
-                </Text>
-                <Text style={[styles.itemPreview, { color: colors.secondaryText }]} numberOfLines={1}>
-                  {tpl.body.replace(/\n/g, ' ').slice(0, 60)}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </Dialog.Inner>
-      </Dialog.Outer>
+      <Dialog control={control} label="Insert Template" style={{ padding: 0 }}>
+        <Text style={[styles.dropdownTitle, { color: colors.secondaryText }]}>
+          Insert Template
+        </Text>
+        <ScrollView style={styles.dropdownScroll} bounces={false}>
+          {templates.map((tpl) => (
+            <TouchableOpacity
+              key={tpl._id}
+              style={[styles.dropdownItem, { borderBottomColor: colors.border }]}
+              onPress={() => handleSelect(tpl)}
+            >
+              <Text style={[styles.itemName, { color: colors.text }]} numberOfLines={1}>
+                {tpl.name}
+              </Text>
+              <Text style={[styles.itemPreview, { color: colors.secondaryText }]} numberOfLines={1}>
+                {tpl.body.replace(/\n/g, ' ').slice(0, 60)}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </Dialog>
     </View>
   );
 }

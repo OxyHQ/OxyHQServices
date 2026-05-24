@@ -16,8 +16,7 @@ import {
   Platform,
 } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
-import * as Prompt from '@oxyhq/bloom/prompt';
-import * as Dialog from '@oxyhq/bloom/dialog';
+import { Dialog, useDialogControl } from '@oxyhq/bloom';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import {
@@ -30,7 +29,8 @@ import {
 } from '@hugeicons/core-free-icons';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useOxy, toast } from '@oxyhq/services';
+import { useOxy } from '@oxyhq/services';
+import { toast } from '@oxyhq/bloom';
 
 import { useColors } from '@/constants/theme';
 import { useEmailStore } from '@/hooks/useEmail';
@@ -300,15 +300,15 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
     );
   }, [to, cc, bcc, subject, body, replyTo, saveDraftMutation, router]);
 
-  const saveDraftPrompt = Prompt.usePromptControl();
+  const saveDraftDialog = useDialogControl();
 
   const handleClose = useCallback(() => {
     if (hasContent) {
-      saveDraftPrompt.open();
+      saveDraftDialog.open();
     } else {
       router.back();
     }
-  }, [hasContent, saveDraftPrompt, router]);
+  }, [hasContent, saveDraftDialog, router]);
 
   const formatSize = (bytes: number) => {
     if (bytes < 1024) return `${bytes} B`;
@@ -354,7 +354,7 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
 
   // Schedule Send state
   const [showScheduleSheet, setShowScheduleSheet] = useState(false);
-  const sendMenuControl = Dialog.useDialogControl();
+  const sendMenuControl = useDialogControl();
 
   const handleScheduleSend = useCallback((scheduledDate: Date) => {
     if (!to.trim()) {
@@ -528,41 +528,38 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
       </View>
 
       {/* Send-options menu */}
-      <Dialog.Outer control={sendMenuControl}>
-        <Dialog.Handle />
-        <Dialog.Inner label="Send options" contentContainerStyle={{ padding: 0 }}>
-          <TouchableOpacity
-            style={styles.sendMenuItem}
-            onPress={() => {
-              sendMenuControl.close();
-              handleSend();
-            }}
-            activeOpacity={0.6}
-          >
-            {Platform.OS === 'web' ? (
-              <HugeiconsIcon icon={MailSend01Icon as unknown as IconSvgElement} size={18} color={colors.icon} />
-            ) : (
-              <MaterialCommunityIcons name="send" size={18} color={colors.icon} />
-            )}
-            <Text style={[styles.sendMenuItemText, { color: colors.text }]}>Send now</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.sendMenuItem}
-            onPress={() => {
-              sendMenuControl.close();
-              setShowScheduleSheet(true);
-            }}
-            activeOpacity={0.6}
-          >
-            {Platform.OS === 'web' ? (
-              <HugeiconsIcon icon={Clock01Icon as unknown as IconSvgElement} size={18} color={colors.icon} />
-            ) : (
-              <MaterialCommunityIcons name="clock-outline" size={18} color={colors.icon} />
-            )}
-            <Text style={[styles.sendMenuItemText, { color: colors.text }]}>Schedule send</Text>
-          </TouchableOpacity>
-        </Dialog.Inner>
-      </Dialog.Outer>
+      <Dialog control={sendMenuControl} label="Send options" style={{ padding: 0 }}>
+        <TouchableOpacity
+          style={styles.sendMenuItem}
+          onPress={() => {
+            sendMenuControl.close();
+            handleSend();
+          }}
+          activeOpacity={0.6}
+        >
+          {Platform.OS === 'web' ? (
+            <HugeiconsIcon icon={MailSend01Icon as unknown as IconSvgElement} size={18} color={colors.icon} />
+          ) : (
+            <MaterialCommunityIcons name="send" size={18} color={colors.icon} />
+          )}
+          <Text style={[styles.sendMenuItemText, { color: colors.text }]}>Send now</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.sendMenuItem}
+          onPress={() => {
+            sendMenuControl.close();
+            setShowScheduleSheet(true);
+          }}
+          activeOpacity={0.6}
+        >
+          {Platform.OS === 'web' ? (
+            <HugeiconsIcon icon={Clock01Icon as unknown as IconSvgElement} size={18} color={colors.icon} />
+          ) : (
+            <MaterialCommunityIcons name="clock-outline" size={18} color={colors.icon} />
+          )}
+          <Text style={[styles.sendMenuItemText, { color: colors.text }]}>Schedule send</Text>
+        </TouchableOpacity>
+      </Dialog>
 
       <ScrollView style={styles.form} keyboardShouldPersistTaps="handled">
         {/* From */}
@@ -742,17 +739,17 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
       />
 
       {/* Save as draft confirmation */}
-      <Prompt.Outer control={saveDraftPrompt} onClose={() => router.back()}>
-        <Prompt.Content>
-          <Prompt.TitleText>Save draft?</Prompt.TitleText>
-          <Prompt.DescriptionText>Do you want to save this message as a draft?</Prompt.DescriptionText>
-        </Prompt.Content>
-        <Prompt.Actions>
-          <Prompt.Action cta="Save" onPress={handleSaveDraft} color="primary" />
-          <Prompt.Action cta="Discard" onPress={() => router.back()} color="negative" />
-          <Prompt.Cancel />
-        </Prompt.Actions>
-      </Prompt.Outer>
+      <Dialog
+        control={saveDraftDialog}
+        onClose={() => router.back()}
+        title="Save draft?"
+        description="Do you want to save this message as a draft?"
+        actions={[
+          { label: 'Save', onPress: handleSaveDraft },
+          { label: 'Discard', color: 'destructive', onPress: () => router.back() },
+          { label: 'Cancel', color: 'cancel' },
+        ]}
+      />
     </KeyboardAvoidingView>
   );
 }

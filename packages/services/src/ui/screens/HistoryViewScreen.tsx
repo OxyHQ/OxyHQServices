@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import { View, StyleSheet, ScrollView } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
-import { toast } from '../../lib/sonner';
+import { toast } from '@oxyhq/bloom';
 import { Header, LoadingState, EmptyState } from '../components';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 import { SettingsIcon } from '../components/SettingsIcon';
@@ -11,8 +11,7 @@ import { useColorScheme } from '../hooks/useColorScheme';
 import { Colors } from '../constants/theme';
 import { normalizeColorScheme } from '../utils/themeUtils';
 import { useOxy } from '../context/OxyContext';
-import * as Prompt from '@oxyhq/bloom/prompt';
-import { usePromptControl } from '@oxyhq/bloom/prompt';
+import { Dialog, useDialogControl } from '@oxyhq/bloom';
 
 interface HistoryItem { id: string; query: string; type: 'search' | 'browse'; timestamp: Date; }
 
@@ -26,8 +25,8 @@ const HistoryViewScreen: React.FC<BaseScreenProps> = ({ onClose, theme, goBack }
     const [history, setHistory] = useState<HistoryItem[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isDeleting, setIsDeleting] = useState(false);
-    const deleteLast15Prompt = usePromptControl();
-    const clearAllPrompt = usePromptControl();
+    const deleteLast15Dialog = useDialogControl();
+    const clearAllDialog = useDialogControl();
 
     const getStorage = async () => {
         const isRN = typeof navigator !== 'undefined' && navigator.product === 'ReactNative';
@@ -100,14 +99,14 @@ const HistoryViewScreen: React.FC<BaseScreenProps> = ({ onClose, theme, goBack }
                         icon={<SettingsIcon name="clock-outline" color={themeColors.iconStorage} />}
                         title={t('history.deleteLast15Minutes.title') || 'Delete Last 15 Minutes'}
                         description={t('history.deleteLast15Minutes.subtitle') || 'Remove recent history entries'}
-                        onPress={() => deleteLast15Prompt.open()}
+                        onPress={() => deleteLast15Dialog.open()}
                         disabled={isDeleting || history.length === 0}
                     />
                     <SettingsListItem
                         icon={<SettingsIcon name="delete-outline" color={themeColors.iconSharing} />}
                         title={t('history.clearAll.title') || 'Clear All History'}
                         description={t('history.clearAll.subtitle') || 'Remove all history entries'}
-                        onPress={() => clearAllPrompt.open()}
+                        onPress={() => clearAllDialog.open()}
                         disabled={isDeleting || history.length === 0}
                     />
                 </SettingsListGroup>
@@ -124,8 +123,24 @@ const HistoryViewScreen: React.FC<BaseScreenProps> = ({ onClose, theme, goBack }
                     ))}
                 </SettingsListGroup>
             </ScrollView>
-            <Prompt.Basic control={deleteLast15Prompt} title={t('history.deleteLast15Minutes.title') || 'Delete Last 15 Minutes'} description={t('history.deleteLast15Minutes.confirm') || 'Delete last 15 minutes of history?'} onConfirm={handleDeleteLast15Minutes} confirmButtonCta={t('common.actions.delete') || 'Delete'} confirmButtonColor="negative" />
-            <Prompt.Basic control={clearAllPrompt} title={t('history.clearAll.title') || 'Clear All History'} description={t('history.clearAll.confirm') || 'Clear all history? This cannot be undone.'} onConfirm={handleClearAll} confirmButtonCta={t('history.clearAll.title') || 'Clear All'} confirmButtonColor="negative" />
+            <Dialog
+                control={deleteLast15Dialog}
+                title={t('history.deleteLast15Minutes.title') || 'Delete Last 15 Minutes'}
+                description={t('history.deleteLast15Minutes.confirm') || 'Delete last 15 minutes of history?'}
+                actions={[
+                    { label: t('common.actions.delete') || 'Delete', color: 'destructive', onPress: handleDeleteLast15Minutes },
+                    { label: t('common.cancel') || 'Cancel', color: 'cancel' },
+                ]}
+            />
+            <Dialog
+                control={clearAllDialog}
+                title={t('history.clearAll.title') || 'Clear All History'}
+                description={t('history.clearAll.confirm') || 'Clear all history? This cannot be undone.'}
+                actions={[
+                    { label: t('history.clearAll.title') || 'Clear All', color: 'destructive', onPress: handleClearAll },
+                    { label: t('common.cancel') || 'Cancel', color: 'cancel' },
+                ]}
+            />
         </View>
     );
 };

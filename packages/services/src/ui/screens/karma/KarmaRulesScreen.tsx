@@ -40,14 +40,14 @@ const KarmaRulesScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
             {isLoading ? (
                 <ActivityIndicator size="large" color={primaryColor} style={{ marginTop: 40 }} />
             ) : error ? (
-                <Text style={[styles.error, { color: '#D32F2F' }]}>{error}</Text>
+                <Text style={[styles.error, { color: bloomTheme.colors.error }]}>{error}</Text>
             ) : (
                 <ScrollView contentContainerStyle={styles.listContainer}>
                     {rules.length === 0 ? (
                         <Text style={[styles.placeholder, { color: bloomTheme.colors.text }]}>{t('karma.rules.empty') || 'No rules found.'}</Text>
                     ) : (
                         rules.map((rule, idx) => (
-                            <View key={rule.id || idx} style={styles.ruleRow}>
+                            <View key={rule.id || idx} style={[styles.ruleRow, { borderColor: bloomTheme.colors.border }]}>
                                 <Text style={[styles.ruleDesc, { color: bloomTheme.colors.text }]}>{rule.description}</Text>
                             </View>
                         ))
@@ -65,10 +65,9 @@ const styles = StyleSheet.create({
         paddingVertical: 14,
         paddingHorizontal: 24,
         borderBottomWidth: 1,
-        borderColor: '#eee',
     },
     ruleDesc: { fontSize: 16 },
-    placeholder: { fontSize: 16, color: '#888', textAlign: 'center', marginTop: 40 },
+    placeholder: { fontSize: 16, textAlign: 'center', marginTop: 40 },
     error: { fontSize: 16, textAlign: 'center', marginTop: 40 },
 });
 

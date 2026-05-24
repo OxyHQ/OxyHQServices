@@ -1,7 +1,7 @@
 import type { AssetUploadInput, FileMetadata, RNFileDescriptor } from '@oxyhq/core';
 import { File as ExpoFile } from 'expo-file-system';
 import { Platform } from 'react-native';
-import { toast } from '../../lib/sonner';
+import { toast } from '@oxyhq/bloom';
 import type { RouteName } from '../navigation/routes';
 import { updateAvatarVisibility } from '@oxyhq/core';
 

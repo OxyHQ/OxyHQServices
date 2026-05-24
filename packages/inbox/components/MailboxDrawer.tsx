@@ -21,7 +21,7 @@ import { useRouter, usePathname } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import { Badge } from '@oxyhq/bloom/badge';
-import * as Dialog from '@oxyhq/bloom/dialog';
+import { Dialog, useDialogControl } from '@oxyhq/bloom';
 import {
   Home01Icon,
   FavouriteIcon,
@@ -169,7 +169,7 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
   const { user, isAuthenticated } = useOxy();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const accountSwitcherControl = Dialog.useDialogControl();
+  const accountSwitcherControl = useDialogControl();
 
   const handleOpenMenu = useCallback(() => {
     accountSwitcherControl.open();
@@ -635,20 +635,17 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
 
       {/* Account switcher dialog (only mounted when signed-in) */}
       {isAuthenticated && (
-        <Dialog.Outer control={accountSwitcherControl}>
-          <Dialog.Handle />
-          <Dialog.Inner label="Account Switcher">
-            <AccountSwitcher
-              onClose={() => accountSwitcherControl.close()}
-              onSettings={() => {
-                accountSwitcherControl.close();
-                router.push('/settings');
-                onClose?.();
-              }}
-              onAddAccount={handleAddAccount}
-            />
-          </Dialog.Inner>
-        </Dialog.Outer>
+        <Dialog control={accountSwitcherControl} label="Account Switcher">
+          <AccountSwitcher
+            onClose={() => accountSwitcherControl.close()}
+            onSettings={() => {
+              accountSwitcherControl.close();
+              router.push('/settings');
+              onClose?.();
+            }}
+            onAddAccount={handleAddAccount}
+          />
+        </Dialog>
       )}
     </View>
   );

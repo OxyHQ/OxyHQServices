@@ -6,7 +6,7 @@ import {
     Linking,
 } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
-import { toast } from '../../lib/sonner';
+import { toast } from '@oxyhq/bloom';
 import { Header } from '../components';
 import { SettingsIcon } from '../components/SettingsIcon';
 import { useI18n } from '../hooks/useI18n';

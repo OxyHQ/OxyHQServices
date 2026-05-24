@@ -189,7 +189,7 @@ const KarmaRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
             case 'rare':
                 return '#007AFF';
             default:
-                return '#8E8E93';
+                return bloomTheme.colors.textTertiary;
         }
     };
 
@@ -218,7 +218,7 @@ const KarmaRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
 
         // Two-tone colors: darker for borders/shadow, lighter for highlights
         // Use achievement iconColor for unlocked badges, gray for locked
-        const baseColor = isLocked ? '#8E8E93' : (achievement.iconColor || '#8E8E93');
+        const baseColor = isLocked ? bloomTheme.colors.textTertiary : (achievement.iconColor || bloomTheme.colors.textTertiary);
         const darkTone = darkenColor(baseColor, 0.45); // Darker border/shadow (more contrast)
         const lightTone = lightenColor(baseColor, 0.25); // Lighter highlight
         const mediumTone = baseColor; // Base color
@@ -254,7 +254,7 @@ const KarmaRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
                             styles.badgeMain,
                             styles.badgeOrganic,
                             {
-                                backgroundColor: isLocked ? '#E5E5EA' : mediumTone,
+                                backgroundColor: isLocked ? bloomTheme.colors.border : mediumTone,
                                 borderColor: darkTone,
                                 borderWidth: 5,
                                 shadowColor: darkTone,
@@ -287,9 +287,9 @@ const KarmaRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
                         {/* Icon container - positioned in upper area */}
                         <View style={styles.badgeIconContainer}>
                             {isLocked ? (
-                                <Ionicons name="lock-closed" size={40} color="#8E8E93" />
+                                <Ionicons name="lock-closed" size={40} color={bloomTheme.colors.textTertiary} />
                             ) : (
-                                <Ionicons name={achievement.icon as React.ComponentProps<typeof Ionicons>['name']} size={40} color="#FFFFFF" />
+                                <Ionicons name={achievement.icon as React.ComponentProps<typeof Ionicons>['name']} size={40} color={bloomTheme.colors.negativeForeground} />
                             )}
                         </View>
 
@@ -314,7 +314,7 @@ const KarmaRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
                     {/* Rarity badge - small accent in corner */}
                     {achievement.unlocked && (
                         <View style={[styles.rarityBadge, { backgroundColor: rarityColor, borderColor: darkenColor(rarityColor, 0.4) }]}>
-                            <Text style={styles.rarityText}>{achievement.rarity[0].toUpperCase()}</Text>
+                            <Text style={[styles.rarityText, { color: bloomTheme.colors.negativeForeground }]}>{achievement.rarity[0].toUpperCase()}</Text>
                         </View>
                     )}
                 </View>
@@ -322,7 +322,7 @@ const KarmaRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
                 <Text style={[styles.achievementName, { color: bloomTheme.colors.text, opacity: isLocked ? 0.5 : 1 }]}>
                     {achievement.name}
                 </Text>
-                <Text style={[styles.achievementDescription, { color: bloomTheme.isDark ? '#BBBBBB' : '#888888', opacity: isLocked ? 0.5 : 1 }]}>
+                <Text style={[styles.achievementDescription, { color: bloomTheme.colors.textTertiary, opacity: isLocked ? 0.5 : 1 }]}>
                     {achievement.description}
                 </Text>
             </View>
@@ -366,7 +366,7 @@ const KarmaRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
                             <Text style={[styles.currentKarma, { color: themeStyles.primaryColor }]}>
                                 {karmaTotal}
                             </Text>
-                            <Text style={[styles.karmaLabel, { color: bloomTheme.isDark ? '#BBBBBB' : '#888888' }]}>
+                            <Text style={[styles.karmaLabel, { color: bloomTheme.colors.textTertiary }]}>
                                 {t('karma.center.balance') || 'Karma Points'}
                             </Text>
                         </View>
@@ -374,7 +374,7 @@ const KarmaRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
                             <Text style={[styles.achievementCount, { color: themeStyles.primaryColor }]}>
                                 {unlockedAchievements.length}
                             </Text>
-                            <Text style={[styles.achievementCountLabel, { color: bloomTheme.isDark ? '#BBBBBB' : '#888888' }]}>
+                            <Text style={[styles.achievementCountLabel, { color: bloomTheme.colors.textTertiary }]}>
                                 {t('karma.achievements.unlocked') || 'Achievements'}
                             </Text>
                         </View>
@@ -391,7 +391,7 @@ const KarmaRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
                                 ]}
                             />
                         </View>
-                        <Text style={[styles.progressText, { color: bloomTheme.isDark ? '#BBBBBB' : '#888888' }]}>
+                        <Text style={[styles.progressText, { color: bloomTheme.colors.textTertiary }]}>
                             {unlockedAchievements.length} / {achievements.length}
                         </Text>
                     </View>
@@ -609,7 +609,6 @@ const styles = StyleSheet.create({
     rarityText: {
         fontSize: 14,
         fontWeight: 'bold',
-        color: '#FFFFFF',
     },
     achievementName: {
         fontSize: 15,

@@ -3,7 +3,7 @@ import type { ClientSession } from '@oxyhq/core';
 import { queryKeys, invalidateSessionQueries } from '../queries/queryKeys';
 import { mutationKeys } from './mutationKeys';
 import { useOxy } from '../../context/OxyContext';
-import { toast } from '../../../lib/sonner';
+import { toast } from '@oxyhq/bloom';
 
 /**
  * Switch active session

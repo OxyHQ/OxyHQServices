@@ -19,7 +19,8 @@ import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import { PencilEdit01Icon } from '@hugeicons/core-free-icons';
 import { useRouter, useNavigation } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useOxy, OxySignInButton, toast } from '@oxyhq/services';
+import { useOxy, OxySignInButton } from '@oxyhq/services';
+import { toast } from '@oxyhq/bloom';
 
 import { useColors } from '@/constants/theme';
 import { SPECIAL_USE } from '@/constants/mailbox';

@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
 import { packageInfo } from '@oxyhq/core';
-import { toast } from '../../lib/sonner';
+import { toast } from '@oxyhq/bloom';
 import { Ionicons } from '@expo/vector-icons';
 import OxyServicesLogo from '../../assets/icons/OxyServices';
 import { SettingsIcon } from '../components/SettingsIcon';

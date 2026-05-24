@@ -10,9 +10,7 @@ import {
 import { useCallback, useMemo } from 'react';
 import type { BaseScreenProps } from '../types/navigation';
 import { packageInfo } from '@oxyhq/core';
-import { toast } from '../../lib/sonner';
-import * as Prompt from '@oxyhq/bloom/prompt';
-import { usePromptControl } from '@oxyhq/bloom/prompt';
+import { Dialog, toast, useDialogControl } from '@oxyhq/bloom';
 import ProfileCard from '../components/ProfileCard';
 import QuickActions from '../components/QuickActions';
 import { SettingsIcon } from '../components/SettingsIcon';
@@ -37,7 +35,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
     const normalizedTheme = normalizeTheme(theme);
     const dangerColor = bloomTheme.colors.error;
     const colors = Colors[normalizeColorScheme(colorScheme, normalizedTheme)];
-    const logoutPrompt = usePromptControl();
+    const logoutDialog = useDialogControl();
 
     const handleLogout = useCallback(async () => {
         try {
@@ -133,14 +131,14 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                     ) : null}
                     <SettingsListItem icon={<SettingsIcon name="translate" color={colors.iconPersonalInfo} />} title={t('language.title') || 'Language'} description={t('language.subtitle') || 'Choose your preferred language'} onPress={() => navigate?.('LanguageSelector')} />
                     <SettingsListItem icon={<SettingsIcon name="help-circle" color={colors.iconSecurity} />} title={t('accountOverview.items.help.title') || 'Help & Support'} description={t('accountOverview.items.help.subtitle') || 'Get help and contact support'} onPress={() => navigate?.('HelpSupport')} />
-                    <SettingsListItem icon={<SettingsIcon name="information" color="#8E8E93" />} title={t('accountCenter.items.appInfo.title') || 'App Information'} description={t('accountCenter.items.appInfo.subtitle') || 'Version and system details'} onPress={() => navigate?.('AppInfo')} />
+                    <SettingsListItem icon={<SettingsIcon name="information" color={bloomTheme.colors.textTertiary} />} title={t('accountCenter.items.appInfo.title') || 'App Information'} description={t('accountCenter.items.appInfo.subtitle') || 'Version and system details'} onPress={() => navigate?.('AppInfo')} />
                 </SettingsListGroup>
 
                 <SettingsListGroup>
                     <SettingsListItem
                         icon={<SettingsIcon name="logout" color={dangerColor} />}
                         title={isLoading ? (t('accountCenter.signingOut') || 'Signing out...') : (t('common.actions.signOut') || 'Sign Out')}
-                        onPress={() => logoutPrompt.open()}
+                        onPress={() => logoutDialog.open()}
                         destructive={true}
                         showChevron={false}
                         disabled={isLoading}
@@ -155,13 +153,18 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                 </View>
             </ScrollView>
 
-            <Prompt.Basic
-                control={logoutPrompt}
+            <Dialog
+                control={logoutDialog}
                 title={t('common.actions.signOut') || 'Sign Out'}
                 description={t('common.confirms.signOut') || 'Are you sure you want to sign out?'}
-                onConfirm={handleLogout}
-                confirmButtonCta={t('common.actions.signOut') || 'Sign Out'}
-                confirmButtonColor="negative"
+                actions={[
+                    {
+                        label: t('common.actions.signOut') || 'Sign Out',
+                        color: 'destructive',
+                        onPress: handleLogout,
+                    },
+                    { label: t('common.cancel') || 'Cancel', color: 'cancel' },
+                ]}
             />
         </View>
     );

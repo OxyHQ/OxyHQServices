@@ -17,7 +17,7 @@ interface QuickActionsProps {
 }
 
 const QuickActions: React.FC<QuickActionsProps> = ({ actions, theme }) => {
-    const { isDark } = useTheme();
+    const { colors } = useTheme();
 
     return (
         <View
@@ -34,7 +34,7 @@ const QuickActions: React.FC<QuickActionsProps> = ({ actions, theme }) => {
                         <TouchableOpacity
                             style={[
                                 styles.quickActionCircle,
-                                { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.03)' }
+                                { backgroundColor: colors.backgroundTertiary }
                             ]}
                             onPress={action.onPress}
                         >

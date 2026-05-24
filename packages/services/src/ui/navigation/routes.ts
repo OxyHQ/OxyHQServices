@@ -1,4 +1,4 @@
-import type { ComponentType } from 'react';
+import type { ComponentType, ReactNode } from 'react';
 import type { BaseScreenProps } from '../types/navigation';
 
 // Lazy loading: Screens are loaded on-demand to break require cycles
@@ -122,8 +122,8 @@ export const isValidRoute = (routeName: string): routeName is RouteName => {
 
 /**
  * Configuration that BottomSheetRouter applies to the underlying BottomSheet
- * for a given route. Right now this only controls scrolling, but more options
- * (e.g. detached, custom snap points) can land here over time.
+ * for a given route. Adding new options here is additive — never rename or
+ * remove fields without bumping the consumer surface as a breaking change.
  */
 export interface SheetRouteConfig {
     /**
@@ -133,6 +133,32 @@ export interface SheetRouteConfig {
      * plain ScrollView breaks windowing and triggers a RN warning.
      */
     scrollable: boolean;
+    /**
+     * Controls the body-pan activation strategy on the underlying bloom
+     * `BottomSheet`. `true` uses RNGH's `manualActivation` with scroll-handoff
+     * (recommended for scrollable content — the only RNGH 2.x pattern that
+     * doesn't steal vertical events from the inner scroller on Android).
+     * `false` uses an always-active body pan that gates on scroll offset.
+     *
+     * Defaults to `true` for all routes — matches the historical in-tree
+     * BottomSheet behavior. Per-route opt-out is possible if a screen needs
+     * the always-active pan instead.
+     */
+    manualActivation: boolean;
+    /**
+     * When `true`, the backdrop dims proportionally with drag distance (iOS
+     * Photos style). Defaults to `true` for all routes — matches the
+     * historical in-tree BottomSheet behavior.
+     */
+    dynamicBackdrop: boolean;
+    /**
+     * Optional custom handle slot. When provided, replaces the default
+     * 36×5 pill drag handle. The handle remains unconditionally draggable
+     * via the dedicated handle gesture (when `manualActivation` is `true`).
+     * Use sparingly — screens should default to the standard handle for
+     * platform consistency.
+     */
+    handleComponent?: () => ReactNode;
 }
 
 /**
@@ -157,18 +183,28 @@ const isFileManagementImageOnlyPicker = (props: Record<string, unknown>): boolea
     return blocksVideos && blocksAudio && blocksDocs;
 };
 
+/** Defaults shared across all routes — preserves the historical in-tree BS UX. */
+const DEFAULT_SHEET_CONFIG: SheetRouteConfig = {
+    scrollable: true,
+    manualActivation: true,
+    dynamicBackdrop: true,
+};
+
 /**
- * Returns the bottom-sheet configuration for a route. Defaults to a scrollable
- * sheet (existing behavior); routes opt out by returning `scrollable: false`
- * either unconditionally or conditionally on the supplied `screenProps`.
+ * Returns the bottom-sheet configuration for a route. Defaults match the
+ * pre-refactor in-tree `BottomSheet` (scrollable, manualActivation,
+ * dynamicBackdrop). Routes opt out per-field as needed.
  */
 export const getSheetConfig = (
     routeName: RouteName | null,
     screenProps: Record<string, unknown>,
 ): SheetRouteConfig => {
-    if (!routeName) return { scrollable: true };
+    if (!routeName) return DEFAULT_SHEET_CONFIG;
     if (routeName === 'FileManagement' && isFileManagementImageOnlyPicker(screenProps)) {
-        return { scrollable: false };
+        // PhotoPickerView owns its own FlatList — the sheet must not wrap a
+        // ScrollView around it. Everything else stays at the standard
+        // manualActivation + dynamicBackdrop defaults.
+        return { ...DEFAULT_SHEET_CONFIG, scrollable: false };
     }
-    return { scrollable: true };
+    return DEFAULT_SHEET_CONFIG;
 };

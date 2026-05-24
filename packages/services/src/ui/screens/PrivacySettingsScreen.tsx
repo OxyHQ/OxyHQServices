@@ -7,7 +7,7 @@ import {
     TouchableOpacity,
 } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
-import { toast } from '../../lib/sonner';
+import { toast } from '@oxyhq/bloom';
 import { Header, Avatar, LoadingState, EmptyState } from '../components';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 import { Switch } from '@oxyhq/bloom/switch';

@@ -14,10 +14,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { BaseScreenProps } from '../types/navigation';
 import OxyLogo from '../components/OxyLogo';
 import Avatar from '../components/Avatar';
-import { toast } from '../../lib/sonner';
+import { Dialog, toast, useDialogControl } from '@oxyhq/bloom';
 import { Ionicons } from '@expo/vector-icons';
-import * as Prompt from '@oxyhq/bloom/prompt';
-import { usePromptControl } from '@oxyhq/bloom/prompt';
 import { SettingsIcon } from '../components/SettingsIcon';
 import { useI18n } from '../hooks/useI18n';
 import { useTheme } from '@oxyhq/bloom/theme';
@@ -35,7 +33,6 @@ import {
     createScreenContentStyle,
 } from '../constants/spacing';
 import { DeleteAccountModal } from '../components/modals';
-import { useDialogControl } from '@oxyhq/bloom/dialog';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 
 // Optional Lottie import - gracefully handle if not available
@@ -87,9 +84,9 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
     const [additionalAccountsData, setAdditionalAccountsData] = useState<any[]>([]);
     const [loadingAdditionalAccounts, setLoadingAdditionalAccounts] = useState(false);
     const deleteAccountControl = useDialogControl();
-    const logoutPrompt = usePromptControl();
-    const signOutAllPrompt = usePromptControl();
-    const downloadDataPrompt = usePromptControl();
+    const logoutDialog = useDialogControl();
+    const signOutAllDialog = useDialogControl();
+    const downloadDataDialog = useDialogControl();
     const lottieRef = useRef<any>(null);
     const hasPlayedRef = useRef(false);
     const insets = useSafeAreaInsets();
@@ -194,7 +191,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
     const performDownload = useCallback(async (format: 'json' | 'csv') => {
         if (!oxyServices || !user) { toast.error(t('accountOverview.items.downloadData.error') || 'Service not available'); return; }
         try {
-            toast.loading(t('accountOverview.items.downloadData.downloading') || 'Preparing download...');
+            toast.info(t('accountOverview.items.downloadData.downloading') || 'Preparing download...');
             const blob = await oxyServices.downloadAccountData(format);
             if (Platform.OS === 'web') {
                 const url = URL.createObjectURL(blob);
@@ -215,8 +212,8 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
 
     const handleDownloadData = useCallback(() => {
         if (!oxyServices || !user) { toast.error(t('accountOverview.items.downloadData.error') || 'Service not available'); return; }
-        downloadDataPrompt.open();
-    }, [oxyServices, user, t, downloadDataPrompt]);
+        downloadDataDialog.open();
+    }, [oxyServices, user, t, downloadDataDialog]);
 
     const handleDeleteAccount = useCallback(() => {
         if (!user) {
@@ -428,7 +425,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                             icon={<SettingsIcon name="logout" color={baseThemeColors.iconSharing} />}
                             title={t('accountOverview.items.signOutAll.title') || 'Sign out of all accounts'}
                             description={t('accountOverview.items.signOutAll.subtitle') || 'Remove all accounts from this device'}
-                            onPress={() => signOutAllPrompt.open()}
+                            onPress={() => signOutAllDialog.open()}
                         />
                     </SettingsListGroup>
                 )}
@@ -533,7 +530,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                         icon={<SettingsIcon name="logout" color={bloomTheme.colors.error} />}
                         title={t('accountOverview.items.signOut.title')}
                         description={t('accountOverview.items.signOut.subtitle')}
-                        onPress={() => logoutPrompt.open()}
+                        onPress={() => logoutDialog.open()}
                         destructive={true}
                         showChevron={false}
                     />
@@ -550,33 +547,42 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                 />
             )}
 
-            <Prompt.Basic
-                control={logoutPrompt}
+            <Dialog
+                control={logoutDialog}
                 title={t('accountOverview.items.signOut.title') || 'Sign Out'}
                 description={t('common.confirms.signOut') || 'Are you sure you want to sign out?'}
-                onConfirm={handleLogout}
-                confirmButtonCta={t('accountOverview.items.signOut.title') || 'Sign Out'}
-                confirmButtonColor="negative"
+                actions={[
+                    {
+                        label: t('accountOverview.items.signOut.title') || 'Sign Out',
+                        color: 'destructive',
+                        onPress: handleLogout,
+                    },
+                    { label: t('common.cancel') || 'Cancel', color: 'cancel' },
+                ]}
             />
-            <Prompt.Basic
-                control={signOutAllPrompt}
+            <Dialog
+                control={signOutAllDialog}
                 title={t('accountOverview.items.signOutAll.title') || 'Sign Out All'}
                 description={t('common.confirms.signOutAll') || 'Are you sure you want to sign out of all accounts?'}
-                onConfirm={handleLogout}
-                confirmButtonCta={t('accountOverview.items.signOutAll.title') || 'Sign Out All'}
-                confirmButtonColor="negative"
+                actions={[
+                    {
+                        label: t('accountOverview.items.signOutAll.title') || 'Sign Out All',
+                        color: 'destructive',
+                        onPress: handleLogout,
+                    },
+                    { label: t('common.cancel') || 'Cancel', color: 'cancel' },
+                ]}
             />
-            <Prompt.Outer control={downloadDataPrompt}>
-                <Prompt.Content>
-                    <Prompt.TitleText>{t('accountOverview.items.downloadData.confirmTitle') || 'Download Account Data'}</Prompt.TitleText>
-                    <Prompt.DescriptionText>{t('accountOverview.items.downloadData.confirmMessage') || 'Choose the format for your account data export:'}</Prompt.DescriptionText>
-                </Prompt.Content>
-                <Prompt.Actions>
-                    <Prompt.Action cta="JSON" onPress={() => performDownload('json')} color="primary" />
-                    <Prompt.Action cta="CSV" onPress={() => performDownload('csv')} color="primary_subtle" />
-                    <Prompt.Cancel cta={t('common.cancel') || 'Cancel'} />
-                </Prompt.Actions>
-            </Prompt.Outer>
+            <Dialog
+                control={downloadDataDialog}
+                title={t('accountOverview.items.downloadData.confirmTitle') || 'Download Account Data'}
+                description={t('accountOverview.items.downloadData.confirmMessage') || 'Choose the format for your account data export:'}
+                actions={[
+                    { label: 'JSON', onPress: () => performDownload('json') },
+                    { label: 'CSV', onPress: () => performDownload('csv') },
+                    { label: t('common.cancel') || 'Cancel', color: 'cancel' },
+                ]}
+            />
         </View>
     );
 };

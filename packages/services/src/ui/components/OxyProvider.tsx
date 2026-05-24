@@ -3,9 +3,9 @@ import { AppState, Platform, StyleSheet, View } from 'react-native';
 import type { OxyProviderProps } from '../types/navigation';
 import { OxyContextProvider, type OxyContextProviderProps } from '../context/OxyContext';
 import { QueryClientProvider, focusManager, onlineManager } from '@tanstack/react-query';
-import { BloomThemeProvider } from '@oxyhq/bloom';
+import { BloomDialogProvider, BloomThemeProvider } from '@oxyhq/bloom';
+import { ToastOutlet } from '@oxyhq/bloom/toast';
 import { setupFonts } from './FontLoader';
-import { Toaster } from '../../lib/sonner';
 import { attachQueryPersistence, createQueryClient } from '../hooks/queryClient';
 import { createPlatformStorage, type StorageInterface } from '../utils/storageHelpers';
 
@@ -291,21 +291,30 @@ const OxyProvider: FC<OxyProviderProps> = ({
               * by this one. Pass `themeMode` and `colorPreset` props instead.
               */}
             <BloomThemeProvider mode={themeMode} colorPreset={colorPreset}>
-                <OxyContextProvider
-                    oxyServices={oxyServices as OxyContextProviderProps['oxyServices']}
-                    baseURL={baseURL}
-                    authWebUrl={authWebUrl}
-                    authRedirectUri={authRedirectUri}
-                    storageKeyPrefix={storageKeyPrefix}
-                    onAuthStateChange={onAuthStateChange as OxyContextProviderProps['onAuthStateChange']}
-                >
-                    {children}
-                    <Suspense fallback={null}>
-                        <LazyBottomSheetRouter />
-                        <LazySignInModal />
-                    </Suspense>
-                    <Toaster />
-                </OxyContextProvider>
+                {/*
+                  * BloomDialogProvider hosts the imperative `alert()` queue from
+                  * `@oxyhq/bloom`. Any code (event handlers, async callbacks,
+                  * module-scope helpers) calling `alert()` is rendered by this
+                  * provider. Mount once here so every consumer of OxyProvider
+                  * gets it without ceremony.
+                  */}
+                <BloomDialogProvider>
+                    <OxyContextProvider
+                        oxyServices={oxyServices as OxyContextProviderProps['oxyServices']}
+                        baseURL={baseURL}
+                        authWebUrl={authWebUrl}
+                        authRedirectUri={authRedirectUri}
+                        storageKeyPrefix={storageKeyPrefix}
+                        onAuthStateChange={onAuthStateChange as OxyContextProviderProps['onAuthStateChange']}
+                    >
+                        {children}
+                        <Suspense fallback={null}>
+                            <LazyBottomSheetRouter />
+                            <LazySignInModal />
+                        </Suspense>
+                        <ToastOutlet />
+                    </OxyContextProvider>
+                </BloomDialogProvider>
             </BloomThemeProvider>
         </QueryClientProvider>
     );

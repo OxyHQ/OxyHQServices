@@ -5,7 +5,7 @@ import AnimatedReanimated, { useSharedValue, useAnimatedStyle, withTiming } from
 import type { BaseScreenProps } from '../types/navigation';
 import Avatar from '../components/Avatar';
 import { Ionicons } from '@expo/vector-icons';
-import { toast } from '../../lib/sonner';
+import { toast } from '@oxyhq/bloom';
 import { useAuthStore } from '../stores/authStore';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { Button } from '@oxyhq/bloom/button';

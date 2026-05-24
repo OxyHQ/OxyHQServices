@@ -22,7 +22,7 @@ import * as Sharing from 'expo-sharing';
 import * as Print from 'expo-print';
 import { Loading } from '@oxyhq/bloom/loading';
 import { Chip } from '@oxyhq/bloom/chip';
-import * as Dialog from '@oxyhq/bloom/dialog';
+import { Dialog, useDialogControl } from '@oxyhq/bloom';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import {
@@ -54,7 +54,7 @@ import { useThread } from '@/hooks/queries/useThread';
 import { useMailboxes } from '@/hooks/queries/useMailboxes';
 import { useLabels } from '@/hooks/queries/useLabels';
 import { useToggleStar, useToggleRead, useArchiveMessage, useDeleteMessage, useUpdateMessageLabels, useTogglePin, useSnoozeMessage } from '@/hooks/mutations/useMessageMutations';
-import { toast } from '@oxyhq/services';
+import { toast } from '@oxyhq/bloom';
 import { SenderAvatar } from '@/components/Avatar';
 import { HtmlBody } from '@/components/HtmlBody';
 import { InlineReply } from '@/components/InlineReply';
@@ -145,9 +145,9 @@ function MessageDetailInner({ mode, messageId }: MessageDetailProps) {
   const [expandedMessages, setExpandedMessages] = useState<Set<string>>(new Set([messageId]));
   const [messageMenuId, setMessageMenuId] = useState<string | null>(null);
 
-  const moreMenuControl = Dialog.useDialogControl();
-  const labelPickerControl = Dialog.useDialogControl();
-  const messageMenuControl = Dialog.useDialogControl();
+  const moreMenuControl = useDialogControl();
+  const labelPickerControl = useDialogControl();
+  const messageMenuControl = useDialogControl();
 
   // Sentiment analysis for the current message
   const sentiment = useSentimentAnalysis(currentMessage);
@@ -658,71 +658,65 @@ function MessageDetailInner({ mode, messageId }: MessageDetailProps) {
       </View>
 
       {/* More menu dialog */}
-      <Dialog.Outer control={moreMenuControl}>
-        <Dialog.Handle />
-        <Dialog.Inner label="More actions" contentContainerStyle={{ padding: 0 }}>
-          <TouchableOpacity style={styles.menuItem} onPress={handleMarkUnread} activeOpacity={0.6}>
-            {Platform.OS === 'web' ? (
-              <HugeiconsIcon icon={Mail01Icon as unknown as IconSvgElement} size={16} color={colors.icon} />
-            ) : (
-              <MaterialCommunityIcons name="email-mark-as-unread" size={16} color={colors.icon} />
-            )}
-            <Text style={[styles.menuItemText, { color: colors.text }]}>Mark unread</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.menuItem} onPress={handleMarkSpam} activeOpacity={0.6}>
-            {Platform.OS === 'web' ? (
-              <HugeiconsIcon icon={SpamIcon as unknown as IconSvgElement} size={16} color={colors.icon} />
-            ) : (
-              <MaterialCommunityIcons name="alert-octagon-outline" size={16} color={colors.icon} />
-            )}
-            <Text style={[styles.menuItemText, { color: colors.text }]}>Report spam</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.menuItem} onPress={() => { moreMenuControl.close(); labelPickerControl.open(); }} activeOpacity={0.6}>
-            {Platform.OS === 'web' ? (
-              <HugeiconsIcon icon={LabelIcon as unknown as IconSvgElement} size={16} color={colors.icon} />
-            ) : (
-              <MaterialCommunityIcons name="label-outline" size={16} color={colors.icon} />
-            )}
-            <Text style={[styles.menuItemText, { color: colors.text }]}>Label</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.menuItem} onPress={handleDownloadEml} activeOpacity={0.6}>
-            {Platform.OS === 'web' ? (
-              <HugeiconsIcon icon={Mail01Icon as unknown as IconSvgElement} size={16} color={colors.icon} />
-            ) : (
-              <MaterialCommunityIcons name="email-arrow-right-outline" size={16} color={colors.icon} />
-            )}
-            <Text style={[styles.menuItemText, { color: colors.text }]}>Download .eml</Text>
-          </TouchableOpacity>
-        </Dialog.Inner>
-      </Dialog.Outer>
+      <Dialog control={moreMenuControl} label="More actions" style={{ padding: 0 }}>
+        <TouchableOpacity style={styles.menuItem} onPress={handleMarkUnread} activeOpacity={0.6}>
+          {Platform.OS === 'web' ? (
+            <HugeiconsIcon icon={Mail01Icon as unknown as IconSvgElement} size={16} color={colors.icon} />
+          ) : (
+            <MaterialCommunityIcons name="email-mark-as-unread" size={16} color={colors.icon} />
+          )}
+          <Text style={[styles.menuItemText, { color: colors.text }]}>Mark unread</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.menuItem} onPress={handleMarkSpam} activeOpacity={0.6}>
+          {Platform.OS === 'web' ? (
+            <HugeiconsIcon icon={SpamIcon as unknown as IconSvgElement} size={16} color={colors.icon} />
+          ) : (
+            <MaterialCommunityIcons name="alert-octagon-outline" size={16} color={colors.icon} />
+          )}
+          <Text style={[styles.menuItemText, { color: colors.text }]}>Report spam</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.menuItem} onPress={() => { moreMenuControl.close(); labelPickerControl.open(); }} activeOpacity={0.6}>
+          {Platform.OS === 'web' ? (
+            <HugeiconsIcon icon={LabelIcon as unknown as IconSvgElement} size={16} color={colors.icon} />
+          ) : (
+            <MaterialCommunityIcons name="label-outline" size={16} color={colors.icon} />
+          )}
+          <Text style={[styles.menuItemText, { color: colors.text }]}>Label</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.menuItem} onPress={handleDownloadEml} activeOpacity={0.6}>
+          {Platform.OS === 'web' ? (
+            <HugeiconsIcon icon={Mail01Icon as unknown as IconSvgElement} size={16} color={colors.icon} />
+          ) : (
+            <MaterialCommunityIcons name="email-arrow-right-outline" size={16} color={colors.icon} />
+          )}
+          <Text style={[styles.menuItemText, { color: colors.text }]}>Download .eml</Text>
+        </TouchableOpacity>
+      </Dialog>
 
       {/* Label picker dialog */}
-      <Dialog.Outer control={labelPickerControl}>
-        <Dialog.Handle />
-        <Dialog.Inner label="Labels" contentContainerStyle={{ padding: 0 }}>
-          <Text style={[styles.labelPickerTitle, { color: colors.text }]}>Labels</Text>
-          {labels.length === 0 && (
-            <Text style={[styles.labelPickerEmpty, { color: colors.secondaryText }]}>No labels yet</Text>
-          )}
-          {labels.map((lbl) => {
-            const isAssigned = currentMessage.labels.includes(lbl.name);
-            return (
-              <TouchableOpacity
-                key={lbl._id}
-                style={styles.labelPickerItem}
-                onPress={() => handleToggleLabel(lbl.name)}
-                activeOpacity={0.6}
-              >
-                <View style={[styles.labelDot, { backgroundColor: lbl.color }]} />
-                <Text style={[styles.labelPickerItemText, { color: colors.text }]}>{lbl.name}</Text>
-                {isAssigned && (
-                  <MaterialCommunityIcons name="check" size={16} color={colors.primary} />
-                )}
-              </TouchableOpacity>
-            );
-          })}
-        </Dialog.Inner>
-      </Dialog.Outer>
+      <Dialog control={labelPickerControl} label="Labels" style={{ padding: 0 }}>
+        <Text style={[styles.labelPickerTitle, { color: colors.text }]}>Labels</Text>
+        {labels.length === 0 && (
+          <Text style={[styles.labelPickerEmpty, { color: colors.secondaryText }]}>No labels yet</Text>
+        )}
+        {labels.map((lbl) => {
+          const isAssigned = currentMessage.labels.includes(lbl.name);
+          return (
+            <TouchableOpacity
+              key={lbl._id}
+              style={styles.labelPickerItem}
+              onPress={() => handleToggleLabel(lbl.name)}
+              activeOpacity={0.6}
+            >
+              <View style={[styles.labelDot, { backgroundColor: lbl.color }]} />
+              <Text style={[styles.labelPickerItemText, { color: colors.text }]}>{lbl.name}</Text>
+              {isAssigned && (
+                <MaterialCommunityIcons name="check" size={16} color={colors.primary} />
+              )}
+            </TouchableOpacity>
+          );
+        })}
+      </Dialog>
 
       <ScrollView
         style={styles.body}
@@ -962,35 +956,37 @@ function MessageDetailInner({ mode, messageId }: MessageDetailProps) {
       />
 
       {/* Per-message action dialog */}
-      <Dialog.Outer control={messageMenuControl} onClose={() => setMessageMenuId(null)}>
-        <Dialog.Handle />
-        <Dialog.Inner label="Message actions" contentContainerStyle={{ padding: 0 }}>
-          <TouchableOpacity style={styles.menuItem} onPress={() => handleReply(messageMenuId ?? undefined)} activeOpacity={0.6}>
-            {Platform.OS === 'web' ? (
-              <HugeiconsIcon icon={MailReply01Icon as unknown as IconSvgElement} size={16} color={colors.icon} />
-            ) : (
-              <MaterialCommunityIcons name="reply" size={16} color={colors.icon} />
-            )}
-            <Text style={[styles.menuItemText, { color: colors.text }]}>Reply</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.menuItem} onPress={() => handleReplyAll(messageMenuId ?? undefined)} activeOpacity={0.6}>
-            {Platform.OS === 'web' ? (
-              <HugeiconsIcon icon={MailReplyAll01Icon as unknown as IconSvgElement} size={16} color={colors.icon} />
-            ) : (
-              <MaterialCommunityIcons name="reply-all" size={16} color={colors.icon} />
-            )}
-            <Text style={[styles.menuItemText, { color: colors.text }]}>Reply all</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.menuItem} onPress={() => handleForward(messageMenuId ?? undefined)} activeOpacity={0.6}>
-            {Platform.OS === 'web' ? (
-              <HugeiconsIcon icon={Forward01Icon as unknown as IconSvgElement} size={16} color={colors.icon} />
-            ) : (
-              <MaterialCommunityIcons name="share" size={16} color={colors.icon} />
-            )}
-            <Text style={[styles.menuItemText, { color: colors.text }]}>Forward</Text>
-          </TouchableOpacity>
-        </Dialog.Inner>
-      </Dialog.Outer>
+      <Dialog
+        control={messageMenuControl}
+        onClose={() => setMessageMenuId(null)}
+        label="Message actions"
+        style={{ padding: 0 }}
+      >
+        <TouchableOpacity style={styles.menuItem} onPress={() => handleReply(messageMenuId ?? undefined)} activeOpacity={0.6}>
+          {Platform.OS === 'web' ? (
+            <HugeiconsIcon icon={MailReply01Icon as unknown as IconSvgElement} size={16} color={colors.icon} />
+          ) : (
+            <MaterialCommunityIcons name="reply" size={16} color={colors.icon} />
+          )}
+          <Text style={[styles.menuItemText, { color: colors.text }]}>Reply</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.menuItem} onPress={() => handleReplyAll(messageMenuId ?? undefined)} activeOpacity={0.6}>
+          {Platform.OS === 'web' ? (
+            <HugeiconsIcon icon={MailReplyAll01Icon as unknown as IconSvgElement} size={16} color={colors.icon} />
+          ) : (
+            <MaterialCommunityIcons name="reply-all" size={16} color={colors.icon} />
+          )}
+          <Text style={[styles.menuItemText, { color: colors.text }]}>Reply all</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.menuItem} onPress={() => handleForward(messageMenuId ?? undefined)} activeOpacity={0.6}>
+          {Platform.OS === 'web' ? (
+            <HugeiconsIcon icon={Forward01Icon as unknown as IconSvgElement} size={16} color={colors.icon} />
+          ) : (
+            <MaterialCommunityIcons name="share" size={16} color={colors.icon} />
+          )}
+          <Text style={[styles.menuItemText, { color: colors.text }]}>Forward</Text>
+        </TouchableOpacity>
+      </Dialog>
 
       {/* Sticky reply buttons at bottom */}
       {!replyMode && (

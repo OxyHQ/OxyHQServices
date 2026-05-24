@@ -9,7 +9,7 @@ import {
   ActivityIndicator
 } from 'react-native';
 import { useOxy } from '../context/OxyContext';
-import { toast } from '../../lib/sonner';
+import { toast } from '@oxyhq/bloom';
 import { useFollowForButton } from '../hooks/useFollow';
 import { useTheme } from '@oxyhq/bloom/theme';
 import type { OxyServices } from '@oxyhq/core';
@@ -93,7 +93,7 @@ const FollowButtonInner = memo(function FollowButtonInner({
       {showLoadingState && isLoading ? (
         <ActivityIndicator
           size="small"
-          color={isFollowing ? colors.text : '#FFFFFF'}
+          color={isFollowing ? colors.text : colors.negativeForeground}
         />
       ) : (
         <Text

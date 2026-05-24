@@ -14,8 +14,7 @@ import {
   StyleSheet,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { toast } from '@oxyhq/services';
-import * as Prompt from '@oxyhq/bloom/prompt';
+import { Dialog, toast, useDialogControl } from '@oxyhq/bloom';
 
 import { useColors } from '@/constants/theme';
 import { useContacts } from '@/hooks/queries/useContacts';
@@ -56,7 +55,7 @@ export function ContactsSection() {
   const updateContact = useUpdateContact();
   const deleteContact = useDeleteContact();
   const [contactToDeleteId, setContactToDeleteId] = useState<string | null>(null);
-  const deleteContactPrompt = Prompt.usePromptControl();
+  const deleteContactDialog = useDialogControl();
 
   const resetAddForm = useCallback(() => {
     setNewName('');
@@ -139,9 +138,9 @@ export function ContactsSection() {
   const handleDelete = useCallback(
     (contactId: string) => {
       setContactToDeleteId(contactId);
-      deleteContactPrompt.open();
+      deleteContactDialog.open();
     },
-    [deleteContactPrompt],
+    [deleteContactDialog],
   );
 
   const handleConfirmDelete = useCallback(() => {
@@ -370,13 +369,14 @@ export function ContactsSection() {
       </View>
 
       {/* Delete contact confirmation */}
-      <Prompt.Basic
-        control={deleteContactPrompt}
+      <Dialog
+        control={deleteContactDialog}
         title="Delete this contact?"
         description="This action cannot be undone."
-        confirmButtonCta="Delete"
-        confirmButtonColor="negative"
-        onConfirm={handleConfirmDelete}
+        actions={[
+          { label: 'Delete', color: 'destructive', onPress: handleConfirmDelete },
+          { label: 'Cancel', color: 'cancel' },
+        ]}
       />
     </View>
   );

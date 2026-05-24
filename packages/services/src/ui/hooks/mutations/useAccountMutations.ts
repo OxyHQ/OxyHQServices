@@ -4,7 +4,7 @@ import type { AssetUploadInput, PrivacySettings, User } from '@oxyhq/core';
 import { queryKeys, invalidateAccountQueries, invalidateUserQueries, invalidateSessionQueries } from '../queries/queryKeys';
 import { mutationKeys } from './mutationKeys';
 import { useOxy } from '../../context/OxyContext';
-import { toast } from '../../../lib/sonner';
+import { toast } from '@oxyhq/bloom';
 import { refreshAvatarInStore } from '../../utils/avatarUtils';
 import { useAuthStore } from '../../stores/authStore';
 

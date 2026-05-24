@@ -39,9 +39,7 @@ const loadDocumentPicker = async () => {
         throw new Error('expo-document-picker is not installed. Please install it: npx expo install expo-document-picker');
     }
 };
-import { toast } from '../../lib/sonner';
-import * as Prompt from '@oxyhq/bloom/prompt';
-import { usePromptControl } from '@oxyhq/bloom/prompt';
+import { Dialog, toast, useDialogControl } from '@oxyhq/bloom';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import type { AssetUploadInput, FileMetadata, RNFileDescriptor } from '@oxyhq/core';
 import { getErrorMessage as getOxyErrorMessage } from '@oxyhq/core';
@@ -62,7 +60,6 @@ import {
 import { FileViewer } from '../components/fileManagement/FileViewer';
 import { FileDetailsModal } from '../components/fileManagement/FileDetailsModal';
 import { UploadPreview } from '../components/fileManagement/UploadPreview';
-import { useDialogControl } from '@oxyhq/bloom/dialog';
 import { fileManagementStyles, photoPickerStyles } from '../components/fileManagement/styles';
 import type { OnConfirmFileSelection } from '../types/fileManagement';
 
@@ -771,9 +768,9 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     const { t } = useI18n();
     const uploadFileMutation = useUploadFile();
     // Prompt controls
-    const fileDeletePrompt = usePromptControl();
-    const bulkDeletePrompt = usePromptControl();
-    const visibilityChangePrompt = usePromptControl();
+    const fileDeleteDialog = useDialogControl();
+    const bulkDeleteDialog = useDialogControl();
+    const visibilityChangeDialog = useDialogControl();
     const [pendingDeleteFile, setPendingDeleteFile] = useState<{ id: string; name: string } | null>(null);
     const files = useFiles();
     // Ensure containerWidth is a number (TypeScript guard)
@@ -1575,8 +1572,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
     const confirmFileDelete = useCallback((fileId: string, filename: string) => {
         setPendingDeleteFile({ id: fileId, name: filename });
-        fileDeletePrompt.open();
-    }, [fileDeletePrompt]);
+        fileDeleteDialog.open();
+    }, [fileDeleteDialog]);
 
     const handleFileDelete = useCallback(async () => {
         if (!pendingDeleteFile) return;
@@ -1613,8 +1610,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
     const confirmBulkDelete = useCallback(() => {
         if (selectedIds.size === 0) return;
-        bulkDeletePrompt.open();
-    }, [selectedIds.size, bulkDeletePrompt]);
+        bulkDeleteDialog.open();
+    }, [selectedIds.size, bulkDeleteDialog]);
 
     const handleBulkDelete = useCallback(async () => {
         if (selectedIds.size === 0) return;
@@ -2728,7 +2725,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         key: 'visibility',
                         text: t('fileManagement.visibility'),
                         onPress: () => {
-                            visibilityChangePrompt.open();
+                            visibilityChangeDialog.open();
                         },
                         icon: 'eye',
                     }
@@ -3047,34 +3044,35 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
             {/* Selection bar removed; actions are now in header */}
             {/* Global loadingMore bar removed; now inline in scroll areas */}
-            <Prompt.Basic
-                control={fileDeletePrompt}
+            <Dialog
+                control={fileDeleteDialog}
                 title={t('fileManagement.deleteFile') || 'Delete File'}
                 description={pendingDeleteFile ? t('fileManagement.confirms.deleteFile', { filename: pendingDeleteFile.name }) : ''}
-                onConfirm={handleFileDelete}
-                confirmButtonCta={t('fileManagement.confirm') || 'Delete'}
-                confirmButtonColor='negative'
+                actions={[
+                    { label: t('fileManagement.confirm') || 'Delete', color: 'destructive', onPress: handleFileDelete },
+                    { label: t('common.cancel') || 'Cancel', color: 'cancel' },
+                ]}
             />
-            <Prompt.Basic
-                control={bulkDeletePrompt}
+            <Dialog
+                control={bulkDeleteDialog}
                 title={t('fileManagement.deleteFiles') || 'Delete Files'}
                 description={t('fileManagement.confirms.deleteFiles', { count: selectedIds.size })}
-                onConfirm={handleBulkDelete}
-                confirmButtonCta={t('fileManagement.confirm') || 'Delete'}
-                confirmButtonColor='negative'
+                actions={[
+                    { label: t('fileManagement.confirm') || 'Delete', color: 'destructive', onPress: handleBulkDelete },
+                    { label: t('common.cancel') || 'Cancel', color: 'cancel' },
+                ]}
             />
-            <Prompt.Outer control={visibilityChangePrompt}>
-                <Prompt.Content>
-                    <Prompt.TitleText>{t('fileManagement.changeVisibility') || 'Change Visibility'}</Prompt.TitleText>
-                    <Prompt.DescriptionText>{t('fileManagement.changeVisibilityConfirm', { count: selectedIds.size })}</Prompt.DescriptionText>
-                </Prompt.Content>
-                <Prompt.Actions>
-                    <Prompt.Action cta={t('fileManagement.private') || 'Private'} onPress={() => handleBulkVisibilityChange('private')} color='primary' />
-                    <Prompt.Action cta={t('fileManagement.public') || 'Public'} onPress={() => handleBulkVisibilityChange('public')} color='primary_subtle' />
-                    <Prompt.Action cta={t('fileManagement.unlisted') || 'Unlisted'} onPress={() => handleBulkVisibilityChange('unlisted')} color='primary_subtle' />
-                    <Prompt.Cancel cta={t('common.cancel') || 'Cancel'} />
-                </Prompt.Actions>
-            </Prompt.Outer>
+            <Dialog
+                control={visibilityChangeDialog}
+                title={t('fileManagement.changeVisibility') || 'Change Visibility'}
+                description={t('fileManagement.changeVisibilityConfirm', { count: selectedIds.size })}
+                actions={[
+                    { label: t('fileManagement.private') || 'Private', onPress: () => handleBulkVisibilityChange('private') },
+                    { label: t('fileManagement.public') || 'Public', onPress: () => handleBulkVisibilityChange('public') },
+                    { label: t('fileManagement.unlisted') || 'Unlisted', onPress: () => handleBulkVisibilityChange('unlisted') },
+                    { label: t('common.cancel') || 'Cancel', color: 'cancel' },
+                ]}
+            />
         </View>
     );
 };

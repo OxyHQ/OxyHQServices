@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
-import { toast } from '../../lib/sonner';
+import { toast } from '@oxyhq/bloom';
 
 interface UseSettingToggleOptions {
     /** Initial value of the setting */

@@ -14,7 +14,7 @@ import type { User, ApiError, SessionLoginResponse } from '@oxyhq/core';
 import type { ManagedAccount, CreateManagedAccountInput } from '@oxyhq/core';
 import { KeyManager } from '@oxyhq/core';
 import type { ClientSession } from '@oxyhq/core';
-import { toast } from '../../lib/sonner';
+import { toast } from '@oxyhq/bloom';
 import { useAuthStore, type AuthState } from '../stores/authStore';
 import { useShallow } from 'zustand/react/shallow';
 import { useSessionSocket } from '../hooks/useSessionSocket';

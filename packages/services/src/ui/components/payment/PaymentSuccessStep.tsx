@@ -45,7 +45,7 @@ const PaymentSuccessStep: React.FC<PaymentSuccessStepProps> = ({
                         <Ionicons
                             name="checkmark-circle"
                             size={64}
-                            color={colors.success || '#4BB543'}
+                            color={colors.success}
                             style={styles.successIcon}
                         />
                         <Text style={styles.successMainTitle}>{t('payment.success.heading')}</Text>

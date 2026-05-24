@@ -39,8 +39,8 @@ const KarmaCenterScreen: React.FC<BaseScreenProps> = ({
     const themeColors = Colors[normalizedColorScheme];
     // Override primaryColor for Karma screens (purple instead of blue)
     const primaryColor = '#d169e5';
-    const dangerColor = bloomTheme.colors.error || '#D32F2F';
-    const mutedTextColor = bloomTheme.isDark ? '#BBBBBB' : '#888888';
+    const dangerColor = bloomTheme.colors.error;
+    const mutedTextColor = bloomTheme.colors.textTertiary;
 
     // Icon colors from theme
     const iconLeaderboard = themeColors.iconPayments;
@@ -88,7 +88,7 @@ const KarmaCenterScreen: React.FC<BaseScreenProps> = ({
             <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContainer}>
                 <View style={styles.walletHeader}>
                     <Text style={[styles.karmaAmount, { color: primaryColor }]}>{karmaTotal ?? 0}</Text>
-                    <Text style={[styles.karmaLabel, { color: bloomTheme.isDark ? '#BBBBBB' : '#888888' }]}>
+                    <Text style={[styles.karmaLabel, { color: bloomTheme.colors.textTertiary }]}>
                         {t('karma.center.balance') || 'Karma Balance'}
                     </Text>
                     <View style={styles.actionContainer}>
@@ -148,7 +148,7 @@ const KarmaCenterScreen: React.FC<BaseScreenProps> = ({
                                 <Text style={[styles.historyDesc, { color: bloomTheme.colors.text }]}>
                                     {entry.reason || (t('karma.center.noDescription') || 'No description')}
                                 </Text>
-                                <Text style={[styles.historyDate, { color: bloomTheme.isDark ? '#BBBBBB' : '#888888' }]}>
+                                <Text style={[styles.historyDate, { color: bloomTheme.colors.textTertiary }]}>
                                     {entry.createdAt ? new Date(entry.createdAt).toLocaleString() : ''}
                                 </Text>
                             </View>

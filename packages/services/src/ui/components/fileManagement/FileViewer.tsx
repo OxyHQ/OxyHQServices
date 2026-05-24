@@ -170,7 +170,7 @@ export const FileViewer: React.FC<FileViewerProps> = ({
                         transition={120}
                         cachePolicy="memory-disk"
                     />
-                    <View style={[fileManagementStyles.backgroundOverlay, { backgroundColor: isDark ? 'rgba(0, 0, 0, 0.6)' : 'rgba(255, 255, 255, 0.85)' }]} />
+                    <View style={[fileManagementStyles.backgroundOverlay, { backgroundColor: colors.overlay }]} />
                 </>
             )}
 
@@ -266,7 +266,7 @@ export const FileViewer: React.FC<FileViewerProps> = ({
                             style={fileManagementStyles.downloadButtonLarge}
                             onPress={() => onDownload(file.id, file.filename)}
                         >
-                            <MaterialCommunityIcons name="download" size={18} color="#FFFFFF" />
+                            <MaterialCommunityIcons name="download" size={18} color={colors.negativeForeground} />
                             <Text style={fileManagementStyles.downloadButtonText}>Download PDF</Text>
                         </TouchableOpacity>
                     </View>
@@ -289,7 +289,7 @@ export const FileViewer: React.FC<FileViewerProps> = ({
                             style={fileManagementStyles.downloadButtonLarge}
                             onPress={() => onDownload(file.id, file.filename)}
                         >
-                            <MaterialCommunityIcons name="download" size={18} color="#FFFFFF" />
+                            <MaterialCommunityIcons name="download" size={18} color={colors.negativeForeground} />
                             <Text style={fileManagementStyles.downloadButtonText}>Download Video</Text>
                         </TouchableOpacity>
                     </View>
@@ -312,7 +312,7 @@ export const FileViewer: React.FC<FileViewerProps> = ({
                             style={fileManagementStyles.downloadButtonLarge}
                             onPress={() => onDownload(file.id, file.filename)}
                         >
-                            <MaterialCommunityIcons name="download" size={18} color="#FFFFFF" />
+                            <MaterialCommunityIcons name="download" size={18} color={colors.negativeForeground} />
                             <Text style={fileManagementStyles.downloadButtonText}>Download Audio</Text>
                         </TouchableOpacity>
                     </View>
@@ -335,7 +335,7 @@ export const FileViewer: React.FC<FileViewerProps> = ({
                             style={fileManagementStyles.downloadButtonLarge}
                             onPress={() => onDownload(file.id, file.filename)}
                         >
-                            <MaterialCommunityIcons name="download" size={18} color="#FFFFFF" />
+                            <MaterialCommunityIcons name="download" size={18} color={colors.negativeForeground} />
                             <Text style={fileManagementStyles.downloadButtonText}>Download File</Text>
                         </TouchableOpacity>
                     </View>
@@ -386,7 +386,7 @@ export const FileViewer: React.FC<FileViewerProps> = ({
                                         onDelete(file.id, file.filename);
                                     }}
                                 >
-                                    <MaterialCommunityIcons name="delete" size={16} color="#FFFFFF" />
+                                    <MaterialCommunityIcons name="delete" size={16} color={colors.negativeForeground} />
                                     <Text style={fileManagementStyles.fileDetailsActionText}>Delete</Text>
                                 </TouchableOpacity>
                             </View>

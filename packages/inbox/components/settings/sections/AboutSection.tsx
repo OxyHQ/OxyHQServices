@@ -11,7 +11,7 @@ import { Linking, Platform, Pressable, StyleSheet, View } from 'react-native';
 import Constants from 'expo-constants';
 import { Text } from '@oxyhq/bloom/typography';
 import { useTheme } from '@oxyhq/bloom/theme';
-import { toast } from '@oxyhq/services';
+import { toast } from '@oxyhq/bloom';
 import {
   CircleInfo_Stroke2_Corner0_Rounded,
   PageText_Stroke2_Corner0_Rounded,

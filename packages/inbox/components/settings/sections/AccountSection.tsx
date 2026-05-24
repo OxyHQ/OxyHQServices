@@ -22,15 +22,15 @@ import { Switch } from '@oxyhq/bloom/switch';
 import { GroupedButtons } from '@oxyhq/bloom/grouped-buttons';
 import { Text } from '@oxyhq/bloom/typography';
 import { useTheme } from '@oxyhq/bloom/theme';
-import * as Prompt from '@oxyhq/bloom/prompt';
-import { usePromptControl } from '@oxyhq/bloom/prompt';
+import { Dialog, useDialogControl } from '@oxyhq/bloom';
 import {
   Pencil_Stroke2_Corner0_Rounded,
   ArrowBoxLeft_Stroke2_Corner0_Rounded,
   ArrowOutOfBox_Stroke2_Corner0_Rounded,
   PaperPlane_Stroke2_Corner0_Rounded,
 } from '@oxyhq/bloom/icons';
-import { useOxy, toast } from '@oxyhq/services';
+import { useOxy } from '@oxyhq/services';
+import { toast } from '@oxyhq/bloom';
 
 import { useColors } from '@/constants/theme';
 import { useSettings, useUpdateSettings } from '@/hooks/queries/useSettings';
@@ -143,7 +143,7 @@ export function AccountSection() {
     updateSettings,
   ]);
 
-  const signOutPrompt = usePromptControl();
+  const signOutDialog = useDialogControl();
 
   const fullName = useMemo(() => {
     return (
@@ -308,19 +308,19 @@ export function AccountSection() {
           <GroupedButtons.Item
             label="Sign out"
             description="You'll be signed out of this device only."
-            onPress={() => signOutPrompt.open()}
+            onPress={() => signOutDialog.open()}
           />
         </GroupedButtons>
       </View>
 
-      <Prompt.Basic
-        control={signOutPrompt}
+      <Dialog
+        control={signOutDialog}
         title="Sign out?"
         description="You can sign back in at any time."
-        confirmButtonCta="Sign out"
-        cancelButtonCta="Cancel"
-        confirmButtonColor="negative"
-        onConfirm={handleSignOut}
+        actions={[
+          { label: 'Sign out', color: 'destructive', onPress: handleSignOut },
+          { label: 'Cancel', color: 'cancel' },
+        ]}
       />
 
     </KeyboardAvoidingView>
