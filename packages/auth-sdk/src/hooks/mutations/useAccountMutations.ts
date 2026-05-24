@@ -193,44 +193,57 @@ export const useUploadAvatar = () => {
 };
 
 /**
+ * Variables accepted by the `useUpdateAccountSettings` mutation.
+ *
+ * `currentUser` is captured at dispatch time so the rebuilt user object the
+ * mutation returns is computed against a stable snapshot — NOT the cache
+ * value at the moment the API call settles. Reading from the cache inside
+ * `mutationFn` would race with sibling optimistic updates: a concurrent
+ * write could already have overwritten the cache by the time the privacy
+ * update returns, causing the rebuilt user to clobber the sibling's
+ * optimistic value.
+ */
+interface UpdateAccountSettingsVariables {
+  updates: Partial<PrivacySettings>;
+  currentUser: User;
+}
+
+/**
  * Update account settings (privacy preferences).
  *
  * Privacy settings are not part of the `PUT /users/me` allow-list; the API
  * would silently drop them. Route through `updatePrivacySettings` so the
  * dedicated `PATCH /privacy/:id/privacy` endpoint performs a dot-path merge
  * and returns the updated `privacySettings` object.
+ *
+ * The returned object exposes the standard mutation surface PLUS a
+ * convenience `mutate(updates)` / `mutateAsync(updates)` that snapshots
+ * the current user from `useWebOxy()` at dispatch time.
  */
 export const useUpdateAccountSettings = () => {
   const { oxyServices, activeSessionId, user } = useWebOxy();
   const queryClient = useQueryClient();
 
-  return useMutation({
-    mutationFn: async (settings: Partial<PrivacySettings>) => {
-      const userId = user?.id;
+  const mutation = useMutation({
+    mutationFn: async ({ updates, currentUser }: UpdateAccountSettingsVariables) => {
+      const userId = currentUser.id;
       if (!userId) {
         throw new Error('User ID is required to update account settings');
       }
       const updatedPrivacy = await authenticatedApiCall<PrivacySettings>(
         oxyServices,
         activeSessionId,
-        () => oxyServices.updatePrivacySettings(settings, userId)
+        () => oxyServices.updatePrivacySettings(updates, userId)
       );
-      // Reflect the merged privacy block back onto the user object so cache
-      // consumers that key off `User.privacySettings` see the change. We
-      // REQUIRE the current user to be present in cache — fabricating a
-      // skeleton `{ privacySettings }` here would later be written into
-      // `accounts.current()` and `useAuthStore`, wiping every other user
-      // field (id, username, email, etc.). Bail loudly instead.
-      const currentUser = queryClient.getQueryData<User>(queryKeys.accounts.current());
-      if (!currentUser) {
-        throw new Error('Cannot update account settings: no current user in cache');
-      }
+      // Rebuild against the dispatch-time snapshot, NOT the live cache.
+      // The cache may have been mutated by a sibling write between
+      // dispatch and settle.
       return {
         ...currentUser,
         privacySettings: updatedPrivacy,
       };
     },
-    onMutate: async (settings) => {
+    onMutate: async ({ updates }) => {
       await queryClient.cancelQueries({ queryKey: queryKeys.accounts.settings() });
       const previousUser = queryClient.getQueryData<User>(queryKeys.accounts.current());
 
@@ -239,18 +252,18 @@ export const useUpdateAccountSettings = () => {
           ...previousUser,
           privacySettings: {
             ...previousUser.privacySettings,
-            ...settings,
+            ...updates,
           },
         });
       }
 
       return { previousUser };
     },
-    onError: (error, settings, context) => {
+    onError: (error, { updates }, context) => {
       // Restore only the privacySettings keys this mutation tried to change
-      if (context?.previousUser && settings) {
+      if (context?.previousUser && updates) {
         const previousPrivacy = context.previousUser.privacySettings ?? {};
-        const changedKeys = Object.keys(settings) as Array<keyof PrivacySettings>;
+        const changedKeys = Object.keys(updates) as Array<keyof PrivacySettings>;
         const partialPrivacyRollback = changedKeys.reduce<Partial<PrivacySettings>>((acc, key) => {
           (acc as Record<string, unknown>)[key as string] = (previousPrivacy as Record<string, unknown>)[key as string];
           return acc;
@@ -271,10 +284,10 @@ export const useUpdateAccountSettings = () => {
     },
     onSuccess: (data) => {
       queryClient.setQueryData(queryKeys.accounts.current(), data);
-      
+
       // Update authStore so frontend components see the changes immediately
       useAuthStore.getState().setUser(data);
-      
+
       invalidateAccountQueries(queryClient);
       toast.success('Settings updated successfully');
     },
@@ -282,6 +295,27 @@ export const useUpdateAccountSettings = () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.accounts.settings() });
     },
   });
+
+  // Wrap mutate/mutateAsync so call sites pass a plain settings object and
+  // the current user is captured at dispatch time.
+  return {
+    ...mutation,
+    mutate: (updates: Partial<PrivacySettings>): void => {
+      const currentUser = user ?? queryClient.getQueryData<User>(queryKeys.accounts.current());
+      if (!currentUser) {
+        toast.error('Cannot update account settings: no current user');
+        return;
+      }
+      mutation.mutate({ updates, currentUser });
+    },
+    mutateAsync: async (updates: Partial<PrivacySettings>): Promise<User> => {
+      const currentUser = user ?? queryClient.getQueryData<User>(queryKeys.accounts.current());
+      if (!currentUser) {
+        throw new Error('Cannot update account settings: no current user');
+      }
+      return mutation.mutateAsync({ updates, currentUser });
+    },
+  };
 };
 
 /**

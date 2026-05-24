@@ -13,13 +13,13 @@ import React, { useMemo, useCallback, useState } from 'react';
 import {
   View,
   Text,
-  ScrollView,
   TouchableOpacity,
   StyleSheet,
   Platform,
   useWindowDimensions,
   ImageBackground,
 } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
 import { Loading } from '@oxyhq/bloom/loading';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter, useNavigation, useFocusEffect } from 'expo-router';
@@ -29,7 +29,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useOxy, OxySignInButton } from '@oxyhq/services';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import {
-  CheckmarkCircle02Icon,
   ArrowUp01Icon,
   ArrowDown01Icon,
   Menu01Icon,
@@ -55,10 +54,6 @@ import { useNeedsResponse } from '@/hooks/queries/useNeedsResponse';
 import { useFollowUp } from '@/hooks/queries/useFollowUp';
 
 const DAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
-const MONTHS = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-];
 
 function getGreeting(): string {
   const hour = new Date().getHours();
@@ -88,9 +83,6 @@ function isSameDay(a: Date, b: Date) {
   );
 }
 
-/** Max number of recent emails to show on home */
-const HOME_EMAIL_LIMIT = 10;
-
 interface DrawerNavigation {
   openDrawer?: () => void;
   dispatch?: (action: unknown) => void;
@@ -112,23 +104,17 @@ export function HomeScreen() {
   // rolls over without the user backgrounding the app.
   const [realToday, setRealToday] = useState(() => new Date());
   const [selectedDate, setSelectedDate] = useState(() => new Date());
-  const [timeOfDay, setTimeOfDay] = useState<'morning' | 'afternoon'>(() =>
-    new Date().getHours() < 12 ? 'morning' : 'afternoon',
-  );
-  const [importantExpanded, setImportantExpanded] = useState(true);
   const [needsResponseExpanded, setNeedsResponseExpanded] = useState(true);
   const [followUpExpanded, setFollowUpExpanded] = useState(true);
 
-  // Recompute `realToday` / `selectedDate` / `timeOfDay` whenever the screen
-  // regains focus. This catches the day-rollover case where the user left the
-  // app open across midnight and returns to a stale "today" pinned to yesterday.
+  // Recompute `realToday` / `selectedDate` whenever the screen regains focus.
+  // This catches the day-rollover case where the user left the app open
+  // across midnight and returns to a stale "today" pinned to yesterday.
   useFocusEffect(
     useCallback(() => {
       const now = new Date();
       setRealToday((prev) => (isSameDay(prev, now) ? prev : now));
       setSelectedDate((prev) => (isSameDay(prev, now) ? prev : now));
-      const nowTimeOfDay: 'morning' | 'afternoon' = now.getHours() < 12 ? 'morning' : 'afternoon';
-      setTimeOfDay((prev) => (prev === nowTimeOfDay ? prev : nowTimeOfDay));
     }, []),
   );
 
@@ -148,19 +134,6 @@ export function HomeScreen() {
   const toggleStar = useToggleStar();
 
   const allMessages = useMemo(() => data?.pages.flatMap((p) => p.data) ?? [], [data]);
-
-  // Filter by selected date AND time of day: morning = received before 12pm, afternoon = 12pm+
-  const recentMessages = useMemo(() => {
-    const filtered = allMessages.filter((msg) => {
-      const msgDate = new Date(msg.date);
-      // Must be same day as selected date
-      if (!isSameDay(msgDate, selectedDate)) return false;
-      // Filter by time of day
-      const hour = msgDate.getHours();
-      return timeOfDay === 'morning' ? hour < 12 : hour >= 12;
-    });
-    return filtered.slice(0, HOME_EMAIL_LIMIT);
-  }, [allMessages, timeOfDay, selectedDate]);
 
   // Stats — filtered by selected date
   const dayMessages = useMemo(
@@ -207,12 +180,19 @@ export function HomeScreen() {
   const { messages: followUpMessages, count: followUpCount, isLoading: followUpLoading } = useFollowUp(allMessages, 5);
 
   // Greeting respects empty user (signed-out / not loaded yet) — no dangling comma.
-  // `timeOfDay` is still maintained for filtering recent messages but no longer
-  // exposed as a toggle in the UI.
   const greetingBase = getGreeting();
   const greetingLine = firstName ? `${greetingBase}, ${firstName}` : greetingBase;
-  const today = selectedDate;
-  const dateString = `${MONTHS[today.getMonth()]} ${today.getDate()}, ${today.getFullYear()}`;
+  // Long-form, locale-aware date — "May 24, 2026" — used as the single header
+  // above the week strip. Computed via Intl.DateTimeFormat so it follows the
+  // user's system locale conventions rather than a hard-coded MONTHS array.
+  const longDate = useMemo(
+    () => new Intl.DateTimeFormat('en-US', {
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+    }).format(selectedDate),
+    [selectedDate],
+  );
 
   return (
     <ImageBackground
@@ -241,7 +221,9 @@ export function HomeScreen() {
         pointerEvents="none"
       />
 
-      {/* Header bar */}
+      {/* Header bar — left: drawer menu, center: logo, right: optional
+          "jump to today" button when the selected date drifts away from
+          actual today. */}
       <View style={[styles.header, { paddingTop: isDesktop ? 16 : insets.top + 8 }]}>
         {!isDesktop && (
           <TouchableOpacity
@@ -259,370 +241,340 @@ export function HomeScreen() {
         )}
         <LogoIcon height={24} color="#FFFFFF" />
         <View style={{ flex: 1 }} />
+        {!isOnToday && (
+          <TouchableOpacity
+            onPress={() => setSelectedDate(new Date())}
+            style={styles.headerButton}
+            activeOpacity={0.7}
+            accessibilityLabel="Jump to today"
+            accessibilityRole="button"
+          >
+            <MaterialCommunityIcons name="calendar-today" size={22} color="#FFFFFF" />
+          </TouchableOpacity>
+        )}
       </View>
 
-      <ScrollView
+      {/*
+       * Single FlashList that drives the whole screen:
+       *  - `ListHeaderComponent` carries the brief title, week strip,
+       *    greeting, stats, AI brief, Needs Response, and Follow Up
+       *    blocks (i.e. the "summary").
+       *  - Items are inbox messages (`allMessages`) so the home screen
+       *    doubles as the user's main inbox feed. Tapping a row navigates
+       *    to the conversation detail just like InboxList does.
+       *  - `ListEmptyComponent` covers the signed-in-but-no-messages
+       *    case. The signed-out variant is handled by `ListHeaderComponent`
+       *    rendering the sign-in card instead of the summary.
+       */}
+      <FlashList
+        data={isAuthenticated ? allMessages : []}
+        keyExtractor={(msg) => msg._id}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
-      >
-        {/* Date & Week Strip */}
-        <Text style={styles.monthYear}>{MONTHS[today.getMonth()]} {today.getFullYear()}</Text>
-        <View style={styles.weekStripRow}>
-          <TouchableOpacity
-            accessibilityLabel="Previous week"
-            accessibilityRole="button"
-            onPress={() => setSelectedDate((d) => {
-              const prev = new Date(d);
-              prev.setDate(prev.getDate() - 7);
-              return prev;
-            })}
-            style={styles.weekArrow}
-            activeOpacity={0.7}
-            // Keep the visible icon small to match the original look; touch
-            // target is grown to ~44pt via hitSlop instead.
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <MaterialCommunityIcons name="chevron-left" size={20} color="rgba(255,255,255,0.7)" />
-          </TouchableOpacity>
-          <View style={styles.weekStrip}>
-            {weekDays.map((d, i) => {
-              const isSelected = isSameDay(d, selectedDate);
-              return (
-                <TouchableOpacity
-                  key={i}
-                  style={[styles.dayCell, isSelected && styles.dayCellActive]}
-                  onPress={() => setSelectedDate(new Date(d))}
-                  activeOpacity={0.7}
-                  accessibilityLabel={`${DAYS[d.getDay()]} ${d.getDate()}`}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: isSelected }}
-                >
-                  <Text style={[styles.dayLabel, isSelected && styles.dayLabelActive]}>
-                    {DAYS[d.getDay()]}
-                  </Text>
-                  <Text style={[styles.dayNumber, isSelected && styles.dayNumberActive]}>
-                    {String(d.getDate()).padStart(2, '0')}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-          <TouchableOpacity
-            accessibilityLabel="Next week"
-            accessibilityRole="button"
-            onPress={() => setSelectedDate((d) => {
-              const next = new Date(d);
-              next.setDate(next.getDate() + 7);
-              return next;
-            })}
-            style={styles.weekArrow}
-            activeOpacity={0.7}
-            // Keep the visible icon small to match the original look; touch
-            // target is grown to ~44pt via hitSlop instead.
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <MaterialCommunityIcons name="chevron-right" size={20} color="rgba(255,255,255,0.7)" />
-          </TouchableOpacity>
-        </View>
-
-        {/* "Go to today" chip */}
-        {!isOnToday && (
-          <View style={styles.todayChipRow}>
-            <TouchableOpacity
-              style={styles.todayChip}
-              onPress={() => setSelectedDate(new Date())}
-              activeOpacity={0.7}
-              accessibilityLabel="Jump to today"
-              accessibilityRole="button"
-            >
-              <MaterialCommunityIcons name="calendar-today" size={14} color="#FFFFFF" />
-              <Text style={styles.todayChipText}>Today</Text>
-            </TouchableOpacity>
+        renderItem={({ item }) => (
+          <View style={[styles.feedRow, { backgroundColor: colors.background }]}>
+            <MessageRow
+              message={item}
+              onStar={handleStar}
+              onSelect={handleMessagePress}
+              labelColorMap={labelColorMap}
+            />
           </View>
         )}
-
-        {/* Today's Brief Title */}
-        <Text style={styles.briefTitle}>
-          <Text style={styles.briefTitleItalic}>Today's Brief</Text>
-          {' — '}
-          {dateString}
-        </Text>
-
-        {!isAuthenticated ? (
-          /*
-           * Signed-out variant — hide AI brief / needs-response / follow-up /
-           * important cards (they all require authenticated mailbox access) and
-           * show a single sign-in CTA card instead.
-           */
-          <View style={[styles.card, { backgroundColor: colors.background }]}>
-            <View style={styles.cardContent}>
-              <Text style={[styles.greetingText, { color: colors.text }]}>
-                {greetingLine}
-              </Text>
-              <Text style={[styles.digestText, styles.signedOutText, { color: colors.secondaryText }]}>
-                Sign in to see your daily brief, emails that need a reply, and
-                follow-ups waiting on you.
-              </Text>
-              <View style={styles.signedOutCtaWrapper}>
-                <OxySignInButton variant="contained" />
-              </View>
-            </View>
-          </View>
-        ) : isLoading ? (
-          <View style={styles.loadingContainer}>
-            <Loading />
-          </View>
-        ) : (
+        ListHeaderComponent={
           <>
-            {/*
-             * Summary / AI brief block — renders FLUSH against the photo
-             * background (no card wrapper, no rounded panel, no shadow). Just
-             * the greeting, stat pills, and brief text on the overlay.
-             */}
-            <View style={styles.summaryBlock}>
-              <Text style={[styles.summaryGreeting, styles.overlayTextShadow]}>
-                {greetingLine}
-              </Text>
-
-              {/* Stats row — pills stay tinted so they read on the photo */}
-              <View style={styles.statsRow}>
-                <View style={[styles.statPill, { backgroundColor: colors.primaryContainer }]}>
-                  {Platform.OS === 'web' ? (
-                    <HugeiconsIcon icon={Mail01Icon as unknown as IconSvgElement} size={14} color={colors.primary} />
-                  ) : (
-                    <MaterialCommunityIcons name="email-outline" size={14} color={colors.primary} />
-                  )}
-                  <Text style={[styles.statText, { color: colors.primary }]}>
-                    {unreadCount} unread
-                  </Text>
-                </View>
-                <View style={[styles.statPill, { backgroundColor: 'rgba(255,255,255,0.18)' }]}>
-                  {Platform.OS === 'web' ? (
-                    <HugeiconsIcon icon={StarIcon as unknown as IconSvgElement} size={14} color={colors.starred} />
-                  ) : (
-                    <MaterialCommunityIcons name="star" size={14} color={colors.starred} />
-                  )}
-                  <Text style={[styles.statText, { color: colors.starred }]}>
-                    {starredCount} starred
-                  </Text>
-                </View>
-                <View style={[styles.statPill, { backgroundColor: 'rgba(255,255,255,0.18)' }]}>
-                  {Platform.OS === 'web' ? (
-                    <HugeiconsIcon icon={Attachment01Icon as unknown as IconSvgElement} size={14} color="#FFFFFF" />
-                  ) : (
-                    <MaterialCommunityIcons name="paperclip" size={14} color="#FFFFFF" />
-                  )}
-                  <Text style={[styles.statText, { color: '#FFFFFF' }]}>
-                    {attachmentCount}
-                  </Text>
-                </View>
-              </View>
-
-              {briefLoading ? (
-                <View style={styles.briefLoadingRow}>
-                  <Loading variant="inline" size="small" />
-                  <Text style={[styles.summaryBriefText, styles.overlayTextShadow]}>
-                    Alia is analyzing your inbox...
-                  </Text>
-                </View>
-              ) : briefError && !briefText ? (
-                <Text style={[styles.summaryBriefText, styles.overlayTextShadow]}>
-                  Unable to generate brief right now.
-                </Text>
-              ) : briefText ? (
-                <Text style={[styles.summaryBriefText, styles.overlayTextShadow]}>
-                  {briefText}
-                  {briefStreaming && <Text style={styles.summaryBriefCursor}>|</Text>}
-                </Text>
-              ) : (
-                <Text style={[styles.summaryBriefText, styles.overlayTextShadow]}>
-                  No emails to summarize yet.
-                </Text>
-              )}
+            {/* Single header above the week strip — replaces the old "May 2026"
+                month label. Reads "Today's Brief - May 24, 2026" so the date
+                and section name are surfaced in one line. */}
+            <Text style={styles.briefTitle}>
+              <Text style={styles.briefTitleItalic}>Today's Brief</Text>
+              {' - '}
+              {longDate}
+            </Text>
+            <View style={styles.weekStripRow}>
               <TouchableOpacity
-                onPress={regenerate}
-                style={styles.refreshButton}
-                activeOpacity={0.7}
-                accessibilityLabel="Regenerate brief"
+                accessibilityLabel="Previous week"
                 accessibilityRole="button"
+                onPress={() => setSelectedDate((d) => {
+                  const prev = new Date(d);
+                  prev.setDate(prev.getDate() - 7);
+                  return prev;
+                })}
+                style={styles.weekArrow}
+                activeOpacity={0.7}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
-                <MaterialCommunityIcons name="refresh" size={16} color="rgba(255,255,255,0.85)" />
+                <MaterialCommunityIcons name="chevron-left" size={20} color="rgba(255,255,255,0.7)" />
+              </TouchableOpacity>
+              <View style={styles.weekStrip}>
+                {weekDays.map((d, i) => {
+                  const isSelected = isSameDay(d, selectedDate);
+                  return (
+                    <TouchableOpacity
+                      key={i}
+                      style={[styles.dayCell, isSelected && styles.dayCellActive]}
+                      onPress={() => setSelectedDate(new Date(d))}
+                      activeOpacity={0.7}
+                      accessibilityLabel={`${DAYS[d.getDay()]} ${d.getDate()}`}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: isSelected }}
+                    >
+                      <Text style={[styles.dayLabel, isSelected && styles.dayLabelActive]}>
+                        {DAYS[d.getDay()]}
+                      </Text>
+                      <Text style={[styles.dayNumber, isSelected && styles.dayNumberActive]}>
+                        {String(d.getDate()).padStart(2, '0')}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+              <TouchableOpacity
+                accessibilityLabel="Next week"
+                accessibilityRole="button"
+                onPress={() => setSelectedDate((d) => {
+                  const next = new Date(d);
+                  next.setDate(next.getDate() + 7);
+                  return next;
+                })}
+                style={styles.weekArrow}
+                activeOpacity={0.7}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <MaterialCommunityIcons name="chevron-right" size={20} color="rgba(255,255,255,0.7)" />
               </TouchableOpacity>
             </View>
 
-            {/*
-             * Needs Response — sub-content below the hero; uses the standard
-             * card style so it reads as a list panel separate from the flush
-             * AI summary above.
-             */}
-            {needsResponseMessages.length > 0 && (
-              <View style={[styles.card, { backgroundColor: colors.background }]}>
-                <TouchableOpacity
-                  style={styles.sectionHeader}
-                  onPress={() => setNeedsResponseExpanded((v) => !v)}
-                  activeOpacity={0.7}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Needs response, ${needsResponseCount} email${needsResponseCount === 1 ? '' : 's'}`}
-                  accessibilityState={{ expanded: needsResponseExpanded }}
-                >
-                  <View style={styles.sectionHeaderLeft}>
-                    <MaterialCommunityIcons name="message-reply-text-outline" size={18} color={colors.primary} />
-                    <Text style={[styles.sectionTitle, { color: colors.text }]}>
-                      Needs Response
-                    </Text>
-                    <Badge variant="subtle" color="primary" content={needsResponseCount} size="small" />
-                  </View>
-                  {Platform.OS === 'web' ? (
-                    <HugeiconsIcon
-                      icon={(needsResponseExpanded ? ArrowUp01Icon : ArrowDown01Icon) as unknown as IconSvgElement}
-                      size={20}
-                      color={colors.secondaryText}
-                    />
-                  ) : (
-                    <MaterialCommunityIcons
-                      name={needsResponseExpanded ? 'chevron-up' : 'chevron-down'}
-                      size={20}
-                      color={colors.secondaryText}
-                    />
-                  )}
-                </TouchableOpacity>
-
-                {needsResponseExpanded && (
-                  <>
-                    {needsResponseMessages.map((msg, index) => (
-                      <React.Fragment key={msg._id}>
-                        {index > 0 && (
-                           <Divider />
-                        )}
-                        <MessageRow
-                          message={msg}
-                          onStar={handleStar}
-                          onSelect={handleMessagePress}
-                          labelColorMap={labelColorMap}
-                        />
-                      </React.Fragment>
-                    ))}
-                  </>
-                )}
-              </View>
-            )}
-
-            {/* Follow Up — card-styled list (sub-content). */}
-            {followUpMessages.length > 0 && (
-              <View style={[styles.card, { backgroundColor: colors.background }]}>
-                <TouchableOpacity
-                  style={styles.sectionHeader}
-                  onPress={() => setFollowUpExpanded((v) => !v)}
-                  activeOpacity={0.7}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Follow up, ${followUpCount} email${followUpCount === 1 ? '' : 's'}`}
-                  accessibilityState={{ expanded: followUpExpanded }}
-                >
-                  <View style={styles.sectionHeaderLeft}>
-                    <MaterialCommunityIcons name="clock-outline" size={18} color={colors.starred} />
-                    <Text style={[styles.sectionTitle, { color: colors.text }]}>
-                      Follow Up
-                    </Text>
-                    <Badge variant="subtle" color="warning" content={followUpCount} size="small" />
-                  </View>
-                  {Platform.OS === 'web' ? (
-                    <HugeiconsIcon
-                      icon={(followUpExpanded ? ArrowUp01Icon : ArrowDown01Icon) as unknown as IconSvgElement}
-                      size={20}
-                      color={colors.secondaryText}
-                    />
-                  ) : (
-                    <MaterialCommunityIcons
-                      name={followUpExpanded ? 'chevron-up' : 'chevron-down'}
-                      size={20}
-                      color={colors.secondaryText}
-                    />
-                  )}
-                </TouchableOpacity>
-
-                {followUpExpanded && (
-                  <>
-                    {followUpMessages.map((msg, index) => (
-                      <React.Fragment key={msg._id}>
-                        {index > 0 && (
-                           <Divider />
-                        )}
-                        <MessageRow
-                          message={msg}
-                          onStar={handleStar}
-                          onSelect={handleMessagePress}
-                          labelColorMap={labelColorMap}
-                        />
-                      </React.Fragment>
-                    ))}
-                  </>
-                )}
-              </View>
-            )}
-
-            {/* Important Information */}
-            <View style={[styles.card, { backgroundColor: colors.background }]}>
-              <TouchableOpacity
-                style={styles.sectionHeader}
-                onPress={() => setImportantExpanded((v) => !v)}
-                activeOpacity={0.7}
-                accessibilityRole="button"
-                accessibilityLabel="Important information"
-                accessibilityState={{ expanded: importantExpanded }}
-              >
-                <Text style={[styles.sectionTitle, { color: colors.text }]}>
-                  Important Information
+            {!isAuthenticated ? (
+              /*
+               * Signed-out variant — render flush against the photo overlay
+               * (no card chrome). Greeting + CTA copy + sign-in button on
+               * the wheat-field background. No message feed below.
+               */
+              <View style={styles.summaryBlock}>
+                <Text style={[styles.summaryGreeting, styles.overlayTextShadow]}>
+                  {greetingLine}
                 </Text>
-                {Platform.OS === 'web' ? (
-                  <HugeiconsIcon
-                    icon={(importantExpanded ? ArrowUp01Icon : ArrowDown01Icon) as unknown as IconSvgElement}
-                    size={20}
-                    color={colors.secondaryText}
-                  />
-                ) : (
-                  <MaterialCommunityIcons
-                    name={importantExpanded ? 'chevron-up' : 'chevron-down'}
-                    size={20}
-                    color={colors.secondaryText}
-                  />
-                )}
-              </TouchableOpacity>
+                <Text style={[styles.summaryBriefText, styles.signedOutText, styles.overlayTextShadow]}>
+                  Sign in to see your daily brief, emails that need a reply, and
+                  follow-ups waiting on you.
+                </Text>
+                <View style={styles.signedOutCtaWrapper}>
+                  <OxySignInButton variant="contained" />
+                </View>
+              </View>
+            ) : (
+              <>
+                {/*
+                 * Summary / AI brief block — renders FLUSH against the photo
+                 * background (no card wrapper, no rounded panel, no shadow).
+                 */}
+                <View style={styles.summaryBlock}>
+                  <Text style={[styles.summaryGreeting, styles.overlayTextShadow]}>
+                    {greetingLine}
+                  </Text>
 
-              {importantExpanded && (
-                <>
-                  {recentMessages.length > 0 ? (
-                    recentMessages.map((msg, index) => (
-                      <React.Fragment key={msg._id}>
-                        {index > 0 && (
-                           <Divider />
-                        )}
-                        <MessageRow
-                          message={msg}
-                          onStar={handleStar}
-                          onSelect={handleMessagePress}
-                          labelColorMap={labelColorMap}
-                        />
-                      </React.Fragment>
-                    ))
-                  ) : (
-                    <View style={styles.emptyContainer}>
+                  {/* Stats row — pills stay tinted so they read on the photo */}
+                  <View style={styles.statsRow}>
+                    <View style={[styles.statPill, { backgroundColor: colors.primaryContainer }]}>
                       {Platform.OS === 'web' ? (
-                        <HugeiconsIcon icon={CheckmarkCircle02Icon as unknown as IconSvgElement} size={40} color={colors.success} />
+                        <HugeiconsIcon icon={Mail01Icon as unknown as IconSvgElement} size={14} color={colors.primary} />
                       ) : (
-                        <MaterialCommunityIcons name="check-circle-outline" size={40} color={colors.success} />
+                        <MaterialCommunityIcons name="email-outline" size={14} color={colors.primary} />
                       )}
-                      <Text style={[styles.emptyTitle, { color: colors.text }]}>All clear</Text>
-                      <Text style={[styles.emptySubtitle, { color: colors.secondaryText }]}>
-                        No priority emails right now. Enjoy your day!
+                      <Text style={[styles.statText, { color: colors.primary }]}>
+                        {unreadCount} unread
                       </Text>
                     </View>
+                    <View style={[styles.statPill, { backgroundColor: 'rgba(255,255,255,0.18)' }]}>
+                      {Platform.OS === 'web' ? (
+                        <HugeiconsIcon icon={StarIcon as unknown as IconSvgElement} size={14} color={colors.starred} />
+                      ) : (
+                        <MaterialCommunityIcons name="star" size={14} color={colors.starred} />
+                      )}
+                      <Text style={[styles.statText, { color: colors.starred }]}>
+                        {starredCount} starred
+                      </Text>
+                    </View>
+                    <View style={[styles.statPill, { backgroundColor: 'rgba(255,255,255,0.18)' }]}>
+                      {Platform.OS === 'web' ? (
+                        <HugeiconsIcon icon={Attachment01Icon as unknown as IconSvgElement} size={14} color="#FFFFFF" />
+                      ) : (
+                        <MaterialCommunityIcons name="paperclip" size={14} color="#FFFFFF" />
+                      )}
+                      <Text style={[styles.statText, { color: '#FFFFFF' }]}>
+                        {attachmentCount}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {briefLoading ? (
+                    <View style={styles.briefLoadingRow}>
+                      <Loading variant="inline" size="small" />
+                      <Text style={[styles.summaryBriefText, styles.overlayTextShadow]}>
+                        Alia is analyzing your inbox...
+                      </Text>
+                    </View>
+                  ) : briefError && !briefText ? (
+                    <Text style={[styles.summaryBriefText, styles.overlayTextShadow]}>
+                      Unable to generate brief right now.
+                    </Text>
+                  ) : briefText ? (
+                    <Text style={[styles.summaryBriefText, styles.overlayTextShadow]}>
+                      {briefText}
+                      {briefStreaming && <Text style={styles.summaryBriefCursor}>|</Text>}
+                    </Text>
+                  ) : (
+                    <Text style={[styles.summaryBriefText, styles.overlayTextShadow]}>
+                      No emails to summarize yet.
+                    </Text>
                   )}
-                </>
-              )}
-            </View>
+                  <TouchableOpacity
+                    onPress={regenerate}
+                    style={styles.refreshButton}
+                    activeOpacity={0.7}
+                    accessibilityLabel="Regenerate brief"
+                    accessibilityRole="button"
+                  >
+                    <MaterialCommunityIcons name="refresh" size={16} color="rgba(255,255,255,0.85)" />
+                  </TouchableOpacity>
+                </View>
+
+                {/* Needs Response — card-styled sub-content panel. */}
+                {needsResponseMessages.length > 0 && (
+                  <View style={[styles.card, { backgroundColor: colors.background }]}>
+                    <TouchableOpacity
+                      style={styles.sectionHeader}
+                      onPress={() => setNeedsResponseExpanded((v) => !v)}
+                      activeOpacity={0.7}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Needs response, ${needsResponseCount} email${needsResponseCount === 1 ? '' : 's'}`}
+                      accessibilityState={{ expanded: needsResponseExpanded }}
+                    >
+                      <View style={styles.sectionHeaderLeft}>
+                        <MaterialCommunityIcons name="message-reply-text-outline" size={18} color={colors.primary} />
+                        <Text style={[styles.sectionTitle, { color: colors.text }]}>
+                          Needs Response
+                        </Text>
+                        <Badge variant="subtle" color="primary" content={needsResponseCount} size="small" />
+                      </View>
+                      {Platform.OS === 'web' ? (
+                        <HugeiconsIcon
+                          icon={(needsResponseExpanded ? ArrowUp01Icon : ArrowDown01Icon) as unknown as IconSvgElement}
+                          size={20}
+                          color={colors.secondaryText}
+                        />
+                      ) : (
+                        <MaterialCommunityIcons
+                          name={needsResponseExpanded ? 'chevron-up' : 'chevron-down'}
+                          size={20}
+                          color={colors.secondaryText}
+                        />
+                      )}
+                    </TouchableOpacity>
+
+                    {needsResponseExpanded && (
+                      <>
+                        {needsResponseMessages.map((msg, index) => (
+                          <React.Fragment key={msg._id}>
+                            {index > 0 && (
+                               <Divider />
+                            )}
+                            <MessageRow
+                              message={msg}
+                              onStar={handleStar}
+                              onSelect={handleMessagePress}
+                              labelColorMap={labelColorMap}
+                            />
+                          </React.Fragment>
+                        ))}
+                      </>
+                    )}
+                  </View>
+                )}
+
+                {/* Follow Up — card-styled sub-content panel. */}
+                {followUpMessages.length > 0 && (
+                  <View style={[styles.card, { backgroundColor: colors.background }]}>
+                    <TouchableOpacity
+                      style={styles.sectionHeader}
+                      onPress={() => setFollowUpExpanded((v) => !v)}
+                      activeOpacity={0.7}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Follow up, ${followUpCount} email${followUpCount === 1 ? '' : 's'}`}
+                      accessibilityState={{ expanded: followUpExpanded }}
+                    >
+                      <View style={styles.sectionHeaderLeft}>
+                        <MaterialCommunityIcons name="clock-outline" size={18} color={colors.starred} />
+                        <Text style={[styles.sectionTitle, { color: colors.text }]}>
+                          Follow Up
+                        </Text>
+                        <Badge variant="subtle" color="warning" content={followUpCount} size="small" />
+                      </View>
+                      {Platform.OS === 'web' ? (
+                        <HugeiconsIcon
+                          icon={(followUpExpanded ? ArrowUp01Icon : ArrowDown01Icon) as unknown as IconSvgElement}
+                          size={20}
+                          color={colors.secondaryText}
+                        />
+                      ) : (
+                        <MaterialCommunityIcons
+                          name={followUpExpanded ? 'chevron-up' : 'chevron-down'}
+                          size={20}
+                          color={colors.secondaryText}
+                        />
+                      )}
+                    </TouchableOpacity>
+
+                    {followUpExpanded && (
+                      <>
+                        {followUpMessages.map((msg, index) => (
+                          <React.Fragment key={msg._id}>
+                            {index > 0 && (
+                               <Divider />
+                            )}
+                            <MessageRow
+                              message={msg}
+                              onStar={handleStar}
+                              onSelect={handleMessagePress}
+                              labelColorMap={labelColorMap}
+                            />
+                          </React.Fragment>
+                        ))}
+                      </>
+                    )}
+                  </View>
+                )}
+
+                {/* Feed heading — sits between the summary cards and the
+                    main inbox feed below. */}
+                <View style={styles.feedHeader}>
+                  <Text style={[styles.feedHeaderText, styles.overlayTextShadow]}>
+                    Inbox
+                  </Text>
+                </View>
+              </>
+            )}
           </>
+        }
+        ItemSeparatorComponent={() => (
+          <View style={[styles.feedSeparator, { backgroundColor: colors.border }]} />
         )}
-      </ScrollView>
+        ListEmptyComponent={
+          isAuthenticated && !isLoading ? (
+            <View style={[styles.feedEmpty, { backgroundColor: colors.background }]}>
+              <Text style={[styles.feedEmptyTitle, { color: colors.text }]}>All caught up</Text>
+              <Text style={[styles.feedEmptySubtitle, { color: colors.secondaryText }]}>
+                Nothing new in your inbox.
+              </Text>
+            </View>
+          ) : isAuthenticated && isLoading ? (
+            <View style={styles.loadingContainer}>
+              <Loading />
+            </View>
+          ) : null
+        }
+      />
     </ImageBackground>
   );
 }
@@ -671,17 +623,6 @@ const styles = StyleSheet.create({
     maxWidth: 700,
     alignSelf: 'center',
     width: '100%',
-  },
-  // Month / Year — over photo, white with subtle shadow for legibility
-  monthYear: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
-    textAlign: 'center',
-    marginBottom: 8,
-    textShadowColor: 'rgba(0,0,0,0.45)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
   },
   // Week strip — original visual treatment; touch-target a11y is preserved
   // via `hitSlop` on the chevron `TouchableOpacity` (see JSX), not by growing
@@ -739,25 +680,6 @@ const styles = StyleSheet.create({
   dayNumberActive: {
     color: '#A23BC2',
   },
-  // Today chip — over photo
-  todayChipRow: {
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  todayChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.25)',
-    paddingVertical: 6,
-    paddingHorizontal: 14,
-    borderRadius: 16,
-    gap: 6,
-  },
-  todayChipText: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '600',
-  },
   // Brief title — over photo
   briefTitle: {
     color: '#FFFFFF',
@@ -794,9 +716,6 @@ const styles = StyleSheet.create({
       },
     }),
   },
-  cardContent: {
-    padding: 20,
-  },
   // Greeting (only used by the signed-out sign-in card now)
   greetingText: {
     fontSize: 22,
@@ -818,11 +737,14 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   summaryGreeting: {
+    // Hero title — primary focal point of the home screen now that the cards
+    // are gone. Bumped from 22 → 34 + heavier weight to read like an h1.
     color: '#FFFFFF',
-    fontSize: 22,
-    fontWeight: '600',
+    fontSize: 34,
+    fontWeight: '700',
     marginBottom: 12,
     textAlign: 'center',
+    lineHeight: 40,
   },
   summaryBriefText: {
     color: '#FFFFFF',
@@ -836,35 +758,6 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0,0,0,0.45)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
-  },
-  summarySectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 4,
-    paddingVertical: 8,
-    marginBottom: 8,
-  },
-  summarySectionTitle: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  summaryRowsHolder: {
-    // Subtle white-ish backdrop so MessageRow content reads on the photo,
-    // without a hard card edge. Visually feels like translucent glass.
-    borderRadius: 12,
-    overflow: 'hidden',
-    ...Platform.select({
-      web: { boxShadow: '0 2px 12px rgba(0,0,0,0.08)' },
-      default: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.06,
-        shadowRadius: 4,
-        elevation: 1,
-      },
-    }),
   },
   // Stats
   statsRow: {
@@ -930,6 +823,45 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   emptySubtitle: {
+    fontSize: 13,
+    textAlign: 'center',
+  },
+  // Inbox feed (rows under the summary)
+  feedHeader: {
+    paddingHorizontal: 4,
+    paddingVertical: 8,
+    marginTop: 4,
+    marginBottom: 4,
+  },
+  feedHeaderText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
+  feedRow: {
+    // Each row sits on the themed background so MessageRow text is readable;
+    // first and last row corners are handled by the surrounding card-ish
+    // styling around the whole feed.
+  },
+  feedSeparator: {
+    height: StyleSheet.hairlineWidth,
+    marginLeft: 68,
+  },
+  feedEmpty: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 32,
+    gap: 6,
+    borderRadius: 12,
+    marginTop: 8,
+  },
+  feedEmptyTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  feedEmptySubtitle: {
     fontSize: 13,
     textAlign: 'center',
   },

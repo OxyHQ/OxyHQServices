@@ -36,6 +36,7 @@ import { useTemplates } from '@/hooks/queries/useTemplates';
 import { useCreateTemplate, useUpdateTemplate, useDeleteTemplate } from '@/hooks/mutations/useTemplateMutations';
 import { useThemeContext } from '@/contexts/theme-context';
 import { ContactsSection } from '@/components/ContactsSection';
+import { ColorPresetPicker } from '@/components/ColorPresetPicker';
 import { useEmailStore } from '@/hooks/useEmail';
 import type { EmailSettings } from '@/services/emailApi';
 
@@ -1193,6 +1194,8 @@ export function SettingsPage({ section }: SettingsPageProps) {
                   <SegmentedControl.ItemText>System</SegmentedControl.ItemText>
                 </SegmentedControl.Item>
               </SegmentedControl.Root>
+              <View style={[styles.appearanceDivider, { borderTopColor: colors.border }]} />
+              <ColorPresetPicker />
             </View>
           </>
         )}
@@ -1536,6 +1539,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   importExportDivider: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    marginVertical: 4,
+  },
+  appearanceDivider: {
     borderTopWidth: StyleSheet.hairlineWidth,
     marginVertical: 4,
   },

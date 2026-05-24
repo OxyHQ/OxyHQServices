@@ -45,10 +45,14 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@oxyhq/bloom/theme';
+import { logger } from '@oxyhq/core';
 import { fontFamilies } from '../styles/fonts';
 import { useI18n } from '../hooks/useI18n';
 import { toast } from '../../lib/sonner';
 import type { BaseScreenProps } from '../types/navigation';
+
+/** Component name used in `logger` context for filtered diagnostics. */
+const LOG_COMPONENT = 'AvatarCropScreen';
 
 /** Final crop result handed back to the caller. */
 export interface AvatarCropResult {
@@ -300,15 +304,15 @@ const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
         (uri: string) => {
             if (measuringUriRef.current === uri) return;
             measuringUriRef.current = uri;
-            if (__DEV__) {
-                console.log('[AvatarCropScreen] Measuring image:', uri);
-            }
+            // `logger.debug` is dev-gated upstream (no-op in production).
+            // We deliberately don't log the full file URI in any production
+            // path — only in debug builds — to avoid leaking on-device file
+            // paths into logcat / Sentry breadcrumbs.
+            logger.debug('Measuring image', { component: LOG_COMPONENT });
             Image.getSize(
                 uri,
                 (w, h) => {
-                    if (__DEV__) {
-                        console.log('[AvatarCropScreen] Image measured:', { uri, width: w, height: h });
-                    }
+                    logger.debug('Image measured', { component: LOG_COMPONENT }, { width: w, height: h });
                     if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) {
                         const message = t('editProfile.toasts.cropMeasureFailed') ||
                             'Could not measure the image';
@@ -321,9 +325,7 @@ const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
                     setNaturalSize({ width: w, height: h });
                 },
                 (err) => {
-                    if (__DEV__) {
-                        console.error('[AvatarCropScreen] Image.getSize failed:', uri, err);
-                    }
+                    logger.error('Image.getSize failed', err, { component: LOG_COMPONENT });
                     const message = t('editProfile.toasts.cropMeasureFailed') ||
                         'Could not measure the image';
                     setMeasureError(message);
@@ -345,14 +347,19 @@ const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
         handleImageMeasured(imageUri);
     }, [handleImageMeasured, imageUri, naturalSize, sourceHeight, sourceWidth]);
 
-    // Dev-only one-time mount log so we can confirm the URI we received.
+    // Dev-only one-time mount breadcrumb. `logger.debug` is dev-gated so
+    // this is a no-op in production releases; we additionally avoid logging
+    // the full `imageUri` to prevent leaking on-device file paths into any
+    // breadcrumb sink that picks up debug output.
     useEffect(() => {
-        if (!__DEV__) return;
-        console.log('[AvatarCropScreen] mount', {
-            imageUri,
-            sourceWidth,
-            sourceHeight,
-        });
+        logger.debug(
+            'mount',
+            { component: LOG_COMPONENT },
+            {
+                hasImageUri: !!imageUri,
+                hasSourceDimensions: !!(sourceWidth && sourceHeight),
+            },
+        );
     }, [imageUri, sourceHeight, sourceWidth]);
 
     // Detect reduce-motion preference once on mount + subscribe to changes.
@@ -424,8 +431,7 @@ const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
 
     /** Dev-only ping fired once per gesture start so we can confirm in logs. */
     const logGestureStart = useCallback((kind: 'pan' | 'pinch') => {
-        if (!__DEV__) return;
-        console.log(`[AvatarCropScreen] gesture start: ${kind}`);
+        logger.debug(`gesture start: ${kind}`, { component: LOG_COMPONENT });
     }, []);
 
     const panGesture = useMemo(
@@ -596,16 +602,19 @@ const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
      * crop + resize to 512x512 JPEG.
      */
     const handleConfirm = useCallback(async () => {
-        if (__DEV__) {
-            console.log('[AvatarCropScreen] handleConfirm start', {
-                imageUri,
-                baseFit,
-                naturalSize,
+        // Dev-only breadcrumb. Avoid logging `imageUri` so on-device file
+        // paths don't leak into breadcrumb sinks that surface debug output.
+        logger.debug(
+            'handleConfirm start',
+            { component: LOG_COMPONENT },
+            {
+                hasBaseFit: !!baseFit,
+                hasNaturalSize: !!naturalSize,
                 committedScale: committedScale.current,
                 committedTranslateX: committedTranslateX.current,
                 committedTranslateY: committedTranslateY.current,
-            });
-        }
+            },
+        );
         if (!imageUri || !baseFit || !naturalSize) {
             toast.error(
                 t('editProfile.toasts.cropNotReady') || 'Image not ready yet',
@@ -644,15 +653,18 @@ const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
                 throw new Error('Computed crop region is invalid');
             }
 
-            if (__DEV__) {
-                console.log('[AvatarCropScreen] manipulateAsync input', {
-                    imageUri,
+            // Dev-only crop coordinates. We log the derived crop region but
+            // never the input URI — paths are PII-adjacent on some platforms.
+            logger.debug(
+                'manipulateAsync input',
+                { component: LOG_COMPONENT },
+                {
                     cropX,
                     cropY,
                     cropSize,
-                    OUTPUT_SIZE,
-                });
-            }
+                    outputSize: OUTPUT_SIZE,
+                },
+            );
 
             const result = await manipulateAsync(
                 imageUri,
@@ -670,9 +682,12 @@ const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
                 { format: SaveFormat.JPEG, compress: 0.85 },
             );
 
-            if (__DEV__) {
-                console.log('[AvatarCropScreen] manipulateAsync result', result);
-            }
+            // Log only the result's dimensions, never the on-disk URI.
+            logger.debug(
+                'manipulateAsync result',
+                { component: LOG_COMPONENT },
+                { width: result.width, height: result.height },
+            );
 
             void hapticNotification('success');
 
@@ -687,9 +702,7 @@ const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
             // success toast (uploads typically toast their own outcome).
             onClose?.();
         } catch (err) {
-            if (__DEV__) {
-                console.error('[AvatarCropScreen] handleConfirm failed', err);
-            }
+            logger.error('handleConfirm failed', err, { component: LOG_COMPONENT });
             const message = err instanceof Error ? err.message : undefined;
             void hapticNotification('error');
             toast.error(

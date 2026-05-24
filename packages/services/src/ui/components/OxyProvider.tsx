@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, useState, type ComponentType, type FC, type ReactNode } from 'react';
-import { AppState, Platform } from 'react-native';
+import { AppState, Platform, StyleSheet, View } from 'react-native';
 import type { OxyProviderProps } from '../types/navigation';
 import { OxyContextProvider, type OxyContextProviderProps } from '../context/OxyContext';
 import { QueryClientProvider, focusManager, onlineManager } from '@tanstack/react-query';
@@ -8,6 +8,29 @@ import { setupFonts } from './FontLoader';
 import { Toaster } from '../../lib/sonner';
 import { attachQueryPersistence, createQueryClient } from '../hooks/queryClient';
 import { createPlatformStorage, type StorageInterface } from '../utils/storageHelpers';
+
+/**
+ * Background color shown for the brief window between mount and the
+ * persisted-cache hydration completing. Matches the typical splash-screen
+ * backgrounds used across Oxy apps (dark surface, white-on-dark text), so
+ * the transition reads as a continuation of the splash instead of a
+ * white flash. Apps that need a different boot color can keep doing their
+ * own `expo-splash-screen` orchestration — this placeholder just guarantees
+ * we never render a transparent `null` while we wait.
+ *
+ * Light-mode background. Apps that boot into dark mode see a brief light
+ * flash here, which is unavoidable without re-implementing the BloomTheme
+ * resolver outside of `<BloomThemeProvider>`. The light value is far less
+ * jarring than `null` (transparent) on either theme.
+ */
+const BOOT_BG_COLOR = '#ffffff';
+
+const bootStyles = StyleSheet.create({
+    bootShell: {
+        flex: 1,
+        backgroundColor: BOOT_BG_COLOR,
+    },
+});
 
 // Initialize fonts automatically
 setupFonts();
@@ -244,9 +267,18 @@ const OxyProvider: FC<OxyProviderProps> = ({
         };
     }, []);
 
-    // Ensure we have a valid QueryClient
+    // While the QueryClient is being created and the persisted cache is
+    // hydrating, render a solid-color shell instead of `null`. Returning
+    // `null` here on mid-range Android devices flashed a transparent
+    // surface for 200–600ms after the native splash hid, which read as a
+    // glitch. The shell keeps the screen filled with a sensible default
+    // until children can mount under a real <QueryClientProvider>.
     if (!queryClient) {
-        return null;
+        return (
+            <KeyboardWrapper>
+                <View style={bootStyles.bootShell} />
+            </KeyboardWrapper>
+        );
     }
 
     // Core content: QueryClient + OxyContext + UI overlays

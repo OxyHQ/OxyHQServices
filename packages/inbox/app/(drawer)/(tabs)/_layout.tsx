@@ -23,14 +23,21 @@
  */
 
 import { NativeTabs } from 'expo-router/unstable-native-tabs';
+import { useKeyboardState } from 'react-native-keyboard-controller';
 
 import { useColors } from '@/constants/theme';
 
 export default function TabsLayout() {
   const colors = useColors();
+  // Drive the native tab bar's `hidden` prop from the OS keyboard state via
+  // `react-native-keyboard-controller`. The selector only re-renders this
+  // layout when the visibility boolean actually flips. `KeyboardProvider` is
+  // already mounted at the app root in `app/_layout.tsx`.
+  const keyboardVisible = useKeyboardState((state) => state.isVisible);
 
   return (
     <NativeTabs
+      hidden={keyboardVisible}
       iconColor={{
         default: colors.icon,
         selected: colors.primary,

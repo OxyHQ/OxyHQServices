@@ -101,12 +101,27 @@ export function WebOxyProvider({
   const [authManager] = useState(() => createAuthManager(oxyServices, { autoRefresh: true }));
   const [queryClient] = useState(() => createQueryClient());
 
-  // Persist the query cache to localStorage so cached identity and any paused
-  // mutations survive a full page reload. Detach on unmount so HMR doesn't
-  // leak subscriptions.
+  // Block first render until the persisted localStorage cache has been
+  // restored — mirrors the RN OxyProvider pattern. Without this gate the
+  // first paint observes an empty cache and any consumer reading
+  // `getQueryData(...)` synchronously (or using `placeholderData: 'previous'`
+  // gating) misses the persisted blob.
+  //
+  // Persistence is attached inside the same effect so we can hold a
+  // reference to the `restored` promise and only flip `isRestoring` to
+  // false once it settles (success OR failure). Detach on unmount so HMR
+  // doesn't leak subscriptions.
+  const [isRestoring, setIsRestoring] = useState(true);
   useEffect(() => {
-    const { unsubscribe } = attachQueryPersistence(queryClient);
-    return unsubscribe;
+    let mounted = true;
+    const { restored, unsubscribe } = attachQueryPersistence(queryClient);
+    restored.finally(() => {
+      if (mounted) setIsRestoring(false);
+    });
+    return () => {
+      mounted = false;
+      unsubscribe();
+    };
   }, [queryClient]);
 
   // Auth state
@@ -341,6 +356,21 @@ export function WebOxyProvider({
     signIn, signInWithFedCM, signInWithPopup, signInWithRedirect,
     signOut, isFedCMSupported, switchSession, clearSessionState,
   ]);
+
+  // Mirror the RN OxyProvider pattern: don't expose the QueryClient (or
+  // mount children) until the persisted cache has been restored. On the
+  // web this prevents the first paint from observing an empty
+  // localStorage-backed cache, which would otherwise force every
+  // identity/session/auth query to refetch from the network even when a
+  // fresh blob was available on disk.
+  //
+  // The restored promise is wired with `.finally(...)` upstream, so this
+  // unblocks on both success and failure within typically <50ms (sync
+  // localStorage read + JSON.parse). A safety net is unnecessary: the
+  // restore promise always settles synchronously after one microtask.
+  if (isRestoring) {
+    return null;
+  }
 
   return (
     <QueryClientProvider client={queryClient}>

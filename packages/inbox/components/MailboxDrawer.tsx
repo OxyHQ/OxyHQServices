@@ -18,6 +18,7 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useOxy, OxySignInButton, showSignInModal } from '@oxyhq/services';
 import { useRouter, usePathname } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import { Badge } from '@oxyhq/bloom/badge';
 import * as Dialog from '@oxyhq/bloom/dialog';
@@ -167,6 +168,7 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
   const colors = useColors();
   const { user, isAuthenticated } = useOxy();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const accountSwitcherControl = Dialog.useDialogControl();
 
   const handleOpenMenu = useCallback(() => {
@@ -295,7 +297,20 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
   const isSubscriptionsActive = currentView === 'subscriptions';
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.sidebarBackground }, collapsed && styles.containerCollapsed]}>
+    <View
+      style={[
+        styles.container,
+        {
+          backgroundColor: colors.sidebarBackground,
+          // Safe-area: respect the top notch / status bar, the home indicator
+          // (bottom), and the leading notch on landscape devices. `insets.*`
+          // is 0 on web so this is safe to apply unconditionally.
+          paddingTop: insets.top + 16,
+          paddingLeft: insets.left,
+        },
+        collapsed && styles.containerCollapsed,
+      ]}
+    >
       {/* Header */}
       <View style={[styles.header, { borderBottomColor: colors.border }, collapsed && styles.headerCollapsed]}>
         {collapsed ? (
@@ -542,11 +557,17 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
        * Account section at bottom — only rendered when signed-in. When the
        * user is signed-out the centered sign-in card above is the single
        * primary CTA; the footer drops to a thin "Not signed in" label so we
-       * don't duplicate the action.
+       * don't duplicate the action. Bottom inset is respected so the row
+       * isn't clipped by the home indicator / Android gesture area.
        */}
       {!collapsed && isAuthenticated && (
         <View style={styles.footerWrapper}>
-          <View style={[styles.footer, { borderTopColor: colors.border }]}>
+          <View
+            style={[
+              styles.footer,
+              { borderTopColor: colors.border, paddingBottom: insets.bottom + 8 },
+            ]}
+          >
             <TouchableOpacity
               style={styles.accountButton}
               onPress={handleOpenMenu}
@@ -570,7 +591,13 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
       )}
 
       {!collapsed && !isAuthenticated && (
-        <View style={[styles.footer, styles.footerSignedOut, { borderTopColor: colors.border }]}>
+        <View
+          style={[
+            styles.footer,
+            styles.footerSignedOut,
+            { borderTopColor: colors.border, paddingBottom: insets.bottom + 8 },
+          ]}
+        >
           <Text style={[styles.footerSignedOutLabel, { color: colors.secondaryText }]}>
             Not signed in
           </Text>
@@ -579,7 +606,12 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
 
       {/* Collapsed footer — avatar (signed-in) or empty (signed-out keeps it clean) */}
       {collapsed && isAuthenticated && (
-        <View style={[styles.footer, { borderTopColor: colors.border }]}>
+        <View
+          style={[
+            styles.footer,
+            { borderTopColor: colors.border, paddingBottom: insets.bottom + 8 },
+          ]}
+        >
           <TouchableOpacity
             style={styles.collapsedAccountButton}
             onPress={handleOpenMenu}
@@ -616,7 +648,7 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    paddingTop: 48,
+    // paddingTop is applied at the call site via insets.top + 16.
   },
   containerCollapsed: {
     alignItems: 'center',

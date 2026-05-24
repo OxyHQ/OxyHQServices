@@ -9,10 +9,11 @@ import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { OxyProvider, toast } from '@oxyhq/services';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { BloomThemeProvider, useTheme } from '@oxyhq/bloom/theme';
+import type { ThemeMode } from '@oxyhq/bloom/theme';
 import { Provider as PortalProvider, Outlet as PortalOutlet } from '@oxyhq/bloom/portal';
 
 import { queryClient } from '@/hooks/queries/queryClient';
-import { ThemeProvider as AppThemeProvider } from '@/contexts/theme-context';
+import { ThemeProvider as AppThemeProvider, useThemeContext } from '@/contexts/theme-context';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { registerServiceWorker } from '@/utils/registerServiceWorker';
 import { onConnectivityChange, flushQueue } from '@/utils/offlineQueue';
@@ -34,13 +35,29 @@ export default function RootLayout() {
   return (
     <ErrorBoundary>
       <Head.Provider>
-        <BloomThemeProvider mode="system" colorPreset="oxy">
-          <AppThemeProvider>
-            <RootLayoutContent />
-          </AppThemeProvider>
-        </BloomThemeProvider>
+        <AppThemeProvider>
+          <ThemedRoot />
+        </AppThemeProvider>
       </Head.Provider>
     </ErrorBoundary>
+  );
+}
+
+/**
+ * Reads the persisted theme preferences from `AppThemeProvider` and threads
+ * them into BOTH `BloomThemeProvider` (used by `useNavigationTheme` to build
+ * the react-navigation theme) AND `OxyProvider` (which mounts its own inner
+ * `BloomThemeProvider` that shadows this one, so the prop must be passed
+ * along). Keeping the two trees in sync ensures the entire UI — chrome and
+ * content — tracks the user's selection in real time.
+ */
+function ThemedRoot() {
+  const { themePreference, colorPreset } = useThemeContext();
+  const themeMode = themePreference as ThemeMode;
+  return (
+    <BloomThemeProvider mode={themeMode} colorPreset={colorPreset}>
+      <RootLayoutContent themeMode={themeMode} colorPreset={colorPreset} />
+    </BloomThemeProvider>
   );
 }
 
@@ -73,7 +90,12 @@ function useNavigationTheme() {
   );
 }
 
-function RootLayoutContent() {
+interface RootLayoutContentProps {
+  themeMode: ThemeMode;
+  colorPreset: ReturnType<typeof useThemeContext>['colorPreset'];
+}
+
+function RootLayoutContent({ themeMode, colorPreset }: RootLayoutContentProps) {
   const navTheme = useNavigationTheme();
 
   // Register service worker on web
@@ -118,7 +140,13 @@ function RootLayoutContent() {
   return (
     <QueryClientProvider client={queryClient}>
       <KeyboardProvider>
-        <OxyProvider baseURL={API_URL}>
+        {/*
+          OxyProvider mounts its own internal BloomThemeProvider that shadows
+          any outer one — so we MUST forward themeMode + colorPreset here, or
+          the entire UI under OxyProvider falls back to Bloom's default
+          `oxy` preset, no matter what the outer BloomThemeProvider sees.
+        */}
+        <OxyProvider baseURL={API_URL} themeMode={themeMode} colorPreset={colorPreset}>
           <SafeAreaProvider>
             <PortalProvider>
               <ThemeProvider value={navTheme}>

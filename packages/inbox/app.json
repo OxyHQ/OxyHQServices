@@ -14,7 +14,7 @@
         "backgroundImage": "./assets/images/adaptive-icon-background.png"
       },
       "edgeToEdgeEnabled": true,
-      "softwareKeyboardLayoutMode": "pan",
+      "softwareKeyboardLayoutMode": "resize",
       "package": "so.oxy.inbox"
     },
     "ios": {

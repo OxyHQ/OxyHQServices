@@ -7,10 +7,30 @@
 
 import { ec as EC } from 'elliptic';
 import type { ECKeyPair } from 'elliptic';
+import type { SecureStoreOptions } from 'expo-secure-store';
 import { isWeb, isIOS, isAndroid, isReactNative, isNodeJS } from '../utils/platform';
 import { loadExpoCrypto, loadNodeCrypto, loadSecureStore } from '../utils/platformCrypto';
 import { logger } from '../utils/loggerUtils';
 import { isDev } from '../shared/utils/debugUtils';
+
+/**
+ * Extended SecureStoreOptions that explicitly includes `keychainAccessGroup`.
+ *
+ * The shipped `expo-secure-store` types in this repo (see
+ * `src/types/expo-secure-store.d.ts`) already declare `keychainAccessGroup`,
+ * but we redeclare it here as an `interface extends ...` so the field stays
+ * type-safe even when the upstream package types drift. Older versions of
+ * `@types/expo-secure-store` omitted this field, which is why the code base
+ * used to fall back to `as any` — that escape hatch is now removed.
+ */
+interface OxySecureStoreOptions extends SecureStoreOptions {
+  /**
+   * iOS Keychain access group. Required for sharing identity material across
+   * apps in the Oxy ecosystem via Keychain Sharing entitlements. The
+   * underlying `expo-secure-store` runtime supports this option.
+   */
+  keychainAccessGroup?: string;
+}
 
 /**
  * Thrown when an identity-mutating operation (createIdentity / importKeyPair)
@@ -251,14 +271,16 @@ export class KeyManager {
       // iOS: Store in shared keychain group
       // Note: keychainAccessGroup requires Keychain Sharing capability in Xcode
       try {
-        await store.setItemAsync(STORAGE_KEYS.SHARED_PRIVATE_KEY, privateKey, {
+        const privateOpts: OxySecureStoreOptions = {
           keychainAccessible: store.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
-          keychainAccessGroup: IOS_KEYCHAIN_GROUP, // This enables sharing across apps
-        } as any); // Type assertion: keychainAccessGroup may not be in older @types but is supported
+          keychainAccessGroup: IOS_KEYCHAIN_GROUP, // Enables sharing across apps
+        };
+        await store.setItemAsync(STORAGE_KEYS.SHARED_PRIVATE_KEY, privateKey, privateOpts);
 
-        await store.setItemAsync(STORAGE_KEYS.SHARED_PUBLIC_KEY, publicKey, {
+        const publicOpts: OxySecureStoreOptions = {
           keychainAccessGroup: IOS_KEYCHAIN_GROUP,
-        } as any);
+        };
+        await store.setItemAsync(STORAGE_KEYS.SHARED_PUBLIC_KEY, publicKey, publicOpts);
       } catch (error) {
         throw new Error(
           `Failed to create shared identity on iOS. Ensure your app has the Keychain Sharing capability enabled with access group "${IOS_KEYCHAIN_GROUP}". Error: ${error}`
@@ -305,9 +327,8 @@ export class KeyManager {
       let publicKey: string | null = null;
 
       if (isIOS()) {
-        publicKey = await store.getItemAsync(STORAGE_KEYS.SHARED_PUBLIC_KEY, {
-          keychainAccessGroup: IOS_KEYCHAIN_GROUP,
-        } as any);
+        const opts: OxySecureStoreOptions = { keychainAccessGroup: IOS_KEYCHAIN_GROUP };
+        publicKey = await store.getItemAsync(STORAGE_KEYS.SHARED_PUBLIC_KEY, opts);
       } else if (isAndroid()) {
         publicKey = await store.getItemAsync(STORAGE_KEYS.SHARED_PUBLIC_KEY);
       }
@@ -343,9 +364,8 @@ export class KeyManager {
       let privateKey: string | null = null;
 
       if (isIOS()) {
-        privateKey = await store.getItemAsync(STORAGE_KEYS.SHARED_PRIVATE_KEY, {
-          keychainAccessGroup: IOS_KEYCHAIN_GROUP,
-        } as any);
+        const opts: OxySecureStoreOptions = { keychainAccessGroup: IOS_KEYCHAIN_GROUP };
+        privateKey = await store.getItemAsync(STORAGE_KEYS.SHARED_PRIVATE_KEY, opts);
       } else if (isAndroid()) {
         privateKey = await store.getItemAsync(STORAGE_KEYS.SHARED_PRIVATE_KEY);
       }
@@ -416,14 +436,16 @@ export class KeyManager {
     const publicKey = keyPair.getPublic('hex');
 
     if (isIOS()) {
-      await store.setItemAsync(STORAGE_KEYS.SHARED_PRIVATE_KEY, canonicalPrivate, {
+      const privateOpts: OxySecureStoreOptions = {
         keychainAccessible: store.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
         keychainAccessGroup: IOS_KEYCHAIN_GROUP,
-      } as any);
+      };
+      await store.setItemAsync(STORAGE_KEYS.SHARED_PRIVATE_KEY, canonicalPrivate, privateOpts);
 
-      await store.setItemAsync(STORAGE_KEYS.SHARED_PUBLIC_KEY, publicKey, {
+      const publicOpts: OxySecureStoreOptions = {
         keychainAccessGroup: IOS_KEYCHAIN_GROUP,
-      } as any);
+      };
+      await store.setItemAsync(STORAGE_KEYS.SHARED_PUBLIC_KEY, publicKey, publicOpts);
     } else if (isAndroid()) {
       await store.setItemAsync(STORAGE_KEYS.SHARED_PRIVATE_KEY, canonicalPrivate, {
         keychainAccessible: store.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
@@ -462,14 +484,16 @@ export class KeyManager {
       const store = await initSecureStore();
 
       if (isIOS()) {
-        await store.setItemAsync(STORAGE_KEYS.SHARED_SESSION_ID, sessionId, {
+        const sessionIdOpts: OxySecureStoreOptions = {
           keychainAccessGroup: IOS_KEYCHAIN_GROUP,
-        } as any);
+        };
+        await store.setItemAsync(STORAGE_KEYS.SHARED_SESSION_ID, sessionId, sessionIdOpts);
 
-        await store.setItemAsync(STORAGE_KEYS.SHARED_SESSION_TOKEN, accessToken, {
+        const tokenOpts: OxySecureStoreOptions = {
           keychainAccessible: store.WHEN_UNLOCKED,
           keychainAccessGroup: IOS_KEYCHAIN_GROUP,
-        } as any);
+        };
+        await store.setItemAsync(STORAGE_KEYS.SHARED_SESSION_TOKEN, accessToken, tokenOpts);
       } else if (isAndroid()) {
         await store.setItemAsync(STORAGE_KEYS.SHARED_SESSION_ID, sessionId);
         await store.setItemAsync(STORAGE_KEYS.SHARED_SESSION_TOKEN, accessToken);
@@ -505,13 +529,9 @@ export class KeyManager {
       let accessToken: string | null = null;
 
       if (isIOS()) {
-        sessionId = await store.getItemAsync(STORAGE_KEYS.SHARED_SESSION_ID, {
-          keychainAccessGroup: IOS_KEYCHAIN_GROUP,
-        } as any);
-
-        accessToken = await store.getItemAsync(STORAGE_KEYS.SHARED_SESSION_TOKEN, {
-          keychainAccessGroup: IOS_KEYCHAIN_GROUP,
-        } as any);
+        const opts: OxySecureStoreOptions = { keychainAccessGroup: IOS_KEYCHAIN_GROUP };
+        sessionId = await store.getItemAsync(STORAGE_KEYS.SHARED_SESSION_ID, opts);
+        accessToken = await store.getItemAsync(STORAGE_KEYS.SHARED_SESSION_TOKEN, opts);
       } else if (isAndroid()) {
         sessionId = await store.getItemAsync(STORAGE_KEYS.SHARED_SESSION_ID);
         accessToken = await store.getItemAsync(STORAGE_KEYS.SHARED_SESSION_TOKEN);
@@ -545,12 +565,9 @@ export class KeyManager {
       const store = await initSecureStore();
 
       if (isIOS()) {
-        await store.deleteItemAsync(STORAGE_KEYS.SHARED_SESSION_ID, {
-          keychainAccessGroup: IOS_KEYCHAIN_GROUP,
-        } as any);
-        await store.deleteItemAsync(STORAGE_KEYS.SHARED_SESSION_TOKEN, {
-          keychainAccessGroup: IOS_KEYCHAIN_GROUP,
-        } as any);
+        const opts: OxySecureStoreOptions = { keychainAccessGroup: IOS_KEYCHAIN_GROUP };
+        await store.deleteItemAsync(STORAGE_KEYS.SHARED_SESSION_ID, opts);
+        await store.deleteItemAsync(STORAGE_KEYS.SHARED_SESSION_TOKEN, opts);
       } else if (isAndroid()) {
         await store.deleteItemAsync(STORAGE_KEYS.SHARED_SESSION_ID);
         await store.deleteItemAsync(STORAGE_KEYS.SHARED_SESSION_TOKEN);

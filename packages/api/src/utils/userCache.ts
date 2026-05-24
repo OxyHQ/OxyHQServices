@@ -1,8 +1,10 @@
 import { getRedisClient } from '../config/redis';
 import { IUser } from '../models/User';
+import { logger } from './logger';
 
 const DEFAULT_TTL = 5 * 60; // 5 minutes in seconds
 const MAX_LOCAL_SIZE = 10000;
+const LOG_COMPONENT = 'UserCache';
 
 class UserCache {
   private local: Map<string, { user: IUser; timestamp: number; ttl: number }> = new Map();
@@ -20,11 +22,34 @@ class UserCache {
 
     const redis = getRedisClient();
     if (redis && redis.status === 'ready') {
+      // Warm-fill from Redis is best-effort and runs in the background.
+      // We never let a Redis hiccup (network blip, corrupt blob) escape
+      // into the unhandled-rejection sink — both the I/O step and the
+      // JSON parse step are guarded independently so a malformed cache
+      // entry doesn't poison the local map.
       redis.get(`user:${userId}`).then(data => {
-        if (data) {
-          this.setLocal(userId, JSON.parse(data));
+        if (!data) return;
+        let parsed: IUser | null = null;
+        try {
+          parsed = JSON.parse(data) as IUser;
+        } catch (parseError) {
+          logger.warn('userCache: failed to parse Redis blob; skipping warm-fill', {
+            component: LOG_COMPONENT,
+            userId,
+            err: parseError instanceof Error ? parseError.message : String(parseError),
+          });
+          return;
         }
-      }).catch(() => {});
+        if (parsed) {
+          this.setLocal(userId, parsed);
+        }
+      }).catch((err) => {
+        logger.warn('userCache: Redis warm-fill failed', {
+          component: LOG_COMPONENT,
+          userId,
+          err: err instanceof Error ? err.message : String(err),
+        });
+      });
     }
 
     return null;
@@ -37,7 +62,13 @@ class UserCache {
 
     const redis = getRedisClient();
     if (redis && redis.status === 'ready') {
-      redis.setex(`user:${userId}`, ttlSec, JSON.stringify(user)).catch(() => {});
+      redis.setex(`user:${userId}`, ttlSec, JSON.stringify(user)).catch((err) => {
+        logger.warn('userCache: Redis setex failed', {
+          component: LOG_COMPONENT,
+          userId,
+          err: err instanceof Error ? err.message : String(err),
+        });
+      });
     }
   }
 
@@ -47,7 +78,13 @@ class UserCache {
 
     const redis = getRedisClient();
     if (redis && redis.status === 'ready') {
-      redis.del(`user:${userId}`).catch(() => {});
+      redis.del(`user:${userId}`).catch((err) => {
+        logger.warn('userCache: Redis del failed', {
+          component: LOG_COMPONENT,
+          userId,
+          err: err instanceof Error ? err.message : String(err),
+        });
+      });
     }
   }
 
