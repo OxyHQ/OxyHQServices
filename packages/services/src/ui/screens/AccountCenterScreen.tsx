@@ -11,7 +11,6 @@ import { useCallback, useMemo } from 'react';
 import type { BaseScreenProps } from '../types/navigation';
 import { packageInfo } from '@oxyhq/core';
 import { toast } from '../../lib/sonner';
-import { fontFamilies } from '../styles/fonts';
 import * as Prompt from '@oxyhq/bloom/prompt';
 import { usePromptControl } from '@oxyhq/bloom/prompt';
 import ProfileCard from '../components/ProfileCard';
@@ -173,7 +172,7 @@ const styles = StyleSheet.create({
     scrollView: { flex: 1 },
     scrollContainer: screenContentStyle,
     versionContainer: { alignItems: 'center', marginTop: 20, marginBottom: 20 },
-    versionText: { fontSize: 12, fontFamily: fontFamilies.inter },
+    versionText: { fontSize: 12 },
     message: { fontSize: 16, textAlign: 'center', marginTop: 24 },
 });
 

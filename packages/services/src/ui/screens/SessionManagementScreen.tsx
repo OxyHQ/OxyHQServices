@@ -255,7 +255,7 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
                 dense: true,
             };
         });
-    }, [userSessions, activeSessionId, formatRelative, successColor, primaryColor, isDarkTheme, switchLoading, actionLoading, handleSwitchSession, confirmLogoutSession, dangerColor]);
+    }, [userSessions, activeSessionId, formatRelative, successColor, primaryColor, bloomTheme.colors.primarySubtle, bloomTheme.colors.negativeSubtle, switchLoading, actionLoading, handleSwitchSession, confirmLogoutSession, dangerColor, t]);
 
     const bulkItems = useMemo(() => [
         {
