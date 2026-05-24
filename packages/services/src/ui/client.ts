@@ -35,9 +35,6 @@ export { default as ProfileScreen } from './screens/ProfileScreen';
 export { useAuthStore } from './stores/authStore';
 export { useAccountStore } from './stores/accountStore';
 
-// Toast
-export { toast } from '../lib/sonner';
-
 // Error handler utilities
 export {
     handleAuthError,

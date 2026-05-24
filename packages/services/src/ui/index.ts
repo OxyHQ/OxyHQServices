@@ -34,7 +34,6 @@ let useFollow;
 let ProfileScreen;
 let useAuthStore;
 let useAccountStore;
-let toast;
 let useStorage;
 
 if (isFrontend) {
@@ -53,7 +52,6 @@ if (isFrontend) {
   ProfileScreen = require('./screens/ProfileScreen').default;
   useAuthStore = require('./stores/authStore').useAuthStore;
   useAccountStore = require('./stores/accountStore').useAccountStore;
-  toast = require('../lib/sonner').toast;
   useStorage = require('./hooks/useStorage').useStorage;
 } else {
   // Backend: no-op fallbacks
@@ -76,7 +74,6 @@ if (isFrontend) {
   ProfileScreen = noopComponent;
   useAuthStore = noopHook;
   useAccountStore = noopHook;
-  toast = () => {};
   useStorage = () => noopStorageResult;
 }
 
@@ -96,7 +93,6 @@ export {
   ProfileScreen,
   useAuthStore,
   useAccountStore,
-  toast,
   useStorage,
 };
 

@@ -34,6 +34,3 @@ coverage
 .eslintcache
 
 .vercel
-# Allow src lib wrapper
-!/src/lib/
-!/src/lib/sonner.ts
