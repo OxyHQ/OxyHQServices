@@ -47,20 +47,10 @@ export class UserService {
    * Get current authenticated user
    */
   async getCurrentUser(userId: string): Promise<IUser | null> {
-    const user = await User.findById(userId)
+    // `lean({ virtuals: true })` populates `name.full` from the User schema virtual.
+    return await User.findById(userId)
       .select('-password -refreshToken')
       .lean({ virtuals: true }) as IUser | null;
-
-    if (user && user.name && typeof user.name === 'object') {
-      // Ensure name.full exists for backward compatibility
-      const first = (user.name.first as string) || '';
-      const last = (user.name.last as string) || '';
-      if (!('full' in user.name) || !user.name.full) {
-        user.name.full = [first, last].filter(Boolean).join(' ').trim();
-      }
-    }
-
-    return user;
   }
 
   /**

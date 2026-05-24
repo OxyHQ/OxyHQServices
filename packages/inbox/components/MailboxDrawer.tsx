@@ -1,8 +1,12 @@
 /**
- * Gmail-style drawer sidebar listing mailboxes, starred, labels, and compose.
+ * Drawer sidebar listing mailboxes, starred, labels, and compose.
+ *
+ * Auth-aware: when signed-out the nav body is replaced with a sign-in card and
+ * the bottom Account row becomes the same CTA. Auth-only affordances (Compose
+ * pill, Create folder) are hidden until the user is authenticated.
  */
 
-import React, { useMemo, useState, useCallback, useRef } from 'react';
+import React, { useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,14 +14,12 @@ import {
   StyleSheet,
   ScrollView,
   Platform,
-  TextInput,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useOxy, showSignInModal } from '@oxyhq/services';
+import { useOxy, OxySignInButton, showSignInModal } from '@oxyhq/services';
 import { useRouter, usePathname } from 'expo-router';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import { Badge } from '@oxyhq/bloom/badge';
-import * as Prompt from '@oxyhq/bloom/prompt';
 import * as Dialog from '@oxyhq/bloom/dialog';
 import {
   Home01Icon,
@@ -30,7 +32,6 @@ import {
   Archive01Icon,
   StarIcon as HugeStarIcon,
   Folder01Icon,
-  FolderAddIcon,
   LabelIcon,
   SidebarLeft01Icon,
   SidebarRight01Icon,
@@ -39,9 +40,6 @@ import {
   ArrowUp01Icon,
   Mail01Icon,
   Clock01Icon,
-  Cancel01Icon,
-  Tick02Icon,
-  Search01Icon,
 } from '@hugeicons/core-free-icons';
 import { useColors } from '@/constants/theme';
 import { Divider } from '@oxyhq/bloom/divider';
@@ -51,7 +49,6 @@ import { useMailboxes } from '@/hooks/queries/useMailboxes';
 import { useLabels } from '@/hooks/queries/useLabels';
 import { Avatar } from '@/components/Avatar';
 import type { Mailbox } from '@/services/emailApi';
-import { useCreateMailbox, useDeleteMailbox } from '@/hooks/mutations/useMailboxMutations';
 import { LogoIcon } from '@/assets/logo';
 import { AccountSwitcher } from '@/components/AccountSwitcher';
 
@@ -168,17 +165,9 @@ function NavItem({
 
 export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () => void; onToggle?: () => void; collapsed?: boolean }) {
   const colors = useColors();
-  const { user } = useOxy();
+  const { user, isAuthenticated } = useOxy();
   const router = useRouter();
   const accountSwitcherControl = Dialog.useDialogControl();
-  const [isCreatingFolder, setIsCreatingFolder] = useState(false);
-  const [newFolderName, setNewFolderName] = useState('');
-  const [deletingMailboxId, setDeletingMailboxId] = useState<string | null>(null);
-  const [folderToDelete, setFolderToDelete] = useState<Mailbox | null>(null);
-  const deleteFolderPrompt = Prompt.usePromptControl();
-  const newFolderInputRef = useRef<TextInput>(null);
-  const createMailbox = useCreateMailbox();
-  const deleteMailbox = useDeleteMailbox();
 
   const handleOpenMenu = useCallback(() => {
     accountSwitcherControl.open();
@@ -187,8 +176,7 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
   const handleAddAccount = useCallback(() => {
     accountSwitcherControl.close();
     // Open the sign-in modal to authenticate a new account.
-    // Once authenticated, OxyContext will add the new session, and
-    // the useAccountSwitcher hook will persist it to account storage.
+    // OxyContext picks up the new session; useAccountSwitcher persists it.
     showSignInModal();
   }, [accountSwitcherControl]);
 
@@ -209,72 +197,77 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
       [SPECIAL_USE.SNOOZED]: 3, [SPECIAL_USE.SPAM]: 4, [SPECIAL_USE.TRASH]: 5, [SPECIAL_USE.ARCHIVE]: 6,
     };
     const sorted = mailboxes
-      .filter((m) => m.specialUse)
-      .sort((a, b) => (order[a.specialUse!] ?? 99) - (order[b.specialUse!] ?? 99));
+      .filter((m): m is Mailbox & { specialUse: string } => Boolean(m.specialUse))
+      .sort((a, b) => (order[a.specialUse] ?? 99) - (order[b.specialUse] ?? 99));
 
     return {
-      primaryMailboxes: sorted.filter((m) => PRIMARY_SPECIAL_USE.has(m.specialUse!)),
-      snoozedMailbox: sorted.find((m) => m.specialUse === SPECIAL_USE.SNOOZED) || null,
-      secondaryMailboxes: sorted.filter((m) => !PRIMARY_SPECIAL_USE.has(m.specialUse!) && m.specialUse !== SPECIAL_USE.SNOOZED),
+      primaryMailboxes: sorted.filter((m) => PRIMARY_SPECIAL_USE.has(m.specialUse)),
+      snoozedMailbox: sorted.find((m) => m.specialUse === SPECIAL_USE.SNOOZED) ?? null,
+      secondaryMailboxes: sorted.filter(
+        (m) => !PRIMARY_SPECIAL_USE.has(m.specialUse) && m.specialUse !== SPECIAL_USE.SNOOZED,
+      ),
     };
   }, [mailboxes]);
 
-  const customMailboxes = useMemo(() => mailboxes.filter((m) => !m.specialUse), [mailboxes]);
+  // Custom (non-system) folders are not addressable by the current `[view]`
+  // route — only inbox/sent/drafts/trash/spam/archive/snoozed/starred and
+  // label-* are handled. So we hide custom mailboxes and the "Create folder"
+  // affordance entirely until the route is taught to handle folder-* views.
 
-  // Map specialUse to URL route
-  const getMailboxRoute = (mailbox: Mailbox): string => {
-    if (!mailbox.specialUse) return `/folder-${mailbox.name.toLowerCase()}`;
-    const routeMap: Record<string, string> = {
-      [SPECIAL_USE.INBOX]: '/inbox',
-      [SPECIAL_USE.SENT]: '/sent',
-      [SPECIAL_USE.DRAFTS]: '/drafts',
-      [SPECIAL_USE.TRASH]: '/trash',
-      [SPECIAL_USE.SPAM]: '/spam',
-      [SPECIAL_USE.ARCHIVE]: '/archive',
-      [SPECIAL_USE.SNOOZED]: '/snoozed',
-    };
-    return routeMap[mailbox.specialUse] || `/folder-${mailbox.name.toLowerCase()}`;
-  };
+  const handleSelect = useCallback(
+    (mailbox: Mailbox & { specialUse: string }) => {
+      const viewMap: Record<string, 'inbox' | 'sent' | 'drafts' | 'trash' | 'spam' | 'archive' | 'snoozed'> = {
+        [SPECIAL_USE.INBOX]: 'inbox',
+        [SPECIAL_USE.SENT]: 'sent',
+        [SPECIAL_USE.DRAFTS]: 'drafts',
+        [SPECIAL_USE.TRASH]: 'trash',
+        [SPECIAL_USE.SPAM]: 'spam',
+        [SPECIAL_USE.ARCHIVE]: 'archive',
+        [SPECIAL_USE.SNOOZED]: 'snoozed',
+      };
+      const view = viewMap[mailbox.specialUse];
+      if (!view) return;
+      router.push({ pathname: '/(drawer)/(tabs)/(inbox)/[view]', params: { view } });
+      onClose?.();
+    },
+    [router, onClose],
+  );
 
-  const handleSelect = (mailbox: Mailbox) => {
-    router.push(getMailboxRoute(mailbox));
+  const handleStarred = useCallback(() => {
+    router.push({ pathname: '/(drawer)/(tabs)/(inbox)/[view]', params: { view: 'starred' } });
     onClose?.();
-  };
+  }, [router, onClose]);
 
-  const handleStarred = () => {
-    router.push('/starred');
-    onClose?.();
-  };
+  const handleLabelSelect = useCallback(
+    (labelName: string) => {
+      router.push({
+        pathname: '/(drawer)/(tabs)/(inbox)/[view]',
+        params: { view: `label-${labelName.toLowerCase()}` },
+      });
+      onClose?.();
+    },
+    [router, onClose],
+  );
 
-  const handleLabelSelect = (labelId: string, labelName: string) => {
-    router.push(`/label-${labelName.toLowerCase()}`);
-    onClose?.();
-  };
-
-  const handleHome = () => {
+  const handleHome = useCallback(() => {
     router.push('/home');
     onClose?.();
-  };
+  }, [router, onClose]);
 
-  const handleForYou = () => {
+  const handleForYou = useCallback(() => {
     router.push('/for-you');
     onClose?.();
-  };
+  }, [router, onClose]);
 
-  const handleCompose = () => {
+  const handleCompose = useCallback(() => {
     router.push('/compose');
     onClose?.();
-  };
+  }, [router, onClose]);
 
-  const handleSubscriptions = () => {
+  const handleSubscriptions = useCallback(() => {
     router.push('/subscriptions');
     onClose?.();
-  };
-
-  const handleSearch = () => {
-    router.push('/search');
-    onClose?.();
-  };
+  }, [router, onClose]);
 
   const emailAddress = user?.username ? `${user.username}@oxy.so` : '';
   const displayName = user?.name?.first
@@ -282,57 +275,24 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
     : user?.username || 'Account';
 
   // Check if a mailbox route is active
-  const isMailboxActive = (mailbox: Mailbox): boolean => {
-    if (!mailbox.specialUse) return currentView === `folder-${mailbox.name.toLowerCase()}`;
-    const routeMap: Record<string, string> = {
-      [SPECIAL_USE.INBOX]: 'inbox',
-      [SPECIAL_USE.SENT]: 'sent',
-      [SPECIAL_USE.DRAFTS]: 'drafts',
-      [SPECIAL_USE.TRASH]: 'trash',
-      [SPECIAL_USE.SPAM]: 'spam',
-      [SPECIAL_USE.ARCHIVE]: 'archive',
-      [SPECIAL_USE.SNOOZED]: 'snoozed',
-    };
-    return currentView === routeMap[mailbox.specialUse];
-  };
+  const isMailboxActive = useCallback(
+    (mailbox: Mailbox & { specialUse: string }): boolean => {
+      const routeMap: Record<string, string> = {
+        [SPECIAL_USE.INBOX]: 'inbox',
+        [SPECIAL_USE.SENT]: 'sent',
+        [SPECIAL_USE.DRAFTS]: 'drafts',
+        [SPECIAL_USE.TRASH]: 'trash',
+        [SPECIAL_USE.SPAM]: 'spam',
+        [SPECIAL_USE.ARCHIVE]: 'archive',
+        [SPECIAL_USE.SNOOZED]: 'snoozed',
+      };
+      return currentView === routeMap[mailbox.specialUse];
+    },
+    [currentView],
+  );
 
   const isStarredActive = currentView === 'starred';
   const isSubscriptionsActive = currentView === 'subscriptions';
-
-  const handleCreateFolder = useCallback(() => {
-    const trimmed = newFolderName.trim();
-    if (!trimmed) return;
-    createMailbox.mutate(
-      { name: trimmed },
-      {
-        onSuccess: () => {
-          setNewFolderName('');
-          setIsCreatingFolder(false);
-        },
-      },
-    );
-  }, [newFolderName, createMailbox]);
-
-  const handleCancelCreate = useCallback(() => {
-    setNewFolderName('');
-    setIsCreatingFolder(false);
-  }, []);
-
-  const handleDeleteFolder = useCallback(
-    (mailbox: Mailbox) => {
-      setFolderToDelete(mailbox);
-      deleteFolderPrompt.open();
-    },
-    [deleteFolderPrompt],
-  );
-
-  const handleConfirmDeleteFolder = useCallback(() => {
-    if (folderToDelete) {
-      deleteMailbox.mutate({ mailboxId: folderToDelete._id });
-      setDeletingMailboxId(null);
-      setFolderToDelete(null);
-    }
-  }, [folderToDelete, deleteMailbox]);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.sidebarBackground }, collapsed && styles.containerCollapsed]}>
@@ -380,8 +340,8 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
         )}
       </View>
 
-      {/* Compose button */}
-      {!collapsed && (
+      {/* Compose button — auth required */}
+      {isAuthenticated && !collapsed && (
         <View style={styles.composeWrapper}>
           <TouchableOpacity
             accessibilityLabel="Compose new email"
@@ -399,7 +359,7 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
           </TouchableOpacity>
         </View>
       )}
-      {collapsed && (
+      {isAuthenticated && collapsed && (
         <View style={styles.composeWrapperCollapsed}>
           <TouchableOpacity
             accessibilityLabel="Compose new email"
@@ -417,303 +377,182 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
         </View>
       )}
 
-      {/* Search button — always reachable from the sidebar on desktop. */}
-      {!collapsed && (
-        <View style={styles.searchWrapper}>
-          <TouchableOpacity
-            style={[styles.searchButton, { backgroundColor: colors.searchBackground }]}
-            onPress={handleSearch}
-            activeOpacity={0.7}
-            accessibilityLabel="Search mail"
-            accessibilityRole="search"
-          >
-            {Platform.OS === 'web' ? (
-              <HugeiconsIcon icon={Search01Icon as unknown as IconSvgElement} size={18} color={colors.searchPlaceholder} />
-            ) : (
-              <MaterialCommunityIcons name="magnify" size={18} color={colors.searchPlaceholder} />
-            )}
-            <Text style={[styles.searchLabel, { color: colors.searchPlaceholder }]}>Search mail</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-      {collapsed && (
-        <View style={styles.composeWrapperCollapsed}>
-          <TouchableOpacity
-            style={[styles.composeButtonCollapsed, { backgroundColor: colors.searchBackground }]}
-            onPress={handleSearch}
-            activeOpacity={0.7}
-            accessibilityLabel="Search mail"
-            accessibilityRole="search"
-          >
-            {Platform.OS === 'web' ? (
-              <HugeiconsIcon icon={Search01Icon as unknown as IconSvgElement} size={18} color={colors.searchPlaceholder} />
-            ) : (
-              <MaterialCommunityIcons name="magnify" size={18} color={colors.searchPlaceholder} />
-            )}
-          </TouchableOpacity>
-        </View>
-      )}
+      {/*
+       * Search is intentionally not duplicated here — the inbox header
+       * (`SearchHeader.tsx`) already exposes a search entry point. Keeping
+       * one canonical search affordance avoids two-way bouncing between the
+       * drawer and the list and keeps the sidebar tight.
+       */}
 
-      <ScrollView style={[styles.list, collapsed && styles.listCollapsed]} showsVerticalScrollIndicator={false}>
-        <NavItem icon="home-outline" hugeIcon={Home01Icon as unknown as IconSvgElement} label="Home" isActive={isHomeActive} colors={colors} collapsed={collapsed} onPress={handleHome} />
-        <NavItem icon="cards-heart-outline" hugeIcon={FavouriteIcon as unknown as IconSvgElement} label="For You" isActive={isForYouActive} colors={colors} collapsed={collapsed} onPress={handleForYou} />
+      {isAuthenticated ? (
+        <ScrollView style={[styles.list, collapsed && styles.listCollapsed]} showsVerticalScrollIndicator={false}>
+          <NavItem icon="home-outline" hugeIcon={Home01Icon as unknown as IconSvgElement} label="Home" isActive={isHomeActive} colors={colors} collapsed={collapsed} onPress={handleHome} />
+          <NavItem icon="cards-heart-outline" hugeIcon={FavouriteIcon as unknown as IconSvgElement} label="For You" isActive={isForYouActive} colors={colors} collapsed={collapsed} onPress={handleForYou} />
 
-        {/* Primary Mailboxes (Inbox, Sent, Drafts) */}
-        {primaryMailboxes.map((mailbox) => {
-          const label = mailbox.specialUse ? mailbox.specialUse.replace(/^\\+/, '') : mailbox.name;
-          const hasUnseen = mailbox.unseenMessages > 0;
-          return (
-            <NavItem
-              key={mailbox._id}
-              icon={getMailboxFallbackIcon(mailbox)}
-              hugeIcon={getMailboxHugeIcon(mailbox)}
-              label={label}
-              isActive={isMailboxActive(mailbox)}
-              colors={colors}
-              badge={mailbox.unseenMessages}
-              bold={hasUnseen}
-              collapsed={collapsed}
-              onPress={() => handleSelect(mailbox)}
-            />
-          );
-        })}
-
-        {/* Starred */}
-        <NavItem
-          icon="star-outline"
-          hugeIcon={HugeStarIcon as unknown as IconSvgElement}
-          label="Starred"
-          isActive={isStarredActive}
-          colors={colors}
-          collapsed={collapsed}
-          onPress={handleStarred}
-        />
-
-        {/* Snoozed */}
-        {snoozedMailbox && (
-          <NavItem
-            icon="clock-outline"
-            hugeIcon={Clock01Icon as unknown as IconSvgElement}
-            label="Snoozed"
-            isActive={isMailboxActive(snoozedMailbox)}
-            colors={colors}
-            badge={snoozedMailbox.unseenMessages}
-            collapsed={collapsed}
-            onPress={() => handleSelect(snoozedMailbox)}
-          />
-        )}
-
-        {/* Subscriptions */}
-        <NavItem
-          icon="newspaper-variant-outline"
-          hugeIcon={Mail01Icon as unknown as IconSvgElement}
-          label="Subscriptions"
-          isActive={isSubscriptionsActive}
-          colors={colors}
-          collapsed={collapsed}
-          onPress={handleSubscriptions}
-        />
-
-        {/* More toggle for secondary mailboxes */}
-        {secondaryMailboxes.length > 0 && !collapsed && (
-          <TouchableOpacity style={styles.moreToggle} onPress={toggleMore} activeOpacity={0.7}>
-            {Platform.OS === 'web' ? (
-              <HugeiconsIcon
-                icon={(moreExpanded ? ArrowUp01Icon : ArrowDown01Icon) as unknown as IconSvgElement}
-                size={16}
-                color={colors.secondaryText}
-              />
-            ) : (
-              <MaterialCommunityIcons
-                name={moreExpanded ? 'chevron-up' : 'chevron-down'}
-                size={16}
-                color={colors.secondaryText}
-              />
-            )}
-            <Text style={[styles.moreToggleText, { color: colors.secondaryText }]}>
-              {moreExpanded ? 'Less' : 'More'}
-            </Text>
-          </TouchableOpacity>
-        )}
-
-        {/* Secondary Mailboxes (Spam, Trash, Archive) - behind "More" */}
-        {(moreExpanded || collapsed) && secondaryMailboxes.map((mailbox) => {
-          const label = mailbox.specialUse ? mailbox.specialUse.replace(/^\\+/, '') : mailbox.name;
-          return (
-            <NavItem
-              key={mailbox._id}
-              icon={getMailboxFallbackIcon(mailbox)}
-              hugeIcon={getMailboxHugeIcon(mailbox)}
-              label={label}
-              isActive={isMailboxActive(mailbox)}
-              colors={colors}
-              badge={mailbox.unseenMessages}
-              collapsed={collapsed}
-              onPress={() => handleSelect(mailbox)}
-            />
-          );
-        })}
-
-        {/* Labels (from Label model, not custom mailboxes) */}
-        {!collapsed && labels.length > 0 && (
-          <>
-            <Divider />
-            <Text style={[styles.sectionTitle, { color: colors.secondaryText }]}>Labels</Text>
-            {labels.map((lbl) => (
+          {/* Primary Mailboxes (Inbox, Sent, Drafts) */}
+          {primaryMailboxes.map((mailbox) => {
+            const label = mailbox.specialUse.replace(/^\\+/, '');
+            const hasUnseen = mailbox.unseenMessages > 0;
+            return (
               <NavItem
-                key={lbl._id}
-                icon="label-outline"
-                hugeIcon={LabelIcon as unknown as IconSvgElement}
-                label={lbl.name}
-                isActive={currentView === `label-${lbl.name.toLowerCase()}`}
+                key={mailbox._id}
+                icon={getMailboxFallbackIcon(mailbox)}
+                hugeIcon={getMailboxHugeIcon(mailbox)}
+                label={label}
+                isActive={isMailboxActive(mailbox)}
                 colors={colors}
-                colorDot={lbl.color}
+                badge={mailbox.unseenMessages}
+                bold={hasUnseen}
                 collapsed={collapsed}
-                onPress={() => handleLabelSelect(lbl._id, lbl.name)}
+                onPress={() => handleSelect(mailbox)}
               />
-            ))}
-          </>
-        )}
-        {/* Labels hidden when collapsed for cleaner UI */}
+            );
+          })}
 
-        {/* Custom mailboxes (non-system, non-label) */}
-        {!collapsed && (
-          <>
-            {(customMailboxes.length > 0 || isCreatingFolder) && (
+          {/* Starred */}
+          <NavItem
+            icon="star-outline"
+            hugeIcon={HugeStarIcon as unknown as IconSvgElement}
+            label="Starred"
+            isActive={isStarredActive}
+            colors={colors}
+            collapsed={collapsed}
+            onPress={handleStarred}
+          />
+
+          {/* Snoozed */}
+          {snoozedMailbox && (
+            <NavItem
+              icon="clock-outline"
+              hugeIcon={Clock01Icon as unknown as IconSvgElement}
+              label="Snoozed"
+              isActive={isMailboxActive(snoozedMailbox)}
+              colors={colors}
+              badge={snoozedMailbox.unseenMessages}
+              collapsed={collapsed}
+              onPress={() => handleSelect(snoozedMailbox)}
+            />
+          )}
+
+          {/* Subscriptions */}
+          <NavItem
+            icon="newspaper-variant-outline"
+            hugeIcon={Mail01Icon as unknown as IconSvgElement}
+            label="Subscriptions"
+            isActive={isSubscriptionsActive}
+            colors={colors}
+            collapsed={collapsed}
+            onPress={handleSubscriptions}
+          />
+
+          {/* More toggle for secondary mailboxes */}
+          {secondaryMailboxes.length > 0 && !collapsed && (
+            <TouchableOpacity style={styles.moreToggle} onPress={toggleMore} activeOpacity={0.7}>
+              {Platform.OS === 'web' ? (
+                <HugeiconsIcon
+                  icon={(moreExpanded ? ArrowUp01Icon : ArrowDown01Icon) as unknown as IconSvgElement}
+                  size={16}
+                  color={colors.secondaryText}
+                />
+              ) : (
+                <MaterialCommunityIcons
+                  name={moreExpanded ? 'chevron-up' : 'chevron-down'}
+                  size={16}
+                  color={colors.secondaryText}
+                />
+              )}
+              <Text style={[styles.moreToggleText, { color: colors.secondaryText }]}>
+                {moreExpanded ? 'Less' : 'More'}
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          {/* Secondary Mailboxes (Spam, Trash, Archive) - behind "More" */}
+          {(moreExpanded || collapsed) && secondaryMailboxes.map((mailbox) => {
+            const label = mailbox.specialUse.replace(/^\\+/, '');
+            return (
+              <NavItem
+                key={mailbox._id}
+                icon={getMailboxFallbackIcon(mailbox)}
+                hugeIcon={getMailboxHugeIcon(mailbox)}
+                label={label}
+                isActive={isMailboxActive(mailbox)}
+                colors={colors}
+                badge={mailbox.unseenMessages}
+                collapsed={collapsed}
+                onPress={() => handleSelect(mailbox)}
+              />
+            );
+          })}
+
+          {/* Labels (from Label model, not custom mailboxes) */}
+          {!collapsed && labels.length > 0 && (
+            <>
               <Divider />
-            )}
-            {(customMailboxes.length > 0 || isCreatingFolder) && (
-              <View style={styles.sectionHeader}>
-                <Text style={[styles.sectionTitle, { color: colors.secondaryText }]}>Folders</Text>
-              </View>
-            )}
-            {customMailboxes.map((mailbox) => (
-              <View key={mailbox._id} style={styles.customMailboxRow}>
-                <View style={styles.customMailboxNav}>
-                  <NavItem
-                    icon="folder-outline"
-                    hugeIcon={Folder01Icon as unknown as IconSvgElement}
-                    label={mailbox.name}
-                    isActive={isMailboxActive(mailbox)}
-                    colors={colors}
-                    collapsed={collapsed}
-                    onPress={() => handleSelect(mailbox)}
-                  />
-                </View>
-                {deletingMailboxId === mailbox._id ? (
-                  <View style={styles.deleteActions}>
-                    <TouchableOpacity
-                      style={styles.deleteConfirmButton}
-                      onPress={() => handleDeleteFolder(mailbox)}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={[styles.deleteConfirmText, { color: colors.danger }]}>Delete</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.deleteCancelButton}
-                      onPress={() => setDeletingMailboxId(null)}
-                      activeOpacity={0.7}
-                    >
-                      {Platform.OS === 'web' ? (
-                        <HugeiconsIcon icon={Cancel01Icon as unknown as IconSvgElement} size={16} color={colors.secondaryText} />
-                      ) : (
-                        <MaterialCommunityIcons name="close" size={16} color={colors.secondaryText} />
-                      )}
-                    </TouchableOpacity>
-                  </View>
-                ) : (
-                  <TouchableOpacity
-                    style={styles.deleteIconButton}
-                    onPress={() => setDeletingMailboxId(mailbox._id)}
-                    activeOpacity={0.7}
-                  >
-                    {Platform.OS === 'web' ? (
-                      <HugeiconsIcon icon={Delete01Icon as unknown as IconSvgElement} size={14} color={colors.secondaryText} />
-                    ) : (
-                      <MaterialCommunityIcons name="delete-outline" size={14} color={colors.secondaryText} />
-                    )}
-                  </TouchableOpacity>
-                )}
-              </View>
-            ))}
+              <Text style={[styles.sectionTitle, { color: colors.secondaryText }]}>Labels</Text>
+              {labels.map((lbl) => (
+                <NavItem
+                  key={lbl._id}
+                  icon="label-outline"
+                  hugeIcon={LabelIcon as unknown as IconSvgElement}
+                  label={lbl.name}
+                  isActive={currentView === `label-${lbl.name.toLowerCase()}`}
+                  colors={colors}
+                  colorDot={lbl.color}
+                  collapsed={collapsed}
+                  onPress={() => handleLabelSelect(lbl.name)}
+                />
+              ))}
+            </>
+          )}
+          {/* Labels hidden when collapsed for cleaner UI */}
 
-            {/* Inline create folder input */}
-            {isCreatingFolder && (
-              <View style={styles.createFolderRow}>
-                <View style={styles.createFolderInputWrapper}>
-                  {Platform.OS === 'web' ? (
-                    <HugeiconsIcon icon={Folder01Icon as unknown as IconSvgElement} size={18} color={colors.secondaryText} />
-                  ) : (
-                    <MaterialCommunityIcons name="folder-outline" size={18} color={colors.secondaryText} />
-                  )}
-                  <TextInput
-                    ref={newFolderInputRef}
-                    style={[styles.createFolderInput, { color: colors.text, borderColor: colors.border }]}
-                    placeholder="Folder name"
-                    placeholderTextColor={colors.secondaryText}
-                    value={newFolderName}
-                    onChangeText={setNewFolderName}
-                    onSubmitEditing={handleCreateFolder}
-                    autoFocus
-                    returnKeyType="done"
-                  />
-                </View>
-                <View style={styles.createFolderActions}>
-                  <TouchableOpacity
-                    style={[styles.createFolderConfirm, { opacity: newFolderName.trim() ? 1 : 0.4 }]}
-                    onPress={handleCreateFolder}
-                    disabled={!newFolderName.trim() || createMailbox.isPending}
-                    activeOpacity={0.7}
-                  >
-                    {Platform.OS === 'web' ? (
-                      <HugeiconsIcon icon={Tick02Icon as unknown as IconSvgElement} size={16} color={colors.primary} />
-                    ) : (
-                      <MaterialCommunityIcons name="check" size={16} color={colors.primary} />
-                    )}
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.createFolderCancel}
-                    onPress={handleCancelCreate}
-                    activeOpacity={0.7}
-                  >
-                    {Platform.OS === 'web' ? (
-                      <HugeiconsIcon icon={Cancel01Icon as unknown as IconSvgElement} size={16} color={colors.secondaryText} />
-                    ) : (
-                      <MaterialCommunityIcons name="close" size={16} color={colors.secondaryText} />
-                    )}
-                  </TouchableOpacity>
-                </View>
-              </View>
-            )}
-
-            {/* Create folder button */}
-            {!isCreatingFolder && (
-              <TouchableOpacity
-                style={styles.createFolderButton}
-                onPress={() => setIsCreatingFolder(true)}
-                activeOpacity={0.7}
-              >
+          {/*
+            Custom folders are intentionally hidden. The dynamic [view] route
+            only handles inbox/sent/drafts/trash/spam/archive/snoozed/starred
+            and label-* views — there's no /folder-* handler yet, so exposing
+            "Create folder" or rendering user-created mailboxes here would ship
+            a navigation dead-end. Re-enable once the route learns folder-*.
+          */}
+        </ScrollView>
+      ) : (
+        <View style={[styles.list, collapsed && styles.listCollapsed, styles.signedOutBody]}>
+          {!collapsed && (
+            <View style={styles.signedOutCard}>
+              <View style={[styles.signedOutIconCircle, { backgroundColor: colors.primaryContainer }]}>
                 {Platform.OS === 'web' ? (
-                  <HugeiconsIcon icon={FolderAddIcon as unknown as IconSvgElement} size={18} color={colors.secondaryText} />
+                  <HugeiconsIcon icon={Mail01Icon as unknown as IconSvgElement} size={28} color={colors.primary} />
                 ) : (
-                  <MaterialCommunityIcons name="folder-plus-outline" size={18} color={colors.secondaryText} />
+                  <MaterialCommunityIcons name="email-outline" size={28} color={colors.primary} />
                 )}
-                <Text style={[styles.createFolderLabel, { color: colors.secondaryText }]}>Create folder</Text>
-              </TouchableOpacity>
-            )}
-          </>
-        )}
-      </ScrollView>
+              </View>
+              <Text style={[styles.signedOutTitle, { color: colors.text }]}>
+                Sign in to manage your email
+              </Text>
+              <Text style={[styles.signedOutSubtitle, { color: colors.secondaryText }]}>
+                Access your mailboxes, labels, and compose new messages.
+              </Text>
+              <OxySignInButton variant="contained" style={styles.signedOutCta} />
+            </View>
+          )}
+        </View>
+      )}
 
-      {/* Account section at bottom */}
-      {!collapsed && (
+      {/*
+       * Account section at bottom — only rendered when signed-in. When the
+       * user is signed-out the centered sign-in card above is the single
+       * primary CTA; the footer drops to a thin "Not signed in" label so we
+       * don't duplicate the action.
+       */}
+      {!collapsed && isAuthenticated && (
         <View style={styles.footerWrapper}>
-          {/* Account button */}
           <View style={[styles.footer, { borderTopColor: colors.border }]}>
             <TouchableOpacity
               style={styles.accountButton}
               onPress={handleOpenMenu}
               activeOpacity={0.7}
+              accessibilityLabel={`Switch account, signed in as ${displayName}`}
+              accessibilityRole="button"
             >
               <Avatar name={user?.name?.first || user?.username || '?'} size={32} />
               <View style={styles.accountInfo}>
@@ -730,44 +569,46 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
         </View>
       )}
 
-      {/* Collapsed footer — just avatar */}
-      {collapsed && (
+      {!collapsed && !isAuthenticated && (
+        <View style={[styles.footer, styles.footerSignedOut, { borderTopColor: colors.border }]}>
+          <Text style={[styles.footerSignedOutLabel, { color: colors.secondaryText }]}>
+            Not signed in
+          </Text>
+        </View>
+      )}
+
+      {/* Collapsed footer — avatar (signed-in) or empty (signed-out keeps it clean) */}
+      {collapsed && isAuthenticated && (
         <View style={[styles.footer, { borderTopColor: colors.border }]}>
           <TouchableOpacity
             style={styles.collapsedAccountButton}
             onPress={handleOpenMenu}
             activeOpacity={0.7}
+            accessibilityLabel={`Switch account, signed in as ${displayName}`}
+            accessibilityRole="button"
           >
             <Avatar name={user?.name?.first || user?.username || '?'} size={32} />
           </TouchableOpacity>
         </View>
       )}
 
-      {/* Account switcher dialog */}
-      <Dialog.Outer control={accountSwitcherControl}>
-        <Dialog.Handle />
-        <Dialog.Inner label="Account Switcher">
-          <AccountSwitcher
-            onClose={() => accountSwitcherControl.close()}
-            onSettings={() => {
-              accountSwitcherControl.close();
-              router.push('/settings');
-              onClose?.();
-            }}
-            onAddAccount={handleAddAccount}
-          />
-        </Dialog.Inner>
-      </Dialog.Outer>
-
-      {/* Delete folder confirmation */}
-      <Prompt.Basic
-        control={deleteFolderPrompt}
-        title="Delete folder?"
-        description={`Delete "${folderToDelete?.name ?? ''}"? Messages in this folder will be moved to Trash.`}
-        confirmButtonCta="Delete"
-        confirmButtonColor="negative"
-        onConfirm={handleConfirmDeleteFolder}
-      />
+      {/* Account switcher dialog (only mounted when signed-in) */}
+      {isAuthenticated && (
+        <Dialog.Outer control={accountSwitcherControl}>
+          <Dialog.Handle />
+          <Dialog.Inner label="Account Switcher">
+            <AccountSwitcher
+              onClose={() => accountSwitcherControl.close()}
+              onSettings={() => {
+                accountSwitcherControl.close();
+                router.push('/settings');
+                onClose?.();
+              }}
+              onAddAccount={handleAddAccount}
+            />
+          </Dialog.Inner>
+        </Dialog.Outer>
+      )}
     </View>
   );
 }
@@ -917,113 +758,45 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     letterSpacing: 0.5,
   },
-  sectionHeader: {
-    flexDirection: 'row',
+  signedOutBody: {
+    paddingHorizontal: 16,
+    paddingTop: 24,
+  },
+  signedOutCard: {
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingRight: 8,
-  },
-  customMailboxRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  customMailboxNav: {
-    flex: 1,
-    minWidth: 0,
-  },
-  deleteIconButton: {
-    width: 28,
-    height: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 14,
-    marginRight: 4,
-    // Visible as a faded affordance; CSS :hover on the parent row in the web
-    // build raises this to full opacity via `transition`. `transition` is
-    // declared in types/react-native-web.d.ts as a ViewStyle augmentation.
-    ...Platform.select({
-      web: { opacity: 0.5, transition: 'opacity 0.15s' },
-      default: { opacity: 0.6 },
-    }),
-  },
-  deleteActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-    marginRight: 4,
-  },
-  deleteConfirmButton: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  deleteConfirmText: {
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  deleteCancelButton: {
-    width: 24,
-    height: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 12,
-  },
-  createFolderButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 10,
-    borderRadius: 28,
-    marginVertical: 1,
+    paddingVertical: 24,
+    paddingHorizontal: 16,
     gap: 12,
   },
-  createFolderLabel: {
+  signedOutIconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  signedOutTitle: {
+    fontSize: 17,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  signedOutSubtitle: {
     fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 8,
+  },
+  signedOutCta: {
+    alignSelf: 'stretch',
+  },
+  footerSignedOut: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  footerSignedOutLabel: {
+    fontSize: 12,
     fontWeight: '500',
-  },
-  createFolderRow: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    gap: 6,
-  },
-  createFolderInputWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  createFolderInput: {
-    flex: 1,
-    fontSize: 13,
-    paddingVertical: 6,
-    paddingHorizontal: 8,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 8,
-    // outlineStyle 'none' is valid CSS for TextInput on web, but react-native's
-    // TextStyle type only declares 'solid' | 'dotted' | 'dashed'. Augmenting
-    // TextStyle conflicts with bloom's icon style usage, so we cast inline.
-    ...Platform.select<{ outlineStyle?: string }>({
-      web: { outlineStyle: 'none' },
-      default: {},
-    }) as { outlineStyle?: 'solid' | 'dotted' | 'dashed' },
-  },
-  createFolderActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    gap: 4,
-  },
-  createFolderConfirm: {
-    width: 28,
-    height: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 14,
-  },
-  createFolderCancel: {
-    width: 28,
-    height: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 14,
   },
   footerWrapper: {
     position: 'relative',

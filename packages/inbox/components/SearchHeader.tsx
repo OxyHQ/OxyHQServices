@@ -1,7 +1,10 @@
 /**
  * Reusable Gmail-style search header bar.
  *
- * Centered with max width, used on both inbox (as a button) and search (as an input).
+ * Centered with max width, used on both inbox (as a button) and search (as an
+ * input). In placeholder (button) mode the leading icon and the pill use
+ * side-by-side Pressables — never nested TouchableOpacity — so the leading
+ * button's tap doesn't bubble up to the pill's onPress.
  */
 
 import React, { forwardRef } from 'react';
@@ -9,13 +12,13 @@ import {
   View,
   Text,
   TextInput,
-  TouchableOpacity,
+  Pressable,
   StyleSheet,
   Platform,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
-import { Menu01Icon, ArrowLeft01Icon, Cancel01Icon, Search01Icon } from '@hugeicons/core-free-icons';
+import { Menu01Icon, ArrowLeft01Icon, Cancel01Icon } from '@hugeicons/core-free-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const HUGE_ICON_MAP: Record<string, IconSvgElement> = {
@@ -24,6 +27,8 @@ const HUGE_ICON_MAP: Record<string, IconSvgElement> = {
 };
 
 import { useColors } from '@/constants/theme';
+
+const ICON_HIT_SLOP = { top: 8, bottom: 8, left: 8, right: 8 };
 
 interface SearchHeaderProps {
   /** Left icon action (e.g. open drawer, go back) */
@@ -64,24 +69,30 @@ export const SearchHeader = forwardRef<TextInput, SearchHeaderProps>(function Se
   const colors = useColors();
 
   const isInputMode = onChangeText !== undefined;
+  const leftIconLabel = leftIcon === 'menu' ? 'Open menu' : 'Go back';
+
+  const renderLeftIcon = () => (
+    Platform.OS === 'web' && HUGE_ICON_MAP[leftIcon] ? (
+      <HugeiconsIcon icon={HUGE_ICON_MAP[leftIcon]} size={24} color={colors.icon} />
+    ) : (
+      <MaterialCommunityIcons name={leftIcon} size={24} color={colors.icon} />
+    )
+  );
 
   return (
     <View style={[styles.wrapper, { paddingTop: insets.top + 8, backgroundColor: colors.background }]}>
       <View style={styles.bar}>
         {isInputMode ? (
           <>
-            <TouchableOpacity
-              accessibilityLabel={leftIcon === 'menu' ? 'Open menu' : 'Go back'}
+            <Pressable
+              accessibilityLabel={leftIconLabel}
               accessibilityRole="button"
               onPress={onLeftIcon}
               style={styles.iconButton}
+              hitSlop={ICON_HIT_SLOP}
             >
-              {Platform.OS === 'web' && HUGE_ICON_MAP[leftIcon] ? (
-                <HugeiconsIcon icon={HUGE_ICON_MAP[leftIcon]} size={24} color={colors.icon} />
-              ) : (
-                <MaterialCommunityIcons name={leftIcon} size={24} color={colors.icon} />
-              )}
-            </TouchableOpacity>
+              {renderLeftIcon()}
+            </Pressable>
             <TextInput
               ref={ref}
               style={[styles.input, { color: colors.searchText, backgroundColor: colors.searchBackground }]}
@@ -96,44 +107,60 @@ export const SearchHeader = forwardRef<TextInput, SearchHeaderProps>(function Se
               autoCorrect={false}
             />
             {value && value.length > 0 && onClear && (
-              <TouchableOpacity
+              <Pressable
                 accessibilityLabel="Clear search"
                 accessibilityRole="button"
                 onPress={onClear}
                 style={styles.iconButton}
+                hitSlop={ICON_HIT_SLOP}
               >
                 {Platform.OS === 'web' ? (
                   <HugeiconsIcon icon={Cancel01Icon as unknown as IconSvgElement} size={20} color={colors.icon} />
                 ) : (
                   <MaterialCommunityIcons name="close" size={20} color={colors.icon} />
                 )}
-              </TouchableOpacity>
+              </Pressable>
             )}
           </>
         ) : (
-          <TouchableOpacity
-            accessibilityLabel={placeholder}
-            accessibilityRole="search"
-            style={[styles.pillButton, { backgroundColor: colors.searchBackground }]}
-            onPress={onPress}
-            activeOpacity={0.8}
-          >
-            <TouchableOpacity
-              accessibilityLabel={leftIcon === 'menu' ? 'Open menu' : 'Go back'}
+          /*
+           * Side-by-side Pressables (Gmail pattern): a full-width pill that
+           * opens search, plus an absolutely positioned leading icon button
+           * on top of the pill that opens the drawer / goes back. They no
+           * longer nest, so taps on the leading icon don't bubble.
+           */
+          <View style={styles.placeholderRow}>
+            <Pressable
+              accessibilityLabel={placeholder}
+              accessibilityRole="search"
+              style={({ pressed }) => [
+                styles.pillButton,
+                { backgroundColor: colors.searchBackground },
+                pressed && styles.pillButtonPressed,
+              ]}
+              onPress={onPress}
+            >
+              <Text
+                style={[
+                  styles.placeholderText,
+                  styles.placeholderTextWithLeftSpace,
+                  { color: colors.searchPlaceholder },
+                ]}
+                numberOfLines={1}
+              >
+                {placeholder}
+              </Text>
+            </Pressable>
+            <Pressable
+              accessibilityLabel={leftIconLabel}
               accessibilityRole="button"
               onPress={onLeftIcon}
-              activeOpacity={0.7}
+              style={styles.leadingIconOverlay}
+              hitSlop={ICON_HIT_SLOP}
             >
-              {Platform.OS === 'web' && HUGE_ICON_MAP[leftIcon] ? (
-                <HugeiconsIcon icon={HUGE_ICON_MAP[leftIcon]} size={24} color={colors.icon} />
-              ) : (
-                <MaterialCommunityIcons name={leftIcon} size={24} color={colors.icon} />
-              )}
-            </TouchableOpacity>
-            <Text style={[styles.placeholderText, { color: colors.searchPlaceholder }]}>
-              {placeholder}
-            </Text>
-          </TouchableOpacity>
+              {renderLeftIcon()}
+            </Pressable>
+          </View>
         )}
       </View>
     </View>
@@ -167,17 +194,37 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     fontSize: 16,
   },
-  pillButton: {
+  placeholderRow: {
     flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
+    position: 'relative',
+    justifyContent: 'center',
+  },
+  pillButton: {
+    width: '100%',
     height: 48,
     borderRadius: 28,
     paddingHorizontal: 16,
-    gap: 12,
+    justifyContent: 'center',
+  },
+  pillButtonPressed: {
+    opacity: 0.8,
+  },
+  leadingIconOverlay: {
+    position: 'absolute',
+    left: 4,
+    top: 2,
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 22,
   },
   placeholderText: {
-    flex: 1,
     fontSize: 16,
+  },
+  placeholderTextWithLeftSpace: {
+    // Reserve room for the 44pt overlay icon + ~4pt padding so the
+    // placeholder text isn't covered by the leading button.
+    paddingLeft: 44,
   },
 });

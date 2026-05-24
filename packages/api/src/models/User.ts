@@ -142,10 +142,7 @@ export interface IUser extends Document {
   _id: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
-  
-  // Virtual properties
-  primaryLocation?: string;
-  
+
   // Instance methods
   addLocation(locationData: {
     id: string;
@@ -545,15 +542,6 @@ UserSchema.virtual('name.full').get(function() {
     const first = typeof name.first === 'string' ? name.first : '';
     const last = typeof name.last === 'string' ? name.last : '';
     return [first, last].filter(Boolean).join(' ').trim();
-  }
-  return '';
-});
-
-// Virtual for primary location (backward compatibility)
-UserSchema.virtual('primaryLocation').get(function() {
-  const locations = this.locations as Array<any> | undefined;
-  if (locations && Array.isArray(locations) && locations.length > 0) {
-    return locations[0].name;
   }
   return '';
 });

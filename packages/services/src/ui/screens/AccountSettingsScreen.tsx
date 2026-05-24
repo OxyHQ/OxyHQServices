@@ -59,7 +59,8 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
     // Prompt controls
     const removeAvatarPrompt = usePromptControl();
 
-    // Fallback to store for backward compatibility
+    // Fall back to the auth store while the query is loading so the screen
+    // can render immediately with cached profile data on subsequent visits.
     const userFromStore = useAuthStore((state) => state.user);
     const finalUser = user || userFromStore;
     const isUpdatingAvatar = uploadAvatarMutation.isPending;

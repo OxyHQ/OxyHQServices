@@ -7,7 +7,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 
-import type { TextInputLabelProp } from '../types';
+import type { TextFieldLabelProp } from '../types';
 
 type OutlineProps = {
   isV3: boolean;
@@ -17,7 +17,7 @@ type OutlineProps = {
   focused?: boolean;
   outlineColor?: string;
   roundness?: number;
-  label?: TextInputLabelProp;
+  label?: TextFieldLabelProp;
   style?: StyleProp<ViewStyle>;
 };
 

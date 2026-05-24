@@ -82,24 +82,24 @@ describe('sanitizeUsernameInput', () => {
 
 describe('generateSuggestedUsername', () => {
   it('returns a string matching adjective + noun + number pattern', () => {
-    const suggestion = generateSuggestedUsername(null);
+    const suggestion = generateSuggestedUsername();
     expect(suggestion.length).toBeGreaterThan(0);
   });
 
   it('contains a known adjective from the list', () => {
-    const suggestion = generateSuggestedUsername(null);
+    const suggestion = generateSuggestedUsername();
     const hasAdjective = USERNAME_ADJECTIVES.some((adj) => suggestion.startsWith(adj));
     expect(hasAdjective).toBe(true);
   });
 
   it('contains a known noun from the list', () => {
-    const suggestion = generateSuggestedUsername(null);
+    const suggestion = generateSuggestedUsername();
     const hasNoun = USERNAME_NOUNS.some((noun) => suggestion.includes(noun));
     expect(hasNoun).toBe(true);
   });
 
   it('ends with a number in the configured range', () => {
-    const suggestion = generateSuggestedUsername(null);
+    const suggestion = generateSuggestedUsername();
     const trailingNumber = Number.parseInt(suggestion.match(/(\d+)$/)?.[1] ?? '', 10);
     expect(trailingNumber).toBeGreaterThanOrEqual(USERNAME_NUM_SUFFIX_MIN);
     expect(trailingNumber).toBeLessThanOrEqual(USERNAME_NUM_SUFFIX_MAX);
@@ -108,7 +108,7 @@ describe('generateSuggestedUsername', () => {
   it('produces output that passes validateUsernameFormat', () => {
     // Generate a batch to defend against statistical flukes from a single sample.
     for (let i = 0; i < 25; i++) {
-      const suggestion = generateSuggestedUsername(null);
+      const suggestion = generateSuggestedUsername();
       expect(validateUsernameFormat(suggestion)).toBe(true);
     }
   });

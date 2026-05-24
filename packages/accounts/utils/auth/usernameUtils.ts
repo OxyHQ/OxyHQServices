@@ -14,10 +14,9 @@ import {
  * sees and freely edits or replaces. Uniqueness is enforced server-side at
  * registration time. No secret/security boundary depends on this value.
  *
- * @param publicKey - Optional public key (currently unused, kept for backward compatibility)
  * @returns A random username suggestion
  */
-export function generateSuggestedUsername(publicKey: string | null): string {
+export function generateSuggestedUsername(): string {
   // Select random adjective and noun
   const adjIndex = Math.floor(Math.random() * USERNAME_ADJECTIVES.length);
   const nounIndex = Math.floor(Math.random() * USERNAME_NOUNS.length);

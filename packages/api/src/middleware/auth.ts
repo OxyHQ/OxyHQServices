@@ -98,7 +98,7 @@ export const authMiddleware = async (req: AuthRequest, res: Response, next: Next
       if (!decoded.sessionId) {
         return res.status(401).json({
           error: 'Invalid token',
-          message: 'Token must be session-based. Legacy token format is no longer supported.'
+          message: 'Token must be session-based (include a sessionId claim).'
         });
       }
 
@@ -287,7 +287,7 @@ export const simpleAuthMiddleware = async (req: SimpleAuthRequest, res: Response
       if (!decoded.sessionId) {
         return res.status(401).json({
           error: 'Invalid token',
-          message: 'Token must be session-based. Legacy token format is no longer supported.'
+          message: 'Token must be session-based (include a sessionId claim).'
         });
       }
 

@@ -1,83 +1,115 @@
-import { QueryClient, onlineManager } from '@tanstack/react-query';
+/**
+ * Offline-first QueryClient with cross-restart persistence.
+ *
+ * Wires together:
+ * - TanStack Query with `networkMode: 'offlineFirst'` for queries and mutations
+ *   so cached data is served immediately and mutations are queued (paused) while
+ *   the browser/device reports offline.
+ * - `persistQueryClient(...)` from `@tanstack/react-query-persist-client` so that
+ *   query results AND paused mutations survive a cold restart (kill-and-relaunch).
+ * - `onlineManager` resume hook so paused mutations replay the moment the
+ *   network is reported back, even if the host app swapped in a custom
+ *   onlineManager implementation.
+ *
+ * Storage layer:
+ * - React Native -> AsyncStorage via `createAsyncStoragePersister`.
+ * - Web -> localStorage via `createSyncStoragePersister` (wrapped in the
+ *   async persister API for a single call site).
+ * - Both adapters are content-shape compatible with our `StorageInterface`.
+ *
+ * Whitelist policy:
+ * - Persist every account/user/session/privacy query and every queued mutation.
+ * - DO NOT persist large list queries (e.g. activity feeds) — they go stale
+ *   fast and would balloon storage. Add new keys to `PERSISTED_QUERY_PREFIXES`
+ *   when introducing reads that should survive restart.
+ */
+
+import { QueryClient, onlineManager, type Query, type Mutation } from '@tanstack/react-query';
+import {
+  persistQueryClient,
+  type PersistedClient,
+} from '@tanstack/react-query-persist-client';
+import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister';
 import { isDev } from '@oxyhq/core';
 import type { StorageInterface } from '../utils/storageHelpers';
 
-const QUERY_CACHE_KEY = 'oxy_query_cache';
-const QUERY_CACHE_VERSION = '1';
+const QUERY_CACHE_KEY = 'oxy_query_cache_v2';
+const QUERY_CACHE_MAX_AGE = 30 * 24 * 60 * 60 * 1000; // 30 days
+const QUERY_PERSIST_THROTTLE_MS = 1_000;
 
 /**
- * Custom persistence adapter for TanStack Query using our StorageInterface
+ * Query-key prefixes that should survive cold restart. Anything not listed
+ * is dropped during dehydration so the persisted blob stays small.
+ *
+ * Mutations are persisted independently (always) so the offline write queue
+ * works regardless of the read whitelist.
  */
-export const createPersistenceAdapter = (storage: StorageInterface) => {
-  return {
-    persistClient: async (client: any) => {
-      try {
-        const serialized = JSON.stringify({
-          clientState: client,
-          timestamp: Date.now(),
-          version: QUERY_CACHE_VERSION,
-        });
-        await storage.setItem(QUERY_CACHE_KEY, serialized);
-      } catch (error) {
-        if (isDev()) {
-          console.warn('[QueryClient] Failed to persist cache:', error);
-        }
-      }
-    },
-    restoreClient: async () => {
-      try {
-        const cached = await storage.getItem(QUERY_CACHE_KEY);
-        if (!cached) return undefined;
-
-        const parsed = JSON.parse(cached);
-        
-        // Check version compatibility
-        if (parsed.version !== QUERY_CACHE_VERSION) {
-          // Clear old cache on version mismatch
-          await storage.removeItem(QUERY_CACHE_KEY);
-          return undefined;
-        }
-
-        // Check if cache is too old (30 days)
-        const maxAge = 30 * 24 * 60 * 60 * 1000;
-        if (parsed.timestamp && Date.now() - parsed.timestamp > maxAge) {
-          await storage.removeItem(QUERY_CACHE_KEY);
-          return undefined;
-        }
-
-        return parsed.clientState;
-      } catch (error) {
-        if (isDev()) {
-          console.warn('[QueryClient] Failed to restore cache:', error);
-        }
-        return undefined;
-      }
-    },
-    removeClient: async () => {
-      try {
-        await storage.removeItem(QUERY_CACHE_KEY);
-      } catch (error) {
-        if (isDev()) {
-          console.warn('[QueryClient] Failed to remove cache:', error);
-        }
-      }
-    },
-  };
-};
+const PERSISTED_QUERY_PREFIXES: ReadonlyArray<string> = [
+  'accounts',
+  'users',
+  'sessions',
+  'devices',
+  'privacy',
+];
 
 /**
- * Create a QueryClient with offline-first configuration.
+ * Adapt our `StorageInterface` (which always returns `null` for missing keys)
+ * to TanStack's `AsyncStorage` shape. The two are structurally identical
+ * apart from naming; this also gives us a single place to add error
+ * suppression if a host platform's storage throws.
+ */
+function adaptStorage(storage: StorageInterface): {
+  getItem: (key: string) => Promise<string | null>;
+  setItem: (key: string, value: string) => Promise<void>;
+  removeItem: (key: string) => Promise<void>;
+} {
+  return {
+    getItem: (key) => storage.getItem(key),
+    setItem: (key, value) => storage.setItem(key, value),
+    removeItem: (key) => storage.removeItem(key),
+  };
+}
+
+/**
+ * Decide whether a given query should be written to persistent storage.
+ *
+ * Two gates:
+ * 1. The query must be in our prefix whitelist.
+ * 2. The query must have completed successfully at least once — there's no
+ *    point persisting a `pending`/`error` state, and persisting `error` would
+ *    leak failure objects across restarts.
+ */
+function shouldDehydrateQuery(query: Query): boolean {
+  if (query.state.status !== 'success') {
+    return false;
+  }
+  const head = query.queryKey[0];
+  if (typeof head !== 'string') {
+    return false;
+  }
+  return PERSISTED_QUERY_PREFIXES.includes(head);
+}
+
+/**
+ * Persist every mutation regardless of status — paused mutations are
+ * exactly the ones that must survive restart to replay when online.
+ */
+function shouldDehydrateMutation(_mutation: Mutation): boolean {
+  return true;
+}
+
+/**
+ * Create a QueryClient with offline-first defaults.
  *
  * Mutations marked with `networkMode: 'offlineFirst'` are queued by TanStack
  * Query when offline (status "paused") and resumed automatically when
  * `onlineManager` transitions back to online. Network monitoring wiring lives
  * in `OxyProvider.tsx`.
  *
- * NOTE: This is in-memory queueing only. The queue does not survive an app
- * restart while offline — for cross-restart persistence add
- * `@tanstack/react-query-persist-client` with an async storage persister.
+ * Persistence is attached separately via `attachQueryPersistence(...)`.
+ * Splitting the steps lets test/SSR callers create a stateless client.
  */
-export const createQueryClient = (_storage?: StorageInterface | null): QueryClient => {
+export const createQueryClient = (): QueryClient => {
   const client = new QueryClient({
     defaultOptions: {
       queries: {
@@ -88,17 +120,17 @@ export const createQueryClient = (_storage?: StorageInterface | null): QueryClie
         // Retry 3 times with exponential backoff
         retry: 3,
         retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
-        // Refetch on reconnect
+        // Refetch on reconnect so stale data is refreshed once online again.
         refetchOnReconnect: true,
         // Don't refetch on window focus (better for mobile)
         refetchOnWindowFocus: false,
-        // Offline-first: use cache when offline
+        // Offline-first: serve cached data immediately, refetch in background.
         networkMode: 'offlineFirst',
       },
       mutations: {
         // Retry once for mutations
         retry: 1,
-        // Offline-first: queue mutations when offline
+        // Offline-first: pause and queue mutations when offline.
         networkMode: 'offlineFirst',
       },
     },
@@ -114,8 +146,6 @@ export const createQueryClient = (_storage?: StorageInterface | null): QueryClie
     }
   });
 
-  // Stash the unsubscribe so callers (tests) can clean up if they replace
-  // the client. We attach via a typed extension instead of `as any`.
   Object.defineProperty(client, '__oxyOnlineUnsubscribe', {
     value: unsubscribe,
     enumerable: false,
@@ -126,11 +156,83 @@ export const createQueryClient = (_storage?: StorageInterface | null): QueryClie
   return client;
 };
 
+export interface AttachPersistenceResult {
+  /** Promise that resolves once the persisted cache has been restored. */
+  restored: Promise<void>;
+  /** Detach the persistence subscription (tests + teardown). */
+  unsubscribe: () => void;
+}
+
 /**
- * Clear persisted query cache
+ * Wire `persistQueryClient` to the supplied storage adapter.
+ *
+ * Returns once the in-flight restore promise is available so callers can
+ * `await result.restored` before rendering UI that depends on cached data.
+ *
+ * Safe to no-op if `storage` is null/undefined (e.g. server-side render
+ * with no host storage).
  */
-export const clearQueryCache = async (storage: StorageInterface): Promise<void> => {
-  const adapter = createPersistenceAdapter(storage);
-  await adapter.removeClient();
+export const attachQueryPersistence = (
+  queryClient: QueryClient,
+  storage: StorageInterface | null | undefined,
+): AttachPersistenceResult => {
+  if (!storage) {
+    return {
+      restored: Promise.resolve(),
+      unsubscribe: () => {},
+    };
+  }
+
+  const persister = createAsyncStoragePersister({
+    storage: adaptStorage(storage),
+    key: QUERY_CACHE_KEY,
+    throttleTime: QUERY_PERSIST_THROTTLE_MS,
+  });
+
+  const [unsubscribe, restored] = persistQueryClient({
+    queryClient,
+    persister,
+    maxAge: QUERY_CACHE_MAX_AGE,
+    dehydrateOptions: {
+      shouldDehydrateQuery,
+      shouldDehydrateMutation,
+    },
+  });
+
+  restored.catch((error) => {
+    if (isDev()) {
+      console.warn('[QueryClient] Failed to restore persisted cache', error);
+    }
+  });
+
+  return { unsubscribe, restored };
 };
 
+// Legacy v1 cache key — kept so we can opportunistically purge stale blobs
+// written by older builds. Safe to drop after a few releases.
+const LEGACY_QUERY_CACHE_KEYS: ReadonlyArray<string> = ['oxy_query_cache'];
+
+/**
+ * Remove the persisted query+mutation cache (used on full sign-out / data
+ * reset). Safe to call even if persistence was never attached. Also clears
+ * legacy cache keys from older builds.
+ */
+export const clearQueryCache = async (storage: StorageInterface): Promise<void> => {
+  const keys = [QUERY_CACHE_KEY, ...LEGACY_QUERY_CACHE_KEYS];
+  await Promise.all(
+    keys.map(async (key) => {
+      try {
+        await storage.removeItem(key);
+      } catch (error) {
+        if (isDev()) {
+          console.warn(`[QueryClient] Failed to clear persisted query cache (${key})`, error);
+        }
+      }
+    }),
+  );
+};
+
+/**
+ * Re-export the persisted client shape so callers can type custom persisters.
+ */
+export type { PersistedClient };

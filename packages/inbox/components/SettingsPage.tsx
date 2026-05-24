@@ -5,7 +5,7 @@
  * When `section` is undefined, shows all sections in a scroll view (mobile full page).
  */
 
-import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -37,6 +37,7 @@ import { useCreateTemplate, useUpdateTemplate, useDeleteTemplate } from '@/hooks
 import { useThemeContext } from '@/contexts/theme-context';
 import { ContactsSection } from '@/components/ContactsSection';
 import { useEmailStore } from '@/hooks/useEmail';
+import type { EmailSettings } from '@/services/emailApi';
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B';
@@ -44,6 +45,68 @@ function formatBytes(bytes: number): string {
   const sizes = ['B', 'KB', 'MB', 'GB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+}
+
+type SettingsDraft = {
+  signature: string;
+  autoReplyEnabled: boolean;
+  autoReplySubject: string;
+  autoReplyBody: string;
+  autoForwardTo: string;
+  autoForwardKeepCopy: boolean;
+};
+
+function toDraft(data: EmailSettings | undefined): SettingsDraft {
+  return {
+    signature: data?.signature ?? '',
+    autoReplyEnabled: data?.autoReply.enabled ?? false,
+    autoReplySubject: data?.autoReply.subject ?? '',
+    autoReplyBody: data?.autoReply.body ?? '',
+    autoForwardTo: data?.autoForwardTo ?? '',
+    autoForwardKeepCopy: data?.autoForwardKeepCopy ?? true,
+  };
+}
+
+function draftsEqual(a: SettingsDraft, b: SettingsDraft): boolean {
+  return (
+    a.signature === b.signature &&
+    a.autoReplyEnabled === b.autoReplyEnabled &&
+    a.autoReplySubject === b.autoReplySubject &&
+    a.autoReplyBody === b.autoReplyBody &&
+    a.autoForwardTo === b.autoForwardTo &&
+    a.autoForwardKeepCopy === b.autoForwardKeepCopy
+  );
+}
+
+/**
+ * Derives form state from `settingsData` via lazy init and re-syncs when the
+ * server data identity changes (e.g. async arrival, post-save refetch) while
+ * the user has no pending edits. No useEffect required.
+ *
+ * Returns the draft, setters, and a `dirty` flag.
+ */
+function useDirtySettings(settingsData: EmailSettings | undefined) {
+  const [serverSnapshot, setServerSnapshot] = useState<EmailSettings | undefined>(settingsData);
+  const [draft, setDraft] = useState<SettingsDraft>(() => toDraft(settingsData));
+
+  // React-docs pattern: adjust state during render when an input prop changes
+  // identity. Only resync the draft if the user hasn't made edits since the
+  // last sync (i.e. draft still matches the previously-synced server state).
+  if (settingsData !== serverSnapshot) {
+    const isClean = draftsEqual(draft, toDraft(serverSnapshot));
+    setServerSnapshot(settingsData);
+    if (isClean) {
+      setDraft(toDraft(settingsData));
+    }
+  }
+
+  const dirty = !draftsEqual(draft, toDraft(settingsData));
+
+  const setField = useCallback(<K extends keyof SettingsDraft>(key: K, value: SettingsDraft[K]) => {
+    setDraft((prev) => ({ ...prev, [key]: value }));
+  }, []);
+
+  return { draft, setField, dirty };
 }
 
 interface SettingsPageProps {
@@ -76,12 +139,16 @@ export function SettingsPage({ section }: SettingsPageProps) {
   const updateFilterMutation = useUpdateFilter();
   const deleteFilter = useDeleteFilter();
 
-  const [signature, setSignature] = useState('');
-  const [autoReplyEnabled, setAutoReplyEnabled] = useState(false);
-  const [autoReplySubject, setAutoReplySubject] = useState('');
-  const [autoReplyBody, setAutoReplyBody] = useState('');
-  const [autoForwardTo, setAutoForwardTo] = useState('');
-  const [autoForwardKeepCopy, setAutoForwardKeepCopy] = useState(true);  const [newLabelName, setNewLabelName] = useState('');
+  const { draft, setField, dirty } = useDirtySettings(settingsData);
+  const { signature, autoReplyEnabled, autoReplySubject, autoReplyBody, autoForwardTo, autoForwardKeepCopy } = draft;
+  const setSignature = useCallback((v: string) => setField('signature', v), [setField]);
+  const setAutoReplyEnabled = useCallback((v: boolean) => setField('autoReplyEnabled', v), [setField]);
+  const setAutoReplySubject = useCallback((v: string) => setField('autoReplySubject', v), [setField]);
+  const setAutoReplyBody = useCallback((v: string) => setField('autoReplyBody', v), [setField]);
+  const setAutoForwardTo = useCallback((v: string) => setField('autoForwardTo', v), [setField]);
+  const setAutoForwardKeepCopy = useCallback((v: boolean) => setField('autoForwardKeepCopy', v), [setField]);
+
+  const [newLabelName, setNewLabelName] = useState('');
   const [newLabelColor, setNewLabelColor] = useState('#4285f4');
   const [editingLabelId, setEditingLabelId] = useState<string | null>(null);
   const [editingLabelName, setEditingLabelName] = useState('');
@@ -104,7 +171,6 @@ export function SettingsPage({ section }: SettingsPageProps) {
   const [filterActions, setFilterActions] = useState<Array<{ type: string; value?: string }>>([
     { type: 'label', value: '' },
   ]);
-  const initialized = useRef(false);
 
   // Import/Export state
   const api = useEmailStore((s) => s._api);
@@ -116,19 +182,6 @@ export function SettingsPage({ section }: SettingsPageProps) {
     '#ff6d01', '#46bdc6', '#7b1fa2', '#c2185b',
     '#795548', '#607d8b',
   ];
-
-  // Sync local form state from query data (once)
-  useEffect(() => {
-    if (settingsData && !initialized.current) {
-      initialized.current = true;
-      setSignature(settingsData.signature);
-      setAutoReplyEnabled(settingsData.autoReply.enabled);
-      setAutoReplySubject(settingsData.autoReply.subject ?? '');
-      setAutoReplyBody(settingsData.autoReply.body ?? '');
-      setAutoForwardTo(settingsData.autoForwardTo ?? '');
-      setAutoForwardKeepCopy(settingsData.autoForwardKeepCopy ?? true);
-    }
-  }, [settingsData]);
 
   const saving = updateSettings.isPending;
 
@@ -461,8 +514,8 @@ export function SettingsPage({ section }: SettingsPageProps) {
           <View style={styles.headerSpacer} />
           <TouchableOpacity
             onPress={handleSave}
-            style={[styles.saveButton, { backgroundColor: colors.primary, opacity: saving ? 0.5 : 1 }]}
-            disabled={saving}
+            style={[styles.saveButton, { backgroundColor: colors.primary, opacity: !dirty || saving ? 0.5 : 1 }]}
+            disabled={saving || !dirty}
           >
             <Text style={styles.saveButtonText}>Save</Text>
           </TouchableOpacity>
@@ -478,8 +531,8 @@ export function SettingsPage({ section }: SettingsPageProps) {
           <View style={styles.headerSpacer} />
           <TouchableOpacity
             onPress={handleSave}
-            style={[styles.saveButton, { backgroundColor: colors.primary, opacity: saving ? 0.5 : 1 }]}
-            disabled={saving}
+            style={[styles.saveButton, { backgroundColor: colors.primary, opacity: !dirty || saving ? 0.5 : 1 }]}
+            disabled={saving || !dirty}
           >
             <Text style={styles.saveButtonText}>Save</Text>
           </TouchableOpacity>

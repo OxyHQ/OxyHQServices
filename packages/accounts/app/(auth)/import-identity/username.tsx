@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'expo-router';
 import { useOxy } from '@oxyhq/services';
 import { useColors } from '@/hooks/useColors';
@@ -15,32 +15,15 @@ import { useAuthFlowContext } from '@/contexts/auth-flow-context';
 export default function ImportIdentityUsernameScreen() {
   const router = useRouter();
   const colors = useColors();
-  const { oxyServices, getPublicKey } = useOxy();
+  const { oxyServices } = useOxy();
   const { isOffline, checkNetworkStatus } = useNetworkStatus();
   const { usernameRef } = useAuthFlowContext();
 
   const backgroundColor = colors.background;
   const textColor = colors.text;
 
-  const [username, setUsername] = useState<string>('');
-  const hasInitializedUsername = useRef(false);
-  const isInitializingRef = useRef(false);
-
-  // Initialize suggested username on mount (only once)
-  useEffect(() => {
-    if (!hasInitializedUsername.current && !isInitializingRef.current) {
-      isInitializingRef.current = true;
-      getPublicKey().then((publicKey) => {
-        if (!hasInitializedUsername.current) {
-          setUsername(generateSuggestedUsername(publicKey));
-          hasInitializedUsername.current = true;
-        }
-        isInitializingRef.current = false;
-      }).catch(() => {
-        isInitializingRef.current = false;
-      });
-    }
-  }, [getPublicKey]);
+  // Lazy initialiser keeps the suggestion stable across re-renders.
+  const [username, setUsername] = useState<string>(() => generateSuggestedUsername());
 
   // Update username ref whenever username changes
   useEffect(() => {

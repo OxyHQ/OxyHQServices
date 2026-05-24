@@ -1195,20 +1195,18 @@ declare module './variantService' {
 }
 
 VariantService.prototype.commitVariants = async function(file: IFile, options: VariantCommitRetryOptions = {}): Promise<void> {
-  const { retries, delayMs, maxRetries = 2, retryDelay = 60 } = options;
-  const actualRetries = retries ?? maxRetries;
-  const actualDelay = delayMs ?? retryDelay;
+  const { maxRetries = 2, retryDelay = 60 } = options;
   let attempt = 0;
   // We only update the variants field to avoid version key conflicts; using updateOne bypasses optimistic concurrency
-  while (attempt <= actualRetries) {
+  while (attempt <= maxRetries) {
     try {
       await File.updateOne({ _id: file._id }, { $set: { variants: file.variants } }).exec();
       return;
     } catch (err: unknown) {
       const error = err as { name?: string };
-      if (String(error?.name) === 'VersionError' && attempt < actualRetries) {
+      if (String(error?.name) === 'VersionError' && attempt < maxRetries) {
         logger.warn('VersionError committing variants, retrying', { fileId: file._id, attempt });
-        await new Promise(res => setTimeout(res, actualDelay * (attempt + 1)));
+        await new Promise(res => setTimeout(res, retryDelay * (attempt + 1)));
         // Refresh variants from DB to merge if needed
         const fresh = await File.findById(file._id);
         if (fresh) {

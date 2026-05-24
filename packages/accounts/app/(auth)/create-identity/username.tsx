@@ -50,7 +50,7 @@ export default function CreateIdentityUsernameScreen() {
   // suggestion. Using the lazy initialiser form keeps the value stable across
   // re-renders so navigation hiccups never visibly regenerate the suggestion.
   const [username, setUsername] = useState<string>(
-    () => user?.username || usernameRef.current || generateSuggestedUsername(null),
+    () => user?.username || usernameRef.current || generateSuggestedUsername(),
   );
   const [updateError, setUpdateError] = useState<string | null>(null);
 

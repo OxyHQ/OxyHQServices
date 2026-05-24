@@ -17,11 +17,15 @@ export default function DrawerLayout() {
 
   // Initialize email API with httpService when authenticated.
   // Also re-initializes after an account switch resets the store (_api becomes null).
+  // Deps deliberately exclude `oxyServices` (object identity changes on every
+  // render) and `_initApi` (stable zustand action); the effect reads them
+  // imperatively from the closure when triggered.
   useEffect(() => {
-    if (isAuthenticated && !hasApi) {
-      _initApi(oxyServices.httpService);
-    }
-  }, [isAuthenticated, oxyServices, _initApi, hasApi]);
+    if (hasApi) return;
+    if (!isAuthenticated) return;
+    _initApi(oxyServices.httpService);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated, hasApi]);
 
   const drawerWidth = isDesktop ? (sidebarCollapsed ? 64 : 280) : 300;
 

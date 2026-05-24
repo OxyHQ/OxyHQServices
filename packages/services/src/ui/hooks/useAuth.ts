@@ -215,5 +215,3 @@ export function useAuth(): UseAuthReturn {
   };
 }
 
-// Re-export useOxy for backward compatibility and advanced usage
-export { useOxy } from '../context/OxyContext';

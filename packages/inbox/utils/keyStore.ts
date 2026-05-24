@@ -25,9 +25,6 @@ const PRIVATE_KEY_ID = 'private';
 const PUBLIC_KEY_ID = 'public';
 const PUBLIC_KEY_SPKI_ID = 'publicSpki';
 
-const LEGACY_PRIVATE_KEY_STORAGE = 'inbox_encryption_private_key';
-const LEGACY_PUBLIC_KEY_STORAGE = 'inbox_encryption_public_key';
-
 function isWeb(): boolean {
   return Platform.OS === 'web' && typeof indexedDB !== 'undefined';
 }
@@ -149,29 +146,3 @@ export async function clearStoredKeys(): Promise<void> {
   }
 }
 
-/**
- * Remove any legacy plaintext keys left in `localStorage` from the pre-IDB
- * implementation. We deliberately do NOT attempt to migrate them — those keys
- * were generated as extractable and exposed via XSS, so they are
- * cryptographically tainted. The caller is expected to prompt the user to
- * regenerate their identity if `cleared` is `true`.
- */
-export function migrateLegacyKeysIfPresent(): { cleared: boolean } {
-  if (Platform.OS !== 'web' || typeof localStorage === 'undefined') {
-    return { cleared: false };
-  }
-  let cleared = false;
-  try {
-    if (localStorage.getItem(LEGACY_PRIVATE_KEY_STORAGE) !== null) {
-      localStorage.removeItem(LEGACY_PRIVATE_KEY_STORAGE);
-      cleared = true;
-    }
-    if (localStorage.getItem(LEGACY_PUBLIC_KEY_STORAGE) !== null) {
-      localStorage.removeItem(LEGACY_PUBLIC_KEY_STORAGE);
-      cleared = true;
-    }
-  } catch {
-    // localStorage may throw in restricted contexts; nothing to clean up.
-  }
-  return { cleared };
-}

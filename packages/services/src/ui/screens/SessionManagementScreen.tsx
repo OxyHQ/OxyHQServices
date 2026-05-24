@@ -415,7 +415,6 @@ const styles = StyleSheet.create({
         ...screenContentStyle,
         paddingTop: 0, // Header handles top spacing
     },
-    // Removed legacy session card & bulk action styles (now using GroupedSection)
     sessionActionsRow: {
         flexDirection: 'row',
         gap: 8,

@@ -15,7 +15,6 @@ import type {
 import type { $Omit, InternalTheme, ThemeProp } from '../types';
 
 export type TextFieldLabelProp = string | React.ReactElement;
-export type TextInputLabelProp = TextFieldLabelProp; // Alias for backward compatibility
 
 type TextInputProps = React.ComponentPropsWithRef<typeof NativeTextInput> & {
   mode?: 'flat' | 'outlined';

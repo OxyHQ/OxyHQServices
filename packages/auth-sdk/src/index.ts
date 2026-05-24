@@ -104,7 +104,7 @@ export { useWebSSO, isWebBrowser } from './hooks/useWebSSO';
 export { useSessionSocket } from './hooks/useSessionSocket';
 export type { UseSessionSocketOptions } from './hooks/useSessionSocket';
 export { useAssets, setOxyAssetInstance } from './hooks/useAssets';
-export { useFileDownloadUrl, setOxyFileUrlInstance } from './hooks/useFileDownloadUrl';
+export { useFileDownloadUrl } from './hooks/useFileDownloadUrl';
 export { useFollow, useFollowerCounts } from './hooks/useFollow';
 export { useFileFiltering } from './hooks/useFileFiltering';
 export type { ViewMode, SortBy, SortOrder } from './hooks/useFileFiltering';

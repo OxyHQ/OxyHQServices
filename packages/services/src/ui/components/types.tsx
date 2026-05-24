@@ -57,7 +57,8 @@ export type InternalTheme = {
       level4: string;
       level5: string;
     };
-    // Legacy properties for backward compatibility
+    // MD2 fallback color slots — TextField/Icon/TouchableRipple read these
+    // first and fall back to MD3 names when the host theme only provides MD3.
     text?: string;
     disabled?: string;
     placeholder?: string;
@@ -79,7 +80,7 @@ export type InternalTheme = {
     bodyMedium: TextStyle;
     bodySmall: TextStyle;
     default: TextStyle;
-    // Legacy property for backward compatibility
+    // MD2 fallback — `AnimatedText` reads this when the theme isn't MD3.
     regular?: TextStyle;
   };
 };

@@ -155,7 +155,7 @@ export interface OxyServices extends InstanceType<ReturnType<typeof composeOxySe
 export { OxyAuthenticationError, OxyAuthenticationTimeoutError };
 
 /**
- * Export the default Oxy Cloud URL (for backward compatibility)
+ * Default Oxy Cloud URL — used when no `cloudURL` is provided to OxyServices.
  */
 export const OXY_CLOUD_URL = 'https://cloud.oxy.so';
 

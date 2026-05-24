@@ -19,7 +19,7 @@
     "@oxyhq/bloom": "^0.3.6",
     "@oxyhq/core": "*",
     "@tailwindcss/vite": "^4.0.6",
-    "@tanstack/react-query": "^5.90.20",
+    "@tanstack/react-query": "^5.100",
     "@tanstack/react-router": "^1.132.0",
     "@tanstack/react-router-devtools": "^1.132.0",
     "@tanstack/router-plugin": "^1.132.0",

@@ -53,7 +53,7 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
         const searchParams = buildSearchParams(params);
         const paramsObj = Object.fromEntries(searchParams.entries());
 
-        const response = await this.makeRequest<SearchProfilesResponse | User[]>(
+        const response = await this.makeRequest<SearchProfilesResponse>(
           'GET',
           '/profiles/search',
           paramsObj,
@@ -63,43 +63,26 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
           }
         );
 
-        // New API shape: { data: User[], pagination: {...} }
-        const isSearchProfilesResponse = (payload: unknown): payload is SearchProfilesResponse =>
-          typeof payload === 'object' &&
-          payload !== null &&
-          Array.isArray((payload as SearchProfilesResponse).data);
-
-        if (isSearchProfilesResponse(response)) {
-          const typedResponse = response;
-          const paginationInfo: PaginationInfo = typedResponse.pagination ?? {
-            total: typedResponse.data.length,
-            limit: pagination?.limit ?? typedResponse.data.length,
-            offset: pagination?.offset ?? 0,
-            hasMore: typedResponse.data.length === (pagination?.limit ?? typedResponse.data.length) &&
-              (pagination?.limit ?? typedResponse.data.length) > 0,
-          };
-
-          return {
-            data: typedResponse.data,
-            pagination: paginationInfo,
-          };
+        if (
+          typeof response !== 'object' ||
+          response === null ||
+          !Array.isArray(response.data)
+        ) {
+          throw new Error('Unexpected search response format');
         }
 
-        // Legacy API shape: returns raw User[]
-        if (Array.isArray(response)) {
-          const fallbackLimit = pagination?.limit ?? response.length;
-          const fallbackPagination: PaginationInfo = {
-            total: response.length,
-            limit: fallbackLimit,
-            offset: pagination?.offset ?? 0,
-            hasMore: fallbackLimit > 0 && response.length === fallbackLimit,
-          };
+        const paginationInfo: PaginationInfo = response.pagination ?? {
+          total: response.data.length,
+          limit: pagination?.limit ?? response.data.length,
+          offset: pagination?.offset ?? 0,
+          hasMore: response.data.length === (pagination?.limit ?? response.data.length) &&
+            (pagination?.limit ?? response.data.length) > 0,
+        };
 
-          return { data: response, pagination: fallbackPagination };
-        }
-
-        // If response is unexpected, throw an error
-        throw new Error('Unexpected search response format');
+        return {
+          data: response.data,
+          pagination: paginationInfo,
+        };
       } catch (error) {
         throw this.handleError(error);
       }

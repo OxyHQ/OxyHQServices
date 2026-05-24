@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, StyleSheet, Platform, useWindowDimensions } from 'react-native';
 import { Link, Stack } from 'expo-router';
-import { Text, H1, H4 } from '@oxyhq/bloom/typography';
+import { H1, H4 } from '@oxyhq/bloom/typography';
 import { useColors } from '@/constants/theme';
 
 export default function NotFoundScreen() {
@@ -14,10 +14,10 @@ export default function NotFoundScreen() {
       <Stack.Screen options={{ headerShown: false }} />
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         <H1 style={[styles.code, { color: colors.border }]}>404</H1>
-        <H4 style={[styles.title, { color: colors.text }]}>Page not found</H4>
-        <Text style={[styles.description, { color: colors.secondaryText }]}>
-          The page you're looking for doesn't exist or has been moved.
-        </Text>
+        <H4 style={[styles.title, { color: colors.text }]}>
+          Couldn't find that conversation. It may have been moved, archived, or
+          deleted.
+        </H4>
         <Link
           href="/"
           style={[
@@ -29,7 +29,7 @@ export default function NotFoundScreen() {
             isDesktop && styles.linkDesktop,
           ]}
         >
-          Go to Inbox
+          Back to Inbox
         </Link>
       </View>
     </>
@@ -53,13 +53,9 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: '600',
     marginTop: 8,
-  },
-  description: {
-    fontSize: 15,
-    marginTop: 8,
     textAlign: 'center',
-    maxWidth: 320,
-    lineHeight: 22,
+    maxWidth: 400,
+    lineHeight: 30,
   },
   link: {
     marginTop: 24,

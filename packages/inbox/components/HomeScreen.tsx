@@ -1,7 +1,12 @@
 /**
  * Home screen — personalized greeting with AI summary of important emails.
  *
- * Full-bleed background image with overlaid content cards.
+ * The hero uses the wheat-field photo as a full-bleed background. A
+ * `LinearGradient` overlay (darker at the top so the system clock + week
+ * header stay readable, fading toward transparent over the content) sits on
+ * top of the photo. While focused the status bar is forced to `light` style
+ * so the system clock contrasts with the photo. Cards on top use Bloom's
+ * background so they stay theme-aware in dark mode.
  */
 
 import React, { useMemo, useCallback, useState } from 'react';
@@ -17,9 +22,11 @@ import {
 } from 'react-native';
 import { Loading } from '@oxyhq/bloom/loading';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useRouter, useNavigation } from 'expo-router';
+import { useRouter, useNavigation, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useOxy } from '@oxyhq/services';
+import { StatusBar } from 'expo-status-bar';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useOxy, OxySignInButton } from '@oxyhq/services';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import {
   CheckmarkCircle02Icon,
@@ -94,12 +101,16 @@ export function HomeScreen() {
   const navigation = useNavigation<DrawerNavigation>();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
+  const colors = useColors();
   const { mode } = useTheme();
   const isDark = mode === 'dark';
-  const colors = useColors();
   const isDesktop = Platform.OS === 'web' && width >= 900;
-  const { user } = useOxy();
+  const { user, isAuthenticated } = useOxy();
 
+  // `realToday` is intentionally a piece of state — it's refreshed on focus
+  // (see `useFocusEffect` below) so the home screen self-heals after the date
+  // rolls over without the user backgrounding the app.
+  const [realToday, setRealToday] = useState(() => new Date());
   const [selectedDate, setSelectedDate] = useState(() => new Date());
   const [timeOfDay, setTimeOfDay] = useState<'morning' | 'afternoon'>(() =>
     new Date().getHours() < 12 ? 'morning' : 'afternoon',
@@ -108,7 +119,19 @@ export function HomeScreen() {
   const [needsResponseExpanded, setNeedsResponseExpanded] = useState(true);
   const [followUpExpanded, setFollowUpExpanded] = useState(true);
 
-  const realToday = useMemo(() => new Date(), []);
+  // Recompute `realToday` / `selectedDate` / `timeOfDay` whenever the screen
+  // regains focus. This catches the day-rollover case where the user left the
+  // app open across midnight and returns to a stale "today" pinned to yesterday.
+  useFocusEffect(
+    useCallback(() => {
+      const now = new Date();
+      setRealToday((prev) => (isSameDay(prev, now) ? prev : now));
+      setSelectedDate((prev) => (isSameDay(prev, now) ? prev : now));
+      const nowTimeOfDay: 'morning' | 'afternoon' = now.getHours() < 12 ? 'morning' : 'afternoon';
+      setTimeOfDay((prev) => (prev === nowTimeOfDay ? prev : nowTimeOfDay));
+    }, []),
+  );
+
   const isOnToday = isSameDay(selectedDate, realToday);
 
   const weekDays = useMemo(() => getWeekDays(selectedDate), [selectedDate]);
@@ -183,7 +206,11 @@ export function HomeScreen() {
   const { messages: needsResponseMessages, count: needsResponseCount } = useNeedsResponse(allMessages, 5);
   const { messages: followUpMessages, count: followUpCount, isLoading: followUpLoading } = useFollowUp(allMessages, 5);
 
-  const greeting = getGreeting();
+  // Greeting respects empty user (signed-out / not loaded yet) — no dangling comma.
+  // `timeOfDay` is still maintained for filtering recent messages but no longer
+  // exposed as a toggle in the UI.
+  const greetingBase = getGreeting();
+  const greetingLine = firstName ? `${greetingBase}, ${firstName}` : greetingBase;
   const today = selectedDate;
   const dateString = `${MONTHS[today.getMonth()]} ${today.getDate()}, ${today.getFullYear()}`;
 
@@ -193,13 +220,36 @@ export function HomeScreen() {
       style={styles.container}
       resizeMode="cover"
     >
-      {/* Overlay — darker for dark mode */}
+      <StatusBar style="light" />
+
+      {/*
+       * Two-stop overlay: a strong dark wash over the top portion (status bar
+       * + header + week strip) so the system clock, week labels, and date
+       * header stay legible over the photo; then fade to a softer overlay so
+       * the photo still reads in the lower portion. A second subtle full-bleed
+       * scrim handles dark mode (deeper) vs light mode.
+       */}
       <View style={[styles.overlay, isDark && styles.overlayDark]} />
+      <LinearGradient
+        colors={[
+          isDark ? 'rgba(0,0,0,0.75)' : 'rgba(0,0,0,0.55)',
+          isDark ? 'rgba(0,0,0,0.45)' : 'rgba(0,0,0,0.25)',
+          'rgba(0,0,0,0)',
+        ]}
+        locations={[0, 0.45, 1]}
+        style={styles.topGradient}
+        pointerEvents="none"
+      />
 
       {/* Header bar */}
       <View style={[styles.header, { paddingTop: isDesktop ? 16 : insets.top + 8 }]}>
         {!isDesktop && (
-          <TouchableOpacity onPress={handleOpenDrawer} style={styles.headerButton}>
+          <TouchableOpacity
+            onPress={handleOpenDrawer}
+            style={styles.headerButton}
+            accessibilityLabel="Open menu"
+            accessibilityRole="button"
+          >
             {Platform.OS === 'web' ? (
               <HugeiconsIcon icon={Menu01Icon as unknown as IconSvgElement} size={24} color="#FFFFFF" />
             ) : (
@@ -219,6 +269,8 @@ export function HomeScreen() {
         <Text style={styles.monthYear}>{MONTHS[today.getMonth()]} {today.getFullYear()}</Text>
         <View style={styles.weekStripRow}>
           <TouchableOpacity
+            accessibilityLabel="Previous week"
+            accessibilityRole="button"
             onPress={() => setSelectedDate((d) => {
               const prev = new Date(d);
               prev.setDate(prev.getDate() - 7);
@@ -226,6 +278,9 @@ export function HomeScreen() {
             })}
             style={styles.weekArrow}
             activeOpacity={0.7}
+            // Keep the visible icon small to match the original look; touch
+            // target is grown to ~44pt via hitSlop instead.
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
             <MaterialCommunityIcons name="chevron-left" size={20} color="rgba(255,255,255,0.7)" />
           </TouchableOpacity>
@@ -238,6 +293,9 @@ export function HomeScreen() {
                   style={[styles.dayCell, isSelected && styles.dayCellActive]}
                   onPress={() => setSelectedDate(new Date(d))}
                   activeOpacity={0.7}
+                  accessibilityLabel={`${DAYS[d.getDay()]} ${d.getDate()}`}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: isSelected }}
                 >
                   <Text style={[styles.dayLabel, isSelected && styles.dayLabelActive]}>
                     {DAYS[d.getDay()]}
@@ -250,6 +308,8 @@ export function HomeScreen() {
             })}
           </View>
           <TouchableOpacity
+            accessibilityLabel="Next week"
+            accessibilityRole="button"
             onPress={() => setSelectedDate((d) => {
               const next = new Date(d);
               next.setDate(next.getDate() + 7);
@@ -257,6 +317,9 @@ export function HomeScreen() {
             })}
             style={styles.weekArrow}
             activeOpacity={0.7}
+            // Keep the visible icon small to match the original look; touch
+            // target is grown to ~44pt via hitSlop instead.
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
             <MaterialCommunityIcons name="chevron-right" size={20} color="rgba(255,255,255,0.7)" />
           </TouchableOpacity>
@@ -269,6 +332,8 @@ export function HomeScreen() {
               style={styles.todayChip}
               onPress={() => setSelectedDate(new Date())}
               activeOpacity={0.7}
+              accessibilityLabel="Jump to today"
+              accessibilityRole="button"
             >
               <MaterialCommunityIcons name="calendar-today" size={14} color="#FFFFFF" />
               <Text style={styles.todayChipText}>Today</Text>
@@ -283,113 +348,122 @@ export function HomeScreen() {
           {dateString}
         </Text>
 
-        {/* Time of day toggle */}
-        <View style={styles.toggleRow}>
-          <View style={styles.toggleContainer}>
-            <TouchableOpacity
-              style={[styles.toggleButton, timeOfDay === 'morning' && styles.toggleButtonActive]}
-              onPress={() => setTimeOfDay('morning')}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.toggleIcon}>☀️</Text>
-              <Text style={[styles.toggleText, timeOfDay === 'morning' && styles.toggleTextActive]}>
-                Morning
+        {!isAuthenticated ? (
+          /*
+           * Signed-out variant — hide AI brief / needs-response / follow-up /
+           * important cards (they all require authenticated mailbox access) and
+           * show a single sign-in CTA card instead.
+           */
+          <View style={[styles.card, { backgroundColor: colors.background }]}>
+            <View style={styles.cardContent}>
+              <Text style={[styles.greetingText, { color: colors.text }]}>
+                {greetingLine}
               </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.toggleButton, timeOfDay === 'afternoon' && styles.toggleButtonActive]}
-              onPress={() => setTimeOfDay('afternoon')}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.toggleIcon}>🌙</Text>
-              <Text style={[styles.toggleText, timeOfDay === 'afternoon' && styles.toggleTextActive]}>
-                Afternoon
+              <Text style={[styles.digestText, styles.signedOutText, { color: colors.secondaryText }]}>
+                Sign in to see your daily brief, emails that need a reply, and
+                follow-ups waiting on you.
               </Text>
-            </TouchableOpacity>
+              <View style={styles.signedOutCtaWrapper}>
+                <OxySignInButton variant="contained" />
+              </View>
+            </View>
           </View>
-        </View>
-
-        {isLoading ? (
+        ) : isLoading ? (
           <View style={styles.loadingContainer}>
             <Loading />
           </View>
         ) : (
           <>
-            {/* Greeting Card */}
-            <View style={[styles.card, { backgroundColor: colors.background }]}>
-              <View style={styles.cardContent}>
-                <Text style={[styles.greetingText, { color: colors.text }]}>
-                  {greeting}, {firstName}
-                </Text>
+            {/*
+             * Summary / AI brief block — renders FLUSH against the photo
+             * background (no card wrapper, no rounded panel, no shadow). Just
+             * the greeting, stat pills, and brief text on the overlay.
+             */}
+            <View style={styles.summaryBlock}>
+              <Text style={[styles.summaryGreeting, styles.overlayTextShadow]}>
+                {greetingLine}
+              </Text>
 
-                {/* Stats row */}
-                <View style={styles.statsRow}>
-                  <View style={[styles.statPill, { backgroundColor: colors.primaryContainer }]}>
-                    {Platform.OS === 'web' ? (
-                      <HugeiconsIcon icon={Mail01Icon as unknown as IconSvgElement} size={14} color={colors.primary} />
-                    ) : (
-                      <MaterialCommunityIcons name="email-outline" size={14} color={colors.primary} />
-                    )}
-                    <Text style={[styles.statText, { color: colors.primary }]}>
-                      {unreadCount} unread
-                    </Text>
-                  </View>
-                  <View style={[styles.statPill, { backgroundColor: isDark ? '#3D3000' : '#FFF8E1' }]}>
-                    {Platform.OS === 'web' ? (
-                      <HugeiconsIcon icon={StarIcon as unknown as IconSvgElement} size={14} color={colors.starred} />
-                    ) : (
-                      <MaterialCommunityIcons name="star" size={14} color={colors.starred} />
-                    )}
-                    <Text style={[styles.statText, { color: colors.starred }]}>
-                      {starredCount} starred
-                    </Text>
-                  </View>
-                  <View style={[styles.statPill, { backgroundColor: colors.surfaceVariant }]}>
-                    {Platform.OS === 'web' ? (
-                      <HugeiconsIcon icon={Attachment01Icon as unknown as IconSvgElement} size={14} color={colors.secondaryText} />
-                    ) : (
-                      <MaterialCommunityIcons name="paperclip" size={14} color={colors.secondaryText} />
-                    )}
-                    <Text style={[styles.statText, { color: colors.secondaryText }]}>
-                      {attachmentCount}
-                    </Text>
-                  </View>
+              {/* Stats row — pills stay tinted so they read on the photo */}
+              <View style={styles.statsRow}>
+                <View style={[styles.statPill, { backgroundColor: colors.primaryContainer }]}>
+                  {Platform.OS === 'web' ? (
+                    <HugeiconsIcon icon={Mail01Icon as unknown as IconSvgElement} size={14} color={colors.primary} />
+                  ) : (
+                    <MaterialCommunityIcons name="email-outline" size={14} color={colors.primary} />
+                  )}
+                  <Text style={[styles.statText, { color: colors.primary }]}>
+                    {unreadCount} unread
+                  </Text>
                 </View>
-
-                {briefLoading ? (
-                  <View style={styles.briefLoadingRow}>
-                    <Loading variant="inline" size="small" />
-                    <Text style={[styles.digestText, { color: colors.secondaryText }]}>
-                      Alia is analyzing your inbox...
-                    </Text>
-                  </View>
-                ) : briefError && !briefText ? (
-                  <Text style={[styles.digestText, { color: colors.secondaryText }]}>
-                    Unable to generate brief right now.
+                <View style={[styles.statPill, { backgroundColor: 'rgba(255,255,255,0.18)' }]}>
+                  {Platform.OS === 'web' ? (
+                    <HugeiconsIcon icon={StarIcon as unknown as IconSvgElement} size={14} color={colors.starred} />
+                  ) : (
+                    <MaterialCommunityIcons name="star" size={14} color={colors.starred} />
+                  )}
+                  <Text style={[styles.statText, { color: colors.starred }]}>
+                    {starredCount} starred
                   </Text>
-                ) : briefText ? (
-                  <Text style={[styles.digestText, { color: colors.secondaryText }]}>
-                    {briefText}
-                    {briefStreaming && <Text style={{ color: colors.primary }}>|</Text>}
+                </View>
+                <View style={[styles.statPill, { backgroundColor: 'rgba(255,255,255,0.18)' }]}>
+                  {Platform.OS === 'web' ? (
+                    <HugeiconsIcon icon={Attachment01Icon as unknown as IconSvgElement} size={14} color="#FFFFFF" />
+                  ) : (
+                    <MaterialCommunityIcons name="paperclip" size={14} color="#FFFFFF" />
+                  )}
+                  <Text style={[styles.statText, { color: '#FFFFFF' }]}>
+                    {attachmentCount}
                   </Text>
-                ) : (
-                  <Text style={[styles.digestText, { color: colors.secondaryText }]}>
-                    No emails to summarize yet.
-                  </Text>
-                )}
-                <TouchableOpacity onPress={regenerate} style={styles.refreshButton} activeOpacity={0.7}>
-                  <MaterialCommunityIcons name="refresh" size={16} color={colors.secondaryText} />
-                </TouchableOpacity>
+                </View>
               </View>
+
+              {briefLoading ? (
+                <View style={styles.briefLoadingRow}>
+                  <Loading variant="inline" size="small" />
+                  <Text style={[styles.summaryBriefText, styles.overlayTextShadow]}>
+                    Alia is analyzing your inbox...
+                  </Text>
+                </View>
+              ) : briefError && !briefText ? (
+                <Text style={[styles.summaryBriefText, styles.overlayTextShadow]}>
+                  Unable to generate brief right now.
+                </Text>
+              ) : briefText ? (
+                <Text style={[styles.summaryBriefText, styles.overlayTextShadow]}>
+                  {briefText}
+                  {briefStreaming && <Text style={styles.summaryBriefCursor}>|</Text>}
+                </Text>
+              ) : (
+                <Text style={[styles.summaryBriefText, styles.overlayTextShadow]}>
+                  No emails to summarize yet.
+                </Text>
+              )}
+              <TouchableOpacity
+                onPress={regenerate}
+                style={styles.refreshButton}
+                activeOpacity={0.7}
+                accessibilityLabel="Regenerate brief"
+                accessibilityRole="button"
+              >
+                <MaterialCommunityIcons name="refresh" size={16} color="rgba(255,255,255,0.85)" />
+              </TouchableOpacity>
             </View>
 
-            {/* Needs Response - AI-detected emails requiring reply */}
+            {/*
+             * Needs Response — sub-content below the hero; uses the standard
+             * card style so it reads as a list panel separate from the flush
+             * AI summary above.
+             */}
             {needsResponseMessages.length > 0 && (
               <View style={[styles.card, { backgroundColor: colors.background }]}>
                 <TouchableOpacity
                   style={styles.sectionHeader}
                   onPress={() => setNeedsResponseExpanded((v) => !v)}
                   activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Needs response, ${needsResponseCount} email${needsResponseCount === 1 ? '' : 's'}`}
+                  accessibilityState={{ expanded: needsResponseExpanded }}
                 >
                   <View style={styles.sectionHeaderLeft}>
                     <MaterialCommunityIcons name="message-reply-text-outline" size={18} color={colors.primary} />
@@ -433,13 +507,16 @@ export function HomeScreen() {
               </View>
             )}
 
-            {/* Follow Up - Sent emails awaiting reply */}
+            {/* Follow Up — card-styled list (sub-content). */}
             {followUpMessages.length > 0 && (
               <View style={[styles.card, { backgroundColor: colors.background }]}>
                 <TouchableOpacity
                   style={styles.sectionHeader}
                   onPress={() => setFollowUpExpanded((v) => !v)}
                   activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Follow up, ${followUpCount} email${followUpCount === 1 ? '' : 's'}`}
+                  accessibilityState={{ expanded: followUpExpanded }}
                 >
                   <View style={styles.sectionHeaderLeft}>
                     <MaterialCommunityIcons name="clock-outline" size={18} color={colors.starred} />
@@ -489,6 +566,9 @@ export function HomeScreen() {
                 style={styles.sectionHeader}
                 onPress={() => setImportantExpanded((v) => !v)}
                 activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel="Important information"
+                accessibilityState={{ expanded: importantExpanded }}
               >
                 <Text style={[styles.sectionTitle, { color: colors.text }]}>
                   Important Information
@@ -552,11 +632,21 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   overlay: {
-    ...StyleSheet.absoluteFillObject,
+    // `absoluteFill` is the typed alias for `absoluteFillObject` — same
+    // computed shape, but TS recognises it without complaining.
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(0,0,0,0.25)',
   },
   overlayDark: {
     backgroundColor: 'rgba(0,0,0,0.55)',
+  },
+  topGradient: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 320,
+    zIndex: 0,
   },
   // Header
   header: {
@@ -568,11 +658,11 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   headerButton: {
-    width: 40,
-    height: 40,
+    width: 44,
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 20,
+    borderRadius: 22,
   },
   // Scroll
   scrollContent: {
@@ -582,18 +672,20 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     width: '100%',
   },
-  // Month / Year
+  // Month / Year — over photo, white with subtle shadow for legibility
   monthYear: {
     color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '600',
     textAlign: 'center',
     marginBottom: 8,
-    textShadowColor: 'rgba(0,0,0,0.3)',
+    textShadowColor: 'rgba(0,0,0,0.45)',
     textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 2,
+    textShadowRadius: 3,
   },
-  // Week strip
+  // Week strip — original visual treatment; touch-target a11y is preserved
+  // via `hitSlop` on the chevron `TouchableOpacity` (see JSX), not by growing
+  // the visible icon button.
   weekStripRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -633,7 +725,11 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   dayLabelActive: {
-    color: '#1A73E8',
+    // Oxy purple text on the white-translucent active pill — palette migration
+    // from the original Gmail blue. Hex matches Bloom's `oxy` preset primary
+    // (HSL 277 66% 56% → #c46ede ish — using the user-facing hex from
+    // color-presets.ts so it tracks the same brand value).
+    color: '#A23BC2',
   },
   dayNumber: {
     color: '#FFFFFF',
@@ -641,9 +737,9 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   dayNumberActive: {
-    color: '#1A73E8',
+    color: '#A23BC2',
   },
-  // Today chip
+  // Today chip — over photo
   todayChipRow: {
     alignItems: 'center',
     marginBottom: 12,
@@ -662,53 +758,20 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
   },
-  // Brief title
+  // Brief title — over photo
   briefTitle: {
     color: '#FFFFFF',
     fontSize: 22,
     fontWeight: '400',
     textAlign: 'center',
     marginBottom: 16,
-    textShadowColor: 'rgba(0,0,0,0.3)',
+    textShadowColor: 'rgba(0,0,0,0.45)',
     textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 2,
+    textShadowRadius: 3,
   },
   briefTitleItalic: {
     fontStyle: 'italic',
     fontWeight: '300',
-  },
-  // Time toggle
-  toggleRow: {
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  toggleContainer: {
-    flexDirection: 'row',
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    borderRadius: 20,
-    padding: 3,
-  },
-  toggleButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 18,
-    gap: 6,
-  },
-  toggleButtonActive: {
-    backgroundColor: 'rgba(255,255,255,0.9)',
-  },
-  toggleIcon: {
-    fontSize: 14,
-  },
-  toggleText: {
-    color: 'rgba(255,255,255,0.8)',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  toggleTextActive: {
-    color: '#333333',
   },
   // Loading
   loadingContainer: {
@@ -725,21 +788,83 @@ const styles = StyleSheet.create({
       default: {
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
+        shadowOpacity: 0.08,
         shadowRadius: 8,
-        elevation: 3,
+        elevation: 2,
       },
     }),
   },
   cardContent: {
     padding: 20,
   },
-  // Greeting
+  // Greeting (only used by the signed-out sign-in card now)
   greetingText: {
     fontSize: 22,
     fontWeight: '600',
     marginBottom: 12,
     textAlign: 'center',
+  },
+  signedOutText: {
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  signedOutCtaWrapper: {
+    alignItems: 'center',
+  },
+  // Flush summary block — renders directly on the photo overlay (no card
+  // chrome, no shadow). Used by the AI brief, Needs Response, and Follow Up
+  // sections so the home hero stays one continuous visual surface.
+  summaryBlock: {
+    marginBottom: 20,
+  },
+  summaryGreeting: {
+    color: '#FFFFFF',
+    fontSize: 22,
+    fontWeight: '600',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  summaryBriefText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    lineHeight: 22,
+  },
+  summaryBriefCursor: {
+    color: '#FFFFFF',
+  },
+  overlayTextShadow: {
+    textShadowColor: 'rgba(0,0,0,0.45)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+  summarySectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 4,
+    paddingVertical: 8,
+    marginBottom: 8,
+  },
+  summarySectionTitle: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  summaryRowsHolder: {
+    // Subtle white-ish backdrop so MessageRow content reads on the photo,
+    // without a hard card edge. Visually feels like translucent glass.
+    borderRadius: 12,
+    overflow: 'hidden',
+    ...Platform.select({
+      web: { boxShadow: '0 2px 12px rgba(0,0,0,0.08)' },
+      default: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.06,
+        shadowRadius: 4,
+        elevation: 1,
+      },
+    }),
   },
   // Stats
   statsRow: {

@@ -62,7 +62,7 @@ export interface EnhancedLocationResult {
 export interface LocationSearchOptions {
   limit?: number;
   countryCode?: string; // Preferred camelCase
-  countrycodes?: string; // Nominatim API parameter (backward compatibility)
+  countrycodes?: string; // Lowercase form forwarded directly to the Nominatim API
   addressdetails?: number;
   useCache?: boolean;
   bounded?: boolean;

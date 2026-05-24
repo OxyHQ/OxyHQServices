@@ -26,7 +26,7 @@ import {
   MD3_MIN_HEIGHT,
   MD3_OUTLINED_INPUT_OFFSET,
 } from './constants';
-import type { TextInputLabelProp } from './types';
+import type { TextFieldLabelProp } from './types';
 import type { InternalTheme } from "../types";
 
 type PaddingProps = {
@@ -37,7 +37,7 @@ type PaddingProps = {
   topPosition: number;
   fontSize: number;
   lineHeight?: number;
-  label?: TextInputLabelProp | null;
+  label?: TextFieldLabelProp | null;
   scale: number;
   offset: number;
   isAndroid: boolean;

@@ -14,7 +14,5 @@ export interface VariantConfig {
 export interface VariantCommitRetryOptions {
   maxRetries?: number;
   retryDelay?: number;
-  retries?: number; // alias for maxRetries (backward compatibility)
-  delayMs?: number; // alias for retryDelay (backward compatibility)
 }
 

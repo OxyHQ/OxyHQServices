@@ -20,8 +20,6 @@ interface FileViewerProps {
     onDownload: (fileId: string, filename: string) => void;
     onDelete: (fileId: string, filename: string) => void;
     isOwner: boolean;
-    /** @deprecated No longer used. Colors are sourced from useTheme() internally. */
-    themeStyles?: unknown;
 }
 
 export const FileViewer: React.FC<FileViewerProps> = ({

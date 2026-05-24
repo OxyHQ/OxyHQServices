@@ -372,10 +372,11 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
               {
                 configURL: options.configURL,
                 clientId: options.clientId,
-                // Send nonce at both levels for backward compatibility
-                nonce: options.nonce, // For older browsers
+                // Older browsers read `nonce` at the top level; Chrome 145+
+                // expects it inside `params`. Send both for full coverage.
+                nonce: options.nonce,
                 params: {
-                  nonce: options.nonce, // For Chrome 145+
+                  nonce: options.nonce,
                 },
                 ...(options.loginHint && { loginHint: options.loginHint }),
               },

@@ -604,13 +604,15 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
             }
           }
 
-          // Attach user data to socket
+          // Attach user data to socket. We expose BOTH `socket.data.userId`
+          // (the official Socket.IO data slot) and `socket.user` because
+          // every consumer in this ecosystem (Mention, Allo, api/server.ts)
+          // reads from `socket.user.id`.
           socket.data = socket.data || {};
           socket.data.userId = userId;
           socket.data.sessionId = decoded.sessionId || null;
           socket.data.token = token;
 
-          // Also set on socket.user for backward compatibility
           socket.user = { id: userId, userId, sessionId: decoded.sessionId };
 
           if (debug) {

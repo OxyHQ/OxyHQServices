@@ -17,6 +17,9 @@ import {
   Platform,
   Linking,
 } from 'react-native';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
+import * as Print from 'expo-print';
 import { Loading } from '@oxyhq/bloom/loading';
 import { Chip } from '@oxyhq/bloom/chip';
 import * as Dialog from '@oxyhq/bloom/dialog';
@@ -107,7 +110,16 @@ interface MessageDetailProps {
   messageId: string;
 }
 
-export function MessageDetail({ mode, messageId }: MessageDetailProps) {
+/**
+ * Public wrapper — uses `messageId` as a React key so the inner component
+ * unmounts/remounts on message change, naturally resetting all local state
+ * (no manual reset effect required).
+ */
+export function MessageDetail(props: MessageDetailProps) {
+  return <MessageDetailInner key={props.messageId} {...props} />;
+}
+
+function MessageDetailInner({ mode, messageId }: MessageDetailProps) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
@@ -127,9 +139,7 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
   const togglePin = useTogglePin();
   const snoozeMutation = useSnoozeMessage();
 
-  const [moreMenuVisible, setMoreMenuVisible] = useState(false);
   const [snoozeVisible, setSnoozeVisible] = useState(false);
-  const [labelMenuVisible, setLabelMenuVisible] = useState(false);
   const [replyMode, setReplyMode] = useState<'reply' | 'reply-all' | 'forward' | null>(null);
   const [replyTargetId, setReplyTargetId] = useState<string | null>(null);
   const [expandedMessages, setExpandedMessages] = useState<Set<string>>(new Set([messageId]));
@@ -145,20 +155,6 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
   // Get current user for stale thread detection
   const { user } = useOxy();
   const userEmail = user?.email || user?.emails?.[0]?.address;
-
-  // Reset state when message changes
-  useEffect(() => {
-    setMoreMenuVisible(false);
-    setLabelMenuVisible(false);
-    setSnoozeVisible(false);
-    setReplyMode(null);
-    setReplyTargetId(null);
-    setExpandedMessages(new Set([messageId]));
-    setMessageMenuId(null);
-    moreMenuControl.close();
-    labelPickerControl.close();
-    messageMenuControl.close();
-  }, [messageId, moreMenuControl, labelPickerControl, messageMenuControl]);
 
   // Auto-mark message as read when opened
   const toggleReadMutate = toggleRead.mutate;
@@ -287,9 +283,12 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
       if (Platform.OS === 'web') {
         window.open(url, '_blank');
       } else {
-        const FileSystem = require('expo-file-system');
-        const Sharing = require('expo-sharing');
-        const localUri = FileSystem.documentDirectory + filename;
+        const documentDirectory = FileSystem.documentDirectory;
+        if (!documentDirectory) {
+          await Linking.openURL(url);
+          return;
+        }
+        const localUri = documentDirectory + filename;
         const { uri } = await FileSystem.downloadAsync(url, localUri);
         if (await Sharing.isAvailableAsync()) {
           await Sharing.shareAsync(uri);
@@ -301,8 +300,9 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
       try {
         const url = await api.getAttachmentUrl(s3Key);
         await Linking.openURL(url);
-      } catch {
-        toast.error('Failed to download attachment.');
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Failed to download attachment.';
+        toast.error(message);
       }
     }
   }, [api]);
@@ -367,10 +367,10 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
     } else {
       (async () => {
         try {
-          const Print = require('expo-print');
           await Print.printAsync({ html: printHtml });
-        } catch {
-          toast.error('Failed to print email.');
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : 'Failed to print email.';
+          toast.error(message);
         }
       })();
     }
@@ -456,17 +456,21 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
     } else {
       (async () => {
         try {
-          const FileSystem = require('expo-file-system');
-          const Sharing = require('expo-sharing');
-          const fileUri = `${FileSystem.documentDirectory}${filename}`;
+          const documentDirectory = FileSystem.documentDirectory;
+          if (!documentDirectory) {
+            toast.error('File system not available on this device.');
+            return;
+          }
+          const fileUri = `${documentDirectory}${filename}`;
           await FileSystem.writeAsStringAsync(fileUri, emlContent, { encoding: FileSystem.EncodingType.UTF8 });
           if (await Sharing.isAvailableAsync()) {
             await Sharing.shareAsync(fileUri, { mimeType: 'message/rfc822', dialogTitle: 'Save email' });
           } else {
             toast.error('Sharing is not available on this device.');
           }
-        } catch {
-          toast.error('Failed to download email.');
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : 'Failed to download email.';
+          toast.error(message);
         }
       })();
     }

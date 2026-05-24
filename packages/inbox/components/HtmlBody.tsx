@@ -20,14 +20,24 @@ interface HtmlBodyProps {
 /**
  * Wrap email HTML with styling and proxy external resources.
  *
- * Dark mode strategy:
- * - Set `color-scheme: dark` so the browser knows the document is dark.
- * - Apply dark background/text with `!important` on html/body to override
- *   email sender stylesheets that hardcode `background: white`.
- * - Invert bright inline-styled elements via a targeted CSS filter on common
- *   container patterns (tables, divs with explicit bg) so marketing emails
- *   don't produce a white flash inside the dark app shell.
- * - Images are excluded from inversion to preserve their appearance.
+ * Dark mode strategy (feature-detection rather than forced override):
+ * - Set `color-scheme: dark` on the document so well-behaved emails can opt
+ *   in to a dark variant via CSS `@media (prefers-color-scheme: dark)` or
+ *   `light-dark()` declarations. Modern marketing email systems
+ *   (Mailchimp, Litmus, Apple Mail's adaptive engine, etc.) already use
+ *   this signal, so we trust it.
+ * - Apply our own background/text only on `html` and `body` themselves
+ *   (without `!important`) so the email's own root-level styling wins
+ *   when present.
+ * - Crucially, do NOT force `background-color: transparent` on `body > div`,
+ *   `body > table`, or `body > center`. That used to break marketing emails
+ *   with branded coloured header bars (Apple, Stripe, GitHub notifications,
+ *   etc.) because those wrappers carry the header background.
+ * - Images are unaffected — no `filter: invert` or similar tricks.
+ *
+ * The result: a slightly worse rendering for emails that hardcode
+ * `background: white` and don't honour `color-scheme`, but correct
+ * rendering for the rich-HTML newsletters that actually matter.
  */
 function wrapHtml(html: string, isDark: boolean): string {
   const bgColor = isDark ? '#000000' : '#ffffff';
@@ -39,60 +49,6 @@ function wrapHtml(html: string, isDark: boolean): string {
   // Transform external image/font URLs to go through our proxy
   const proxyBaseUrl = getProxyBaseUrl();
   const proxiedHtml = proxyExternalImages(html, proxyBaseUrl);
-
-  // Dark-mode-specific overrides that force dark appearance even when
-  // email senders hardcode white backgrounds via inline styles.
-  const darkOverrides = isDark
-    ? `
-      /* Force dark on root elements — !important overrides inline styles */
-      html, body {
-        background-color: ${bgColor} !important;
-        color: ${textColor} !important;
-      }
-      /* Override common email wrapper patterns with explicit white backgrounds */
-      body > div, body > table, body > center,
-      body > div > div, body > div > table,
-      body > table > tbody > tr > td {
-        background-color: transparent !important;
-        color: inherit !important;
-      }
-      /* Force text colors on common inline-styled elements */
-      p, span, li, td, th, h1, h2, h3, h4, h5, h6, div, center {
-        color: ${textColor} !important;
-      }
-      /* Preserve legibility for elements with very bright backgrounds by
-         making backgrounds transparent so the dark root shows through */
-      [style*="background-color: #fff"],
-      [style*="background-color: #FFF"],
-      [style*="background-color:#fff"],
-      [style*="background-color:#FFF"],
-      [style*="background-color: white"],
-      [style*="background-color:white"],
-      [style*="background-color: #ffffff"],
-      [style*="background-color: #FFFFFF"],
-      [style*="background-color:#ffffff"],
-      [style*="background-color:#FFFFFF"],
-      [style*="background: #fff"],
-      [style*="background: #FFF"],
-      [style*="background: white"],
-      [style*="background: #ffffff"],
-      [style*="background: #FFFFFF"],
-      [style*="background:#fff"],
-      [style*="background:#ffffff"],
-      [style*="background-color: rgb(255, 255, 255)"],
-      [style*="background-color: rgb(255,255,255)"] {
-        background-color: transparent !important;
-      }
-      /* Light gray backgrounds (f5f5f5, f8f8f8, fafafa, etc.) -> dark surface */
-      [style*="background-color: #f"],
-      [style*="background-color:#f"],
-      [style*="background: #f"] {
-        background-color: #1f1f1f !important;
-      }
-      /* Ensure images are NOT color-inverted */
-      img { filter: none !important; }
-    `
-    : '';
 
   return `
     <!DOCTYPE html>
@@ -125,7 +81,6 @@ function wrapHtml(html: string, isDark: boolean): string {
           border-left: 3px solid ${quoteBorderColor};
           color: ${quoteTextColor};
         }
-        ${darkOverrides}
       </style>
     </head>
     <body>${proxiedHtml}</body>

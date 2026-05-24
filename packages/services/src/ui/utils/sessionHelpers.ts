@@ -69,7 +69,9 @@ export const mapSessionsToClient = (
 };
 
 /**
- * Fetch device sessions with fallback to the legacy session endpoint when needed.
+ * Fetch device sessions, falling back to the per-user session endpoint
+ * if the device endpoint is unavailable (older API versions or disabled
+ * device-grouping feature flag).
  *
  * @param oxyServices - Oxy service instance
  * @param sessionId - Session identifier to fetch

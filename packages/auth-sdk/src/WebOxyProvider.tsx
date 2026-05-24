@@ -28,7 +28,7 @@ import type {
   ClientSession,
 } from '@oxyhq/core';
 import { QueryClientProvider } from '@tanstack/react-query';
-import { createQueryClient } from './hooks/queryClient';
+import { attachQueryPersistence, createQueryClient } from './hooks/queryClient';
 
 export interface WebAuthState {
   user: User | null;
@@ -100,6 +100,14 @@ export function WebOxyProvider({
   const [crossDomainAuth] = useState(() => new CrossDomainAuth(oxyServices));
   const [authManager] = useState(() => createAuthManager(oxyServices, { autoRefresh: true }));
   const [queryClient] = useState(() => createQueryClient());
+
+  // Persist the query cache to localStorage so cached identity and any paused
+  // mutations survive a full page reload. Detach on unmount so HMR doesn't
+  // leak subscriptions.
+  useEffect(() => {
+    const { unsubscribe } = attachQueryPersistence(queryClient);
+    return unsubscribe;
+  }, [queryClient]);
 
   // Auth state
   const [user, setUser] = useState<User | null>(null);

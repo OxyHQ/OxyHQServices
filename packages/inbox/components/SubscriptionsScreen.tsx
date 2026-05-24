@@ -20,9 +20,8 @@ import { FlashList } from '@shopify/flash-list';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import {
-  Menu01Icon,
   ArrowLeft01Icon,
-  Mail01Icon,
+  News01Icon,
 } from '@hugeicons/core-free-icons';
 import { useRouter, useNavigation } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -118,13 +117,13 @@ export function SubscriptionsScreen() {
       <View style={styles.emptyContainer}>
         {Platform.OS === 'web' ? (
           <HugeiconsIcon
-            icon={Mail01Icon as unknown as IconSvgElement}
+            icon={News01Icon as unknown as IconSvgElement}
             size={64}
             color={colors.border}
           />
         ) : (
           <MaterialCommunityIcons
-            name="email-check-outline"
+            name="newspaper-variant-outline"
             size={64}
             color={colors.border}
           />
@@ -185,12 +184,15 @@ export function SubscriptionsScreen() {
         </Text>
       </View>
 
-      {/* Subtitle */}
-      <View style={[styles.subtitle, { borderBottomColor: colors.border }]}>
-        <Text style={[styles.subtitleText, { color: colors.secondaryText }]}>
-          When you unsubscribe, it can take a few days to stop receiving messages
-        </Text>
-      </View>
+      {/* Subtitle — only shown when there are actual subscriptions to manage,
+          otherwise the empty state explains things by itself. */}
+      {subscriptions.length > 0 && (
+        <View style={[styles.subtitle, { borderBottomColor: colors.border }]}>
+          <Text style={[styles.subtitleText, { color: colors.secondaryText }]}>
+            When you unsubscribe, it can take a few days to stop receiving messages
+          </Text>
+        </View>
+      )}
 
       {isLoading ? (
         <View style={styles.loadingContainer}>

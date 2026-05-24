@@ -11,6 +11,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import { Text } from '@oxyhq/bloom/typography';
+import * as Haptics from 'expo-haptics';
 import {
   StarIcon,
   PinIcon,
@@ -158,10 +159,7 @@ function MessageRowInner({
 
   const handleLongPress = useCallback(() => {
     if (Platform.OS !== 'web' && onLongPress) {
-      try {
-        const Haptics = require('expo-haptics');
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      } catch {}
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => undefined);
       onLongPress(message._id);
     }
   }, [message._id, onLongPress]);
@@ -209,6 +207,7 @@ function MessageRowInner({
       style={({ pressed }) => [
         styles.container,
         { backgroundColor: rowBg },
+        isMultiSelected && { borderLeftWidth: 3, borderLeftColor: colors.primary, paddingLeft: 13 },
         pressed && { opacity: 0.7 },
       ]}
       onPress={handlePress}

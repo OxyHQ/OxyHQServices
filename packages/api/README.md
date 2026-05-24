@@ -118,9 +118,10 @@ Note: All auth endpoints are also available under `/auth` (e.g., `POST /auth/log
 ### Payments & Wallet
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/payments/process` | POST | Process payment |
-| `/api/payments/validate` | POST | Validate payment method |
-| `/api/payments/methods/:userId` | GET | Get payment methods |
+| `/api/payments/user` | GET | Get transaction history for current user |
+| `/api/billing/checkout/credits` | POST | Start credits checkout (Stripe) |
+| `/api/billing/checkout/subscription` | POST | Start subscription checkout (Stripe) |
+| `/api/billing/portal` | POST | Open Stripe Customer Portal |
 | `/api/wallet/:userId` | GET | Get wallet info |
 | `/api/wallet/transactions/:userId` | GET | Get transaction history |
 | `/api/wallet/transfer` | POST | Transfer funds |

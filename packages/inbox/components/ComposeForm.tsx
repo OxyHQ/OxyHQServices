@@ -15,7 +15,9 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import * as DocumentPicker from 'expo-document-picker';
 import * as Prompt from '@oxyhq/bloom/prompt';
+import * as Dialog from '@oxyhq/bloom/dialog';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import {
@@ -86,8 +88,9 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
           // Add signature with separator
           setBody(`\n\n--\n${settings.signature}`);
         }
-      } catch {
-        // Silently fail - signature is optional
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Failed to load signature.';
+        toast.error(message);
       }
       setSignatureLoaded(true);
     };
@@ -102,20 +105,28 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
   const sending = sendPending;
   const hasContent = to.trim() || subject.trim() || body.trim() || attachments.length > 0;
 
-  // Auto-save draft every 30 seconds when form has content
+  // Debounced auto-save draft: fires ~8s after the user stops editing.
+  // Latest form values live in a ref so the debounce timer is not recreated
+  // on each keystroke (which would prevent it from ever firing while typing).
+  const latestDraftRef = useRef({ to, cc, bcc, subject, body, replyTo });
+  latestDraftRef.current = { to, cc, bcc, subject, body, replyTo };
+
+  const saveDraftMutate = saveDraftMutation.mutate;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: to/cc/bcc/subject/body are intentionally listed so each keystroke restarts the 8s debounce timer; the actual values are read from latestDraftRef at fire time.
   useEffect(() => {
     if (!api || !hasContent || sentRef.current) return;
-    const timer = setInterval(() => {
+    const timer = setTimeout(() => {
       if (sentRef.current) return;
-      saveDraftMutation.mutate(
+      const snapshot = latestDraftRef.current;
+      saveDraftMutate(
         {
-          to: to.trim() ? parseAddresses(to) : undefined,
-          cc: cc.trim() ? parseAddresses(cc) : undefined,
-          bcc: bcc.trim() ? parseAddresses(bcc) : undefined,
-          subject: subject || undefined,
-          text: isWeb ? stripHtml(body) || undefined : body || undefined,
-          html: isWeb ? body || undefined : undefined,
-          inReplyTo: replyTo,
+          to: snapshot.to.trim() ? parseAddresses(snapshot.to) : undefined,
+          cc: snapshot.cc.trim() ? parseAddresses(snapshot.cc) : undefined,
+          bcc: snapshot.bcc.trim() ? parseAddresses(snapshot.bcc) : undefined,
+          subject: snapshot.subject || undefined,
+          text: isWeb ? stripHtml(snapshot.body) || undefined : snapshot.body || undefined,
+          html: isWeb ? snapshot.body || undefined : undefined,
+          inReplyTo: snapshot.replyTo,
           existingDraftId: draftIdRef.current ?? undefined,
         },
         {
@@ -124,9 +135,9 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
           },
         },
       );
-    }, 30_000);
-    return () => clearInterval(timer);
-  }, [api, hasContent, to, cc, bcc, subject, body, replyTo, saveDraftMutation]);
+    }, 8_000);
+    return () => clearTimeout(timer);
+  }, [api, hasContent, to, cc, bcc, subject, body, saveDraftMutate]);
 
   // Contact autocomplete state — track which field is active and the current query
   const [activeField, setActiveField] = useState<'to' | 'cc' | 'bcc' | null>(null);
@@ -181,15 +192,15 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
             const attachment = await api.uploadAttachment(file, file.name);
             setAttachments((prev) => [...prev, attachment]);
           }
-        } catch {
-          toast.error('Failed to upload attachment.');
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : 'Failed to upload attachment.';
+          toast.error(message);
         }
         setUploading(false);
       };
       input.click();
     } else {
       try {
-        const DocumentPicker = require('expo-document-picker');
         const result = await DocumentPicker.getDocumentAsync({ multiple: true });
         if (result.canceled) return;
         setUploading(true);
@@ -199,8 +210,9 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
           const attachment = await api.uploadAttachment(blob, asset.name);
           setAttachments((prev) => [...prev, attachment]);
         }
-      } catch {
-        toast.error('Failed to upload attachment.');
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Failed to upload attachment.';
+        toast.error(message);
       }
       setUploading(false);
     }
@@ -214,8 +226,9 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
         const attachment = await api.uploadAttachment(file, file.name);
         setAttachments((prev) => [...prev, attachment]);
       }
-    } catch {
-      toast.error('Failed to upload attachment.');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to upload attachment.';
+      toast.error(message);
     }
     setUploading(false);
   }, [api]);
@@ -333,6 +346,7 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
 
   // Schedule Send state
   const [showScheduleSheet, setShowScheduleSheet] = useState(false);
+  const sendMenuControl = Dialog.useDialogControl();
 
   const handleScheduleSend = useCallback((scheduledDate: Date) => {
     if (!to.trim()) {
@@ -471,29 +485,76 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
             <MaterialCommunityIcons name="content-save-outline" size={22} color={colors.icon} />
           )}
         </TouchableOpacity>
-        <TouchableOpacity
-          onPress={handleSend}
-          style={[styles.sendButton, { backgroundColor: colors.primary, opacity: sending ? 0.5 : 1 }]}
-          disabled={sending}
-        >
-          {Platform.OS === 'web' ? (
-            <HugeiconsIcon icon={MailSend01Icon as unknown as IconSvgElement} size={20} color="#FFFFFF" />
-          ) : (
-            <MaterialCommunityIcons name="send" size={20} color="#FFFFFF" />
-          )}
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={() => setShowScheduleSheet(true)}
-          style={[styles.scheduleButton, { backgroundColor: colors.primary, opacity: sending ? 0.5 : 1 }]}
-          disabled={sending}
-        >
-          {Platform.OS === 'web' ? (
-            <HugeiconsIcon icon={Clock01Icon as unknown as IconSvgElement} size={16} color="#FFFFFF" />
-          ) : (
-            <MaterialCommunityIcons name="clock-outline" size={16} color="#FFFFFF" />
-          )}
-        </TouchableOpacity>
+        <View style={[styles.sendGroup, { backgroundColor: colors.primary, opacity: sending ? 0.5 : 1 }]}>
+          <TouchableOpacity
+            accessibilityLabel="Send"
+            accessibilityRole="button"
+            onPress={handleSend}
+            style={styles.sendGroupPrimary}
+            disabled={sending}
+            activeOpacity={0.7}
+          >
+            {Platform.OS === 'web' ? (
+              <HugeiconsIcon icon={MailSend01Icon as unknown as IconSvgElement} size={20} color={colors.background} />
+            ) : (
+              <MaterialCommunityIcons name="send" size={20} color={colors.background} />
+            )}
+            <Text style={[styles.sendGroupLabel, { color: colors.background }]}>Send</Text>
+          </TouchableOpacity>
+          <View style={[styles.sendGroupDivider, { backgroundColor: colors.background }]} />
+          <TouchableOpacity
+            accessibilityLabel="More send options"
+            accessibilityRole="button"
+            onPress={() => sendMenuControl.open()}
+            style={styles.sendGroupChevron}
+            disabled={sending}
+            activeOpacity={0.7}
+          >
+            {Platform.OS === 'web' ? (
+              <HugeiconsIcon icon={ArrowDown01Icon as unknown as IconSvgElement} size={16} color={colors.background} />
+            ) : (
+              <MaterialCommunityIcons name="chevron-down" size={18} color={colors.background} />
+            )}
+          </TouchableOpacity>
+        </View>
       </View>
+
+      {/* Send-options menu */}
+      <Dialog.Outer control={sendMenuControl}>
+        <Dialog.Handle />
+        <Dialog.Inner label="Send options" contentContainerStyle={{ padding: 0 }}>
+          <TouchableOpacity
+            style={styles.sendMenuItem}
+            onPress={() => {
+              sendMenuControl.close();
+              handleSend();
+            }}
+            activeOpacity={0.6}
+          >
+            {Platform.OS === 'web' ? (
+              <HugeiconsIcon icon={MailSend01Icon as unknown as IconSvgElement} size={18} color={colors.icon} />
+            ) : (
+              <MaterialCommunityIcons name="send" size={18} color={colors.icon} />
+            )}
+            <Text style={[styles.sendMenuItemText, { color: colors.text }]}>Send now</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.sendMenuItem}
+            onPress={() => {
+              sendMenuControl.close();
+              setShowScheduleSheet(true);
+            }}
+            activeOpacity={0.6}
+          >
+            {Platform.OS === 'web' ? (
+              <HugeiconsIcon icon={Clock01Icon as unknown as IconSvgElement} size={18} color={colors.icon} />
+            ) : (
+              <MaterialCommunityIcons name="clock-outline" size={18} color={colors.icon} />
+            )}
+            <Text style={[styles.sendMenuItemText, { color: colors.text }]}>Schedule send</Text>
+          </TouchableOpacity>
+        </Dialog.Inner>
+      </Dialog.Outer>
 
       <ScrollView style={styles.form} keyboardShouldPersistTaps="handled">
         {/* From */}
@@ -716,20 +777,45 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderRadius: 22,
   },
-  sendButton: {
-    width: 44,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 22,
+  sendGroup: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    height: 40,
+    borderRadius: 20,
+    overflow: 'hidden',
+    marginHorizontal: 4,
   },
-  scheduleButton: {
-    width: 32,
-    height: 44,
+  sendGroupPrimary: {
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 16,
-    marginLeft: -4,
+    paddingHorizontal: 16,
+    gap: 6,
+  },
+  sendGroupLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  sendGroupDivider: {
+    width: StyleSheet.hairlineWidth,
+    opacity: 0.4,
+    marginVertical: 8,
+  },
+  sendGroupChevron: {
+    width: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sendMenuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    gap: 12,
+  },
+  sendMenuItemText: {
+    fontSize: 15,
+    fontWeight: '500',
   },
   form: {
     flex: 1,

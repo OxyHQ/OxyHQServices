@@ -54,7 +54,7 @@ export {
 // UI hooks
 export { useSessionSocket } from './ui/hooks/useSessionSocket';
 export { useAssets, setOxyAssetInstance } from './ui/hooks/useAssets';
-export { useFileDownloadUrl, setOxyFileUrlInstance } from './ui/hooks/useFileDownloadUrl';
+export { useFileDownloadUrl } from './ui/hooks/useFileDownloadUrl';
 export { useFollow, useFollowerCounts } from './ui/hooks/useFollow';
 
 // Query hooks

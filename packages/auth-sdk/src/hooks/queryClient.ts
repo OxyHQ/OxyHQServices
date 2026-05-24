@@ -1,112 +1,169 @@
-import { QueryClient } from '@tanstack/react-query';
+/**
+ * Web QueryClient with offline-first defaults + localStorage persistence.
+ *
+ * Mirrors the persistence behaviour in `@oxyhq/services/queryClient` so
+ * web auth apps (FedCM, popup, redirect flows) survive a page reload with
+ * cached identity + paused mutations intact.
+ *
+ * Persistence is opt-in via `attachQueryPersistence(...)` so SSR callers
+ * (Next.js getServerSideProps, Vite SSR, tests) can create a stateless
+ * client without touching `window`.
+ */
+
+import { QueryClient, type Mutation, type Query } from '@tanstack/react-query';
+import {
+  persistQueryClient,
+  type PersistedClient,
+} from '@tanstack/react-query-persist-client';
+import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister';
 import type { StorageInterface } from '../utils/storageHelpers';
 
-const QUERY_CACHE_KEY = 'oxy_query_cache';
-const QUERY_CACHE_VERSION = '1';
+const QUERY_CACHE_KEY = 'oxy_auth_query_cache_v2';
+const QUERY_CACHE_MAX_AGE = 30 * 24 * 60 * 60 * 1000;
+const QUERY_PERSIST_THROTTLE_MS = 1_000;
 
 /**
- * Custom persistence adapter for TanStack Query using our StorageInterface
+ * Query-key prefixes whose data is safe to restore across reloads.
+ * Web auth surfaces are session/profile heavy — lists and history are not
+ * persisted to keep the localStorage footprint small.
  */
-export const createPersistenceAdapter = (storage: StorageInterface) => {
-  return {
-    persistClient: async (client: any) => {
-      try {
-        const serialized = JSON.stringify({
-          clientState: client,
-          timestamp: Date.now(),
-          version: QUERY_CACHE_VERSION,
-        });
-        await storage.setItem(QUERY_CACHE_KEY, serialized);
-      } catch (error) {
-        if (process.env.NODE_ENV !== 'production') {
-          console.warn('[QueryClient] Failed to persist cache:', error);
-        }
-      }
-    },
-    restoreClient: async () => {
-      try {
-        const cached = await storage.getItem(QUERY_CACHE_KEY);
-        if (!cached) return undefined;
+const PERSISTED_QUERY_PREFIXES: ReadonlyArray<string> = [
+  'accounts',
+  'users',
+  'sessions',
+  'auth',
+];
 
-        const parsed = JSON.parse(cached);
-        
-        // Check version compatibility
-        if (parsed.version !== QUERY_CACHE_VERSION) {
-          // Clear old cache on version mismatch
-          await storage.removeItem(QUERY_CACHE_KEY);
-          return undefined;
-        }
+function shouldDehydrateQuery(query: Query): boolean {
+  if (query.state.status !== 'success') return false;
+  const head = query.queryKey[0];
+  return typeof head === 'string' && PERSISTED_QUERY_PREFIXES.includes(head);
+}
 
-        // Check if cache is too old (30 days)
-        const maxAge = 30 * 24 * 60 * 60 * 1000;
-        if (parsed.timestamp && Date.now() - parsed.timestamp > maxAge) {
-          await storage.removeItem(QUERY_CACHE_KEY);
-          return undefined;
-        }
-
-        return parsed.clientState;
-      } catch (error) {
-        if (process.env.NODE_ENV !== 'production') {
-          console.warn('[QueryClient] Failed to restore cache:', error);
-        }
-        return undefined;
-      }
-    },
-    removeClient: async () => {
-      try {
-        await storage.removeItem(QUERY_CACHE_KEY);
-      } catch (error) {
-        if (process.env.NODE_ENV !== 'production') {
-          console.warn('[QueryClient] Failed to remove cache:', error);
-        }
-      }
-    },
-  };
-};
+function shouldDehydrateMutation(_mutation: Mutation): boolean {
+  return true;
+}
 
 /**
- * Create a QueryClient with offline-first configuration
+ * Best-effort detection — works in browsers, Node SSR, and React Server
+ * Components. `localStorage` is gated behind `window` because Node and edge
+ * runtimes may polyfill `globalThis.localStorage` inconsistently.
  */
-export const createQueryClient = (storage?: StorageInterface | null): QueryClient => {
-  const client = new QueryClient({
+function getBrowserLocalStorage(): Storage | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    if (!window.localStorage) return null;
+    return window.localStorage;
+  } catch {
+    // Access blocked (Safari Private Mode, sandboxed iframe, etc.)
+    return null;
+  }
+}
+
+export const createPersistenceAdapter = (storage: StorageInterface) => ({
+  persistClient: async (client: unknown): Promise<void> => {
+    try {
+      await storage.setItem(QUERY_CACHE_KEY, JSON.stringify(client));
+    } catch (error) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.warn('[QueryClient] Failed to persist cache', error);
+      }
+    }
+  },
+  restoreClient: async (): Promise<unknown> => {
+    try {
+      const cached = await storage.getItem(QUERY_CACHE_KEY);
+      return cached ? JSON.parse(cached) : undefined;
+    } catch (error) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.warn('[QueryClient] Failed to restore cache', error);
+      }
+      return undefined;
+    }
+  },
+  removeClient: async (): Promise<void> => {
+    try {
+      await storage.removeItem(QUERY_CACHE_KEY);
+    } catch (error) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.warn('[QueryClient] Failed to remove cache', error);
+      }
+    }
+  },
+});
+
+export const createQueryClient = (): QueryClient =>
+  new QueryClient({
     defaultOptions: {
       queries: {
-        // Data is fresh for 5 minutes
         staleTime: 5 * 60 * 1000,
-        // Keep unused data in cache for 10 minutes
-        gcTime: 10 * 60 * 1000,
-        // Retry 3 times with exponential backoff
+        gcTime: 30 * 60 * 1000,
         retry: 3,
-        retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
-        // Refetch on reconnect
+        retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 30000),
         refetchOnReconnect: true,
-        // Don't refetch on window focus (better for mobile)
         refetchOnWindowFocus: false,
-        // Offline-first: use cache when offline
         networkMode: 'offlineFirst',
       },
       mutations: {
-        // Retry once for mutations
         retry: 1,
-        // Offline-first: queue mutations when offline
         networkMode: 'offlineFirst',
       },
     },
   });
 
-  // Note: Persistence is handled by TanStack Query's built-in persistence
-  // For now, we rely on the query client's default behavior with networkMode: 'offlineFirst'
-  // The cache will be available in memory and queries will use cached data when offline
-  // Full persistence to AsyncStorage can be added later with @tanstack/react-query-persist-client if needed
-
-  return client;
-};
+export interface AttachPersistenceResult {
+  restored: Promise<void>;
+  unsubscribe: () => void;
+}
 
 /**
- * Clear persisted query cache
+ * Wire `persistQueryClient` to browser `localStorage` (or a no-op when not
+ * in a browser). Returns the restore promise so consumers can `await` it
+ * before exposing the client to <Suspense> boundaries.
  */
-export const clearQueryCache = async (storage: StorageInterface): Promise<void> => {
-  const adapter = createPersistenceAdapter(storage);
-  await adapter.removeClient();
+export const attachQueryPersistence = (
+  queryClient: QueryClient,
+): AttachPersistenceResult => {
+  const localStorage = getBrowserLocalStorage();
+  if (!localStorage) {
+    return { restored: Promise.resolve(), unsubscribe: () => {} };
+  }
+
+  const persister = createSyncStoragePersister({
+    storage: localStorage,
+    key: QUERY_CACHE_KEY,
+    throttleTime: QUERY_PERSIST_THROTTLE_MS,
+  });
+
+  const [unsubscribe, restored] = persistQueryClient({
+    queryClient,
+    persister,
+    maxAge: QUERY_CACHE_MAX_AGE,
+    dehydrateOptions: {
+      shouldDehydrateQuery,
+      shouldDehydrateMutation,
+    },
+  });
+
+  restored.catch((error) => {
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn('[QueryClient] Failed to restore persisted cache', error);
+    }
+  });
+
+  return { unsubscribe, restored };
 };
 
+export const clearQueryCache = async (
+  storage: StorageInterface,
+): Promise<void> => {
+  try {
+    await storage.removeItem(QUERY_CACHE_KEY);
+  } catch (error) {
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn('[QueryClient] Failed to remove cache', error);
+    }
+  }
+};
+
+export type { PersistedClient };

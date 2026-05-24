@@ -2,7 +2,7 @@ import { Stack, ThemeProvider } from 'expo-router';
 import Head from 'expo-router/head';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo } from 'react';
 import { Platform } from 'react-native';
 import 'react-native-reanimated';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
@@ -18,7 +18,15 @@ import { registerServiceWorker } from '@/utils/registerServiceWorker';
 import { onConnectivityChange, flushQueue } from '@/utils/offlineQueue';
 import * as SplashScreen from 'expo-splash-screen';
 
-SplashScreen.preventAutoHideAsync();
+// Hide the native splash immediately on import. `BloomThemeProvider` configures
+// the Inter font synchronously via `Text.defaultProps`, and `OxyProvider`'s
+// internal `FontLoader` loads custom font weights in the background without
+// blocking children (system font is used as fallback). No artificial wait is
+// required before unhiding the splash.
+SplashScreen.hideAsync().catch(() => {
+  // hideAsync rejects if the splash has already been hidden (e.g. during a
+  // fast-refresh re-import). The state is idempotent, so swallow this case.
+});
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'https://api.oxy.so';
 
@@ -67,21 +75,6 @@ function useNavigationTheme() {
 
 function RootLayoutContent() {
   const navTheme = useNavigationTheme();
-  const [appIsReady, setAppIsReady] = useState(false);
-
-  const initialize = useCallback(async () => {
-    try {
-      // Allow fonts to load via OxyProvider
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    } finally {
-      setAppIsReady(true);
-      await SplashScreen.hideAsync();
-    }
-  }, []);
-
-  useEffect(() => {
-    initialize();
-  }, [initialize]);
 
   // Register service worker on web
   useEffect(() => {
@@ -98,7 +91,10 @@ function RootLayoutContent() {
           if (count > 0) {
             toast.success(`Synced ${count} offline action${count > 1 ? 's' : ''}.`);
           }
-        }).catch(() => {});
+        }).catch(() => {
+          // Sync failure is non-fatal; queued actions will retry on next
+          // connectivity-change event. Surface nothing to the user.
+        });
       }
     });
 
@@ -119,30 +115,24 @@ function RootLayoutContent() {
     return () => { document.head.removeChild(style); };
   }, []);
 
-  const content = useMemo(
-    () => (
-      <QueryClientProvider client={queryClient}>
-        <KeyboardProvider>
-          <OxyProvider baseURL={API_URL}>
-            <SafeAreaProvider>
-              <PortalProvider>
-                <ThemeProvider value={navTheme}>
-                  <Stack>
-                    <Stack.Screen name="(drawer)" options={{ headerShown: false }} />
-                    <Stack.Screen name="+not-found" options={{ headerShown: false }} />
-                  </Stack>
-                  <StatusBar style="auto" />
-                </ThemeProvider>
-                <PortalOutlet />
-              </PortalProvider>
-            </SafeAreaProvider>
-          </OxyProvider>
-        </KeyboardProvider>
-      </QueryClientProvider>
-    ),
-    [navTheme],
+  return (
+    <QueryClientProvider client={queryClient}>
+      <KeyboardProvider>
+        <OxyProvider baseURL={API_URL}>
+          <SafeAreaProvider>
+            <PortalProvider>
+              <ThemeProvider value={navTheme}>
+                <Stack>
+                  <Stack.Screen name="(drawer)" options={{ headerShown: false }} />
+                  <Stack.Screen name="+not-found" options={{ headerShown: false }} />
+                </Stack>
+                <StatusBar style="auto" />
+              </ThemeProvider>
+              <PortalOutlet />
+            </PortalProvider>
+          </SafeAreaProvider>
+        </OxyProvider>
+      </KeyboardProvider>
+    </QueryClientProvider>
   );
-
-  if (!appIsReady) return null;
-  return content;
 }

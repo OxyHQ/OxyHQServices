@@ -1,11 +1,5 @@
 import { useEffect, useState } from 'react';
-import { OxyServices } from '@oxyhq/core';
-
-let oxyInstance: OxyServices | null = null;
-
-export const setOxyFileUrlInstance = (instance: OxyServices) => {
-  oxyInstance = instance;
-};
+import type { OxyServices } from '@oxyhq/core';
 
 export interface UseFileDownloadUrlOptions {
   variant?: string;
@@ -21,37 +15,20 @@ export interface UseFileDownloadUrlResult {
 /**
  * Hook to resolve a file's download URL asynchronously.
  *
- * Prefers the provided `oxyServices` instance, falls back to the module-level
- * singleton set via `setOxyFileUrlInstance`.
- *
  * Uses `getFileDownloadUrlAsync` first, falling back to the synchronous
  * `getFileDownloadUrl` if the async call fails.
  */
 export const useFileDownloadUrl = (
-  fileIdOrServices?: string | OxyServices | null,
-  fileIdOrOptions?: string | UseFileDownloadUrlOptions | null,
-  maybeOptions?: UseFileDownloadUrlOptions
+  oxyServices: OxyServices | null | undefined,
+  fileId: string | null | undefined,
+  options?: UseFileDownloadUrlOptions,
 ): UseFileDownloadUrlResult => {
-  // Support two call signatures:
-  // 1. useFileDownloadUrl(oxyServices, fileId, options)  — preferred
-  // 2. useFileDownloadUrl(fileId, options)               — legacy (uses singleton)
-  let services: OxyServices | null;
-  let fileId: string | null | undefined;
-  let options: UseFileDownloadUrlOptions | undefined;
-
-  if (fileIdOrServices instanceof OxyServices) {
-    services = fileIdOrServices;
-    fileId = typeof fileIdOrOptions === 'string' ? fileIdOrOptions : null;
-    options = maybeOptions;
-  } else {
-    services = oxyInstance;
-    fileId = typeof fileIdOrServices === 'string' ? fileIdOrServices : null;
-    options = typeof fileIdOrOptions === 'object' && fileIdOrOptions !== null ? fileIdOrOptions as UseFileDownloadUrlOptions : undefined;
-  }
-
   const [url, setUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
+
+  const variant = options?.variant;
+  const expiresIn = options?.expiresIn;
 
   useEffect(() => {
     if (!fileId) {
@@ -61,7 +38,7 @@ export const useFileDownloadUrl = (
       return;
     }
 
-    if (!services) {
+    if (!oxyServices) {
       setUrl(null);
       setLoading(false);
       setError(new Error('OxyServices instance not configured for useFileDownloadUrl'));
@@ -69,22 +46,22 @@ export const useFileDownloadUrl = (
     }
 
     let cancelled = false;
-    const instance = services;
+    const instance = oxyServices;
+    const targetFileId = fileId;
 
     const load = async () => {
       setLoading(true);
       setError(null);
 
       try {
-        const { variant, expiresIn } = options || {};
         let resolvedUrl: string | null = null;
 
         if (typeof instance.getFileDownloadUrlAsync === 'function') {
-          resolvedUrl = await instance.getFileDownloadUrlAsync(fileId!, variant, expiresIn);
+          resolvedUrl = await instance.getFileDownloadUrlAsync(targetFileId, variant, expiresIn);
         }
 
         if (!resolvedUrl && typeof instance.getFileDownloadUrl === 'function') {
-          resolvedUrl = instance.getFileDownloadUrl(fileId!, variant, expiresIn);
+          resolvedUrl = instance.getFileDownloadUrl(targetFileId, variant, expiresIn);
         }
 
         if (!cancelled) {
@@ -94,8 +71,7 @@ export const useFileDownloadUrl = (
         // Fallback to sync URL on error where possible
         try {
           if (typeof instance.getFileDownloadUrl === 'function') {
-            const { variant, expiresIn } = options || {};
-            const fallbackUrl = instance.getFileDownloadUrl(fileId!, variant, expiresIn);
+            const fallbackUrl = instance.getFileDownloadUrl(targetFileId, variant, expiresIn);
             if (!cancelled) {
               setUrl(fallbackUrl || null);
               setError(err instanceof Error ? err : new Error(String(err)));
@@ -103,7 +79,7 @@ export const useFileDownloadUrl = (
             return;
           }
         } catch {
-          // ignore secondary failure
+          // Secondary failure: surface the original error below.
         }
 
         if (!cancelled) {
@@ -121,7 +97,7 @@ export const useFileDownloadUrl = (
     return () => {
       cancelled = true;
     };
-  }, [fileId, services, options?.variant, options?.expiresIn]);
+  }, [fileId, oxyServices, variant, expiresIn]);
 
   return { url, loading, error };
 };

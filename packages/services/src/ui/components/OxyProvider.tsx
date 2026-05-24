@@ -6,7 +6,7 @@ import { QueryClientProvider, focusManager, onlineManager } from '@tanstack/reac
 import { BloomThemeProvider } from '@oxyhq/bloom';
 import { setupFonts } from './FontLoader';
 import { Toaster } from '../../lib/sonner';
-import { createQueryClient } from '../hooks/queryClient';
+import { attachQueryPersistence, createQueryClient } from '../hooks/queryClient';
 import { createPlatformStorage, type StorageInterface } from '../utils/storageHelpers';
 
 // Initialize fonts automatically
@@ -105,10 +105,19 @@ const OxyProvider: FC<OxyProviderProps> = ({
     }, []);
     const KeyboardWrapper: FC<{ children: ReactNode }> = KBProvider ?? (({ children }) => <>{children}</>);
 
-    // Simple storage initialization for query persistence
+    // Storage + persistence wiring.
+    //
+    // We MUST await the restore() promise before exposing the QueryClient to
+    // children — otherwise the first render sees an empty cache and any
+    // <Suspense> queries or `enabled: !!cached` gates would skip the offline
+    // hit. Once the persisted blob has been hydrated (or definitively failed
+    // to hydrate), we mark the client ready and unblock rendering.
     const storageRef = useRef<StorageInterface | null>(null);
     const queryClientRef = useRef<ReturnType<typeof createQueryClient> | null>(null);
-    // Initialize immediately if provided via prop to avoid a null-render frame
+    const persistenceUnsubRef = useRef<(() => void) | null>(null);
+
+    // If the consumer supplied their own QueryClient we use it as-is and skip
+    // persistence — their host app owns that lifecycle.
     const [queryClient, setQueryClient] = useState<ReturnType<typeof createQueryClient> | null>(() => {
         if (providedQueryClient) {
             queryClientRef.current = providedQueryClient;
@@ -124,31 +133,44 @@ const OxyProvider: FC<OxyProviderProps> = ({
             return;
         }
 
-        // Initialize storage and create query client
         let mounted = true;
-        createPlatformStorage()
-            .then((storage) => {
-                if (mounted && !queryClientRef.current) {
-                    storageRef.current = storage;
-                    const client = createQueryClient(storage);
-                    queryClientRef.current = client;
-                    setQueryClient(client);
+
+        const bootstrap = async (): Promise<void> => {
+            let storage: StorageInterface | null = null;
+            try {
+                storage = await createPlatformStorage();
+            } catch (error) {
+                if (__DEV__) {
+                    console.warn('[OxyProvider] Failed to initialize storage for query persistence', error);
                 }
-            })
-            .catch((error) => {
-                // If storage fails, create query client without persistence
-                if (mounted && !queryClientRef.current) {
-                    if (__DEV__) {
-                        console.warn('[OxyProvider] Failed to initialize storage for query persistence', error);
-                    }
-                    const client = createQueryClient(null);
-                    queryClientRef.current = client;
-                    setQueryClient(client);
-                }
-            });
+            }
+
+            if (!mounted || queryClientRef.current) return;
+
+            storageRef.current = storage;
+            const client = createQueryClient();
+            const { restored, unsubscribe } = attachQueryPersistence(client, storage);
+            persistenceUnsubRef.current = unsubscribe;
+
+            // Block first render until the persisted cache is restored so
+            // offline reads land synchronously on the very first paint.
+            await restored;
+
+            if (!mounted) {
+                unsubscribe();
+                return;
+            }
+
+            queryClientRef.current = client;
+            setQueryClient(client);
+        };
+
+        bootstrap();
 
         return () => {
             mounted = false;
+            persistenceUnsubRef.current?.();
+            persistenceUnsubRef.current = null;
         };
     }, [providedQueryClient]);
 

@@ -54,7 +54,11 @@ function AccountRow({
 }) {
   return (
     <TouchableOpacity
-      style={[styles.accountRow, isActive && { backgroundColor: colors.surfaceVariant }]}
+      style={[
+        styles.accountRow,
+        isActive && { backgroundColor: colors.surfaceVariant },
+        isSwitching && !isActive && styles.actionRowDisabled,
+      ]}
       onPress={onSwitch}
       activeOpacity={0.6}
       disabled={isSwitching}
@@ -191,9 +195,10 @@ export function AccountSwitcher({ onClose, onSettings, onAddAccount }: AccountSw
 
       {/* Add account */}
       <TouchableOpacity
-        style={styles.actionRow}
+        style={[styles.actionRow, isSwitching && styles.actionRowDisabled]}
         onPress={onAddAccount}
         activeOpacity={0.6}
+        disabled={isSwitching}
       >
         {Platform.OS === 'web' ? (
           <HugeiconsIcon
@@ -210,7 +215,12 @@ export function AccountSwitcher({ onClose, onSettings, onAddAccount }: AccountSw
       <Divider />
 
       {/* Settings */}
-      <TouchableOpacity style={styles.actionRow} onPress={onSettings} activeOpacity={0.6}>
+      <TouchableOpacity
+        style={[styles.actionRow, isSwitching && styles.actionRowDisabled]}
+        onPress={onSettings}
+        activeOpacity={0.6}
+        disabled={isSwitching}
+      >
         {Platform.OS === 'web' ? (
           <HugeiconsIcon
             icon={Settings01Icon as unknown as IconSvgElement}
@@ -226,9 +236,10 @@ export function AccountSwitcher({ onClose, onSettings, onAddAccount }: AccountSw
       {/* Sign out current account */}
       {currentUserId && (
         <TouchableOpacity
-          style={styles.actionRow}
+          style={[styles.actionRow, isSwitching && styles.actionRowDisabled]}
           onPress={() => handleSignOut(currentUserId)}
           activeOpacity={0.6}
+          disabled={isSwitching}
         >
           {Platform.OS === 'web' ? (
             <HugeiconsIcon
@@ -301,6 +312,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 10,
     gap: 10,
+  },
+  actionRowDisabled: {
+    opacity: 0.4,
   },
   actionText: {
     fontSize: 13,

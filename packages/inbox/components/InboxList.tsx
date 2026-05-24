@@ -85,6 +85,13 @@ interface DrawerNavigation {
   dispatch?: (action: unknown) => void;
 }
 
+/**
+ * Vertical offset (in dp) from the safe-area bottom for the Alia FAB.
+ * Stacked above the Compose FAB with at least 24pt of separation:
+ *   Compose bottom = insets.bottom + 16, Compose height ≈ 52, plus 24 gap.
+ */
+const ALIA_FAB_BOTTOM_OFFSET = 16 + 52 + 24;
+
 export function InboxList({ replaceNavigation }: InboxListProps) {
   const router = useRouter();
   const navigation = useNavigation<DrawerNavigation>();
@@ -626,7 +633,7 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
         />
       </View>
 
-      {!isSelectionMode && (
+      {isAuthenticated && !isSelectionMode && (
         <TouchableOpacity
           accessibilityLabel="Compose new email"
           accessibilityRole="button"
@@ -664,8 +671,11 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
       {/* Alia AI chat assistant */}
       {isAuthenticated && !isSelectionMode && (
         <>
-          <View style={styles.aliaFab}>
+          <View style={[styles.aliaFab, { bottom: insets.bottom + ALIA_FAB_BOTTOM_OFFSET }]}>
             <TouchableOpacity
+              accessibilityLabel="Ask Alia"
+              accessibilityRole="button"
+              accessibilityHint="Opens the Alia AI assistant to ask questions about your inbox"
               style={styles.aliaFabTouchable}
               onPress={() => aliaChatRef.current?.present()}
               activeOpacity={0.8}
@@ -795,7 +805,6 @@ const styles = StyleSheet.create({
   },
   aliaFab: {
     position: 'absolute',
-    bottom: 80,
     right: 16,
     zIndex: 100,
     ...Platform.select({
