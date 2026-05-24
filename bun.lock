@@ -301,11 +301,24 @@
       },
       "devDependencies": {
         "@biomejs/biome": "^1.9.4",
+        "@react-native-async-storage/async-storage": "^2.2.0",
         "@types/elliptic": "^6.4.18",
         "@types/invariant": "^2.2.34",
         "@types/node": "^20.19.9",
+        "expo-crypto": "~56.0.3",
+        "expo-secure-store": "~56.0.4",
         "typescript": "^5.9.2",
       },
+      "peerDependencies": {
+        "@react-native-async-storage/async-storage": "*",
+        "expo-crypto": "*",
+        "expo-secure-store": "*",
+      },
+      "optionalPeers": [
+        "@react-native-async-storage/async-storage",
+        "expo-crypto",
+        "expo-secure-store",
+      ],
     },
     "packages/inbox": {
       "name": "inbox",
@@ -322,6 +335,7 @@
         "@radix-ui/react-icons": "^1.3.2",
         "@radix-ui/react-tabs": "^1.1.13",
         "@react-native-async-storage/async-storage": "^2.2.0",
+        "@react-native-menu/menu": "1.2.2",
         "@react-navigation/bottom-tabs": "^7.4.0",
         "@react-navigation/drawer": "^7.5.0",
         "@react-navigation/elements": "^2.6.3",
@@ -1493,6 +1507,8 @@
     "@react-native-community/netinfo": ["@react-native-community/netinfo@11.5.2", "", { "peerDependencies": { "react": "*", "react-native": ">=0.59" } }, ""],
 
     "@react-native-masked-view/masked-view": ["@react-native-masked-view/masked-view@0.3.2", "", { "peerDependencies": { "react": ">=16", "react-native": ">=0.57" } }, "sha512-XwuQoW7/GEgWRMovOQtX3A4PrXhyaZm0lVUiY8qJDvdngjLms9Cpdck6SmGAUNqQwcj2EadHC1HwL0bEyoa/SQ=="],
+
+    "@react-native-menu/menu": ["@react-native-menu/menu@1.2.2", "", { "peerDependencies": { "react": "*", "react-native": "*" } }, "sha512-Uk65PAhwNkCVBAqJu5t2H9biV+m0JLwJc7m3v2X2A/W8SFJmUqYabBsLH4fOWKI3a7kkR9QDT6HruliIKSfM8w=="],
 
     "@react-native/assets-registry": ["@react-native/assets-registry@0.85.3", "", {}, "sha512-u9ZiYP23vA2IFtdFQFmetzSmk6SM0xgKIoiOsr1hXNHjHaLhOm+/Ph1ud57wX6+Dbwdzx8coJgnzSKL3W21PCg=="],
 

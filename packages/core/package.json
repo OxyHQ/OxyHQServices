@@ -13,23 +13,30 @@
   "exports": {
     ".": {
       "types": "./dist/types/index.d.ts",
+      "react-native": "./dist/esm/index.js",
       "import": "./dist/esm/index.js",
       "require": "./dist/cjs/index.js",
       "default": "./dist/esm/index.js"
     },
     "./crypto": {
       "types": "./dist/types/crypto/index.d.ts",
+      "react-native": "./dist/esm/crypto/index.js",
       "import": "./dist/esm/crypto/index.js",
       "require": "./dist/cjs/crypto/index.js",
       "default": "./dist/esm/crypto/index.js"
     },
     "./shared": {
       "types": "./dist/types/shared/index.d.ts",
+      "react-native": "./dist/esm/shared/index.js",
       "import": "./dist/esm/shared/index.js",
       "require": "./dist/cjs/shared/index.js",
       "default": "./dist/esm/shared/index.js"
     },
     "./package.json": "./package.json"
+  },
+  "react-native": {
+    "./dist/esm/utils/platformCrypto.js": "./dist/esm/utils/platformCrypto.native.js",
+    "./dist/cjs/utils/platformCrypto.js": "./dist/cjs/utils/platformCrypto.native.js"
   },
   "files": [
     "dist",
@@ -74,11 +81,30 @@
     "socket.io-client": "^4.8.1",
     "zod": "^3.25.64"
   },
+  "peerDependencies": {
+    "@react-native-async-storage/async-storage": "*",
+    "expo-crypto": "*",
+    "expo-secure-store": "*"
+  },
+  "peerDependenciesMeta": {
+    "@react-native-async-storage/async-storage": {
+      "optional": true
+    },
+    "expo-crypto": {
+      "optional": true
+    },
+    "expo-secure-store": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
+    "@react-native-async-storage/async-storage": "^2.2.0",
     "@types/elliptic": "^6.4.18",
     "@types/invariant": "^2.2.34",
     "@types/node": "^20.19.9",
+    "expo-crypto": "~56.0.3",
+    "expo-secure-store": "~56.0.4",
     "typescript": "^5.9.2"
   }
 }

@@ -1,4 +1,4 @@
-import { bundlerOpaqueImport } from './dynamicImport';
+import { loadAsyncStorage } from './platformCrypto';
 
 export interface DeviceFingerprint {
   userAgent: string;
@@ -44,16 +44,10 @@ export class DeviceManager {
   }> {
     if (this.isReactNative()) {
       try {
-        // bundlerOpaqueImport hides the specifier from every bundler's static
-        // analyzer so this only resolves at runtime in a React Native host
-        // where @react-native-async-storage/async-storage actually exists.
-        const asyncStorageModule = await bundlerOpaqueImport<{
-          default: {
-            getItem: (key: string) => Promise<string | null>;
-            setItem: (key: string, value: string) => Promise<void>;
-            removeItem: (key: string) => Promise<void>;
-          };
-        }>('@react-native-async-storage/async-storage');
+        // `loadAsyncStorage` is per-platform: the RN variant statically imports
+        // @react-native-async-storage/async-storage, the default variant throws
+        // (never called outside RN because of the `isReactNative()` gate above).
+        const asyncStorageModule = await loadAsyncStorage();
         const storage = asyncStorageModule.default;
         return {
           getItem: storage.getItem.bind(storage),

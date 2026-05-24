@@ -7,7 +7,7 @@
 import { jwtDecode } from 'jwt-decode';
 import type { ApiError, User } from '../models/interfaces';
 import type { OxyServicesBase } from '../OxyServices.base';
-import { bundlerOpaqueImport } from '../utils/dynamicImport';
+import { loadNodeCrypto } from '../utils/platformCrypto';
 import { CACHE_TIMES } from './mixinHelpers';
 
 interface JwtPayload {
@@ -300,11 +300,12 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
 
             // Verify JWT signature (not just decode).
             // This middleware only runs on a Node Express server, but the file
-            // is bundled by Metro/Vite for RN/web consumers. bundlerOpaqueImport
-            // hides the 'crypto' specifier from every bundler's static analyzer
-            // so the bundle never tries to resolve Node's built-in.
+            // is bundled by Metro/Vite for RN/web consumers. `loadNodeCrypto`
+            // is per-platform: the RN variant throws (and is never called
+            // because service-token middleware is only mounted by Node hosts),
+            // so Metro never bundles a reference to Node's built-in.
             try {
-              const nodeCrypto = await bundlerOpaqueImport<typeof import('crypto')>('crypto');
+              const nodeCrypto = await loadNodeCrypto();
               const { createHmac, timingSafeEqual } = nodeCrypto;
               const [headerB64, payloadB64, signatureB64] = token.split('.');
               if (!headerB64 || !payloadB64 || !signatureB64) {

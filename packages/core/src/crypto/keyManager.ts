@@ -8,7 +8,7 @@
 import { ec as EC } from 'elliptic';
 import type { ECKeyPair } from 'elliptic';
 import { isWeb, isIOS, isAndroid, isReactNative, isNodeJS } from '../utils/platform';
-import { bundlerOpaqueImport } from '../utils/dynamicImport';
+import { loadExpoCrypto, loadNodeCrypto, loadSecureStore } from '../utils/platformCrypto';
 import { logger } from '../utils/loggerUtils';
 import { isDev } from '../shared/utils/debugUtils';
 
@@ -47,10 +47,6 @@ export class IdentityPersistError extends Error {
   }
 }
 
-// Lazy imports for React Native specific modules
-let SecureStore: typeof import('expo-secure-store') | null = null;
-let ExpoCrypto: typeof import('expo-crypto') | null = null;
-
 const ec = new EC('secp256k1');
 
 const STORAGE_KEYS = {
@@ -81,24 +77,23 @@ const ANDROID_ACCOUNT_TYPE = 'com.oxy.account';
 
 /**
  * Initialize React Native specific modules
- * This allows the module to work in both Node.js and React Native environments
+ *
+ * Delegates to `platformCrypto`, which is a per-platform module
+ * (`platformCrypto.ts` vs `platformCrypto.react-native.ts`) selected by the
+ * consumer's bundler. On RN it returns a statically-imported handle to
+ * `expo-secure-store`; off RN it throws (and is never called because every
+ * caller is gated by `isWebPlatform()` / native-only paths).
  */
 async function initSecureStore(): Promise<typeof import('expo-secure-store')> {
-  if (!SecureStore) {
-    try {
-      // bundlerOpaqueImport hides the specifier from every bundler's static
-      // analyzer (Metro/Vite/webpack/esbuild/Rollup) so this only resolves
-      // at runtime in a React Native host where expo-secure-store exists.
-      SecureStore = await bundlerOpaqueImport<typeof import('expo-secure-store')>('expo-secure-store');
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      throw new Error(`Failed to load expo-secure-store: ${errorMessage}. Make sure expo-secure-store is installed and properly configured.`);
-    }
+  try {
+    return await loadSecureStore();
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `Failed to load expo-secure-store: ${errorMessage}. ` +
+        'Make sure expo-secure-store is installed and properly configured.',
+    );
   }
-  if (!SecureStore) {
-    throw new Error('expo-secure-store module is not available');
-  }
-  return SecureStore;
 }
 
 /**
@@ -110,12 +105,8 @@ function isWebPlatform(): boolean {
 }
 
 async function initExpoCrypto(): Promise<typeof import('expo-crypto')> {
-  if (!ExpoCrypto) {
-    // bundlerOpaqueImport hides the specifier from every bundler's static
-    // analyzer so this only resolves at runtime in a React Native host.
-    ExpoCrypto = await bundlerOpaqueImport<typeof import('expo-crypto')>('expo-crypto');
-  }
-  return ExpoCrypto!;
+  // Same per-platform delegation as initSecureStore — see comment there.
+  return loadExpoCrypto();
 }
 
 /**
@@ -139,13 +130,17 @@ async function getSecureRandomBytes(length: number): Promise<Uint8Array> {
   }
   
   // In Node.js, use Node's crypto module.
-  // bundlerOpaqueImport hides the 'crypto' specifier from every bundler's
-  // static analyzer so RN/web builds don't try to resolve Node's built-in.
+  //
+  // `loadNodeCrypto` is per-platform: the default variant performs
+  // `await import('crypto')`, the RN variant throws (and we'd never reach
+  // here on RN because the early-return above caught it).
   try {
-    const nodeCrypto = await bundlerOpaqueImport<typeof import('crypto')>('crypto');
+    const nodeCrypto = await loadNodeCrypto();
     return new Uint8Array(nodeCrypto.randomBytes(length));
   } catch (error) {
-    // Fallback to expo-crypto if Node crypto fails
+    // Fallback to expo-crypto if Node crypto fails (defensive — should not
+    // happen on real Node, but the platform-detection edge cases are
+    // surprisingly varied).
     const Crypto = await initExpoCrypto();
     return Crypto.getRandomBytes(length);
   }

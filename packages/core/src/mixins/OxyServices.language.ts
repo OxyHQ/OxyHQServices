@@ -4,7 +4,7 @@
 import { normalizeLanguageCode, getLanguageMetadata, getLanguageName, getNativeLanguageName } from '../utils/languageUtils';
 import type { LanguageMetadata } from '../utils/languageUtils';
 import type { OxyServicesBase } from '../OxyServices.base';
-import { bundlerOpaqueImport } from '../utils/dynamicImport';
+import { loadAsyncStorage } from '../utils/platformCrypto';
 import { isDev } from '../shared/utils/debugUtils';
 
 export function OxyServicesLanguageMixin<T extends typeof OxyServicesBase>(Base: T) {
@@ -24,16 +24,10 @@ export function OxyServicesLanguageMixin<T extends typeof OxyServicesBase>(Base:
       
       if (isReactNative) {
         try {
-          // bundlerOpaqueImport hides the specifier from every bundler's static
-          // analyzer so this only resolves at runtime in a React Native host
-          // where @react-native-async-storage/async-storage actually exists.
-          const asyncStorageModule = await bundlerOpaqueImport<{
-            default: {
-              getItem: (key: string) => Promise<string | null>;
-              setItem: (key: string, value: string) => Promise<void>;
-              removeItem: (key: string) => Promise<void>;
-            };
-          }>('@react-native-async-storage/async-storage');
+          // `loadAsyncStorage` is per-platform: the RN variant statically imports
+          // @react-native-async-storage/async-storage, the default variant throws
+          // (never called outside RN because of the `isReactNative` gate above).
+          const asyncStorageModule = await loadAsyncStorage();
           const storage = asyncStorageModule.default;
           return {
             getItem: storage.getItem.bind(storage),

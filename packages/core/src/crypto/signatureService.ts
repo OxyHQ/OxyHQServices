@@ -8,29 +8,11 @@
 import { ec as EC } from 'elliptic';
 import { KeyManager } from './keyManager';
 import { isReactNative, isNodeJS } from '../utils/platform';
-import { bundlerOpaqueImport } from '../utils/dynamicImport';
+import { loadExpoCrypto, loadNodeCrypto } from '../utils/platformCrypto';
 import { logger } from '../utils/loggerUtils';
 import { isDev } from '../shared/utils/debugUtils';
 
-// Lazy imports for platform-specific crypto
-let ExpoCrypto: typeof import('expo-crypto') | null = null;
-let NodeCrypto: typeof import('crypto') | null = null;
-
 const ec = new EC('secp256k1');
-
-async function initExpoCrypto(): Promise<typeof import('expo-crypto')> {
-  if (!ExpoCrypto) {
-    ExpoCrypto = await bundlerOpaqueImport<typeof import('expo-crypto')>('expo-crypto');
-  }
-  return ExpoCrypto!;
-}
-
-async function initNodeCrypto(): Promise<typeof import('crypto')> {
-  if (!NodeCrypto) {
-    NodeCrypto = await bundlerOpaqueImport<typeof import('crypto')>('crypto');
-  }
-  return NodeCrypto!;
-}
 
 /**
  * Compute SHA-256 hash of a string
@@ -38,7 +20,7 @@ async function initNodeCrypto(): Promise<typeof import('crypto')> {
 async function sha256(message: string): Promise<string> {
   // In React Native, use expo-crypto
   if (isReactNative()) {
-    const Crypto = await initExpoCrypto();
+    const Crypto = await loadExpoCrypto();
     return Crypto.digestStringAsync(
       Crypto.CryptoDigestAlgorithm.SHA256,
       message
@@ -47,7 +29,7 @@ async function sha256(message: string): Promise<string> {
 
   if (isNodeJS()) {
     try {
-      const nodeCrypto = await initNodeCrypto();
+      const nodeCrypto = await loadNodeCrypto();
       return nodeCrypto.createHash('sha256').update(message).digest('hex');
     } catch (error) {
       // Node crypto failed to load — log and fall through to Web Crypto API
@@ -84,7 +66,7 @@ export class SignatureService {
   static async generateChallenge(): Promise<string> {
     // In React Native, use expo-crypto
     if (isReactNative()) {
-      const Crypto = await initExpoCrypto();
+      const Crypto = await loadExpoCrypto();
       const randomBytes = await Crypto.getRandomBytesAsync(32);
       return Array.from(new Uint8Array(randomBytes))
         .map((b) => b.toString(16).padStart(2, '0'))
@@ -93,7 +75,7 @@ export class SignatureService {
 
     if (isNodeJS()) {
       try {
-        const nodeCrypto = await initNodeCrypto();
+        const nodeCrypto = await loadNodeCrypto();
         return nodeCrypto.randomBytes(32).toString('hex');
       } catch (error) {
         // Node crypto failed to load — log and fall through to Web Crypto API
