@@ -4,7 +4,6 @@ import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
 import { AccountCard, ScreenHeader } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
-import { UnauthenticatedScreen } from '@/components/unauthenticated-screen';
 import { useOxy } from '@oxyhq/services';
 import { formatDate, getDisplayName } from '@/utils/date-utils';
 import { useHapticPress } from '@/hooks/use-haptic-press';
@@ -18,8 +17,8 @@ export default function PersonalInfoScreen() {
   const colors = useColors();
   const { t } = useTranslation();
 
-  // OxyServices integration
-  const { user, isLoading: oxyLoading, isAuthenticated, showBottomSheet } = useOxy();
+  // OxyServices integration — auth is enforced by the `(tabs)` layout.
+  const { user, isLoading: oxyLoading, showBottomSheet } = useOxy();
   const handlePressIn = useHapticPress();
   const handleEditField = useCallback((field: string) => {
     showBottomSheet?.({
@@ -167,18 +166,6 @@ export default function PersonalInfoScreen() {
           <ThemedText style={[styles.loadingText, { color: colors.text }]}>{t('common.loadingShort')}</ThemedText>
         </View>
       </ScreenContentWrapper>
-    );
-  }
-
-  // Show message if not authenticated
-  if (!isAuthenticated) {
-    return (
-      <UnauthenticatedScreen
-        title={t('personalInfo.title')}
-        subtitle={t('personalInfo.subtitle')}
-        message={t('personalInfo.signInRequired')}
-        isAuthenticated={isAuthenticated}
-      />
     );
   }
 

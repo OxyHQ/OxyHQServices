@@ -6,12 +6,13 @@ import { useOxy } from '@oxyhq/services';
 
 export default function CreateBackupScreen() {
     const router = useRouter();
-    const { getPublicKey, isAuthenticated } = useOxy();
+    // Auth is enforced by the `(tabs)` layout — assume a session here.
+    const { getPublicKey } = useOxy();
     const [publicKey, setPublicKey] = useState<string | null>(null);
 
     useEffect(() => {
         const loadPublicKey = async () => {
-            if (isAuthenticated && getPublicKey) {
+            if (getPublicKey) {
                 try {
                     const pk = await getPublicKey();
                     setPublicKey(pk);
@@ -21,7 +22,7 @@ export default function CreateBackupScreen() {
             }
         };
         loadPublicKey();
-    }, [isAuthenticated, getPublicKey]);
+    }, [getPublicKey]);
 
     const handleComplete = () => {
         router.back();

@@ -10,7 +10,6 @@ import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { ScreenHeader, AccountCard } from '@/components/ui';
-import { UnauthenticatedScreen } from '@/components/unauthenticated-screen';
 import { useOxy, useInfiniteSecurityActivity } from '@oxyhq/services';
 import { Section } from '@/components/section';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -143,7 +142,8 @@ export default function ActivityScreen() {
     const colors = useColors();
     const { mode } = useTheme();
     const { t, locale } = useTranslation();
-    const { isAuthenticated, isLoading: oxyLoading } = useOxy();
+    // Auth is enforced by the `(tabs)` layout — we can assume a session here.
+    const { isLoading: oxyLoading } = useOxy();
     const handlePressIn = useHapticPress();
     const [refreshing, setRefreshing] = useState(false);
     const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -161,7 +161,6 @@ export default function ActivityScreen() {
         refetch,
     } = useInfiniteSecurityActivity({
         limit: PAGE_SIZE,
-        enabled: isAuthenticated,
     });
 
     const activities = useMemo<SecurityActivity[]>(() => {
@@ -308,18 +307,6 @@ export default function ActivityScreen() {
     const handleRetry = useCallback(() => {
         refetch();
     }, [refetch]);
-
-    // Not authenticated — render the unauthenticated screen.
-    if (!isAuthenticated && !oxyLoading) {
-        return (
-            <UnauthenticatedScreen
-                title={t('activity.title')}
-                subtitle={t('activity.subtitle')}
-                message={t('activity.signInRequired')}
-                isAuthenticated={isAuthenticated}
-            />
-        );
-    }
 
     const showInitialLoading =
         (isLoading || oxyLoading) && activities.length === 0;

@@ -7,7 +7,6 @@ import { Section } from '@/components/section';
 import { AccountCard, ScreenHeader, useAlert, Switch } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { useOxy, useFollow, usePrivacySettings, useUpdatePrivacySettings } from '@oxyhq/services';
-import { UnauthenticatedScreen } from '@/components/unauthenticated-screen';
 import * as Contacts from 'expo-contacts';
 import { useTranslation } from '@/lib/i18n';
 import type { User } from '@oxyhq/core';
@@ -18,7 +17,8 @@ export default function PeopleAndSharingScreen() {
   const colors = useColors();
   const alert = useAlert();
   const router = useRouter();
-  const { isAuthenticated, isLoading: authLoading, user, oxyServices, showBottomSheet } = useOxy();
+  // Auth is enforced by the `(tabs)` layout — assume a session here.
+  const { isLoading: authLoading, user, oxyServices, showBottomSheet } = useOxy();
   const { t } = useTranslation();
 
   // Get user ID as string
@@ -34,7 +34,7 @@ export default function PeopleAndSharingScreen() {
     isFetching: privacyFetching,
     refetch: refetchPrivacy,
   } = usePrivacySettings(userId, {
-    enabled: !!userId && isAuthenticated,
+    enabled: !!userId,
   });
   const updatePrivacyMutation = useUpdatePrivacySettings();
 
@@ -53,7 +53,7 @@ export default function PeopleAndSharingScreen() {
   const [pendingPrivacyKey, setPendingPrivacyKey] = useState<string | null>(null);
 
   const fetchPrivacyCounts = useCallback(async () => {
-    if (!isAuthenticated || !oxyServices || !userId) return;
+    if (!oxyServices || !userId) return;
     try {
       const [blockedUsers, restrictedUsers] = await Promise.all([
         oxyServices.getBlockedUsers(),
@@ -64,7 +64,7 @@ export default function PeopleAndSharingScreen() {
     } finally {
       setHasFetchedPrivacy(true);
     }
-  }, [isAuthenticated, oxyServices, userId]);
+  }, [oxyServices, userId]);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -238,11 +238,11 @@ export default function PeopleAndSharingScreen() {
 
   // Fetch blocked/restricted counts
   useEffect(() => {
-    if (isAuthenticated && userId && !hasFetchedPrivacy) {
+    if (userId && !hasFetchedPrivacy) {
       void fetchPrivacyCounts();
       fetchUserCounts?.();
     }
-  }, [isAuthenticated, userId, hasFetchedPrivacy, fetchPrivacyCounts, fetchUserCounts]);
+  }, [userId, hasFetchedPrivacy, fetchPrivacyCounts, fetchUserCounts]);
 
   // Contacts section items
   const contactsItems = useMemo(() => {
@@ -450,18 +450,6 @@ export default function PeopleAndSharingScreen() {
           <Text style={[styles.loadingText, { color: colors.text }]}>{t('common.loadingShort')}</Text>
         </View>
       </ScreenContentWrapper>
-    );
-  }
-
-  // Show unauthenticated screen
-  if (!isAuthenticated) {
-    return (
-      <UnauthenticatedScreen
-        title={t('sharing.title')}
-        subtitle={t('sharing.subtitle')}
-        message={t('sharing.signInRequired')}
-        isAuthenticated={isAuthenticated}
-      />
     );
   }
 

@@ -8,7 +8,6 @@ import { AccountCard, ScreenHeader, LinkButton, useAlert } from '@/components/ui
 import { Section } from '@/components/section';
 import { GroupedSection } from '@/components/grouped-section';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
-import { UnauthenticatedScreen } from '@/components/unauthenticated-screen';
 import { useOxy } from '@oxyhq/services';
 import type { AccountStorageUsageResponse } from '@oxyhq/core';
 import { formatDate } from '@/utils/date-utils';
@@ -21,7 +20,8 @@ export default function StorageScreen() {
   const isDesktop = Platform.OS === 'web' && width >= 768;
   const { t } = useTranslation();
 
-  const { oxyServices, isAuthenticated, isLoading: oxyLoading } = useOxy();
+  // Auth is enforced by the `(tabs)` layout — assume a session here.
+  const { oxyServices, isLoading: oxyLoading } = useOxy();
   const alert = useAlert();
   const [usage, setUsage] = useState<AccountStorageUsageResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -29,7 +29,7 @@ export default function StorageScreen() {
   const [error, setError] = useState<string | null>(null);
 
   const loadUsage = useCallback(async () => {
-    if (!isAuthenticated || !oxyServices) return;
+    if (!oxyServices) return;
     setLoading(true);
     setError(null);
     try {
@@ -42,10 +42,10 @@ export default function StorageScreen() {
     } finally {
       setLoading(false);
     }
-  }, [isAuthenticated, oxyServices, t]);
+  }, [oxyServices, t]);
 
   const handleRefresh = useCallback(async () => {
-    if (!isAuthenticated || !oxyServices) return;
+    if (!oxyServices) return;
     setRefreshing(true);
     setError(null);
     try {
@@ -57,7 +57,7 @@ export default function StorageScreen() {
     } finally {
       setRefreshing(false);
     }
-  }, [isAuthenticated, oxyServices, t]);
+  }, [oxyServices, t]);
 
   useEffect(() => {
     void loadUsage();
@@ -269,17 +269,6 @@ export default function StorageScreen() {
       },
     ];
   }, [colors.sidebarIconPayments, colors.textSecondary, formatRelativeTime, planDisplayName, usage, t]);
-
-  if (!isAuthenticated && !oxyLoading) {
-    return (
-      <UnauthenticatedScreen
-        title={t('storage.title')}
-        subtitle={t('storage.subtitle')}
-        message={t('storage.signInRequired')}
-        isAuthenticated={isAuthenticated}
-      />
-    );
-  }
 
   const content = (
     <>

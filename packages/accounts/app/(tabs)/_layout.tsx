@@ -1,8 +1,9 @@
-import { Slot, useRouter, usePathname } from 'expo-router';
+import { Redirect, Slot, useRouter, usePathname } from 'expo-router';
 import { Drawer } from 'expo-router/drawer';
 import React, { useRef, useCallback, useState } from 'react';
 import { View, ScrollView, StyleSheet, Platform, useWindowDimensions, TextInput, TouchableOpacity } from 'react-native';
 import { useTheme } from '@oxyhq/bloom/theme';
+import { Loading } from '@oxyhq/bloom/loading';
 import { useColors } from '@/hooks/useColors';
 import { useThemeMode } from '@/contexts/theme-mode-context';
 import { DesktopSidebar, DrawerContent } from '@/components/ui';
@@ -58,6 +59,15 @@ export default function TabLayout() {
   const isDesktop = Platform.OS === 'web' && width >= 768;
   const { t } = useTranslation();
 
+  // Auth gate: the entire `(tabs)` group is a protected zone. Unauthenticated
+  // users belong in `(auth)`. We derive the redirect during render (no
+  // useEffect) so the protected screens never mount with `user === undefined`,
+  // which avoids any TanStack queries firing with no session and the
+  // associated "loading forever" UX. We render a neutral spinner during the
+  // initial `isLoading` window so a freshly-launched authenticated user
+  // doesn't briefly bounce through `(auth)`.
+  const { isAuthenticated, isLoading: authLoading, showBottomSheet, refreshSessions } = useOxy();
+
   // --- Animated background color transition ---
   const prevBgRef = useRef(colors.background);
   const bgProgress = useSharedValue(1);
@@ -90,7 +100,6 @@ export default function TabLayout() {
   const { setIsScrolled, scrollToTop, scrollY } = useScrollContext();
   const [showGoToTopButton, setShowGoToTopButton] = useState(false);
 
-  const { showBottomSheet, refreshSessions } = useOxy();
   const { scrollRef } = useScrollContext();
 
   const handlePressIn = useHapticPress();
@@ -153,6 +162,23 @@ export default function TabLayout() {
     const offsetY = event.nativeEvent.contentOffset.y;
     setIsScrolled(offsetY > 10);
   }, [setIsScrolled]);
+
+  // Protected zone: redirect unauthenticated users to the auth welcome
+  // screen. During the initial auth-resolution window render a neutral
+  // spinner so a freshly-launched authenticated user does not flicker
+  // through `(auth)` for a frame. `(auth)/index` handles routing for
+  // authenticated users (complete → /(tabs); in_progress → create-identity)
+  // so this is loop-safe.
+  if (authLoading && !isAuthenticated) {
+    return (
+      <Animated.View style={[styles.container, animatedBgStyle, styles.gateCenter]}>
+        <Loading variant="spinner" size="large" color={colors.tint} />
+      </Animated.View>
+    );
+  }
+  if (!isAuthenticated) {
+    return <Redirect href="/(auth)" />;
+  }
 
   if (isDesktop) {
     return (
@@ -461,6 +487,10 @@ const styles = StyleSheet.create({
   mobileContainer: {
     flex: 1,
     position: 'relative',
+  },
+  gateCenter: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   desktopBody: {
     flex: 1,

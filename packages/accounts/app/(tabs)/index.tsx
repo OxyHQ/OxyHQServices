@@ -35,18 +35,18 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const { t } = useTranslation();
 
-  // OxyServices integration
-  const { user, isAuthenticated, oxyServices, isLoading: oxyLoading, showBottomSheet, refreshSessions, openAvatarPicker, sessions, managedAccounts, actingAs } = useOxy();
+  // OxyServices integration — auth is enforced by the `(tabs)` layout.
+  const { user, oxyServices, isLoading: oxyLoading, showBottomSheet, refreshSessions, openAvatarPicker, sessions, managedAccounts, actingAs } = useOxy();
   // Hydrate the user record from the server (createdAt + any fields that were
   // missing from a cached signIn response). useCurrentUser handles staleness
   // via TanStack Query and re-fetches on mount / staleTime expiry, then
   // OxyContext picks up the fresh record from the same cache key.
-  useCurrentUser({ enabled: isAuthenticated });
+  useCurrentUser();
   const { syncIdentity, isIdentitySynced, identitySyncState } = useIdentity();
   const alert = useAlert();
 
   // Fetch devices for stats
-  const { data: devicesData } = useUserDevices({ enabled: isAuthenticated });
+  const { data: devicesData } = useUserDevices();
   const devices = (devicesData ?? []) as { id: string }[];
 
   // Fetch security activity
@@ -643,30 +643,10 @@ export default function HomeScreen() {
     return () => clearTimeout(timer);
   }, []);
 
-  // Redirect to auth flow if not authenticated (native only)
-  // Accounts app uses its own auth flow (create/import identity), not the bottom sheet
-  // IMPORTANT: This useEffect must be called before any early returns to maintain hook order
-  // Note: Auth route is only available on native platforms, so we skip redirect on web
-  useEffect(() => {
-    if (!oxyLoading && !isAuthenticated && Platform.OS !== 'web') {
-      router.replace('/(auth)');
-    }
-  }, [oxyLoading, isAuthenticated, router]);
-
-  // Show loading state while OxyServices is initializing
+  // Show loading state while OxyServices is initializing. Auth itself is
+  // enforced by the `(tabs)` layout — by the time this screen mounts the
+  // user is signed in, so no unauthenticated branch is needed.
   if (oxyLoading) {
-    return (
-      <ScreenContentWrapper>
-        <View style={[styles.container, styles.loadingContainer, { backgroundColor: colors.background }]}>
-          <ActivityIndicator size="large" color={colors.tint} />
-          <ThemedText style={[styles.loadingText, { color: colors.text }]}>{t('common.loadingShort')}</ThemedText>
-        </View>
-      </ScreenContentWrapper>
-    );
-  }
-
-  // Show loading while checking auth or redirecting
-  if (!isAuthenticated) {
     return (
       <ScreenContentWrapper>
         <View style={[styles.container, styles.loadingContainer, { backgroundColor: colors.background }]}>

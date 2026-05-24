@@ -5,14 +5,13 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { ScreenHeader } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { useOxy } from '@oxyhq/services';
-import { UnauthenticatedScreen } from '@/components/unauthenticated-screen';
 import { useTranslation } from '@/lib/i18n';
 
 export default function ThirdPartyConnectionsScreen() {
   const colors = useColors();
   const { width } = useWindowDimensions();
   const isDesktop = Platform.OS === 'web' && width >= 768;
-  const { isAuthenticated, isLoading: authLoading } = useOxy();
+  const { isLoading: authLoading } = useOxy();
   const { t } = useTranslation();
 
   if (authLoading) {
@@ -23,17 +22,6 @@ export default function ThirdPartyConnectionsScreen() {
           <Text style={[styles.loadingText, { color: colors.text }]}>{t('common.loadingShort')}</Text>
         </View>
       </ScreenContentWrapper>
-    );
-  }
-
-  if (!isAuthenticated) {
-    return (
-      <UnauthenticatedScreen
-        title={t('family.title')}
-        subtitle={t('family.subtitle')}
-        message={t('family.signInRequired')}
-        isAuthenticated={isAuthenticated}
-      />
     );
   }
 

@@ -7,7 +7,6 @@ import { Section } from '@/components/section';
 import { GroupedSection } from '@/components/grouped-section';
 import { AccountCard, ScreenHeader, useAlert } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
-import { UnauthenticatedScreen } from '@/components/unauthenticated-screen';
 import { useOxy } from '@oxyhq/services';
 import { formatDate } from '@/utils/date-utils';
 import { useHapticPress } from '@/hooks/use-haptic-press';
@@ -35,8 +34,8 @@ export default function DeviceDetailScreen() {
   // colors already from useColors() above
   const isDesktop = Platform.OS === 'web' && width >= 768;
 
-  // OxyServices integration
-  const { oxyServices, isAuthenticated, isLoading: oxyLoading } = useOxy();
+  // OxyServices integration — auth is enforced by the `(tabs)` layout.
+  const { oxyServices, isLoading: oxyLoading } = useOxy();
   const alert = useAlert();
   const [device, setDevice] = useState<Device | null>(null);
   const [loading, setLoading] = useState(false);
@@ -48,7 +47,7 @@ export default function DeviceDetailScreen() {
   // Fetch device details
   useEffect(() => {
     const fetchDevice = async () => {
-      if (!isAuthenticated || !oxyServices || !deviceId) return;
+      if (!oxyServices || !deviceId) return;
 
       setLoading(true);
       setError(null);
@@ -72,7 +71,7 @@ export default function DeviceDetailScreen() {
     };
 
     fetchDevice();
-  }, [isAuthenticated, oxyServices, deviceId]);
+  }, [oxyServices, deviceId]);
 
   const handlePressIn = useHapticPress();
 
@@ -224,18 +223,6 @@ export default function DeviceDetailScreen() {
           <ThemedText style={[styles.loadingText, { color: colors.text }]}>Loading device details...</ThemedText>
         </View>
       </ScreenContentWrapper>
-    );
-  }
-
-  // Show message if not authenticated
-  if (!isAuthenticated) {
-    return (
-      <UnauthenticatedScreen
-        title="Device Details"
-        subtitle="View and manage device information."
-        message="Please sign in to view device details."
-        isAuthenticated={isAuthenticated}
-      />
     );
   }
 

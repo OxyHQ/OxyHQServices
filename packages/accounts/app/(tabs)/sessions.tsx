@@ -5,7 +5,6 @@ import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { ScreenHeader, useAlert } from '@/components/ui';
-import { UnauthenticatedScreen } from '@/components/unauthenticated-screen';
 import { useOxy } from '@oxyhq/services';
 import { AccountCard } from '@/components/ui';
 import { GroupedSection } from '@/components/grouped-section';
@@ -21,8 +20,9 @@ export default function SessionsScreen() {
     const router = useRouter();
     const { t } = useTranslation();
 
-    // OxyServices integration
-    const { sessions, activeSessionId, removeSession, switchSession, isLoading: oxyLoading, isAuthenticated, refreshSessions } = useOxy();
+    // OxyServices integration — auth is enforced by the `(tabs)` layout, so
+    // we can assume the session exists here.
+    const { sessions, activeSessionId, removeSession, switchSession, isLoading: oxyLoading, refreshSessions } = useOxy();
     const alert = useAlert();
     const [actionLoading, setActionLoading] = useState<string | null>(null);
     const [refreshing, setRefreshing] = useState(false);
@@ -180,18 +180,6 @@ export default function SessionsScreen() {
                     <ThemedText style={[styles.loadingText, { color: colors.text }]}>Loading sessions...</ThemedText>
                 </View>
             </ScreenContentWrapper>
-        );
-    }
-
-    // Show message if not authenticated
-    if (!isAuthenticated) {
-        return (
-            <UnauthenticatedScreen
-                title="Sessions"
-                subtitle="Manage your active sessions."
-                message="Please sign in to view your sessions."
-                isAuthenticated={isAuthenticated}
-            />
         );
     }
 

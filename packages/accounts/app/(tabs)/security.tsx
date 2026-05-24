@@ -10,7 +10,6 @@ import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import { darkenColor } from '@/utils/color-utils';
 import { LinkButton, AccountCard, Switch, ScreenHeader, useAlert } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
-import { UnauthenticatedScreen } from '@/components/unauthenticated-screen';
 import { useOxy, useUserDevices, useRecentSecurityActivity, useUpdateProfile } from '@oxyhq/services';
 import { formatDate } from '@/utils/date-utils';
 import type { ClientSession, SecurityActivity } from '@oxyhq/core';
@@ -31,8 +30,8 @@ export default function SecurityScreen() {
     const isDesktop = Platform.OS === 'web' && width >= 768;
     const { t, locale } = useTranslation();
 
-    // OxyServices integration
-    const { user, isAuthenticated, isLoading: oxyLoading, sessions, getPublicKey, logoutAll, oxyServices } = useOxy();
+    // OxyServices integration — auth is enforced by the `(tabs)` layout.
+    const { user, isLoading: oxyLoading, sessions, getPublicKey, logoutAll, oxyServices } = useOxy();
     // hasIdentity from useOxy is a function; pull the reactive boolean from
     // the onboarding status hook instead so we can use it in dependency
     // arrays and conditional rendering.
@@ -54,10 +53,9 @@ export default function SecurityScreen() {
         isCurrent?: boolean;
     }
 
-    // Fetch devices using TanStack Query hook
-    const { data: rawDevices, isLoading: loading, error: devicesError } = useUserDevices({
-        enabled: isAuthenticated,
-    });
+    // Fetch devices using TanStack Query hook — the `(tabs)` layout guarantees
+    // an authenticated session by the time this hook mounts.
+    const { data: rawDevices, isLoading: loading, error: devicesError } = useUserDevices();
     const devices = (rawDevices ?? []) as DeviceRecord[];
 
     // Fetch security activity
@@ -534,18 +532,6 @@ export default function SecurityScreen() {
                     <ThemedText style={[styles.loadingText, { color: colors.text }]}>{t('security.loading')}</ThemedText>
                 </View>
             </ScreenContentWrapper>
-        );
-    }
-
-    // Show message if not authenticated
-    if (!isAuthenticated) {
-        return (
-            <UnauthenticatedScreen
-                title={t('security.title')}
-                subtitle={t('security.subtitle')}
-                message={t('security.signInRequired')}
-                isAuthenticated={isAuthenticated}
-            />
         );
     }
 

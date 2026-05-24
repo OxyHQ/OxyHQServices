@@ -20,8 +20,8 @@ export default function PaymentsScreen() {
   const isDesktop = Platform.OS === 'web' && width >= 768;
   const { t } = useTranslation();
 
-  // OxyServices integration
-  const { user, oxyServices, isAuthenticated, isLoading: oxyLoading, showBottomSheet } = useOxy();
+  // OxyServices integration — auth is enforced by the `(tabs)` layout.
+  const { user, oxyServices, isLoading: oxyLoading, showBottomSheet } = useOxy();
   const [subscription, setSubscription] = useState<any>(null);
   const [payments, setPayments] = useState<any[]>([]);
   const [wallet, setWallet] = useState<any>(null);
@@ -32,7 +32,7 @@ export default function PaymentsScreen() {
 
   // Fetch all payment-related data in parallel
   const fetchAllPaymentData = useCallback(async () => {
-    if (!isAuthenticated || !oxyServices || !user?.id) {
+    if (!oxyServices || !user?.id) {
       return;
     }
 
@@ -53,12 +53,12 @@ export default function PaymentsScreen() {
     } else {
       setTransactions([]);
     }
-  }, [isAuthenticated, oxyServices, user?.id]);
+  }, [oxyServices, user?.id]);
 
   useEffect(() => {
     let cancelled = false;
     const run = async () => {
-      if (!isAuthenticated || !oxyServices || !user?.id) {
+      if (!oxyServices || !user?.id) {
         setLoading(false);
         return;
       }
@@ -70,7 +70,7 @@ export default function PaymentsScreen() {
     return () => {
       cancelled = true;
     };
-  }, [isAuthenticated, oxyServices, user?.id, fetchAllPaymentData]);
+  }, [oxyServices, user?.id, fetchAllPaymentData]);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);

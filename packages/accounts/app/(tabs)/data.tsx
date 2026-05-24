@@ -10,7 +10,6 @@ import { Section } from '@/components/section';
 import { GroupedSection } from '@/components/grouped-section';
 import { AccountCard, ScreenHeader, Switch, useAlert } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
-import { UnauthenticatedScreen } from '@/components/unauthenticated-screen';
 import { useOxy, usePrivacySettings, useUpdatePrivacySettings } from '@oxyhq/services';
 import { useTranslation } from '@/lib/i18n';
 
@@ -24,10 +23,10 @@ export default function DataScreen() {
   const isDesktop = Platform.OS === 'web' && width >= 768;
   const { t } = useTranslation();
 
-  // OxyServices integration
-  const { user, isAuthenticated, isLoading: oxyLoading, oxyServices } = useOxy();
+  // OxyServices integration — auth is enforced by the `(tabs)` layout.
+  const { user, isLoading: oxyLoading, oxyServices } = useOxy();
   const { data: privacySettings, isLoading: privacyLoading } = usePrivacySettings(user?.id, {
-    enabled: !!user?.id && isAuthenticated,
+    enabled: !!user?.id,
   });
   const updatePrivacyMutation = useUpdatePrivacySettings();
 
@@ -279,18 +278,6 @@ export default function DataScreen() {
           <ThemedText style={[styles.loadingText, { color: colors.text }]}>{t('data.loading')}</ThemedText>
         </View>
       </ScreenContentWrapper>
-    );
-  }
-
-  // Show message if not authenticated
-  if (!isAuthenticated) {
-    return (
-      <UnauthenticatedScreen
-        title={t('data.title')}
-        subtitle={t('data.subtitle')}
-        message={t('data.signInRequired')}
-        isAuthenticated={isAuthenticated}
-      />
     );
   }
 

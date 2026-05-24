@@ -7,7 +7,6 @@ import { ThemedText } from '@/components/themed-text';
 import { Section } from '@/components/section';
 import { Button, ImportantBanner, ScreenHeader, useAlert } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
-import { UnauthenticatedScreen } from '@/components/unauthenticated-screen';
 import { useOxy } from '@oxyhq/services';
 import { KeyManager } from '@oxyhq/core';
 import { useTranslation } from '@/lib/i18n';
@@ -23,7 +22,8 @@ export default function DeleteAccountScreen() {
   const colors = useColors();
   const router = useRouter();
   const alert = useAlert();
-  const { user, isAuthenticated, isLoading: oxyLoading, oxyServices, logoutAll } = useOxy();
+  // Auth is enforced by the `(tabs)` layout — assume a session here.
+  const { user, isLoading: oxyLoading, oxyServices, logoutAll } = useOxy();
   const { t } = useTranslation();
 
   const [confirmText, setConfirmText] = useState('');
@@ -69,17 +69,6 @@ export default function DeleteAccountScreen() {
           <ThemedText style={[styles.loadingText, { color: colors.text }]}>{t('common.loadingShort')}</ThemedText>
         </View>
       </ScreenContentWrapper>
-    );
-  }
-
-  if (!isAuthenticated) {
-    return (
-      <UnauthenticatedScreen
-        title={t('data.deleteAccount.title')}
-        subtitle={t('data.deleteAccount.subtitle')}
-        message={t('data.deleteAccount.signInRequired')}
-        isAuthenticated={isAuthenticated}
-      />
     );
   }
 

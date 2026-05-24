@@ -4,7 +4,6 @@ import { useColors, type AppColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { ScreenHeader, AccountCard, useAlert } from '@/components/ui';
-import { UnauthenticatedScreen } from '@/components/unauthenticated-screen';
 import { Section } from '@/components/section';
 import { GroupedSection } from '@/components/grouped-section';
 import { useOxy, Avatar } from '@oxyhq/services';
@@ -44,9 +43,9 @@ export default function ManagedAccountsScreen() {
   const handlePressIn = useHapticPress();
   const { t, locale } = useTranslation();
 
+  // Auth is enforced by the `(tabs)` layout — assume a session here.
   const {
     user,
-    isAuthenticated,
     isLoading: oxyLoading,
     managedAccounts,
     actingAs,
@@ -217,17 +216,6 @@ export default function ManagedAccountsScreen() {
           <ThemedText style={[styles.loadingText, { color: colors.text }]}>Loading...</ThemedText>
         </View>
       </ScreenContentWrapper>
-    );
-  }
-
-  if (!isAuthenticated) {
-    return (
-      <UnauthenticatedScreen
-        title="Managed Accounts"
-        subtitle="Create and manage sub-accounts."
-        message="Please sign in to manage your identities."
-        isAuthenticated={isAuthenticated}
-      />
     );
   }
 

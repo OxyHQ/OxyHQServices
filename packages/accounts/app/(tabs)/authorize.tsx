@@ -30,7 +30,8 @@ export default function AuthorizeScreen() {
   const colors = useColors();
   const alert = useAlert();
   const { locale } = useTranslation();
-  const { oxyServices, user, isAuthenticated, activeSessionId, isTokenReady } = useOxy();
+  // Auth is enforced by the `(tabs)` layout — assume a session here.
+  const { oxyServices, user, activeSessionId, isTokenReady } = useOxy();
 
   const [isLoading, setIsLoading] = useState(true);
   const [isAuthorizing, setIsAuthorizing] = useState(false);
@@ -151,28 +152,6 @@ export default function AuthorizeScreen() {
   // Derive from theme
   const backgroundColor = colors.background;
   const textColor = colors.text;
-
-  // Check if user is authenticated
-  if (!isAuthenticated || !user) {
-    return (
-      <View style={[styles.container, styles.centered, { backgroundColor }]}>
-        <View style={styles.content}>
-          <MaterialCommunityIcons name="lock-outline" size={48} color={textColor} />
-          <Text style={[styles.title, { color: textColor }]}>Sign In Required</Text>
-          <Text style={[styles.subtitle, { color: textColor, opacity: 0.8 }]}>
-            You need to be signed in to authorize this request.
-          </Text>
-          <Button
-            variant="primary"
-            onPress={() => router.push('/(auth)')}
-            style={styles.fullWidthButton}
-          >
-            Sign In
-          </Button>
-        </View>
-      </View>
-    );
-  }
 
   if (isLoading || !isTokenReady) {
     return (

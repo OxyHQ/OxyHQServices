@@ -6,7 +6,6 @@ import { ThemedText } from '@/components/themed-text';
 import { GroupedSection } from '@/components/grouped-section';
 import { AccountCard, ScreenHeader, useAlert } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
-import { UnauthenticatedScreen } from '@/components/unauthenticated-screen';
 import { useOxy, useUserDevices } from '@oxyhq/services';
 import { formatDate } from '@/utils/date-utils';
 import { useHapticPress } from '@/hooks/use-haptic-press';
@@ -34,8 +33,8 @@ export default function DevicesScreen() {
   // colors already from useColors() above
   const isDesktop = Platform.OS === 'web' && width >= 768;
 
-  // OxyServices integration
-  const { oxyServices, isAuthenticated, isLoading: oxyLoading } = useOxy();
+  // OxyServices integration — auth is enforced by the `(tabs)` layout.
+  const { oxyServices, isLoading: oxyLoading } = useOxy();
   const alert = useAlert();
   const {
     data: devicesData,
@@ -43,7 +42,7 @@ export default function DevicesScreen() {
     isFetching,
     error: queryError,
     refetch,
-  } = useUserDevices({ enabled: isAuthenticated });
+  } = useUserDevices();
   const devices = (devicesData ?? []) as Device[];
   const error = queryError instanceof Error ? queryError.message : null;
   const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -190,18 +189,6 @@ export default function DevicesScreen() {
           <ThemedText style={[styles.loadingText, { color: colors.text }]}>Loading devices...</ThemedText>
         </View>
       </ScreenContentWrapper>
-    );
-  }
-
-  // Show message if not authenticated
-  if (!isAuthenticated) {
-    return (
-      <UnauthenticatedScreen
-        title="Your devices"
-        subtitle="Manage devices that have access to your account."
-        message="Please sign in to view your devices."
-        isAuthenticated={isAuthenticated}
-      />
     );
   }
 

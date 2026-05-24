@@ -14,7 +14,6 @@ import { GroupedSection } from '@/components/grouped-section';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AccountCard, ScreenHeader, useAlert, Button, ImportantBanner } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
-import { UnauthenticatedScreen } from '@/components/unauthenticated-screen';
 import { useOxy } from '@oxyhq/services';
 import { KeyManager } from '@oxyhq/core';
 import { useIdentity } from '@/hooks/useIdentity';
@@ -27,7 +26,8 @@ export default function AboutIdentityScreen() {
   const colors = useColors();
   const router = useRouter();
   const alert = useAlert();
-  const { user, isAuthenticated, isLoading: oxyLoading, oxyServices, showBottomSheet } = useOxy();
+  // Auth is enforced by the `(tabs)` layout — assume a session here.
+  const { user, isLoading: oxyLoading, oxyServices, showBottomSheet } = useOxy();
   const { getPublicKey } = useIdentity();
 
   const displayName = useMemo(() => getDisplayName(user), [user]);
@@ -72,7 +72,7 @@ export default function AboutIdentityScreen() {
   useEffect(() => {
     const loadPublicKey = async () => {
       try {
-        if (isAuthenticated && getPublicKey) {
+        if (getPublicKey) {
           const pk = await getPublicKey();
           setPublicKey(pk);
         }
@@ -84,7 +84,7 @@ export default function AboutIdentityScreen() {
     };
 
     loadPublicKey();
-  }, [isAuthenticated, getPublicKey]);
+  }, [getPublicKey]);
 
   // Load export history
   useEffect(() => {
@@ -104,10 +104,8 @@ export default function AboutIdentityScreen() {
       }
     };
 
-    if (isAuthenticated) {
-      loadExportHistory();
-    }
-  }, [isAuthenticated]);
+    loadExportHistory();
+  }, []);
 
   const handleCopyPublicKey = useCallback(async () => {
     if (!publicKey) return;
@@ -415,17 +413,6 @@ export default function AboutIdentityScreen() {
           <ThemedText style={[styles.loadingText, { color: colors.text }]}>Loading...</ThemedText>
         </View>
       </ScreenContentWrapper>
-    );
-  }
-
-  if (!isAuthenticated) {
-    return (
-      <UnauthenticatedScreen
-        title="About Your Identity"
-        subtitle="Learn about self-custody and how your identity works."
-        message="Please sign in to view your identity information."
-        isAuthenticated={isAuthenticated}
-      />
     );
   }
 
