@@ -188,10 +188,17 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
   const { data: mailboxes = [] } = useMailboxes();
   const { data: labels = [] } = useLabels();
 
-  // Determine active state from URL pathname
+  // Determine active state from URL pathname.
+  // Path shapes we care about here:
+  //   /home, /for-you  → top-level
+  //   /<view>          → system mailbox (inbox, sent, drafts, etc.)
+  //   /label/<name>    → label view (owned by app/.../label/[name].tsx)
   const isHomeActive = pathname === '/home';
   const isForYouActive = pathname === '/for-you';
-  const currentView = pathname.split('/')[1]?.toLowerCase() || 'inbox';
+  const pathSegments = useMemo(() => pathname.split('/').filter(Boolean), [pathname]);
+  const isLabelRoute = pathSegments[0]?.toLowerCase() === 'label';
+  const activeLabelName = isLabelRoute ? pathSegments[1]?.toLowerCase() ?? null : null;
+  const currentView = isLabelRoute ? 'label' : pathSegments[0]?.toLowerCase() || 'inbox';
 
   const { primaryMailboxes, snoozedMailbox, secondaryMailboxes } = useMemo(() => {
     const order: Record<string, number> = {
@@ -211,10 +218,11 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
     };
   }, [mailboxes]);
 
-  // Custom (non-system) folders are not addressable by the current `[view]`
-  // route — only inbox/sent/drafts/trash/spam/archive/snoozed/starred and
-  // label-* are handled. So we hide custom mailboxes and the "Create folder"
-  // affordance entirely until the route is taught to handle folder-* views.
+  // Custom (non-system) folders are not addressable yet. Today we expose
+  // system mailboxes via the `[view]` route (inbox/sent/drafts/trash/spam/
+  // archive/snoozed/starred) and labels via the `label/[name]` subroute. We
+  // hide custom mailboxes and the "Create folder" affordance until a
+  // `folder/[id]` route exists.
 
   const handleSelect = useCallback(
     (mailbox: Mailbox & { specialUse: string }) => {
@@ -243,8 +251,8 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
   const handleLabelSelect = useCallback(
     (labelName: string) => {
       router.push({
-        pathname: '/(drawer)/(tabs)/(inbox)/[view]',
-        params: { view: `label-${labelName.toLowerCase()}` },
+        pathname: '/(drawer)/(tabs)/(inbox)/label/[name]',
+        params: { name: labelName.toLowerCase() },
       });
       onClose?.();
     },
@@ -511,7 +519,7 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
                   icon="label-outline"
                   hugeIcon={LabelIcon as unknown as IconSvgElement}
                   label={lbl.name}
-                  isActive={currentView === `label-${lbl.name.toLowerCase()}`}
+                  isActive={activeLabelName === lbl.name.toLowerCase()}
                   colors={colors}
                   colorDot={lbl.color}
                   collapsed={collapsed}
@@ -525,9 +533,10 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
           {/*
             Custom folders are intentionally hidden. The dynamic [view] route
             only handles inbox/sent/drafts/trash/spam/archive/snoozed/starred
-            and label-* views — there's no /folder-* handler yet, so exposing
-            "Create folder" or rendering user-created mailboxes here would ship
-            a navigation dead-end. Re-enable once the route learns folder-*.
+            and labels live at /label/<name>. There's no /folder/<id> handler
+            yet, so exposing "Create folder" or rendering user-created
+            mailboxes here would ship a navigation dead-end. Re-enable once
+            a folder route exists.
           */}
         </ScrollView>
       ) : (

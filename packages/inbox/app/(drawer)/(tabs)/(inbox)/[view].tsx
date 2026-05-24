@@ -1,8 +1,10 @@
 /**
- * Dynamic route for mailbox views.
+ * Dynamic route for system mailbox views.
  *
- * Handles: /inbox, /sent, /drafts, /trash, /spam, /archive, /starred
- * Also handles labels: /label/[name]
+ * Handles: /inbox, /sent, /drafts, /trash, /spam, /archive, /starred, /snoozed
+ *
+ * Labels live at `/label/<name>` and are owned by `label/[name].tsx` — they
+ * are intentionally NOT handled here.
  *
  * Desktop: shows empty state (list is in layout)
  * Mobile: shows the inbox list
@@ -17,7 +19,6 @@ import { InboxList } from '@/components/InboxList';
 import { MessageDetailEmpty } from '@/components/MessageDetailEmpty';
 import { useEmailStore } from '@/hooks/useEmail';
 import { useMailboxes } from '@/hooks/queries/useMailboxes';
-import { useLabels } from '@/hooks/queries/useLabels';
 import { useMessages } from '@/hooks/queries/useMessages';
 import { SPECIAL_USE } from '@/constants/mailbox';
 
@@ -36,22 +37,15 @@ export default function MailboxViewRoute() {
   const isDesktop = Platform.OS === 'web' && width >= 900;
   const { view } = useLocalSearchParams<{ view: string }>();
   const { data: mailboxes = [] } = useMailboxes();
-  const { data: labels = [] } = useLabels();
 
   const selectMailbox = useEmailStore((s) => s.selectMailbox);
   const selectStarred = useEmailStore((s) => s.selectStarred);
-  const selectLabel = useEmailStore((s) => s.selectLabel);
   const currentMailbox = useEmailStore((s) => s.currentMailbox);
 
   const { data: messagesData } = useMessages({ mailboxId: currentMailbox?._id });
 
   const viewLabel = useMemo(() => {
     if (!view) return 'Inbox';
-    const viewLower = view.toLowerCase();
-    if (viewLower.startsWith('label-')) {
-      const labelName = view.slice(6);
-      return labelName.charAt(0).toUpperCase() + labelName.slice(1);
-    }
     return view.charAt(0).toUpperCase() + view.slice(1);
   }, [view]);
 
@@ -73,23 +67,17 @@ export default function MailboxViewRoute() {
 
     if (viewLower === 'starred') {
       selectStarred();
-    } else if (viewLower.startsWith('label-')) {
-      // Handle label routes: /label-work, /label-personal
-      const labelName = view.slice(6); // Remove 'label-' prefix
-      const label = labels.find((l) => l.name.toLowerCase() === labelName.toLowerCase());
-      if (label) {
-        selectLabel(label._id, label.name);
-      }
-    } else {
-      const specialUse = VIEW_TO_SPECIAL_USE[viewLower];
-      if (specialUse) {
-        const mailbox = mailboxes.find((m) => m.specialUse === specialUse);
-        if (mailbox) {
-          selectMailbox(mailbox);
-        }
+      return;
+    }
+
+    const specialUse = VIEW_TO_SPECIAL_USE[viewLower];
+    if (specialUse) {
+      const mailbox = mailboxes.find((m) => m.specialUse === specialUse);
+      if (mailbox) {
+        selectMailbox(mailbox);
       }
     }
-  }, [view, mailboxes, labels, selectMailbox, selectStarred, selectLabel]);
+  }, [view, mailboxes, selectMailbox, selectStarred]);
 
   return (
     <>
