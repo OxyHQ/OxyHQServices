@@ -434,7 +434,7 @@ const EditProfileFieldScreen: React.FC<EditProfileFieldScreenProps> = ({
                     {...field.inputProps}
                 />
                 {fieldErrors[field.key] && (
-                    <Text style={styles.errorText}>{fieldErrors[field.key]}</Text>
+                    <Text style={[styles.errorText, { color: bloomTheme.colors.error }]}>{fieldErrors[field.key]}</Text>
                 )}
             </View>
         );
