@@ -634,7 +634,6 @@ const styles = StyleSheet.create({
     },
     errorText: {
         fontSize: 12,
-        color: '#FF3B30',
         marginTop: 4,
     },
     addItemRow: {
