@@ -521,7 +521,7 @@ const EditProfileFieldScreen: React.FC<EditProfileFieldScreenProps> = ({
                                     onPress={() => handleRemoveItem(item.id)}
                                     style={styles.removeButton}
                                 >
-                                    <Ionicons name="trash-outline" size={18} color="#FF3B30" />
+                                    <Ionicons name="trash-outline" size={18} color={bloomTheme.colors.error} />
                                 </TouchableOpacity>
                             </View>
                         ))}
