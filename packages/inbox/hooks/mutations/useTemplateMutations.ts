@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEmailStore } from '@/hooks/useEmail';
-import { toast } from '@oxyhq/services';
+import { toast } from '@oxyhq/bloom';
 
 export function useCreateTemplate() {
   const api = useEmailStore((s) => s._api);

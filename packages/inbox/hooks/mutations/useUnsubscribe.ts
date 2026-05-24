@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient, type InfiniteData } from '@tanstack/react-query';
-import { toast } from '@oxyhq/services';
+import { toast } from '@oxyhq/bloom';
 import { useEmailStore } from '@/hooks/useEmail';
 import type { Subscription, Pagination } from '@/services/emailApi';
 
