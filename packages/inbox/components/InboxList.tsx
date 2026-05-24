@@ -641,7 +641,12 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
             styles.fab,
             {
               backgroundColor: colors.composeFab,
-              bottom: insets.bottom + 16,
+              // NativeTabs wraps the tab content in a SafeAreaView with
+              // bottom edge enabled on Android, which already adds the
+              // bottom inset. Adding insets.bottom again would double-pad
+              // the FAB. On iOS the inset is applied here.
+              bottom: Platform.OS === 'android' ? 16 : insets.bottom + 16,
+              right: insets.right + 16,
             },
             Platform.select({
               ios: {
@@ -671,7 +676,21 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
       {/* Alia AI chat assistant */}
       {isAuthenticated && !isSelectionMode && (
         <>
-          <View style={[styles.aliaFab, { bottom: insets.bottom + ALIA_FAB_BOTTOM_OFFSET }]}>
+          <View
+            style={[
+              styles.aliaFab,
+              {
+                // Mirror the Compose FAB: NativeTabs already adds the bottom
+                // inset on Android, so applying insets.bottom there would
+                // push the FAB above the system bar by the inset twice.
+                bottom:
+                  Platform.OS === 'android'
+                    ? ALIA_FAB_BOTTOM_OFFSET
+                    : insets.bottom + ALIA_FAB_BOTTOM_OFFSET,
+                right: insets.right + 16,
+              },
+            ]}
+          >
             <TouchableOpacity
               accessibilityLabel="Ask Alia"
               accessibilityRole="button"
@@ -756,7 +775,8 @@ const styles = StyleSheet.create({
   },
   fab: {
     position: 'absolute',
-    right: 16,
+    // `right` is set inline so it can include `insets.right` for landscape
+    // notch protection (see JSX).
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -805,7 +825,8 @@ const styles = StyleSheet.create({
   },
   aliaFab: {
     position: 'absolute',
-    right: 16,
+    // `right` is set inline so it can include `insets.right` for landscape
+    // notch protection (see JSX).
     zIndex: 100,
     ...Platform.select({
       web: { boxShadow: '0 4px 16px rgba(0,0,0,0.2)' },

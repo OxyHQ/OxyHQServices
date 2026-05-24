@@ -26,7 +26,19 @@
       "require": "./lib/commonjs/ui/index.js",
       "default": "./lib/module/ui/index.js"
     },
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./*": {
+      "react-native": "./src/*",
+      "import": "./lib/module/*",
+      "require": "./lib/commonjs/*",
+      "default": "./lib/module/*"
+    },
+    "./*.js": {
+      "react-native": "./src/*.ts",
+      "import": "./lib/module/*.js",
+      "require": "./lib/commonjs/*.js",
+      "default": "./lib/module/*.js"
+    }
   },
   "files": [
     "src",

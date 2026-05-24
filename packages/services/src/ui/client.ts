@@ -35,9 +35,6 @@ export { default as ProfileScreen } from './screens/ProfileScreen';
 export { useAuthStore } from './stores/authStore';
 export { useAccountStore } from './stores/accountStore';
 
-// Styles
-export { fontFamilies, fontStyles } from './styles/fonts';
-
 // Toast
 export { toast } from '../lib/sonner';
 

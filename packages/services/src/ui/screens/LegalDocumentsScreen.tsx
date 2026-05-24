@@ -155,13 +155,13 @@ const LegalDocumentsScreen: React.FC<BaseScreenProps> = ({
                         onPress={handleOpenPolicy('contentModeration')}
                     />
                     <SettingsListItem
-                        icon={<SettingsIcon name="heart" color="#FF2D55" />}
+                        icon={<SettingsIcon name="heart" color={bloomTheme.colors.error} />}
                         title={t('legal.childSafety.title') || 'Child Safety Policy'}
                         description={t('legal.childSafety.subtitle') || 'Protecting minors on our platform'}
                         onPress={handleOpenPolicy('childSafety')}
                     />
                     <SettingsListItem
-                        icon={<SettingsIcon name="cookie" color="#8E8E93" />}
+                        icon={<SettingsIcon name="cookie" color={bloomTheme.colors.textTertiary} />}
                         title={t('legal.cookiePolicy.title') || 'Cookie Policy'}
                         description={t('legal.cookiePolicy.subtitle') || 'How we use cookies and similar technologies'}
                         onPress={handleOpenPolicy('cookie')}

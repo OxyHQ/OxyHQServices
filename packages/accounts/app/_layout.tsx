@@ -1,4 +1,4 @@
-import { Stack, ThemeProvider } from 'expo-router';
+import { DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import Head from 'expo-router/head';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -151,12 +151,12 @@ function useNavigationTheme() {
         border: colors.border,
         notification: colors.error,
       },
-      fonts: {
-        regular: { fontFamily: 'System', fontWeight: '400' as const },
-        medium: { fontFamily: 'System', fontWeight: '500' as const },
-        bold: { fontFamily: 'System', fontWeight: '700' as const },
-        heavy: { fontFamily: 'System', fontWeight: '900' as const },
-      },
+      // `fonts` is required by the navigation theme type but every screen in
+      // this stack opts out of the native header (`headerShown: false`), so
+      // the values are never rendered. We delegate to React Navigation's
+      // built-in defaults rather than declaring our own — Bloom owns the
+      // app-wide typography via `Text.defaultProps`, not the nav theme.
+      fonts: DefaultTheme.fonts,
     }),
     [mode, colors],
   );

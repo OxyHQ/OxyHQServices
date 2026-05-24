@@ -13,15 +13,19 @@ import Head from 'expo-router/head';
 import { MessageDetail } from '@/components/MessageDetail';
 import { useEmailStore } from '@/hooks/useEmail';
 import { useThread } from '@/hooks/queries/useThread';
+import { useTranslation } from '@/lib/i18n';
 
 export default function ConversationScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { width } = useWindowDimensions();
   const isDesktop = Platform.OS === 'web' && width >= 900;
+  const { t } = useTranslation();
 
   const { data: thread } = useThread(id);
   const subject = thread?.[0]?.subject;
-  const pageTitle = subject ? `${subject} · Oxy` : 'Message · Inbox · Oxy';
+  const pageTitle = subject
+    ? `${subject} ${t('app.titleSuffix')}`
+    : `${t('tabs.inbox')} ${t('app.titleSuffix')}`;
 
   // Sync selected message ID for list highlighting
   useEffect(() => {

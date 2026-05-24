@@ -304,8 +304,6 @@ function WebRichTextEditor(
             lineHeight: '24px',
             color: colors.text,
             outline: 'none',
-            fontFamily:
-              "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
             overflowY: 'auto' as const,
             wordBreak: 'break-word' as const,
           }}

@@ -161,11 +161,11 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
     return (
         <View style={[styles.container, { backgroundColor }]}>
             {/* Header */}
-            <View style={styles.header}>
+            <View style={[styles.header, { backgroundColor: bloomTheme.colors.card }]}>
                 <TouchableOpacity style={styles.cancelButton} onPress={onClose}>
-                    <Ionicons name="close" size={24} color="#666" />
+                    <Ionicons name="close" size={24} color={bloomTheme.colors.textSecondary} />
                 </TouchableOpacity>
-                <Text style={styles.headerTitle}>{t('appInfo.title')}</Text>
+                <Text style={[styles.headerTitle, { color: bloomTheme.colors.text }]}>{t('appInfo.title')}</Text>
                 <View style={styles.placeholder} />
             </View>
 
@@ -271,7 +271,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                                 description={user.email || 'N/A'}
                             />
                             <SettingsListItem
-                                icon={<SettingsIcon name="star" color={user.isPremium ? '#FFD700' : '#8E8E93'} />}
+                                icon={<SettingsIcon name="star" color={user.isPremium ? bloomTheme.colors.warning : bloomTheme.colors.textTertiary} />}
                                 title={t('appInfo.items.premiumStatus')}
                                 description={user.isPremium ? t('appInfo.items.premium') : t('appInfo.items.standard')}
                             />
@@ -351,7 +351,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                     <SettingsListItem
                         icon={<SettingsIcon
                             name={isRunningSystemCheck ? 'sync' : 'check-circle'}
-                            color={isRunningSystemCheck ? '#FF9500' : '#34C759'}
+                            color={isRunningSystemCheck ? bloomTheme.colors.warning : bloomTheme.colors.success}
                         />}
                         title={isRunningSystemCheck ? t('appInfo.items.runningSystemCheck') : t('appInfo.items.runSystemCheck')}
                         description={isRunningSystemCheck
@@ -360,7 +360,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                         onPress={runSystemCheck}
                         disabled={isRunningSystemCheck}
                         rightElement={isRunningSystemCheck ? (
-                            <ActivityIndicator color="#FF9500" size="small" />
+                            <ActivityIndicator color={bloomTheme.colors.warning} size="small" />
                         ) : undefined}
                     />
                 </SettingsListGroup>
@@ -379,7 +379,6 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         paddingHorizontal: 16,
         paddingVertical: 12,
-        backgroundColor: '#fff',
     },
     cancelButton: {
         padding: 5,
@@ -387,7 +386,6 @@ const styles = StyleSheet.create({
     headerTitle: {
         fontSize: 24,
         fontWeight: 'bold',
-        color: '#000',
     },
     placeholder: {
         width: 34, // Same width as cancel button to center title

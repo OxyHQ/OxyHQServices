@@ -61,7 +61,17 @@ export function SelectionToolbar({
   const colors = useColors();
 
   return (
-    <View style={[styles.wrapper, { paddingTop: insets.top + 8, backgroundColor: colors.background }]}>
+    <View
+      style={[
+        styles.wrapper,
+        {
+          paddingTop: insets.top + 8,
+          paddingLeft: 8 + insets.left,
+          paddingRight: 8 + insets.right,
+          backgroundColor: colors.background,
+        },
+      ]}
+    >
       <View style={styles.bar}>
         <TouchableOpacity onPress={onClose} style={styles.closeButton} activeOpacity={0.7}>
           {Platform.OS === 'web' ? (
@@ -105,9 +115,10 @@ export function SelectionToolbar({
 }
 
 const styles = StyleSheet.create({
+  // `paddingLeft` / `paddingRight` are applied inline so they can include
+  // landscape `insets.left` / `insets.right`.
   wrapper: {
     alignItems: 'center',
-    paddingHorizontal: 8,
     paddingBottom: 8,
   },
   bar: {

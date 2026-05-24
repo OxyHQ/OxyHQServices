@@ -58,6 +58,14 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const colors = useColors();
+
+  // Field rows inherit the static `paddingHorizontal: 16` from styles.fieldRow.
+  // For landscape notch protection we widen the horizontal padding inline so
+  // the To/Cc/Bcc/Subject input rows clear the device side cutouts.
+  const fieldRowInset = useMemo(
+    () => ({ paddingLeft: 16 + insets.left, paddingRight: 16 + insets.right }),
+    [insets.left, insets.right],
+  );
   const { user } = useOxy();
   const api = useEmailStore((s) => s._api);
   const { sendWithUndo, isPending: sendPending } = useSendMessageWithUndo();
@@ -558,14 +566,14 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
 
       <ScrollView style={styles.form} keyboardShouldPersistTaps="handled">
         {/* From */}
-        <View style={[styles.fieldRow, { borderBottomColor: colors.border }]}>
+        <View style={[styles.fieldRow, fieldRowInset, { borderBottomColor: colors.border }]}>
           <Text style={[styles.fieldLabel, { color: colors.secondaryText }]}>From</Text>
           <Text style={[styles.fromAddress, { color: colors.text }]}>{fromAddress}</Text>
         </View>
 
         {/* To */}
         <View style={{ zIndex: activeField === 'to' ? 10 : 1 }}>
-          <View style={[styles.fieldRow, { borderBottomColor: colors.border }]}>
+          <View style={[styles.fieldRow, fieldRowInset, { borderBottomColor: colors.border }]}>
             <Text style={[styles.fieldLabel, { color: colors.secondaryText }]}>To</Text>
             <TextInput
               style={[styles.fieldInput, { color: colors.text }]}
@@ -611,7 +619,7 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
         {showCcBcc && (
           <>
             <View style={{ zIndex: activeField === 'cc' ? 10 : 1 }}>
-              <View style={[styles.fieldRow, { borderBottomColor: colors.border }]}>
+              <View style={[styles.fieldRow, fieldRowInset, { borderBottomColor: colors.border }]}>
                 <Text style={[styles.fieldLabel, { color: colors.secondaryText }]}>Cc</Text>
                 <TextInput
                   style={[styles.fieldInput, { color: colors.text }]}
@@ -644,7 +652,7 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
               )}
             </View>
             <View style={{ zIndex: activeField === 'bcc' ? 10 : 1 }}>
-              <View style={[styles.fieldRow, { borderBottomColor: colors.border }]}>
+              <View style={[styles.fieldRow, fieldRowInset, { borderBottomColor: colors.border }]}>
                 <Text style={[styles.fieldLabel, { color: colors.secondaryText }]}>Bcc</Text>
                 <TextInput
                   style={[styles.fieldInput, { color: colors.text }]}
@@ -680,7 +688,7 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
         )}
 
         {/* Subject */}
-        <View style={[styles.fieldRow, { borderBottomColor: colors.border }]}>
+        <View style={[styles.fieldRow, fieldRowInset, { borderBottomColor: colors.border }]}>
           <TextInput
             style={[styles.subjectInput, { color: colors.text }]}
             value={subject}
@@ -692,7 +700,7 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
 
         {/* Attachments */}
         {attachments.length > 0 && (
-          <View style={[styles.attachmentsSection, { borderBottomColor: colors.border }]}>
+          <View style={[styles.attachmentsSection, fieldRowInset, { borderBottomColor: colors.border }]}>
             {attachments.map((att, i) => (
               <View key={i} style={[styles.attachmentChip, { backgroundColor: colors.surfaceVariant }]}>
                 <MaterialCommunityIcons name="paperclip" size={14} color={colors.secondaryText} />
@@ -820,10 +828,11 @@ const styles = StyleSheet.create({
   form: {
     flex: 1,
   },
+  // `paddingLeft` / `paddingRight` are applied inline via `fieldRowInset` so
+  // they can include landscape `insets.left` / `insets.right`.
   fieldRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
     gap: 12,
@@ -846,8 +855,8 @@ const styles = StyleSheet.create({
     fontSize: 16,
     paddingVertical: 0,
   },
+  // `paddingLeft` / `paddingRight` are applied inline via `fieldRowInset`.
   attachmentsSection: {
-    paddingHorizontal: 16,
     paddingVertical: 8,
     gap: 6,
     borderBottomWidth: StyleSheet.hairlineWidth,

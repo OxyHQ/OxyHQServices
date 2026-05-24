@@ -7,10 +7,10 @@
  */
 
 import React, { useMemo } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { View, Text, Pressable, StyleSheet, Platform } from 'react-native';
 import { APP_COLOR_NAMES, APP_COLOR_PRESETS } from '@oxyhq/bloom/theme';
 import type { AppColorName } from '@oxyhq/bloom/theme';
+import { Check_Stroke2_Corner0_Rounded } from '@oxyhq/bloom/icons';
 
 import { useThemeContext } from '@/contexts/theme-context';
 import { useColors } from '@/constants/theme';
@@ -49,45 +49,41 @@ export function ColorPresetPicker() {
 
   return (
     <View style={styles.root}>
-      <View style={styles.header}>
-        <Text style={[styles.title, { color: colors.text }]}>Accent color</Text>
-        <View style={styles.activePreview}>
-          <View style={[styles.activeDot, { backgroundColor: activeHex }]} />
-          <Text style={[styles.activeLabel, { color: colors.secondaryText }]}>
-            {PRESET_LABELS[colorPreset]}
-          </Text>
-        </View>
+      <View style={styles.activeRow}>
+        <View style={[styles.activeDot, { backgroundColor: activeHex }]} />
+        <Text style={[styles.activeLabel, { color: colors.secondaryText }]}>
+          {PRESET_LABELS[colorPreset]}
+        </Text>
       </View>
 
       <View style={styles.grid}>
         {presets.map((preset) => {
           const isActive = preset.name === colorPreset;
           return (
-            <TouchableOpacity
+            <Pressable
               key={preset.name}
               onPress={() => setColorPreset(preset.name)}
               accessibilityRole="button"
               accessibilityLabel={`Use ${preset.label} accent color`}
               accessibilityState={{ selected: isActive }}
-              style={styles.swatchCell}
+              style={({ pressed }) => [
+                styles.swatchCell,
+                pressed && { opacity: 0.75 },
+              ]}
             >
               <View
                 style={[
                   styles.swatch,
                   { backgroundColor: preset.hex },
-                  isActive && [
-                    styles.swatchActive,
-                    { borderColor: colors.text },
-                  ],
+                  isActive && [styles.swatchActive, { borderColor: colors.text }],
                 ]}
               >
-                {isActive && (
-                  <MaterialCommunityIcons
-                    name="check"
-                    size={18}
-                    color="#FFFFFF"
+                {isActive ? (
+                  <Check_Stroke2_Corner0_Rounded
+                    size="sm"
+                    style={{ color: '#FFFFFF' }}
                   />
-                )}
+                ) : null}
               </View>
               <Text
                 style={[styles.swatchLabel, { color: colors.secondaryText }]}
@@ -95,7 +91,7 @@ export function ColorPresetPicker() {
               >
                 {preset.label}
               </Text>
-            </TouchableOpacity>
+            </Pressable>
           );
         })}
       </View>
@@ -103,21 +99,13 @@ export function ColorPresetPicker() {
   );
 }
 
-const SWATCH_SIZE = 36;
+const SWATCH_SIZE = 32;
 
 const styles = StyleSheet.create({
   root: {
     gap: 12,
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  title: {
-    fontSize: 14,
-  },
-  activePreview: {
+  activeRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,

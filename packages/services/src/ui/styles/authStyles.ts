@@ -1,5 +1,4 @@
 import { Platform, StyleSheet, TextStyle } from 'react-native';
-import { fontFamilies } from './fonts';
 
 export interface AuthThemeColors {
   text: string;
@@ -32,7 +31,6 @@ export const createAuthStyles = (colors: AuthThemeColors, theme: string) => Styl
     marginBottom: 24,
   },
   modernTitle: {
-    fontFamily: fontFamilies.interBold,
     fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
     fontSize: 62,
     lineHeight: 74.4, // 62 * 1.2
@@ -47,7 +45,6 @@ export const createAuthStyles = (colors: AuthThemeColors, theme: string) => Styl
     opacity: 0.8,
   },
   welcomeTitle: {
-    fontFamily: fontFamilies.interBold,
     fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
     fontSize: 42,
     lineHeight: 50.4, // 42 * 1.2
@@ -56,7 +53,6 @@ export const createAuthStyles = (colors: AuthThemeColors, theme: string) => Styl
     letterSpacing: -1,
   },
   stepTitle: {
-    fontFamily: fontFamilies.interBold,
     fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
     fontSize: 42,
     lineHeight: 50.4, // 42 * 1.2
@@ -257,7 +253,6 @@ export const createAuthStyles = (colors: AuthThemeColors, theme: string) => Styl
     borderColor: colors.background,
   },
   modernUserDisplayName: {
-    fontFamily: fontFamilies.interBold,
     fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
     fontSize: 42,
     marginBottom: 4,

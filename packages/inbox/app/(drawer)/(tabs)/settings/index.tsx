@@ -1,28 +1,42 @@
 /**
- * Settings index route.
+ * Settings landing screen.
  *
- * Desktop: rendered in Slot — shows General section by default.
- * Mobile: renders the full settings page with all sections.
+ * Mobile / native: a `SettingsListGroup`-based list of sections (with a
+ * hero card at the top) that navigates into each subscreen.
+ *
+ * Desktop: the `_layout.tsx` renders a permanent sidebar (`SettingsNav`) +
+ * a content pane. The bare `/settings` URL has no section selected, so we
+ * redirect to the first reasonable default (Account when authenticated,
+ * Appearance otherwise) so the content pane is never blank.
  */
 
 import React from 'react';
 import { Platform, useWindowDimensions } from 'react-native';
+import { Redirect } from 'expo-router';
 import Head from 'expo-router/head';
+import { useOxy } from '@oxyhq/services';
 
-import { SettingsPage } from '@/components/SettingsPage';
+import { SettingsLanding } from '@/components/settings/SettingsLanding';
+
+const DESKTOP_BREAKPOINT = 900;
 
 export default function SettingsIndex() {
   const { width } = useWindowDimensions();
-  const isDesktop = Platform.OS === 'web' && width >= 900;
+  const { isAuthenticated } = useOxy();
+  const isDesktop = Platform.OS === 'web' && width >= DESKTOP_BREAKPOINT;
 
-  // On desktop, show general section in the content pane
-  // On mobile, show the full settings page
+  if (isDesktop) {
+    return (
+      <Redirect href={isAuthenticated ? '/settings/account' : '/settings/appearance'} />
+    );
+  }
+
   return (
     <>
       <Head>
         <title>Settings · Inbox · Oxy</title>
       </Head>
-      <SettingsPage section={isDesktop ? 'general' : undefined} />
+      <SettingsLanding />
     </>
   );
 }

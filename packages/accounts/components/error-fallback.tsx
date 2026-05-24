@@ -209,7 +209,7 @@ const minimalStyles = StyleSheet.create({
   },
   devStack: {
     fontSize: 11,
-    fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace', default: 'monospace' }),
+    fontFamily: 'Geist Mono',
     lineHeight: 14,
   },
   retryButton: {
@@ -280,7 +280,7 @@ const styles = StyleSheet.create({
   },
   devStack: {
     fontSize: 11,
-    fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace', default: 'monospace' }),
+    fontFamily: 'Geist Mono',
     lineHeight: 14,
   },
   retryButton: {

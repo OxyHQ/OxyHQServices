@@ -21,6 +21,19 @@ import { useEmailStore } from '@/hooks/useEmail';
 import { useMailboxes } from '@/hooks/queries/useMailboxes';
 import { useMessages } from '@/hooks/queries/useMessages';
 import { SPECIAL_USE } from '@/constants/mailbox';
+import { useTranslation } from '@/lib/i18n';
+
+/** Map a `/[view]` segment to a `drawer.mailboxes.*` translation key. */
+const VIEW_TO_LABEL_KEY: Record<string, string> = {
+  inbox: 'drawer.mailboxes.Inbox',
+  sent: 'drawer.mailboxes.Sent',
+  drafts: 'drawer.mailboxes.Drafts',
+  trash: 'drawer.mailboxes.Trash',
+  spam: 'drawer.mailboxes.Spam',
+  archive: 'drawer.mailboxes.Archive',
+  snoozed: 'drawer.mailboxes.Snoozed',
+  starred: 'drawer.mailboxes.Starred',
+};
 
 const VIEW_TO_SPECIAL_USE: Record<string, string> = {
   inbox: SPECIAL_USE.INBOX,
@@ -37,6 +50,7 @@ export default function MailboxViewRoute() {
   const isDesktop = Platform.OS === 'web' && width >= 900;
   const { view } = useLocalSearchParams<{ view: string }>();
   const { data: mailboxes = [] } = useMailboxes();
+  const { t } = useTranslation();
 
   const selectMailbox = useEmailStore((s) => s.selectMailbox);
   const selectStarred = useEmailStore((s) => s.selectStarred);
@@ -45,9 +59,12 @@ export default function MailboxViewRoute() {
   const { data: messagesData } = useMessages({ mailboxId: currentMailbox?._id });
 
   const viewLabel = useMemo(() => {
-    if (!view) return 'Inbox';
+    if (!view) return t('drawer.mailboxes.Inbox');
+    const viewLower = view.toLowerCase();
+    const labelKey = VIEW_TO_LABEL_KEY[viewLower];
+    if (labelKey) return t(labelKey);
     return view.charAt(0).toUpperCase() + view.slice(1);
-  }, [view]);
+  }, [view, t]);
 
   const unreadCount = useMemo(() => {
     const messages = messagesData?.pages.flatMap((p) => p.data) ?? [];
@@ -55,9 +72,10 @@ export default function MailboxViewRoute() {
   }, [messagesData]);
 
   const pageTitle = useMemo(() => {
-    if (unreadCount > 0) return `(${unreadCount}) ${viewLabel} · Oxy`;
-    return `${viewLabel} · Oxy`;
-  }, [unreadCount, viewLabel]);
+    const suffix = t('app.titleSuffix');
+    if (unreadCount > 0) return `(${unreadCount}) ${viewLabel} ${suffix}`;
+    return `${viewLabel} ${suffix}`;
+  }, [unreadCount, viewLabel, t]);
 
   // Sync route to Zustand state
   useEffect(() => {

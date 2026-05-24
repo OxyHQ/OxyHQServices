@@ -4,7 +4,7 @@ import { TouchableOpacity, Text, View, StyleSheet, type ViewStyle, type TextStyl
 import { useAuthStore } from '../stores/authStore';
 import { useShallow } from 'zustand/react/shallow';
 import { useTheme } from '@oxyhq/bloom/theme';
-import { fontFamilies } from '../styles/fonts';
+import { useOxy } from '../context/OxyContext';
 import OxyLogo from './OxyLogo';
 import { showSignInModal, subscribeToSignInModal } from './SignInModal';
 
@@ -84,27 +84,37 @@ export const OxySignInButton: React.FC<OxySignInButtonProps> = ({
     showWhenAuthenticated = false,
 }) => {
     const theme = useTheme();
+    const { showBottomSheet } = useOxy();
     const { isAuthenticated, isLoading } = useAuthStore(
         useShallow((state) => ({ isAuthenticated: state.isAuthenticated, isLoading: state.isLoading }))
     );
+    // Tracks visibility of the web full-screen sign-in modal so we can show
+    // "Signing in..." while it's open. On native we open a bottom sheet whose
+    // visibility is owned by the sheet manager — no subscription needed.
     const [isModalOpen, setIsModalOpen] = useState(false);
 
-    // Subscribe to modal close events
+    // Subscribe to web modal visibility only — bottom sheet manages its own state.
     useEffect(() => {
+        if (Platform.OS !== 'web') return;
         return subscribeToSignInModal(setIsModalOpen);
     }, []);
 
-    // Handle button press - opens full-screen sign-in modal with QR code and auth options
+    // Handle button press
+    // - Web: legacy full-screen Modal (dialog UX fits desktop / browser)
+    // - Native: bottom sheet (sheet UX fits iOS/Android)
     const handlePress = useCallback(() => {
         if (onPress) {
             onPress();
             return;
         }
 
-        setIsModalOpen(true);
-        // Show the full-screen sign-in modal on all platforms
-        showSignInModal();
-    }, [onPress]);
+        if (Platform.OS === 'web') {
+            setIsModalOpen(true);
+            showSignInModal();
+        } else {
+            showBottomSheet?.('OxyAuth');
+        }
+    }, [onPress, showBottomSheet]);
 
     const themedStyles = useMemo(() => StyleSheet.create({
         button: {
@@ -114,7 +124,7 @@ export const OxySignInButton: React.FC<OxySignInButtonProps> = ({
             justifyContent: 'center',
         },
         buttonDefault: {
-            backgroundColor: '#FFFFFF',
+            backgroundColor: theme.colors.card,
             borderWidth: 1,
             borderColor: theme.colors.borderLight,
             ...Platform.select({
@@ -147,7 +157,9 @@ export const OxySignInButton: React.FC<OxySignInButtonProps> = ({
             justifyContent: 'center',
         },
         text: {
-            fontFamily: fontFamilies.interSemiBold,
+            // Bloom's BloomThemeProvider sets the default font via Text.defaultProps,
+            // so we intentionally do NOT set fontFamily here. Setting it would defeat
+            // the theme-wide font.
             fontWeight: Platform.OS === 'web' ? '600' : undefined,
             fontSize: 16,
             marginLeft: 10,

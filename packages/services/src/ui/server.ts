@@ -39,10 +39,6 @@ export const ProfileScreen = noopComponent;
 export const useAuthStore = noopHook;
 export const useAccountStore = noopHook;
 
-// Styles (empty objects)
-export const fontFamilies = {};
-export const fontStyles = {};
-
 // Toast (noop)
 export const toast = Object.assign(
     () => {},

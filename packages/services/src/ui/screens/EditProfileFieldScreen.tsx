@@ -422,7 +422,7 @@ const EditProfileFieldScreen: React.FC<EditProfileFieldScreenProps> = ({
                         {
                             backgroundColor: bloomTheme.colors.card,
                             color: bloomTheme.colors.text,
-                            borderColor: fieldErrors[field.key] ? '#FF3B30' : bloomTheme.colors.border,
+                            borderColor: fieldErrors[field.key] ? bloomTheme.colors.error : bloomTheme.colors.border,
                         },
                     ]}
                     value={fieldValues[field.key] || ''}
@@ -486,7 +486,7 @@ const EditProfileFieldScreen: React.FC<EditProfileFieldScreenProps> = ({
                             onPress={handleAddItem}
                             disabled={!newItemValue.trim()}
                         >
-                            <Ionicons name="add" size={20} color="#fff" />
+                            <Ionicons name="add" size={20} color={bloomTheme.colors.negativeForeground} />
                         </TouchableOpacity>
                     </View>
                 </View>

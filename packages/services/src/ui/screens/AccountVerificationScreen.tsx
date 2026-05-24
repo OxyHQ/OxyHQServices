@@ -145,9 +145,9 @@ const AccountVerificationScreen: React.FC<BaseScreenProps> = ({
                         disabled={isSubmitting || !reason.trim()}
                     >
                         {isSubmitting ? (
-                            <ActivityIndicator color="#FFFFFF" />
+                            <ActivityIndicator color={bloomTheme.colors.negativeForeground} />
                         ) : (
-                            <Text style={styles.submitButtonText}>
+                            <Text style={[styles.submitButtonText, { color: bloomTheme.colors.negativeForeground }]}>
                                 {t('accountVerification.submit') || 'Submit Request'}
                             </Text>
                         )}
@@ -212,7 +212,6 @@ const styles = StyleSheet.create({
         minHeight: 50,
     },
     submitButtonText: {
-        color: '#FFFFFF',
         fontSize: 16,
         fontWeight: '600',
     },

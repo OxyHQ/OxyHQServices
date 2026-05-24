@@ -245,6 +245,7 @@ export function HomeScreen() {
           <TouchableOpacity
             onPress={() => setSelectedDate(new Date())}
             style={styles.headerButton}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
             activeOpacity={0.7}
             accessibilityLabel="Jump to today"
             accessibilityRole="button"
@@ -269,7 +270,15 @@ export function HomeScreen() {
       <FlashList
         data={isAuthenticated ? allMessages : []}
         keyExtractor={(msg) => msg._id}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={{
+          ...styles.scrollContent,
+          // NativeTabs already adds the safe-area bottom inset on Android,
+          // so doubling it here would over-pad. iOS / web apply the inset
+          // explicitly. Landscape: include left/right inset so content
+          // clears the notch instead of hugging the screen edge.
+          paddingBottom: Platform.OS === 'android' ? 40 : insets.bottom + 40,
+          paddingHorizontal: 20 + Math.max(insets.left, insets.right),
+        }}
         showsVerticalScrollIndicator={false}
         renderItem={({ item }) => (
           <View style={[styles.feedRow, { backgroundColor: colors.background }]}>
@@ -610,16 +619,13 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   headerButton: {
-    width: 44,
-    height: 44,
+    padding: 4,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 22,
   },
-  // Scroll
+  // Scroll. `paddingBottom` / `paddingHorizontal` are applied inline so they
+  // can include safe-area insets (landscape notch, home indicator) — see JSX.
   scrollContent: {
-    paddingHorizontal: 20,
-    paddingBottom: 40,
     maxWidth: 700,
     alignSelf: 'center',
     width: '100%',

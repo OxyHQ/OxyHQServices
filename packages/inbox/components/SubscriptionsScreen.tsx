@@ -106,10 +106,17 @@ export function SubscriptionsScreen() {
   const renderSeparator = useCallback(
     () => (
       <View
-        style={[styles.separator, { backgroundColor: colors.border }]}
+        style={[
+          styles.separator,
+          {
+            backgroundColor: colors.border,
+            marginLeft: 16 + insets.left,
+            marginRight: 16 + insets.right,
+          },
+        ]}
       />
     ),
-    [colors.border],
+    [colors.border, insets.left, insets.right],
   );
 
   const renderEmpty = useCallback(
@@ -155,7 +162,11 @@ export function SubscriptionsScreen() {
       <View
         style={[
           styles.header,
-          { borderBottomColor: colors.border },
+          {
+            borderBottomColor: colors.border,
+            paddingLeft: 16 + insets.left,
+            paddingRight: 16 + insets.right,
+          },
           !isDesktop && { paddingTop: insets.top },
         ]}
       >
@@ -214,11 +225,13 @@ export function SubscriptionsScreen() {
               tintColor={colors.primary}
             />
           }
-          contentContainerStyle={
-            subscriptions.length === 0
-              ? styles.emptyListContent
-              : undefined
-          }
+          contentContainerStyle={{
+            ...(subscriptions.length === 0 ? styles.emptyListContent : null),
+            // NativeTabs already adds bottom safe-area inset on Android, so
+            // pad iOS / web explicitly to keep the last row above the home
+            // indicator.
+            paddingBottom: Platform.OS === 'android' ? 0 : insets.bottom,
+          }}
         />
       )}
     </View>
@@ -229,10 +242,11 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  // `paddingLeft` / `paddingRight` are applied inline so they can include
+  // landscape `insets.left` / `insets.right` for notch protection.
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
     gap: 8,
@@ -261,9 +275,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  // `marginLeft` / `marginRight` are applied inline so they can include
+  // landscape `insets.left` / `insets.right`.
   separator: {
     height: StyleSheet.hairlineWidth,
-    marginHorizontal: 16,
   },
   emptyContainer: {
     alignItems: 'center',

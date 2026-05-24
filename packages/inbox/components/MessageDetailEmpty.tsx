@@ -3,14 +3,16 @@ import { View, StyleSheet } from 'react-native';
 import { Text } from '@oxyhq/bloom/typography';
 import { useColors } from '@/constants/theme';
 import { EmptyIllustration } from '@/components/EmptyIllustration';
+import { useTranslation } from '@/lib/i18n';
 
 export function MessageDetailEmpty() {
   const colors = useColors();
+  const { t } = useTranslation();
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <EmptyIllustration size={180} />
-      <Text style={[styles.text, { color: colors.secondaryText }]}>Select a conversation</Text>
+      <Text style={[styles.text, { color: colors.secondaryText }]}>{t('empty.selectConversation')}</Text>
     </View>
   );
 }

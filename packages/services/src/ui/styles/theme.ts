@@ -1,6 +1,5 @@
 import { Platform, StyleSheet, type TextStyle } from 'react-native';
 import { useTheme as useBloomThemeHook, type ThemeColors as BloomThemeColors } from '@oxyhq/bloom';
-import { fontFamilies } from './fonts';
 
 /**
  * ThemeColors used by services style files.
@@ -81,7 +80,6 @@ const createTheme = (isDark: boolean, colors?: ThemeColors): Theme => {
     colors: themeColors,
     fonts: {
       title: {
-        fontFamily: fontFamilies.interBold,
         fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
         fontSize: 34,
       },
@@ -90,7 +88,6 @@ const createTheme = (isDark: boolean, colors?: ThemeColors): Theme => {
         lineHeight: 24,
       },
       button: {
-        fontFamily: fontFamilies.interSemiBold,
         fontSize: 16,
         fontWeight: '600',
         color: themeColors.background,
@@ -153,7 +150,6 @@ export const createCommonStyles = (theme: 'light' | 'dark') => {
       marginTop: 24,
     },
     buttonText: {
-      fontFamily: fontFamilies.interSemiBold,
       fontSize: 16,
       fontWeight: '600',
       color: colors.background,

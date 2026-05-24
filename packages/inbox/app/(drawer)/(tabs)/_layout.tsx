@@ -26,9 +26,11 @@ import { NativeTabs } from 'expo-router/unstable-native-tabs';
 import { useKeyboardState } from 'react-native-keyboard-controller';
 
 import { useColors } from '@/constants/theme';
+import { useTranslation } from '@/lib/i18n';
 
 export default function TabsLayout() {
   const colors = useColors();
+  const { t } = useTranslation();
   // Drive the native tab bar's `hidden` prop from the OS keyboard state via
   // `react-native-keyboard-controller`. The selector only re-renders this
   // layout when the visibility boolean actually flips. `KeyboardProvider` is
@@ -56,7 +58,7 @@ export default function TabsLayout() {
           sf={{ default: 'house', selected: 'house.fill' }}
           md="home"
         />
-        <NativeTabs.Trigger.Label>Home</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Label>{t('tabs.home')}</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
 
       <NativeTabs.Trigger name="(inbox)">
@@ -64,12 +66,12 @@ export default function TabsLayout() {
           sf={{ default: 'envelope', selected: 'envelope.fill' }}
           md="mail"
         />
-        <NativeTabs.Trigger.Label>Inbox</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Label>{t('tabs.inbox')}</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
 
       <NativeTabs.Trigger name="search">
         <NativeTabs.Trigger.Icon sf="magnifyingglass" md="search" />
-        <NativeTabs.Trigger.Label>Search</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Label>{t('tabs.search')}</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
 
       <NativeTabs.Trigger name="settings">
@@ -77,7 +79,7 @@ export default function TabsLayout() {
           sf={{ default: 'gearshape', selected: 'gearshape.fill' }}
           md="settings"
         />
-        <NativeTabs.Trigger.Label>Settings</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Label>{t('tabs.settings')}</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
 
       <NativeTabs.Trigger name="for-you" hidden />

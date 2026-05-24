@@ -46,7 +46,6 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { logger } from '@oxyhq/core';
-import { fontFamilies } from '../styles/fonts';
 import { useI18n } from '../hooks/useI18n';
 import { toast } from '../../lib/sonner';
 import type { BaseScreenProps } from '../types/navigation';
@@ -746,7 +745,6 @@ const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
                 },
                 topBarTitle: {
                     color: '#ffffff',
-                    fontFamily: fontFamilies.interSemiBold,
                     fontSize: 17,
                     letterSpacing: -0.2,
                     ...(Platform.OS === 'web' ? { fontWeight: '600' as const } : null),
@@ -761,7 +759,6 @@ const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
                 },
                 cancelLabel: {
                     color: '#ffffff',
-                    fontFamily: fontFamilies.interMedium,
                     fontSize: 15,
                     opacity: 0.85,
                 },
@@ -779,7 +776,6 @@ const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
                 },
                 doneLabel: {
                     color: '#ffffff',
-                    fontFamily: fontFamilies.interSemiBold,
                     fontSize: 15,
                     letterSpacing: -0.1,
                     ...(Platform.OS === 'web' ? { fontWeight: '600' as const } : null),
@@ -887,7 +883,6 @@ const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
                     gap: 10,
                 },
                 helper: {
-                    fontFamily: fontFamilies.inter,
                     fontSize: 13,
                     lineHeight: 18,
                     color: 'rgba(255,255,255,0.6)',
@@ -899,7 +894,6 @@ const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
                     paddingVertical: 6,
                 },
                 resetLinkText: {
-                    fontFamily: fontFamilies.interMedium,
                     fontSize: 13,
                     color: '#ffffff',
                     opacity: 0.85,
@@ -912,7 +906,6 @@ const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
                     padding: 24,
                 },
                 emptyLabel: {
-                    fontFamily: fontFamilies.inter,
                     fontSize: 14,
                     color: 'rgba(255,255,255,0.7)',
                     textAlign: 'center',

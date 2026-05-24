@@ -52,7 +52,7 @@ const UserLinksScreen: React.FC<UserLinksScreenProps> = ({
                     {links.map((link) => (
                         <SettingsListItem
                             key={link.id}
-                            icon={<SettingsIcon name="link" color="#32D74B" />}
+                            icon={<SettingsIcon name="link" color={bloomTheme.colors.success} />}
                             title={link.title || link.url}
                             description={link.description || link.url}
                             onPress={() => handleLinkPress(link.url)}
@@ -67,7 +67,6 @@ const UserLinksScreen: React.FC<UserLinksScreenProps> = ({
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#f2f2f2',
     },
     content: {
         flex: 1,

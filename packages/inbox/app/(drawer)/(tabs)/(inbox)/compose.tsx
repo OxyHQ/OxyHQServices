@@ -3,10 +3,12 @@ import { useLocalSearchParams } from 'expo-router';
 import Head from 'expo-router/head';
 
 import { ComposeForm } from '@/components/ComposeForm';
+import { useTranslation } from '@/lib/i18n';
 
 export default function ComposeRoute() {
   const { width } = useWindowDimensions();
   const isDesktop = Platform.OS === 'web' && width >= 900;
+  const { t } = useTranslation();
   const params = useLocalSearchParams<{
     replyTo?: string;
     forward?: string;
@@ -18,8 +20,8 @@ export default function ComposeRoute() {
   }>();
 
   const pageTitle = params.subject
-    ? `${params.subject} · Compose · Oxy`
-    : 'Compose · Inbox · Oxy';
+    ? t('compose.headTitleWithSubject', { subject: params.subject })
+    : t('compose.headTitleCompose');
 
   return (
     <>

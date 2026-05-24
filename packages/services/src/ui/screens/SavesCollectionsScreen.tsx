@@ -53,7 +53,7 @@ const SavesCollectionsScreen: React.FC<BaseScreenProps> = ({
     const normalizedColorScheme = normalizeColorScheme(colorScheme);
     const themeColors = Colors[normalizedColorScheme];
     const tabActiveColor = themeColors.iconSecurity;
-    const tabInactiveColor = bloomTheme.isDark ? '#888888' : '#666666';
+    const tabInactiveColor = bloomTheme.colors.textTertiary;
 
     // Load saved items and collections from API
     useEffect(() => {

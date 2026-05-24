@@ -3,7 +3,7 @@
  * Features a large, readable public key like real IDs show numbers.
  */
 
-import { Platform, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 
 interface BackSideProps {
     publicKey?: string;
@@ -71,10 +71,6 @@ const styles = StyleSheet.create({
     },
     keyLabel: {
         color: '#8E8E93',
-        fontFamily: Platform.select({
-            ios: 'SF Pro Text',
-            default: 'System',
-        }),
         fontSize: 10,
         letterSpacing: 0.8,
         textTransform: 'uppercase',
@@ -83,10 +79,7 @@ const styles = StyleSheet.create({
     },
     keyValue: {
         color: '#1C1C1E',
-        fontFamily: Platform.select({
-            ios: 'SF Mono',
-            default: 'monospace',
-        }),
+        fontFamily: 'Geist Mono',
         fontSize: 10,
         fontWeight: '400',
         letterSpacing: 0.3,
@@ -101,10 +94,6 @@ const styles = StyleSheet.create({
     },
     infoLabel: {
         color: '#8E8E93',
-        fontFamily: Platform.select({
-            ios: 'SF Pro Text',
-            default: 'System',
-        }),
         fontSize: 10,
         letterSpacing: 0.8,
         textTransform: 'uppercase',
@@ -112,10 +101,6 @@ const styles = StyleSheet.create({
     },
     infoValue: {
         color: '#1C1C1E',
-        fontFamily: Platform.select({
-            ios: 'SF Pro Display',
-            default: 'System',
-        }),
         fontSize: 12,
         fontWeight: '500',
         textAlign: 'right',

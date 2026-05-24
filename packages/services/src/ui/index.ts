@@ -34,8 +34,6 @@ let useFollow;
 let ProfileScreen;
 let useAuthStore;
 let useAccountStore;
-let fontFamilies;
-let fontStyles;
 let toast;
 let useStorage;
 
@@ -55,8 +53,6 @@ if (isFrontend) {
   ProfileScreen = require('./screens/ProfileScreen').default;
   useAuthStore = require('./stores/authStore').useAuthStore;
   useAccountStore = require('./stores/accountStore').useAccountStore;
-  fontFamilies = require('./styles/fonts').fontFamilies;
-  fontStyles = require('./styles/fonts').fontStyles;
   toast = require('../lib/sonner').toast;
   useStorage = require('./hooks/useStorage').useStorage;
 } else {
@@ -80,8 +76,6 @@ if (isFrontend) {
   ProfileScreen = noopComponent;
   useAuthStore = noopHook;
   useAccountStore = noopHook;
-  fontFamilies = {};
-  fontStyles = {};
   toast = () => {};
   useStorage = () => noopStorageResult;
 }
@@ -102,8 +96,6 @@ export {
   ProfileScreen,
   useAuthStore,
   useAccountStore,
-  fontFamilies,
-  fontStyles,
   toast,
   useStorage,
 };

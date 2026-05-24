@@ -11,9 +11,11 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useColors } from '@/constants/theme';
 import { SPECIAL_USE } from '@/constants/mailbox';
@@ -25,7 +27,12 @@ import { useEmailStore } from '@/hooks/useEmail';
 import { useSearchMessages } from '@/hooks/queries/useSearchMessages';
 import { useToggleStar } from '@/hooks/mutations/useMessageMutations';
 import { useMailboxes } from '@/hooks/queries/useMailboxes';
-import { useNaturalLanguageSearch, quickParseSearch } from '@/hooks/queries/useNaturalLanguageSearch';
+import {
+  useNaturalLanguageSearch,
+  quickParseSearch,
+  type ParsedSearchQuery,
+} from '@/hooks/queries/useNaturalLanguageSearch';
+import { useTranslation, type TranslateFn } from '@/lib/i18n';
 
 /**
  * Parse Gmail-style search operators from query string.
@@ -84,22 +91,17 @@ function parseSearchQuery(query: string): ParsedQuery {
   return result;
 }
 
-interface NLParsedOptions {
-  q?: string;
-  from?: string;
-  to?: string;
-  subject?: string;
-  hasAttachment?: boolean;
-}
-
 /** Format NL search interpretation for display */
-function formatInterpretation(opts: NLParsedOptions): string {
+function formatInterpretation(opts: ParsedSearchQuery): string {
   const parts: string[] = [];
   if (opts.q) parts.push(`"${opts.q}"`);
   if (opts.from) parts.push(`from ${opts.from}`);
   if (opts.to) parts.push(`to ${opts.to}`);
   if (opts.subject) parts.push(`subject contains "${opts.subject}"`);
   if (opts.hasAttachment) parts.push('with attachments');
+  if (opts.starred) parts.push('starred');
+  if (opts.unread === true) parts.push('unread');
+  if (opts.unread === false) parts.push('read');
   return parts.join(', ') || 'all emails';
 }
 
@@ -109,6 +111,7 @@ interface SearchListProps {
 
 export function SearchList({ replaceNavigation }: SearchListProps) {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const colors = useColors();
   const inputRef = useRef<TextInput>(null);
   const selectedMessageId = useEmailStore((s) => s.selectedMessageId);
@@ -122,7 +125,7 @@ export function SearchList({ replaceNavigation }: SearchListProps) {
   const [editingFilter, setEditingFilter] = useState<string | null>(null);
   const [filterInput, setFilterInput] = useState('');
   const [nlInterpretation, setNlInterpretation] = useState('');
-  const [nlParsedOptions, setNlParsedOptions] = useState<NLParsedOptions | null>(null);
+  const [nlParsedOptions, setNlParsedOptions] = useState<ParsedSearchQuery | null>(null);
 
   // Natural language search hook
   const { parseQuery: parseNL, isLoading: nlParsing } = useNaturalLanguageSearch();
@@ -168,53 +171,110 @@ export function SearchList({ replaceNavigation }: SearchListProps) {
   const total = searchResult?.pagination?.total ?? 0;
   const hasSearched = !!(submittedQuery.trim() || nlParsedOptions || filterFrom || filterHasAttachment || mailboxIdFromName);
 
-  const handleSearch = useCallback(async () => {
-    const trimmed = query.trim();
-    if (!trimmed) {
-      setSubmittedQuery('');
-      setNlInterpretation('');
-      setNlParsedOptions(null);
-      return;
-    }
+  /**
+   * Runs the search pipeline for a given query text:
+   *   1. Gmail-style operators (`from:foo`, `is:starred`) → text + filter parse.
+   *   2. Quick patterns (`unread`, `from sarah`) → structured filters.
+   *   3. Plain text search immediately, then optionally refined by AI.
+   *
+   * Accepts the text as a parameter so debounced callers can pass the latest
+   * value without waiting for React state to settle.
+   */
+  const runSearch = useCallback(
+    async (rawText: string, { allowAI }: { allowAI: boolean } = { allowAI: true }) => {
+      const trimmed = rawText.trim();
+      if (!trimmed) {
+        setSubmittedQuery('');
+        setNlInterpretation('');
+        setNlParsedOptions(null);
+        return;
+      }
 
-    // Check if query contains Gmail-style operators
-    const hasOperators = /\b(in:|is:|from:|to:|has:|label:|subject:)/i.test(trimmed);
+      const hasOperators = /\b(in:|is:|from:|to:|has:|label:|subject:)/i.test(trimmed);
+      if (hasOperators) {
+        setSubmittedQuery(trimmed);
+        setNlInterpretation('');
+        setNlParsedOptions(null);
+        return;
+      }
 
-    if (hasOperators) {
-      // Use traditional operator parsing
-      setSubmittedQuery(trimmed);
-      setNlInterpretation('');
-      setNlParsedOptions(null);
-    } else {
-      // Try quick parse first (simple patterns like "from Sarah" or "emails last week")
       const quickResult = quickParseSearch(trimmed);
       if (quickResult) {
         setNlParsedOptions(quickResult);
         setNlInterpretation(`Searching: ${formatInterpretation(quickResult)}`);
-        setSubmittedQuery(''); // Clear so Gmail parser doesn't interfere
-      } else {
-        // Use AI for complex natural language queries
-        try {
-          const result = await parseNL(trimmed);
-          if (result) {
-            setNlParsedOptions(result.searchOptions);
-            setNlInterpretation(result.interpretation || `Searching: ${formatInterpretation(result.searchOptions)}`);
-            setSubmittedQuery('');
-          } else {
-            // Fall back to text search
-            setSubmittedQuery(trimmed);
-            setNlInterpretation('');
-            setNlParsedOptions(null);
-          }
-        } catch {
-          // On error, fall back to text search
-          setSubmittedQuery(trimmed);
-          setNlInterpretation('');
-          setNlParsedOptions(null);
-        }
+        setSubmittedQuery('');
+        return;
       }
+
+      // Run plain text search immediately so the user sees results without
+      // waiting for AI parsing.
+      setSubmittedQuery(trimmed);
+      setNlInterpretation('');
+      setNlParsedOptions(null);
+
+      if (!allowAI) return;
+
+      // Refine with AI in the background. Only switch from plain text to
+      // structured filters if the AI returns something useful.
+      try {
+        const result = await parseNL(trimmed);
+        const parsed = result.query;
+        const hasUsefulFilters =
+          !!parsed.q?.trim() ||
+          !!parsed.from?.trim() ||
+          !!parsed.to?.trim() ||
+          !!parsed.subject?.trim() ||
+          parsed.hasAttachment === true ||
+          parsed.starred === true ||
+          typeof parsed.unread === 'boolean' ||
+          !!parsed.after ||
+          !!parsed.before ||
+          !!parsed.mailbox;
+
+        if (hasUsefulFilters) {
+          setNlParsedOptions(parsed);
+          setNlInterpretation(
+            result.interpretation || `Searching: ${formatInterpretation(parsed)}`,
+          );
+          setSubmittedQuery('');
+        }
+      } catch {
+        // AI failed; plain text search is already in flight.
+      }
+    },
+    [parseNL],
+  );
+
+  // Debounced search-as-you-type. The user pressing Enter submits immediately.
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleQueryChange = useCallback(
+    (text: string) => {
+      setQuery(text);
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      const trimmed = text.trim();
+      if (!trimmed) {
+        // Clear immediately when the user empties the input
+        setSubmittedQuery('');
+        setNlInterpretation('');
+        setNlParsedOptions(null);
+        return;
+      }
+      // Skip AI on intermediate keystrokes — AI fires on explicit submit
+      debounceRef.current = setTimeout(() => {
+        runSearch(text, { allowAI: false });
+      }, 300);
+    },
+    [runSearch],
+  );
+
+  const handleSubmit = useCallback(() => {
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+      debounceRef.current = null;
     }
-  }, [query, parseNL]);
+    runSearch(query, { allowAI: true });
+  }, [runSearch, query]);
 
   const handleStar = useCallback(
     (messageId: string) => {
@@ -241,6 +301,10 @@ export function SearchList({ replaceNavigation }: SearchListProps) {
   }, [router]);
 
   const handleClear = useCallback(() => {
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
     setQuery('');
     setSubmittedQuery('');
     setFilterFrom('');
@@ -308,14 +372,19 @@ export function SearchList({ replaceNavigation }: SearchListProps) {
         leftIcon="arrow-left"
         placeholder="Search mail"
         value={query}
-        onChangeText={setQuery}
-        onSubmitEditing={handleSearch}
+        onChangeText={handleQueryChange}
+        onSubmitEditing={handleSubmit}
         onClear={handleClear}
         autoFocus
       />
 
       {/* Filter chips */}
-      <View style={styles.filterBar}>
+      <View
+        style={[
+          styles.filterBar,
+          { paddingLeft: 16 + insets.left, paddingRight: 16 + insets.right },
+        ]}
+      >
         <TouchableOpacity
           style={[
             styles.filterChip,
@@ -357,7 +426,16 @@ export function SearchList({ replaceNavigation }: SearchListProps) {
 
       {/* NL interpretation display */}
       {(nlInterpretation || nlParsing) && (
-        <View style={[styles.nlInterpretation, { backgroundColor: colors.surfaceVariant }]}>
+        <View
+          style={[
+            styles.nlInterpretation,
+            {
+              backgroundColor: colors.surfaceVariant,
+              marginLeft: 16 + insets.left,
+              marginRight: 16 + insets.right,
+            },
+          ]}
+        >
           <MaterialCommunityIcons
             name="robot-outline"
             size={14}
@@ -432,7 +510,12 @@ export function SearchList({ replaceNavigation }: SearchListProps) {
         renderItem={renderItem}
         keyExtractor={(item) => item._id}
         ListEmptyComponent={renderEmpty}
-        contentContainerStyle={results.length === 0 ? styles.emptyListContent : undefined}
+        contentContainerStyle={{
+          ...(results.length === 0 ? styles.emptyListContent : null),
+          // NativeTabs adds the bottom safe-area inset on Android already; iOS / web
+          // get it here so the final result row never sits under the home indicator.
+          paddingBottom: Platform.OS === 'android' ? 0 : insets.bottom,
+        }}
         showsVerticalScrollIndicator={false}
         ItemSeparatorComponent={() => (
           <View style={[styles.separator, { backgroundColor: colors.border }]} />
@@ -446,9 +529,10 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  // `paddingLeft` / `paddingRight` are applied inline so they can include
+  // landscape `insets.left` / `insets.right`.
   filterBar: {
     flexDirection: 'row',
-    paddingHorizontal: 16,
     paddingBottom: 8,
     gap: 8,
     flexWrap: 'wrap',
@@ -510,10 +594,11 @@ const styles = StyleSheet.create({
     height: StyleSheet.hairlineWidth,
     marginLeft: 68,
   },
+  // `marginLeft` / `marginRight` are applied inline so they can include
+  // landscape `insets.left` / `insets.right`.
   nlInterpretation: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginHorizontal: 16,
     marginBottom: 8,
     paddingHorizontal: 12,
     paddingVertical: 8,

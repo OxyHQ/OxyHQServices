@@ -27,6 +27,7 @@ const HUGE_ICON_MAP: Record<string, IconSvgElement> = {
 };
 
 import { useColors } from '@/constants/theme';
+import { useTranslation } from '@/lib/i18n';
 
 const ICON_HIT_SLOP = { top: 8, bottom: 8, left: 8, right: 8 };
 
@@ -55,7 +56,7 @@ export const SearchHeader = forwardRef<TextInput, SearchHeaderProps>(function Se
   {
     onLeftIcon,
     leftIcon = 'menu',
-    placeholder = 'Search mail',
+    placeholder,
     onPress,
     value,
     onChangeText,
@@ -67,9 +68,14 @@ export const SearchHeader = forwardRef<TextInput, SearchHeaderProps>(function Se
 ) {
   const insets = useSafeAreaInsets();
   const colors = useColors();
+  const { t } = useTranslation();
 
   const isInputMode = onChangeText !== undefined;
-  const leftIconLabel = leftIcon === 'menu' ? 'Open menu' : 'Go back';
+  const leftIconLabel = leftIcon === 'menu' ? t('search.openMenu') : t('search.goBack');
+  // Default the search-pill placeholder to the localized `search.placeholder`.
+  // Callers can still pass a custom value (e.g. "Search in inbox") which is
+  // already localized at the call site.
+  const resolvedPlaceholder = placeholder ?? t('search.placeholder');
 
   const renderLeftIcon = () => (
     Platform.OS === 'web' && HUGE_ICON_MAP[leftIcon] ? (
@@ -80,7 +86,17 @@ export const SearchHeader = forwardRef<TextInput, SearchHeaderProps>(function Se
   );
 
   return (
-    <View style={[styles.wrapper, { paddingTop: insets.top + 8, backgroundColor: colors.background }]}>
+    <View
+      style={[
+        styles.wrapper,
+        {
+          paddingTop: insets.top + 8,
+          paddingLeft: 8 + insets.left,
+          paddingRight: 8 + insets.right,
+          backgroundColor: colors.background,
+        },
+      ]}
+    >
       <View style={styles.bar}>
         {isInputMode ? (
           <>
@@ -98,7 +114,7 @@ export const SearchHeader = forwardRef<TextInput, SearchHeaderProps>(function Se
               style={[styles.input, { color: colors.searchText, backgroundColor: colors.searchBackground }]}
               value={value}
               onChangeText={onChangeText}
-              placeholder={placeholder}
+              placeholder={resolvedPlaceholder}
               placeholderTextColor={colors.searchPlaceholder}
               returnKeyType="search"
               onSubmitEditing={onSubmitEditing}
@@ -108,7 +124,7 @@ export const SearchHeader = forwardRef<TextInput, SearchHeaderProps>(function Se
             />
             {value && value.length > 0 && onClear && (
               <Pressable
-                accessibilityLabel="Clear search"
+                accessibilityLabel={t('search.clear')}
                 accessibilityRole="button"
                 onPress={onClear}
                 style={styles.iconButton}
@@ -131,7 +147,7 @@ export const SearchHeader = forwardRef<TextInput, SearchHeaderProps>(function Se
            */
           <View style={styles.placeholderRow}>
             <Pressable
-              accessibilityLabel={placeholder}
+              accessibilityLabel={resolvedPlaceholder}
               accessibilityRole="search"
               style={({ pressed }) => [
                 styles.pillButton,
@@ -148,7 +164,7 @@ export const SearchHeader = forwardRef<TextInput, SearchHeaderProps>(function Se
                 ]}
                 numberOfLines={1}
               >
-                {placeholder}
+                {resolvedPlaceholder}
               </Text>
             </Pressable>
             <Pressable
@@ -168,9 +184,10 @@ export const SearchHeader = forwardRef<TextInput, SearchHeaderProps>(function Se
 });
 
 const styles = StyleSheet.create({
+  // `paddingLeft` / `paddingRight` are applied inline so they can include
+  // landscape `insets.left` / `insets.right`.
   wrapper: {
     alignItems: 'center',
-    paddingHorizontal: 8,
     paddingBottom: 8,
   },
   bar: {

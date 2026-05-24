@@ -86,6 +86,7 @@ function HorizontalSection({
   onMessagePress,
   onStar,
   labelColorMap,
+  horizontalInset,
 }: {
   title: string;
   description: string;
@@ -96,6 +97,8 @@ function HorizontalSection({
   onMessagePress: (id: string) => void;
   onStar: (id: string) => void;
   labelColorMap?: Map<string, string>;
+  /** Extra horizontal padding to add for landscape notch clearance. */
+  horizontalInset: { left: number; right: number };
 }) {
   const scrollRef = useRef<ScrollView>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
@@ -132,7 +135,12 @@ function HorizontalSection({
 
   return (
     <View style={styles.section}>
-      <View style={styles.sectionHeader}>
+      <View
+        style={[
+          styles.sectionHeader,
+          { paddingLeft: 16 + horizontalInset.left, paddingRight: 16 + horizontalInset.right },
+        ]}
+      >
         {Platform.OS === 'web' && sectionIcon ? (
           <HugeiconsIcon icon={sectionIcon.huge} size={20} color={iconColor} />
         ) : (
@@ -141,7 +149,12 @@ function HorizontalSection({
         <Text style={[styles.sectionTitle, { color: colors.text }]}>{title}</Text>
         <Text style={[styles.sectionCount, { color: colors.secondaryText }]}>{items.length}</Text>
       </View>
-      <Text style={[styles.sectionDescription, { color: colors.secondaryText }]}>
+      <Text
+        style={[
+          styles.sectionDescription,
+          { color: colors.secondaryText, paddingLeft: 16 + horizontalInset.left, paddingRight: 16 + horizontalInset.right },
+        ]}
+      >
         {description}
       </Text>
 
@@ -166,7 +179,10 @@ function HorizontalSection({
           showsHorizontalScrollIndicator={false}
           onScroll={handleScroll}
           scrollEventThrottle={16}
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingLeft: 16 + horizontalInset.left, paddingRight: 16 + horizontalInset.right },
+          ]}
         >
           {items.map((message) => (
             <View
@@ -292,7 +308,14 @@ export function ForYouScreen() {
       ) : (
         <ScrollView
           style={styles.body}
-          contentContainerStyle={styles.bodyContent}
+          contentContainerStyle={[
+            styles.bodyContent,
+            {
+              // NativeTabs already adds bottom safe-area inset on Android.
+              // iOS / web apply it explicitly here.
+              paddingBottom: Platform.OS === 'android' ? 40 : insets.bottom + 40,
+            },
+          ]}
           showsVerticalScrollIndicator={false}
         >
           <HorizontalSection
@@ -305,6 +328,7 @@ export function ForYouScreen() {
             onMessagePress={handleMessagePress}
             onStar={handleStar}
             labelColorMap={labelColorMap}
+            horizontalInset={{ left: insets.left, right: insets.right }}
           />
           <HorizontalSection
             title="Unread"
@@ -316,6 +340,7 @@ export function ForYouScreen() {
             onMessagePress={handleMessagePress}
             onStar={handleStar}
             labelColorMap={labelColorMap}
+            horizontalInset={{ left: insets.left, right: insets.right }}
           />
           <HorizontalSection
             title="Attachments"
@@ -327,6 +352,7 @@ export function ForYouScreen() {
             onMessagePress={handleMessagePress}
             onStar={handleStar}
             labelColorMap={labelColorMap}
+            horizontalInset={{ left: insets.left, right: insets.right }}
           />
 
           {starred.length === 0 && unread.length === 0 && withAttachments.length === 0 && (
@@ -379,19 +405,21 @@ const styles = StyleSheet.create({
   body: {
     flex: 1,
   },
+  // `paddingBottom` is applied inline so it can include the safe-area bottom
+  // inset on iOS/web (NativeTabs handles Android automatically) — see JSX.
   bodyContent: {
     paddingVertical: 16,
-    paddingBottom: 40,
   },
   section: {
     marginBottom: 28,
   },
+  // `paddingHorizontal` for sectionHeader / sectionDescription / scrollContent
+  // is applied inline so they can include landscape `insets.left` / `insets.right`.
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
     marginBottom: 12,
-    paddingHorizontal: 16,
   },
   sectionTitle: {
     fontSize: 16,
@@ -404,7 +432,6 @@ const styles = StyleSheet.create({
   },
   sectionDescription: {
     fontSize: 13,
-    paddingHorizontal: 16,
     marginBottom: 12,
     marginTop: -4,
   },
@@ -413,7 +440,6 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     gap: CARD_GAP,
-    paddingHorizontal: 16,
   },
   cardWrapper: {
     width: CARD_WIDTH,

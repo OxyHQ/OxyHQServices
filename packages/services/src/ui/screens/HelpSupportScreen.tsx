@@ -84,7 +84,7 @@ const HelpSupportScreen: React.FC<BaseScreenProps> = ({
                 {/* Resources */}
                 <SettingsListGroup title={t('help.resources') || 'Resources'}>
                     <SettingsListItem
-                        icon={<SettingsIcon name="file-document" color="#8E8E93" />}
+                        icon={<SettingsIcon name="file-document" color={bloomTheme.colors.textTertiary} />}
                         title={t('help.documentation.title') || 'Documentation'}
                         description={t('help.documentation.subtitle') || 'User guides and tutorials'}
                         onPress={() => {

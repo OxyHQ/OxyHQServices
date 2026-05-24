@@ -100,7 +100,6 @@ export const useInternalTheme = (
       bodyMedium: themeObj.fonts.body,
       bodySmall: themeObj.fonts.body,
       default: {
-        fontFamily: themeObj.fonts.body.fontFamily || undefined,
         fontWeight: themeObj.fonts.body.fontWeight || 'normal',
         letterSpacing: 0,
       },

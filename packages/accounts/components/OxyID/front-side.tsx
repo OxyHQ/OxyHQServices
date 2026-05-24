@@ -3,7 +3,7 @@
  * Government ID style layout with avatar mask and formal typography.
  */
 
-import { Platform, StyleSheet, Text, View, Image } from 'react-native';
+import { StyleSheet, Text, View, Image } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 
 interface FrontSideProps {
@@ -251,10 +251,6 @@ const styles = StyleSheet.create({
         fontSize: 42,
         fontWeight: '600',
         color: '#8E8E93',
-        fontFamily: Platform.select({
-            ios: 'SF Pro Display',
-            default: 'System',
-        }),
     },
     infoSection: {
         flex: 1,
@@ -274,10 +270,6 @@ const styles = StyleSheet.create({
     },
     fieldLabel: {
         color: '#6E6E73',
-        fontFamily: Platform.select({
-            ios: 'SF Pro Text',
-            default: 'System',
-        }),
         fontSize: 9,
         letterSpacing: 0.6,
         textTransform: 'uppercase',
@@ -286,10 +278,6 @@ const styles = StyleSheet.create({
     },
     fieldValue: {
         color: '#1C1C1E',
-        fontFamily: Platform.select({
-            ios: 'SF Pro Display',
-            default: 'System',
-        }),
         fontSize: 18,
         fontWeight: '600',
         letterSpacing: -0.2,
@@ -297,20 +285,13 @@ const styles = StyleSheet.create({
     },
     fieldValueSmall: {
         color: '#1C1C1E',
-        fontFamily: Platform.select({
-            ios: 'SF Pro Display',
-            default: 'System',
-        }),
         fontSize: 14,
         fontWeight: '500',
         letterSpacing: -0.1,
     },
     idNumber: {
         color: '#1C1C1E',
-        fontFamily: Platform.select({
-            ios: 'SF Mono',
-            default: 'monospace',
-        }),
+        fontFamily: 'Geist Mono',
         fontSize: 12,
         fontWeight: '600',
         letterSpacing: 0.8,
@@ -324,10 +305,6 @@ const styles = StyleSheet.create({
     },
     footerText: {
         color: '#8E8E93',
-        fontFamily: Platform.select({
-            ios: 'SF Pro Text',
-            default: 'System',
-        }),
         fontSize: 8,
         fontWeight: '400',
         letterSpacing: 0.5,

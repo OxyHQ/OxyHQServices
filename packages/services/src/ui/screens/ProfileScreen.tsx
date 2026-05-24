@@ -185,7 +185,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
     if (error) {
         return (
             <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
-                <View style={styles.errorHeader}>
+                <View style={[styles.errorHeader, { borderBottomColor: bloomTheme.colors.border }]}>
                     {goBack && (
                         <TouchableOpacity onPress={goBack} style={styles.backButton}>
                             <Ionicons name="arrow-back" size={24} color={bloomTheme.colors.text} />
@@ -410,7 +410,6 @@ const createStyles = () => StyleSheet.create({
         paddingHorizontal: 16,
         paddingVertical: 12,
         borderBottomWidth: 1,
-        borderBottomColor: '#E0E0E0',
     },
     backButton: {
         padding: 8,

@@ -492,7 +492,15 @@ function MessageDetailInner({ mode, messageId }: MessageDetailProps) {
         ]}
       >
         {mode === 'standalone' && (
-          <View style={styles.toolbar}>
+          <View
+            style={[
+              styles.toolbar,
+              {
+                paddingLeft: 4 + insets.left,
+                paddingRight: 4 + insets.right,
+              },
+            ]}
+          >
             <TouchableOpacity onPress={handleBack} style={styles.iconButton}>
               {Platform.OS === 'web' ? (
                 <HugeiconsIcon icon={ArrowLeft01Icon as unknown as IconSvgElement} size={24} color={colors.icon} />
@@ -520,7 +528,16 @@ function MessageDetailInner({ mode, messageId }: MessageDetailProps) {
       ]}
     >
       {/* Toolbar */}
-      <View style={[styles.toolbar, { borderBottomColor: colors.border }]}>
+      <View
+        style={[
+          styles.toolbar,
+          {
+            borderBottomColor: colors.border,
+            paddingLeft: 4 + insets.left,
+            paddingRight: 4 + insets.right,
+          },
+        ]}
+      >
         {mode === 'standalone' && (
           <TouchableOpacity onPress={handleBack} style={styles.iconButton}>
             {Platform.OS === 'web' ? (
@@ -1039,10 +1056,12 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  // `paddingLeft` / `paddingRight` are applied inline so they can include
+  // landscape `insets.left` / `insets.right` (leading back button clips
+  // under left notch otherwise).
   toolbar: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 4,
     paddingVertical: 4,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
