@@ -25,7 +25,6 @@ import Reanimated, {
     withSpring,
     withTiming,
 } from 'react-native-reanimated';
-import { fontFamilies } from '../styles/fonts';
 import type { FileManagementScreenProps } from '../types/fileManagement';
 
 // Lazy load expo-document-picker (optional dependency)

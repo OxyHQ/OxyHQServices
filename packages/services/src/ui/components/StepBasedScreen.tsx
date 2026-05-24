@@ -14,7 +14,6 @@ import Animated, {
 import { useTheme } from '@oxyhq/bloom/theme';
 import type { ThemeColors } from '@oxyhq/bloom/theme';
 import { createAuthStyles } from '../styles';
-import { fontFamilies } from '../styles/fonts';
 import type { BaseScreenProps, StepController } from '../types/navigation';
 import type { RouteName } from '../types/navigation';
 import { screenContentStyle } from '../constants/spacing';
@@ -163,7 +162,6 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
             marginBottom: 24,
         },
         modernTitle: {
-            fontFamily: fontFamilies.interBold,
             fontWeight: Platform.OS === 'web' ? 'bold' as const : undefined,
             fontSize: 42,
             lineHeight: 50.4, // 42 * 1.2

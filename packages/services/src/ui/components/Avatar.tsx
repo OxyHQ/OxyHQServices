@@ -2,7 +2,6 @@ import type React from 'react';
 import { memo, useMemo, useState, useEffect } from 'react';
 import { View, Text, Image, StyleSheet, type StyleProp, type ViewStyle, type ImageStyle, type TextStyle, ActivityIndicator, Platform } from 'react-native';
 import { useTheme } from '@oxyhq/bloom/theme';
-import { fontFamilies } from '../styles/fonts';
 
 export interface AvatarProps {
     /**
@@ -199,7 +198,6 @@ const Avatar: React.FC<AvatarProps> = ({
             styles.text,
             {
                 fontSize,
-                fontFamily: fontFamilies.interBold,
                 color: textColor,
                 textAlign: 'center' as const,
                 lineHeight: size, // Match line height to size for perfect vertical centering

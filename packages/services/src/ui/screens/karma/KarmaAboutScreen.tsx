@@ -4,7 +4,6 @@ import type { BaseScreenProps } from '../../types/navigation';
 import { Header } from '../../components';
 import { useI18n } from '../../hooks/useI18n';
 import { useTheme } from '@oxyhq/bloom/theme';
-import { fontFamilies } from '../../styles/fonts';
 
 const KarmaAboutScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
     const { t } = useI18n();
@@ -49,7 +48,6 @@ const KarmaAboutScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
 const styles = StyleSheet.create({
     container: { flex: 1 },
     title: {
-        fontFamily: fontFamilies.interBold,
         fontWeight: Platform.OS === 'web' ? 'bold' : undefined,  // Only apply fontWeight on web
         fontSize: 54,
         margin: 24,
@@ -59,7 +57,6 @@ const styles = StyleSheet.create({
     section: {
         fontSize: 18,
         fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
-        fontFamily: fontFamilies.interBold,
         marginTop: 24,
         marginBottom: 8
     },

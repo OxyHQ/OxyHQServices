@@ -6,7 +6,6 @@ import { useI18n } from '../hooks/useI18n';
 import Avatar from './Avatar';
 import { useOxy } from '../context/OxyContext';
 import { useFileDownloadUrl } from '../hooks';
-import { fontFamilies } from '../styles/fonts';
 import { getAccountDisplayName, getAccountFallbackHandle } from '@oxyhq/core';
 
 interface ProfileCardProps {
@@ -117,7 +116,6 @@ const styles = StyleSheet.create({
     userName: {
         fontSize: 22,
         fontWeight: 'bold',
-        fontFamily: fontFamilies.interBold,
         marginBottom: 4,
     },
     userEmail: {

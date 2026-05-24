@@ -1,5 +1,4 @@
 import { StyleSheet, Platform } from 'react-native';
-import { fontFamilies } from '../../styles';
 import type { PaymentColors } from './types';
 
 export const createPaymentStyles = (colors: PaymentColors) => StyleSheet.create({
@@ -24,7 +23,6 @@ export const createPaymentStyles = (colors: PaymentColors) => StyleSheet.create(
         fontWeight: '600',
         color: colors.text,
         marginBottom: 12,
-        fontFamily: fontFamilies.interSemiBold,
     },
     errorContainer: {
         flex: 1,
@@ -54,7 +52,6 @@ export const createPaymentStyles = (colors: PaymentColors) => StyleSheet.create(
         marginBottom: 8,
     },
     summaryCardMainTitle: {
-        fontFamily: fontFamilies.interBold,
         fontWeight: 'bold',
         fontSize: 28,
         color: colors.text,
@@ -95,7 +92,6 @@ export const createPaymentStyles = (colors: PaymentColors) => StyleSheet.create(
         color: colors.text,
         textAlign: 'center',
         marginBottom: 8,
-        fontFamily: fontFamilies.interBold,
     },
     summaryCardAmountDescription: {
         fontSize: 14,
@@ -146,7 +142,6 @@ export const createPaymentStyles = (colors: PaymentColors) => StyleSheet.create(
         marginBottom: 8,
     },
     cardPaymentMainTitle: {
-        fontFamily: fontFamilies.interBold,
         fontWeight: 'bold',
         fontSize: 28,
         color: colors.text,
@@ -215,7 +210,6 @@ export const createPaymentStyles = (colors: PaymentColors) => StyleSheet.create(
         marginBottom: 8,
     },
     oxyPayMainTitle: {
-        fontFamily: fontFamilies.interBold,
         fontWeight: 'bold',
         fontSize: 28,
         color: colors.text,
@@ -262,7 +256,6 @@ export const createPaymentStyles = (colors: PaymentColors) => StyleSheet.create(
         marginBottom: 8,
     },
     faircoinMainTitle: {
-        fontFamily: fontFamilies.interBold,
         fontWeight: 'bold',
         fontSize: 28,
         color: '#1b1f0a',
@@ -373,7 +366,6 @@ export const createPaymentStyles = (colors: PaymentColors) => StyleSheet.create(
         marginBottom: 8,
     },
     successMainTitle: {
-        fontFamily: fontFamilies.interBold,
         fontWeight: 'bold',
         fontSize: 28,
         color: colors.success || '#4BB543',

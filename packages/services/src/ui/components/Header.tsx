@@ -13,7 +13,6 @@ import AnimatedReanimated, { useAnimatedStyle, interpolate, Extrapolation, type 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import OxyIcon from './icon/OxyIcon';
-import { fontFamilies } from '../styles/fonts';
 import { useTheme } from '@oxyhq/bloom/theme';
 
 // Calculate header height based on platform and variant
@@ -406,14 +405,12 @@ const styles = StyleSheet.create({
     titleDefault: {
         fontSize: 18,
         fontWeight: '700',
-        fontFamily: fontFamilies.interBold,
         letterSpacing: -0.5,
         lineHeight: 22,
     },
     titleLarge: {
         fontSize: 28,
         fontWeight: '800',
-        fontFamily: fontFamilies.interExtraBold,
         letterSpacing: -1,
         lineHeight: 34,
         marginBottom: 3,
@@ -421,7 +418,6 @@ const styles = StyleSheet.create({
     titleMinimal: {
         fontSize: 16,
         fontWeight: '600',
-        fontFamily: fontFamilies.interSemiBold,
         letterSpacing: -0.3,
         lineHeight: 20,
     },
@@ -475,7 +471,6 @@ const styles = StyleSheet.create({
     actionText: {
         fontSize: 14,
         fontWeight: '600',
-        fontFamily: fontFamilies.interSemiBold,
         letterSpacing: -0.2,
     },
     loadingContainer: {

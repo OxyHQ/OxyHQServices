@@ -12,7 +12,6 @@ import {
     Dimensions,
 } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
-import { fontFamilies } from '../styles/fonts';
 import { toast } from '../../lib/sonner';
 import * as Prompt from '@oxyhq/bloom/prompt';
 import { usePromptControl } from '@oxyhq/bloom/prompt';
@@ -98,7 +97,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
     const successColor = bloomTheme.colors.success;
     const dangerColor = bloomTheme.colors.error;
     const isDarkTheme = bloomTheme.isDark;
-    const warningColor = '#FF9500';
+    const warningColor = bloomTheme.colors.warning;
 
     // Oxy+ subscription plans
     const mockPlans: SubscriptionPlan[] = [
@@ -549,7 +548,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                 </TouchableOpacity>
                 <View style={styles.headerTitleContainer}>
                     <Text style={[styles.headerTitle, { color: textColor }]}>{t('premium.title') || 'Oxy+ Subscriptions'}</Text>
-                    <Text style={[styles.currentAppText, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                    <Text style={[styles.currentAppText, { color: bloomTheme.colors.textSecondary }]}>
                         {t('premium.forApp', { app: getAppDisplayName(currentAppPackage) }) || `for ${getAppDisplayName(currentAppPackage)}`}
                     </Text>
                 </View>
@@ -592,7 +591,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                         </View>
                     </View>
 
-                    <Text style={[styles.subscriptionDetail, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                    <Text style={[styles.subscriptionDetail, { color: bloomTheme.colors.textSecondary }]}>
                         {t('premium.current.renewsOn', { date: new Date(subscription.currentPeriodEnd).toLocaleDateString() }) || `Renews on ${new Date(subscription.currentPeriodEnd).toLocaleDateString()}`}
                     </Text>
 
@@ -646,7 +645,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                 >
                     <Text style={[
                         styles.billingOptionText,
-                        { color: billingInterval === 'month' ? '#FFFFFF' : textColor }
+                        { color: billingInterval === 'month' ? bloomTheme.colors.negativeForeground : textColor }
                     ]}>
                         {t('premium.billing.monthly') || 'Monthly'}
                     </Text>
@@ -661,7 +660,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                 >
                     <Text style={[
                         styles.billingOptionText,
-                        { color: billingInterval === 'year' ? '#FFFFFF' : textColor }
+                        { color: billingInterval === 'year' ? bloomTheme.colors.negativeForeground : textColor }
                     ]}>
                         {t('premium.billing.yearly') || 'Yearly'}
                     </Text>
@@ -735,10 +734,10 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
 
                 <View style={styles.planHeader}>
                     <Text style={[styles.planName, { color: textColor }]}>{plan.name}</Text>
-                    <Text style={[styles.planDescription, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                    <Text style={[styles.planDescription, { color: bloomTheme.colors.textSecondary }]}>
                         {plan.description}
                     </Text>
-                    <Text style={[styles.planAppScope, { color: isDarkTheme ? '#888888' : '#999999' }]}>
+                    <Text style={[styles.planAppScope, { color: bloomTheme.colors.textTertiary }]}>
                         {getAppScopeText()}
                     </Text>
                     {!availability.available && (
@@ -752,7 +751,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                     <Text style={[styles.planPrice, { color: textColor }]}>
                         {pricing.formatted}
                     </Text>
-                    <Text style={[styles.planInterval, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                    <Text style={[styles.planInterval, { color: bloomTheme.colors.textSecondary }]}>
                         {t('premium.plan.perInterval', { interval: pricing.interval }) || `per ${pricing.interval}`}
                     </Text>
                 </View>
@@ -771,8 +770,8 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                         <Text style={styles.currentPlanText}>{t('premium.plan.current') || 'Current Plan'}</Text>
                     </View>
                 ) : !availability.available ? (
-                    <View style={[styles.unavailablePlanButton, { backgroundColor: isDarkTheme ? '#444444' : '#E0E0E0' }]}>
-                        <Text style={[styles.unavailablePlanText, { color: isDarkTheme ? '#888888' : '#999999' }]}>
+                    <View style={[styles.unavailablePlanButton, { backgroundColor: bloomTheme.colors.border }]}>
+                        <Text style={[styles.unavailablePlanText, { color: bloomTheme.colors.textTertiary }]}>
                             {t('premium.plan.notAvailableInApp') || 'Not Available in Current App'}
                         </Text>
                     </View>
@@ -786,11 +785,11 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                         disabled={processingPayment}
                     >
                         {processingPayment ? (
-                            <ActivityIndicator color="#FFFFFF" size="small" />
+                            <ActivityIndicator color={bloomTheme.colors.negativeForeground} size="small" />
                         ) : (
                             <Text style={[
                                 styles.selectPlanText,
-                                { color: plan.isPopular ? '#FFFFFF' : textColor }
+                                { color: plan.isPopular ? bloomTheme.colors.negativeForeground : textColor }
                             ]}>
                                 {t('premium.actions.subscribeTo', { name: plan.name }) || `Subscribe to ${plan.name}`}
                             </Text>
@@ -845,11 +844,11 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
 
         const getCategoryColor = (category: string) => {
             switch (category) {
-                case 'analytics': return '#FF9500';
-                case 'customization': return '#5856D6';
-                case 'content': return '#30D158';
-                case 'networking': return '#007AFF';
-                case 'productivity': return '#FF3B30';
+                case 'analytics': return bloomTheme.colors.warning;
+                case 'customization': return bloomTheme.colors.secondary;
+                case 'content': return bloomTheme.colors.success;
+                case 'networking': return bloomTheme.colors.info;
+                case 'productivity': return bloomTheme.colors.error;
                 default: return primaryColor;
             }
         };
@@ -899,10 +898,10 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                                 </View>
                             )}
                         </View>
-                        <Text style={[styles.featureDescription, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                        <Text style={[styles.featureDescription, { color: bloomTheme.colors.textSecondary }]}>
                             {feature.description}
                         </Text>
-                        <Text style={[styles.appScopeText, { color: isDarkTheme ? '#888888' : '#999999' }]}>
+                        <Text style={[styles.appScopeText, { color: bloomTheme.colors.textTertiary }]}>
                             {getAppScopeText()}
                         </Text>
                     </View>
@@ -913,7 +912,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                         <Text style={[styles.featurePrice, { color: textColor }]}>
                             {pricing.formatted}
                         </Text>
-                        <Text style={[styles.featureInterval, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                        <Text style={[styles.featureInterval, { color: bloomTheme.colors.textSecondary }]}>
                             {t('premium.plan.perInterval', { interval: pricing.interval }) || `per ${pricing.interval}`}
                         </Text>
                     </View>
@@ -921,13 +920,13 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
 
                 {isIncludedInCurrentPlan ? (
                     <View style={[styles.includedInPlanButton, { backgroundColor: primaryColor }]}>
-                        <Ionicons name="checkmark-circle" size={16} color="#FFFFFF" />
+                        <Ionicons name="checkmark-circle" size={16} color={bloomTheme.colors.negativeForeground} />
                         <Text style={styles.includedInPlanText}>{t('premium.feature.includedInPlan') || 'Included in your plan'}</Text>
                     </View>
                 ) : isSubscribed ? (
                     <View style={styles.featureActions}>
                         <View style={[styles.subscribedButton, { backgroundColor: successColor }]}>
-                            <Ionicons name="checkmark" size={16} color="#FFFFFF" />
+                            <Ionicons name="checkmark" size={16} color={bloomTheme.colors.negativeForeground} />
                             <Text style={styles.subscribedText}>{t('premium.feature.subscribed') || 'Subscribed'}</Text>
                         </View>
                         <TouchableOpacity
@@ -944,14 +943,14 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                         disabled={processingPayment}
                     >
                         {processingPayment ? (
-                            <ActivityIndicator color="#FFFFFF" size="small" />
+                            <ActivityIndicator color={bloomTheme.colors.negativeForeground} size="small" />
                         ) : (
                             <Text style={styles.subscribeFeatureText}>{t('premium.actions.subscribe') || 'Subscribe'}</Text>
                         )}
                     </TouchableOpacity>
                 ) : (
-                    <View style={[styles.unavailableButton, { backgroundColor: isDarkTheme ? '#444444' : '#E0E0E0' }]}>
-                        <Text style={[styles.unavailableText, { color: isDarkTheme ? '#888888' : '#999999' }]}>
+                    <View style={[styles.unavailableButton, { backgroundColor: bloomTheme.colors.border }]}>
+                        <Text style={[styles.unavailableText, { color: bloomTheme.colors.textTertiary }]}>
                             Only available in subscription plans
                         </Text>
                     </View>
@@ -966,7 +965,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
         return (
             <View style={styles.section}>
                 <Text style={[styles.sectionTitle, { color: textColor }]}>Individual Features</Text>
-                <Text style={[styles.sectionSubtitle, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                <Text style={[styles.sectionSubtitle, { color: bloomTheme.colors.textSecondary }]}>
                     Subscribe to specific features you need. Some features are included in subscription plans.
                 </Text>
 
@@ -996,7 +995,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
         const testApps = ['mention', 'oxy-social', 'oxy-workspace', 'oxy-creator'];
 
         return (
-            <View style={[styles.appSwitcher, { backgroundColor: isDarkTheme ? '#333333' : '#F0F0F0', borderColor }]}>
+            <View style={[styles.appSwitcher, { backgroundColor: bloomTheme.colors.backgroundSecondary, borderColor }]}>
                 <Text style={[styles.appSwitcherTitle, { color: textColor }]}>
                     🧪 Test App Context (Dev Only)
                 </Text>
@@ -1018,7 +1017,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                             >
                                 <Text style={[
                                     styles.appSwitcherButtonText,
-                                    { color: currentAppPackage === app ? '#FFFFFF' : textColor }
+                                    { color: currentAppPackage === app ? bloomTheme.colors.negativeForeground : textColor }
                                 ]}>
                                     {app}
                                 </Text>
@@ -1050,7 +1049,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                 {!subscription && (
                     <View style={styles.section}>
                         <Text style={[styles.sectionTitle, { color: textColor }]}>{t('premium.choosePlan') || 'Choose Your Plan'}</Text>
-                        <Text style={[styles.sectionSubtitle, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                        <Text style={[styles.sectionSubtitle, { color: bloomTheme.colors.textSecondary }]}>
                             {t('premium.choosePlanSubtitle') || 'Unlock premium features and take your experience to the next level'}
                         </Text>
                     </View>
@@ -1081,7 +1080,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                             <Ionicons name="flash" size={24} color={primaryColor} />
                             <View style={styles.benefitContent}>
                                 <Text style={[styles.benefitTitle, { color: textColor }]}>{t('premium.benefits.performance.title') || 'Enhanced Performance'}</Text>
-                                <Text style={[styles.benefitDescription, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                                <Text style={[styles.benefitDescription, { color: bloomTheme.colors.textSecondary }]}>
                                     {t('premium.benefits.performance.desc') || 'Faster processing and priority access to our servers'}
                                 </Text>
                             </View>
@@ -1091,7 +1090,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                             <Ionicons name="shield-checkmark" size={24} color={successColor} />
                             <View style={styles.benefitContent}>
                                 <Text style={[styles.benefitTitle, { color: textColor }]}>{t('premium.benefits.security.title') || 'Advanced Security'}</Text>
-                                <Text style={[styles.benefitDescription, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                                <Text style={[styles.benefitDescription, { color: bloomTheme.colors.textSecondary }]}>
                                     {t('premium.benefits.security.desc') || 'Enhanced encryption and security features'}
                                 </Text>
                             </View>
@@ -1101,7 +1100,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                             <Ionicons name="headset" size={24} color={warningColor} />
                             <View style={styles.benefitContent}>
                                 <Text style={[styles.benefitTitle, { color: textColor }]}>{t('premium.benefits.support.title') || 'Priority Support'}</Text>
-                                <Text style={[styles.benefitDescription, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                                <Text style={[styles.benefitDescription, { color: bloomTheme.colors.textSecondary }]}>
                                     {t('premium.benefits.support.desc') || 'Get help faster with our premium support team'}
                                 </Text>
                             </View>
@@ -1150,7 +1149,6 @@ const styles = StyleSheet.create({
     headerTitle: {
         fontSize: 20,
         fontWeight: '600',
-        fontFamily: fontFamilies.interSemiBold,
     },
     headerTitleContainer: {
         flex: 1,
@@ -1173,7 +1171,6 @@ const styles = StyleSheet.create({
     sectionTitle: {
         fontSize: 24,
         fontWeight: 'bold',
-        fontFamily: fontFamilies.interBold,
         marginBottom: 8,
     },
     sectionSubtitle: {

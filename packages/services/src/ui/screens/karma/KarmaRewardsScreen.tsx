@@ -11,7 +11,6 @@ import { useColorScheme } from '../../hooks/useColorScheme';
 import { Colors } from '../../constants/theme';
 import { useOxy } from '../../context/OxyContext';
 import { darkenColor, lightenColor } from '../../utils/colorUtils';
-import { fontFamilies } from '../../styles/fonts';
 
 interface Achievement {
     id: string;
@@ -456,7 +455,6 @@ const styles = StyleSheet.create({
     currentKarma: {
         fontSize: 36,
         fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
-        fontFamily: fontFamilies.interBold,
         marginBottom: 4,
     },
     achievementStats: {
@@ -465,7 +463,6 @@ const styles = StyleSheet.create({
     achievementCount: {
         fontSize: 36,
         fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
-        fontFamily: fontFamilies.interBold,
         marginBottom: 4,
     },
     achievementCountLabel: {
@@ -494,7 +491,6 @@ const styles = StyleSheet.create({
     sectionTitle: {
         fontSize: 20,
         fontWeight: Platform.OS === 'web' ? '600' : undefined,
-        fontFamily: fontFamilies.interSemiBold,
         marginTop: 8,
     },
     achievementsGrid: {

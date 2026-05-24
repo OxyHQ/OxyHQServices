@@ -1,6 +1,5 @@
 import { StyleSheet, Platform, Dimensions } from 'react-native';
 import { screenContentStyle } from '../../constants/spacing';
-import { fontFamilies } from '../../styles/fonts';
 import type { FeedbackColors } from './types';
 
 export const createFeedbackStyles = (colors: FeedbackColors) => StyleSheet.create({
@@ -26,7 +25,6 @@ export const createFeedbackStyles = (colors: FeedbackColors) => StyleSheet.creat
         marginBottom: 24,
     },
     stepTitle: {
-        fontFamily: fontFamilies.interBold,
         fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
         fontSize: 42,
         lineHeight: 48,

@@ -13,7 +13,6 @@ import {
 } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
 import type { ClientSession } from '@oxyhq/core';
-import { fontFamilies } from '../styles/fonts';
 import type { User } from '@oxyhq/core';
 import { getAccountDisplayName, getAccountFallbackHandle } from '@oxyhq/core';
 import { toast } from '../../lib/sonner';
@@ -92,6 +91,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
 
     const screenWidth = Dimensions.get('window').width;
     const { t, locale } = useI18n();
+    const styles = useMemo(() => createStyles(bloomTheme.colors), [bloomTheme.colors]);
 
     // Refresh sessions when screen loads
     useEffect(() => {
@@ -372,7 +372,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                 {isLoading ? (
                     <LoadingState
                         message={t('accountSwitcher.loading') || 'Loading accounts...'}
-                        color="#007AFF"
+                        color={bloomTheme.colors.info}
                     />
                 ) : (
                     <>
@@ -395,7 +395,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                                                 </View>
                                             )}
                                             <View style={styles.activeBadge}>
-                                                <OxyIcon name="checkmark" size={12} color="#fff" />
+                                                <OxyIcon name="checkmark" size={12} color={bloomTheme.colors.negativeForeground} />
                                             </View>
                                         </View>
                                         <View style={styles.settingInfo}>
@@ -448,7 +448,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                                             <View style={styles.userIcon}>
                                                 {isLoadingProfile ? (
                                                     <View style={styles.accountAvatarFallback}>
-                                                        <ActivityIndicator size="small" color="#007AFF" />
+                                                        <ActivityIndicator size="small" color={bloomTheme.colors.info} />
                                                     </View>
                                                 ) : userProfile?.avatar ? (
                                                     <Image source={{ uri: oxyServices.getFileDownloadUrl(userProfile.avatar, 'thumb') }} style={styles.accountAvatarImage} />
@@ -477,7 +477,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                                                     disabled={isSwitching || isRemoving}
                                                 >
                                                     {isSwitching ? (
-                                                        <ActivityIndicator size="small" color="#007AFF" />
+                                                        <ActivityIndicator size="small" color={bloomTheme.colors.info} />
                                                     ) : (
                                                         <Text style={styles.switchButtonText}>Switch</Text>
                                                     )}
@@ -488,9 +488,9 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                                                     disabled={isSwitching || isRemoving}
                                                 >
                                                     {isRemoving ? (
-                                                        <ActivityIndicator size="small" color="#FF3B30" />
+                                                        <ActivityIndicator size="small" color={bloomTheme.colors.error} />
                                                     ) : (
-                                                        <OxyIcon name="trash" size={16} color="#FF3B30" />
+                                                        <OxyIcon name="trash" size={16} color={bloomTheme.colors.error} />
                                                     )}
                                                 </TouchableOpacity>
                                             </View>
@@ -566,7 +566,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                                                 )}
                                                 {isActive && (
                                                     <View style={styles.activeBadge}>
-                                                        <OxyIcon name="checkmark" size={12} color="#fff" />
+                                                        <OxyIcon name="checkmark" size={12} color={bloomTheme.colors.negativeForeground} />
                                                     </View>
                                                 )}
                                             </View>
@@ -597,8 +597,8 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                                                         onPress={() => handleSwitchToManagedAccount(managed.accountId)}
                                                         disabled={isSwitching}
                                                     >
-                                                        {isSwitching ? (
-                                                            <ActivityIndicator size="small" color="#fff" />
+                                                                        {isSwitching ? (
+                                                            <ActivityIndicator size="small" color={bloomTheme.colors.negativeForeground} />
                                                         ) : (
                                                             <Text style={styles.switchButtonText}>Act As</Text>
                                                         )}
@@ -616,12 +616,12 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                                     activeOpacity={0.7}
                                 >
                                     <View style={styles.userIcon}>
-                                        <View style={[styles.accountAvatarFallback, { backgroundColor: '#007AFF20' }]}>
-                                            <OxyIcon name="add" size={20} color="#007AFF" />
+                                        <View style={[styles.accountAvatarFallback, { backgroundColor: bloomTheme.colors.primarySubtle }]}>
+                                            <OxyIcon name="add" size={20} color={bloomTheme.colors.info} />
                                         </View>
                                     </View>
                                     <View style={styles.settingInfo}>
-                                        <Text style={[styles.settingLabel, { color: '#007AFF' }]}>Create New Identity</Text>
+                                        <Text style={[styles.settingLabel, { color: bloomTheme.colors.info }]}>Create New Identity</Text>
                                         <Text style={styles.settingDescription}>Add a managed sub-account</Text>
                                     </View>
                                 </TouchableOpacity>
@@ -638,12 +638,12 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                                     activeOpacity={0.7}
                                 >
                                     <View style={styles.userIcon}>
-                                        <View style={[styles.accountAvatarFallback, { backgroundColor: '#007AFF20' }]}>
-                                            <OxyIcon name="add" size={20} color="#007AFF" />
+                                        <View style={[styles.accountAvatarFallback, { backgroundColor: bloomTheme.colors.primarySubtle }]}>
+                                            <OxyIcon name="add" size={20} color={bloomTheme.colors.info} />
                                         </View>
                                     </View>
                                     <View style={styles.settingInfo}>
-                                        <Text style={[styles.settingLabel, { color: '#007AFF' }]}>Create New Identity</Text>
+                                        <Text style={[styles.settingLabel, { color: bloomTheme.colors.info }]}>Create New Identity</Text>
                                         <Text style={styles.settingDescription}>Create a managed sub-account you control</Text>
                                     </View>
                                 </TouchableOpacity>
@@ -654,19 +654,19 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                         <View style={styles.section}>
                             <SettingsListGroup title="Quick Actions">
                                 <SettingsListItem
-                                    icon={<SettingsIcon name="account-plus" color="#007AFF" />}
+                                    icon={<SettingsIcon name="account-plus" color={bloomTheme.colors.info} />}
                                     title="Add Another Account"
                                     description="Sign in with a different account"
                                     onPress={() => navigate?.('OxyAuth')}
                                 />
                                 <SettingsListItem
-                                    icon={<SettingsIcon name="cellphone" color="#5856D6" />}
+                                    icon={<SettingsIcon name="cellphone" color={bloomTheme.colors.secondary} />}
                                     title={`${showDeviceManagement ? 'Hide' : 'Manage'} Device Sessions`}
                                     description="View and manage sessions on other devices"
                                     onPress={() => setShowDeviceManagement(!showDeviceManagement)}
                                 />
                                 <SettingsListItem
-                                    icon={<SettingsIcon name="logout" color="#FF3B30" />}
+                                    icon={<SettingsIcon name="logout" color={bloomTheme.colors.error} />}
                                     title="Sign Out All Accounts"
                                     description="Remove all accounts from this device"
                                     onPress={confirmLogoutAll}
@@ -684,18 +684,18 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                                 {loadingDeviceSessions ? (
                                     <SettingsListGroup>
                                         <SettingsListItem
-                                            icon={<SettingsIcon name="sync" color="#007AFF" />}
+                                            icon={<SettingsIcon name="sync" color={bloomTheme.colors.info} />}
                                             title={t('accountSwitcher.device.loadingTitle') || 'Loading device sessions...'}
                                             description={t('accountSwitcher.device.loadingSubtitle') || 'Please wait while we fetch your device sessions'}
                                             disabled={true}
-                                            rightElement={<ActivityIndicator size="small" color="#007AFF" />}
+                                            rightElement={<ActivityIndicator size="small" color={bloomTheme.colors.info} />}
                                             showChevron={false}
                                         />
                                     </SettingsListGroup>
                                 ) : deviceSessions.length === 0 ? (
                                     <SettingsListGroup>
                                         <SettingsListItem
-                                            icon={<SettingsIcon name="cellphone" color="#ccc" />}
+                                            icon={<SettingsIcon name="cellphone" color={bloomTheme.colors.textTertiary} />}
                                             title={t('accountSwitcher.device.noneTitle') || 'No device sessions found'}
                                             description={t('accountSwitcher.device.noneSubtitle') || 'Device session management not available'}
                                             disabled={true}
@@ -707,7 +707,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                                         {deviceSessions.map((session) => (
                                             <SettingsListItem
                                                 key={`device-session-${session.sessionId}`}
-                                                icon={<SettingsIcon name={session.isCurrent ? 'cellphone' : 'cellphone-basic'} color={session.isCurrent ? '#34C759' : '#8E8E93'} />}
+                                                icon={<SettingsIcon name={session.isCurrent ? 'cellphone' : 'cellphone-basic'} color={session.isCurrent ? bloomTheme.colors.success : bloomTheme.colors.textTertiary} />}
                                                 title={`${session.deviceName} ${session.isCurrent ? `(${t('accountSwitcher.device.thisDevice') || 'This device'})` : ''}`}
                                                 description={t('accountSwitcher.device.lastActive', { date: new Date(session.lastActive).toLocaleDateString() }) || `Last active: ${new Date(session.lastActive).toLocaleDateString()}`}
                                                 onPress={session.isCurrent ? undefined : () => confirmRemoteSessionLogout(session.sessionId, session.deviceName)}
@@ -720,9 +720,9 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                                                         disabled={remotingLogoutSessionId === session.sessionId}
                                                     >
                                                         {remotingLogoutSessionId === session.sessionId ? (
-                                                            <ActivityIndicator size="small" color="#FF3B30" />
+                                                            <ActivityIndicator size="small" color={bloomTheme.colors.error} />
                                                         ) : (
-                                                            <OxyIcon name="log-out" size={16} color="#FF3B30" />
+                                                            <OxyIcon name="log-out" size={16} color={bloomTheme.colors.error} />
                                                         )}
                                                     </TouchableOpacity>
                                                 ) : undefined}
@@ -738,13 +738,13 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                             <View style={styles.section}>
                                 <SettingsListGroup>
                                     <SettingsListItem
-                                        icon={<SettingsIcon name="account-outline" color="#ccc" />}
+                                        icon={<SettingsIcon name="account-outline" color={bloomTheme.colors.textTertiary} />}
                                         title={t('accountSwitcher.empty.title') || 'No saved accounts'}
                                         description={t('accountSwitcher.empty.subtitle') || 'Add another account to switch between them quickly'}
                                         onPress={() => navigate?.('OxyAuth')}
                                         rightElement={
                                             <View style={styles.emptyStateContainer}>
-                                                <OxyIcon name="person-outline" size={48} color="#ccc" />
+                                                <OxyIcon name="person-outline" size={48} color={bloomTheme.colors.textTertiary} />
                                                 <Text style={styles.emptyStateTitle}>{t('accountSwitcher.empty.title') || 'No saved accounts'}</Text>
                                                 <Text style={styles.emptyStateDescription}>
                                                     {t('accountSwitcher.empty.subtitle') || 'Add another account to switch between them quickly'}
@@ -801,201 +801,201 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
     );
 };
 
-const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: '#f2f2f2',
-    },
+const createStyles = (colors: ReturnType<typeof useTheme>['colors']) =>
+    StyleSheet.create({
+        container: {
+            flex: 1,
+            backgroundColor: colors.background,
+        },
 
-    content: {
-        flex: 1,
-        padding: 16,
-    },
-    section: {
-        marginBottom: 24,
-    },
-    sectionTitle: {
-        fontSize: 16,
-        fontWeight: Platform.OS === 'web' ? '600' : undefined,
-        fontFamily: fontFamilies.interSemiBold,
-        color: '#333',
-    },
-    settingItem: {
-        backgroundColor: '#fff',
-        padding: 16,
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        marginBottom: 2,
-    },
-    firstSettingItem: {
-        borderTopLeftRadius: 24,
-        borderTopRightRadius: 24,
-    },
-    lastSettingItem: {
-        borderBottomLeftRadius: 24,
-        borderBottomRightRadius: 24,
-        marginBottom: 8,
-    },
-    currentAccountCard: {
-        borderWidth: 2,
-        borderColor: '#007AFF',
-        backgroundColor: '#007AFF08',
-    },
-    settingInfo: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        flex: 1,
-    },
-    settingLabel: {
-        fontSize: 16,
-        fontWeight: '500',
-        color: '#333',
-        marginBottom: 2,
-    },
-    settingDescription: {
-        fontSize: 14,
-        color: '#666',
-    },
-    userIcon: {
-        marginRight: 12,
-        position: 'relative',
-    },
-    accountAvatarImage: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-    },
-    accountAvatarFallback: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        backgroundColor: '#d169e5',
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    accountAvatarText: {
-        color: 'white',
-        fontSize: 18,
-        fontWeight: 'bold',
-    },
-    activeBadge: {
-        position: 'absolute',
-        top: -2,
-        right: -2,
-        width: 16,
-        height: 16,
-        borderRadius: 8,
-        backgroundColor: '#34C759',
-        alignItems: 'center',
-        justifyContent: 'center',
-        borderWidth: 2,
-        borderColor: '#fff',
-    },
-    currentBadge: {
-        backgroundColor: '#007AFF',
-        paddingHorizontal: 8,
-        paddingVertical: 4,
-        borderRadius: 12,
-    },
-    currentBadgeText: {
-        color: '#fff',
-        fontSize: 12,
-        fontWeight: '600',
-    },
-    accountActions: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
-    },
-    switchButton: {
-        backgroundColor: '#007AFF',
-        paddingHorizontal: 16,
-        paddingVertical: 8,
-        borderRadius: 16,
-        minWidth: 60,
-        alignItems: 'center',
-    },
-    switchButtonText: {
-        color: '#fff',
-        fontSize: 14,
-        fontWeight: '500',
-    },
-    removeButton: {
-        padding: 8,
-        borderRadius: 16,
-        backgroundColor: '#fff',
-        borderWidth: 1,
-        borderColor: '#FF3B30',
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    emptyStateContainer: {
-        alignItems: 'center',
-        paddingVertical: 32,
-        paddingHorizontal: 20,
-    },
-    emptyStateTitle: {
-        fontSize: 18,
-        fontWeight: '600',
-        color: '#333',
-        marginTop: 16,
-        marginBottom: 8,
-    },
-    emptyStateDescription: {
-        fontSize: 14,
-        color: '#666',
-        textAlign: 'center',
-        marginBottom: 24,
-        lineHeight: 20,
-    },
-    addAccountButton: {
-        backgroundColor: '#007AFF',
-        paddingHorizontal: 24,
-        paddingVertical: 12,
-        borderRadius: 20,
-    },
-    addAccountButtonText: {
-        color: '#fff',
-        fontSize: 16,
-        fontWeight: '600',
-    },
-    sectionSubtitle: {
-        fontSize: 13,
-        color: '#888',
-        marginBottom: 12,
-    },
-    managedAvatarFallback: {
-        backgroundColor: '#5856D6',
-    },
-    roleBadge: {
-        backgroundColor: '#F2F2F7',
-        paddingHorizontal: 8,
-        paddingVertical: 3,
-        borderRadius: 8,
-    },
-    roleBadgeText: {
-        color: '#666',
-        fontSize: 11,
-        fontWeight: '500',
-        textTransform: 'capitalize',
-    },
-    actingAsBanner: {
-        borderWidth: 2,
-        borderColor: '#FF9500',
-        backgroundColor: '#FF950010',
-    },
-    switchBackButton: {
-        backgroundColor: '#FF9500',
-        paddingHorizontal: 14,
-        paddingVertical: 8,
-        borderRadius: 16,
-    },
-    switchBackButtonText: {
-        color: '#fff',
-        fontSize: 13,
-        fontWeight: '600',
-    },
-});
+        content: {
+            flex: 1,
+            padding: 16,
+        },
+        section: {
+            marginBottom: 24,
+        },
+        sectionTitle: {
+            fontSize: 16,
+            fontWeight: Platform.OS === 'web' ? '600' : undefined,
+            color: colors.text,
+        },
+        settingItem: {
+            backgroundColor: colors.card,
+            padding: 16,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: 2,
+        },
+        firstSettingItem: {
+            borderTopLeftRadius: 24,
+            borderTopRightRadius: 24,
+        },
+        lastSettingItem: {
+            borderBottomLeftRadius: 24,
+            borderBottomRightRadius: 24,
+            marginBottom: 8,
+        },
+        currentAccountCard: {
+            borderWidth: 2,
+            borderColor: colors.info,
+            backgroundColor: colors.primarySubtle,
+        },
+        settingInfo: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            flex: 1,
+        },
+        settingLabel: {
+            fontSize: 16,
+            fontWeight: '500',
+            color: colors.text,
+            marginBottom: 2,
+        },
+        settingDescription: {
+            fontSize: 14,
+            color: colors.textSecondary,
+        },
+        userIcon: {
+            marginRight: 12,
+            position: 'relative',
+        },
+        accountAvatarImage: {
+            width: 40,
+            height: 40,
+            borderRadius: 20,
+        },
+        accountAvatarFallback: {
+            width: 40,
+            height: 40,
+            borderRadius: 20,
+            backgroundColor: colors.primary,
+            alignItems: 'center',
+            justifyContent: 'center',
+        },
+        accountAvatarText: {
+            color: colors.negativeForeground,
+            fontSize: 18,
+            fontWeight: 'bold',
+        },
+        activeBadge: {
+            position: 'absolute',
+            top: -2,
+            right: -2,
+            width: 16,
+            height: 16,
+            borderRadius: 8,
+            backgroundColor: colors.success,
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderWidth: 2,
+            borderColor: colors.card,
+        },
+        currentBadge: {
+            backgroundColor: colors.info,
+            paddingHorizontal: 8,
+            paddingVertical: 4,
+            borderRadius: 12,
+        },
+        currentBadgeText: {
+            color: colors.negativeForeground,
+            fontSize: 12,
+            fontWeight: '600',
+        },
+        accountActions: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 8,
+        },
+        switchButton: {
+            backgroundColor: colors.info,
+            paddingHorizontal: 16,
+            paddingVertical: 8,
+            borderRadius: 16,
+            minWidth: 60,
+            alignItems: 'center',
+        },
+        switchButtonText: {
+            color: colors.negativeForeground,
+            fontSize: 14,
+            fontWeight: '500',
+        },
+        removeButton: {
+            padding: 8,
+            borderRadius: 16,
+            backgroundColor: colors.card,
+            borderWidth: 1,
+            borderColor: colors.error,
+            alignItems: 'center',
+            justifyContent: 'center',
+        },
+        emptyStateContainer: {
+            alignItems: 'center',
+            paddingVertical: 32,
+            paddingHorizontal: 20,
+        },
+        emptyStateTitle: {
+            fontSize: 18,
+            fontWeight: '600',
+            color: colors.text,
+            marginTop: 16,
+            marginBottom: 8,
+        },
+        emptyStateDescription: {
+            fontSize: 14,
+            color: colors.textSecondary,
+            textAlign: 'center',
+            marginBottom: 24,
+            lineHeight: 20,
+        },
+        addAccountButton: {
+            backgroundColor: colors.info,
+            paddingHorizontal: 24,
+            paddingVertical: 12,
+            borderRadius: 20,
+        },
+        addAccountButtonText: {
+            color: colors.negativeForeground,
+            fontSize: 16,
+            fontWeight: '600',
+        },
+        sectionSubtitle: {
+            fontSize: 13,
+            color: colors.textTertiary,
+            marginBottom: 12,
+        },
+        managedAvatarFallback: {
+            backgroundColor: colors.secondary,
+        },
+        roleBadge: {
+            backgroundColor: colors.backgroundSecondary,
+            paddingHorizontal: 8,
+            paddingVertical: 3,
+            borderRadius: 8,
+        },
+        roleBadgeText: {
+            color: colors.textSecondary,
+            fontSize: 11,
+            fontWeight: '500',
+            textTransform: 'capitalize',
+        },
+        actingAsBanner: {
+            borderWidth: 2,
+            borderColor: colors.warning,
+            backgroundColor: colors.primarySubtle,
+        },
+        switchBackButton: {
+            backgroundColor: colors.warning,
+            paddingHorizontal: 14,
+            paddingVertical: 8,
+            borderRadius: 16,
+        },
+        switchBackButtonText: {
+            color: colors.negativeForeground,
+            fontSize: 13,
+            fontWeight: '600',
+        },
+    });
 
 export default ModernAccountSwitcherScreen;

@@ -7,7 +7,6 @@ import {
   Platform,
   Image,
 } from 'react-native';
-import { fontFamilies } from '../styles/fonts';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { useOxy } from '../context/OxyContext';
 
@@ -107,7 +106,6 @@ const styles = StyleSheet.create({
   },
   avatarText: {
     fontSize: 12,
-    fontFamily: fontFamilies.interSemiBold,
     fontWeight: Platform.OS === 'web' ? '600' : undefined,
   },
   textContainer: {
@@ -116,7 +114,6 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 14,
-    fontFamily: fontFamilies.interMedium,
     fontWeight: Platform.OS === 'web' ? '500' : undefined,
   },
   switchBackHint: {
@@ -127,7 +124,6 @@ const styles = StyleSheet.create({
   },
   switchBackText: {
     fontSize: 12,
-    fontFamily: fontFamilies.interMedium,
     fontWeight: Platform.OS === 'web' ? '500' : undefined,
   },
 });

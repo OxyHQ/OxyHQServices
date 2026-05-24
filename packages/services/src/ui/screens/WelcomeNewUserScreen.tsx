@@ -9,7 +9,6 @@ import { toast } from '../../lib/sonner';
 import { useAuthStore } from '../stores/authStore';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { fontFamilies } from '../styles/fonts';
-import { normalizeTheme } from '../utils/themeUtils';
 import { Button } from '@oxyhq/bloom/button';
 import { useI18n } from '../hooks/useI18n';
 import { useOxy } from '../context/OxyContext';
@@ -74,8 +73,7 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
         border: bloomTheme.colors.border,
         text: bloomTheme.colors.text,
     };
-    const normalizedTheme = normalizeTheme(theme);
-    const styles = useMemo(() => createStyles(normalizedTheme), [normalizedTheme]);
+    const styles = useMemo(() => createStyles(bloomTheme.colors), [bloomTheme.colors]);
 
     // Animation state
     const fadeAnim = useRef(new Animated.Value(1)).current;
@@ -269,7 +267,7 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
                                 style={styles.avatar}
                             />
                             <TouchableOpacity style={styles.changeAvatarButton} className="bg-primary" onPress={openAvatarPicker}>
-                                <Ionicons name="image-outline" size={18} color="#FFFFFF" />
+                                <Ionicons name="image-outline" size={18} color={bloomTheme.colors.negativeForeground} />
                                 <Text style={styles.changeAvatarText}>{avatarUri ? (t('welcomeNew.avatar.change') || 'Change Avatar') : (t('welcomeNew.avatar.add') || 'Add Avatar')}</Text>
                             </TouchableOpacity>
                         </View>
@@ -284,9 +282,7 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
 
 };
 
-const createStyles = (theme: string) => {
-    const isDark = theme === 'dark';
-    const border = isDark ? '#333333' : '#E0E0E0';
+const createStyles = (colors: ReturnType<typeof useTheme>['colors']) => {
     return StyleSheet.create({
         container: {
             width: '100%',
@@ -357,7 +353,7 @@ const createStyles = (theme: string) => {
             ...(Platform.OS === 'web' ? { boxShadow: 'none' } : null),
         },
         changeAvatarText: {
-            color: '#FFFFFF',
+            color: colors.negativeForeground,
             fontSize: 15,
             fontWeight: '600',
         },
@@ -373,7 +369,7 @@ const createStyles = (theme: string) => {
             width: 6,
             borderRadius: 3,
             marginHorizontal: 3,
-            backgroundColor: border,
+            backgroundColor: colors.border,
         },
     });
 };

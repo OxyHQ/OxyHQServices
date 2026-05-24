@@ -19,7 +19,6 @@ import { Header } from '../components';
 import { useI18n } from '../hooks/useI18n';
 import { useOxy } from '../context/OxyContext';
 import { useProfileEditing } from '../hooks/useProfileEditing';
-import { fontFamilies } from '../styles/fonts';
 import { toast } from '../../lib/sonner';
 import { EMAIL_REGEX } from '@oxyhq/core';
 
@@ -597,7 +596,6 @@ const styles = StyleSheet.create({
     bigTitle: {
         fontSize: 34,
         fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
-        fontFamily: fontFamilies.interBold,
         lineHeight: 40,
         marginBottom: 8,
         letterSpacing: -0.5,
@@ -619,7 +617,6 @@ const styles = StyleSheet.create({
     label: {
         fontSize: 14,
         fontWeight: '600',
-        fontFamily: fontFamilies.interSemiBold,
     },
     input: {
         borderWidth: StyleSheet.hairlineWidth,
@@ -658,7 +655,6 @@ const styles = StyleSheet.create({
     listTitle: {
         fontSize: 16,
         fontWeight: '600',
-        fontFamily: fontFamilies.interSemiBold,
         marginBottom: 12,
     },
     listItem: {

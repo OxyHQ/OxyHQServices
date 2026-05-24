@@ -12,7 +12,6 @@ import {
   KeyboardAvoidingView,
 } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
-import { fontFamilies } from '../styles/fonts';
 import { Header } from '../components';
 import { useI18n } from '../hooks/useI18n';
 import { useTheme } from '@oxyhq/bloom/theme';
@@ -126,7 +125,7 @@ const CreateManagedAccountScreen: React.FC<BaseScreenProps> = ({
 
   const getStatusColor = (): string => {
     switch (usernameStatus) {
-      case 'available': return '#34C759';
+      case 'available': return bloomTheme.colors.success;
       case 'taken':
       case 'invalid': return bloomTheme.colors.error;
       case 'checking': return bloomTheme.colors.primary;
@@ -182,7 +181,7 @@ const CreateManagedAccountScreen: React.FC<BaseScreenProps> = ({
                 <ActivityIndicator size="small" color={bloomTheme.colors.primary} />
               )}
               {usernameStatus === 'available' && (
-                <Text style={styles.statusIcon}>OK</Text>
+                <Text style={[styles.statusIcon, { color: bloomTheme.colors.success }]}>OK</Text>
               )}
             </View>
             {usernameMessage ? (
@@ -240,9 +239,9 @@ const CreateManagedAccountScreen: React.FC<BaseScreenProps> = ({
             activeOpacity={0.7}
           >
             {isCreating ? (
-              <ActivityIndicator size="small" color="#fff" />
+              <ActivityIndicator size="small" color={bloomTheme.colors.negativeForeground} />
             ) : (
-              <Text style={styles.createButtonText}>Create Identity</Text>
+              <Text style={[styles.createButtonText, { color: bloomTheme.colors.negativeForeground }]}>Create Identity</Text>
             )}
           </TouchableOpacity>
         </ScrollView>
@@ -262,14 +261,12 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
     marginBottom: 24,
-    fontFamily: fontFamilies.inter,
   },
   fieldGroup: {
     marginBottom: 20,
   },
   label: {
     fontSize: 14,
-    fontFamily: fontFamilies.interSemiBold,
     fontWeight: Platform.OS === 'web' ? '600' : undefined,
     marginBottom: 8,
   },
@@ -283,13 +280,11 @@ const styles = StyleSheet.create({
   },
   inputPrefix: {
     fontSize: 16,
-    fontFamily: fontFamilies.inter,
     marginRight: 2,
   },
   input: {
     flex: 1,
     fontSize: 16,
-    fontFamily: fontFamilies.inter,
     paddingVertical: 0,
   },
   bioContainer: {
@@ -302,18 +297,14 @@ const styles = StyleSheet.create({
   },
   statusIcon: {
     fontSize: 13,
-    fontFamily: fontFamilies.interSemiBold,
     fontWeight: Platform.OS === 'web' ? '600' : undefined,
-    color: '#34C759',
   },
   statusMessage: {
     fontSize: 13,
-    fontFamily: fontFamilies.inter,
     marginTop: 6,
   },
   charCount: {
     fontSize: 12,
-    fontFamily: fontFamilies.inter,
     textAlign: 'right',
     marginTop: 4,
   },
@@ -328,9 +319,7 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   createButtonText: {
-    color: '#fff',
     fontSize: 16,
-    fontFamily: fontFamilies.interSemiBold,
     fontWeight: Platform.OS === 'web' ? '600' : undefined,
   },
 });

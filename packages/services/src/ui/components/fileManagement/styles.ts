@@ -1,5 +1,4 @@
 import { StyleSheet } from 'react-native';
-import { fontFamilies } from '../../styles/fonts';
 
 export const fileManagementStyles = StyleSheet.create({
     container: {
@@ -50,14 +49,12 @@ export const fileManagementStyles = StyleSheet.create({
     headerTitle: {
         fontSize: 22,
         fontWeight: '700',
-        fontFamily: fontFamilies.interBold,
         letterSpacing: -0.5,
         lineHeight: 28,
     },
     headerSubtitle: {
         fontSize: 13,
         fontWeight: '500',
-        fontFamily: fontFamilies.interMedium,
         marginTop: 2,
         letterSpacing: 0.2,
     },
@@ -86,7 +83,6 @@ export const fileManagementStyles = StyleSheet.create({
         color: '#FFFFFF',
         fontSize: 14,
         fontWeight: '600',
-        fontFamily: fontFamilies.interSemiBold,
     },
     uploadProgress: {
         alignItems: 'center',
@@ -153,7 +149,6 @@ export const fileManagementStyles = StyleSheet.create({
     searchInput: {
         flex: 1,
         fontSize: 16,
-        fontFamily: fontFamilies.inter,
         lineHeight: 20,
     },
     searchClearButton: {
@@ -179,14 +174,12 @@ export const fileManagementStyles = StyleSheet.create({
     statValue: {
         fontSize: 20,
         fontWeight: '800',
-        fontFamily: fontFamilies.interBold,
         letterSpacing: -0.5,
         lineHeight: 24,
     },
     statLabel: {
         fontSize: 12,
         fontWeight: '500',
-        fontFamily: fontFamilies.interMedium,
         marginTop: 2,
         letterSpacing: 0.2,
     },
@@ -342,7 +335,6 @@ export const fileManagementStyles = StyleSheet.create({
     emptyStateTitle: {
         fontSize: 24,
         fontWeight: 'bold',
-        fontFamily: fontFamilies.interBold,
         marginTop: 16,
         marginBottom: 8,
     },
@@ -382,7 +374,6 @@ export const fileManagementStyles = StyleSheet.create({
     modalTitle: {
         fontSize: 18,
         fontWeight: '600',
-        fontFamily: fontFamilies.interSemiBold,
     },
     modalPlaceholder: {
         width: 40,
@@ -403,7 +394,6 @@ export const fileManagementStyles = StyleSheet.create({
     fileDetailName: {
         fontSize: 20,
         fontWeight: 'bold',
-        fontFamily: fontFamilies.interBold,
         textAlign: 'center',
         marginBottom: 24,
     },
@@ -462,7 +452,6 @@ export const fileManagementStyles = StyleSheet.create({
     uploadPreviewTitle: {
         fontSize: 20,
         fontWeight: '700',
-        fontFamily: fontFamilies.interBold,
     },
     uploadPreviewList: {
         flex: 1,
@@ -496,12 +485,10 @@ export const fileManagementStyles = StyleSheet.create({
     uploadPreviewName: {
         fontSize: 16,
         fontWeight: '600',
-        fontFamily: fontFamilies.interSemiBold,
         marginBottom: 4,
     },
     uploadPreviewMeta: {
         fontSize: 13,
-        fontFamily: fontFamilies.inter,
     },
     uploadPreviewRemove: {
         padding: 4,
@@ -518,7 +505,6 @@ export const fileManagementStyles = StyleSheet.create({
     uploadPreviewStatsText: {
         fontSize: 15,
         fontWeight: '600',
-        fontFamily: fontFamilies.interSemiBold,
     },
     uploadPreviewActions: {
         flexDirection: 'row',
@@ -535,7 +521,6 @@ export const fileManagementStyles = StyleSheet.create({
     uploadPreviewCancelText: {
         fontSize: 16,
         fontWeight: '600',
-        fontFamily: fontFamilies.interSemiBold,
     },
     uploadPreviewConfirmButton: {
         flex: 2,
@@ -550,7 +535,6 @@ export const fileManagementStyles = StyleSheet.create({
         color: '#FFFFFF',
         fontSize: 16,
         fontWeight: '600',
-        fontFamily: fontFamilies.interSemiBold,
     },
     fileViewerContainer: {
         flex: 1,
@@ -590,7 +574,6 @@ export const fileManagementStyles = StyleSheet.create({
     fileViewerTitle: {
         fontSize: 18,
         fontWeight: '600',
-        fontFamily: fontFamilies.interSemiBold,
         marginBottom: 2,
     },
     fileViewerSubtitle: {
@@ -681,7 +664,6 @@ export const fileManagementStyles = StyleSheet.create({
     unsupportedFileTitle: {
         fontSize: 24,
         fontWeight: 'bold',
-        fontFamily: fontFamilies.interBold,
         marginTop: 16,
         marginBottom: 8,
         textAlign: 'center',
@@ -739,7 +721,6 @@ export const fileManagementStyles = StyleSheet.create({
     fileDetailsSectionTitle: {
         fontSize: 18,
         fontWeight: '600',
-        fontFamily: fontFamilies.interSemiBold,
         flex: 1,
     },
     fileDetailsSectionHeader: {
@@ -931,7 +912,6 @@ export const photoPickerStyles = StyleSheet.create({
     headerTitle: {
         fontSize: 17,
         fontWeight: '600',
-        fontFamily: fontFamilies.interSemiBold,
         color: '#FFFFFF',
         letterSpacing: -0.2,
         textAlign: 'center',
@@ -946,7 +926,6 @@ export const photoPickerStyles = StyleSheet.create({
     headerCancelText: {
         fontSize: 17,
         fontWeight: '500',
-        fontFamily: fontFamilies.interMedium,
         color: '#FFFFFF',
     },
     headerPrimaryPill: {
@@ -967,7 +946,6 @@ export const photoPickerStyles = StyleSheet.create({
         color: '#FFFFFF',
         fontSize: 15,
         fontWeight: '600',
-        fontFamily: fontFamilies.interSemiBold,
     },
     headerProgressBarTrack: {
         position: 'absolute',
@@ -1028,7 +1006,6 @@ export const photoPickerStyles = StyleSheet.create({
         color: '#FFFFFF',
         fontSize: 12,
         fontWeight: '700',
-        fontFamily: fontFamilies.interBold,
         lineHeight: 14,
     },
     empty: {
@@ -1044,14 +1021,12 @@ export const photoPickerStyles = StyleSheet.create({
     emptyTitle: {
         fontSize: 17,
         fontWeight: '600',
-        fontFamily: fontFamilies.interSemiBold,
         textAlign: 'center',
         marginBottom: 6,
     },
     emptySubtitle: {
         fontSize: 14,
         fontWeight: '400',
-        fontFamily: fontFamilies.inter,
         textAlign: 'center',
         opacity: 0.7,
         marginBottom: 24,
@@ -1068,7 +1043,6 @@ export const photoPickerStyles = StyleSheet.create({
         color: '#FFFFFF',
         fontSize: 15,
         fontWeight: '600',
-        fontFamily: fontFamilies.interSemiBold,
     },
 });
 

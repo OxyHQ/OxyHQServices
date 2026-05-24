@@ -466,8 +466,8 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
     const renderSuccessStep = () => (
         <Animated.View style={[styles.stepContainer, { opacity: fadeAnim, transform: [{ translateX: slideAnim }] }]}>
             <View style={styles.successContainer}>
-                <View style={[styles.successIcon, { backgroundColor: `${colors.success || '#34C759'}20`, padding: 24, borderRadius: 50 }]}>
-                    <Ionicons name="checkmark-circle" size={48} color={colors.success || '#34C759'} />
+                <View style={[styles.successIcon, { backgroundColor: `${colors.success}20`, padding: 24, borderRadius: 50 }]}>
+                    <Ionicons name="checkmark-circle" size={48} color={colors.success} />
                 </View>
                 <Text style={styles.successTitle} className="text-foreground">
                     {t('feedback.success.thanks') || 'Thank You!'}

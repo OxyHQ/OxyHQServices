@@ -14,7 +14,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { BaseScreenProps } from '../types/navigation';
 import OxyLogo from '../components/OxyLogo';
 import Avatar from '../components/Avatar';
-import { fontFamilies } from '../styles/fonts';
 import { toast } from '../../lib/sonner';
 import { Ionicons } from '@expo/vector-icons';
 import * as Prompt from '@oxyhq/bloom/prompt';
@@ -407,7 +406,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                             })
                         ) : (
                             <SettingsListItem
-                                icon={<SettingsIcon name="account-outline" color="#ccc" />}
+                                icon={<SettingsIcon name="account-outline" color={bloomTheme.colors.textTertiary} />}
                                 title={t('accountOverview.additional.noAccounts.title') || 'No other accounts'}
                                 description={t('accountOverview.additional.noAccounts.subtitle') || 'Add another account to switch between them'}
                                 showChevron={false}
@@ -491,7 +490,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                         onPress={() => navigate?.('LanguageSelector')}
                     />
                     <SettingsListItem
-                        icon={<SettingsIcon name="cog" color="#8E8E93" />}
+                        icon={<SettingsIcon name="cog" color={bloomTheme.colors.textTertiary} />}
                         title={t('accountOverview.items.preferences.title')}
                         description={t('accountOverview.items.preferences.subtitle')}
                         onPress={() => toast.info(t('accountOverview.items.preferences.coming'))}
@@ -521,7 +520,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                         onPress={() => toast.info(t('accountOverview.items.connectedApps.coming'))}
                     />
                     <SettingsListItem
-                        icon={<SettingsIcon name="information" color="#8E8E93" />}
+                        icon={<SettingsIcon name="information" color={bloomTheme.colors.textTertiary} />}
                         title={t('accountOverview.items.about.title')}
                         description={t('accountOverview.items.about.subtitle')}
                         onPress={() => navigate?.('AppInfo')}
@@ -531,7 +530,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                 {/* Sign Out */}
                 <SettingsListGroup title={t('accountOverview.sections.actions')}>
                     <SettingsListItem
-                        icon={<SettingsIcon name="logout" color="#FF3B30" />}
+                        icon={<SettingsIcon name="logout" color={bloomTheme.colors.error} />}
                         title={t('accountOverview.items.signOut.title')}
                         description={t('accountOverview.items.signOut.subtitle')}
                         onPress={() => logoutPrompt.open()}
@@ -643,7 +642,6 @@ const styles = StyleSheet.create({
         fontSize: 28,
         fontWeight: '600',
         marginBottom: 8,
-        fontFamily: fontFamilies.interBold,
         maxWidth: '90%',
     },
     welcomeSubtext: {
@@ -653,16 +651,6 @@ const styles = StyleSheet.create({
     },
     userIcon: {
         marginRight: 12,
-    },
-    manageButton: {
-        paddingHorizontal: 16,
-        paddingVertical: 8,
-        borderRadius: 16,
-    },
-    manageButtonText: {
-        color: '#fff',
-        fontSize: 14,
-        fontWeight: '500',
     },
     accountAvatarImage: {
         width: 40,
@@ -686,7 +674,6 @@ const styles = StyleSheet.create({
         fontSize: 16,
         textAlign: 'center',
         marginTop: 24,
-        color: '#333',
     },
     loadingContainer: {
         flexDirection: 'row',
@@ -697,7 +684,6 @@ const styles = StyleSheet.create({
     },
     loadingText: {
         fontSize: 16,
-        color: '#666',
     },
 });
 

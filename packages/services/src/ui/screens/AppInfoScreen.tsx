@@ -12,7 +12,6 @@ import {
     ActivityIndicator,
 } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
-import { fontFamilies } from '../styles/fonts';
 import { packageInfo } from '@oxyhq/core';
 import { toast } from '../../lib/sonner';
 import { Ionicons } from '@expo/vector-icons';
@@ -390,7 +389,6 @@ const styles = StyleSheet.create({
         fontSize: 24,
         fontWeight: 'bold',
         color: '#000',
-        fontFamily: fontFamilies.interBold,
     },
     placeholder: {
         width: 34, // Same width as cancel button to center title

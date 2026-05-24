@@ -12,7 +12,6 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import type { BaseScreenProps } from '../types/navigation';
 import { toast } from '../../lib/sonner';
-import { fontFamilies } from '../styles/fonts';
 import * as Prompt from '@oxyhq/bloom/prompt';
 import { usePromptControl } from '@oxyhq/bloom/prompt';
 import { useAuthStore } from '../stores/authStore';
@@ -585,7 +584,6 @@ const styles = StyleSheet.create({
         gap: COMPONENT_GAP,
     },
     modernTitle: {
-        fontFamily: fontFamilies.interBold,
         fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
         fontSize: 42,
         lineHeight: 50.4, // 42 * 1.2
@@ -610,7 +608,6 @@ const styles = StyleSheet.create({
         marginTop: 4,
         textTransform: 'uppercase',
         letterSpacing: 0.5,
-        fontFamily: fontFamilies.interSemiBold,
     },
     groupedSectionWrapper: {
         backgroundColor: 'transparent',

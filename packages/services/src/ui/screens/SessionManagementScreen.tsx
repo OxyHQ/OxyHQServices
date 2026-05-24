@@ -23,16 +23,6 @@ import { useTheme } from '@oxyhq/bloom/theme';
 import { useOxy } from '../context/OxyContext';
 import { useI18n } from '../hooks/useI18n';
 
-// Button background colors for session actions
-const SWITCH_BUTTON_BG = {
-    dark: '#1E2A38',
-    light: '#E6F2FF',
-} as const;
-
-const LOGOUT_BUTTON_BG = {
-    dark: '#3A1E1E',
-    light: '#FFEBEE',
-} as const;
 
 const SessionManagementScreen: React.FC<BaseScreenProps> = ({
     onClose,
@@ -63,10 +53,9 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
 
     // Use bloom theme for non-style color props (ActivityIndicator, icon colors, etc.)
     const bloomTheme = useTheme();
-    const isDarkTheme = bloomTheme.isDark;
     const primaryColor = bloomTheme.colors.primary;
     const dangerColor = bloomTheme.colors.error;
-    const successColor = bloomTheme.colors.success || '#34C759';
+    const successColor = bloomTheme.colors.success;
 
     // Memoized load sessions function - prevents unnecessary re-renders
     const loadSessions = useCallback(async (isRefresh = false) => {
@@ -236,7 +225,7 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
                     <View style={styles.sessionActionsRow}>
                         <TouchableOpacity
                             onPress={() => handleSwitchSession(session.sessionId)}
-                            style={[styles.sessionPillButton, { backgroundColor: isDarkTheme ? SWITCH_BUTTON_BG.dark : SWITCH_BUTTON_BG.light, borderColor: primaryColor }]}
+                            style={[styles.sessionPillButton, { backgroundColor: bloomTheme.colors.primarySubtle, borderColor: primaryColor }]}
                             disabled={switchLoading === session.sessionId || actionLoading === session.sessionId}
                         >
                             {switchLoading === session.sessionId ? (
@@ -247,7 +236,7 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
                         </TouchableOpacity>
                         <TouchableOpacity
                             onPress={() => confirmLogoutSession(session.sessionId)}
-                            style={[styles.sessionPillButton, { backgroundColor: isDarkTheme ? LOGOUT_BUTTON_BG.dark : LOGOUT_BUTTON_BG.light, borderColor: dangerColor }]}
+                            style={[styles.sessionPillButton, { backgroundColor: bloomTheme.colors.negativeSubtle, borderColor: dangerColor }]}
                             disabled={actionLoading === session.sessionId || switchLoading === session.sessionId}
                         >
                             {actionLoading === session.sessionId ? (
@@ -259,7 +248,7 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
                     </View>
                 ) : (
                     <View style={styles.sessionActionsRow}>
-                        <Text style={[styles.currentBadgeText, { color: successColor }]}>{t('sessionManagement.active')}</Text>
+                        <Text style={[styles.currentBadgeText, { color: successColor, backgroundColor: `${successColor}20` }]}>{t('sessionManagement.active')}</Text>
                     </View>
                 ),
                 selected: isCurrent,
@@ -327,7 +316,7 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
                 {userSessions.length > 0 ? (
                     <>
                         {lastRefreshed && (
-                            <Text style={[styles.metaText, { color: '#777', marginBottom: 6 }]}>{t('sessionManagement.lastRefreshed', { time: formatRelative(lastRefreshed.toISOString()) })}</Text>
+                            <Text style={[styles.metaText, { color: bloomTheme.colors.textTertiary, marginBottom: 6 }]}>{t('sessionManagement.lastRefreshed', { time: formatRelative(lastRefreshed.toISOString()) })}</Text>
                         )}
                         <View style={styles.fullBleed}>
                             <SettingsListGroup>
@@ -363,7 +352,7 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
                     </>
                 ) : (
                     <View style={styles.emptyState}>
-                        <Text style={[styles.emptyStateText, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>{t('sessionManagement.empty')}</Text>
+                        <Text style={[styles.emptyStateText, { color: bloomTheme.colors.textSecondary }]}>{t('sessionManagement.empty')}</Text>
                     </View>
                 )}
             </ScrollView>
@@ -439,7 +428,6 @@ const styles = StyleSheet.create({
         fontWeight: '600',
         paddingHorizontal: 10,
         paddingVertical: 4,
-        backgroundColor: '#2E7D3215',
         borderRadius: 16,
         overflow: 'hidden',
         textTransform: 'uppercase',

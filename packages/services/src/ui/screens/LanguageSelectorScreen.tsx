@@ -17,7 +17,6 @@ import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list'
 import { useI18n } from '../hooks/useI18n';
 import { SUPPORTED_LANGUAGES } from '@oxyhq/core';
 import { useOxy } from '../context/OxyContext';
-import { fontFamilies } from '../styles/fonts';
 
 interface LanguageSelectorScreenProps extends BaseScreenProps { }
 
@@ -188,7 +187,6 @@ const styles = StyleSheet.create({
     bigTitle: {
         fontSize: 34,
         fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
-        fontFamily: fontFamilies.interBold,
         lineHeight: 40,
         marginBottom: 8,
         letterSpacing: -0.5,

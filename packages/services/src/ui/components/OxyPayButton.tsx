@@ -2,7 +2,6 @@ import type React from 'react';
 import { useState } from 'react';
 import { TouchableOpacity, Text, View, StyleSheet, type ViewStyle, type TextStyle, type StyleProp, type LayoutChangeEvent } from 'react-native';
 import { useTheme } from '@oxyhq/bloom/theme';
-import { fontFamilies } from '../styles/fonts';
 import type { PaymentItem, PaymentGatewayResult } from '../screens/PaymentGatewayScreen';
 import OxyLogo from './OxyLogo';
 
@@ -117,7 +116,6 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     text: {
-        fontFamily: fontFamilies.inter,
         fontWeight: '700',
     },
 });

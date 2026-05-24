@@ -9,7 +9,6 @@ import {
   ActivityIndicator
 } from 'react-native';
 import { useOxy } from '../context/OxyContext';
-import { fontFamilies } from '../styles/fonts';
 import { toast } from '../../lib/sonner';
 import { useFollowForButton } from '../hooks/useFollow';
 import { useTheme } from '@oxyhq/bloom/theme';
@@ -159,7 +158,6 @@ function getBaseButtonStyle(size: string, style?: StyleProp<ViewStyle>): StylePr
 
 function getBaseTextStyle(size: string, textStyle?: StyleProp<TextStyle>): StyleProp<TextStyle> {
   const baseTextStyle: TextStyle = {
-    fontFamily: fontFamilies.interSemiBold,
     fontWeight: '600',
   };
 
