@@ -14,7 +14,10 @@ import { Provider as PortalProvider, Outlet as PortalOutlet } from '@oxyhq/bloom
 
 import { queryClient } from '@/hooks/queries/queryClient';
 import { ThemeProvider as AppThemeProvider, useThemeContext } from '@/contexts/theme-context';
+import { InboxPrefsProvider } from '@/contexts/inbox-prefs-context';
+import { LocaleProvider, useTranslation } from '@/lib/i18n';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { AuthGate } from '@/components/AuthGate';
 import { registerServiceWorker } from '@/utils/registerServiceWorker';
 import { onConnectivityChange, flushQueue } from '@/utils/offlineQueue';
 import * as SplashScreen from 'expo-splash-screen';
@@ -36,7 +39,9 @@ export default function RootLayout() {
     <ErrorBoundary>
       <Head.Provider>
         <AppThemeProvider>
-          <ThemedRoot />
+          <InboxPrefsProvider>
+            <ThemedRoot />
+          </InboxPrefsProvider>
         </AppThemeProvider>
       </Head.Provider>
     </ErrorBoundary>
@@ -98,12 +103,62 @@ interface RootLayoutContentProps {
 function RootLayoutContent({ themeMode, colorPreset }: RootLayoutContentProps) {
   const navTheme = useNavigationTheme();
 
+  return (
+    <QueryClientProvider client={queryClient}>
+      <KeyboardProvider>
+        {/*
+          OxyProvider mounts its own internal BloomThemeProvider that shadows
+          any outer one — so we MUST forward themeMode + colorPreset here, or
+          the entire UI under OxyProvider falls back to Bloom's default
+          `oxy` preset, no matter what the outer BloomThemeProvider sees.
+
+          LocaleProvider sits INSIDE OxyProvider so it can read the signed-in
+          user's `language` preference via `useOxy()` and seed the initial
+          locale accordingly. Persisted overrides flow through AsyncStorage.
+        */}
+        <OxyProvider baseURL={API_URL} themeMode={themeMode} colorPreset={colorPreset}>
+          <LocaleProvider>
+            <SafeAreaProvider>
+              <PortalProvider>
+                <ThemeProvider value={navTheme}>
+                  <RootEffects />
+                  <Stack>
+                    <Stack.Screen name="(drawer)" options={{ headerShown: false }} />
+                    <Stack.Screen name="+not-found" options={{ headerShown: false }} />
+                  </Stack>
+                  <StatusBar style="auto" />
+                  {/*
+                    Global, non-dismissible auth gate. Renders ABOVE the entire
+                    app tree whenever the user is signed-out (after the initial
+                    auth restore completes). Unmounts cleanly the moment auth
+                    flips to true, leaving the user wherever they were.
+                  */}
+                  <AuthGate />
+                </ThemeProvider>
+                <PortalOutlet />
+              </PortalProvider>
+            </SafeAreaProvider>
+          </LocaleProvider>
+        </OxyProvider>
+      </KeyboardProvider>
+    </QueryClientProvider>
+  );
+}
+
+/**
+ * Renders no UI — runs the web-only side effects (service worker registration,
+ * offline-queue flush listener, Bloom Dialog keyframes) inside `LocaleProvider`
+ * so that translated toast strings are available when those handlers fire.
+ */
+function RootEffects() {
+  const { t } = useTranslation();
+
   // Register service worker on web
   useEffect(() => {
     if (Platform.OS !== 'web') return;
 
     registerServiceWorker(() => {
-      toast.info('New version available — refresh to update.');
+      toast.info(t('inbox.toast.newVersionAvailable'));
     });
 
     // Flush offline queue when connectivity returns
@@ -111,7 +166,7 @@ function RootLayoutContent({ themeMode, colorPreset }: RootLayoutContentProps) {
       if (online) {
         flushQueue().then((count) => {
           if (count > 0) {
-            toast.success(`Synced ${count} offline action${count > 1 ? 's' : ''}.`);
+            toast.success(t('inbox.toast.offlineSync', { count }));
           }
         }).catch(() => {
           // Sync failure is non-fatal; queued actions will retry on next
@@ -121,7 +176,7 @@ function RootLayoutContent({ themeMode, colorPreset }: RootLayoutContentProps) {
     });
 
     return unsubscribe;
-  }, []);
+  }, [t]);
 
   // Inject Bloom Dialog CSS keyframe animations on web
   useEffect(() => {
@@ -137,30 +192,5 @@ function RootLayoutContent({ themeMode, colorPreset }: RootLayoutContentProps) {
     return () => { document.head.removeChild(style); };
   }, []);
 
-  return (
-    <QueryClientProvider client={queryClient}>
-      <KeyboardProvider>
-        {/*
-          OxyProvider mounts its own internal BloomThemeProvider that shadows
-          any outer one — so we MUST forward themeMode + colorPreset here, or
-          the entire UI under OxyProvider falls back to Bloom's default
-          `oxy` preset, no matter what the outer BloomThemeProvider sees.
-        */}
-        <OxyProvider baseURL={API_URL} themeMode={themeMode} colorPreset={colorPreset}>
-          <SafeAreaProvider>
-            <PortalProvider>
-              <ThemeProvider value={navTheme}>
-                <Stack>
-                  <Stack.Screen name="(drawer)" options={{ headerShown: false }} />
-                  <Stack.Screen name="+not-found" options={{ headerShown: false }} />
-                </Stack>
-                <StatusBar style="auto" />
-              </ThemeProvider>
-              <PortalOutlet />
-            </PortalProvider>
-          </SafeAreaProvider>
-        </OxyProvider>
-      </KeyboardProvider>
-    </QueryClientProvider>
-  );
+  return null;
 }
