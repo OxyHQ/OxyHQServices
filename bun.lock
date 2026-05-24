@@ -7,7 +7,7 @@
       "dependencies": {
         "@expo/metro-runtime": "~56.0.11",
         "@fontsource-variable/phudu": "^5.2.10",
-        "@oxyhq/bloom": "^0.3.7",
+        "@oxyhq/bloom": "^0.5.0",
         "expo-contacts": "~56.0.7",
         "expo-splash-screen": "^56.0.9",
         "is-arrayish": "^0.3.2",
@@ -29,7 +29,7 @@
         "@expo/vector-icons": "^15.0.3",
         "@lottiefiles/dotlottie-react": "^0.13.5",
         "@lottiefiles/dotlottie-react-native": "^0.7.1",
-        "@oxyhq/bloom": "^0.3.6",
+        "@oxyhq/bloom": "0.5.0",
         "@oxyhq/core": "*",
         "@oxyhq/services": "*",
         "@radix-ui/react-tabs": "^1.1.13",
@@ -175,7 +175,7 @@
         "@hono/node-server": "^1.14.3",
         "@hugeicons/core-free-icons": "^3.1.1",
         "@hugeicons/react": "^1.1.4",
-        "@oxyhq/bloom": "^0.3.6",
+        "@oxyhq/bloom": "^0.5.0",
         "@oxyhq/core": "workspace:*",
         "@radix-ui/react-alert-dialog": "1.1.4",
         "@radix-ui/react-avatar": "^1.1.11",
@@ -248,7 +248,7 @@
         "@hugeicons/core-free-icons": "^3.1.1",
         "@hugeicons/react": "^1.1.4",
         "@oxyhq/auth": "*",
-        "@oxyhq/bloom": "^0.3.6",
+        "@oxyhq/bloom": "^0.5.0",
         "@oxyhq/core": "*",
         "@tailwindcss/vite": "^4.0.6",
         "@tanstack/react-query": "^5.100",
@@ -292,7 +292,7 @@
     },
     "packages/core": {
       "name": "@oxyhq/core",
-      "version": "1.11.12",
+      "version": "1.11.13",
       "dependencies": {
         "bip39": "^3.1.0",
         "buffer": "^6.0.3",
@@ -331,7 +331,7 @@
         "@expo/vector-icons": "^15.0.3",
         "@lottiefiles/dotlottie-react": "^0.13.5",
         "@lottiefiles/dotlottie-react-native": "^0.7.1",
-        "@oxyhq/bloom": "^0.3.6",
+        "@oxyhq/bloom": "^0.5.0",
         "@oxyhq/core": "*",
         "@oxyhq/services": "*",
         "@radix-ui/react-dropdown-menu": "^2.1.6",
@@ -408,7 +408,7 @@
     },
     "packages/services": {
       "name": "@oxyhq/services",
-      "version": "6.9.45",
+      "version": "6.10.0",
       "dependencies": {
         "@lottiefiles/dotlottie-react": "^0.13.5",
         "@oxyhq/core": "*",
@@ -464,7 +464,7 @@
       },
       "peerDependencies": {
         "@expo/vector-icons": "^15.0.3",
-        "@oxyhq/bloom": ">=0.3.6",
+        "@oxyhq/bloom": ">=0.5.0",
         "@react-navigation/native": "^7.1.8",
         "@types/react": "*",
         "@types/react-native": "*",
@@ -506,7 +506,7 @@
         "@expo/vector-icons": "^15.0.3",
         "@gorhom/bottom-sheet": "^5.1.6",
         "@lottiefiles/dotlottie-react": "^0.13.5",
-        "@oxyhq/bloom": "^0.3.6",
+        "@oxyhq/bloom": "^0.5.0",
         "@oxyhq/services": "*",
         "@react-native-async-storage/async-storage": "2.2.0",
         "@react-native/virtualized-lists": "0.83.2",
@@ -556,6 +556,7 @@
     },
   },
   "overrides": {
+    "@oxyhq/bloom": "^0.5.0",
     "@radix-ui/react-slot": "1.2.3",
     "react": "19.2.3",
     "react-dom": "19.2.3",
@@ -1374,7 +1375,7 @@
 
     "@oxyhq/auth": ["@oxyhq/auth@workspace:packages/auth-sdk"],
 
-    "@oxyhq/bloom": ["@oxyhq/bloom@0.3.7", "", { "dependencies": { "nanoid": "^5.1.5", "react-remove-scroll-bar": "^2.3.8" }, "peerDependencies": { "@gorhom/bottom-sheet": ">=5.0.0", "expo": "*", "expo-font": "*", "react": ">=18.0.0", "react-dom": ">=18.0.0", "react-native": ">=0.73.0", "react-native-gesture-handler": ">=2.0.0", "react-native-reanimated": ">=3.0.0", "react-native-safe-area-context": ">=5.0.0", "react-native-svg": ">=13.0.0", "sonner": ">=2.0.0", "sonner-native": ">=0.17.0" }, "optionalPeers": ["@gorhom/bottom-sheet", "expo", "expo-font", "react-dom", "react-native-gesture-handler", "react-native-reanimated", "react-native-svg", "sonner", "sonner-native"] }, "sha512-PR/ZJG/W3rxQRMfvdobeX7HQOP3mLS/r+vAnSsVZipcV4R7GOhpVN4t1y2NsgJ2UcMjZigq7Uhpxj3y3RvrL3g=="],
+    "@oxyhq/bloom": ["@oxyhq/bloom@0.5.0", "", { "dependencies": { "nanoid": "^5.1.5", "react-remove-scroll-bar": "^2.3.8" }, "peerDependencies": { "expo": "*", "expo-font": "*", "react": ">=18.0.0", "react-dom": ">=18.0.0", "react-native": ">=0.73.0", "react-native-gesture-handler": ">=2.0.0", "react-native-reanimated": ">=3.0.0", "react-native-safe-area-context": ">=5.0.0", "react-native-svg": ">=13.0.0", "sonner": ">=2.0.0", "sonner-native": ">=0.17.0" }, "optionalPeers": ["expo", "expo-font", "react-dom", "react-native-gesture-handler", "react-native-reanimated", "react-native-svg", "sonner", "sonner-native"] }, "sha512-xLBYPSlMCiAIG7K0B3LocPb/Wo/aIr99e7jW6HL8U5LItR4Q3cGdalrZRPwKItC9EXGIMOwag+il0tSxp6a8cg=="],
 
     "@oxyhq/core": ["@oxyhq/core@workspace:packages/core"],
 
@@ -4752,8 +4753,6 @@
 
     "@modelcontextprotocol/sdk/raw-body": ["raw-body@3.0.2", "", { "dependencies": { "bytes": "~3.1.2", "http-errors": "~2.0.1", "iconv-lite": "~0.7.0", "unpipe": "~1.0.0" } }, ""],
 
-    "@oxyhq/api/ts-jest": ["ts-jest@29.4.6", "", { "dependencies": { "bs-logger": "^0.2.6", "fast-json-stable-stringify": "^2.1.0", "handlebars": "^4.7.8", "json5": "^2.2.3", "lodash.memoize": "^4.1.2", "make-error": "^1.3.6", "semver": "^7.7.3", "type-fest": "^4.41.0", "yargs-parser": "^21.1.1" }, "peerDependencies": { "@babel/core": ">=7.0.0-beta.0 <8", "@jest/transform": "^29.0.0 || ^30.0.0", "@jest/types": "^29.0.0 || ^30.0.0", "babel-jest": "^29.0.0 || ^30.0.0", "jest": "^29.0.0 || ^30.0.0", "jest-util": "^29.0.0 || ^30.0.0", "typescript": ">=4.3 <6" }, "bin": "cli.js" }, ""],
-
     "@oxyhq/auth/@types/node": ["@types/node@20.19.31", "", { "dependencies": { "undici-types": "~6.21.0" } }, ""],
 
     "@oxyhq/core/@types/node": ["@types/node@20.19.31", "", { "dependencies": { "undici-types": "~6.21.0" } }, ""],
@@ -5893,10 +5892,6 @@
     "@modelcontextprotocol/sdk/raw-body/http-errors": ["http-errors@2.0.1", "", { "dependencies": { "depd": "~2.0.0", "inherits": "~2.0.4", "setprototypeof": "~1.2.0", "statuses": "~2.0.2", "toidentifier": "~1.0.1" } }, ""],
 
     "@modelcontextprotocol/sdk/raw-body/iconv-lite": ["iconv-lite@0.7.2", "", { "dependencies": { "safer-buffer": ">= 2.1.2 < 3.0.0" } }, ""],
-
-    "@oxyhq/api/ts-jest/handlebars": ["handlebars@4.7.8", "", { "dependencies": { "minimist": "^1.2.5", "neo-async": "^2.6.2", "source-map": "^0.6.1", "wordwrap": "^1.0.0" }, "optionalDependencies": { "uglify-js": "^3.1.4" }, "bin": "bin/handlebars" }, ""],
-
-    "@oxyhq/api/ts-jest/semver": ["semver@7.7.3", "", { "bin": "bin/semver.js" }, ""],
 
     "@oxyhq/services/@types/jest/expect": ["expect@29.7.0", "", { "dependencies": { "@jest/expect-utils": "^29.7.0", "jest-get-type": "^29.6.3", "jest-matcher-utils": "^29.7.0", "jest-message-util": "^29.7.0", "jest-util": "^29.7.0" } }, ""],
 
