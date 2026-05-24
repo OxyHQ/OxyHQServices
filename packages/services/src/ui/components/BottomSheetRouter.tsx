@@ -226,6 +226,9 @@ const BottomSheetRouter: React.FC<BottomSheetRouterProps> = ({ onScreenChange, o
             onDismiss={handleDismiss}
             onDismissAttempt={handleDismissAttempt}
             scrollable={sheetConfig.scrollable}
+            manualActivation={sheetConfig.manualActivation}
+            dynamicBackdrop={sheetConfig.dynamicBackdrop}
+            handleComponent={sheetConfig.handleComponent}
         >
             {ScreenComponent && currentScreen && (
                 <ScreenErrorBoundary screenName={currentScreen}>
