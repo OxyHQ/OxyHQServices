@@ -4,6 +4,29 @@ import { logger } from '../utils/logger';
 import { AuthRequest } from '../middleware/auth';
 
 /**
+ * Mint a single-use server-side nonce for the FedCM handoff. The auth UI
+ * embeds the returned nonce in `navigator.credentials.get({ identity: {
+ * nonce } })`; the consuming app then exchanges the resulting ID token via
+ * `POST /fedcm/exchange`, which validates and burns the nonce server-side.
+ *
+ * The nonce is bound to the requesting `Origin` header so a nonce minted
+ * for one site cannot be replayed from another.
+ */
+export async function mintNonce(req: Request, res: Response) {
+  try {
+    const origin = req.headers.origin;
+    if (typeof origin !== 'string' || origin.length === 0) {
+      return res.status(400).json({ message: 'Origin header is required' });
+    }
+    const result = await fedcmService.mintNonce(origin);
+    return res.json(result);
+  } catch (error) {
+    logger.error('FedCM mint nonce error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+}
+
+/**
  * Exchange FedCM ID token for an Oxy session
  *
  * This endpoint enables cross-domain SSO without cookies:

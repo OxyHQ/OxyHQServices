@@ -1,8 +1,9 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
-import { exchangeIdToken, getApprovedClients, addApprovedClient, removeApprovedClient } from '../controllers/fedcm.controller';
+import { exchangeIdToken, getApprovedClients, addApprovedClient, removeApprovedClient, mintNonce } from '../controllers/fedcm.controller';
 import type { Request, Response, NextFunction } from 'express';
 import type { TokenDecoded } from '../middleware/authUtils';
+import { rateLimit } from '../middleware/rateLimiter';
 
 const router = express.Router();
 
@@ -17,8 +18,12 @@ function serviceTokenOnly(req: Request, res: Response, next: NextFunction) {
   }
 
   const token = authHeader.substring(7);
+  const secret = process.env.ACCESS_TOKEN_SECRET;
+  if (!secret) {
+    return res.status(500).json({ message: 'Server configuration error' });
+  }
   try {
-    const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET!) as TokenDecoded;
+    const decoded = jwt.verify(token, secret) as TokenDecoded;
     if (decoded.type !== 'service') {
       return res.status(403).json({ message: 'This endpoint is only accessible to internal services' });
     }
@@ -28,15 +33,178 @@ function serviceTokenOnly(req: Request, res: Response, next: NextFunction) {
   }
 }
 
-// FedCM token exchange - Cross-domain SSO without cookies
-// Client sends FedCM ID token, receives Oxy session with access token
+// Rate-limit nonce minting independently from other FedCM endpoints —
+// nonces are cheap server-side but expensive to enumerate, so cap both
+// per-IP and overall throughput.
+const nonceLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: process.env.NODE_ENV === 'development' ? 200 : 60,
+});
+
+/**
+ * @openapi
+ * /fedcm/nonce:
+ *   post:
+ *     tags:
+ *       - Federation
+ *     security: []
+ *     summary: Mint a single-use FedCM nonce
+ *     description: >
+ *       The auth UI requests a server-issued nonce just before invoking
+ *       `navigator.credentials.get({ identity: { nonce } })`. The IdP
+ *       signs the nonce into the issued ID token; `/fedcm/exchange` will
+ *       only accept tokens whose nonce was minted here and has not yet been
+ *       used. Bound to the requesting origin so a nonce minted for one site
+ *       cannot be exchanged from another.
+ *     responses:
+ *       200:
+ *         description: Nonce issued.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 nonce:
+ *                   type: string
+ *                 expiresAt:
+ *                   type: string
+ *                   format: date-time
+ *       400:
+ *         description: Missing or invalid Origin header.
+ */
+router.post('/nonce', nonceLimiter, mintNonce);
+
+/**
+ * @openapi
+ * /fedcm/exchange:
+ *   post:
+ *     tags:
+ *       - Federation
+ *     security: []
+ *     summary: Exchange a FedCM ID token for an Oxy session
+ *     description: >
+ *       Implements the FedCM (Federated Credential Management) token
+ *       exchange. The relying party passes the ID token it just received
+ *       from the browser's FedCM API and gets back an Oxy `AuthSuccess`
+ *       payload (user + sessionId + access/refresh tokens). This is the
+ *       cookie-less, cross-origin SSO entry point.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - idToken
+ *             properties:
+ *               idToken:
+ *                 type: string
+ *                 description: FedCM ID token from the browser.
+ *               clientId:
+ *                 type: string
+ *                 description: Calling app's registered client ID.
+ *     responses:
+ *       200:
+ *         description: Oxy session issued.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/AuthSuccess'
+ *       400:
+ *         description: Invalid token format.
+ *       401:
+ *         description: ID token verification failed.
+ *       403:
+ *         description: Origin not on the approved-clients list.
+ */
 router.post('/exchange', exchangeIdToken);
 
-// Get approved clients (public - needed by FedCM flow)
+/**
+ * @openapi
+ * /fedcm/clients/approved:
+ *   get:
+ *     tags:
+ *       - Federation
+ *     security: []
+ *     summary: List origins approved for FedCM token exchange
+ *     description: >
+ *       Public list of `origin` strings that may call `/fedcm/exchange`.
+ *       Browsers query this list when displaying the FedCM account picker.
+ *     responses:
+ *       200:
+ *         description: Approved client origins.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 origins:
+ *                   type: array
+ *                   items:
+ *                     type: string
+ */
 router.get('/clients/approved', getApprovedClients);
 
-// Routes for managing approved clients (internal services only)
+/**
+ * @openapi
+ * /fedcm/clients/approved:
+ *   post:
+ *     tags:
+ *       - Federation
+ *     security:
+ *       - serviceTokenAuth: []
+ *     summary: Approve an origin for FedCM (internal services only)
+ *     description: >
+ *       Add a new origin to the FedCM approved-clients list. Requires a
+ *       service token — third-party developers cannot self-approve.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - origin
+ *             properties:
+ *               origin:
+ *                 type: string
+ *                 example: https://example.com
+ *     responses:
+ *       200:
+ *         description: Origin added.
+ *       401:
+ *         description: Service token missing or invalid.
+ *       403:
+ *         description: Token is not a service token.
+ */
 router.post('/clients/approved', serviceTokenOnly, addApprovedClient);
+
+/**
+ * @openapi
+ * /fedcm/clients/approved/{origin}:
+ *   delete:
+ *     tags:
+ *       - Federation
+ *     security:
+ *       - serviceTokenAuth: []
+ *     summary: Remove an approved origin (internal services only)
+ *     parameters:
+ *       - name: origin
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: URL-encoded origin to remove.
+ *     responses:
+ *       200:
+ *         description: Origin removed.
+ *       401:
+ *         description: Service token missing or invalid.
+ *       403:
+ *         description: Token is not a service token.
+ *       404:
+ *         description: Origin not on the list.
+ */
 router.delete('/clients/approved/:origin', serviceTokenOnly, removeApprovedClient);
 
 export default router;

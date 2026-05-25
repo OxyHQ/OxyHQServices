@@ -1,9 +1,36 @@
 import FedCMClient from '../models/FedCMClient';
+import FedCMNonce from '../models/FedCMNonce';
 import { User } from '../models/User';
 import { logger } from '../utils/logger';
 import sessionService from './session.service';
 import { Request } from 'express';
 import * as crypto from 'crypto';
+
+const NONCE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const NONCE_BYTES = 32;
+
+/** SHA-256 hex digest helper — never persist or compare raw nonces. */
+function sha256Hex(value: string): string {
+  return crypto.createHash('sha256').update(value).digest('hex');
+}
+
+/** Constant-time string equality (length-tolerant). */
+function timingSafeStringEqual(a: string, b: string): boolean {
+  const aBuf = Buffer.from(a);
+  const bBuf = Buffer.from(b);
+  if (aBuf.length !== bBuf.length) return false;
+  return crypto.timingSafeEqual(aBuf, bBuf);
+}
+
+/**
+ * Normalise an origin string for equality checks. Strips trailing slash and
+ * lowercases scheme + host. Throws if the input is not a parseable URL.
+ */
+function normaliseOrigin(value: string): string {
+  const url = new URL(value);
+  const port = url.port ? `:${url.port}` : '';
+  return `${url.protocol.toLowerCase()}//${url.hostname.toLowerCase()}${port}`;
+}
 
 // FedCM ID token issuer - must match auth server's NEXT_PUBLIC_OXY_AUTH_URL
 const FEDCM_ISSUER = (process.env.FEDCM_ISSUER || 'https://auth.oxy.so').replace(/\/+$/, '');
@@ -230,17 +257,37 @@ class FedCMService {
   }
 
   /**
-   * Exchange FedCM ID token for a session
+   * Mint a single-use nonce that the auth UI embeds in the FedCM
+   * `navigator.credentials.get({ identity: { nonce } })` call. The IdP
+   * signs the nonce into the ID token; we burn the nonce on the first
+   * successful token exchange. Bound to the requesting origin so a
+   * nonce minted for origin A can't be used by origin B.
+   */
+  async mintNonce(origin: string): Promise<{ nonce: string; expiresAt: string }> {
+    const normalisedOrigin = normaliseOrigin(origin);
+    const raw = crypto.randomBytes(NONCE_BYTES).toString('base64url');
+    const expiresAt = new Date(Date.now() + NONCE_TTL_MS);
+    await FedCMNonce.create({
+      nonceHash: sha256Hex(raw),
+      origin: normalisedOrigin,
+      expiresAt,
+    });
+    return { nonce: raw, expiresAt: expiresAt.toISOString() };
+  }
+
+  /**
+   * Exchange FedCM ID token for a session.
    *
-   * This is the core of cross-domain SSO:
-   * 1. FedCM provides an ID token (JWT) from auth.oxy.so
-   * 2. Client sends token to this endpoint
-   * 3. We verify the token and create a session
-   * 4. Client gets session with access token - works across any domain
+   * Hardened to reject (H9):
+   *  - any token whose `aud` is not an approved client origin (previously
+   *    we only logged a warning and continued);
+   *  - any token whose `nonce` is missing, unknown, or already used;
+   *  - any request whose HTTP `Origin` header doesn't match the token's
+   *    `aud` (protects against a malicious page reusing a leaked token).
    *
    * @param idToken - The FedCM ID token (JWT from auth.oxy.so)
-   * @param req - Express request for device info
-   * @returns Session with access token, or null if invalid
+   * @param req - Express request for device info and Origin checks
+   * @returns Session with access token, or `{ error: string }` on failure.
    */
   async exchangeIdToken(
     idToken: string,
@@ -266,9 +313,10 @@ class FedCMService {
         return { error: 'token_verification_failed' };
       }
 
-      // Validate required fields
-      if (!tokenPayload.sub || !tokenPayload.aud) {
-        logger.warn('FedCM: Invalid token payload - missing sub or aud');
+      // Validate required fields. We also require `nonce` to enforce the
+      // anti-replay binding established at `POST /fedcm/nonce`.
+      if (!tokenPayload.sub || !tokenPayload.aud || !tokenPayload.nonce) {
+        logger.warn('FedCM: Invalid token payload - missing sub, aud, or nonce');
         return { error: 'missing_required_fields' };
       }
 
@@ -284,11 +332,66 @@ class FedCMService {
         return { error: 'token_expired' };
       }
 
-      // Verify the client origin is approved (optional but recommended)
-      const clientOrigin = tokenPayload.aud;
+      // Audience check — must be on the approved client allowlist. This
+      // previously only logged a warning and continued processing, which
+      // allowed a malicious origin to mint sessions from any user's
+      // leaked token (H9).
+      let clientOrigin: string;
+      try {
+        clientOrigin = normaliseOrigin(tokenPayload.aud);
+      } catch {
+        logger.warn('FedCM: Token aud is not a valid origin', { aud: tokenPayload.aud });
+        return { error: 'invalid_audience' };
+      }
       const isApproved = await this.isClientApproved(clientOrigin);
       if (!isApproved) {
         logger.warn('FedCM: Client origin not in approved list', { clientOrigin });
+        return { error: 'audience_not_approved' };
+      }
+
+      // Origin check — the actual HTTP Origin header must match the
+      // token aud. Without this a malicious page could replay a token
+      // issued for a different origin.
+      const requestOriginRaw = req.headers.origin;
+      if (typeof requestOriginRaw === 'string' && requestOriginRaw.length > 0) {
+        let requestOrigin: string;
+        try {
+          requestOrigin = normaliseOrigin(requestOriginRaw);
+        } catch {
+          logger.warn('FedCM: Request Origin header is not a valid origin', { origin: requestOriginRaw });
+          return { error: 'invalid_request_origin' };
+        }
+        if (!timingSafeStringEqual(clientOrigin, requestOrigin)) {
+          logger.warn('FedCM: Origin header does not match token aud', { clientOrigin, requestOrigin });
+          return { error: 'origin_aud_mismatch' };
+        }
+      } else {
+        // A FedCM exchange MUST be a CORS request initiated by a browser;
+        // a missing Origin header indicates a non-browser caller. Treat as
+        // hostile per the principle of lock-down-by-default.
+        logger.warn('FedCM: Missing Origin header on token exchange');
+        return { error: 'missing_origin' };
+      }
+
+      // Nonce check — single-use, bound to the token aud, must exist.
+      // Atomic findOneAndUpdate so two concurrent exchanges can't both
+      // succeed: only the first wins the {usedAt: null} -> set transition.
+      const nonceHash = sha256Hex(tokenPayload.nonce);
+      const nonceClaim = await FedCMNonce.findOneAndUpdate(
+        { nonceHash, usedAt: null, expiresAt: { $gt: new Date() } },
+        { $set: { usedAt: new Date() } },
+        { new: true }
+      );
+      if (!nonceClaim) {
+        logger.warn('FedCM: Nonce missing, expired, or already used', { nonceHash });
+        return { error: 'invalid_nonce' };
+      }
+      if (!timingSafeStringEqual(nonceClaim.origin, clientOrigin)) {
+        logger.warn('FedCM: Nonce origin does not match token aud', {
+          nonceOrigin: nonceClaim.origin,
+          clientOrigin,
+        });
+        return { error: 'nonce_origin_mismatch' };
       }
 
       // Get user by ID (with virtuals to get name.full)
@@ -307,18 +410,22 @@ class FedCMService {
 
       logger.info('FedCM: Session created via token exchange', { clientOrigin });
 
-      const userDoc = user as any;
+      const userDoc = user as { _id?: { toString(): string }; id?: string; username?: string; email?: string; avatar?: string; name?: { full?: string } | string };
+      const idValue = userDoc._id?.toString() ?? userDoc.id ?? '';
+      const nameValue = typeof userDoc.name === 'string'
+        ? userDoc.name
+        : userDoc.name?.full;
       return {
         sessionId: session.sessionId,
         deviceId: session.deviceId,
         expiresAt: session.expiresAt.toISOString(),
         accessToken: session.accessToken,
         user: {
-          id: userDoc._id?.toString() || userDoc.id,
+          id: idValue,
           username: userDoc.username,
           email: userDoc.email,
           avatar: userDoc.avatar,
-          name: userDoc.name?.full || userDoc.name,
+          name: nameValue,
         },
       };
     } catch (error) {
