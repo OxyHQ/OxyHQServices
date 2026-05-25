@@ -154,7 +154,7 @@ export function getNativeLanguageName(languageCode: string | null | undefined): 
 export function normalizeLanguageCode(lang?: string | null): string {
   if (!lang) return FALLBACK_LANGUAGE;
   if (lang.includes('-')) return lang;
-  
+
   const map: Record<string, string> = {
     en: 'en-US',
     es: 'es-ES',
@@ -168,7 +168,28 @@ export function normalizeLanguageCode(lang?: string | null): string {
     zh: 'zh-CN',
     ar: 'ar-SA',
   };
-  
+
   return map[lang] || lang;
+}
+
+/**
+ * RTL language detection.
+ *
+ * Returns `true` when the given BCP-47 tag or bare language code is one
+ * of the right-to-left scripts we ship UI for. Apps use this to drive
+ * `I18nManager.allowRTL(true)` / `forceRTL(...)` on React Native and the
+ * `<html dir="rtl">` attribute on web.
+ *
+ * Includes Arabic (`ar`), Hebrew (`he` / legacy `iw`), Persian (`fa`),
+ * Urdu (`ur`) plus their common region variants. Unknown tags are
+ * treated as LTR.
+ */
+const RTL_LANGUAGE_BASES = new Set(['ar', 'he', 'iw', 'fa', 'ur']);
+
+export function isRTLLocale(locale?: string | null): boolean {
+  if (!locale) return false;
+  const base = locale.toLowerCase().split('-')[0];
+  if (!base) return false;
+  return RTL_LANGUAGE_BASES.has(base);
 }
 

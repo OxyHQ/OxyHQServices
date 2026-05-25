@@ -1,6 +1,7 @@
 import { Outlet, useLocation, useNavigationType, Link } from "react-router-dom"
 import { Logo } from "@/components/logo"
 import { TermsFooter } from "@/components/auth-form-layout"
+import { LanguagePicker } from "@/components/language-picker"
 import { useLayoutContext } from "@/lib/layout-context"
 
 export function AuthLayout() {
@@ -26,6 +27,10 @@ export function AuthLayout() {
                 </div>
 
                 <TermsFooter />
+
+                <div className="flex justify-center">
+                    <LanguagePicker />
+                </div>
             </div>
         </div>
     )

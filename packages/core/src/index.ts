@@ -30,8 +30,9 @@ export type { CrossDomainAuthOptions } from './CrossDomainAuth';
 export type { FedCMAuthOptions, FedCMConfig } from './mixins/OxyServices.fedcm';
 export type { PopupAuthOptions } from './mixins/OxyServices.popup';
 export type { RedirectAuthOptions } from './mixins/OxyServices.redirect';
+export { ServiceCredentialMismatchError } from './mixins/OxyServices.auth';
 export type { ServiceTokenResponse } from './mixins/OxyServices.auth';
-export type { ServiceApp } from './mixins/OxyServices.utility';
+export type { ServiceApp, ServiceActingAsVerification } from './mixins/OxyServices.utility';
 export type { CreateManagedAccountInput, ManagedAccountManager, ManagedAccount } from './mixins/OxyServices.managedAccounts';
 export type { ContactDiscoveryMatch, ContactDiscoveryResponse } from './mixins/OxyServices.contacts';
 
@@ -62,6 +63,7 @@ export {
   getLanguageName,
   getNativeLanguageName,
   normalizeLanguageCode,
+  isRTLLocale,
 } from './utils/languageUtils';
 export type { LanguageMetadata } from './utils/languageUtils';
 
