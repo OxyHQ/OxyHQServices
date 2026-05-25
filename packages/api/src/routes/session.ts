@@ -1,5 +1,6 @@
 import express from 'express';
 import { SessionController } from '../controllers/session.controller';
+import { authMiddleware } from '../middleware/auth';
 import { validate } from '../middleware/validate';
 import { sessionIdParams, updateDeviceNameSchema, batchUsersSchema } from '../schemas/session.schemas';
 
@@ -49,7 +50,7 @@ const router = express.Router();
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.get('/user/:sessionId', validate({ params: sessionIdParams }), SessionController.getUserBySession);
+router.get('/user/:sessionId', authMiddleware, validate({ params: sessionIdParams }), SessionController.getUserBySession);
 
 /**
  * @openapi
@@ -85,7 +86,7 @@ router.get('/user/:sessionId', validate({ params: sessionIdParams }), SessionCon
  *       404:
  *         description: Session not found or expired.
  */
-router.get('/token/:sessionId', validate({ params: sessionIdParams }), SessionController.getTokenBySession);
+router.get('/token/:sessionId', authMiddleware, validate({ params: sessionIdParams }), SessionController.getTokenBySession);
 
 /**
  * @openapi
@@ -116,7 +117,7 @@ router.get('/token/:sessionId', validate({ params: sessionIdParams }), SessionCo
  *       404:
  *         description: Session not found or expired.
  */
-router.get('/sessions/:sessionId', validate({ params: sessionIdParams }), SessionController.getUserSessions);
+router.get('/sessions/:sessionId', authMiddleware, validate({ params: sessionIdParams }), SessionController.getUserSessions);
 
 // ============================================
 // Session management

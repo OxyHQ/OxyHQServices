@@ -7,6 +7,9 @@ import securityActivityService from '../services/securityActivityService';
 import sessionService from '../services/session.service';
 import { buildSessionAuthResponse } from './session.controller';
 import { AuthRequest } from '../middleware/auth';
+import { isLockedOut, recordFailure, clearFailures } from '../services/loginLockout.service';
+
+const TWO_FACTOR_LOCKOUT_SCOPE = '2fa-login';
 
 /**
  * Setup 2FA - Generate secret and return QR code data
@@ -282,7 +285,12 @@ export async function verify2FAToken(req: Request, res: Response) {
 
 /**
  * Verify 2FA during login flow - accepts loginToken from signIn + TOTP/backup code
- * Creates a session on success and returns SessionAuthResponse
+ * Creates a session on success and returns SessionAuthResponse.
+ *
+ * Lockout (H7): we track failed attempts per-userId (extracted from the
+ * verified loginToken). After the configured threshold we return the same
+ * generic "Invalid token or backup code" message plus a `Retry-After`
+ * header — we never reveal that the account is locked.
  */
 export async function verify2FALogin(req: Request, res: Response) {
   try {
@@ -296,16 +304,34 @@ export async function verify2FALogin(req: Request, res: Response) {
       return res.status(400).json({ message: 'Token or backup code is required' });
     }
 
+    const accessTokenSecret = process.env.ACCESS_TOKEN_SECRET;
+    if (!accessTokenSecret) {
+      logger.error('ACCESS_TOKEN_SECRET not configured');
+      return res.status(500).json({ message: 'Server configuration error' });
+    }
+
     // Verify the loginToken JWT
     let decoded: { userId: string; purpose: string };
     try {
-      decoded = jwt.verify(loginToken, process.env.ACCESS_TOKEN_SECRET!) as { userId: string; purpose: string };
+      decoded = jwt.verify(loginToken, accessTokenSecret) as { userId: string; purpose: string };
     } catch {
       return res.status(401).json({ message: 'Login session expired. Please sign in again.' });
     }
 
     if (decoded.purpose !== '2fa_challenge') {
       return res.status(400).json({ message: 'Invalid login token' });
+    }
+
+    // Lockout check BEFORE looking up the user. Same generic 400 response
+    // when locked — only the Retry-After header distinguishes the case.
+    const lockoutIdentifier = decoded.userId;
+    const lockState = await isLockedOut({
+      scope: TWO_FACTOR_LOCKOUT_SCOPE,
+      identifier: lockoutIdentifier,
+    });
+    if (lockState.locked && typeof lockState.retryAfterSeconds === 'number') {
+      res.setHeader('Retry-After', String(lockState.retryAfterSeconds));
+      return res.status(429).json({ message: 'Invalid token or backup code' });
     }
 
     const user = await User.findById(decoded.userId).select('+twoFactorAuth');
@@ -347,8 +373,22 @@ export async function verify2FALogin(req: Request, res: Response) {
     }
 
     if (!isValid) {
+      const failure = await recordFailure({
+        scope: TWO_FACTOR_LOCKOUT_SCOPE,
+        identifier: lockoutIdentifier,
+      });
+      if (failure.locked && typeof failure.retryAfterSeconds === 'number') {
+        res.setHeader('Retry-After', String(failure.retryAfterSeconds));
+        return res.status(429).json({ message: 'Invalid token or backup code' });
+      }
       return res.status(400).json({ message: 'Invalid token or backup code' });
     }
+
+    // Success — clear the lockout counter for this user.
+    await clearFailures({
+      scope: TWO_FACTOR_LOCKOUT_SCOPE,
+      identifier: lockoutIdentifier,
+    });
 
     // Update verified timestamp
     user.twoFactorAuth.verifiedAt = new Date();

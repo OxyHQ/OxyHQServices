@@ -5,7 +5,7 @@ import Session from '../models/Session';
 import AuthChallenge from '../models/AuthChallenge';
 import RecoveryCode from '../models/RecoveryCode';
 import { SessionAuthResponse, ClientSession } from '../types/session';
-import { 
+import {
   getDeviceActiveSessions,
   logoutAllDeviceSessions
 } from '../utils/deviceUtils';
@@ -19,6 +19,35 @@ import { formatUserResponse, type UserLike } from '../utils/userTransform';
 import { generateAlphanumericCode, hashPassword, verifyPassword, validatePasswordStrength } from '../utils/password';
 import securityActivityService from '../services/securityActivityService';
 import anomalyDetectionService from '../services/anomalyDetection.service';
+import { isLockedOut, recordFailure, clearFailures } from '../services/loginLockout.service';
+import type { AuthRequest } from '../middleware/auth';
+
+/**
+ * Constant-time dummy Argon2 hash used to keep login response timing
+ * indistinguishable between "user exists, wrong password" and "user does
+ * not exist" (H5). We never persist this hash anywhere — `verifyPassword`
+ * just compares against it and returns false. The actual content is
+ * irrelevant; argon2 will return false for any password.
+ */
+const DUMMY_PASSWORD_HASH =
+  '$argon2id$v=19$m=19456,t=2,p=1$ZHVtbXktc2FsdC1ub3QtcmVhbA$1IfQM3sg47A8WjEf9xXjSx8Z1m7jPwd80Z8z6oMTHbI';
+
+const LOGIN_LOCKOUT_SCOPE = 'login';
+const TWO_FACTOR_LOCKOUT_SCOPE = '2fa-login';
+
+/**
+ * Extract the authenticated user's MongoDB ObjectId string from an
+ * `AuthRequest` populated by `authMiddleware`. The middleware sets
+ * `req.user._id` to the canonical Mongo ObjectId, but the IUser interface
+ * also exposes a virtual `id` (which may equal `publicKey`). We always
+ * want the ObjectId here so we can compare against Session.userId.
+ */
+function getAuthenticatedUserId(req: AuthRequest): string | null {
+  const user = req.user;
+  if (!user) return null;
+  if (user._id) return user._id.toString();
+  return null;
+}
 
 // Challenge expiration time (5 minutes)
 const CHALLENGE_TTL_MS = 5 * 60 * 1000;
@@ -552,7 +581,20 @@ export class SessionController {
   }
 
   /**
-   * Sign in with email/username and password
+   * Sign in with email/username and password.
+   *
+   * Constant-time behaviour (H5): when the identifier resolves to no user
+   * we still execute a full Argon2 verification against `DUMMY_PASSWORD_HASH`
+   * so that response timing is indistinguishable from the wrong-password
+   * branch. Without this, the no-user branch returned in single-digit
+   * milliseconds while a real password check costs tens of milliseconds,
+   * leaking account existence.
+   *
+   * Lockout (H7): we track per-identifier failed attempts. After the
+   * configured threshold the account returns the same generic
+   * "Invalid credentials" message plus a `Retry-After` header — we never
+   * tell the unauthenticated caller that the account is locked, because
+   * that itself is enumeration.
    */
   static async signIn(req: Request, res: Response) {
     try {
@@ -568,30 +610,59 @@ export class SessionController {
         return res.status(400).json({ message: 'Invalid identifier' });
       }
 
+      // Check lockout BEFORE the credential lookup. We always return the
+      // same generic 401-style message; only the Retry-After header differs.
+      const lockoutKey = parsedIdentifier.value;
+      const lockState = await isLockedOut({
+        scope: LOGIN_LOCKOUT_SCOPE,
+        identifier: lockoutKey,
+      });
+      if (lockState.locked && typeof lockState.retryAfterSeconds === 'number') {
+        res.setHeader('Retry-After', String(lockState.retryAfterSeconds));
+        return res.status(429).json({ message: 'Invalid credentials' });
+      }
+
       const query = parsedIdentifier.field === 'email'
         ? { email: parsedIdentifier.value }
         : { username: parsedIdentifier.value };
 
       const user = await User.findOne(query).select('+password +twoFactorAuth');
 
-      if (!user?.password) {
+      // Always run a password verification — against the real hash if we
+      // found one, otherwise against a dummy hash — so the response time
+      // is the same in both branches.
+      const hashToCompare = user?.password ?? DUMMY_PASSWORD_HASH;
+      const isValidPassword = await verifyPassword(password, hashToCompare);
+
+      if (!user?.password || !isValidPassword) {
+        const failure = await recordFailure({
+          scope: LOGIN_LOCKOUT_SCOPE,
+          identifier: lockoutKey,
+        });
+        if (failure.locked && typeof failure.retryAfterSeconds === 'number') {
+          res.setHeader('Retry-After', String(failure.retryAfterSeconds));
+          return res.status(429).json({ message: 'Invalid credentials' });
+        }
         return res.status(401).json({ message: 'Invalid credentials' });
       }
 
-      const isValidPassword = await verifyPassword(password, user.password);
-      if (!isValidPassword) {
-        return res.status(401).json({ message: 'Invalid credentials' });
-      }
+      // Credentials valid — clear the lockout counter for this identifier.
+      await clearFailures({ scope: LOGIN_LOCKOUT_SCOPE, identifier: lockoutKey });
 
       // Check if user has 2FA enabled
       if (user.twoFactorAuth?.enabled) {
+        const accessTokenSecret = process.env.ACCESS_TOKEN_SECRET;
+        if (!accessTokenSecret) {
+          logger.error('ACCESS_TOKEN_SECRET not configured');
+          return res.status(500).json({ message: 'Server configuration error' });
+        }
         // Generate a short-lived login token for the 2FA challenge
         const loginToken = jwt.sign(
           {
             userId: user._id.toString(),
             purpose: '2fa_challenge',
           },
-          process.env.ACCESS_TOKEN_SECRET!,
+          accessTokenSecret,
           { expiresIn: '5m' }
         );
 
@@ -701,13 +772,23 @@ export class SessionController {
         used: false,
       });
 
-      const response: Record<string, any> = {
+      const response: {
+        success: boolean;
+        message: string;
+        expiresAt: string;
+        devCode?: string;
+      } = {
         success: true,
         message: 'Recovery code sent',
         expiresAt: expiresAt.toISOString(),
       };
 
-      if (process.env.NODE_ENV !== 'production') {
+      // Gate the dev-only code leak behind a dedicated opt-in env var (H8).
+      // NODE_ENV is set to 'development' in staging too, which would have
+      // leaked recovery codes to anyone hitting staging. The dedicated var
+      // is intentionally NOT in `.env.example` so it can never be enabled
+      // by accident.
+      if (process.env.OXY_DEV_RECOVERY_DEBUG === 'true') {
         response.devCode = code;
       }
 
@@ -850,23 +931,33 @@ export class SessionController {
     }
   }
 
-  // Get user data by session ID
-  static async getUserBySession(req: Request, res: Response) {
+  // Get user data by session ID. Requires bearer auth (see route mount) and
+  // verifies the authenticated user owns the requested session — otherwise
+  // returns 404 (do NOT use 403 here, that would leak session existence
+  // across user boundaries). Fixes C1 / H3.
+  static async getUserBySession(req: AuthRequest, res: Response) {
     try {
       const { sessionId } = req.params;
+      const authenticatedUserId = getAuthenticatedUserId(req);
 
       if (!sessionId) {
         return res.status(400).json({ message: 'Session ID is required' });
+      }
+      if (!authenticatedUserId) {
+        return res.status(401).json({ message: 'Authentication required' });
       }
 
       // Use session service for optimized lookup with caching
       const result = await sessionService.validateSessionById(sessionId, true);
 
-      if (!result || !result.session || !result.user) {
-        return res.status(401).json({ 
-          message: 'Invalid or expired session',
-          sessionId: sessionId.substring(0, 8) + '...'
-        });
+      if (!result?.session || !result.user) {
+        return res.status(404).json({ message: 'Session not found' });
+      }
+
+      const sessionOwnerId = result.session.userId?.toString();
+      if (sessionOwnerId !== authenticatedUserId) {
+        // Treat cross-user lookups as "not found" so callers can't probe.
+        return res.status(404).json({ message: 'Session not found' });
       }
 
       const userData = formatUserResponse(result.user);
@@ -881,23 +972,37 @@ export class SessionController {
     }
   }
 
-  // Get access token by session ID
-  static async getTokenBySession(req: Request, res: Response) {
+  // Get access token by session ID. Requires bearer auth and verifies the
+  // authenticated user owns the requested session — without this an
+  // attacker with any stolen sessionId could mint fresh access tokens for
+  // arbitrary accounts (C1).
+  static async getTokenBySession(req: AuthRequest, res: Response) {
     try {
       const { sessionId } = req.params;
+      const authenticatedUserId = getAuthenticatedUserId(req);
 
       if (!sessionId) {
         return res.status(400).json({ message: 'Session ID is required' });
+      }
+      if (!authenticatedUserId) {
+        return res.status(401).json({ message: 'Authentication required' });
+      }
+
+      // Verify ownership BEFORE handing out a fresh token. Use the cached
+      // session lookup (no user populate needed for this check).
+      const ownerCheck = await sessionService.validateSessionById(sessionId, false);
+      if (!ownerCheck?.session) {
+        return res.status(404).json({ message: 'Session not found' });
+      }
+      if (ownerCheck.session.userId?.toString() !== authenticatedUserId) {
+        return res.status(404).json({ message: 'Session not found' });
       }
 
       // Use session service which handles auto-refresh
       const result = await sessionService.getAccessToken(sessionId);
 
       if (!result) {
-        return res.status(401).json({ 
-          message: 'Invalid or expired session',
-          sessionId: sessionId.substring(0, 8) + '...'
-        });
+        return res.status(404).json({ message: 'Session not found' });
       }
 
       res.json({
@@ -910,26 +1015,36 @@ export class SessionController {
     }
   }
 
-  // Get all sessions for a user
-  static async getUserSessions(req: Request, res: Response) {
+  // Get all sessions for a user. Requires bearer auth and verifies the
+  // authenticated user owns the referenced session — otherwise an attacker
+  // with a stolen sessionId could enumerate every active session for the
+  // owner (C1 / H3).
+  static async getUserSessions(req: AuthRequest, res: Response) {
     try {
       const { sessionId } = req.params;
+      const authenticatedUserId = getAuthenticatedUserId(req);
 
       if (!sessionId) {
         return res.status(400).json({ message: 'Session ID is required' });
+      }
+      if (!authenticatedUserId) {
+        return res.status(401).json({ message: 'Authentication required' });
       }
 
       // Find current session to get user ID
       const currentSessionResult = await sessionService.validateSessionById(sessionId, false);
 
-      if (!currentSessionResult || !currentSessionResult.session) {
-        return res.status(401).json({ message: 'Invalid session', code: 'INVALID_SESSION' });
+      if (!currentSessionResult?.session) {
+        return res.status(404).json({ message: 'Session not found' });
+      }
+
+      const sessionOwnerId = currentSessionResult.session.userId?.toString();
+      if (sessionOwnerId !== authenticatedUserId) {
+        return res.status(404).json({ message: 'Session not found' });
       }
 
       // Get all active sessions for this user using service
-      const sessions = await sessionService.getUserActiveSessions(
-        currentSessionResult.session.userId.toString()
-      );
+      const sessions = await sessionService.getUserActiveSessions(sessionOwnerId);
 
       // Transform sessions for client
       const clientSessions: ClientSession[] = sessions.map(session => ({
