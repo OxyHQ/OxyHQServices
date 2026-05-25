@@ -1,12 +1,14 @@
 /**
  * Authentication Methods Mixin
- * 
+ *
  * Supports password-based login (email/username) and public key challenge-response.
  */
 import type { User } from '../models/interfaces';
 import type { SessionLoginResponse } from '../models/session';
 import type { OxyServicesBase } from '../OxyServices.base';
 import { OxyAuthenticationError } from '../OxyServices.errors';
+import { loadNodeCrypto } from '../utils/platformCrypto';
+import { logger } from '../utils/loggerUtils';
 
 export interface ChallengeResponse {
   challenge: string;
@@ -41,21 +43,77 @@ export interface ServiceTokenResponse {
   appName: string;
 }
 
+/**
+ * One cache entry per (apiKey hash) → issued token + the secret that produced it.
+ * The secret is kept around in raw Buffer form so we can perform a
+ * constant-time compare against any reused credential pair — this prevents an
+ * attacker who learned a victim's apiKey from receiving the victim's cached
+ * service token by simply guessing the secret.
+ *
+ * @internal
+ */
+interface ServiceTokenCacheEntry {
+  token: string;
+  /** Expiry as ms since epoch */
+  expiresAt: number;
+  /** Raw secret stored as Buffer for constant-time comparison on cache hit */
+  secretBuf: Buffer;
+  /** In-flight refresh promise (deduplicates concurrent callers) */
+  pending: Promise<string> | null;
+}
+
+/**
+ * Sentinel error raised when getServiceToken() is called with a known apiKey
+ * but a non-matching secret. Indicates either credential drift in the caller
+ * or a cross-tenant cache lookup attempt. Surface as a 401-equivalent.
+ */
+export class ServiceCredentialMismatchError extends Error {
+  constructor() {
+    super('Service credential mismatch: provided secret does not match the secret stored for this apiKey');
+    this.name = 'ServiceCredentialMismatchError';
+  }
+}
+
 export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) {
   return class extends Base {
-    /** @internal */ _serviceToken: string | null = null;
-    /** @internal */ _serviceTokenExp: number = 0;
-    /** @internal */ _serviceApiKey: string | null = null;
-    /** @internal */ _serviceApiSecret: string | null = null;
     /**
-     * In-flight promise for service token fetch. Used to deduplicate concurrent
-     * calls to getServiceToken() — pattern mirrors AuthManager.refreshToken().
+     * Per-credential token cache.
+     *
+     * Keyed by SHA-256(apiKey). Each entry carries:
+     *   - the issued service JWT
+     *   - its expiry timestamp
+     *   - the secret that produced it (Buffer for constant-time compare)
+     *   - an optional in-flight promise to deduplicate concurrent refreshes
+     *
+     * The previous implementation kept ONE token/exp pair per OxyServices
+     * instance. That meant calling `getServiceToken(keyA, secretA)` populated
+     * the cache, and a subsequent `getServiceToken(keyB, secretB)` (different
+     * tenant) would receive tenant A's token. This is fixed by routing every
+     * lookup through the Map.
+     *
      * @internal
      */
-    _serviceTokenPromise: Promise<string> | null = null;
+    _serviceTokenCache = new Map<string, ServiceTokenCacheEntry>();
+
+    /** @internal Raw apiKey stored by configureServiceAuth() for use by getServiceToken() */
+    _serviceApiKey: string | null = null;
+    /** @internal Raw apiSecret stored by configureServiceAuth() for use by getServiceToken() */
+    _serviceApiSecret: string | null = null;
 
     constructor(...args: any[]) {
       super(...(args as [any]));
+    }
+
+    /**
+     * Hash an apiKey into a stable Map cache key. Uses Node's SHA-256 — service
+     * tokens are only ever issued by a Node host (the SDK on web/RN never has
+     * the apiSecret in the first place), so we can rely on Node crypto here.
+     *
+     * @internal
+     */
+    async _hashApiKey(apiKey: string): Promise<string> {
+      const nodeCrypto = await loadNodeCrypto();
+      return nodeCrypto.createHash('sha256').update(apiKey).digest('hex');
     }
 
     /**
@@ -63,23 +121,34 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
      * Call this once at startup so that getServiceToken() and makeServiceRequest()
      * can automatically obtain and refresh tokens.
      *
+     * Calling this with credentials that differ from a previously-configured pair
+     * is allowed — each `(apiKey, apiSecret)` pair is cached independently, so
+     * legitimate multi-tenant hosts that need to switch credentials cannot leak
+     * one tenant's token to another tenant on the same instance.
+     *
      * @param apiKey - DeveloperApp API key (oxy_dk_*)
      * @param apiSecret - DeveloperApp API secret
      */
     configureServiceAuth(apiKey: string, apiSecret: string): void {
       this._serviceApiKey = apiKey;
       this._serviceApiSecret = apiSecret;
-      // Invalidate any cached token
-      this._serviceToken = null;
-      this._serviceTokenExp = 0;
     }
 
     /**
      * Get a service token for internal service-to-service communication.
-     * Tokens are short-lived (1h) and automatically cached/refreshed.
+     * Tokens are short-lived (1h) and automatically cached/refreshed per
+     * `(apiKey, apiSecret)` pair.
      *
-     * Concurrent callers share a single in-flight request to avoid hammering
-     * `/auth/service-token` when the cache is empty or expired.
+     * Concurrent callers for the same credential pair share a single in-flight
+     * request to avoid hammering `/auth/service-token` when the cache is empty
+     * or expired.
+     *
+     * **Security guarantee:** if the cache already holds a token for this
+     * apiKey but the supplied apiSecret does not constant-time match the
+     * secret that originally produced that token, this method throws
+     * `ServiceCredentialMismatchError` instead of returning the cached token.
+     * This prevents an attacker who learned a peer's apiKey from extracting
+     * their service token by polling with a wrong secret.
      *
      * @param apiKey - DeveloperApp API key (optional if configureServiceAuth was called)
      * @param apiSecret - DeveloperApp API secret (optional if configureServiceAuth was called)
@@ -92,21 +161,65 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
         throw new Error('Service credentials not provided. Call configureServiceAuth() or pass apiKey and apiSecret.');
       }
 
-      // Return cached token if still valid (with 60s buffer)
-      if (this._serviceToken && this._serviceTokenExp > Date.now() + 60_000) {
-        return this._serviceToken;
+      const cacheKey = await this._hashApiKey(key);
+      const now = Date.now();
+      const providedSecretBuf = Buffer.from(secret, 'utf8');
+
+      let entry = this._serviceTokenCache.get(cacheKey);
+
+      // Verify the secret on every cache hit, regardless of token freshness.
+      // Constant-time compare prevents timing oracles on the stored secret.
+      if (entry) {
+        const nodeCrypto = await loadNodeCrypto();
+        const storedSecretBuf = entry.secretBuf;
+        const lengthMatch = storedSecretBuf.length === providedSecretBuf.length;
+        // Always run timingSafeEqual on equal-length inputs to keep timing flat.
+        // When lengths differ, run against a zero-padded copy of the same length
+        // to avoid an early-return timing signal.
+        const compareBuf = lengthMatch
+          ? providedSecretBuf
+          : Buffer.alloc(storedSecretBuf.length);
+        const compareResult = nodeCrypto.timingSafeEqual(storedSecretBuf, compareBuf);
+        if (!lengthMatch || !compareResult) {
+          logger.warn('[oxy.auth] Service token cache hit with mismatched secret', {
+            component: 'auth',
+            method: 'getServiceToken',
+          });
+          throw new ServiceCredentialMismatchError();
+        }
+
+        // Return cached token if still valid (with 60s buffer for clock drift)
+        if (entry.token && entry.expiresAt > now + 60_000) {
+          return entry.token;
+        }
+
+        // If a fetch is already in-flight for this credential, share its result
+        if (entry.pending) {
+          return entry.pending;
+        }
+      } else {
+        // First time seeing this apiKey on this instance — seed an empty entry
+        // so concurrent callers serialize on the same promise.
+        entry = {
+          token: '',
+          expiresAt: 0,
+          secretBuf: providedSecretBuf,
+          pending: null,
+        };
+        this._serviceTokenCache.set(cacheKey, entry);
       }
 
-      // If a fetch is already in-flight, share the same promise
-      if (this._serviceTokenPromise) {
-        return this._serviceTokenPromise;
-      }
-
-      this._serviceTokenPromise = this._doFetchServiceToken(key, secret);
+      const pending = this._doFetchServiceToken(key, secret, cacheKey, providedSecretBuf);
+      entry.pending = pending;
       try {
-        return await this._serviceTokenPromise;
+        return await pending;
       } finally {
-        this._serviceTokenPromise = null;
+        // Clear the in-flight slot; the entry itself (with fresh token / expiry)
+        // is updated inside _doFetchServiceToken before we land here.
+        const settled = this._serviceTokenCache.get(cacheKey);
+        if (settled) {
+          settled.pending = null;
+        }
       }
     }
 
@@ -115,7 +228,12 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
      * Separated so getServiceToken() can deduplicate concurrent calls.
      * @internal
      */
-    async _doFetchServiceToken(key: string, secret: string): Promise<string> {
+    async _doFetchServiceToken(
+      key: string,
+      secret: string,
+      cacheKey: string,
+      secretBuf: Buffer,
+    ): Promise<string> {
       const response = await this.makeRequest<ServiceTokenResponse>(
         'POST',
         '/auth/service-token',
@@ -123,10 +241,24 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
         { cache: false, retry: false }
       );
 
-      this._serviceToken = response.token;
-      this._serviceTokenExp = Date.now() + response.expiresIn * 1000;
+      const expiresAt = Date.now() + response.expiresIn * 1000;
+      // Update the entry in-place so any caller that already grabbed a reference
+      // (via `_serviceTokenCache.get(...)`) sees the fresh state.
+      const entry = this._serviceTokenCache.get(cacheKey);
+      if (entry) {
+        entry.token = response.token;
+        entry.expiresAt = expiresAt;
+        entry.secretBuf = secretBuf;
+      } else {
+        this._serviceTokenCache.set(cacheKey, {
+          token: response.token,
+          expiresAt,
+          secretBuf,
+          pending: null,
+        });
+      }
 
-      return this._serviceToken;
+      return response.token;
     }
 
     /**
