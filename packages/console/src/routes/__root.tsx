@@ -6,6 +6,7 @@ import { BloomThemeProvider } from '@oxyhq/bloom/theme';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Toaster } from '@/components/ui/sonner';
 import { WorkspaceProvider } from '@/hooks/use-workspace';
+import { LocaleProvider } from '@/lib/i18n';
 
 import config from '@/lib/config';
 
@@ -37,16 +38,18 @@ export const Route = createRootRoute({
 function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
-      <BloomThemeProvider mode="system" colorPreset="oxy">
-        <WebOxyProvider baseURL={config.oxyUrl}>
-          <WorkspaceProvider>
-            <TooltipProvider delayDuration={300}>
-              <Outlet />
-              <Toaster position="bottom-right" richColors closeButton />
-            </TooltipProvider>
-          </WorkspaceProvider>
-        </WebOxyProvider>
-      </BloomThemeProvider>
+      <LocaleProvider>
+        <BloomThemeProvider mode="system" colorPreset="oxy">
+          <WebOxyProvider baseURL={config.oxyUrl}>
+            <WorkspaceProvider>
+              <TooltipProvider delayDuration={300}>
+                <Outlet />
+                <Toaster position="bottom-right" richColors closeButton />
+              </TooltipProvider>
+            </WorkspaceProvider>
+          </WebOxyProvider>
+        </BloomThemeProvider>
+      </LocaleProvider>
       {import.meta.env.DEV && (
         <Suspense fallback={null}>
           <TanStackRouterDevtools position="bottom-right" />
