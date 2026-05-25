@@ -212,8 +212,53 @@ export function OxyServicesPopupAuthMixin<T extends typeof OxyServicesBase>(Base
     try {
       const session = await this.waitForIframeAuth(iframe, timeout, clientId);
 
-      if (session && (session as any).accessToken) {
-        this.httpService.setTokens((session as any).accessToken);
+      // Bail early on incomplete responses. The iframe contract requires
+      // both an access token and a session id; anything less is unusable.
+      // Returning `null` here (without installing the token) prevents a
+      // stale credential from being committed to HttpService when the
+      // user is actually signed out — that pattern caused a `getCurrentUser`
+      // -> 401 -> token-clear loop in consumer apps because callers gated
+      // on `session?.user` and never installed the user via
+      // `handleAuthSuccess`, while HttpService quietly held the token.
+      const accessToken = session ? (session as { accessToken?: string }).accessToken : undefined;
+      if (!session || !accessToken || !session.sessionId) {
+        return null;
+      }
+
+      // Snapshot the previous token so we can roll back if the user
+      // lookup below fails — this avoids leaving a half-committed session
+      // (token installed, user missing) which would let the next
+      // authenticated request 401 with no way to recover.
+      const previousAccessToken = this.httpService.getAccessToken();
+      this.httpService.setTokens(accessToken);
+
+      // The iframe typically returns `{ sessionId, accessToken }` without
+      // user data. Fetch the user explicitly so callers receive a
+      // fully-formed session and never need a second `/users/me` round
+      // trip. If this fails the session is unusable — revert the token
+      // and return null so the caller treats this exactly like a
+      // missing-session response.
+      if (!session.user) {
+        try {
+          const userData = await this.makeRequest<unknown>(
+            'GET',
+            `/session/user/${session.sessionId}`,
+            undefined,
+            { cache: false, retry: false }
+          );
+          if (!userData) {
+            throw new Error('Empty user response');
+          }
+          (session as { user?: unknown }).user = userData;
+        } catch (userError) {
+          debug.warn('silentSignIn: failed to fetch user data, rolling back token', userError);
+          if (previousAccessToken) {
+            this.httpService.setTokens(previousAccessToken);
+          } else {
+            this.httpService.clearTokens();
+          }
+          return null;
+        }
       }
 
       return session;
