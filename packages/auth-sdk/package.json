@@ -50,7 +50,22 @@
     "build:types": "tsc -p tsconfig.types.json",
     "clean": "rm -rf dist",
     "typescript": "tsc --noEmit",
-    "lint": "biome lint --error-on-warnings ./src"
+    "lint": "biome lint --error-on-warnings ./src",
+    "release": "rm -rf dist && bun run build && release-it"
+  },
+  "release-it": {
+    "git": {
+      "tagName": "@oxyhq/auth@${version}",
+      "tagAnnotation": "Release @oxyhq/auth@${version}",
+      "commitMessage": "chore(auth-sdk): release @oxyhq/auth@${version}"
+    },
+    "github": {
+      "release": true,
+      "releaseName": "@oxyhq/auth@${version}"
+    },
+    "npm": {
+      "publish": true
+    }
   },
   "dependencies": {
     "@tanstack/query-sync-storage-persister": "^5.100",
@@ -73,6 +88,7 @@
     "@biomejs/biome": "^1.9.4",
     "@types/react": "^19.2.0",
     "@types/node": "^20.19.9",
+    "release-it": "^19.0.6",
     "typescript": "^5.9.2"
   }
 }

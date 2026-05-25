@@ -4,7 +4,7 @@
   "shortName": "console",
   "repo": "https://github.com/OxyHQ/OxyHQServices",
   "category": "app",
-  "versions": ["main"],
+  "versioned": false,
   "defaultVersion": "main",
   "docsPath": "docs/",
   "description": "Developer console — manage apps, API keys, webhooks, and usage."

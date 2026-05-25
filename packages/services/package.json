@@ -81,6 +81,20 @@
     "release": "rm -rf lib && bun run build && release-it",
     "prepublishOnly": "bun run typescript && bun run test && bun run build"
   },
+  "release-it": {
+    "git": {
+      "tagName": "@oxyhq/services@${version}",
+      "tagAnnotation": "Release @oxyhq/services@${version}",
+      "commitMessage": "chore(services): release @oxyhq/services@${version}"
+    },
+    "github": {
+      "release": true,
+      "releaseName": "@oxyhq/services@${version}"
+    },
+    "npm": {
+      "publish": true
+    }
+  },
   "dependencies": {
     "@lottiefiles/dotlottie-react": "^0.13.5",
     "@oxyhq/core": "*",

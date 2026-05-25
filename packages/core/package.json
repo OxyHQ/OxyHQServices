@@ -70,7 +70,22 @@
     "clean": "rm -rf dist",
     "typescript": "tsc --noEmit",
     "test": "jest --passWithNoTests",
-    "lint": "biome lint --error-on-warnings ./src"
+    "lint": "biome lint --error-on-warnings ./src",
+    "release": "rm -rf dist && bun run build && release-it"
+  },
+  "release-it": {
+    "git": {
+      "tagName": "@oxyhq/core@${version}",
+      "tagAnnotation": "Release @oxyhq/core@${version}",
+      "commitMessage": "chore(core): release @oxyhq/core@${version}"
+    },
+    "github": {
+      "release": true,
+      "releaseName": "@oxyhq/core@${version}"
+    },
+    "npm": {
+      "publish": true
+    }
   },
   "dependencies": {
     "bip39": "^3.1.0",
@@ -105,6 +120,7 @@
     "@types/node": "^20.19.9",
     "expo-crypto": "~56.0.3",
     "expo-secure-store": "~56.0.4",
+    "release-it": "^19.0.6",
     "typescript": "^5.9.2"
   }
 }
