@@ -8,6 +8,7 @@ import { jwtDecode } from 'jwt-decode';
 import type { ApiError, User } from '../models/interfaces';
 import type { OxyServicesBase } from '../OxyServices.base';
 import { loadNodeCrypto } from '../utils/platformCrypto';
+import { logger } from '../utils/loggerUtils';
 import { CACHE_TIMES } from './mixinHelpers';
 
 interface JwtPayload {
@@ -18,7 +19,10 @@ interface JwtPayload {
   type?: string;
   appId?: string;
   appName?: string;
-  [key: string]: any;
+  scopes?: string[];
+  aud?: string | string[];
+  iss?: string;
+  [key: string]: unknown;
 }
 
 /**
@@ -31,11 +35,67 @@ interface ActingAsVerification {
 }
 
 /**
- * Service app metadata attached to requests authenticated with service tokens
+ * Result from the service-acting-as verification endpoint.
+ * Confirms that a given service app holds an active delegation grant for
+ * the supplied user, along with the explicit scope list the grant covers.
+ *
+ * The api side persists these via the `ServiceActingAs` model:
+ *   { serviceAppId, userId, scopes: string[], grantedAt, expiresAt }
+ *
+ * The SDK never inspects the grant directly — it round-trips through
+ * `GET /internal/service-acting-as/verify?appId=...&userId=...` so the
+ * authoritative store stays server-side.
+ */
+export interface ServiceActingAsVerification {
+  authorized: boolean;
+  scopes: string[];
+}
+
+/**
+ * Service app metadata attached to requests authenticated with service tokens.
+ * `scopes` reflects the scopes granted to the app at signup time (from the
+ * `DeveloperApp.scopes` field); route-level checks can require additional
+ * scope-narrowing via `requireScope()`.
  */
 export interface ServiceApp {
   appId: string;
   appName: string;
+  scopes: string[];
+}
+
+/**
+ * Expected JWT audience for tokens issued by the Oxy auth service.
+ */
+const OXY_JWT_AUDIENCE = 'oxy-api';
+/**
+ * Expected JWT issuer for tokens issued by the Oxy auth service.
+ */
+const OXY_JWT_ISSUER = 'oxy-auth';
+
+/**
+ * Sentinel error classes for service-token verification. Using classes (not
+ * message strings) makes the catch site below safe to extend: a new failure
+ * mode added later cannot silently fall through to the generic 500 branch.
+ */
+class ServiceTokenStructureError extends Error {
+  constructor(message = 'Service token has malformed structure') {
+    super(message);
+    this.name = 'ServiceTokenStructureError';
+  }
+}
+
+class ServiceTokenSignatureError extends Error {
+  constructor(message = 'Service token signature is invalid') {
+    super(message);
+    this.name = 'ServiceTokenSignatureError';
+  }
+}
+
+class ServiceTokenClaimError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ServiceTokenClaimError';
+  }
 }
 
 /**
@@ -45,7 +105,7 @@ interface AuthMiddlewareOptions {
   /** Enable debug logging (default: false) */
   debug?: boolean;
   /** Custom error handler - receives error object, can return response */
-  onError?: (error: ApiError) => any;
+  onError?: (error: ApiError) => unknown;
   /** Load full user profile from API (default: false for performance) */
   loadUser?: boolean;
   /** Optional auth - attach user if token present but don't block (default: false) */
@@ -54,8 +114,24 @@ interface AuthMiddlewareOptions {
    * JWT secret for verifying service token signatures locally.
    * When provided, service tokens will be cryptographically verified.
    * When omitted, service tokens will be rejected (secure default).
+   *
+   * **Migration note (>=1.11.14):** the Oxy API now signs service tokens
+   * with a dedicated `SERVICE_TOKEN_SECRET` distinct from `ACCESS_TOKEN_SECRET`.
+   * Pass that value here. If you keep passing the access-token secret you will
+   * still verify ALL signed-by-Oxy tokens (which is the whole class of bug
+   * H4 was supposed to prevent — DO NOT do that in production).
    */
   jwtSecret?: string;
+  /**
+   * Expected JWT issuer. Defaults to `'oxy-auth'`. Override only if you run
+   * a private fork of the Oxy auth server under a different `iss` claim.
+   */
+  expectedIssuer?: string;
+  /**
+   * Expected JWT audience. Defaults to `'oxy-api'`. Override only if your
+   * private fork mints tokens for a different audience.
+   */
+  expectedAudience?: string;
 }
 
 export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: T) {
@@ -63,6 +139,19 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
     /** @internal In-memory cache for acting-as verification results (TTL: 5 min) */
     _actingAsCache = new Map<string, { result: ActingAsVerification | null; expiresAt: number }>();
 
+    /**
+     * In-memory cache for service-acting-as verification.
+     * Negative results are cached for 1min to avoid hammering the verify
+     * endpoint when a service is misconfigured; positive grants are cached
+     * for 5min to amortize the round-trip without holding stale grants too long.
+     * @internal
+     */
+    _serviceActingAsCache = new Map<string, { result: ServiceActingAsVerification | null; expiresAt: number }>();
+
+    // TypeScript's mixin pattern requires `(...args: any[])` here — the
+    // constructor signature is a structural shape check the compiler enforces.
+    // Matches every other mixin in this package; do not change without a
+    // monorepo-wide refactor of the mixin pipeline.
     constructor(...args: any[]) {
       super(...(args as [any]));
     }
@@ -99,9 +188,75 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
         });
 
         return result && result.authorized ? result : null;
-      } catch {
+      } catch (error) {
+        logger.warn('[oxy.auth] verifyActingAs lookup failed — caching negative result', {
+          component: 'auth',
+          method: 'verifyActingAs',
+          userId,
+          accountId,
+        }, error);
         // Cache negative result for 1 minute to avoid hammering on transient errors
         this._actingAsCache.set(cacheKey, {
+          result: null,
+          expiresAt: now + 1 * 60 * 1000,
+        });
+        return null;
+      }
+    }
+
+    /**
+     * Verify that a service app holds an active delegation grant authorising
+     * it to act on behalf of `userId`. Returns the grant (with allowed scopes)
+     * on success or `null` if no valid grant exists. Negative answers are
+     * cached briefly to protect the verify endpoint from misconfigured callers.
+     *
+     * Implemented as a per-instance Map keyed by `appId:userId`. Cached
+     * positive grants live for 5 minutes (acceptable staleness window for an
+     * impersonation grant); revocations propagate within that window.
+     *
+     * @internal Used by the auth() middleware — not part of the public API
+     */
+    async verifyServiceActingAs(
+      appId: string,
+      userId: string,
+    ): Promise<ServiceActingAsVerification | null> {
+      const cacheKey = `${appId}:${userId}`;
+      const now = Date.now();
+
+      const cached = this._serviceActingAsCache.get(cacheKey);
+      if (cached && cached.expiresAt > now) {
+        return cached.result;
+      }
+
+      try {
+        const result = await this.makeRequest<ServiceActingAsVerification>(
+          'GET',
+          '/internal/service-acting-as/verify',
+          { appId, userId },
+          { cache: false, retry: false, timeout: 5000 },
+        );
+
+        const authorized = Boolean(result && result.authorized);
+        const verified: ServiceActingAsVerification | null = authorized
+          ? { authorized: true, scopes: Array.isArray(result.scopes) ? result.scopes : [] }
+          : null;
+
+        this._serviceActingAsCache.set(cacheKey, {
+          result: verified,
+          expiresAt: now + 5 * 60 * 1000,
+        });
+
+        return verified;
+      } catch (error) {
+        logger.warn('[oxy.auth] verifyServiceActingAs lookup failed — caching negative result', {
+          component: 'auth',
+          method: 'verifyServiceActingAs',
+          appId,
+          userId,
+        }, error);
+        // Negative cache prevents a runaway loop if the verify endpoint is
+        // down, while still letting a real grant become visible within 60s.
+        this._serviceActingAsCache.set(cacheKey, {
           result: null,
           expiresAt: now + 1 * 60 * 1000,
         });
@@ -146,9 +301,17 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
      * - Security comes from API-based session validation (`validateSession()`)
      *   which checks the session server-side on every request
      * - Service tokens (type: 'service') DO use cryptographic HMAC verification
-     *   via the `jwtSecret` option, since they are stateless
+     *   via the `jwtSecret` option, since they are stateless. Service tokens
+     *   are additionally checked for `aud`, `iss`, and `type` claims to prevent
+     *   cross-token-type confusion attacks.
      * - The backend's own `authMiddleware` uses `jwt.verify()` because it has
-     *   direct access to `ACCESS_TOKEN_SECRET`
+     *   direct access to `SERVICE_TOKEN_SECRET` / `ACCESS_TOKEN_SECRET`.
+     *
+     * **Service-token delegation (X-Oxy-User-Id):**
+     * When a service token is accompanied by `X-Oxy-User-Id`, the SDK calls
+     * `verifyServiceActingAs(appId, userId)` to confirm an explicit delegation
+     * grant exists before attaching `req.userId`. A missing/expired grant
+     * results in a 403 — there is no fail-open path.
      *
      * @example
      * ```typescript
@@ -157,7 +320,7 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
      * const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
      *
      * // Protect all routes under /protected
-     * app.use('/protected', oxy.auth());
+     * app.use('/protected', oxy.auth({ jwtSecret: process.env.SERVICE_TOKEN_SECRET }));
      *
      * // Access user in route handler
      * app.get('/protected/me', (req, res) => {
@@ -169,27 +332,41 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
      *
      * // Optional auth - attach user if present, don't block if absent
      * app.use('/public', oxy.auth({ optional: true }));
+     *
+     * // Require a specific scope on a service-token-protected route
+     * app.use('/internal/files', oxy.serviceAuth({ jwtSecret: process.env.SERVICE_TOKEN_SECRET }), oxy.requireScope('files:write'));
      * ```
      *
      * @param options Optional configuration
      * @returns Express middleware function
      */
     auth(options: AuthMiddlewareOptions = {}) {
-      const { debug = false, onError, loadUser = false, optional = false, jwtSecret } = options;
-      // Cast to any for cross-mixin method access (Auth mixin methods available at runtime)
-      const oxyInstance = this as any;
+      const {
+        debug = false,
+        onError,
+        loadUser = false,
+        optional = false,
+        jwtSecret,
+        expectedIssuer = OXY_JWT_ISSUER,
+        expectedAudience = OXY_JWT_AUDIENCE,
+      } = options;
+      // Cross-mixin method access: typed as a structural subset of the
+      // composed OxyServices we know we have at runtime.
+      const oxyInstance = this as unknown as OxyAuthInstance;
 
       // Return an async middleware function
-      return async (req: any, res: any, next: any) => {
+      return async (req: AuthReq, res: AuthRes, next: AuthNext) => {
         // Process X-Acting-As header for managed account identity delegation.
         // Called after successful authentication, before next(). If the header
         // is present, verifies authorization and swaps the request identity to
         // the managed account, preserving the original user for audit trails.
         const processActingAs = async (): Promise<boolean> => {
-          const actingAsUserId = req.headers['x-acting-as'] as string | undefined;
-          if (!actingAsUserId) return true; // No header, proceed normally
+          const actingAsUserId = req.headers['x-acting-as'];
+          if (!actingAsUserId || typeof actingAsUserId !== 'string') return true; // No header, proceed normally
+          const currentUserId = req.userId;
+          if (!currentUserId) return true; // No authenticated user yet — nothing to swap
 
-          const verification = await oxyInstance.verifyActingAs(req.userId, actingAsUserId);
+          const verification = await oxyInstance.verifyActingAs(currentUserId, actingAsUserId);
           if (!verification) {
             const error = {
               error: 'ACTING_AS_UNAUTHORIZED',
@@ -206,27 +383,29 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
           }
 
           // Preserve original user for audit trails
-          req.originalUser = { id: req.userId, ...req.user };
+          req.originalUser = { id: currentUserId, ...(req.user ?? {}) };
           req.actingAs = { userId: actingAsUserId, role: verification.role };
 
           // Swap user identity to the managed account
           req.userId = actingAsUserId;
-          req.user = { id: actingAsUserId } as any;
-          // Also set _id for routes that use Pattern B (req.user._id)
-          if (req.user) {
-            (req.user as any)._id = actingAsUserId;
-          }
+          req.user = { id: actingAsUserId, _id: actingAsUserId } as unknown as User;
 
           if (debug) {
-            console.log(`[oxy.auth] Acting as ${actingAsUserId} (role=${verification.role}) original=${req.originalUser.id}`);
+            logger.debug(`[oxy.auth] Acting as ${actingAsUserId} (role=${verification.role}) original=${currentUserId}`, {
+              component: 'auth',
+              method: 'auth.processActingAs',
+            });
           }
 
           return true;
         };
 
         try {
-          // Extract token from Authorization header or query params
-          const authHeader = req.headers['authorization'];
+          // Extract token from Authorization header or query params.
+          // Node/Express normalizes `Authorization` to a string; we guard
+          // against the (legal but unusual) string[] case anyway.
+          const rawAuthHeader = req.headers.authorization;
+          const authHeader = Array.isArray(rawAuthHeader) ? rawAuthHeader[0] : rawAuthHeader;
           let token = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : null;
 
           // Fallback to query params (useful for WebSocket upgrades)
@@ -237,7 +416,10 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
           }
 
           if (debug) {
-            console.log(`[oxy.auth] ${req.method} ${req.path} | token: ${!!token}`);
+            logger.debug(`[oxy.auth] ${req.method} ${req.path} | token: ${!!token}`, {
+              component: 'auth',
+              method: 'auth',
+            });
           }
 
           if (!token) {
@@ -262,6 +444,12 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
           try {
             decoded = jwtDecode<JwtPayload>(token);
           } catch (decodeError) {
+            if (debug) {
+              logger.debug('[oxy.auth] Token decode failed', {
+                component: 'auth',
+                method: 'auth',
+              }, decodeError);
+            }
             if (optional) {
               req.userId = null;
               req.user = null;
@@ -298,51 +486,69 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
               return res.status(403).json(error);
             }
 
-            // Verify JWT signature (not just decode).
-            // This middleware only runs on a Node Express server, but the file
-            // is bundled by Metro/Vite for RN/web consumers. `loadNodeCrypto`
-            // is per-platform: the RN variant throws (and is never called
-            // because service-token middleware is only mounted by Node hosts),
-            // so Metro never bundles a reference to Node's built-in.
+            // Verify JWT signature, then audience / issuer / type / appId claims.
+            //
+            // Signature verification uses a manual HMAC-SHA256 compare because
+            // this file ships into RN/web bundles where `jsonwebtoken` is
+            // unavailable. The middleware only ever runs on Node hosts (see
+            // platformCrypto's doc-comment), and `loadNodeCrypto` is per-
+            // platform: the RN variant throws so Metro never bundles a Node
+            // built-in reference.
             try {
-              const nodeCrypto = await loadNodeCrypto();
-              const { createHmac, timingSafeEqual } = nodeCrypto;
-              const [headerB64, payloadB64, signatureB64] = token.split('.');
-              if (!headerB64 || !payloadB64 || !signatureB64) {
-                throw new Error('Invalid token structure');
-              }
-              const expectedSig = createHmac('sha256', jwtSecret)
-                .update(`${headerB64}.${payloadB64}`)
-                .digest('base64')
-                .replace(/\+/g, '-')
-                .replace(/\//g, '_')
-                .replace(/=/g, '');
-
-              // Timing-safe comparison
-              const sigBuf = Buffer.from(signatureB64);
-              const expectedBuf = Buffer.from(expectedSig);
-              if (sigBuf.length !== expectedBuf.length || !timingSafeEqual(sigBuf, expectedBuf)) {
-                throw new Error('Invalid signature');
-              }
+              await verifyServiceTokenSignature(token, jwtSecret);
+              verifyServiceTokenClaims(decoded, {
+                audience: expectedAudience,
+                issuer: expectedIssuer,
+              });
             } catch (verifyError) {
-              const isSignatureError = verifyError instanceof Error &&
-                (verifyError.message === 'Invalid signature' || verifyError.message === 'Invalid token structure');
-
-              if (!isSignatureError) {
-                console.error('[oxy.auth] Unexpected error during service token verification:', verifyError);
-                const error = { error: 'AUTH_INTERNAL_ERROR', message: 'Internal authentication error', code: 'AUTH_INTERNAL_ERROR', status: 500 };
+              // Structure + signature + claim errors all map to 401. Anything
+              // else (e.g. Node crypto failing to load on a misconfigured host)
+              // genuinely IS a 500.
+              if (
+                verifyError instanceof ServiceTokenStructureError ||
+                verifyError instanceof ServiceTokenSignatureError ||
+                verifyError instanceof ServiceTokenClaimError
+              ) {
+                if (debug) {
+                  logger.debug('[oxy.auth] Service token rejected', {
+                    component: 'auth',
+                    method: 'auth.serviceToken',
+                    reason: verifyError.name,
+                    detail: verifyError.message,
+                  });
+                }
+                if (optional) {
+                  req.userId = null;
+                  req.user = null;
+                  return next();
+                }
+                const code = verifyError instanceof ServiceTokenSignatureError
+                  ? 'INVALID_SERVICE_TOKEN'
+                  : verifyError instanceof ServiceTokenStructureError
+                    ? 'INVALID_SERVICE_TOKEN'
+                    : 'INVALID_SERVICE_TOKEN_CLAIMS';
+                const error = {
+                  error: code,
+                  message: verifyError.message,
+                  code,
+                  status: 401,
+                };
                 if (onError) return onError(error);
-                return res.status(500).json(error);
+                return res.status(401).json(error);
               }
 
-              if (optional) {
-                req.userId = null;
-                req.user = null;
-                return next();
-              }
-              const error = { error: 'INVALID_SERVICE_TOKEN', message: 'Invalid service token signature', code: 'INVALID_SERVICE_TOKEN', status: 401 };
+              logger.error('[oxy.auth] Unexpected error during service token verification', verifyError, {
+                component: 'auth',
+                method: 'auth.serviceToken',
+              });
+              const error = {
+                error: 'AUTH_INTERNAL_ERROR',
+                message: 'Internal authentication error',
+                code: 'AUTH_INTERNAL_ERROR',
+                status: 500,
+              };
               if (onError) return onError(error);
-              return res.status(401).json(error);
+              return res.status(500).json(error);
             }
 
             // Check expiration — reject tokens at exact expiry second (use <=)
@@ -358,7 +564,8 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
             }
 
             // Validate required service token fields
-            if (!decoded.appId) {
+            const appId = decoded.appId;
+            if (!appId) {
               if (optional) {
                 req.userId = null;
                 req.user = null;
@@ -370,18 +577,54 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
             }
 
             // Read delegated user ID from header
-            const oxyUserId = req.headers['x-oxy-user-id'] as string;
+            const oxyUserIdRaw = req.headers['x-oxy-user-id'];
+            const oxyUserId = typeof oxyUserIdRaw === 'string' && oxyUserIdRaw.length > 0 ? oxyUserIdRaw : null;
 
-            req.userId = oxyUserId || null;
-            req.user = oxyUserId ? ({ id: oxyUserId } as User) : null;
+            // C3: a service may only act as a user when an explicit
+            // ServiceActingAs grant exists for that (appId, userId) pair.
+            // Without the grant we MUST refuse — silently attaching
+            // `req.userId = oxyUserId` would let any service impersonate
+            // any user simply by setting the header.
+            if (oxyUserId) {
+              const grant = await oxyInstance.verifyServiceActingAs(appId, oxyUserId);
+              if (!grant || !grant.authorized) {
+                logger.warn('[oxy.auth] Service token rejected — no delegation grant', {
+                  component: 'auth',
+                  method: 'auth.serviceToken',
+                  appId,
+                  attemptedUserId: oxyUserId,
+                });
+                const error = {
+                  error: 'SERVICE_ACTING_AS_UNAUTHORIZED',
+                  message: 'Service not authorized to act as this user',
+                  code: 'SERVICE_ACTING_AS_UNAUTHORIZED',
+                  status: 403,
+                };
+                if (onError) return onError(error);
+                return res.status(403).json(error);
+              }
+
+              req.userId = oxyUserId;
+              req.user = { id: oxyUserId } as User;
+              req.serviceActingAs = { userId: oxyUserId, scopes: grant.scopes };
+            } else {
+              // No X-Oxy-User-Id means the service is acting as itself.
+              req.userId = null;
+              req.user = null;
+            }
+
             req.accessToken = token;
             req.serviceApp = {
-              appId: decoded.appId || '',
+              appId,
               appName: decoded.appName || 'unknown',
+              scopes: Array.isArray(decoded.scopes) ? decoded.scopes : [],
             };
 
             if (debug) {
-              console.log(`[oxy.auth] Service token OK app=${decoded.appName} delegateUser=${oxyUserId || '(none)'}`);
+              logger.debug(`[oxy.auth] Service token OK app=${decoded.appName} delegateUser=${oxyUserId || '(none)'}`, {
+                component: 'auth',
+                method: 'auth.serviceToken',
+              });
             }
 
             return next();
@@ -462,7 +705,10 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
               }
 
               if (debug) {
-                console.log(`[oxy.auth] OK user=${userId} session=${decoded.sessionId}`);
+                logger.debug(`[oxy.auth] OK user=${userId} session=${decoded.sessionId}`, {
+                  component: 'auth',
+                  method: 'auth',
+                });
               }
 
               // Process X-Acting-As header before proceeding
@@ -470,7 +716,10 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
               return;
             } catch (validationError) {
               if (debug) {
-                console.log(`[oxy.auth] Session validation failed:`, validationError);
+                logger.debug('[oxy.auth] Session validation failed', {
+                  component: 'auth',
+                  method: 'auth',
+                }, validationError);
               }
 
               if (optional) {
@@ -512,26 +761,49 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
               if (fullUser) {
                 req.user = fullUser;
               }
-            } catch {
-              // Failed to load user, continue with basic user object
+            } catch (loadUserError) {
+              // Loading the full user is best-effort here; the basic { id }
+              // object is already attached. Log so misconfigured deployments
+              // can be diagnosed instead of silently failing.
+              logger.warn('[oxy.auth] loadUser fallback — could not fetch full profile', {
+                component: 'auth',
+                method: 'auth.loadUser',
+                userId,
+              }, loadUserError);
             }
           }
 
           if (debug) {
-            console.log(`[oxy.auth] OK user=${userId} (no session)`);
+            logger.debug(`[oxy.auth] OK user=${userId} (no session)`, {
+              component: 'auth',
+              method: 'auth',
+            });
           }
 
           // Process X-Acting-As header before proceeding
           if (await processActingAs()) next();
         } catch (error) {
-          const apiError = oxyInstance.handleError(error) as any;
+          const handled = oxyInstance.handleError(error) as Error & {
+            code?: string;
+            status?: number;
+            details?: Record<string, unknown>;
+          };
+          const apiError: ApiError = {
+            message: handled.message || 'Authentication error',
+            code: handled.code ?? 'AUTH_ERROR',
+            status: handled.status ?? 500,
+            details: handled.details,
+          };
 
           if (debug) {
-            console.log(`[oxy.auth] Error:`, apiError);
+            logger.debug('[oxy.auth] Error', {
+              component: 'auth',
+              method: 'auth',
+            }, apiError);
           }
 
           if (onError) return onError(apiError);
-          return res.status((apiError && apiError.status) || 500).json(apiError);
+          return res.status(apiError.status).json(apiError);
         }
       };
     }
@@ -562,10 +834,10 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
      */
     authSocket(options: { debug?: boolean } = {}) {
       const { debug = false } = options;
-      // Cast to any for cross-mixin method access (Auth mixin methods available at runtime)
-      const oxyInstance = this as any;
+      // Cross-mixin method access typed via the same structural subset.
+      const oxyInstance = this as unknown as OxyAuthInstance;
 
-      return async (socket: any, next: (err?: Error) => void) => {
+      return async (socket: SocketLike, next: (err?: Error) => void) => {
         try {
           const token = socket.handshake?.auth?.token;
 
@@ -576,7 +848,13 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
           let decoded: JwtPayload;
           try {
             decoded = jwtDecode<JwtPayload>(token);
-          } catch {
+          } catch (decodeError) {
+            if (debug) {
+              logger.debug('[oxy.authSocket] Token decode failed', {
+                component: 'auth',
+                method: 'authSocket',
+              }, decodeError);
+            }
             return next(new Error('Invalid token'));
           }
 
@@ -599,7 +877,13 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
               if (!result || !result.valid) {
                 return next(new Error('Session invalid'));
               }
-            } catch {
+            } catch (validateErr) {
+              if (debug) {
+                logger.debug('[oxy.authSocket] Session validation failed', {
+                  component: 'auth',
+                  method: 'authSocket',
+                }, validateErr);
+              }
               return next(new Error('Session validation failed'));
             }
           }
@@ -616,13 +900,19 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
           socket.user = { id: userId, userId, sessionId: decoded.sessionId };
 
           if (debug) {
-            console.log(`[oxy.authSocket] OK user=${userId}`);
+            logger.debug(`[oxy.authSocket] OK user=${userId}`, {
+              component: 'auth',
+              method: 'authSocket',
+            });
           }
 
           next();
         } catch (err) {
           if (debug) {
-            console.log(`[oxy.authSocket] Error:`, err);
+            logger.debug('[oxy.authSocket] Error', {
+              component: 'auth',
+              method: 'authSocket',
+            }, err);
           }
           next(new Error('Authentication error'));
         }
@@ -636,7 +926,7 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
      * @example
      * ```typescript
      * // Protect internal endpoints
-     * app.use('/internal', oxy.serviceAuth());
+     * app.use('/internal', oxy.serviceAuth({ jwtSecret: process.env.SERVICE_TOKEN_SECRET }));
      *
      * app.post('/internal/trigger', (req, res) => {
      *   console.log('Service app:', req.serviceApp);
@@ -644,10 +934,10 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
      * });
      * ```
      */
-    serviceAuth(options: { debug?: boolean; jwtSecret?: string } = {}) {
+    serviceAuth(options: { debug?: boolean; jwtSecret?: string; expectedIssuer?: string; expectedAudience?: string } = {}) {
       const innerAuth = this.auth({ ...options });
 
-      return async (req: any, res: any, next: any) => {
+      return async (req: AuthReq, res: AuthRes, next: AuthNext) => {
         await innerAuth(req, res, () => {
           if (!req.serviceApp) {
             return res.status(403).json({
@@ -660,6 +950,180 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
         });
       };
     }
+
+    /**
+     * Express.js middleware that enforces a specific service-token scope.
+     *
+     * Mount AFTER `auth()` / `serviceAuth()` — relies on `req.serviceApp` and
+     * (when delegation is in effect) `req.serviceActingAs.scopes`. The scope
+     * is granted if EITHER list contains it, mirroring the OAuth2 model where
+     * the app's app-level scopes and the per-user delegated scopes both count.
+     *
+     * Requests authenticated as a regular user (no service token) are rejected
+     * with 403 — scope-protected endpoints are service-to-service by design.
+     *
+     * @example
+     * ```typescript
+     * app.use(
+     *   '/internal/files',
+     *   oxy.serviceAuth({ jwtSecret: process.env.SERVICE_TOKEN_SECRET }),
+     *   oxy.requireScope('files:write'),
+     * );
+     * ```
+     */
+    requireScope(scope: string) {
+      if (typeof scope !== 'string' || scope.length === 0) {
+        throw new Error('requireScope: scope must be a non-empty string');
+      }
+
+      return (req: AuthReq, res: AuthRes, next: AuthNext): void => {
+        const appScopes = req.serviceApp?.scopes ?? [];
+        const delegatedScopes = req.serviceActingAs?.scopes ?? [];
+
+        if (!req.serviceApp) {
+          res.status(403).json({
+            error: 'SERVICE_TOKEN_REQUIRED',
+            message: 'Scope-protected endpoint requires a service token',
+            code: 'SERVICE_TOKEN_REQUIRED',
+            status: 403,
+          });
+          return;
+        }
+
+        if (appScopes.includes(scope) || delegatedScopes.includes(scope)) {
+          next();
+          return;
+        }
+
+        logger.warn('[oxy.auth] Service token missing required scope', {
+          component: 'auth',
+          method: 'requireScope',
+          appId: req.serviceApp.appId,
+          required: scope,
+        });
+        res.status(403).json({
+          error: 'INSUFFICIENT_SCOPE',
+          message: `Required scope '${scope}' not granted`,
+          code: 'INSUFFICIENT_SCOPE',
+          status: 403,
+        });
+      };
+    }
   };
 }
 
+// ---------------------------------------------------------------------------
+// Service token verification helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Verify a service JWT's HMAC-SHA256 signature using a constant-time compare.
+ * Throws `ServiceTokenStructureError` on malformed tokens and
+ * `ServiceTokenSignatureError` on signature mismatch — both map to 401.
+ */
+async function verifyServiceTokenSignature(token: string, secret: string): Promise<void> {
+  const nodeCrypto = await loadNodeCrypto();
+  const { createHmac, timingSafeEqual } = nodeCrypto;
+  const parts = token.split('.');
+  if (parts.length !== 3) {
+    throw new ServiceTokenStructureError(`Service token must have 3 parts, got ${parts.length}`);
+  }
+  const [headerB64, payloadB64, signatureB64] = parts;
+  if (!headerB64 || !payloadB64 || !signatureB64) {
+    throw new ServiceTokenStructureError('Service token has empty segment');
+  }
+  const expectedSig = createHmac('sha256', secret)
+    .update(`${headerB64}.${payloadB64}`)
+    .digest('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=/g, '');
+
+  const sigBuf = Buffer.from(signatureB64);
+  const expectedBuf = Buffer.from(expectedSig);
+  if (sigBuf.length !== expectedBuf.length || !timingSafeEqual(sigBuf, expectedBuf)) {
+    throw new ServiceTokenSignatureError();
+  }
+}
+
+/**
+ * Verify that a decoded service-token payload carries the expected `aud`,
+ * `iss`, and `type` claims. Throws `ServiceTokenClaimError` on mismatch.
+ * This is the defence against the H4 vulnerability where a recovery / 2FA /
+ * access token signed by the same shared secret could be replayed as a
+ * service token because no claim binding existed.
+ */
+function verifyServiceTokenClaims(
+  decoded: JwtPayload,
+  expected: { audience: string; issuer: string },
+): void {
+  if (decoded.type !== 'service') {
+    throw new ServiceTokenClaimError(`Service token has unexpected type '${String(decoded.type)}'`);
+  }
+  if (decoded.iss !== expected.issuer) {
+    throw new ServiceTokenClaimError(`Service token issuer mismatch: expected '${expected.issuer}', got '${String(decoded.iss)}'`);
+  }
+  const aud = decoded.aud;
+  if (Array.isArray(aud)) {
+    if (!aud.includes(expected.audience)) {
+      throw new ServiceTokenClaimError(`Service token audience does not include '${expected.audience}'`);
+    }
+  } else if (aud !== expected.audience) {
+    throw new ServiceTokenClaimError(`Service token audience mismatch: expected '${expected.audience}', got '${String(aud)}'`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Local request/response/socket typing
+//
+// Express's types are an optional peer (we don't want to take a hard dep on
+// `@types/express` from a platform-agnostic SDK). The structural subset below
+// captures everything this middleware actually touches, so consumers get type
+// checking without us coupling to Express's full surface.
+// ---------------------------------------------------------------------------
+
+interface AuthReq {
+  method?: string;
+  path?: string;
+  headers: Record<string, string | string[] | undefined>;
+  query?: Record<string, unknown>;
+  userId?: string | null;
+  user?: User | null;
+  accessToken?: string;
+  sessionId?: string | null;
+  serviceApp?: ServiceApp;
+  serviceActingAs?: { userId: string; scopes: string[] };
+  actingAs?: { userId: string; role: string };
+  originalUser?: { id: string } & Partial<User>;
+}
+
+interface AuthRes {
+  status(code: number): AuthRes;
+  json(body: unknown): unknown;
+}
+
+type AuthNext = (err?: unknown) => void;
+
+interface SocketLike {
+  handshake?: { auth?: { token?: string } };
+  data?: Record<string, unknown>;
+  user?: { id: string; userId: string; sessionId?: string | null };
+}
+
+interface OxyAuthInstance {
+  verifyActingAs(userId: string, accountId: string): Promise<ActingAsVerification | null>;
+  verifyServiceActingAs(appId: string, userId: string): Promise<ServiceActingAsVerification | null>;
+  validateSession(
+    sessionId: string,
+    options?: { deviceFingerprint?: string; useHeaderValidation?: boolean },
+  ): Promise<{
+    valid: boolean;
+    user?: User;
+    [key: string]: unknown;
+  } | null>;
+  getAccessToken(): string | null;
+  setTokens(accessToken: string, refreshToken?: string): void;
+  clearTokens(): void;
+  getCurrentUser(): Promise<User | null>;
+  handleError(error: unknown): Error;
+}

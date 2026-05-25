@@ -137,15 +137,29 @@ export interface OxyServices extends InstanceType<ReturnType<typeof composeOxySe
   // Express.js middleware
   auth(options?: {
     debug?: boolean;
-    onError?: (error: any) => any;
+    onError?: (error: unknown) => unknown;
     loadUser?: boolean;
     optional?: boolean;
-  }): (req: any, res: any, next: any) => Promise<void>;
+    jwtSecret?: string;
+    expectedIssuer?: string;
+    expectedAudience?: string;
+  }): (req: unknown, res: unknown, next: (err?: unknown) => void) => Promise<void>;
 
   // Socket.IO middleware
   authSocket(options?: {
     debug?: boolean;
-  }): (socket: any, next: (err?: Error) => void) => Promise<void>;
+  }): (socket: unknown, next: (err?: Error) => void) => Promise<void>;
+
+  // Service-token-only middleware (delegates to auth() internally)
+  serviceAuth(options?: {
+    debug?: boolean;
+    jwtSecret?: string;
+    expectedIssuer?: string;
+    expectedAudience?: string;
+  }): (req: unknown, res: unknown, next: (err?: unknown) => void) => Promise<void>;
+
+  // Scope enforcement for service-token-protected routes
+  requireScope(scope: string): (req: unknown, res: unknown, next: (err?: unknown) => void) => void;
 
   // Asset management
   assetUpdateVisibility(fileId: string, visibility: 'private' | 'public' | 'unlisted'): Promise<unknown>;
