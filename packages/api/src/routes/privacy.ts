@@ -188,13 +188,198 @@ const getRestrictedUsers = createUserListHandler(Restricted, 'restrictedId');
 const restrictUser = createUserActionHandler(Restricted, 'restrictedId', 'restrict');
 const unrestrictUser = createUserRemoveHandler(Restricted, 'restrictedId', 'unrestrict');
 
+/**
+ * @openapi
+ * /privacy/{id}/privacy:
+ *   get:
+ *     tags:
+ *       - Privacy
+ *     summary: Get a user's privacy settings
+ *     description: >
+ *       Return the full privacy settings record for the user. Some fields
+ *       are only visible to the owner; non-owner callers see a redacted
+ *       projection.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Privacy settings.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               additionalProperties: true
+ *             examples:
+ *               default:
+ *                 value:
+ *                   profileVisibility: public
+ *                   showActivity: true
+ *                   allowDirectMessages: contacts-only
+ *                   discoverableByEmail: false
+ *                   discoverableByPhone: false
+ *       401:
+ *         description: Missing or invalid bearer token.
+ *       404:
+ *         description: User not found.
+ */
 router.get("/:id/privacy", validate({ params: privacyUserIdParams }), getPrivacySettings);
+
+/**
+ * @openapi
+ * /privacy/{id}/privacy:
+ *   patch:
+ *     tags:
+ *       - Privacy
+ *     summary: Update a user's privacy settings (owner only)
+ *     description: >
+ *       Partial update of the user's privacy settings. Only the owner of
+ *       the account may patch their settings — other callers get 403.
+ *       Invalidates the in-memory user cache so subsequent reads return
+ *       fresh values.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             additionalProperties: true
+ *           examples:
+ *             tighten:
+ *               summary: Make profile private and disable email discovery
+ *               value:
+ *                 profileVisibility: private
+ *                 discoverableByEmail: false
+ *     responses:
+ *       200:
+ *         description: Updated privacy settings.
+ *       400:
+ *         description: Validation failed.
+ *       401:
+ *         description: Missing or invalid bearer token.
+ *       403:
+ *         description: Caller is not the owner.
+ */
 router.patch("/:id/privacy", validate({ params: privacyUserIdParams }), updatePrivacySettings);
+
+/**
+ * @openapi
+ * /privacy/blocked:
+ *   get:
+ *     tags:
+ *       - Privacy
+ *     summary: List blocked users
+ *     description: Return the users the authenticated caller has blocked.
+ *     responses:
+ *       200:
+ *         description: List of blocked users.
+ */
 router.get("/blocked", getBlockedUsers);
+
+/**
+ * @openapi
+ * /privacy/blocked/{targetId}:
+ *   post:
+ *     tags:
+ *       - Privacy
+ *     summary: Block a user
+ *     description: >
+ *       Block `targetId` for the authenticated caller. Blocking is
+ *       symmetric — neither account can see the other's posts, profile, or
+ *       reach the other in DMs.
+ *     parameters:
+ *       - name: targetId
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: User blocked.
+ */
 router.post("/blocked/:targetId", validate({ params: targetIdParams }), blockUser);
+
+/**
+ * @openapi
+ * /privacy/blocked/{targetId}:
+ *   delete:
+ *     tags:
+ *       - Privacy
+ *     summary: Unblock a user
+ *     parameters:
+ *       - name: targetId
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: User unblocked.
+ */
 router.delete("/blocked/:targetId", validate({ params: targetIdParams }), unblockUser);
+
+/**
+ * @openapi
+ * /privacy/restricted:
+ *   get:
+ *     tags:
+ *       - Privacy
+ *     summary: List restricted users
+ *     description: Return the users the authenticated caller has restricted.
+ *     responses:
+ *       200:
+ *         description: List of restricted users.
+ */
 router.get("/restricted", getRestrictedUsers);
+
+/**
+ * @openapi
+ * /privacy/restricted/{targetId}:
+ *   post:
+ *     tags:
+ *       - Privacy
+ *     summary: Restrict a user
+ *     description: >
+ *       Restrict `targetId` — they can still see public content but their
+ *       replies and DMs are silently filtered out of the caller's view.
+ *     parameters:
+ *       - name: targetId
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: User restricted.
+ */
 router.post("/restricted/:targetId", validate({ params: targetIdParams }), restrictUser);
+
+/**
+ * @openapi
+ * /privacy/restricted/{targetId}:
+ *   delete:
+ *     tags:
+ *       - Privacy
+ *     summary: Unrestrict a user
+ *     parameters:
+ *       - name: targetId
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: User unrestricted.
+ */
 router.delete("/restricted/:targetId", validate({ params: targetIdParams }), unrestrictUser);
 
 export default router;

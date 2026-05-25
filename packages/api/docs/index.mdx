@@ -1,35 +1,170 @@
 ---
 title: REST API
-description: Browse the OpenAPI-rendered reference for the Oxy platform REST API.
+description: The Oxy platform REST API — authentication, accounts, files, billing, federation. OpenAPI 3.1, rendered with Scalar.
 order: 0
 ---
 
 # Oxy REST API
 
-The Oxy REST API powers every official Oxy app and is open to third-party integrations via the developer apps program.
+The Oxy REST API powers every official Oxy app (web, iOS, Android) and is open to third-party integrations via the developer apps program. It exposes the platform's auth, accounts, devices, files, billing, notifications, email, federation (ActivityPub), and developer tooling.
 
-<Badge variant="success">Service</Badge> <Badge>OpenAPI 3.1</Badge>
+<Badge variant="success">Service</Badge> <Badge>OpenAPI 3.1</Badge> <Badge variant="info">v1.0</Badge>
 
 ## Reference
 
-Browse the full OpenAPI reference here: [**/docs/api**](/docs/api). The reference is rendered by [Scalar](https://github.com/scalar/scalar) from a generated OpenAPI document.
+Browse the full reference at [**/developers/docs/api**](/developers/docs/api). The page is rendered by [Scalar](https://github.com/scalar/scalar) from a generated OpenAPI document and stays in sync with the latest deploy.
+
+Endpoints are grouped by domain (Authentication, Users, Sessions, Devices, Privacy, Security, Contacts, Files, Email, Notifications, Search, Developer, Payments, Subscription, Billing, Credits, Wallet, Karma, Federation, AI, Analytics, System, Misc). Use the left-nav to jump around.
 
 ## Base URL
 
-```
-https://api.oxy.so
-```
+| Environment | URL |
+|-------------|-----|
+| Production | `https://api.oxy.so` |
+| Local development | `http://localhost:3001` |
+
+All examples below assume production.
 
 ## Authentication
 
-The API supports three auth flavors:
+Three credential types are accepted. Every endpoint declares which schemes it supports in its OpenAPI `security` block.
 
-| Type | Header | Use case |
-|------|--------|----------|
-| User session JWT | `Authorization: Bearer <token>` | First-party Oxy apps (web, mobile). |
-| API key + secret | `Authorization: Bearer <token>` (after `/auth/service-token` exchange) | Server-to-server (internal Oxy services). |
-| Developer app token | `Authorization: Bearer <token>` | Third-party integrations registered in the developer console. |
+### User session JWT (bearer)
 
-## Stub
+The most common scheme. Used by every first-party Oxy app. The token is obtained from `POST /auth/login`, `POST /auth/signup`, or `POST /auth/verify` and sent on subsequent requests as:
 
-Full guides (rate limits, webhook signatures, pagination conventions) will land in a follow-up. For now the live OpenAPI reference is the source of truth.
+```
+Authorization: Bearer <accessToken>
+```
+
+Access tokens expire (typically 15 minutes). Refresh with `GET /session/token/{sessionId}` using the session ID returned at sign-in, then keep the new access token in memory.
+
+If the user has 2FA enabled, `POST /auth/login` returns `{ twoFactorRequired: true, loginToken }` and you must finish with `POST /security/2fa/verify-login`. The final response is the same `AuthSuccess` shape.
+
+### Service token (server-to-server)
+
+Used by internal Oxy services and trusted integrations. Exchange your `DeveloperApp` credentials at `POST /auth/service-token` to receive a 1-hour service JWT. Send it as `Authorization: Bearer <token>`; for delegated calls add `X-Oxy-User-Id: <userId>` so the API can attribute the action to a specific user.
+
+Service tokens have a `type: 'service'` claim that the `auth()` middleware in `@oxyhq/core` recognises without a session DB lookup, making them ideal for high-volume server-to-server traffic.
+
+See [Service Tokens in @oxyhq/core](/developers/docs/core) for the client pattern.
+
+### Developer app API key
+
+Third-party integrations registered via the developer console get a long-lived `apiKey` (`oxy_dk_...`). Send it as `Authorization: Bearer <apiKey>`. API keys are scoped — see the `scopes` field on the key.
+
+API keys are best for backend integrations that need persistent access without a refresh loop. For end-user-facing clients prefer a session JWT.
+
+## Errors
+
+Every error response follows the same envelope:
+
+```json
+{
+  "error": "VALIDATION_FAILED",
+  "message": "Validation failed",
+  "details": {
+    "issues": [
+      { "path": "email", "message": "Invalid email" }
+    ]
+  }
+}
+```
+
+| Status | When |
+|--------|------|
+| `400 BAD_REQUEST` | Missing or malformed request body / params. |
+| `401 UNAUTHORIZED` | Missing, expired, or invalid credentials. |
+| `403 FORBIDDEN` | Authenticated but not allowed to access the resource. |
+| `404 NOT_FOUND` | Resource does not exist (or is invisible to the caller). |
+| `409 CONFLICT` | Resource state conflicts with the request (e.g. duplicate username). |
+| `422 UNPROCESSABLE_ENTITY` | Validation failed at a semantic level. |
+| `429 RATE_LIMIT` | Rate limit exceeded. Honour the `Retry-After` header. |
+| `5xx` | Server error. Safe to retry with backoff. |
+
+The `error` code is machine-readable SCREAMING_SNAKE_CASE; the `message` is human-readable; `details` is optional and varies per endpoint.
+
+## Pagination
+
+List endpoints accept two conventions:
+
+- **Offset / limit** — `?limit=20&offset=40` for endpoints that return a `total` field.
+- **Cursor** — `?limit=20&cursor=<opaque>` for activity-style feeds. The response includes `nextCursor` (or `null` when exhausted).
+
+`limit` is capped at 100 unless otherwise noted; the default is documented per-endpoint.
+
+## Rate limits
+
+Default limits are generous, but a few sensitive routes are tightened:
+
+| Route | Limit |
+|-------|-------|
+| `/auth/login`, `/auth/signup` | 10 / minute / IP |
+| `/auth/challenge`, `/auth/verify` (public-key auth) | 10 and 5 / minute / IP |
+| `/auth/check-username`, `/auth/lookup`, `/auth/check-email`, `/auth/check-publickey` | 10 / minute / IP |
+| `/auth/service-token` | 10 / 5 minutes / IP |
+| `/contacts/discover` | 5 / minute / user |
+
+Throttled requests return `429` with a `Retry-After` header.
+
+## CSRF
+
+State-changing routes mounted with `csrfProtection` require an `X-CSRF-Token` header. Fetch a token from any GET response (set via the `XSRF-TOKEN` cookie) and echo it on subsequent POST/PUT/PATCH/DELETE calls. Enforced only when cookies are present, so bearer-token-only clients are unaffected.
+
+## Versioning
+
+The API is currently on `v1.x` and surfaces under no path prefix. We follow semantic versioning at the surface level:
+
+- **Patch** releases add fields and endpoints. Safe.
+- **Minor** releases may deprecate fields (with at least 90 days of notice in the changelog) but keep them functional.
+- **Major** releases break backwards compatibility and are announced 90+ days in advance.
+
+Deprecations are surfaced via the `Deprecation` and `Sunset` HTTP headers and in the OpenAPI spec via `deprecated: true`.
+
+## Timestamps & IDs
+
+- All timestamps are ISO-8601 strings (`2025-05-25T12:34:56.789Z`). Always UTC.
+- All IDs are opaque strings. They look like MongoDB ObjectIds today, but treat them as opaque tokens — never parse or order them.
+
+## Webhooks
+
+Developer apps subscribe to events at registration time. Payloads are signed with the per-app webhook secret (HMAC-SHA256 over the raw body) and delivered with:
+
+```
+X-Oxy-Signature: sha256=<hex>
+X-Oxy-Event: <event_name>
+X-Oxy-Delivery: <delivery_id>
+```
+
+Rotate webhook secrets via `PATCH /developer/apps/{id}` (any change to `webhookUrl` rotates the secret automatically). See the [developer console](/developers/docs/console) for managing subscriptions and inspecting delivery history.
+
+## SDKs
+
+You almost never need to hand-write `fetch` against this API — pick the SDK that matches your runtime:
+
+- [`@oxyhq/core`](/developers/docs/core) — Node, Bun, Cloudflare Workers, server-side. Includes the `OxyServices` client used by every other SDK.
+- [`@oxyhq/auth`](/developers/docs/auth-sdk) — Web (Vite, Next.js, CRA). React hooks plus `WebOxyProvider`.
+- [`@oxyhq/services`](/developers/docs/services) — Expo + React Native. Adds bottom-sheet UI, native key storage, and screen flows.
+
+Each SDK is generated against the same OpenAPI document you see at [`/developers/docs/api`](/developers/docs/api) so SDK shapes never drift from the wire format.
+
+## Common endpoint groups
+
+| Group | Examples |
+|-------|----------|
+| Authentication | `/auth/login`, `/auth/signup`, `/auth/verify`, `/auth/service-token`, `/auth/session/*` |
+| Users | `/users/me`, `/users/{userId}`, `/users/search`, `/users/me/data` |
+| Profiles | `/profiles/username/{username}`, `/profiles/search`, `/profiles/resolve` |
+| Sessions | `/session/user/{id}`, `/session/token/{id}`, `/session/logout/{id}`, `/session/logout-all/{id}` |
+| Devices | `/devices`, `/devices/{id}`, `/devices/security` |
+| Privacy | `/privacy/{id}/privacy`, `/privacy/blocked`, `/privacy/restricted` |
+| Security | `/security/activity`, `/security/2fa/setup`, `/security/2fa/verify` |
+| Files | `/assets`, `/assets/init`, `/assets/complete`, `/assets/{id}/stream`, `/storage/usage` |
+| Contacts | `/contacts/discover` |
+| Federation | `/fedcm/exchange`, `/fedcm/clients/approved` |
+| Developer | `/developer/apps`, `/developer/apps/{id}/keys`, `/developer/usage` |
+| Billing | `/billing/checkout/subscription`, `/billing/portal`, `/billing/webhook` |
+
+## Examples
+
+All examples in the reference use placeholder data (e.g. `alice`, `alice@placeholder.example`, `64f7c2a1b8e9d3f4a1c2b3d4`). Never paste real tokens, real user data, or real API secrets into shared documentation or chat logs.

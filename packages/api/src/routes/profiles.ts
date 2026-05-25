@@ -166,12 +166,62 @@ const validatePagination = (req: Request, res: Response, next: () => void): void
 };
 
 /**
- * GET /profiles/username/:username
- * 
- * Get user profile by username
- * 
- * @param {string} username - Username (alphanumeric only)
- * @returns {UserProfile} User profile with statistics
+ * @openapi
+ * /profiles/username/{username}:
+ *   get:
+ *     tags:
+ *       - Profiles
+ *     security: []
+ *     summary: Public profile lookup by username
+ *     description: >
+ *       Resolve a username to a public profile, with follower/following
+ *       counts. Federated handles (`user@domain`) are resolved on the fly via
+ *       WebFinger + ActivityPub; if the actor has never been seen the
+ *       endpoint will upsert it as a federated user before returning.
+ *
+ *       This endpoint is unauthenticated and may be cached by edge.
+ *     parameters:
+ *       - name: username
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *           description: Local username (alphanumeric, 3-30 chars) or fediverse handle.
+ *           examples:
+ *             local: alice
+ *             federated: alice@mastodon.social
+ *     responses:
+ *       200:
+ *         description: Profile found.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/User'
+ *             examples:
+ *               local:
+ *                 value:
+ *                   id: 64f7c2a1b8e9d3f4a1c2b3d4
+ *                   username: alice
+ *                   name:
+ *                     first: Alice
+ *                     last: Example
+ *                   description: Coffee, code, and open source.
+ *                   type: local
+ *                   _count:
+ *                     followers: 42
+ *                     following: 17
+ *       400:
+ *         description: Malformed username.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       404:
+ *         description: Profile not found (and federation lookup failed).
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.get(
   '/username/:username',

@@ -2,63 +2,122 @@ openapi: 3.1.0
 info:
   title: Oxy REST API
   version: 1.0.0
-  description: REST API for the Oxy platform. Authentication, accounts, files, billing, notifications, and developer tooling.
+  description: >
+    The Oxy REST API powers every official Oxy app (web, iOS, Android) and is
+    open to third-party integrations via the developer apps program. It covers
+    authentication, accounts, devices, files, billing, notifications, email,
+    federation (ActivityPub), and developer tooling.
 servers:
   - url: https://api.oxy.so
     description: Production
   - url: http://localhost:3001
     description: Local development
 tags:
-  - name: auth
-    description: Authentication, session management, FedCM, public-key challenge.
-  - name: users
-    description: User profile, identity, settings, lookup.
-  - name: profiles
-    description: Public profile reads (no auth required).
-  - name: session
-    description: Session refresh, current session info.
-  - name: privacy
-    description: Privacy settings per user.
-  - name: security
-    description: Activity log, devices, 2FA.
-  - name: devices
-    description: Per-device session management.
-  - name: developer
-    description: Developer apps, API keys, webhooks.
-  - name: payments
-    description: Stripe payments and saved methods.
-  - name: subscription
-    description: Plans, billing cycles, customer portal.
-  - name: billing
-    description: Stripe webhooks, invoices.
-  - name: credits
-    description: Credit ledger and grants.
-  - name: storage
-    description: User file storage, uploads, downloads.
-  - name: assets
-    description: Public CDN-style assets.
-  - name: email
-    description: Email accounts, messages, threads.
-  - name: notifications
-    description: In-app notifications.
-  - name: contacts
-    description: Privacy-first contact discovery via hashed identifiers.
-  - name: search
-    description: Full-text search.
-  - name: misc
-    description: Miscellaneous endpoints.
+  - name: Authentication
+    description: >
+      Sign up, sign in, refresh sessions, 2FA, public-key challenge-response,
+      and FedCM-backed cross-app sign-in. Routes under /auth/*.
+  - name: Users
+    description: >
+      Read / update the current user, follow graph, account export and
+      deletion, internal user resolution. Routes under /users/*.
+  - name: Profiles
+    description: >
+      Public profile reads (no auth required) — by username, by ID, with
+      similar / recommended profile lookups. Routes under /profiles/*.
+  - name: Sessions
+    description: >
+      Session management: list, validate, refresh, log out one or all
+      sessions on a device. Routes under /session/*.
+  - name: Devices
+    description: >
+      List the user's signed-in devices, inspect security signals, and
+      remotely sign devices out. Routes under /devices/*.
+  - name: Privacy
+    description: >
+      Per-account privacy settings: visibility, blocked users, restricted
+      users. Routes under /privacy/*.
+  - name: Security
+    description: >
+      Account activity log and TOTP-based two-factor authentication setup.
+      Routes under /security/*.
+  - name: Contacts
+    description: >
+      Privacy-first contact discovery via SHA-256 hashed identifiers. The
+      server never sees raw email or phone. Routes under /contacts/*.
+  - name: Files
+    description: >
+      User-owned file storage — upload, link to entities, sign download URLs,
+      manage variants. Routes under /assets/* and /storage/*.
+  - name: Email
+    description: >
+      Mailboxes, messages, threads, labels, drafts, attachments, and inbound
+      mail webhooks. Routes under /email/*.
+  - name: Notifications
+    description: In-app notifications and per-channel preferences.
+  - name: Search
+    description: Full-text search across users, profiles, and posts.
+  - name: Developer
+    description: >
+      Developer apps, API keys, webhook subscriptions, usage analytics,
+      service-token registration. Routes under /developer/*.
+  - name: Payments
+    description: Stripe-backed payments, saved payment methods, refunds.
+  - name: Subscription
+    description: Subscription plans, billing cycles, customer portal links.
+  - name: Billing
+    description: Stripe webhooks, invoices, charge history.
+  - name: Credits
+    description: Per-user credit ledger and grants used by AI / paid features.
+  - name: Wallet
+    description: User wallet — balance, top-up, transfers.
+  - name: Karma
+    description: Karma scores, contributions, leaderboards.
+  - name: Federation
+    description: >
+      ActivityPub / WebFinger inbox-outbox endpoints and FedCM identity
+      provider routes. Routes under /fedcm/*.
+  - name: AI
+    description: AI features — Alia assistant, model usage stats.
+  - name: Analytics
+    description: Read-only analytics for the authenticated account.
+  - name: System
+    description: Platform health, uptime, public metadata.
+  - name: Misc
+    description: Miscellaneous endpoints not covered by another group.
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: JWT access token obtained from /auth/login or /auth/verify, or service token from /auth/service-token.
+      description: >
+        User session JWT obtained from /auth/login, /auth/signup, or
+        /auth/verify. Send as `Authorization: Bearer <token>`.
+    serviceTokenAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >
+        Service-to-service JWT obtained from /auth/service-token by exchanging
+        DeveloperApp credentials. For delegated calls also include
+        `X-Oxy-User-Id: <userId>`.
+    apiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: >
+        Long-lived developer app API key (for third-party integrations that
+        do not require a delegated user session).
     csrfToken:
       type: apiKey
       in: header
       name: X-CSRF-Token
-      description: Required for state-changing requests against CSRF-protected routes.
+      description: >
+        Required for state-changing requests against CSRF-protected routes.
+        Obtain a token from any GET response (set via the `XSRF-TOKEN` cookie)
+        and echo it on subsequent POST/PUT/PATCH/DELETE calls. Only enforced
+        when cookies are present.
   schemas:
     Error:
       type: object
@@ -68,8 +127,8 @@ components:
       properties:
         error:
           type: string
-          description: Machine-readable error code.
-          example: BAD_REQUEST
+          description: Machine-readable error code (SCREAMING_SNAKE_CASE).
+          example: VALIDATION_FAILED
         message:
           type: string
           description: Human-readable error message.
@@ -78,5 +137,147 @@ components:
           type: object
           description: Additional error details (optional).
           additionalProperties: true
+    PaginatedResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            type: object
+        total:
+          type: integer
+          description: Total number of records matching the query.
+          example: 142
+        limit:
+          type: integer
+          description: Page size used for this response.
+          example: 20
+        offset:
+          type: integer
+          description: Zero-based offset applied to this page.
+          example: 0
+        hasMore:
+          type: boolean
+          example: true
+    User:
+      type: object
+      description: A public-facing user profile.
+      properties:
+        id:
+          type: string
+          description: Stable Oxy user ID (MongoDB ObjectId).
+          example: 64f7c2a1b8e9d3f4a1c2b3d4
+        username:
+          type: string
+          example: alice
+        name:
+          type: object
+          properties:
+            first:
+              type: string
+              example: Alice
+            last:
+              type: string
+              example: Example
+        avatar:
+          type: string
+          description: Avatar asset URL or asset ID.
+          example: https://api.oxy.so/assets/64f7.../stream
+        description:
+          type: string
+          example: Coffee, code, and open source.
+        type:
+          type: string
+          enum: [local, federated, agent, automated]
+          description: Account type. Local users are first-party Oxy accounts; federated users come from ActivityPub instances; agents / automated accounts are programmatic.
+        publicKey:
+          type: string
+          description: secp256k1 public key in hex.
+        _count:
+          type: object
+          properties:
+            followers:
+              type: integer
+              example: 42
+            following:
+              type: integer
+              example: 17
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    Session:
+      type: object
+      description: A device-bound user session.
+      properties:
+        id:
+          type: string
+          example: sess_64f7c2a1b8e9d3f4a1c2b3d4
+        deviceName:
+          type: string
+          example: iPhone 15 Pro
+        deviceFingerprint:
+          type: string
+        ip:
+          type: string
+          example: 198.51.100.42
+        userAgent:
+          type: string
+          example: OxyApp/1.0 (iOS 18.0)
+        createdAt:
+          type: string
+          format: date-time
+        lastActiveAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        isCurrent:
+          type: boolean
+          example: true
+    Device:
+      type: object
+      description: A device that has at least one active session.
+      properties:
+        id:
+          type: string
+          example: dev_64f7c2a1b8e9d3f4a1c2b3d4
+        name:
+          type: string
+          example: MacBook Pro 16
+        platform:
+          type: string
+          example: macOS
+        firstSeenAt:
+          type: string
+          format: date-time
+        lastSeenAt:
+          type: string
+          format: date-time
+        sessionCount:
+          type: integer
+          example: 2
+    AuthSuccess:
+      type: object
+      description: Successful authentication response from /auth/signup, /auth/login, or /auth/verify.
+      properties:
+        user:
+          $ref: '#/components/schemas/User'
+        sessionId:
+          type: string
+          example: sess_64f7c2a1b8e9d3f4a1c2b3d4
+        accessToken:
+          type: string
+          description: Short-lived JWT for API calls. Typically valid 15 minutes.
+        refreshToken:
+          type: string
+          description: Long-lived refresh token. Submit to /auth/refresh for a new access token.
+        expiresIn:
+          type: integer
+          description: Lifetime of `accessToken` in seconds.
+          example: 900
 security:
   - bearerAuth: []

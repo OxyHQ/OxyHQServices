@@ -86,16 +86,26 @@ const SUBSCRIPTION_PLANS = [
   { id: 'business_monthly', name: 'Business', creditsPerMonth: 50000, price: 9999, stripePriceId: process.env.STRIPE_BUSINESS_PRICE_ID || '', currency: 'usd' },
 ];
 
-// Public endpoints (no auth needed)
+/**
+ * List one-time credit packages available for purchase.
+ * Public endpoint, no auth needed.
+ */
 router.get('/packages', async (_req: Request, res: Response) => {
   res.json({ packages: CREDIT_PACKAGES });
 });
 
+/**
+ * List subscription plans (free, pro, business).
+ * Public endpoint, no auth needed.
+ */
 router.get('/plans', async (_req: Request, res: Response) => {
   res.json({ plans: SUBSCRIPTION_PLANS });
 });
 
-// Authenticated endpoints
+/**
+ * Create a Stripe checkout session for a one-time credit purchase. Returns
+ * a session ID and a hosted-page URL to redirect the user to.
+ */
 router.post('/checkout/credits', authMiddleware, validate({ body: checkoutCreditsSchema }), async (req: AuthRequest, res: Response) => {
   try {
     const { packageId, successUrl, cancelUrl } = req.body;
@@ -141,6 +151,10 @@ router.post('/checkout/credits', authMiddleware, validate({ body: checkoutCredit
   }
 });
 
+/**
+ * Create a Stripe checkout session for a subscription plan. Returns the
+ * checkout URL.
+ */
 router.post('/checkout/subscription', authMiddleware, validate({ body: checkoutSubscriptionSchema }), async (req: AuthRequest, res: Response) => {
   try {
     const { planId, successUrl, cancelUrl } = req.body;
@@ -179,6 +193,9 @@ router.post('/checkout/subscription', authMiddleware, validate({ body: checkoutS
   }
 });
 
+/**
+ * Get the user's current active subscription (or `null`).
+ */
 router.get('/subscription', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?._id?.toString();
@@ -196,6 +213,11 @@ router.get('/subscription', authMiddleware, async (req: AuthRequest, res: Respon
   }
 });
 
+/**
+ * Cancel the user's current subscription at the end of the billing
+ * period. Sets `cancel_at_period_end=true` on the Stripe subscription so
+ * the user keeps access until the period closes.
+ */
 router.post('/subscription/cancel', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?._id?.toString();
@@ -222,6 +244,10 @@ router.post('/subscription/cancel', authMiddleware, async (req: AuthRequest, res
   }
 });
 
+/**
+ * Paginated list of the user's billing transactions (one-time purchases
+ * and subscription invoices). Default limit 20, max 100.
+ */
 router.get('/transactions', authMiddleware, validate({ query: transactionsQuerySchema }), async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?._id?.toString();
@@ -242,6 +268,11 @@ router.get('/transactions', authMiddleware, validate({ query: transactionsQueryS
   }
 });
 
+/**
+ * Open a Stripe customer portal session. Returns the portal URL — redirect
+ * the user there to manage payment methods, view invoices, or change their
+ * subscription.
+ */
 router.post('/portal', authMiddleware, validate({ body: portalSchema }), async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?._id?.toString();
@@ -269,7 +300,11 @@ router.post('/portal', authMiddleware, validate({ body: portalSchema }), async (
   }
 });
 
-// Stripe webhook (no auth, uses signature verification)
+/**
+ * Stripe webhook receiver. Verifies the `stripe-signature` header against
+ * `STRIPE_WEBHOOK_SECRET` and dispatches handled events (subscription
+ * created/updated, invoice paid, checkout completed, etc.). No auth.
+ */
 router.post('/webhook', async (req: Request, res: Response) => {
   const sig = req.headers['stripe-signature'] as string;
   if (!sig) return res.status(400).json({ error: 'Missing stripe-signature' });

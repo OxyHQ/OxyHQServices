@@ -130,7 +130,12 @@ const apiKeyScopesEnum = ['chat:completions', 'models:read', 'files:read', 'file
 // GLOBAL USAGE & STATS (before /apps/:id)
 // ============================================
 
-// Get global usage statistics across all apps
+/**
+ * Get aggregated usage statistics across every developer app the user owns
+ * for the requested time window (`24h`, `7d`, `30d`, `90d`; defaults to 7d).
+ * Returns totals for requests, tokens, credits, plus a daily breakdown and a
+ * top-10 endpoint breakdown.
+ */
 router.get('/usage', validate({ query: periodQuerySchema }), async (req: AuthenticatedRequest, res: express.Response) => {
   try {
     const userId = getUserId(req);
@@ -151,7 +156,10 @@ router.get('/usage', validate({ query: periodQuerySchema }), async (req: Authent
   }
 });
 
-// Get developer overview stats
+/**
+ * Developer dashboard overview: app counts, key counts, and last-30-days
+ * usage totals for the authenticated developer.
+ */
 router.get('/stats', async (req: AuthenticatedRequest, res: express.Response) => {
   try {
     const userId = getUserId(req);
@@ -217,7 +225,11 @@ const updateAppSchema = z.object({
   scopes: z.array(z.enum(appScopesEnum)).optional(),
 });
 
-// List apps
+/**
+ * List the developer's apps (up to 100). Soft-deleted apps are excluded.
+ * Each entry includes the app's name, description, redirect URLs, icon, and
+ * active status — but never the API secret or webhook secret.
+ */
 router.get('/apps', async (req: AuthenticatedRequest, res: express.Response) => {
   try {
     const userId = getUserId(req);
@@ -235,7 +247,11 @@ router.get('/apps', async (req: AuthenticatedRequest, res: express.Response) => 
   }
 });
 
-// Create app
+/**
+ * Create a new developer app and return its credentials (apiKey, apiSecret,
+ * webhookSecret) — the only time the secrets are returned in plaintext.
+ * Maximum 10 apps per developer.
+ */
 router.post('/apps', validate({ body: createAppSchema }), async (req: AuthenticatedRequest, res: express.Response) => {
   try {
     const userId = getUserId(req);
@@ -284,7 +300,10 @@ router.post('/apps', validate({ body: createAppSchema }), async (req: Authentica
   }
 });
 
-// Get single app
+/**
+ * Get a single developer app by ID. Returns 404 if the app does not exist
+ * or is owned by another developer.
+ */
 router.get('/apps/:id', validate({ params: appIdParams }), async (req: AuthenticatedRequest, res: express.Response) => {
   try {
     const userId = getUserId(req);
@@ -305,7 +324,11 @@ router.get('/apps/:id', validate({ params: appIdParams }), async (req: Authentic
   }
 });
 
-// Update app
+/**
+ * Partially update a developer app. Supplying a new `webhookUrl` also
+ * rotates the `webhookSecret`. `isActive: false` suspends the app so its
+ * keys stop authenticating.
+ */
 router.patch('/apps/:id', validate({ params: appIdParams, body: updateAppSchema }), async (req: AuthenticatedRequest, res: express.Response) => {
   try {
     const userId = getUserId(req);
@@ -352,7 +375,10 @@ router.patch('/apps/:id', validate({ params: appIdParams, body: updateAppSchema 
   }
 });
 
-// Regenerate API secret
+/**
+ * Rotate the app's API secret. Returns the new secret in plaintext one
+ * time — store it immediately, the server cannot reveal it again.
+ */
 router.post('/apps/:id/regenerate-secret', validate({ params: appIdParams }), async (req: AuthenticatedRequest, res: express.Response) => {
   try {
     const userId = getUserId(req);
@@ -376,7 +402,10 @@ router.post('/apps/:id/regenerate-secret', validate({ params: appIdParams }), as
   }
 });
 
-// Delete app (cascade deletes keys + usage)
+/**
+ * Permanently delete a developer app. Cascade-deletes every API key and
+ * usage record tied to the app. Irreversible.
+ */
 router.delete('/apps/:id', validate({ params: appIdParams }), async (req: AuthenticatedRequest, res: express.Response) => {
   try {
     const userId = getUserId(req);
@@ -407,6 +436,11 @@ router.delete('/apps/:id', validate({ params: appIdParams }), async (req: Authen
 // APP USAGE STATISTICS
 // ============================================
 
+/**
+ * Per-app usage statistics over the requested time window (`24h`, `7d`,
+ * `30d`, `90d`; defaults to `7d`). Same shape as `/developer/usage` but
+ * filtered to a single app.
+ */
 router.get('/apps/:appId/usage', validate({ params: appIdRouteParams, query: periodQuerySchema }), async (req: AuthenticatedRequest, res: express.Response) => {
   try {
     const userId = getUserId(req);
@@ -447,7 +481,10 @@ const updateApiKeySchema = z.object({
   isActive: z.boolean().optional(),
 });
 
-// List keys for an app
+/**
+ * List API keys for the given app (up to 100). Returns key metadata but
+ * never the key hash — only the prefix is exposed.
+ */
 router.get('/apps/:appId/keys', validate({ params: appIdRouteParams }), async (req: AuthenticatedRequest, res: express.Response) => {
   try {
     const userId = getUserId(req);
@@ -469,7 +506,11 @@ router.get('/apps/:appId/keys', validate({ params: appIdRouteParams }), async (r
   }
 });
 
-// Create API key
+/**
+ * Create a new API key for the given app. The plaintext key is returned
+ * once and only once — keep it secret. The server stores only its SHA-256
+ * hash and a 16-char prefix.
+ */
 router.post('/apps/:appId/keys', validate({ params: appIdRouteParams, body: createApiKeySchema }), async (req: AuthenticatedRequest, res: express.Response) => {
   try {
     const userId = getUserId(req);
@@ -516,7 +557,10 @@ router.post('/apps/:appId/keys', validate({ params: appIdRouteParams, body: crea
   }
 });
 
-// Update API key
+/**
+ * Update an API key's name, scopes, or active flag. Cannot rotate the key
+ * material — delete and recreate for that.
+ */
 router.patch('/apps/:appId/keys/:keyId', validate({ params: appKeyParams, body: updateApiKeySchema }), async (req: AuthenticatedRequest, res: express.Response) => {
   try {
     const userId = getUserId(req);
@@ -546,7 +590,10 @@ router.patch('/apps/:appId/keys/:keyId', validate({ params: appKeyParams, body: 
   }
 });
 
-// Delete API key
+/**
+ * Delete an API key. Cascade-deletes all usage records for the key.
+ * Irreversible.
+ */
 router.delete('/apps/:appId/keys/:keyId', validate({ params: appKeyParams }), async (req: AuthenticatedRequest, res: express.Response) => {
   try {
     const userId = getUserId(req);
@@ -569,7 +616,9 @@ router.delete('/apps/:appId/keys/:keyId', validate({ params: appKeyParams }), as
   }
 });
 
-// Per-key usage
+/**
+ * Per-key usage statistics over the requested time window.
+ */
 router.get('/apps/:appId/keys/:keyId/usage', validate({ params: appKeyParams, query: periodQuerySchema }), async (req: AuthenticatedRequest, res: express.Response) => {
   try {
     const userId = getUserId(req);

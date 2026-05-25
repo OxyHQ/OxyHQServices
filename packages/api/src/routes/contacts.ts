@@ -98,12 +98,104 @@ interface DiscoverMatch {
 }
 
 /**
- * POST /contacts/discover
+ * @openapi
+ * /contacts/discover:
+ *   post:
+ *     tags:
+ *       - Contacts
+ *     summary: Discover which contacts are on Oxy
+ *     description: >
+ *       Privacy-preserving contact-book matching. Clients SHA-256 hash each
+ *       email and phone number locally (lowercased; phone numbers normalised
+ *       to E.164 — see `utils/contactHash.ts` in `@oxyhq/core`) and upload
+ *       only the resulting 64-character hex digests. The server intersects
+ *       them against precomputed indexes on the `User` collection and returns
+ *       matched Oxy user IDs.
  *
- * Body: { hashedEmails: string[]; hashedPhones: string[] }
- * Response: { matches: Array<{ userId, hashedIdentifier, matchType }> }
+ *       Privacy invariants:
+ *         - Raw email / phone never traverses this endpoint.
+ *         - The response contains no PII — only Oxy user IDs and the hash the
+ *           caller supplied (so the client can map matches back to the local
+ *           contact that produced them).
+ *         - The endpoint never writes to the database. Discovery is stateless.
  *
- * Auth: required (user session token only; rejects service tokens).
+ *       Rate limits: 5 requests per minute per authenticated user; up to 200
+ *       hashed identifiers per channel (~400 total) per request. Service
+ *       tokens are explicitly rejected with 403.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               hashedEmails:
+ *                 type: array
+ *                 maxItems: 200
+ *                 items:
+ *                   type: string
+ *                   pattern: '^[a-f0-9]{64}$'
+ *                   description: SHA-256 hex of `email.toLowerCase().trim()`.
+ *               hashedPhones:
+ *                 type: array
+ *                 maxItems: 200
+ *                 items:
+ *                   type: string
+ *                   pattern: '^[a-f0-9]{64}$'
+ *                   description: SHA-256 hex of the E.164-normalised phone number.
+ *           examples:
+ *             addressBook:
+ *               summary: Mixed email + phone request
+ *               value:
+ *                 hashedEmails:
+ *                   - 7c211433f02071597741e6ff5a8ea34789abbf43b9c1abcdef0123456789abcd
+ *                 hashedPhones:
+ *                   - 9876543210fedcba9876543210fedcba9876543210fedcba9876543210fedcba
+ *     responses:
+ *       200:
+ *         description: Discovery completed. Empty `matches` means no overlap.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 matches:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     required:
+ *                       - userId
+ *                       - hashedIdentifier
+ *                       - matchType
+ *                     properties:
+ *                       userId:
+ *                         type: string
+ *                         example: 64f7c2a1b8e9d3f4a1c2b3d4
+ *                       hashedIdentifier:
+ *                         type: string
+ *                         example: 7c211433f02071597741e6ff5a8ea34789abbf43b9c1abcdef0123456789abcd
+ *                       matchType:
+ *                         type: string
+ *                         enum: [email, phone]
+ *             examples:
+ *               oneMatch:
+ *                 value:
+ *                   matches:
+ *                     - userId: 64f7c2a1b8e9d3f4a1c2b3d4
+ *                       hashedIdentifier: 7c211433f02071597741e6ff5a8ea34789abbf43b9c1abcdef0123456789abcd
+ *                       matchType: email
+ *       400:
+ *         description: Validation failed (empty payload, malformed hash, oversized batch).
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       401:
+ *         description: Missing or invalid bearer token.
+ *       403:
+ *         description: Service token used — must use a user session token.
+ *       429:
+ *         description: Rate limit exceeded (5 requests / minute / user).
  */
 router.post(
   '/discover',

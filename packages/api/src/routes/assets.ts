@@ -77,9 +77,50 @@ const unlinkFileSchema = z.object({
 });
 
 /**
- * @route GET /api/assets
- * @desc List authenticated user's files (Central Asset Service)
- * @access Private
+ * @openapi
+ * /assets:
+ *   get:
+ *     tags:
+ *       - Files
+ *     summary: List the user's files
+ *     description: >
+ *       Paginated list of files owned by the authenticated user, including
+ *       upload status, deduplication info (`sha256`), variants (thumbnails,
+ *       resized renditions), and any entity links.
+ *     parameters:
+ *       - name: limit
+ *         in: query
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 100
+ *           default: 50
+ *       - name: offset
+ *         in: query
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           minimum: 0
+ *           default: 0
+ *     responses:
+ *       200:
+ *         description: Paginated file list.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 files:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                 total:
+ *                   type: integer
+ *                 hasMore:
+ *                   type: boolean
+ *       401:
+ *         description: Missing or invalid bearer token.
  */
 router.get('/', authMiddleware, validate({ query: listAssetsQuerySchema }), asyncHandler(async (req: AuthenticatedRequest, res: express.Response) => {
   const user = req.user;
@@ -115,9 +156,63 @@ router.get('/', authMiddleware, validate({ query: listAssetsQuerySchema }), asyn
 }));
 
 /**
- * @route POST /api/assets/init
- * @desc Initialize file upload - returns pre-signed URL and file ID
- * @access Private
+ * @openapi
+ * /assets/init:
+ *   post:
+ *     tags:
+ *       - Files
+ *     summary: Initialise a file upload
+ *     description: >
+ *       First call in the two-step upload flow. Submit the file's SHA-256,
+ *       size, and MIME type and receive a `fileId` plus a pre-signed S3
+ *       upload URL. If a file with the same SHA-256 already exists for the
+ *       caller, the server short-circuits and returns the existing record
+ *       (de-duplication).
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - sha256
+ *               - size
+ *               - mime
+ *             properties:
+ *               sha256:
+ *                 type: string
+ *                 minLength: 64
+ *                 maxLength: 64
+ *                 example: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+ *               size:
+ *                 type: integer
+ *                 minimum: 1
+ *                 example: 12345
+ *               mime:
+ *                 type: string
+ *                 example: image/png
+ *     responses:
+ *       200:
+ *         description: Upload initialised.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 fileId:
+ *                   type: string
+ *                 uploadUrl:
+ *                   type: string
+ *                   description: Pre-signed S3 PUT URL.
+ *                 storageKey:
+ *                   type: string
+ *                 deduplicated:
+ *                   type: boolean
+ *                   description: True if the SHA-256 was already present.
+ *       400:
+ *         description: Validation failed.
+ *       401:
+ *         description: Missing or invalid bearer token.
  */
 router.post('/init', authMiddleware, validate({ body: initUploadSchema }), asyncHandler(async (req: AuthenticatedRequest, res: express.Response) => {
   const user = req.user;
@@ -152,9 +247,64 @@ router.post('/init', authMiddleware, validate({ body: initUploadSchema }), async
 }));
 
 /**
- * @route POST /api/assets/complete
- * @desc Complete file upload - commit metadata and trigger variant generation
- * @access Private
+ * @openapi
+ * /assets/complete:
+ *   post:
+ *     tags:
+ *       - Files
+ *     summary: Complete a file upload
+ *     description: >
+ *       Second call in the two-step upload flow. Call this after the client
+ *       has finished PUTing the file to the pre-signed S3 URL returned by
+ *       `/assets/init`. Commits the metadata, marks the file ready, and
+ *       enqueues variant generation (thumbnails, image resizes) where
+ *       applicable.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - fileId
+ *               - originalName
+ *               - size
+ *               - mime
+ *             properties:
+ *               fileId:
+ *                 type: string
+ *               originalName:
+ *                 type: string
+ *                 example: profile.png
+ *               size:
+ *                 type: integer
+ *                 example: 12345
+ *               mime:
+ *                 type: string
+ *                 example: image/png
+ *               visibility:
+ *                 type: string
+ *                 enum: [private, public, unlisted]
+ *                 default: private
+ *               metadata:
+ *                 type: object
+ *                 additionalProperties: true
+ *     responses:
+ *       200:
+ *         description: File committed.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 assetId:
+ *                   type: string
+ *                 file:
+ *                   type: object
+ *       400:
+ *         description: Validation failed.
+ *       401:
+ *         description: Missing or invalid bearer token.
  */
 router.post('/complete', authMiddleware, validate({ body: completeUploadSchema }), asyncHandler(async (req: AuthenticatedRequest, res: express.Response) => {
   const user = req.user;
@@ -231,9 +381,43 @@ router.post('/:id/upload-direct', authMiddleware, validate({ params: assetIdPara
 }));
 
 /**
- * @route POST /api/assets/upload
- * @desc Upload file directly - backend calculates SHA256
- * @access Private
+ * @openapi
+ * /assets/upload:
+ *   post:
+ *     tags:
+ *       - Files
+ *     summary: Upload a file in a single request
+ *     description: >
+ *       Convenience endpoint that wraps the init/PUT/complete flow into a
+ *       single multipart upload. The backend computes the SHA-256 itself.
+ *       Use this for small files where the round-trip cost outweighs the
+ *       benefit of direct-to-S3 streaming.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - file
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *               visibility:
+ *                 type: string
+ *                 enum: [private, public, unlisted]
+ *                 default: private
+ *               metadata:
+ *                 type: string
+ *                 description: Optional JSON-encoded metadata object.
+ *     responses:
+ *       200:
+ *         description: File uploaded and committed.
+ *       400:
+ *         description: Missing file or malformed metadata.
+ *       401:
+ *         description: Missing or invalid bearer token.
  */
 router.post('/upload', authMiddleware, upload.single('file'), asyncHandler(async (req: AuthenticatedRequest, res: express.Response) => {
   const user = req.user;
@@ -379,9 +563,30 @@ router.delete('/:id/links', authMiddleware, validate({ params: assetIdParams, bo
 }));
 
 /**
- * @route GET /api/assets/:id
- * @desc Get file metadata with links and variants
- * @access Private
+ * @openapi
+ * /assets/{id}:
+ *   get:
+ *     tags:
+ *       - Files
+ *     summary: Get file metadata
+ *     description: >
+ *       Return metadata for the file (size, MIME, SHA-256, variants, links,
+ *       usage count, status). Only the owner can fetch metadata; signed
+ *       URLs (`/assets/:id/url` or `/assets/:id/stream`) are the public
+ *       access path.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: File metadata.
+ *       401:
+ *         description: Missing or invalid bearer token.
+ *       404:
+ *         description: File not found.
  */
 router.get('/:id', authMiddleware, validate({ params: assetIdParams }), asyncHandler(async (req: AuthenticatedRequest, res: express.Response) => {
   const user = req.user;
@@ -423,9 +628,55 @@ router.get('/:id', authMiddleware, validate({ params: assetIdParams }), asyncHan
 }));
 
 /**
- * @route GET /api/assets/:id/url
- * @desc Get file URL (CDN or signed URL)
- * @access Private
+ * @openapi
+ * /assets/{id}/url:
+ *   get:
+ *     tags:
+ *       - Files
+ *     summary: Get a download URL for a file
+ *     description: >
+ *       Return a CDN URL (for public files) or a pre-signed S3 URL (for
+ *       private files) suitable for `<img src>` or direct download. The URL
+ *       is valid for `expiresIn` seconds (default 3600).
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - name: variant
+ *         in: query
+ *         required: false
+ *         schema:
+ *           type: string
+ *           description: 'Variant name (e.g. "thumb-256", "medium").'
+ *       - name: expiresIn
+ *         in: query
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           default: 3600
+ *           description: Seconds the signed URL stays valid.
+ *     responses:
+ *       200:
+ *         description: Signed URL.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 url:
+ *                   type: string
+ *                   format: uri
+ *                 variant:
+ *                   type: string
+ *                   nullable: true
+ *                 expiresIn:
+ *                   type: integer
+ *       401:
+ *         description: Missing or invalid bearer token.
+ *       404:
+ *         description: File not found.
  */
 router.get('/:id/url', authMiddleware, validate({ params: assetIdParams, query: assetUrlQuerySchema }), asyncHandler(async (req: AuthenticatedRequest, res: express.Response) => {
   const user = req.user;
@@ -486,9 +737,44 @@ router.get('/:id/exists', authMiddleware, validate({ params: assetIdParams }), a
 }));
 
 /**
- * @route GET /api/assets/:id/stream
- * @desc Stream file bytes with correct headers to avoid browser ORB blocking
- * @access Public (with optional authentication for private files)
+ * @openapi
+ * /assets/{id}/stream:
+ *   get:
+ *     tags:
+ *       - Files
+ *     summary: Stream file bytes (with correct headers)
+ *     description: >
+ *       Public endpoint that streams the raw file bytes back to the caller.
+ *       Sends correct `Content-Type` and `Cache-Control` headers and falls
+ *       back to a placeholder if the underlying object is missing
+ *       (`?fallback=placeholder|placeholderVisible|icon`). For private files
+ *       the caller must supply a bearer token.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - name: variant
+ *         in: query
+ *         required: false
+ *         schema:
+ *           type: string
+ *       - name: fallback
+ *         in: query
+ *         required: false
+ *         schema:
+ *           type: string
+ *           enum: [placeholder, placeholderVisible, icon]
+ *     responses:
+ *       200:
+ *         description: File bytes streamed (or placeholder if fallback requested).
+ *       302:
+ *         description: Redirect to pre-signed S3 URL.
+ *       403:
+ *         description: Access denied.
+ *       404:
+ *         description: File not found (and no fallback requested).
  */
 router.get('/:id/stream', mediaHeadersMiddleware, validate({ params: assetIdParams }), optionalAuthMiddleware, asyncHandler(async (req: AuthenticatedRequest, res: express.Response) => {
   const userId = getUserId(req);
