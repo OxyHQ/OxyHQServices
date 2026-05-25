@@ -24,5 +24,6 @@
   "defaultVersion": "2.0.4",
   "docsPath": "docs/",
   "typedoc": { "entry": "src/index.ts" },
-  "description": "Web auth SDK: React hooks, FedCM, WebOxyProvider, session management."
+  "description": "Web auth SDK: React hooks, FedCM, WebOxyProvider, session management.",
+  "versionsNote": "Version 2.0.0 was published from a local commit not preserved in git history. See npm for the changelog."
 }

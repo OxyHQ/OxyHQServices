@@ -468,5 +468,6 @@
   "typedoc": {
     "entry": "src/index.ts"
   },
-  "description": "Expo / React Native SDK: components, screens, bottom-sheet navigation."
+  "description": "Expo / React Native SDK: components, screens, bottom-sheet navigation.",
+  "versionsNote": "Most pre-6.x versions were published from local commits not preserved in git history. Git tags exist only for versions whose bump commit is reachable from HEAD. See npm for full changelogs."
 }

@@ -51,5 +51,6 @@
   "defaultVersion": "1.11.13",
   "docsPath": "docs/",
   "typedoc": { "entry": "src/index.ts" },
-  "description": "Platform-agnostic OxyServices client, mixins, and crypto. Zero React/RN."
+  "description": "Platform-agnostic OxyServices client, mixins, and crypto. Zero React/RN.",
+  "versionsNote": "Versions 1.6.2-1.6.5 and 1.11.8 were published from local commits not preserved in git history. See npm for changelogs."
 }
