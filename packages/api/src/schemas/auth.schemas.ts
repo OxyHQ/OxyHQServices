@@ -111,3 +111,30 @@ export const serviceTokenSchema = z.object({
   apiKey: z.string().trim().min(1),
   apiSecret: z.string().trim().min(1),
 });
+
+// POST /auth/oauth/authorize
+// Issued from the auth UI after the user clicks "Allow". Requires the user
+// to be authenticated via Bearer token; the client passes the OAuth client
+// id and the registered redirect URI to bind into a single-use code.
+export const oauthAuthorizeSchema = z.object({
+  clientId: z.string().trim().min(1),
+  redirectUri: z.string().trim().url(),
+  state: z.string().trim().min(1).max(512).optional(),
+  /** PKCE — required for public clients (no clientSecret). */
+  codeChallenge: z.string().trim().min(43).max(128).optional(),
+  codeChallengeMethod: z.literal('S256').optional(),
+  scope: z.string().trim().max(512).optional(),
+});
+
+// POST /auth/oauth/token
+// Confidential clients pass clientSecret. Public clients pass codeVerifier.
+export const oauthTokenSchema = z.object({
+  code: z.string().trim().min(1),
+  clientId: z.string().trim().min(1),
+  redirectUri: z.string().trim().url(),
+  clientSecret: z.string().trim().min(1).optional(),
+  codeVerifier: z.string().trim().min(43).max(128).optional(),
+}).refine(
+  (data) => Boolean(data.clientSecret) || Boolean(data.codeVerifier),
+  { message: 'Either clientSecret (confidential client) or codeVerifier (PKCE) is required' }
+);

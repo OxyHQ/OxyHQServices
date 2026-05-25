@@ -1,5 +1,24 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
+/**
+ * Allowed OAuth scopes for DeveloperApp.
+ * - `federation:write` permits internal services to call the user resolution
+ *   endpoint (`PUT /users/resolve`) for federation/agent/automation flows.
+ *   Must be explicitly granted in the DB by an administrator.
+ */
+export const DEVELOPER_APP_SCOPES = [
+  'files:read',
+  'files:write',
+  'files:delete',
+  'user:read',
+  'webhooks:receive',
+  'chat:completions',
+  'models:read',
+  'federation:write',
+] as const;
+
+export type DeveloperAppScope = typeof DEVELOPER_APP_SCOPES[number];
+
 export interface IDeveloperApp extends Omit<Document, '_id'> {
   _id: string;
   name: string;
@@ -12,9 +31,15 @@ export interface IDeveloperApp extends Omit<Document, '_id'> {
   devWebhookUrl?: string;
   websiteUrl?: string;
   redirectUrls: string[];
+  /**
+   * Per-app allowlist of redirect URIs for the OAuth2 authorization code flow.
+   * Matched exactly (scheme + host + port + path) against the `redirect_uri`
+   * parameter on `POST /auth/oauth/authorize`. Rejected if not present.
+   */
+  redirectUris: string[];
   icon?: string;
   status: 'active' | 'suspended' | 'deleted';
-  scopes: string[];
+  scopes: DeveloperAppScope[];
   createdAt: Date;
   updatedAt: Date;
   lastUsedAt?: Date;
@@ -67,18 +92,22 @@ const DeveloperAppSchema = new Schema<IDeveloperApp>({
     type: String,
     trim: true
   }],
+  redirectUris: [{
+    type: String,
+    trim: true,
+  }],
   icon: {
     type: String
   },
-  status: { 
-    type: String, 
-    enum: ['active', 'suspended', 'deleted'], 
+  status: {
+    type: String,
+    enum: ['active', 'suspended', 'deleted'],
     default: 'active',
-    index: true 
+    index: true
   },
   scopes: [{
     type: String,
-    enum: ['files:read', 'files:write', 'files:delete', 'user:read', 'webhooks:receive', 'chat:completions', 'models:read']
+    enum: DEVELOPER_APP_SCOPES,
   }],
   lastUsedAt: { type: Date },
   isInternal: {

@@ -189,6 +189,29 @@ export const authMiddleware = async (req: AuthRequest, res: Response, next: Next
 };
 
 /**
+ * Decoded payload for service-to-service JWTs minted via
+ * `POST /auth/service-token`. Carries the `scopes` granted to the
+ * DeveloperApp so downstream middleware can do per-scope authorisation.
+ */
+export interface ServiceTokenPayload {
+  type: 'service';
+  appId: string;
+  appName: string;
+  scopes: string[];
+  iat?: number;
+  exp?: number;
+}
+
+/**
+ * Request augmented by `serviceAuthMiddleware` with the verified service
+ * principal. Routes can read `req.serviceApp.scopes` to gate sensitive
+ * actions.
+ */
+export interface ServiceAuthRequest extends Request {
+  serviceApp?: ServiceTokenPayload;
+}
+
+/**
  * Service token authentication middleware
  *
  * Validates OAuth2 client-credentials service JWTs (type: 'service').
@@ -196,11 +219,14 @@ export const authMiddleware = async (req: AuthRequest, res: Response, next: Next
  * user session tokens. Used to protect internal endpoints that should only
  * be called by other Oxy ecosystem services.
  *
+ * Attaches the decoded service payload (including granted `scopes`) to
+ * `req.serviceApp` so routes can do scope-level authorisation.
+ *
  * @param req - Express request object
  * @param res - Express response object
  * @param next - Express next function
  */
-export const serviceAuthMiddleware = (req: Request, res: Response, next: NextFunction) => {
+export const serviceAuthMiddleware = (req: ServiceAuthRequest, res: Response, next: NextFunction) => {
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {
     return res.status(401).json({
@@ -224,6 +250,9 @@ export const serviceAuthMiddleware = (req: Request, res: Response, next: NextFun
       type?: string;
       appId?: string;
       appName?: string;
+      scopes?: unknown;
+      iat?: number;
+      exp?: number;
       [key: string]: unknown;
     };
 
@@ -233,6 +262,26 @@ export const serviceAuthMiddleware = (req: Request, res: Response, next: NextFun
         message: 'This endpoint requires a service token',
       });
     }
+
+    if (typeof decoded.appId !== 'string' || typeof decoded.appName !== 'string') {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Service token is missing required claims',
+      });
+    }
+
+    const scopes = Array.isArray(decoded.scopes)
+      ? decoded.scopes.filter((s): s is string => typeof s === 'string')
+      : [];
+
+    req.serviceApp = {
+      type: 'service',
+      appId: decoded.appId,
+      appName: decoded.appName,
+      scopes,
+      iat: decoded.iat,
+      exp: decoded.exp,
+    };
 
     next();
   } catch (error) {

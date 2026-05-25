@@ -12,7 +12,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { Types } from 'mongoose';
 import User from '../models/User';
-import { authMiddleware, serviceAuthMiddleware } from '../middleware/auth';
+import { authMiddleware, serviceAuthMiddleware, type ServiceAuthRequest } from '../middleware/auth';
 import { logger } from '../utils/logger';
 import { asyncHandler, sendSuccess, sendPaginated } from '../utils/asyncHandler';
 import {
@@ -170,11 +170,45 @@ const requireOwnership = async (req: AuthRequest, res: Response, next: NextFunct
 // ============================================================================
 
 /**
- * GET /users/me
- * 
- * Get current authenticated user profile
- * 
- * @returns {User} Current user object
+ * @openapi
+ * /users/me:
+ *   get:
+ *     tags:
+ *       - Users
+ *     summary: Get the current authenticated user
+ *     description: >
+ *       Returns the full profile for the bearer-token holder, including
+ *       privacy settings, identity flags, and connected account types. This
+ *       is the canonical "who am I" endpoint that every Oxy app calls on
+ *       startup.
+ *     responses:
+ *       200:
+ *         description: Current user profile.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/User'
+ *             examples:
+ *               success:
+ *                 value:
+ *                   id: 64f7c2a1b8e9d3f4a1c2b3d4
+ *                   username: alice
+ *                   name:
+ *                     first: Alice
+ *                     last: Example
+ *                   description: Coffee, code, and open source.
+ *                   type: local
+ *                   _count:
+ *                     followers: 42
+ *                     following: 17
+ *                   createdAt: '2024-01-15T12:34:56.789Z'
+ *                   updatedAt: '2025-05-12T09:00:00.000Z'
+ *       401:
+ *         description: Missing or invalid bearer token.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.get(
   '/me',
@@ -196,12 +230,79 @@ router.get(
 );
 
 /**
- * PUT /users/me
- * 
- * Update current authenticated user profile
- * 
- * @body {ProfileUpdateInput} Profile updates
- * @returns {User} Updated user object
+ * @openapi
+ * /users/me:
+ *   put:
+ *     tags:
+ *       - Users
+ *     summary: Update the current authenticated user
+ *     description: >
+ *       Partial profile update for the authenticated user. Only fields
+ *       supplied in the body are touched — missing fields keep their existing
+ *       values. The server enforces uniqueness on `email` and `username`;
+ *       conflicts return 409. Always invalidates the in-memory user cache so
+ *       the next read returns the updated record.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               username:
+ *                 type: string
+ *                 minLength: 3
+ *                 maxLength: 30
+ *                 pattern: '^[a-zA-Z0-9]{3,30}$'
+ *                 example: alice
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: alice@placeholder.example
+ *               name:
+ *                 type: object
+ *                 properties:
+ *                   first:
+ *                     type: string
+ *                     example: Alice
+ *                   last:
+ *                     type: string
+ *                     example: Example
+ *               description:
+ *                 type: string
+ *                 example: Updated bio.
+ *               avatar:
+ *                 type: string
+ *                 description: Asset ID or absolute URL.
+ *                 example: 64f7c2a1b8e9d3f4a1c2b3d4
+ *           examples:
+ *             rename:
+ *               summary: Update the display name
+ *               value:
+ *                 name:
+ *                   first: Alice
+ *                   last: Example
+ *     responses:
+ *       200:
+ *         description: Updated user profile.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/User'
+ *       400:
+ *         description: Validation failed.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       401:
+ *         description: Missing or invalid bearer token.
+ *       409:
+ *         description: Email or username conflict.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.put(
   '/me',
@@ -670,14 +771,74 @@ router.get(
 );
 
 /**
- * DELETE /users/me
- * 
- * Permanently delete the current user's account
- * 
- * @body {string} signature - Signature of "delete:{publicKey}:{timestamp}" for confirmation
- * @body {number} timestamp - Timestamp when the signature was created
- * @body {string} confirmText - Confirmation text (usually username)
- * @returns {object} Confirmation message
+ * @openapi
+ * /users/me:
+ *   delete:
+ *     tags:
+ *       - Users
+ *     summary: Permanently delete the current account
+ *     description: >
+ *       Hard-delete the authenticated user's account. To prove identity at
+ *       the time of deletion the client signs `delete:{publicKey}:{timestamp}`
+ *       with the local secp256k1 private key (see `KeyManager.sign` in
+ *       `@oxyhq/core`). The signature is rejected if it is older than 5
+ *       minutes, if the confirmation text does not match the account's
+ *       username, or if the account has no associated public key.
+ *
+ *       Successful deletion removes all mailboxes, messages, and S3
+ *       attachments owned by the user.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - signature
+ *               - timestamp
+ *               - confirmText
+ *             properties:
+ *               signature:
+ *                 type: string
+ *                 description: Hex-encoded secp256k1 signature over `delete:{publicKey}:{timestamp}`.
+ *                 example: 3045022100abcd...3045022100efgh
+ *               timestamp:
+ *                 type: integer
+ *                 description: Unix milliseconds when the signature was produced.
+ *                 example: 1714576800000
+ *               confirmText:
+ *                 type: string
+ *                 description: Must equal the account's username.
+ *                 example: alice
+ *     responses:
+ *       200:
+ *         description: Account deleted.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Account deleted successfully
+ *       400:
+ *         description: Missing field, expired signature, or mismatched confirmText.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       401:
+ *         description: Invalid signature.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       404:
+ *         description: User not found.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.delete(
   '/me',
@@ -747,7 +908,18 @@ router.delete(
  *
  * Find or create a non-local user (federated, agent, or automated).
  * Called by Oxy ecosystem services when they encounter an external user
- * that needs an Oxy identity. Requires a valid service token.
+ * that needs an Oxy identity. Requires a valid service token whose
+ * DeveloperApp has been granted the `federation:write` scope.
+ *
+ * Hardening (C4):
+ *  - Scope check: rejects service tokens that lack `federation:write`.
+ *  - Actor URI binding: `actorUri.hostname` must match the asserted
+ *    `domain` (so a malicious service can't claim to vouch for a user on
+ *    a host they don't actually own).
+ *  - Username squatting: for `agent` / `automated`, refuse to upsert when
+ *    a `local` (or other-type) user already owns the username.
+ *  - Type immutability: never let `type` change on an existing user — a
+ *    federated user cannot be silently upgraded to an `agent`, etc.
  *
  * @body {'federated' | 'agent' | 'automated'} type
  * @body {string} username      - Unique username (e.g. "user@mastodon.social")
@@ -762,7 +934,14 @@ router.delete(
 router.put(
   '/resolve',
   serviceAuthMiddleware,
-  asyncHandler(async (req: Request, res: Response) => {
+  asyncHandler(async (req: ServiceAuthRequest, res: Response) => {
+    // Scope gate — only service tokens explicitly granted `federation:write`
+    // may create or update federated/agent/automated users.
+    const scopes = req.serviceApp?.scopes ?? [];
+    if (!scopes.includes('federation:write')) {
+      throw new ForbiddenError('Missing required scope: federation:write');
+    }
+
     const { type, username, actorUri, domain, displayName, avatar, bio, ownerId } = req.body;
 
     if (!type || !['federated', 'agent', 'automated'].includes(type)) {
@@ -774,7 +953,7 @@ router.put(
 
     // Build the upsert filter and $set payload — never touch auth fields
     let filter: Record<string, unknown>;
-    const setFields: Record<string, unknown> = { type, username };
+    const setFields: Record<string, unknown> = { username };
 
     if (type === 'federated') {
       if (!actorUri || typeof actorUri !== 'string') {
@@ -783,15 +962,50 @@ router.put(
       if (!domain || typeof domain !== 'string') {
         throw new BadRequestError('domain is required for federated users');
       }
+      // Bind the actor URI hostname to the asserted domain so a service
+      // can't claim "alice@mastodon.social" actually lives at
+      // attacker.example.
+      let actorHostname: string;
+      try {
+        actorHostname = new URL(actorUri).hostname.toLowerCase();
+      } catch {
+        throw new BadRequestError('actorUri must be a valid URL');
+      }
+      const normalisedDomain = domain.toLowerCase();
+      if (actorHostname !== normalisedDomain) {
+        throw new BadRequestError('actorUri hostname does not match domain');
+      }
       filter = { 'federation.actorUri': actorUri };
       setFields['federation.actorUri'] = actorUri;
-      setFields['federation.domain'] = domain;
+      setFields['federation.domain'] = normalisedDomain;
     } else {
+      // For agent / automated, refuse to clobber a username already taken
+      // by a local user — that would be account takeover via the
+      // federation pipeline.
+      const localCollision = await User.findOne({
+        username,
+        type: { $nin: ['agent', 'automated'] },
+      }).select('_id type').lean();
+      if (localCollision) {
+        throw new ConflictError('Username is already taken by a non-automated user');
+      }
       filter = { username, type: { $in: ['agent', 'automated'] } };
       if (typeof ownerId === 'string') {
         setFields['automation.ownerId'] = ownerId;
       }
     }
+
+    // Type immutability check: if a user already exists, its `type` must
+    // match what the caller is asserting. We never allow a federated user
+    // to be silently re-typed as an agent, or vice versa.
+    const existingByFilter = await User.findOne(filter).select('_id type').lean();
+    if (existingByFilter && existingByFilter.type && existingByFilter.type !== type) {
+      throw new ConflictError('Cannot change the type of an existing user');
+    }
+
+    // Only set `type` on initial insert; never overwrite on update. The
+    // immutability invariant above already rejected mismatched updates.
+    const setOnInsert: Record<string, unknown> = { type };
 
     if (typeof displayName === 'string') {
       setFields['name.first'] = displayName;
@@ -820,7 +1034,7 @@ router.put(
 
     const user = await User.findOneAndUpdate(
       filter,
-      { $set: setFields },
+      { $set: setFields, $setOnInsert: setOnInsert },
       { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true }
     )
       .select('-password -refreshToken')

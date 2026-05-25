@@ -1,6 +1,5 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import { useSearchParams, Link, useNavigate, Navigate } from "react-router-dom";
-import { toast } from "sonner";
 import { Check, Shield } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -80,13 +79,23 @@ export function AuthorizePage() {
   const token = searchParams.get("token");
   const redirectUri = searchParams.get("redirect_uri");
   const state = searchParams.get("state");
-  const status = searchParams.get("status");
+  // OAuth2 authorization code flow parameters. When `client_id` is present
+  // we exchange the user's consent for a single-use code (not a token) and
+  // redirect with `?code=<code>&state=<state>` — never `?access_token=...`.
+  // PKCE (code_challenge + S256) is REQUIRED for public clients. Servers MUST
+  // strip these from logs / referrers since they are short-lived bearer-like
+  // credentials.
+  const clientId = searchParams.get("client_id");
+  const codeChallenge = searchParams.get("code_challenge");
+  const codeChallengeMethod = searchParams.get("code_challenge_method");
+  const scope = searchParams.get("scope");
+  const statusParam = searchParams.get("status");
   const urlError = searchParams.get("error");
 
   const [data, setData] = useState<AuthorizeData>({
     user: null,
     sessionId: null,
-    sessionStatus: status,
+    sessionStatus: statusParam,
     appName: null,
     expiresAt: null,
     error: urlError,
@@ -122,11 +131,11 @@ export function AuthorizePage() {
             }
           }
         } catch {
-          // No existing session
+          // No existing session — handled by the page-level redirect below.
         }
 
         // If we have an auth session token, check its status
-        if (!status && token) {
+        if (!statusParam && token) {
           try {
             const statusResponse = await fetch(
               buildAuthUrl(`/session/status/${token}`),
@@ -145,44 +154,6 @@ export function AuthorizePage() {
             // The Oxy API wraps in {data: ...}
             const sessionInfo = statusResult.data || statusResult;
 
-            const safeRedirect = safeRedirectUrl(redirectUri);
-
-            // If already authorized and has a redirect, build redirect URL with tokens
-            if (
-              sessionInfo.status === "authorized" &&
-              sessionInfo.sessionId &&
-              safeRedirect
-            ) {
-              const tokenResponse = await fetch(
-                buildApiUrl(`/session/token/${sessionInfo.sessionId}`),
-                { credentials: "include", headers: storedToken ? { Authorization: `Bearer ${storedToken}` } : {} }
-              );
-              if (tokenResponse.ok) {
-                const tokenData = await tokenResponse.json();
-                const redirectTarget = new URL(safeRedirect);
-                redirectTarget.searchParams.set(
-                  "access_token",
-                  tokenData.accessToken
-                );
-                redirectTarget.searchParams.set(
-                  "session_id",
-                  sessionInfo.sessionId
-                );
-                redirectTarget.searchParams.set(
-                  "expires_at",
-                  tokenData.expiresAt
-                );
-                if (user) {
-                  redirectTarget.searchParams.set("user_id", user.id);
-                  if (user.username) redirectTarget.searchParams.set("username", user.username);
-                  if (user.avatar) redirectTarget.searchParams.set("avatar_url", getAvatarUrl(user.avatar));
-                }
-                if (state) redirectTarget.searchParams.set("state", state);
-                window.location.href = redirectTarget.toString();
-                return;
-              }
-            }
-
             if (sessionInfo.status !== "pending") {
               const err =
                 sessionInfo.status === "expired"
@@ -200,23 +171,6 @@ export function AuthorizePage() {
                 redirected: false,
               });
               return;
-            }
-
-            // If we don't have user info yet but have a sessionId from the status
-            if (!user && sessionInfo.sessionId) {
-              try {
-                const userResponse = await fetch(
-                  buildApiUrl(`/session/user/${sessionInfo.sessionId}`),
-                  { credentials: "include" }
-                );
-                if (userResponse.ok) {
-                  const userData = await userResponse.json();
-                  user = userData;
-                  sessionId = sessionInfo.sessionId;
-                }
-              } catch {
-                // Could not load user info
-              }
             }
 
             setData({
@@ -249,7 +203,7 @@ export function AuthorizePage() {
         setData({
           sessionId,
           user,
-          sessionStatus: status,
+          sessionStatus: statusParam,
           appName: null,
           expiresAt: null,
           error: urlError,
@@ -262,7 +216,7 @@ export function AuthorizePage() {
       }
     }
     loadData();
-  }, [token, redirectUri, state, status, urlError]);
+  }, [token, redirectUri, state, statusParam, urlError]);
 
   // Auto-close popup when authorization is complete
   useEffect(() => {
@@ -312,45 +266,49 @@ export function AuthorizePage() {
       return;
     }
 
-    // Approve
+    // Approve. Two distinct redirect paths:
+    //   - OAuth2 authorization code flow (when `client_id` is in the URL):
+    //     mint a short-lived code and redirect with `?code=<code>&state=...`.
+    //   - Legacy cross-app QR-code handoff (no `client_id`): authorize the
+    //     pending AuthSession via the Bearer-auth endpoint and notify the
+    //     polling client via socket.io. No tokens ever appear in the URL.
     try {
       const sessionId = data.sessionId;
-      if (!sessionId) {
+      const storedToken = sessionStorage.getItem("oxy_access_token");
+
+      if (!storedToken) {
         setData((prev) => ({
           ...prev,
-          error: "No session found. Please sign in again.",
+          error: "Sign in required to authorize this request.",
         }));
         setSubmitting(false);
         return;
       }
 
-      // Authorize the auth session
-      const storedToken = sessionStorage.getItem("oxy_access_token");
-      const headers: Record<string, string> = {
-        "content-type": "application/json",
-        "x-session-id": sessionId,
-      };
-      if (storedToken) headers["Authorization"] = `Bearer ${storedToken}`;
-
-      const authorizeResponse = await fetch(
-        buildAuthUrl(`/session/authorize/${token}`),
-        {
-          method: "POST",
-          headers,
-          credentials: "include",
-          body: JSON.stringify({}),
+      // ---- OAuth2 authorization code flow ----
+      if (clientId && safeRedirect) {
+        const body: Record<string, string> = {
+          clientId,
+          redirectUri: safeRedirect,
+        };
+        if (codeChallenge) {
+          body.codeChallenge = codeChallenge;
+          body.codeChallengeMethod = codeChallengeMethod || "S256";
         }
-      );
+        if (scope) body.scope = scope;
+        if (state) body.state = state;
 
-      if (!authorizeResponse.ok) {
-        const errPayload = await authorizeResponse.json().catch(() => ({}));
-        const message =
-          typeof errPayload?.message === "string"
-            ? errPayload.message
-            : "Authorization failed";
-        const isExpired = message.toLowerCase().includes("expired") ||
-          message.toLowerCase().includes("invalid session");
-        if (isExpired) {
+        const codeResponse = await fetch(buildApiUrl("/auth/oauth/authorize"), {
+          method: "POST",
+          credentials: "include",
+          headers: {
+            "content-type": "application/json",
+            Authorization: `Bearer ${storedToken}`,
+          },
+          body: JSON.stringify(body),
+        });
+
+        if (codeResponse.status === 401) {
           navigate(
             buildRelativeUrl("/login", {
               token: token || undefined,
@@ -361,49 +319,91 @@ export function AuthorizePage() {
           );
           return;
         }
+
+        if (!codeResponse.ok) {
+          const errPayload = await codeResponse.json().catch(() => ({}));
+          const message =
+            typeof errPayload?.message === "string"
+              ? errPayload.message
+              : "Authorization failed";
+          setData((prev) => ({ ...prev, error: message }));
+          setSubmitting(false);
+          return;
+        }
+
+        const codeResult = await codeResponse.json();
+        const codeData = codeResult.data || codeResult;
+        const url = new URL(safeRedirect);
+        url.searchParams.set("code", codeData.code);
+        if (state) url.searchParams.set("state", state);
+        window.location.href = url.toString();
+        return;
+      }
+
+      // ---- Legacy cross-app handoff (token + AuthSession) ----
+      if (!token) {
+        setData((prev) => ({
+          ...prev,
+          error: "Missing authorization request token.",
+        }));
+        setSubmitting(false);
+        return;
+      }
+
+      if (!sessionId) {
+        setData((prev) => ({
+          ...prev,
+          error: "No session found. Please sign in again.",
+        }));
+        setSubmitting(false);
+        return;
+      }
+
+      const authorizeResponse = await fetch(
+        buildAuthUrl(`/session/authorize/${token}`),
+        {
+          method: "POST",
+          credentials: "include",
+          headers: {
+            "content-type": "application/json",
+            Authorization: `Bearer ${storedToken}`,
+          },
+          body: JSON.stringify({}),
+        }
+      );
+
+      if (authorizeResponse.status === 401) {
+        navigate(
+          buildRelativeUrl("/login", {
+            token: token || undefined,
+            redirect_uri: redirectUri || undefined,
+            state: state || undefined,
+            error: "Session expired. Please sign in again.",
+          })
+        );
+        return;
+      }
+
+      if (!authorizeResponse.ok) {
+        const errPayload = await authorizeResponse.json().catch(() => ({}));
+        const message =
+          typeof errPayload?.message === "string"
+            ? errPayload.message
+            : "Authorization failed";
         setData((prev) => ({ ...prev, error: message }));
         setSubmitting(false);
         return;
       }
 
-      const authorizeResult = await authorizeResponse.json();
-      const authorizeData = authorizeResult.data || authorizeResult;
-      const sessionIdForApp = authorizeData.sessionId || sessionId;
-
-      if (safeRedirect) {
-        // Get access token for the redirect
-        const tokenResponse = await fetch(
-          buildApiUrl(`/session/token/${sessionIdForApp}`),
-          { credentials: "include", headers: storedToken ? { Authorization: `Bearer ${storedToken}` } : {} }
-        );
-        if (tokenResponse.ok) {
-          const tokenData = await tokenResponse.json();
-          const url = new URL(safeRedirect);
-          url.searchParams.set("access_token", tokenData.accessToken);
-          url.searchParams.set("session_id", sessionIdForApp);
-          url.searchParams.set("expires_at", tokenData.expiresAt);
-          if (data.user) {
-            url.searchParams.set("user_id", data.user.id);
-            if (data.user.username) url.searchParams.set("username", data.user.username);
-            if (data.user.avatar) url.searchParams.set("avatar_url", getAvatarUrl(data.user.avatar));
-          }
-          if (state) url.searchParams.set("state", state);
-          window.location.href = url.toString();
-        } else {
-          setData((prev) => ({
-            ...prev,
-            error: "Failed to retrieve access token.",
-          }));
-          setSubmitting(false);
-        }
-      } else {
-        navigate(
-          buildRelativeUrl("/authorize", {
-            token: token || undefined,
-            status: "approved",
-          })
-        );
-      }
+      // The cross-app handoff completes server-side via socket emission to
+      // the polling client; no tokens are returned to the auth UI and none
+      // appear in the URL. We just confirm completion to the user.
+      navigate(
+        buildRelativeUrl("/authorize", {
+          token: token || undefined,
+          status: "approved",
+        })
+      );
     } catch (error) {
       const msg =
         error instanceof Error ? error.message : "Authorization failed";
@@ -416,7 +416,7 @@ export function AuthorizePage() {
     return <LoadingSpinner />;
   }
 
-  if (!token) {
+  if (!token && !clientId) {
     return (
       <AuthFormLayout>
         <AuthFormHeader
@@ -430,7 +430,7 @@ export function AuthorizePage() {
     );
   }
 
-  if (!data.sessionId) {
+  if (!data.sessionId && !data.user) {
     // No session - redirect to login
     return (
       <Navigate
