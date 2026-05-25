@@ -3,6 +3,15 @@ import { translate as coreTranslate } from '@oxyhq/core';
 import { useLocale } from './locale-context';
 import enInbox from './locales/en';
 import esInbox from './locales/es';
+import caInbox from './locales/ca';
+import frInbox from './locales/fr';
+import deInbox from './locales/de';
+import itInbox from './locales/it';
+import ptInbox from './locales/pt';
+import jaInbox from './locales/ja';
+import koInbox from './locales/ko';
+import zhInbox from './locales/zh';
+import arInbox from './locales/ar';
 import type {
   Locale,
   LocaleDict,
@@ -12,13 +21,22 @@ import type {
 } from './types';
 
 /**
- * Inbox-namespaced dictionaries loaded at module init. Only English and
- * Spanish are populated; other supported locales fall back to core's larger
- * dictionary and then to the raw key.
+ * Inbox-namespaced dictionaries loaded at module init. All 11 supported
+ * locales are fully populated; missing keys fall back to core's dictionary
+ * and then to the raw key for visibility.
  */
 const INBOX_DICTS: Partial<Record<Locale, LocaleDict>> = {
   'en-US': enInbox as LocaleDict,
   'es-ES': esInbox as LocaleDict,
+  'ca-ES': caInbox as LocaleDict,
+  'fr-FR': frInbox as LocaleDict,
+  'de-DE': deInbox as LocaleDict,
+  'it-IT': itInbox as LocaleDict,
+  'pt-PT': ptInbox as LocaleDict,
+  'ja-JP': jaInbox as LocaleDict,
+  'ko-KR': koInbox as LocaleDict,
+  'zh-CN': zhInbox as LocaleDict,
+  'ar-SA': arInbox as LocaleDict,
 };
 
 function lookup(dict: LocaleDict | undefined, key: string): string | undefined {
@@ -76,9 +94,9 @@ interface UseTranslationResult {
  * Returns the translation function plus the current locale and a setter.
  *
  * Resolution order:
- *   1. Inbox-namespaced dict for the active locale (`en.ts` / `es.ts`)
- *   2. Core's `translate(locale, key, vars)` (covers all 11 locales for
- *      shared strings like `signin.*`, `signup.*`, etc.)
+ *   1. Inbox-namespaced dict for the active locale (all 11 locales).
+ *   2. Core's `translate(locale, key, vars)` for shared strings such as
+ *      `signin.*`, `signup.*`, etc. that live in `@oxyhq/core` dictionaries.
  *   3. The raw key string, so missing translations surface visibly without
  *      breaking the UI.
  */
