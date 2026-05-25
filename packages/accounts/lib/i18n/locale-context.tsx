@@ -6,14 +6,20 @@ import React, {
   useMemo,
   useState,
 } from 'react';
+import { I18nManager } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useOxy } from '@oxyhq/services';
-import { normalizeLanguageCode } from '@oxyhq/core';
+import { isRTLLocale, normalizeLanguageCode } from '@oxyhq/core';
 import {
   DEFAULT_LOCALE,
   SUPPORTED_LOCALES,
   type Locale,
 } from './types';
+
+// Allow RTL flipping system-wide once. `allowRTL` is idempotent and only
+// gates whether `forceRTL` and the device-locale auto-detection take
+// effect; without it Arabic users on Hermes never see a mirrored layout.
+I18nManager.allowRTL(true);
 
 const STORAGE_KEY = 'oxy_accounts_locale';
 
@@ -123,6 +129,18 @@ export function LocaleProvider({ children }: LocaleProviderProps) {
     },
     [isAuthenticated, oxyServices],
   );
+
+  // Mirror RN layout direction to match the active locale. `forceRTL` only
+  // takes effect after a JS bundle reload (RN doesn't flip on-the-fly), so
+  // we set it eagerly here and let Hermes pick it up on next launch — the
+  // typical UX is "change language -> brief sync indicator -> next session
+  // shows RTL". This is the same pattern React Native docs recommend.
+  useEffect(() => {
+    const wantRTL = isRTLLocale(locale);
+    if (I18nManager.isRTL !== wantRTL) {
+      I18nManager.forceRTL(wantRTL);
+    }
+  }, [locale]);
 
   const value = useMemo<LocaleContextValue>(
     () => ({ locale, setLocale, isReady: hasLoadedStorage }),
