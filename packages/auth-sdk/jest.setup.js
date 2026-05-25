@@ -1,13 +1,10 @@
-// Jest setup for the services package.
+// Jest setup for @oxyhq/auth.
 //
-// Notes:
-//  - testEnvironment is `jsdom` so React hooks can render with React 19 + @testing-library/react.
-//  - react-native is aliased to a lightweight stub under moduleNameMapper.
-//  - bloom toast/etc. are aliased to a stub since we don't need real UI behavior.
+// Mirrors the services package setup (jsdom + ts-jest), with stubs only
+// for the deps that the test files actually touch.
 
 globalThis.__DEV__ = false;
 
-// Mock socket.io-client globally so useSessionSocket tests can intercept emitted events.
 jest.mock('socket.io-client', () => {
   const sockets = [];
   const factory = () => {
@@ -58,30 +55,7 @@ jest.mock('socket.io-client', () => {
     default: io,
     io,
   };
-});
-
-jest.mock('@react-native-async-storage/async-storage', () => {
-  const store = new Map();
-  return {
-    __esModule: true,
-    default: {
-      getItem: jest.fn((key) => Promise.resolve(store.has(key) ? store.get(key) : null)),
-      setItem: jest.fn((key, value) => {
-        store.set(key, value);
-        return Promise.resolve();
-      }),
-      removeItem: jest.fn((key) => {
-        store.delete(key);
-        return Promise.resolve();
-      }),
-      clear: jest.fn(() => {
-        store.clear();
-        return Promise.resolve();
-      }),
-      __reset: () => store.clear(),
-    },
-  };
-});
+}, { virtual: true });
 
 beforeEach(() => {
   jest.spyOn(console, 'error').mockImplementation(() => undefined);

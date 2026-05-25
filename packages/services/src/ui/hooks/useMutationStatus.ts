@@ -6,7 +6,7 @@
  * "Syncing..." indicator in the app shell.
  */
 
-import { useSyncExternalStore } from 'react';
+import { useCallback, useRef, useSyncExternalStore } from 'react';
 import { useQueryClient, type Mutation, type QueryClient } from '@tanstack/react-query';
 
 export interface MutationStatus {
@@ -56,27 +56,56 @@ function computeStatus(queryClient: QueryClient): MutationStatus {
   };
 }
 
+const EMPTY_SNAPSHOT: MutationStatus = {
+  pending: 0,
+  paused: 0,
+  erroring: 0,
+  total: 0,
+  isOffline: false,
+  isSyncing: false,
+};
+
+function snapshotsEqual(a: MutationStatus, b: MutationStatus): boolean {
+  return (
+    a.pending === b.pending &&
+    a.paused === b.paused &&
+    a.erroring === b.erroring &&
+    a.total === b.total &&
+    a.isOffline === b.isOffline &&
+    a.isSyncing === b.isSyncing
+  );
+}
+
 export function useMutationStatus(): MutationStatus {
   const queryClient = useQueryClient();
 
-  const subscribe = (notify: () => void): (() => void) => {
-    const cache = queryClient.getMutationCache();
-    return cache.subscribe(() => {
-      notify();
-    });
-  };
+  // Cache the last returned snapshot so `useSyncExternalStore`'s tearing
+  // check sees the same reference between renders unless the underlying
+  // mutation cache actually changed. Without this React 19 enters an
+  // infinite render loop because every call to `computeStatus` returns
+  // a fresh object literal.
+  const cachedRef = useRef<MutationStatus>(EMPTY_SNAPSHOT);
 
-  const getSnapshot = (): MutationStatus => computeStatus(queryClient);
+  const subscribe = useCallback(
+    (notify: () => void): (() => void) => {
+      const cache = queryClient.getMutationCache();
+      return cache.subscribe(() => {
+        notify();
+      });
+    },
+    [queryClient],
+  );
 
-  // SSR fallback — empty status.
-  const getServerSnapshot = (): MutationStatus => ({
-    pending: 0,
-    paused: 0,
-    erroring: 0,
-    total: 0,
-    isOffline: false,
-    isSyncing: false,
-  });
+  const getSnapshot = useCallback((): MutationStatus => {
+    const next = computeStatus(queryClient);
+    if (snapshotsEqual(cachedRef.current, next)) {
+      return cachedRef.current;
+    }
+    cachedRef.current = next;
+    return next;
+  }, [queryClient]);
+
+  const getServerSnapshot = useCallback((): MutationStatus => EMPTY_SNAPSHOT, []);
 
   return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 }

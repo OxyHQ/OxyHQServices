@@ -1,6 +1,6 @@
 module.exports = {
-  setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
   testEnvironment: 'jsdom',
+  setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json'],
   transform: {
     '^.+\\.(ts|tsx)$': ['ts-jest', {
@@ -23,21 +23,6 @@ module.exports = {
   testMatch: [
     '<rootDir>/__tests__/**/*.(test|spec).(ts|tsx|js)',
     '<rootDir>/src/**/__tests__/**/*.(test|spec).(ts|tsx|js)',
-    '<rootDir>/src/**/*.(test|spec).(ts|tsx|js)',
   ],
-  coverageDirectory: 'coverage',
-  collectCoverageFrom: [
-    'src/**/*.{ts,tsx}',
-    '!src/**/*.d.ts',
-    '!src/**/*.stories.{ts,tsx}',
-    '!src/**/*.test.{ts,tsx}',
-    '!src/**/__tests__/**',
-  ],
-  moduleNameMapper: {
-    '^@/(.*)$': '<rootDir>/src/$1',
-    '^react-native$': '<rootDir>/__tests__/__mocks__/react-native.ts',
-    '^@oxyhq/bloom$': '<rootDir>/__tests__/__mocks__/bloom.ts',
-    '^@oxyhq/bloom/(.*)$': '<rootDir>/__tests__/__mocks__/bloom.ts',
-  },
   testTimeout: 10000,
 };
