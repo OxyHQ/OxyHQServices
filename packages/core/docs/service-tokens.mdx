@@ -1,0 +1,101 @@
+---
+title: Service tokens
+description: OAuth2 client-credentials flow for internal Oxy service-to-service auth.
+order: 3
+---
+
+# Service tokens
+
+Internal Oxy ecosystem services authenticate to each other with short-lived service JWTs minted via the OAuth2 client-credentials pattern. This page documents the flow end-to-end — how to register an internal app, how to exchange credentials for a token, how to delegate as a specific user, and how to protect downstream endpoints.
+
+## When to use them
+
+- A backend service that needs to call `/users/me` on behalf of a user it has out-of-band trust with (e.g. a Mention server hitting the Oxy API to fetch the actor for an inbound ActivityPub message).
+- A scheduled job that needs to read or write Oxy state without a human session.
+- Any service-to-service call inside the Oxy ecosystem.
+
+Service tokens **are not for third-party apps.** Third parties use the developer-app token flow and consent screen instead.
+
+## Registration
+
+Internal apps are registered directly in MongoDB with `isInternal: true` — there is no public API for it. The fields you need:
+
+```ts
+// packages/api/src/models/DeveloperApp.ts
+{
+  name: 'Mention',
+  apiKey: 'oxy_dk_abc…',         // public id
+  apiSecret: 'hash_of_secret',    // bcrypt-hashed
+  isInternal: true,
+  scopes: ['users:read', 'inbox:write', …],
+}
+```
+
+After insert, hand the cleartext `apiSecret` to the service owner — it's never recoverable from the database.
+
+## Exchanging credentials for a token
+
+The endpoint is `POST /auth/service-token`. Body: `{ apiKey, apiSecret }`. Response: `{ token, expiresAt }` where `token` is a 1-hour JWT with `type: 'service'`, `appId`, and the granted scopes.
+
+```ts
+import { OxyServices } from '@oxyhq/core';
+
+const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
+oxy.configureServiceAuth(process.env.OXY_API_KEY!, process.env.OXY_API_SECRET!);
+
+// Auto-cached, auto-refreshed.
+const token = await oxy.getServiceToken();
+```
+
+`getServiceToken()` caches the token in memory and refreshes it ~5 minutes before expiry. Call it freely — there is no per-call cost.
+
+## Delegating as a specific user
+
+To make an API call that should look like it came from user X, add `X-Oxy-User-Id: <userId>`. The API treats the request as if user X had made it directly (subject to the service's granted scopes). `makeServiceRequest` is the ergonomic wrapper:
+
+```ts
+const result = await oxy.makeServiceRequest('POST', '/some/endpoint', body, userId);
+// Sends:
+//   Authorization: Bearer <service token>
+//   X-Oxy-User-Id: <userId>
+//   Content-Type: application/json
+```
+
+Audit logs record both the service identity and the delegated user.
+
+## Protecting your own endpoints
+
+Internal services that expose their own HTTP surface should validate inbound service tokens. The `serviceAuth()` middleware does this:
+
+```ts
+import express from 'express';
+import { OxyServices } from '@oxyhq/core';
+
+const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
+const app = express();
+
+// Only allow service tokens (rejects user JWTs and API keys).
+app.use('/internal', oxy.serviceAuth());
+
+app.post('/internal/replay-webhook', (req, res) => {
+  // req.serviceApp is populated with the calling service.
+  // req.delegatedUserId is set if the caller passed X-Oxy-User-Id.
+  res.json({ replayed: true });
+});
+```
+
+The `auth()` middleware recognises service tokens too (along with user JWTs), so general endpoints accept both transparently.
+
+## Security notes
+
+- Service tokens are stateless — they're not stored in the session table, and they can't be remotely revoked mid-flight. If a secret leaks, rotate it.
+- Rotate `apiSecret` from the [developer console](/developers/docs/console). Rotation keeps the previous value valid for 24 hours so deploys don't go down.
+- Service JWTs are signed with the same key as user JWTs; verification is identical.
+- Never put `apiSecret` in client-side code or environment files committed to git. Use a secrets manager.
+- Scopes are enforced on every call — request only what you need.
+
+## What service tokens cannot do
+
+- They cannot impersonate users for human-facing actions (e.g. sending a "you logged in" email). Use the user's own session token for those.
+- They cannot bypass the rate limiter — they're subject to the same per-IP and per-token limits as user calls.
+- They cannot be issued by a non-internal developer app. Third-party apps must use the standard OAuth2 authorization code flow.

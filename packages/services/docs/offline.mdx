@@ -1,0 +1,91 @@
+---
+title: Offline & sync
+description: How @oxyhq/services persists queries, queues mutations, and reflects online status.
+order: 3
+---
+
+# Offline & sync
+
+`@oxyhq/services` is offline-first out of the box. Every mutation is queued, every important read is cached on disk, and the UI knows when the network goes down. Nothing here is opt-in — wiring up `OxyProvider` lights up all of it.
+
+## Persisted query cache
+
+The provider configures `@tanstack/react-query-persist-client` over `AsyncStorage`:
+
+| Setting | Value |
+|---------|-------|
+| Persisted query keys | `accounts`, `users`, `sessions`, `devices`, `privacy` |
+| Mutations | always persisted |
+| TTL | 30 days |
+| Throttle | 1s |
+| Cache key | versioned (`v2`); legacy `v1` is cleaned up on first run |
+
+The provider awaits `restored` before exposing the QueryClient so the first paint serves cached data, not a loading spinner. You don't need to special-case this — just render the same hooks you always would.
+
+## Mutation queue
+
+Every mutation hook uses:
+
+```ts
+{ networkMode: 'offlineFirst', mutationKey: ['stable', 'key'] }
+```
+
+Pending mutations sit in the persisted queue and replay automatically when the network returns. Reuse the same mutation hook from multiple places — the stable `mutationKey` makes the cache dedup them.
+
+## Reading sync status
+
+```tsx
+import { useMutationStatus } from '@oxyhq/services';
+
+function SyncPill() {
+  const status = useMutationStatus(); // 'idle' | 'syncing' | 'error'
+  if (status === 'idle') return null;
+  return <Pill tone={status === 'error' ? 'destructive' : 'neutral'}>{status}</Pill>;
+}
+```
+
+`useMutationStatus` aggregates the mutation cache so a single component can drive a status indicator.
+
+## Reading online state
+
+```tsx
+import { useOnlineStatus } from '@oxyhq/services';
+
+function OfflineBanner() {
+  const online = useOnlineStatus();
+  if (online) return null;
+  return (
+    <View>
+      <Text>Offline — changes will sync when you're back online.</Text>
+    </View>
+  );
+}
+```
+
+`useOnlineStatus()` is built on `useSyncExternalStore` over TanStack Query's `onlineManager` — no `useEffect`, no polling.
+
+## What about the HTTP cache?
+
+`@oxyhq/core`'s `HttpService` also keeps a short-lived in-memory cache keyed by `GET:<path>`. Mutations call `clearCacheByPrefix(...)` for the affected prefixes so the next read pulls fresh data. If you write custom endpoints, follow the same pattern:
+
+```ts
+await oxy.users.updateProfile(input);
+oxy.http.clearCacheByPrefix('GET:/my-custom-endpoint/');
+```
+
+## File uploads on RN
+
+On React Native (Expo 56), uploads route through `XMLHttpRequest` rather than `fetch` because Expo's `fetch` rejects RN file descriptors for multipart bodies. `useUploadFile` and `useUploadAvatar` already handle this — call them and you get progress events for free.
+
+## Listening to session events
+
+`useSessionSocket()` subscribes to remote session events with zero config:
+
+```tsx
+function SessionGuard() {
+  useSessionSocket();
+  return null;
+}
+```
+
+Only three events ever trigger a local sign-out: `session_removed`, `device_removed`, `sessions_removed`. Unknown events log a dev warning and do nothing — there is no fallback `else` branch that would force the app offline.

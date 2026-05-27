@@ -100,3 +100,9 @@ jspm_packages/
 !/packages/inbox/lib/
 
 dkim-private.pem
+
+# Local secrets (Claude pairing keys, ad-hoc keypairs)
+.claude/
+*_private.key
+*_public.key
+c4p0_*.key

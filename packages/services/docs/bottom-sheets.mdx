@@ -1,0 +1,105 @@
+---
+title: Bottom Sheets
+description: The bottom-sheet navigation system used across @oxyhq/services, plus the full route registry.
+order: 2
+---
+
+# Bottom Sheets
+
+The bottom-sheet router is the navigation backbone of `@oxyhq/services`. Every screen the SDK ships (account center, profile editor, security settings, file picker, payment gateway, …) renders as a draggable sheet over your app, with shared backdrop dim, gesture support, and lazy-loaded screen modules.
+
+## Why a bottom sheet, not a stack
+
+- Native iOS/Android feel — sheets slide up from the bottom, dim the backdrop, and respond to pan gestures.
+- One sheet at a time, with clear focus and no nested transition state to debug.
+- Screens are siloed: each route's module loads on demand from `ui/navigation/routes.ts`, breaking `require` cycles with `OxyContext`.
+
+## Open a sheet
+
+```tsx
+import { showBottomSheet, closeBottomSheet } from '@oxyhq/services';
+
+showBottomSheet('AccountSwitcher');
+
+// Pass props that the screen reads from its `BaseScreenProps`:
+showBottomSheet('EditProfileField', { field: 'username', initialValue: user?.username });
+
+closeBottomSheet(); // close the active sheet
+```
+
+`showBottomSheet` is callable from anywhere — event handlers, `useEffect`, even raw JS — because the sheet host is mounted by `OxyProvider`.
+
+## Route registry
+
+The full `RouteName` union, sourced from `ui/navigation/routes.ts`:
+
+| Route | Purpose |
+|-------|---------|
+| `OxyAuth` | Sign in with Oxy (QR code / deep link to the Accounts app) |
+| `WelcomeNewUser` | First-time-user welcome flow |
+| `AccountOverview` | High-level account summary |
+| `AccountSettings` | Account-level settings (handle, email, language) |
+| `AccountCenter` | Shortcuts to common account actions |
+| `AccountSwitcher` | Multi-account picker |
+| `AccountVerification` | Identity verification flow |
+| `CreateManagedAccount` | Create a managed sub-account |
+| `Profile` | View/edit profile fields |
+| `EditProfileField` | Dedicated single-field editor |
+| `AvatarCrop` | Square-crop editor before avatar upload |
+| `LearnMoreUsernames` | Informational screen about usernames |
+| `LanguageSelector` | Pick locale |
+| `PrivacySettings` | Privacy flag toggles |
+| `SearchSettings` | Search privacy / personalization |
+| `SessionManagement` | Active sessions across devices |
+| `FileManagement` | Files / assets browser + picker |
+| `PaymentGateway` | Manage payment methods |
+| `PremiumSubscription` | Premium tier management |
+| `HelpSupport`, `FAQ`, `Feedback`, `LegalDocuments`, `AppInfo` | Support, docs, legal |
+| `UserLinks` | External links on the profile |
+| `HistoryView`, `SavesCollections` | Activity history + saved items |
+| `FollowersList`, `FollowingList` | Social graph lists |
+| `KarmaCenter`, `KarmaLeaderboard`, `KarmaRewards`, `KarmaRules`, `AboutKarma`, `KarmaFAQ` | Karma module |
+
+## Scrollable vs. fixed sheets
+
+Most sheets are scrollable (the default). Routes that own their own `VirtualizedList` (e.g. `FileManagement` in image-only-picker mode) must opt out so the sheet doesn't wrap the list in a `ScrollView`:
+
+```ts
+// ui/navigation/routes.ts
+export function getSheetConfig(routeName: RouteName, screenProps: unknown) {
+  if (routeName === 'FileManagement' && (screenProps as { mode?: string })?.mode === 'image-only-picker') {
+    return { scrollable: false };
+  }
+  return { scrollable: true };
+}
+```
+
+## Gestures
+
+- The handle pan is always active.
+- The body pan uses `manualActivation()` with `simultaneousWithExternalGesture(scrollViewRef)` so it only activates when the inner scroll is at the top **and** the user is dragging downward more than 8dp.
+- The backdrop dims proportionally to drag distance (iOS Photos pattern).
+- Modal contents must wrap children in `<GestureHandlerRootView>` — React Native's `Modal` renders into its own window, and the app-root GHRV does not extend into it.
+
+## Close races
+
+Every `open()` bumps `closeGenerationRef`; close callbacks capture the generation at commit time. Stale callbacks from a cancelled close cycle no-op, so you can call `closeBottomSheet()` from inside a navigation handler without worrying about double-fire.
+
+## Composing your own screen
+
+```tsx
+import type { BaseScreenProps } from '@oxyhq/services';
+import { showBottomSheet } from '@oxyhq/services';
+
+function MyScreen({ close }: BaseScreenProps) {
+  return (
+    <View>
+      <Text>Custom sheet content</Text>
+      <Button onPress={close}>Done</Button>
+    </View>
+  );
+}
+
+// Add to your own route registry, or open one of the built-in screens
+// and customize via props.
+```

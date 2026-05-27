@@ -6,9 +6,15 @@ order: 0
 
 # @oxyhq/services
 
-Expo / React Native SDK. Provides `OxyProvider`, `useOxy`, a bottom-sheet navigation system with 29+ pre-built screens, and native UI components (sign-in button, account switcher, photo picker, etc.).
+The Expo and React Native SDK for the Oxy platform. Ships `OxyProvider`, `useOxy`, 29+ pre-built bottom-sheet screens (auth, profile, security, files, payments, karma, …), and native UI primitives like `OxySignInButton`, `Avatar`, and `LogoIcon`.
 
-<Badge variant="success">SDK</Badge> <Badge>MIT</Badge>
+<Badge variant="success">SDK</Badge> <Badge>Expo / RN / Web</Badge>
+
+## What it is
+
+`@oxyhq/services` is the all-in-one mobile SDK. Drop `OxyProvider` at the root of your Expo app and you get sign-in, account management, multi-account switching, file uploads, security screens, and the bottom-sheet navigation system the official Oxy apps use. Authentication state, mutations, and offline queueing are wired through TanStack Query with `networkMode: 'offlineFirst'` and `AsyncStorage`-backed persistence.
+
+For web-only apps see [`@oxyhq/auth`](/developers/docs/auth-sdk). For server / edge runtimes see [`@oxyhq/core`](/developers/docs/core).
 
 ## Install
 
@@ -16,27 +22,151 @@ Expo / React Native SDK. Provides `OxyProvider`, `useOxy`, a bottom-sheet naviga
 bun add @oxyhq/services @oxyhq/core
 ```
 
+Required peer dependencies:
+
+- `react >= 18`, `react-native >= 0.76`
+- `react-native-reanimated >= 3.16`
+- `react-native-gesture-handler >= 2.16`
+- `react-native-safe-area-context ^5.4`
+- `react-native-svg >= 13`
+- For Expo apps: `expo`, `expo-font`, `expo-image`, `expo-linear-gradient`
+- For screens: `@react-navigation/native`
+
+At the very top of your entry file (Expo `index.js` or `App.tsx`):
+
+```ts
+import 'react-native-url-polyfill/auto';
+```
+
 ## Quick start
 
 ```tsx
-import { OxyProvider, OxySignInButton } from '@oxyhq/services';
+import { OxyProvider, OxySignInButton, useOxy } from '@oxyhq/services';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 export default function Root() {
   return (
-    <OxyProvider baseURL="https://api.oxy.so">
-      <OxySignInButton />
-    </OxyProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <OxyProvider baseURL="https://api.oxy.so">
+        <Shell />
+      </OxyProvider>
+    </GestureHandlerRootView>
+  );
+}
+
+function Shell() {
+  const { user, isAuthenticated } = useOxy();
+  if (!isAuthenticated) return <OxySignInButton />;
+  return <Text>Welcome, {user?.name}</Text>;
+}
+```
+
+`GestureHandlerRootView` is required for the bottom-sheet pan gestures. The provider awaits `restored` (TanStack Query persist-client over `AsyncStorage`) before exposing the QueryClient — cached data renders on first paint.
+
+## Core concepts
+
+### OxyProvider + useOxy
+
+`OxyProvider` owns the same things `WebOxyProvider` does (HTTP client, QueryClient, AuthManager) plus the bottom-sheet route registry, Inter font loader, and image resolver. `useOxy()` returns the full context value; for narrower surfaces use `useAuth()`, `useCurrentUser()`, or the query/mutation hooks directly.
+
+### Bottom-sheet navigation
+
+The SDK ships a centralized bottom-sheet router with 29+ pre-built screens. Open one from anywhere with `showBottomSheet(routeName, screenProps?)`:
+
+```tsx
+import { showBottomSheet } from '@oxyhq/services';
+
+<Pressable onPress={() => showBottomSheet('AccountSwitcher')}>
+  <Avatar uri={user?.avatarUrl} />
+</Pressable>
+```
+
+Built-in routes include `AccountCenter`, `AccountSettings`, `AccountSwitcher`, `Profile`, `PrivacySettings`, `FileManagement`, `SessionManagement`, `PaymentGateway`, `KarmaCenter`, `OxyAuth`, `EditProfileField`, `AvatarCrop`, `WelcomeNewUser`, and more. See [Bottom Sheets](./bottom-sheets) for the full list and customisation patterns.
+
+### Screens lazy-load
+
+Screen modules are loaded on demand via `screenLoaders` in `ui/navigation/routes.ts`, which keeps the initial JS chunk small and breaks the `require` cycle between screens and `OxyContext`.
+
+### Pre-themed UI components
+
+- `<OxySignInButton />` — the canonical sign-in CTA
+- `<Avatar />` — image + initials fallback + verified badge
+- `<OxyLogo />` / `<LogoIcon />` / `<LogoText />` — Bloom-themed brand marks
+- `<ActingAsBanner />` — managed-account banner showing the active sub-account
+- `<FollowButton />` — toggleable follow state with optimistic update
+
+## Common patterns
+
+### Open the account switcher
+
+```tsx
+import { Avatar, showBottomSheet, useOxy } from '@oxyhq/services';
+
+function Header() {
+  const { user } = useOxy();
+  return (
+    <Pressable onPress={() => showBottomSheet('AccountSwitcher')}>
+      <Avatar uri={user?.avatarUrl} size={32} />
+    </Pressable>
   );
 }
 ```
 
-## What's inside
+### Update profile with optimistic write
 
-- **`OxyProvider`** — RN auth context provider.
-- **`useOxy()`** — RN hook returning `{ user, oxyServices, signIn, signOut, ... }`.
-- **Bottom-sheet navigation** — 29+ screens covering profile, security, devices, files, payments.
-- **`LogoIcon` / `LogoText`** — Bloom-themed logo exports.
+```tsx
+import { useUpdateProfile } from '@oxyhq/services';
 
-## Stub
+function UsernameField() {
+  const { mutateAsync, isPending } = useUpdateProfile();
+  return (
+    <TextField
+      defaultValue={user?.username}
+      onSubmitEditing={(e) => mutateAsync({ username: e.nativeEvent.text })}
+      editable={!isPending}
+    />
+  );
+}
+```
 
-Component reference and screen catalog are scaffolded for follow-up.
+`useUpdateProfile` mutates optimistically and clears the SDK's HTTP cache for `users/me`, `session/user/`, and `profiles/username/` so the new value is visible everywhere immediately.
+
+### Aggregate mutation status (the "Syncing..." pill)
+
+```tsx
+import { useMutationStatus } from '@oxyhq/services';
+
+function SyncBadge() {
+  const status = useMutationStatus(); // 'idle' | 'syncing' | 'error'
+  if (status === 'syncing') return <Pill label="Syncing…" />;
+  if (status === 'error') return <Pill label="Sync failed" />;
+  return null;
+}
+```
+
+### Upload a file (with FormData via XHR)
+
+```tsx
+import { useUploadFile } from '@oxyhq/services';
+
+const { mutateAsync, isPending } = useUploadFile();
+await mutateAsync({ uri: pickedAsset.uri, type: 'image/jpeg', name: 'photo.jpg' });
+```
+
+On React Native (Expo 56), uploads route through `XMLHttpRequest` — `fetch` rejects RN file descriptors for multipart bodies.
+
+### Online status banner
+
+```tsx
+import { useOnlineStatus } from '@oxyhq/services';
+
+function OfflineBanner() {
+  const online = useOnlineStatus();
+  if (online) return null;
+  return <Banner>Offline — changes will sync when you're back online.</Banner>;
+}
+```
+
+## API surface
+
+The auto-generated TypeDoc reference (see **API Reference** in the sidebar) covers every exported hook, component, store, type, and navigation helper.

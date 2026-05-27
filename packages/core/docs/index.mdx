@@ -10,11 +10,23 @@ The platform-agnostic foundation of the Oxy SDK. **Zero React, zero React Native
 
 <Badge variant="success">SDK</Badge> <Badge>MIT</Badge>
 
+## What it is
+
+`@oxyhq/core` is the universal client and crypto layer for the Oxy platform. Every higher-level SDK (`@oxyhq/auth` for React web, `@oxyhq/services` for Expo/RN) builds on top of it. Use it directly when you need API access from a Node server, an Edge runtime, a service worker, or anywhere React is not in play.
+
+The package ships three entry points:
+
+- `@oxyhq/core` — `OxyServices` client + mixins, models, error types, platform helpers
+- `@oxyhq/core/crypto` — `KeyManager`, `SignatureService`, `RecoveryPhraseService`
+- `@oxyhq/core/shared` — color/theme/error utilities used across the Oxy ecosystem
+
 ## Install
 
 ```sh
 bun add @oxyhq/core
 ```
+
+No peer dependencies. The package is dual CJS + ESM and works in every JavaScript runtime that supports `fetch`.
 
 ## Quick start
 
@@ -22,19 +34,152 @@ bun add @oxyhq/core
 import { OxyServices } from '@oxyhq/core';
 import type { User } from '@oxyhq/core';
 
-const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
+const oxy = new OxyServices({
+  baseURL: 'https://api.oxy.so',
+  cloudURL: 'https://cloud.oxy.so',
+});
 
+await oxy.setTokens('ACCESS_TOKEN');
 const me: User | null = await oxy.users.getMe();
 ```
 
-## What's inside
+## Core concepts
 
-- **`OxyServices`** — composable API client with namespaced mixins (`auth`, `users`, `files`, `billing`, `contacts`, …).
-- **Crypto utilities** — `KeyManager`, identity helpers, signed-request signing.
-- **Avatar utilities** — `avatarUtils`, `accountUtils`, `displayUtils` (canonical display names, public-key fallbacks).
-- **Contact discovery** — privacy-first hashed lookup (`oxy.contacts.discoverContacts(...)`).
-- **Service tokens** — internal service-to-service auth (`configureServiceAuth`, `getServiceToken`).
+### OxyServices and mixins
 
-## Stub
+`OxyServices` is composed from feature-specific mixins so the public surface stays organized:
 
-This package's docs are scaffolded. Detailed pages for each mixin will land in a follow-up.
+| Namespace | Source | Covers |
+|-----------|--------|--------|
+| `oxy.auth` | `OxyServices.auth.ts` | login, signup, refresh, TOTP, service tokens |
+| `oxy.users` | `OxyServices.user.ts` | profile read/write, follow, search |
+| `oxy.files` | `OxyServices.assets.ts` | uploads, downloads, asset metadata |
+| `oxy.privacy` | `OxyServices.privacy.ts` | privacy settings, visibility |
+| `oxy.contacts` | `OxyServices.contacts.ts` | privacy-first contact discovery |
+| `oxy.security` | `OxyServices.security.ts` | sessions, devices, security activity |
+| `oxy.payment` | `OxyServices.payment.ts` | payment methods, billing |
+| `oxy.managedAccounts` | `OxyServices.managedAccounts.ts` | sub-accounts (e.g. for organizations) |
+
+All methods return typed promises; errors throw `ApiError` subclasses you can narrow with helpers like `isInvalidSessionError`, `isRateLimitError`.
+
+### Crypto and identity
+
+`KeyManager` owns secp256k1 keypairs used for Oxy's recovery phrase login. It enforces atomic persistence, integrity probes, and refuses to clobber a healthy identity:
+
+```ts
+import { KeyManager } from '@oxyhq/core/crypto';
+
+const km = new KeyManager();
+
+if (!(await km.hasIdentity())) {
+  const phrase = await km.createIdentityWithPhrase();
+  // Show `phrase.mnemonic` to the user once, then forget it.
+}
+```
+
+`KeyManager` throws `IdentityAlreadyExistsError` if you call `createIdentity` over an existing key — pass `{ overwrite: true }` to replace. See [KeyManager Safety](#keymanager-safety) below.
+
+### Service tokens
+
+For backend-to-backend calls inside the Oxy ecosystem, register an internal `DeveloperApp` and use the OAuth2 client-credentials flow:
+
+```ts
+const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
+oxy.configureServiceAuth('oxy_dk_…', 'secret…');
+
+// Auto-cached, auto-refreshed service JWT.
+const token = await oxy.getServiceToken();
+
+// Or delegate as a specific user with one call:
+const result = await oxy.makeServiceRequest('POST', '/some/endpoint', body, userId);
+```
+
+The API recognises service tokens (`type: 'service'` in the JWT payload) statelessly — no session lookup, no DB round-trip. Wrap protected endpoints with `oxy.serviceAuth()` middleware.
+
+### HTTP service
+
+`OxyServices` shares a single `HttpService` instance that handles:
+
+- Bearer token attachment + refresh
+- Request deduplication
+- Per-prefix in-memory cache (`clearCacheByPrefix` clears specific paths)
+- Retry with exponential backoff for 5xx / network errors
+- Request queuing during token refresh
+
+Custom interceptors are exposed via `oxy.http`.
+
+## Common patterns
+
+### Sign in with a recovery phrase
+
+```ts
+import { OxyServices } from '@oxyhq/core';
+import { KeyManager, SignatureService } from '@oxyhq/core/crypto';
+
+const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
+const km = new KeyManager();
+
+await km.importFromPhrase(mnemonic);
+const { publicKey } = await km.getKeyPair();
+
+const challenge = await oxy.auth.requestChallenge(publicKey);
+const signed = await SignatureService.signChallenge(challenge, km);
+const session = await oxy.auth.verify(signed);
+await oxy.setTokens(session.accessToken);
+```
+
+### Upload a file (browser + Node)
+
+```ts
+// Browser
+const file = (document.querySelector('input[type=file]') as HTMLInputElement).files![0];
+await oxy.files.upload(file);
+
+// Node / Bun
+import { readFile } from 'node:fs/promises';
+const buf = await readFile('./avatar.png');
+await oxy.files.upload(new Blob([buf]), { filename: 'avatar.png' });
+```
+
+### Update profile and bust the cache
+
+```ts
+await oxy.users.updateProfile({ name: 'Ada' });
+// updateProfile already clears `GET:/users/me`, `GET:/session/user/`,
+// and `GET:/profiles/username/` — but if you have custom cached
+// reads, call clearCacheByPrefix yourself.
+oxy.http.clearCacheByPrefix('GET:/my-custom-endpoint/');
+```
+
+### Privacy-first contact discovery
+
+```ts
+const sha256Hex = async (input: string) => {
+  const buf = new TextEncoder().encode(input.trim().toLowerCase());
+  const digest = await crypto.subtle.digest('SHA-256', buf);
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+};
+
+const emailHashes = await Promise.all(emails.map(sha256Hex));
+const matches = await oxy.contacts.discoverContacts(emailHashes, []);
+// Only matching Oxy users come back; raw emails never leave the device.
+```
+
+## KeyManager Safety
+
+`KeyManager` enforces strict invariants documented in the package's `CLAUDE.md`:
+
+- `createIdentity` / `importKeyPair` throw `IdentityAlreadyExistsError` unless `{ overwrite: true }` is passed.
+- Writes use a backup-first, sign/verify-probe-after atomic strategy; failures roll back to the backup.
+- `hasIdentity()` requires both keys present, well-formed, and matching — not just key existence.
+- `verifyIdentityIntegrity()` performs a real sign/verify probe rather than byte parsing.
+- `restoreIdentityFromBackup()` refuses to clobber a healthy primary or switch users.
+- Strict hex/length/range validation on every private/public key.
+
+Treat the private key as load-bearing — never log it, never send it over the wire.
+
+## API surface
+
+The auto-generated TypeDoc reference (see the **API Reference** section in the sidebar) covers every exported symbol, including all mixin namespaces, type aliases, and helper utilities.

@@ -6,17 +6,78 @@ order: 0
 
 # Auth App
 
-The standalone Vite app that powers `auth.oxy.so`. Handles sign-in, sign-up, account authorization, password recovery, and serves as a FedCM Identity Provider.
+The standalone Vite app that powers `auth.oxy.so`. Handles sign-in, sign-up, account authorization, password recovery, two-factor auth, and serves as a FedCM Identity Provider for the rest of the Oxy ecosystem.
 
 <Badge variant="success">App</Badge> <Badge>Vite + React</Badge>
 
-## Highlights
+## What it is
 
-- Multi-step login (identifier → password → 2FA).
-- Per-step entrance animations and route-level fade transitions.
-- Bloom color preset applied to CSS variables via `applyColorPreset()`.
-- FedCM IdP endpoints served alongside the SPA.
+A small, focused app whose only job is authentication. Every other Oxy app (Mention, Inbox, MyAccount, third-party developer apps) redirects users here to sign in, and gets back a short-lived authorization code or a FedCM token.
 
-## Stub
+Unlike the rest of the SDKs, this is a deployed app — you don't `bun add` it. You integrate by pointing your sign-in CTA at it.
 
-FedCM integration guide, sign-up flow, and recovery email walkthrough will get dedicated pages in a follow-up.
+## Flows
+
+### Sign in (password)
+
+1. User lands on `/sign-in`.
+2. Step 1 — identifier (email or username). The app calls `GET /auth/lookup/:username` to validate existence + fetch the user's Bloom color preset (so the rest of the flow is themed correctly).
+3. Step 2 — password. `POST /auth/login`.
+4. If 2FA is enabled, step 3 — TOTP code. `POST /auth/2fa/verify`.
+5. On success, the app redirects back to the caller with an authorization code or short-lived session token.
+
+Each step has its own entrance animation; the route layout (`AuthLayout`) fades between routes via `useNavigationType()`.
+
+### Sign up
+
+`POST /auth/signup` with `{ email, username, password }`. Email verification is queued separately.
+
+### Recovery
+
+Multi-step:
+1. `/recover` — enter email or username, app calls `POST /auth/recover/request`.
+2. `/recover/code` — enter the code that landed in email, app calls `POST /auth/recover/verify`.
+3. `/recover/reset` — choose a new password, app calls `POST /auth/recover/reset`.
+
+### Authorize (OAuth2)
+
+When a third-party app sends the user to `/authorize?client_id=...&redirect_uri=...&scope=...`, the app:
+1. Validates the developer app exists and the redirect URI matches.
+2. Shows a consent screen listing the requested scopes.
+3. On approval, redirects to `redirect_uri?code=...&state=...`.
+
+## FedCM Identity Provider
+
+When a relying party invokes `signIn({ method: 'fedcm' })` (from `@oxyhq/auth`), the browser asks the user to choose an `auth.oxy.so` session. The app serves three FedCM endpoints alongside the SPA:
+
+| Endpoint | Purpose |
+|----------|---------|
+| `/.well-known/web-identity` | FedCM discovery |
+| `/fedcm/config.json` | IdP config (accounts endpoint, client_metadata endpoint, …) |
+| `/fedcm/accounts` | List of signed-in accounts (filtered to the relying-party scope) |
+| `/fedcm/token` | Exchange a FedCM grant for an Oxy session token |
+
+These run in the same Vite server / static build — no separate process.
+
+## Shared layout & theming
+
+- `AuthFormLayout` + `AuthFormHeader` — the shared layout every step uses.
+- `AuthLayout` (route layout) — persistent logo / footer, route-level fade transitions via `useNavigationType()`.
+- `applyColorPreset()` from `lib/bloom-css.ts` — applies the looked-up user's Bloom color preset to `:root` CSS vars so the rest of the flow is themed correctly.
+
+## Anti-patterns the app deliberately avoids
+
+These exist as guardrails in the app's `CLAUDE.md` and they're worth lifting wherever you wire authentication:
+
+- **No `useEffect` for syncing props to state.** Derive from props during render.
+- **No `useEffect` for firing toasts.** Call `toast()` directly in event handlers.
+- **No `useEffect` for focus.** Use `requestAnimationFrame` in event handlers.
+- **No `Suspense` wrappers** unless backing a `React.lazy()` or `use()`.
+- **No render-body side effects.** Use `useEffect` for `window.location.href`, or `<Navigate>` from react-router.
+
+## API surface
+
+No JS API — this is a deployed app. Programmatic integration happens via:
+
+- [`@oxyhq/auth`](/developers/docs/auth-sdk) — `signIn({ method: 'fedcm' | 'popup' | 'redirect' })`
+- The REST API's `/auth/*` endpoints — see [API reference](/developers/docs/api)

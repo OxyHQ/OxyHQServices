@@ -1,0 +1,73 @@
+---
+title: Onboarding flow
+description: How MyAccount walks a user from first launch to a fully recoverable identity.
+order: 2
+---
+
+# Onboarding flow
+
+The onboarding flow is the most security-critical path in MyAccount — at the end of it, the user must have an identity they can recover from a phrase, with no way to skip the phrase acknowledgement step.
+
+## Stages
+
+```
+   Launch
+     │
+     ▼
+  /(auth)/index.tsx           ─► splash + status check
+     │
+     ▼
+  Status branch
+     ├─ checking      ─► blank backdrop (no flash)
+     ├─ in_progress   ─► /(auth)/create-identity
+     ├─ recover       ─► /(auth)/recover
+     └─ complete      ─► /(tabs)
+```
+
+`status` is the output of `useOnboardingStatus()`. Invariant: when `isAuthenticated && user`, status is `'complete'` or `'in_progress'` — regardless of whether the storage lookup found a stale value. The hook re-runs `KeyManager.hasIdentity()` on `isAuthenticated` transitions so a fresh sign-in immediately sees its new identity.
+
+## Create identity
+
+1. **Username** — `/(auth)/create-identity/username`. Submitted via `useUpdateProfile().mutateAsync()` so the optimistic update + cache invalidation kicks in. Stable initial value via `useState(() => initial)` so a remount doesn't reset.
+2. **Profile** — name, avatar, optional bio.
+3. **Recovery phrase** — `/(auth)/create-identity/recovery-phrase`. The phrase is generated client-side via `RecoveryPhraseService.generate()`, displayed once, and committed to memory only.
+4. **Acknowledgement** — the user must tap "I've stored my phrase" before the route advances. The button stays disabled until the user has scrolled past the phrase and taps the explicit confirmation. This step is **non-skippable** — there is no escape hatch.
+5. **Completion** — `KeyManager.createIdentityWithPhrase()` writes the key atomically (backup-first, sign/verify probe) and lands the user on `/(tabs)`.
+
+If acknowledgement is skipped via a deep link, the Security screen shows a persistent reminder until the user goes back and confirms.
+
+## Recover identity
+
+`/(auth)/recover`:
+
+1. User enters their recovery phrase (12 words).
+2. `KeyManager.importFromPhrase(phrase)` derives the keypair.
+3. App verifies the public key matches an existing Oxy account via `oxy.users.lookupByPublicKey(publicKey)`.
+4. On match, `KeyManager` writes the identity atomically and sends the user to `/(tabs)`.
+
+The recover flow does **not** require the user's password — the recovery phrase is the password equivalent.
+
+## KeyManager safety in onboarding
+
+The MyAccount app surfaces a few KeyManager invariants directly:
+
+- `createIdentity` throws `IdentityAlreadyExistsError` if an identity already exists for this account. The recovery flow catches this and offers to overwrite (with a confirmation dialog).
+- `verifyIdentityIntegrity()` runs after the create / recover write — a sign/verify probe ensures the persisted key is functional. If it fails, the app rolls back to the previous identity (if any) and surfaces an error.
+- `restoreIdentityFromBackup()` is never auto-invoked; the user explicitly triggers it from Security > Advanced.
+
+See `KeyManager` in [`@oxyhq/core`](/developers/docs/core) for the full safety contract.
+
+## Patterns the flow enforces
+
+- **No `useEffect` for syncing query data into local state** — derive during render, or use a `useState` lazy initialiser bound to the query result.
+- **No timers leaked** — every entrance animation is wrapped in a cleanup that clears the timer on unmount.
+- **No deep-link bypasses** — every screen in the `(auth)` group validates the prerequisite state before rendering; a user who deep-links to `recovery-phrase` without having completed the username step is redirected back.
+- **Typed routes** — every `router.push()` uses a typed path. No `as any`, no string casts.
+
+## What happens if the user closes the app mid-flow
+
+State is held in zustand + AsyncStorage. On relaunch, `useOnboardingStatus()` derives the current stage and `/(auth)/index.tsx` routes the user back to where they left off. The recovery-phrase step is the one exception: if the user closed before acknowledging, the app shows the phrase again (we have not yet committed the identity) so they don't lose it.
+
+## i18n
+
+Onboarding strings live under `editProfile.*`, `auth.*`, `security.*`, and `errors.*` in `lib/i18n/locales/en-US.json` and `es-ES.json`. The other 9 locales fall back to English where untranslated.

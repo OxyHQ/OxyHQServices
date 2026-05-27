@@ -1,21 +1,75 @@
 ---
 title: Console
-description: Developer console — manage apps, API keys, webhooks, and usage.
+description: Developer console — apps, API keys, webhooks, usage.
 order: 0
 ---
 
-# Console (Cloud)
+# Console (Oxy Cloud)
 
-The Oxy developer console. Create developer apps, manage API keys + secrets, view request logs, and configure webhooks.
+The Oxy developer console. Register developer apps, manage API keys and secrets, view request logs, configure webhooks, and rotate credentials. Available at `console.oxy.so`.
 
 <Badge variant="success">App</Badge> <Badge>Web</Badge>
 
-## Highlights
+## What it is
 
-- App registration with redirect URIs and scopes.
-- Internal `isInternal: true` apps for service-to-service auth.
-- Webhook secret rotation.
+A web app — not a library. Anyone with an Oxy account can sign in and create developer apps to integrate the Oxy platform into their own products. Internal Oxy apps (Mention, Inbox, Accounts, …) also live here as `isInternal: true` apps that can mint service tokens.
 
-## Stub
+## Create your first app
 
-End-to-end "create your first app" walkthrough is scaffolded for follow-up.
+1. Sign in to [`console.oxy.so`](https://console.oxy.so) with an Oxy account.
+2. Click **New app** → fill in name, description, redirect URIs, requested scopes.
+3. Console returns `apiKey` (public, prefixed `oxy_dk_`) and `apiSecret` (shown once — store it now).
+4. Use the credentials in your backend. For public clients (mobile, SPA), only the `apiKey` is needed; for confidential clients (server-side), use both via the OAuth2 client-credentials flow.
+
+```ts
+import { OxyServices } from '@oxyhq/core';
+
+const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
+oxy.configureServiceAuth(process.env.OXY_API_KEY!, process.env.OXY_API_SECRET!);
+
+// Auto-cached, auto-refreshed service token.
+const token = await oxy.getServiceToken();
+```
+
+## Internal apps
+
+For Oxy ecosystem services (`Mention`, `Inbox`, `Accounts`, …), an internal app is registered directly in the database with `isInternal: true`. Internal apps:
+
+- Can mint service tokens via `POST /auth/service-token`
+- Bypass the third-party consent screen
+- Can call `oxy.makeServiceRequest(method, path, body, userId)` to delegate as a specific user via the `X-Oxy-User-Id` header
+
+Internal apps are reserved for first-party services and require manual DB seeding.
+
+## Rotating secrets
+
+Webhook secrets and API secrets can be rotated from the app detail page. Rotation:
+
+- Returns a fresh value, shown once
+- Marks the previous value as deprecated for 24 hours (still valid, so deploys don't go down)
+- After 24 hours, the old value is hard-revoked
+
+Rotate proactively — never reuse a secret across environments.
+
+## Webhooks
+
+Apps subscribe to events at registration time. Payloads are signed with the per-app webhook secret using HMAC-SHA256 over the raw body, and arrive in the `X-Oxy-Signature` header. Verify before trusting the payload:
+
+```ts
+import crypto from 'node:crypto';
+
+function verify(rawBody: Buffer, headerSig: string, secret: string): boolean {
+  const expected = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
+  return crypto.timingSafeEqual(Buffer.from(headerSig, 'hex'), Buffer.from(expected, 'hex'));
+}
+```
+
+Retries: exponential backoff for 4 attempts over 1 hour. Use the **Replay** button in console to manually re-fire a failed delivery.
+
+## Request logs & usage
+
+Each app gets per-route metrics — request counts, p50/p95 latency, 4xx/5xx rates, top error codes. Logs are kept for 7 days; usage rollups for 90 days.
+
+## API surface
+
+There is no JS API for the console itself — it's a deployed product. Everything you can do in the console is also exposed via the REST API under `/developer/*`. See the [API reference](/developers/docs/api).
