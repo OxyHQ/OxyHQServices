@@ -38,6 +38,7 @@ import platformStatsRoutes from './routes/platform-stats';
 import topicsRoutes from './routes/topics.routes';
 import managedAccountsRouter from './routes/managedAccounts';
 import contactsRouter from './routes/contacts';
+import userDataRouter from './routes/userData';
 import { startSmtpInbound, stopSmtpInbound } from './services/smtp.inbound';
 import { smtpOutbound } from './services/smtp.outbound';
 import { startSnoozeCron, stopSnoozeCron } from './cron/snooze.cron';
@@ -410,6 +411,12 @@ app.use("/assets", assetRoutes);
 app.use("/storage", userRateLimiter, csrfProtection, storageRoutes);
 app.use("/search", searchRoutes);
 app.use("/profiles", csrfProtection, profilesRouter);
+// Mount the user app-data KV store BEFORE the generic /users mount so the
+// `/users/me/app-data/:namespace[/:key]` paths are owned by their dedicated
+// router. Mounting after /users would still work in practice (no route inside
+// `usersRouter` matches `/me/app-data/...`) but the explicit ordering makes
+// the routing topology unambiguous.
+app.use("/users/me/app-data", userRateLimiter, csrfProtection, userDataRouter);
 app.use("/users", userRateLimiter, csrfProtection, usersRouter); // Per-user rate limiting for authenticated routes
 app.use("/session", userRateLimiter, csrfProtection, sessionRouter); // SDK uses /session/token/:id
 app.use("/privacy", userRateLimiter, csrfProtection, privacyRoutes);

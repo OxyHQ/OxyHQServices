@@ -26,6 +26,7 @@ import { OxyServicesFeaturesMixin } from './OxyServices.features';
 import { OxyServicesTopicsMixin } from './OxyServices.topics';
 import { OxyServicesManagedAccountsMixin } from './OxyServices.managedAccounts';
 import { OxyServicesContactsMixin } from './OxyServices.contacts';
+import { OxyServicesAppDataMixin } from './OxyServices.appData';
 
 /**
  * Instance shape of every mixin in the pipeline, intersected. The runtime
@@ -56,6 +57,7 @@ type AllMixinInstances =
   & InstanceType<ReturnType<typeof OxyServicesTopicsMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesManagedAccountsMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesContactsMixin<typeof OxyServicesBase>>>
+  & InstanceType<ReturnType<typeof OxyServicesAppDataMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesUtilityMixin<typeof OxyServicesBase>>>;
 
 /**
@@ -115,6 +117,7 @@ const MIXIN_PIPELINE: MixinFunction[] = [
     OxyServicesTopicsMixin,
     OxyServicesManagedAccountsMixin,
     OxyServicesContactsMixin,
+    OxyServicesAppDataMixin,
 
     // Utility (last, can use all above)
     OxyServicesUtilityMixin,

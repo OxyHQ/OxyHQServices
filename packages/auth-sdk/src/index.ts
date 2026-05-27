@@ -74,6 +74,10 @@ export {
   useSecurityInfo,
   useSecurityActivity,
   useRecentSecurityActivity,
+  useAppData,
+  useAppDataNamespace,
+  appDataQueryKeys,
+  isMissingAppDataEndpointError,
 } from './hooks/queries';
 
 // --- Mutation Hooks ---
@@ -88,6 +92,8 @@ export {
   useLogoutAll,
   useUpdateDeviceName,
   useRemoveDevice,
+  useSetAppData,
+  useDeleteAppData,
 } from './hooks/mutations';
 
 export {

@@ -23,3 +23,6 @@ export {
   useRemoveDevice,
 } from './useServicesMutations';
 
+// App-data KV store mutation hooks
+export { useSetAppData, useDeleteAppData } from './useAppData';
+

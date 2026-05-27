@@ -35,6 +35,7 @@ export type { ServiceTokenResponse } from './mixins/OxyServices.auth';
 export type { ServiceApp, ServiceActingAsVerification } from './mixins/OxyServices.utility';
 export type { CreateManagedAccountInput, ManagedAccountManager, ManagedAccount } from './mixins/OxyServices.managedAccounts';
 export type { ContactDiscoveryMatch, ContactDiscoveryResponse } from './mixins/OxyServices.contacts';
+export { OxyAppDataIdentifierError } from './mixins/OxyServices.appData';
 
 // --- Crypto / Identity ---
 export {

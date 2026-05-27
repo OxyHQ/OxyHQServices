@@ -34,3 +34,7 @@ export {
 // Query keys and invalidation helpers (for advanced usage)
 export { queryKeys, invalidateAccountQueries, invalidateUserQueries, invalidateSessionQueries } from './queryKeys';
 
+// App-data KV store query hooks
+export { useAppData, useAppDataNamespace } from './useAppData';
+export { appDataQueryKeys, isMissingAppDataEndpointError } from './appDataQueryKeys';
+
