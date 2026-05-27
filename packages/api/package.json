@@ -1,6 +1,6 @@
 {
   "name": "@oxyhq/api",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "OxyHQ API server with authentication, user management, and real-time features",
   "main": "dist/server.js",
   "scripts": {

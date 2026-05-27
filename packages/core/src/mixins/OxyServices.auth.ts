@@ -440,6 +440,11 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
 
     /**
      * Get access token by session ID
+     *
+     * SECURITY: this endpoint requires the caller to already hold a
+     * bearer token whose user owns the referenced session (C1 hardening
+     * in the API). For the device-flow / QR sign-in case where the
+     * client has no bearer token yet, use `claimSessionByToken` instead.
      */
     async getTokenBySession(sessionId: string): Promise<{ accessToken: string; expiresAt: string }> {
       try {
@@ -449,9 +454,67 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
           undefined,
           { cache: false, retry: false }
         );
-        
+
         this.setTokens(res.accessToken);
-        
+
+        return res;
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
+    /**
+     * Exchange a device-flow sessionToken for the first access token.
+     *
+     * The originating client holds a 128-bit `sessionToken` that nobody
+     * else has seen — it was generated client-side, sent once on
+     * `POST /auth/session/create`, and is never echoed back. After
+     * another authenticated device approves the session via
+     * `POST /auth/session/authorize/{sessionToken}` (bearer-authed) and
+     * the auth socket / poll loop notifies this client, the client
+     * exchanges its `sessionToken` here for the first access token,
+     * refresh token, sessionId, and the authorized user.
+     *
+     * This call requires no Authorization header — the high-entropy
+     * `sessionToken` IS the credential (RFC 8628 §3.4). The exchange is
+     * single-use; replay attempts are rejected with 401.
+     *
+     * @param sessionToken - The same sessionToken the SDK passed to
+     *   `POST /auth/session/create` at the start of the flow.
+     * @param options.deviceFingerprint - Optional fingerprint of the
+     *   originating client device.
+     */
+    async claimSessionByToken(
+      sessionToken: string,
+      options: { deviceFingerprint?: string } = {}
+    ): Promise<{
+      accessToken: string;
+      refreshToken: string;
+      sessionId: string;
+      deviceId: string;
+      expiresAt: string;
+      user: User;
+    }> {
+      try {
+        const res = await this.makeRequest<{
+          accessToken: string;
+          refreshToken: string;
+          sessionId: string;
+          deviceId: string;
+          expiresAt: string;
+          user: User;
+        }>(
+          'POST',
+          '/auth/session/claim',
+          {
+            sessionToken,
+            ...(options.deviceFingerprint ? { deviceFingerprint: options.deviceFingerprint } : {}),
+          },
+          { cache: false, retry: false }
+        );
+
+        this.setTokens(res.accessToken, res.refreshToken);
+
         return res;
       } catch (error) {
         throw this.handleError(error);

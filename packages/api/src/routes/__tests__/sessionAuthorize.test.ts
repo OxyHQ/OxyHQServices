@@ -45,6 +45,20 @@ jest.mock('../../models/AuthSession', () => ({
   AuthSession: { findOne: mockAuthSessionFindOne },
 }));
 
+// Session model — the auth route file imports it for use by
+// `/auth/session/claim`. We don't exercise that path in this suite,
+// but the bare default-export is required so the module loads.
+jest.mock('../../models/Session', () => ({
+  __esModule: true,
+  default: { findOne: jest.fn() },
+}));
+
+// authSession.service is consumed by `/auth/session/claim` only; we
+// mock it to avoid the model import chain.
+jest.mock('../../services/authSession.service', () => ({
+  claimAuthSession: jest.fn(),
+}));
+
 jest.mock('../../models/AuthCode', () => ({
   __esModule: true,
   AuthCode: { create: mockAuthCodeCreate },

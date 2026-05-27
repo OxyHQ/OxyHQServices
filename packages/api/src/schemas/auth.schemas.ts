@@ -106,6 +106,21 @@ export const authorizeSessionBodySchema = z.object({
   deviceFingerprint: z.string().trim().optional(),
 });
 
+// POST /auth/session/claim
+// Exchange a 128-bit `sessionToken` (held only by the originating client)
+// for the first access token after another authenticated device has
+// approved the session via /auth/session/authorize/:sessionToken.
+// No bearer header is required — the `sessionToken` IS the credential.
+// Single-use, time-bound, status-bound (must be 'authorized').
+export const authSessionClaimSchema = z.object({
+  sessionToken: z.string().trim().min(1).max(256),
+  // Optional device fingerprint of the originating client. We don't
+  // require it because RN/web SDKs may not have one, but when supplied
+  // we record it on the new session so the device list shows the
+  // correct device, not the authorizer's.
+  deviceFingerprint: z.string().trim().max(512).optional(),
+});
+
 // POST /auth/service-token
 export const serviceTokenSchema = z.object({
   apiKey: z.string().trim().min(1),

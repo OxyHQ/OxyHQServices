@@ -24,6 +24,7 @@ import { validate } from '../middleware/validate';
 import sessionService from '../services/session.service';
 import { formatUserResponse } from '../utils/userTransform';
 import { issueAuthCode, exchangeAuthCode, AUTH_CODE_TTL_MS } from '../services/oauthCode.service';
+import { claimAuthSession } from '../services/authSession.service';
 import {
   signupSchema,
   loginSchema,
@@ -40,6 +41,7 @@ import {
   authSessionCreateSchema,
   authSessionTokenParams,
   authorizeSessionBodySchema,
+  authSessionClaimSchema,
   serviceTokenSchema,
   oauthAuthorizeSchema,
   oauthTokenSchema,
@@ -826,6 +828,7 @@ router.get('/user/:publicKey', validate({ params: getUserByPublicKeyParams }), S
 // ============================================
 
 import AuthSession from '../models/AuthSession';
+import Session from '../models/Session';
 
 /**
  * @openapi
@@ -1145,6 +1148,170 @@ router.post('/session/authorize/:sessionToken', authMiddleware, validate({ param
     },
   });
 }));
+
+// Limiter for the device-flow claim. Tighter than the OAuth token
+// endpoint because each `sessionToken` is single-use — legitimate
+// clients hit this at most once per flow. The cap blunts brute-force
+// attempts against the 128-bit sessionToken value even though
+// guessing is computationally infeasible (10^7 RPS for 100 years to
+// hit a 50 % collision).
+const authSessionClaimLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: process.env.NODE_ENV === 'development' ? 100 : 30,
+});
+
+/**
+ * @openapi
+ * /auth/session/claim:
+ *   post:
+ *     tags:
+ *       - Authentication
+ *     security: []
+ *     summary: Exchange a sessionToken for the first access token (device flow)
+ *     description: >
+ *       Final step of the QR-code / "Open Oxy Auth" device sign-in flow.
+ *       After another authenticated device has approved this session via
+ *       `POST /auth/session/authorize/{sessionToken}`, the originating
+ *       client — which alone knows the secret `sessionToken` — calls
+ *       this endpoint to atomically claim the resulting access token,
+ *       refresh token, and session ID.
+ *
+ *       No `Authorization` header is required: the 128-bit `sessionToken`
+ *       (held only by the originating client, never echoed back to
+ *       observers) IS the credential, exactly as in RFC 8628 §3.4.
+ *       The exchange is single-use: a successful claim transitions the
+ *       AuthSession status from `authorized` -> `consumed`, so a replayed
+ *       sessionToken is rejected. Time-bound by the AuthSession TTL
+ *       (default 5 minutes). Status-bound: only `authorized` rows are
+ *       claimable.
+ *
+ *       This endpoint replaces the previous SDK fallback of calling
+ *       `GET /session/token/{sessionId}` after the device-flow socket
+ *       update — that path requires bearer auth and the originating
+ *       client has no bearer token yet, so the call was always 401.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - sessionToken
+ *             properties:
+ *               sessionToken:
+ *                 type: string
+ *                 description: The same 128-bit sessionToken issued by `POST /auth/session/create`.
+ *               deviceFingerprint:
+ *                 type: string
+ *                 description: Optional fingerprint of the originating client device.
+ *     responses:
+ *       200:
+ *         description: First access token issued.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 accessToken:
+ *                   type: string
+ *                 refreshToken:
+ *                   type: string
+ *                 sessionId:
+ *                   type: string
+ *                 deviceId:
+ *                   type: string
+ *                 expiresAt:
+ *                   type: string
+ *                   format: date-time
+ *                 user:
+ *                   $ref: '#/components/schemas/User'
+ *       400:
+ *         description: Validation failed.
+ *       401:
+ *         description: SessionToken is unknown, expired, cancelled, not yet authorized, or already consumed.
+ */
+router.post(
+  '/session/claim',
+  authSessionClaimLimiter,
+  validate({ body: authSessionClaimSchema }),
+  asyncHandler(async (req, res) => {
+    const { sessionToken } = req.body as { sessionToken: string };
+
+    const outcome = await claimAuthSession({ sessionToken });
+
+    if (!outcome.ok) {
+      // Per RFC 6749 §5.2 we collapse all failure modes to a single
+      // generic error to avoid leaking which step failed (does the
+      // sessionToken exist? was it authorized?).
+      logger.warn('[AuthSession] Claim rejected', {
+        reason: outcome.reason,
+        sessionToken: sessionToken.substring(0, 8) + '...',
+      });
+      throw new UnauthorizedError('invalid_grant');
+    }
+
+    const { authSession } = outcome;
+
+    if (!authSession.authorizedSessionId || !authSession.authorizedUserId) {
+      // Defensive: should never happen for an 'authorized' row but we
+      // never want to return a successful response without these.
+      logger.error('[AuthSession] Claimed authSession is missing bindings', new Error('missing bindings'), {
+        sessionToken: sessionToken.substring(0, 8) + '...',
+      });
+      throw new UnauthorizedError('invalid_grant');
+    }
+
+    const tokenResult = await sessionService.getAccessToken(authSession.authorizedSessionId);
+    if (!tokenResult) {
+      logger.error('[AuthSession] Could not resolve access token for claimed session', new Error('no access token'), {
+        sessionToken: sessionToken.substring(0, 8) + '...',
+        sessionId: authSession.authorizedSessionId,
+      });
+      throw new UnauthorizedError('invalid_grant');
+    }
+
+    const user = await User.findById(authSession.authorizedUserId).lean();
+    if (!user) {
+      logger.error('[AuthSession] User not found for claimed session', new Error('user not found'), {
+        sessionToken: sessionToken.substring(0, 8) + '...',
+        userId: authSession.authorizedUserId.toString(),
+      });
+      throw new UnauthorizedError('invalid_grant');
+    }
+
+    // Pull the refreshToken + deviceId from the underlying Session so
+    // the client can persist them and continue using the normal token
+    // refresh flow afterwards.
+    const session = await Session.findOne({ sessionId: authSession.authorizedSessionId })
+      .select('refreshToken deviceId expiresAt')
+      .lean();
+
+    if (!session) {
+      logger.error('[AuthSession] Underlying session disappeared between authorize and claim', new Error('session missing'), {
+        sessionToken: sessionToken.substring(0, 8) + '...',
+      });
+      throw new UnauthorizedError('invalid_grant');
+    }
+
+    const userData = formatUserResponse(user);
+
+    logger.info('[AuthSession] Claim succeeded', {
+      sessionToken: sessionToken.substring(0, 8) + '...',
+      sessionId: authSession.authorizedSessionId,
+      userId: authSession.authorizedUserId.toString(),
+      appId: authSession.appId,
+    });
+
+    sendSuccess(res, {
+      accessToken: tokenResult.accessToken,
+      refreshToken: session.refreshToken,
+      sessionId: authSession.authorizedSessionId,
+      deviceId: session.deviceId,
+      expiresAt: tokenResult.expiresAt.toISOString(),
+      user: userData,
+    });
+  })
+);
 
 /**
  * POST /auth/session/cancel/:sessionToken
