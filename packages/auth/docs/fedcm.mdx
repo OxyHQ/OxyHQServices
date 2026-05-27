@@ -1,0 +1,75 @@
+---
+title: FedCM
+description: How auth.oxy.so works as a Federated Credential Management Identity Provider.
+order: 2
+---
+
+# FedCM
+
+The auth app at `auth.oxy.so` ships a [Federated Credential Management](https://developers.google.com/privacy-sandbox/3pcd/fedcm) (FedCM) Identity Provider for the Oxy ecosystem. Browsers that support FedCM can let users sign into any Relying Party with one tap, without third-party cookies, redirect storms, or a popup that the browser will eventually block.
+
+## What FedCM gives you
+
+- **One-tap sign-in.** The browser shows a chip with the user's Oxy avatar; one click signs them in.
+- **No redirects.** The Relying Party stays on its own origin. The browser brokers the identity assertion.
+- **No third-party cookies.** FedCM is the privacy-first replacement for the old `iframe` IdP patterns Chrome is phasing out.
+- **Native account picker.** Multiple Oxy accounts on the device? The browser surfaces all of them, themed with each user's Bloom color preset.
+
+## How it works in this app
+
+Every Oxy auth app deployment exposes the four FedCM endpoints required by the spec:
+
+| Endpoint | Purpose |
+|----------|---------|
+| `/fedcm/config.json` | Declares the IdP. Linked from the well-known URL. |
+| `/fedcm/accounts` | Returns the active sessions for the calling browser. |
+| `/fedcm/client-metadata` | Returns the calling RP's privacy policy + terms URLs (looked up by `clientId`). |
+| `/fedcm/assertion` | Issues an identity token for the chosen account + RP pair. |
+
+Tokens are short-lived JWTs signed with the platform's FedCM key, with `aud = clientId`, `nonce` echoed from the call, and `origin` claim bound to the RP origin. The API verifies all three on every consumer call and rejects mismatches as origin spoofing.
+
+## Calling FedCM from a Relying Party
+
+```ts
+const credential = await navigator.credentials.get({
+  identity: {
+    providers: [
+      {
+        configURL: 'https://auth.oxy.so/fedcm/config.json',
+        clientId: 'oxy_dk_live_abc123…',
+        nonce: cryptoRandom(),
+      },
+    ],
+  },
+});
+
+if (credential?.type === 'identity') {
+  const idToken = credential.token;
+  // Verify on your backend by calling POST https://api.oxy.so/auth/fedcm/verify
+}
+```
+
+Browsers without FedCM return `undefined`. Always fall back to the redirect flow (`window.location.href = 'https://auth.oxy.so/sign-in?...'`) for the long tail of browsers.
+
+## When to use FedCM vs the redirect flow
+
+- **FedCM** — best for web apps where the user is likely already signed into Oxy and you want a frictionless sign-in chip.
+- **Redirect (OAuth2 authorization code)** — required for first-time sign-ups (the user can complete account creation inside `auth.oxy.so` and come back), for native apps, and for any flow that needs a refresh token.
+
+Both flows produce equivalent end-state sessions on the platform; the difference is the UX in between.
+
+## Login Status API
+
+FedCM relies on the [Login Status API](https://developers.google.com/privacy-sandbox/3pcd/fedcm-developer-guide#login-status-api) to know whether to show the IdP chip at all. The auth app sets this on every successful sign-in:
+
+```ts
+navigator.login.setStatus('logged-in');
+```
+
+and clears it on sign-out:
+
+```ts
+navigator.login.setStatus('logged-out');
+```
+
+If you spin up an internal Oxy product, make sure your sign-out flow either redirects through `auth.oxy.so/sign-out` (which calls `setStatus`) or otherwise notifies the auth app — otherwise the chip will keep offering a stale session.

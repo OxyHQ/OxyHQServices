@@ -1,0 +1,68 @@
+---
+title: Account recovery
+description: How auth.oxy.so handles password reset and identity recovery.
+order: 3
+---
+
+# Account recovery
+
+Two separate flows are bundled under the term "recovery" in the auth app. They look superficially similar but recover different things:
+
+1. **Password recovery** — the user has lost their password but still has their email or a phone number on file. Recoverable via a verification code; the cryptographic identity (recovery phrase + keys) is untouched.
+2. **Identity recovery** — the user has lost both their device and their password. Recoverable only via the 12-word BIP-39 recovery phrase displayed at account creation.
+
+Both flows are exposed under `/recover` and the screen picks the path based on what the user has.
+
+## Password recovery
+
+Triggered from the sign-in screen via **Forgot password?**.
+
+```text
+1. /recover                  enter identifier (email or username)
+2. /recover/method           pick the verification channel
+3. /recover/verify           enter the 6-digit code sent to the channel
+4. /recover/new-password     set a fresh password
+5. /sign-in                  back to sign-in, themed for the account
+```
+
+The API endpoints used:
+
+- `POST /auth/recover/start` — accepts `{ identifier }`, returns the channels the user has on file (email/phone).
+- `POST /auth/recover/send-code` — accepts `{ recoveryId, channel }`, sends a 6-digit code with 10-minute TTL. Throttled to one send per minute per identifier.
+- `POST /auth/recover/verify` — accepts `{ recoveryId, code }`, returns a short-lived `resetToken`.
+- `POST /auth/recover/set-password` — accepts `{ resetToken, newPassword }`. The new password must clear the platform's minimum entropy bar (zxcvbn score >= 3).
+
+After a password reset the platform revokes every active session for the user except the one created by the reset flow itself. Connected devices receive a `session_removed` event over the session socket and sign out locally.
+
+## Identity recovery
+
+The cryptographic identity is end-to-end controlled by the user. The platform cannot help recover it — only the 12-word recovery phrase can. The flow:
+
+```text
+1. /recover                       pick "Lost both device and password"
+2. /recover/phrase                enter the 12 words (case-insensitive, BIP-39)
+3. /recover/identity-confirm      sign a challenge with the derived key to prove the phrase matches the account
+4. /recover/new-password          set a fresh password (optional — phrase + new device is enough)
+5. /(tabs)                        signed in to MyAccount with restored identity
+```
+
+The phrase is never sent to the server. The auth app derives the secp256k1 keypair locally, calls `POST /auth/recover/identity` with the public key + a signed challenge, and the server checks the public key against the on-file `publicKey` for that account. If they match, a fresh session is issued.
+
+This means a phrase is sufficient to sign in but it is also sufficient to drain the account — treat it like a master password.
+
+## 2FA-related recovery
+
+If 2FA is enabled and the user has lost their authenticator:
+
+1. **Recovery codes** — at 2FA enrolment the platform shows 10 single-use recovery codes. Each code substitutes for a TOTP code exactly once.
+2. **Support-channel reset** — if all recovery codes are also lost, the account moves into a 72-hour quarantine. The user signs in to a recovery-only mode that exposes nothing except a "Disable 2FA" action with a 72-hour delay. Every active session is notified throughout the window; if a session reports the action as unauthorised, the disablement is rolled back.
+
+This delay is deliberate and non-negotiable — it is the only practical defence against an attacker who has stolen the password and email simultaneously.
+
+## Rate limits
+
+- `POST /auth/recover/start`: 5 requests per identifier per hour.
+- `POST /auth/recover/send-code`: 1 per minute, 5 per hour.
+- `POST /auth/recover/verify`: 10 attempts per `recoveryId` — after that, the recovery session is invalidated and the user has to restart from `/recover/start`.
+
+Hitting any of these limits returns 429 with `Retry-After`.

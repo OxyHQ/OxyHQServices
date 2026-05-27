@@ -1,0 +1,81 @@
+---
+title: Developer apps
+description: Registering apps, scopes, redirect URIs, and the difference between public and confidential clients.
+order: 3
+---
+
+# Developer apps
+
+A developer app is the unit of integration on the Oxy platform. Every external product that authenticates Oxy users, calls the REST API on their behalf, or subscribes to platform events registers an app first.
+
+## Registering
+
+From the console:
+
+1. **Apps → New app**.
+2. Fill in name, description, homepage URL, support email.
+3. Add **Redirect URIs**. Every URI is exact-matched at the OAuth2 callback step — no wildcards, no trailing-slash flexibility. Add one entry per environment (`https://app.example.com/callback`, `http://localhost:5173/callback`, etc.).
+4. Pick **Scopes** the app needs. The consent screen shows the union of scopes; users can accept or deny individually.
+5. On save the console mints two credentials:
+
+```text
+apiKey:    oxy_dk_live_abc123…          (public)
+apiSecret: secret_live_x1y2z3…          (shown once)
+```
+
+Store the secret immediately. Lost secrets cannot be recovered — only rotated.
+
+## Public vs confidential clients
+
+| Client type | Credentials | Used by | Auth flow |
+|-------------|-------------|---------|-----------|
+| **Public** | `apiKey` only | Mobile apps, SPAs, native desktop | OAuth2 authorization code + PKCE |
+| **Confidential** | `apiKey` + `apiSecret` | Server-side apps, daemons, CLIs | OAuth2 authorization code or client credentials |
+
+The console infers the type from the app's runtime — apps with at least one mobile bundle id or origin without server-side capability are flagged public and refuse to use the client-credentials grant.
+
+## Scopes
+
+A scope is a contract between your app and the user about what it can do. Granular scopes are the rule:
+
+| Scope | Grants |
+|-------|--------|
+| `openid` | Sign-in only. No API access. |
+| `profile` | Read the user's profile (`getMe`, public profile fields). |
+| `email` | Read the user's verified email. |
+| `wallet:read` | Read balances and transactions. |
+| `wallet:write` | Initiate transfers (consent re-required per session). |
+| `files:read` | List and download files the user owns. |
+| `files:write` | Upload and modify files. |
+| `notifications:send` | Send notifications on the user's behalf. |
+
+Request only what you need — the consent screen lists every scope literally, and over-broad scopes hurt conversion. The full list lives in the [API docs](/developers/docs/api).
+
+## Internal apps
+
+For first-party Oxy products (Mention, Inbox, MyAccount, …) an app is registered in the database with `isInternal: true`. Internal apps:
+
+- Bypass the third-party consent screen (the user has already consented by signing up to the ecosystem).
+- Can mint **service tokens** via `POST /auth/service-token`. Service tokens are short-lived JWTs that authenticate as the *service*, with optional delegation to a specific user via the `X-Oxy-User-Id` header.
+- Can call protected internal endpoints (`/internal/*`) gated by `oxy.serviceAuth()` middleware.
+
+Internal apps require manual database seeding; the console UI does not expose the toggle.
+
+## Credentials at rest
+
+The platform stores hashed secrets, never raw. Lookups are `bcrypt`-compared. The console UI never re-displays a secret after creation; lost secrets can be rotated from **Settings → Credentials**, which:
+
+- Mints a fresh secret, shown once.
+- Marks the old secret as `deprecated` for 24 hours (still accepted, so deploys do not go down).
+- Hard-revokes the old secret after the grace period.
+
+Rotate after every team turnover, every CI compromise scare, and on a 90-day cadence regardless.
+
+## Deleting an app
+
+Deletion is two-step:
+
+1. **Mark for deletion** — the app is hidden from the user-facing apps list and stops accepting new tokens. Existing user grants are revoked.
+2. After 30 days, the app is hard-deleted and the `apiKey` is freed for re-use.
+
+The 30-day quarantine lets you cancel a mistaken deletion without losing user grants or app history.

@@ -4,13 +4,13 @@
   "shortName": "api",
   "repo": "https://github.com/OxyHQ/OxyHQServices",
   "category": "service",
-  "versioned": true,
+  "versioned": false,
   "versions": [
-    "1.0.2"
+    "main"
   ],
-  "latestVersion": "1.0.2",
+  "latestVersion": null,
   "deprecatedVersions": [],
-  "defaultVersion": "1.0.2",
+  "defaultVersion": "main",
   "docsPath": "docs/",
   "description": "REST API reference for the Oxy platform — auth, accounts, files, billing."
 }

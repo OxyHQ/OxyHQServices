@@ -1,0 +1,96 @@
+---
+title: Webhooks
+description: How to subscribe to platform events, verify signatures, and handle retries.
+order: 2
+---
+
+# Webhooks
+
+Every developer app registered in the Oxy console can subscribe to a set of platform events — `user.created`, `session.revoked`, `payment.succeeded`, and so on. Webhooks are the canonical way to react to changes in user state without polling the REST API.
+
+## Subscribing
+
+Webhook subscriptions are configured per app on the **Settings → Webhooks** screen. For each subscription you provide:
+
+| Field | Notes |
+|-------|-------|
+| Endpoint URL | Must be `https://` in production. `http://` is only accepted from `console.oxy.so/dev`. |
+| Events | A list of event names. Wildcards (`user.*`) are accepted. |
+| Description | Free-form, shown in the delivery log. |
+
+On save the console returns a per-subscription `webhookSecret` — copy it once; it is never shown again. Use the **Rotate** button to mint a fresh secret while keeping the old one valid for 24 hours.
+
+## Payload
+
+Every webhook POSTs a JSON envelope:
+
+```json
+{
+  "id": "evt_01HSF...",
+  "type": "user.created",
+  "createdAt": "2026-03-15T14:22:01.231Z",
+  "appId": "app_abc123",
+  "data": {
+    "userId": "u_01HSF...",
+    "username": "ana"
+  }
+}
+```
+
+- `id` is unique per delivery. Use it for idempotency in your handler.
+- `type` is the event name. New events are additive; you should ignore unknown types.
+- `data` is event-specific. The full payload reference lives in the [API docs](/developers/docs/api).
+
+## Verifying the signature
+
+The request carries two headers:
+
+```http
+X-Oxy-Signature: hex(hmac_sha256(secret, raw_body))
+X-Oxy-Timestamp: 1737654321
+```
+
+Verify both before trusting the payload. Reject requests older than five minutes to prevent replay:
+
+```ts
+import crypto from 'node:crypto';
+
+export function verify(
+  rawBody: Buffer,
+  signatureHeader: string,
+  timestampHeader: string,
+  secret: string,
+): boolean {
+  const skew = Math.abs(Date.now() / 1000 - Number(timestampHeader));
+  if (Number.isNaN(skew) || skew > 300) return false;
+
+  const expected = crypto
+    .createHmac('sha256', secret)
+    .update(`${timestampHeader}.`)
+    .update(rawBody)
+    .digest();
+
+  const provided = Buffer.from(signatureHeader, 'hex');
+  if (provided.length !== expected.length) return false;
+  return crypto.timingSafeEqual(provided, expected);
+}
+```
+
+Never compare with `===` on hex strings — use `timingSafeEqual` to avoid leaking the secret via response timing.
+
+## Retries
+
+The platform retries non-2xx responses with exponential backoff over one hour: at 30 s, 2 min, 15 min, and 60 min. A 410 response permanently disables the subscription — return 4xx when you have stopped caring about an event, but only when you really mean it.
+
+Each delivery attempt is recorded under **Apps → \<app\> → Webhooks → Deliveries**, including the request body, response status, latency, and the next retry time. Use **Replay** to manually re-fire any delivery; the platform will sign the replay with the current secret.
+
+## Recommended handler shape
+
+A robust handler does four things, in order:
+
+1. Read the raw body (`bodyParser.raw({ type: 'application/json' })`, not `.json()`).
+2. Verify the signature and timestamp.
+3. Check `event.id` against a short-lived dedupe store (Redis with 1-day TTL is enough).
+4. Enqueue the work — do not block the HTTP response on it. Return 2xx fast, then process asynchronously.
+
+Failing to do step 4 is the most common cause of webhook backups: a slow handler stacks up retries that compound into outages.
