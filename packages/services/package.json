@@ -227,7 +227,7 @@
     ]
   },
   "overrides": {
-    "react-native-gesture-handler": "~2.30.0",
-    "react-native-reanimated": "4.2.1"
+    "react-native-gesture-handler": "~2.31.2",
+    "react-native-reanimated": "4.3.1"
   }
 }
