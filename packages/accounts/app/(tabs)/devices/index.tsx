@@ -8,22 +8,10 @@ import { AccountCard, ScreenHeader } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { useOxy, useUserDevices } from '@oxyhq/services';
 import { alert, toast } from '@oxyhq/bloom';
-import { formatDate } from '@/utils/date-utils';
+import { useRelativeTime } from '@/hooks/useRelativeTime';
 import { useHapticPress } from '@/hooks/use-haptic-press';
 import { useTranslation } from '@/lib/i18n';
-import type { MaterialCommunityIconName } from '@/types/icons';
-
-interface Device {
-  id?: string;
-  deviceId?: string;
-  name?: string;
-  deviceName?: string;
-  type?: string;
-  deviceType?: string;
-  lastActive?: string;
-  createdAt?: string;
-  isCurrent?: boolean;
-}
+import { getDeviceIcon, getDeviceDisplayName, type DeviceRecord } from '@/utils/device-utils';
 
 export default function DevicesScreen() {
   const colors = useColors();
@@ -43,7 +31,7 @@ export default function DevicesScreen() {
     error: queryError,
     refetch,
   } = useUserDevices();
-  const devices = (devicesData ?? []) as Device[];
+  const devices = (devicesData ?? []) as DeviceRecord[];
   const error = queryError instanceof Error ? queryError.message : null;
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
@@ -52,39 +40,7 @@ export default function DevicesScreen() {
   }, [refetch]);
 
   const handlePressIn = useHapticPress();
-
-  // Format relative time for last active
-  const formatRelativeTime = useCallback((dateString?: string) => {
-    if (!dateString) return 'Unknown';
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const minutes = Math.floor(diffMs / 60000);
-
-    if (minutes < 1) return 'Just now';
-    if (minutes < 60) return `${minutes}m ago`;
-    const hours = Math.floor(minutes / 60);
-    if (hours < 24) return `${hours}h ago`;
-    const days = Math.floor(hours / 24);
-    if (days < 7) return `${days}d ago`;
-    return formatDate(dateString);
-  }, []);
-
-  // Get device icon based on type
-  const getDeviceIcon = useCallback((deviceType?: string): MaterialCommunityIconName => {
-    if (!deviceType) return 'devices';
-    const type = deviceType.toLowerCase();
-    if (type.includes('mobile') || type.includes('phone') || type.includes('iphone') || type.includes('android')) {
-      return 'cellphone';
-    }
-    if (type.includes('tablet') || type.includes('ipad')) {
-      return 'tablet';
-    }
-    if (type.includes('desktop') || type.includes('laptop') || type.includes('mac') || type.includes('windows') || type.includes('linux')) {
-      return 'laptop';
-    }
-    return 'devices';
-  }, []);
+  const formatRelativeTime = useRelativeTime();
 
   // Handle device removal
   const handleRemoveDevice = useCallback(async (deviceId: string, deviceName: string, isCurrent: boolean) => {
@@ -127,9 +83,9 @@ export default function DevicesScreen() {
   const deviceItems = useMemo(() => {
     if (!devices || devices.length === 0) return [];
 
-    return devices.map((device: Device) => {
+    return devices.map((device: DeviceRecord) => {
       const deviceId = device.id || device.deviceId || '';
-      const deviceName = device.name || device.deviceName || 'Unknown Device';
+      const deviceName = getDeviceDisplayName(device, 'Unknown Device');
       const deviceType = device.type || device.deviceType || '';
       const lastActive = device.lastActive || device.createdAt;
       // Use isCurrent from API response (already identified by backend)
@@ -142,8 +98,8 @@ export default function DevicesScreen() {
         iconColor: isCurrent ? colors.tint : colors.sidebarIconDevices,
         title: deviceName,
         subtitle: isCurrent
-          ? 'This device • Last active: ' + formatRelativeTime(lastActive)
-          : 'Last active: ' + formatRelativeTime(lastActive),
+          ? 'This device • Last active: ' + formatRelativeTime(lastActive, t('common.unknown'))
+          : 'Last active: ' + formatRelativeTime(lastActive, t('common.unknown')),
         onPress: () => router.push({ pathname: '/(tabs)/devices/[deviceId]', params: { deviceId } }),
         showChevron: true,
         customContent: (
@@ -173,7 +129,7 @@ export default function DevicesScreen() {
         ),
       };
     });
-  }, [devices, colors, formatRelativeTime, getDeviceIcon, actionLoading, handleRemoveDevice, handlePressIn, router]);
+  }, [devices, colors, formatRelativeTime, actionLoading, handleRemoveDevice, handlePressIn, router, t]);
 
   // Show loading state
   if (oxyLoading || loading) {

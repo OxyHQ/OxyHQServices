@@ -5,6 +5,13 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
 import { useTranslation } from '@/lib/i18n';
+import { Fonts } from '@/constants/theme';
+
+// Platform-appropriate monospace stack for the dev-only stack-trace block.
+// `Geist Mono` was referenced previously but is never bundled, so it silently
+// fell back to the system face; `Fonts.mono` resolves to ui-monospace /
+// monospace / a proper CSS stack per platform.
+const MONO_FONT_FAMILY = Fonts?.mono;
 
 interface ErrorFallbackProps {
   error: Error;
@@ -209,7 +216,7 @@ const minimalStyles = StyleSheet.create({
   },
   devStack: {
     fontSize: 11,
-    fontFamily: 'Geist Mono',
+    fontFamily: MONO_FONT_FAMILY,
     lineHeight: 14,
   },
   retryButton: {
@@ -280,7 +287,7 @@ const styles = StyleSheet.create({
   },
   devStack: {
     fontSize: 11,
-    fontFamily: 'Geist Mono',
+    fontFamily: MONO_FONT_FAMILY,
     lineHeight: 14,
   },
   retryButton: {

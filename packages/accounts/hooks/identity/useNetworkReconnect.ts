@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { isTimeoutOrNetworkError } from '@oxyhq/services';
 import type { OxyServices } from '@oxyhq/core';
+import { isUsernameRequiredError } from '@/utils/auth/errorUtils';
 import {
   createCircuitBreakerState,
   recordFailure,
@@ -87,9 +88,9 @@ export const useNetworkReconnect = (options: UseNetworkReconnectOptions): void =
                 await syncIdentity();
               }
             }
-          } catch (syncError: any) {
+          } catch (syncError: unknown) {
             // Skip sync silently if username is required (expected when offline onboarding)
-            if (syncError?.code === 'USERNAME_REQUIRED' || syncError?.message === 'USERNAME_REQUIRED') {
+            if (isUsernameRequiredError(syncError)) {
               // Don't log or show error - username will be set later
             } else if (!isTimeoutOrNetworkError(syncError)) {
               // Only log unexpected errors

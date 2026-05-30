@@ -1,5 +1,10 @@
 import React from 'react';
-import { ScrollView, StyleSheet } from 'react-native';
+import {
+  ScrollView,
+  StyleSheet,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+} from 'react-native';
 import { useScrollContext } from '@/contexts/scroll-context';
 
 interface ScrollableScreenWrapperProps {
@@ -9,7 +14,7 @@ interface ScrollableScreenWrapperProps {
 export function ScrollableScreenWrapper({ children }: ScrollableScreenWrapperProps) {
   const { setIsScrolled } = useScrollContext();
 
-  const handleScroll = (event: any) => {
+  const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const offsetY = event.nativeEvent.contentOffset.y;
     setIsScrolled(offsetY > 10);
   };

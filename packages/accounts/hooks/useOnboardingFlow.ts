@@ -1,7 +1,8 @@
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useOxy } from '@oxyhq/services';
+import { extractAuthErrorMessage } from '@/utils/auth/errorUtils';
 import { useIdentity } from './useIdentity';
-import { useOnboardingStatus, type OnboardingStatus } from './useOnboardingStatus';
+import { useOnboardingStatus } from './useOnboardingStatus';
 
 export type OnboardingStep = 'creating' | 'username' | 'notifications';
 
@@ -51,13 +52,14 @@ export function useOnboardingFlow() {
             setStep('username');
             setIsCreating(false);
           }, 1500);
-        } catch (err: any) {
+        } catch (err: unknown) {
           setIsCreating(false);
+          const message = err instanceof Error ? err.message : '';
           // If identity already exists (race condition), go to username step
-          if (err?.message?.includes('already exists') || err?.message?.includes('Identity already')) {
+          if (message.includes('already exists') || message.includes('Identity already')) {
             setStep('username');
           } else {
-            setError(err.message || 'Failed to create identity');
+            setError(message || extractAuthErrorMessage(err, 'Failed to create identity'));
           }
         }
       }

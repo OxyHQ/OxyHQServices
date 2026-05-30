@@ -1,8 +1,35 @@
 import { handleHttpError, ErrorCodes, type ApiError } from '@oxyhq/core';
 
+/** Narrow an unknown thrown value to its optional `code`/`message` fields. */
+interface CodedError {
+  code?: string;
+  message?: string;
+}
+
+function asCodedError(error: unknown): CodedError {
+  if (error && typeof error === 'object') {
+    const e = error as Record<string, unknown>;
+    return {
+      code: typeof e.code === 'string' ? e.code : undefined,
+      message: typeof e.message === 'string' ? e.message : undefined,
+    };
+  }
+  return {};
+}
+
+/**
+ * Whether a thrown value represents the "username required" signal that the
+ * identity-sync flow raises when an account has no username yet. Checked by
+ * code (`USERNAME_REQUIRED`) or, for older call sites, message equality.
+ */
+export function isUsernameRequiredError(error: unknown): boolean {
+  const { code, message } = asCodedError(error);
+  return code === 'USERNAME_REQUIRED' || message === 'USERNAME_REQUIRED';
+}
+
 /**
  * Check if an error is a network or timeout error using Oxy core utilities
- * 
+ *
  * @param error - The error to check
  * @returns True if the error is a network or timeout error
  */

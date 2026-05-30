@@ -10,9 +10,60 @@ import { useOxy } from '@oxyhq/services';
 import { toast } from '@oxyhq/bloom';
 import { formatDate } from '@/utils/date-utils';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import type { MaterialCommunityIconName } from '@/types/icons';
 import { darkenColor } from '@/utils/color-utils';
 import faircoinImage from '@/assets/images/faircoin.jpg';
 import { useTranslation } from '@/lib/i18n';
+import { FAIRCOIN_WALLET_URL } from '@/constants/payments';
+
+/**
+ * Local payment-domain types. The `@oxyhq/core` payment mixin currently returns
+ * `Promise<any>` for these endpoints, so the shapes are modelled here against
+ * the fields this screen actually reads.
+ */
+interface Subscription {
+  plan: string;
+  status?: string;
+  endDate?: string;
+  paymentMethod?: string;
+}
+
+interface Wallet {
+  balance?: number;
+}
+
+interface WalletTransaction {
+  id?: string;
+  amount?: number;
+  type?: string;
+  createdAt?: string;
+}
+
+/** Paginated wallet-transaction envelope (some endpoints wrap the array). */
+interface WalletTransactionsResponse {
+  data?: WalletTransaction[];
+}
+
+interface Payment {
+  id?: string;
+  amount?: number;
+  currency?: string;
+  status?: string;
+  createdAt?: string;
+}
+
+/** A row rendered by `GroupedSection` on this screen. */
+interface PaymentGroupedItem {
+  id: string;
+  icon?: MaterialCommunityIconName;
+  iconColor?: string;
+  title: string;
+  subtitle?: string;
+  onPress?: () => void;
+  showChevron?: boolean;
+  customContent?: React.ReactNode;
+  customIcon?: React.ReactNode;
+}
 
 export default function PaymentsScreen() {
   const colors = useColors();
@@ -22,10 +73,10 @@ export default function PaymentsScreen() {
 
   // OxyServices integration — auth is enforced by the `(tabs)` layout.
   const { user, oxyServices, isLoading: oxyLoading, showBottomSheet } = useOxy();
-  const [subscription, setSubscription] = useState<any>(null);
-  const [payments, setPayments] = useState<any[]>([]);
-  const [wallet, setWallet] = useState<any>(null);
-  const [transactions, setTransactions] = useState<any[]>([]);
+  const [subscription, setSubscription] = useState<Subscription | null>(null);
+  const [payments, setPayments] = useState<Payment[]>([]);
+  const [wallet, setWallet] = useState<Wallet | null>(null);
+  const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [expandedPaymentMethod, setExpandedPaymentMethod] = useState<string | null>(null);
@@ -43,13 +94,21 @@ export default function PaymentsScreen() {
       oxyServices.getCurrentUserWalletTransactions({ limit: 5 }),
     ]);
 
-    setSubscription(subResult.status === 'fulfilled' ? subResult.value : { plan: 'basic', status: 'active' });
-    setPayments(paymentsResult.status === 'fulfilled' ? (paymentsResult.value || []) : []);
-    setWallet(walletResult.status === 'fulfilled' ? walletResult.value : null);
+    setSubscription(
+      subResult.status === 'fulfilled'
+        ? (subResult.value as Subscription)
+        : { plan: 'basic', status: 'active' },
+    );
+    setPayments(
+      paymentsResult.status === 'fulfilled'
+        ? ((paymentsResult.value as Payment[] | null) ?? [])
+        : [],
+    );
+    setWallet(walletResult.status === 'fulfilled' ? (walletResult.value as Wallet) : null);
 
     if (txResult.status === 'fulfilled') {
-      const txValue = txResult.value;
-      setTransactions(Array.isArray(txValue) ? txValue : (txValue?.data || []));
+      const txValue = txResult.value as WalletTransaction[] | WalletTransactionsResponse | null;
+      setTransactions(Array.isArray(txValue) ? txValue : (txValue?.data ?? []));
     } else {
       setTransactions([]);
     }
@@ -90,7 +149,7 @@ export default function PaymentsScreen() {
   }, [t]);
 
   // Format subscription status
-  const getSubscriptionStatus = useCallback((sub: any) => {
+  const getSubscriptionStatus = useCallback((sub: Subscription | null) => {
     if (!sub || sub.plan === 'basic') {
       return t('payments.subscription.noActive');
     }
@@ -116,7 +175,7 @@ export default function PaymentsScreen() {
   }, [t]);
 
   // Format next billing date
-  const getNextBillingDate = useCallback((sub: any) => {
+  const getNextBillingDate = useCallback((sub: Subscription | null) => {
     if (!sub || sub.plan === 'basic' || sub.status !== 'active') {
       return null;
     }
@@ -179,10 +238,7 @@ export default function PaymentsScreen() {
   }, []);
 
   const handleInstallFairCoinWallet = useCallback(() => {
-    const walletUrl = 'https://fairco.in/wallet';
-    
-    Linking.openURL(walletUrl).catch((err) => {
-      console.error('Failed to open FAIRWallet URL:', err);
+    Linking.openURL(FAIRCOIN_WALLET_URL).catch(() => {
       toast.error(t('payments.fairCoinBanner.openMessage'));
     });
   }, [t]);
@@ -222,7 +278,7 @@ export default function PaymentsScreen() {
 
   // Wallet section items
   const walletItems = useMemo(() => {
-    const items: any[] = [];
+    const items: PaymentGroupedItem[] = [];
     const walletBalance = wallet?.balance || 0;
 
     // Oxy Pay wallet
@@ -238,7 +294,7 @@ export default function PaymentsScreen() {
     items.push({
       id: 'faircoin',
       icon: 'qrcode-scan',
-      iconColor: '#FF6B35',
+      iconColor: colors.brandFairCoinScan,
       title: t('payments.wallet.fairwallet'),
       subtitle: t('payments.wallet.fairwalletSubtitle'),
     });
@@ -248,7 +304,7 @@ export default function PaymentsScreen() {
 
   // Payment methods section
   const paymentMethodsItems = useMemo(() => {
-    const items: any[] = [];
+    const items: PaymentGroupedItem[] = [];
 
     // Credit/Debit Card
     items.push({
@@ -278,7 +334,7 @@ export default function PaymentsScreen() {
     items.push({
       id: 'faircoin-method',
       icon: 'qrcode-scan',
-      iconColor: '#FF6B35',
+      iconColor: colors.brandFairCoinScan,
       title: t('payments.methods.fairwallet'),
       subtitle: t('payments.methods.fairwalletSubtitle'),
       onPress: () => togglePaymentMethodExpanded('faircoin-method'),
@@ -407,7 +463,7 @@ export default function PaymentsScreen() {
   const content = (
     <>
       {/* FairCoin Wallet Banner */}
-      <View style={[styles.faircoinBanner, { backgroundColor: '#1b1e09' }]}>
+      <View style={[styles.faircoinBanner, { backgroundColor: colors.brandFairCoinBackground }]}>
         <View style={styles.faircoinBannerContent}>
           {/* Left side - phone image */}
           <Image
@@ -420,7 +476,9 @@ export default function PaymentsScreen() {
           <View style={styles.faircoinBannerRightContainer}>
             {/* Title and description */}
             <View style={styles.faircoinBannerTextContainer}>
-              <Text style={styles.faircoinBannerTitle}>{t('payments.fairCoinBanner.title')}</Text>
+              <Text style={[styles.faircoinBannerTitle, { color: colors.brandFairCoinAccent }]}>
+                {t('payments.fairCoinBanner.title')}
+              </Text>
               <Text style={styles.faircoinBannerDescription}>
                 {t('payments.fairCoinBanner.description')}
               </Text>
@@ -428,7 +486,7 @@ export default function PaymentsScreen() {
 
             {/* Button */}
             <TouchableOpacity
-              style={styles.faircoinBannerButton}
+              style={[styles.faircoinBannerButton, { backgroundColor: colors.brandFairCoinAccent }]}
               onPress={handleInstallFairCoinWallet}
               activeOpacity={0.8}
               accessibilityRole="button"
@@ -786,7 +844,6 @@ const styles = StyleSheet.create({
   faircoinBannerTitle: {
     fontSize: 17,
     fontWeight: '700',
-    color: '#9ffb50',
     marginBottom: 3,
   },
   faircoinBannerDescription: {
@@ -798,7 +855,6 @@ const styles = StyleSheet.create({
   faircoinBannerButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#9ffb50',
     paddingHorizontal: 18,
     paddingVertical: 10,
     borderRadius: 20,

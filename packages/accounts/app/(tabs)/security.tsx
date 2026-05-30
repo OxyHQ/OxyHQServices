@@ -10,17 +10,42 @@ import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import { darkenColor } from '@/utils/color-utils';
 import { LinkButton, AccountCard, Switch, ScreenHeader } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
-import { useOxy, useUserDevices, useRecentSecurityActivity, useUpdateProfile, showBottomSheet } from '@oxyhq/services';
+import { useOxy, useUserDevices, useRecentSecurityActivity, showBottomSheet } from '@oxyhq/services';
 import { alert, toast } from '@oxyhq/bloom';
 import { formatDate } from '@/utils/date-utils';
+import { useRelativeTime } from '@/hooks/useRelativeTime';
 import type { ClientSession, SecurityActivity } from '@oxyhq/core';
 import { useBiometricSettings } from '@/hooks/useBiometricSettings';
 import { getEventIcon, getSeverityColor, getEventSeverity, formatEventDescription } from '@/utils/security-utils';
+import { getDeviceIcon, getDeviceDisplayName, type DeviceRecord } from '@/utils/device-utils';
 import type { MaterialCommunityIconName } from '@/types/icons';
 import { useTranslation } from '@/lib/i18n';
 import { getNativeLanguageName } from '@oxyhq/core';
 import { useIdentityStore } from '@/hooks/identity/identityStore';
 import { useOnboardingStatus } from '@/hooks/useOnboardingStatus';
+
+/**
+ * A row rendered by `GroupedSection`. Mirrors the props that component
+ * accepts; declared locally because the interface is not exported from
+ * `components/grouped-section`.
+ */
+interface GroupedItem {
+    id: string;
+    icon?: MaterialCommunityIconName;
+    iconColor?: string;
+    title: string;
+    subtitle?: string;
+    onPress?: () => void;
+    showChevron?: boolean;
+    disabled?: boolean;
+    customContent?: React.ReactNode;
+    customIcon?: React.ReactNode;
+}
+
+/** A security recommendation row, sortable by ascending `priority`. */
+interface RecommendationItem extends GroupedItem {
+    priority: number;
+}
 
 export default function SecurityScreen() {
     const { mode } = useTheme();
@@ -37,19 +62,6 @@ export default function SecurityScreen() {
     // arrays and conditional rendering.
     const { hasIdentity: hasIdentityBoolean } = useOnboardingStatus();
     const [isLoggingOutAll, setIsLoggingOutAll] = useState(false);
-
-    // Device type for typing the query result
-    interface DeviceRecord {
-        id?: string;
-        deviceId?: string;
-        name?: string;
-        deviceName?: string;
-        type?: string;
-        deviceType?: string;
-        lastActive?: string;
-        createdAt?: string;
-        isCurrent?: boolean;
-    }
 
     // Fetch devices using TanStack Query hook — the `(tabs)` layout guarantees
     // an authenticated session by the time this hook mounts.
@@ -81,42 +93,11 @@ export default function SecurityScreen() {
         (state) => state.recoveryPhraseAcknowledged,
     );
 
-    // Format relative time for dates
-    const formatRelativeTime = useCallback((dateString?: string) => {
-        if (!dateString) return '';
-        const date = new Date(dateString);
-        const now = new Date();
-        const diffMs = now.getTime() - date.getTime();
-        const minutes = Math.floor(diffMs / 60000);
-
-        if (minutes < 1) return t('home.activity.justNow');
-        if (minutes < 60) return t('home.activity.minutesAgo', { count: minutes });
-        const hours = Math.floor(minutes / 60);
-        if (hours < 24) return t('home.activity.hoursAgo', { count: hours });
-        const days = Math.floor(hours / 24);
-        if (days < 7) return t('home.activity.daysAgo', { count: days });
-        return formatDate(dateString);
-    }, [t]);
-
-    // Get device icon based on type
-    const getDeviceIcon = useCallback((deviceType?: string): MaterialCommunityIconName => {
-        if (!deviceType) return 'devices';
-        const type = deviceType.toLowerCase();
-        if (type.includes('mobile') || type.includes('phone') || type.includes('iphone') || type.includes('android')) {
-            return 'cellphone';
-        }
-        if (type.includes('tablet') || type.includes('ipad')) {
-            return 'tablet';
-        }
-        if (type.includes('desktop') || type.includes('laptop') || type.includes('mac') || type.includes('windows') || type.includes('linux')) {
-            return 'monitor';
-        }
-        return 'devices';
-    }, []);
+    const formatRelativeTime = useRelativeTime();
 
     // Compute security recommendations with actionable items
     const securityRecommendations = useMemo(() => {
-        const recommendations: any[] = [];
+        const recommendations: RecommendationItem[] = [];
 
         // 0. CRITICAL: Recommend backing up the recovery phrase if the user
         //    has not acknowledged it. Without this, account loss is
@@ -145,20 +126,14 @@ export default function SecurityScreen() {
                 title: t('security.recommendations.biometric'),
                 subtitle: t('security.recommendations.biometricSubtitle'),
                 onPress: () => {
-                    // Navigate to biometric section and show toggle
+                    // The biometric toggle lives in the "How you sign in"
+                    // section on this same screen, so the recommendation is
+                    // purely informational — point the user at the toggle
+                    // below rather than offering a no-op navigation action.
                     alert(
                         t('security.recommendations.biometricAlertTitle'),
                         t('security.recommendations.biometricAlertMessage'),
-                        [
-                            { text: t('common.cancel'), style: 'cancel' },
-                            {
-                                text: t('security.recommendations.biometricGoToSettings'),
-                                onPress: () => {
-                                    // Scroll to biometric section (user can enable it there)
-                                    // For now, just show the section is below
-                                },
-                            },
-                        ]
+                        [{ text: t('common.ok'), style: 'default' }]
                     );
                 },
                 showChevron: true,
@@ -336,7 +311,7 @@ export default function SecurityScreen() {
 
     // Sign-in items
     const signInItems = useMemo(() => {
-        const items: any[] = [];
+        const items: GroupedItem[] = [];
 
         // Biometric authentication
         if (Platform.OS !== 'web') {
@@ -371,7 +346,7 @@ export default function SecurityScreen() {
                     />
                 ) : biometricEnabled ? (
                     <View style={styles.statusContainer}>
-                        <Ionicons name="checkmark-circle" size={20} color="#34C759" />
+                        <Ionicons name="checkmark-circle" size={20} color={colors.iconSuccess} />
                     </View>
                 ) : undefined,
             });
@@ -410,15 +385,16 @@ export default function SecurityScreen() {
         // Group devices by type
         const deviceGroups = new Map<string, { count: number; names: string[]; deviceIds: string[] }>();
 
-        devices.forEach((device: any) => {
+        devices.forEach((device: DeviceRecord) => {
             const type = device.type || device.deviceType || 'unknown';
-            const name = device.name || device.deviceName || 'Unknown Device';
+            const name = getDeviceDisplayName(device, 'Unknown Device');
             const deviceId = device.id || device.deviceId || '';
 
-            if (!deviceGroups.has(type)) {
-                deviceGroups.set(type, { count: 0, names: [], deviceIds: [] });
+            let group = deviceGroups.get(type);
+            if (!group) {
+                group = { count: 0, names: [], deviceIds: [] };
+                deviceGroups.set(type, group);
             }
-            const group = deviceGroups.get(type)!;
             group.count++;
             group.deviceIds.push(deviceId);
             if (group.names.length < 3) {
@@ -427,7 +403,7 @@ export default function SecurityScreen() {
         });
 
         // Convert to items
-        const items: any[] = [];
+        const items: GroupedItem[] = [];
         deviceGroups.forEach((group, type) => {
             const icon = getDeviceIcon(type);
             const typeLabel = type.charAt(0).toUpperCase() + type.slice(1);
@@ -447,7 +423,7 @@ export default function SecurityScreen() {
         });
 
         return items;
-    }, [devices, colors, getDeviceIcon, router, t]);
+    }, [devices, colors, router, t]);
 
 
     // Handle logout all sessions
@@ -481,7 +457,7 @@ export default function SecurityScreen() {
 
     // Active sessions management
     const activeSessionsItems = useMemo(() => {
-        const items: any[] = [];
+        const items: GroupedItem[] = [];
         const activeSessionsCount = sessions?.filter(s => s.isCurrent !== false).length || 0;
 
         if (activeSessionsCount > 1) {
@@ -698,32 +674,6 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
     },
-    desktopBody: {
-        flex: 1,
-        flexDirection: 'row',
-    },
-    desktopMain: {
-        flex: 1,
-        maxWidth: 720,
-    },
-    desktopMainContent: {
-        padding: 32,
-    },
-    headerSection: {
-        marginBottom: 24,
-    },
-    title: {
-        fontSize: 32,
-        fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
-        marginBottom: 8,
-    },
-    recommendationIconContainer: {
-        width: 36,
-        height: 36,
-        borderRadius: 18,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
     sectionSubtitle: {
         fontSize: 14,
         opacity: 0.7,
@@ -735,14 +685,6 @@ const styles = StyleSheet.create({
         padding: 16,
         paddingBottom: 120,
     },
-    mobileHeaderSection: {
-        marginBottom: 20,
-    },
-    mobileTitle: {
-        fontSize: 28,
-        fontWeight: '600',
-        marginBottom: 6,
-    },
     loadingContainer: {
         flex: 1,
         justifyContent: 'center',
@@ -752,16 +694,6 @@ const styles = StyleSheet.create({
     loadingText: {
         fontSize: 16,
         opacity: 0.7,
-    },
-    placeholderText: {
-        fontSize: 16,
-        textAlign: 'center',
-    },
-    emptyText: {
-        fontSize: 14,
-        opacity: 0.6,
-        textAlign: 'center',
-        paddingVertical: 20,
     },
     emptyStateContainer: {
         alignItems: 'center',

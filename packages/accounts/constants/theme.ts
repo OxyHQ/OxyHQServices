@@ -41,6 +41,17 @@ export const DomainColors = {
     // Identity icon colors
     identityIconSelfCustody: '#10B981',
     identityIconPublicKey: '#8B5CF6',
+    // Semantic icon tints (informational list/grouped-item icons). These are
+    // intentionally separate from Bloom's `success`/`warning`/`error` status
+    // colors, which carry alert semantics; these are decorative accents.
+    iconSuccess: '#10B981',
+    iconInfo: '#3B82F6',
+    iconWarning: '#F59E0B',
+    // FairCoin / FAIRWallet brand palette (Payments screen). Deliberately
+    // off-theme to match the partner brand; not derived from Bloom tokens.
+    brandFairCoinBackground: '#1b1e09',
+    brandFairCoinAccent: '#9ffb50',
+    brandFairCoinScan: '#FF6B35',
   },
   dark: {
     // Avatar
@@ -76,6 +87,15 @@ export const DomainColors = {
     // Identity icon colors
     identityIconSelfCustody: '#34D399',
     identityIconPublicKey: '#A78BFA',
+    // Semantic icon tints (decorative accents; see light variant for rationale).
+    iconSuccess: '#34D399',
+    iconInfo: '#60A5FA',
+    iconWarning: '#FBBF24',
+    // FairCoin / FAIRWallet brand palette. Brand colors stay constant across
+    // light/dark so the partner banner renders identically in both modes.
+    brandFairCoinBackground: '#1b1e09',
+    brandFairCoinAccent: '#9ffb50',
+    brandFairCoinScan: '#FF6B35',
   },
 } as const;
 

@@ -1,11 +1,18 @@
 import React from 'react';
-import { View, StyleSheet, Platform, useWindowDimensions } from 'react-native';
+import {
+    View,
+    StyleSheet,
+    Platform,
+    useWindowDimensions,
+    type StyleProp,
+    type ViewStyle,
+} from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 
 interface ScreenHeaderProps {
     title: string;
     subtitle?: string;
-    style?: any;
+    style?: StyleProp<ViewStyle>;
 }
 
 export function ScreenHeader({ title, subtitle, style }: ScreenHeaderProps) {

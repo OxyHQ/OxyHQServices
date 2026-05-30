@@ -11,8 +11,8 @@ import { AccountCard } from '@/components/ui';
 import { GroupedSection } from '@/components/grouped-section';
 import { Section } from '@/components/section';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { formatDate } from '@/utils/date-utils';
 import type { ClientSession } from '@oxyhq/core';
+import { useRelativeTime } from '@/hooks/useRelativeTime';
 import { useHapticPress } from '@/hooks/use-haptic-press';
 import { useTranslation } from '@/lib/i18n';
 
@@ -43,22 +43,7 @@ export default function SessionsScreen() {
         router.push('/(tabs)/managed-accounts');
     }, [router]);
 
-    // Format relative time for last active
-    const formatRelativeTime = useCallback((dateString?: string) => {
-        if (!dateString) return 'Unknown';
-        const date = new Date(dateString);
-        const now = new Date();
-        const diffMs = now.getTime() - date.getTime();
-        const minutes = Math.floor(diffMs / 60000);
-
-        if (minutes < 1) return 'Just now';
-        if (minutes < 60) return `${minutes}m ago`;
-        const hours = Math.floor(minutes / 60);
-        if (hours < 24) return `${hours}h ago`;
-        const days = Math.floor(hours / 24);
-        if (days < 7) return `${days}d ago`;
-        return formatDate(dateString);
-    }, []);
+    const formatRelativeTime = useRelativeTime();
 
     // Handle session removal
     const handleRemoveSession = useCallback(async (sessionId: string, isActive: boolean) => {
@@ -122,8 +107,8 @@ export default function SessionsScreen() {
                 iconColor: isActive ? colors.tint : colors.sidebarIconDevices,
                 title: `Session ${session.deviceId?.substring(0, 8) || session.sessionId.substring(0, 8)}`,
                 subtitle: isActive
-                    ? 'Current session \u2022 ' + formatRelativeTime(session.lastActive)
-                    : 'Last active: ' + formatRelativeTime(session.lastActive),
+                    ? 'Current session \u2022 ' + formatRelativeTime(session.lastActive, t('common.unknown'))
+                    : 'Last active: ' + formatRelativeTime(session.lastActive, t('common.unknown')),
                 customContent: (
                     <View style={styles.sessionActions}>
                         {isActive && (
@@ -165,7 +150,7 @@ export default function SessionsScreen() {
                 ),
             };
         });
-    }, [sessions, activeSessionId, colors, formatRelativeTime, actionLoading, handleRemoveSession, handleSwitchSession]);
+    }, [sessions, activeSessionId, colors, formatRelativeTime, actionLoading, handleRemoveSession, handleSwitchSession, handlePressIn, t]);
 
     // Show loading state
     if (oxyLoading) {

@@ -11,16 +11,17 @@ import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
 import { Section } from '@/components/section';
 import { GroupedSection } from '@/components/grouped-section';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AccountCard, ScreenHeader, Button, ImportantBanner } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { useOxy } from '@oxyhq/services';
 import { alert, toast } from '@oxyhq/bloom';
 import { KeyManager } from '@oxyhq/core';
 import { useIdentity } from '@/hooks/useIdentity';
+import { useAvatarUrl } from '@/hooks/useAvatarUrl';
+import { useRelativeTime } from '@/hooks/useRelativeTime';
 import * as Print from 'expo-print';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { formatDate, getDisplayName } from '@/utils/date-utils';
+import { getDisplayName } from '@/utils/date-utils';
 import { IdentityCard } from '@/components/identity';
 
 export default function AboutIdentityScreen() {
@@ -31,12 +32,7 @@ export default function AboutIdentityScreen() {
   const { getPublicKey } = useIdentity();
 
   const displayName = useMemo(() => getDisplayName(user), [user]);
-  const avatarUrl = useMemo(() => {
-    if (user?.avatar && oxyServices) {
-      return oxyServices.getFileDownloadUrl(user.avatar, 'thumb');
-    }
-    return undefined;
-  }, [user?.avatar, oxyServices]);
+  const avatarUrl = useAvatarUrl(user);
 
   const handleEditName = useCallback(() => {
     showBottomSheet?.({
@@ -51,22 +47,7 @@ export default function AboutIdentityScreen() {
   const [exportHistory, setExportHistory] = useState<{ timestamp: string; date: string }[]>([]);
   const [isExporting, setIsExporting] = useState(false);
 
-  // Format relative time for dates (matching security screen)
-  const formatRelativeTime = useCallback((dateString?: string): string => {
-    if (!dateString) return '';
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const minutes = Math.floor(diffMs / 60000);
-
-    if (minutes < 1) return 'Just now';
-    if (minutes < 60) return `${minutes}m ago`;
-    const hours = Math.floor(minutes / 60);
-    if (hours < 24) return `${hours}h ago`;
-    const days = Math.floor(hours / 24);
-    if (days < 7) return `${days}d ago`;
-    return formatDate(dateString);
-  }, []);
+  const formatRelativeTime = useRelativeTime();
 
 
   useEffect(() => {
@@ -148,9 +129,11 @@ export default function AboutIdentityScreen() {
       await oxyServices.updateProfile({ accountExpiresAfterInactivityDays: selectedDays });
       // User object from useOxy should update automatically via the context
       toast.success('Account expiration setting updated');
-    } catch (error: any) {
-      console.error('Failed to update expiration setting:', error);
-      toast.error(error?.message || 'Failed to update account expiration setting. Please try again.');
+    } catch (error: unknown) {
+      const message = error instanceof Error
+        ? error.message
+        : 'Failed to update account expiration setting. Please try again.';
+      toast.error(message);
     } finally {
       setIsSavingExpiration(false);
     }
@@ -360,9 +343,11 @@ export default function AboutIdentityScreen() {
               }
 
               toast.success('Private key has been sent to printer');
-            } catch (error: any) {
-              console.error('Failed to export private key:', error);
-              toast.error(error?.message || 'Failed to export private key. Please try again.');
+            } catch (error: unknown) {
+              const message = error instanceof Error
+                ? error.message
+                : 'Failed to export private key. Please try again.';
+              toast.error(message);
             } finally {
               setIsExporting(false);
             }
@@ -377,32 +362,32 @@ export default function AboutIdentityScreen() {
     {
       id: 'private-key',
       icon: 'key-variant',
-      iconColor: '#10B981',
+      iconColor: colors.iconSuccess,
       title: 'Private Key Stored Locally',
       subtitle: 'Your private key is encrypted and stored securely on this device. It never leaves your device.',
     },
     {
       id: 'no-password',
       icon: 'lock-off-outline',
-      iconColor: '#3B82F6',
+      iconColor: colors.iconInfo,
       title: 'No Passwords',
       subtitle: 'You sign in using cryptographic proof, not passwords that can be guessed or stolen.',
     },
     {
       id: 'recovery',
       icon: 'text-box-outline',
-      iconColor: '#F59E0B',
+      iconColor: colors.iconWarning,
       title: 'Recovery Phrase Backup',
       subtitle: 'Your 12-word recovery phrase is the only way to restore your identity on a new device.',
     },
     {
       id: 'decentralized',
       icon: 'web',
-      iconColor: '#8B5CF6',
+      iconColor: colors.identityIconPublicKey,
       title: 'Decentralized Identity',
       subtitle: 'Your identity is not controlled by any company. You own it completely.',
     },
-  ], []);
+  ], [colors.iconSuccess, colors.iconInfo, colors.iconWarning, colors.identityIconPublicKey]);
 
 
   if (oxyLoading || loading) {
@@ -472,7 +457,7 @@ export default function AboutIdentityScreen() {
                   {
                     id: 'create-backup',
                     icon: 'file-export',
-                    iconColor: '#F59E0B',
+                    iconColor: colors.iconWarning,
                     title: 'Create Encrypted Backup',
                     subtitle: 'Generate password-protected backup file',
                     onPress: () => router.push('/(tabs)/create-backup'),
@@ -481,7 +466,7 @@ export default function AboutIdentityScreen() {
                   {
                     id: 'export-private-key',
                     icon: 'printer',
-                    iconColor: '#8B5CF6',
+                    iconColor: colors.identityIconPublicKey,
                     title: 'Export Private Key',
                     subtitle: isExporting
                       ? 'Exporting...'
@@ -492,7 +477,7 @@ export default function AboutIdentityScreen() {
                     showChevron: true,
                     disabled: isExporting,
                     customContent: isExporting ? (
-                      <ActivityIndicator size="small" color="#8B5CF6" />
+                      <ActivityIndicator size="small" color={colors.identityIconPublicKey} />
                     ) : undefined,
                   },
                 ]}

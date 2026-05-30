@@ -25,6 +25,20 @@ const FollowButton: React.FC<{
   theme?: 'light' | 'dark';
 }> = ImportedFollowButton;
 
+/** ObjectId-like value: a raw MongoDB `_id` exposes `toString()`. */
+interface ObjectIdLike {
+  toString(): string;
+}
+
+/**
+ * A user record we can resolve a stable id from. Covers both the standard
+ * `User` shape (`id: string`) and raw documents where the id lives on `_id`
+ * (either a string or an ObjectId instance).
+ */
+type IdentifiableUser = Partial<User> & {
+  _id?: string | ObjectIdLike;
+};
+
 export default function SearchScreen() {
   const { mode } = useTheme();
   const colors = useColors();
@@ -32,7 +46,6 @@ export default function SearchScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ q?: string }>();
   const searchQuery = params.q || '';
-  const [localSearchQuery, setLocalSearchQuery] = useState(searchQuery);
   const isDesktop = useMemo(() => Platform.OS === 'web' && width >= 768, [width]);
   const { t, locale } = useTranslation();
 
@@ -47,27 +60,26 @@ export default function SearchScreen() {
   const [blockedUsers, setBlockedUsers] = useState<BlockedUser[]>([]);
   const [restrictedUsers, setRestrictedUsers] = useState<RestrictedUser[]>([]);
 
-  // Helper to safely extract and validate user ID
-  const extractUserId = useCallback((user: User | any): string | null => {
-    if (!user) return null;
+  // Helper to safely extract and validate user ID. Accepts either a standard
+  // `User` (with `id`) or a raw MongoDB document where the identifier is `_id`
+  // (a string or an ObjectId-like value exposing `toString()`).
+  const extractUserId = useCallback((candidate: IdentifiableUser | null | undefined): string | null => {
+    if (!candidate) return null;
 
     // Try id field first (standard User interface)
-    if (user.id && typeof user.id === 'string' && user.id.trim().length > 0) {
-      return user.id.trim();
+    if (typeof candidate.id === 'string' && candidate.id.trim().length > 0) {
+      return candidate.id.trim();
     }
 
     // Try _id field (MongoDB format)
-    if (user._id) {
-      if (typeof user._id === 'string' && user._id.trim().length > 0) {
-        return user._id.trim();
-      }
+    const rawId = candidate._id;
+    if (typeof rawId === 'string') {
+      const trimmed = rawId.trim();
+      if (trimmed.length > 0) return trimmed;
+    } else if (rawId && typeof rawId.toString === 'function') {
       // If _id is an ObjectId instance, convert to string
-      if (user._id.toString && typeof user._id.toString === 'function') {
-        const idString = user._id.toString().trim();
-        if (idString.length > 0) {
-          return idString;
-        }
-      }
+      const idString = rawId.toString().trim();
+      if (idString.length > 0) return idString;
     }
 
     return null;
@@ -92,11 +104,6 @@ export default function SearchScreen() {
 
     loadBlockedRestricted();
   }, [oxyServices, isAuthenticated, user?.id]);
-
-  // Sync local state with route params
-  useEffect(() => {
-    setLocalSearchQuery(searchQuery);
-  }, [searchQuery]);
 
   // Search for users with debouncing
   const searchUsers = useCallback(async (query: string) => {
@@ -149,8 +156,10 @@ export default function SearchScreen() {
       });
 
       setUserSearchResults(filtered);
-    } catch (err: any) {
-      console.error('Failed to search users:', err);
+    } catch (err: unknown) {
+      if (__DEV__) {
+        console.warn('[Search] Failed to search users:', err);
+      }
       setUserSearchResults([]);
     } finally {
       setIsSearchingUsers(false);
@@ -178,11 +187,6 @@ export default function SearchScreen() {
       }
     };
   }, [searchQuery, searchUsers, isAuthenticated]);
-
-  const handleSearchChange = (text: string) => {
-    setLocalSearchQuery(text);
-    router.setParams({ q: text || '' });
-  };
 
   const handleRefresh = useCallback(async () => {
     if (!isAuthenticated) return;

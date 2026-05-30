@@ -15,6 +15,7 @@ import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import { Button } from '@/components/ui';
 import { IdentityCard } from '@/components/identity';
 import { getDisplayName } from '@/utils/date-utils';
+import { useAvatarUrl } from '@/hooks/useAvatarUrl';
 import { useTranslation } from '@/lib/i18n';
 
 /**
@@ -71,8 +72,8 @@ export default function AuthorizeScreen() {
         appId: response.appId,
         expiresAt: response.expiresAt,
       });
-    } catch (err: any) {
-      setError(err.message || 'Failed to load authorization request');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to load authorization request');
     } finally {
       setIsLoading(false);
     }
@@ -111,8 +112,8 @@ export default function AuthorizeScreen() {
         `Authorized ${sessionInfo?.appId || 'the app'} to access your Oxy identity.`,
       );
       router.back();
-    } catch (err: any) {
-      setError(err.message || 'Failed to authorize');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to authorize');
     } finally {
       setIsAuthorizing(false);
     }
@@ -136,12 +137,7 @@ export default function AuthorizeScreen() {
   const displayName = useMemo(() => getDisplayName(user, locale), [user, locale]);
 
   // Get avatar URL
-  const avatarUrl = useMemo(() => {
-    if (user?.avatar && oxyServices) {
-      return oxyServices.getFileDownloadUrl(user.avatar, 'thumb');
-    }
-    return undefined;
-  }, [user?.avatar, oxyServices]);
+  const avatarUrl = useAvatarUrl(user);
 
   // Derive from theme
   const backgroundColor = colors.background;

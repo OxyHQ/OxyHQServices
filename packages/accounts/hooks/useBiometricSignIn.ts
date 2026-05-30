@@ -33,9 +33,10 @@ export function useBiometricSignIn() {
             }
           }
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : '';
         // If it's a user cancellation, throw to prevent sign-in
-        if (err?.message?.includes('cancelled') || err?.message?.includes('cancel') || err?.message?.includes('user_cancel')) {
+        if (message.includes('cancelled') || message.includes('cancel') || message.includes('user_cancel')) {
           throw new Error('Sign in cancelled');
         }
         // For other errors, re-throw

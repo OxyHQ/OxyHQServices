@@ -7,6 +7,8 @@ import {
   Platform,
   type ColorValue,
   type NativeMethods,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -49,7 +51,7 @@ export function HorizontalScrollSection({
     setShowRightArrow(canScrollRight);
   }, []);
 
-  const handleScroll = useCallback((event: any) => {
+  const handleScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
     currentScrollX.current = contentOffset.x;
     checkScrollPosition(contentSize.width, contentOffset.x, layoutMeasurement.width);

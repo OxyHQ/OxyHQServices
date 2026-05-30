@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, type LayoutChangeEvent } from 'react-native';
 import { BlurView } from 'expo-blur';
 import Svg, { Defs, RadialGradient, Stop, Path, Filter, FeGaussianBlur } from 'react-native-svg';
 import Animated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming, Easing } from 'react-native-reanimated';
@@ -124,7 +124,7 @@ export function IdCard({ name, imageUrl, title, value, onPress, onPressIn }: IdC
   const colors = useColors();
   const [cardDimensions, setCardDimensions] = React.useState({ width: 300, height: 200 });
 
-  const handleLayout = (event: any) => {
+  const handleLayout = (event: LayoutChangeEvent) => {
     const { width, height } = event.nativeEvent.layout;
     if (width > 0 && height > 0) {
       setCardDimensions({ width, height });

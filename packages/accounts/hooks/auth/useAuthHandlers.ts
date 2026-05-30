@@ -1,7 +1,8 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback } from 'react';
 import { useRouter } from 'expo-router';
 import Constants from 'expo-constants';
-import type { OxyServices } from '@oxyhq/core';
+import type { OxyServices, User } from '@oxyhq/core';
+import { KeyManager } from '@oxyhq/core';
 import { useAuthStore } from '@oxyhq/services';
 import { checkIfOffline } from '@/utils/auth/networkUtils';
 import { isNetworkOrTimeoutError, extractAuthErrorMessage, handleAuthError } from '@/utils/auth/errorUtils';
@@ -22,7 +23,8 @@ const isExpoGo = (): boolean => {
 };
 
 interface UseAuthHandlersOptions {
-  signIn: (...args: any[]) => Promise<unknown>;
+  /** The session sign-in function from `useOxy()`. */
+  signIn: (publicKey: string, deviceName?: string) => Promise<User>;
   oxyServices: OxyServices | null;
   usernameRef: React.MutableRefObject<string>;
   setAuthError: (error: string | null) => void;
@@ -116,10 +118,19 @@ export function useAuthHandlers({
     let lastError: unknown = null;
     let signInSuccess = false;
 
+    // The session sign-in requires the device's public key as the identity
+    // credential; resolve it from the local KeyManager before authenticating.
+    const publicKey = await KeyManager.getPublicKey();
+    if (!publicKey) {
+      setAuthError('No identity found on this device.');
+      setSigningIn(false);
+      return;
+    }
+
     // Retry logic for sign-in
     for (let attempt = 0; attempt <= MAX_SIGN_IN_RETRIES; attempt++) {
       try {
-        await signIn();
+        await signIn(publicKey);
         signInSuccess = true;
         break;
       } catch (err: unknown) {

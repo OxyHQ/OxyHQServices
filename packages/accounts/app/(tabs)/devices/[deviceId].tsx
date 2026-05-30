@@ -10,34 +10,29 @@ import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { useOxy } from '@oxyhq/services';
 import { alert, toast } from '@oxyhq/bloom';
 import { formatDate } from '@/utils/date-utils';
+import { useRelativeTime } from '@/hooks/useRelativeTime';
+import { useTranslation } from '@/lib/i18n';
+import { getDeviceIcon, getDeviceDisplayName, type DeviceRecord } from '@/utils/device-utils';
 import { useHapticPress } from '@/hooks/use-haptic-press';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import type { MaterialCommunityIconName } from '@/types/icons';
 
-interface Device {
-  id?: string;
-  deviceId?: string;
-  name?: string;
-  deviceName?: string;
-  type?: string;
-  deviceType?: string;
-  lastActive?: string;
-  createdAt?: string;
-  isCurrent?: boolean;
-}
+// 20% alpha suffix applied to the success token for the current-device icon
+// badge background (e.g. `#10B981` -> `#10B98120`).
+const ICON_BADGE_ALPHA = '20';
 
 export default function DeviceDetailScreen() {
   const colors = useColors();
   const { width } = useWindowDimensions();
   const router = useRouter();
   const params = useLocalSearchParams<{ deviceId: string }>();
+  const { t } = useTranslation();
 
   // colors already from useColors() above
   const isDesktop = Platform.OS === 'web' && width >= 768;
 
   // OxyServices integration — auth is enforced by the `(tabs)` layout.
   const { oxyServices, isLoading: oxyLoading } = useOxy();
-  const [device, setDevice] = useState<Device | null>(null);
+  const [device, setDevice] = useState<DeviceRecord | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
@@ -54,7 +49,7 @@ export default function DeviceDetailScreen() {
       try {
         const devicesData = await oxyServices.getUserDevices();
         const foundDevice = devicesData?.find(
-          (d: Device) => (d.id === deviceId || d.deviceId === deviceId)
+          (d: DeviceRecord) => (d.id === deviceId || d.deviceId === deviceId)
         );
 
         if (foundDevice) {
@@ -62,9 +57,12 @@ export default function DeviceDetailScreen() {
         } else {
           setError('Device not found');
         }
-      } catch (err: any) {
-        console.error('Failed to fetch device:', err);
-        setError(err?.message || 'Failed to load device');
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Failed to load device';
+        if (__DEV__) {
+          console.warn('[DeviceDetail] Failed to fetch device:', err);
+        }
+        setError(message);
       } finally {
         setLoading(false);
       }
@@ -74,45 +72,13 @@ export default function DeviceDetailScreen() {
   }, [oxyServices, deviceId]);
 
   const handlePressIn = useHapticPress();
-
-  // Format relative time for last active
-  const formatRelativeTime = useCallback((dateString?: string) => {
-    if (!dateString) return 'Unknown';
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const minutes = Math.floor(diffMs / 60000);
-
-    if (minutes < 1) return 'Just now';
-    if (minutes < 60) return `${minutes}m ago`;
-    const hours = Math.floor(minutes / 60);
-    if (hours < 24) return `${hours}h ago`;
-    const days = Math.floor(hours / 24);
-    if (days < 7) return `${days}d ago`;
-    return formatDate(dateString);
-  }, []);
-
-  // Get device icon based on type
-  const getDeviceIcon = useCallback((deviceType?: string): MaterialCommunityIconName => {
-    if (!deviceType) return 'devices';
-    const type = deviceType.toLowerCase();
-    if (type.includes('mobile') || type.includes('phone') || type.includes('iphone') || type.includes('android')) {
-      return 'cellphone';
-    }
-    if (type.includes('tablet') || type.includes('ipad')) {
-      return 'tablet';
-    }
-    if (type.includes('desktop') || type.includes('laptop') || type.includes('mac') || type.includes('windows') || type.includes('linux')) {
-      return 'laptop';
-    }
-    return 'devices';
-  }, []);
+  const formatRelativeTime = useRelativeTime();
 
   // Handle device removal
   const handleRemoveDevice = useCallback(async () => {
     if (!device || !oxyServices) return;
 
-    const deviceName = device.name || device.deviceName || 'Unknown Device';
+    const deviceName = getDeviceDisplayName(device, 'Unknown Device');
     const isCurrent = Boolean(device.isCurrent);
 
     if (isCurrent) {
@@ -131,7 +97,6 @@ export default function DeviceDetailScreen() {
           onPress: async () => {
             // Explicitly check if oxyServices exists before attempting operations
             if (!oxyServices) {
-              console.error('Failed to remove device: oxyServices is not available');
               toast.error('Service unavailable. Please try again.');
               return;
             }
@@ -145,9 +110,11 @@ export default function DeviceDetailScreen() {
               if (Platform.OS !== 'web') {
                 toast.success('Device removed');
               }
-            } catch (err: any) {
-              console.error('Failed to remove device:', err);
-              toast.error(err?.message || 'Failed to remove device. Please try again.');
+            } catch (err: unknown) {
+              const message = err instanceof Error
+                ? err.message
+                : 'Failed to remove device. Please try again.';
+              toast.error(message);
             } finally {
               setActionLoading(false);
             }
@@ -161,11 +128,14 @@ export default function DeviceDetailScreen() {
   const deviceInfoItems = useMemo(() => {
     if (!device) return [];
 
-    const deviceName = device.name || device.deviceName || 'Unknown Device';
+    const deviceName = getDeviceDisplayName(device, 'Unknown Device');
     const deviceType = device.type || device.deviceType || 'unknown';
     const lastActive = device.lastActive || device.createdAt;
     const createdAt = device.createdAt;
     const isCurrent = Boolean(device.isCurrent);
+    const badgeBackground = isCurrent
+      ? colors.iconSuccess + ICON_BADGE_ALPHA
+      : colors.sidebarIconDevices + ICON_BADGE_ALPHA;
 
     return [
       {
@@ -175,9 +145,9 @@ export default function DeviceDetailScreen() {
         title: deviceName,
         subtitle: isCurrent ? 'Current Device' : 'Other Device',
         customIcon: (
-          <View style={[styles.deviceIconBadge, { backgroundColor: isCurrent ? '#34C75920' : colors.sidebarIconDevices + '20' }]}>
+          <View style={[styles.deviceIconBadge, { backgroundColor: badgeBackground }]}>
             <MaterialCommunityIcons
-              name={getDeviceIcon(deviceType) as any}
+              name={getDeviceIcon(deviceType)}
               size={24}
               color={isCurrent ? colors.success : colors.sidebarIconDevices}
             />
@@ -196,7 +166,7 @@ export default function DeviceDetailScreen() {
         icon: 'clock-outline',
         iconColor: colors.sidebarIconDevices,
         title: 'Last Active',
-        subtitle: lastActive ? formatRelativeTime(lastActive) : 'Unknown',
+        subtitle: formatRelativeTime(lastActive, t('common.unknown')),
       },
       ...(createdAt ? [{
         id: 'createdAt',
@@ -206,7 +176,7 @@ export default function DeviceDetailScreen() {
         subtitle: formatDate(createdAt),
       }] : []),
     ];
-  }, [device, colors, formatRelativeTime, getDeviceIcon]);
+  }, [device, colors, formatRelativeTime, t]);
 
   // Show loading state
   if (oxyLoading || loading) {
@@ -285,7 +255,7 @@ export default function DeviceDetailScreen() {
                 showChevron: false,
                 disabled: actionLoading,
                 customContent: actionLoading ? (
-                  <ActivityIndicator size="small" color="#FF3B30" />
+                  <ActivityIndicator size="small" color={colors.error} />
                 ) : undefined,
               }]} />
             </AccountCard>

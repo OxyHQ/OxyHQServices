@@ -15,10 +15,14 @@ import { AccountCard } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { useOxy, useUserDevices, useRecentSecurityActivity, useCurrentUser } from '@oxyhq/services';
 import { toast } from '@oxyhq/bloom';
+import type { ClientSession, SecurityActivity } from '@oxyhq/core';
 import { formatDate, getDisplayName } from '@/utils/date-utils';
 import { useIdentity } from '@/hooks/useIdentity';
+import { useAvatarUrl } from '@/hooks/useAvatarUrl';
+import { useRelativeTime } from '@/hooks/useRelativeTime';
 import { useHapticPress } from '@/hooks/use-haptic-press';
 import { useBiometricSettings } from '@/hooks/useBiometricSettings';
+import { isUsernameRequiredError } from '@/utils/auth/errorUtils';
 import { formatEventDescription, getEventIcon, getSeverityColor } from '@/utils/security-utils';
 import { QuickActionsSection, type QuickAction } from '@/components/quick-actions-section';
 import { AccountInfoGrid, type AccountInfoCard } from '@/components/account-info-grid';
@@ -26,6 +30,25 @@ import { IdentityCardsSection, type IdentityCard } from '@/components/identity-c
 import { RecentActivitySection, type RecentActivityItem } from '@/components/recent-activity-section';
 import { UsernameRequiredModal } from '@/components/UsernameRequiredModal';
 import { useTranslation } from '@/lib/i18n';
+import type { MaterialCommunityIconName } from '@/types/icons';
+
+/** A row rendered by `GroupedSection` on the home screen. */
+interface HomeGroupedItem {
+  id: string;
+  icon?: MaterialCommunityIconName;
+  iconColor?: string;
+  title: string;
+  subtitle?: string;
+  onPress?: () => void;
+  showChevron?: boolean;
+  customContent?: React.ReactNode;
+  customIcon?: React.ReactNode;
+}
+
+/** A home-screen recommendation row, sortable by ascending `priority`. */
+interface HomeRecommendation extends HomeGroupedItem {
+  priority: number;
+}
 
 export default function HomeScreen() {
   const { mode } = useTheme();
@@ -37,7 +60,7 @@ export default function HomeScreen() {
   const { t } = useTranslation();
 
   // OxyServices integration — auth is enforced by the `(tabs)` layout.
-  const { user, oxyServices, isLoading: oxyLoading, showBottomSheet, refreshSessions, openAvatarPicker, sessions, managedAccounts, actingAs } = useOxy();
+  const { user, isLoading: oxyLoading, showBottomSheet, refreshSessions, openAvatarPicker, sessions, managedAccounts, actingAs } = useOxy();
   // Hydrate the user record from the server (createdAt + any fields that were
   // missing from a cached signIn response). useCurrentUser handles staleness
   // via TanStack Query and re-fetches on mount / staleTime expiry, then
@@ -60,22 +83,7 @@ export default function HomeScreen() {
     isLoading: biometricLoading,
   } = useBiometricSettings();
 
-  // Format relative time for dates
-  const formatRelativeTime = useCallback((dateString?: string) => {
-    if (!dateString) return '';
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const minutes = Math.floor(diffMs / 60000);
-
-    if (minutes < 1) return t('home.activity.justNow');
-    if (minutes < 60) return t('home.activity.minutesAgo', { count: minutes });
-    const hours = Math.floor(minutes / 60);
-    if (hours < 24) return t('home.activity.hoursAgo', { count: hours });
-    const days = Math.floor(hours / 24);
-    if (days < 7) return t('home.activity.daysAgo', { count: days });
-    return formatDate(dateString);
-  }, [t]);
+  const formatRelativeTime = useRelativeTime();
 
   // Use reactive state from identity store (with defaults)
   const { isSynced } = identitySyncState || { isSynced: true };
@@ -85,12 +93,7 @@ export default function HomeScreen() {
   // Compute user data
   const displayName = useMemo(() => getDisplayName(user), [user]);
   const accountCreatedDate = useMemo(() => formatDate(user?.createdAt), [user?.createdAt]);
-  const avatarUrl = useMemo(() => {
-    if (user?.avatar && oxyServices) {
-      return oxyServices.getFileDownloadUrl(user.avatar, 'thumb');
-    }
-    return undefined;
-  }, [user?.avatar, oxyServices]);
+  const avatarUrl = useAvatarUrl(user);
 
   const handlePressIn = useHapticPress();
 
@@ -120,13 +123,13 @@ export default function HomeScreen() {
         if (!synced && syncIdentity) {
           try {
             await syncIdentity();
-          } catch (err: any) {
+          } catch (err: unknown) {
             // Check if error is username required - show modal
-            if (err?.code === 'USERNAME_REQUIRED' || err?.message === 'USERNAME_REQUIRED') {
+            if (isUsernameRequiredError(err)) {
               setShowUsernameModal(true);
-            } else {
-              // Silent fail for other errors - will try again later
-              // Auto-sync will retry on next mount/focus; surface for diagnostics.
+            } else if (__DEV__) {
+              // Silent fail for other errors - auto-sync retries on next
+              // mount/focus; surface for diagnostics in development only.
               console.warn('[Home] Auto-sync failed:', err);
             }
           }
@@ -238,7 +241,7 @@ export default function HomeScreen() {
 
   // Compute recommendations similar to security screen
   const recommendations = useMemo(() => {
-    const recs: any[] = [];
+    const recs: HomeRecommendation[] = [];
 
     // Check if username is missing
     if (!user?.username) {
@@ -402,7 +405,7 @@ export default function HomeScreen() {
       }];
     }
 
-    return securityActivities.slice(0, 3).map((activity: any) => {
+    return securityActivities.slice(0, 3).map((activity: SecurityActivity) => {
       const eventIcon = getEventIcon(activity.eventType);
       const eventColor = getSeverityColor(activity.severity || 'low', mode);
       const description = formatEventDescription(activity);
@@ -421,7 +424,9 @@ export default function HomeScreen() {
   // Quick stats cards
   const quickStatsCards = useMemo<AccountInfoCard[]>(() => {
     const deviceCount = devices.length || 0;
-    const sessionCount = sessions?.filter((s: any) => s.isActive !== false).length || 0;
+    // Mirror the security screen's "active session" definition (a session is
+    // counted unless it is explicitly flagged non-current).
+    const sessionCount = sessions?.filter((s: ClientSession) => s.isCurrent !== false).length || 0;
     return [
       {
         id: 'devices-count',
@@ -832,16 +837,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   } as const,
-  userName: {
-    fontSize: 24,
-    fontWeight: '600',
-  } as const,
-  userUsername: {
-    fontSize: 16,
-    fontWeight: '400',
-    opacity: 0.6,
-    marginTop: 4,
-  } as const,
   welcomeText: {
     fontSize: 24,
     fontWeight: '600',
@@ -856,22 +851,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     opacity: 0.7,
     marginBottom: 12,
-  } as const,
-  accountCard: {
-    marginBottom: 8,
-  } as const,
-  button: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-  } as const,
-  buttonText: {
-    fontSize: 13,
-    fontWeight: '500',
   } as const,
   methodIcon: {
     width: 36,
@@ -892,27 +871,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   } as const,
-  mobileTabBar: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    borderTopWidth: 1,
-    paddingBottom: 20,
-    paddingTop: 8,
-  } as const,
-  tabItem: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 8,
-  } as const,
-  tabLabel: {
-    fontSize: 11,
-    marginTop: 4,
-    fontWeight: '500',
-  } as const,
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -922,33 +880,6 @@ const styles = StyleSheet.create({
   loadingText: {
     fontSize: 16,
     opacity: 0.7,
-  } as const,
-  unauthenticatedContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 32,
-  } as const,
-  unauthenticatedContent: {
-    alignItems: 'center',
-    maxWidth: 400,
-    gap: 16,
-  } as const,
-  unauthenticatedTitle: {
-    fontSize: 28,
-    fontWeight: '600',
-    textAlign: 'center',
-    marginBottom: 8,
-  } as const,
-  unauthenticatedSubtitle: {
-    fontSize: 16,
-    textAlign: 'center',
-    marginBottom: 8,
-  } as const,
-  signInButtonContainer: {
-    width: '100%',
-    gap: 12,
-    marginTop: 8,
   } as const,
   infoBanner: {
     borderWidth: 1,

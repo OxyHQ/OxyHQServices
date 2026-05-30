@@ -10,7 +10,7 @@ import { GroupedSection } from '@/components/grouped-section';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { useOxy } from '@oxyhq/services';
 import type { AccountStorageUsageResponse } from '@oxyhq/core';
-import { formatDate } from '@/utils/date-utils';
+import { useRelativeTime } from '@/hooks/useRelativeTime';
 import { useTranslation } from '@/lib/i18n';
 import { alert } from '@oxyhq/bloom';
 
@@ -83,21 +83,7 @@ export default function StorageScreen() {
     return { value: bytes, unit: 'B', text: `${bytes} B` };
   }, []);
 
-  const formatRelativeTime = useCallback((dateString?: string) => {
-    if (!dateString) return t('storage.info.never');
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const minutes = Math.floor(diffMs / 60000);
-
-    if (minutes < 1) return t('home.activity.justNow');
-    if (minutes < 60) return t('home.activity.minutesAgo', { count: minutes });
-    const hours = Math.floor(minutes / 60);
-    if (hours < 24) return t('home.activity.hoursAgo', { count: hours });
-    const days = Math.floor(hours / 24);
-    if (days < 7) return t('home.activity.daysAgo', { count: days });
-    return formatDate(dateString);
-  }, [t]);
+  const relativeTime = useRelativeTime();
 
   const usagePercentage = useMemo(() => {
     if (!usage || usage.totalLimitBytes === 0) return 0;
@@ -264,11 +250,11 @@ export default function StorageScreen() {
         icon: 'clock-outline',
         iconColor: colors.textSecondary,
         title: t('storage.info.updated'),
-        subtitle: formatRelativeTime(usage.updatedAt),
+        subtitle: relativeTime(usage.updatedAt, t('storage.info.never')),
         showChevron: false,
       },
     ];
-  }, [colors.sidebarIconPayments, colors.textSecondary, formatRelativeTime, planDisplayName, usage, t]);
+  }, [colors.sidebarIconPayments, colors.textSecondary, relativeTime, planDisplayName, usage, t]);
 
   const content = (
     <>
