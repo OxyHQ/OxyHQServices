@@ -419,6 +419,7 @@
       "identityRequiredMessage": "Para eliminar la cuenta necesitas el dispositivo donde está tu clave de identidad. Inicia sesión en el dispositivo donde creaste esta identidad.",
       "failedTitle": "Eliminación fallida",
       "failedDefault": "No se pudo eliminar la cuenta. Inténtalo de nuevo.",
+      "localKeyPurgeWarning": "Tu cuenta se eliminó, pero no se pudo borrar la clave de identidad de este dispositivo. Reinstala la app para borrarla por completo.",
       "signInRequired": "Inicia sesión para eliminar tu cuenta.",
       "thisAccount": "esta cuenta",
       "confirmInputLabel": "Escribe tu nombre de usuario para confirmar la eliminación de cuenta"

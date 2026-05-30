@@ -419,6 +419,7 @@
       "identityRequiredMessage": "Account deletion requires the device that holds your identity key. Please sign in on the device you used to create this identity.",
       "failedTitle": "Deletion Failed",
       "failedDefault": "Failed to delete account. Please try again.",
+      "localKeyPurgeWarning": "Your account was deleted, but the identity key could not be removed from this device. Reinstall the app to clear it fully.",
       "signInRequired": "Please sign in to delete your account.",
       "thisAccount": "this account",
       "confirmInputLabel": "Type your username to confirm account deletion"

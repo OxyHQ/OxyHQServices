@@ -11,6 +11,7 @@ import { useOxy } from '@oxyhq/services';
 import { alert, toast } from '@oxyhq/bloom';
 import { KeyManager } from '@oxyhq/core';
 import { useTranslation } from '@/lib/i18n';
+import { runAccountDeletion } from '@/lib/account/delete-account-flow';
 
 /**
  * Account Deletion Screen.
@@ -47,10 +48,27 @@ export default function DeleteAccountScreen() {
         return;
       }
 
-      await oxyServices.deleteAccount(confirmText);
+      // Server-side delete → purge the local identity (primary + backup) →
+      // sign out. The purge runs ONLY after the server confirms deletion, so a
+      // failed delete never strands the user without their keys. See
+      // `runAccountDeletion` for the full ordering/safety contract.
+      const { localIdentityPurged } = await runAccountDeletion(confirmText, {
+        deleteAccount: (text) => oxyServices.deleteAccount(text),
+        // skipBackup=true (no point backing up keys for a deleted account),
+        // force=true (also purges the backup slot, no re-prompt), and
+        // userConfirmed=true (the user already confirmed via username match +
+        // the cryptographic signature this device produced).
+        purgeIdentity: () => KeyManager.deleteIdentity(true, true, true),
+        signOutAll: () => logoutAll(),
+      });
 
-      // Clear sessions on this device, then return user to the auth root.
-      await logoutAll();
+      // The account is gone server-side regardless. If the local key purge
+      // failed, surface a non-fatal warning so the user knows to reinstall to
+      // fully clear residual key material.
+      if (!localIdentityPurged) {
+        toast.error(t('data.deleteAccount.localKeyPurgeWarning'));
+      }
+
       router.replace('/');
     } catch (error) {
       const message = error instanceof Error
