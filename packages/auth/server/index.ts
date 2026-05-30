@@ -129,8 +129,59 @@ function getAvatarUrl(fileId: string): string {
 const app = new Hono();
 
 // ---------------------------------------------------------------------------
+// FedCM request validation + CORS helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * The FedCM spec requires the browser to send `Sec-Fetch-Dest: webidentity`
+ * on credentialed requests to the accounts, id_assertion and disconnect
+ * endpoints. Enforcing it prevents these cookie-bearing endpoints from being
+ * driven by ordinary `fetch()`/navigation (CSRF protection): a cross-site
+ * page cannot forge this header.
+ *
+ * Spec: https://fedidcg.github.io/FedCM/#http-csrf-protection
+ */
+function hasWebIdentityDest(c: { req: { header: (name: string) => string | undefined } }): boolean {
+  return c.req.header('sec-fetch-dest') === 'webidentity';
+}
+
+/**
+ * The id_assertion endpoint is fetched cross-origin by the browser on behalf
+ * of the RP. Per spec the response MUST echo the RP origin in
+ * `Access-Control-Allow-Origin` and set `Access-Control-Allow-Credentials:
+ * true`, otherwise the browser discards the token ("Error retrieving a
+ * token"). The RP origin arrives in the `Origin` header.
+ */
+function applyAssertionCors(c: {
+  req: { header: (name: string) => string | undefined };
+  header: (name: string, value: string) => void;
+}): void {
+  const origin = c.req.header('origin');
+  if (origin) {
+    c.header('Access-Control-Allow-Origin', origin);
+    c.header('Access-Control-Allow-Credentials', 'true');
+    c.header('Vary', 'Origin');
+  }
+}
+
+// ---------------------------------------------------------------------------
 // FedCM Endpoints
 // ---------------------------------------------------------------------------
+
+/**
+ * GET /.well-known/web-identity
+ *
+ * The FedCM manifest that points the browser at the IdP config (fedcm.json).
+ * It MUST be served from the eTLD+1 well-known path with
+ * `Content-Type: application/json`. The static file handler would label this
+ * extensionless file `application/octet-stream`, which Chrome rejects — so we
+ * serve it explicitly here.
+ *
+ * Spec: https://fedidcg.github.io/FedCM/#idp-api-well-known
+ */
+app.get('/.well-known/web-identity', (c) => {
+  return c.json({ provider_urls: [`${FEDCM_ISSUER}/fedcm.json`] });
+});
 
 /**
  * GET /fedcm/accounts
@@ -142,6 +193,11 @@ const app = new Hono();
  * Spec: https://fedidcg.github.io/FedCM/#idp-api-accounts-endpoint
  */
 app.get('/fedcm/accounts', async (c) => {
+  // CSRF protection mandated by the FedCM spec.
+  if (!hasWebIdentityDest(c)) {
+    return c.json({ error: 'invalid_request' }, 400);
+  }
+
   const sessionId = getCookie(c, COOKIE_NAME);
 
   if (!sessionId) {
@@ -197,6 +253,15 @@ app.get('/fedcm/accounts', async (c) => {
  * Spec: https://fedidcg.github.io/FedCM/#idp-api-id-assertion-endpoint
  */
 app.post('/fedcm/assertion', async (c) => {
+  // The browser issues this cross-origin POST with credentials. Echo the RP
+  // origin so the browser accepts the token (required by the FedCM spec).
+  applyAssertionCors(c);
+
+  // CSRF protection mandated by the FedCM spec.
+  if (!hasWebIdentityDest(c)) {
+    return c.json({ error: 'invalid_request' }, 400);
+  }
+
   if (!FEDCM_TOKEN_SECRET) {
     console.error('[FedCM] FEDCM_TOKEN_SECRET is not configured');
     return c.json({ error: 'server_error' }, 500);
@@ -204,6 +269,10 @@ app.post('/fedcm/assertion', async (c) => {
 
   const sessionId = getCookie(c, COOKIE_NAME);
   if (!sessionId) {
+    // Per spec, a logged-out state on the assertion endpoint is signalled
+    // with a 401 + WWW-Authenticate so the browser can surface the IdP
+    // login_url ("Continue to sign in") instead of failing silently.
+    c.header('WWW-Authenticate', 'FedCM');
     return c.json({ error: 'not_logged_in' }, 401);
   }
 
@@ -268,6 +337,15 @@ app.post('/fedcm/assertion', async (c) => {
  * Spec: https://fedidcg.github.io/FedCM/#idp-api-disconnect-endpoint
  */
 app.post('/fedcm/disconnect', async (c) => {
+  // Cross-origin credentialed request — echo RP origin like the assertion
+  // endpoint so the browser accepts the response.
+  applyAssertionCors(c);
+
+  // CSRF protection mandated by the FedCM spec.
+  if (!hasWebIdentityDest(c)) {
+    return c.json({ error: 'invalid_request' }, 400);
+  }
+
   // Read the session cookie BEFORE clearing it
   const sessionId = getCookie(c, COOKIE_NAME);
 
@@ -279,6 +357,17 @@ app.post('/fedcm/disconnect', async (c) => {
   } else {
     const body = await c.req.json().catch(() => ({})) as Record<string, string>;
     accountHint = body.account_hint;
+  }
+
+  // Resolve the account id we're disconnecting BEFORE clearing the session,
+  // so we can return it to the browser per spec. Fall back to the RP-supplied
+  // account_hint when the session can no longer be resolved.
+  let disconnectedAccountId = accountHint;
+  if (sessionId) {
+    const user = await fetchUserFromAPI(sessionId);
+    if (user?.id) {
+      disconnectedAccountId = user.id;
+    }
   }
 
   // Clear the session cookie
@@ -302,7 +391,15 @@ app.post('/fedcm/disconnect', async (c) => {
     }
   }
 
-  return c.json({ success: true });
+  c.header('Set-Login', 'logged-out');
+
+  // The FedCM disconnect spec requires the response body to carry the
+  // disconnected `account_id`. A missing/empty value here makes Chrome treat
+  // the disconnect as failed.
+  if (disconnectedAccountId && disconnectedAccountId !== '*') {
+    return c.json({ account_id: disconnectedAccountId });
+  }
+  return c.json({ account_id: '' });
 });
 
 /**
@@ -404,27 +501,39 @@ app.get('*', async (c) => {
   }
 });
 
+// Export the configured Hono app so it can be exercised in tests via
+// `app.request(...)` without binding a TCP port.
+export { app };
+
 // ---------------------------------------------------------------------------
 // Start
 // ---------------------------------------------------------------------------
 
-if (!FEDCM_TOKEN_SECRET && IS_PRODUCTION) {
-  console.error('[FedCM Server] FATAL: FEDCM_TOKEN_SECRET environment variable is required in production');
-  process.exit(1);
+function startServer(): void {
+  if (!FEDCM_TOKEN_SECRET && IS_PRODUCTION) {
+    console.error('[FedCM Server] FATAL: FEDCM_TOKEN_SECRET environment variable is required in production');
+    process.exit(1);
+  }
+
+  if (!FEDCM_TOKEN_SECRET) {
+    console.warn('[FedCM Server] WARNING: FEDCM_TOKEN_SECRET is not set. The /fedcm/assertion endpoint will not work.');
+  }
+
+  console.log(`[FedCM Server] Starting on port ${PORT}`);
+  console.log(`[FedCM Server] API: ${API_BASE_URL}`);
+  console.log(`[FedCM Server] Issuer: ${FEDCM_ISSUER}`);
+  console.log(`[FedCM Server] SPA dist: ${DIST_DIR}`);
+
+  serve({
+    fetch: app.fetch,
+    port: PORT,
+  }, (info) => {
+    console.log(`[FedCM Server] Listening on http://localhost:${info.port}`);
+  });
 }
 
-if (!FEDCM_TOKEN_SECRET) {
-  console.warn('[FedCM Server] WARNING: FEDCM_TOKEN_SECRET is not set. The /fedcm/assertion endpoint will not work.');
+// Only bind a port when run directly (`bun run server/index.ts`), not when
+// imported for testing. `import.meta.main` is Bun's entrypoint check.
+if (import.meta.main) {
+  startServer();
 }
-
-console.log(`[FedCM Server] Starting on port ${PORT}`);
-console.log(`[FedCM Server] API: ${API_BASE_URL}`);
-console.log(`[FedCM Server] Issuer: ${FEDCM_ISSUER}`);
-console.log(`[FedCM Server] SPA dist: ${DIST_DIR}`);
-
-serve({
-  fetch: app.fetch,
-  port: PORT,
-}, (info) => {
-  console.log(`[FedCM Server] Listening on http://localhost:${info.port}`);
-});

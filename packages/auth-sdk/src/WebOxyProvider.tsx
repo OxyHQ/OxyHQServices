@@ -58,6 +58,23 @@ export interface WebOxyContextValue extends WebAuthState, WebAuthActions {
 
 const WebOxyContext = createContext<WebOxyContextValue | null>(null);
 
+/**
+ * Module-level run-once guard for FedCM silent sign-in.
+ *
+ * The init effect runs again whenever the provider remounts (route change,
+ * StrictMode double-invoke, error-boundary recovery). The redirect-callback
+ * and local-session-restore steps are cheap and idempotent, but the FedCM
+ * `silentSignIn()` step triggers `navigator.credentials.get`, which must fire
+ * AT MOST ONCE per page load — otherwise a remount storm becomes a credential
+ * request storm. Keyed by origin so the guard survives instance churn; never
+ * cleared because only a fresh page load can change the IdP session state.
+ */
+const fedcmSilentSignInAttempted = new Set<string>();
+
+function silentSignInKey(): string {
+  return typeof window !== 'undefined' ? window.location.origin : 'no-origin';
+}
+
 export interface WebOxyProviderProps {
   children: ReactNode;
   baseURL: string;
@@ -191,14 +208,21 @@ export function WebOxyProvider({
           }
         }
 
-        try {
-          const session = await crossDomainAuth.silentSignIn();
-          if (mounted && session?.user) {
-            await handleAuthSuccess(session, 'fedcm');
-            return;
+        // FedCM silent sign-in: run AT MOST ONCE per page load. A remount
+        // (route change / StrictMode / error recovery) must not re-trigger
+        // the browser credential request.
+        const ssoKey = silentSignInKey();
+        if (!fedcmSilentSignInAttempted.has(ssoKey)) {
+          fedcmSilentSignInAttempted.add(ssoKey);
+          try {
+            const session = await crossDomainAuth.silentSignIn();
+            if (mounted && session?.user) {
+              await handleAuthSuccess(session, 'fedcm');
+              return;
+            }
+          } catch {
+            // Silent sign-in failed — resolve to unauthenticated below.
           }
-        } catch {
-          // Silent sign-in failed
         }
 
         if (mounted) setIsLoading(false);

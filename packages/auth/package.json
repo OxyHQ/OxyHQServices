@@ -10,6 +10,7 @@
     "build:server": "bun build server/index.ts --outdir dist-server --target node --format esm",
     "build:all": "bun run build && bun run build:server",
     "start": "bun run dist-server/index.js",
+    "test": "bun test server/__tests__",
     "lint": "eslint"
   },
   "dependencies": {

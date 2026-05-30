@@ -109,7 +109,10 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
     }
 
     try {
-      const nonce = options.nonce || this.generateNonce();
+      // Prefer a server-minted, origin-bound nonce so the downstream
+      // `/fedcm/exchange` can validate it. A caller-supplied nonce is
+      // respected as-is for advanced use cases.
+      const nonce = options.nonce || (await this.getFedcmNonce());
       const clientId = this.getClientId();
 
       // Use provided loginHint, or fall back to stored last-used account ID
@@ -219,7 +222,9 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
     const loginHint = this.getStoredLoginHint();
 
     try {
-      const nonce = this.generateNonce();
+      // Server-minted, origin-bound nonce — required for `/fedcm/exchange`
+      // to accept the resulting ID token (anti-replay binding).
+      const nonce = await this.getFedcmNonce();
       debug.log('Silent SSO: Attempting silent mediation...', loginHint ? `(hint: ${loginHint})` : '');
 
       credential = await this.requestIdentityCredential({
@@ -494,7 +499,14 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
   }
 
   /**
-   * Generate a cryptographically secure nonce for FedCM
+   * Generate a cryptographically secure local nonce for FedCM.
+   *
+   * NOTE: this is a *local* fallback only. The server-side `/fedcm/exchange`
+   * endpoint requires the nonce embedded in the ID token to have been minted
+   * by `POST /fedcm/nonce` (see {@link mintServerNonce}) and bound to this
+   * origin. A purely local nonce will be rejected with `invalid_nonce`. Use
+   * {@link getFedcmNonce}, which prefers a server-minted nonce and only falls
+   * back to this generator when the mint endpoint is unreachable.
    *
    * @private
    */
@@ -508,6 +520,58 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
       return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
     }
     throw new Error('No secure random source available for nonce generation');
+  }
+
+  /**
+   * Mint a single-use, origin-bound nonce from the Oxy API.
+   *
+   * The FedCM ID token issued by the IdP embeds this nonce as the `nonce`
+   * claim. When the consuming app calls `POST /fedcm/exchange`, the API burns
+   * the nonce (atomic `usedAt` transition) and verifies it was minted for the
+   * same origin as the token `aud`. This is the anti-replay binding required
+   * by the API's H9 hardening — without a server-minted nonce the exchange
+   * always fails.
+   *
+   * The browser attaches the `Origin` header automatically on this
+   * cross-origin request, so the API binds the nonce to the calling app's
+   * origin (which also becomes the FedCM `clientId`/token `aud`).
+   *
+   * @private
+   */
+  public async mintServerNonce(): Promise<string> {
+    const result = await this.makeRequest<{ nonce: string; expiresAt: string }>(
+      'POST',
+      '/fedcm/nonce',
+      {},
+      { cache: false }
+    );
+    if (!result?.nonce) {
+      throw new OxyAuthenticationError('FedCM nonce endpoint returned no nonce');
+    }
+    return result.nonce;
+  }
+
+  /**
+   * Resolve the nonce to use for a FedCM credential request.
+   *
+   * Prefers a server-minted, origin-bound nonce (required for the token
+   * exchange to succeed). If the mint endpoint is unreachable we fall back to
+   * a locally generated nonce so the browser flow can still proceed; the
+   * exchange may then fail server-side, but that is strictly better than
+   * throwing before the browser ever shows its UI.
+   *
+   * @private
+   */
+  public async getFedcmNonce(): Promise<string> {
+    try {
+      return await this.mintServerNonce();
+    } catch (error) {
+      debug.warn(
+        'Could not mint server nonce, falling back to local nonce:',
+        error instanceof Error ? error.message : String(error)
+      );
+      return this.generateNonce();
+    }
   }
 
   /**
