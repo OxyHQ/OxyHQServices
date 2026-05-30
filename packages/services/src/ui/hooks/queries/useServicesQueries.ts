@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { authenticatedApiCall } from '@oxyhq/core';
-import type { ClientSession } from '@oxyhq/core';
+import type { AccountStorageUsageResponse, ClientSession } from '@oxyhq/core';
 import { queryKeys } from './queryKeys';
 import { useOxy } from '../../context/OxyContext';
 import { fetchSessionsWithFallback, mapSessionsToClient } from '../../utils/sessionHelpers';
@@ -117,6 +117,31 @@ export const useSecurityInfo = (options?: { enabled?: boolean }) => {
     queryKey: [...queryKeys.devices.all, 'security'],
     queryFn: async () => {
       return await oxyServices.getSecurityInfo();
+    },
+    enabled: (options?.enabled !== false) && isAuthenticated,
+    staleTime: 5 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
+  });
+};
+
+/**
+ * Get account storage usage (server-aggregated usage across assets, mail,
+ * recordings, etc.). Wraps `oxyServices.getAccountStorageUsage()` in a
+ * TanStack query so consumers get caching, background refetch, and a
+ * consistent `isLoading` / `refetch` surface instead of hand-rolled
+ * `useEffect` fetches.
+ */
+export const useAccountStorageUsage = (options?: { enabled?: boolean }) => {
+  const { oxyServices, isAuthenticated, activeSessionId } = useOxy();
+
+  return useQuery<AccountStorageUsageResponse>({
+    queryKey: queryKeys.storage.usage(),
+    queryFn: async () => {
+      return authenticatedApiCall(
+        oxyServices,
+        activeSessionId,
+        () => oxyServices.getAccountStorageUsage()
+      );
     },
     enabled: (options?.enabled !== false) && isAuthenticated,
     staleTime: 5 * 60 * 1000,

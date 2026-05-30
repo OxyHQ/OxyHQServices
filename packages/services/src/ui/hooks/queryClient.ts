@@ -50,6 +50,7 @@ const PERSISTED_QUERY_PREFIXES: ReadonlyArray<string> = [
   'sessions',
   'devices',
   'privacy',
+  'payments',
 ];
 
 /**

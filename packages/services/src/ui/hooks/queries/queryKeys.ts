@@ -65,6 +65,32 @@ export const queryKeys = {
     infinite: (limit: number, eventType?: string) =>
       [...queryKeys.security.all, 'infinite', limit, eventType] as const,
   },
+
+  // Storage usage queries
+  storage: {
+    all: ['storage'] as const,
+    usage: () => [...queryKeys.storage.all, 'usage'] as const,
+  },
+
+  // Payment / wallet / subscription queries
+  payments: {
+    all: ['payments'] as const,
+    subscription: (userId?: string) =>
+      [...queryKeys.payments.all, 'subscription', userId || 'current'] as const,
+    history: (userId?: string) =>
+      [...queryKeys.payments.all, 'history', userId || 'current'] as const,
+    wallet: (userId?: string) =>
+      [...queryKeys.payments.all, 'wallet', userId || 'current'] as const,
+    walletTransactions: (limit?: number, offset?: number, userId?: string) =>
+      [
+        ...queryKeys.payments.all,
+        'wallet',
+        userId || 'current',
+        'transactions',
+        limit,
+        offset,
+      ] as const,
+  },
 } as const;
 
 /**

@@ -63,7 +63,16 @@ export {
   useUserById, useUserByUsername, useUsersBySessions,
   usePrivacySettings, useSessions, useSession,
   useDeviceSessions, useUserDevices, useSecurityInfo,
+  useAccountStorageUsage,
   useSecurityActivity, useRecentSecurityActivity, useInfiniteSecurityActivity,
+  useUserSubscription, useUserPayments, useUserWallet, useUserWalletTransactions,
+} from './ui/hooks/queries';
+
+// Payment / wallet / subscription domain types
+export type {
+  Subscription, SubscriptionPlan, SubscriptionStatus, SubscriptionFeatures,
+  Payment, Wallet, WalletTransaction, WalletTransactionType,
+  WalletTransactionStatus, WalletPagination, WalletTransactionsResponse,
 } from './ui/hooks/queries';
 
 // Mutation hooks
