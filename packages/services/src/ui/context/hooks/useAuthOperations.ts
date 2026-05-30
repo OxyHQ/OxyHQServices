@@ -189,16 +189,29 @@ export const useAuthOperations = ({
           deviceFingerprint,
         );
 
-        // Get token for the session
-        try {
-          await oxyServices.getTokenBySession(sessionResponse.sessionId);
-        } catch (tokenError: unknown) {
-          const errorMessage = tokenError instanceof Error ? tokenError.message : String(tokenError);
-          const status = isErrorWithCodeOrStatus(tokenError) ? tokenError.status : undefined;
-          if (status === 404 || errorMessage.includes('404')) {
-            throw new Error(`Session was created but token could not be retrieved. Session ID: ${sessionResponse.sessionId.substring(0, 8)}...`);
+        // Plant the first access token. `/auth/verify` already returns the
+        // freshly-minted access token in its response body, so use it
+        // directly. We must NOT fall back to `GET /session/token/:sessionId`
+        // here for a brand-new sign-in: that route is bearer-protected (C1
+        // hardening) and the client has no bearer yet, so calling it without
+        // a token returns 401 "Invalid or missing authorization header" —
+        // which previously broke the entire new-identity onboarding flow.
+        // Only when the verify response somehow omits the token do we fall
+        // back, and by then `setTokens` has not run so a 401 there is a real
+        // server fault worth surfacing.
+        if (sessionResponse.accessToken) {
+          oxyServices.setTokens(sessionResponse.accessToken, sessionResponse.refreshToken ?? '');
+        } else {
+          try {
+            await oxyServices.getTokenBySession(sessionResponse.sessionId);
+          } catch (tokenError: unknown) {
+            const errorMessage = tokenError instanceof Error ? tokenError.message : String(tokenError);
+            const status = isErrorWithCodeOrStatus(tokenError) ? tokenError.status : undefined;
+            if (status === 404 || errorMessage.includes('404')) {
+              throw new Error(`Session was created but token could not be retrieved. Session ID: ${sessionResponse.sessionId.substring(0, 8)}...`);
+            }
+            throw tokenError;
           }
-          throw tokenError;
         }
 
         // Get full user data
