@@ -35,3 +35,15 @@ export const Dimensions = {
 };
 
 export const useColorScheme = (): 'light' | 'dark' => 'light';
+
+export const I18nManager: {
+  isRTL: boolean;
+  allowRTL: (allowRTL: boolean) => void;
+  forceRTL: (forceRTL: boolean) => void;
+  getConstants: () => { isRTL: boolean; doLeftAndRightSwapInRTL: boolean };
+} = {
+  isRTL: false,
+  allowRTL: () => undefined,
+  forceRTL: () => undefined,
+  getConstants: () => ({ isRTL: false, doLeftAndRightSwapInRTL: true }),
+};

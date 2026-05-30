@@ -99,12 +99,31 @@ describe('useOnboardingStatus', () => {
     expect(result.current.needsAuth).toBe(false);
   });
 
-  it('needsAuth is always false on web regardless of status', async () => {
+  it('needsAuth is true on web when no session resolves (status "none")', async () => {
+    // Regression guard: web previously hard-clamped needsAuth to false, which
+    // routed unauthenticated visitors into (tabs). The (tabs) layout then
+    // redirected them back to (auth), and the two guards deadlocked into a
+    // blank screen. Web must follow the same status-driven gate as native so a
+    // fresh visitor lands on the welcome/auth stack instead of an infinite
+    // redirect loop.
     Platform.OS = 'web';
     hasIdentityMock.mockResolvedValue(false);
     const { result } = renderHook(() => useOnboardingStatus());
     await waitFor(() => {
       expect(result.current.status).toBe('none');
+    });
+    expect(result.current.needsAuth).toBe(true);
+  });
+
+  it('needsAuth is false on web once a session is authenticated (status "complete")', async () => {
+    // After FedCM silent SSO succeeds, the authenticated web user must be able
+    // to reach (tabs) — needsAuth flips to false exactly as on native.
+    Platform.OS = 'web';
+    hasIdentityMock.mockResolvedValue(false);
+    __setOxyState({ isAuthenticated: true, user: { username: 'alice' } });
+    const { result } = renderHook(() => useOnboardingStatus());
+    await waitFor(() => {
+      expect(result.current.status).toBe('complete');
     });
     expect(result.current.needsAuth).toBe(false);
   });

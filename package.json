@@ -69,12 +69,12 @@
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "@radix-ui/react-slot": "1.2.3",
-    "@oxyhq/bloom": "^0.5.0"
+    "@oxyhq/bloom": "^0.6.6"
   },
   "dependencies": {
     "@expo/metro-runtime": "~56.0.11",
     "@fontsource-variable/phudu": "^5.2.10",
-    "@oxyhq/bloom": "^0.5.0",
+    "@oxyhq/bloom": "^0.6.6",
     "expo-contacts": "~56.0.7",
     "expo-splash-screen": "^56.0.9",
     "is-arrayish": "^0.3.2",

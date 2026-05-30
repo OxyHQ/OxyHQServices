@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Platform } from 'react-native';
 import { useOxy } from '@oxyhq/services';
 import { KeyManager, logger } from '@oxyhq/core';
 
@@ -115,11 +114,19 @@ export function useOnboardingStatus(): OnboardingState {
   }, [identityExists, isResolving, isAuthenticated, user, oxyLoading]);
 
   const needsAuth = useMemo(() => {
-    // On web, the (auth) flow is not the native entry point —
-    // accounts.oxy.so/web bounces to the external sign-in flow.
-    if (Platform.OS === 'web') {
-      return false;
-    }
+    // The auth gate is platform-agnostic. On web, an unauthenticated visitor
+    // is NOT silently parked on `(tabs)` — that produced a redirect deadlock,
+    // because `(tabs)/_layout` itself redirects unauthenticated users to
+    // `(auth)` while the root layout marked `(auth)` as redirect-away. The two
+    // guards bounced off each other and Expo Router settled on rendering no
+    // route at all (blank screen, pathname stuck at "/").
+    //
+    // Web sign-in still happens via FedCM silent SSO (OxyContext runs it on
+    // mount). While SSO is in flight `status === 'checking'` keeps us in the
+    // auth stack; if it succeeds, `isAuthenticated` flips and `status` becomes
+    // `complete`/`in_progress` → `needsAuth` is false → `(tabs)` renders. If it
+    // fails, `status` resolves to `none` and the welcome screen renders — a
+    // real terminal state instead of an infinite loop.
 
     // Default to "show auth" while resolving — better to briefly show a
     // blank backdrop inside the auth stack than to flash the tab bar at
