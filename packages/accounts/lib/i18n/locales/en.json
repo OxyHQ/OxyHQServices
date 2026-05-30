@@ -31,11 +31,26 @@
     "tapToCopy": "Tap to copy",
     "copied": "Copied",
     "or": "or",
-    "and": "and"
+    "and": "and",
+    "relativeTime": {
+      "justNow": "Just now",
+      "minutesAgo": "{{count}}m ago",
+      "hoursAgo": "{{count}}h ago",
+      "daysAgo": "{{count}}d ago"
+    }
   },
   "auth": {
     "indexHello": "Hello",
     "indexTapToContinue": "Tap to continue",
+    "signIn": {
+      "title": "Sign in to your account",
+      "subtitle": "Use your Oxy account to manage your profile, security, and connected apps.",
+      "button": "Sign in with Oxy",
+      "error": "Sign-in failed. Please try again.",
+      "unsupported": "Your browser doesn't support secure sign-in. Please update it or use the Oxy app.",
+      "noAccount": "Don't have an Oxy account yet?",
+      "createAccount": "Create one in the app"
+    },
     "welcome": {
       "lead": "Oxy is your",
       "termsAgree": "I agree with Oxy User Terms And Conditions and acknowledge the Privacy notice",

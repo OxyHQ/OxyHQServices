@@ -124,9 +124,10 @@ export function useOnboardingStatus(): OnboardingState {
     // Web sign-in still happens via FedCM silent SSO (OxyContext runs it on
     // mount). While SSO is in flight `status === 'checking'` keeps us in the
     // auth stack; if it succeeds, `isAuthenticated` flips and `status` becomes
-    // `complete`/`in_progress` → `needsAuth` is false → `(tabs)` renders. If it
-    // fails, `status` resolves to `none` and the welcome screen renders — a
-    // real terminal state instead of an infinite loop.
+    // `complete` → `needsAuth` is false → `(tabs)` renders. If it fails,
+    // `status` resolves to `none` and the web `(auth)/index.web.tsx` routes to
+    // the SIGN-IN screen (identity creation is native-only) — a real terminal
+    // state instead of an infinite loop.
 
     // Default to "show auth" while resolving — better to briefly show a
     // blank backdrop inside the auth stack than to flash the tab bar at

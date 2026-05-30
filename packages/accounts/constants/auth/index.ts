@@ -62,3 +62,11 @@ export const CREATING_SUBTITLE = 'This may take a moment';
 export const RECOVERY_PHRASE_LENGTH = 12;
 export const RECOVERY_PHRASE_24_LENGTH = 24;
 
+/**
+ * Where the web sign-in screen points users who don't yet have an account.
+ * Identity creation is native-only, so this links to the place that explains
+ * how to get the app and create an Oxy identity. Overridable per deployment.
+ */
+export const CREATE_ACCOUNT_HELP_URL =
+  process.env.EXPO_PUBLIC_CREATE_ACCOUNT_URL ?? 'https://oxy.so/download';
+

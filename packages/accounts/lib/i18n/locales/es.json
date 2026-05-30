@@ -31,11 +31,26 @@
     "tapToCopy": "Toca para copiar",
     "copied": "Copiado",
     "or": "o",
-    "and": "y"
+    "and": "y",
+    "relativeTime": {
+      "justNow": "Ahora mismo",
+      "minutesAgo": "Hace {{count}} min",
+      "hoursAgo": "Hace {{count}} h",
+      "daysAgo": "Hace {{count}} d"
+    }
   },
   "auth": {
     "indexHello": "Hola",
     "indexTapToContinue": "Toca para continuar",
+    "signIn": {
+      "title": "Inicia sesión en tu cuenta",
+      "subtitle": "Usa tu cuenta de Oxy para gestionar tu perfil, seguridad y apps conectadas.",
+      "button": "Iniciar sesión con Oxy",
+      "error": "No se pudo iniciar sesión. Inténtalo de nuevo.",
+      "unsupported": "Tu navegador no admite el inicio de sesión seguro. Actualízalo o usa la app de Oxy.",
+      "noAccount": "¿Aún no tienes una cuenta de Oxy?",
+      "createAccount": "Créala en la app"
+    },
     "welcome": {
       "lead": "Oxy es tu",
       "termsAgree": "Acepto los Términos y Condiciones de Usuario de Oxy y reconozco el Aviso de Privacidad",

@@ -17,6 +17,7 @@ export default function AuthLayout() {
                 }}
             >
                 <Stack.Screen name="index" />
+                <Stack.Screen name="sign-in" />
                 <Stack.Screen name="welcome" />
                 <Stack.Screen name="create-identity" />
                 <Stack.Screen name="import-identity" />

@@ -35,6 +35,7 @@ module.exports = {
       '<rootDir>/__mocks__/async-storage.ts',
     '^@oxyhq/services$': '<rootDir>/__mocks__/oxyhq-services.ts',
     '^@oxyhq/bloom/theme$': '<rootDir>/__mocks__/bloom-theme.ts',
+    '^expo-router$': '<rootDir>/__mocks__/expo-router.tsx',
     '^expo-secure-store$': '<rootDir>/__mocks__/expo-secure-store.ts',
   },
   testTimeout: 10000,

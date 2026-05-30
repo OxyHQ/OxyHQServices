@@ -183,9 +183,18 @@ function AppStackContent() {
                 - Redirect AWAY from `(auth)` when onboarding is complete.
 
               Expo Router resolves redirects to the first non-redirecting
-              sibling, so exactly one is true at any time on native. On web,
-              `useOnboardingStatus` clamps `needsAuth` to `false` so `(auth)`
-              is always redirected away and `(tabs)` is always reachable.
+              sibling, so exactly one is true at any time. `needsAuth` is
+              PLATFORM-AGNOSTIC by design: an earlier web-only clamp to `false`
+              parked unauthenticated web visitors on `(tabs)`, whose own guard
+              bounced them back to `(auth)`, deadlocking on a blank screen.
+
+              The native/web split lives INSIDE the `(auth)` group instead: the
+              native `(auth)/index.tsx` shows the create-identity welcome, while
+              the web `(auth)/index.web.tsx` routes to a SIGN-IN screen (web is
+              a management surface for an account created on native — identity
+              creation is forbidden in the browser). So for an unauthenticated
+              web visitor, `needsAuth` is true → `(auth)` renders → sign-in. No
+              loop, no blank screen.
             */}
             <Stack.Screen name="(tabs)" redirect={needsAuth} options={{ headerShown: false }} />
             <Stack.Screen name="(auth)" redirect={!needsAuth} options={{ headerShown: false }} />
