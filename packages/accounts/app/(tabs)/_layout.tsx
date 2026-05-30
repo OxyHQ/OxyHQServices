@@ -1,23 +1,22 @@
 import { Redirect, Slot, useRouter, usePathname } from 'expo-router';
 import { Drawer } from 'expo-router/drawer';
 import React, { useRef, useCallback, useState } from 'react';
-import { View, ScrollView, StyleSheet, Platform, useWindowDimensions, TextInput, TouchableOpacity } from 'react-native';
+import { View, ScrollView, StyleSheet, Platform, useWindowDimensions, TextInput, TouchableOpacity, type ViewStyle } from 'react-native';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { Loading } from '@oxyhq/bloom/loading';
 import { useColors } from '@/hooks/useColors';
 import { useThemeMode } from '@/contexts/theme-mode-context';
-import { DesktopSidebar, DrawerContent } from '@/components/ui';
+import { DesktopSidebar, DrawerContent, BottomActionBar } from '@/components/ui';
 import { Header } from '@/components/header';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useScrollContext } from '@/contexts/scroll-context';
 import { useOxy } from '@oxyhq/services';
 import { useHapticPress } from '@/hooks/use-haptic-press';
 import { useSearchNavigation } from '@/hooks/use-search-navigation';
-import { darkenColor } from '@/utils/color-utils';
 import { useTranslation } from '@/lib/i18n';
 import { ErrorFallback } from '@/components/error-fallback';
+import { DRAWER_SCREENS } from '@/constants/drawer-screens';
 import Animated, {
-  Easing,
   useAnimatedStyle,
   useDerivedValue,
   useSharedValue,
@@ -27,26 +26,20 @@ import Animated, {
 } from 'react-native-reanimated';
 
 const THEME_TRANSITION_MS = 280;
-const ICON_ANIM_MS = 350;
-const ICON_EASING = Easing.bezier(0.34, 1.56, 0.64, 1);
 
-/** Custom entering animation: rotate(-90°→0°) + scale(0.4→1) + fade in. */
-const themeIconEntering = () => {
-  'worklet';
-  const config = { duration: ICON_ANIM_MS, easing: ICON_EASING };
-  return {
-    initialValues: {
-      opacity: 0,
-      transform: [{ rotate: '-90deg' }, { scale: 0.4 }],
-    },
-    animations: {
-      opacity: withTiming(1, config),
-      transform: [
-        { rotate: withTiming('0deg', config) },
-        { scale: withTiming(1, config) },
-      ],
-    },
-  };
+/**
+ * Floating-cluster positioning: `fixed` on web (pinned while content scrolls),
+ * `absolute` on native (within the screen container). Typed as `ViewStyle` so
+ * the `position` literal is validated instead of cast.
+ */
+const floatingPosition: ViewStyle = Platform.select<ViewStyle>({
+  web: { position: 'fixed' },
+  default: { position: 'absolute' },
+}) ?? { position: 'absolute' };
+
+/** Hides a drawer item from the rail while keeping its route registered. */
+const HIDDEN_DRAWER_ITEM: { drawerItemStyle: ViewStyle } = {
+  drawerItemStyle: { display: 'none' },
 };
 
 export default function TabLayout() {
@@ -205,56 +198,14 @@ export default function TabLayout() {
           </View>
         </View>
 
-        <View style={styles.desktopBottomActions}>
-          {Platform.OS !== 'web' && (
-            <TouchableOpacity
-              style={styles.circleButton}
-              onPressIn={handlePressIn}
-              onPress={handleScanQR}
-              accessibilityRole="button"
-              accessibilityLabel={t('a11y.scanQr')}
-            >
-              <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconSecurity }]}>
-                <MaterialCommunityIcons name="qrcode-scan" size={22} color={darkenColor(colors.sidebarIconSecurity)} />
-              </View>
-            </TouchableOpacity>
-          )}
-          <TouchableOpacity
-            style={styles.circleButton}
-            onPressIn={handlePressIn}
-            onPress={handleReload}
-            accessibilityRole="button"
-            accessibilityLabel={t('a11y.refresh')}
-          >
-            <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconSecurity }]}>
-              <MaterialCommunityIcons name="reload" size={22} color={darkenColor(colors.sidebarIconSecurity)} />
-            </View>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.circleButton}
-            onPressIn={handlePressIn}
-            onPress={handleDevices}
-            accessibilityRole="button"
-            accessibilityLabel={t('drawer.devices')}
-          >
-            <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconDevices }]}>
-              <MaterialCommunityIcons name="desktop-classic" size={22} color={darkenColor(colors.sidebarIconDevices)} />
-            </View>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.circleButton}
-            onPressIn={handlePressIn}
-            onPress={toggleColorScheme}
-            accessibilityRole="button"
-            accessibilityLabel={t('a11y.themeToggle')}
-          >
-            <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconData }]}>
-              <Animated.View key={mode} entering={themeIconEntering}>
-                <MaterialCommunityIcons name={mode === 'dark' ? 'weather-sunny' : 'weather-night'} size={22} color={darkenColor(colors.sidebarIconData)} />
-              </Animated.View>
-            </View>
-          </TouchableOpacity>
-        </View>
+        <BottomActionBar
+          variant="desktop"
+          mode={mode}
+          onReload={handleReload}
+          onDevices={handleDevices}
+          onToggleTheme={toggleColorScheme}
+          onScanQR={handleScanQR}
+        />
       </Animated.View>
     );
   }
@@ -276,175 +227,39 @@ export default function TabLayout() {
           },
         }}
       >
-        <Drawer.Screen
-          name="index"
-          options={{
-            drawerLabel: t('drawer.home'),
-            title: t('drawer.home'),
-          }}
-        />
-        <Drawer.Screen
-          name="personal-info"
-          options={{
-            drawerLabel: t('drawer.personalInfo'),
-            title: t('drawer.personalInfo'),
-          }}
-        />
-        <Drawer.Screen
-          name="security"
-          options={{
-            drawerLabel: t('drawer.security'),
-            title: t('drawer.security'),
-          }}
-        />
-        <Drawer.Screen
-          name="activity"
-          options={{
-            drawerLabel: t('drawer.activity'),
-            title: t('drawer.activity'),
-          }}
-        />
-        {Platform.OS !== 'web' && (
-          <Drawer.Screen
-            name="about-identity"
-            options={{
-              drawerLabel: t('drawer.aboutIdentity'),
-              title: t('drawer.aboutIdentity'),
-            }}
-          />
-        )}
-        <Drawer.Screen
-          name="devices"
-          options={{
-            drawerLabel: t('drawer.devices'),
-            title: t('drawer.devices'),
-          }}
-        />
-        <Drawer.Screen
-          name="data"
-          options={{
-            drawerLabel: t('drawer.data'),
-            title: t('drawer.data'),
-          }}
-        />
-        <Drawer.Screen
-          name="sharing"
-          options={{
-            drawerLabel: t('drawer.sharing'),
-            title: t('drawer.sharing'),
-          }}
-        />
-        <Drawer.Screen
-          name="family"
-          options={{
-            drawerLabel: t('drawer.thirdParty'),
-            title: t('drawer.thirdParty'),
-          }}
-        />
-        <Drawer.Screen
-          name="payments"
-          options={{
-            drawerLabel: t('drawer.payments'),
-            title: t('drawer.payments'),
-          }}
-        />
-        <Drawer.Screen
-          name="storage"
-          options={{
-            drawerLabel: t('drawer.storage'),
-            title: t('drawer.storage'),
-          }}
-        />
-        <Drawer.Screen
-          name="managed-accounts"
-          options={{
-            drawerLabel: t('drawer.yourIdentities'),
-            title: t('drawer.yourIdentities'),
-          }}
-        />
-        <Drawer.Screen
-          name="sessions"
-          options={{
-            drawerItemStyle: { display: 'none' },
-          }}
-        />
-        <Drawer.Screen
-          name="search"
-          options={{
-            drawerItemStyle: { display: 'none' },
-          }}
-        />
-        <Drawer.Screen
-          name="authorize"
-          options={{
-            drawerItemStyle: { display: 'none' },
-            title: t('drawer.authorize'),
-          }}
-        />
-        <Drawer.Screen
-          name="scan-qr"
-          options={{
-            drawerItemStyle: { display: 'none' },
-            title: t('drawer.scanQr'),
-            headerShown: false,
-          }}
-        />
-        <Drawer.Screen
-          name="delete-account"
-          options={{
-            drawerItemStyle: { display: 'none' },
-            title: t('drawer.deleteAccount'),
-          }}
-        />
-        <Drawer.Screen
-          name="create-backup"
-          options={{
-            drawerItemStyle: { display: 'none' },
-            title: t('drawer.createBackup'),
-          }}
-        />
+        {DRAWER_SCREENS.map((screen) => {
+          // Native-only screens (e.g. about-identity) are not registered on web.
+          if (screen.platform === 'native' && Platform.OS === 'web') {
+            return null;
+          }
+          return (
+            <Drawer.Screen
+              key={screen.name}
+              name={screen.name}
+              options={{
+                ...(screen.labelKey ? { drawerLabel: t(screen.labelKey) } : null),
+                ...(screen.titleKey ? { title: t(screen.titleKey) } : null),
+                ...(screen.hidden ? HIDDEN_DRAWER_ITEM : null),
+                ...(screen.headerShown === false ? { headerShown: false } : null),
+              }}
+            />
+          );
+        })}
       </Drawer>
 
       {/* Bottom actions - Mobile: keep parity with desktop quick actions */}
-      <View style={styles.mobileBottomActions}>
-        <TouchableOpacity
-          style={styles.circleButton}
-          onPressIn={handlePressIn}
-          onPress={handleReload}
-          accessibilityRole="button"
-          accessibilityLabel={t('a11y.refresh')}
-        >
-          <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconSecurity }]}>
-            <MaterialCommunityIcons name="reload" size={22} color={darkenColor(colors.sidebarIconSecurity)} />
-          </View>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.circleButton}
-          onPressIn={handlePressIn}
-          onPress={handleDevices}
-          accessibilityRole="button"
-          accessibilityLabel={t('drawer.devices')}
-        >
-          <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconDevices }]}>
-            <MaterialCommunityIcons name="desktop-classic" size={22} color={darkenColor(colors.sidebarIconDevices)} />
-          </View>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.circleButton}
-          onPressIn={handlePressIn}
-          onPress={toggleColorScheme}
-          accessibilityRole="button"
-          accessibilityLabel={t('a11y.themeToggle')}
-        >
-          <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconData }]}>
-            <MaterialCommunityIcons name={mode === 'dark' ? 'weather-sunny' : 'weather-night'} size={22} color={darkenColor(colors.sidebarIconData)} />
-          </View>
-        </TouchableOpacity>
-      </View>
+      <BottomActionBar
+        variant="mobile"
+        mode={mode}
+        onReload={handleReload}
+        onDevices={handleDevices}
+        onToggleTheme={toggleColorScheme}
+        onScanQR={handleScanQR}
+      />
 
       {/* FAB Button - Mobile - Changes between Scan and Go to Top */}
       {Platform.OS !== 'web' && !pathname.includes('scan-qr') && (
-        <View style={styles.fabButton}>
+        <View style={[styles.fabButton, floatingPosition]}>
           <TouchableOpacity
             style={styles.circleButton}
             onPressIn={handlePressIn}
@@ -516,25 +331,7 @@ const styles = StyleSheet.create({
     padding: 24,
     paddingTop: 88,
   },
-  desktopBottomActions: {
-    bottom: 24,
-    right: 24,
-    flexDirection: 'row',
-    gap: 16,
-    zIndex: 1000,
-    ...(Platform.select({
-      web: { position: 'fixed' },
-      default: { position: 'absolute' },
-    }) as { position: 'absolute' }),
-  },
   circleButton: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  menuIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -542,10 +339,6 @@ const styles = StyleSheet.create({
     bottom: 32,
     right: 32,
     zIndex: 1000,
-    ...(Platform.select({
-      web: { position: 'fixed' },
-      default: { position: 'absolute' },
-    }) as { position: 'absolute' }),
   },
   fabIconContainer: {
     width: 56,
@@ -576,16 +369,5 @@ const styles = StyleSheet.create({
     position: 'absolute',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  mobileBottomActions: {
-    bottom: 24,
-    right: 24,
-    flexDirection: 'row',
-    gap: 12,
-    zIndex: 1000,
-    ...(Platform.select({
-      web: { position: 'fixed' },
-      default: { position: 'absolute' },
-    }) as { position: 'absolute' }),
   },
 });

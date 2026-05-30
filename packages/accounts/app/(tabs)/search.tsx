@@ -1,6 +1,7 @@
-import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react';
+import React, { useMemo, useCallback } from 'react';
 import { View, StyleSheet, Platform, useWindowDimensions, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useQuery } from '@tanstack/react-query';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { useColors } from '@/hooks/useColors';
 import { ThemedText } from '@/components/themed-text';
@@ -8,14 +9,19 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Section } from '@/components/section';
 import { GroupedSection } from '@/components/grouped-section';
 import { AccountCard } from '@/components/ui';
-import { menuItems, type MenuItem } from '@/components/ui/sidebar-content';
+import { menuItems } from '@/components/ui/sidebar-content';
 import { darkenColor } from '@/utils/color-utils';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
-import { useOxy, FollowButton as ImportedFollowButton } from '@oxyhq/services';
+import { useOxy, FollowButton as ImportedFollowButton, Avatar } from '@oxyhq/services';
 import type { User, BlockedUser, RestrictedUser } from '@oxyhq/core';
 import { getAccountDisplayName, getAccountFallbackHandle } from '@oxyhq/core';
-import { Avatar } from '@oxyhq/services';
 import { useTranslation } from '@/lib/i18n';
+import { useDebounce } from '@/hooks/useDebounce';
+
+/** Minimum query length before we hit the profile-search endpoint. */
+const MIN_SEARCH_LENGTH = 2;
+/** Debounce window applied to the search box before refetching. */
+const SEARCH_DEBOUNCE_MS = 500;
 
 // Explicit type annotation to avoid implicit any when services source has transient TS errors
 const FollowButton: React.FC<{
@@ -52,14 +58,6 @@ export default function SearchScreen() {
   // OxyServices integration
   const { user, oxyServices, isAuthenticated, showBottomSheet } = useOxy();
 
-  // User search state
-  const [userSearchResults, setUserSearchResults] = useState<User[]>([]);
-  const [isSearchingUsers, setIsSearchingUsers] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-  const userSearchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [blockedUsers, setBlockedUsers] = useState<BlockedUser[]>([]);
-  const [restrictedUsers, setRestrictedUsers] = useState<RestrictedUser[]>([]);
-
   // Helper to safely extract and validate user ID. Accepts either a standard
   // `User` (with `id`) or a raw MongoDB document where the identifier is `_id`
   // (a string or an ObjectId-like value exposing `toString()`).
@@ -85,134 +83,94 @@ export default function SearchScreen() {
     return null;
   }, []);
 
-  // Load blocked and restricted users for filtering
-  useEffect(() => {
-    if (!oxyServices || !isAuthenticated || !user?.id) return;
+  // Blocked / restricted lists power the result filter below. They are cached
+  // independently of the search term so typing does not re-fetch them.
+  const blockedQuery = useQuery<BlockedUser[]>({
+    queryKey: ['search', 'blocked', user?.id ?? null],
+    queryFn: () => oxyServices.getBlockedUsers(),
+    enabled: isAuthenticated && !!user?.id,
+    staleTime: 5 * 60 * 1000,
+  });
+  const restrictedQuery = useQuery<RestrictedUser[]>({
+    queryKey: ['search', 'restricted', user?.id ?? null],
+    queryFn: () => oxyServices.getRestrictedUsers(),
+    enabled: isAuthenticated && !!user?.id,
+    staleTime: 5 * 60 * 1000,
+  });
+  const blockedUsers = useMemo(() => blockedQuery.data ?? [], [blockedQuery.data]);
+  const restrictedUsers = useMemo(() => restrictedQuery.data ?? [], [restrictedQuery.data]);
 
-    const loadBlockedRestricted = async () => {
-      try {
-        const [blocked, restricted] = await Promise.all([
-          oxyServices.getBlockedUsers(),
-          oxyServices.getRestrictedUsers(),
-        ]);
-        setBlockedUsers(blocked || []);
-        setRestrictedUsers(restricted || []);
-      } catch (err) {
-        console.error('Failed to load blocked/restricted users:', err);
-      }
-    };
+  // Debounce the raw query into the React Query key: the profile-search request
+  // fires once typing settles, replacing the manual `setTimeout` ref + effect.
+  const debouncedQuery = useDebounce(searchQuery.trim(), SEARCH_DEBOUNCE_MS);
+  const canSearch = isAuthenticated && debouncedQuery.length >= MIN_SEARCH_LENGTH;
 
-    loadBlockedRestricted();
-  }, [oxyServices, isAuthenticated, user?.id]);
+  const searchQueryResult = useQuery<User[]>({
+    queryKey: ['search', 'profiles', debouncedQuery],
+    queryFn: async () => {
+      const response = await oxyServices.searchProfiles(debouncedQuery, { limit: 10 });
+      return response.data ?? [];
+    },
+    enabled: canSearch,
+    staleTime: 60 * 1000,
+  });
 
-  // Search for users with debouncing
-  const searchUsers = useCallback(async (query: string) => {
-    if (!oxyServices || !query.trim() || query.length < 2 || !isAuthenticated) {
-      setUserSearchResults([]);
-      setIsSearchingUsers(false);
-      return;
-    }
+  // Filtering (current user, blocked, restricted) is derived from the raw
+  // results so it re-applies reactively when the blocked/restricted lists load,
+  // without re-issuing the search request.
+  const userSearchResults = useMemo<User[]>(() => {
+    if (!canSearch) return [];
+    const rawResults = searchQueryResult.data ?? [];
+    const currentUserId = extractUserId(user);
 
-    try {
-      setIsSearchingUsers(true);
-      const response = await oxyServices.searchProfiles(query, { limit: 10 });
+    return rawResults.filter((candidate: User) => {
+      const userId = extractUserId(candidate);
+      if (!userId) return false; // Skip invalid users
+      if (!currentUserId) return false;
+      if (userId === currentUserId) return false; // Filter out current user
 
-      // Filter out current user, blocked users, and restricted users
-      const filtered = (response.data || []).filter((u: User) => {
-        const userId = extractUserId(u);
-        if (!userId) return false; // Skip invalid users
-
-        const currentUserId = extractUserId(user);
-        if (!currentUserId) return false;
-
-        // Filter out current user
-        if (userId === currentUserId) {
-          return false;
-        }
-
-        // Filter out blocked users
-        const isBlocked = blockedUsers.some(blocked => {
-          const blockedId = typeof blocked.blockedId === 'string'
-            ? blocked.blockedId
-            : (blocked.blockedId._id || '');
-          return blockedId === userId;
-        });
-        if (isBlocked) {
-          return false;
-        }
-
-        // Filter out restricted users
-        const isRestricted = restrictedUsers.some(restricted => {
-          const restrictedId = typeof restricted.restrictedId === 'string'
-            ? restricted.restrictedId
-            : (restricted.restrictedId._id || '');
-          return restrictedId === userId;
-        });
-        if (isRestricted) {
-          return false;
-        }
-
-        return true;
+      const isBlocked = blockedUsers.some((blocked) => {
+        const blockedId = typeof blocked.blockedId === 'string'
+          ? blocked.blockedId
+          : (blocked.blockedId._id || '');
+        return blockedId === userId;
       });
+      if (isBlocked) return false;
 
-      setUserSearchResults(filtered);
-    } catch (err: unknown) {
-      if (__DEV__) {
-        console.warn('[Search] Failed to search users:', err);
-      }
-      setUserSearchResults([]);
-    } finally {
-      setIsSearchingUsers(false);
-    }
-  }, [oxyServices, user, blockedUsers, restrictedUsers, extractUserId, isAuthenticated]);
+      const isRestricted = restrictedUsers.some((restricted) => {
+        const restrictedId = typeof restricted.restrictedId === 'string'
+          ? restricted.restrictedId
+          : (restricted.restrictedId._id || '');
+        return restrictedId === userId;
+      });
+      if (isRestricted) return false;
 
-  // Debounced user search effect
-  useEffect(() => {
-    if (userSearchTimeoutRef.current) {
-      clearTimeout(userSearchTimeoutRef.current);
-    }
+      return true;
+    });
+  }, [canSearch, searchQueryResult.data, user, blockedUsers, restrictedUsers, extractUserId]);
 
-    if (searchQuery.trim().length >= 2 && isAuthenticated) {
-      userSearchTimeoutRef.current = setTimeout(() => {
-        searchUsers(searchQuery);
-      }, 500);
-    } else {
-      setUserSearchResults([]);
-      setIsSearchingUsers(false);
-    }
+  // "Searching…" is shown while the debounced query is in flight (covers the
+  // initial fetch and any background refetch after typing settles).
+  const isSearchingUsers = canSearch && (searchQueryResult.isLoading || searchQueryResult.isFetching);
 
-    return () => {
-      if (userSearchTimeoutRef.current) {
-        clearTimeout(userSearchTimeoutRef.current);
-      }
-    };
-  }, [searchQuery, searchUsers, isAuthenticated]);
-
+  // Pull-to-refresh re-fetches the blocked/restricted lists and the active
+  // search in parallel; `refreshing` mirrors their combined fetch state.
   const handleRefresh = useCallback(async () => {
     if (!isAuthenticated) return;
-    setRefreshing(true);
-    try {
-      // Refresh blocked/restricted lists and re-run active search in parallel
-      const refreshPromises: Array<Promise<unknown>> = [];
-      if (oxyServices && user?.id) {
-        refreshPromises.push(
-          Promise.all([
-            oxyServices.getBlockedUsers(),
-            oxyServices.getRestrictedUsers(),
-          ]).then(([blocked, restricted]) => {
-            setBlockedUsers(blocked || []);
-            setRestrictedUsers(restricted || []);
-          }),
-        );
-      }
-      if (searchQuery.trim().length >= 2) {
-        refreshPromises.push(searchUsers(searchQuery));
-      }
-      await Promise.all(refreshPromises);
-    } finally {
-      setRefreshing(false);
+    const refreshPromises: Promise<unknown>[] = [];
+    if (user?.id) {
+      refreshPromises.push(blockedQuery.refetch(), restrictedQuery.refetch());
     }
-  }, [isAuthenticated, oxyServices, user?.id, searchQuery, searchUsers]);
+    if (canSearch) {
+      refreshPromises.push(searchQueryResult.refetch());
+    }
+    await Promise.all(refreshPromises);
+  }, [isAuthenticated, user?.id, canSearch, blockedQuery, restrictedQuery, searchQueryResult]);
+
+  const refreshing =
+    blockedQuery.isRefetching ||
+    restrictedQuery.isRefetching ||
+    searchQueryResult.isRefetching;
 
   const filteredItems = useMemo(() => {
     if (!searchQuery.trim()) {

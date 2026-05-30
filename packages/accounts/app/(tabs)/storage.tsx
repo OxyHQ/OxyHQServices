@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { ActivityIndicator, Platform, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useColors } from '@/hooks/useColors';
@@ -8,8 +8,7 @@ import { AccountCard, ScreenHeader, LinkButton } from '@/components/ui';
 import { Section } from '@/components/section';
 import { GroupedSection } from '@/components/grouped-section';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
-import { useOxy } from '@oxyhq/services';
-import type { AccountStorageUsageResponse } from '@oxyhq/core';
+import { useOxy, useAccountStorageUsage } from '@oxyhq/services';
 import { useRelativeTime } from '@/hooks/useRelativeTime';
 import { useTranslation } from '@/lib/i18n';
 import { alert } from '@oxyhq/bloom';
@@ -22,46 +21,23 @@ export default function StorageScreen() {
   const { t } = useTranslation();
 
   // Auth is enforced by the `(tabs)` layout — assume a session here.
-  const { oxyServices, isLoading: oxyLoading } = useOxy();
-  const [usage, setUsage] = useState<AccountStorageUsageResponse | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const loadUsage = useCallback(async () => {
-    if (!oxyServices) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await oxyServices.getAccountStorageUsage();
-      setUsage(res);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : t('storage.loadFailed');
-      setError(message);
-      setUsage(null);
-    } finally {
-      setLoading(false);
-    }
-  }, [oxyServices, t]);
+  // Storage usage is served by a TanStack query (caching, background refetch,
+  // pull-to-refresh via `refetch`) instead of hand-rolled `useEffect` fetches.
+  const { isLoading: oxyLoading } = useOxy();
+  const {
+    data: usage = null,
+    isLoading: loading,
+    isFetching,
+    error: queryError,
+    refetch,
+  } = useAccountStorageUsage();
+  const error = queryError
+    ? (queryError instanceof Error ? queryError.message : t('storage.loadFailed'))
+    : null;
 
   const handleRefresh = useCallback(async () => {
-    if (!oxyServices) return;
-    setRefreshing(true);
-    setError(null);
-    try {
-      const res = await oxyServices.getAccountStorageUsage();
-      setUsage(res);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : t('storage.loadFailed');
-      setError(message);
-    } finally {
-      setRefreshing(false);
-    }
-  }, [oxyServices, t]);
-
-  useEffect(() => {
-    void loadUsage();
-  }, [loadUsage]);
+    await refetch();
+  }, [refetch]);
 
   const formatBytes = useCallback((bytes: number) => {
     const abs = Math.abs(bytes);
@@ -150,7 +126,8 @@ export default function StorageScreen() {
       t('storage.detail.summary', { size: sizeText, count: countText, percent: percentage }),
       [{ text: t('common.ok') }]
     );
-  }, [alert, formatBytes, usage, t]);
+    // `alert` is a stable module import from @oxyhq/bloom, not a reactive value.
+  }, [formatBytes, usage, t]);
 
   const storageDetails = useMemo(() => {
     const cats = usage?.categories;
@@ -274,7 +251,7 @@ export default function StorageScreen() {
                 <ThemedText style={[styles.errorText, { color: colors.text }]}>{error}</ThemedText>
                 <TouchableOpacity
                   style={[styles.retryButton, { backgroundColor: colors.tint }]}
-                  onPress={loadUsage}
+                  onPress={() => { void refetch(); }}
                   accessibilityRole="button"
                   accessibilityLabel={t('storage.retry')}
                 >
@@ -356,7 +333,7 @@ export default function StorageScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <ScreenContentWrapper refreshing={refreshing} onRefresh={handleRefresh}>
+      <ScreenContentWrapper refreshing={isFetching && !loading} onRefresh={handleRefresh}>
         <View style={styles.mobileContent}>{content}</View>
       </ScreenContentWrapper>
     </View>

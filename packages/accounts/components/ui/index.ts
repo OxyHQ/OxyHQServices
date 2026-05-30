@@ -11,3 +11,5 @@ export { Button } from './button';
 export type { ButtonProps, ButtonVariant } from './button';
 export { KeyboardAwareScrollViewWrapper } from './keyboard-aware-scroll-view';
 export { ImportantBanner } from './important-banner';
+export { QuickActionButton } from './quick-action-button';
+export { BottomActionBar } from './bottom-action-bar';

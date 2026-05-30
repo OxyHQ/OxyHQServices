@@ -739,7 +739,29 @@
   },
   "devices": {
     "title": "Your devices",
-    "subtitle": "Devices where you're signed in to Oxy."
+    "subtitle": "Devices where you're signed in to Oxy.",
+    "detail": {
+      "title": "Device Details",
+      "subtitle": "View and manage device information.",
+      "loading": "Loading device details…",
+      "loadFailed": "Failed to load device",
+      "notFound": "Device not found",
+      "notFoundSubtitle": "The device you're looking for doesn't exist or has been removed.",
+      "goBack": "Go Back",
+      "infoSection": "Device Information",
+      "currentDevice": "Current Device",
+      "otherDevice": "Other Device",
+      "deviceType": "Device Type",
+      "lastActive": "Last Active",
+      "firstSeen": "First Seen",
+      "actionsSection": "Device Actions",
+      "actionsSubtitle": "Manage this device and its active sessions",
+      "removeAction": "Remove Device",
+      "removeActionSubtitle": "Sign out all sessions on this device",
+      "removeTitle": "Remove device",
+      "removeMessage": "Are you sure you want to remove \"{{name}}\"? This will sign out all sessions on this device.",
+      "removeCurrentWarning": "You cannot remove your current device. Use another device to remove this one."
+    }
   },
   "sidebar": {
     "actingAs": "Acting as {{name}}",

@@ -739,7 +739,29 @@
   },
   "devices": {
     "title": "Tus dispositivos",
-    "subtitle": "Dispositivos donde tienes sesión iniciada en Oxy."
+    "subtitle": "Dispositivos donde tienes sesión iniciada en Oxy.",
+    "detail": {
+      "title": "Detalles del dispositivo",
+      "subtitle": "Consulta y gestiona la información del dispositivo.",
+      "loading": "Cargando detalles del dispositivo…",
+      "loadFailed": "No se pudo cargar el dispositivo",
+      "notFound": "Dispositivo no encontrado",
+      "notFoundSubtitle": "El dispositivo que buscas no existe o ha sido eliminado.",
+      "goBack": "Volver",
+      "infoSection": "Información del dispositivo",
+      "currentDevice": "Dispositivo actual",
+      "otherDevice": "Otro dispositivo",
+      "deviceType": "Tipo de dispositivo",
+      "lastActive": "Última actividad",
+      "firstSeen": "Primera vez visto",
+      "actionsSection": "Acciones del dispositivo",
+      "actionsSubtitle": "Gestiona este dispositivo y sus sesiones activas",
+      "removeAction": "Eliminar dispositivo",
+      "removeActionSubtitle": "Cerrar todas las sesiones de este dispositivo",
+      "removeTitle": "Eliminar dispositivo",
+      "removeMessage": "¿Seguro que quieres eliminar \"{{name}}\"? Esto cerrará todas las sesiones de este dispositivo.",
+      "removeCurrentWarning": "No puedes eliminar tu dispositivo actual. Usa otro dispositivo para eliminar este."
+    }
   },
   "sidebar": {
     "actingAs": "Actuando como {{name}}",

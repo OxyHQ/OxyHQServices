@@ -1,4 +1,4 @@
-import React, { useMemo, useCallback, useState, useEffect } from 'react';
+import React, { useMemo, useCallback } from 'react';
 import { View, StyleSheet, Platform, useWindowDimensions, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useColors } from '@/hooks/useColors';
@@ -7,7 +7,7 @@ import { Section } from '@/components/section';
 import { GroupedSection } from '@/components/grouped-section';
 import { AccountCard, ScreenHeader } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
-import { useOxy } from '@oxyhq/services';
+import { useOxy, useUserDevices, useRemoveDevice } from '@oxyhq/services';
 import { alert, toast } from '@oxyhq/bloom';
 import { formatDate } from '@/utils/date-utils';
 import { useRelativeTime } from '@/hooks/useRelativeTime';
@@ -27,108 +27,82 @@ export default function DeviceDetailScreen() {
   const params = useLocalSearchParams<{ deviceId: string }>();
   const { t } = useTranslation();
 
-  // colors already from useColors() above
   const isDesktop = Platform.OS === 'web' && width >= 768;
-
-  // OxyServices integration — auth is enforced by the `(tabs)` layout.
-  const { oxyServices, isLoading: oxyLoading } = useOxy();
-  const [device, setDevice] = useState<DeviceRecord | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [actionLoading, setActionLoading] = useState(false);
-
   const deviceId = params.deviceId;
 
-  // Fetch device details
-  useEffect(() => {
-    const fetchDevice = async () => {
-      if (!oxyServices || !deviceId) return;
+  // Devices come from the shared TanStack query (cached across the security and
+  // devices-list screens). We select the requested device with a `useMemo`
+  // `.find()` instead of an imperative `useEffect` that re-fetched the whole
+  // list. Auth is enforced by the `(tabs)` layout.
+  const { isLoading: oxyLoading } = useOxy();
+  const { data: devicesData, isLoading: loading, error: queryError } = useUserDevices();
+  const removeDevice = useRemoveDevice();
 
-      setLoading(true);
-      setError(null);
-      try {
-        const devicesData = await oxyServices.getUserDevices();
-        const foundDevice = devicesData?.find(
-          (d: DeviceRecord) => (d.id === deviceId || d.deviceId === deviceId)
-        );
+  const device = useMemo<DeviceRecord | null>(() => {
+    if (!devicesData || !deviceId) return null;
+    const devices = devicesData as DeviceRecord[];
+    return (
+      devices.find((d) => d.id === deviceId || d.deviceId === deviceId) ?? null
+    );
+  }, [devicesData, deviceId]);
 
-        if (foundDevice) {
-          setDevice(foundDevice);
-        } else {
-          setError('Device not found');
-        }
-      } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : 'Failed to load device';
-        if (__DEV__) {
-          console.warn('[DeviceDetail] Failed to fetch device:', err);
-        }
-        setError(message);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchDevice();
-  }, [oxyServices, deviceId]);
+  // Distinguish "the list failed to load" from "the list loaded but this id
+  // isn't in it". Both render the same empty state, but the message differs.
+  const error = useMemo(() => {
+    if (queryError) {
+      return queryError instanceof Error ? queryError.message : t('devices.detail.loadFailed');
+    }
+    if (!loading && !oxyLoading && !device) {
+      return t('devices.detail.notFound');
+    }
+    return null;
+  }, [queryError, loading, oxyLoading, device, t]);
 
   const handlePressIn = useHapticPress();
   const formatRelativeTime = useRelativeTime();
 
-  // Handle device removal
-  const handleRemoveDevice = useCallback(async () => {
-    if (!device || !oxyServices) return;
+  // Handle device removal via the shared mutation (optimistic toast +
+  // automatic device/session cache invalidation live in the hook).
+  const handleRemoveDevice = useCallback(() => {
+    if (!device) return;
 
-    const deviceName = getDeviceDisplayName(device, 'Unknown Device');
+    const deviceName = getDeviceDisplayName(device, t('common.unknown'));
     const isCurrent = Boolean(device.isCurrent);
 
     if (isCurrent) {
-      toast.warning('You cannot remove your current device. Use another device to remove this one.');
+      toast.warning(t('devices.detail.removeCurrentWarning'));
       return;
     }
 
     alert(
-      'Remove device',
-      `Are you sure you want to remove "${deviceName}"? This will sign out all sessions on this device.`,
+      t('devices.detail.removeTitle'),
+      t('devices.detail.removeMessage', { name: deviceName }),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Remove',
+          text: t('common.remove'),
           style: 'destructive',
           onPress: async () => {
-            // Explicitly check if oxyServices exists before attempting operations
-            if (!oxyServices) {
-              toast.error('Service unavailable. Please try again.');
-              return;
-            }
-
             try {
-              setActionLoading(true);
-              await oxyServices.removeDevice(deviceId);
-              // Navigate back to devices list after successful removal
+              await removeDevice.mutateAsync(deviceId);
+              // Navigate back to the devices list after a successful removal.
               router.back();
-              // On native, surface a success toast (web's list pop is its own confirmation).
-              if (Platform.OS !== 'web') {
-                toast.success('Device removed');
-              }
-            } catch (err: unknown) {
-              const message = err instanceof Error
-                ? err.message
-                : 'Failed to remove device. Please try again.';
-              toast.error(message);
-            } finally {
-              setActionLoading(false);
+            } catch {
+              // The mutation surfaces its own error toast; nothing to add here.
             }
           },
         },
       ]
     );
-  }, [device, deviceId, oxyServices, router, alert]);
+  }, [device, deviceId, removeDevice, router, t]);
+
+  const actionLoading = removeDevice.isPending;
 
   // Device information items
   const deviceInfoItems = useMemo(() => {
     if (!device) return [];
 
-    const deviceName = getDeviceDisplayName(device, 'Unknown Device');
+    const deviceName = getDeviceDisplayName(device, t('common.unknown'));
     const deviceType = device.type || device.deviceType || 'unknown';
     const lastActive = device.lastActive || device.createdAt;
     const createdAt = device.createdAt;
@@ -143,7 +117,7 @@ export default function DeviceDetailScreen() {
         icon: getDeviceIcon(deviceType),
         iconColor: isCurrent ? colors.success : colors.sidebarIconDevices,
         title: deviceName,
-        subtitle: isCurrent ? 'Current Device' : 'Other Device',
+        subtitle: isCurrent ? t('devices.detail.currentDevice') : t('devices.detail.otherDevice'),
         customIcon: (
           <View style={[styles.deviceIconBadge, { backgroundColor: badgeBackground }]}>
             <MaterialCommunityIcons
@@ -158,21 +132,21 @@ export default function DeviceDetailScreen() {
         id: 'type',
         icon: 'devices',
         iconColor: colors.sidebarIconDevices,
-        title: 'Device Type',
+        title: t('devices.detail.deviceType'),
         subtitle: deviceType.charAt(0).toUpperCase() + deviceType.slice(1),
       },
       {
         id: 'lastActive',
         icon: 'clock-outline',
         iconColor: colors.sidebarIconDevices,
-        title: 'Last Active',
+        title: t('devices.detail.lastActive'),
         subtitle: formatRelativeTime(lastActive, t('common.unknown')),
       },
       ...(createdAt ? [{
         id: 'createdAt',
         icon: 'calendar-outline',
         iconColor: colors.sidebarIconDevices,
-        title: 'First Seen',
+        title: t('devices.detail.firstSeen'),
         subtitle: formatDate(createdAt),
       }] : []),
     ];
@@ -184,19 +158,19 @@ export default function DeviceDetailScreen() {
       <ScreenContentWrapper>
         <View style={[styles.container, styles.loadingContainer, { backgroundColor: colors.background }]}>
           <ActivityIndicator size="large" color={colors.tint} />
-          <ThemedText style={[styles.loadingText, { color: colors.text }]}>Loading device details...</ThemedText>
+          <ThemedText style={[styles.loadingText, { color: colors.text }]}>{t('devices.detail.loading')}</ThemedText>
         </View>
       </ScreenContentWrapper>
     );
   }
 
-  // Show error state
+  // Show error / not-found state
   if (error || !device) {
     return (
       <ScreenContentWrapper>
         <View style={[styles.container, { backgroundColor: colors.background }]}>
           <View style={styles.mobileContent}>
-            <ScreenHeader title="Device Details" subtitle="View and manage device information." />
+            <ScreenHeader title={t('devices.detail.title')} subtitle={t('devices.detail.subtitle')} />
             <AccountCard>
               <View style={styles.emptyStateContainer}>
                 <MaterialCommunityIcons
@@ -206,19 +180,19 @@ export default function DeviceDetailScreen() {
                   style={styles.emptyStateIcon}
                 />
                 <ThemedText style={[styles.emptyStateTitle, { color: colors.text }]}>
-                  {error || 'Device not found'}
+                  {error || t('devices.detail.notFound')}
                 </ThemedText>
                 <ThemedText style={[styles.emptyStateSubtitle, { color: colors.text }]}>
-                  The device you&apos;re looking for doesn&apos;t exist or has been removed
+                  {t('devices.detail.notFoundSubtitle')}
                 </ThemedText>
                 <TouchableOpacity
                   style={[styles.backButton, { backgroundColor: colors.tint }]}
                   onPressIn={handlePressIn}
                   onPress={() => router.back()}
                   accessibilityRole="button"
-                  accessibilityLabel="Go back"
+                  accessibilityLabel={t('common.back')}
                 >
-                  <Text style={styles.backButtonText}>Go Back</Text>
+                  <Text style={styles.backButtonText}>{t('devices.detail.goBack')}</Text>
                 </TouchableOpacity>
               </View>
             </AccountCard>
@@ -233,24 +207,24 @@ export default function DeviceDetailScreen() {
 
     return (
       <>
-        <Section title="Device Information">
+        <Section title={t('devices.detail.infoSection')}>
           <AccountCard>
             <GroupedSection items={deviceInfoItems} />
           </AccountCard>
         </Section>
 
         {!isCurrent && (
-          <Section title="Device Actions">
+          <Section title={t('devices.detail.actionsSection')}>
             <ThemedText style={styles.sectionSubtitle}>
-              Manage this device and its active sessions
+              {t('devices.detail.actionsSubtitle')}
             </ThemedText>
             <AccountCard>
               <GroupedSection items={[{
                 id: 'remove-device',
                 icon: 'delete-outline',
                 iconColor: colors.error,
-                title: 'Remove Device',
-                subtitle: 'Sign out all sessions on this device',
+                title: t('devices.detail.removeAction'),
+                subtitle: t('devices.detail.removeActionSubtitle'),
                 onPress: handleRemoveDevice,
                 showChevron: false,
                 disabled: actionLoading,
@@ -268,7 +242,7 @@ export default function DeviceDetailScreen() {
   if (isDesktop) {
     return (
       <>
-        <ScreenHeader title="Device Details" subtitle="View and manage device information." />
+        <ScreenHeader title={t('devices.detail.title')} subtitle={t('devices.detail.subtitle')} />
         {renderContent()}
       </>
     );
@@ -278,7 +252,7 @@ export default function DeviceDetailScreen() {
     <ScreenContentWrapper>
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         <View style={styles.mobileContent}>
-          <ScreenHeader title="Device Details" subtitle="View and manage device information." />
+          <ScreenHeader title={t('devices.detail.title')} subtitle={t('devices.detail.subtitle')} />
           {renderContent()}
         </View>
       </View>
@@ -351,4 +325,3 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 });
-
