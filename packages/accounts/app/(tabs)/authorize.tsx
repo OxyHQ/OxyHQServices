@@ -30,7 +30,7 @@ export default function AuthorizeScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ token: string }>();
   const colors = useColors();
-  const { locale } = useTranslation();
+  const { t, locale } = useTranslation();
   // Auth is enforced by the `(tabs)` layout — assume a session here.
   const { oxyServices, user, activeSessionId, isTokenReady } = useOxy();
 
@@ -44,7 +44,7 @@ export default function AuthorizeScreen() {
 
   const loadSessionInfo = useCallback(async () => {
     if (!params.token) {
-      setError('No authorization token provided');
+      setError(t('authorize.errors.noToken'));
       setIsLoading(false);
       return;
     }
@@ -63,7 +63,7 @@ export default function AuthorizeScreen() {
       };
 
       if (response.status !== 'pending') {
-        setError('This authorization request has already been processed or expired');
+        setError(t('authorize.errors.alreadyProcessed'));
         setIsLoading(false);
         return;
       }
@@ -73,11 +73,11 @@ export default function AuthorizeScreen() {
         expiresAt: response.expiresAt,
       });
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to load authorization request');
+      setError(err instanceof Error ? err.message : t('authorize.errors.loadFailed'));
     } finally {
       setIsLoading(false);
     }
-  }, [params.token, oxyServices]);
+  }, [params.token, oxyServices, t]);
 
   // Load session info after token is ready
   useEffect(() => {
@@ -88,12 +88,12 @@ export default function AuthorizeScreen() {
 
   const handleAuthorize = useCallback(async () => {
     if (!params.token) {
-      setError('No authorization token provided');
+      setError(t('authorize.errors.noToken'));
       return;
     }
 
     if (!activeSessionId) {
-      setError('No active session. Please sign in first.');
+      setError(t('authorize.errors.noSession'));
       return;
     }
 
@@ -109,15 +109,15 @@ export default function AuthorizeScreen() {
       });
 
       toast.success(
-        `Authorized ${sessionInfo?.appId || 'the app'} to access your Oxy identity.`,
+        t('authorize.authorizedSuccess', { app: sessionInfo?.appId || t('authorize.appFallbackInline') }),
       );
       router.back();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to authorize');
+      setError(err instanceof Error ? err.message : t('authorize.errors.authorizeFailed'));
     } finally {
       setIsAuthorizing(false);
     }
-  }, [params.token, activeSessionId, oxyServices, sessionInfo, router]);
+  }, [params.token, activeSessionId, oxyServices, sessionInfo, router, t]);
 
   const handleDeny = useCallback(async () => {
     if (!params.token) return;
@@ -149,7 +149,7 @@ export default function AuthorizeScreen() {
         <View style={styles.content}>
           <ActivityIndicator size="large" color={textColor} />
           <Text style={[styles.loadingText, { color: textColor, opacity: 0.8 }]}>
-            {!isTokenReady ? 'Preparing session...' : 'Loading authorization request...'}
+            {!isTokenReady ? t('authorize.preparingSession') : t('authorize.loadingRequest')}
           </Text>
         </View>
       </View>
@@ -161,14 +161,14 @@ export default function AuthorizeScreen() {
       <View style={[styles.container, styles.centered, { backgroundColor }]}>
         <View style={styles.content}>
           <MaterialCommunityIcons name="alert-circle-outline" size={48} color={colors.error} />
-          <Text style={[styles.title, { color: textColor }]}>Authorization Error</Text>
+          <Text style={[styles.title, { color: textColor }]}>{t('authorize.errorTitle')}</Text>
           <Text style={[styles.errorText, { color: textColor, opacity: 0.8 }]}>{error}</Text>
           <Button
             variant="secondary"
             onPress={() => router.back()}
             style={styles.fullWidthButton}
           >
-            Go Back
+            {t('authorize.goBack')}
           </Button>
         </View>
       </View>
@@ -191,10 +191,10 @@ export default function AuthorizeScreen() {
               color={textColor}
             />
             <Text style={[styles.appName, { color: textColor }]}>
-              {sessionInfo?.appId || 'An app'}
+              {sessionInfo?.appId || t('authorize.appFallback')}
             </Text>
             <Text style={[styles.appRequest, { color: textColor, opacity: 0.8 }]}>
-              wants to access your account
+              {t('authorize.wantsToAccess')}
             </Text>
           </View>
 
@@ -218,20 +218,20 @@ export default function AuthorizeScreen() {
                 color={textColor}
               />
               <Text style={[styles.permissionsTitle, { color: textColor }]}>
-                This app will be able to:
+                {t('authorize.permissionsTitle')}
               </Text>
             </View>
             <View style={styles.permissionsList}>
               <View style={styles.permissionItem}>
                 <Ionicons name="checkmark-circle" size={20} color={textColor} />
                 <Text style={[styles.permissionText, { color: textColor, opacity: 0.8 }]}>
-                  Verify your identity
+                  {t('authorize.permissionVerify')}
                 </Text>
               </View>
               <View style={styles.permissionItem}>
                 <Ionicons name="checkmark-circle" size={20} color={textColor} />
                 <Text style={[styles.permissionText, { color: textColor, opacity: 0.8 }]}>
-                  Access your public profile information
+                  {t('authorize.permissionProfile')}
                 </Text>
               </View>
             </View>
@@ -248,7 +248,7 @@ export default function AuthorizeScreen() {
           disabled={isAuthorizing}
           style={styles.button}
         >
-          Cancel
+          {t('authorize.cancel')}
         </Button>
         <Button
           variant="primary"
@@ -257,7 +257,7 @@ export default function AuthorizeScreen() {
           loading={isAuthorizing}
           style={styles.button}
         >
-          {!activeSessionId ? 'Session Not Ready...' : 'Continue'}
+          {!activeSessionId ? t('authorize.sessionNotReady') : t('authorize.continue')}
         </Button>
       </View>
     </View>

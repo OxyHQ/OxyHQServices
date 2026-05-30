@@ -138,6 +138,30 @@
       "replaceWarning": "This will permanently remove the existing identity from this device. Make sure you have its recovery phrase saved first.",
       "replaceConfirm": "Yes, replace",
       "cancel": "Cancel"
+    },
+    "usernameStep": {
+      "title": "Choose your username",
+      "subtitleOffline": "You're offline. You can set your username later when online.",
+      "subtitle": "Your username is required. You can change this later in settings.",
+      "placeholder": "Username",
+      "hint": "You can use a-z, 0-9. Minimum length is 4 characters.",
+      "checking": "Checking availability…",
+      "available": "✓ Username is available",
+      "saving": "Saving…",
+      "confirming": "Confirming…",
+      "confirm": "Confirm",
+      "skip": "Skip for now",
+      "learnMore": "Learn more about usernames",
+      "a11y": {
+        "playAnimation": "Play animation"
+      }
+    },
+    "importStep": {
+      "title": "Import Your Identity",
+      "subtitle": "Enter your 12-word recovery phrase to restore your identity.",
+      "wordPlaceholder": "word",
+      "import": "Import Identity",
+      "createInstead": "Create a new identity instead"
     }
   },
   "home": {
@@ -595,7 +619,8 @@
       "payment": "Payment",
       "refund": "Refund",
       "deposit": "Deposit",
-      "withdrawal": "Withdrawal"
+      "withdrawal": "Withdrawal",
+      "purchase": "Purchase"
     },
     "info": {
       "fairCoin": "FairCoin (⊜)",
@@ -859,5 +884,176 @@
     "followToggle": "Follow",
     "unfollowToggle": "Unfollow",
     "lottieDecorative": "Decorative background animation"
+  },
+  "scanQr": {
+    "checkingIdentity": "Checking identity…",
+    "redirecting": "Redirecting to identity setup…",
+    "requestingPermission": "Requesting camera permission…",
+    "identityRequiredTitle": "Identity Required",
+    "identityRequiredBody": "To scan QR codes and authorize sign-in requests, you need to create or import an identity.\n\nIdentity creation is only available on native platforms (iOS/Android). Please use the mobile app to set up your identity.",
+    "goBack": "Go Back",
+    "permissionTitle": "Camera Access Required",
+    "permissionBody": "To scan QR codes for sign-in authorization, we need access to your camera.",
+    "grantPermission": "Grant Permission",
+    "openSettings": "Open Settings",
+    "cancel": "Cancel",
+    "instructions": "Scan the QR code shown in the app you want to sign in to",
+    "flashOn": "Flash On",
+    "flashOff": "Flash Off",
+    "scanAgain": "Scan Again",
+    "invalidTitle": "Invalid QR Code",
+    "invalidBody": "This QR code is not a valid Oxy authorization request.",
+    "a11y": {
+      "grantPermission": "Grant camera permission",
+      "openSettings": "Open device settings",
+      "cancel": "Cancel",
+      "goBack": "Go back",
+      "flashOn": "Turn flash on",
+      "flashOff": "Turn flash off",
+      "scanAgain": "Scan again",
+      "close": "Close scanner"
+    }
+  },
+  "authorize": {
+    "preparingSession": "Preparing session…",
+    "loadingRequest": "Loading authorization request…",
+    "errorTitle": "Authorization Error",
+    "goBack": "Go Back",
+    "appFallback": "An app",
+    "appFallbackInline": "the app",
+    "wantsToAccess": "wants to access your account",
+    "permissionsTitle": "This app will be able to:",
+    "permissionVerify": "Verify your identity",
+    "permissionProfile": "Access your public profile information",
+    "cancel": "Cancel",
+    "sessionNotReady": "Session Not Ready…",
+    "continue": "Continue",
+    "authorizedSuccess": "Authorized {{app}} to access your Oxy identity.",
+    "errors": {
+      "noToken": "No authorization token provided",
+      "alreadyProcessed": "This authorization request has already been processed or expired",
+      "loadFailed": "Failed to load authorization request",
+      "noSession": "No active session. Please sign in first.",
+      "authorizeFailed": "Failed to authorize"
+    }
+  },
+  "aboutIdentity": {
+    "loading": "Loading…",
+    "title": "About Your Identity",
+    "subtitle": "Self-custody identity powered by cryptography",
+    "idCard": "ID Card",
+    "copyPublicKey": "Copy Public Key",
+    "publicKeyCopied": "Public key copied to clipboard",
+    "copyFailed": "Failed to copy",
+    "importantNotice": "Your recovery phrase is the ONLY way to restore your identity if you lose access to this device. Oxy cannot reset or recover your account. Keep your recovery phrase safe and never share it.",
+    "selfCustodyTitle": "Self-Custody Identity",
+    "selfCustodyDescription": "Unlike traditional accounts, your Oxy identity uses the same technology that secures Bitcoin. You have complete control over your identity.",
+    "items": {
+      "privateKeyTitle": "Private Key Stored Locally",
+      "privateKeySubtitle": "Your private key is encrypted and stored securely on this device. It never leaves your device.",
+      "noPasswordTitle": "No Passwords",
+      "noPasswordSubtitle": "You sign in using cryptographic proof, not passwords that can be guessed or stolen.",
+      "recoveryTitle": "Recovery Phrase Backup",
+      "recoverySubtitle": "Your 12-word recovery phrase is the only way to restore your identity on a new device.",
+      "decentralizedTitle": "Decentralized Identity",
+      "decentralizedSubtitle": "Your identity is not controlled by any company. You own it completely."
+    },
+    "securityActions": "Security Actions",
+    "createBackupTitle": "Create Encrypted Backup",
+    "createBackupSubtitle": "Generate password-protected backup file",
+    "exportKeyTitle": "Export Private Key",
+    "exporting": "Exporting…",
+    "lastExported": "Last exported {{time}}",
+    "exportKeySubtitle": "Print your private key for secure backup",
+    "accountSettings": "Account Settings",
+    "accountSettingsDescription": "Manage your account preferences and expiration settings.",
+    "accountExpiration": "Account Expiration",
+    "expiration": {
+      "never": "Never expires",
+      "days": "{{count}} days",
+      "oneYear": "1 year"
+    },
+    "expirationPicker": {
+      "title": "Account Expiration",
+      "message": "Choose when your account expires after inactivity",
+      "days30": "30 days",
+      "days90": "90 days",
+      "days180": "180 days",
+      "oneYear": "1 year",
+      "never": "Never"
+    },
+    "expirationUpdated": "Account expiration setting updated",
+    "expirationUpdateFailed": "Failed to update account expiration setting. Please try again.",
+    "securityWarning": {
+      "title": "Security Warning",
+      "message": "Exporting your private key will print it on paper. Anyone with access to this printed key can control your identity. Make sure you are in a secure location and will store the printed document safely.\n\nDo you want to continue?",
+      "continue": "Continue"
+    },
+    "export": {
+      "noPrivateKey": "No private key found on this device",
+      "sentToPrinter": "Private key has been sent to printer",
+      "failed": "Failed to export private key. Please try again."
+    },
+    "print": {
+      "documentTitle": "Oxy Identity - Private Key Export",
+      "generated": "Generated: {{date}}",
+      "warningTitle": "SECURITY WARNING",
+      "warningBody": "This document contains your private key. Anyone with access to this key can control your identity. Store this document in a secure location, such as a safe or safety deposit box. Never share this key with anyone.",
+      "publicKeyLabel": "Public Key (Your Identity):",
+      "privateKeyLabel": "Private Key (KEEP SECRET):",
+      "infoTitle": "Important Information:",
+      "info1": "This private key is used to sign transactions and prove your identity",
+      "info2": "If you lose this key and your recovery phrase, you will permanently lose access to your identity",
+      "info3": "Do not store this document digitally (screenshots, cloud storage, etc.)",
+      "info4": "Consider storing multiple copies in different secure locations",
+      "info5": "If this key is compromised, you should immediately create a new identity",
+      "footerLine1": "Oxy Identity - Self-Custody Cryptographic Identity",
+      "footerLine2": "This document was generated by the Oxy Accounts app"
+    }
+  },
+  "backup": {
+    "checkingIdentity": "Checking identity…",
+    "missingTitle": "No identity on this device",
+    "missingSubtitle": "We could not find a private key on this device. Backups encrypt the identity key stored locally, so you need to create or import your identity first.",
+    "missingBanner": "If you already have an identity on another device, sign in there and create the backup from that device.",
+    "goBack": "Go back",
+    "setupIdentity": "Set up identity",
+    "title": "Create Encrypted Backup",
+    "subtitle": "Generate a password-protected backup file that you can store securely offline.",
+    "banner": "Store this file in a secure location (safe, encrypted drive, etc.). Never share your password or backup file.",
+    "password": "Password",
+    "confirmPassword": "Confirm Password",
+    "passwordPlaceholder": "Enter password (min 12 characters)",
+    "confirmPasswordPlaceholder": "Confirm password",
+    "passwordTooShort": "Password must be at least 12 characters",
+    "passwordsDoNotMatch": "Passwords do not match",
+    "cancel": "Cancel",
+    "generating": "Generating…",
+    "generate": "Generate Backup",
+    "errors": {
+      "noPublicKey": "Public key not available",
+      "passwordMinLength": "Password must be at least 12 characters long",
+      "passwordsMismatch": "Passwords do not match",
+      "noPrivateKey": "No private key found on this device",
+      "sharingUnavailable": "Sharing is not available on this platform",
+      "generateFailed": "Failed to generate backup file"
+    },
+    "shareDialogTitle": "Share Oxy Identity Backup",
+    "shareSuccess": "Backup file ready. Save it to a secure location like your password manager, encrypted drive, or offline storage.",
+    "readme": {
+      "title": "Oxy Identity Backup",
+      "intro": "This backup file contains your encrypted identity.",
+      "restoreTitle": "To restore:",
+      "restoreStep1": "Extract this ZIP file",
+      "restoreStep2": "Use the Oxy Accounts app to import the wallet.json file",
+      "restoreStep3": "Enter your backup password when prompted",
+      "importantTitle": "IMPORTANT:",
+      "important1": "Store this file in a secure location (safe, encrypted drive, etc.)",
+      "important2": "Never share your password or backup file",
+      "important3": "Keep multiple copies in different secure locations",
+      "important4": "If this backup is compromised, create a new identity immediately",
+      "createdLabel": "Created",
+      "publicKeyLabel": "Public Key"
+    }
   }
 }

@@ -8,6 +8,7 @@ import { useUsernameValidation } from '@/hooks/auth/useUsernameValidation';
 import { sanitizeUsernameInput } from '@/utils/auth/usernameUtils';
 import { useOxy } from '@oxyhq/services';
 import type { OxyServices } from '@oxyhq/core';
+import { useTranslation } from '@/lib/i18n';
 import telescopeAnimation from '@/assets/lottie/telescope.json';
 
 interface UsernameStepProps {
@@ -39,6 +40,7 @@ export function UsernameStep({
   updateError = null,
 }: UsernameStepProps) {
   const colors = useColors();
+  const { t } = useTranslation();
   const { showBottomSheet } = useOxy();
   const insets = useSafeAreaInsets();
   const validation = useUsernameValidation(username, oxyServices);
@@ -134,7 +136,7 @@ export function UsernameStep({
             activeOpacity={0.8}
             disabled={isAnimationPlaying || shouldLoop || validation.isChecking || isConfirming}
             accessibilityRole="button"
-            accessibilityLabel="Play animation"
+            accessibilityLabel={t('auth.usernameStep.a11y.playAnimation')}
             accessibilityState={{ disabled: isAnimationPlaying || shouldLoop || validation.isChecking || isConfirming }}
           >
             <LottieView
@@ -147,11 +149,11 @@ export function UsernameStep({
             />
           </TouchableOpacity>
         </View>
-        <Text style={[styles.title, { color: textColor }]}>Choose your username</Text>
+        <Text style={[styles.title, { color: textColor }]}>{t('auth.usernameStep.title')}</Text>
         <Text style={[styles.subtitle, { color: textColor, opacity: 0.6 }]}>
           {isOffline
-            ? 'You\'re offline. You can set your username later when online.'
-            : 'Your username is required. You can change this later in settings.'}
+            ? t('auth.usernameStep.subtitleOffline')
+            : t('auth.usernameStep.subtitle')}
         </Text>
 
         <View style={styles.inputWrapper}>
@@ -161,7 +163,7 @@ export function UsernameStep({
               backgroundColor: colors.card,
               borderColor: validation.error ? colors.error : colors.border,
             }]}
-            placeholder="Username"
+            placeholder={t('auth.usernameStep.placeholder')}
             placeholderTextColor={colors.textSecondary}
             value={username}
             onChangeText={handleTextChange}
@@ -172,18 +174,18 @@ export function UsernameStep({
         </View>
 
         <Text style={[styles.inputHint, { color: textColor, opacity: 0.6 }]}>
-          You can use a-z, 0-9. Minimum length is 4 characters.
+          {t('auth.usernameStep.hint')}
         </Text>
 
         {validation.isChecking && (
           <Text style={[styles.checkingText, { color: textColor, opacity: 0.6 }]}>
-            Checking availability...
+            {t('auth.usernameStep.checking')}
           </Text>
         )}
 
         {validation.isAvailable === true && !validation.isChecking && (
           <Text style={[styles.availableText, { color: colors.success }]}>
-            ✓ Username is available
+            {t('auth.usernameStep.available')}
           </Text>
         )}
 
@@ -198,7 +200,7 @@ export function UsernameStep({
           loading={isUpdating || isConfirming}
           style={styles.primaryButton}
         >
-          {isUpdating ? 'Saving...' : isConfirming ? 'Confirming...' : 'Confirm'}
+          {isUpdating ? t('auth.usernameStep.saving') : isConfirming ? t('auth.usernameStep.confirming') : t('auth.usernameStep.confirm')}
         </Button>
 
         {/* Only show skip button if offline and onSkip is provided (for offline fallback) */}
@@ -209,7 +211,7 @@ export function UsernameStep({
             style={styles.skipButton}
             disabled={isUpdating}
           >
-            Skip for now
+            {t('auth.usernameStep.skip')}
           </Button>
         )}
 
@@ -219,7 +221,7 @@ export function UsernameStep({
             onPress={() => showBottomSheet?.('LearnMoreUsernames')}
             disabled={isUpdating}
           >
-            Learn more about usernames
+            {t('auth.usernameStep.learnMore')}
           </Button>
         )}
       </KeyboardAwareScrollViewWrapper>

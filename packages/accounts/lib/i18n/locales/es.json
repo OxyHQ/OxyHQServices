@@ -138,6 +138,30 @@
       "replaceWarning": "Esto eliminará permanentemente la identidad existente de este dispositivo. Asegúrate de tener guardada su frase de recuperación primero.",
       "replaceConfirm": "Sí, reemplazar",
       "cancel": "Cancelar"
+    },
+    "usernameStep": {
+      "title": "Elige tu nombre de usuario",
+      "subtitleOffline": "Estás sin conexión. Puedes establecer tu nombre de usuario más tarde cuando vuelvas a conectarte.",
+      "subtitle": "Tu nombre de usuario es obligatorio. Puedes cambiarlo más tarde en los ajustes.",
+      "placeholder": "Nombre de usuario",
+      "hint": "Puedes usar a-z, 0-9. La longitud mínima es de 4 caracteres.",
+      "checking": "Comprobando disponibilidad…",
+      "available": "✓ El nombre de usuario está disponible",
+      "saving": "Guardando…",
+      "confirming": "Confirmando…",
+      "confirm": "Confirmar",
+      "skip": "Omitir por ahora",
+      "learnMore": "Más información sobre los nombres de usuario",
+      "a11y": {
+        "playAnimation": "Reproducir animación"
+      }
+    },
+    "importStep": {
+      "title": "Importa tu identidad",
+      "subtitle": "Introduce tu frase de recuperación de 12 palabras para restaurar tu identidad.",
+      "wordPlaceholder": "palabra",
+      "import": "Importar identidad",
+      "createInstead": "Crear una nueva identidad en su lugar"
     }
   },
   "home": {
@@ -595,7 +619,8 @@
       "payment": "Pago",
       "refund": "Reembolso",
       "deposit": "Depósito",
-      "withdrawal": "Retirada"
+      "withdrawal": "Retirada",
+      "purchase": "Compra"
     },
     "info": {
       "fairCoin": "FairCoin (⊜)",
@@ -859,5 +884,176 @@
     "followToggle": "Seguir",
     "unfollowToggle": "Dejar de seguir",
     "lottieDecorative": "Animación decorativa de fondo"
+  },
+  "scanQr": {
+    "checkingIdentity": "Comprobando identidad…",
+    "redirecting": "Redirigiendo a la configuración de identidad…",
+    "requestingPermission": "Solicitando permiso de cámara…",
+    "identityRequiredTitle": "Identidad requerida",
+    "identityRequiredBody": "Para escanear códigos QR y autorizar solicitudes de inicio de sesión, necesitas crear o importar una identidad.\n\nLa creación de identidad solo está disponible en plataformas nativas (iOS/Android). Usa la app móvil para configurar tu identidad.",
+    "goBack": "Volver",
+    "permissionTitle": "Acceso a la cámara requerido",
+    "permissionBody": "Para escanear códigos QR de autorización de inicio de sesión, necesitamos acceso a tu cámara.",
+    "grantPermission": "Conceder permiso",
+    "openSettings": "Abrir ajustes",
+    "cancel": "Cancelar",
+    "instructions": "Escanea el código QR que se muestra en la app en la que quieres iniciar sesión",
+    "flashOn": "Flash activado",
+    "flashOff": "Flash desactivado",
+    "scanAgain": "Escanear de nuevo",
+    "invalidTitle": "Código QR no válido",
+    "invalidBody": "Este código QR no es una solicitud de autorización de Oxy válida.",
+    "a11y": {
+      "grantPermission": "Conceder permiso de cámara",
+      "openSettings": "Abrir ajustes del dispositivo",
+      "cancel": "Cancelar",
+      "goBack": "Volver",
+      "flashOn": "Activar flash",
+      "flashOff": "Desactivar flash",
+      "scanAgain": "Escanear de nuevo",
+      "close": "Cerrar escáner"
+    }
+  },
+  "authorize": {
+    "preparingSession": "Preparando sesión…",
+    "loadingRequest": "Cargando solicitud de autorización…",
+    "errorTitle": "Error de autorización",
+    "goBack": "Volver",
+    "appFallback": "Una app",
+    "appFallbackInline": "la app",
+    "wantsToAccess": "quiere acceder a tu cuenta",
+    "permissionsTitle": "Esta app podrá:",
+    "permissionVerify": "Verificar tu identidad",
+    "permissionProfile": "Acceder a la información de tu perfil público",
+    "cancel": "Cancelar",
+    "sessionNotReady": "Sesión no lista…",
+    "continue": "Continuar",
+    "authorizedSuccess": "Has autorizado a {{app}} a acceder a tu identidad de Oxy.",
+    "errors": {
+      "noToken": "No se proporcionó ningún token de autorización",
+      "alreadyProcessed": "Esta solicitud de autorización ya se ha procesado o ha caducado",
+      "loadFailed": "No se pudo cargar la solicitud de autorización",
+      "noSession": "No hay ninguna sesión activa. Inicia sesión primero.",
+      "authorizeFailed": "No se pudo autorizar"
+    }
+  },
+  "aboutIdentity": {
+    "loading": "Cargando…",
+    "title": "Acerca de tu identidad",
+    "subtitle": "Identidad de autocustodia basada en criptografía",
+    "idCard": "Tarjeta de identidad",
+    "copyPublicKey": "Copiar clave pública",
+    "publicKeyCopied": "Clave pública copiada al portapapeles",
+    "copyFailed": "No se pudo copiar",
+    "importantNotice": "Tu frase de recuperación es la ÚNICA forma de restaurar tu identidad si pierdes el acceso a este dispositivo. Oxy no puede restablecer ni recuperar tu cuenta. Guarda tu frase de recuperación en un lugar seguro y nunca la compartas.",
+    "selfCustodyTitle": "Identidad de autocustodia",
+    "selfCustodyDescription": "A diferencia de las cuentas tradicionales, tu identidad de Oxy usa la misma tecnología que protege Bitcoin. Tienes control total sobre tu identidad.",
+    "items": {
+      "privateKeyTitle": "Clave privada almacenada localmente",
+      "privateKeySubtitle": "Tu clave privada está cifrada y almacenada de forma segura en este dispositivo. Nunca sale de tu dispositivo.",
+      "noPasswordTitle": "Sin contraseñas",
+      "noPasswordSubtitle": "Inicias sesión mediante prueba criptográfica, no con contraseñas que puedan adivinarse o robarse.",
+      "recoveryTitle": "Copia de la frase de recuperación",
+      "recoverySubtitle": "Tu frase de recuperación de 12 palabras es la única forma de restaurar tu identidad en un nuevo dispositivo.",
+      "decentralizedTitle": "Identidad descentralizada",
+      "decentralizedSubtitle": "Tu identidad no está controlada por ninguna empresa. Es completamente tuya."
+    },
+    "securityActions": "Acciones de seguridad",
+    "createBackupTitle": "Crear copia de seguridad cifrada",
+    "createBackupSubtitle": "Genera un archivo de copia de seguridad protegido con contraseña",
+    "exportKeyTitle": "Exportar clave privada",
+    "exporting": "Exportando…",
+    "lastExported": "Exportada por última vez {{time}}",
+    "exportKeySubtitle": "Imprime tu clave privada para una copia de seguridad segura",
+    "accountSettings": "Configuración de la cuenta",
+    "accountSettingsDescription": "Gestiona las preferencias y la configuración de caducidad de tu cuenta.",
+    "accountExpiration": "Caducidad de la cuenta",
+    "expiration": {
+      "never": "Nunca caduca",
+      "days": "{{count}} días",
+      "oneYear": "1 año"
+    },
+    "expirationPicker": {
+      "title": "Caducidad de la cuenta",
+      "message": "Elige cuándo caduca tu cuenta tras un periodo de inactividad",
+      "days30": "30 días",
+      "days90": "90 días",
+      "days180": "180 días",
+      "oneYear": "1 año",
+      "never": "Nunca"
+    },
+    "expirationUpdated": "Configuración de caducidad de la cuenta actualizada",
+    "expirationUpdateFailed": "No se pudo actualizar la configuración de caducidad de la cuenta. Inténtalo de nuevo.",
+    "securityWarning": {
+      "title": "Advertencia de seguridad",
+      "message": "Al exportar tu clave privada se imprimirá en papel. Cualquiera con acceso a esta clave impresa puede controlar tu identidad. Asegúrate de estar en un lugar seguro y de guardar el documento impreso de forma segura.\n\n¿Quieres continuar?",
+      "continue": "Continuar"
+    },
+    "export": {
+      "noPrivateKey": "No se encontró ninguna clave privada en este dispositivo",
+      "sentToPrinter": "La clave privada se ha enviado a la impresora",
+      "failed": "No se pudo exportar la clave privada. Inténtalo de nuevo."
+    },
+    "print": {
+      "documentTitle": "Identidad de Oxy - Exportación de clave privada",
+      "generated": "Generado: {{date}}",
+      "warningTitle": "ADVERTENCIA DE SEGURIDAD",
+      "warningBody": "Este documento contiene tu clave privada. Cualquiera con acceso a esta clave puede controlar tu identidad. Guarda este documento en un lugar seguro, como una caja fuerte o una caja de seguridad. Nunca compartas esta clave con nadie.",
+      "publicKeyLabel": "Clave pública (tu identidad):",
+      "privateKeyLabel": "Clave privada (MANTÉNLA EN SECRETO):",
+      "infoTitle": "Información importante:",
+      "info1": "Esta clave privada se usa para firmar transacciones y demostrar tu identidad",
+      "info2": "Si pierdes esta clave y tu frase de recuperación, perderás el acceso a tu identidad de forma permanente",
+      "info3": "No guardes este documento de forma digital (capturas de pantalla, almacenamiento en la nube, etc.)",
+      "info4": "Considera guardar varias copias en distintos lugares seguros",
+      "info5": "Si esta clave se ve comprometida, deberías crear una nueva identidad de inmediato",
+      "footerLine1": "Identidad de Oxy - Identidad criptográfica de autocustodia",
+      "footerLine2": "Este documento fue generado por la app Oxy Accounts"
+    }
+  },
+  "backup": {
+    "checkingIdentity": "Comprobando identidad…",
+    "missingTitle": "No hay identidad en este dispositivo",
+    "missingSubtitle": "No pudimos encontrar una clave privada en este dispositivo. Las copias de seguridad cifran la clave de identidad almacenada localmente, así que primero debes crear o importar tu identidad.",
+    "missingBanner": "Si ya tienes una identidad en otro dispositivo, inicia sesión allí y crea la copia de seguridad desde ese dispositivo.",
+    "goBack": "Volver",
+    "setupIdentity": "Configurar identidad",
+    "title": "Crear copia de seguridad cifrada",
+    "subtitle": "Genera un archivo de copia de seguridad protegido con contraseña que puedas guardar de forma segura sin conexión.",
+    "banner": "Guarda este archivo en un lugar seguro (caja fuerte, unidad cifrada, etc.). Nunca compartas tu contraseña ni tu archivo de copia de seguridad.",
+    "password": "Contraseña",
+    "confirmPassword": "Confirmar contraseña",
+    "passwordPlaceholder": "Introduce la contraseña (mín. 12 caracteres)",
+    "confirmPasswordPlaceholder": "Confirma la contraseña",
+    "passwordTooShort": "La contraseña debe tener al menos 12 caracteres",
+    "passwordsDoNotMatch": "Las contraseñas no coinciden",
+    "cancel": "Cancelar",
+    "generating": "Generando…",
+    "generate": "Generar copia de seguridad",
+    "errors": {
+      "noPublicKey": "Clave pública no disponible",
+      "passwordMinLength": "La contraseña debe tener al menos 12 caracteres",
+      "passwordsMismatch": "Las contraseñas no coinciden",
+      "noPrivateKey": "No se encontró ninguna clave privada en este dispositivo",
+      "sharingUnavailable": "Compartir no está disponible en esta plataforma",
+      "generateFailed": "No se pudo generar el archivo de copia de seguridad"
+    },
+    "shareDialogTitle": "Compartir copia de seguridad de identidad de Oxy",
+    "shareSuccess": "Archivo de copia de seguridad listo. Guárdalo en un lugar seguro, como tu gestor de contraseñas, una unidad cifrada o almacenamiento sin conexión.",
+    "readme": {
+      "title": "Copia de seguridad de identidad de Oxy",
+      "intro": "Este archivo de copia de seguridad contiene tu identidad cifrada.",
+      "restoreTitle": "Para restaurar:",
+      "restoreStep1": "Extrae este archivo ZIP",
+      "restoreStep2": "Usa la app Oxy Accounts para importar el archivo wallet.json",
+      "restoreStep3": "Introduce la contraseña de tu copia de seguridad cuando se te solicite",
+      "importantTitle": "IMPORTANTE:",
+      "important1": "Guarda este archivo en un lugar seguro (caja fuerte, unidad cifrada, etc.)",
+      "important2": "Nunca compartas tu contraseña ni tu archivo de copia de seguridad",
+      "important3": "Guarda varias copias en distintos lugares seguros",
+      "important4": "Si esta copia de seguridad se ve comprometida, crea una nueva identidad de inmediato",
+      "createdLabel": "Creado",
+      "publicKeyLabel": "Clave pública"
+    }
   }
 }

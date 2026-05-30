@@ -15,6 +15,7 @@ import * as Sharing from 'expo-sharing';
 import { useOxy } from '@oxyhq/services';
 import { toast } from '@oxyhq/bloom';
 import { KeyManager } from '@oxyhq/core';
+import { useTranslation } from '@/lib/i18n';
 import JSZip from 'jszip';
 
 type IdentityStatus = 'checking' | 'present' | 'missing';
@@ -38,6 +39,7 @@ export function EncryptedBackupGenerator({
     const colors = useColors();
     const router = useRouter();
     const { oxyServices } = useOxy();
+    const { t } = useTranslation();
 
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
@@ -64,17 +66,17 @@ export function EncryptedBackupGenerator({
 
     const generateBackupFile = useCallback(async () => {
         if (!publicKey) {
-            toast.error('Public key not available');
+            toast.error(t('backup.errors.noPublicKey'));
             return;
         }
 
         if (!isPasswordValid) {
-            toast.error('Password must be at least 12 characters long');
+            toast.error(t('backup.errors.passwordMinLength'));
             return;
         }
 
         if (!doPasswordsMatch) {
-            toast.error('Passwords do not match');
+            toast.error(t('backup.errors.passwordsMismatch'));
             return;
         }
 
@@ -153,7 +155,7 @@ export function EncryptedBackupGenerator({
             // Get private key
             const privateKey = await KeyManager.getPrivateKey();
             if (!privateKey) {
-                toast.error('No private key found on this device');
+                toast.error(t('backup.errors.noPrivateKey'));
                 setIsGenerating(false);
                 return;
             }
@@ -184,24 +186,24 @@ export function EncryptedBackupGenerator({
             };
 
             // Create README.txt content
-            const readmeContent = `Oxy Identity Backup
+            const readmeContent = `${t('backup.readme.title')}
 ====================
 
-This backup file contains your encrypted identity.
+${t('backup.readme.intro')}
 
-To restore:
-1. Extract this ZIP file
-2. Use the Oxy Accounts app to import the wallet.json file
-3. Enter your backup password when prompted
+${t('backup.readme.restoreTitle')}
+1. ${t('backup.readme.restoreStep1')}
+2. ${t('backup.readme.restoreStep2')}
+3. ${t('backup.readme.restoreStep3')}
 
-IMPORTANT:
-- Store this file in a secure location (safe, encrypted drive, etc.)
-- Never share your password or backup file
-- Keep multiple copies in different secure locations
-- If this backup is compromised, create a new identity immediately
+${t('backup.readme.importantTitle')}
+- ${t('backup.readme.important1')}
+- ${t('backup.readme.important2')}
+- ${t('backup.readme.important3')}
+- ${t('backup.readme.important4')}
 
-Created: ${createdAt}
-Public Key: ${publicKey}`;
+${t('backup.readme.createdLabel')}: ${createdAt}
+${t('backup.readme.publicKeyLabel')}: ${publicKey}`;
 
             // Create ZIP file
             const zip = new JSZip();
@@ -236,33 +238,31 @@ Public Key: ${publicKey}`;
             if (await Sharing.isAvailableAsync()) {
                 await Sharing.shareAsync(fileUri, {
                     mimeType: 'application/zip',
-                    dialogTitle: 'Share Oxy Identity Backup',
+                    dialogTitle: t('backup.shareDialogTitle'),
                     UTI: 'public.zip-archive', // Recommended for iOS
                 });
 
-                toast.success(
-                    'Backup file ready. Save it to a secure location like your password manager, encrypted drive, or offline storage.',
-                );
+                toast.success(t('backup.shareSuccess'));
                 setPassword('');
                 setConfirmPassword('');
                 onComplete?.();
             } else {
-                toast.error('Sharing is not available on this platform');
+                toast.error(t('backup.errors.sharingUnavailable'));
             }
         } catch (error) {
             if (__DEV__) {
                 console.warn('[backup] Failed to generate backup:', error);
             }
-            toast.error(error instanceof Error ? error.message : 'Failed to generate backup file');
+            toast.error(error instanceof Error ? error.message : t('backup.errors.generateFailed'));
         } finally {
             setIsGenerating(false);
         }
-    }, [password, publicKey, isPasswordValid, doPasswordsMatch, oxyServices, onComplete]);
+    }, [password, publicKey, isPasswordValid, doPasswordsMatch, oxyServices, onComplete, t]);
 
     if (identityStatus === 'checking') {
         return (
             <View style={[styles.container, styles.centeredContainer, { backgroundColor: colors.background }]}>
-                <ThemedText style={{ color: colors.textSecondary }}>Checking identity...</ThemedText>
+                <ThemedText style={{ color: colors.textSecondary }}>{t('backup.checkingIdentity')}</ThemedText>
             </View>
         );
     }
@@ -273,22 +273,21 @@ Public Key: ${publicKey}`;
                 <View style={styles.header}>
                     <MaterialCommunityIcons name="key-alert-outline" size={32} color={colors.error} />
                     <ThemedText style={[styles.title, { color: colors.text }]}>
-                        No identity on this device
+                        {t('backup.missingTitle')}
                     </ThemedText>
                     <ThemedText style={[styles.subtitle, { color: colors.textSecondary }]}>
-                        We could not find a private key on this device. Backups encrypt the identity
-                        key stored locally, so you need to create or import your identity first.
+                        {t('backup.missingSubtitle')}
                     </ThemedText>
                 </View>
 
                 <ImportantBanner iconSize={20}>
-                    If you already have an identity on another device, sign in there and create the backup from that device.
+                    {t('backup.missingBanner')}
                 </ImportantBanner>
 
                 <View style={styles.buttonContainer}>
                     {onCancel && (
                         <Button variant="secondary" onPress={onCancel} style={styles.cancelButton}>
-                            Go back
+                            {t('backup.goBack')}
                         </Button>
                     )}
                     <Button
@@ -296,7 +295,7 @@ Public Key: ${publicKey}`;
                         onPress={() => router.replace('/(auth)/welcome')}
                         style={styles.generateButton}
                     >
-                        Set up identity
+                        {t('backup.setupIdentity')}
                     </Button>
                 </View>
             </View>
@@ -308,20 +307,20 @@ Public Key: ${publicKey}`;
             <View style={styles.header}>
                 <MaterialCommunityIcons name="shield-key" size={32} color={colors.tint} />
                 <ThemedText style={[styles.title, { color: colors.text }]}>
-                    Create Encrypted Backup
+                    {t('backup.title')}
                 </ThemedText>
                 <ThemedText style={[styles.subtitle, { color: colors.textSecondary }]}>
-                    Generate a password-protected backup file that you can store securely offline.
+                    {t('backup.subtitle')}
                 </ThemedText>
             </View>
 
             <ImportantBanner iconSize={20}>
-                Store this file in a secure location (safe, encrypted drive, etc.). Never share your password or backup file.
+                {t('backup.banner')}
             </ImportantBanner>
 
             <View style={styles.form}>
                 <View style={styles.inputContainer}>
-                    <ThemedText style={[styles.label, { color: colors.text }]}>Password</ThemedText>
+                    <ThemedText style={[styles.label, { color: colors.text }]}>{t('backup.password')}</ThemedText>
                     <View style={[styles.inputWrapper, {
                         borderColor: password.length > 0 && !isPasswordValid ? colors.error : colors.border,
                         backgroundColor: colors.card || 'rgba(0,0,0,0.02)',
@@ -330,7 +329,7 @@ Public Key: ${publicKey}`;
                             style={[styles.input, { color: colors.text }]}
                             value={password}
                             onChangeText={setPassword}
-                            placeholder="Enter password (min 12 characters)"
+                            placeholder={t('backup.passwordPlaceholder')}
                             placeholderTextColor={colors.textSecondary}
                             secureTextEntry={!showPasswords}
                             autoCapitalize="none"
@@ -348,13 +347,13 @@ Public Key: ${publicKey}`;
                     </View>
                     {password.length > 0 && !isPasswordValid && (
                         <ThemedText style={[styles.errorText, { color: colors.error }]}>
-                            Password must be at least 12 characters
+                            {t('backup.passwordTooShort')}
                         </ThemedText>
                     )}
                 </View>
 
                 <View style={styles.inputContainer}>
-                    <ThemedText style={[styles.label, { color: colors.text }]}>Confirm Password</ThemedText>
+                    <ThemedText style={[styles.label, { color: colors.text }]}>{t('backup.confirmPassword')}</ThemedText>
                     <View style={[styles.inputWrapper, {
                         borderColor: confirmPassword.length > 0 && !doPasswordsMatch ? colors.error : colors.border,
                         backgroundColor: colors.card || 'rgba(0,0,0,0.02)',
@@ -363,7 +362,7 @@ Public Key: ${publicKey}`;
                             style={[styles.input, { color: colors.text }]}
                             value={confirmPassword}
                             onChangeText={setConfirmPassword}
-                            placeholder="Confirm password"
+                            placeholder={t('backup.confirmPasswordPlaceholder')}
                             placeholderTextColor={colors.textSecondary}
                             secureTextEntry={!showPasswords}
                             autoCapitalize="none"
@@ -373,7 +372,7 @@ Public Key: ${publicKey}`;
                     </View>
                     {confirmPassword.length > 0 && !doPasswordsMatch && (
                         <ThemedText style={[styles.errorText, { color: colors.error }]}>
-                            Passwords do not match
+                            {t('backup.passwordsDoNotMatch')}
                         </ThemedText>
                     )}
                 </View>
@@ -386,7 +385,7 @@ Public Key: ${publicKey}`;
                             style={styles.cancelButton}
                             disabled={isGenerating}
                         >
-                            Cancel
+                            {t('backup.cancel')}
                         </Button>
                     )}
                     <Button
@@ -396,7 +395,7 @@ Public Key: ${publicKey}`;
                         disabled={!canGenerate}
                         style={styles.generateButton}
                     >
-                        {isGenerating ? 'Generating...' : 'Generate Backup'}
+                        {isGenerating ? t('backup.generating') : t('backup.generate')}
                     </Button>
                 </View>
             </View>

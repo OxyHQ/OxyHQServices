@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { Button, KeyboardAwareScrollViewWrapper } from '@/components/ui';
+import { useTranslation } from '@/lib/i18n';
 
 interface ImportPhraseStepProps {
   phraseWords: string[];
@@ -32,15 +33,16 @@ export function ImportPhraseStep({
   const colors = useColors();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { t } = useTranslation();
 
   return (
     <View style={[styles.container, { backgroundColor, paddingTop: insets.top }]}>
       <KeyboardAwareScrollViewWrapper
         contentContainerStyle={[styles.scrollContent, styles.stepContainer]}
       >
-        <Text style={[styles.title, { color: textColor }]}>Import Your Identity</Text>
+        <Text style={[styles.title, { color: textColor }]}>{t('auth.importStep.title')}</Text>
         <Text style={[styles.subtitle, { color: textColor, opacity: 0.6 }]}>
-          Enter your 12-word recovery phrase to restore your identity.
+          {t('auth.importStep.subtitle')}
         </Text>
 
         <View style={[styles.phraseGrid, {
@@ -64,7 +66,7 @@ export function ImportPhraseStep({
                     onWordChange(index, text);
                   }
                 }}
-                placeholder="word"
+                placeholder={t('auth.importStep.wordPlaceholder')}
                 placeholderTextColor={colors.textSecondary}
                 autoCapitalize="none"
                 autoCorrect={false}
@@ -82,14 +84,14 @@ export function ImportPhraseStep({
           loading={isLoading}
           style={styles.primaryButton}
         >
-          Import Identity
+          {t('auth.importStep.import')}
         </Button>
 
         <Button
           variant="ghost"
           onPress={() => router.push('/(auth)/create-identity')}
         >
-          Create a new identity instead
+          {t('auth.importStep.createInstead')}
         </Button>
       </KeyboardAwareScrollViewWrapper>
     </View>

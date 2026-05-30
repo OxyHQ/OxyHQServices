@@ -14,17 +14,19 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 import { useOxy } from '@oxyhq/services';
 import { alert } from '@oxyhq/bloom';
+import { useTranslation } from '@/lib/i18n';
 
 
 /**
  * QR Scanner Screen
- * 
+ *
  * Scans QR codes from other Oxy apps to authorize sign-in requests.
  * The QR code contains an oxyauth:// URL with a session token.
  */
 export default function ScanQRScreen() {
   const router = useRouter();
   const colors = useColors();
+  const { t } = useTranslation();
   const { hasIdentity, isLoading, isStorageReady } = useOxy();
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
@@ -75,22 +77,22 @@ export default function ScanQRScreen() {
       });
     } else {
       alert(
-        'Invalid QR Code',
-        'This QR code is not a valid Oxy authorization request.',
+        t('scanQr.invalidTitle'),
+        t('scanQr.invalidBody'),
         [
           {
-            text: 'Scan Again',
+            text: t('scanQr.scanAgain'),
             onPress: () => setScanned(false),
           },
           {
-            text: 'Cancel',
+            text: t('scanQr.cancel'),
             onPress: () => router.back(),
             style: 'cancel',
           },
         ]
       );
     }
-  }, [scanned, router]);
+  }, [scanned, router, t]);
 
   // Toggle flash
   const toggleFlash = useCallback(() => {
@@ -153,7 +155,7 @@ export default function ScanQRScreen() {
       <View style={[styles.container, { backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center' }]}>
         <ActivityIndicator size="large" color={colors.tint} />
         <Text style={[styles.text, { color: colors.textSecondary, marginTop: 16 }]}>
-          Checking identity...
+          {t('scanQr.checkingIdentity')}
         </Text>
       </View>
     );
@@ -172,19 +174,18 @@ export default function ScanQRScreen() {
             style={styles.icon}
           />
           <Text style={[styles.title, { color: colors.text }]}>
-            Identity Required
+            {t('scanQr.identityRequiredTitle')}
           </Text>
           <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-            To scan QR codes and authorize sign-in requests, you need to create or import an identity.{'\n\n'}
-            Identity creation is only available on native platforms (iOS/Android). Please use the mobile app to set up your identity.
+            {t('scanQr.identityRequiredBody')}
           </Text>
           <TouchableOpacity
             style={[styles.button, { backgroundColor: colors.tint, marginTop: 24 }]}
             onPress={handleClose}
             accessibilityRole="button"
-            accessibilityLabel="Go back"
+            accessibilityLabel={t('scanQr.a11y.goBack')}
           >
-            <Text style={styles.buttonText}>Go Back</Text>
+            <Text style={styles.buttonText}>{t('scanQr.goBack')}</Text>
           </TouchableOpacity>
         </View>
       );
@@ -194,7 +195,7 @@ export default function ScanQRScreen() {
       <View style={[styles.container, { backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center' }]}>
         <ActivityIndicator size="large" color={colors.tint} />
         <Text style={[styles.text, { color: colors.textSecondary, marginTop: 16 }]}>
-          Redirecting to identity setup...
+          {t('scanQr.redirecting')}
         </Text>
       </View>
     );
@@ -205,7 +206,7 @@ export default function ScanQRScreen() {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         <Text style={[styles.text, { color: colors.text }]}>
-          Requesting camera permission...
+          {t('scanQr.requestingPermission')}
         </Text>
       </View>
     );
@@ -222,37 +223,37 @@ export default function ScanQRScreen() {
           style={styles.icon}
         />
         <Text style={[styles.title, { color: colors.text }]}>
-          Camera Access Required
+          {t('scanQr.permissionTitle')}
         </Text>
         <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-          To scan QR codes for sign-in authorization, we need access to your camera.
+          {t('scanQr.permissionBody')}
         </Text>
         <TouchableOpacity
           style={[styles.button, { backgroundColor: colors.tint }]}
           onPress={requestPermission}
           accessibilityRole="button"
-          accessibilityLabel="Grant camera permission"
+          accessibilityLabel={t('scanQr.a11y.grantPermission')}
         >
-          <Text style={styles.buttonText}>Grant Permission</Text>
+          <Text style={styles.buttonText}>{t('scanQr.grantPermission')}</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.linkButton]}
           onPress={openSettings}
           accessibilityRole="button"
-          accessibilityLabel="Open device settings"
+          accessibilityLabel={t('scanQr.a11y.openSettings')}
         >
           <Text style={[styles.linkText, { color: colors.tint }]}>
-            Open Settings
+            {t('scanQr.openSettings')}
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.linkButton]}
           onPress={handleClose}
           accessibilityRole="button"
-          accessibilityLabel="Cancel"
+          accessibilityLabel={t('scanQr.a11y.cancel')}
         >
           <Text style={[styles.linkText, { color: colors.textSecondary }]}>
-            Cancel
+            {t('scanQr.cancel')}
           </Text>
         </TouchableOpacity>
       </View>
@@ -291,7 +292,7 @@ export default function ScanQRScreen() {
           {/* Bottom section */}
           <View style={[styles.overlaySection, styles.bottomSection]}>
             <Text style={styles.instructionText}>
-              Scan the QR code shown in the app you want to sign in to
+              {t('scanQr.instructions')}
             </Text>
 
             {/* Controls */}
@@ -300,7 +301,7 @@ export default function ScanQRScreen() {
                 style={styles.controlButton}
                 onPress={toggleFlash}
                 accessibilityRole="button"
-                accessibilityLabel={flashOn ? 'Turn flash off' : 'Turn flash on'}
+                accessibilityLabel={flashOn ? t('scanQr.a11y.flashOff') : t('scanQr.a11y.flashOn')}
                 accessibilityState={{ selected: flashOn }}
               >
                 <MaterialCommunityIcons
@@ -309,7 +310,7 @@ export default function ScanQRScreen() {
                   color="#fff"
                 />
                 <Text style={styles.controlText}>
-                  {flashOn ? 'Flash On' : 'Flash Off'}
+                  {flashOn ? t('scanQr.flashOn') : t('scanQr.flashOff')}
                 </Text>
               </TouchableOpacity>
 
@@ -318,14 +319,14 @@ export default function ScanQRScreen() {
                   style={styles.controlButton}
                   onPress={() => setScanned(false)}
                   accessibilityRole="button"
-                  accessibilityLabel="Scan again"
+                  accessibilityLabel={t('scanQr.a11y.scanAgain')}
                 >
                   <MaterialCommunityIcons
                     name="refresh"
                     size={28}
                     color="#fff"
                   />
-                  <Text style={styles.controlText}>Scan Again</Text>
+                  <Text style={styles.controlText}>{t('scanQr.scanAgain')}</Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -337,7 +338,7 @@ export default function ScanQRScreen() {
           style={styles.closeButton}
           onPress={handleClose}
           accessibilityRole="button"
-          accessibilityLabel="Close scanner"
+          accessibilityLabel={t('scanQr.a11y.close')}
         >
           <MaterialCommunityIcons name="close" size={28} color="#fff" />
         </TouchableOpacity>

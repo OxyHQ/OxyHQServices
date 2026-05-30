@@ -23,10 +23,12 @@ import * as Print from 'expo-print';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getDisplayName } from '@/utils/date-utils';
 import { IdentityCard } from '@/components/identity';
+import { useTranslation } from '@/lib/i18n';
 
 export default function AboutIdentityScreen() {
   const colors = useColors();
   const router = useRouter();
+  const { t } = useTranslation();
   // Auth is enforced by the `(tabs)` layout — assume a session here.
   const { user, isLoading: oxyLoading, oxyServices, showBottomSheet } = useOxy();
   const { getPublicKey } = useIdentity();
@@ -94,9 +96,9 @@ export default function AboutIdentityScreen() {
     if (Platform.OS === 'web') {
       try {
         await navigator.clipboard.writeText(publicKey);
-        toast.success('Public key copied to clipboard');
+        toast.success(t('aboutIdentity.publicKeyCopied'));
       } catch {
-        toast.error('Failed to copy');
+        toast.error(t('aboutIdentity.copyFailed'));
       }
     } else {
       try {
@@ -105,17 +107,14 @@ export default function AboutIdentityScreen() {
         // Cancelled - don't show error
       }
     }
-  }, [publicKey]);
+  }, [publicKey, t]);
 
   // Format expiration setting for display
   const formatExpirationSetting = useCallback((days: number | null | undefined): string => {
-    if (!days || days === null) return 'Never expires';
-    if (days === 30) return '30 days';
-    if (days === 90) return '90 days';
-    if (days === 180) return '180 days';
-    if (days === 365) return '1 year';
-    return `${days} days`;
-  }, []);
+    if (!days || days === null) return t('aboutIdentity.expiration.never');
+    if (days === 365) return t('aboutIdentity.expiration.oneYear');
+    return t('aboutIdentity.expiration.days', { count: days });
+  }, [t]);
 
   // Get current expiration setting
   const currentExpirationDays = user?.accountExpiresAfterInactivityDays ?? null;
@@ -128,39 +127,39 @@ export default function AboutIdentityScreen() {
       setIsSavingExpiration(true);
       await oxyServices.updateProfile({ accountExpiresAfterInactivityDays: selectedDays });
       // User object from useOxy should update automatically via the context
-      toast.success('Account expiration setting updated');
+      toast.success(t('aboutIdentity.expirationUpdated'));
     } catch (error: unknown) {
       const message = error instanceof Error
         ? error.message
-        : 'Failed to update account expiration setting. Please try again.';
+        : t('aboutIdentity.expirationUpdateFailed');
       toast.error(message);
     } finally {
       setIsSavingExpiration(false);
     }
-  }, [oxyServices, user]);
+  }, [oxyServices, user, t]);
 
   // Show expiration selection dialog
   const showExpirationPicker = useCallback(() => {
     const options = [
-      { label: '30 days', value: 30 },
-      { label: '90 days', value: 90 },
-      { label: '180 days', value: 180 },
-      { label: '1 year', value: 365 },
-      { label: 'Never', value: null },
+      { label: t('aboutIdentity.expirationPicker.days30'), value: 30 },
+      { label: t('aboutIdentity.expirationPicker.days90'), value: 90 },
+      { label: t('aboutIdentity.expirationPicker.days180'), value: 180 },
+      { label: t('aboutIdentity.expirationPicker.oneYear'), value: 365 },
+      { label: t('aboutIdentity.expirationPicker.never'), value: null },
     ];
 
     alert(
-      'Account Expiration',
-      'Choose when your account expires after inactivity',
+      t('aboutIdentity.expirationPicker.title'),
+      t('aboutIdentity.expirationPicker.message'),
       [
         ...options.map(option => ({
           text: option.label,
           onPress: () => handleExpirationChange(option.value),
         })),
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
       ]
     );
-  }, [handleExpirationChange, alert]);
+  }, [handleExpirationChange, t]);
 
   // Save export history
   const saveExportHistory = useCallback(async (timestamp: string) => {
@@ -181,12 +180,12 @@ export default function AboutIdentityScreen() {
   // Export private key using expo-print
   const handleExportPrivateKey = useCallback(async () => {
     alert(
-      'Security Warning',
-      'Exporting your private key will print it on paper. Anyone with access to this printed key can control your identity. Make sure you are in a secure location and will store the printed document safely.\n\nDo you want to continue?',
+      t('aboutIdentity.securityWarning.title'),
+      t('aboutIdentity.securityWarning.message'),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Continue',
+          text: t('aboutIdentity.securityWarning.continue'),
           style: 'destructive',
           onPress: async () => {
             try {
@@ -195,7 +194,7 @@ export default function AboutIdentityScreen() {
               // Get private key
               const privateKey = await KeyManager.getPrivateKey();
               if (!privateKey) {
-                toast.error('No private key found on this device');
+                toast.error(t('aboutIdentity.export.noPrivateKey'));
                 return;
               }
 
@@ -287,39 +286,39 @@ export default function AboutIdentityScreen() {
   </head>
   <body>
     <div class="header">
-      <h1>Oxy Identity - Private Key Export</h1>
-      <p>Generated: ${new Date().toLocaleString()}</p>
+      <h1>${t('aboutIdentity.print.documentTitle')}</h1>
+      <p>${t('aboutIdentity.print.generated', { date: new Date().toLocaleString() })}</p>
     </div>
 
     <div class="warning">
-      <div class="warning-title">⚠️ SECURITY WARNING</div>
-      <p>This document contains your private key. Anyone with access to this key can control your identity. Store this document in a secure location, such as a safe or safety deposit box. Never share this key with anyone.</p>
+      <div class="warning-title">⚠️ ${t('aboutIdentity.print.warningTitle')}</div>
+      <p>${t('aboutIdentity.print.warningBody')}</p>
     </div>
 
     <div class="key-section">
-      <div class="key-label">Public Key (Your Identity):</div>
+      <div class="key-label">${t('aboutIdentity.print.publicKeyLabel')}</div>
       <div class="key-value">${pk}</div>
     </div>
 
     <div class="key-section">
-      <div class="key-label">Private Key (KEEP SECRET):</div>
+      <div class="key-label">${t('aboutIdentity.print.privateKeyLabel')}</div>
       <div class="key-value">${privateKey}</div>
     </div>
 
     <div class="info-section">
-      <div class="info-title">Important Information:</div>
+      <div class="info-title">${t('aboutIdentity.print.infoTitle')}</div>
       <ul>
-        <li>This private key is used to sign transactions and prove your identity</li>
-        <li>If you lose this key and your recovery phrase, you will permanently lose access to your identity</li>
-        <li>Do not store this document digitally (screenshots, cloud storage, etc.)</li>
-        <li>Consider storing multiple copies in different secure locations</li>
-        <li>If this key is compromised, you should immediately create a new identity</li>
+        <li>${t('aboutIdentity.print.info1')}</li>
+        <li>${t('aboutIdentity.print.info2')}</li>
+        <li>${t('aboutIdentity.print.info3')}</li>
+        <li>${t('aboutIdentity.print.info4')}</li>
+        <li>${t('aboutIdentity.print.info5')}</li>
       </ul>
     </div>
 
     <div class="footer">
-      <p>Oxy Identity - Self-Custody Cryptographic Identity</p>
-      <p>This document was generated by the Oxy Accounts app</p>
+      <p>${t('aboutIdentity.print.footerLine1')}</p>
+      <p>${t('aboutIdentity.print.footerLine2')}</p>
     </div>
   </body>
 </html>
@@ -342,11 +341,11 @@ export default function AboutIdentityScreen() {
                 }
               }
 
-              toast.success('Private key has been sent to printer');
+              toast.success(t('aboutIdentity.export.sentToPrinter'));
             } catch (error: unknown) {
               const message = error instanceof Error
                 ? error.message
-                : 'Failed to export private key. Please try again.';
+                : t('aboutIdentity.export.failed');
               toast.error(message);
             } finally {
               setIsExporting(false);
@@ -355,7 +354,7 @@ export default function AboutIdentityScreen() {
         },
       ]
     );
-  }, [publicKey, saveExportHistory, alert]);
+  }, [publicKey, saveExportHistory, t]);
 
   // Self-custody features
   const selfCustodyItems = useMemo(() => [
@@ -363,31 +362,31 @@ export default function AboutIdentityScreen() {
       id: 'private-key',
       icon: 'key-variant',
       iconColor: colors.iconSuccess,
-      title: 'Private Key Stored Locally',
-      subtitle: 'Your private key is encrypted and stored securely on this device. It never leaves your device.',
+      title: t('aboutIdentity.items.privateKeyTitle'),
+      subtitle: t('aboutIdentity.items.privateKeySubtitle'),
     },
     {
       id: 'no-password',
       icon: 'lock-off-outline',
       iconColor: colors.iconInfo,
-      title: 'No Passwords',
-      subtitle: 'You sign in using cryptographic proof, not passwords that can be guessed or stolen.',
+      title: t('aboutIdentity.items.noPasswordTitle'),
+      subtitle: t('aboutIdentity.items.noPasswordSubtitle'),
     },
     {
       id: 'recovery',
       icon: 'text-box-outline',
       iconColor: colors.iconWarning,
-      title: 'Recovery Phrase Backup',
-      subtitle: 'Your 12-word recovery phrase is the only way to restore your identity on a new device.',
+      title: t('aboutIdentity.items.recoveryTitle'),
+      subtitle: t('aboutIdentity.items.recoverySubtitle'),
     },
     {
       id: 'decentralized',
       icon: 'web',
       iconColor: colors.identityIconPublicKey,
-      title: 'Decentralized Identity',
-      subtitle: 'Your identity is not controlled by any company. You own it completely.',
+      title: t('aboutIdentity.items.decentralizedTitle'),
+      subtitle: t('aboutIdentity.items.decentralizedSubtitle'),
     },
-  ], [colors.iconSuccess, colors.iconInfo, colors.iconWarning, colors.identityIconPublicKey]);
+  ], [colors.iconSuccess, colors.iconInfo, colors.iconWarning, colors.identityIconPublicKey, t]);
 
 
   if (oxyLoading || loading) {
@@ -395,7 +394,7 @@ export default function AboutIdentityScreen() {
       <ScreenContentWrapper>
         <View style={[styles.container, styles.loadingContainer, { backgroundColor: colors.background }]}>
           <ActivityIndicator size="large" color={colors.tint} />
-          <ThemedText style={[styles.loadingText, { color: colors.text }]}>Loading...</ThemedText>
+          <ThemedText style={[styles.loadingText, { color: colors.text }]}>{t('aboutIdentity.loading')}</ThemedText>
         </View>
       </ScreenContentWrapper>
     );
@@ -406,12 +405,12 @@ export default function AboutIdentityScreen() {
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         <View style={styles.content}>
           <ScreenHeader
-            title="About Your Identity"
-            subtitle="Self-custody identity powered by cryptography"
+            title={t('aboutIdentity.title')}
+            subtitle={t('aboutIdentity.subtitle')}
           />
 
           {/* ID Card */}
-          <Section title="ID Card">
+          <Section title={t('aboutIdentity.idCard')}>
             <View style={styles.idCardContainer}>
               <IdentityCard
                 displayName={displayName}
@@ -427,22 +426,20 @@ export default function AboutIdentityScreen() {
                 onPress={handleCopyPublicKey}
                 style={styles.copyPublicKeyButton}
               >
-                Copy Public Key
+                {t('aboutIdentity.copyPublicKey')}
               </Button>
             )}
           </Section>
 
           {/* Important Notice */}
           <ImportantBanner>
-            Your recovery phrase is the ONLY way to restore your identity if you lose access to this device.
-            Oxy cannot reset or recover your account. Keep your recovery phrase safe and never share it.
+            {t('aboutIdentity.importantNotice')}
           </ImportantBanner>
 
           {/* Self-Custody Identity */}
-          <Section title="Self-Custody Identity">
+          <Section title={t('aboutIdentity.selfCustodyTitle')}>
             <ThemedText style={styles.sectionDescription}>
-              Unlike traditional accounts, your Oxy identity uses the same technology that secures Bitcoin.
-              You have complete control over your identity.
+              {t('aboutIdentity.selfCustodyDescription')}
             </ThemedText>
             <AccountCard>
               <GroupedSection items={selfCustodyItems} />
@@ -450,7 +447,7 @@ export default function AboutIdentityScreen() {
           </Section>
 
           {/* Security Actions */}
-          <Section title="Security Actions">
+          <Section title={t('aboutIdentity.securityActions')}>
             <AccountCard>
               <GroupedSection
                 items={[
@@ -458,8 +455,8 @@ export default function AboutIdentityScreen() {
                     id: 'create-backup',
                     icon: 'file-export',
                     iconColor: colors.iconWarning,
-                    title: 'Create Encrypted Backup',
-                    subtitle: 'Generate password-protected backup file',
+                    title: t('aboutIdentity.createBackupTitle'),
+                    subtitle: t('aboutIdentity.createBackupSubtitle'),
                     onPress: () => router.push('/(tabs)/create-backup'),
                     showChevron: true,
                   },
@@ -467,12 +464,12 @@ export default function AboutIdentityScreen() {
                     id: 'export-private-key',
                     icon: 'printer',
                     iconColor: colors.identityIconPublicKey,
-                    title: 'Export Private Key',
+                    title: t('aboutIdentity.exportKeyTitle'),
                     subtitle: isExporting
-                      ? 'Exporting...'
+                      ? t('aboutIdentity.exporting')
                       : exportHistory.length > 0
-                        ? `Last exported ${formatRelativeTime(exportHistory[0]?.timestamp)}`
-                        : 'Print your private key for secure backup',
+                        ? t('aboutIdentity.lastExported', { time: formatRelativeTime(exportHistory[0]?.timestamp) })
+                        : t('aboutIdentity.exportKeySubtitle'),
                     onPress: handleExportPrivateKey,
                     showChevron: true,
                     disabled: isExporting,
@@ -486,9 +483,9 @@ export default function AboutIdentityScreen() {
           </Section>
 
           {/* Account Settings */}
-          <Section title="Account Settings">
+          <Section title={t('aboutIdentity.accountSettings')}>
             <ThemedText style={styles.sectionDescription}>
-              Manage your account preferences and expiration settings.
+              {t('aboutIdentity.accountSettingsDescription')}
             </ThemedText>
             <AccountCard>
               <GroupedSection
@@ -497,7 +494,7 @@ export default function AboutIdentityScreen() {
                     id: 'account-expiration',
                     icon: 'clock-outline',
                     iconColor: colors.tint,
-                    title: 'Account Expiration',
+                    title: t('aboutIdentity.accountExpiration'),
                     subtitle: formatExpirationSetting(currentExpirationDays),
                     onPress: isSavingExpiration ? undefined : showExpirationPicker,
                     showChevron: !isSavingExpiration,
