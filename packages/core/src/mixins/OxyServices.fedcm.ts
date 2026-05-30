@@ -17,6 +17,88 @@ export interface FedCMConfig {
   clientId?: string;
 }
 
+/**
+ * FedCM request mode values.
+ *
+ * The W3C FedCM spec renamed the `IdentityCredentialRequestOptions.mode` enum:
+ * `'widget'` → `'passive'` and `'button'` → `'active'`. Modern Chrome only
+ * accepts `'active'`/`'passive'` and throws a synchronous `TypeError` for the
+ * legacy values, while Chrome 125–131 only understands `'button'`/`'widget'`.
+ * Callers should use the modern values; the legacy values are accepted for
+ * convenience and normalised internally.
+ */
+export type FedCMRequestMode = 'active' | 'passive' | 'button' | 'widget';
+
+// Modern (W3C spec) → legacy (Chrome 125–131) mode value mapping. Used to
+// retry a credential request when an older browser rejects the modern enum.
+const MODERN_TO_LEGACY_MODE: Record<'active' | 'passive', 'button' | 'widget'> = {
+  active: 'button',
+  passive: 'widget',
+};
+
+// Legacy → modern mapping so callers may pass either spelling.
+const LEGACY_TO_MODERN_MODE: Record<'button' | 'widget', 'active' | 'passive'> = {
+  button: 'active',
+  widget: 'passive',
+};
+
+/**
+ * Normalise any accepted mode value to the modern W3C spelling
+ * (`'active'`/`'passive'`), which is what is sent to the browser first.
+ */
+function toModernMode(mode: FedCMRequestMode): 'active' | 'passive' {
+  return mode === 'button' || mode === 'widget' ? LEGACY_TO_MODERN_MODE[mode] : mode;
+}
+
+/**
+ * Detect the synchronous `TypeError` a pre-spec browser throws when it does not
+ * recognise a modern `mode` enum value (e.g. Chrome 125–131 rejecting
+ * `'active'`/`'passive'`). Such a browser only understands the legacy
+ * `'button'`/`'widget'` values, so the caller can retry with those.
+ */
+function isUnknownModeEnumError(error: unknown): boolean {
+  if (!(error instanceof TypeError)) return false;
+  const message = error.message.toLowerCase();
+  return (
+    message.includes('identitycredentialrequestoptionsmode') ||
+    ((message.includes('active') || message.includes('passive')) &&
+      (message.includes('enum') || message.includes('not a valid')))
+  );
+}
+
+// Minimal structural types for the FedCM `navigator.credentials.get` surface.
+// The DOM lib does not ship these in every TypeScript version we build against,
+// so we model only the fields this mixin reads/writes. This lets the FedCM code
+// stay free of `any` without depending on lib-dom FedCM typings.
+interface FedCMProviderRequest {
+  configURL: string;
+  clientId: string;
+  nonce: string;
+  params?: { nonce: string };
+  loginHint?: string;
+}
+
+interface FedCMIdentityRequest {
+  providers: FedCMProviderRequest[];
+  mode?: FedCMRequestMode;
+}
+
+interface FedCMCredentialRequest {
+  identity: FedCMIdentityRequest;
+  mediation: 'silent' | 'optional' | 'required';
+  signal: AbortSignal;
+}
+
+interface FedCMIdentityCredential {
+  type?: string;
+  token?: string;
+  isAutoSelected?: boolean;
+}
+
+interface FedCMCredentialsContainer {
+  get(options: FedCMCredentialRequest): Promise<FedCMIdentityCredential | null>;
+}
+
 const FEDCM_LOGIN_HINT_KEY = 'oxy_fedcm_login_hint';
 
 // Global lock to prevent concurrent FedCM requests
@@ -120,15 +202,17 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
 
       debug.log('Interactive sign-in: Requesting credential for', clientId, loginHint ? `(hint: ${loginHint})` : '');
 
-      // Request credential from browser's native identity flow
-      // mode: 'button' signals this is a user-gesture-initiated flow (Chrome 125+)
+      // Request credential from browser's native identity flow.
+      // mode: 'active' signals this is a user-gesture-initiated (button) flow.
+      // 'active' is the current W3C spec value; requestIdentityCredential
+      // transparently retries with the legacy 'button' value for Chrome 125–131.
       const credential = await this.requestIdentityCredential({
         configURL: this.resolveFedcmConfigUrl(),
         clientId,
         nonce,
         context: options.context,
         loginHint,
-        mode: 'button',
+        mode: 'active',
       });
 
       if (!credential || !credential.token) {
@@ -322,7 +406,14 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
     context?: string;
     loginHint?: string;
     mediation?: 'silent' | 'optional' | 'required';
-    mode?: 'button' | 'widget';
+    /**
+     * FedCM request mode. The W3C spec values are `'active'` (user-gesture
+     * button flow) and `'passive'` (browser-initiated widget flow). Chrome
+     * 125–131 used the legacy names `'button'`/`'widget'`; those are accepted
+     * here and mapped to the modern values, with an automatic legacy retry if
+     * the running browser only understands the old enum.
+     */
+    mode?: FedCMRequestMode;
   }): Promise<{ token: string; isAutoSelected: boolean } | null> {
     const requestedMediation = options.mediation || 'optional';
     const isInteractive = requestedMediation !== 'silent';
@@ -367,31 +458,58 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
       controller.abort();
     }, timeoutMs);
 
+    // Normalise the caller's mode to the modern W3C value first. A modern
+    // browser accepts it; an older one (Chrome 125–131) rejects it with a
+    // synchronous TypeError, in which case we retry with the legacy value.
+    const modernMode = options.mode ? toModernMode(options.mode) : undefined;
+
+    // Build the identity request for a specific mode value. The `mode` field
+    // lives on the `identity` object (sibling of `providers`), separate from
+    // the top-level `mediation` field.
+    const buildCredentialOptions = (modeValue: FedCMRequestMode | undefined): FedCMCredentialRequest => ({
+      identity: {
+        providers: [
+          {
+            configURL: options.configURL,
+            clientId: options.clientId,
+            // Older browsers read `nonce` at the top level; Chrome 145+
+            // expects it inside `params`. Send both for full coverage.
+            nonce: options.nonce,
+            params: {
+              nonce: options.nonce,
+            },
+            ...(options.loginHint && { loginHint: options.loginHint }),
+          },
+        ],
+        ...(modeValue && { mode: modeValue }),
+      },
+      mediation: requestedMediation,
+      signal: controller.signal,
+    });
+
+    // The DOM lib's `CredentialsContainer` does not declare the FedCM `identity`
+    // request in every TypeScript version we build against. Re-type through the
+    // minimal structural interface above (not `any`) to keep this typed.
+    const credentials = navigator.credentials as unknown as FedCMCredentialsContainer;
+
     fedCMRequestPromise = (async () => {
       try {
-        debug.log('Calling navigator.credentials.get with mediation:', requestedMediation);
-        // Type assertion needed as FedCM types may not be in all TypeScript versions
-        const credentialOptions: any = {
-          identity: {
-            providers: [
-              {
-                configURL: options.configURL,
-                clientId: options.clientId,
-                // Older browsers read `nonce` at the top level; Chrome 145+
-                // expects it inside `params`. Send both for full coverage.
-                nonce: options.nonce,
-                params: {
-                  nonce: options.nonce,
-                },
-                ...(options.loginHint && { loginHint: options.loginHint }),
-              },
-            ],
-            ...(options.mode && { mode: options.mode }),
-          },
-          mediation: requestedMediation,
-          signal: controller.signal,
-        };
-        const credential = (await (navigator.credentials as any).get(credentialOptions)) as any;
+        debug.log('Calling navigator.credentials.get with mediation:', requestedMediation, modernMode ? `mode: ${modernMode}` : '');
+        let credential: FedCMIdentityCredential | null;
+        try {
+          credential = await credentials.get(buildCredentialOptions(modernMode));
+        } catch (modeError) {
+          // Chrome 125–131 only knows the legacy 'button'/'widget' enum and
+          // throws a synchronous TypeError for the modern 'active'/'passive'
+          // values. Retry once with the legacy value so older browsers work.
+          if (modernMode && isUnknownModeEnumError(modeError)) {
+            const legacyMode = MODERN_TO_LEGACY_MODE[modernMode];
+            debug.log(`Browser rejected modern mode '${modernMode}'; retrying with legacy mode '${legacyMode}'`);
+            credential = await credentials.get(buildCredentialOptions(legacyMode));
+          } else {
+            throw modeError;
+          }
+        }
 
         debug.log('navigator.credentials.get returned:', {
           hasCredential: !!credential,
@@ -399,7 +517,7 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
           hasToken: !!credential?.token,
         });
 
-        if (!credential || credential.type !== 'identity') {
+        if (!credential || credential.type !== 'identity' || !credential.token) {
           debug.log('No valid identity credential returned');
           return null;
         }

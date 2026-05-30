@@ -185,3 +185,139 @@ describe('OxyServices FedCM nonce binding', () => {
     await expect(oxy.silentSignInWithFedCM()).resolves.toBeNull();
   });
 });
+
+/**
+ * FedCM `mode` enum regression tests.
+ *
+ * The W3C FedCM spec renamed `IdentityCredentialRequestOptions.mode`:
+ * `'button'` → `'active'` and `'widget'` → `'passive'`. Modern Chrome rejects
+ * the legacy values with a synchronous `TypeError`; Chrome 125–131 only knows
+ * the legacy values. These tests lock in that:
+ *
+ *   1. the interactive button flow requests the MODERN `mode: 'active'`;
+ *   2. a `TypeError` on the modern value triggers a single retry with the
+ *      LEGACY `'button'` value (so older Chrome still works);
+ *   3. the silent SSO path sends NO `mode` at all (mode and mediation are
+ *      independent fields).
+ */
+function mintAndExchange(oxy: OxyServices, exchanged: string[]): void {
+  jest
+    .spyOn(oxy, 'makeRequest')
+    .mockImplementation(async (_method: string, url: string, data?: unknown) => {
+      if (url === '/fedcm/nonce') {
+        return { nonce: 'server-nonce', expiresAt: new Date(Date.now() + 60000).toISOString() } as never;
+      }
+      if (url === '/fedcm/exchange') {
+        exchanged.push((data as { id_token: string }).id_token);
+        return {
+          sessionId: 'sess_mode',
+          deviceId: 'dev_mode',
+          expiresAt: new Date(Date.now() + 60000).toISOString(),
+          accessToken: 'access_mode',
+          user: { id: 'user_mode', username: 'tester' },
+        } as never;
+      }
+      throw new Error(`unexpected request to ${url}`);
+    });
+}
+
+describe('OxyServices FedCM mode enum (active/passive)', () => {
+  afterEach(() => {
+    clearBrowserGlobals();
+    jest.restoreAllMocks();
+  });
+
+  it('interactive sign-in requests the modern mode: "active"', async () => {
+    const modesSeen: Array<string | undefined> = [];
+    installBrowserGlobals({
+      credentialsGet: async (opts) => {
+        modesSeen.push(opts.identity.mode);
+        return { type: 'identity', token: 'idp-id-token', isAutoSelected: false };
+      },
+    });
+
+    const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
+    const exchanged: string[] = [];
+    mintAndExchange(oxy, exchanged);
+
+    const session = await oxy.signInWithFedCM();
+
+    expect(session.sessionId).toBe('sess_mode');
+    // The modern W3C value — never the legacy 'button' — is sent first.
+    expect(modesSeen).toEqual(['active']);
+    expect(exchanged).toEqual(['idp-id-token']);
+  });
+
+  it('retries with legacy mode "button" when the browser rejects "active" with a TypeError', async () => {
+    const modesSeen: Array<string | undefined> = [];
+    installBrowserGlobals({
+      credentialsGet: async (opts) => {
+        modesSeen.push(opts.identity.mode);
+        // First call (modern 'active'): emulate Chrome 125–131 rejecting the
+        // unknown enum value synchronously with a TypeError.
+        if (opts.identity.mode === 'active') {
+          throw new TypeError(
+            "The provided value 'active' is not a valid enum value of type IdentityCredentialRequestOptionsMode."
+          );
+        }
+        // Second call (legacy 'button'): the old browser accepts it.
+        return { type: 'identity', token: 'legacy-id-token', isAutoSelected: false };
+      },
+    });
+
+    const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
+    const exchanged: string[] = [];
+    mintAndExchange(oxy, exchanged);
+
+    const session = await oxy.signInWithFedCM();
+
+    expect(session.sessionId).toBe('sess_mode');
+    // Tried modern 'active' first, then fell back to legacy 'button'.
+    expect(modesSeen).toEqual(['active', 'button']);
+    // The token from the successful legacy retry was exchanged.
+    expect(exchanged).toEqual(['legacy-id-token']);
+  });
+
+  it('does not retry (and surfaces the error) when a non-mode TypeError is thrown', async () => {
+    let callCount = 0;
+    installBrowserGlobals({
+      credentialsGet: async () => {
+        callCount += 1;
+        throw new TypeError('Failed to fetch the FedCM config file.');
+      },
+    });
+
+    const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
+    const exchanged: string[] = [];
+    mintAndExchange(oxy, exchanged);
+
+    await expect(oxy.signInWithFedCM()).rejects.toThrow('Failed to fetch the FedCM config file.');
+    // Only one attempt — an unrelated TypeError must not trigger the legacy retry.
+    expect(callCount).toBe(1);
+  });
+
+  it('silent SSO sends no mode (mode and mediation are independent fields)', async () => {
+    let credentialCall: CredentialGetCall | null = null;
+    installBrowserGlobals({
+      credentialsGet: async (opts) => {
+        credentialCall = opts;
+        return null;
+      },
+    });
+
+    const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
+    jest.spyOn(oxy, 'makeRequest').mockImplementation(async (_method: string, url: string) => {
+      if (url === '/fedcm/nonce') {
+        return { nonce: 'n', expiresAt: new Date(Date.now() + 60000).toISOString() } as never;
+      }
+      throw new Error(`unexpected request to ${url}`);
+    });
+
+    await oxy.silentSignInWithFedCM();
+
+    expect(credentialCall).not.toBeNull();
+    const call = credentialCall as unknown as CredentialGetCall;
+    expect(call.mediation).toBe('silent');
+    expect(call.identity.mode).toBeUndefined();
+  });
+});
