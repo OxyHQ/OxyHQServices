@@ -2,6 +2,8 @@
 
 A comprehensive TypeScript UI library for the Oxy API providing authentication, user management, and UI components for React Native and Expo applications.
 
+**Current published version: 6.10.4**
+
 > **For web apps (Vite, Next.js, CRA):** Use [`@oxyhq/auth`](../auth) for authentication and [`@oxyhq/core`](../core) for types and services.
 >
 > **For backend / Node.js:** Use [`@oxyhq/core`](../core) only.
@@ -727,10 +729,34 @@ try {
 }
 ```
 
+## Payment & Storage Query Hooks
+
+The following React Query hooks are exported from the package root:
+
+```typescript
+import {
+  useUserSubscription,
+  useUserPayments,
+  useUserWallet,
+  useUserWalletTransactions,
+  useAccountStorageUsage,
+} from '@oxyhq/services';
+```
+
+Typed returns are defined in `ui/hooks/queries/paymentTypes.ts` (`Subscription`, `Payment`, `Wallet`, `WalletTransaction`). The `payments` query namespace is whitelisted for offline persistence alongside `accounts`, `users`, `sessions`, `devices`, and `privacy`.
+
+## Sign-In Token Planting
+
+`useAuthOperations.performSignIn` plants the `accessToken` returned directly by `verifyChallenge` via `oxyServices.setTokens(...)`. It falls back to the bearer-protected `getTokenBySession` only when the verify response omits the token. Without this, a brand-new identity 401s on the session sync step.
+
+## Silent SSO Run-Once Guard
+
+`useWebSSO` contains a module-level `silentSSOAttempted` Set keyed on `origin+baseURL`. Silent FedCM sign-in fires exactly once per page load regardless of unmount/remount or StrictMode double-invoke.
+
 ## Requirements
 
 - **React Native**: 0.76+ (for mobile components)
-- **Expo**: 54+ (recommended)
+- **Expo**: 56+ (recommended)
 - **TypeScript**: 4.0+ (optional but recommended)
 
 ### Peer Dependencies

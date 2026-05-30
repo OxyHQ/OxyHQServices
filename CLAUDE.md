@@ -161,14 +161,15 @@ Without this sweep the HTTP cache returns stale data and the username onboarding
 ## KeyManager Safety (core — critical)
 
 - `createIdentity` / `importKeyPair` throw `IdentityAlreadyExistsError` if an identity already exists. Pass `{ overwrite: true }` to replace.
-- Writes use `_persistIdentityAtomic`: backup written first, primary second, followed by a sign/verify probe. Rolls back to backup on failure.
+- Writes use `_persistIdentityAtomic`: backs up the EXISTING identity first, writes new primary → sign/verify probe → only then refreshes backup. A failed `createIdentity({overwrite:true})` rolls primary back to the exact prior bytes — never destroys the prior identity.
 - `hasIdentity()` requires both keys present, well-formed, and matching (not just key existence).
 - `verifyIdentityIntegrity()` performs a full sign/verify probe, not just byte parsing.
-- `restoreIdentityFromBackup()` refuses to clobber a healthy primary or switch users (mismatched backup rejected).
+- `restoreIdentityFromBackup()` is transient-error-safe: a keychain-read EXCEPTION is treated as transient → refuses to clobber a healthy-but-locked primary. Dual mismatch guards prevent silently switching accounts.
 - Strict hex/length/range validation on all private/public key material.
 - `canonicalPrivateKey(key) = key.toLowerCase().padStart(64, '0')` applied at every `ec.keyFromPrivate(...)` callsite.
 - `isValidPrivateKey` rejects degenerate scalars via `^0{56}` check (rejects `'1'`, `'2'`, etc.).
 - `hasIdentity()` does NOT cache `false` on transient SecureStore errors — only stable verdicts get cached.
+- `deleteIdentity` signature: `(skipBackup=false, force=false, userConfirmed=false)`. `force=true` deletes the backup slot.
 
 ## PrivacySettings Type (core)
 
@@ -188,14 +189,20 @@ Without this sweep the HTTP cache returns stale data and the username onboarding
 - **Error boundaries**: at root, `(tabs)`, and `(auth)` layout levels using an `ErrorFallback` component
 - **Activity History**: `/(tabs)/activity.tsx` using `GET /security/activity` with infinite scroll
 - **Recovery phrase**: mandatory acknowledgement screen at `/(auth)/create-identity/recovery-phrase` before identity creation completes; persistent reminder in Security screen until acknowledged
-- **Delete account**: `delete-account.tsx` — signed deletion + `KeyManager.hasIdentity()` pre-flight + username confirmation
+- **Delete account flow** (`packages/accounts/lib/account/delete-account-flow.ts`): after a SUCCESSFUL `oxyServices.deleteAccount(...)`, purge local identity (primary AND backup) via `KeyManager.deleteIdentity(skipBackup=true, force=true, userConfirmed=true)` BEFORE sign-out — prevents zombie identity auto-restore. Strict order: `deleteAccount` → `purgeIdentity` (success-only, never on failure) → `signOutAll`; local-purge failure is non-fatal.
 - **Font**: do NOT set `fontFamily: 'Inter-*'` — `BloomThemeProvider` sets Inter as `Text.defaultProps` globally
 - **expo-router v56**: no `@react-navigation/*` direct imports; synthesize `{ type: 'OPEN_DRAWER' }` payloads inline
-- **Test coverage**: 142 jest tests in accounts; 64 in core; 39 in api
+- **Test coverage**: 216 jest tests in accounts; 117 in core; 125 in services; 100 in api; 54 in auth-sdk; 9 in auth IdP. `bun run build:all` 8/8.
 - **Username step**: use `useUpdateProfile().mutateAsync()`, NOT `oxyServices.updateProfile()` directly — gets optimistic update + cache invalidation. Stable initial value via lazy `useState` initializer (no `useEffect` reset on remount).
 - **`useUpdatePrivacySettings`**: do NOT call `invalidateAccountQueries(queryClient)` in `onSuccess` (defeats optimistic merge). Use `{ ...previous, ...requested, ...incoming }` merge in `onMutate`. `onError` does targeted `invalidateQueries({ queryKey: queryKeys.privacy.settings(...) })` for reconciliation.
 - **`(auth)/index.tsx` routing**: `status === 'complete'` → `/(tabs)`; `hasIdentity && status === 'in_progress'` → `/(auth)/create-identity`; blank backdrop during `status === 'checking'`. Always clean up timers from entrance animations.
 - **`useOnboardingStatus` invariant**: when `isAuthenticated && user`, status is `'complete'` or `'in_progress'` regardless of storage lookup result. Re-runs `KeyManager.hasIdentity()` on `isAuthenticated` transitions to reflect a fresh sign-in's new identity.
+- **Web vs native split (CRITICAL)**: Identity CREATION is NATIVE-ONLY; web is for managing an existing account (sign-in only). Web sign-in screen: `app/(auth)/sign-in.tsx` (uses `signInWithFedCM()` + `handlePopupSession()`). Web blocks identity creation via `.web.tsx` layout redirects: `app/(auth)/create-identity/_layout.web.tsx`, `import-identity/_layout.web.tsx`, `welcome.web.tsx`, `index.web.tsx` — all redirect to `/(auth)/sign-in`.
+- **`useOnboardingStatus.needsAuth` is PLATFORM-AGNOSTIC** — do NOT reinstate a `Platform.OS === 'web'` clamp (caused a `(tabs)`↔`(auth)` redirect deadlock). The platform split lives in the `(auth)` entry/guards, not in `needsAuth`.
+- **Shared modules** (use these, don't re-duplicate): `utils/relative-time.ts` + `hooks/useRelativeTime.ts` (i18n-aware relative time); `utils/device-utils.ts` (getDeviceIcon, getDeviceDisplayName, DeviceRecord, groupDevicesByType); `hooks/useAvatarUrl.ts`; `hooks/useDebounce.ts`; `constants/payments.ts` (FAIRCOIN_WALLET_URL); `constants/drawer-screens.ts` (typed DrawerScreenConfig[] — lives in `constants/` NOT `app/` so expo-router doesn't register it as a route).
+- **God-screen decomposition**: section components under `components/sections/` (+ shared `GroupedItem`/`PrioritizedGroupedItem` types in `components/sections/types.ts`), `components/security/`, `components/home/`, `components/payments/`; hooks under `hooks/home/*`; identity auto-sync in `hooks/identity/useIdentitySync.ts`; pure helpers `utils/security-recommendations.ts`, `utils/payment-utils.ts`.
+- **`payments.tsx`**: reads `timestamp` field (NOT `createdAt`) for payment/transaction dates.
+- **Removed unused deps**: `@radix-ui/react-tabs`, `react-responsive`, `@lottiefiles/dotlottie-react-native`, `expo-symbols`. KEEP `expo-document-picker` + `expo-image-manipulator` (lazy-loaded optional peers of `@oxyhq/services`) and `@lottiefiles/dotlottie-react` (hard-required by web lottie export).
 
 ## HttpService (services)
 
@@ -209,7 +216,7 @@ Without this sweep the HTTP cache returns stale data and the username onboarding
 ## Offline-First Persistence (services + auth-sdk)
 
 - `@tanstack/react-query-persist-client` wired in both `@oxyhq/services` (AsyncStorage) and `@oxyhq/auth` (localStorage via `createSyncStoragePersister`).
-- Query whitelist: `accounts`, `users`, `sessions`, `devices`, `privacy` queries are persisted; mutations always persisted; 30-day TTL; 1s throttle; legacy v1 cache cleanup on startup.
+- Query whitelist: `accounts`, `users`, `sessions`, `devices`, `privacy`, `payments` queries are persisted; mutations always persisted; 30-day TTL; 1s throttle; legacy v1 cache cleanup on startup.
 - `OxyProvider` and `WebOxyProvider` both await `restored` before exposing the QueryClient → first paint serves cached data, not a loading spinner.
 - New `useOnlineStatus()` hook in `@oxyhq/services` — built on `useSyncExternalStore` over `onlineManager`; use for offline banners in app UIs.
 - TanStack Query version locked to `^5.100` across services, auth-sdk, console, test-app-expo (persist-client pins `query-core@5.100.14`).
@@ -245,6 +252,38 @@ Activated inside `FileManagementScreen` when `isImageOnlyPicker` is true. Apple 
 - Entrance spring; haptics on reset / zoom limits / confirm.
 - `ActivityIndicator` + "Saving…" during processing; Reset link; full a11y + `announceForAccessibility`; reduced-motion respect.
 - i18n keys under `editProfile.crop.*` and `editProfile.toasts.crop*` in en-US.json + es-ES.json.
+
+## FedCM (core + auth-sdk + services + api + packages/auth IdP)
+
+- **`mode` enum**: interactive sign-in must use W3C-spec values `'active'` / `'passive'` (NOT the legacy `'button'` / `'widget'` — current Chrome throws `TypeError: '<x>' is not a valid enum value of type IdentityCredentialRequestOptionsMode`). The client (`OxyServices.fedcm.ts`, `useWebSSO`) sends `'active'` first and transparently retries once with the legacy value for Chrome 125–131 backwards-compat.
+- **`mode` vs `mediation` are DISTINCT fields**: `mode` (`'active'`/`'passive'`) selects the FedCM UI style; `mediation` (`'silent'`/`'optional'`/`'required'`) controls the credential-chooser flow. Silent SSO sends NO `mode` field.
+- **Server-minted nonce required**: token exchange requires a server-minted, origin-bound nonce. Client calls `POST /fedcm/nonce` (`mintServerNonce` / `getFedcmNonce`) before exchange. A purely local UUID nonce is rejected with `invalid_nonce`.
+- **IdP server requirements** (requires redeploy of auth.oxy.so to take effect in prod): `/.well-known/web-identity` must be served as `application/json` (not octet-stream); `id_assertion_endpoint` and `disconnect` must send CORS headers (`Access-Control-Allow-Origin: <RP origin>` + `Access-Control-Allow-Credentials: true`) and enforce the `Sec-Fetch-Dest: webidentity` guard.
+- **Silent SSO run-once guard**: fires EXACTLY ONCE per page load. Module-level `silentSSOAttempted` Set (keyed on `origin+baseURL`) in `useWebSSO` (both services and auth-sdk) plus `fedcmSilentSignInAttempted` in `WebOxyProvider` — survives unmount/remount/StrictMode double-invocation.
+
+## Sign-In Token Planting (services `useAuthOperations.performSignIn`)
+
+Plant the `accessToken` returned by `verifyChallenge` via `oxyServices.setTokens(...)` immediately after verification; only fall back to bearer-protected `getTokenBySession` when the verify response body omits it. A token-less new identity previously 401'd with "Identity created locally but server sync failed" / `AUTH_REQUIRED_OFFLINE_SESSION`.
+
+## New React Query Hooks (@oxyhq/services — exported from package root)
+
+`useUserSubscription`, `useUserPayments`, `useUserWallet`, `useUserWalletTransactions`, `useAccountStorageUsage` — with typed returns (`Subscription`, `Payment`, `Wallet`, `WalletTransaction` in `ui/hooks/queries/paymentTypes.ts`). `payments` + `storage` query-key namespaces added; `payments` whitelisted for offline persistence.
+
+## Bloom Worklets Safety (@oxyhq/bloom)
+
+- BottomSheet pan context must use a **primitive** `SharedValue` (`contextY = useSharedValue(0)`), NEVER an object-valued SharedValue — object SharedValues mutated inside worklets crash under `react-native-worklets@0.8.3` (`removeListener` on UI thread).
+- `hooks/mergeRefs.ts` returns a plain `(instance: T|null) => void` (not `React.RefCallback`) so the ref stays assignable across duplicate `@types/react` copies (RN 0.85 / React 19).
+
+## Published Package Versions (as of 2026-05-30)
+
+| Package | Version | Notes |
+|---------|---------|-------|
+| `@oxyhq/core` | **1.11.19** | |
+| `@oxyhq/services` | **6.10.4** | |
+| `@oxyhq/auth` | **2.0.7** | |
+| `@oxyhq/bloom` | **0.6.7** | RN-0.85 line; monorepo override pins `^0.6.7` |
+
+External consumers (Mention, Allo, Homiio, TNP) should bump to these versions.
 
 ## Terminology
 
@@ -282,3 +321,9 @@ Standalone Vite app for authentication flows (sign in, sign up, authorize, recov
 - `POST /auth/signup` — account creation
 - `POST /auth/recover/*` — password recovery flow
 - `GET /users/me` — current session check
+- `POST /fedcm/nonce` — mint a server-bound nonce before FedCM token exchange (required; local UUID nonces rejected)
+
+**FedCM IdP server (packages/auth/server):**
+- `/.well-known/web-identity` MUST be served as `application/json`
+- `id_assertion_endpoint` and `disconnect` MUST include CORS headers (`Access-Control-Allow-Origin`, `Access-Control-Allow-Credentials: true`) and enforce `Sec-Fetch-Dest: webidentity` guard
+- Changes require a redeploy of auth.oxy.so to take effect in production

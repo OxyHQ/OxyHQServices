@@ -1,50 +1,86 @@
-# Welcome to your Expo app 👋
+# Oxy Accounts
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Expo app for managing your Oxy identity. The equivalent of Google MyAccount — settings, security, sessions, payments, privacy.
 
-## Get started
-
-1. Install dependencies
-
-   ```bash
-   npm install
-   ```
-
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+## Development
 
 ```bash
-npm run reset-project
+cd packages/accounts
+bun install
+bun run start        # Expo dev server
+bun run ios          # iOS simulator
+bun run android      # Android emulator
+bun run web          # Web (Vite)
+bun run test         # Jest (216 tests)
+bun run typecheck    # tsc --noEmit
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+## Architecture
 
-## Learn more
+- **Router**: `expo-router` v3 with `typedRoutes: true` — all `router.push()` calls must use typed path strings, no `as any`.
+- **Auth SDK**: `@oxyhq/services` (RN) + `@oxyhq/core` (types, KeyManager)
+- **UI**: `@oxyhq/bloom` component library; BloomThemeProvider sets Inter globally — do NOT set `fontFamily: 'Inter-*'` manually.
+- **i18n**: `LocaleProvider` + `useTranslation` in `lib/i18n/`; 11 locales; device locale via `Intl.DateTimeFormat()` (no `expo-localization` needed).
 
-To learn more about developing your project with Expo, look at the following resources:
+## Web vs Native Split
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+Identity **creation** is native-only. Web is for managing an existing account (sign-in only).
 
-## Join the community
+- Web sign-in screen: `app/(auth)/sign-in.tsx` — uses `signInWithFedCM()` + `handlePopupSession()`.
+- Web blocks identity creation via `.web.tsx` layout redirects: `app/(auth)/create-identity/_layout.web.tsx`, `import-identity/_layout.web.tsx`, `welcome.web.tsx`, `index.web.tsx` — all redirect to `/(auth)/sign-in`.
+- `useOnboardingStatus.needsAuth` is platform-agnostic — do NOT add a `Platform.OS === 'web'` clamp (causes redirect deadlock).
 
-Join our community of developers creating universal apps.
+## Key Routes
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+```
+app/
+  (auth)/
+    index.tsx             — auth router (complete→tabs, in_progress→create-identity, checking→blank)
+    sign-in.tsx           — web sign-in via FedCM / popup
+    create-identity/      — native-only identity creation flow
+    import-identity/      — native-only identity import flow
+    welcome.tsx           — native onboarding welcome
+  (tabs)/
+    index.tsx             — home / account overview
+    security.tsx          — sessions, devices, 2FA, recovery phrase
+    activity.tsx          — security activity (infinite scroll, GET /security/activity)
+    payments.tsx          — subscription, wallet, transactions (reads `timestamp` field)
+    privacy.tsx           — privacy settings
+    settings.tsx          — app settings, locale
+```
+
+## Shared Modules (use these, don't duplicate)
+
+| Module | Purpose |
+|--------|---------|
+| `utils/relative-time.ts` + `hooks/useRelativeTime.ts` | i18n-aware relative timestamps |
+| `utils/device-utils.ts` | `getDeviceIcon`, `getDeviceDisplayName`, `DeviceRecord`, `groupDevicesByType` |
+| `hooks/useAvatarUrl.ts` | Avatar URL with fallback |
+| `hooks/useDebounce.ts` | Debounce hook |
+| `constants/payments.ts` | `FAIRCOIN_WALLET_URL` and other payment constants |
+| `constants/drawer-screens.ts` | Typed `DrawerScreenConfig[]` — data-drives 18 Drawer.Screen in `_layout` |
+| `lib/account/delete-account-flow.ts` | Safe account deletion (deleteAccount → purgeIdentity → signOutAll) |
+| `hooks/identity/useIdentitySync.ts` | Identity auto-sync (byte-identical semantics) |
+
+## Delete Account Flow
+
+Strict order enforced in `lib/account/delete-account-flow.ts`:
+1. `oxyServices.deleteAccount(...)` — signed deletion with username confirmation
+2. On SUCCESS ONLY: `KeyManager.deleteIdentity(skipBackup=true, force=true, userConfirmed=true)` — purges primary AND backup to prevent zombie identity auto-restore
+3. `signOutAll()`
+Local-purge failure is non-fatal (logged, not thrown).
+
+## Routing Invariants
+
+- **`(auth)/index.tsx`**: `status === 'complete'` → `/(tabs)`; `hasIdentity && status === 'in_progress'` → `/(auth)/create-identity`; blank backdrop during `status === 'checking'`. Always clean up timers.
+- **`useOnboardingStatus`**: when `isAuthenticated && user`, status is always `'complete'` or `'in_progress'`, never stale. Re-checks `KeyManager.hasIdentity()` on `isAuthenticated` transitions.
+
+## Error Boundaries
+
+Error boundaries at root, `(tabs)`, and `(auth)` layout levels using `ErrorFallback` component.
+
+## expo-router v56 Notes
+
+- No `@react-navigation/*` direct imports.
+- Synthesize `{ type: 'OPEN_DRAWER' }` drawer payloads inline.
+- `constants/drawer-screens.ts` must live in `constants/`, not `app/` — otherwise expo-router registers it as a route.

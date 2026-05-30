@@ -74,8 +74,15 @@ bun run dev
 | `/api/auth/recover/request` | POST | Request account recovery code |
 | `/api/auth/recover/verify` | POST | Verify recovery code |
 | `/api/auth/recover/reset` | POST | Reset password with verified code |
+| `/api/auth/service-token` | POST | Exchange apiKey + apiSecret for 1h service JWT |
 
 Note: All auth endpoints are also available under `/auth` (e.g., `POST /auth/login`).
+
+### FedCM
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/fedcm/nonce` | POST | Mint a server-bound, origin-scoped nonce for FedCM token exchange (required; local UUID nonces rejected) |
+| `/.well-known/web-identity` | GET | FedCM IdP manifest — must be served as `application/json` |
 
 ### TOTP (Two-Factor)
 | Endpoint | Method | Description |
@@ -243,12 +250,11 @@ The API exposes an authenticated endpoint to retrieve **account storage usage** 
 Response:
 ```json
 {
-  "status": "ok",
-  "timestamp": "2025-06-13T10:00:00.000Z",
-  "services": {
-    "database": true,
-    "auth": true,
-    "fileStorage": true
+  "usedBytes": 104857600,
+  "limitBytes": 5368709120,
+  "categories": {
+    "files": 83886080,
+    "avatars": 20971520
   }
 }
 ```

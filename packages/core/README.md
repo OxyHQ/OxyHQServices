@@ -2,10 +2,12 @@
 
 OxyHQ SDK Foundation. Platform-agnostic core library that works in Node.js, browser, and React Native environments. No React dependency.
 
+**Current published version: 1.11.19**
+
 ## Installation
 
 ```bash
-npm install @oxyhq/core
+bun add @oxyhq/core
 ```
 
 ## Contents
@@ -44,7 +46,20 @@ const keyManager = new KeyManager();
 ## Build
 
 ```bash
-npm run build
+bun run build
 ```
 
 Compiles with TypeScript, producing CJS, ESM, and type declaration outputs.
+
+## KeyManager Safety
+
+- `_persistIdentityAtomic` backs up the EXISTING identity before any overwrite, writes the new primary, runs a sign/verify probe, then refreshes the backup. A failed `createIdentity({overwrite:true})` rolls the primary back to the exact prior bytes — prior identity is never destroyed.
+- `restoreIdentityFromBackup()` treats keychain-read exceptions as transient — never clobbers a healthy-but-locked primary. Rejects mismatched backups (dual mismatch guards).
+- `deleteIdentity(skipBackup=false, force=false, userConfirmed=false)` — `force=true` also deletes the backup slot.
+
+## FedCM (`OxyServices.fedcm.ts`)
+
+- Use W3C-spec `mode` enum: `'active'` / `'passive'`. Do NOT use legacy `'button'` / `'widget'` (Chrome throws TypeError).
+- Client sends `'active'` first, transparently retries with legacy value for Chrome 125–131 backwards compat.
+- Token exchange requires a server-minted nonce from `POST /fedcm/nonce` — local UUID nonces are rejected.
+- Silent SSO: module-level `silentSSOAttempted` Set keyed on `origin+baseURL` ensures the silent attempt fires exactly once per page load, surviving StrictMode double-invoke.

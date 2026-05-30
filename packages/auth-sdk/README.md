@@ -2,10 +2,12 @@
 
 OxyHQ Web Auth SDK. Headless React hooks for web applications. Zero React Native or Expo dependencies.
 
+**Current published version: 2.0.7**
+
 ## Installation
 
 ```bash
-npm install @oxyhq/auth
+bun add @oxyhq/auth
 ```
 
 ### Peer Dependencies
@@ -90,3 +92,15 @@ v1.x required passing 8+ props manually. In v2.0 all state is derived from conte
 - });
 + useSessionSocket();
 ```
+
+## FedCM (`useWebSSO`, `WebOxyProvider`)
+
+- Use W3C-spec `mode` values `'active'` / `'passive'`. The legacy `'button'` / `'widget'` values throw `TypeError` in current Chrome.
+- `WebOxyProvider` contains a `fedcmSilentSignInAttempted` flag; `useWebSSO` has a module-level `silentSSOAttempted` Set keyed on `origin+baseURL`. Together they ensure silent SSO fires exactly once per page load, surviving unmount/remount and StrictMode.
+- Token exchange requires a server-minted nonce (`POST /fedcm/nonce`) — local UUID nonces are rejected.
+
+## Offline-First Persistence
+
+- `@tanstack/react-query-persist-client` + `createSyncStoragePersister` (localStorage); `WebOxyProvider` awaits `restored` before exposing the QueryClient.
+- Query whitelist: `accounts`, `users`, `sessions`, `devices`, `privacy`, `payments`; mutations always persisted; 30-day TTL; 1s throttle.
+- TanStack Query pinned to `^5.100`.
