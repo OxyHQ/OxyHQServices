@@ -637,16 +637,28 @@ export class KeyManager {
   /**
    * Atomically persist a key pair to secure storage with verification + backup.
    *
-   * Write order is critical:
-   *   1. Backup (BACKUP_PRIVATE_KEY + BACKUP_PUBLIC_KEY + BACKUP_TIMESTAMP)
-   *   2. Primary public key
-   *   3. Primary private key (last so a partial write leaves us in a known
-   *      "no identity yet" state — easier to retry than a half-written one)
-   *   4. Read back + sign/verify to confirm the storage round-trip works
+   * INVARIANT (the reason this method exists): at no instant during the write
+   * may the device be left holding ZERO recoverable copies of a healthy
+   * identity. This matters most on the OVERWRITE / account-switch path: if we
+   * are replacing identity A with B and the write fails halfway, we MUST end
+   * up back on A — never on a half-written B, and never on nothing.
    *
-   * If any step throws, the caller sees the error AND any partial state is
-   * cleaned up so the device is left either fully consistent or fully empty.
-   * It never leaves an unusable half-identity that would fool `hasIdentity()`.
+   * Algorithm (recoverability-preserving):
+   *   0. Snapshot the existing primary (privA, pubA) so we can roll back to
+   *      EXACTLY what was there.
+   *   1. Write the new primary: public first, then private.
+   *   2. Read back + sign/verify the new primary.
+   *   3. ONLY after the new primary is proven durable, refresh the backup to
+   *      the new key. The backup is NEVER touched before this point, so any
+   *      prior identity's backup remains intact and `restoreIdentityFromBackup`
+   *      can always recover it.
+   *   4. On ANY failure in steps 1–2, restore the snapshotted primary verbatim
+   *      (or delete it if there was none), then surface the error.
+   *
+   * Earlier versions wrote the *incoming* key to the backup FIRST, which
+   * destroyed the previous identity's backup, and rolled back by blindly
+   * deleting the primary — so a failed overwrite silently switched the user
+   * to (or lost them into) the half-written new identity. That is fixed here.
    *
    * @internal
    */
@@ -663,23 +675,64 @@ export class KeyManager {
     const canonicalPrivate = KeyManager.canonicalPrivateKey(privateKey);
     const canonicalPublic = publicKey.toLowerCase();
 
-    // Step 1: Backup BEFORE touching primary storage so we always have a
-    // recoverable copy even if the device crashes mid-write. Store the
-    // backup in canonical form too so a backup-restore cycle preserves
-    // canonicalization.
+    // Step 0: Snapshot the existing primary so a failed write can be rolled
+    // back to EXACTLY the prior state. If the read itself fails we treat the
+    // prior primary as unknown and refuse to proceed — overwriting blind
+    // would risk clobbering an identity we just couldn't see (e.g. a
+    // transient keychain lock).
+    let priorPrivate: string | null;
+    let priorPublic: string | null;
     try {
-      await store.setItemAsync(STORAGE_KEYS.BACKUP_PRIVATE_KEY, canonicalPrivate, {
-        keychainAccessible: store.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
-      });
-      await store.setItemAsync(STORAGE_KEYS.BACKUP_PUBLIC_KEY, canonicalPublic);
-      await store.setItemAsync(STORAGE_KEYS.BACKUP_TIMESTAMP, Date.now().toString());
+      priorPrivate = await store.getItemAsync(STORAGE_KEYS.PRIVATE_KEY);
+      priorPublic = await store.getItemAsync(STORAGE_KEYS.PUBLIC_KEY);
     } catch (error) {
-      logger.error('Failed to write identity backup before primary', error, { component: 'KeyManager' });
-      throw new IdentityPersistError('Failed to write identity backup', error);
+      logger.error('Failed to read existing primary before persist', error, { component: 'KeyManager' });
+      throw new IdentityPersistError(
+        'Could not read existing identity before writing a new one; refusing to overwrite blind.',
+        error,
+      );
     }
 
-    // Step 2 + 3: Write primary keys. Public first so that if private write
-    // fails we are still missing the most critical bit.
+    // If we are replacing a DIFFERENT, currently-healthy identity, make sure
+    // it is recoverable from the backup slot BEFORE we overwrite the primary.
+    // We only do this when the existing backup does not already hold that
+    // identity — otherwise we would needlessly churn the keychain. This keeps
+    // the "always at least one recoverable copy" invariant intact across the
+    // window where the primary briefly holds the new key but the new backup
+    // has not been written yet.
+    const priorIsHealthyDifferent =
+      !!priorPrivate &&
+      !!priorPublic &&
+      priorPublic.toLowerCase() !== canonicalPublic &&
+      KeyManager.isValidPrivateKey(priorPrivate) &&
+      KeyManager.isValidPublicKey(priorPublic) &&
+      KeyManager.derivePublicKey(priorPrivate).toLowerCase() === priorPublic.toLowerCase();
+
+    if (priorIsHealthyDifferent && priorPrivate && priorPublic) {
+      let existingBackupPublic: string | null = null;
+      try {
+        existingBackupPublic = await store.getItemAsync(STORAGE_KEYS.BACKUP_PUBLIC_KEY);
+      } catch {
+        existingBackupPublic = null;
+      }
+      if (existingBackupPublic?.toLowerCase() !== priorPublic.toLowerCase()) {
+        try {
+          await store.setItemAsync(STORAGE_KEYS.BACKUP_PRIVATE_KEY, KeyManager.canonicalPrivateKey(priorPrivate), {
+            keychainAccessible: store.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+          });
+          await store.setItemAsync(STORAGE_KEYS.BACKUP_PUBLIC_KEY, priorPublic.toLowerCase());
+          await store.setItemAsync(STORAGE_KEYS.BACKUP_TIMESTAMP, Date.now().toString());
+        } catch (error) {
+          logger.error('Failed to back up existing identity before overwrite', error, { component: 'KeyManager' });
+          throw new IdentityPersistError('Failed to back up existing identity before overwrite', error);
+        }
+      }
+    }
+
+    // Step 1: Write the new primary. Public first so that if the private write
+    // fails we are missing the most critical bit. The backup is intentionally
+    // NOT touched here — it still holds the previous good identity until the
+    // new primary is proven durable.
     try {
       await store.setItemAsync(STORAGE_KEYS.PUBLIC_KEY, canonicalPublic);
       await store.setItemAsync(STORAGE_KEYS.PRIVATE_KEY, canonicalPrivate, {
@@ -687,13 +740,11 @@ export class KeyManager {
       });
     } catch (error) {
       logger.error('Failed to write primary identity to secure store', error, { component: 'KeyManager' });
-      // Roll back the public-key half-write so hasIdentity() doesn't lie later.
-      try { await store.deleteItemAsync(STORAGE_KEYS.PUBLIC_KEY); } catch { /* best effort */ }
-      try { await store.deleteItemAsync(STORAGE_KEYS.PRIVATE_KEY); } catch { /* best effort */ }
+      await KeyManager._rollbackPrimary(store, priorPrivate, priorPublic);
       throw new IdentityPersistError('Failed to write identity to secure store', error);
     }
 
-    // Step 4: Verify round-trip. If the store silently drops our writes
+    // Step 2: Verify round-trip. If the store silently drops our writes
     // (e.g., a misconfigured keychain access group), we MUST surface it
     // before declaring success — otherwise the caller will think the
     // identity was saved and discard the in-memory copy.
@@ -704,6 +755,7 @@ export class KeyManager {
       readBackPublic = await store.getItemAsync(STORAGE_KEYS.PUBLIC_KEY);
     } catch (error) {
       logger.error('Failed to read identity back after write', error, { component: 'KeyManager' });
+      await KeyManager._rollbackPrimary(store, priorPrivate, priorPublic);
       throw new IdentityPersistError('Failed to verify identity after write', error);
     }
 
@@ -715,6 +767,7 @@ export class KeyManager {
       readBackPublic?.toLowerCase() !== canonicalPublic
     ) {
       logger.error('Identity round-trip mismatch after write', undefined, { component: 'KeyManager' });
+      await KeyManager._rollbackPrimary(store, priorPrivate, priorPublic);
       throw new IdentityPersistError('Identity write was not persisted correctly (round-trip mismatch).');
     }
 
@@ -735,14 +788,70 @@ export class KeyManager {
         throw new IdentityPersistError('Sign/verify roundtrip failed for newly stored identity.');
       }
     } catch (error) {
+      await KeyManager._rollbackPrimary(store, priorPrivate, priorPublic);
       if (error instanceof IdentityPersistError) throw error;
       logger.error('Identity sign/verify probe failed', error, { component: 'KeyManager' });
       throw new IdentityPersistError('Stored identity failed crypto self-test', error);
     }
 
+    // Step 3: The new primary is durable and functional. NOW it is safe to
+    // refresh the backup to the new key. If this final backup write fails the
+    // user still has a fully working primary, and the backup still holds the
+    // PREVIOUS good identity — so we log and continue rather than failing the
+    // whole operation (failing here would be strictly worse: a working
+    // primary would be reported as an error to the caller).
+    try {
+      await store.setItemAsync(STORAGE_KEYS.BACKUP_PRIVATE_KEY, canonicalPrivate, {
+        keychainAccessible: store.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+      });
+      await store.setItemAsync(STORAGE_KEYS.BACKUP_PUBLIC_KEY, canonicalPublic);
+      await store.setItemAsync(STORAGE_KEYS.BACKUP_TIMESTAMP, Date.now().toString());
+    } catch (error) {
+      logger.warn(
+        'Primary identity persisted successfully but refreshing the backup failed; primary is usable, backup may be stale',
+        { component: 'KeyManager' },
+        error,
+      );
+    }
+
     // Update cache only after we are certain the identity is durable.
     KeyManager.cachedPublicKey = canonicalPublic;
     KeyManager.cachedHasIdentity = true;
+  }
+
+  /**
+   * Restore the primary slot to a previously-snapshotted (privA, pubA) pair,
+   * or delete it entirely if there was no prior identity. Best-effort: every
+   * step is wrapped so a rollback failure never masks the original error the
+   * caller is about to throw. Invalidates the in-memory cache so the next read
+   * reflects whatever actually landed on disk.
+   *
+   * @internal
+   */
+  private static async _rollbackPrimary(
+    store: Awaited<ReturnType<typeof initSecureStore>>,
+    priorPrivate: string | null,
+    priorPublic: string | null,
+  ): Promise<void> {
+    try {
+      if (priorPrivate && priorPublic) {
+        // Restore exactly what was there before the failed write.
+        await store.setItemAsync(STORAGE_KEYS.PUBLIC_KEY, priorPublic, {});
+        await store.setItemAsync(STORAGE_KEYS.PRIVATE_KEY, priorPrivate, {
+          keychainAccessible: store.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+        });
+      } else {
+        // There was no prior identity — leave the device empty rather than
+        // half-written so hasIdentity() does not lie.
+        try { await store.deleteItemAsync(STORAGE_KEYS.PUBLIC_KEY); } catch { /* best effort */ }
+        try { await store.deleteItemAsync(STORAGE_KEYS.PRIVATE_KEY); } catch { /* best effort */ }
+      }
+    } catch (rollbackError) {
+      logger.error('Failed to roll back primary identity after a failed write', rollbackError, { component: 'KeyManager' });
+    } finally {
+      // Whatever happened, the cached verdict is no longer trustworthy.
+      KeyManager.invalidateCache();
+    }
   }
 
   /**
@@ -1122,17 +1231,23 @@ export class KeyManager {
   }
 
   /**
-   * Restore identity from backup if primary storage is corrupted.
+   * Restore identity from backup if primary storage is genuinely missing or
+   * corrupt.
    *
-   * SAFETY: this method will NEVER overwrite a verifying primary identity.
-   * If the primary passes a sign/verify probe, the backup is left untouched
-   * and `false` is returned — this protects against a transient
-   * `verifyIdentityIntegrity()` blip clobbering valid keys with stale
-   * backup keys (e.g., from a previous account before an import).
+   * SAFETY (three independent guards against silently switching accounts):
+   *   1. If the primary passes a full sign/verify probe, do nothing.
+   *   2. If the primary keys CANNOT BE READ (storage threw — e.g. a transient
+   *      keychain lock during a background launch), do nothing. We must NOT
+   *      treat "couldn't read" as "corrupted" and restore a possibly-stale
+   *      backup over an identity that is actually fine but momentarily
+   *      inaccessible.
+   *   3. If a primary private/public key IS present but does not match the
+   *      backup, the backup may belong to a different identity — refuse, so we
+   *      never silently switch the user to another account.
    *
-   * Additionally, if the backup public key does NOT match the (still-
-   * present-but-failing) primary public key, we refuse to overwrite — the
-   * backup may belong to a different identity entirely.
+   * Only when the primary is provably absent (read succeeded, returned
+   * null/empty) or provably corrupt (read succeeded, bytes malformed AND no
+   * conflicting key material is present) do we rebuild it from the backup.
    */
   static async restoreIdentityFromBackup(): Promise<boolean> {
     if (isWebPlatform()) {
@@ -1141,15 +1256,38 @@ export class KeyManager {
     try {
       const store = await initSecureStore();
 
-      // First: if the primary still works, do nothing. Returning true here
-      // would be misleading; returning false (no restore needed) is the
-      // honest answer.
-      const primaryOk = await KeyManager.verifyIdentityIntegrity();
-      if (primaryOk) {
+      // Read the primary DIRECTLY (not via the error-swallowing getters) so
+      // we can distinguish a transient read failure from a genuinely absent
+      // key. A thrown read here means the keychain is locked/unavailable —
+      // bail out and let a later call retry rather than risk restoring over a
+      // healthy-but-locked identity.
+      let primaryPrivate: string | null;
+      let primaryPublic: string | null;
+      try {
+        primaryPrivate = await store.getItemAsync(STORAGE_KEYS.PRIVATE_KEY);
+        primaryPublic = await store.getItemAsync(STORAGE_KEYS.PUBLIC_KEY);
+      } catch (error) {
+        logger.warn(
+          'restoreIdentityFromBackup: could not read primary (transient?). Refusing to restore.',
+          { component: 'KeyManager' },
+          error,
+        );
         return false;
       }
 
-      // Check if backup exists
+      // If the primary reads back as a complete, self-consistent identity, it
+      // is healthy — nothing to restore. (Guard 1.)
+      if (primaryPrivate && primaryPublic) {
+        if (
+          KeyManager.isValidPrivateKey(primaryPrivate) &&
+          KeyManager.isValidPublicKey(primaryPublic) &&
+          KeyManager.derivePublicKey(primaryPrivate).toLowerCase() === primaryPublic.toLowerCase()
+        ) {
+          return false;
+        }
+      }
+
+      // Load + validate the backup.
       const backupPrivateKey = await store.getItemAsync(STORAGE_KEYS.BACKUP_PRIVATE_KEY);
       const backupPublicKey = await store.getItemAsync(STORAGE_KEYS.BACKUP_PUBLIC_KEY);
 
@@ -1157,7 +1295,6 @@ export class KeyManager {
         return false; // No backup available
       }
 
-      // Verify backup integrity
       if (!KeyManager.isValidPrivateKey(backupPrivateKey) || !KeyManager.isValidPublicKey(backupPublicKey)) {
         logger.warn('Backup identity is malformed; refusing to restore', { component: 'KeyManager' });
         return false;
@@ -1172,17 +1309,30 @@ export class KeyManager {
         return false;
       }
 
-      // CRITICAL: if there is still a (broken) primary public key present
-      // that does NOT match the backup, the backup may be from a completely
-      // different identity. Better to surface a corrupted state than
-      // silently switch the user to a different account.
-      const currentPrimaryPublic = await store.getItemAsync(STORAGE_KEYS.PUBLIC_KEY).catch(() => null);
+      // Guard 3: if ANY primary key material is still present and identifies a
+      // DIFFERENT identity than the backup, refuse — the backup may be from a
+      // completely different account and restoring it would silently switch
+      // the user. We check the private key too (not just the public): a
+      // present private key that derives to a non-backup public means a real,
+      // different identity is sitting in the primary slot.
       if (
-        currentPrimaryPublic &&
-        currentPrimaryPublic.toLowerCase() !== backupPublicKey.toLowerCase()
+        primaryPublic &&
+        primaryPublic.toLowerCase() !== backupPublicKey.toLowerCase()
       ) {
         logger.error(
-          'Primary identity is corrupted AND does not match the backup. Refusing to restore to avoid switching accounts.',
+          'Primary public key is present, corrupt-or-mismatched, AND differs from the backup. Refusing to restore to avoid switching accounts.',
+          undefined,
+          { component: 'KeyManager' },
+        );
+        return false;
+      }
+      if (
+        primaryPrivate &&
+        KeyManager.isValidPrivateKey(primaryPrivate) &&
+        KeyManager.derivePublicKey(primaryPrivate).toLowerCase() !== backupPublicKey.toLowerCase()
+      ) {
+        logger.error(
+          'Primary private key identifies a DIFFERENT identity than the backup. Refusing to restore to avoid switching accounts.',
           undefined,
           { component: 'KeyManager' },
         );
