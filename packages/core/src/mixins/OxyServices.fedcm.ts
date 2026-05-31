@@ -99,12 +99,35 @@ interface FedCMCredentialsContainer {
   get(options: FedCMCredentialRequest): Promise<FedCMIdentityCredential | null>;
 }
 
+/**
+ * Normalised result of a FedCM credential request: the IdP-issued ID token plus
+ * whether the browser auto-selected the account (no explicit user choice).
+ */
+interface FedCMTokenResult {
+  token: string;
+  isAutoSelected: boolean;
+}
+
+// Options accepted by the static `IdentityCredential.disconnect()` method
+// (W3C FedCM "disconnect" / sign-out). Not declared in every lib-dom version.
+interface FedCMDisconnectOptions {
+  configURL: string;
+  clientId: string;
+  accountHint: string;
+}
+
+// Minimal structural shape of the global `IdentityCredential` interface object,
+// modelling only the static `disconnect` method this mixin invokes.
+interface FedCMIdentityCredentialStatic {
+  disconnect(options: FedCMDisconnectOptions): Promise<void>;
+}
+
 const FEDCM_LOGIN_HINT_KEY = 'oxy_fedcm_login_hint';
 
 // Global lock to prevent concurrent FedCM requests
 // FedCM only allows one navigator.credentials.get request at a time
 let fedCMRequestInProgress = false;
-let fedCMRequestPromise: Promise<any> | null = null;
+let fedCMRequestPromise: Promise<FedCMTokenResult | null> | null = null;
 let currentMediationMode: string | null = null;
 
 /**
@@ -224,9 +247,11 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
       // Exchange FedCM ID token for Oxy session
       const session = await this.exchangeIdTokenForSession(credential.token);
 
-      // Store access token in HttpService (extract from response or get from session)
-      if (session && (session as any).accessToken) {
-        this.httpService.setTokens((session as any).accessToken);
+      // Store access token in HttpService. `accessToken`/`refreshToken` are
+      // declared optional on SessionLoginResponse; default the refresh token to
+      // an empty string when the exchange did not return one.
+      if (session?.accessToken) {
+        this.httpService.setTokens(session.accessToken, session.refreshToken ?? '');
       }
 
       // Store the user ID as loginHint for future FedCM requests
@@ -234,17 +259,20 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
         this.storeLoginHint(session.user.id);
       }
 
-      debug.log('Interactive sign-in: Success!', { userId: (session as any)?.user?.id });
+      debug.log('Interactive sign-in: Success!', { userId: session?.user?.id });
 
       return session;
     } catch (error) {
       debug.log('Interactive sign-in failed:', error);
       const errorMessage = error instanceof Error ? error.message : String(error);
+      // FedCM aborts/network failures surface as DOMException/Error instances,
+      // both of which carry a `name`. Anything else has no meaningful name.
+      const errorName = error instanceof Error ? error.name : '';
 
-      if ((error as any).name === 'AbortError') {
+      if (errorName === 'AbortError') {
         throw new OxyAuthenticationError('Sign-in was cancelled by user');
       }
-      if ((error as any).name === 'NetworkError') {
+      if (errorName === 'NetworkError') {
         throw new OxyAuthenticationError('Network error during sign-in. Please check your connection.');
       }
       if (errorMessage.includes('multiple accounts')) {
@@ -301,7 +329,7 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
     // We intentionally do NOT fall back to optional mediation here because
     // this runs on app startup — showing browser UI without user action is bad UX.
     // Optional/interactive mediation should only happen when the user clicks "Sign In".
-    let credential: { token: string; isAutoSelected: boolean } | null = null;
+    let credential: FedCMTokenResult | null = null;
 
     const loginHint = this.getStoredLoginHint();
 
@@ -368,9 +396,11 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
       return null;
     }
 
-    // Set the access token
-    if ((session as any).accessToken) {
-      this.httpService.setTokens((session as any).accessToken);
+    // Set the access token. `accessToken`/`refreshToken` are declared optional
+    // on SessionLoginResponse; default the refresh token to an empty string when
+    // the exchange did not return one.
+    if (session.accessToken) {
+      this.httpService.setTokens(session.accessToken, session.refreshToken ?? '');
       debug.log('Silent SSO: Access token set');
     } else {
       debug.warn('Silent SSO: No accessToken in session response');
@@ -414,7 +444,7 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
      * the running browser only understands the old enum.
      */
     mode?: FedCMRequestMode;
-  }): Promise<{ token: string; isAutoSelected: boolean } | null> {
+  }): Promise<FedCMTokenResult | null> {
     const requestedMediation = options.mediation || 'optional';
     const isInteractive = requestedMediation !== 'silent';
 
@@ -589,9 +619,17 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
     }
 
     try {
-      if ('IdentityCredential' in window && 'disconnect' in (window as any).IdentityCredential) {
+      // The DOM lib does not declare the global `IdentityCredential` interface
+      // object (with its static `disconnect`) in every TypeScript version we
+      // build against. Read it off `window` through the minimal structural type
+      // (not `any`), guarding that `disconnect` is actually present at runtime.
+      const fedCMWindow = window as unknown as {
+        IdentityCredential?: Partial<FedCMIdentityCredentialStatic>;
+      };
+      const identityCredential = fedCMWindow.IdentityCredential;
+      if (identityCredential && typeof identityCredential.disconnect === 'function') {
         const clientId = this.getClientId();
-        await (window as any).IdentityCredential.disconnect({
+        await identityCredential.disconnect({
           configURL: this.resolveFedcmConfigUrl(),
           clientId,
           accountHint: accountHint || '*',
