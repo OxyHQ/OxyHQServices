@@ -19,7 +19,6 @@
  */
 
 import { OxyServices } from '../../OxyServices';
-import { __resetSilentSSOMemoForTests } from '../OxyServices.fedcm';
 
 interface CredentialGetCall {
   identity: {
@@ -70,11 +69,6 @@ describe('OxyServices FedCM nonce binding', () => {
   afterEach(() => {
     clearBrowserGlobals();
     jest.restoreAllMocks();
-    // The silent-SSO memo is module-scoped and survives between `it` blocks.
-    // Each test that calls `silentSignInWithFedCM` expects a fresh browser
-    // invocation, so reset the memo (a real page load would do the same by
-    // starting a fresh module scope).
-    __resetSilentSSOMemoForTests();
   });
 
   it('silent SSO mints a server nonce and forwards it to the browser', async () => {
@@ -231,7 +225,6 @@ describe('OxyServices FedCM mode enum (active/passive)', () => {
   afterEach(() => {
     clearBrowserGlobals();
     jest.restoreAllMocks();
-    __resetSilentSSOMemoForTests();
   });
 
   it('interactive sign-in requests the modern mode: "active"', async () => {
@@ -326,180 +319,5 @@ describe('OxyServices FedCM mode enum (active/passive)', () => {
     const call = credentialCall as unknown as CredentialGetCall;
     expect(call.mediation).toBe('silent');
     expect(call.identity.mode).toBeUndefined();
-  });
-});
-
-/**
- * Page-load silent-SSO run-once guard.
- *
- * Silent SSO must invoke `navigator.credentials.get` AT MOST ONCE per page
- * load, even when multiple consumers / remounts / StrictMode call
- * `silentSignInWithFedCM()` repeatedly. The guard lives at the chokepoint in
- * core: the first silent attempt for an `origin + baseURL` runs; concurrent
- * callers share the in-flight promise; later callers get the memoized result
- * (session OR null) without re-invoking the browser.
- *
- * Interactive sign-in (`signInWithFedCM`) is NOT memoized — a user clicking the
- * sign-in button must always be able to re-prompt. That is asserted too.
- */
-describe('OxyServices FedCM silent-SSO page-load guard', () => {
-  afterEach(() => {
-    clearBrowserGlobals();
-    jest.restoreAllMocks();
-    __resetSilentSSOMemoForTests();
-  });
-
-  it('invokes the browser at most once across repeated silent calls and returns the memoized result', async () => {
-    let getCallCount = 0;
-    installBrowserGlobals({
-      credentialsGet: async () => {
-        getCallCount += 1;
-        return { type: 'identity', token: 'idp-token', isAutoSelected: true };
-      },
-    });
-
-    const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
-    let exchangeCount = 0;
-    jest.spyOn(oxy, 'makeRequest').mockImplementation(async (_method: string, url: string) => {
-      if (url === '/fedcm/nonce') {
-        return { nonce: 'n', expiresAt: new Date(Date.now() + 60000).toISOString() } as never;
-      }
-      if (url === '/fedcm/exchange') {
-        exchangeCount += 1;
-        return {
-          sessionId: 'sess_guard',
-          deviceId: 'dev_guard',
-          expiresAt: new Date(Date.now() + 60000).toISOString(),
-          accessToken: 'access_guard',
-          user: { id: 'user_guard', username: 'tester' },
-        } as never;
-      }
-      throw new Error(`unexpected request to ${url}`);
-    });
-
-    const first = await oxy.silentSignInWithFedCM();
-    const second = await oxy.silentSignInWithFedCM();
-    const third = await oxy.silentSignInWithFedCM();
-
-    // The browser credential request fired exactly once.
-    expect(getCallCount).toBe(1);
-    // The token exchange ran exactly once too (the whole flow is memoized).
-    expect(exchangeCount).toBe(1);
-    // Every caller received the same memoized session.
-    expect(first?.sessionId).toBe('sess_guard');
-    expect(second).toBe(first);
-    expect(third).toBe(first);
-  });
-
-  it('shares a single in-flight browser call across concurrent silent callers', async () => {
-    let getCallCount = 0;
-    let resolveGet: ((value: unknown) => void) | null = null;
-    installBrowserGlobals({
-      credentialsGet: () =>
-        new Promise((resolve) => {
-          getCallCount += 1;
-          resolveGet = resolve;
-        }),
-    });
-
-    const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
-    jest.spyOn(oxy, 'makeRequest').mockImplementation(async (_method: string, url: string) => {
-      if (url === '/fedcm/nonce') {
-        return { nonce: 'n', expiresAt: new Date(Date.now() + 60000).toISOString() } as never;
-      }
-      if (url === '/fedcm/exchange') {
-        return {
-          sessionId: 'sess_concurrent',
-          deviceId: 'dev_concurrent',
-          expiresAt: new Date(Date.now() + 60000).toISOString(),
-          accessToken: 'access_concurrent',
-          user: { id: 'user_concurrent', username: 'tester' },
-        } as never;
-      }
-      throw new Error(`unexpected request to ${url}`);
-    });
-
-    // Fire three silent calls before the first browser request resolves.
-    const p1 = oxy.silentSignInWithFedCM();
-    const p2 = oxy.silentSignInWithFedCM();
-    const p3 = oxy.silentSignInWithFedCM();
-
-    // Let the in-flight nonce/get chain start, then release the browser call.
-    await Promise.resolve();
-    await new Promise((r) => setTimeout(r, 0));
-    expect(getCallCount).toBe(1);
-    expect(resolveGet).not.toBeNull();
-    (resolveGet as unknown as (value: unknown) => void)({
-      type: 'identity',
-      token: 'idp-token',
-      isAutoSelected: true,
-    });
-
-    const [r1, r2, r3] = await Promise.all([p1, p2, p3]);
-
-    // Only one browser invocation despite three concurrent callers.
-    expect(getCallCount).toBe(1);
-    expect(r1?.sessionId).toBe('sess_concurrent');
-    expect(r2).toBe(r1);
-    expect(r3).toBe(r1);
-  });
-
-  it('memoizes a null result (user not signed in) without re-invoking the browser', async () => {
-    let getCallCount = 0;
-    installBrowserGlobals({
-      credentialsGet: async () => {
-        getCallCount += 1;
-        return null; // user not logged in at IdP
-      },
-    });
-
-    const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
-    jest.spyOn(oxy, 'makeRequest').mockImplementation(async (_method: string, url: string) => {
-      if (url === '/fedcm/nonce') {
-        return { nonce: 'n', expiresAt: new Date(Date.now() + 60000).toISOString() } as never;
-      }
-      throw new Error(`unexpected request to ${url}`);
-    });
-
-    const first = await oxy.silentSignInWithFedCM();
-    const second = await oxy.silentSignInWithFedCM();
-
-    expect(first).toBeNull();
-    expect(second).toBeNull();
-    // The null verdict is memoized — the browser is not asked again.
-    expect(getCallCount).toBe(1);
-  });
-
-  it('does NOT memoize interactive sign-in (each click can re-prompt the browser)', async () => {
-    let getCallCount = 0;
-    installBrowserGlobals({
-      credentialsGet: async () => {
-        getCallCount += 1;
-        return { type: 'identity', token: `idp-token-${getCallCount}`, isAutoSelected: false };
-      },
-    });
-
-    const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
-    jest.spyOn(oxy, 'makeRequest').mockImplementation(async (_method: string, url: string) => {
-      if (url === '/fedcm/nonce') {
-        return { nonce: 'n', expiresAt: new Date(Date.now() + 60000).toISOString() } as never;
-      }
-      if (url === '/fedcm/exchange') {
-        return {
-          sessionId: 'sess_interactive',
-          deviceId: 'dev_interactive',
-          expiresAt: new Date(Date.now() + 60000).toISOString(),
-          accessToken: 'access_interactive',
-          user: { id: 'user_interactive', username: 'tester' },
-        } as never;
-      }
-      throw new Error(`unexpected request to ${url}`);
-    });
-
-    await oxy.signInWithFedCM();
-    await oxy.signInWithFedCM();
-
-    // Interactive flow is never gated by the silent memo.
-    expect(getCallCount).toBe(2);
   });
 });

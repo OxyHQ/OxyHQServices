@@ -1,15 +1,12 @@
 /**
  * @jest-environment-options {"url": "https://accounts.oxy.so/"}
  *
- * Behaviour of the @oxyhq/auth web silent-SSO hook.
+ * Run-once guarantees for the @oxyhq/auth web silent-SSO hook.
  *
- * Mirrors the @oxyhq/services test. The page-load run-once guarantee — silent
- * SSO invoking `navigator.credentials.get` AT MOST ONCE per page load across
- * remounts / StrictMode / multiple consumers — now lives in `@oxyhq/core`'s
- * `silentSignInWithFedCM` (memoized on `origin + baseURL`). The hook keeps only
- * a per-instance `hasCheckedRef` fast-path; it no longer owns a module-level
- * guard. The core memo is covered by core's own FedCM tests, which exercise the
- * REAL method; these tests pin the hook's per-mount contract.
+ * Mirrors the @oxyhq/services test: silent SSO must fire exactly once per page
+ * load even across provider remounts (route churn / StrictMode), because a
+ * remount storm previously became a `navigator.credentials.get` storm. The
+ * guard is module-level and keyed on `origin + baseURL`.
  */
 
 import { renderHook, waitFor } from '@testing-library/react';
@@ -42,8 +39,8 @@ const fakeSession: SessionLoginResponse = {
   user: { id: 'u1', username: 'tester' },
 } as SessionLoginResponse;
 
-describe('useWebSSO behaviour (auth-sdk)', () => {
-  it('fires silent SSO exactly once per mount and resolves a session', async () => {
+describe('useWebSSO run-once guarantee (auth-sdk)', () => {
+  it('fires silent SSO exactly once on mount and resolves a session', async () => {
     const services = makeServices(fakeSession, 'https://api.oxy.so/auth-once-1');
     const onSessionFound = jest.fn(async () => undefined);
 
@@ -57,17 +54,10 @@ describe('useWebSSO behaviour (auth-sdk)', () => {
 
     await waitFor(() => expect(services.silentSignInWithFedCM).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(onSessionFound).toHaveBeenCalledWith(fakeSession));
-
-    // No duplicate fire from effect re-runs within the same mount.
-    expect(services.silentSignInWithFedCM).toHaveBeenCalledTimes(1);
   });
 
-  it('delegates the page-load run-once guarantee to core (calls through per mount)', async () => {
-    // The hook no longer owns a module-level guard. Run-once per page load is
-    // enforced inside the REAL `silentSignInWithFedCM`. With a mock standing in
-    // for it there is no memo, so each fresh mount calls through once; the
-    // per-instance `hasCheckedRef` only suppresses re-fires within one mount.
-    const services = makeServices(null, 'https://api.oxy.so/auth-delegates-core');
+  it('does NOT re-fire silent SSO after unmount + remount', async () => {
+    const services = makeServices(null, 'https://api.oxy.so/auth-remount');
     const onSessionFound = jest.fn(async () => undefined);
 
     const first = renderHook(() =>
@@ -78,16 +68,19 @@ describe('useWebSSO behaviour (auth-sdk)', () => {
       })
     );
     await waitFor(() => expect(services.silentSignInWithFedCM).toHaveBeenCalledTimes(1));
-    first.unmount();
 
-    const second = renderHook(() =>
-      useWebSSO({
-        oxyServices: services as unknown as OxyServices,
-        onSessionFound,
-        enabled: true,
-      })
-    );
-    await waitFor(() => expect(services.silentSignInWithFedCM).toHaveBeenCalledTimes(2));
-    second.unmount();
+    first.unmount();
+    for (let i = 0; i < 5; i++) {
+      const r = renderHook(() =>
+        useWebSSO({
+          oxyServices: services as unknown as OxyServices,
+          onSessionFound,
+          enabled: true,
+        })
+      );
+      r.unmount();
+    }
+
+    expect(services.silentSignInWithFedCM).toHaveBeenCalledTimes(1);
   });
 });

@@ -39,6 +39,36 @@ interface UseWebSSOResult {
 }
 
 /**
+ * Module-level guard tracking which (origin + API) signatures have already
+ * had a silent SSO attempt this page load.
+ *
+ * A per-component `useRef` guard resets whenever the provider remounts (route
+ * churn, StrictMode double-invoke, error-boundary recovery), which previously
+ * allowed silent SSO to re-fire and — combined with a routing redirect loop —
+ * produced an accelerating `navigator.credentials.get` retry storm. Keying the
+ * guard on a stable signature instead of the component instance makes silent
+ * SSO fire EXACTLY ONCE per page load regardless of how many times the
+ * provider mounts. The set is intentionally never cleared: a fresh page load
+ * (the only thing that can change the answer) starts a fresh module scope.
+ */
+const silentSSOAttempted = new Set<string>();
+
+/**
+ * Build a stable signature for the silent-SSO run-once guard. Two providers
+ * pointed at the same API from the same origin share one attempt.
+ */
+function ssoSignature(oxyServices: OxyServices): string {
+  const origin = typeof window !== 'undefined' ? window.location.origin : 'no-origin';
+  let baseURL = '';
+  try {
+    baseURL = oxyServices.getBaseURL?.() ?? '';
+  } catch {
+    baseURL = '';
+  }
+  return `${origin}|${baseURL}`;
+}
+
+/**
  * Check if we're running in a web browser environment (not React Native)
  */
 function isWebBrowser(): boolean {
@@ -165,12 +195,12 @@ export function useWebSSO({
 
   // Auto-check SSO on mount (web only, FedCM only, not on auth domain).
   //
-  // `hasCheckedRef` is a cheap per-instance fast-path so effect re-runs (from
-  // changing deps) within one mount never re-fire. The page-load run-once
-  // guarantee — silent SSO invoking `navigator.credentials.get` AT MOST ONCE
-  // per page load across remounts / StrictMode / multiple consumers — lives in
-  // `@oxyhq/core`'s `silentSignInWithFedCM`, which memoizes the first silent
-  // attempt's result for this origin + API. The hook therefore calls it freely.
+  // Run-once is enforced by TWO guards:
+  //   1. `hasCheckedRef` — cheap per-instance fast-path so effect re-runs
+  //      (from changing deps) within one mount never re-fire.
+  //   2. `silentSSOAttempted` — module-level, survives remounts/StrictMode so
+  //      silent SSO fires exactly once per page load even if the provider
+  //      unmounts and remounts.
   useEffect(() => {
     if (!enabled || !isWebBrowser() || hasCheckedRef.current || isIdentityProvider(authWebUrl)) {
       if (isIdentityProvider(authWebUrl)) {
@@ -179,14 +209,23 @@ export function useWebSSO({
       return;
     }
 
+    const signature = ssoSignature(oxyServices);
+    if (silentSSOAttempted.has(signature)) {
+      // Already attempted this page load (e.g. before a remount) — do not
+      // re-fire. Mark the local fast-path too so subsequent re-renders skip.
+      hasCheckedRef.current = true;
+      return;
+    }
+
     hasCheckedRef.current = true;
+    silentSSOAttempted.add(signature);
 
     if (fedCMSupported) {
       checkSSO();
     } else {
       onSSOUnavailable?.();
     }
-  }, [enabled, checkSSO, fedCMSupported, onSSOUnavailable, authWebUrl]);
+  }, [enabled, checkSSO, fedCMSupported, onSSOUnavailable, oxyServices, authWebUrl]);
 
   return {
     checkSSO,

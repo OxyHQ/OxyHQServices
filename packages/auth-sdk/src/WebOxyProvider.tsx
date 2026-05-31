@@ -59,36 +59,20 @@ export interface WebOxyContextValue extends WebAuthState, WebAuthActions {
 const WebOxyContext = createContext<WebOxyContextValue | null>(null);
 
 /**
- * Module-level run-once guard for the provider's silent sign-in step.
+ * Module-level run-once guard for FedCM silent sign-in.
  *
  * The init effect runs again whenever the provider remounts (route change,
  * StrictMode double-invoke, error-boundary recovery). The redirect-callback
- * and local-session-restore steps are cheap and idempotent, but
- * `crossDomainAuth.silentSignIn()` is NOT: it first tries FedCM silent
- * mediation (`navigator.credentials.get`) and, if that yields nothing, falls
- * back to an iframe-based silent auth against `/auth/silent`.
- *
- * The FedCM leg is now centrally memoized inside `@oxyhq/core`'s
- * `silentSignInWithFedCM` (at-most-once `navigator.credentials.get` per page
- * load). The iframe fallback, however, is a SEPARATE mechanism the core guard
- * does not cover — without this guard a remount storm would create a hidden
- * iframe per remount. So this guard is intentionally retained to keep the
- * provider's WHOLE silent step run-once. Keyed on `origin + baseURL` to match
- * the core guard's keying (so the two stay in lockstep) and to survive
- * instance churn; never cleared because only a fresh page load can change the
- * IdP/iframe session state.
+ * and local-session-restore steps are cheap and idempotent, but the FedCM
+ * `silentSignIn()` step triggers `navigator.credentials.get`, which must fire
+ * AT MOST ONCE per page load — otherwise a remount storm becomes a credential
+ * request storm. Keyed by origin so the guard survives instance churn; never
+ * cleared because only a fresh page load can change the IdP session state.
  */
-const silentSignInAttempted = new Set<string>();
+const fedcmSilentSignInAttempted = new Set<string>();
 
-function silentSignInKey(oxyServices: OxyServices): string {
-  const origin = typeof window !== 'undefined' ? window.location.origin : 'no-origin';
-  let baseURL = '';
-  try {
-    baseURL = oxyServices.getBaseURL();
-  } catch {
-    baseURL = '';
-  }
-  return `${origin}|${baseURL}`;
+function silentSignInKey(): string {
+  return typeof window !== 'undefined' ? window.location.origin : 'no-origin';
 }
 
 export interface WebOxyProviderProps {
@@ -224,14 +208,12 @@ export function WebOxyProvider({
           }
         }
 
-        // Silent sign-in: run AT MOST ONCE per page load. A remount (route
-        // change / StrictMode / error recovery) must not re-trigger the
-        // browser credential request OR the iframe fallback. The FedCM leg is
-        // additionally memoized in core; this guard also covers the iframe
-        // fallback that core does not.
-        const ssoKey = silentSignInKey(oxyServices);
-        if (!silentSignInAttempted.has(ssoKey)) {
-          silentSignInAttempted.add(ssoKey);
+        // FedCM silent sign-in: run AT MOST ONCE per page load. A remount
+        // (route change / StrictMode / error recovery) must not re-trigger
+        // the browser credential request.
+        const ssoKey = silentSignInKey();
+        if (!fedcmSilentSignInAttempted.has(ssoKey)) {
+          fedcmSilentSignInAttempted.add(ssoKey);
           try {
             const session = await crossDomainAuth.silentSignIn();
             if (mounted && session?.user) {
