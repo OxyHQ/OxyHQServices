@@ -131,6 +131,46 @@ let fedCMRequestPromise: Promise<FedCMTokenResult | null> | null = null;
 let currentMediationMode: string | null = null;
 
 /**
+ * Page-load-persistent memo for SILENT FedCM sign-in.
+ *
+ * Silent SSO (`mediation: 'silent'`) is the one FedCM flow that runs WITHOUT a
+ * user gesture — on app startup / provider mount. Multiple consumers
+ * (`@oxyhq/auth`'s `WebOxyProvider` / `useWebSSO`, `@oxyhq/services`'
+ * `useWebSSO`) can each mount and trigger it, and a remount storm (route churn,
+ * React StrictMode double-invoke, error-boundary recovery) previously turned
+ * into a `navigator.credentials.get` storm. This memo collapses every silent
+ * attempt for a given `origin + baseURL` into AT MOST ONE browser credential
+ * request per page load:
+ *
+ *   - the FIRST silent call runs the real flow and stores its in-flight promise;
+ *   - concurrent silent calls share that same in-flight promise;
+ *   - once it settles, the memo retains the resolved value (a session OR `null`)
+ *     and every subsequent silent call returns it WITHOUT re-invoking the
+ *     browser.
+ *
+ * Keyed on `origin + baseURL` (not the OxyServices instance) so it survives
+ * instance churn across remounts. Intentionally never cleared: only a fresh
+ * page load — which starts a fresh module scope — can change the IdP session
+ * state that silent mediation observes.
+ *
+ * This guard is SILENT-ONLY. Interactive flows (`signInWithFedCM`,
+ * `mediation: 'optional'|'required'`, `mode: 'active'|'passive'`) must always
+ * be able to re-prompt and are never memoized here.
+ */
+const silentSSOMemo = new Map<string, Promise<SessionLoginResponse | null>>();
+
+/**
+ * Test-only reset of the page-load silent-SSO memo. The memo is module-scoped
+ * and never cleared at runtime (a fresh page load resets it naturally), but
+ * tests sharing one module instance need to start from a clean slate.
+ *
+ * @internal
+ */
+export function __resetSilentSSOMemoForTests(): void {
+  silentSSOMemo.clear();
+}
+
+/**
  * Federated Credential Management (FedCM) Authentication Mixin
  *
  * Implements the modern browser-native identity federation API that enables
@@ -322,6 +362,49 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
       return null;
     }
 
+    // Page-load run-once guard. The first silent attempt for this
+    // origin + API runs; concurrent callers share the in-flight promise; once
+    // it settles, every later caller gets the memoized result (session OR
+    // null) WITHOUT re-invoking `navigator.credentials.get`. This is the single
+    // chokepoint for silent SSO across all consumers and remounts.
+    const memoKey = this.silentSSOMemoKey();
+    const existing = silentSSOMemo.get(memoKey);
+    if (existing) {
+      debug.log('Silent SSO: Returning memoized page-load result (no re-invocation)');
+      return existing;
+    }
+
+    const attempt = this._performSilentSignInWithFedCM();
+    silentSSOMemo.set(memoKey, attempt);
+    return attempt;
+  }
+
+  /**
+   * Build the page-load silent-SSO memo key from the current origin and the
+   * configured API base URL. Two providers pointed at the same API from the
+   * same origin share a single silent attempt per page load.
+   *
+   * @internal
+   */
+  public silentSSOMemoKey(): string {
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'no-origin';
+    let baseURL = '';
+    try {
+      baseURL = this.getBaseURL();
+    } catch {
+      baseURL = '';
+    }
+    return `${origin}|${baseURL}`;
+  }
+
+  /**
+   * Perform the actual silent FedCM sign-in. Always wrapped by
+   * {@link silentSignInWithFedCM}'s page-load memo — never call this directly
+   * (doing so bypasses the run-once guard).
+   *
+   * @internal
+   */
+  public async _performSilentSignInWithFedCM(): Promise<SessionLoginResponse | null> {
     const clientId = this.getClientId();
     debug.log('Silent SSO: Starting for', clientId);
 

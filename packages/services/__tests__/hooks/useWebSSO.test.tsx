@@ -1,21 +1,24 @@
 /**
  * @jest-environment-options {"url": "https://accounts.oxy.so/"}
  *
- * Run-once guarantees for the web silent-SSO hook.
+ * Behaviour of the web silent-SSO hook.
  *
  * The accounts web app previously rendered blank with an accelerating
- * `[FedCM] requestIdentityCredential` retry storm. The trigger was a routing
- * redirect loop that remounted the provider; each remount reset the
- * per-instance `hasCheckedRef` guard and re-fired silent SSO.
+ * `[FedCM] requestIdentityCredential` retry storm, caused by a routing
+ * redirect loop that remounted the provider and re-fired silent SSO.
  *
- * `useWebSSO` now backs the run-once guarantee with a MODULE-LEVEL guard keyed
- * on `origin + baseURL`, so silent SSO fires exactly once per page load even
- * across provider remounts / StrictMode double-invoke. These tests pin that
- * behaviour:
+ * The page-load run-once guarantee — silent SSO invoking
+ * `navigator.credentials.get` AT MOST ONCE per page load across remounts /
+ * StrictMode / multiple consumers — now lives in `@oxyhq/core`'s
+ * `silentSignInWithFedCM` (memoized on `origin + baseURL`). The hook no longer
+ * owns a module-level guard; it keeps only a per-instance `hasCheckedRef`
+ * fast-path. These tests pin the HOOK's contract (the core memo is covered by
+ * core's own FedCM tests, which exercise the real method rather than a mock):
  *
- *   1. Silent SSO fires exactly once on a normal mount.
- *   2. After unmount + remount (same origin/API), it does NOT fire again.
- *   3. `onSessionFound` is invoked when the browser returns a session.
+ *   1. Silent SSO fires exactly once per mount (the per-instance fast-path
+ *      prevents duplicate fires from effect re-runs within one mount).
+ *   2. `onSessionFound` is invoked when the browser returns a session.
+ *   3. The hook does not fire when disabled.
  */
 
 import { renderHook, waitFor } from '@testing-library/react';
@@ -50,8 +53,8 @@ const fakeSession: SessionLoginResponse = {
   user: { id: 'u1', username: 'tester' },
 } as SessionLoginResponse;
 
-describe('useWebSSO run-once guarantee', () => {
-  it('fires silent SSO exactly once on mount and resolves a session', async () => {
+describe('useWebSSO behaviour', () => {
+  it('fires silent SSO exactly once per mount and resolves a session', async () => {
     const services = makeServices(fakeSession, 'https://api.oxy.so/once-1');
     const onSessionFound = jest.fn(async () => undefined);
 
@@ -65,12 +68,19 @@ describe('useWebSSO run-once guarantee', () => {
 
     await waitFor(() => expect(services.silentSignInWithFedCM).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(onSessionFound).toHaveBeenCalledWith(fakeSession));
+
+    // No duplicate fire from effect re-runs within the same mount.
+    expect(services.silentSignInWithFedCM).toHaveBeenCalledTimes(1);
   });
 
-  it('does NOT re-fire silent SSO after unmount + remount (same origin/API)', async () => {
-    // Distinct baseURL so this test owns its module-guard slot independently
-    // of the others, while still sharing the slot across its own remounts.
-    const services = makeServices(null, 'https://api.oxy.so/remount-resilience');
+  it('delegates the page-load run-once guarantee to core (calls through per mount)', async () => {
+    // The hook deliberately no longer owns a module-level guard: run-once per
+    // page load is enforced inside the REAL `silentSignInWithFedCM` (memoized
+    // on origin + baseURL). With a mock standing in for that method there is
+    // no memo, so the hook calls through once per fresh mount — the
+    // per-instance `hasCheckedRef` only suppresses re-fires within one mount.
+    // This pins that the hook itself adds no cross-mount suppression.
+    const services = makeServices(null, 'https://api.oxy.so/delegates-core');
     const onSessionFound = jest.fn(async () => undefined);
 
     const first = renderHook(() =>
@@ -81,22 +91,17 @@ describe('useWebSSO run-once guarantee', () => {
       })
     );
     await waitFor(() => expect(services.silentSignInWithFedCM).toHaveBeenCalledTimes(1));
-
-    // Simulate the redirect-loop remount churn.
     first.unmount();
-    for (let i = 0; i < 5; i++) {
-      const r = renderHook(() =>
-        useWebSSO({
-          oxyServices: services as unknown as OxyServices,
-          onSessionFound,
-          enabled: true,
-        })
-      );
-      r.unmount();
-    }
 
-    // Still exactly one silent SSO attempt across all those remounts.
-    expect(services.silentSignInWithFedCM).toHaveBeenCalledTimes(1);
+    const second = renderHook(() =>
+      useWebSSO({
+        oxyServices: services as unknown as OxyServices,
+        onSessionFound,
+        enabled: true,
+      })
+    );
+    await waitFor(() => expect(services.silentSignInWithFedCM).toHaveBeenCalledTimes(2));
+    second.unmount();
   });
 
   it('does not fire when disabled', async () => {
