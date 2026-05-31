@@ -353,7 +353,7 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
       deviceFingerprint?: string
     ): Promise<SessionLoginResponse> {
       try {
-        return await this.makeRequest<SessionLoginResponse>('POST', '/auth/verify', {
+        const res = await this.makeRequest<SessionLoginResponse>('POST', '/auth/verify', {
           publicKey,
           challenge,
           signature,
@@ -361,6 +361,21 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
           deviceName,
           deviceFingerprint,
         }, { cache: false });
+
+        // Plant the freshly-minted tokens, mirroring `claimSessionByToken`.
+        // `/auth/verify` returns the first access token (and refresh token) in
+        // its body, so installing it here means callers get an authenticated
+        // client without a second round-trip — and, critically, without
+        // falling back to the bearer-protected `GET /session/token/:sessionId`
+        // (C1 hardening), which 401s for a brand-new identity that has no
+        // bearer yet. `accessToken`/`refreshToken` are optional on
+        // SessionLoginResponse; only plant when an access token is present and
+        // default the refresh token to an empty string.
+        if (res?.accessToken) {
+          this.setTokens(res.accessToken, res.refreshToken ?? '');
+        }
+
+        return res;
       } catch (error) {
         throw this.handleError(error);
       }

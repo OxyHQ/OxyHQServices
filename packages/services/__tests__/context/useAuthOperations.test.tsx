@@ -63,10 +63,12 @@ interface FakeServices {
 const makeOxyServices = (overrides: Partial<FakeServices> = {}): FakeServices => ({
   requestChallenge: jest.fn(async () => ({ challenge: 'server-challenge' })),
   // The real `/auth/verify` always returns the first access token in its
-  // body, so the default mock mirrors that. The sign-in flow must plant
-  // this token via `setTokens` rather than re-fetching it from the
-  // bearer-protected `GET /session/token/:sessionId` (which 401s before a
-  // token exists).
+  // body, and `OxyServices.verifyChallenge` now PLANTS that token internally
+  // (mirroring `claimSessionByToken`). The sign-in flow therefore relies on
+  // `verifyChallenge` to authenticate the client and must NOT re-fetch the
+  // token from the bearer-protected `GET /session/token/:sessionId` (which
+  // 401s before a token exists). The mock returns the token to mirror the
+  // real response shape, but the consumer no longer reads it directly.
   verifyChallenge: jest.fn(async (): Promise<SessionLoginResponse> => ({
     sessionId: 'new-session',
     deviceId: 'device-1',
@@ -158,7 +160,7 @@ const setup = (opts: SetupOpts = {}) => {
 };
 
 describe('useAuthOperations.signIn — online flow', () => {
-  it('plants the verify access token and skips the bearer-protected token fetch', async () => {
+  it('authenticates via verifyChallenge and never calls the bearer-protected token fetch', async () => {
     (sessionHelpers.fetchSessionsWithFallback as jest.Mock).mockResolvedValueOnce([
       { sessionId: 'new-session', deviceId: 'device-1', userId: 'user-1', isCurrent: true },
     ]);
@@ -172,12 +174,14 @@ describe('useAuthOperations.signIn — online flow', () => {
 
     expect(helpers.oxyServices.requestChallenge).toHaveBeenCalledWith('pubkey-1');
     expect(helpers.oxyServices.verifyChallenge).toHaveBeenCalled();
-    // The first access token comes straight from the verify response — it
-    // must be planted via setTokens, NOT re-fetched via getTokenBySession
-    // (that route is bearer-protected and would 401 for a brand-new
-    // identity that has no token yet). Regression guard for the
+    // `verifyChallenge` now plants the first access token internally (asserted
+    // in @oxyhq/core's auth mixin tests), so the consumer no longer touches
+    // `setTokens` directly...
+    expect(helpers.oxyServices.setTokens).not.toHaveBeenCalled();
+    // ...and critically must NEVER call the bearer-protected
+    // `GET /session/token/:sessionId`, which 401s for a brand-new identity
+    // that has no bearer yet. Regression guard for the
     // AUTH_REQUIRED_OFFLINE_SESSION onboarding break.
-    expect(helpers.oxyServices.setTokens).toHaveBeenCalledWith('verify-access-token', 'verify-refresh-token');
     expect(helpers.oxyServices.getTokenBySession).not.toHaveBeenCalled();
     expect(helpers.oxyServices.getUserBySession).toHaveBeenCalledWith('new-session');
     expect(helpers.setActiveSessionId).toHaveBeenCalledWith('new-session');
@@ -189,13 +193,17 @@ describe('useAuthOperations.signIn — online flow', () => {
     expect(helpers.setAuthState).toHaveBeenLastCalledWith({ isLoading: false });
   });
 
-  it('falls back to getTokenBySession when the verify response omits the access token', async () => {
+  it('does not call getTokenBySession even when the verify response omits an access token', async () => {
     (sessionHelpers.fetchSessionsWithFallback as jest.Mock).mockResolvedValueOnce([
       { sessionId: 'new-session', deviceId: 'device-1', userId: 'user-1', isCurrent: true },
     ]);
 
     const helpers = setup({
       oxyServices: {
+        // A token-less new identity (onboarding): verify returns no access
+        // token. The consumer must still proceed to fetch the user WITHOUT
+        // hitting the bearer-protected session-token endpoint — that endpoint
+        // 401s pre-bearer and previously broke onboarding.
         verifyChallenge: jest.fn(async (): Promise<SessionLoginResponse> => ({
           sessionId: 'new-session',
           deviceId: 'device-1',
@@ -205,13 +213,15 @@ describe('useAuthOperations.signIn — online flow', () => {
       },
     });
 
+    let signedInUser: User | undefined;
     await act(async () => {
-      await helpers.result.current.signIn('pubkey-1');
+      signedInUser = await helpers.result.current.signIn('pubkey-1');
     });
 
-    // No token in the verify body → fall back to the session-token endpoint.
     expect(helpers.oxyServices.setTokens).not.toHaveBeenCalled();
-    expect(helpers.oxyServices.getTokenBySession).toHaveBeenCalledWith('new-session');
+    expect(helpers.oxyServices.getTokenBySession).not.toHaveBeenCalled();
+    expect(helpers.oxyServices.getUserBySession).toHaveBeenCalledWith('new-session');
+    expect(signedInUser?.id).toBe('user-1');
   });
 
   it('rejects with the original error when verifyChallenge throws', async () => {
@@ -237,31 +247,6 @@ describe('useAuthOperations.signIn — online flow', () => {
     expect(helpers.onError).toHaveBeenCalledWith(expect.objectContaining({
       code: 'LOGIN_ERROR',
     }));
-  });
-
-  it('translates a 404 from getTokenBySession into a helpful message (token-less verify fallback)', async () => {
-    const helpers = setup({
-      oxyServices: {
-        // Force the fallback path: verify returns no access token.
-        verifyChallenge: jest.fn(async (): Promise<SessionLoginResponse> => ({
-          sessionId: 'new-session',
-          deviceId: 'device-1',
-          expiresAt: '2030-01-01',
-          user: { id: 'user-1', username: 'alice' },
-        })),
-        getTokenBySession: jest.fn(async () => {
-          const err: Error & { status?: number } = new Error('HTTP 404: not found');
-          err.status = 404;
-          throw err;
-        }),
-      },
-    });
-
-    await expect(
-      act(async () => {
-        await helpers.result.current.signIn('pubkey-1');
-      }),
-    ).rejects.toThrow(/Session was created but token could not be retrieved/);
   });
 
   it('switches to an existing session for the same user instead of duplicating', async () => {

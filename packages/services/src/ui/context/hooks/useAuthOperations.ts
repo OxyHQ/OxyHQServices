@@ -178,8 +178,16 @@ export const useAuthOperations = ({
           logger('Offline sign-in successful');
         }
       } else {
-        // Online sign-in: use normal flow
-        // Verify and create session
+        // Online sign-in: use normal flow.
+        // Verify and create session. `verifyChallenge` plants the first
+        // access token (and refresh token) from the `/auth/verify` response
+        // body internally — mirroring `claimSessionByToken` — so the client is
+        // authenticated as soon as this resolves. We deliberately do NOT fall
+        // back to the bearer-protected `GET /session/token/:sessionId` (C1
+        // hardening): for a brand-new identity with no bearer yet that route
+        // 401s, which previously broke the entire new-identity onboarding
+        // flow. A token-less verify response simply leaves the client without
+        // a bearer here rather than triggering that 401.
         sessionResponse = await oxyServices.verifyChallenge(
           publicKey,
           challenge,
@@ -188,31 +196,6 @@ export const useAuthOperations = ({
           deviceName,
           deviceFingerprint,
         );
-
-        // Plant the first access token. `/auth/verify` already returns the
-        // freshly-minted access token in its response body, so use it
-        // directly. We must NOT fall back to `GET /session/token/:sessionId`
-        // here for a brand-new sign-in: that route is bearer-protected (C1
-        // hardening) and the client has no bearer yet, so calling it without
-        // a token returns 401 "Invalid or missing authorization header" —
-        // which previously broke the entire new-identity onboarding flow.
-        // Only when the verify response somehow omits the token do we fall
-        // back, and by then `setTokens` has not run so a 401 there is a real
-        // server fault worth surfacing.
-        if (sessionResponse.accessToken) {
-          oxyServices.setTokens(sessionResponse.accessToken, sessionResponse.refreshToken ?? '');
-        } else {
-          try {
-            await oxyServices.getTokenBySession(sessionResponse.sessionId);
-          } catch (tokenError: unknown) {
-            const errorMessage = tokenError instanceof Error ? tokenError.message : String(tokenError);
-            const status = isErrorWithCodeOrStatus(tokenError) ? tokenError.status : undefined;
-            if (status === 404 || errorMessage.includes('404')) {
-              throw new Error(`Session was created but token could not be retrieved. Session ID: ${sessionResponse.sessionId.substring(0, 8)}...`);
-            }
-            throw tokenError;
-          }
-        }
 
         // Get full user data
         fullUser = await oxyServices.getUserBySession(sessionResponse.sessionId);
