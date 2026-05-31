@@ -252,7 +252,6 @@ export default function HomeScreen() {
               onReload={handleReload}
               onDevices={handleDevices}
               onMenu={handleMenu}
-              onPressIn={handlePressIn}
             />
           </View>
         </View>

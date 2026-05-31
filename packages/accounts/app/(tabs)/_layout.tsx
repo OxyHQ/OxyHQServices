@@ -16,6 +16,7 @@ import { useSearchNavigation } from '@/hooks/use-search-navigation';
 import { useTranslation } from '@/lib/i18n';
 import { ErrorFallback } from '@/components/error-fallback';
 import { DRAWER_SCREENS } from '@/constants/drawer-screens';
+import { floatingPosition } from '@/constants/styles';
 import Animated, {
   useAnimatedStyle,
   useDerivedValue,
@@ -26,16 +27,6 @@ import Animated, {
 } from 'react-native-reanimated';
 
 const THEME_TRANSITION_MS = 280;
-
-/**
- * Floating-cluster positioning: `fixed` on web (pinned while content scrolls),
- * `absolute` on native (within the screen container). Typed as `ViewStyle` so
- * the `position` literal is validated instead of cast.
- */
-const floatingPosition: ViewStyle = Platform.select<ViewStyle>({
-  web: { position: 'fixed' },
-  default: { position: 'absolute' },
-}) ?? { position: 'absolute' };
 
 /** Hides a drawer item from the rail while keeping its route registered. */
 const HIDDEN_DRAWER_ITEM: { drawerItemStyle: ViewStyle } = {

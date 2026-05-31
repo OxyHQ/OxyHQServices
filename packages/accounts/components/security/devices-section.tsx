@@ -1,12 +1,10 @@
 import React from 'react';
 import { View, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Section } from '@/components/section';
 import { GroupedSection } from '@/components/grouped-section';
 import { ThemedText } from '@/components/themed-text';
-import { LinkButton, AccountCard } from '@/components/ui';
-import { useColors } from '@/hooks/useColors';
+import { LinkButton, AccountCard, EmptyStateCard } from '@/components/ui';
 import { useTranslation } from '@/lib/i18n';
 import type { GroupedItem } from '@/components/sections/types';
 
@@ -22,7 +20,6 @@ interface DevicesSectionProps {
  * Extracted from the security screen's `renderContent`.
  */
 export function DevicesSection({ items, deviceCount }: DevicesSectionProps) {
-  const colors = useColors();
   const router = useRouter();
   const { t } = useTranslation();
 
@@ -45,22 +42,11 @@ export function DevicesSection({ items, deviceCount }: DevicesSectionProps) {
           </View>
         </>
       ) : (
-        <AccountCard>
-          <View style={styles.emptyStateContainer}>
-            <MaterialCommunityIcons
-              name="devices"
-              size={40}
-              color={colors.text}
-              style={styles.emptyStateIcon}
-            />
-            <ThemedText style={[styles.emptyStateTitle, { color: colors.text }]}>
-              {t('security.devices.noDevices')}
-            </ThemedText>
-            <ThemedText style={[styles.emptyStateSubtitle, { color: colors.text }]}>
-              {t('security.devices.noDevicesSubtitle')}
-            </ThemedText>
-          </View>
-        </AccountCard>
+        <EmptyStateCard
+          icon="devices"
+          title={t('security.devices.noDevices')}
+          subtitle={t('security.devices.noDevicesSubtitle')}
+        />
       )}
     </Section>
   );
@@ -73,27 +59,5 @@ const styles = StyleSheet.create({
   },
   linkButtonWrapper: {
     marginTop: -8,
-  },
-  emptyStateContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 32,
-    paddingHorizontal: 24,
-  },
-  emptyStateIcon: {
-    opacity: 0.4,
-    marginBottom: 12,
-  },
-  emptyStateTitle: {
-    fontSize: 15,
-    fontWeight: '600',
-    marginBottom: 6,
-    opacity: 0.8,
-  },
-  emptyStateSubtitle: {
-    fontSize: 13,
-    opacity: 0.6,
-    textAlign: 'center',
-    lineHeight: 18,
   },
 });

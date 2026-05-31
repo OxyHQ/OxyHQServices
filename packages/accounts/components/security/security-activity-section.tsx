@@ -1,12 +1,11 @@
 import React from 'react';
 import { View, StyleSheet, ActivityIndicator } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { alert } from '@oxyhq/bloom';
 import type { SecurityActivity } from '@oxyhq/core';
 import { Section } from '@/components/section';
 import { GroupedSection } from '@/components/grouped-section';
 import { ThemedText } from '@/components/themed-text';
-import { LinkButton, AccountCard } from '@/components/ui';
+import { LinkButton, AccountCard, EmptyStateCard } from '@/components/ui';
 import { useColors } from '@/hooks/useColors';
 import { useTranslation } from '@/lib/i18n';
 import { useRelativeTime } from '@/hooks/useRelativeTime';
@@ -43,9 +42,9 @@ export function SecurityActivitySection({
     <Section title={t('security.sections.recentActivity')}>
       {isLoading ? (
         <AccountCard>
-          <View style={styles.emptyStateContainer}>
+          <View style={styles.loadingContainer}>
             <ActivityIndicator size="small" color={colors.tint} />
-            <ThemedText style={[styles.emptyStateSubtitle, styles.loadingSubtitle, { color: colors.text }]}>
+            <ThemedText style={[styles.loadingSubtitle, { color: colors.text }]}>
               {t('security.activity.loading')}
             </ThemedText>
           </View>
@@ -76,22 +75,11 @@ export function SecurityActivitySection({
           </View>
         </>
       ) : (
-        <AccountCard>
-          <View style={styles.emptyStateContainer}>
-            <MaterialCommunityIcons
-              name="shield-check-outline"
-              size={40}
-              color={colors.text}
-              style={styles.emptyStateIcon}
-            />
-            <ThemedText style={[styles.emptyStateTitle, { color: colors.text }]}>
-              {t('security.activity.noActivity')}
-            </ThemedText>
-            <ThemedText style={[styles.emptyStateSubtitle, { color: colors.text }]}>
-              {t('security.activity.noActivitySubtitle')}
-            </ThemedText>
-          </View>
-        </AccountCard>
+        <EmptyStateCard
+          icon="shield-check-outline"
+          title={t('security.activity.noActivity')}
+          subtitle={t('security.activity.noActivitySubtitle')}
+        />
       )}
     </Section>
   );
@@ -101,29 +89,17 @@ const styles = StyleSheet.create({
   linkButtonWrapper: {
     marginTop: -8,
   },
-  loadingSubtitle: {
-    marginTop: 12,
-  },
-  emptyStateContainer: {
+  loadingContainer: {
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 32,
     paddingHorizontal: 24,
   },
-  emptyStateIcon: {
-    opacity: 0.4,
-    marginBottom: 12,
-  },
-  emptyStateTitle: {
-    fontSize: 15,
-    fontWeight: '600',
-    marginBottom: 6,
-    opacity: 0.8,
-  },
-  emptyStateSubtitle: {
+  loadingSubtitle: {
     fontSize: 13,
     opacity: 0.6,
     textAlign: 'center',
     lineHeight: 18,
+    marginTop: 12,
   },
 });

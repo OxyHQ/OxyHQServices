@@ -1,8 +1,8 @@
 import React, { useMemo } from 'react';
-import { View, Image, StyleSheet } from 'react-native';
+import { Image, StyleSheet } from 'react-native';
 import { Section } from '@/components/section';
 import { GroupedSection } from '@/components/grouped-section';
-import { AccountCard } from '@/components/ui';
+import { AccountCard, CircleIconBadge } from '@/components/ui';
 import { useColors } from '@/hooks/useColors';
 import { useTranslation } from '@/lib/i18n';
 import faircoinImage from '@/assets/images/faircoin.jpg';
@@ -20,13 +20,13 @@ export function PaymentsInfoSection() {
     {
       id: 'faircoin',
       customIcon: (
-        <View style={[styles.faircoinIcon, { backgroundColor: colors.sidebarIconPayments }]}>
+        <CircleIconBadge backgroundColor={colors.sidebarIconPayments}>
           <Image
             source={faircoinImage}
             style={styles.faircoinIconImage}
             resizeMode="cover"
           />
-        </View>
+        </CircleIconBadge>
       ),
       title: t('payments.info.fairCoin'),
       subtitle: t('payments.info.fairCoinBody'),
@@ -71,12 +71,6 @@ export function PaymentsInfoSection() {
 }
 
 const styles = StyleSheet.create({
-  faircoinIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    overflow: 'hidden',
-  },
   faircoinIconImage: {
     width: 36,
     height: 36,

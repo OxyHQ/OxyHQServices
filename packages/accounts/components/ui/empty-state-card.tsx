@@ -1,21 +1,29 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { AccountCard } from '@/components/ui';
+import { ThemedText } from '@/components/themed-text';
+import { AccountCard } from '@/components/ui/account-card';
 import { useColors } from '@/hooks/useColors';
 import type { MaterialCommunityIconName } from '@/types/icons';
 
-interface HistoryEmptyStateProps {
+interface EmptyStateCardProps {
   icon: MaterialCommunityIconName;
   title: string;
   subtitle: string;
+  /**
+   * Color for the subtitle text. Defaults to the primary text color (matching
+   * the security sections). The payments sections pass `colors.textSecondary`
+   * to preserve their dimmer subtitle tone.
+   */
+  subtitleColor?: string;
 }
 
 /**
- * Shared empty-state card used by the billing-history and transaction-history
- * sections when there are no entries to render.
+ * Generic empty-state card (centered icon + title + subtitle inside an
+ * {@link AccountCard}). Shared by the billing/transaction history sections and
+ * the security devices/activity sections when there are no entries to render.
  */
-export function HistoryEmptyState({ icon, title, subtitle }: HistoryEmptyStateProps) {
+export function EmptyStateCard({ icon, title, subtitle, subtitleColor }: EmptyStateCardProps) {
   const colors = useColors();
 
   return (
@@ -27,8 +35,10 @@ export function HistoryEmptyState({ icon, title, subtitle }: HistoryEmptyStatePr
           color={colors.text}
           style={styles.emptyStateIcon}
         />
-        <Text style={[styles.emptyStateTitle, { color: colors.text }]}>{title}</Text>
-        <Text style={[styles.emptyStateSubtitle, { color: colors.textSecondary }]}>{subtitle}</Text>
+        <ThemedText style={[styles.emptyStateTitle, { color: colors.text }]}>{title}</ThemedText>
+        <ThemedText style={[styles.emptyStateSubtitle, { color: subtitleColor ?? colors.text }]}>
+          {subtitle}
+        </ThemedText>
       </View>
     </AccountCard>
   );

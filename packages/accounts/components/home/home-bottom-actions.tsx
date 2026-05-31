@@ -1,77 +1,55 @@
 import React from 'react';
-import { View, TouchableOpacity, StyleSheet } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { darkenColor } from '@/utils/color-utils';
+import { View, StyleSheet } from 'react-native';
 import { useColors } from '@/hooks/useColors';
 import { useTranslation } from '@/lib/i18n';
+import { QuickActionButton } from '@/components/ui';
+
+/** Diameter of the home footer's circular action badges. */
+const HOME_BADGE_SIZE = 36;
 
 interface HomeBottomActionsProps {
   onReload: () => void;
   onDevices: () => void;
   onMenu: () => void;
-  onPressIn: () => void;
 }
 
 /**
  * The three circular action buttons (reload, devices, menu) at the bottom of
- * the home screen. Extracted verbatim from the home screen's footer.
+ * the home screen. Built on the shared {@link QuickActionButton}, which owns
+ * the haptic press feedback.
  */
-export function HomeBottomActions({
-  onReload,
-  onDevices,
-  onMenu,
-  onPressIn,
-}: HomeBottomActionsProps) {
+export function HomeBottomActions({ onReload, onDevices, onMenu }: HomeBottomActionsProps) {
   const colors = useColors();
   const { t } = useTranslation();
 
   return (
     <View style={styles.bottomActions}>
-      <TouchableOpacity
-        style={styles.circleButton}
-        onPressIn={onPressIn}
+      <QuickActionButton
+        icon="reload"
+        backgroundColor={colors.sidebarIconSecurity}
         onPress={onReload}
-        accessibilityRole="button"
         accessibilityLabel={t('a11y.refresh')}
-      >
-        <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconSecurity }]}>
-          <MaterialCommunityIcons name="reload" size={22} color={darkenColor(colors.sidebarIconSecurity)} />
-        </View>
-      </TouchableOpacity>
-      <TouchableOpacity
-        style={styles.circleButton}
-        onPressIn={onPressIn}
+        size={HOME_BADGE_SIZE}
+      />
+      <QuickActionButton
+        icon="desktop-classic"
+        backgroundColor={colors.sidebarIconDevices}
         onPress={onDevices}
-        accessibilityRole="button"
         accessibilityLabel={t('drawer.devices')}
-      >
-        <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconDevices }]}>
-          <MaterialCommunityIcons name="desktop-classic" size={22} color={darkenColor(colors.sidebarIconDevices)} />
-        </View>
-      </TouchableOpacity>
-      <TouchableOpacity
-        style={styles.circleButton}
-        onPressIn={onPressIn}
+        size={HOME_BADGE_SIZE}
+      />
+      <QuickActionButton
+        icon="menu"
+        backgroundColor={colors.sidebarIconData}
         onPress={onMenu}
-        accessibilityRole="button"
         accessibilityLabel={t('a11y.menu')}
-      >
-        <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconData }]}>
-          <MaterialCommunityIcons name="menu" size={22} color={darkenColor(colors.sidebarIconData)} />
-        </View>
-      </TouchableOpacity>
+        size={HOME_BADGE_SIZE}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  menuIconContainer: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-  } as const,
   bottomActions: {
     flexDirection: 'row',
     justifyContent: 'center',
@@ -79,9 +57,5 @@ const styles = StyleSheet.create({
     gap: 16,
     marginTop: 32,
     marginBottom: 24,
-  } as const,
-  circleButton: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  } as const,
+  },
 });

@@ -3,12 +3,11 @@ import { Text, StyleSheet } from 'react-native';
 import type { WalletTransaction } from '@oxyhq/services';
 import { Section } from '@/components/section';
 import { GroupedSection } from '@/components/grouped-section';
-import { AccountCard } from '@/components/ui';
+import { AccountCard, EmptyStateCard } from '@/components/ui';
 import { useColors } from '@/hooks/useColors';
 import { useTranslation } from '@/lib/i18n';
 import { formatDate } from '@/utils/date-utils';
 import { isCreditTransaction } from '@/utils/payment-utils';
-import { HistoryEmptyState } from './HistoryEmptyState';
 
 interface TransactionHistorySectionProps {
   /** Wallet ledger entries, newest first. */
@@ -64,10 +63,11 @@ export function TransactionHistorySection({ transactions }: TransactionHistorySe
           <GroupedSection items={items} />
         </AccountCard>
       ) : (
-        <HistoryEmptyState
+        <EmptyStateCard
           icon="swap-horizontal"
           title={t('payments.history.noTransactions')}
           subtitle={t('payments.history.noTransactionsSubtitle')}
+          subtitleColor={colors.textSecondary}
         />
       )}
     </Section>

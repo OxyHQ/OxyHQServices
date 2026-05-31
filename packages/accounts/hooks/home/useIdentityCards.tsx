@@ -1,9 +1,10 @@
 import React, { useMemo } from 'react';
-import { View, StyleSheet, Platform } from 'react-native';
+import { Platform } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { darkenColor } from '@/utils/color-utils';
 import { useColors } from '@/hooks/useColors';
 import { useTranslation } from '@/lib/i18n';
+import { CircleIconBadge } from '@/components/ui';
 import type { IdentityCard } from '@/components/identity-cards-section';
 import type { HomeHandlers } from './useHomeHandlers';
 
@@ -28,9 +29,9 @@ export function useIdentityCards(handleAboutIdentity: HomeHandlers['handleAboutI
       {
         id: 'self-custody',
         customIcon: (
-          <View style={[styles.methodIcon, { backgroundColor: colors.identityIconSelfCustody }]}>
+          <CircleIconBadge backgroundColor={colors.identityIconSelfCustody}>
             <MaterialCommunityIcons name="shield-key" size={22} color={darkenColor(colors.identityIconSelfCustody)} />
-          </View>
+          </CircleIconBadge>
         ),
         title: t('home.identity.selfCustody'),
         subtitle: t('home.identity.selfCustodySubtitle'),
@@ -40,9 +41,9 @@ export function useIdentityCards(handleAboutIdentity: HomeHandlers['handleAboutI
       {
         id: 'public-key',
         customIcon: (
-          <View style={[styles.methodIcon, { backgroundColor: colors.identityIconPublicKey }]}>
+          <CircleIconBadge backgroundColor={colors.identityIconPublicKey}>
             <MaterialCommunityIcons name="key-variant" size={22} color={darkenColor(colors.identityIconPublicKey)} />
-          </View>
+          </CircleIconBadge>
         ),
         title: t('home.identity.publicKey'),
         subtitle: t('home.identity.publicKeySubtitle'),
@@ -52,13 +53,3 @@ export function useIdentityCards(handleAboutIdentity: HomeHandlers['handleAboutI
     ];
   }, [handleAboutIdentity, colors.identityIconSelfCustody, colors.identityIconPublicKey, t]);
 }
-
-const styles = StyleSheet.create({
-  methodIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-  } as const,
-});

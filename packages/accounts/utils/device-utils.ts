@@ -79,17 +79,15 @@ export interface DeviceGroup {
   count: number;
   /** Up to {@link MAX_DEVICE_GROUP_NAME_PREVIEW} display names for preview. */
   names: string[];
-  /** Coalesced device ids (`id ?? deviceId ?? ''`) for every device in the group. */
-  deviceIds: string[];
 }
 
 /**
  * Groups devices by their normalized type, preserving first-seen order.
  *
  * Pure helper backing the security screen's device section: it counts devices
- * per type, collects a capped preview of display names, and records every
- * device id. Extracted from the screen so the grouping algorithm can be unit
- * tested without standing up the React/RN render tree.
+ * per type and collects a capped preview of display names. Extracted from the
+ * screen so the grouping algorithm can be unit tested without standing up the
+ * React/RN render tree.
  *
  * @param devices - The device records to group.
  * @param nameFallback - Display-name fallback for records missing a name.
@@ -103,15 +101,13 @@ export function groupDevicesByType(
   devices.forEach((device) => {
     const type = device.type || device.deviceType || 'unknown';
     const name = getDeviceDisplayName(device, nameFallback);
-    const deviceId = device.id || device.deviceId || '';
 
     let group = groups.get(type);
     if (!group) {
-      group = { type, count: 0, names: [], deviceIds: [] };
+      group = { type, count: 0, names: [] };
       groups.set(type, group);
     }
     group.count++;
-    group.deviceIds.push(deviceId);
     if (group.names.length < MAX_DEVICE_GROUP_NAME_PREVIEW) {
       group.names.push(name);
     }

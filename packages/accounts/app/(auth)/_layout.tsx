@@ -3,10 +3,12 @@ import { AuthFlowProvider } from '@/contexts/auth-flow-context';
 import { ErrorFallback } from '@/components/error-fallback';
 
 /**
- * Auth Layout (Base)
+ * Auth Layout
  *
- * Base layout for authentication flow screens.
- * Platform-specific implementations are in _layout.native.tsx and _layout.web.tsx
+ * Single cross-platform layout for the authentication flow screens (welcome,
+ * sign-in, create-identity, import-identity). The same stack registration
+ * serves web and native; platform differences live inside the individual
+ * screens, not in a layout shadow.
  */
 export default function AuthLayout() {
     return (

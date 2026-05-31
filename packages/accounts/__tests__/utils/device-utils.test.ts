@@ -69,7 +69,6 @@ describe('groupDevicesByType', () => {
     const mobile = groups.find((g) => g.type === 'mobile');
     const desktop = groups.find((g) => g.type === 'desktop');
     expect(mobile?.count).toBe(2);
-    expect(mobile?.deviceIds).toEqual(['1', '2']);
     expect(desktop?.count).toBe(1);
   });
 
@@ -108,10 +107,9 @@ describe('groupDevicesByType', () => {
     expect(group.count).toBe(5);
     expect(group.names).toHaveLength(MAX_DEVICE_GROUP_NAME_PREVIEW);
     expect(group.names).toEqual(['Phone 0', 'Phone 1', 'Phone 2']);
-    expect(group.deviceIds).toHaveLength(5);
   });
 
-  it('falls back to the provided name fallback and coalesces id variants', () => {
+  it('falls back to the provided name fallback for records missing a name', () => {
     const devices: DeviceRecord[] = [
       { deviceId: 'd1', type: 'mobile' },
       { type: 'mobile' },
@@ -120,6 +118,5 @@ describe('groupDevicesByType', () => {
     const [group] = groupDevicesByType(devices, 'Unknown Device');
 
     expect(group.names).toEqual(['Unknown Device', 'Unknown Device']);
-    expect(group.deviceIds).toEqual(['d1', '']);
   });
 });

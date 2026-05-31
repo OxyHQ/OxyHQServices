@@ -1,10 +1,11 @@
 import React from 'react';
-import { Platform, StyleSheet, View, type ViewStyle } from 'react-native';
+import { Platform, StyleSheet, View } from 'react-native';
 import Animated, { Easing, withTiming } from 'react-native-reanimated';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 import { darkenColor } from '@/utils/color-utils';
 import { useTranslation } from '@/lib/i18n';
+import { floatingPosition } from '@/constants/styles';
 import { QuickActionButton } from './quick-action-button';
 
 const ICON_ANIM_MS = 350;
@@ -28,16 +29,6 @@ const themeIconEntering = () => {
     },
   };
 };
-
-/**
- * Absolute/fixed positioning shared by every floating action cluster. On web
- * the cluster is `position: fixed` so it stays pinned while the content column
- * scrolls; on native it is `position: absolute` within the screen container.
- */
-const floatingPosition: ViewStyle = Platform.select<ViewStyle>({
-  web: { position: 'fixed' },
-  default: { position: 'absolute' },
-}) ?? { position: 'absolute' };
 
 interface BottomActionBarProps {
   variant: 'desktop' | 'mobile';

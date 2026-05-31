@@ -61,20 +61,12 @@ export default function PaymentsScreen() {
     return null;
   }, [subscriptionQuery.data, subscriptionQuery.isError]);
 
-  const payments = useMemo<Payment[]>(
-    () => paymentsQuery.data ?? [],
-    [paymentsQuery.data],
-  );
-
-  const wallet = useMemo<Wallet | null>(
-    () => walletQuery.data ?? null,
-    [walletQuery.data],
-  );
-
-  const transactions = useMemo<WalletTransaction[]>(
-    () => transactionsQuery.data?.data ?? [],
-    [transactionsQuery.data],
-  );
+  // TanStack Query data is referentially stable across renders, so these need
+  // no memoization — the `?? []` / `?? null` fallbacks are cheap and only
+  // change identity when the underlying query data changes.
+  const payments: Payment[] = paymentsQuery.data ?? [];
+  const wallet: Wallet | null = walletQuery.data ?? null;
+  const transactions: WalletTransaction[] = transactionsQuery.data?.data ?? [];
 
   // Initial full-screen loader: only while a query has no data yet and is still
   // loading. Once any data has resolved we render the screen and let

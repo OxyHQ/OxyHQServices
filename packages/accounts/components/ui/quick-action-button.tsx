@@ -5,6 +5,9 @@ import { darkenColor } from '@/utils/color-utils';
 import { useHapticPress } from '@/hooks/use-haptic-press';
 import type { MaterialCommunityIconName } from '@/types/icons';
 
+/** Default diameter of the circular badge, used by the bottom action bars. */
+const DEFAULT_BADGE_SIZE = 48;
+
 interface QuickActionButtonProps {
   /** MaterialCommunityIcons glyph to render inside the circular badge. */
   icon: MaterialCommunityIconName;
@@ -12,6 +15,11 @@ interface QuickActionButtonProps {
   backgroundColor: string;
   onPress: () => void;
   accessibilityLabel: string;
+  /**
+   * Diameter of the circular badge in dp. Defaults to {@link DEFAULT_BADGE_SIZE}
+   * (the bottom action bars); the home footer passes a smaller 36dp badge.
+   */
+  size?: number;
   /**
    * Optional override for the icon node — used by the theme toggle, which
    * wraps the glyph in an animated container for its rotate/scale transition.
@@ -31,6 +39,7 @@ export function QuickActionButton({
   backgroundColor,
   onPress,
   accessibilityLabel,
+  size = DEFAULT_BADGE_SIZE,
   iconNode,
 }: QuickActionButtonProps) {
   const handlePressIn = useHapticPress();
@@ -43,7 +52,12 @@ export function QuickActionButton({
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
     >
-      <View style={[styles.menuIconContainer, { backgroundColor }]}>
+      <View
+        style={[
+          styles.menuIconContainer,
+          { width: size, height: size, borderRadius: size / 2, backgroundColor },
+        ]}
+      >
         {iconNode ?? (
           <MaterialCommunityIcons name={icon} size={22} color={darkenColor(backgroundColor)} />
         )}
@@ -58,9 +72,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   menuIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
   },
