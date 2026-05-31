@@ -260,11 +260,16 @@ Activated inside `FileManagementScreen` when `isImageOnlyPicker` is true. Apple 
 - **`mode` vs `mediation` are DISTINCT fields**: `mode` (`'active'`/`'passive'`) selects the FedCM UI style; `mediation` (`'silent'`/`'optional'`/`'required'`) controls the credential-chooser flow. Silent SSO sends NO `mode` field.
 - **Server-minted nonce required**: token exchange requires a server-minted, origin-bound nonce. Client calls `POST /fedcm/nonce` (`mintServerNonce` / `getFedcmNonce`) before exchange. A purely local UUID nonce is rejected with `invalid_nonce`.
 - **IdP server requirements** (requires redeploy of auth.oxy.so to take effect in prod): `/.well-known/web-identity` must be served as `application/json` (not octet-stream); `id_assertion_endpoint` and `disconnect` must send CORS headers (`Access-Control-Allow-Origin: <RP origin>` + `Access-Control-Allow-Credentials: true`) and enforce the `Sec-Fetch-Dest: webidentity` guard.
-- **Silent SSO run-once guard**: fires EXACTLY ONCE per page load. Module-level `silentSSOAttempted` Set (keyed on `origin+baseURL`) in `useWebSSO` (both services and auth-sdk) plus `fedcmSilentSignInAttempted` in `WebOxyProvider` — survives unmount/remount/StrictMode double-invocation.
+- **Silent SSO run-once guard — LIVES IN CONSUMERS, NOT core**: A module-level `silentSignInWithFedCM()` singleton in `@oxyhq/core` was tried and reverted — it re-evaluates in the Metro web bundle (same hazard the accounts `metro.config.js` `resolveRequest` block mitigates), so the guard did not hold across page navigations. The guard now lives in each consumer:
+  - `useWebSSO` in **both** `@oxyhq/services` and `@oxyhq/auth` owns a module-level `silentSSOAttempted` Set + `ssoSignature(origin|baseURL)` key for cross-mount deduplication, plus a per-instance `hasCheckedRef` fast-path to skip redundant renders within the same mount.
+  - `WebOxyProvider` keeps its own `fedcmSilentSignInAttempted` guard (keyed `origin+baseURL`) because its silent path also runs `oxyServices.silentSignIn()` (iframe/popup fallback).
+  - **Do NOT move this guard back into a core module-level singleton** — it re-evaluates in the Metro web bundle and the guard won't hold. Keep it in the consumer hooks/provider.
 
-## Sign-In Token Planting (services `useAuthOperations.performSignIn`)
+## Sign-In Token Planting
 
-Plant the `accessToken` returned by `verifyChallenge` via `oxyServices.setTokens(...)` immediately after verification; only fall back to bearer-protected `getTokenBySession` when the verify response body omits it. A token-less new identity previously 401'd with "Identity created locally but server sync failed" / `AUTH_REQUIRED_OFFLINE_SESSION`.
+`@oxyhq/core` `OxyServices.verifyChallenge()` now calls `setTokens(accessToken, refreshToken ?? '')` internally before returning — matching the behaviour of `claimSessionByToken`. Consumers (including `services` `useAuthOperations.performSignIn`) no longer need to hand-plant the token or fall back to the bearer-protected `getTokenBySession` after `verifyChallenge`. Just await `verifyChallenge` and proceed; the SDK has already planted the token.
+
+**Token-less new-identity onboarding**: the 401 fix (avoiding bearer-protected `getTokenBySession` for a brand-new identity that has no session yet) is preserved — `verifyChallenge`'s internal `setTokens` call handles it.
 
 ## New React Query Hooks (@oxyhq/services — exported from package root)
 
@@ -279,9 +284,9 @@ Plant the `accessToken` returned by `verifyChallenge` via `oxyServices.setTokens
 
 | Package | Version | Notes |
 |---------|---------|-------|
-| `@oxyhq/core` | **1.11.20** | type-only cleanup (`OxyServices.fedcm.ts` — removed all `as any`) |
-| `@oxyhq/services` | **6.10.4** | |
-| `@oxyhq/auth` | **2.0.7** | |
+| `@oxyhq/core` | **1.11.22** | `verifyChallenge` plants tokens; silent-SSO guard reverted to consumers |
+| `@oxyhq/services` | **6.10.6** | `useWebSSO` owns module-level `silentSSOAttempted` Set + per-instance `hasCheckedRef` |
+| `@oxyhq/auth` | **2.0.9** | `useWebSSO` owns module-level `silentSSOAttempted` Set + per-instance `hasCheckedRef` |
 | `@oxyhq/bloom` | **0.6.7** | RN-0.85 line; monorepo override pins `^0.6.7` |
 
 External consumers (Mention, Allo, Homiio, TNP) should bump to these versions.

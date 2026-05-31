@@ -2,7 +2,7 @@
 
 A comprehensive TypeScript UI library for the Oxy API providing authentication, user management, and UI components for React Native and Expo applications.
 
-**Current published version: 6.10.4**
+**Current published version: 6.10.6**
 
 > **For web apps (Vite, Next.js, CRA):** Use [`@oxyhq/auth`](../auth) for authentication and [`@oxyhq/core`](../core) for types and services.
 >
@@ -747,11 +747,11 @@ Typed returns are defined in `ui/hooks/queries/paymentTypes.ts` (`Subscription`,
 
 ## Sign-In Token Planting
 
-`useAuthOperations.performSignIn` plants the `accessToken` returned directly by `verifyChallenge` via `oxyServices.setTokens(...)`. It falls back to the bearer-protected `getTokenBySession` only when the verify response omits the token. Without this, a brand-new identity 401s on the session sync step.
+`@oxyhq/core` `OxyServices.verifyChallenge()` plants `setTokens(accessToken, refreshToken ?? '')` internally before returning. `useAuthOperations.performSignIn` no longer needs to hand-plant the token or fall back to `getTokenBySession` — just await `verifyChallenge` and proceed.
 
 ## Silent SSO Run-Once Guard
 
-`useWebSSO` contains a module-level `silentSSOAttempted` Set keyed on `origin+baseURL`. Silent FedCM sign-in fires exactly once per page load regardless of unmount/remount or StrictMode double-invoke.
+The cross-page-load deduplication guard lives in the consumer hooks, NOT in `@oxyhq/core`. A core module-level singleton was tried and reverted because it re-evaluates in the Metro web bundle and the guard did not hold. `useWebSSO` in this package owns a module-level `silentSSOAttempted` Set + `ssoSignature(origin|baseURL)` key for cross-mount deduplication, plus a per-instance `hasCheckedRef` fast-path. Do NOT move this guard into a core module-level singleton.
 
 ## Requirements
 

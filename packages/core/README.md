@@ -2,7 +2,7 @@
 
 OxyHQ SDK Foundation. Platform-agnostic core library that works in Node.js, browser, and React Native environments. No React dependency.
 
-**Current published version: 1.11.20**
+**Current published version: 1.11.22**
 
 ## Installation
 
@@ -62,4 +62,8 @@ Compiles with TypeScript, producing CJS, ESM, and type declaration outputs.
 - Use W3C-spec `mode` enum: `'active'` / `'passive'`. Do NOT use legacy `'button'` / `'widget'` (Chrome throws TypeError).
 - Client sends `'active'` first, transparently retries with legacy value for Chrome 125–131 backwards compat.
 - Token exchange requires a server-minted nonce from `POST /fedcm/nonce` — local UUID nonces are rejected.
-- Silent SSO: module-level `silentSSOAttempted` Set keyed on `origin+baseURL` ensures the silent attempt fires exactly once per page load, surviving StrictMode double-invoke.
+- **Silent SSO guard is NOT here**: a module-level singleton in core was tried and reverted — it re-evaluates in the Metro web bundle so the guard did not hold. The guard lives in the consumer hooks (`useWebSSO` in `@oxyhq/services` and `@oxyhq/auth`) and in `WebOxyProvider`. Do NOT move it back into a core module-level singleton.
+
+## `verifyChallenge` Token Planting
+
+`OxyServices.verifyChallenge()` calls `setTokens(accessToken, refreshToken ?? '')` internally before returning. Callers do not need to plant tokens manually after `verifyChallenge` — the SDK handles it.

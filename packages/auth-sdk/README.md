@@ -2,7 +2,7 @@
 
 OxyHQ Web Auth SDK. Headless React hooks for web applications. Zero React Native or Expo dependencies.
 
-**Current published version: 2.0.7**
+**Current published version: 2.0.9**
 
 ## Installation
 
@@ -96,7 +96,8 @@ v1.x required passing 8+ props manually. In v2.0 all state is derived from conte
 ## FedCM (`useWebSSO`, `WebOxyProvider`)
 
 - Use W3C-spec `mode` values `'active'` / `'passive'`. The legacy `'button'` / `'widget'` values throw `TypeError` in current Chrome.
-- `WebOxyProvider` contains a `fedcmSilentSignInAttempted` flag; `useWebSSO` has a module-level `silentSSOAttempted` Set keyed on `origin+baseURL`. Together they ensure silent SSO fires exactly once per page load, surviving unmount/remount and StrictMode.
+- **Silent SSO guard lives in consumers, NOT `@oxyhq/core`**: a core module-level singleton was tried and reverted because it re-evaluates in the Metro web bundle and the guard did not hold. `useWebSSO` owns a module-level `silentSSOAttempted` Set + `ssoSignature(origin|baseURL)` for cross-mount deduplication, plus a per-instance `hasCheckedRef` fast-path. Do NOT move this guard into a core module-level singleton.
+- `WebOxyProvider` keeps its own `fedcmSilentSignInAttempted` guard (keyed `origin+baseURL`) because its silent path also runs `oxyServices.silentSignIn()` (iframe/popup fallback).
 - Token exchange requires a server-minted nonce (`POST /fedcm/nonce`) — local UUID nonces are rejected.
 
 ## Offline-First Persistence
