@@ -2,7 +2,7 @@
 
 OxyHQ SDK Foundation. Platform-agnostic core library that works in Node.js, browser, and React Native environments. No React dependency.
 
-**Current published version: 1.11.19**
+**Current published version: 1.11.20**
 
 ## Installation
 
