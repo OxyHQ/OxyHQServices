@@ -9,7 +9,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { OxyServices } from '@oxyhq/core';
+import { OxyServices, oxyClient } from '@oxyhq/core';
 import type { User, ApiError, SessionLoginResponse } from '@oxyhq/core';
 import type { ManagedAccount, CreateManagedAccountInput } from '@oxyhq/core';
 import { KeyManager } from '@oxyhq/core';
@@ -189,6 +189,43 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   const [tokenReady, setTokenReady] = useState(true);
   const [initialized, setInitialized] = useState(false);
   const setAuthState = useAuthStore.setState;
+
+  // Keep the shared `oxyClient` singleton's token store in lockstep with the
+  // session owned by THIS provider's instance. Many apps construct their api
+  // clients against the exported `oxyClient` singleton (reading
+  // `oxyClient.getAccessToken()` to build Authorization headers) while passing
+  // only `baseURL` to OxyProvider — in which case the provider owns a DIFFERENT
+  // `OxyServices` instance and the singleton would otherwise never receive the
+  // token, producing `Authorization: Bearer null`.
+  //
+  // Subscribing to `onTokensChanged` mirrors EVERY token mutation — sign-in,
+  // session restore, switch, silent refresh, and sign-out/clear — onto the
+  // singleton at the single source of truth in @oxyhq/core, with no per-app
+  // plumbing and regardless of which auth code path fired.
+  //
+  // When the app passed the singleton itself as `oxyServices` (Mention's
+  // pattern), `oxyServices === oxyClient`, so we skip the redundant self-write
+  // and the subscription is a no-op mirror — fully backward compatible.
+  useEffect(() => {
+    if (oxyServices === oxyClient) {
+      return;
+    }
+
+    const applyToSingleton = (accessToken: string | null) => {
+      if (accessToken) {
+        oxyClient.setTokens(accessToken);
+      } else {
+        oxyClient.clearTokens();
+      }
+    };
+
+    // Seed the singleton with whatever token the instance already holds (it may
+    // have been planted synchronously before this effect ran — e.g. a token set
+    // during the same tick as mount), then keep it in sync going forward.
+    applyToSingleton(oxyServices.getAccessToken());
+
+    return oxyServices.onTokensChanged(applyToSingleton);
+  }, [oxyServices]);
 
   const logger = useCallback((message: string, err?: unknown) => {
     if (__DEV__) {

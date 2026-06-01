@@ -166,7 +166,15 @@ export const useSessionManagement = ({
     setSessions([]);
     setActiveSessionId(null);
     logoutStore();
-    
+
+    // Clear the access token on the client instance. Without this the
+    // TokenStore retained the stale bearer until the next 401, leaving the
+    // instance "logged in" at the HTTP layer and — via OxyProvider's
+    // token-change mirror — leaking that stale token onto the shared
+    // `oxyClient` singleton after sign-out. Clearing here fires
+    // `onTokensChanged(null)`, propagating the logged-out state everywhere.
+    oxyServices.clearTokens();
+
     // Clear TanStack Query cache (in-memory)
     if (queryClient) {
       queryClient.clear();
@@ -185,7 +193,7 @@ export const useSessionManagement = ({
     
     await clearSessionStorage();
     onAuthStateChange?.(null);
-  }, [clearSessionStorage, logoutStore, onAuthStateChange, queryClient, storage, logger]);
+  }, [clearSessionStorage, logoutStore, onAuthStateChange, oxyServices, queryClient, storage, logger]);
 
   const activateSession = useCallback(
     async (sessionId: string, user: User): Promise<void> => {

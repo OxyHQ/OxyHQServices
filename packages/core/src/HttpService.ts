@@ -176,6 +176,17 @@ export class HttpService {
   private tokenRefreshCooldownUntil: number = 0;
   private _onTokenRefreshed: ((accessToken: string) => void) | null = null;
 
+  /**
+   * Fan-out listeners notified on EVERY access-token change on this instance:
+   * explicit `setTokens`, `clearTokens`, a successful silent refresh, and the
+   * internal 401-driven clear. Unlike the single-slot `_onTokenRefreshed`
+   * (owned by AuthManager for the refresh path only), this is a Set so multiple
+   * independent observers can mirror token state without clobbering each other.
+   *
+   * Each listener receives the resulting access token, or `null` when cleared.
+   */
+  private _tokenChangeListeners = new Set<(accessToken: string | null) => void>();
+
   // Acting-as identity for managed accounts
   private _actingAsUserId: string | null = null;
 
@@ -430,6 +441,7 @@ export class HttpService {
             // Refresh failed or no token — clear tokens and stale CSRF
             this.tokenStore.clearTokens();
             this.tokenStore.clearCsrfToken();
+            this.notifyTokenChange();
           }
 
           // On 403 with CSRF error, clear cached token and retry once
@@ -844,6 +856,7 @@ export class HttpService {
         const { accessToken: newToken } = await response.json();
         this.tokenStore.setTokens(newToken);
         this._onTokenRefreshed?.(newToken);
+        this.notifyTokenChange();
         this.logger.debug('Token refreshed');
         return `Bearer ${newToken}`;
       }
@@ -920,6 +933,7 @@ export class HttpService {
   // Token management
   setTokens(accessToken: string, refreshToken = ''): void {
     this.tokenStore.setTokens(accessToken, refreshToken);
+    this.notifyTokenChange();
   }
 
   set onTokenRefreshed(callback: ((accessToken: string) => void) | null) {
@@ -929,6 +943,45 @@ export class HttpService {
   clearTokens(): void {
     this.tokenStore.clearTokens();
     this.tokenStore.clearCsrfToken();
+    this.notifyTokenChange();
+  }
+
+  /**
+   * Subscribe to access-token changes on this instance.
+   *
+   * Fires on every mutation of the access token — `setTokens`, `clearTokens`,
+   * a successful silent refresh, and the internal 401-driven clear — passing
+   * the resulting token (or `null` when cleared). Returns an unsubscribe
+   * function; call it on teardown to avoid leaks.
+   *
+   * This is the single hook downstream code (e.g. @oxyhq/services' OxyProvider)
+   * uses to keep an external token sink — such as the shared `oxyClient`
+   * singleton — in lockstep with the active session, regardless of which code
+   * path mutated the token.
+   */
+  addTokenChangeListener(listener: (accessToken: string | null) => void): () => void {
+    this._tokenChangeListeners.add(listener);
+    return () => {
+      this._tokenChangeListeners.delete(listener);
+    };
+  }
+
+  /**
+   * Notify all token-change listeners with the current access token.
+   * Listener exceptions are isolated so one bad subscriber cannot break token
+   * propagation to the others or to the calling auth flow.
+   * @internal
+   */
+  private notifyTokenChange(): void {
+    if (this._tokenChangeListeners.size === 0) return;
+    const accessToken = this.tokenStore.getAccessToken();
+    for (const listener of this._tokenChangeListeners) {
+      try {
+        listener(accessToken);
+      } catch (error) {
+        this.logger.error('Token change listener threw:', error);
+      }
+    }
   }
 
   getAccessToken(): string | null {

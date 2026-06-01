@@ -146,6 +146,23 @@ export class OxyServicesBase {
     this._cachedAccessToken = null;
   }
 
+  /**
+   * Subscribe to access-token changes on this client.
+   *
+   * The listener fires on every access-token mutation — explicit
+   * `setTokens`/`clearTokens`, a successful silent refresh, and the internal
+   * 401-driven clear — receiving the resulting token, or `null` when cleared.
+   * Returns an unsubscribe function.
+   *
+   * Primary use: keeping an external token sink (e.g. the shared `oxyClient`
+   * singleton) in lockstep with whichever `OxyServices` instance actually owns
+   * the session, so imperative consumers reading the singleton always observe
+   * the live token regardless of the code path that changed it.
+   */
+  public onTokensChanged(listener: (accessToken: string | null) => void): () => void {
+    return this.httpService.addTokenChangeListener(listener);
+  }
+
   /** @internal */ _cachedUserId: string | null | undefined = undefined;
   /** @internal */ _cachedAccessToken: string | null = null;
 
