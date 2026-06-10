@@ -1,0 +1,65 @@
+# ─────────────────────────────────────────────────────────────
+# Docker build context exclusions for the Oxy API image.
+#
+# Keep the context small and—critically—NEVER ship host build
+# artifacts or secrets into an image layer:
+#   - node_modules: reinstalled inside the image for linux/arm64
+#     (native modules like sharp / @node-rs/argon2 must be built
+#     for the target arch, not copied from the host).
+#   - dist / lib / .turbo: rebuilt inside the image.
+#   - .env*: live secrets must come from the runtime env, never
+#     be baked into the image.
+# ─────────────────────────────────────────────────────────────
+
+# Dependencies (reinstalled per-arch inside the image)
+**/node_modules
+node_modules
+
+# Build outputs (rebuilt inside the image)
+**/dist
+**/lib
+**/build
+**/.turbo
+.turbo
+**/*.tsbuildinfo
+
+# Secrets & environment files — NEVER copy into an image
+**/.env
+**/.env.*
+!**/.env.example
+dkim-private.pem
+*_private.key
+*_public.key
+
+# Version control & CI
+.git
+.github
+.gitignore
+**/.gitignore
+
+# Editor / OS noise
+.vscode
+.idea
+**/*.swp
+.DS_Store
+
+# Tests, coverage, docs (not needed at runtime)
+**/coverage
+**/*.log
+**/.eslintcache
+
+# Other apps in the monorepo that the API image does not build.
+# The Dockerfile only copies packages/core and packages/api, but
+# excluding the rest keeps the build context lean.
+packages/accounts
+packages/auth
+packages/auth-sdk
+packages/console
+packages/inbox
+packages/services
+packages/test-app-expo
+packages/test-app-vite
+
+# Local Docker artifacts
+Dockerfile
+.dockerignore
