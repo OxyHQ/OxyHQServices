@@ -1,5 +1,16 @@
 # CLAUDE.md
 
+## AWS Deployment
+
+The backend (`oxy-api`) runs on **AWS ECS Fargate** (region `eu-west-1`, cluster `oxy-cluster`), behind an ALB with ACM HTTPS.
+
+- **Port**: `8080` | **Domain**: `api.oxy.so` (also serves `api.website.oxy.so` / `website-api.oxy.so` for the oxy.so/fairco.in website API; email via SES + Cloudflare Email Routing webhook)
+- **Deploy**: `git push origin main` → `.github/workflows/deploy-aws.yml` builds a `linux/arm64` Docker image → pushes to ECR (`237343248947.dkr.ecr.eu-west-1.amazonaws.com/oxy/oxy-api`) → `aws ecs update-service --force-new-deployment`
+- **Auth**: GitHub OIDC → role `oxy-github-deploy`. No AWS keys stored in GitHub.
+- **Secrets**: GitHub Actions secrets are the source of truth. The deploy workflow syncs them to AWS SSM (`/oxy/oxy-api/*`; shared secrets to `/oxy/_shared/*`); ECS injects them into the container. To change a secret: edit it in GitHub — the next deploy applies it.
+- **Dockerfile**: must build for `linux/arm64` (Graviton).
+- **WARNING**: Never put secret values in this file.
+
 ## Custom Agents
 
 Use these agents for all implementation work:
