@@ -1015,52 +1015,6 @@ export class SessionController {
     }
   }
 
-  /**
-   * Cold-boot bearer-free token mint.
-   *
-   * Authenticates via the sessionId path param itself — exactly the same
-   * trust model as GET /session/validate/:sessionId, which also requires no
-   * bearer token and returns the full user record. The sessionId is a
-   * server-minted crypto.randomUUID() value (128 bits of entropy) that is
-   * already sufficient as a server-side credential; the minted access token
-   * is the normal short-lived session-based JWT carrying { sessionId, userId,
-   * deviceId } claims, so subsequent authMiddleware validation is unchanged.
-   *
-   * This enables cookie-free / FedCM-free cold-boot session restore on web
-   * reload: the client holds the sessionId in localStorage but has no
-   * in-memory access token, calls this route, and receives a fresh token
-   * without needing to present an existing bearer token.
-   *
-   * Brute-force / enumeration is mitigated by:
-   *   - UUID-format param validation (sessionTokenMintParams) — rejects
-   *     non-UUID inputs before touching the database.
-   *   - tokenMintLimiter on the route — 30 req/min per sessionId (keyed by
-   *     the sessionId path param falling back to IP).
-   */
-  static async getTokenBySessionPublic(req: Request, res: Response) {
-    try {
-      const { sessionId } = req.params;
-
-      if (!sessionId) {
-        return res.status(400).json({ message: 'Session ID is required' });
-      }
-
-      const result = await sessionService.getAccessToken(sessionId);
-
-      if (!result) {
-        return res.status(401).json({ message: 'Invalid or expired session' });
-      }
-
-      res.json({
-        accessToken: result.accessToken,
-        expiresAt: result.expiresAt.toISOString(),
-      });
-    } catch (error) {
-      logger.error('Get token by session (public) error:', error);
-      res.status(500).json({ message: 'Internal server error' });
-    }
-  }
-
   // Get all sessions for a user. Requires bearer auth and verifies the
   // authenticated user owns the referenced session — otherwise an attacker
   // with a stolen sessionId could enumerate every active session for the
