@@ -1,36 +1,107 @@
 import { create } from 'zustand';
+import { Platform } from 'react-native';
 
-// Lazy import for expo-secure-store (works on native and web)
-let SecureStore: typeof import('expo-secure-store') | null = null;
-
-async function initSecureStore(): Promise<typeof import('expo-secure-store') | null> {
-  if (!SecureStore) {
-    try {
-      const module = await import('expo-secure-store');
-      // Verify the module has the expected methods
-      if (module && typeof module.getItemAsync === 'function' && typeof module.setItemAsync === 'function') {
-        SecureStore = module;
-      } else {
-        if (__DEV__) {
-          console.warn('[IdentityStore] expo-secure-store module is missing expected methods:', {
-            hasGetItemAsync: typeof module?.getItemAsync === 'function',
-            hasSetItemAsync: typeof module?.setItemAsync === 'function',
-            moduleKeys: module ? Object.keys(module) : 'null',
-          });
-        }
-        return null;
-      }
-    } catch (error) {
-      if (__DEV__) {
-        console.warn('[IdentityStore] Failed to load expo-secure-store:', error);
-      }
-      return null;
-    }
-  }
-  return SecureStore;
+/**
+ * Minimal async key/value storage surface used by the identity store.
+ *
+ * The identity store only persists two NON-SECRET boolean flags
+ * (serialized as the strings `'true'` / `'false'`):
+ *   - {@link IDENTITY_SYNC_STORAGE_KEY}
+ *   - {@link RECOVERY_PHRASE_ACK_STORAGE_KEY}
+ *
+ * The recovery PHRASE itself is never stored here — only the
+ * acknowledgement flag — so a non-secret backing store is appropriate.
+ */
+interface KeyValueStorage {
+  getItem(key: string): Promise<string | null>;
+  setItem(key: string, value: string): Promise<void>;
 }
 
-/** Storage key for identity sync state */
+/**
+ * Web storage adapter backed by `localStorage`.
+ *
+ * `expo-secure-store` is unusable on web: its `getItemAsync` /
+ * `setItemAsync` exist as functions (so a `typeof === 'function'` guard
+ * passes) but internally call the iOS/Android-native
+ * `getValueWithKeyAsync` / `setValueWithKeyAsync`, which do not exist in
+ * the web build (`ExpoSecureStore.web` is an empty object). They throw
+ * `TypeError: ...getValueWithKeyAsync is not a function` at call time.
+ *
+ * Since the only data persisted here is two non-secret flags,
+ * `localStorage` is the correct web backing store.
+ */
+class WebKeyValueStorage implements KeyValueStorage {
+  getItem(key: string): Promise<string | null> {
+    try {
+      return Promise.resolve(globalThis.localStorage?.getItem(key) ?? null);
+    } catch (error) {
+      // localStorage can throw in private-mode / sandboxed iframes. Treat
+      // an unreadable store as "no value" rather than crashing.
+      return Promise.reject(error instanceof Error ? error : new Error(String(error)));
+    }
+  }
+
+  setItem(key: string, value: string): Promise<void> {
+    try {
+      globalThis.localStorage?.setItem(key, value);
+      return Promise.resolve();
+    } catch (error) {
+      return Promise.reject(error instanceof Error ? error : new Error(String(error)));
+    }
+  }
+}
+
+/**
+ * Native storage adapter backed by `expo-secure-store`.
+ *
+ * Loaded lazily so the web bundle never pulls the native module in, and
+ * so a missing/broken module degrades gracefully (reads resolve to
+ * `null`, writes no-op) instead of throwing during module evaluation.
+ */
+class SecureStoreKeyValueStorage implements KeyValueStorage {
+  private modulePromise: Promise<typeof import('expo-secure-store') | null> | null = null;
+
+  private loadModule(): Promise<typeof import('expo-secure-store') | null> {
+    if (!this.modulePromise) {
+      this.modulePromise = import('expo-secure-store')
+        .then((module) => module)
+        .catch((error: unknown) => {
+          if (__DEV__) {
+            console.warn('[IdentityStore] Failed to load expo-secure-store', error);
+          }
+          return null;
+        });
+    }
+    return this.modulePromise;
+  }
+
+  async getItem(key: string): Promise<string | null> {
+    const module = await this.loadModule();
+    if (!module) {
+      return null;
+    }
+    return module.getItemAsync(key);
+  }
+
+  async setItem(key: string, value: string): Promise<void> {
+    const module = await this.loadModule();
+    if (!module) {
+      return;
+    }
+    await module.setItemAsync(key, value);
+  }
+}
+
+/**
+ * Platform-selected storage adapter.
+ *
+ * - Web  → `localStorage` (secure-store throws on web; see above).
+ * - Native → `expo-secure-store`.
+ */
+const storage: KeyValueStorage =
+  Platform.OS === 'web' ? new WebKeyValueStorage() : new SecureStoreKeyValueStorage();
+
+/** Storage key for identity sync state. */
 export const IDENTITY_SYNC_STORAGE_KEY = 'oxy_identity_synced';
 /**
  * Storage key for "user has acknowledged their recovery phrase" flag.
@@ -43,6 +114,10 @@ export const IDENTITY_SYNC_STORAGE_KEY = 'oxy_identity_synced';
  * The phrase itself is NEVER stored — only this acknowledgement flag.
  */
 export const RECOVERY_PHRASE_ACK_STORAGE_KEY = 'oxy_recovery_phrase_acknowledged';
+
+/** Canonical serialized truthy value. Only this literal is treated as set. */
+const STORED_TRUE = 'true';
+const STORED_FALSE = 'false';
 
 export interface IdentityState {
   /** Whether identity is synced with server */
@@ -60,7 +135,7 @@ export interface IdentityStore extends IdentityState {
   setSyncing: (syncing: boolean) => void;
   /** Mark the recovery phrase as acknowledged (persists). */
   setRecoveryPhraseAcknowledged: (acknowledged: boolean) => void;
-  /** Initialize store from secure storage */
+  /** Initialize store from persistent storage */
   hydrate: () => Promise<void>;
   /** Reset store state */
   reset: () => void;
@@ -74,7 +149,11 @@ const defaultState: IdentityState = {
 
 /**
  * Identity store - single source of truth for identity sync state.
- * Persists to async storage automatically.
+ *
+ * In-memory zustand state mirrored to platform storage (`localStorage`
+ * on web, `expo-secure-store` on native). Persistence of the sync flag
+ * is driven explicitly by the caller via {@link persistIdentitySyncState};
+ * the acknowledgement flag persists from {@link IdentityStore.setRecoveryPhraseAcknowledged}.
  */
 export const useIdentityStore = create<IdentityStore>((set: (state: Partial<IdentityState>) => void, get: () => IdentityStore) => ({
   ...defaultState,
@@ -100,23 +179,17 @@ export const useIdentityStore = create<IdentityStore>((set: (state: Partial<Iden
 
   hydrate: async () => {
     try {
-      const store = await initSecureStore();
-      if (!store) {
-        set({ isSynced: defaultState.isSynced, recoveryPhraseAcknowledged: defaultState.recoveryPhraseAcknowledged });
-        return;
-      }
-
       const [synced, ack] = await Promise.all([
-        store.getItemAsync(IDENTITY_SYNC_STORAGE_KEY),
-        store.getItemAsync(RECOVERY_PHRASE_ACK_STORAGE_KEY),
+        storage.getItem(IDENTITY_SYNC_STORAGE_KEY),
+        storage.getItem(RECOVERY_PHRASE_ACK_STORAGE_KEY),
       ]);
-      // Only consider synced / acknowledged if explicitly stored as 'true'
+      // Only consider synced / acknowledged if explicitly stored as 'true'.
       set({
-        isSynced: synced === 'true',
-        recoveryPhraseAcknowledged: ack === 'true',
+        isSynced: synced === STORED_TRUE,
+        recoveryPhraseAcknowledged: ack === STORED_TRUE,
       });
     } catch (error) {
-      console.error('[IdentityStore] Failed to hydrate from secure storage', error);
+      console.error('[IdentityStore] Failed to hydrate identity state from storage', error);
       set({ isSynced: defaultState.isSynced, recoveryPhraseAcknowledged: defaultState.recoveryPhraseAcknowledged });
     }
   },
@@ -127,16 +200,11 @@ export const useIdentityStore = create<IdentityStore>((set: (state: Partial<Iden
 }));
 
 /**
- * Persist sync state to secure storage.
- * Uses expo-secure-store which works on both native and web platforms.
+ * Persist sync state to platform storage.
  */
 export const persistIdentitySyncState = async (isSynced: boolean): Promise<void> => {
   try {
-    const store = await initSecureStore();
-    if (!store) {
-      return;
-    }
-    await store.setItemAsync(IDENTITY_SYNC_STORAGE_KEY, isSynced ? 'true' : 'false');
+    await storage.setItem(IDENTITY_SYNC_STORAGE_KEY, isSynced ? STORED_TRUE : STORED_FALSE);
   } catch (error) {
     console.error('[IdentityStore] Failed to persist sync state', error);
   }
@@ -147,29 +215,21 @@ export const persistIdentitySyncState = async (isSynced: boolean): Promise<void>
  */
 export const persistRecoveryPhraseAcknowledged = async (acknowledged: boolean): Promise<void> => {
   try {
-    const store = await initSecureStore();
-    if (!store) {
-      return;
-    }
-    await store.setItemAsync(RECOVERY_PHRASE_ACK_STORAGE_KEY, acknowledged ? 'true' : 'false');
+    await storage.setItem(RECOVERY_PHRASE_ACK_STORAGE_KEY, acknowledged ? STORED_TRUE : STORED_FALSE);
   } catch (error) {
     console.error('[IdentityStore] Failed to persist recovery phrase acknowledgement', error);
   }
 };
 
 /**
- * Get sync state from secure storage directly (for non-reactive reads).
+ * Get sync state from storage directly (for non-reactive reads).
  * Returns false (not synced) by default - only true if explicitly stored as 'true'.
  */
 export const getIdentitySyncStateFromStorage = async (): Promise<boolean> => {
   try {
-    const store = await initSecureStore();
-    if (!store) {
-      return false; // Not synced if storage unavailable
-    }
-    const synced = await store.getItemAsync(IDENTITY_SYNC_STORAGE_KEY);
-    // Only consider synced if explicitly stored as 'true'
-    return synced === 'true';
+    const synced = await storage.getItem(IDENTITY_SYNC_STORAGE_KEY);
+    // Only consider synced if explicitly stored as 'true'.
+    return synced === STORED_TRUE;
   } catch (error) {
     console.error('[IdentityStore] Failed to read sync state', error);
     return false; // Not synced on error
@@ -181,12 +241,8 @@ export const getIdentitySyncStateFromStorage = async (): Promise<boolean> => {
  */
 export const getRecoveryPhraseAcknowledgedFromStorage = async (): Promise<boolean> => {
   try {
-    const store = await initSecureStore();
-    if (!store) {
-      return false;
-    }
-    const ack = await store.getItemAsync(RECOVERY_PHRASE_ACK_STORAGE_KEY);
-    return ack === 'true';
+    const ack = await storage.getItem(RECOVERY_PHRASE_ACK_STORAGE_KEY);
+    return ack === STORED_TRUE;
   } catch (error) {
     console.error('[IdentityStore] Failed to read recovery phrase acknowledgement', error);
     return false;
