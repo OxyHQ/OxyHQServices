@@ -194,9 +194,34 @@ export function LoginForm({
     }
 
     async function redirectAfterLogin(sessionId: string, accessToken?: string, expiresAt?: string) {
-        setFedCMLoginStatus(sessionId)
         sessionStorage.setItem("oxy_session_id", sessionId)
         if (accessToken) sessionStorage.setItem("oxy_access_token", accessToken)
+
+        // FedCM login_url completion: when there's no OAuth/cross-app request
+        // context (no token, no redirect_uri), this login was almost certainly
+        // initiated by the browser's FedCM flow opening our `login_url` dialog
+        // (cold sign-in OR "use another account"). This branch MUST run before
+        // any fire-and-forget login-status work: the `fedcm_session` cookie has
+        // to land BEFORE we signal completion (so Chrome's accounts re-fetch
+        // resolves the *new* account), and a stray `/fedcm/login-status` iframe
+        // racing the `IdentityProvider.close()` handoff is exactly the kind of
+        // concurrent navigation that made "use another account" complete
+        // erratically. So we do a single AWAITED cookie write here and nothing
+        // else, then hand off to the browser.
+        if (!sessionToken && !redirectUri) {
+            await registerFedCMSession(sessionId)
+            if (completeFedCMLogin()) {
+                return
+            }
+            // Not a FedCM/popup context (e.g. a plain direct visit to /login):
+            // the cookie is set; fall through to the normal redirect below.
+        } else {
+            // OAuth / cross-app login: keep the browser's FedCM login status in
+            // sync (returning-account + silent SSO) via the fire-and-forget
+            // cookie write + Set-Login iframe. Safe here because we are NOT in
+            // the close()-handoff path.
+            setFedCMLoginStatus(sessionId)
+        }
 
         if (isOAuthFlow && redirectUri) {
             const callbackUrl = new URL(redirectUri)
@@ -207,20 +232,6 @@ export function LoginForm({
             callbackUrl.searchParams.set("redirect_uri", clientId || window.location.origin)
             window.location.href = callbackUrl.toString()
             return
-        }
-
-        // FedCM login_url completion: when there's no OAuth/cross-app request
-        // context (no token, no redirect_uri), this login was almost certainly
-        // initiated by the browser's FedCM flow opening our `login_url` dialog.
-        // Await the `fedcm_session` cookie write FIRST so the accounts endpoint
-        // resolves the new session, THEN signal completion via
-        // IdentityProvider.close() so Chrome re-runs the accounts flow — instead
-        // of navigating to /authorize and rendering "No authorization request".
-        if (!sessionToken && !redirectUri) {
-            await registerFedCMSession(sessionId)
-            if (completeFedCMLogin()) {
-                return
-            }
         }
 
         navigate(buildPostLoginRedirect({ sessionToken, redirectUri, state }))

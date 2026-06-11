@@ -196,6 +196,37 @@ async function fetchUserFromAPI(apiBaseUrl: string, sessionId: string): Promise<
   }
 }
 
+/**
+ * Fetch the RP origins this user has previously granted via FedCM. These
+ * populate the spec's optional `approved_clients` array on the accounts
+ * response so Chrome treats the account as a *returning* account for those RPs
+ * — skipping the disclosure UI and (critically) allowing `mediation: 'silent'`
+ * to resolve across apps. Without it every RP is treated as first-time and
+ * cross-app silent SSO never completes.
+ *
+ * Best-effort: any failure yields an empty list (the account is still returned,
+ * just without the returning-account optimization). The API endpoint is
+ * cookie-less and harmless (it only returns public app origins the user
+ * themselves authorized), so no auth token is needed for this server-to-server
+ * call.
+ */
+async function fetchApprovedClients(apiBaseUrl: string, userId: string): Promise<string[]> {
+  try {
+    const url = `${apiBaseUrl}/fedcm/grants/${encodeURIComponent(userId)}`;
+    const res = await fetch(url, {
+      headers: { 'Accept': 'application/json' },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return [];
+    const data = await res.json() as Record<string, unknown>;
+    const origins = data.origins;
+    if (!Array.isArray(origins)) return [];
+    return origins.filter((o): o is string => typeof o === 'string' && o.length > 0);
+  } catch {
+    return [];
+  }
+}
+
 /** Validate that a session is still active via the API. */
 async function validateSession(apiBaseUrl: string, sessionId: string): Promise<boolean> {
   try {
@@ -334,8 +365,15 @@ app.get('/fedcm/accounts', async (c) => {
     account.given_name = user.username;
   }
 
-  // approved_clients is optional; we return empty to allow all approved RPs
-  // The browser validates client_id against the RP's origin separately
+  // `approved_clients` lists the RP client_ids (== RP origins, in our IdP) this
+  // user has already granted. When the requesting RP is in this list, Chrome
+  // skips the disclosure UI and lets `mediation: 'silent'` resolve — this is
+  // what makes cross-app SSO work for returning users. A brand-new user has an
+  // empty list (first visit always needs one chooser interaction, by spec).
+  const approvedClients = await fetchApprovedClients(apiBaseUrl, user.id);
+  if (approvedClients.length > 0) {
+    account.approved_clients = approvedClients;
+  }
 
   return c.json({ accounts: [account] }, 200);
 });

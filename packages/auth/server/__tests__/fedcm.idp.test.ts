@@ -39,6 +39,11 @@ process.env.NODE_ENV = 'test';
 // The `user` shape mirrors the real API's `formatUserResponse`: the id field
 // is `id` (stringified Mongo `_id`), never `_id`.
 const realFetch = globalThis.fetch;
+
+// Origins the stubbed API reports as previously granted by the test user.
+// Mutable so individual tests can assert empty vs populated `approved_clients`.
+let stubbedGrantedOrigins: string[] = [RP_ORIGIN];
+
 function installApiStub(): void {
   globalThis.fetch = (async (input: RequestInfo | URL): Promise<Response> => {
     const url = typeof input === 'string' ? input : input.toString();
@@ -48,6 +53,14 @@ function installApiStub(): void {
           valid: true,
           user: { id: TEST_USER_ID, username: 'tester', email: 'tester@oxy.so', name: { full: 'Test User' } },
         }),
+        { status: 200, headers: { 'content-type': 'application/json' } }
+      );
+    }
+    // The accounts endpoint resolves the user's granted RP origins to populate
+    // the FedCM `approved_clients` array.
+    if (url.includes('/fedcm/grants/')) {
+      return new Response(
+        JSON.stringify({ origins: stubbedGrantedOrigins }),
         { status: 200, headers: { 'content-type': 'application/json' } }
       );
     }
@@ -69,6 +82,7 @@ afterAll(() => {
 });
 
 beforeEach(() => {
+  stubbedGrantedOrigins = [RP_ORIGIN];
   installApiStub();
 });
 
@@ -101,6 +115,64 @@ describe('GET /fedcm/accounts', () => {
     const body = (await res.json()) as { accounts: Array<{ id: string }> };
     expect(body.accounts).toHaveLength(1);
     expect(body.accounts[0].id).toBe(TEST_USER_ID);
+  });
+
+  it('populates approved_clients from the user grants so returning RPs skip disclosure', async () => {
+    // The user has previously granted accounts.oxy.so → it must appear in
+    // `approved_clients`, which is what lets Chrome resolve silent mediation
+    // for that RP (cross-app SSO for returning users).
+    stubbedGrantedOrigins = [RP_ORIGIN, 'https://homiio.com'];
+    installApiStub();
+
+    const res = await app.request('/fedcm/accounts', {
+      headers: { ...WEBIDENTITY, cookie: SESSION_COOKIE },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { accounts: Array<{ approved_clients?: string[] }> };
+    expect(body.accounts[0].approved_clients).toEqual([RP_ORIGIN, 'https://homiio.com']);
+  });
+
+  it('omits approved_clients for a brand-new user with no grants (first-visit needs the chooser)', async () => {
+    stubbedGrantedOrigins = [];
+    installApiStub();
+
+    const res = await app.request('/fedcm/accounts', {
+      headers: { ...WEBIDENTITY, cookie: SESSION_COOKIE },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { accounts: Array<{ approved_clients?: string[] }> };
+    // No `approved_clients` key at all (not an empty array) — Chrome treats the
+    // account as first-time, which is the correct/expected first-visit UX.
+    expect(body.accounts[0].approved_clients).toBeUndefined();
+  });
+
+  it('still returns the account when the grants lookup fails (best-effort)', async () => {
+    // If the grants endpoint errors, the account must still be returned (just
+    // without the returning-account optimization) — never a hard failure.
+    globalThis.fetch = (async (input: RequestInfo | URL): Promise<Response> => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.includes('/session/validate/')) {
+        return new Response(
+          JSON.stringify({
+            valid: true,
+            user: { id: TEST_USER_ID, username: 'tester', email: 'tester@oxy.so', name: { full: 'Test User' } },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } }
+        );
+      }
+      if (url.includes('/fedcm/grants/')) {
+        return new Response('boom', { status: 500, headers: { 'content-type': 'text/plain' } });
+      }
+      return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
+    }) as typeof fetch;
+
+    const res = await app.request('/fedcm/accounts', {
+      headers: { ...WEBIDENTITY, cookie: SESSION_COOKIE },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { accounts: Array<{ id: string; approved_clients?: string[] }> };
+    expect(body.accounts[0].id).toBe(TEST_USER_ID);
+    expect(body.accounts[0].approved_clients).toBeUndefined();
   });
 
   it('signals logged-out with 401 + WWW-Authenticate when no session cookie is present', async () => {

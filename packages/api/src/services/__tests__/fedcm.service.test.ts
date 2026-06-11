@@ -17,8 +17,11 @@ process.env.FEDCM_ISSUER = 'https://auth.test.example';
 const mockFindOneAndUpdate = jest.fn();
 const mockNonceCreate = jest.fn();
 const mockClientFindOne = jest.fn();
+const mockClientFind = jest.fn();
 const mockUserFindById = jest.fn();
 const mockCreateSession = jest.fn();
+const mockGrantFindOneAndUpdate = jest.fn();
+const mockGrantFind = jest.fn();
 
 jest.mock('../../models/FedCMNonce', () => ({
   __esModule: true,
@@ -32,7 +35,15 @@ jest.mock('../../models/FedCMClient', () => ({
   __esModule: true,
   default: {
     findOne: mockClientFindOne,
-    find: jest.fn(),
+    find: mockClientFind,
+  },
+}));
+
+jest.mock('../../models/FedCMGrant', () => ({
+  __esModule: true,
+  default: {
+    findOneAndUpdate: mockGrantFindOneAndUpdate,
+    find: mockGrantFind,
   },
 }));
 
@@ -130,6 +141,18 @@ beforeEach(() => {
     expiresAt: new Date(Date.now() + 60_000),
     accessToken: 'token-xyz',
   });
+  // Grant recording succeeds by default.
+  mockGrantFindOneAndUpdate.mockResolvedValue({});
+  // Grant lookup: no prior grants by default (overridden per-test).
+  mockGrantFind.mockReturnValue({
+    select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([]) }),
+  });
+  // Approved-clients list (used by getUserGrantedOrigins to intersect grants).
+  mockClientFind.mockReturnValue({
+    select: jest.fn().mockReturnValue({
+      lean: jest.fn().mockResolvedValue([{ origin: APPROVED_ORIGIN }]),
+    }),
+  });
 });
 
 describe('FedCM exchangeIdToken (H9)', () => {
@@ -222,6 +245,80 @@ describe('FedCM exchangeIdToken (H9)', () => {
     expect(result.sessionId).toBe('sess-123');
     expect(result.accessToken).toBe('token-xyz');
     expect(mockCreateSession).toHaveBeenCalledWith('user-123', expect.anything(), { deviceName: 'FedCM Sign-In' });
+  });
+
+  it('records a FedCM grant for the user+origin on a successful exchange', async () => {
+    const token = mintToken();
+    await fedcmService.exchangeIdToken(token, createReq(APPROVED_ORIGIN));
+
+    // The grant upsert must run with the verified sub + approved origin so the
+    // RP shows up in `approved_clients` for future returning-account flows.
+    expect(mockGrantFindOneAndUpdate).toHaveBeenCalledTimes(1);
+    const [filter, update, options] = mockGrantFindOneAndUpdate.mock.calls[0];
+    expect(filter).toEqual({ userId: 'user-123', clientOrigin: APPROVED_ORIGIN });
+    expect(options).toEqual({ upsert: true, new: true });
+    expect(update.$set.lastUsedAt).toBeInstanceOf(Date);
+    expect(update.$setOnInsert.userId).toBe('user-123');
+    expect(update.$setOnInsert.clientOrigin).toBe(APPROVED_ORIGIN);
+  });
+
+  it('does not record a grant when the exchange is rejected', async () => {
+    // Audience not approved → no session, and crucially no grant either.
+    mockClientFindOne.mockImplementationOnce(() => ({
+      select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue(null) }),
+    }));
+    const token = mintToken({ aud: WRONG_ORIGIN });
+    await fedcmService.exchangeIdToken(token, createReq(WRONG_ORIGIN));
+
+    expect(mockGrantFindOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it('still issues the session if grant recording throws (best-effort)', async () => {
+    mockGrantFindOneAndUpdate.mockRejectedValueOnce(new Error('db down'));
+    const token = mintToken();
+    const result = await fedcmService.exchangeIdToken(token, createReq(APPROVED_ORIGIN));
+
+    expect('error' in result).toBe(false);
+    if ('error' in result) return;
+    expect(result.sessionId).toBe('sess-123');
+  });
+});
+
+describe('FedCM getUserGrantedOrigins', () => {
+  it('returns the user grants intersected with the approved-clients list', async () => {
+    mockGrantFind.mockReturnValueOnce({
+      select: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue([
+          { clientOrigin: APPROVED_ORIGIN },
+          // A grant whose origin is no longer approved must be filtered out.
+          { clientOrigin: 'https://deapproved.example' },
+        ]),
+      }),
+    });
+
+    const origins = await fedcmService.getUserGrantedOrigins('user-123');
+    expect(origins).toEqual([APPROVED_ORIGIN]);
+  });
+
+  it('returns an empty array for a user with no grants', async () => {
+    const origins = await fedcmService.getUserGrantedOrigins('user-123');
+    expect(origins).toEqual([]);
+  });
+});
+
+describe('FedCM recordGrant', () => {
+  it('normalises the origin and upserts on user+origin', async () => {
+    await fedcmService.recordGrant('user-123', `${APPROVED_ORIGIN}/`);
+
+    expect(mockGrantFindOneAndUpdate).toHaveBeenCalledTimes(1);
+    const [filter] = mockGrantFindOneAndUpdate.mock.calls[0];
+    // Trailing slash stripped by normaliseOrigin.
+    expect(filter.clientOrigin).toBe(APPROVED_ORIGIN);
+  });
+
+  it('swallows errors (never throws)', async () => {
+    mockGrantFindOneAndUpdate.mockRejectedValueOnce(new Error('db down'));
+    await expect(fedcmService.recordGrant('user-123', APPROVED_ORIGIN)).resolves.toBeUndefined();
   });
 });
 

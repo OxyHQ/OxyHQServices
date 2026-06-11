@@ -1,6 +1,6 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
-import { exchangeIdToken, getApprovedClients, addApprovedClient, removeApprovedClient, mintNonce } from '../controllers/fedcm.controller';
+import { exchangeIdToken, getApprovedClients, getUserGrants, addApprovedClient, removeApprovedClient, mintNonce } from '../controllers/fedcm.controller';
 import type { Request, Response, NextFunction } from 'express';
 import type { TokenDecoded } from '../middleware/authUtils';
 import { rateLimit } from '../middleware/rateLimiter';
@@ -144,6 +144,45 @@ router.post('/exchange', exchangeIdToken);
  *                     type: string
  */
 router.get('/clients/approved', getApprovedClients);
+
+/**
+ * @openapi
+ * /fedcm/grants/{userId}:
+ *   get:
+ *     tags:
+ *       - Federation
+ *     security: []
+ *     summary: List RP origins a user has granted via FedCM
+ *     description: >
+ *       Returns the relying-party origins the user has previously authorized
+ *       through FedCM, intersected with the currently-approved client list.
+ *       The IdP accounts endpoint (auth.oxy.so) calls this server-to-server to
+ *       populate the FedCM `approved_clients` array, which lets Chrome treat
+ *       the account as a returning account for those RPs (skips the disclosure
+ *       UI and enables silent mediation). Carries no token material or PII.
+ *     parameters:
+ *       - name: userId
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The user's id (24-char hex ObjectId).
+ *     responses:
+ *       200:
+ *         description: Granted origins (possibly empty).
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 origins:
+ *                   type: array
+ *                   items:
+ *                     type: string
+ *       400:
+ *         description: Missing or malformed userId.
+ */
+router.get('/grants/:userId', getUserGrants);
 
 /**
  * @openapi

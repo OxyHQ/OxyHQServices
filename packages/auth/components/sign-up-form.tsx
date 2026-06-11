@@ -145,18 +145,24 @@ export function SignUpForm({
                 return
             }
 
-            setFedCMLoginStatus(payload.sessionId)
             didRedirect = true
 
             // FedCM login_url completion: a brand-new account created inside the
             // browser's FedCM login_url dialog has no OAuth/cross-app context, so
             // signal completion (after the session cookie is written) instead of
             // navigating to /authorize and rendering "No authorization request".
+            // As in login-form, the close()-handoff branch does a single AWAITED
+            // cookie write and nothing else — a stray /fedcm/login-status iframe
+            // racing IdentityProvider.close() makes the handoff complete
+            // erratically. The fire-and-forget Set-Login iframe only runs on the
+            // non-FedCM redirect paths.
             if (!sessionToken && !redirectUri) {
                 await registerFedCMSession(payload.sessionId)
                 if (completeFedCMLogin()) {
                     return
                 }
+            } else {
+                setFedCMLoginStatus(payload.sessionId)
             }
 
             navigate(buildPostLoginRedirect({ sessionToken, redirectUri, state }))

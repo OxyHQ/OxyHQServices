@@ -1,5 +1,6 @@
 import FedCMClient from '../models/FedCMClient';
 import FedCMNonce from '../models/FedCMNonce';
+import FedCMGrant from '../models/FedCMGrant';
 import { User } from '../models/User';
 import { logger } from '../utils/logger';
 import sessionService from './session.service';
@@ -257,6 +258,73 @@ class FedCMService {
   }
 
   /**
+   * Record (or refresh) a user's FedCM grant for an RP origin.
+   *
+   * Called after a successful `/fedcm/exchange` — at that point the user has
+   * actively completed a FedCM sign-in for `clientOrigin`, which is exactly
+   * the consent the spec's `approved_clients` array represents. Upserts on the
+   * unique `{ userId, clientOrigin }` index so repeat sign-ins refresh
+   * `lastUsedAt` instead of inserting duplicates.
+   *
+   * Best-effort: a failure here must never block the session that was just
+   * minted, so we swallow and log. The worst case is a returning user briefly
+   * sees the disclosure UI again on their next cross-app visit.
+   */
+  async recordGrant(userId: string, clientOrigin: string): Promise<void> {
+    try {
+      const normalisedOrigin = normaliseOrigin(clientOrigin);
+      const now = new Date();
+      await FedCMGrant.findOneAndUpdate(
+        { userId, clientOrigin: normalisedOrigin },
+        {
+          $set: { lastUsedAt: now },
+          $setOnInsert: { userId, clientOrigin: normalisedOrigin, firstGrantedAt: now },
+        },
+        { upsert: true, new: true }
+      );
+    } catch (error) {
+      logger.error('Error recording FedCM grant:', error);
+    }
+  }
+
+  /**
+   * List the RP origins a user has previously granted via FedCM.
+   *
+   * Powers the `approved_clients` array on the IdP accounts endpoint. We
+   * intersect the user's grants with the *currently approved* client list so a
+   * de-approved (removed) origin never leaks back as an approved client.
+   */
+  async getUserGrantedOrigins(userId: string): Promise<string[]> {
+    try {
+      const [grants, approvedOrigins] = await Promise.all([
+        FedCMGrant.find({ userId }).select('clientOrigin').lean(),
+        this.getApprovedClientOrigins(),
+      ]);
+
+      const approvedSet = new Set(
+        approvedOrigins.map((origin) => {
+          try {
+            return normaliseOrigin(origin);
+          } catch {
+            return origin;
+          }
+        })
+      );
+
+      const granted = new Set<string>();
+      for (const grant of grants) {
+        if (approvedSet.has(grant.clientOrigin)) {
+          granted.add(grant.clientOrigin);
+        }
+      }
+      return Array.from(granted);
+    } catch (error) {
+      logger.error('Error fetching FedCM grants:', error);
+      return [];
+    }
+  }
+
+  /**
    * Mint a single-use nonce that the auth UI embeds in the FedCM
    * `navigator.credentials.get({ identity: { nonce } })` call. The IdP
    * signs the nonce into the ID token; we burn the nonce on the first
@@ -407,6 +475,11 @@ class FedCMService {
       const session = await sessionService.createSession(userId, req, {
         deviceName: 'FedCM Sign-In',
       });
+
+      // Record the grant: the user just actively authorized this RP origin via
+      // FedCM, so it belongs in `approved_clients` for future returning-account
+      // / silent-SSO flows. Best-effort — never blocks the issued session.
+      await this.recordGrant(userId, clientOrigin);
 
       logger.info('FedCM: Session created via token exchange', { clientOrigin });
 

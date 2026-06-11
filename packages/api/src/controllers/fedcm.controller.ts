@@ -63,6 +63,37 @@ export async function exchangeIdToken(req: Request, res: Response) {
 }
 
 /**
+ * Get the RP origins a user has previously granted via FedCM.
+ *
+ * Consumed by the IdP accounts endpoint (auth.oxy.so) to populate the FedCM
+ * `approved_clients` array, which lets Chrome treat the account as a returning
+ * account for those RPs (skips disclosure UI, enables silent mediation).
+ *
+ * Returns only public app origins the user themselves authorized — the same
+ * data surface as the public `GET /fedcm/clients/approved`, filtered to this
+ * user — so it carries no token material or PII and is safe to expose to the
+ * IdP server-to-server fetch without a bearer token. The result is also
+ * intersected with the currently-approved client list, so a removed origin can
+ * never leak back.
+ */
+export async function getUserGrants(req: Request, res: Response) {
+  try {
+    const { userId } = req.params;
+
+    if (!userId || !/^[a-f0-9]{24}$/i.test(userId)) {
+      return res.status(400).json({ message: 'A valid userId is required' });
+    }
+
+    const origins = await fedcmService.getUserGrantedOrigins(userId);
+
+    return res.json({ origins });
+  } catch (error) {
+    logger.error('Get FedCM user grants error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+}
+
+/**
  * Get approved FedCM client origins
  */
 export async function getApprovedClients(req: Request, res: Response) {
