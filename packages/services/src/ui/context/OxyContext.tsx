@@ -97,6 +97,77 @@ export interface OxyContextState {
 
 const OxyContext = createContext<OxyContextState | null>(null);
 
+/**
+ * Minimal, decode-only shape of the session access-token JWT claims the
+ * `POST /auth/refresh` endpoint returns. We only read `sessionId` (and `userId`
+ * as a fallback). The token is already signed and verified server-side; the
+ * client decodes the payload purely to recover the session id — it does NOT and
+ * MUST NOT verify the signature.
+ */
+interface RefreshAccessTokenClaims {
+  sessionId?: string;
+  userId?: string;
+  id?: string;
+}
+
+/**
+ * Decode the payload of a JWT WITHOUT verifying its signature.
+ *
+ * The server (`POST /auth/refresh`) has already minted and signed this access
+ * token; we only need to recover the `sessionId` claim from it on cold boot.
+ * Returns `null` for any malformed input rather than throwing, so a bad token
+ * simply falls through to the unauthenticated path.
+ *
+ * Implemented with manual base64url decoding (no `jwt-decode` dependency added
+ * to `@oxyhq/services`). Works on web (where this cold-boot path runs) via
+ * `atob`; if `atob` is unavailable (non-browser runtime) it is treated as
+ * undecodable and returns `null`.
+ */
+function decodeAccessTokenClaims(token: string): RefreshAccessTokenClaims | null {
+  if (!token || typeof token !== 'string') {
+    return null;
+  }
+  const segments = token.split('.');
+  if (segments.length !== 3) {
+    return null;
+  }
+  const payloadSegment = segments[1];
+  if (!payloadSegment) {
+    return null;
+  }
+  try {
+    const base64 = payloadSegment.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), '=');
+    if (typeof atob !== 'function') {
+      return null;
+    }
+    const json = decodeURIComponent(
+      atob(padded)
+        .split('')
+        .map((char) => `%${`00${char.charCodeAt(0).toString(16)}`.slice(-2)}`)
+        .join(''),
+    );
+    const parsed: unknown = JSON.parse(json);
+    if (parsed === null || typeof parsed !== 'object') {
+      return null;
+    }
+    const claims = parsed as Record<string, unknown>;
+    return {
+      sessionId: typeof claims.sessionId === 'string' ? claims.sessionId : undefined,
+      userId: typeof claims.userId === 'string' ? claims.userId : undefined,
+      id: typeof claims.id === 'string' ? claims.id : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Server response shape of `POST /auth/refresh`. */
+interface RefreshCookieResponse {
+  accessToken?: string;
+  sessionId?: string;
+}
+
 export interface OxyContextProviderProps {
   children: ReactNode;
   oxyServices?: OxyServices;
@@ -417,6 +488,148 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   const clearSessionStateRef = useRef(clearSessionState);
   clearSessionStateRef.current = clearSessionState;
 
+  // Durable, navigation-safe session persistence.
+  //
+  // Writes the active-session id and appends the session id to the durable
+  // `session_ids` list, awaiting the READY storage instance (never the possibly
+  // -null `storage` state) so a write is never dropped because it raced storage
+  // init. Callers MUST invoke this BEFORE any work that can trigger a route
+  // navigation (`onAuthStateChange`) — navigation can interrupt a still-pending
+  // async write, which is exactly what once left `session_ids` empty after a
+  // successful sign-in. Shared by the FedCM/popup path and the cold-boot
+  // refresh-cookie restore so both land the same durable record.
+  const persistSessionDurably = useCallback(async (sessionId: string): Promise<void> => {
+    const readyStorage = await getReadyStorage();
+    await readyStorage.setItem(storageKeys.activeSessionId, sessionId);
+    const existingIds = await readyStorage.getItem(storageKeys.sessionIds);
+    let sessionIds: string[] = [];
+    try { sessionIds = existingIds ? JSON.parse(existingIds) : []; } catch { /* corrupted storage */ }
+    if (!sessionIds.includes(sessionId)) {
+      sessionIds.push(sessionId);
+      await readyStorage.setItem(storageKeys.sessionIds, JSON.stringify(sessionIds));
+    }
+  }, [getReadyStorage, storageKeys.activeSessionId, storageKeys.sessionIds]);
+
+  // Refs so the cold-boot restore can plant session state without widening its
+  // dependency array (mirrors the existing ref pattern above).
+  const setActiveSessionIdRef = useRef(setActiveSessionId);
+  setActiveSessionIdRef.current = setActiveSessionId;
+  const loginSuccessRef = useRef(loginSuccess);
+  loginSuccessRef.current = loginSuccess;
+  const onAuthStateChangeRef = useRef(onAuthStateChange);
+  onAuthStateChangeRef.current = onAuthStateChange;
+
+  // Cold-boot session restore via the secure refresh cookie (web only).
+  //
+  // On a hard reload the in-app, bearer-protected token fetch
+  // (`getTokenBySession` → `/session/token/:id`) 401s because there is no token
+  // in memory yet, which previously cleared the session and bounced the user to
+  // sign-in. Instead we call `POST {apiBaseUrl}/auth/refresh` with
+  // `credentials: 'include'` and NO Authorization header: the browser
+  // automatically attaches the first-party httpOnly `oxy_rt` cookie (set at
+  // login/signup/fedcm-exchange), the server validates + rotates it and returns
+  // a fresh session access token. JS never sees the refresh cookie (httpOnly) —
+  // that is the security property.
+  //
+  // Returns `true` when the session was restored (caller short-circuits the
+  // bearer path); `false` on 401 / no durable cookie / any failure (caller
+  // proceeds unauthenticated through the existing flow — nothing is cleared).
+  const restoreViaRefreshCookie = useCallback(async (): Promise<boolean> => {
+    if (!isWebBrowser()) {
+      return false;
+    }
+
+    const apiBaseUrl = oxyServices.getBaseURL();
+    if (!apiBaseUrl) {
+      return false;
+    }
+
+    let response: Response;
+    try {
+      // Direct credentialed, no-auth POST. We deliberately bypass the SDK's
+      // HttpService here: it would attach the (absent) bearer and does not send
+      // cookies. The refresh cookie is scoped to `Path=/auth/refresh` and sent
+      // automatically same-site.
+      response = await fetch(`${apiBaseUrl.replace(/\/$/, '')}/auth/refresh`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { Accept: 'application/json' },
+      });
+    } catch (fetchError) {
+      // Offline / network error — fall through to the cached/stored-session flow.
+      if (__DEV__) {
+        loggerUtil.debug('Refresh-cookie restore network error (expected when offline)', { component: 'OxyContext', method: 'restoreViaRefreshCookie' }, fetchError as unknown);
+      }
+      return false;
+    }
+
+    // 401 (no/expired/reused cookie) and any non-2xx → no durable session.
+    if (!response.ok) {
+      return false;
+    }
+
+    let payload: RefreshCookieResponse;
+    try {
+      payload = (await response.json()) as RefreshCookieResponse;
+    } catch {
+      return false;
+    }
+
+    const accessToken = payload.accessToken;
+    if (!accessToken) {
+      return false;
+    }
+
+    // Recover the session id from the (server-signed) access-token claims, or
+    // from the response body if the server included it. Decode-only; the server
+    // already verified the signature.
+    const claims = decodeAccessTokenClaims(accessToken);
+    const sessionId = payload.sessionId ?? claims?.sessionId;
+    if (!sessionId) {
+      // A token with no resolvable session id cannot drive multi-session state.
+      return false;
+    }
+
+    // Plant the fresh access token. The refresh token stays in the httpOnly
+    // cookie and is never touched by JS.
+    oxyServices.httpService.setTokens(accessToken);
+
+    // Fetch the full user with the freshly planted token.
+    let fullUser: User;
+    try {
+      fullUser = await oxyServices.getCurrentUser();
+    } catch (userError) {
+      // Token planted but profile fetch failed (e.g. transient network). Do not
+      // claim a restored session; fall through so the stored-session flow can
+      // retry. Leave the planted token in place — it is valid and harmless.
+      if (__DEV__) {
+        loggerUtil.debug('Refresh-cookie restore: getCurrentUser failed', { component: 'OxyContext', method: 'restoreViaRefreshCookie' }, userError as unknown);
+      }
+      return false;
+    }
+
+    const userId = fullUser.id?.toString() ?? claims?.userId ?? '';
+    const now = new Date();
+    const clientSession: ClientSession = {
+      sessionId,
+      deviceId: '',
+      expiresAt: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      lastActive: now.toISOString(),
+      userId,
+      isCurrent: true,
+    };
+
+    // Restore the active session into the multi-session store (merge: keep any
+    // other sessions intact) and durably persist BEFORE notifying listeners.
+    updateSessionsRef.current([clientSession], { merge: true });
+    setActiveSessionIdRef.current(sessionId);
+    await persistSessionDurably(sessionId);
+
+    loginSuccessRef.current(fullUser);
+    onAuthStateChangeRef.current?.(fullUser);
+    return true;
+  }, [oxyServices, persistSessionDurably]);
+
   const restoreSessionsFromStorage = useCallback(async (): Promise<void> => {
     if (!storage) {
       return;
@@ -425,6 +638,15 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     setTokenReady(false);
 
     try {
+      // Web cold-boot fast path: restore the active session from the secure
+      // httpOnly refresh cookie before the bearer-protected stored-session
+      // validation (which 401s on a hard reload). On success we are signed in
+      // from the cookie alone — no FedCM needed. On failure we fall through to
+      // the existing stored-session flow below; nothing is cleared.
+      if (await restoreViaRefreshCookie()) {
+        return;
+      }
+
       const storedSessionIdsJson = await storage.getItem(storageKeys.sessionIds);
       const storedSessionIds: string[] = storedSessionIdsJson ? JSON.parse(storedSessionIdsJson) : [];
       const storedActiveSessionId = await storage.getItem(storageKeys.activeSessionId);
@@ -515,6 +737,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     storage,
     storageKeys.activeSessionId,
     storageKeys.sessionIds,
+    restoreViaRefreshCookie,
   ]);
 
   useEffect(() => {
@@ -568,19 +791,11 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     // guarantees the durable record lands; that is exactly what was missing
     // when `oxy_session_session_ids` came back empty after a successful FedCM
     // sign-in (the user appeared logged in until reload, then had no session to
-    // restore). We also await the READY storage instance rather than reading
-    // the possibly-null `storage` state, so a sign-in fired the instant the
-    // screen mounts (before the storage-init microtask populates state) is not
+    // restore). `persistSessionDurably` awaits the READY storage instance rather
+    // than reading the possibly-null `storage` state, so a sign-in fired the
+    // instant the screen mounts (before storage-init populates state) is not
     // silently dropped.
-    const readyStorage = await getReadyStorage();
-    await readyStorage.setItem(storageKeys.activeSessionId, session.sessionId);
-    const existingIds = await readyStorage.getItem(storageKeys.sessionIds);
-    let sessionIds: string[] = [];
-    try { sessionIds = existingIds ? JSON.parse(existingIds) : []; } catch { /* corrupted storage */ }
-    if (!sessionIds.includes(session.sessionId)) {
-      sessionIds.push(session.sessionId);
-      await readyStorage.setItem(storageKeys.sessionIds, JSON.stringify(sessionIds));
-    }
+    await persistSessionDurably(session.sessionId);
 
     // Fetch the full user profile now that we have a valid access token and the
     // session is durably persisted. The session only carries MinimalUserData;
@@ -596,7 +811,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     }
     loginSuccess(fullUser);
     onAuthStateChange?.(fullUser);
-  }, [oxyServices, updateSessions, setActiveSessionId, loginSuccess, onAuthStateChange, getReadyStorage, storageKeys]);
+  }, [oxyServices, updateSessions, setActiveSessionId, loginSuccess, onAuthStateChange, persistSessionDurably]);
 
   // Enable web SSO only after local storage check completes and no user found
   const shouldTryWebSSO = isWebBrowser() && tokenReady && !user && initialized;
