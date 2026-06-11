@@ -18,6 +18,13 @@
  * CASE B: sign-in fires before storage state populates → STILL persists (the fix).
  * CASE C: returning user whose stale session fails validation (restore clears
  *         the store to []), then a fresh FedCM sign-in → re-persists.
+ * CASE D: the durable write happens BEFORE the profile fetch / auth-state-change
+ *         tail. So even if `getCurrentUser` rejects (and we fall back to the
+ *         minimal session user) the session id is STILL persisted. This guards
+ *         the ordering fix: persistence must not depend on the post-navigation
+ *         tail running. In production the `onAuthStateChange` callback triggers
+ *         a route navigation that can interrupt the still-pending write if
+ *         persistence ran last — moving it first is what makes it reliable.
  */
 
 import React from 'react';
@@ -143,6 +150,47 @@ describe('FedCM/popup session persistence', () => {
     // A fresh FedCM sign-in must repopulate the store.
     await act(async () => {
       await capturedHandlePopupSession!(FEDCM_SESSION);
+    });
+
+    expect(window.localStorage.getItem(SESSION_IDS_KEY)).toBe(JSON.stringify(['sess_fedcm_1']));
+    expect(window.localStorage.getItem(ACTIVE_SESSION_KEY)).toBe('sess_fedcm_1');
+  });
+
+  it('CASE D: persists even when the profile fetch (post-write tail) rejects', async () => {
+    // getCurrentUser rejecting models the navigation/teardown tail failing or
+    // being interrupted right after the durable write. Because persistence now
+    // runs BEFORE getCurrentUser/loginSuccess/onAuthStateChange, the session id
+    // must already be on disk regardless of what the tail does.
+    const stub = baseStub();
+    stub.getCurrentUser = jest.fn(async () => {
+      throw new Error('network down during profile fetch');
+    });
+    // onAuthStateChange throwing simulates a navigation side effect that tears
+    // down before the (now-earlier) write could have completed if it ran last.
+    const onAuthStateChange = jest.fn(() => {
+      throw new Error('navigated away / teardown');
+    });
+
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <OxyContextProvider
+          oxyServices={stub as never}
+          baseURL="https://api.oxy.so"
+          onAuthStateChange={onAuthStateChange}
+        >
+          <Capture />
+        </OxyContextProvider>
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => expect(capturedHandlePopupSession).not.toBeNull());
+    await waitFor(() => expect(capturedStorageReady).toBe(true));
+
+    // The handler itself may reject because onAuthStateChange throws in the tail;
+    // that is fine — the durable write already happened earlier in the function.
+    await act(async () => {
+      await capturedHandlePopupSession!(FEDCM_SESSION).catch(() => undefined);
     });
 
     expect(window.localStorage.getItem(SESSION_IDS_KEY)).toBe(JSON.stringify(['sess_fedcm_1']));

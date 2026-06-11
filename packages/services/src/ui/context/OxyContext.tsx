@@ -559,8 +559,33 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     updateSessions([clientSession], { merge: true });
     setActiveSessionId(session.sessionId);
 
-    // Fetch the full user profile now that we have a valid access token.
-    // The session only carries MinimalUserData; the store and callbacks expect a full User.
+    // Persist to storage BEFORE fetching the profile and BEFORE notifying the
+    // auth-state-change callback. The token is planted and the in-memory store
+    // is updated above; durably committing the session id here — ahead of
+    // `getCurrentUser()` / `loginSuccess` / `onAuthStateChange` — is critical
+    // because `onAuthStateChange` triggers a route navigation that can
+    // interrupt/supersede a still-pending async write. Persisting first
+    // guarantees the durable record lands; that is exactly what was missing
+    // when `oxy_session_session_ids` came back empty after a successful FedCM
+    // sign-in (the user appeared logged in until reload, then had no session to
+    // restore). We also await the READY storage instance rather than reading
+    // the possibly-null `storage` state, so a sign-in fired the instant the
+    // screen mounts (before the storage-init microtask populates state) is not
+    // silently dropped.
+    const readyStorage = await getReadyStorage();
+    await readyStorage.setItem(storageKeys.activeSessionId, session.sessionId);
+    const existingIds = await readyStorage.getItem(storageKeys.sessionIds);
+    let sessionIds: string[] = [];
+    try { sessionIds = existingIds ? JSON.parse(existingIds) : []; } catch { /* corrupted storage */ }
+    if (!sessionIds.includes(session.sessionId)) {
+      sessionIds.push(session.sessionId);
+      await readyStorage.setItem(storageKeys.sessionIds, JSON.stringify(sessionIds));
+    }
+
+    // Fetch the full user profile now that we have a valid access token and the
+    // session is durably persisted. The session only carries MinimalUserData;
+    // the store and callbacks expect a full User. The navigation kicked off by
+    // `onAuthStateChange` now happens only after the durable write is committed.
     let fullUser: User;
     try {
       fullUser = await oxyServices.getCurrentUser();
@@ -571,22 +596,6 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     }
     loginSuccess(fullUser);
     onAuthStateChange?.(fullUser);
-
-    // Persist to storage. Await the READY storage instance rather than reading
-    // the possibly-null `storage` state: an interactive FedCM sign-in fired the
-    // instant the screen mounts can run before the storage-init microtask has
-    // populated state, and silently skipping the write here is exactly what
-    // left `oxy_session_session_ids` empty after a successful sign-in (the user
-    // appeared logged in until reload, then had no session to restore).
-    const readyStorage = await getReadyStorage();
-    await readyStorage.setItem(storageKeys.activeSessionId, session.sessionId);
-    const existingIds = await readyStorage.getItem(storageKeys.sessionIds);
-    let sessionIds: string[] = [];
-    try { sessionIds = existingIds ? JSON.parse(existingIds) : []; } catch { /* corrupted storage */ }
-    if (!sessionIds.includes(session.sessionId)) {
-      sessionIds.push(session.sessionId);
-      await readyStorage.setItem(storageKeys.sessionIds, JSON.stringify(sessionIds));
-    }
   }, [oxyServices, updateSessions, setActiveSessionId, loginSuccess, onAuthStateChange, getReadyStorage, storageKeys]);
 
   // Enable web SSO only after local storage check completes and no user found
