@@ -18,7 +18,7 @@ import { RequestDeduplicator, RequestQueue, SimpleLogger } from './utils/request
 import { retryAsync } from './utils/asyncUtils';
 import { handleHttpError } from './utils/errorUtils';
 import { jwtDecode } from 'jwt-decode';
-import { isNative, isReactNative, getPlatformOS } from './utils/platform';
+import { isNative, isReactNative, isWeb, getPlatformOS } from './utils/platform';
 import type { OxyConfig } from './models/interfaces';
 
 /**
@@ -26,6 +26,14 @@ import type { OxyConfig } from './models/interfaces';
  * This is used to determine CSRF handling mode
  */
 const isNativeApp = isNative();
+
+/**
+ * Cooldown (ms) after a failed silent re-auth before the fallback may run again.
+ * Long enough that a persistently-unauthenticated user cannot storm the FedCM
+ * `navigator.credentials.get` API on every request, short enough that a genuine
+ * transient failure recovers within a single user session.
+ */
+const SILENT_REAUTH_COOLDOWN_MS = 30000;
 
 interface JwtPayload {
   exp?: number;
@@ -175,6 +183,31 @@ export class HttpService {
   private tokenRefreshPromise: Promise<string | null> | null = null;
   private tokenRefreshCooldownUntil: number = 0;
   private _onTokenRefreshed: ((accessToken: string) => void) | null = null;
+
+  /**
+   * Optional silent re-authentication handler. When the session-based refresh
+   * (`/session/token`) cannot mint a fresh access token — the cold-boot case
+   * where no/expired bearer is present and that endpoint 401s — this handler is
+   * the last-resort token source. It is wired by the web provider to
+   * `oxyServices.reauthenticateSilently()` (silent FedCM against the durable
+   * `fedcm_session` cookie). Resolves the fresh access token, or `null` when
+   * silent re-auth is unavailable. Never set on native (FedCM is web-only).
+   */
+  private _silentReauthHandler: (() => Promise<string | null>) | null = null;
+
+  /**
+   * In-flight silent-reauth promise (single-flight) so concurrent 401s / token
+   * checks trigger at most ONE `navigator.credentials.get` call. Shared across
+   * all awaiters and cleared only after it settles.
+   */
+  private silentReauthPromise: Promise<string | null> | null = null;
+
+  /**
+   * Cooldown timestamp after a failed silent reauth. While `Date.now()` is below
+   * this, the silent-reauth fallback is skipped entirely so a persistently
+   * signed-out user can NEVER storm `navigator.credentials.get` on every request.
+   */
+  private silentReauthCooldownUntil: number = 0;
 
   /**
    * Fan-out listeners notified on EVERY access-token change on this instance:
@@ -435,10 +468,19 @@ export class HttpService {
                   }
                 }
               } catch {
-                // Token decode failed, fall through to clear
+                // Token decode failed, fall through to silent reauth / clear
               }
             }
-            // Refresh failed or no token — clear tokens and stale CSRF
+            // Session-based refresh failed or there was no token at all. Before
+            // clearing — which on web throws away a still-valid server session —
+            // try the silent-reauth fallback (silent FedCM against the durable
+            // IdP cookie). This is the cold-boot case where the only thing
+            // missing is an in-memory access token. Guarded + single-flighted.
+            const reauthHeader = await this._silentReauthFallback();
+            if (reauthHeader) {
+              return this.request<T>({ ...config, _isAuthRetry: true, retry: false });
+            }
+            // No way to recover — clear tokens and stale CSRF.
             this.tokenStore.clearTokens();
             this.tokenStore.clearCsrfToken();
             this.notifyTokenChange();
@@ -805,7 +847,12 @@ export class HttpService {
   private async getAuthHeader(): Promise<string | null> {
     const accessToken = this.tokenStore.getAccessToken();
     if (!accessToken) {
-      return null;
+      // No in-memory token. On web this is the cold-boot case: a durable server
+      // session may still exist behind the IdP `fedcm_session` cookie. Try the
+      // silent-reauth fallback to mint a fresh token before giving up; the
+      // fallback is single-flighted and cooldown-guarded so a signed-out user
+      // never storms FedCM.
+      return this._silentReauthFallback();
     }
 
     try {
@@ -831,7 +878,12 @@ export class HttpService {
         }
         const result = await this.tokenRefreshPromise;
         if (result) return result;
-        // Refresh failed — don't use the expired token (would cause 401 loop)
+        // Session-based refresh failed (e.g. the bearer-protected
+        // `/session/token` 401'd on an expired token). Fall back to silent
+        // FedCM re-auth against the durable IdP cookie before giving up.
+        const reauthResult = await this._silentReauthFallback();
+        if (reauthResult) return reauthResult;
+        // Both refresh paths failed — don't use the expired token (401 loop).
         return null;
       }
 
@@ -864,6 +916,79 @@ export class HttpService {
       this.logger.warn('Token refresh failed, using current token');
     }
     return null;
+  }
+
+  /**
+   * Is the current environment eligible to run the silent-reauth fallback?
+   *
+   * Silent FedCM re-auth is web-only and must never run ON the IdP origin
+   * itself (it would authenticate against itself). The handler is also only
+   * wired by the web provider, so on native it is `null` and this is moot —
+   * the platform guard is belt-and-braces.
+   */
+  private canSilentReauth(): boolean {
+    if (!this._silentReauthHandler) return false;
+    // Web-only: FedCM does not exist in React Native / Node.
+    if (!isWeb() || typeof window === 'undefined') return false;
+    // Never on the IdP origin — it would re-auth against itself. Use the
+    // configured `authWebUrl` host when available, else the default IdP host.
+    let idpHostname = 'auth.oxy.so';
+    if (this.config.authWebUrl) {
+      try {
+        idpHostname = new URL(this.config.authWebUrl).hostname;
+      } catch {
+        // Malformed authWebUrl — fall back to the default IdP host.
+      }
+    }
+    if (window.location.hostname === idpHostname) {
+      return false;
+    }
+    return true;
+  }
+
+  /**
+   * Last-resort token refresh via the silent-reauth handler (silent FedCM).
+   *
+   * Called only when the session-based refresh could not mint a token (the
+   * cold-boot 401 case). Single-flighted and cooldown-guarded so a persistently
+   * signed-out user can NEVER storm `navigator.credentials.get`:
+   *   - while a previous attempt is in flight, all callers await the SAME promise;
+   *   - after a failure, the fallback is skipped for {@link SILENT_REAUTH_COOLDOWN_MS}.
+   *
+   * On success the handler has already planted the new access token (via the
+   * OxyServices token store, which is this same store), so we re-read it and
+   * return the `Bearer` header.
+   */
+  private async _silentReauthFallback(): Promise<string | null> {
+    if (!this.canSilentReauth()) return null;
+    if (Date.now() < this.silentReauthCooldownUntil) return null;
+
+    if (!this.silentReauthPromise) {
+      const handler = this._silentReauthHandler;
+      if (!handler) return null;
+      this.silentReauthPromise = handler()
+        .then((accessToken) => {
+          if (!accessToken) {
+            this.silentReauthCooldownUntil = Date.now() + SILENT_REAUTH_COOLDOWN_MS;
+          }
+          return accessToken;
+        })
+        .catch((error) => {
+          this.silentReauthCooldownUntil = Date.now() + SILENT_REAUTH_COOLDOWN_MS;
+          this.logger.debug('Silent reauth fallback failed:', error);
+          return null;
+        })
+        .finally(() => {
+          this.silentReauthPromise = null;
+        });
+    }
+
+    const accessToken = await this.silentReauthPromise;
+    if (!accessToken) return null;
+    // The handler planted the token into this same store; re-read it so the
+    // returned header reflects exactly what was stored.
+    const current = this.tokenStore.getAccessToken();
+    return current ? `Bearer ${current}` : `Bearer ${accessToken}`;
   }
 
   /**
@@ -933,11 +1058,28 @@ export class HttpService {
   // Token management
   setTokens(accessToken: string, refreshToken = ''): void {
     this.tokenStore.setTokens(accessToken, refreshToken);
+    // A fresh token means the user is authenticated again — clear any stale
+    // silent-reauth cooldown so a later expiry can re-attempt immediately.
+    this.silentReauthCooldownUntil = 0;
     this.notifyTokenChange();
   }
 
   set onTokenRefreshed(callback: ((accessToken: string) => void) | null) {
     this._onTokenRefreshed = callback;
+  }
+
+  /**
+   * Register the silent re-authentication handler used as the cold-boot / expiry
+   * token-refresh fallback. Called once during web provider init with
+   * `() => oxyServices.reauthenticateSilently().then(s => s?.accessToken ?? null)`.
+   *
+   * When set, a no-token or failed-session-refresh condition triggers ONE
+   * guarded, single-flighted silent FedCM re-auth (web only, never on the IdP
+   * origin) before tokens are cleared — recovering a still-valid server session
+   * on page reload instead of dumping the user to sign-in. Pass `null` to remove.
+   */
+  setSilentReauthHandler(handler: (() => Promise<string | null>) | null): void {
+    this._silentReauthHandler = handler;
   }
 
   clearTokens(): void {

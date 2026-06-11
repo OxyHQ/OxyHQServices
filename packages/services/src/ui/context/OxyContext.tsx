@@ -233,6 +233,27 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     }
   }, []);
 
+  // Wire the HTTP layer's cold-boot / expiry token-refresh fallback to silent
+  // FedCM re-auth. On a page reload a web app has a valid long-lived server
+  // session but no in-memory access token, and the bearer-protected
+  // `GET /session/token/:sessionId` cannot mint a fresh one (401). The durable
+  // identity is the IdP `fedcm_session` cookie; `reauthenticateSilently()` mints
+  // a fresh token from it with no UI. Registering it here lets HttpService
+  // recover a still-valid session transparently instead of clearing it. The
+  // fallback is web-only, never runs on the IdP origin, and is single-flighted
+  // + cooldown-guarded inside HttpService so it can never storm FedCM.
+  useEffect(() => {
+    if (!isWebBrowser()) {
+      return;
+    }
+    oxyServices.httpService.setSilentReauthHandler(() =>
+      oxyServices.reauthenticateSilently().then((session) => session?.accessToken ?? null),
+    );
+    return () => {
+      oxyServices.httpService.setSilentReauthHandler(null);
+    };
+  }, [oxyServices]);
+
   const storageKeys = useMemo(() => getStorageKeys(storageKeyPrefix), [storageKeyPrefix]);
 
   // Storage initialization.
@@ -484,11 +505,43 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         } catch (switchError) {
           // Silently handle expected errors (invalid sessions, timeouts, network issues)
           if (isInvalidSessionError(switchError)) {
-            await storage.removeItem(storageKeys.activeSessionId);
-            updateSessionsRef.current(
-              validSessions.filter((session) => session.sessionId !== storedActiveSessionId),
-              { merge: false },
+            // COLD-BOOT 401 RECOVERY (web): the session validated as server-side
+            // VALID above (it is in `validSessions`), so a 401 here is not a dead
+            // session — it is the cold-boot case where the bearer-protected
+            // `GET /session/token/:sessionId` could not mint a token because no
+            // access token was in memory. Before throwing the valid session away,
+            // try silent FedCM re-auth against the durable IdP `fedcm_session`
+            // cookie and retry the switch ONCE. Only remove the session if silent
+            // re-auth ALSO fails (the user is genuinely unauthenticated).
+            const sessionWasServerValid = validSessions.some(
+              (session) => session.sessionId === storedActiveSessionId,
             );
+            let recovered = false;
+            if (isWebBrowser() && sessionWasServerValid) {
+              try {
+                const reauthed = await oxyServices.reauthenticateSilently();
+                if (reauthed) {
+                  await switchSessionRef.current(storedActiveSessionId);
+                  recovered = true;
+                }
+              } catch (reauthError) {
+                if (__DEV__) {
+                  loggerUtil.debug(
+                    'Silent re-auth during session restore failed',
+                    { component: 'OxyContext', method: 'restoreSessionsFromStorage' },
+                    reauthError as unknown,
+                  );
+                }
+              }
+            }
+
+            if (!recovered) {
+              await storage.removeItem(storageKeys.activeSessionId);
+              updateSessionsRef.current(
+                validSessions.filter((session) => session.sessionId !== storedActiveSessionId),
+                { merge: false },
+              );
+            }
             // Don't log expected session errors during restoration
           } else if (isTimeoutOrNetworkError(switchError)) {
             // Timeout/network error - non-critical, don't block
@@ -540,11 +593,15 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       return;
     }
 
-    // Set the access token on the HTTP client before updating UI state
+    // Set the access token on the HTTP client before updating UI state. A
+    // session arriving here (FedCM exchange or popup) carries an accessToken in
+    // the overwhelmingly common case. If it does not, do NOT fall back to the
+    // bearer-protected `GET /session/token/:sessionId` — with no in-memory token
+    // that endpoint 401s. The HttpService silent-reauth fallback (wired above)
+    // mints a token from the durable IdP cookie on the next authenticated call,
+    // so we simply proceed; `getCurrentUser()` below triggers it if needed.
     if (session.accessToken) {
       oxyServices.httpService.setTokens(session.accessToken);
-    } else {
-      await oxyServices.getTokenBySession(session.sessionId);
     }
 
     const clientSession = {
@@ -559,8 +616,31 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     updateSessions([clientSession], { merge: true });
     setActiveSessionId(session.sessionId);
 
-    // Fetch the full user profile now that we have a valid access token.
-    // The session only carries MinimalUserData; the store and callbacks expect a full User.
+    // PERSIST FIRST — before any await that a post-login navigation could
+    // interrupt. `onAuthStateChange` (fired below) typically triggers the
+    // consuming app to navigate away; if the durable sessionId write happened
+    // AFTER that callback (and after the awaited `getCurrentUser`), the
+    // navigation/unmount could land first and the write would never complete,
+    // leaving `oxy_session_session_ids` empty after a successful sign-in (user
+    // appeared logged in until reload, then had no session to restore). Writing
+    // here — right after the state update, before the profile fetch and the
+    // navigating callback — guarantees exactly one durable write of the
+    // sessionId lands. We await the READY storage instance rather than reading
+    // the possibly-null `storage` state so a sign-in fired the instant the
+    // screen mounts (before storage-init populated state) still persists.
+    const readyStorage = await getReadyStorage();
+    await readyStorage.setItem(storageKeys.activeSessionId, session.sessionId);
+    const existingIds = await readyStorage.getItem(storageKeys.sessionIds);
+    let sessionIds: string[] = [];
+    try { sessionIds = existingIds ? JSON.parse(existingIds) : []; } catch { /* corrupted storage */ }
+    if (!sessionIds.includes(session.sessionId)) {
+      sessionIds.push(session.sessionId);
+      await readyStorage.setItem(storageKeys.sessionIds, JSON.stringify(sessionIds));
+    }
+
+    // Fetch the full user profile now that the session is persisted and a token
+    // is available. The session only carries MinimalUserData; the store and
+    // callbacks expect a full User.
     let fullUser: User;
     try {
       fullUser = await oxyServices.getCurrentUser();
@@ -571,22 +651,6 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     }
     loginSuccess(fullUser);
     onAuthStateChange?.(fullUser);
-
-    // Persist to storage. Await the READY storage instance rather than reading
-    // the possibly-null `storage` state: an interactive FedCM sign-in fired the
-    // instant the screen mounts can run before the storage-init microtask has
-    // populated state, and silently skipping the write here is exactly what
-    // left `oxy_session_session_ids` empty after a successful sign-in (the user
-    // appeared logged in until reload, then had no session to restore).
-    const readyStorage = await getReadyStorage();
-    await readyStorage.setItem(storageKeys.activeSessionId, session.sessionId);
-    const existingIds = await readyStorage.getItem(storageKeys.sessionIds);
-    let sessionIds: string[] = [];
-    try { sessionIds = existingIds ? JSON.parse(existingIds) : []; } catch { /* corrupted storage */ }
-    if (!sessionIds.includes(session.sessionId)) {
-      sessionIds.push(session.sessionId);
-      await readyStorage.setItem(storageKeys.sessionIds, JSON.stringify(sessionIds));
-    }
   }, [oxyServices, updateSessions, setActiveSessionId, loginSuccess, onAuthStateChange, getReadyStorage, storageKeys]);
 
   // Enable web SSO only after local storage check completes and no user found
@@ -603,68 +667,13 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     enabled: shouldTryWebSSO,
   });
 
-  // IdP session validation via lightweight iframe check
-  // When user returns to tab, verify auth.oxy.so still has their session
-  // If session is gone (cleared/logged out), clear local session too
-  const lastIdPCheckRef = useRef<number>(0);
-  const pendingIdPCleanupRef = useRef<(() => void) | null>(null);
-
-  useEffect(() => {
-    if (!isWebBrowser() || !user || !initialized) return;
-
-    const checkIdPSession = () => {
-      // Debounce: check at most once per 30 seconds
-      const now = Date.now();
-      if (now - lastIdPCheckRef.current < 30000) return;
-      lastIdPCheckRef.current = now;
-
-      // Clean up any in-flight check before starting a new one
-      pendingIdPCleanupRef.current?.();
-
-      // Load hidden iframe to check IdP session via postMessage
-      const iframe = document.createElement('iframe');
-      iframe.style.cssText = 'display:none;width:0;height:0;border:0';
-      const idpOrigin = authWebUrl || 'https://auth.oxy.so';
-      iframe.src = `${idpOrigin}/auth/session-check?client_id=${encodeURIComponent(window.location.origin)}`;
-
-      let cleaned = false;
-      const cleanup = () => {
-        if (cleaned) return;
-        cleaned = true;
-        window.removeEventListener('message', handleMessage);
-        iframe.remove();
-      };
-
-      const handleMessage = async (event: MessageEvent) => {
-        if (event.origin !== idpOrigin) return;
-        if (event.data?.type !== 'oxy-session-check') return;
-        cleanup();
-
-        if (!event.data.hasSession) {
-          toast.info('Your session has ended. Please sign in again.');
-          await clearSessionState();
-        }
-      };
-
-      window.addEventListener('message', handleMessage);
-      document.body.appendChild(iframe);
-      setTimeout(cleanup, 5000); // Timeout after 5s
-      pendingIdPCleanupRef.current = cleanup;
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        checkIdPSession();
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      pendingIdPCleanupRef.current?.();
-      pendingIdPCleanupRef.current = null;
-    };
-  }, [user, initialized, clearSessionState, authWebUrl]);
+  // NOTE: A hidden-iframe IdP session check against `/auth/session-check` used
+  // to live here to clear the local session when auth.oxy.so logged out. That
+  // route does not exist on the IdP (the iframe only ever loaded an SPA shell),
+  // so the check was dead code that never fired its cleanup branch. It is
+  // superseded by the silent-FedCM model: if the IdP session is gone, silent
+  // re-auth simply fails and the normal 401 path clears the local session — no
+  // bespoke cross-origin iframe protocol required.
 
   const activeSession = activeSessionId
     ? sessions.find((session) => session.sessionId === activeSessionId)
