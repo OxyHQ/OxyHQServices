@@ -48,7 +48,18 @@ jobs:
         with:
           node-version: '20.x'
       - run: bun install --frozen-lockfile
+      # Builds the Vite SPA AND the FedCM IdP Cloudflare Pages Function
+      # (dist/_worker.js) — see packages/auth `build` -> `build:worker`.
       - run: bun x turbo run build --filter=auth
+      # Safety net: regenerate the Pages Function directly (bypasses any stale
+      # turbo cache) and fail fast if the advanced-mode worker is missing, so we
+      # never deploy a static-only build that 404s/HTMLs the /fedcm/* endpoints.
+      - name: Ensure FedCM Pages Function is built
+        working-directory: packages/auth
+        run: |
+          bun run build:worker
+          test -f dist/_worker.js || { echo "::error::dist/_worker.js missing — FedCM IdP server would not deploy"; exit 1; }
+          echo "dist/_worker.js present ($(wc -c < dist/_worker.js) bytes)"
       - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}

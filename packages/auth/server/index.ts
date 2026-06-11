@@ -1,86 +1,151 @@
 /**
  * FedCM Identity Provider Server for auth.oxy.so
  *
- * This lightweight server sits in front of the Vite-built SPA and implements
- * the FedCM endpoints required by the Federated Credential Management API.
+ * This Hono app implements the FedCM endpoints required by the Federated
+ * Credential Management API and serves the Vite-built SPA for every other
+ * route. It runs in TWO environments from a single source:
+ *
+ *   - Production: bundled to `dist/_worker.js` and deployed as a Cloudflare
+ *     Pages Function (advanced mode). Static assets are served by the Pages
+ *     `env.ASSETS` binding; secrets come from the Worker `env` binding.
+ *   - Local / tests: run on Bun/Node via `bun run server/index.ts`. Static
+ *     assets and env come from the filesystem and `process.env`.
  *
  * The FedCM spec mandates that the IdP endpoints (accounts_endpoint,
- * id_assertion_endpoint, disconnect_endpoint) live on the same origin as
- * the configURL declared in .well-known/web-identity. Since auth.oxy.so is
- * the IdP origin, these endpoints must be served here -- not on api.oxy.so.
+ * id_assertion_endpoint, disconnect_endpoint) live on the same origin as the
+ * configURL declared in .well-known/web-identity. Since auth.oxy.so is the IdP
+ * origin, these endpoints MUST be served here -- not on api.oxy.so.
  *
  * Endpoints:
- *   GET  /fedcm/accounts      - Returns accounts for the logged-in user
- *   POST /fedcm/assertion      - Mints an id_token (HS256 JWT) for the RP
- *   POST /fedcm/disconnect     - Disconnects an RP
- *   GET  /fedcm/login-status   - Returns Set-Login header for the browser
- *   POST /fedcm/set-session    - Called by the SPA after login to set cookie
- *   *    /*                    - Serves the Vite SPA (static files + fallback)
+ *   GET  /.well-known/web-identity - FedCM manifest (application/json)
+ *   GET  /fedcm/accounts          - Accounts for the logged-in user
+ *   POST /fedcm/assertion         - Mints an id_token (HS256 JWT) for the RP
+ *   POST /fedcm/disconnect        - Disconnects an RP
+ *   GET  /fedcm/login-status      - Returns Set-Login header for the browser
+ *   POST /fedcm/set-session       - Called by the SPA after login to set cookie
+ *   *    /*                       - Serves the Vite SPA (static assets)
  */
 
 import { Hono } from 'hono';
-import { serveStatic } from '@hono/node-server/serve-static';
-import { serve } from '@hono/node-server';
+import type { Context } from 'hono';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
-import { createHmac } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
 
 // ---------------------------------------------------------------------------
-// Configuration
+// Runtime configuration
 // ---------------------------------------------------------------------------
 
-const PORT = parseInt(process.env.PORT || '3002', 10);
-const API_BASE_URL = (process.env.OXY_API_URL || 'https://api.oxy.so').replace(/\/+$/, '');
-const FEDCM_ISSUER = (process.env.FEDCM_ISSUER || 'https://auth.oxy.so').replace(/\/+$/, '');
-const FEDCM_TOKEN_SECRET = process.env.FEDCM_TOKEN_SECRET || '';
-const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 const COOKIE_NAME = 'fedcm_session';
 const COOKIE_MAX_AGE = 30 * 24 * 60 * 60; // 30 days in seconds
 const TOKEN_LIFETIME = 600; // 10 minutes for id_tokens
 
-// The dist directory where Vite outputs the built SPA
-const DIST_DIR = join(import.meta.dirname, '..', 'dist');
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/** Base64url-encode a Buffer or string. */
-function base64url(input: Buffer | string): string {
-  const buf = typeof input === 'string' ? Buffer.from(input) : input;
-  return buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+/**
+ * Cloudflare Pages Worker bindings (secrets / vars) plus the static-asset
+ * fetcher Pages injects in advanced mode. All optional so the same type works
+ * when running under Bun/Node where these come from `process.env` instead.
+ */
+interface WorkerEnv {
+  OXY_API_URL?: string;
+  FEDCM_ISSUER?: string;
+  FEDCM_TOKEN_SECRET?: string;
+  NODE_ENV?: string;
+  ASSETS?: { fetch: typeof fetch };
 }
 
-/** Create an HS256 JWT. */
-function createHS256JWT(payload: Record<string, unknown>): string {
+type AppContext = Context<{ Bindings: WorkerEnv }>;
+
+interface ResolvedConfig {
+  apiBaseUrl: string;
+  fedcmIssuer: string;
+  fedcmTokenSecret: string;
+  isProduction: boolean;
+}
+
+/** Read a config value from the Worker `env` binding, falling back to Node `process.env`. */
+function readEnv(env: WorkerEnv | undefined, key: keyof WorkerEnv): string | undefined {
+  const fromBinding = env?.[key];
+  if (typeof fromBinding === 'string' && fromBinding.length > 0) return fromBinding;
+  // `process` is undefined on the Workers runtime — guard before touching it.
+  if (typeof process !== 'undefined' && process.env) {
+    const fromProcess = process.env[key as string];
+    if (typeof fromProcess === 'string' && fromProcess.length > 0) return fromProcess;
+  }
+  return undefined;
+}
+
+/**
+ * Resolve the IdP's runtime config from the request context. On Cloudflare
+ * Pages secrets arrive per-request via `c.env`; under Bun/Node they come from
+ * `process.env`. We resolve per-request (not at module load) because the
+ * Workers runtime does not expose bindings at module-evaluation time.
+ */
+function resolveConfig(c: AppContext): ResolvedConfig {
+  const env = c.env;
+  return {
+    apiBaseUrl: (readEnv(env, 'OXY_API_URL') || 'https://api.oxy.so').replace(/\/+$/, ''),
+    fedcmIssuer: (readEnv(env, 'FEDCM_ISSUER') || 'https://auth.oxy.so').replace(/\/+$/, ''),
+    fedcmTokenSecret: readEnv(env, 'FEDCM_TOKEN_SECRET') || '',
+    isProduction: readEnv(env, 'NODE_ENV') === 'production',
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Helpers (runtime-agnostic — Web Crypto + WHATWG APIs only)
+// ---------------------------------------------------------------------------
+
+/** Base64url-encode a string or byte array without depending on Node `Buffer`. */
+function base64url(input: string | Uint8Array): string {
+  const bytes = typeof input === 'string' ? new TextEncoder().encode(input) : input;
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+}
+
+/**
+ * Create an HS256 JWT signed with the FedCM token secret using Web Crypto
+ * (`crypto.subtle`). Web Crypto is available on the Workers runtime, Bun, and
+ * Node 18+ — unlike `node:crypto`, which is not available on Workers.
+ */
+async function createHS256JWT(payload: Record<string, unknown>, secret: string): Promise<string> {
   const header = base64url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
   const body = base64url(JSON.stringify(payload));
   const signatureInput = `${header}.${body}`;
-  const signature = base64url(
-    createHmac('sha256', FEDCM_TOKEN_SECRET).update(signatureInput).digest()
+
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
   );
+  const signatureBuffer = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(signatureInput));
+  const signature = base64url(new Uint8Array(signatureBuffer));
+
   return `${signatureInput}.${signature}`;
 }
 
-/** Fetch user data from the Oxy API using a session ID. */
-async function fetchUserFromAPI(sessionId: string): Promise<{
+interface ResolvedUser {
   id: string;
   email?: string;
   username?: string;
   name?: string;
   avatar?: string;
-} | null> {
+}
+
+/**
+ * Resolve the FedCM session cookie to a user via the PUBLIC, cookie-less
+ * `/session/validate/:id` endpoint. We deliberately do NOT use
+ * `/session/user/:id`: that route is bearer-protected (it requires an
+ * Authorization header and verifies the caller owns the session), and the IdP
+ * server has no user access token to present — so it would always 401 and
+ * FedCM would fall back to the login_url popup. `/session/validate` takes only
+ * the sessionId, returns `{ valid, user }`, and is the intended
+ * server-to-server session-resolution endpoint.
+ */
+async function fetchUserFromAPI(apiBaseUrl: string, sessionId: string): Promise<ResolvedUser | null> {
   try {
-    // Resolve the FedCM session cookie to a user via the PUBLIC, cookie-less
-    // `/session/validate/:id` endpoint. We deliberately do NOT use
-    // `/session/user/:id` here: that route is bearer-protected (it requires an
-    // Authorization header and verifies the caller owns the session), and the
-    // IdP server has no user access token to present — so it would always 401
-    // and FedCM would fall back to the login_url popup. `/session/validate`
-    // takes only the sessionId, returns `{ valid, user }`, and is the intended
-    // server-to-server session-resolution endpoint.
-    const url = `${API_BASE_URL}/session/validate/${encodeURIComponent(sessionId)}`;
+    const url = `${apiBaseUrl}/session/validate/${encodeURIComponent(sessionId)}`;
     const res = await fetch(url, {
       headers: { 'Accept': 'application/json' },
       signal: AbortSignal.timeout(5000),
@@ -114,9 +179,9 @@ async function fetchUserFromAPI(sessionId: string): Promise<{
 }
 
 /** Validate that a session is still active via the API. */
-async function validateSession(sessionId: string): Promise<boolean> {
+async function validateSession(apiBaseUrl: string, sessionId: string): Promise<boolean> {
   try {
-    const url = `${API_BASE_URL}/session/validate/${encodeURIComponent(sessionId)}`;
+    const url = `${apiBaseUrl}/session/validate/${encodeURIComponent(sessionId)}`;
     const res = await fetch(url, {
       headers: { 'Accept': 'application/json' },
       signal: AbortSignal.timeout(5000),
@@ -131,15 +196,9 @@ async function validateSession(sessionId: string): Promise<boolean> {
 }
 
 /** Build the avatar URL for a user. */
-function getAvatarUrl(fileId: string): string {
-  return `${API_BASE_URL}/assets/${encodeURIComponent(fileId)}/stream?variant=thumb&fallback=placeholderVisible`;
+function getAvatarUrl(apiBaseUrl: string, fileId: string): string {
+  return `${apiBaseUrl}/assets/${encodeURIComponent(fileId)}/stream?variant=thumb&fallback=placeholderVisible`;
 }
-
-// ---------------------------------------------------------------------------
-// App
-// ---------------------------------------------------------------------------
-
-const app = new Hono();
 
 // ---------------------------------------------------------------------------
 // FedCM request validation + CORS helpers
@@ -154,7 +213,7 @@ const app = new Hono();
  *
  * Spec: https://fedidcg.github.io/FedCM/#http-csrf-protection
  */
-function hasWebIdentityDest(c: { req: { header: (name: string) => string | undefined } }): boolean {
+function hasWebIdentityDest(c: AppContext): boolean {
   return c.req.header('sec-fetch-dest') === 'webidentity';
 }
 
@@ -165,10 +224,7 @@ function hasWebIdentityDest(c: { req: { header: (name: string) => string | undef
  * true`, otherwise the browser discards the token ("Error retrieving a
  * token"). The RP origin arrives in the `Origin` header.
  */
-function applyAssertionCors(c: {
-  req: { header: (name: string) => string | undefined };
-  header: (name: string, value: string) => void;
-}): void {
+function applyAssertionCors(c: AppContext): void {
   const origin = c.req.header('origin');
   if (origin) {
     c.header('Access-Control-Allow-Origin', origin);
@@ -178,22 +234,25 @@ function applyAssertionCors(c: {
 }
 
 // ---------------------------------------------------------------------------
-// FedCM Endpoints
+// App
 // ---------------------------------------------------------------------------
+
+const app = new Hono<{ Bindings: WorkerEnv }>();
 
 /**
  * GET /.well-known/web-identity
  *
  * The FedCM manifest that points the browser at the IdP config (fedcm.json).
  * It MUST be served from the eTLD+1 well-known path with
- * `Content-Type: application/json`. The static file handler would label this
+ * `Content-Type: application/json`. The static asset handler would label this
  * extensionless file `application/octet-stream`, which Chrome rejects — so we
  * serve it explicitly here.
  *
  * Spec: https://fedidcg.github.io/FedCM/#idp-api-well-known
  */
 app.get('/.well-known/web-identity', (c) => {
-  return c.json({ provider_urls: [`${FEDCM_ISSUER}/fedcm.json`] });
+  const { fedcmIssuer } = resolveConfig(c);
+  return c.json({ provider_urls: [`${fedcmIssuer}/fedcm.json`] });
 });
 
 /**
@@ -211,6 +270,7 @@ app.get('/fedcm/accounts', async (c) => {
     return c.json({ error: 'invalid_request' }, 400);
   }
 
+  const { apiBaseUrl, isProduction } = resolveConfig(c);
   const sessionId = getCookie(c, COOKIE_NAME);
 
   if (!sessionId) {
@@ -218,12 +278,12 @@ app.get('/fedcm/accounts', async (c) => {
     return c.json({ accounts: [] }, 200);
   }
 
-  const user = await fetchUserFromAPI(sessionId);
+  const user = await fetchUserFromAPI(apiBaseUrl, sessionId);
   if (!user) {
     // Session expired or invalid
     deleteCookie(c, COOKIE_NAME, {
       path: '/',
-      secure: IS_PRODUCTION,
+      secure: isProduction,
       httpOnly: true,
       sameSite: 'None',
     });
@@ -237,7 +297,7 @@ app.get('/fedcm/accounts', async (c) => {
   };
 
   if (user.avatar) {
-    account.picture = getAvatarUrl(user.avatar);
+    account.picture = getAvatarUrl(apiBaseUrl, user.avatar);
   }
 
   // The FedCM spec allows an optional given_name field
@@ -275,7 +335,9 @@ app.post('/fedcm/assertion', async (c) => {
     return c.json({ error: 'invalid_request' }, 400);
   }
 
-  if (!FEDCM_TOKEN_SECRET) {
+  const { apiBaseUrl, fedcmIssuer, fedcmTokenSecret } = resolveConfig(c);
+
+  if (!fedcmTokenSecret) {
     console.error('[FedCM] FEDCM_TOKEN_SECRET is not configured');
     return c.json({ error: 'server_error' }, 500);
   }
@@ -312,7 +374,7 @@ app.post('/fedcm/assertion', async (c) => {
   }
 
   // Verify the session is still valid and the account matches
-  const user = await fetchUserFromAPI(sessionId);
+  const user = await fetchUserFromAPI(apiBaseUrl, sessionId);
   if (!user || user.id !== accountId) {
     return c.json({ error: 'invalid_account' }, 403);
   }
@@ -320,7 +382,7 @@ app.post('/fedcm/assertion', async (c) => {
   // Mint the id_token
   const now = Math.floor(Date.now() / 1000);
   const payload: Record<string, unknown> = {
-    iss: FEDCM_ISSUER,
+    iss: fedcmIssuer,
     sub: accountId,
     aud: clientId,
     iat: now,
@@ -336,7 +398,7 @@ app.post('/fedcm/assertion', async (c) => {
   if (user.name) payload.name = user.name;
   if (user.username) payload.preferred_username = user.username;
 
-  const token = createHS256JWT(payload);
+  const token = await createHS256JWT(payload, fedcmTokenSecret);
 
   return c.json({ token });
 });
@@ -359,6 +421,8 @@ app.post('/fedcm/disconnect', async (c) => {
     return c.json({ error: 'invalid_request' }, 400);
   }
 
+  const { apiBaseUrl, isProduction } = resolveConfig(c);
+
   // Read the session cookie BEFORE clearing it
   const sessionId = getCookie(c, COOKIE_NAME);
 
@@ -377,7 +441,7 @@ app.post('/fedcm/disconnect', async (c) => {
   // account_hint when the session can no longer be resolved.
   let disconnectedAccountId = accountHint;
   if (sessionId) {
-    const user = await fetchUserFromAPI(sessionId);
+    const user = await fetchUserFromAPI(apiBaseUrl, sessionId);
     if (user?.id) {
       disconnectedAccountId = user.id;
     }
@@ -386,7 +450,7 @@ app.post('/fedcm/disconnect', async (c) => {
   // Clear the session cookie
   deleteCookie(c, COOKIE_NAME, {
     path: '/',
-    secure: IS_PRODUCTION,
+    secure: isProduction,
     httpOnly: true,
     sameSite: 'None',
   });
@@ -394,7 +458,7 @@ app.post('/fedcm/disconnect', async (c) => {
   // Best-effort logout from the API
   if (sessionId) {
     try {
-      await fetch(`${API_BASE_URL}/session/logout/${encodeURIComponent(sessionId)}`, {
+      await fetch(`${apiBaseUrl}/session/logout/${encodeURIComponent(sessionId)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         signal: AbortSignal.timeout(5000),
@@ -425,11 +489,12 @@ app.post('/fedcm/disconnect', async (c) => {
  * Spec: https://fedidcg.github.io/FedCM/#login-status
  */
 app.get('/fedcm/login-status', async (c) => {
+  const { apiBaseUrl, isProduction } = resolveConfig(c);
   const sessionId = getCookie(c, COOKIE_NAME);
 
   if (sessionId) {
     // Verify the session is still valid
-    const valid = await validateSession(sessionId);
+    const valid = await validateSession(apiBaseUrl, sessionId);
     if (valid) {
       c.header('Set-Login', 'logged-in');
       return c.html('<!DOCTYPE html><html><body>logged-in</body></html>');
@@ -437,7 +502,7 @@ app.get('/fedcm/login-status', async (c) => {
     // Session invalid -- clean up
     deleteCookie(c, COOKIE_NAME, {
       path: '/',
-      secure: IS_PRODUCTION,
+      secure: isProduction,
       httpOnly: true,
       sameSite: 'None',
     });
@@ -459,6 +524,7 @@ app.get('/fedcm/login-status', async (c) => {
  * login flow and the FedCM server-side session tracking.
  */
 app.post('/fedcm/set-session', async (c) => {
+  const { apiBaseUrl, isProduction } = resolveConfig(c);
   const body = await c.req.json().catch(() => ({})) as Record<string, string>;
   const sessionId = body.sessionId;
   const action = body.action; // 'login' or 'logout'
@@ -466,7 +532,7 @@ app.post('/fedcm/set-session', async (c) => {
   if (action === 'logout') {
     deleteCookie(c, COOKIE_NAME, {
       path: '/',
-      secure: IS_PRODUCTION,
+      secure: isProduction,
       httpOnly: true,
       sameSite: 'None',
     });
@@ -479,14 +545,14 @@ app.post('/fedcm/set-session', async (c) => {
   }
 
   // Validate that this session actually exists in the API
-  const valid = await validateSession(sessionId);
+  const valid = await validateSession(apiBaseUrl, sessionId);
   if (!valid) {
     return c.json({ error: 'invalid_session' }, 401);
   }
 
   setCookie(c, COOKIE_NAME, sessionId, {
     path: '/',
-    secure: IS_PRODUCTION,
+    secure: isProduction,
     httpOnly: true,
     sameSite: 'None', // Required for FedCM cross-site cookie access
     maxAge: COOKIE_MAX_AGE,
@@ -496,57 +562,17 @@ app.post('/fedcm/set-session', async (c) => {
   return c.json({ success: true });
 });
 
-// ---------------------------------------------------------------------------
-// Static File Serving (Vite SPA)
-// ---------------------------------------------------------------------------
-
-// Serve static assets from the dist directory
-app.use('/*', serveStatic({ root: './dist' }));
-
-// SPA fallback: serve index.html for any route not matched by static files
-app.get('*', async (c) => {
-  try {
-    const indexPath = join(DIST_DIR, 'index.html');
-    const html = await readFile(indexPath, 'utf-8');
-    return c.html(html);
-  } catch {
-    return c.text('Not found', 404);
-  }
-});
+// NOTE: there is deliberately NO catch-all `*` route on `app`. Static-asset
+// fallback for the SPA is owned by each runtime entrypoint:
+//   - Cloudflare Pages: `server/worker.ts` falls back to `env.ASSETS.fetch()`
+//     when the Hono app returns 404 (no FedCM route matched).
+//   - Local Bun/Node: `server/node.ts` adds `@hono/node-server` static handlers.
+// Keeping `app` free of a catch-all (and free of any Node-only imports) lets
+// the FedCM endpoint tests assert clean 404s, avoids the mounted-app
+// route-precedence trap, AND keeps the Workers bundle free of `node:*` builtins.
 
 // Export the configured Hono app so it can be exercised in tests via
-// `app.request(...)` without binding a TCP port.
-export { app };
-
-// ---------------------------------------------------------------------------
-// Start
-// ---------------------------------------------------------------------------
-
-function startServer(): void {
-  if (!FEDCM_TOKEN_SECRET && IS_PRODUCTION) {
-    console.error('[FedCM Server] FATAL: FEDCM_TOKEN_SECRET environment variable is required in production');
-    process.exit(1);
-  }
-
-  if (!FEDCM_TOKEN_SECRET) {
-    console.warn('[FedCM Server] WARNING: FEDCM_TOKEN_SECRET is not set. The /fedcm/assertion endpoint will not work.');
-  }
-
-  console.log(`[FedCM Server] Starting on port ${PORT}`);
-  console.log(`[FedCM Server] API: ${API_BASE_URL}`);
-  console.log(`[FedCM Server] Issuer: ${FEDCM_ISSUER}`);
-  console.log(`[FedCM Server] SPA dist: ${DIST_DIR}`);
-
-  serve({
-    fetch: app.fetch,
-    port: PORT,
-  }, (info) => {
-    console.log(`[FedCM Server] Listening on http://localhost:${info.port}`);
-  });
-}
-
-// Only bind a port when run directly (`bun run server/index.ts`), not when
-// imported for testing. `import.meta.main` is Bun's entrypoint check.
-if (import.meta.main) {
-  startServer();
-}
+// `app.request(...)` and re-used by the Cloudflare Pages worker entry
+// (`server/worker.ts`) and the local Node entry (`server/node.ts`).
+export { app, readEnv };
+export type { WorkerEnv };
