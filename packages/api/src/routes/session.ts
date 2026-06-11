@@ -2,7 +2,18 @@ import express from 'express';
 import { SessionController } from '../controllers/session.controller';
 import { authMiddleware } from '../middleware/auth';
 import { validate } from '../middleware/validate';
-import { sessionIdParams, updateDeviceNameSchema, batchUsersSchema } from '../schemas/session.schemas';
+import { rateLimit } from '../middleware/rateLimiter';
+import { sessionIdParams, sessionTokenMintParams, updateDeviceNameSchema, batchUsersSchema } from '../schemas/session.schemas';
+
+// Cold-boot token mint is bearer-free (the sessionId IS the credential, exactly
+// like GET /session/validate/:sessionId). Rate-limit per sessionId (falling back
+// to IP) to prevent brute-force/enumeration of session IDs. Mirrors the FedCM
+// nonce limiter in routes/fedcm.ts.
+const tokenMintLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: process.env.NODE_ENV === 'development' ? 200 : 30,
+  keyGenerator: (req) => `session-token-mint:${req.params.sessionId || req.ip}`,
+});
 
 const router = express.Router();
 
@@ -58,18 +69,26 @@ router.get('/user/:sessionId', authMiddleware, validate({ params: sessionIdParam
  *   get:
  *     tags:
  *       - Sessions
- *     summary: Issue a fresh access token from a session ID
+ *     security: []
+ *     summary: Issue a fresh access token from a session ID (cold-boot, bearer-free)
  *     description: >
  *       Exchange a long-lived session ID for a short-lived access token
- *       (typically 15 minutes). Requires a valid access token whose user
- *       owns the referenced session — callers cannot mint tokens for
- *       sessions belonging to other users.
+ *       (typically 15 minutes). No bearer token is required — the session ID
+ *       path parameter is itself the credential (UUID, 128 bits of entropy),
+ *       exactly like GET /session/validate/:sessionId. This enables cold-boot
+ *       session restore on web reload when the client has a sessionId in
+ *       localStorage but no in-memory access token. The minted token carries
+ *       the normal { sessionId, userId, deviceId } claims so subsequent
+ *       authMiddleware validation is unchanged. Brute-force/enumeration is
+ *       mitigated by UUID-format param validation and per-sessionId rate
+ *       limiting (30 req/min in production).
  *     parameters:
  *       - name: sessionId
  *         in: path
  *         required: true
  *         schema:
  *           type: string
+ *           format: uuid
  *     responses:
  *       200:
  *         description: New access token.
@@ -80,13 +99,15 @@ router.get('/user/:sessionId', authMiddleware, validate({ params: sessionIdParam
  *               properties:
  *                 accessToken:
  *                   type: string
- *                 expiresIn:
- *                   type: integer
- *                   example: 900
- *       404:
- *         description: Session not found or expired.
+ *                 expiresAt:
+ *                   type: string
+ *                   format: date-time
+ *       401:
+ *         description: Session not found, expired, or revoked.
+ *       429:
+ *         description: Rate limit exceeded.
  */
-router.get('/token/:sessionId', authMiddleware, validate({ params: sessionIdParams }), SessionController.getTokenBySession);
+router.get('/token/:sessionId', tokenMintLimiter, validate({ params: sessionTokenMintParams }), SessionController.getTokenBySessionPublic);
 
 /**
  * @openapi
