@@ -235,16 +235,58 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
   const storageKeys = useMemo(() => getStorageKeys(storageKeyPrefix), [storageKeyPrefix]);
 
-  // Simple storage initialization - no complex hook needed
+  // Storage initialization.
+  //
+  // `storage` (state) drives render-time gating (`isStorageReady`) and the
+  // hooks below. But it is `null` for a brief window after mount while
+  // `createPlatformStorage()` resolves (a microtask on web; a dynamic
+  // `import()` on native). Any persistence path that fires during that window
+  // — e.g. an interactive FedCM sign-in the instant the screen mounts — would
+  // read `storage === null` and SILENTLY skip writing the session, leaving the
+  // user signed-in in-memory but with nothing to restore on reload.
+  //
+  // To make persistence robust regardless of timing we ALSO expose the storage
+  // as an awaitable promise (`getReadyStorage`). Persistence code awaits the
+  // ready instance instead of branching on the possibly-null state, so a write
+  // is never silently dropped just because it raced storage init.
   const storageRef = useRef<StorageInterface | null>(null);
   const [storage, setStorage] = useState<StorageInterface | null>(null);
+
+  // A single, stable deferred that resolves with the initialized storage. Built
+  // lazily via a ref initializer so the resolver is captured exactly once and
+  // the promise identity is stable across renders.
+  const buildStorageDeferred = () => {
+    let resolve: (storage: StorageInterface) => void = () => undefined;
+    const promise = new Promise<StorageInterface>((res) => {
+      resolve = res;
+    });
+    return { promise, resolve };
+  };
+  const storageReadyRef = useRef<ReturnType<typeof buildStorageDeferred> | null>(null);
+  if (storageReadyRef.current === null) {
+    storageReadyRef.current = buildStorageDeferred();
+  }
+  const storageReady = storageReadyRef.current;
+
+  // Resolve the storage instance that is guaranteed to be ready. Returns the
+  // already-initialized instance synchronously when available, otherwise awaits
+  // the init promise. Never resolves to `null`.
+  const getReadyStorage = useCallback((): Promise<StorageInterface> => {
+    if (storageRef.current) {
+      return Promise.resolve(storageRef.current);
+    }
+    return storageReady.promise;
+  }, [storageReady]);
 
   useEffect(() => {
     let mounted = true;
     createPlatformStorage()
       .then((storageInstance) => {
+        // Resolve the ready-promise even if the component unmounted: in-flight
+        // persistence awaiting it must still complete against a real store.
+        storageRef.current = storageInstance;
+        storageReady.resolve(storageInstance);
         if (mounted) {
-          storageRef.current = storageInstance;
           setStorage(storageInstance);
         }
       })
@@ -262,7 +304,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     return () => {
       mounted = false;
     };
-  }, [logger, onError]);
+  }, [logger, onError, storageReady]);
 
 
   // Offline queuing is now handled by TanStack Query mutations
@@ -530,18 +572,22 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     loginSuccess(fullUser);
     onAuthStateChange?.(fullUser);
 
-    // Persist to storage
-    if (storage) {
-      await storage.setItem(storageKeys.activeSessionId, session.sessionId);
-      const existingIds = await storage.getItem(storageKeys.sessionIds);
-      let sessionIds: string[] = [];
-      try { sessionIds = existingIds ? JSON.parse(existingIds) : []; } catch { /* corrupted storage */ }
-      if (!sessionIds.includes(session.sessionId)) {
-        sessionIds.push(session.sessionId);
-        await storage.setItem(storageKeys.sessionIds, JSON.stringify(sessionIds));
-      }
+    // Persist to storage. Await the READY storage instance rather than reading
+    // the possibly-null `storage` state: an interactive FedCM sign-in fired the
+    // instant the screen mounts can run before the storage-init microtask has
+    // populated state, and silently skipping the write here is exactly what
+    // left `oxy_session_session_ids` empty after a successful sign-in (the user
+    // appeared logged in until reload, then had no session to restore).
+    const readyStorage = await getReadyStorage();
+    await readyStorage.setItem(storageKeys.activeSessionId, session.sessionId);
+    const existingIds = await readyStorage.getItem(storageKeys.sessionIds);
+    let sessionIds: string[] = [];
+    try { sessionIds = existingIds ? JSON.parse(existingIds) : []; } catch { /* corrupted storage */ }
+    if (!sessionIds.includes(session.sessionId)) {
+      sessionIds.push(session.sessionId);
+      await readyStorage.setItem(storageKeys.sessionIds, JSON.stringify(sessionIds));
     }
-  }, [oxyServices, updateSessions, setActiveSessionId, loginSuccess, onAuthStateChange, storage, storageKeys]);
+  }, [oxyServices, updateSessions, setActiveSessionId, loginSuccess, onAuthStateChange, getReadyStorage, storageKeys]);
 
   // Enable web SSO only after local storage check completes and no user found
   const shouldTryWebSSO = isWebBrowser() && tokenReady && !user && initialized;
