@@ -350,11 +350,32 @@ app.get('/fedcm/accounts', async (c) => {
     return c.json({ error: 'not_logged_in' }, 401);
   }
 
+  const accountEmail = user.email || `${user.username || user.id}@oxy.so`;
+
   const account: Record<string, unknown> = {
     id: user.id,
     name: user.name || user.username || 'Oxy User',
-    email: user.email || `${user.username || user.id}@oxy.so`,
+    email: accountEmail,
   };
+
+  // `login_hints` declares the values an RP may pass as `loginHint` to target
+  // THIS account. Per the FedCM spec Chrome only shows accounts whose
+  // `login_hints` contains the RP-supplied hint — and, critically, when an
+  // account declares NO `login_hints`, ANY non-empty hint filters it out
+  // ("none matched the login hint"), greying every account in the chooser.
+  // Populate it with every identifier an RP could realistically hint by: the
+  // account id, the email, and the username (when present). Deduplicated to
+  // keep the array minimal.
+  //
+  // Spec: https://w3c-fedid.github.io/FedCM/#dom-identityprovideraccount-login_hints
+  const loginHints = Array.from(
+    new Set(
+      [user.id, accountEmail, user.username].filter(
+        (hint): hint is string => typeof hint === 'string' && hint.length > 0
+      )
+    )
+  );
+  account.login_hints = loginHints;
 
   if (user.avatar) {
     account.picture = getAvatarUrl(apiBaseUrl, user.avatar);

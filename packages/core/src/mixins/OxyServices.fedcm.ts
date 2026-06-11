@@ -66,6 +66,33 @@ function isUnknownModeEnumError(error: unknown): boolean {
   );
 }
 
+/**
+ * Detect a `navigator.credentials.get` rejection that is consistent with
+ * "the supplied loginHint matched no account at the IdP".
+ *
+ * When an RP passes a `loginHint` and the IdP returns accounts but NONE of them
+ * declare that hint in their `login_hints`, Chrome filters every account out,
+ * greys it in the chooser ("You can't sign in using this account"), logs
+ * "Accounts were received, but none matched the login hint…", and ultimately
+ * rejects the credential request — surfacing as a `NotAllowedError` /
+ * `AbortError` (the same shape as a user-cancelled or timed-out request). A
+ * stale hint left over from a previously-signed-in/test account therefore hard
+ * -blocks sign-in.
+ *
+ * We can only safely apply the clear-and-retry recovery when a `loginHint` was
+ * actually supplied; without one this is just a normal cancel/timeout and must
+ * NOT be retried. Callers gate on `hadLoginHint` before calling this.
+ */
+function isPossibleHintMismatchError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  // FedCM surfaces a filtered-out / no-eligible-account outcome as
+  // NotAllowedError (current Chrome) or AbortError (our own timeout abort while
+  // the chooser had no selectable account). Both are indistinguishable from a
+  // genuine user cancel at the API level, so the gate on "a hint was supplied"
+  // (in the caller) is what makes the retry safe and targeted.
+  return error.name === 'NotAllowedError' || error.name === 'AbortError';
+}
+
 // Minimal structural types for the FedCM `navigator.credentials.get` surface.
 // The DOM lib does not ship these in every TypeScript version we build against,
 // so we model only the fields this mixin reads/writes. This lets the FedCM code
@@ -213,77 +240,121 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
       );
     }
 
+    // Use provided loginHint, or fall back to stored last-used account ID.
+    const initialLoginHint = options.loginHint || this.getStoredLoginHint();
+
     try {
-      // Prefer a server-minted, origin-bound nonce so the downstream
-      // `/fedcm/exchange` can validate it. A caller-supplied nonce is
-      // respected as-is for advanced use cases.
-      const nonce = options.nonce || (await this.getFedcmNonce());
-      const clientId = this.getClientId();
-
-      // Use provided loginHint, or fall back to stored last-used account ID
-      const loginHint = options.loginHint || this.getStoredLoginHint();
-
-      debug.log('Interactive sign-in: Requesting credential for', clientId, loginHint ? `(hint: ${loginHint})` : '');
-
-      // Request credential from browser's native identity flow.
-      // mode: 'active' signals this is a user-gesture-initiated (button) flow.
-      // 'active' is the current W3C spec value; requestIdentityCredential
-      // transparently retries with the legacy 'button' value for Chrome 125–131.
-      const credential = await this.requestIdentityCredential({
-        configURL: this.resolveFedcmConfigUrl(),
-        clientId,
-        nonce,
-        context: options.context,
-        loginHint,
-        mode: 'active',
-      });
-
-      if (!credential || !credential.token) {
-        throw new OxyAuthenticationError('No credential received from browser');
-      }
-
-      debug.log('Interactive sign-in: Got credential, exchanging for session');
-
-      // Exchange FedCM ID token for Oxy session
-      const session = await this.exchangeIdTokenForSession(credential.token);
-
-      // Store access token in HttpService. `accessToken`/`refreshToken` are
-      // declared optional on SessionLoginResponse; default the refresh token to
-      // an empty string when the exchange did not return one.
-      if (session?.accessToken) {
-        this.httpService.setTokens(session.accessToken, session.refreshToken ?? '');
-      }
-
-      // Store the user ID as loginHint for future FedCM requests
-      if (session?.user?.id) {
-        this.storeLoginHint(session.user.id);
-      }
-
-      debug.log('Interactive sign-in: Success!', { userId: session?.user?.id });
-
-      return session;
+      return await this.attemptInteractiveSignIn(options, initialLoginHint);
     } catch (error) {
-      debug.log('Interactive sign-in failed:', error);
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      // FedCM aborts/network failures surface as DOMException/Error instances,
-      // both of which carry a `name`. Anything else has no meaningful name.
-      const errorName = error instanceof Error ? error.name : '';
-
-      if (errorName === 'AbortError') {
-        throw new OxyAuthenticationError('Sign-in was cancelled by user');
+      // A STALE loginHint (e.g. left over from a previously-signed-in or test
+      // account) that matches no account at the IdP makes Chrome filter out
+      // every account and reject the request — indistinguishable from a user
+      // cancel. When that happens AND we supplied a hint, clear the bad hint
+      // and retry the credential request ONCE with no hint, which lets the
+      // chooser surface the genuinely available account(s). We only do this for
+      // a hint we pulled from storage (not a caller-supplied one), and only
+      // once, so a real cancel never loops.
+      const usedStoredHint = !!initialLoginHint && !options.loginHint;
+      if (usedStoredHint && isPossibleHintMismatchError(error)) {
+        debug.log(
+          'Interactive sign-in: stored loginHint matched no account; clearing it and retrying without a hint'
+        );
+        this.clearLoginHint();
+        return await this.attemptInteractiveSignIn(options, undefined);
       }
-      if (errorName === 'NetworkError') {
-        throw new OxyAuthenticationError('Network error during sign-in. Please check your connection.');
-      }
-      if (errorMessage.includes('multiple accounts')) {
-        throw new OxyAuthenticationError('Please sign out and sign in again to use FedCM with a single account');
-      }
-      if (errorMessage.includes('retrieving a token') || errorMessage.includes('Error retrieving')) {
-        debug.error('FedCM token retrieval error - this may be a browser or IdP configuration issue');
-        throw new OxyAuthenticationError('Authentication failed. Please try again or use an alternative sign-in method.');
-      }
-      throw error;
+      throw this.normalizeInteractiveSignInError(error);
     }
+  }
+
+  /**
+   * Run a single interactive FedCM credential request + token exchange for the
+   * given (possibly undefined) loginHint. A successful exchange plants the
+   * access token and persists the user id as the future loginHint — the hint is
+   * therefore only ever stored after a GENUINELY successful sign-in, never
+   * speculatively.
+   *
+   * @private
+   */
+  public async attemptInteractiveSignIn(
+    options: FedCMAuthOptions,
+    loginHint: string | undefined
+  ): Promise<SessionLoginResponse> {
+    // Prefer a server-minted, origin-bound nonce so the downstream
+    // `/fedcm/exchange` can validate it. A caller-supplied nonce is
+    // respected as-is for advanced use cases.
+    const nonce = options.nonce || (await this.getFedcmNonce());
+    const clientId = this.getClientId();
+
+    debug.log('Interactive sign-in: Requesting credential for', clientId, loginHint ? `(hint: ${loginHint})` : '');
+
+    // Request credential from browser's native identity flow.
+    // mode: 'active' signals this is a user-gesture-initiated (button) flow.
+    // 'active' is the current W3C spec value; requestIdentityCredential
+    // transparently retries with the legacy 'button' value for Chrome 125–131.
+    const credential = await this.requestIdentityCredential({
+      configURL: this.resolveFedcmConfigUrl(),
+      clientId,
+      nonce,
+      context: options.context,
+      loginHint,
+      mode: 'active',
+    });
+
+    if (!credential || !credential.token) {
+      throw new OxyAuthenticationError('No credential received from browser');
+    }
+
+    debug.log('Interactive sign-in: Got credential, exchanging for session');
+
+    // Exchange FedCM ID token for Oxy session
+    const session = await this.exchangeIdTokenForSession(credential.token);
+
+    // Store access token in HttpService. `accessToken`/`refreshToken` are
+    // declared optional on SessionLoginResponse; default the refresh token to
+    // an empty string when the exchange did not return one.
+    if (session?.accessToken) {
+      this.httpService.setTokens(session.accessToken, session.refreshToken ?? '');
+    }
+
+    // Store the user ID as loginHint for future FedCM requests — only now, after
+    // a real successful exchange, so we never persist a hint that cannot resolve.
+    if (session?.user?.id) {
+      this.storeLoginHint(session.user.id);
+    }
+
+    debug.log('Interactive sign-in: Success!', { userId: session?.user?.id });
+
+    return session;
+  }
+
+  /**
+   * Map a raw FedCM/exchange failure to a user-facing {@link OxyAuthenticationError}
+   * (or pass it through). Extracted so the clear-and-retry path can reuse the
+   * exact same error normalisation as the first attempt.
+   *
+   * @private
+   */
+  public normalizeInteractiveSignInError(error: unknown): unknown {
+    debug.log('Interactive sign-in failed:', error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    // FedCM aborts/network failures surface as DOMException/Error instances,
+    // both of which carry a `name`. Anything else has no meaningful name.
+    const errorName = error instanceof Error ? error.name : '';
+
+    if (errorName === 'AbortError') {
+      return new OxyAuthenticationError('Sign-in was cancelled by user');
+    }
+    if (errorName === 'NetworkError') {
+      return new OxyAuthenticationError('Network error during sign-in. Please check your connection.');
+    }
+    if (errorMessage.includes('multiple accounts')) {
+      return new OxyAuthenticationError('Please sign out and sign in again to use FedCM with a single account');
+    }
+    if (errorMessage.includes('retrieving a token') || errorMessage.includes('Error retrieving')) {
+      debug.error('FedCM token retrieval error - this may be a browser or IdP configuration issue');
+      return new OxyAuthenticationError('Authentication failed. Please try again or use an alternative sign-in method.');
+    }
+    return error;
   }
 
   /**

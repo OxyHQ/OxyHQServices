@@ -321,3 +321,112 @@ describe('OxyServices FedCM mode enum (active/passive)', () => {
     expect(call.identity.mode).toBeUndefined();
   });
 });
+
+/**
+ * Stale-loginHint clear-and-retry regression tests.
+ *
+ * A loginHint left over from a previously-signed-in/test account (persisted in
+ * `oxy_fedcm_login_hint`) that matches NO account at the IdP makes Chrome
+ * filter out every account, grey it in the chooser, and reject
+ * `navigator.credentials.get` — indistinguishable from a user cancel. The
+ * interactive flow must recover by clearing the bad hint and retrying ONCE with
+ * no hint, so the genuinely available account becomes selectable again. These
+ * tests lock that behaviour in.
+ */
+describe('OxyServices FedCM stale loginHint clear-and-retry', () => {
+  afterEach(() => {
+    clearBrowserGlobals();
+    jest.restoreAllMocks();
+  });
+
+  it('clears a stale stored hint and retries the get() once with no hint, then succeeds', async () => {
+    const hintsSeen: Array<string | undefined> = [];
+    installBrowserGlobals({
+      credentialsGet: async (opts) => {
+        const hint = opts.identity.providers[0].loginHint;
+        hintsSeen.push(hint);
+        if (hint) {
+          // First attempt carries the stale stored hint → Chrome filtered out
+          // every account and rejected the request (NotAllowedError).
+          const err = new Error('Accounts were received, but none matched the login hint.');
+          err.name = 'NotAllowedError';
+          throw err;
+        }
+        // Retry with NO hint → the available account resolves.
+        return { type: 'identity', token: 'recovered-id-token', isAutoSelected: false };
+      },
+    });
+
+    const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
+    // Seed a stale hint in localStorage (a previously-signed-in/test account).
+    localStorage.setItem('oxy_fedcm_login_hint', 'stale-user-id');
+
+    const exchanged: string[] = [];
+    mintAndExchange(oxy, exchanged);
+
+    const session = await oxy.signInWithFedCM();
+
+    // The first get() saw the stale hint; the second saw none.
+    expect(hintsSeen).toEqual(['stale-user-id', undefined]);
+    // The token from the hint-less retry was exchanged for a session.
+    expect(session.sessionId).toBe('sess_mode');
+    expect(exchanged).toEqual(['recovered-id-token']);
+    // The stale hint was cleared and replaced with the freshly signed-in id.
+    expect(localStorage.getItem('oxy_fedcm_login_hint')).toBe('user_mode');
+  });
+
+  it('does NOT retry when there was no stored hint (a genuine cancel surfaces)', async () => {
+    let callCount = 0;
+    installBrowserGlobals({
+      credentialsGet: async () => {
+        callCount += 1;
+        const err = new Error('User cancelled the sign-in.');
+        err.name = 'NotAllowedError';
+        throw err;
+      },
+    });
+
+    const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
+    // No hint in storage → a NotAllowedError is a real cancel, not a mismatch,
+    // so the error must surface (no clear-and-retry).
+    jest.spyOn(oxy, 'makeRequest').mockImplementation(async (_method: string, url: string) => {
+      if (url === '/fedcm/nonce') {
+        return { nonce: 'n', expiresAt: new Date(Date.now() + 60000).toISOString() } as never;
+      }
+      throw new Error(`unexpected request to ${url}`);
+    });
+
+    await expect(oxy.signInWithFedCM()).rejects.toThrow('User cancelled the sign-in.');
+    // Exactly one attempt — no clear-and-retry without a stored hint.
+    expect(callCount).toBe(1);
+  });
+
+  it('does NOT clear or retry a caller-supplied loginHint (only stored hints are cleared)', async () => {
+    let callCount = 0;
+    installBrowserGlobals({
+      credentialsGet: async () => {
+        callCount += 1;
+        const err = new Error('Accounts were received, but none matched the login hint.');
+        err.name = 'NotAllowedError';
+        throw err;
+      },
+    });
+
+    const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
+    // A leftover stored hint must be untouched: the caller explicitly chose the
+    // hint, so we must not silently discard it nor retry behind their back.
+    localStorage.setItem('oxy_fedcm_login_hint', 'persisted-hint');
+    jest.spyOn(oxy, 'makeRequest').mockImplementation(async (_method: string, url: string) => {
+      if (url === '/fedcm/nonce') {
+        return { nonce: 'n', expiresAt: new Date(Date.now() + 60000).toISOString() } as never;
+      }
+      throw new Error(`unexpected request to ${url}`);
+    });
+
+    await expect(oxy.signInWithFedCM({ loginHint: 'caller-hint' })).rejects.toBeTruthy();
+    // Exactly one attempt — caller-supplied hints are never auto-cleared/retried.
+    expect(callCount).toBe(1);
+    // The stored hint was left intact.
+    expect(localStorage.getItem('oxy_fedcm_login_hint')).toBe('persisted-hint');
+  });
+});

@@ -117,6 +117,25 @@ describe('GET /fedcm/accounts', () => {
     expect(body.accounts[0].id).toBe(TEST_USER_ID);
   });
 
+  it('declares login_hints (id + email + username) so an RP loginHint matches the account', async () => {
+    // Without `login_hints` Chrome filters out EVERY account when the RP passes
+    // any non-empty loginHint ("none matched the login hint"), greying the
+    // account in the chooser. The IdP must therefore advertise every identifier
+    // an RP could hint by: the account id, the email, AND the username.
+    const res = await app.request('/fedcm/accounts', {
+      headers: { ...WEBIDENTITY, cookie: SESSION_COOKIE },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { accounts: Array<{ login_hints?: string[] }> };
+    const loginHints = body.accounts[0].login_hints;
+    expect(Array.isArray(loginHints)).toBe(true);
+    expect(loginHints).toContain(TEST_USER_ID);
+    expect(loginHints).toContain('tester@oxy.so');
+    expect(loginHints).toContain('tester');
+    // No duplicate entries.
+    expect(new Set(loginHints).size).toBe(loginHints?.length);
+  });
+
   it('populates approved_clients from the user grants so returning RPs skip disclosure', async () => {
     // The user has previously granted accounts.oxy.so → it must appear in
     // `approved_clients`, which is what lets Chrome resolve silent mediation
