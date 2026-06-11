@@ -6,7 +6,7 @@ import { OxyServices } from "@oxyhq/core"
 import type { AppColorName } from "@oxyhq/bloom/theme"
 import { Avatar } from "@oxyhq/bloom/avatar"
 import { buildAuthUrl, buildApiUrl, getApiBaseUrl, getAvatarUrl } from "@/lib/oxy-api-client"
-import { setFedCMLoginStatus, buildPostLoginRedirect } from "@/lib/auth-utils"
+import { setFedCMLoginStatus, registerFedCMSession, buildPostLoginRedirect, completeFedCMLogin } from "@/lib/auth-utils"
 import { applyColorPreset } from "@/lib/bloom-css"
 import { useLayoutContext } from "@/lib/layout-context"
 import { meResponseSchema, loginResponseSchema, safeParse } from "@/lib/schemas"
@@ -193,7 +193,7 @@ export function LoginForm({
         }
     }
 
-    function redirectAfterLogin(sessionId: string, accessToken?: string, expiresAt?: string) {
+    async function redirectAfterLogin(sessionId: string, accessToken?: string, expiresAt?: string) {
         setFedCMLoginStatus(sessionId)
         sessionStorage.setItem("oxy_session_id", sessionId)
         if (accessToken) sessionStorage.setItem("oxy_access_token", accessToken)
@@ -209,6 +209,20 @@ export function LoginForm({
             return
         }
 
+        // FedCM login_url completion: when there's no OAuth/cross-app request
+        // context (no token, no redirect_uri), this login was almost certainly
+        // initiated by the browser's FedCM flow opening our `login_url` dialog.
+        // Await the `fedcm_session` cookie write FIRST so the accounts endpoint
+        // resolves the new session, THEN signal completion via
+        // IdentityProvider.close() so Chrome re-runs the accounts flow — instead
+        // of navigating to /authorize and rendering "No authorization request".
+        if (!sessionToken && !redirectUri) {
+            await registerFedCMSession(sessionId)
+            if (completeFedCMLogin()) {
+                return
+            }
+        }
+
         navigate(buildPostLoginRedirect({ sessionToken, redirectUri, state }))
     }
 
@@ -219,7 +233,7 @@ export function LoginForm({
             goToStep("security-alert", "forward")
             return
         }
-        redirectAfterLogin(sessionId, accessToken, expiresAt)
+        void redirectAfterLogin(sessionId, accessToken, expiresAt)
     }
 
     async function handlePasswordSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -331,7 +345,7 @@ export function LoginForm({
                 return
             }
 
-            redirectAfterLogin(existingSessionId, data.accessToken, data.expiresAt)
+            await redirectAfterLogin(existingSessionId, data.accessToken, data.expiresAt)
         } catch (err) {
             setLocalError(err instanceof Error ? err.message : "Unable to continue")
             setIsSubmitting(false)
@@ -340,7 +354,7 @@ export function LoginForm({
 
     function handleSecurityAlertDismiss() {
         if (pendingRedirect) {
-            redirectAfterLogin(pendingRedirect.sessionId, pendingRedirect.accessToken, pendingRedirect.expiresAt)
+            void redirectAfterLogin(pendingRedirect.sessionId, pendingRedirect.accessToken, pendingRedirect.expiresAt)
         }
     }
 

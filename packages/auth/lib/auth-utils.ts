@@ -1,18 +1,34 @@
 /**
+ * Register the session with the FedCM server so it can set the httpOnly
+ * `fedcm_session` cookie the browser needs for FedCM account lookups.
+ *
+ * Returns a promise that resolves once the `/fedcm/set-session` request
+ * settles. Callers that must guarantee the cookie is in place before the next
+ * FedCM step (e.g. `IdentityProvider.close()` re-running the accounts flow)
+ * should AWAIT this. Failures resolve (never reject) — FedCM is an enhancement,
+ * not the critical path.
+ */
+export async function registerFedCMSession(sessionId: string): Promise<void> {
+    try {
+        await fetch("/fedcm/set-session", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ sessionId, action: "login" }),
+        })
+    } catch {
+        // Best-effort — FedCM is an enhancement, not critical path
+    }
+}
+
+/**
  * Register a session with the FedCM server and set the browser's FedCM Login Status.
  * Best-effort — failures are silently ignored.
  */
 export function setFedCMLoginStatus(sessionId: string): void {
-    // Register the session with the FedCM server so it can set
-    // the httpOnly cookie the browser needs for FedCM account lookups
-    fetch("/fedcm/set-session", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ sessionId, action: "login" }),
-    }).catch(() => {
-        // Best-effort — FedCM is an enhancement, not critical path
-    })
+    // Register the session with the FedCM server (fire-and-forget here; the
+    // FedCM login_url completion path awaits `registerFedCMSession` directly).
+    void registerFedCMSession(sessionId)
 
     // Also load the login-status endpoint in an iframe to set
     // the Set-Login header for the browser's FedCM Login Status API
@@ -21,6 +37,71 @@ export function setFedCMLoginStatus(sessionId: string): void {
     loginStatusFrame.src = "/fedcm/login-status"
     document.body.appendChild(loginStatusFrame)
     setTimeout(() => loginStatusFrame.remove(), 1000)
+}
+
+/**
+ * Minimal structural shape of the W3C FedCM `IdentityProvider` interface object,
+ * modelling only the static `close()` method we invoke. `IdentityProvider` is
+ * not declared in the TypeScript lib.dom we build against, so we read it off
+ * `window` through this structural type (never `any`).
+ *
+ * @see https://w3c-fedid.github.io/FedCM/#browser-api-identity-provider-interface
+ */
+interface FedCMIdentityProviderStatic {
+    close(): void
+}
+
+/**
+ * Signal completion of a FedCM "login_url" sign-in.
+ *
+ * When the browser's FedCM flow finds no signed-in account, it opens the IdP's
+ * `login_url` (here `/login`, per `public/fedcm.json`) in a dialog/popup so the
+ * user can authenticate. That popup carries NO OAuth params. After a successful
+ * login + `setFedCMLoginStatus()` (which sets the IdP session cookie and the
+ * `Set-Login: logged-in` signal), the page MUST call `IdentityProvider.close()`
+ * to dismiss the dialog. Chrome then re-runs the accounts flow — which now
+ * resolves the freshly-set account — and completes credential issuance to the
+ * relying party.
+ *
+ * Without this call the page would instead navigate to `/authorize` with no
+ * request context and render "No authorization request" inside the FedCM popup.
+ *
+ * @returns `true` if this was a FedCM login_url context and completion was
+ * signalled (caller must NOT navigate); `false` if it was an ordinary login
+ * and the caller should perform its normal post-login redirect.
+ */
+export function completeFedCMLogin(): boolean {
+    if (typeof window === "undefined") return false
+
+    const identityProvider = (window as unknown as {
+        IdentityProvider?: Partial<FedCMIdentityProviderStatic>
+    }).IdentityProvider
+
+    if (identityProvider && typeof identityProvider.close === "function") {
+        try {
+            // Closes the FedCM dialog and prompts Chrome to re-evaluate the
+            // accounts endpoint, which now succeeds with the new session.
+            identityProvider.close()
+            return true
+        } catch {
+            // Fall through to the popup-close fallback below.
+        }
+    }
+
+    // Fallback: if FedCM opened us as a plain popup but `IdentityProvider` is
+    // unavailable (older browser / non-FedCM popup), just close the window so
+    // the user isn't stranded on the "No authorization request" screen. The
+    // parent flow re-checks its session on the browser's FedCM retry.
+    if (!!window.opener && window.opener !== window) {
+        try {
+            window.close()
+            return true
+        } catch {
+            // Could not close — let the caller fall back to its normal redirect.
+        }
+    }
+
+    return false
 }
 
 type PostLoginRedirectParams = {

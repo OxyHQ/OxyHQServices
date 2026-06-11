@@ -4,7 +4,7 @@ import { toast } from "sonner"
 import { Check, X, Loader2 } from "lucide-react"
 
 import { buildAuthUrl, buildApiUrl } from "@/lib/oxy-api-client"
-import { setFedCMLoginStatus, buildPostLoginRedirect } from "@/lib/auth-utils"
+import { setFedCMLoginStatus, registerFedCMSession, buildPostLoginRedirect, completeFedCMLogin } from "@/lib/auth-utils"
 import { Button } from "@/components/ui/button"
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
@@ -147,6 +147,18 @@ export function SignUpForm({
 
             setFedCMLoginStatus(payload.sessionId)
             didRedirect = true
+
+            // FedCM login_url completion: a brand-new account created inside the
+            // browser's FedCM login_url dialog has no OAuth/cross-app context, so
+            // signal completion (after the session cookie is written) instead of
+            // navigating to /authorize and rendering "No authorization request".
+            if (!sessionToken && !redirectUri) {
+                await registerFedCMSession(payload.sessionId)
+                if (completeFedCMLogin()) {
+                    return
+                }
+            }
+
             navigate(buildPostLoginRedirect({ sessionToken, redirectUri, state }))
         } catch (err) {
             const msg = err instanceof Error ? err.message : "Unable to sign up"
