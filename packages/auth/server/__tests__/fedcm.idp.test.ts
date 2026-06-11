@@ -103,11 +103,16 @@ describe('GET /fedcm/accounts', () => {
     expect(body.accounts[0].id).toBe(TEST_USER_ID);
   });
 
-  it('returns an empty list when no session cookie is present', async () => {
+  it('signals logged-out with 401 + WWW-Authenticate when no session cookie is present', async () => {
+    // Per the FedCM spec a logged-out accounts response MUST be a 401 (not a
+    // 200 with an empty list). An empty 200 list is an INVALID accounts
+    // response in Chromium and aborts the flow with "Error retrieving a token"
+    // showing no UI; the 401 + WWW-Authenticate is what lets the browser open
+    // the login_url.
     const res = await app.request('/fedcm/accounts', { headers: { ...WEBIDENTITY } });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { accounts: unknown[] };
-    expect(body.accounts).toEqual([]);
+    expect(res.status).toBe(401);
+    expect(res.headers.get('www-authenticate')).toBe('FedCM');
+    expect(res.headers.get('set-login')).toBe('logged-out');
   });
 });
 

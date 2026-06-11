@@ -274,20 +274,36 @@ app.get('/fedcm/accounts', async (c) => {
   const sessionId = getCookie(c, COOKIE_NAME);
 
   if (!sessionId) {
-    // No session cookie -- user is not logged in at this IdP
-    return c.json({ accounts: [] }, 200);
+    // No session cookie -- user is not logged in at this IdP.
+    //
+    // Per the FedCM spec the accounts endpoint MUST signal a logged-out state
+    // with HTTP 401 + `WWW-Authenticate: FedCM` (mirroring the id_assertion
+    // endpoint). Returning `200 {"accounts":[]}` instead is treated by Chrome
+    // as a *successful but empty* accounts list — an INVALID accounts response
+    // — which aborts the credential request with `NetworkError: Error
+    // retrieving a token` and shows NO UI (no account chooser, no login_url).
+    // The 401 instead updates the browser's IdP login status to logged-out and
+    // (in active/button mode) opens `login_url` so the user can sign in.
+    //
+    // Spec: https://w3c-fedid.github.io/FedCM/#idp-api-accounts-endpoint
+    c.header('WWW-Authenticate', 'FedCM');
+    c.header('Set-Login', 'logged-out');
+    return c.json({ error: 'not_logged_in' }, 401);
   }
 
   const user = await fetchUserFromAPI(apiBaseUrl, sessionId);
   if (!user) {
-    // Session expired or invalid
+    // Session expired or invalid -- clear the stale cookie and signal
+    // logged-out exactly as above (401, not an empty 200 list).
     deleteCookie(c, COOKIE_NAME, {
       path: '/',
       secure: isProduction,
       httpOnly: true,
       sameSite: 'None',
     });
-    return c.json({ accounts: [] }, 200);
+    c.header('WWW-Authenticate', 'FedCM');
+    c.header('Set-Login', 'logged-out');
+    return c.json({ error: 'not_logged_in' }, 401);
   }
 
   const account: Record<string, unknown> = {
