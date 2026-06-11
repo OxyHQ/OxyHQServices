@@ -39,6 +39,26 @@ const COOKIE_MAX_AGE = 30 * 24 * 60 * 60; // 30 days in seconds
 const TOKEN_LIFETIME = 600; // 10 minutes for id_tokens
 
 /**
+ * Shared attributes for the `fedcm_session` cookie (set AND delete).
+ *
+ * `sameSite: 'None'` is REQUIRED — FedCM reads this cookie in a cross-site
+ * context (the RP origin drives the browser's credentialed fetch to the IdP).
+ * A `SameSite=None` cookie that is NOT also `Secure` is silently rejected by
+ * Chrome (hard rule since Chrome 80), so `secure` MUST be `true` here —
+ * unconditionally, NOT gated on a runtime `NODE_ENV` check. On Cloudflare
+ * Pages `NODE_ENV` is unset, so a `secure: isProduction` gate evaluated to
+ * `false` and Chrome dropped the cookie → the follow-up /fedcm/accounts had no
+ * cookie → 401 → login-popup loop. Modern browsers treat `http://localhost` as
+ * a secure context, so `secure: true` does not break local development.
+ */
+const FEDCM_COOKIE_OPTIONS = {
+  path: '/',
+  secure: true,
+  httpOnly: true,
+  sameSite: 'None',
+} as const;
+
+/**
  * Cloudflare Pages Worker bindings (secrets / vars) plus the static-asset
  * fetcher Pages injects in advanced mode. All optional so the same type works
  * when running under Bun/Node where these come from `process.env` instead.
@@ -57,7 +77,6 @@ interface ResolvedConfig {
   apiBaseUrl: string;
   fedcmIssuer: string;
   fedcmTokenSecret: string;
-  isProduction: boolean;
 }
 
 /** Read a config value from the Worker `env` binding, falling back to Node `process.env`. */
@@ -84,7 +103,6 @@ function resolveConfig(c: AppContext): ResolvedConfig {
     apiBaseUrl: (readEnv(env, 'OXY_API_URL') || 'https://api.oxy.so').replace(/\/+$/, ''),
     fedcmIssuer: (readEnv(env, 'FEDCM_ISSUER') || 'https://auth.oxy.so').replace(/\/+$/, ''),
     fedcmTokenSecret: readEnv(env, 'FEDCM_TOKEN_SECRET') || '',
-    isProduction: readEnv(env, 'NODE_ENV') === 'production',
   };
 }
 
@@ -270,7 +288,7 @@ app.get('/fedcm/accounts', async (c) => {
     return c.json({ error: 'invalid_request' }, 400);
   }
 
-  const { apiBaseUrl, isProduction } = resolveConfig(c);
+  const { apiBaseUrl } = resolveConfig(c);
   const sessionId = getCookie(c, COOKIE_NAME);
 
   if (!sessionId) {
@@ -295,12 +313,7 @@ app.get('/fedcm/accounts', async (c) => {
   if (!user) {
     // Session expired or invalid -- clear the stale cookie and signal
     // logged-out exactly as above (401, not an empty 200 list).
-    deleteCookie(c, COOKIE_NAME, {
-      path: '/',
-      secure: isProduction,
-      httpOnly: true,
-      sameSite: 'None',
-    });
+    deleteCookie(c, COOKIE_NAME, { ...FEDCM_COOKIE_OPTIONS });
     c.header('WWW-Authenticate', 'FedCM');
     c.header('Set-Login', 'logged-out');
     return c.json({ error: 'not_logged_in' }, 401);
@@ -437,7 +450,7 @@ app.post('/fedcm/disconnect', async (c) => {
     return c.json({ error: 'invalid_request' }, 400);
   }
 
-  const { apiBaseUrl, isProduction } = resolveConfig(c);
+  const { apiBaseUrl } = resolveConfig(c);
 
   // Read the session cookie BEFORE clearing it
   const sessionId = getCookie(c, COOKIE_NAME);
@@ -464,12 +477,7 @@ app.post('/fedcm/disconnect', async (c) => {
   }
 
   // Clear the session cookie
-  deleteCookie(c, COOKIE_NAME, {
-    path: '/',
-    secure: isProduction,
-    httpOnly: true,
-    sameSite: 'None',
-  });
+  deleteCookie(c, COOKIE_NAME, { ...FEDCM_COOKIE_OPTIONS });
 
   // Best-effort logout from the API
   if (sessionId) {
@@ -505,7 +513,7 @@ app.post('/fedcm/disconnect', async (c) => {
  * Spec: https://fedidcg.github.io/FedCM/#login-status
  */
 app.get('/fedcm/login-status', async (c) => {
-  const { apiBaseUrl, isProduction } = resolveConfig(c);
+  const { apiBaseUrl } = resolveConfig(c);
   const sessionId = getCookie(c, COOKIE_NAME);
 
   if (sessionId) {
@@ -516,12 +524,7 @@ app.get('/fedcm/login-status', async (c) => {
       return c.html('<!DOCTYPE html><html><body>logged-in</body></html>');
     }
     // Session invalid -- clean up
-    deleteCookie(c, COOKIE_NAME, {
-      path: '/',
-      secure: isProduction,
-      httpOnly: true,
-      sameSite: 'None',
-    });
+    deleteCookie(c, COOKIE_NAME, { ...FEDCM_COOKIE_OPTIONS });
   }
 
   c.header('Set-Login', 'logged-out');
@@ -540,18 +543,13 @@ app.get('/fedcm/login-status', async (c) => {
  * login flow and the FedCM server-side session tracking.
  */
 app.post('/fedcm/set-session', async (c) => {
-  const { apiBaseUrl, isProduction } = resolveConfig(c);
+  const { apiBaseUrl } = resolveConfig(c);
   const body = await c.req.json().catch(() => ({})) as Record<string, string>;
   const sessionId = body.sessionId;
   const action = body.action; // 'login' or 'logout'
 
   if (action === 'logout') {
-    deleteCookie(c, COOKIE_NAME, {
-      path: '/',
-      secure: isProduction,
-      httpOnly: true,
-      sameSite: 'None',
-    });
+    deleteCookie(c, COOKIE_NAME, { ...FEDCM_COOKIE_OPTIONS });
     c.header('Set-Login', 'logged-out');
     return c.json({ success: true });
   }
@@ -567,10 +565,7 @@ app.post('/fedcm/set-session', async (c) => {
   }
 
   setCookie(c, COOKIE_NAME, sessionId, {
-    path: '/',
-    secure: isProduction,
-    httpOnly: true,
-    sameSite: 'None', // Required for FedCM cross-site cookie access
+    ...FEDCM_COOKIE_OPTIONS,
     maxAge: COOKIE_MAX_AGE,
   });
 

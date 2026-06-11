@@ -205,3 +205,60 @@ describe('POST /fedcm/disconnect', () => {
     expect(body.account_id).toBe(TEST_USER_ID);
   });
 });
+
+describe('POST /fedcm/set-session', () => {
+  it('sets the fedcm_session cookie with Secure + SameSite=None for a valid session', async () => {
+    const res = await app.request('/fedcm/set-session', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sessionId: 'sess_abc', action: 'login' }),
+    });
+    expect(res.status).toBe(200);
+
+    const setCookie = res.headers.get('set-cookie') || '';
+    expect(setCookie).toContain('fedcm_session=');
+    // SameSite=None REQUIRES Secure — without it Chrome silently drops the
+    // cookie (hard rule since Chrome 80), which broke the FedCM accounts loop.
+    expect(setCookie).toMatch(/;\s*Secure/i);
+    expect(setCookie).toMatch(/;\s*SameSite=None/i);
+    expect(setCookie).toMatch(/;\s*HttpOnly/i);
+    expect(res.headers.get('set-login')).toBe('logged-in');
+  });
+
+  it('clears the cookie with Secure + SameSite=None on logout', async () => {
+    const res = await app.request('/fedcm/set-session', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action: 'logout' }),
+    });
+    expect(res.status).toBe(200);
+
+    const setCookie = res.headers.get('set-cookie') || '';
+    expect(setCookie).toContain('fedcm_session=');
+    expect(setCookie).toMatch(/;\s*Secure/i);
+    expect(setCookie).toMatch(/;\s*SameSite=None/i);
+    expect(res.headers.get('set-login')).toBe('logged-out');
+  });
+
+  it('rejects an invalid session with 401 and sets no cookie', async () => {
+    // Stub the API to report the session as invalid for this request.
+    globalThis.fetch = (async (input: RequestInfo | URL): Promise<Response> => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.includes('/session/validate/')) {
+        return new Response(JSON.stringify({ valid: false }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
+    }) as typeof fetch;
+
+    const res = await app.request('/fedcm/set-session', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sessionId: 'bogus', action: 'login' }),
+    });
+    expect(res.status).toBe(401);
+    expect(res.headers.get('set-cookie')).toBeNull();
+  });
+});
