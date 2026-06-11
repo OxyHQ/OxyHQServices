@@ -2,11 +2,11 @@ import React, { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, Platform, Linking } from 'react-native';
 import { Redirect } from 'expo-router';
 import { toast } from '@oxyhq/bloom';
-import { useOxy } from '@oxyhq/services';
+import { useOxy, LogoText } from '@oxyhq/services';
 import { logger } from '@oxyhq/core';
 import { useColors } from '@/hooks/useColors';
 import { useTranslation } from '@/lib/i18n';
-import { Logo, Button } from '@/components/ui';
+import { Button } from '@/components/ui';
 import { extractAuthErrorMessage } from '@/utils/auth/errorUtils';
 import { CREATE_ACCOUNT_HELP_URL } from '@/constants/auth';
 
@@ -90,7 +90,7 @@ export default function SignInScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={styles.content}>
-        <Logo height={40} style={styles.logo} />
+        <LogoText height={40} style={styles.logo} />
 
         <Text style={[styles.title, { color: colors.text }]}>
           {t('auth.signIn.title')}

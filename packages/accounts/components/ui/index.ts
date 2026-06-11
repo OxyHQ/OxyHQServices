@@ -4,7 +4,6 @@ export { SidebarContent } from './sidebar-content';
 export { LinkButton } from './link-button';
 export { AccountCard } from './account-card';
 export { ScreenLayout } from './screen-layout';
-export { Logo } from './logo';
 export { Switch } from './switch';
 export { ScreenHeader } from './screen-header';
 export { Button } from './button';
