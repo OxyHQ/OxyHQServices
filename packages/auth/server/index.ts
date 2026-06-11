@@ -72,7 +72,15 @@ async function fetchUserFromAPI(sessionId: string): Promise<{
   avatar?: string;
 } | null> {
   try {
-    const url = `${API_BASE_URL}/session/user/${encodeURIComponent(sessionId)}`;
+    // Resolve the FedCM session cookie to a user via the PUBLIC, cookie-less
+    // `/session/validate/:id` endpoint. We deliberately do NOT use
+    // `/session/user/:id` here: that route is bearer-protected (it requires an
+    // Authorization header and verifies the caller owns the session), and the
+    // IdP server has no user access token to present — so it would always 401
+    // and FedCM would fall back to the login_url popup. `/session/validate`
+    // takes only the sessionId, returns `{ valid, user }`, and is the intended
+    // server-to-server session-resolution endpoint.
+    const url = `${API_BASE_URL}/session/validate/${encodeURIComponent(sessionId)}`;
     const res = await fetch(url, {
       headers: { 'Accept': 'application/json' },
       signal: AbortSignal.timeout(5000),
@@ -80,16 +88,21 @@ async function fetchUserFromAPI(sessionId: string): Promise<{
     if (!res.ok) return null;
 
     const data = await res.json() as Record<string, unknown>;
-    // The API wraps in { data: ... } or returns directly
-    const user = (data.data || data) as Record<string, unknown>;
+    const payload = (data.data || data) as Record<string, unknown>;
 
-    if (!user || !user._id) return null;
+    if (payload.valid !== true) return null;
+
+    // `/session/validate` returns the user via `formatUserResponse`, whose id
+    // field is `id` (the stringified Mongo `_id`) — NOT `_id`. Read `id`.
+    const user = payload.user as Record<string, unknown> | undefined;
+    const userId = user?.id;
+    if (!user || typeof userId !== 'string' || !userId) return null;
 
     const nameObj = user.name as Record<string, string> | undefined;
     const fullName = nameObj?.full || (nameObj?.first && nameObj?.last ? `${nameObj.first} ${nameObj.last}` : undefined);
 
     return {
-      id: String(user._id),
+      id: userId,
       email: user.email as string | undefined,
       username: user.username as string | undefined,
       name: fullName || (user.username as string | undefined),

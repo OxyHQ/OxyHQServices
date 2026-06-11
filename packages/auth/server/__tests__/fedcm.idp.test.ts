@@ -30,24 +30,26 @@ process.env.FEDCM_ISSUER = 'https://auth.oxy.so';
 process.env.OXY_API_URL = 'https://api.oxy.so';
 process.env.NODE_ENV = 'test';
 
-// Stub the upstream Oxy API. The IdP server calls:
-//   GET  /session/user/:id      -> user profile
-//   GET  /session/validate/:id  -> { valid: boolean }
+// Stub the upstream Oxy API. The IdP server resolves the FedCM session cookie
+// to a user via the PUBLIC, cookie-less endpoint:
+//   GET  /session/validate/:id  -> { valid: boolean, user: { id, ... } }
+// (NOT `/session/user/:id`, which is bearer-protected and would 401 here —
+// the IdP server has no user access token to present.)
+//
+// The `user` shape mirrors the real API's `formatUserResponse`: the id field
+// is `id` (stringified Mongo `_id`), never `_id`.
 const realFetch = globalThis.fetch;
 function installApiStub(): void {
   globalThis.fetch = (async (input: RequestInfo | URL): Promise<Response> => {
     const url = typeof input === 'string' ? input : input.toString();
-    if (url.includes('/session/user/')) {
+    if (url.includes('/session/validate/')) {
       return new Response(
-        JSON.stringify({ _id: TEST_USER_ID, username: 'tester', email: 'tester@oxy.so', name: { full: 'Test User' } }),
+        JSON.stringify({
+          valid: true,
+          user: { id: TEST_USER_ID, username: 'tester', email: 'tester@oxy.so', name: { full: 'Test User' } },
+        }),
         { status: 200, headers: { 'content-type': 'application/json' } }
       );
-    }
-    if (url.includes('/session/validate/')) {
-      return new Response(JSON.stringify({ valid: true }), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      });
     }
     return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
   }) as typeof fetch;

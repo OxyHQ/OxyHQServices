@@ -1,3 +1,6 @@
+import { createRequire } from "node:module";
+var __require = /* @__PURE__ */ createRequire(import.meta.url);
+
 // ../../node_modules/hono/dist/compose.js
 var compose = (middleware, onError, onNotFound) => {
   return (context, next) => {
@@ -2416,7 +2419,7 @@ function createHS256JWT(payload) {
 }
 async function fetchUserFromAPI(sessionId) {
   try {
-    const url = `${API_BASE_URL}/session/user/${encodeURIComponent(sessionId)}`;
+    const url = `${API_BASE_URL}/session/validate/${encodeURIComponent(sessionId)}`;
     const res = await fetch(url, {
       headers: { Accept: "application/json" },
       signal: AbortSignal.timeout(5000)
@@ -2424,13 +2427,17 @@ async function fetchUserFromAPI(sessionId) {
     if (!res.ok)
       return null;
     const data = await res.json();
-    const user = data.data || data;
-    if (!user || !user._id)
+    const payload = data.data || data;
+    if (payload.valid !== true)
+      return null;
+    const user = payload.user;
+    const userId = user?.id;
+    if (!user || typeof userId !== "string" || !userId)
       return null;
     const nameObj = user.name;
     const fullName = nameObj?.full || (nameObj?.first && nameObj?.last ? `${nameObj.first} ${nameObj.last}` : undefined);
     return {
-      id: String(user._id),
+      id: userId,
       email: user.email,
       username: user.username,
       name: fullName || user.username,
@@ -2460,7 +2467,24 @@ function getAvatarUrl(fileId) {
   return `${API_BASE_URL}/assets/${encodeURIComponent(fileId)}/stream?variant=thumb&fallback=placeholderVisible`;
 }
 var app = new Hono2;
+function hasWebIdentityDest(c) {
+  return c.req.header("sec-fetch-dest") === "webidentity";
+}
+function applyAssertionCors(c) {
+  const origin = c.req.header("origin");
+  if (origin) {
+    c.header("Access-Control-Allow-Origin", origin);
+    c.header("Access-Control-Allow-Credentials", "true");
+    c.header("Vary", "Origin");
+  }
+}
+app.get("/.well-known/web-identity", (c) => {
+  return c.json({ provider_urls: [`${FEDCM_ISSUER}/fedcm.json`] });
+});
 app.get("/fedcm/accounts", async (c) => {
+  if (!hasWebIdentityDest(c)) {
+    return c.json({ error: "invalid_request" }, 400);
+  }
   const sessionId = getCookie(c, COOKIE_NAME);
   if (!sessionId) {
     return c.json({ accounts: [] }, 200);
@@ -2489,12 +2513,17 @@ app.get("/fedcm/accounts", async (c) => {
   return c.json({ accounts: [account] }, 200);
 });
 app.post("/fedcm/assertion", async (c) => {
+  applyAssertionCors(c);
+  if (!hasWebIdentityDest(c)) {
+    return c.json({ error: "invalid_request" }, 400);
+  }
   if (!FEDCM_TOKEN_SECRET) {
     console.error("[FedCM] FEDCM_TOKEN_SECRET is not configured");
     return c.json({ error: "server_error" }, 500);
   }
   const sessionId = getCookie(c, COOKIE_NAME);
   if (!sessionId) {
+    c.header("WWW-Authenticate", "FedCM");
     return c.json({ error: "not_logged_in" }, 401);
   }
   let accountId;
@@ -2540,6 +2569,10 @@ app.post("/fedcm/assertion", async (c) => {
   return c.json({ token });
 });
 app.post("/fedcm/disconnect", async (c) => {
+  applyAssertionCors(c);
+  if (!hasWebIdentityDest(c)) {
+    return c.json({ error: "invalid_request" }, 400);
+  }
   const sessionId = getCookie(c, COOKIE_NAME);
   let accountHint;
   const contentType = c.req.header("content-type") || "";
@@ -2549,6 +2582,13 @@ app.post("/fedcm/disconnect", async (c) => {
   } else {
     const body = await c.req.json().catch(() => ({}));
     accountHint = body.account_hint;
+  }
+  let disconnectedAccountId = accountHint;
+  if (sessionId) {
+    const user = await fetchUserFromAPI(sessionId);
+    if (user?.id) {
+      disconnectedAccountId = user.id;
+    }
   }
   deleteCookie(c, COOKIE_NAME, {
     path: "/",
@@ -2565,7 +2605,11 @@ app.post("/fedcm/disconnect", async (c) => {
       });
     } catch {}
   }
-  return c.json({ success: true });
+  c.header("Set-Login", "logged-out");
+  if (disconnectedAccountId && disconnectedAccountId !== "*") {
+    return c.json({ account_id: disconnectedAccountId });
+  }
+  return c.json({ account_id: "" });
 });
 app.get("/fedcm/login-status", async (c) => {
   const sessionId = getCookie(c, COOKIE_NAME);
@@ -2626,20 +2670,28 @@ app.get("*", async (c) => {
     return c.text("Not found", 404);
   }
 });
-if (!FEDCM_TOKEN_SECRET && IS_PRODUCTION) {
-  console.error("[FedCM Server] FATAL: FEDCM_TOKEN_SECRET environment variable is required in production");
-  process.exit(1);
+function startServer() {
+  if (!FEDCM_TOKEN_SECRET && IS_PRODUCTION) {
+    console.error("[FedCM Server] FATAL: FEDCM_TOKEN_SECRET environment variable is required in production");
+    process.exit(1);
+  }
+  if (!FEDCM_TOKEN_SECRET) {
+    console.warn("[FedCM Server] WARNING: FEDCM_TOKEN_SECRET is not set. The /fedcm/assertion endpoint will not work.");
+  }
+  console.log(`[FedCM Server] Starting on port ${PORT}`);
+  console.log(`[FedCM Server] API: ${API_BASE_URL}`);
+  console.log(`[FedCM Server] Issuer: ${FEDCM_ISSUER}`);
+  console.log(`[FedCM Server] SPA dist: ${DIST_DIR}`);
+  serve({
+    fetch: app.fetch,
+    port: PORT
+  }, (info) => {
+    console.log(`[FedCM Server] Listening on http://localhost:${info.port}`);
+  });
 }
-if (!FEDCM_TOKEN_SECRET) {
-  console.warn("[FedCM Server] WARNING: FEDCM_TOKEN_SECRET is not set. The /fedcm/assertion endpoint will not work.");
+if (__require.main == __require.module) {
+  startServer();
 }
-console.log(`[FedCM Server] Starting on port ${PORT}`);
-console.log(`[FedCM Server] API: ${API_BASE_URL}`);
-console.log(`[FedCM Server] Issuer: ${FEDCM_ISSUER}`);
-console.log(`[FedCM Server] SPA dist: ${DIST_DIR}`);
-serve({
-  fetch: app.fetch,
-  port: PORT
-}, (info) => {
-  console.log(`[FedCM Server] Listening on http://localhost:${info.port}`);
-});
+export {
+  app
+};
