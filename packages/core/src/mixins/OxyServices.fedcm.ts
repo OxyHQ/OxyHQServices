@@ -156,6 +156,11 @@ const FEDCM_LOGIN_HINT_KEY = 'oxy_fedcm_login_hint';
 let fedCMRequestInProgress = false;
 let fedCMRequestPromise: Promise<FedCMTokenResult | null> | null = null;
 let currentMediationMode: string | null = null;
+// AbortController of the in-flight request, exposed at module scope so an
+// arriving INTERACTIVE request can abort a slow/hung SILENT one instead of
+// blocking on it (see requestIdentityCredential). Set when a request starts,
+// cleared in that request's `finally`.
+let fedCMActiveController: AbortController | null = null;
 
 /**
  * Federated Credential Management (FedCM) Authentication Mixin
@@ -186,13 +191,23 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
   public static readonly DEFAULT_CONFIG_URL = 'https://auth.oxy.so/fedcm.json';
 
   public resolveFedcmConfigUrl(): string {
+    // `DEFAULT_CONFIG_URL` is a static on the composed class; read it off the
+    // most-derived constructor through a typed cast (not `any`).
+    const configCtor = this.constructor as typeof OxyServicesBase & {
+      DEFAULT_CONFIG_URL: string;
+    };
     return this.config.authWebUrl
       ? `${this.config.authWebUrl}/fedcm.json`
-      : (this.constructor as any).DEFAULT_CONFIG_URL;
+      : configCtor.DEFAULT_CONFIG_URL;
   }
 
   public static readonly FEDCM_TIMEOUT = 15000; // 15 seconds for interactive
-  public static readonly FEDCM_SILENT_TIMEOUT = 3000; // 3 seconds for silent mediation
+  // Silent mediation runs on page load (e.g. re-signing-in a user whose stored
+  // session was cleared after a cold-boot token fetch 401'd). The real silent
+  // round-trip — mint nonce → navigator.credentials.get → /fedcm/exchange — was
+  // measured to take more than 3s for live users, so a 3s budget timed out and
+  // left them signed out on reload. 10s gives ample margin while staying bounded.
+  public static readonly FEDCM_SILENT_TIMEOUT = 10000; // 10 seconds for silent mediation
 
   /**
    * Check if FedCM is supported in the current browser
@@ -528,15 +543,20 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
     // If a request is already in progress...
     if (fedCMRequestInProgress && fedCMRequestPromise) {
       debug.log('Request already in progress, waiting...');
-      // If current request is silent and new request is interactive,
-      // wait for silent to finish, then make the interactive request
+      // If the in-flight request is SILENT and this new one is INTERACTIVE,
+      // abort the silent and proceed immediately. The silent round-trip can be
+      // slow (it runs on page load and may stall in the browser), and a user who
+      // just clicked "Sign In" must never be made to wait on — or be blocked by —
+      // it. Awaiting the silent here is what previously let a hung silent
+      // request deadlock the sign-in button, so we deliberately do NOT await it:
+      // we abort it (its own `finally` resets the lock as it settles) and fall
+      // through to start the interactive request synchronously below.
       if (currentMediationMode === 'silent' && isInteractive) {
-        try {
-          await fedCMRequestPromise;
-        } catch {
-          // Ignore silent request errors
-        }
-        // Now fall through to make the interactive request
+        debug.log('Aborting in-flight silent request to make way for interactive request');
+        fedCMActiveController?.abort();
+        // Fall through. The interactive request synchronously overwrites the
+        // lock globals (below); the aborted silent's `finally` uses identity
+        // guards so it cannot later clobber this interactive request's state.
       } else {
         // Same type of request - wait for the existing one
         try {
@@ -550,10 +570,17 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
     fedCMRequestInProgress = true;
     currentMediationMode = requestedMediation;
     const controller = new AbortController();
-    // Use shorter timeout for silent mediation since it should be quick
+    fedCMActiveController = controller;
+    // Use shorter timeout for silent mediation since it should be quick.
+    // The timeout constants are static on the composed class; read them off the
+    // most-derived constructor through a typed cast (not `any`).
+    const timeoutCtor = this.constructor as typeof OxyServicesBase & {
+      FEDCM_SILENT_TIMEOUT: number;
+      FEDCM_TIMEOUT: number;
+    };
     const timeoutMs = requestedMediation === 'silent'
-      ? (this.constructor as any).FEDCM_SILENT_TIMEOUT
-      : (this.constructor as any).FEDCM_TIMEOUT;
+      ? timeoutCtor.FEDCM_SILENT_TIMEOUT
+      : timeoutCtor.FEDCM_TIMEOUT;
     const timeout = setTimeout(() => {
       debug.log('Request timed out after', timeoutMs, 'ms (mediation:', requestedMediation + ')');
       controller.abort();
@@ -633,9 +660,20 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
         throw error;
       } finally {
         clearTimeout(timeout);
-        fedCMRequestInProgress = false;
-        fedCMRequestPromise = null;
-        currentMediationMode = null;
+        // Only reset the shared lock if it still belongs to THIS request. When an
+        // interactive request aborts a slow silent one, the silent settles (and
+        // runs this `finally`) AFTER the interactive has already taken over the
+        // lock and installed its own controller/promise. Guarding on identity
+        // (`fedCMActiveController === controller`) ensures the settling silent
+        // cannot null out the interactive request's in-progress state. The
+        // request that still owns the lock clears it; the superseded one is a
+        // no-op here.
+        if (fedCMActiveController === controller) {
+          fedCMRequestInProgress = false;
+          fedCMRequestPromise = null;
+          currentMediationMode = null;
+          fedCMActiveController = null;
+        }
       }
     })();
 

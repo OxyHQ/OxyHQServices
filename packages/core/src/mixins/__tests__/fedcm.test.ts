@@ -430,3 +430,125 @@ describe('OxyServices FedCM stale loginHint clear-and-retry', () => {
     expect(localStorage.getItem('oxy_fedcm_login_hint')).toBe('persisted-hint');
   });
 });
+
+/**
+ * FedCM single-flight lock: interactive-aborts-silent regression tests.
+ *
+ * FedCM only allows one `navigator.credentials.get` at a time. Silent SSO runs
+ * on page load and the real round-trip can be slow (or stall in the browser).
+ * If an INTERACTIVE request (the user clicked "Sign In") arrives while a SILENT
+ * one is still in flight, it must NOT wait on the silent — awaiting a hung
+ * silent request previously deadlocked the sign-in button. Instead it aborts the
+ * in-flight silent and proceeds immediately. These tests lock that in, and pin
+ * the silent timeout so the on-load silent round-trip has enough budget.
+ */
+
+// `navigator.credentials.get` receives an AbortSignal we want to observe in the
+// lock tests, which the shared `CredentialGetCall` shape omits. Model it here.
+interface CredentialGetCallWithSignal {
+  identity: { providers: Array<{ loginHint?: string }>; mode?: string };
+  mediation: string;
+  signal?: AbortSignal;
+}
+
+describe('OxyServices FedCM single-flight lock (interactive aborts silent)', () => {
+  afterEach(() => {
+    clearBrowserGlobals();
+    jest.restoreAllMocks();
+  });
+
+  it('aborts an in-progress silent request and proceeds with the interactive one', async () => {
+    let silentSignal: AbortSignal | undefined;
+    let silentAborted = false;
+    let interactiveRan = false;
+
+    const store = new Map<string, string>();
+    const localStorageStub = {
+      getItem: (k: string) => (store.has(k) ? (store.get(k) as string) : null),
+      setItem: (k: string, v: string) => { store.set(k, v); },
+      removeItem: (k: string) => { store.delete(k); },
+    };
+
+    const credentialsGet = (opts: CredentialGetCallWithSignal): Promise<unknown> => {
+      if (opts.mediation === 'silent') {
+        // The silent request HANGS: it only settles when its signal is aborted,
+        // exactly like a real slow/stalled silent round-trip. This is what must
+        // NOT block the interactive request.
+        silentSignal = opts.signal;
+        return new Promise((_resolve, reject) => {
+          const signal = opts.signal;
+          if (!signal) return; // never settles without a signal (shouldn't happen)
+          signal.addEventListener('abort', () => {
+            silentAborted = true;
+            const err = new Error('The operation was aborted.');
+            err.name = 'AbortError';
+            reject(err);
+          });
+        });
+      }
+      // Interactive request resolves immediately with a usable credential.
+      interactiveRan = true;
+      return Promise.resolve({ type: 'identity', token: 'interactive-token', isAutoSelected: false });
+    };
+
+    const nav = { credentials: { get: (opts: CredentialGetCallWithSignal) => credentialsGet(opts) } };
+    const win = {
+      location: { origin: ORIGIN, hostname: 'accounts.oxy.so' },
+      IdentityCredential: function IdentityCredential() {},
+      navigator: nav,
+      localStorage: localStorageStub,
+    };
+    (globalThis as unknown as { window: unknown }).window = win;
+    (globalThis as unknown as { navigator: unknown }).navigator = nav;
+    (globalThis as unknown as { localStorage: unknown }).localStorage = localStorageStub;
+    (globalThis as unknown as { IdentityCredential: unknown }).IdentityCredential = win.IdentityCredential;
+
+    const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
+    const exchanged: string[] = [];
+    jest
+      .spyOn(oxy, 'makeRequest')
+      .mockImplementation(async (_method: string, url: string, data?: unknown) => {
+        if (url === '/fedcm/nonce') {
+          return { nonce: 'server-nonce', expiresAt: new Date(Date.now() + 60000).toISOString() } as never;
+        }
+        if (url === '/fedcm/exchange') {
+          exchanged.push((data as { id_token: string }).id_token);
+          return {
+            sessionId: 'sess_lock',
+            deviceId: 'dev_lock',
+            expiresAt: new Date(Date.now() + 60000).toISOString(),
+            accessToken: 'access_lock',
+            user: { id: 'user_lock', username: 'tester' },
+          } as never;
+        }
+        throw new Error(`unexpected request to ${url}`);
+      });
+
+    // Kick off the silent request (it will hang) WITHOUT awaiting it.
+    const silentPromise = oxy.silentSignInWithFedCM();
+    // Let the silent request reach navigator.credentials.get and register its
+    // abort listener (it awaits the nonce mint first).
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(silentSignal).toBeDefined();
+    expect(silentAborted).toBe(false);
+
+    // Now the user clicks "Sign In": the interactive request must abort the
+    // hung silent one and complete on its own — never block on it.
+    const session = await oxy.signInWithFedCM();
+
+    expect(silentAborted).toBe(true);
+    expect(interactiveRan).toBe(true);
+    expect(session.sessionId).toBe('sess_lock');
+    expect(exchanged).toEqual(['interactive-token']);
+
+    // The aborted silent resolves cleanly to null (its own error path), never
+    // throwing and never leaving the lock stuck.
+    await expect(silentPromise).resolves.toBeNull();
+  });
+});
+
+describe('OxyServices FedCM silent timeout', () => {
+  it('uses a 10s silent timeout (enough budget for the real on-load round-trip)', () => {
+    expect(OxyServices.FEDCM_SILENT_TIMEOUT).toBe(10000);
+  });
+});

@@ -109,6 +109,16 @@ const OxyServicesComposed = composeOxyServices();
 // We extend the composed constructor directly — its public surface is broadened
 // to the full mixin set via the interface declaration that follows.
 export class OxyServices extends OxyServicesComposed {
+  /**
+   * FedCM credential-request timeouts (ms). The runtime values are defined on
+   * the FedCM mixin and inherited here via `extends`; these `declare` members
+   * surface their types to TypeScript without re-emitting (or duplicating) the
+   * literals, so consumers/tests can reference `OxyServices.FEDCM_SILENT_TIMEOUT`
+   * with full typing.
+   */
+  declare static readonly FEDCM_TIMEOUT: number;
+  declare static readonly FEDCM_SILENT_TIMEOUT: number;
+
   constructor(config: OxyConfig) {
     super(config);
   }
