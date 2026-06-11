@@ -123,13 +123,6 @@ export interface OxyServices extends InstanceType<ReturnType<typeof composeOxySe
   isFedCMSupported(): boolean;
   signInWithFedCM(options?: FedCMAuthOptions): Promise<SessionLoginResponse>;
   silentSignInWithFedCM(): Promise<SessionLoginResponse | null>;
-  /**
-   * Silent FedCM re-authentication used as a cold-boot / expiry token-refresh
-   * primitive. Thin wrapper over {@link silentSignInWithFedCM}; on success the
-   * access token is already planted before this resolves. Resolves `null`
-   * (never throws) when silent re-auth is unavailable.
-   */
-  reauthenticateSilently(): Promise<SessionLoginResponse | null>;
   revokeFedCMCredential(): Promise<void>;
   getFedCMConfig(): FedCMConfig;
 

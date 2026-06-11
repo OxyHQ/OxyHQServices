@@ -51,10 +51,7 @@ function Capture() {
 function baseStub() {
   return {
     config: { authWebUrl: 'https://auth.oxy.so' },
-    // `setSilentReauthHandler` is wired by the provider during init (the
-    // cold-boot silent-FedCM refresh fallback); the real HttpService always
-    // exposes it, so the stub must too.
-    httpService: { setTokens: jest.fn(), setSilentReauthHandler: jest.fn() },
+    httpService: { setTokens: jest.fn() },
     getBaseURL: () => 'https://api.oxy.so',
     getAccessToken: () => 'header.payload.sig',
     onTokensChanged: () => () => undefined,
@@ -64,7 +61,6 @@ function baseStub() {
     // Disable FedCM so the provider's auto silent-SSO does not fire; these tests
     // drive the persistence path explicitly via handlePopupSession.
     isFedCMSupported: () => false,
-    reauthenticateSilently: jest.fn(async () => null),
     getCurrentUser: jest.fn(async () => ({ id: 'user_123', username: 'tester' })),
     getTokenBySession: jest.fn(async () => 'header.payload.sig'),
     validateSession: jest.fn(async () => ({

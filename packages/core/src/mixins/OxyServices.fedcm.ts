@@ -491,32 +491,6 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
   }
 
   /**
-   * Silently re-authenticate the user as a token-refresh primitive.
-   *
-   * This is a thin, intention-revealing wrapper over {@link silentSignInWithFedCM}
-   * for use as a COLD-BOOT / EXPIRY token source. On a page reload a web app has a
-   * valid long-lived server session but no in-memory access token, and the
-   * bearer-protected `GET /session/token/:sessionId` cannot mint a fresh one
-   * (401). The durable identity is the IdP's first-party `fedcm_session` cookie
-   * (auth.oxy.so, 30 days); a silent `navigator.credentials.get` against it
-   * yields a fresh ID token that `/fedcm/exchange` turns back into an access
-   * token. The IdP returns the user in `approved_clients` + `login_hints`, so
-   * silent mediation resolves for returning users with no UI.
-   *
-   * Like {@link silentSignInWithFedCM}, on success the access token is already
-   * planted via `httpService.setTokens` before this resolves — callers can read
-   * `session.accessToken` (or just `oxyServices.getAccessToken()`) immediately.
-   * Resolves `null` (never throws) when silent re-auth is unavailable
-   * (unsupported browser, not signed in at the IdP, or not yet consented), so it
-   * is safe to wire directly into the HTTP layer's refresh fallback.
-   *
-   * @returns The re-established session, or `null` if silent re-auth was not possible.
-   */
-  async reauthenticateSilently(): Promise<SessionLoginResponse | null> {
-    return this.silentSignInWithFedCM();
-  }
-
-  /**
    * Request identity credential from browser using FedCM API
    *
    * Uses a global lock to prevent concurrent requests, as FedCM only

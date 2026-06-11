@@ -12,6 +12,10 @@ export interface PopupAuthOptions {
   mode?: 'login' | 'signup';
 }
 
+export interface SilentAuthOptions {
+  timeout?: number;
+}
+
 /**
  * Popup-based Cross-Domain Authentication Mixin
  *
@@ -49,6 +53,7 @@ export function OxyServicesPopupAuthMixin<T extends typeof OxyServicesBase>(Base
   public static readonly POPUP_WIDTH = 500;
   public static readonly POPUP_HEIGHT = 700;
   public static readonly POPUP_TIMEOUT = 60000; // 1 minute
+  public static readonly SILENT_TIMEOUT = 5000; // 5 seconds
 
   /**
    * Sign in using popup window
@@ -155,25 +160,113 @@ export function OxyServicesPopupAuthMixin<T extends typeof OxyServicesBase>(Base
   }
 
   /**
-   * Silent sign-in (no UI).
+   * Silent sign-in using hidden iframe
    *
-   * Cross-domain silent SSO on the web is provided by FedCM
-   * ({@link silentSignInWithFedCM} / {@link reauthenticateSilently}), which
-   * authenticates against the durable first-party `fedcm_session` cookie at the
-   * IdP. The legacy hidden-iframe approach this method used to implement —
-   * loading `${authUrl}/auth/silent` and waiting for a `postMessage` — is dead:
-   * that route serves the IdP's SPA HTML shell (it never posts a credential
-   * back), so the iframe could only ever time out. It has been removed rather
-   * than left to spin up an iframe and stall for the timeout on every startup.
+   * Attempts to automatically re-authenticate the user without any UI.
+   * This is what enables seamless SSO across all Oxy domains.
    *
-   * The method is retained (callers such as `CrossDomainAuth` and the web auth
-   * provider invoke it as a post-FedCM fallback) and now resolves immediately to
-   * `null`, which those callers already treat as "no SSO session available".
+   * How it works:
+   * 1. Creates hidden iframe pointing to auth.oxy.so/silent-auth
+   * 2. If user has valid session at auth.oxy.so, it sends token via postMessage
+   * 3. If not, iframe responds with null (no error thrown)
    *
-   * @returns Always `null` — use FedCM silent sign-in for web SSO.
+   * This should be called on app startup to check for existing sessions.
+   *
+   * @param options - Silent auth options
+   * @returns Session if user is signed in, null otherwise
+   *
+   * @example
+   * ```typescript
+   * useEffect(() => {
+   *   const checkAuth = async () => {
+   *     const session = await oxyServices.silentSignIn();
+   *     if (session) {
+   *       setUser(session.user);
+   *     }
+   *   };
+   *   checkAuth();
+   * }, []);
+   * ```
    */
-  async silentSignIn(): Promise<SessionLoginResponse | null> {
-    return null;
+  async silentSignIn(options: SilentAuthOptions = {}): Promise<SessionLoginResponse | null> {
+    if (typeof window === 'undefined') {
+      return null;
+    }
+
+    const timeout = options.timeout || (this.constructor as any).SILENT_TIMEOUT;
+    const nonce = this.generateNonce();
+    const clientId = window.location.origin;
+
+    const iframe = document.createElement('iframe');
+    iframe.style.display = 'none';
+    iframe.style.position = 'absolute';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = 'none';
+
+    const silentUrl = `${this.resolveAuthUrl()}/auth/silent?` + `client_id=${encodeURIComponent(clientId)}&` + `nonce=${nonce}`;
+
+    iframe.src = silentUrl;
+    document.body.appendChild(iframe);
+
+    try {
+      const session = await this.waitForIframeAuth(iframe, timeout, clientId);
+
+      // Bail early on incomplete responses. The iframe contract requires
+      // both an access token and a session id; anything less is unusable.
+      // Returning `null` here (without installing the token) prevents a
+      // stale credential from being committed to HttpService when the
+      // user is actually signed out — that pattern caused a `getCurrentUser`
+      // -> 401 -> token-clear loop in consumer apps because callers gated
+      // on `session?.user` and never installed the user via
+      // `handleAuthSuccess`, while HttpService quietly held the token.
+      const accessToken = session ? (session as { accessToken?: string }).accessToken : undefined;
+      if (!session || !accessToken || !session.sessionId) {
+        return null;
+      }
+
+      // Snapshot the previous token so we can roll back if the user
+      // lookup below fails — this avoids leaving a half-committed session
+      // (token installed, user missing) which would let the next
+      // authenticated request 401 with no way to recover.
+      const previousAccessToken = this.httpService.getAccessToken();
+      this.httpService.setTokens(accessToken);
+
+      // The iframe typically returns `{ sessionId, accessToken }` without
+      // user data. Fetch the user explicitly so callers receive a
+      // fully-formed session and never need a second `/users/me` round
+      // trip. If this fails the session is unusable — revert the token
+      // and return null so the caller treats this exactly like a
+      // missing-session response.
+      if (!session.user) {
+        try {
+          const userData = await this.makeRequest<unknown>(
+            'GET',
+            `/session/user/${session.sessionId}`,
+            undefined,
+            { cache: false, retry: false }
+          );
+          if (!userData) {
+            throw new Error('Empty user response');
+          }
+          (session as { user?: unknown }).user = userData;
+        } catch (userError) {
+          debug.warn('silentSignIn: failed to fetch user data, rolling back token', userError);
+          if (previousAccessToken) {
+            this.httpService.setTokens(previousAccessToken);
+          } else {
+            this.httpService.clearTokens();
+          }
+          return null;
+        }
+      }
+
+      return session;
+    } catch (error) {
+      return null;
+    } finally {
+      document.body.removeChild(iframe);
+    }
   }
 
   /**
@@ -281,6 +374,47 @@ export function OxyServicesPopupAuthMixin<T extends typeof OxyServicesBase>(Base
         if (!popup.closed) {
           popup.close();
         }
+      };
+
+      window.addEventListener('message', messageHandler);
+    });
+  }
+
+  /**
+   * Wait for authentication response from iframe
+   *
+   * @private
+   */
+  public async waitForIframeAuth(
+    iframe: HTMLIFrameElement,
+    timeout: number,
+    expectedOrigin: string
+  ): Promise<SessionLoginResponse | null> {
+    return new Promise((resolve) => {
+      const timeoutId = setTimeout(() => {
+        cleanup();
+        resolve(null); // Silent failure - don't throw
+      }, timeout);
+
+      const messageHandler = (event: MessageEvent) => {
+        // Verify origin
+        if (event.origin !== this.resolveAuthUrl()) {
+          return;
+        }
+
+        const { type, session } = event.data;
+
+        if (type !== 'oxy_silent_auth') {
+          return;
+        }
+
+        cleanup();
+        resolve(session || null);
+      };
+
+      const cleanup = () => {
+        clearTimeout(timeoutId);
+        window.removeEventListener('message', messageHandler);
       };
 
       window.addEventListener('message', messageHandler);
