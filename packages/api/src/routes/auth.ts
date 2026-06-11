@@ -26,6 +26,12 @@ import { formatUserResponse } from '../utils/userTransform';
 import { issueAuthCode, exchangeAuthCode, AUTH_CODE_TTL_MS } from '../services/oauthCode.service';
 import { claimAuthSession } from '../services/authSession.service';
 import {
+  rotateRefreshToken,
+  setRefreshCookie,
+  clearRefreshCookie,
+  REFRESH_COOKIE_NAME,
+} from '../services/refreshToken.service';
+import {
   signupSchema,
   loginSchema,
   registerPublicKeySchema,
@@ -610,6 +616,104 @@ router.post('/verify', verifyLimiter, validate({ body: verifyChallengeSchema }),
  */
 router.get('/validate', asyncHandler(async (req, res) => {
   sendSuccess(res, { valid: true });
+}));
+
+// ============================================
+// First-Party Refresh Cookie (cold-boot session persistence)
+// ============================================
+//
+// Global per-IP rate limit. A per-FAMILY limit is intentionally NOT added: each
+// refresh token is single-use and rotation revokes the whole family on any
+// reuse, so the DB semantics already bound how often a given family can be
+// exercised far more tightly than a counter could. The IP limit blunts blind
+// guessing against the 256-bit token space (computationally infeasible anyway).
+const refreshLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: process.env.NODE_ENV === 'development' ? 200 : 60,
+});
+
+/**
+ * @openapi
+ * /auth/refresh:
+ *   post:
+ *     tags:
+ *       - Authentication
+ *     security: []
+ *     summary: Rotate the httpOnly refresh cookie and mint a fresh access token
+ *     description: >
+ *       Cold-boot session persistence. The refresh token lives ONLY in a
+ *       first-party httpOnly + Secure cookie (`oxy_rt`) scoped to this path —
+ *       it is never readable from JavaScript (XSS-proof) and is never accepted
+ *       from the body, query, or path. On each call the presented token is
+ *       rotated (single-use): a brand-new token is issued in the same rotation
+ *       family with a fresh 30-day sliding expiry, and a new short-lived access
+ *       token is returned in the body.
+ *
+ *       Reuse-detection: presenting an already-consumed or revoked token is
+ *       treated as a theft signal — the entire rotation family is revoked and
+ *       the underlying session is deactivated, forcing a fresh sign-in. All
+ *       failure modes collapse to a single generic 401 (the specific reason is
+ *       only logged) to avoid leaking which step failed.
+ *
+ *       No `Authorization` header is required: the httpOnly cookie IS the
+ *       credential.
+ *     responses:
+ *       200:
+ *         description: Access token minted; a rotated `oxy_rt` cookie is set.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 accessToken:
+ *                   type: string
+ *                 expiresAt:
+ *                   type: string
+ *                   format: date-time
+ *       401:
+ *         description: Missing, invalid, expired, revoked, or reused refresh token.
+ *       429:
+ *         description: Too many refresh attempts from this IP.
+ */
+router.post('/refresh', refreshLimiter, asyncHandler(async (req, res) => {
+  // The refresh token is read ONLY from the httpOnly cookie — never the body,
+  // query, or path. Set/clear the cookie BEFORE sending the response so the
+  // Set-Cookie header is always emitted; we respond directly (rather than
+  // throwing) for the same reason.
+  const raw = req.cookies?.[REFRESH_COOKIE_NAME];
+  if (typeof raw !== 'string' || raw.length === 0) {
+    clearRefreshCookie(res);
+    return res.status(401).json({ message: 'No refresh token' });
+  }
+
+  const outcome = await rotateRefreshToken(raw);
+
+  if (!outcome.ok) {
+    clearRefreshCookie(res);
+    if (outcome.reason === 'reuse_detected') {
+      // Theft signal — family + session already revoked inside rotate. Log the
+      // reason server-side only; the client sees a generic message.
+      logger.warn('[RefreshToken] Reuse detected — family revoked', { reason: outcome.reason });
+    } else {
+      logger.debug('[RefreshToken] Refresh rejected', { reason: outcome.reason });
+    }
+    return res.status(401).json({ message: 'Invalid refresh token' });
+  }
+
+  // Rotation succeeded — set the freshly-rotated cookie, then mint the access
+  // token off the bound session.
+  setRefreshCookie(res, outcome.token);
+
+  const tokenResult = await sessionService.getAccessToken(outcome.sessionId);
+  if (!tokenResult) {
+    clearRefreshCookie(res);
+    return res.status(401).json({ message: 'Session no longer valid' });
+  }
+
+  return res.json({
+    accessToken: tokenResult.accessToken,
+    expiresAt: tokenResult.expiresAt.toISOString(),
+  });
 }));
 
 // Strict rate limit for enumeration-sensitive check endpoints (10/min per IP)

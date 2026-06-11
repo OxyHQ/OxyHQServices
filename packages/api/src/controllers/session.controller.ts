@@ -20,6 +20,12 @@ import { generateAlphanumericCode, hashPassword, verifyPassword, validatePasswor
 import securityActivityService from '../services/securityActivityService';
 import anomalyDetectionService from '../services/anomalyDetection.service';
 import { isLockedOut, recordFailure, clearFailures } from '../services/loginLockout.service';
+import {
+  issueAndSetRefreshCookie,
+  revokeFamilyBySession,
+  revokeAllUserFamilies,
+  clearRefreshCookie,
+} from '../services/refreshToken.service';
 import type { AuthRequest } from '../middleware/auth';
 
 /**
@@ -402,6 +408,19 @@ export class SessionController {
         });
       }
 
+      // Plant the first-party httpOnly refresh cookie for cold-boot session
+      // persistence. A failure here must never break account creation — the
+      // user still gets their access token, just without cold-boot persistence.
+      try {
+        await issueAndSetRefreshCookie(res, session.sessionId, user._id);
+      } catch (error) {
+        logger.error('Failed to set refresh cookie during signup', error instanceof Error ? error : new Error(String(error)), {
+          component: 'SessionController',
+          method: 'signUp',
+          userId: user._id.toString(),
+        });
+      }
+
       return res.status(201).json(response);
     } catch (error: any) {
       if (error.code === 11000 && (error.keyPattern?.email || error.keyPattern?.username)) {
@@ -712,6 +731,19 @@ export class SessionController {
         );
       } catch (error) {
         logger.error('Failed to log security event for sign-in', error instanceof Error ? error : new Error(String(error)), {
+          component: 'SessionController',
+          method: 'signIn',
+          userId: user._id.toString(),
+        });
+      }
+
+      // Plant the first-party httpOnly refresh cookie ONLY on the real success
+      // path (never the 2FA-required or invalid-credential branches, which
+      // return above). A failure here must never break sign-in.
+      try {
+        await issueAndSetRefreshCookie(res, session.sessionId, user._id);
+      } catch (error) {
+        logger.error('Failed to set refresh cookie during sign-in', error instanceof Error ? error : new Error(String(error)), {
           component: 'SessionController',
           method: 'signIn',
           userId: user._id.toString(),
@@ -1111,6 +1143,18 @@ export class SessionController {
         }
       }
 
+      // Revoke any refresh-token family bound to this session and clear the
+      // first-party refresh cookie. Cleanup must never fail the logout itself.
+      try {
+        await revokeFamilyBySession(sessionIdToLogout);
+        clearRefreshCookie(res);
+      } catch (error) {
+        logger.error('Failed to revoke refresh family during logout', error instanceof Error ? error : new Error(String(error)), {
+          component: 'SessionController',
+          method: 'logoutSession',
+        });
+      }
+
       logger.info(`Logged out session: ${sessionIdToLogout.substring(0, 8)}...`);
       res.json({ success: true, message: 'Session logged out successfully' });
     } catch (error) {
@@ -1159,10 +1203,23 @@ export class SessionController {
         });
       }
 
+      // Revoke every refresh-token family for this user and clear the cookie.
+      // Cleanup must never fail the logout itself.
+      try {
+        await revokeAllUserFamilies(userId);
+        clearRefreshCookie(res);
+      } catch (error) {
+        logger.error('Failed to revoke refresh families during logout-all', error instanceof Error ? error : new Error(String(error)), {
+          component: 'SessionController',
+          method: 'logoutAllSessions',
+          userId,
+        });
+      }
+
       logger.info(`Logged out ${count} sessions for user ${userId}`);
-      
-      res.json({ 
-        success: true, 
+
+      res.json({
+        success: true,
         message: `Logged out ${count} sessions`,
         sessionsLoggedOut: count
       });

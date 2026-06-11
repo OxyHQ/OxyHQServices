@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import fedcmService from '../services/fedcm.service';
 import { logger } from '../utils/logger';
 import { AuthRequest } from '../middleware/auth';
+import { issueAndSetRefreshCookie } from '../services/refreshToken.service';
 
 /**
  * Mint a single-use server-side nonce for the FedCM handoff. The auth UI
@@ -50,6 +51,19 @@ export async function exchangeIdToken(req: Request, res: Response) {
       return res.status(401).json({
         message: 'Invalid or expired ID token',
         reason: result.error,
+      });
+    }
+
+    // Plant the first-party httpOnly refresh cookie for cold-boot session
+    // persistence. `result.user.id` is a string ObjectId; issueRefreshToken
+    // accepts string | ObjectId. A failure here must never break the exchange.
+    try {
+      await issueAndSetRefreshCookie(res, result.sessionId, result.user.id);
+    } catch (error) {
+      logger.error('Failed to set refresh cookie during FedCM exchange', error instanceof Error ? error : new Error(String(error)), {
+        component: 'FedCMController',
+        method: 'exchangeIdToken',
+        sessionId: result.sessionId,
       });
     }
 

@@ -35,6 +35,18 @@ jest.mock('../../models/Session', () => ({
 jest.mock('../../models/AuthChallenge', () => ({ __esModule: true, default: {} }));
 jest.mock('../../models/RecoveryCode', () => ({ __esModule: true, default: {} }));
 jest.mock('../../models/Notification', () => ({ __esModule: true, default: jest.fn() }));
+jest.mock('../../models/RefreshToken', () => ({
+  __esModule: true,
+  default: { findOne: jest.fn(), findOneAndUpdate: jest.fn(), create: jest.fn(), updateMany: jest.fn() },
+}));
+// The session controller transitively imports refreshToken.service, which pulls
+// in oauthCode.service -> AuthCode model. Mock it so module evaluation does not
+// touch the (mocked) Mongoose Schema.Types.
+jest.mock('../../models/AuthCode', () => ({
+  __esModule: true,
+  AuthCode: { create: jest.fn() },
+  default: { create: jest.fn() },
+}));
 
 jest.mock('../../utils/password', () => ({
   verifyPassword: mockVerifyPassword,
