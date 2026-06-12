@@ -11,6 +11,7 @@ import { useLayoutContext } from "@/lib/layout-context"
 import { loginResponseSchema, safeParse } from "@/lib/schemas"
 import type { DeviceAccount } from "@/lib/types"
 import { useDeviceAccounts } from "@/lib/use-device-accounts"
+import { getOrCreateDeviceFingerprint } from "@/lib/device-fingerprint"
 import { Button } from "@/components/ui/button"
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
@@ -265,11 +266,25 @@ export function LoginForm({
         const password = String(new FormData(e.currentTarget).get("password") || "")
 
         try {
+            // Compute (or read cached) device fingerprint BEFORE the login
+            // POST. The server uses it to dedupe device-local refresh-cookie
+            // slots: a second sign-in from the same browser reuses an
+            // existing `oxy_rt_${n}` slot instead of allocating a fresh
+            // one, matching Google's multi-account model. Null is allowed —
+            // the server treats a missing fingerprint as "no dedupe hint".
+            const deviceFingerprint = await getOrCreateDeviceFingerprint()
+            const body: Record<string, string> = {
+                identifier: identifier.trim(),
+                password,
+            }
+            if (deviceFingerprint) {
+                body.deviceFingerprint = deviceFingerprint
+            }
             const response = await fetch(buildAuthUrl("/login"), {
                 method: "POST",
                 headers: { "content-type": "application/json" },
                 credentials: "include",
-                body: JSON.stringify({ identifier: identifier.trim(), password }),
+                body: JSON.stringify(body),
             })
             const payload = await response.json().catch(() => ({}))
 
