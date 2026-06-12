@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
 import { Dialog, toast, useDialogControl } from '@oxyhq/bloom';
-import { Header } from '../components';
+import Header from '../components/Header';
 import { SettingsListGroup } from '@oxyhq/bloom/settings-list';
 import { useI18n } from '../hooks/useI18n';
 import { useTheme } from '@oxyhq/bloom/theme';

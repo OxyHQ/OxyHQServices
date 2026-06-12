@@ -1,8 +1,9 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import type { User } from '@oxyhq/core';
 import { queryKeys, invalidateSessionQueries } from '../queries/queryKeys';
 import { useWebOxy } from '../../WebOxyProvider';
 import { toast } from 'sonner';
+
+type SessionRow = { sessionId: string };
 
 /**
  * Switch active session
@@ -54,13 +55,13 @@ export const useLogoutSession = () => {
       await queryClient.cancelQueries({ queryKey: queryKeys.sessions.all });
       
       // Snapshot previous sessions
-      const previousSessions = queryClient.getQueryData(queryKeys.sessions.list());
-      
+      const previousSessions = queryClient.getQueryData<SessionRow[]>(queryKeys.sessions.list());
+
       // Optimistically remove session
       if (previousSessions) {
         const sessionToLogout = targetSessionId || activeSessionId;
-        const updatedSessions = (previousSessions as any[]).filter(
-          (s: any) => s.sessionId !== sessionToLogout
+        const updatedSessions = previousSessions.filter(
+          (s) => s.sessionId !== sessionToLogout,
         );
         queryClient.setQueryData(queryKeys.sessions.list(), updatedSessions);
       }

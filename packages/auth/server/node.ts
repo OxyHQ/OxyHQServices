@@ -17,16 +17,27 @@ import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { app, readEnv, type WorkerEnv } from './index';
 
+/**
+ * Scoped startup logger. Writes one informational line per call to stdout
+ * with a stable `[FedCM Server]` prefix — these are user-facing CLI banners,
+ * not debug `console.log` calls. Kept as a dedicated function so the
+ * boundary between "diagnostic startup output" and "ad-hoc debugging" is
+ * explicit and greppable.
+ */
+function logStartup(message: string): void {
+  process.stdout.write(`[FedCM Server] ${message}\n`);
+}
+
 function startServer(): void {
   const secret = readEnv(undefined, 'FEDCM_TOKEN_SECRET');
   const isProd = readEnv(undefined, 'NODE_ENV') === 'production';
 
   if (!secret && isProd) {
-    console.error('[FedCM Server] FATAL: FEDCM_TOKEN_SECRET environment variable is required in production');
+    process.stderr.write('[FedCM Server] FATAL: FEDCM_TOKEN_SECRET environment variable is required in production\n');
     process.exit(1);
   }
   if (!secret) {
-    console.warn('[FedCM Server] WARNING: FEDCM_TOKEN_SECRET is not set. The /fedcm/assertion endpoint will not work.');
+    process.stderr.write('[FedCM Server] WARNING: FEDCM_TOKEN_SECRET is not set. The /fedcm/assertion endpoint will not work.\n');
   }
 
   const port = parseInt(process.env.PORT || '3002', 10);
@@ -39,12 +50,12 @@ function startServer(): void {
   nodeApp.use('/*', serveStatic({ root: './dist' }));
   nodeApp.get('*', serveStatic({ path: './dist/index.html' }));
 
-  console.log(`[FedCM Server] Starting on port ${port}`);
-  console.log(`[FedCM Server] API: ${readEnv(undefined, 'OXY_API_URL') || 'https://api.oxy.so'}`);
-  console.log(`[FedCM Server] Issuer: ${readEnv(undefined, 'FEDCM_ISSUER') || 'https://auth.oxy.so'}`);
+  logStartup(`Starting on port ${port}`);
+  logStartup(`API: ${readEnv(undefined, 'OXY_API_URL') || 'https://api.oxy.so'}`);
+  logStartup(`Issuer: ${readEnv(undefined, 'FEDCM_ISSUER') || 'https://auth.oxy.so'}`);
 
   serve({ fetch: nodeApp.fetch, port }, (info) => {
-    console.log(`[FedCM Server] Listening on http://localhost:${info.port}`);
+    logStartup(`Listening on http://localhost:${info.port}`);
   });
 }
 

@@ -1,12 +1,9 @@
 import { useCallback } from 'react';
 import { useAssetStore } from '../stores/assetStore';
-import { OxyServices } from '@oxyhq/core';
-import { 
-  Asset, 
-  AssetLinkRequest, 
-  AssetUnlinkRequest, 
-  AssetUploadProgress 
-} from '@oxyhq/core';
+import type { OxyServices, Asset } from '@oxyhq/core';
+import { extractErrorMessage } from '../utils/errorHandlers';
+
+type AssetMetadata = Record<string, string | number | boolean | null | undefined>;
 
 // Create a singleton instance for the hook
 let oxyInstance: OxyServices | null = null;
@@ -14,6 +11,13 @@ let oxyInstance: OxyServices | null = null;
 export const setOxyAssetInstance = (instance: OxyServices) => {
   oxyInstance = instance;
 };
+
+function requireOxyInstance(): OxyServices {
+  if (!oxyInstance) {
+    throw new Error('OxyServices instance not configured. Call setOxyAssetInstance first.');
+  }
+  return oxyInstance;
+}
 
 /**
  * Hook for managing assets with Zustand store integration
@@ -47,19 +51,17 @@ export const useAssets = () => {
 
   // Upload asset with progress tracking
   const upload = useCallback(async (
-    file: File, 
-    metadata?: Record<string, any>
+    file: File,
+    metadata?: AssetMetadata,
   ): Promise<Asset | null> => {
-    if (!oxyInstance) {
-      throw new Error('OxyServices instance not configured. Call setOxyAssetInstance first.');
-    }
+    const instance = requireOxyInstance();
 
     try {
       clearErrors();
       setUploading(true);
-      
+
       // Upload file (progress tracking simplified for now)
-      const result = await oxyInstance.assetUpload(file as any, undefined, metadata);
+      const result = await instance.assetUpload(file, undefined, metadata);
 
       // Update progress with final status
       if (result?.file) {
@@ -71,7 +73,7 @@ export const useAssets = () => {
           percentage: 100,
           status: 'complete'
         });
-        
+
         // Remove progress after a short delay
         setTimeout(() => {
           removeUploadProgress(fileId);
@@ -83,45 +85,43 @@ export const useAssets = () => {
         setAsset(result.file);
         return result.file;
       }
-      
+
       return null;
-    } catch (error: any) {
-      setUploadError(error.message || 'Upload failed');
+    } catch (error: unknown) {
+      setUploadError(extractErrorMessage(error, 'Upload failed'));
       throw error;
     } finally {
       setUploading(false);
     }
   }, [
-    clearErrors, 
-    setUploading, 
-    setUploadProgress, 
-    removeUploadProgress, 
-    setAsset, 
-    setUploadError
+    clearErrors,
+    setUploading,
+    setUploadProgress,
+    removeUploadProgress,
+    setAsset,
+    setUploadError,
   ]);
 
   // Link asset to entity
   const link = useCallback(async (
-    assetId: string, 
-    app: string, 
-    entityType: string, 
-    entityId: string
+    assetId: string,
+    app: string,
+    entityType: string,
+    entityId: string,
   ): Promise<void> => {
-    if (!oxyInstance) {
-      throw new Error('OxyServices instance not configured. Call setOxyAssetInstance first.');
-    }
+    const instance = requireOxyInstance();
 
     try {
       clearErrors();
       setLinking(true);
-      
+
       // Auto-detect visibility for avatars and profile banners
-      const visibility = (entityType === 'avatar' || entityType === 'profile-banner') 
+      const visibility = (entityType === 'avatar' || entityType === 'profile-banner')
         ? 'public' as const
         : undefined;
-      
-      const result = await oxyInstance.assetLink(assetId, app, entityType, entityId, visibility);
-      
+
+      const result = await instance.assetLink(assetId, app, entityType, entityId, visibility);
+
       if (result.file) {
         setAsset(result.file);
       } else {
@@ -134,8 +134,8 @@ export const useAssets = () => {
           createdAt: new Date().toISOString()
         });
       }
-    } catch (error: any) {
-      setLinkError(error.message || 'Link failed');
+    } catch (error: unknown) {
+      setLinkError(extractErrorMessage(error, 'Link failed'));
       throw error;
     } finally {
       setLinking(false);
@@ -144,29 +144,27 @@ export const useAssets = () => {
 
   // Unlink asset from entity
   const unlink = useCallback(async (
-    assetId: string, 
-    app: string, 
-    entityType: string, 
-    entityId: string
+    assetId: string,
+    app: string,
+    entityType: string,
+    entityId: string,
   ): Promise<void> => {
-    if (!oxyInstance) {
-      throw new Error('OxyServices instance not configured. Call setOxyAssetInstance first.');
-    }
+    const instance = requireOxyInstance();
 
     try {
       clearErrors();
       setLinking(true);
-      
-      const result = await oxyInstance.assetUnlink(assetId, app, entityType, entityId);
-      
+
+      const result = await instance.assetUnlink(assetId, app, entityType, entityId);
+
       if (result.file) {
         setAsset(result.file);
       } else {
         // Update store optimistically
         removeLink(assetId, app, entityType, entityId);
       }
-    } catch (error: any) {
-      setLinkError(error.message || 'Unlink failed');
+    } catch (error: unknown) {
+      setLinkError(extractErrorMessage(error, 'Unlink failed'));
       throw error;
     } finally {
       setLinking(false);
@@ -175,57 +173,41 @@ export const useAssets = () => {
 
   // Get asset URL
   const getUrl = useCallback(async (
-    assetId: string, 
-    variant?: string, 
-    expiresIn?: number
+    assetId: string,
+    variant?: string,
+    expiresIn?: number,
   ): Promise<string> => {
-    if (!oxyInstance) {
-      throw new Error('OxyServices instance not configured. Call setOxyAssetInstance first.');
-    }
-
-    try {
-      const result = await oxyInstance.assetGetUrl(assetId, variant, expiresIn);
-      return result.url;
-    } catch (error: any) {
-      throw error;
-    }
+    const instance = requireOxyInstance();
+    const result = await instance.assetGetUrl(assetId, variant, expiresIn);
+    return result.url;
   }, []);
 
   // Get asset metadata
   const getAsset = useCallback(async (assetId: string): Promise<Asset> => {
-    if (!oxyInstance) {
-      throw new Error('OxyServices instance not configured. Call setOxyAssetInstance first.');
+    const instance = requireOxyInstance();
+    const result = await instance.assetGet(assetId);
+    if (result.file) {
+      setAsset(result.file);
+      return result.file;
     }
-
-    try {
-      const result = await oxyInstance.assetGet(assetId);
-      if (result.file) {
-        setAsset(result.file);
-        return result.file;
-      }
-      throw new Error('Asset not found');
-    } catch (error: any) {
-      throw error;
-    }
+    throw new Error('Asset not found');
   }, [setAsset]);
 
   // Delete asset
   const deleteAsset = useCallback(async (
-    assetId: string, 
-    force: boolean = false
+    assetId: string,
+    force: boolean = false,
   ): Promise<void> => {
-    if (!oxyInstance) {
-      throw new Error('OxyServices instance not configured. Call setOxyAssetInstance first.');
-    }
+    const instance = requireOxyInstance();
 
     try {
       clearErrors();
       setDeleting(true);
-      
-      await oxyInstance.assetDelete(assetId, force);
+
+      await instance.assetDelete(assetId, force);
       removeAsset(assetId);
-    } catch (error: any) {
-      setDeleteError(error.message || 'Delete failed');
+    } catch (error: unknown) {
+      setDeleteError(extractErrorMessage(error, 'Delete failed'));
       throw error;
     } finally {
       setDeleting(false);
@@ -234,31 +216,17 @@ export const useAssets = () => {
 
   // Restore asset from trash
   const restore = useCallback(async (assetId: string): Promise<void> => {
-    if (!oxyInstance) {
-      throw new Error('OxyServices instance not configured. Call setOxyAssetInstance first.');
-    }
-
-    try {
-      const result = await oxyInstance.assetRestore(assetId);
-      if (result.file) {
-        setAsset(result.file);
-      }
-    } catch (error: any) {
-      throw error;
+    const instance = requireOxyInstance();
+    const result = await instance.assetRestore(assetId);
+    if (result.file) {
+      setAsset(result.file);
     }
   }, [setAsset]);
 
   // Get variants
   const getVariants = useCallback(async (assetId: string) => {
-    if (!oxyInstance) {
-      throw new Error('OxyServices instance not configured. Call setOxyAssetInstance first.');
-    }
-
-    try {
-      return await oxyInstance.assetGetVariants(assetId);
-    } catch (error: any) {
-      throw error;
-    }
+    const instance = requireOxyInstance();
+    return instance.assetGetVariants(assetId);
   }, []);
 
   return {

@@ -12,25 +12,16 @@
   },
   "exports": {
     ".": {
-      "types": "./dist/types/index.d.ts",
       "react-native": "./dist/esm/index.js",
-      "import": "./dist/esm/index.js",
-      "require": "./dist/cjs/index.js",
+      "import": {
+        "types": "./dist/types/index.d.ts",
+        "default": "./dist/esm/index.js"
+      },
+      "require": {
+        "types": "./dist/types/index.d.ts",
+        "default": "./dist/cjs/index.js"
+      },
       "default": "./dist/esm/index.js"
-    },
-    "./crypto": {
-      "types": "./dist/types/crypto/index.d.ts",
-      "react-native": "./dist/esm/crypto/index.js",
-      "import": "./dist/esm/crypto/index.js",
-      "require": "./dist/cjs/crypto/index.js",
-      "default": "./dist/esm/crypto/index.js"
-    },
-    "./shared": {
-      "types": "./dist/types/shared/index.d.ts",
-      "react-native": "./dist/esm/shared/index.js",
-      "import": "./dist/esm/shared/index.js",
-      "require": "./dist/cjs/shared/index.js",
-      "default": "./dist/esm/shared/index.js"
     },
     "./package.json": "./package.json"
   },

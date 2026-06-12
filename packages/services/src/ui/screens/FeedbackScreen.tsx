@@ -12,7 +12,7 @@ import {
     StatusBar,
 } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
-import { useThemeColors } from '../styles';
+import { useThemeColors } from '../styles/theme';
 import { normalizeTheme } from '../utils/themeUtils';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { Ionicons } from '@expo/vector-icons';
@@ -23,15 +23,11 @@ import { SettingsIcon } from '../components/SettingsIcon';
 import { useI18n } from '../hooks/useI18n';
 import { useOxy } from '../context/OxyContext';
 
-import {
-    FormInput,
-    ProgressIndicator,
-    useFeedbackForm,
-    createFeedbackStyles,
-    FEEDBACK_TYPES,
-    PRIORITY_LEVELS,
-    CATEGORIES,
-} from '../components/feedback';
+import FormInput from '../components/feedback/FormInput';
+import ProgressIndicator from '../components/feedback/ProgressIndicator';
+import { useFeedbackForm } from '../components/feedback/useFeedbackForm';
+import { createFeedbackStyles } from '../components/feedback/feedbackStyles';
+import { FEEDBACK_TYPES, PRIORITY_LEVELS, CATEGORIES } from '../components/feedback/constants';
 
 const FeedbackScreen: React.FC<BaseScreenProps> = ({
     navigate,

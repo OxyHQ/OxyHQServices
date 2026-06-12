@@ -5,7 +5,7 @@ import { useTheme } from '@oxyhq/bloom/theme';
 import { useI18n } from '../hooks/useI18n';
 import Avatar from './Avatar';
 import { useOxy } from '../context/OxyContext';
-import { useFileDownloadUrl } from '../hooks';
+import { useFileDownloadUrl } from '../hooks/useFileDownloadUrl';
 import { getAccountDisplayName, getAccountFallbackHandle } from '@oxyhq/core';
 
 interface ProfileCardProps {

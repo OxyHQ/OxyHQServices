@@ -1,7 +1,7 @@
 import type React from 'react';
 import { View, StyleSheet, ScrollView, Linking } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
-import { Header } from '../components';
+import Header from '../components/Header';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 import { SettingsIcon } from '../components/SettingsIcon';
 import { useTheme } from '@oxyhq/bloom/theme';

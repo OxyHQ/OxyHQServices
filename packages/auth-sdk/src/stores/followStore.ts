@@ -1,5 +1,24 @@
 import { create } from 'zustand';
 import type { OxyServices } from '@oxyhq/core';
+import { extractErrorMessage } from '../utils/errorHandlers';
+
+type FollowCountUpdate = Partial<Pick<FollowState, 'followerCounts' | 'followingCounts'>>;
+
+/**
+ * The typed SDK surface for `followUser` / `unfollowUser` declares only
+ * `{ success, message }`, but the API also returns a `counts` block (target
+ * follower count + current-user following count) we surface to the store.
+ * Probe for it without trusting the static return type.
+ */
+function readFollowCounts(value: unknown): { followers: number; following: number } | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const counts = (value as { counts?: unknown }).counts;
+  if (typeof counts !== 'object' || counts === null) return null;
+  const followers = (counts as { followers?: unknown }).followers;
+  const following = (counts as { following?: unknown }).following;
+  if (typeof followers !== 'number' || typeof following !== 'number') return null;
+  return { followers, following };
+}
 
 interface FollowState {
   followingUsers: Record<string, boolean>;
@@ -23,7 +42,7 @@ interface FollowState {
   fetchUserCounts: (userId: string, oxyServices: OxyServices) => Promise<void>;
 }
 
-export const useFollowStore = create<FollowState>((set: any, get: any) => ({
+export const useFollowStore = create<FollowState>((set) => ({
   followingUsers: {},
   loadingUsers: {},
   fetchingUsers: {},
@@ -59,10 +78,10 @@ export const useFollowStore = create<FollowState>((set: any, get: any) => ({
         fetchingUsers: { ...state.fetchingUsers, [userId]: false },
         errors: { ...state.errors, [userId]: null },
       }));
-    } catch (error: any) {
+    } catch (error: unknown) {
       set((state: FollowState) => ({
         fetchingUsers: { ...state.fetchingUsers, [userId]: false },
-        errors: { ...state.errors, [userId]: error?.message || 'Failed to fetch follow status' },
+        errors: { ...state.errors, [userId]: extractErrorMessage(error, 'Failed to fetch follow status') },
       }));
     }
   },
@@ -72,16 +91,11 @@ export const useFollowStore = create<FollowState>((set: any, get: any) => ({
       errors: { ...state.errors, [userId]: null },
     }));
     try {
-      let response: any;
-      let newFollowState;
-      if (isCurrentlyFollowing) {
-        response = await oxyServices.unfollowUser(userId);
-        newFollowState = false;
-      } else {
-        response = await oxyServices.followUser(userId);
-        newFollowState = true;
-      }
-      
+      const rawResponse: unknown = isCurrentlyFollowing
+        ? await oxyServices.unfollowUser(userId)
+        : await oxyServices.followUser(userId);
+      const newFollowState = !isCurrentlyFollowing;
+
       // Update follow status
       set((state: FollowState) => ({
         followingUsers: { ...state.followingUsers, [userId]: newFollowState },
@@ -93,36 +107,35 @@ export const useFollowStore = create<FollowState>((set: any, get: any) => ({
       // The API returns counts for both users:
       // - followers: target user's follower count (the user being followed)
       // - following: current user's following count (the user doing the following)
-      if (response && response.counts) {
-        const { counts } = response;
-        
+      const counts = readFollowCounts(rawResponse);
+      if (counts) {
         // Get current user ID from oxyServices
         const currentUserId = oxyServices.getCurrentUserId();
-        
+
         set((state: FollowState) => {
-          const updates: any = {};
-          
-          // Update target user's follower count (the user being followed)
-          updates.followerCounts = { 
-            ...state.followerCounts, 
-            [userId]: counts.followers 
+          const updates: FollowCountUpdate = {
+            // Update target user's follower count (the user being followed)
+            followerCounts: {
+              ...state.followerCounts,
+              [userId]: counts.followers,
+            },
           };
-          
+
           // Update current user's following count (the user doing the following)
           if (currentUserId) {
-            updates.followingCounts = { 
-              ...state.followingCounts, 
-              [currentUserId]: counts.following 
+            updates.followingCounts = {
+              ...state.followingCounts,
+              [currentUserId]: counts.following,
             };
           }
-          
+
           return updates;
         });
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       set((state: FollowState) => ({
         loadingUsers: { ...state.loadingUsers, [userId]: false },
-        errors: { ...state.errors, [userId]: error?.message || 'Failed to update follow status' },
+        errors: { ...state.errors, [userId]: extractErrorMessage(error, 'Failed to update follow status') },
       }));
     }
   },
@@ -132,24 +145,24 @@ export const useFollowStore = create<FollowState>((set: any, get: any) => ({
   setFollowingCount: (userId: string, count: number) => set((state: FollowState) => ({
     followingCounts: { ...state.followingCounts, [userId]: count },
   })),
-  updateCountsFromFollowAction: (targetUserId: string, action: 'follow' | 'unfollow', counts: { followers: number; following: number }, currentUserId?: string) => {
+  updateCountsFromFollowAction: (targetUserId: string, _action: 'follow' | 'unfollow', counts: { followers: number; following: number }, currentUserId?: string) => {
     set((state: FollowState) => {
-      const updates: any = {};
-      
-      // Update target user's follower count (the user being followed)
-      updates.followerCounts = { 
-        ...state.followerCounts, 
-        [targetUserId]: counts.followers 
+      const updates: FollowCountUpdate = {
+        // Update target user's follower count (the user being followed)
+        followerCounts: {
+          ...state.followerCounts,
+          [targetUserId]: counts.followers,
+        },
       };
-      
+
       // Update current user's following count (the user doing the following)
       if (currentUserId) {
-        updates.followingCounts = { 
-          ...state.followingCounts, 
-          [currentUserId]: counts.following 
+        updates.followingCounts = {
+          ...state.followingCounts,
+          [currentUserId]: counts.following,
         };
       }
-      
+
       return updates;
     });
   },

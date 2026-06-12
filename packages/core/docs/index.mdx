@@ -14,11 +14,11 @@ The platform-agnostic foundation of the Oxy SDK. **Zero React, zero React Native
 
 `@oxyhq/core` is the universal client and crypto layer for the Oxy platform. Every higher-level SDK (`@oxyhq/auth` for React web, `@oxyhq/services` for Expo/RN) builds on top of it. Use it directly when you need API access from a Node server, an Edge runtime, a service worker, or anywhere React is not in play.
 
-The package ships three entry points:
+The package ships a single public entry point:
 
-- `@oxyhq/core` — `OxyServices` client + mixins, models, error types, platform helpers
-- `@oxyhq/core/crypto` — `KeyManager`, `SignatureService`, `RecoveryPhraseService`
-- `@oxyhq/core/shared` — color/theme/error utilities used across the Oxy ecosystem
+- `@oxyhq/core` — `OxyServices` client + mixins, models, error types, platform helpers, `KeyManager` / `SignatureService` / `RecoveryPhraseService`, and the shared color/theme/error utilities used across the Oxy ecosystem
+
+All symbols below are reachable from the package root — there are no subpath entry points.
 
 ## Install
 
@@ -67,7 +67,7 @@ All methods return typed promises; errors throw `ApiError` subclasses you can na
 `KeyManager` owns secp256k1 keypairs used for Oxy's recovery phrase login. It enforces atomic persistence, integrity probes, and refuses to clobber a healthy identity:
 
 ```ts
-import { KeyManager } from '@oxyhq/core/crypto';
+import { KeyManager } from '@oxyhq/core';
 
 const km = new KeyManager();
 
@@ -113,8 +113,7 @@ Custom interceptors are exposed via `oxy.http`.
 ### Sign in with a recovery phrase
 
 ```ts
-import { OxyServices } from '@oxyhq/core';
-import { KeyManager, SignatureService } from '@oxyhq/core/crypto';
+import { OxyServices, KeyManager, SignatureService } from '@oxyhq/core';
 
 const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
 const km = new KeyManager();

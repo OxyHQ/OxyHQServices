@@ -4,6 +4,14 @@ type ErrorWithMessage = {
   message?: string;
 };
 
+type ErrorWithStatus = {
+  status?: unknown;
+};
+
+type ErrorWithCode = {
+  code?: unknown;
+};
+
 type ErrorWithResponse = {
   response?: {
     status?: number;
@@ -54,7 +62,7 @@ export const isInvalidSessionError = (error: unknown): boolean => {
   }
 
   // Check error.status directly (HttpService sets this)
-  if ((error as any).status === 401) {
+  if ((error as ErrorWithStatus).status === 401) {
     return true;
   }
 
@@ -83,7 +91,7 @@ export const isTimeoutOrNetworkError = (error: unknown): boolean => {
   }
 
   const message = extractErrorMessage(error, '').toLowerCase();
-  const errorCode = (error as any).code;
+  const errorCode = (error as ErrorWithCode).code;
 
   // Check for timeout/cancelled messages
   if (

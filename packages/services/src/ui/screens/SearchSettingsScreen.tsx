@@ -5,7 +5,8 @@ import {
     ScrollView,
 } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
-import { Header, LoadingState } from '../components';
+import Header from '../components/Header';
+import LoadingState from '../components/LoadingState';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 import { Switch } from '@oxyhq/bloom/switch';
 import { useI18n } from '../hooks/useI18n';

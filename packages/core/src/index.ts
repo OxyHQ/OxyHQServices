@@ -12,183 +12,366 @@
  *
  * const user = await oxyClient.signIn(publicKey);
  * ```
+ *
+ * Every export below is NOMINAL — no `export *`, no barrels, no compat shims.
+ * If a symbol does not appear here, it is NOT part of the public API.
  */
 
 // Ensure crypto polyfills are loaded before anything else
 import './crypto/polyfill';
 
-// --- Core API Client ---
+// ---------------------------------------------------------------------------
+// API client
+// ---------------------------------------------------------------------------
 export { OxyServices, OxyAuthenticationError, OxyAuthenticationTimeoutError } from './OxyServices';
 export { OXY_CLOUD_URL, oxyClient } from './OxyServices';
 
-// --- Authentication ---
+// ---------------------------------------------------------------------------
+// Authentication
+// ---------------------------------------------------------------------------
 export { AuthManager, createAuthManager } from './AuthManager';
-export type { StorageAdapter, AuthStateChangeCallback, AuthMethod, AuthManagerConfig } from './AuthManager';
+export type {
+    StorageAdapter,
+    AuthStateChangeCallback,
+    AuthMethod,
+    AuthManagerConfig,
+} from './AuthManager';
+export type {
+    AuthManagerAccount,
+    RestoreFromCookiesResult,
+    SwitchAuthuserResult,
+} from './AuthManagerTypes';
 
 export { CrossDomainAuth, createCrossDomainAuth } from './CrossDomainAuth';
 export type { CrossDomainAuthOptions } from './CrossDomainAuth';
-export type { FedCMAuthOptions, FedCMConfig } from './mixins/OxyServices.fedcm';
+export type { FedCMAuthOptions, FedCMConfig, AuthorizedApp } from './mixins/OxyServices.fedcm';
 export type { PopupAuthOptions } from './mixins/OxyServices.popup';
 export type { RedirectAuthOptions } from './mixins/OxyServices.redirect';
 export { ServiceCredentialMismatchError } from './mixins/OxyServices.auth';
 export type { ServiceTokenResponse } from './mixins/OxyServices.auth';
 export type { ServiceApp, ServiceActingAsVerification } from './mixins/OxyServices.utility';
-export type { CreateManagedAccountInput, ManagedAccountManager, ManagedAccount } from './mixins/OxyServices.managedAccounts';
-export type { ContactDiscoveryMatch, ContactDiscoveryResponse } from './mixins/OxyServices.contacts';
+export type {
+    CreateManagedAccountInput,
+    ManagedAccountManager,
+    ManagedAccount,
+} from './mixins/OxyServices.managedAccounts';
+export type {
+    ContactDiscoveryMatch,
+    ContactDiscoveryResponse,
+} from './mixins/OxyServices.contacts';
 export { OxyAppDataIdentifierError } from './mixins/OxyServices.appData';
 
-// --- Crypto / Identity ---
+// ---------------------------------------------------------------------------
+// Auth helpers (token refresh, error normalisation, retry policies)
+// ---------------------------------------------------------------------------
 export {
-  KeyManager,
-  SignatureService,
-  RecoveryPhraseService,
-  IdentityAlreadyExistsError,
-  IdentityPersistError,
-} from './crypto';
-export type { KeyPair, SignedMessage, AuthChallenge, RecoveryPhraseResult } from './crypto';
+    SessionSyncRequiredError,
+    AuthenticationFailedError,
+    ensureValidToken,
+    isAuthenticationError,
+    withAuthErrorHandling,
+    authenticatedApiCall,
+} from './utils/authHelpers';
+export type { HandleApiErrorOptions } from './utils/authHelpers';
 
-// --- Models & Types ---
-export * from './models/interfaces';
-export * from './models/session';
-export type { TopicData, TopicTranslation } from './models/Topic';
-export { TopicType, TopicSource } from './models/Topic';
+// ---------------------------------------------------------------------------
+// Sessions
+// ---------------------------------------------------------------------------
+export {
+    mergeSessions,
+    normalizeAndSortSessions,
+    sessionsArraysEqual,
+} from './utils/sessionUtils';
+export type {
+    ClientSession,
+    StorageKeys,
+    MinimalUserData,
+    SessionLoginResponse,
+} from './models/session';
 
-// --- Device Management ---
+// ---------------------------------------------------------------------------
+// Multi-account refresh-all (Google-style)
+// ---------------------------------------------------------------------------
+export type {
+    RefreshAllResponse,
+    RefreshAllAccount,
+    RefreshAllAccountUser,
+    RefreshCookieResponse,
+} from './models/interfaces';
+
+// ---------------------------------------------------------------------------
+// Crypto / identity
+// ---------------------------------------------------------------------------
+export {
+    KeyManager,
+    IdentityAlreadyExistsError,
+    IdentityPersistError,
+} from './crypto/keyManager';
+export type { KeyPair } from './crypto/keyManager';
+export { SignatureService } from './crypto/signatureService';
+export type { SignedMessage, AuthChallenge } from './crypto/signatureService';
+export { RecoveryPhraseService } from './crypto/recoveryPhrase';
+export type { RecoveryPhraseResult } from './crypto/recoveryPhrase';
+
+// ---------------------------------------------------------------------------
+// Devices
+// ---------------------------------------------------------------------------
 export { DeviceManager } from './utils/deviceManager';
 export type { DeviceFingerprint, StoredDeviceInfo } from './utils/deviceManager';
 
-// --- Language Utilities ---
+// ---------------------------------------------------------------------------
+// Domain models / wire types
+// ---------------------------------------------------------------------------
+export type {
+    OxyConfig,
+    PrivacySettings,
+    NotificationPreferences,
+    UserPreferences,
+    User,
+    LoginResponse,
+    Notification,
+    Wallet,
+    Transaction,
+    BlockedUser,
+    RestrictedUser,
+    TransferFundsRequest,
+    PurchaseRequest,
+    WithdrawalRequest,
+    TransactionResponse,
+    PaginationInfo,
+    SearchProfilesResponse,
+    KarmaRule,
+    KarmaHistory,
+    KarmaLeaderboardEntry,
+    KarmaAwardRequest,
+    ApiError,
+    PaymentMethod,
+    PaymentRequest,
+    PaymentResponse,
+    AnalyticsData,
+    FollowerDetails,
+    ContentViewer,
+    FileMetadata,
+    FileUploadResponse,
+    FileListResponse,
+    FileUpdateRequest,
+    FileDeleteResponse,
+    RNFileDescriptor,
+    AssetUploadInput,
+    FileVisibility,
+    AssetLink,
+    AssetMetadata,
+    AssetVariant,
+    Asset,
+    AssetInitRequest,
+    AssetInitResponse,
+    AssetCompleteRequest,
+    AssetLinkRequest,
+    AssetUnlinkRequest,
+    AssetUrlResponse,
+    AssetDeleteSummary,
+    AssetUpdateVisibilityRequest,
+    AssetUpdateVisibilityResponse,
+    AccountStorageCategoryUsage,
+    AccountStorageUsageResponse,
+    SecurityEventType,
+    SecurityEventSeverity,
+    SecurityActivity,
+    SecurityActivityResponse,
+    AssetUploadProgress,
+    DeviceSession,
+    DeviceSessionsResponse,
+    DeviceSessionLogoutResponse,
+    UpdateDeviceNameResponse,
+} from './models/interfaces';
+export { SECURITY_EVENT_SEVERITY_MAP } from './models/interfaces';
+
+// Topic enums + type
+export { TopicType, TopicSource } from './models/Topic';
+export type { TopicData, TopicTranslation } from './models/Topic';
+
+// ---------------------------------------------------------------------------
+// Languages
+// ---------------------------------------------------------------------------
 export {
-  SUPPORTED_LANGUAGES,
-  getLanguageMetadata,
-  getLanguageName,
-  getNativeLanguageName,
-  normalizeLanguageCode,
-  isRTLLocale,
+    SUPPORTED_LANGUAGES,
+    getLanguageMetadata,
+    getLanguageName,
+    getNativeLanguageName,
+    normalizeLanguageCode,
+    isRTLLocale,
 } from './utils/languageUtils';
 export type { LanguageMetadata } from './utils/languageUtils';
 
-// --- Platform Detection ---
+// ---------------------------------------------------------------------------
+// Platform detection
+// ---------------------------------------------------------------------------
 export {
-  getPlatformOS,
-  setPlatformOS,
-  isWeb,
-  isNative,
-  isIOS,
-  isAndroid,
+    getPlatformOS,
+    setPlatformOS,
+    isWeb,
+    isNative,
+    isIOS,
+    isAndroid,
 } from './utils/platform';
 export type { PlatformOS } from './utils/platform';
 
-// --- Shared Utilities ---
+// ---------------------------------------------------------------------------
+// Colour / theme utilities
+// ---------------------------------------------------------------------------
 export {
-  darkenColor,
-  lightenColor,
-  hexToRgb,
-  rgbToHex,
-  withOpacity,
-  isLightColor,
-  getContrastTextColor,
+    darkenColor,
+    lightenColor,
+    hexToRgb,
+    rgbToHex,
+    withOpacity,
+    isLightColor,
+    getContrastTextColor,
 } from './shared/utils/colorUtils';
 
 export {
-  normalizeTheme,
-  normalizeColorScheme,
-  getOppositeTheme,
-  systemPrefersDarkMode,
-  getSystemColorScheme,
+    normalizeTheme,
+    normalizeColorScheme,
+    getOppositeTheme,
+    systemPrefersDarkMode,
+    getSystemColorScheme,
 } from './shared/utils/themeUtils';
 export type { ThemeValue } from './shared/utils/themeUtils';
 
+// ---------------------------------------------------------------------------
+// HTTP / error / network helpers
+// ---------------------------------------------------------------------------
 export {
-  HttpStatus,
-  getErrorStatus,
-  getErrorMessage,
-  isAlreadyRegisteredError,
-  isUnauthorizedError,
-  isForbiddenError,
-  isNotFoundError,
-  isRateLimitError,
-  isServerError,
-  isNetworkError,
-  isRetryableError,
+    HttpStatus,
+    getErrorStatus,
+    getErrorMessage,
+    isAlreadyRegisteredError,
+    isUnauthorizedError,
+    isForbiddenError,
+    isNotFoundError,
+    isRateLimitError,
+    isServerError,
+    isNetworkError,
+    isRetryableError,
 } from './shared/utils/errorUtils';
 
 export {
-  DEFAULT_CIRCUIT_BREAKER_CONFIG,
-  createCircuitBreakerState,
-  calculateBackoffInterval,
-  recordFailure,
-  recordSuccess,
-  shouldAllowRequest,
-  delay,
-  withRetry,
+    DEFAULT_CIRCUIT_BREAKER_CONFIG,
+    createCircuitBreakerState,
+    calculateBackoffInterval,
+    recordFailure,
+    recordSuccess,
+    shouldAllowRequest,
+    delay,
+    withRetry,
 } from './shared/utils/networkUtils';
 export type { CircuitBreakerState, CircuitBreakerConfig } from './shared/utils/networkUtils';
 
 export {
-  isDev,
-  debugLog,
-  debugWarn,
-  debugError,
-  createDebugLogger,
+    isDev,
+    debugLog,
+    debugWarn,
+    debugError,
+    createDebugLogger,
 } from './shared/utils/debugUtils';
 
-// --- i18n ---
+// ---------------------------------------------------------------------------
+// i18n
+// ---------------------------------------------------------------------------
 export { translate } from './i18n';
 
-// --- Auth Helpers ---
+// ---------------------------------------------------------------------------
+// API request / URL helpers
+// ---------------------------------------------------------------------------
 export {
-  SessionSyncRequiredError,
-  AuthenticationFailedError,
-  ensureValidToken,
-  isAuthenticationError,
-  withAuthErrorHandling,
-  authenticatedApiCall,
-} from './utils/authHelpers';
-export type { HandleApiErrorOptions } from './utils/authHelpers';
+    buildSearchParams,
+    buildUrl,
+    buildPaginationParams,
+    safeJsonParse,
+} from './utils/apiUtils';
+export type {
+    PaginationParams,
+    ApiResponse,
+    ErrorResponse,
+} from './utils/apiUtils';
 
-// --- Session Utilities ---
-export { mergeSessions, normalizeAndSortSessions, sessionsArraysEqual } from './utils/sessionUtils';
-
-// --- Constants ---
-export { packageInfo } from './constants/version';
-
-// --- API & Error Utilities ---
-export * from './utils/apiUtils';
 export {
-  ErrorCodes,
-  createApiError,
-  handleHttpError,
-  validateRequiredFields,
+    ErrorCodes,
+    createApiError,
+    handleHttpError,
+    validateRequiredFields,
 } from './utils/errorUtils';
+
 export { retryAsync } from './utils/asyncUtils';
-export * from './utils/validationUtils';
+
+// ---------------------------------------------------------------------------
+// Validation
+// ---------------------------------------------------------------------------
 export {
-  logger,
-  LogLevel,
-  logAuth,
-  logApi,
-  logSession,
-  logUser,
-  logDevice,
-  logPayment,
-  logPerformance,
+    EMAIL_REGEX,
+    USERNAME_REGEX,
+    PASSWORD_REGEX,
+    isValidEmail,
+    isValidUsername,
+    isValidPassword,
+    isRequiredString,
+    isRequiredNumber,
+    isRequiredBoolean,
+    isValidArray,
+    isValidObject,
+    isValidUUID,
+    isValidURL,
+    isValidDate,
+    isValidFileSize,
+    isValidFileType,
+    sanitizeString,
+    sanitizeHTML,
+    isValidObjectId,
+    validateAndSanitizeUserInput,
+} from './utils/validationUtils';
+
+// ---------------------------------------------------------------------------
+// Logging
+// ---------------------------------------------------------------------------
+export {
+    logger,
+    LogLevel,
+    logAuth,
+    logApi,
+    logSession,
+    logUser,
+    logDevice,
+    logPayment,
+    logPerformance,
 } from './utils/loggerUtils';
 export type { LogContext } from './utils/loggerUtils';
 
-// --- Avatar Utilities ---
+// ---------------------------------------------------------------------------
+// Avatars
+// ---------------------------------------------------------------------------
 export { updateAvatarVisibility } from './utils/avatarUtils';
 
-// --- Account Utilities ---
+// ---------------------------------------------------------------------------
+// Accounts
+// ---------------------------------------------------------------------------
 export {
-  buildAccountsArray,
-  createQuickAccount,
-  getAccountDisplayName,
-  getAccountFallbackHandle,
-  formatPublicKeyHandle,
+    buildAccountsArray,
+    createQuickAccount,
+    getAccountDisplayName,
+    getAccountFallbackHandle,
+    formatPublicKeyHandle,
+    mergeAccountsFromRefreshAll,
+    getAccountColor,
 } from './utils/accountUtils';
 export type { QuickAccount, DisplayNameUserShape } from './utils/accountUtils';
 
-// Default export
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+export { packageInfo } from './constants/version';
+
+// ---------------------------------------------------------------------------
+// Default export (back-compat — OxyServices is the most common consumer entry)
+// ---------------------------------------------------------------------------
 import { OxyServices } from './OxyServices';
 export default OxyServices;

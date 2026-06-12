@@ -8,7 +8,9 @@ import {
 } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
 import { toast } from '@oxyhq/bloom';
-import { Header, LoadingState, EmptyState } from '../components';
+import Header from '../components/Header';
+import LoadingState from '../components/LoadingState';
+import EmptyState from '../components/EmptyState';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 import { SettingsIcon } from '../components/SettingsIcon';
 import { useI18n } from '../hooks/useI18n';

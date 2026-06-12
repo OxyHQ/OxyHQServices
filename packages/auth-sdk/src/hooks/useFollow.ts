@@ -61,7 +61,7 @@ export const useFollow = (userId?: string | string[]) => {
 
     // If either count is not set and we're not already loading counts, trigger a fetch.
     if ((followerCount === null || followingCount === null) && !isLoadingCounts) {
-      fetchUserCounts().catch((err: any) => console.warn('useFollow: fetchUserCounts failed', err));
+      fetchUserCounts().catch((err: unknown) => console.warn('useFollow: fetchUserCounts failed', err));
     }
   }, [isSingleUser, userId, followerCount, followingCount, isLoadingCounts, fetchUserCounts]);
 

@@ -1,110 +1,49 @@
 /**
- * UI Component exports - Frontend Only (with backend-safe fallbacks)
+ * @oxyhq/services/ui — public subpath
  *
- * This module exports all React/React Native UI components and hooks.
- * In backend, all exports are no-ops or empty objects.
+ * Tree-shakeable static re-exports of the most common UI surface. Backend
+ * environments (SSR) should import `@oxyhq/services/ui/server` instead;
+ * client-only callers can use `@oxyhq/services/ui/client` for a slightly
+ * narrower bundle.
  *
- * NOTE: This entry point uses runtime detection which prevents tree-shaking.
- * For better bundle optimization, use:
- * - '@oxyhq/services/ui/client' for client bundles (tree-shakeable)
- * - '@oxyhq/services/ui/server' for SSR environments (all noops)
- *
- * @example
- * // Client bundle (tree-shakeable)
- * import { OxyProvider, useOxy } from '@oxyhq/services/ui/client';
- *
- * // SSR (noops)
- * import { OxyProvider, useOxy } from '@oxyhq/services/ui/server';
+ * Static `export ... from` only — no runtime `require()`, no platform
+ * conditionals. The previous `if (isFrontend) require(...)` pattern was
+ * removed because it (a) violated the dual CJS/ESM build rule (ESM bundles
+ * cannot contain `require()` per CLAUDE.md) and (b) defeated tree-shaking.
  */
-import isFrontend from './isFrontend';
 
-// UI exports
-let OxyProvider;
-let OxySignInButton;
-let OxyLogo;
-let Avatar;
-let FollowButton;
-let OxyPayButton;
-let FontLoader;
-let setupFonts;
-let OxyIcon;
-let useOxy;
-let useAuth;
-let useFollow;
-let ProfileScreen;
-let useAuthStore;
-let useAccountStore;
-let useStorage;
+// Components
+export { default as OxyProvider } from './components/OxyProvider';
+export { default as OxySignInButton } from './components/OxySignInButton';
+export { default as OxyLogo } from './components/OxyLogo';
+export { default as Avatar } from './components/Avatar';
+export { default as FollowButton } from './components/FollowButton';
+export { default as OxyPayButton } from './components/OxyPayButton';
+export { FontLoader, setupFonts } from './components/FontLoader';
+export { default as OxyIcon } from './components/icon/OxyIcon';
+export { default as AccountMenu } from './components/AccountMenu';
+export { default as AccountMenuButton } from './components/AccountMenuButton';
 
-if (isFrontend) {
-  OxyProvider = require('./components/OxyProvider').default;
-  OxySignInButton = require('./components/OxySignInButton').default;
-  OxyLogo = require('./components/OxyLogo').default;
-  Avatar = require('./components/Avatar').default;
-  FollowButton = require('./components/FollowButton').default;
-  OxyPayButton = require('./components/OxyPayButton').default;
-  FontLoader = require('./components/FontLoader').FontLoader;
-  setupFonts = require('./components/FontLoader').setupFonts;
-  OxyIcon = require('./components/icon').OxyIcon;
-  useOxy = require('./context/OxyContext').useOxy;
-  useAuth = require('./hooks/useAuth').useAuth;
-  useFollow = require('./hooks').useFollow;
-  ProfileScreen = require('./screens/ProfileScreen').default;
-  useAuthStore = require('./stores/authStore').useAuthStore;
-  useAccountStore = require('./stores/accountStore').useAccountStore;
-  useStorage = require('./hooks/useStorage').useStorage;
-} else {
-  // Backend: no-op fallbacks
-  const noopComponent = () => null;
-  const noopHook = () => ({});
-  const noopStorageResult = { storage: null, isReady: false };
+// Context + hooks
+export { useOxy } from './context/OxyContext';
+export { useAuth } from './hooks/useAuth';
+export { useFollow } from './hooks/useFollow';
+export { useStorage } from './hooks/useStorage';
+export type { UseStorageOptions, UseStorageResult } from './hooks/useStorage';
 
-  OxyProvider = noopComponent;
-  OxySignInButton = noopComponent;
-  OxyLogo = noopComponent;
-  Avatar = noopComponent;
-  FollowButton = noopComponent;
-  OxyPayButton = noopComponent;
-  FontLoader = noopComponent;
-  setupFonts = () => {};
-  OxyIcon = noopComponent;
-  useOxy = noopHook;
-  useAuth = noopHook;
-  useFollow = noopHook;
-  ProfileScreen = noopComponent;
-  useAuthStore = noopHook;
-  useAccountStore = noopHook;
-  useStorage = () => noopStorageResult;
-}
+// Screens
+export { default as ProfileScreen } from './screens/ProfileScreen';
+export { default as ManageAccountScreen } from './screens/ManageAccountScreen';
 
+// Stores
+export { useAuthStore } from './stores/authStore';
+export { useAccountStore } from './stores/accountStore';
+
+// Error handlers (pure functions)
 export {
-  OxyProvider,
-  OxySignInButton,
-  OxyLogo,
-  Avatar,
-  FollowButton,
-  OxyPayButton,
-  FontLoader,
-  setupFonts,
-  OxyIcon,
-  useOxy,
-  useAuth,
-  useFollow,
-  ProfileScreen,
-  useAuthStore,
-  useAccountStore,
-  useStorage,
-};
-
-
-// Export error handler utilities (pure functions, no conditional needed)
-export {
-  handleAuthError,
-  isInvalidSessionError,
-  isTimeoutOrNetworkError,
-  extractErrorMessage,
+    handleAuthError,
+    isInvalidSessionError,
+    isTimeoutOrNetworkError,
+    extractErrorMessage,
 } from './utils/errorHandlers';
 export type { HandleAuthErrorOptions } from './utils/errorHandlers';
-
-// Export useStorage hook and types (kept for external consumers)
-export type { UseStorageOptions, UseStorageResult } from './hooks/useStorage';

@@ -66,23 +66,32 @@ export const queryKeys = {
 } as const;
 
 /**
+ * Minimal `QueryClient` surface used by the invalidation helpers below.
+ * Avoids a runtime import on `@tanstack/react-query` for callers that only
+ * want to pass a client through.
+ */
+type QueryClientLike = {
+  invalidateQueries: (filters: { queryKey: readonly unknown[] }) => unknown;
+};
+
+/**
  * Helper to invalidate all account-related queries
  */
-export const invalidateAccountQueries = (queryClient: any) => {
+export const invalidateAccountQueries = (queryClient: QueryClientLike) => {
   queryClient.invalidateQueries({ queryKey: queryKeys.accounts.all });
 };
 
 /**
  * Helper to invalidate all user-related queries
  */
-export const invalidateUserQueries = (queryClient: any) => {
+export const invalidateUserQueries = (queryClient: QueryClientLike) => {
   queryClient.invalidateQueries({ queryKey: queryKeys.users.all });
 };
 
 /**
  * Helper to invalidate all session-related queries
  */
-export const invalidateSessionQueries = (queryClient: any) => {
+export const invalidateSessionQueries = (queryClient: QueryClientLike) => {
   queryClient.invalidateQueries({ queryKey: queryKeys.sessions.all });
 };
 

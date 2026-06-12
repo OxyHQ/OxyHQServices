@@ -4,7 +4,7 @@ import { View, Text, Animated, TouchableOpacity, Clipboard, Linking } from 'reac
 import { Ionicons } from '@expo/vector-icons';
 import { Button } from '@oxyhq/bloom/button';
 import TextField from '../TextField';
-import { FAIRWalletIcon } from '../icon';
+import FAIRWalletIcon from '../icon/FAIRWalletIcon';
 import { createPaymentStyles } from './paymentStyles';
 import { toast } from '@oxyhq/bloom';
 import type { CardDetails, PaymentColors, PaymentStepAnimations } from './types';

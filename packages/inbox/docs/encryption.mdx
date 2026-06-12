@@ -15,7 +15,7 @@ Inbox is end-to-end encrypted. The server only ever sees ciphertext, envelope me
 | Symmetric encryption | AES-256-GCM | Web Crypto (`crypto.subtle`) |
 | Key derivation from recovery phrase | PBKDF2-HMAC-SHA256, 600 000 iterations | Web Crypto |
 | Random nonces / IDs | `crypto.getRandomValues` | Web Crypto |
-| Public-key signing | secp256k1 ECDSA via `KeyManager` | `@oxyhq/core/crypto` |
+| Public-key signing | secp256k1 ECDSA via `KeyManager` | `@oxyhq/core` |
 
 No third-party crypto libraries — we lean exclusively on Web Crypto so the browser's underlying implementation is the trust boundary.
 

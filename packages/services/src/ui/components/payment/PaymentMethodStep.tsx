@@ -4,7 +4,7 @@ import { View, Text, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 import { Button } from '@oxyhq/bloom/button';
-import { FAIRWalletIcon } from '../icon';
+import FAIRWalletIcon from '../icon/FAIRWalletIcon';
 import { createPaymentStyles } from './paymentStyles';
 import type { PaymentMethod, PaymentColors, PaymentStepAnimations } from './types';
 import { useI18n } from '../../hooks/useI18n';

@@ -1,5 +1,5 @@
 import { useTheme } from '@oxyhq/bloom/theme';
-import { getTheme } from '../styles';
+import { getTheme } from '../styles/theme';
 import type { InternalTheme } from './types';
 
 /**

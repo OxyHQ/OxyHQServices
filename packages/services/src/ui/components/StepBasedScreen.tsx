@@ -13,7 +13,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useTheme } from '@oxyhq/bloom/theme';
 import type { ThemeColors } from '@oxyhq/bloom/theme';
-import { createAuthStyles } from '../styles';
+import { createAuthStyles } from '../styles/authStyles';
 import type { BaseScreenProps, StepController } from '../types/navigation';
 import type { RouteName } from '../types/navigation';
 import { screenContentStyle } from '../constants/spacing';

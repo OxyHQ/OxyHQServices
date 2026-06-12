@@ -12,7 +12,7 @@ import {
 import type { BaseScreenProps } from '../types/navigation';
 import { useTheme } from '@oxyhq/bloom/theme';
 import Avatar from '../components/Avatar';
-import { FollowButton } from '../components';
+import FollowButton from '../components/FollowButton';
 import { Ionicons } from '@expo/vector-icons';
 import { useI18n } from '../hooks/useI18n';
 import { useOxy } from '../context/OxyContext';

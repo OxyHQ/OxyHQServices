@@ -12,7 +12,7 @@ import { useTheme } from '@oxyhq/bloom/theme';
 import { normalizeTheme } from '../utils/themeUtils';
 import { Ionicons } from '@expo/vector-icons';
 import { toast } from '@oxyhq/bloom';
-import { Header } from '../components';
+import Header from '../components/Header';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 import { useI18n } from '../hooks/useI18n';
 import { SUPPORTED_LANGUAGES } from '@oxyhq/core';

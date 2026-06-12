@@ -23,23 +23,22 @@ bun add @oxyhq/core
 
 ## Exports
 
-The package exposes three entry points:
+The package exposes a single public entry point:
 
-- `@oxyhq/core` — main entry (API client, auth, models, i18n, platform, device)
-- `@oxyhq/core/crypto` — cryptographic utilities (KeyManager, SignatureService, RecoveryPhraseService)
-- `@oxyhq/core/shared` — shared utilities (color, theme, error, network, debug)
+- `@oxyhq/core` — main entry (API client, auth, crypto, models, shared utilities, i18n, platform, device)
+
+All public symbols (including `KeyManager`, `SignatureService`, `RecoveryPhraseService`, and the shared color / theme / error / network / debug helpers) are re-exported from the package root. There are no subpath entry points.
 
 ## Usage
 
 ```ts
-import { OxyServices, oxyClient } from '@oxyhq/core';
+import { OxyServices, oxyClient, KeyManager, SignatureService } from '@oxyhq/core';
 import type { User, ApiError } from '@oxyhq/core';
 
 // Get user
 const user = await oxyClient.getUserById('123');
 
 // Crypto
-import { KeyManager, SignatureService } from '@oxyhq/core/crypto';
 const keyManager = new KeyManager();
 ```
 

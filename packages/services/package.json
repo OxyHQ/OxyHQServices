@@ -13,17 +13,27 @@
   },
   "exports": {
     ".": {
-      "types": "./lib/typescript/module/index.d.ts",
       "react-native": "./src/index.ts",
-      "import": "./lib/module/index.js",
-      "require": "./lib/commonjs/index.js",
+      "import": {
+        "types": "./lib/typescript/module/index.d.ts",
+        "default": "./lib/module/index.js"
+      },
+      "require": {
+        "types": "./lib/typescript/commonjs/index.d.ts",
+        "default": "./lib/commonjs/index.js"
+      },
       "default": "./lib/module/index.js"
     },
     "./ui": {
-      "types": "./lib/typescript/module/ui/index.d.ts",
       "react-native": "./src/ui/index.ts",
-      "import": "./lib/module/ui/index.js",
-      "require": "./lib/commonjs/ui/index.js",
+      "import": {
+        "types": "./lib/typescript/module/ui/index.d.ts",
+        "default": "./lib/module/ui/index.js"
+      },
+      "require": {
+        "types": "./lib/typescript/commonjs/ui/index.d.ts",
+        "default": "./lib/commonjs/ui/index.js"
+      },
       "default": "./lib/module/ui/index.js"
     },
     "./package.json": "./package.json",
@@ -97,9 +107,7 @@
   },
   "dependencies": {
     "@lottiefiles/dotlottie-react": "^0.13.5",
-    "@oxyhq/core": "*",
     "@react-native-async-storage/async-storage": "2.2.0",
-    "@react-native-community/netinfo": "^11.4.1",
     "@tanstack/query-async-storage-persister": "^5.90",
     "@tanstack/query-sync-storage-persister": "^5.90",
     "@tanstack/react-query": "^5.100",
@@ -151,6 +159,8 @@
   "peerDependencies": {
     "@expo/vector-icons": "^15.0.3",
     "@oxyhq/bloom": ">=0.5.0",
+    "@oxyhq/core": "*",
+    "@react-native-community/netinfo": "^11.4.1",
     "@react-navigation/native": "^7.1.8",
     "@types/react": "*",
     "@types/react-native": "*",

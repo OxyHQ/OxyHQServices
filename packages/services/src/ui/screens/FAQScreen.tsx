@@ -12,7 +12,9 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import type { BaseScreenProps } from '../types/navigation';
 import { toast } from '@oxyhq/bloom';
-import { Header, LoadingState, EmptyState } from '../components';
+import Header from '../components/Header';
+import LoadingState from '../components/LoadingState';
+import EmptyState from '../components/EmptyState';
 import { useI18n } from '../hooks/useI18n';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { useOxy } from '../context/OxyContext';
