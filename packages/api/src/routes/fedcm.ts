@@ -1,9 +1,19 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
-import { exchangeIdToken, getApprovedClients, getUserGrants, addApprovedClient, removeApprovedClient, mintNonce } from '../controllers/fedcm.controller';
+import {
+  exchangeIdToken,
+  getApprovedClients,
+  getUserGrants,
+  addApprovedClient,
+  removeApprovedClient,
+  mintNonce,
+  listMyAuthorizedApps,
+  revokeMyAuthorizedApp,
+} from '../controllers/fedcm.controller';
 import type { Request, Response, NextFunction } from 'express';
 import type { TokenDecoded } from '../middleware/authUtils';
 import { rateLimit } from '../middleware/rateLimiter';
+import { authMiddleware } from '../middleware/auth';
 
 const router = express.Router();
 
@@ -245,5 +255,68 @@ router.post('/clients/approved', serviceTokenOnly, addApprovedClient);
  *         description: Origin not on the list.
  */
 router.delete('/clients/approved/:origin', serviceTokenOnly, removeApprovedClient);
+
+/**
+ * @openapi
+ * /fedcm/me/authorized-apps:
+ *   get:
+ *     tags:
+ *       - Federation
+ *     security:
+ *       - bearerAuth: []
+ *     summary: List the authenticated user's authorized RP apps
+ *     description: >
+ *       Returns the intersection of the user's FedCM grants with the currently
+ *       approved RP client catalog. Powers the "Connected apps" management UI.
+ *     responses:
+ *       200:
+ *         description: Authorized apps (possibly empty).
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 apps:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       origin: { type: string }
+ *                       name: { type: string }
+ *                       description: { type: string }
+ *                       firstGrantedAt: { type: string, format: date-time }
+ *                       lastUsedAt: { type: string, format: date-time }
+ *       401:
+ *         description: Authentication required.
+ */
+router.get('/me/authorized-apps', authMiddleware, listMyAuthorizedApps);
+
+/**
+ * @openapi
+ * /fedcm/me/authorized-apps/{origin}:
+ *   delete:
+ *     tags:
+ *       - Federation
+ *     security:
+ *       - bearerAuth: []
+ *     summary: Revoke the authenticated user's authorization for an RP origin
+ *     parameters:
+ *       - name: origin
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: URL-encoded RP origin to revoke.
+ *     responses:
+ *       200:
+ *         description: Authorization revoked.
+ *       400:
+ *         description: Origin missing or malformed.
+ *       401:
+ *         description: Authentication required.
+ *       404:
+ *         description: No grant exists for this user+origin.
+ */
+router.delete('/me/authorized-apps/:origin', authMiddleware, revokeMyAuthorizedApp);
 
 export default router;

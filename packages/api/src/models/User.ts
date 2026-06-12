@@ -139,6 +139,21 @@ export interface IUser extends Document {
   };
   autoForwardTo?: string; // If set, forward ALL incoming email to this address
   autoForwardKeepCopy?: boolean; // If true, keep the message in inbox too (default true)
+  // User-controlled notification channels. All channels default to on; users
+  // opt out per-channel.
+  notificationPreferences?: {
+    pushEnabled?: boolean;
+    emailDigest?: boolean;
+    securityAlerts?: boolean;
+    marketingEmails?: boolean;
+  };
+  // General app-wide user preferences. Persisted across all Oxy apps.
+  userPreferences?: {
+    language?: string;
+    theme?: 'light' | 'dark' | 'system';
+    reduceMotion?: boolean;
+    timezone?: string;
+  };
   _id: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
@@ -433,6 +448,29 @@ const UserSchema: Schema = new Schema(
     },
     automation: {
       ownerId: { type: String, index: { sparse: true } },
+    },
+    // User-controlled notification preferences (per-channel opt-in/out).
+    // Updated via `PUT /users/me` (see updateProfile). All channels default
+    // to on; users explicitly opt out per channel.
+    notificationPreferences: {
+      pushEnabled: { type: Boolean, default: true },
+      emailDigest: { type: Boolean, default: true },
+      securityAlerts: { type: Boolean, default: true },
+      marketingEmails: { type: Boolean, default: false },
+    },
+    // General user preferences — applied across all Oxy apps for the user.
+    // Persisted via `PUT /users/me`. `language` mirrors the i18n preference
+    // already managed by setLanguagePreference; storing it here lets first-
+    // load apps render in the user's language without an extra round-trip.
+    userPreferences: {
+      language: { type: String, default: '' },
+      theme: {
+        type: String,
+        enum: ['light', 'dark', 'system'],
+        default: 'system',
+      },
+      reduceMotion: { type: Boolean, default: false },
+      timezone: { type: String, default: '' },
     },
   },
   {

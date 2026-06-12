@@ -76,6 +76,8 @@ export class UserService {
       'locations',
       'language',
       'accountExpiresAfterInactivityDays',
+      'notificationPreferences',
+      'userPreferences',
     ] as const;
 
     // Sanitize text fields to prevent XSS

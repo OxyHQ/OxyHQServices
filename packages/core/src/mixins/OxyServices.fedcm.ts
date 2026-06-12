@@ -880,7 +880,70 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
       // Storage blocked
     }
   }
+
+  /**
+   * List the authenticated user's authorized RP apps.
+   *
+   * Returns the intersection of the user's FedCM grants and the currently-
+   * approved RP catalog — what powers the "Connected apps" management UI in
+   * @oxyhq/services. Requires a real user session; service tokens are
+   * rejected by the underlying endpoint.
+   */
+  async listAuthorizedApps(): Promise<AuthorizedApp[]> {
+    try {
+      const response = await this.makeRequest<{ apps: AuthorizedApp[] }>(
+        'GET',
+        '/fedcm/me/authorized-apps',
+        undefined,
+        {
+          cache: true,
+          cacheTTL: 30 * 1000, // 30 second cache — short, this drives a manageable UI
+        }
+      );
+      return response.apps ?? [];
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Revoke the authenticated user's authorization for a specific RP origin.
+   *
+   * The next FedCM sign-in from that origin will require explicit re-consent.
+   * The corresponding cache entry is invalidated so a subsequent
+   * `listAuthorizedApps()` call sees fresh data.
+   */
+  async revokeAuthorizedApp(origin: string): Promise<void> {
+    try {
+      await this.makeRequest(
+        'DELETE',
+        `/fedcm/me/authorized-apps/${encodeURIComponent(origin)}`,
+        undefined,
+        { cache: false }
+      );
+      this.clearCacheEntry('GET:/fedcm/me/authorized-apps');
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
   };
+}
+
+/**
+ * Public summary of an RP application the user has authorized — mirrors the
+ * `AuthorizedAppSummary` shape returned by `GET /fedcm/me/authorized-apps`.
+ */
+export interface AuthorizedApp {
+  /** Normalised RP origin. */
+  origin: string;
+  /** Friendly display name. */
+  name: string;
+  /** Optional human-readable description. */
+  description?: string;
+  /** ISO-8601 timestamp of when the user first authorized this RP. */
+  firstGrantedAt: string;
+  /** ISO-8601 timestamp of the most recent FedCM exchange for this user+RP. */
+  lastUsedAt: string;
 }
 
 // Export the mixin function as both named and default

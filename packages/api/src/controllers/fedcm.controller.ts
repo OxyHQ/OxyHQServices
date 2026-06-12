@@ -208,3 +208,67 @@ export async function removeApprovedClient(req: Request, res: Response) {
     res.status(500).json({ message: 'Internal server error' });
   }
 }
+
+/**
+ * List the authenticated user's authorized RP apps in full detail.
+ *
+ * Powers the "Connected apps" management UI in @oxyhq/services. Returns the
+ * intersection of the user's FedCM grants with the currently-approved client
+ * catalog, so a de-approved origin can never leak back. Requires a real user
+ * session — not exposed to anonymous callers.
+ */
+export async function listMyAuthorizedApps(req: AuthRequest, res: Response) {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ message: 'Authentication required' });
+    }
+    const apps = await fedcmService.getUserAuthorizedApps(userId);
+    return res.json({ apps });
+  } catch (error) {
+    logger.error('List authorized apps error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+}
+
+/**
+ * Revoke the authenticated user's authorization for a specific RP origin.
+ *
+ * Removes the underlying `FedCMGrant` so the origin no longer appears in
+ * `approved_clients` — the next FedCM sign-in from that origin will require
+ * explicit re-consent. 404 if no grant existed (idempotent from the client's
+ * perspective).
+ */
+export async function revokeMyAuthorizedApp(req: AuthRequest, res: Response) {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ message: 'Authentication required' });
+    }
+    const { origin } = req.params;
+    if (typeof origin !== 'string' || origin.length === 0) {
+      return res.status(400).json({ message: 'Origin is required' });
+    }
+    let decoded: string;
+    try {
+      decoded = decodeURIComponent(origin);
+    } catch {
+      return res.status(400).json({ message: 'Invalid origin encoding' });
+    }
+    try {
+      const removed = await fedcmService.revokeUserGrant(userId, decoded);
+      if (!removed) {
+        return res.status(404).json({ message: 'No authorization found for this app' });
+      }
+      return res.json({ success: true, message: 'Authorization revoked' });
+    } catch (innerError) {
+      if (innerError instanceof TypeError) {
+        return res.status(400).json({ message: 'Invalid origin URL' });
+      }
+      throw innerError;
+    }
+  } catch (error) {
+    logger.error('Revoke authorized app error:', error);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+}

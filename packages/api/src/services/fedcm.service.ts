@@ -47,6 +47,24 @@ function getFedCMTokenSecret(): string {
   return secret;
 }
 
+/**
+ * Public-facing summary of a user's authorized RP application — what the
+ * "Connected apps" management UI in @oxyhq/services consumes. Built by
+ * `getUserAuthorizedApps` from FedCMGrant rows joined with FedCMClient.
+ */
+export interface AuthorizedAppSummary {
+  /** Normalised RP origin (== FedCM client_id == token aud). */
+  origin: string;
+  /** Friendly display name from the approved-clients catalog. */
+  name: string;
+  /** Optional description from the approved-clients catalog. */
+  description?: string;
+  /** ISO-8601 timestamp of when the user first authorized this RP. */
+  firstGrantedAt: string;
+  /** ISO-8601 timestamp of the most recent FedCM exchange for this user+RP. */
+  lastUsedAt: string;
+}
+
 interface FedCMTokenPayload {
   iss: string;
   sub: string;
@@ -321,6 +339,73 @@ class FedCMService {
     } catch (error) {
       logger.error('Error fetching FedCM grants:', error);
       return [];
+    }
+  }
+
+  /**
+   * List a user's authorized apps in full detail — origin, friendly name,
+   * description, first-granted/last-used timestamps. Intersected with the
+   * currently-approved FedCM clients so a de-approved origin never leaks back.
+   *
+   * Powers the "Connected apps" management UI in @oxyhq/services.
+   */
+  async getUserAuthorizedApps(userId: string): Promise<AuthorizedAppSummary[]> {
+    try {
+      const [grants, approvedClients] = await Promise.all([
+        FedCMGrant.find({ userId })
+          .select('clientOrigin firstGrantedAt lastUsedAt')
+          .sort({ lastUsedAt: -1 })
+          .lean(),
+        FedCMClient.find({ approved: true })
+          .select('origin name description')
+          .lean(),
+      ]);
+
+      const approvedMap = new Map<string, { name: string; description?: string }>();
+      for (const client of approvedClients) {
+        let key = client.origin;
+        try {
+          key = normaliseOrigin(client.origin);
+        } catch {
+          // Keep raw origin if normalisation fails (defensive — should not happen)
+        }
+        approvedMap.set(key, { name: client.name, description: client.description });
+      }
+
+      const apps: AuthorizedAppSummary[] = [];
+      for (const grant of grants) {
+        const meta = approvedMap.get(grant.clientOrigin);
+        if (!meta) continue;
+        apps.push({
+          origin: grant.clientOrigin,
+          name: meta.name,
+          description: meta.description,
+          firstGrantedAt: grant.firstGrantedAt.toISOString(),
+          lastUsedAt: grant.lastUsedAt.toISOString(),
+        });
+      }
+      return apps;
+    } catch (error) {
+      logger.error('Error fetching authorized apps for user:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Revoke a user's authorization for a specific RP origin. Removes the
+   * `FedCMGrant` row so the origin no longer appears in `approved_clients` —
+   * the next FedCM sign-in from that origin will require explicit re-consent.
+   *
+   * @returns `true` if a grant was removed, `false` if no matching grant existed
+   */
+  async revokeUserGrant(userId: string, clientOrigin: string): Promise<boolean> {
+    try {
+      const normalised = normaliseOrigin(clientOrigin);
+      const result = await FedCMGrant.deleteOne({ userId, clientOrigin: normalised });
+      return result.deletedCount > 0;
+    } catch (error) {
+      logger.error('Error revoking FedCM grant:', error);
+      throw error;
     }
   }
 

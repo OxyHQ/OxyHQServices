@@ -44,6 +44,8 @@ export type ProfileUpdateInput = Partial<
     | 'locations'
     | 'language'
     | 'accountExpiresAfterInactivityDays'
+    | 'notificationPreferences'
+    | 'userPreferences'
   >
 >;
 
