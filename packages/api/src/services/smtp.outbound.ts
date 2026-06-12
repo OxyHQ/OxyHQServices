@@ -1,4 +1,5 @@
 import nodemailer, { Transporter } from 'nodemailer';
+import type SMTPTransport from 'nodemailer/lib/smtp-transport';
 import {
   SMTP_OUTBOUND_CONFIG,
   DKIM_CONFIG,
@@ -49,39 +50,48 @@ const REDIS_QUEUE_KEY = 'smtp:retry:queue';
 const REDIS_SCHEDULE_KEY = 'smtp:retry:schedule';
 
 class SmtpOutboundService {
-  private transporter: Transporter;
+  private _transporter: Transporter | null = null;
   private localQueue: Map<string, QueuedMessage> = new Map();
   private retryTimer: ReturnType<typeof setInterval> | null = null;
 
-  constructor() {
-    this.transporter = this.createTransporter();
+  private get transporter(): Transporter {
+    if (!this._transporter) {
+      this._transporter = this.createTransporter();
+    }
+    return this._transporter;
   }
 
   private createTransporter(): Transporter {
-    const transportConfig: Record<string, unknown> = SMTP_OUTBOUND_CONFIG.relayHost
-      ? {
-          host: SMTP_OUTBOUND_CONFIG.relayHost,
-          port: SMTP_OUTBOUND_CONFIG.relayPort,
-          secure: SMTP_OUTBOUND_CONFIG.relayPort === 465,
-          auth:
-            SMTP_OUTBOUND_CONFIG.relayUser && SMTP_OUTBOUND_CONFIG.relayPass
-              ? {
-                  user: SMTP_OUTBOUND_CONFIG.relayUser,
-                  pass: SMTP_OUTBOUND_CONFIG.relayPass,
-                }
-              : undefined,
-        }
-      : { direct: true };
+    if (!SMTP_OUTBOUND_CONFIG.relayHost) {
+      throw new Error(
+        'SMTP_RELAY_HOST is required for outbound email. nodemailer v8 removed the legacy ' +
+          '`{ direct: true }` MX-resolution path; configure a relay (e.g. AWS SES, SMTP server) ' +
+          'via SMTP_RELAY_HOST/SMTP_RELAY_PORT/SMTP_RELAY_USER/SMTP_RELAY_PASS.'
+      );
+    }
+
+    const transportConfig: SMTPTransport.Options = {
+      host: SMTP_OUTBOUND_CONFIG.relayHost,
+      port: SMTP_OUTBOUND_CONFIG.relayPort,
+      secure: SMTP_OUTBOUND_CONFIG.relayPort === 465,
+      auth:
+        SMTP_OUTBOUND_CONFIG.relayUser && SMTP_OUTBOUND_CONFIG.relayPass
+          ? {
+              user: SMTP_OUTBOUND_CONFIG.relayUser,
+              pass: SMTP_OUTBOUND_CONFIG.relayPass,
+            }
+          : undefined,
+    };
 
     if (DKIM_CONFIG.privateKey) {
-      (transportConfig as any).dkim = {
+      transportConfig.dkim = {
         domainName: DKIM_CONFIG.domainName,
         keySelector: DKIM_CONFIG.keySelector,
         privateKey: DKIM_CONFIG.privateKey,
       };
     }
 
-    return nodemailer.createTransport(transportConfig as any);
+    return nodemailer.createTransport(transportConfig);
   }
 
   async send(message: OutboundMessage): Promise<{ messageId: string; queued: boolean }> {
@@ -424,7 +434,10 @@ class SmtpOutboundService {
       clearInterval(this.retryTimer);
       this.retryTimer = null;
     }
-    this.transporter.close();
+    if (this._transporter) {
+      this._transporter.close();
+      this._transporter = null;
+    }
   }
 }
 

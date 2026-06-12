@@ -4,12 +4,59 @@
 
 The backend (`oxy-api`) runs on **AWS ECS Fargate** (region `eu-west-1`, cluster `oxy-cluster`), behind an ALB with ACM HTTPS.
 
-- **Port**: `8080` | **Domain**: `api.oxy.so` (also serves `api.website.oxy.so` / `website-api.oxy.so` for the oxy.so/fairco.in website API; email via SES + Cloudflare Email Routing webhook)
+- **Port**: `8080` | **Domain**: `api.oxy.so` (also serves `api.website.oxy.so` / `website-api.oxy.so` for the oxy.so/fairco.in website API; outbound email via SES, inbound via Cloudflare Email Routing → Worker `email-inbound` → `POST /email/inbound`)
 - **Deploy**: `git push origin main` → `.github/workflows/deploy-aws.yml` builds a `linux/arm64` Docker image → pushes to ECR (`237343248947.dkr.ecr.eu-west-1.amazonaws.com/oxy/oxy-api`) → `aws ecs update-service --force-new-deployment`
 - **Auth**: GitHub OIDC → role `oxy-github-deploy`. No AWS keys stored in GitHub.
 - **Secrets**: GitHub Actions secrets are the source of truth. The deploy workflow syncs them to AWS SSM (`/oxy/oxy-api/*`; shared secrets to `/oxy/_shared/*`); ECS injects them into the container. To change a secret: edit it in GitHub — the next deploy applies it.
 - **Dockerfile**: must build for `linux/arm64` (Graviton).
 - **WARNING**: Never put secret values in this file.
+
+## Inbound Email Path (Cloudflare → Worker → API)
+
+Inbound mail for `*@oxy.so` is delivered as follows:
+
+1. **MX** records for `oxy.so` point at Cloudflare Email Routing (`route1/2/3.mx.cloudflare.net`).
+2. Cloudflare Email Routing has a **catch-all rule → Worker `email-inbound`** (source: `workers/email-inbound/`, zone `oxy.so` = `7f70358609578c4a1f24dbf6cb9c4498`).
+3. The Worker POSTs the raw RFC 5322 message to `${API_URL}/email/inbound` with `Authorization: Bearer ${EMAIL_INBOUND_WEBHOOK_SECRET}` and `X-Envelope-From` / `X-Envelope-To` headers.
+4. The API route `packages/api/src/routes/emailInbound.ts` (mounted at `/email/inbound` BEFORE `/email`, with a raw body parser registered in `server.ts:95`) parses MIME, validates recipients, spam-checks, and stores into MongoDB via `emailService.storeIncomingMessage`.
+5. Inbox UI at `inbox.oxy.so` reads `GET /email/mailboxes` + `GET /email/messages`.
+
+**Critical config invariants** — if any drifts, inbound mail silently disappears:
+- Worker var `API_URL` MUST equal `https://api.oxy.so` (NOT `mail.oxy.so` — that hostname still resolves to the retired DigitalOcean droplet `159.223.227.58` and returns 502).
+- Worker secret `EMAIL_INBOUND_WEBHOOK_SECRET` MUST equal SSM `/oxy/oxy-api/EMAIL_INBOUND_WEBHOOK_SECRET` (mismatch → API returns 401 → Cloudflare bounces).
+- The raw body parser at `server.ts:95` MUST be registered BEFORE the global `express.json()` middleware (otherwise the JSON parser eats the RFC822 stream and `simpleParser` gets an empty Buffer).
+- `app.use('/email/inbound', emailInboundRoutes)` MUST be registered BEFORE `app.use('/email', ...)` in `server.ts` (otherwise the protected `/email` mount catches the unauthenticated webhook first).
+
+**Worker deploy (when bindings drift):**
+```bash
+cd workers/email-inbound
+export CLOUDFLARE_API_TOKEN=$(cat ~/.config/oxy/cloudflare.token)
+export CLOUDFLARE_ACCOUNT_ID=$(aws --profile oxy --region eu-west-1 ssm get-parameter --name /oxy/oxy-api/CLOUDFLARE_ACCOUNT_ID --with-decryption --query 'Parameter.Value' --output text)
+./node_modules/.bin/wrangler deploy
+aws --profile oxy --region eu-west-1 ssm get-parameter --name /oxy/oxy-api/EMAIL_INBOUND_WEBHOOK_SECRET --with-decryption --query 'Parameter.Value' --output text \
+  | ./node_modules/.bin/wrangler secret put EMAIL_INBOUND_WEBHOOK_SECRET
+```
+
+**Verify health:**
+```bash
+# 1. Confirm Worker bindings
+curl -s -H "Authorization: Bearer $(cat ~/.config/oxy/cloudflare.token)" \
+  "https://api.cloudflare.com/client/v4/accounts/<ACCOUNT_ID>/workers/scripts/email-inbound/settings" \
+  | jq '.result.bindings'   # API_URL must be https://api.oxy.so
+
+# 2. Confirm endpoint mounted (expect 401 = good, 404 = route gone, 500 = secret missing)
+curl -s -o /dev/null -w "%{http_code}\n" -X POST https://api.oxy.so/email/inbound
+
+# 3. CloudWatch (log group is /oxy/ecs, NOT /ecs/oxy-api)
+aws --profile oxy --region eu-west-1 logs tail /oxy/ecs --log-stream-name-prefix oxy-api --since 1h \
+  | grep -iE 'inbound|envelope|delivered'
+```
+
+**Migration cleanup (2026-06-12):** ✅ DigitalOcean fully removed from the inbox path.
+- SPF for `oxy.so` now reads `v=spf1 include:amazonses.com include:_spf.mx.cloudflare.net ~all`.
+- DNS A record `mail.oxy.so` (→ `159.223.227.58`) deleted.
+- Worker `email-inbound` redeployed with `API_URL=https://api.oxy.so` (ECS).
+- Outbound: SES via `SMTP_RELAY_HOST` only. nodemailer v8 removed the legacy `{ direct: true }` MX path — `smtp.outbound.ts` now fails fast if `SMTP_RELAY_HOST` is unset.
 
 ## Custom Agents
 
