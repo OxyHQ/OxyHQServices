@@ -1,6 +1,6 @@
 # Redis & Valkey
 
-The Oxy API uses DigitalOcean Managed Valkey (`db-valkey-ams3-04785`) for distributed rate limiting and Socket.IO cross-instance broadcasting. Valkey is a Redis-compatible in-memory data store.
+The Oxy API uses **AWS ElastiCache (Valkey)** — cluster `oxy-valkey` in `eu-west-1` — for distributed rate limiting and Socket.IO cross-instance broadcasting. Valkey is a Redis-compatible in-memory data store, so the client and protocol are unchanged.
 
 ## What It's Used For
 
@@ -13,40 +13,42 @@ The Oxy API uses DigitalOcean Managed Valkey (`db-valkey-ams3-04785`) for distri
 ## Architecture
 
 ```
-┌─────────────┐     ┌─────────────┐
-│ API Instance│     │ API Instance│
-│    (pod 1)  │     │    (pod 2)  │
-└──────┬──────┘     └──────┬──────┘
-       │                   │
-       └─────────┬─────────┘
-                 │
-          ┌──────┴──────┐
-          │  db-valkey   │
-          │ (Managed)    │
-          │ Port 25061   │
-          │ TLS enabled  │
-          └─────────────┘
++-------------+     +-------------+
+| ECS task A  |     | ECS task B  |
++------+------+     +------+------+
+       \                  /
+        \                /
+         v              v
+       +----------------+
+       |   oxy-valkey   |
+       |  (ElastiCache, |
+       |   in-VPC, TLS) |
+       +----------------+
 ```
+
+The Valkey cluster lives inside the same VPC as the ECS tasks. Its security group only accepts traffic from the ECS task ENIs.
 
 ## Configuration
 
-Set `REDIS_URL` in environment. If not set, everything falls back to in-memory (no breakage).
+Set `REDIS_URL` in the environment. If unset, everything falls back to in-memory with no breakage.
 
 ```bash
-# Production (private VPC URI)
-REDIS_URL=rediss://default:AVNS_xxx@private-db-valkey-ams3-04785-do-user-23621266-0.i.db.ondigitalocean.com:25061
+# Production (ElastiCache, in-VPC, TLS)
+REDIS_URL=rediss://oxy-valkey.xxxxx.use1.cache.amazonaws.com:6379
 
-# Local development (optional, not needed)
+# Local development (optional)
 # REDIS_URL=redis://localhost:6379
 ```
 
-- `rediss://` = TLS enabled (required for DigitalOcean Managed Databases)
-- `redis://` = plaintext (local development only)
-- Omit entirely = in-memory fallback
+- `rediss://` = TLS (recommended for ElastiCache in transit)
+- `redis://` = plaintext (local only)
+- Omit = in-memory fallback
+
+In production the value is stored in SSM (`/oxy/_shared/REDIS_URL`) and injected into ECS tasks via the task definition `secrets` mapping.
 
 ## Implementation
 
-### Redis Client (`packages/api/src/config/redis.ts`)
+### Redis client (`packages/api/src/config/redis.ts`)
 
 ```typescript
 import Redis from 'ioredis';
@@ -61,9 +63,7 @@ export async function closeRedis(): Promise<void> {
 }
 ```
 
-### Rate Limiting (`packages/api/src/middleware/security.ts`)
-
-Uses `rate-limit-redis` to back `express-rate-limit` with Redis:
+### Rate limiting (`packages/api/src/middleware/security.ts`)
 
 ```typescript
 import { RedisStore } from 'rate-limit-redis';
@@ -87,9 +87,7 @@ const rateLimiter = rateLimit({
 });
 ```
 
-### Socket.IO Adapter (`packages/api/src/server.ts`)
-
-Uses `@socket.io/redis-adapter` for cross-instance event broadcasting:
+### Socket.IO adapter (`packages/api/src/server.ts`)
 
 ```typescript
 import { createAdapter } from '@socket.io/redis-adapter';
@@ -103,19 +101,19 @@ if (redis) {
 }
 ```
 
-This enables Socket.IO rooms and events to work across multiple API instances.
+This makes Socket.IO rooms and events fan out across all ECS tasks.
 
 ## Dependencies
 
 | Package | Version | Purpose |
 |---------|---------|---------|
-| `ioredis` | ^5.9 | Redis/Valkey client (Valkey is Redis-compatible) |
+| `ioredis` | ^5.9 | Valkey client (Redis-compatible) |
 | `rate-limit-redis` | ^4.3 | Redis store for express-rate-limit |
 | `@socket.io/redis-adapter` | ^8.3 | Socket.IO multi-instance adapter |
 
-## Graceful Shutdown
+## Graceful shutdown
 
-Redis connection is closed during `SIGINT`:
+Redis is closed during `SIGINT` / `SIGTERM` (ECS sends `SIGTERM` before killing the container):
 
 ```typescript
 process.on('SIGINT', async () => {
@@ -125,7 +123,7 @@ process.on('SIGINT', async () => {
 });
 ```
 
-## Health Check
+## Health check
 
 ```bash
 curl https://api.oxy.so/health
@@ -135,28 +133,29 @@ curl https://api.oxy.so/health
 {
   "status": "operational",
   "database": "connected",
-  "redis": "connected"      // or "disconnected" or "not configured"
+  "redis": "connected"
 }
 ```
 
-## Caching Strategy
+Redis status values: `"connected"`, `"disconnected"`, `"not configured"`.
 
-The API has several in-memory caches that remain in-memory (not moved to Redis):
+## Caching strategy
 
-| Cache | Max Entries | TTL | Purpose |
-|-------|-----------|-----|---------|
+The API keeps several caches in-process. They are intentionally **not** moved to Valkey:
+
+| Cache | Max entries | TTL | Purpose |
+|-------|------------|-----|---------|
 | sessionCache | 5,000 | 5 min | Session validation results |
 | userCache | 10,000 | 5 min | User profile lookups |
 | blockCache | 100,000 | 1 min | User block relationships |
 | fileCache | 50,000 | 5 min | File metadata |
 | locationCache | 1,000 | 24 hr | Location search results |
 
-These work well as fast L1 caches. Redis serves as the distributed backbone for rate limiting and Socket.IO only. If horizontal scaling requires it, these caches can be migrated to Redis as L2 in the future.
+These work well as fast L1 caches per task. Valkey is the distributed backbone for rate limiting and Socket.IO only. If horizontal scaling demands it, individual caches can be migrated to Valkey as L2 in the future.
 
-## Firewall
+## Networking
 
-`db-valkey-ams3-04785` is locked down to:
-- Droplet `oxy-api-backend` (549107286)
-- All 5 App Platform apps (oxy-api, mention, homiio, alia, allo)
-
-No public access.
+`oxy-valkey`:
+- Lives in the same VPC as the ECS tasks.
+- Security group accepts `:6379` only from the ECS task security group (SG-to-SG rule).
+- No public access; no IP allow-list maintenance.

@@ -2,142 +2,155 @@
 
 ## Overview
 
-The Oxy API runs in two environments:
+The Oxy API runs on **AWS ECS Fargate** in `eu-west-1`. Static frontends ship to **Cloudflare Pages**.
 
-| Environment | Platform | URL | How |
-|-------------|----------|-----|-----|
-| **API (production)** | Droplet (Docker) | `api.oxy.so` | Push to `main` -> GitHub Actions SSH deploy |
-| **Auth/Accounts** | App Platform | `auth.oxy.so` / `accounts.oxy.so` | Push to `main` -> auto-deploy |
-| **Other apps** | App Platform | Various | Push to `main` -> auto-deploy |
+| Environment | Platform | URL | Trigger |
+|-------------|----------|-----|---------|
+| **API (production)** | ECS Fargate (eu-west-1) | `api.oxy.so` | Push to `main` -> `deploy-aws.yml` |
+| **Static frontends** | Cloudflare Pages | `auth.oxy.so`, `accounts.oxy.so`, `inbox.oxy.so`, `console.oxy.so` | Push to `main` -> `deploy-cloudflare.yml` |
+| **Other backends** | ECS Fargate (eu-west-1) | `api.mention.earth`, `api.homiio.com`, `api.alia.onl`, `api.syra.oxy.so`, `api.allo.oxy.so` | Per-repo `deploy-aws.yml` |
 
-## Droplet Deployment (api.oxy.so)
+## AWS deployment (`api.oxy.so`)
 
 ### Stack
 
 ```
-Caddy (reverse proxy, auto HTTPS)
-  └── Express API (Node 20, port 8080)
-        ├── SMTP inbound (port 25)
-        ├── SMTP submission (port 587)
-        └── Rspamd (spam filtering)
+Cloudflare DNS (DNS-only, grey cloud)
+   |
+   v
+ALB (oxy-alb-127633307.eu-west-1.elb.amazonaws.com)
+   |  ACM multi-SAN cert, host-based target groups
+   v
+ECS Fargate task (oxy-cluster / oxy-api)
+   |  linux/arm64, port 8080, assign_public_ip=true
+   v
++------------------+   +----------------------+
+| ElastiCache      |   | MongoDB EC2          |
+| Valkey           |   | (EIP 18.203.144.124) |
++------------------+   +----------------------+
 ```
 
-All services run via Docker Compose on a single Droplet at `/opt/oxy`.
+No Caddy, no on-box SMTP, no NAT gateway. Outbound email goes through AWS SES; inbound email goes through Cloudflare Email Routing -> SES -> a webhook in `packages/api/src/routes/emailInbound.ts`.
 
-### CI/CD Pipeline
+### CI/CD pipeline
 
-`.github/workflows/deploy.yml` triggers on every push to `main`:
+`.github/workflows/deploy-aws.yml` runs on every push to `main`:
 
-1. SSH into Droplet
-2. `git fetch origin main && git reset --hard origin/main`
-3. Inject `REDIS_URL` from GitHub secret (if not already in `.env`)
-4. `docker compose build api`
-5. `docker compose up -d`
-6. `docker image prune -f`
+1. Sync the relevant GitHub Actions secrets to SSM (`/oxy/oxy-api/*` and `/oxy/_shared/*`). See lines 36-46 of the workflow.
+2. Authenticate to AWS via **GitHub OIDC** (no long-lived AWS keys in repo secrets) -> assume `oxy-github-deploy`.
+3. `docker buildx build --platform linux/arm64 ...`.
+4. Push to ECR (`237343248947.dkr.ecr.eu-west-1.amazonaws.com/oxy/oxy-api`).
+5. `aws ecs update-service --cluster oxy-cluster --service oxy-api --force-new-deployment`.
+
+Task definitions are versioned (`oxy-oxy-api:N`). New revisions are registered with `aws ecs register-task-definition` whenever env / secret mappings change. Image-only updates reuse the existing task definition.
 
 ### GitHub Secrets Required
 
 | Secret | Description |
 |--------|-------------|
-| `DROPLET_HOST` | Droplet IP or hostname (e.g., `api.oxy.so`) |
-| `DROPLET_USER` | SSH user (e.g., `deploy`) |
-| `DROPLET_SSH_KEY` | Private SSH key for deploy user |
-| `REDIS_URL` | Valkey connection string (private VPC URI) |
+| `AWS_GITHUB_OIDC_ROLE_ARN` | ARN of `oxy-github-deploy`; assumed via OIDC |
+| `ACCESS_TOKEN_SECRET` | JWT signing secret for access tokens |
+| `REFRESH_TOKEN_SECRET` | JWT signing secret for refresh tokens |
+| `FEDCM_TOKEN_SECRET` | JWT secret for FedCM tokens |
+| `DEVICE_ID_SALT` | 64-hex salt for `deriveStableDeviceId` |
+| `MONGODB_URI` | MongoDB cluster URI (no DB name) |
+| `REDIS_URL` | ElastiCache Valkey URI |
+| `CLOUDFLARE_API_TOKEN` | Cloudflare Pages deploys + DNS-01 ACM validation |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account |
 
-### Docker Files
+Shared secrets (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` for SES / app-level S3 usage, `REDIS_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`) are mirrored under `/oxy/_shared/*` for cross-service use.
+
+### Docker files
 
 | File | Purpose |
 |------|---------|
-| `Dockerfile` | Multi-stage build: builder (compile TS) -> production (Node 20 Alpine) |
-| `docker-compose.yml` | API + Rspamd + Caddy services |
-| `Caddyfile` | Reverse proxy config, auto HTTPS |
-| `.env` | Environment variables (not in git) |
+| `Dockerfile` | Multi-stage `oven/bun:1.3-alpine` build: builder (TypeScript compile) -> production (`bun install --production`). Targets **linux/arm64** (Graviton). |
+| `.dockerignore` | Use `**/node_modules` and `**/dist`; BuildKit does not match nested directories with bare patterns |
+| `bunfig.toml` | `linker = "hoisted"` — Bun 1.3 `isolated` linker breaks Dockerfiles that copy root-only `node_modules` |
 
-### Dockerfile Build Process
+### Dockerfile build process
 
 ```dockerfile
-# Stage 1: Builder
-FROM node:20-alpine AS builder
-COPY packages/core/ packages/api/  # Only core + api needed
-RUN npm ci --ignore-scripts
-RUN npm run build -w @oxyhq/core
-RUN npm run build -w @oxyhq/api
+# Stage 1: builder
+FROM oven/bun:1.3-alpine AS builder
+COPY bunfig.toml ./
+COPY packages/core/ packages/api/ ...
+RUN bun install --frozen-lockfile
+RUN bun run core:build && bun run --cwd packages/api build
 
-# Stage 2: Production
-FROM node:20-alpine
-RUN npm ci --omit=dev
-COPY --from=builder /app/packages/api/dist packages/api/dist
-COPY --from=builder /app/packages/core/dist packages/core/dist
-CMD ["node", "packages/api/dist/server.js"]
+# Stage 2: production
+FROM oven/bun:1.3-alpine
+RUN bun install --production --frozen-lockfile
+COPY --from=builder /app/packages/api/dist ./packages/api/dist
+COPY --from=builder /app/packages/core/dist ./packages/core/dist
+CMD ["bun", "run", "packages/api/dist/server.js"]
 ```
 
-## Environment Variables
+## Environment variables
 
 ### Required (API)
 
 | Variable | Description | Example |
 |----------|-------------|---------|
-| `MONGODB_URI` | MongoDB cluster URI (no DB name) | `mongodb+srv://...` |
-| `ACCESS_TOKEN_SECRET` | JWT signing secret for access tokens | Random 64+ char string |
-| `REFRESH_TOKEN_SECRET` | JWT signing secret for refresh tokens | Random 64+ char string |
-| `FEDCM_TOKEN_SECRET` | JWT secret for FedCM tokens | Random 64+ char string |
-| `AWS_REGION` | S3/Spaces region | `ams3` |
-| `AWS_S3_BUCKET` | Asset storage bucket | `oxy-bucket` |
-| `AWS_ACCESS_KEY_ID` | S3/Spaces key | |
-| `AWS_SECRET_ACCESS_KEY` | S3/Spaces secret | |
+| `MONGODB_URI` | MongoDB cluster URI (no DB name -- apps pass `dbName`) | `mongodb://oxy-mongo.eu-west-1.compute:27017` |
+| `ACCESS_TOKEN_SECRET` | JWT signing secret for access tokens | 64+ hex |
+| `REFRESH_TOKEN_SECRET` | JWT signing secret for refresh tokens | 64+ hex |
+| `FEDCM_TOKEN_SECRET` | JWT secret for FedCM tokens | 64+ hex |
+| `DEVICE_ID_SALT` | 64-hex salt scoping `deriveStableDeviceId` | 64 hex |
+| `AWS_REGION` | S3/SES region | `eu-west-1` |
+| `AWS_S3_BUCKET` | Asset storage bucket | |
 | `NODE_ENV` | Environment | `production` |
-| `PORT` | API port | `8080` (Droplet) / `3001` (local) |
+| `PORT` | API port | `8080` |
 
 ### Optional
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `REDIS_URL` | Valkey/Redis connection URI | Falls back to in-memory |
-| `SMTP_ENABLED` | Enable SMTP inbound server | `false` |
-| `EMAIL_DOMAIN` | Email domain | |
-| `RSPAMD_URL` | Spam filter URL | |
-| `AWS_ENDPOINT_URL` | S3-compatible endpoint | AWS default |
+| `REDIS_URL` | ElastiCache Valkey URI | Falls back to in-memory |
+| `AWS_ACCESS_KEY_ID` | Explicit creds for S3/SES | Task IAM role |
+| `AWS_SECRET_ACCESS_KEY` | Explicit creds for S3/SES | Task IAM role |
+| `REFRESH_COOKIE_DOMAIN` | Cookie scope, e.g. `oxy.so` | Validated at startup |
+| `ORIGIN_GUARD_MODE` | `enforce` or `log-only` | `enforce` |
 
-### Generating Secrets
+### Generating secrets
 
 ```bash
-node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
+openssl rand -hex 64
 ```
 
-## App Platform Deployment
+`DEVICE_ID_SALT` must be 64 hex chars — the API refuses to boot without it.
 
-App Platform apps auto-deploy on push to `main`. Each app has its own spec with:
+## Static frontends (Cloudflare Pages)
 
-- GitHub repo + branch configuration
-- Build and run commands
-- Environment variables (encrypted secrets use `EV[1:...]` format)
-- Database references (`${db-oxy.DATABASE_URL}`)
-- VPC attachment for private networking
+`.github/workflows/deploy-cloudflare.yml` builds each affected frontend with `bun x turbo run build --filter=<app>` and deploys via `cloudflare/wrangler-action@v3`.
 
-### App Platform Apps
+| Project | Source | Notes |
+|---------|--------|-------|
+| `oxy-auth` | `packages/auth/` | Builds the Vite SPA **and** the FedCM IdP `_worker.js`. The workflow has a safety check that fails if `dist/_worker.js` is missing — a static-only deploy would 404 on `/fedcm/*`. |
+| `oxy-accounts` | `packages/accounts/` | Expo Web export |
+| `oxy-inbox` | `packages/inbox/` | Expo Web export |
+| `oxy-console` | `packages/console/` | Nuxt or Vite output |
 
-| App | Service | Build Command |
-|-----|---------|---------------|
-| `oxy-api` | oxy-auth (Next.js) | `npm ci && npm run build -w @oxyhq/core && npm run build -w @oxyhq/auth && npm run build -w auth` |
-| `oxy-api` | accounts-frontend (static) | `npm ci && npm run build -w @oxyhq/core && npm run build:js -w @oxyhq/services && npm run build -w accounts` |
-| `mention-production` | mention | App-specific build |
-| `homiio-frontend-app` | homiio | App-specific build |
-| `alia-production` | alia | App-specific build |
-
-## Health Check
+## Health check
 
 ```bash
 curl https://api.oxy.so/health
 ```
 
-Response:
 ```json
 {
   "status": "operational",
-  "timestamp": "2026-02-06T20:00:00.000Z",
+  "timestamp": "2026-06-12T18:00:00.000Z",
   "database": "connected",
   "redis": "connected"
 }
 ```
 
-Redis status values: `"connected"`, `"disconnected"`, `"not configured"`
+`redis` is one of `"connected"`, `"disconnected"`, `"not configured"`.
+
+## Operational notes
+
+- **Logs**: ECS task stdout/stderr -> CloudWatch Logs (`/ecs/oxy-api`). `aws logs tail /ecs/oxy-api --follow` (profile `oxy`) streams live output.
+- **Rollback**: re-run a prior successful deploy workflow, or `aws ecs update-service --task-definition oxy-oxy-api:<previous-rev>`.
+- **SSH-less ops**: MongoDB EC2 has no SSH keys. Use `aws ssm start-session --target i-0ce531a2b124b7c07`.
+- **Backups**: `s3://oxy-mongo-backups-237343248947/daily/`. Restore runbook: `~/Oxy/oxy-infra/docs/runbooks/10-mongo-restore.md`.

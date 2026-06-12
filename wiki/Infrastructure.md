@@ -1,50 +1,63 @@
 # Infrastructure
 
-All Oxy production infrastructure runs on DigitalOcean in the **AMS3 (Amsterdam)** region.
+All Oxy production infrastructure runs on **AWS** in the **eu-west-1 (Ireland)** region under account `237343248947`. Terraform IaC lives in the `oxy-infra` repo (state in S3 `oxy-tf-state-237343248947`).
 
 ## Resources Overview
 
-| Resource | Type | ID | Region | Purpose |
-|----------|------|----|--------|---------|
-| `oxy-api-backend` | Droplet | `549107286` | ams3 | Express API + SMTP (Docker) |
-| `db-oxy` | Managed MongoDB 8 | `6a922a33` | ams3 | Shared MongoDB for all Oxy apps |
-| `db-valkey-ams3-04785` | Managed Valkey 8 | `84abd7c5` | ams3 | Rate limiting + Socket.IO adapter |
-| `oxy-api` | App Platform | `f5771b57` | ams | Auth (Next.js) + Accounts + Inbox |
-| `mention-production` | App Platform | `f9d51c96` | ams | mention.earth |
-| `homiio-frontend-app` | App Platform | `ea648ca3` | ams | homiio.com |
-| `alia-production` | App Platform | `47f815eb` | ams | alia.onl |
-| `allo-app` | App Platform | `2f3b7da0` | **nyc** | allo app (different region) |
+| Resource | Type | Identifier | Region | Purpose |
+|----------|------|------------|--------|---------|
+| `oxy-cluster` | ECS Fargate cluster | — | eu-west-1 | All 6 backend services as Fargate tasks (linux/arm64) |
+| `oxy-alb` | Application Load Balancer | `oxy-alb-127633307.eu-west-1.elb.amazonaws.com` | eu-west-1 | HTTPS termination (ACM multi-SAN cert) + host-based routing |
+| `oxy-valkey` | ElastiCache (Valkey) | — | eu-west-1 | Rate limiting + Socket.IO adapter |
+| `oxy-mongo` | EC2 (MongoDB 8 self-hosted) | `i-0ce531a2b124b7c07` (EIP `18.203.144.124`) | eu-west-1 | Shared MongoDB for all Oxy apps. `/data` on a 100 GB gp3 EBS volume |
+| `oxy-mongo-backups-237343248947` | S3 bucket | — | eu-west-1 | Daily `mongodump` archives under `daily/` (14-day retention) |
+| `oxy-tf-state-237343248947` | S3 bucket | — | eu-west-1 | Terraform remote state |
+| ECR | `237343248947.dkr.ecr.eu-west-1.amazonaws.com/oxy/<app>` | one per service | eu-west-1 | linux/arm64 images |
+| `oxy-github-deploy` | IAM role | — | — | GitHub OIDC trust; no static AWS keys in repo secrets |
+| SES | — | — | eu-west-1 | Outbound email + inbound via Cloudflare Email Routing |
+| Cloudflare Pages | — | — | — | Static frontends (accounts, auth, console, inbox) |
 
-### Non-Oxy Resources
+### Backend services on `oxy-cluster`
 
-| Resource | Type | Purpose |
-|----------|------|---------|
-| `db-mongodb-ams3-ATHINA` | Managed MongoDB | Separate project (not Oxy) |
-| `faircoin-node-2` | Droplet | FairCoin node |
-| `faircoin-shark-ubuntu` | Droplet | FairCoin node |
+| Service | Port | Hostnames |
+|---------|------|-----------|
+| `oxy-api` | 8080 | `api.oxy.so`, `api.website.oxy.so`, `website-api.oxy.so` |
+| `mention` | 3000 | `api.mention.earth` |
+| `alia` | 3001 | `api.alia.onl` |
+| `homiio` | 4000 | `api.homiio.com` |
+| `syra` | 3000 | `api.syra.oxy.so` |
+| `allo` | 8080 | `api.allo.oxy.so` |
 
-## VPC (Virtual Private Cloud)
+All tasks run with `assign_public_ip = true` (no NAT gateway).
 
-All AMS3 resources share the VPC `default-ams3` (`983f1e72-442d-4a5c-b7c2-22a422f88a19`).
+### Non-AWS resources (intentional exclusions)
 
-| Resource | In VPC? |
-|----------|---------|
-| Droplet `oxy-api-backend` | Yes |
-| `db-oxy` | Yes |
-| `db-valkey-ams3-04785` | Yes |
-| `mention-production` | Yes |
-| `homiio-frontend-app` | Yes |
-| `alia-production` | Yes |
-| `oxy-api` (auth/accounts) | Yes |
-| `allo-app` | No (NYC region — cannot join AMS3 VPC) |
+| Resource | Where | Why |
+|----------|-------|-----|
+| LiveKit | DigitalOcean droplet `134.122.53.230` (`livekit.oxy.so`) | Migration to AWS pending |
+| Athina, FairCoin, TNP, OpenSearch (`genai-shark`) | DigitalOcean | Outside the Oxy ecosystem migration scope |
 
-VPC enables private networking between resources. Database connections resolve to private IPs automatically when apps are in the same VPC.
+## Networking
 
-## Database: db-oxy (MongoDB)
+- ALB listener on `:443` terminates TLS using an ACM multi-SAN certificate (DNS-validated via the Cloudflare API).
+- HTTP `:80` redirects to `:443`.
+- ALB target groups route by `Host:` header to the matching ECS service.
+- Cloudflare DNS is **DNS-only** (grey cloud) for all API hostnames so the ALB sees real client IPs and ACM can complete DNS-01 validation.
+- ECS tasks reach ElastiCache and the MongoDB EC2 instance over the default VPC.
+- The MongoDB EC2 security group accepts `:27017` only from the ECS task ENIs (security-group-to-security-group rule). Ops access uses AWS SSM Session Manager — there are no SSH keys on disk.
 
-Shared MongoDB cluster for all Oxy ecosystem apps. Each app uses its own database within the cluster.
+## Database: MongoDB (self-hosted on EC2)
 
-### Database Naming Convention
+Self-hosted rather than DocumentDB so we can use the full driver feature set (transactions, change streams, full text search).
+
+- Daily `mongodump --gzip --archive=…` cron job inside the instance.
+- Archives uploaded to `s3://oxy-mongo-backups-237343248947/daily/<date>.gz`.
+- 14-day retention via the bucket lifecycle policy.
+- Restore runbook: `~/Oxy/oxy-infra/docs/runbooks/10-mongo-restore.md`.
+
+Admin credentials live in SSM (`/oxy/mongo/admin_user`, `/oxy/mongo/admin_password`). Read by deploy jobs and the backup cron. Never committed.
+
+### Database naming convention
 
 ```
 {appName}-{NODE_ENV_suffix}
@@ -55,74 +68,67 @@ Shared MongoDB cluster for all Oxy ecosystem apps. Each app uses its own databas
 | `production` | `prod` |
 | `development` | `dev` |
 
-Examples: `oxy-prod`, `mention-production`, `alia-production`, `homiio-production`, `allo-production`
-
-### Connection Pattern
-
-The `MONGODB_URI` is the cluster URI (no database name embedded). Each app passes `dbName` to `mongoose.connect()`:
+Each app passes `dbName` to `mongoose.connect()`:
 
 ```typescript
 const APP_NAME = "mention";
-const envSuffix = ENV_DB_MAP[process.env.NODE_ENV] || process.env.NODE_ENV;
+const ENV_DB_MAP = { production: 'prod', development: 'dev' } as const;
+const envSuffix = ENV_DB_MAP[process.env.NODE_ENV] ?? process.env.NODE_ENV;
 const dbName = `${APP_NAME}-${envSuffix}`;
 mongoose.connect(process.env.MONGODB_URI, { dbName });
 ```
 
-### Firewall Rules (db-oxy)
+## Cache: ElastiCache Valkey
 
-| Type | Value | Description |
-|------|-------|-------------|
-| droplet | `549107286` | oxy-api-backend |
-| app | `f5771b57-6840-475a-a5a0-2acd5d788837` | oxy-api (auth/accounts) |
-| app | `f9d51c96-6dc1-4dbe-b878-8ac93e40ac78` | mention-production |
-| app | `47f815eb-e095-44c9-a0a4-c315307dac22` | alia-production |
-| app | `ea648ca3-3d17-4bfd-8778-fc96f3bf15c0` | homiio-frontend-app |
-| app | `2f3b7da0-d3be-48bc-8e5a-8bbccd721b37` | allo-app |
-| ip_addr | `37.19.196.14` | Dev IP |
+See [[Redis & Valkey]] for client wiring. Connection URL lives in SSM as a shared parameter (`/oxy/_shared/REDIS_URL`) and is injected into every ECS task definition.
 
-## Database: db-valkey (Redis/Valkey)
+## Secrets
 
-See [[Redis & Valkey]] for implementation details.
+GitHub Actions repo secrets are the **source of truth**. `.github/workflows/deploy-aws.yml` mirrors them to AWS SSM under `/oxy/<app>/*` and `/oxy/_shared/*` on every run. ECS task definitions reference SSM parameters via `secrets` mappings, so the container only ever sees the resolved value at task launch.
 
-### Firewall Rules (db-valkey)
+`/oxy/_shared/*` covers `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` (for SES / app-level S3 usage where IAM roles aren't applied), `REDIS_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`.
 
-Same as db-oxy: Droplet + all 5 App Platform apps.
-
-## Cloud Firewall (Droplet)
-
-The Droplet `oxy-api-backend` has a cloud firewall (`8686a541`) restricting inbound traffic to:
-
-| Port | Source | Purpose |
-|------|--------|---------|
-| 22 | Restricted IPs | SSH |
-| 80, 443 | All | HTTP/HTTPS (Caddy) |
-| 25 | All | SMTP inbound |
-| 587 | All | SMTP submission |
+> Never commit secret values. Never put secret values in this wiki.
 
 ## Architecture Diagram
 
 ```
-                        Internet
-                           |
-              ┌────────────┼────────────┐
-              |            |            |
-         api.oxy.so   auth.oxy.so  mention.earth
-              |            |            |
-         ┌────┘       ┌────┘       ┌────┘
-         |            |            |
-    ┌─────────┐  ┌─────────┐  ┌─────────┐
-    | Droplet |  | App     |  | App     |
-    | (Docker)|  | Platform|  | Platform|
-    | Caddy + |  | Next.js |  | Next.js |
-    | Express |  | Auth    |  | Mention |
-    └────┬────┘  └────┬────┘  └────┬────┘
-         |            |            |
-         └──────┬─────┴────────────┘
-                |        VPC
-         ┌──────┼──────┐
-         |             |
-    ┌─────────┐  ┌──────────┐
-    | db-oxy  |  | db-valkey|
-    | MongoDB |  | Valkey   |
-    └─────────┘  └──────────┘
+                          Internet
+                              |
+                              v
+                +-------------+--------------+
+                |  Cloudflare DNS (DNS only) |
+                +-------------+--------------+
+                              |
+        +---------------------+---------------------+
+        |                                           |
+        v                                           v
++-------+--------+                       +----------+----------+
+| Cloudflare    |                        |  ALB (oxy-alb)      |
+| Pages         |                        |  ACM HTTPS          |
+| (frontends:   |                        +----------+----------+
+|  accounts,    |                                   |
+|  auth, inbox, |                  Host-based routing per service
+|  console)     |                                   |
++---------------+                                   v
+                                       +------------+------------+
+                                       |  ECS Fargate cluster    |
+                                       |  oxy-cluster (arm64)    |
+                                       |                         |
+                                       |  oxy-api  mention  alia |
+                                       |  homiio   syra    allo  |
+                                       +-----+-------+-----+-----+
+                                             |       |     |
+                                             v       v     v
+                                   +---------+----+ +-+---+----------+
+                                   | ElastiCache  | |  MongoDB EC2   |
+                                   |  Valkey      | |  + EBS         |
+                                   |  oxy-valkey  | |  + EIP         |
+                                   +--------------+ +----------------+
+                                                          |
+                                                          v
+                                                 +--------+--------+
+                                                 |  S3 backups     |
+                                                 |  (daily, 14d)   |
+                                                 +-----------------+
 ```

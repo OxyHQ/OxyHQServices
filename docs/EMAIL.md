@@ -12,35 +12,31 @@ Native email system for the Oxy platform. Every Oxy user with a username automat
 
 ## Architecture
 
+Mail flow in production runs through **AWS SES** for both inbound and outbound traffic. The Oxy API exposes a REST surface for mailbox / message operations and a Cloudflare Email Routing webhook handler for inbound mail.
+
 ```
-Internet (port 25)
-       │
-       ▼
-┌──────────────────┐
-│  SMTP Inbound    │  Receives mail from the internet
-│  (smtp-server)   │  Validates recipients against Oxy users
-│  + mailparser    │  Parses MIME messages
-│  + mailauth      │  Verifies SPF/DKIM/DMARC
-└───────┬──────────┘
-        │ stores in MongoDB
-        ▼
-┌──────────────────┐
-│  Oxy API         │  Express.js — email is just more routes
-│  (MongoDB)       │  Same auth, same users, same DB
-│                  │
-│  Models:         │  REST API: /api/email/*
-│  - User (exists) │
-│  - Mailbox (new) │
-│  - Message (new) │
-│  - Attachments   │──→ S3 (dedicated email bucket)
-└───────┬──────────┘
-        │ sends via
-        ▼
-┌──────────────────┐
-│  SMTP Outbound   │  Sends mail with DKIM signing
-│  (nodemailer)    │  Retry queue with exponential backoff
-└──────────────────┘
+Inbound:
+  Sender MX  --SES--> Cloudflare Email Routing webhook
+                                 │
+                                 ▼
+                         ┌──────────────────┐
+                         │  Oxy API         │  Validates recipient against Oxy users,
+                         │  emailInbound.ts │  parses MIME, runs spam checks,
+                         │                  │  writes Mailbox/Message documents.
+                         └────────┬─────────┘
+                                  │
+                                  ▼
+                            MongoDB (EC2)
+                                  │
+                                  ▼
+                        S3 (attachments)
+
+Outbound:
+  Oxy API --SES--> Recipient MX
+   (nodemailer SES transport, DKIM signed)
 ```
+
+The legacy on-box SMTP server (`smtp.inbound.ts` / Rspamd / port 25) is no longer used in production — SES handles delivery and spam scoring. The standalone SMTP modules remain in the codebase for local dev and for self-hosted deployments outside AWS.
 
 ## Setup
 
@@ -198,7 +194,7 @@ Create a dedicated S3 bucket for email attachments:
 # AWS CLI
 aws s3 mb s3://oxy-email --region us-east-1
 
-# Or use any S3-compatible service (MinIO, Cloudflare R2, DigitalOcean Spaces)
+# Or use any S3-compatible service (MinIO, Cloudflare R2, etc.)
 # Set EMAIL_S3_ENDPOINT for non-AWS services
 ```
 
@@ -509,117 +505,63 @@ packages/api/src/
 - [ ] Port 25 open in firewall (inbound SMTP)
 - [ ] Reverse DNS (PTR) set for your server IP
 - [ ] `SMTP_ENABLED=true` in env
-- [ ] DigitalOcean port 25 unblock request approved
+- [ ] (Self-hosted only) Port 25 unblock approved by hosting provider
 - [ ] Test sending/receiving with an external email provider
 - [ ] Monitor spam score of outgoing mail at [mail-tester.com](https://www.mail-tester.com)
 
 ## Deployment Architecture
 
-Everything runs on a **single DigitalOcean Droplet** — the API, SMTP server, spam filter, and reverse proxy:
+In production, email runs entirely on AWS:
 
 ```
-                        Internet
-                           │
-              ┌────────────┼────────────┐
-              │            │            │
-         HTTPS (443)   SMTP (25)   SMTP (587)
-              │            │            │
-              ▼            │            │
-        ┌──────────┐       │            │
-        │  Caddy   │       │            │
-        │  (auto   │       │            │
-        │   TLS)   │       │            │
-        └────┬─────┘       │            │
-             │ proxy       │            │
-             ▼             ▼            ▼
-        ┌─────────────────────────────────┐
-        │         Oxy API Container       │
-        │                                 │
-        │  Express.js (:8080)             │
-        │  + SMTP Inbound (:25)           │
-        │  + SMTP Outbound (nodemailer)   │
-        │                                 │
-        │  SMTP_ENABLED=true              │
-        └──────────┬──────────────────────┘
-                   │ spam check
-                   ▼
-        ┌──────────────────┐
-        │  Rspamd          │
-        │  (spam filter)   │
-        └──────────────────┘
+                Internet
                    │
                    ▼
-              MongoDB
-         (managed cluster)
+        ┌──────────────────┐
+        │  AWS SES         │  inbound + outbound
+        └────────┬─────────┘
+                 │ webhook
+                 ▼
+   ┌─────────────────────────┐
+   │  Cloudflare Email       │  forwards to API webhook
+   │  Routing                │  (oxy.so MX -> SES via Email Routing)
+   └────────────┬────────────┘
+                │ POST /api/email/inbound
+                ▼
+   ┌─────────────────────────┐
+   │  Oxy API on ECS         │
+   │  Fargate (linux/arm64)  │
+   │  packages/api/...       │
+   └────────────┬────────────┘
+                │
+       ┌────────┴────────┐
+       ▼                 ▼
+  MongoDB (EC2)     S3 (attachments)
 ```
 
 **Key points:**
 
-- **Caddy** handles HTTPS with automatic Let's Encrypt certificates and reverse proxies to the API
-- **SMTP ports 25/587** are exposed directly (not through Caddy — SMTP is not HTTP)
-- **Rspamd** runs as a Docker sidecar for spam filtering
-- **MongoDB** is a managed cluster (e.g., DigitalOcean Managed MongoDB) — not on the Droplet
-- **Auto-deploy**: Push to `main` → GitHub Actions SSHs into the Droplet → pulls → rebuilds → restarts
+- **AWS SES** handles transport (delivery + DKIM-signed outbound) and basic spam classification.
+- **Cloudflare Email Routing** delivers inbound mail for `@oxy.so` to the API webhook (`packages/api/src/routes/emailInbound.ts`).
+- The Oxy API runs as an **ECS Fargate** task in `oxy-cluster` behind the ALB — no on-box SMTP server in this path.
+- **MongoDB** is the self-hosted EC2 instance described in [Infrastructure](INFRASTRUCTURE.md).
+- **Auto-deploy**: push to `main` → GitHub Actions builds an `arm64` image → pushes to ECR → `aws ecs update-service --force-new-deployment`. See [Deployment](DEPLOYMENT.md).
 
-### Quick Start
+### Self-hosted SMTP (legacy / non-AWS deployments)
 
-```bash
-# 1. Create an Ubuntu 22.04+ Droplet and name it "mail.oxy.so" (sets PTR/rDNS)
-
-# 2. Run the setup script on the Droplet
-ssh root@YOUR_DROPLET_IP
-bash <(curl -sL https://raw.githubusercontent.com/OxyHQ/OxyHQServices/main/scripts/setup-droplet.sh)
-
-# 3. Configure your environment
-cd /opt/oxy
-nano .env    # Fill in MongoDB URI, DKIM key, S3 creds, etc.
-
-# 4. Generate DKIM keys
-docker run --rm -v $(pwd):/app -w /app node:20-alpine node packages/api/scripts/generate-dkim.js
-# Copy the private key into .env (DKIM_PRIVATE_KEY)
-# Add the DNS TXT record shown in the output
-
-# 5. Update the Caddyfile with your domain
-nano Caddyfile
-
-# 6. Add DNS records (see DNS Records section above)
-
-# 7. Request port 25 unblock from DigitalOcean
-#    https://cloud.digitalocean.com/support
-
-# 8. Start everything
-docker compose up -d
-
-# 9. Verify
-docker compose logs -f
-```
-
-### Auto-Deploy (GitHub Actions)
-
-Push to `main` → GitHub Actions SSHs into the Droplet → pulls → rebuilds → restarts. Same push-to-deploy experience as App Platform.
-
-Add these **GitHub Secrets**:
-
-| Secret | Value |
-|--------|-------|
-| `DROPLET_HOST` | Your Droplet IP or `api.oxy.so` |
-| `DROPLET_USER` | `deploy` |
-| `DROPLET_SSH_KEY` | SSH private key for the deploy user |
-
-You can also trigger a deploy manually from the GitHub Actions tab → "Deploy to Droplet" → "Run workflow".
+The repo still ships an Express + Caddy + Rspamd setup (`Dockerfile`, `docker-compose.yml`, `Caddyfile`) that can be used outside AWS. Set `SMTP_ENABLED=true`, run `docker compose up -d`, and follow the DKIM / DNS sections above. Port 25 must be reachable; many hosting providers block it by default.
 
 ### Deployment Files
 
 ```
 OxyHQServices/
-├── Dockerfile                    # Multi-stage Docker build (API + SMTP)
-├── docker-compose.yml            # API + Rspamd + Caddy
-├── Caddyfile                     # Reverse proxy config (auto HTTPS)
-├── .env.example                  # Template for all env vars
-├── scripts/
-│   └── setup-droplet.sh          # One-time Droplet provisioning
+├── Dockerfile                        # Multi-stage build (linux/arm64 for ECS)
+├── docker-compose.yml                # Local dev / self-hosted SMTP stack
+├── Caddyfile                         # Self-hosted reverse proxy config
+├── .env.example                      # Template for all env vars
 ├── .github/workflows/
-│   └── deploy.yml                # Auto-deploy on push to main
+│   ├── deploy-aws.yml                # ECS Fargate auto-deploy (production)
+│   └── deploy-cloudflare.yml         # Static frontends auto-deploy
 └── packages/api/scripts/
-    └── generate-dkim.js          # DKIM key generation utility
+    └── generate-dkim.js              # DKIM key generation utility (self-hosted)
 ```

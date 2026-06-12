@@ -1,6 +1,6 @@
 # Redis & Valkey
 
-The Oxy API uses DigitalOcean Managed Valkey (`db-valkey-ams3-04785`) for distributed rate limiting and Socket.IO cross-instance broadcasting. Valkey is a Redis-compatible in-memory data store.
+The Oxy API uses **AWS ElastiCache (Valkey)** — cluster `oxy-valkey` in `eu-west-1` — for distributed rate limiting and Socket.IO cross-instance broadcasting. Valkey is a Redis-compatible in-memory data store, so the Redis client and protocol are unchanged.
 
 ## What It's Used For
 
@@ -15,20 +15,22 @@ The Oxy API uses DigitalOcean Managed Valkey (`db-valkey-ams3-04785`) for distri
 Set `REDIS_URL` in environment. Omit to fall back to in-memory (no breakage).
 
 ```bash
-# Production (private VPC URI)
-REDIS_URL=rediss://default:password@private-db-valkey-ams3-04785-do-user-23621266-0.i.db.ondigitalocean.com:25061
+# Production (ElastiCache, in-VPC, TLS)
+REDIS_URL=rediss://oxy-valkey.xxxxx.use1.cache.amazonaws.com:6379
 
 # Local development (optional)
 # REDIS_URL=redis://localhost:6379
 ```
 
-- `rediss://` = TLS (required for DO Managed Databases)
+- `rediss://` = TLS (recommended for ElastiCache in transit)
 - `redis://` = plaintext (local only)
 - Omit = in-memory fallback
 
+In production the value lives in SSM (`/oxy/_shared/REDIS_URL`) and is injected into ECS tasks from the task definition.
+
 ## Implementation
 
-### Redis Client (`packages/api/src/config/redis.ts`)
+### Redis client (`packages/api/src/config/redis.ts`)
 
 Shared singleton with lazy connection and graceful null fallback:
 
@@ -45,7 +47,7 @@ export async function closeRedis(): Promise<void> {
 }
 ```
 
-### Rate Limiting (`packages/api/src/middleware/security.ts`)
+### Rate limiting (`packages/api/src/middleware/security.ts`)
 
 All rate limiters (`rateLimiter`, `authRateLimiter`, `userRateLimiter`) use `RedisStore` when available:
 
@@ -64,7 +66,7 @@ function makeStore() {
 }
 ```
 
-### Socket.IO Adapter (`packages/api/src/server.ts`)
+### Socket.IO adapter (`packages/api/src/server.ts`)
 
 Uses `@socket.io/redis-adapter` for cross-instance event broadcasting:
 
@@ -85,9 +87,9 @@ if (redis) {
 | `rate-limit-redis` | Redis store for express-rate-limit |
 | `@socket.io/redis-adapter` | Socket.IO multi-instance adapter |
 
-## Caching Strategy
+## Caching strategy
 
-The API has several in-memory caches that remain in-memory (not moved to Redis):
+The API has several in-memory caches that remain in-memory (not moved to Valkey):
 
 | Cache | Max Entries | TTL | Purpose |
 |-------|-----------|-----|---------|
@@ -97,8 +99,8 @@ The API has several in-memory caches that remain in-memory (not moved to Redis):
 | fileCache | 50,000 | 5 min | File metadata |
 | locationCache | 1,000 | 24 hr | Location search results |
 
-These work well as fast L1 caches. Redis serves as the distributed backbone for rate limiting and Socket.IO only.
+These work well as fast L1 caches per task. Valkey serves as the distributed backbone for rate limiting and Socket.IO only.
 
-## Firewall
+## Networking
 
-`db-valkey-ams3-04785` is restricted to the Droplet + all 5 App Platform apps. No public access.
+`oxy-valkey` lives in the same VPC as the ECS tasks. The cluster's security group only accepts traffic from the ECS task ENIs (matched by security group, not IP). It is not reachable from the public internet.

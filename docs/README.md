@@ -8,9 +8,9 @@ Complete documentation for the Oxy ecosystem: identity, authentication, and serv
 - **[Architecture Overview](ARCHITECTURE.md)** - System architecture, identity vs auth, user linking
 
 ### Infrastructure & Deployment
-- **[Infrastructure](INFRASTRUCTURE.md)** - DigitalOcean resources, VPC, databases, firewalls
-- **[Deployment](DEPLOYMENT.md)** - Docker, CI/CD pipeline, environment variables
-- **[Redis & Valkey](REDIS.md)** - Rate limiting, Socket.IO adapter, caching strategy
+- **[Infrastructure](INFRASTRUCTURE.md)** - AWS resources (ECS, ALB, ECR, ElastiCache, MongoDB on EC2)
+- **[Deployment](DEPLOYMENT.md)** - GitHub OIDC, ECS Fargate, environment variables, Cloudflare Pages
+- **[Redis & Valkey](REDIS.md)** - ElastiCache Valkey: rate limiting, Socket.IO adapter, caching strategy
 
 ### Authentication
 - **[Authentication Guide](AUTHENTICATION.md)** - Full auth integration (Expo, Web, Node.js, WebSockets)
@@ -71,7 +71,7 @@ OxyHQServices/
 │   ├── EMAIL.md                      # Email server setup & API reference
 │   ├── EXPO_54_GUIDE.md              # Expo 54 universal app guide
 │   ├── FONT_MIGRATION.md             # Font migration summary
-│   ├── INFRASTRUCTURE.md             # DigitalOcean resources, VPC, firewalls
+│   ├── INFRASTRUCTURE.md             # AWS resources (ECS, ALB, ElastiCache, EC2)
 │   ├── REDIS.md                      # Redis/Valkey implementation
 │   └── SERVICE_TOKENS.md             # Service-to-service auth
 ├── packages/
