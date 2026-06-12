@@ -411,8 +411,15 @@ export class SessionController {
       // Plant the first-party httpOnly refresh cookie for cold-boot session
       // persistence. A failure here must never break account creation — the
       // user still gets their access token, just without cold-boot persistence.
+      // `cookieHeader` is forwarded so the helper can resolve the Google-style
+      // device-local `authuser` slot (adding this account to a device that may
+      // already hold others, or creating its first slot).
+      let signupAuthuser: number | null = null;
       try {
-        await issueAndSetRefreshCookie(res, session.sessionId, user._id);
+        const issued = await issueAndSetRefreshCookie(res, session.sessionId, user._id, {
+          cookieHeader: req.headers.cookie,
+        });
+        signupAuthuser = issued.authuser;
       } catch (error) {
         logger.error('Failed to set refresh cookie during signup', error instanceof Error ? error : new Error(String(error)), {
           component: 'SessionController',
@@ -421,7 +428,9 @@ export class SessionController {
         });
       }
 
-      return res.status(201).json(response);
+      const signupResponseWithAuthuser: typeof response & { authuser?: number } =
+        signupAuthuser === null ? response : { ...response, authuser: signupAuthuser };
+      return res.status(201).json(signupResponseWithAuthuser);
     } catch (error: any) {
       if (error.code === 11000 && (error.keyPattern?.email || error.keyPattern?.username)) {
         const field = error.keyPattern?.email ? 'email' : 'username';
@@ -739,9 +748,16 @@ export class SessionController {
 
       // Plant the first-party httpOnly refresh cookie ONLY on the real success
       // path (never the 2FA-required or invalid-credential branches, which
-      // return above). A failure here must never break sign-in.
+      // return above). A failure here must never break sign-in. `cookieHeader`
+      // is forwarded so the helper can resolve the device-local `authuser` slot
+      // (reuse this user's existing slot, take the next free index, or evict
+      // LRU when the per-device cap is reached).
+      let signinAuthuser: number | null = null;
       try {
-        await issueAndSetRefreshCookie(res, session.sessionId, user._id);
+        const issued = await issueAndSetRefreshCookie(res, session.sessionId, user._id, {
+          cookieHeader: req.headers.cookie,
+        });
+        signinAuthuser = issued.authuser;
       } catch (error) {
         logger.error('Failed to set refresh cookie during sign-in', error instanceof Error ? error : new Error(String(error)), {
           component: 'SessionController',
@@ -750,7 +766,9 @@ export class SessionController {
         });
       }
 
-      res.json(response);
+      const signinResponseWithAuthuser: typeof response & { authuser?: number } =
+        signinAuthuser === null ? response : { ...response, authuser: signinAuthuser };
+      res.json(signinResponseWithAuthuser);
     } catch (error) {
       logger.error('Password sign-in error:', error);
       res.status(500).json({ message: 'Internal server error' });

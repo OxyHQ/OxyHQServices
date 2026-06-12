@@ -13,6 +13,7 @@ import { SessionController } from '../controllers/session.controller';
 import { User } from '../models/User';
 import { DeveloperApp } from '../models/DeveloperApp';
 import { authMiddleware, rejectQueryToken, type AuthRequest } from '../middleware/auth';
+import { requireSameSiteOrigin } from '../middleware/originGuard';
 import { rateLimit } from '../middleware/rateLimiter';
 import { asyncHandler, sendSuccess } from '../utils/asyncHandler';
 import { BadRequestError, NotFoundError, UnauthorizedError, ForbiddenError } from '../utils/error';
@@ -25,6 +26,7 @@ import sessionService from '../services/session.service';
 import { formatUserResponse } from '../utils/userTransform';
 import { issueAuthCode, exchangeAuthCode, AUTH_CODE_TTL_MS } from '../services/oauthCode.service';
 import { claimAuthSession } from '../services/authSession.service';
+import Session from '../models/Session';
 import {
   rotateRefreshToken,
   issueAndSetRefreshCookie,
@@ -32,8 +34,12 @@ import {
   revokeFamily,
   setRefreshCookie,
   clearRefreshCookie,
+  clearAllRefreshCookies,
   parseRefreshTokenCandidates,
+  parseAllRefreshCookies,
   classifyRefreshCandidates,
+  selectActiveCandidate,
+  MAX_DEVICE_ACCOUNTS,
 } from '../services/refreshToken.service';
 import { extractTokenFromRequest, decodeToken } from '../middleware/authUtils';
 import {
@@ -680,55 +686,120 @@ const refreshLimiter = rateLimit({
  *       429:
  *         description: Too many refresh attempts from this IP.
  */
-router.post('/refresh', refreshLimiter, asyncHandler(async (req, res) => {
+/**
+ * Parse an `authuser` parameter from query string OR JSON body.
+ *
+ * Returns the integer slot when present and well-formed, `null` when the
+ * caller didn't supply one (legacy single-account path), or throws
+ * `BadRequestError` for malformed input (non-integer, out-of-range, etc.).
+ * We deliberately reject ANY trailing junk (`"0x"`, `"1abc"`) so a client
+ * cannot bypass the range check via JavaScript coercion.
+ */
+function parseAuthuserParam(req: express.Request): number | null {
+  const raw =
+    typeof req.query.authuser === 'string'
+      ? req.query.authuser
+      : typeof (req.body as { authuser?: unknown } | undefined)?.authuser === 'string' ||
+        typeof (req.body as { authuser?: unknown } | undefined)?.authuser === 'number'
+      ? String((req.body as { authuser?: unknown }).authuser)
+      : null;
+
+  if (raw === null || raw === '') {
+    return null;
+  }
+
+  if (!/^\d+$/.test(raw)) {
+    throw new BadRequestError('authuser must be a non-negative integer');
+  }
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed < 0 || parsed >= MAX_DEVICE_ACCOUNTS) {
+    throw new BadRequestError(
+      `authuser must be an integer in [0, ${MAX_DEVICE_ACCOUNTS})`
+    );
+  }
+  return parsed;
+}
+
+router.post('/refresh', refreshLimiter, requireSameSiteOrigin, asyncHandler(async (req, res) => {
   // The refresh token is read ONLY from the httpOnly cookie(s) — never the body,
-  // query, or path. A mid-migration browser can present TWO `oxy_rt` cookies
-  // (legacy `Path=/auth/refresh` + new `Path=/auth`), so we parse ALL presented
-  // values and classify them WITHOUT consuming any, then act on the result.
-  // Set/clear the cookie BEFORE sending the response so the Set-Cookie header is
-  // always emitted; we respond directly (rather than throwing) for the same
-  // reason.
-  const candidates = parseRefreshTokenCandidates(req.headers.cookie);
-  if (candidates.length === 0) {
-    clearRefreshCookie(res);
+  // query, or path. The query/body `authuser` parameter (when present) selects
+  // WHICH device-local slot to rotate; the raw token itself still only lives in
+  // the cookie. Set/clear the cookie BEFORE sending the response so the
+  // Set-Cookie header is always emitted; we respond directly (rather than
+  // throwing) for the same reason.
+  const authuser = parseAuthuserParam(req);
+  const buckets = parseAllRefreshCookies(req.headers.cookie);
+
+  // Resolve which slot to operate on. With `?authuser=N` we use ONLY that slot;
+  // without we prefer the lowest indexed slot present (`oxy_rt_0` wins over
+  // `oxy_rt_1` wins over `oxy_rt_2` ...) and finally fall back to the legacy
+  // un-suffixed `oxy_rt` for clients that don't know about multi-account.
+  let selectedKey: number | 'legacy' | null = null;
+  if (authuser !== null) {
+    if (buckets.has(authuser)) {
+      selectedKey = authuser;
+    }
+  } else {
+    for (let i = 0; i < MAX_DEVICE_ACCOUNTS; i += 1) {
+      if (buckets.has(i)) {
+        selectedKey = i;
+        break;
+      }
+    }
+    if (selectedKey === null && buckets.has('legacy')) {
+      selectedKey = 'legacy';
+    }
+  }
+
+  if (selectedKey === null) {
+    // No matching cookie was presented for the chosen slot. We only emit a
+    // legacy-cookie clear when the LEGACY slot was the implicit target — for an
+    // explicit `?authuser=N` miss we leave every other slot untouched.
+    if (authuser === null) {
+      clearRefreshCookie(res);
+    }
     return res.status(401).json({ message: 'No refresh token' });
   }
 
-  const classification = await classifyRefreshCandidates(candidates);
+  const candidates = buckets.get(selectedKey) ?? [];
+  const classification = await selectActiveCandidate(candidates);
+
+  // `legacy` slot is cleared via clearRefreshCookie() with no `authuser` so a
+  // mid-migration browser also drops the Path=/auth/refresh duplicate; indexed
+  // slots are cleared individually so sibling accounts are never touched.
+  const clearThisSlot = (): void => {
+    if (selectedKey === 'legacy') {
+      clearRefreshCookie(res);
+    } else if (typeof selectedKey === 'number') {
+      clearRefreshCookie(res, { authuser: selectedKey });
+    }
+  };
 
   if (classification.kind === 'used') {
     // REUSE DETECTED. SECURITY: a lone used/revoked token with NO valid sibling
-    // among the presented cookies is a theft signal — the token was already
-    // rotated away and is being replayed. We revoke the whole family + deactivate
-    // the session (exactly like `rotateRefreshToken`'s reuse path). This branch
-    // is NEVER reached when a valid sibling exists, because `'valid'` wins first
-    // in `classifyRefreshCandidates` — so a legit user's own migration duplicate
-    // (used legacy + valid new) does NOT trip reuse-detection.
+    // in THIS slot is a theft signal. We revoke the whole family + deactivate
+    // the session for the affected slot ONLY — other indexed slots (other
+    // signed-in accounts on this device) stay untouched.
     await revokeFamily(classification.family, classification.sessionId);
-    clearRefreshCookie(res);
-    logger.warn('[RefreshToken] Reuse detected — family revoked', { reason: 'reuse_detected' });
+    clearThisSlot();
+    logger.warn('[RefreshToken] Reuse detected — family revoked', {
+      reason: 'reuse_detected',
+      slot: typeof selectedKey === 'number' ? `oxy_rt_${selectedKey}` : 'oxy_rt',
+    });
     return res.status(401).json({ message: 'Invalid refresh token' });
   }
 
   if (classification.kind === 'none') {
-    // No valid, used, or revoked row matched any candidate (unknown/expired/
-    // garbage only) — nothing to revoke; just clear and refuse.
-    clearRefreshCookie(res);
+    clearThisSlot();
     logger.debug('[RefreshToken] Refresh rejected', { reason: 'not_found' });
     return res.status(401).json({ message: 'Invalid refresh token' });
   }
 
-  // A valid candidate exists — rotate THAT token (single-use). Rotation can still
-  // legitimately fail (e.g. a concurrent request wins the atomic claim → the
-  // service treats the lost race as reuse and has already revoked the family);
-  // preserve the existing generic-401 behaviour and logging for that case.
   const outcome = await rotateRefreshToken(classification.rawToken);
 
   if (!outcome.ok) {
-    clearRefreshCookie(res);
+    clearThisSlot();
     if (outcome.reason === 'reuse_detected') {
-      // Theft signal — family + session already revoked inside rotate. Log the
-      // reason server-side only; the client sees a generic message.
       logger.warn('[RefreshToken] Reuse detected — family revoked', { reason: outcome.reason });
     } else {
       logger.debug('[RefreshToken] Refresh rejected', { reason: outcome.reason });
@@ -736,20 +807,190 @@ router.post('/refresh', refreshLimiter, asyncHandler(async (req, res) => {
     return res.status(401).json({ message: 'Invalid refresh token' });
   }
 
-  // Rotation succeeded — set the freshly-rotated cookie, then mint the access
-  // token off the bound session.
-  setRefreshCookie(res, outcome.token);
+  // Re-emit the rotated cookie back into the SAME slot we just rotated.
+  if (selectedKey === 'legacy') {
+    setRefreshCookie(res, outcome.token);
+  } else {
+    setRefreshCookie(res, outcome.token, { authuser: selectedKey });
+  }
 
   const tokenResult = await sessionService.getAccessToken(outcome.sessionId);
   if (!tokenResult) {
-    clearRefreshCookie(res);
+    clearThisSlot();
     return res.status(401).json({ message: 'Session no longer valid' });
   }
 
   return res.json({
     accessToken: tokenResult.accessToken,
     expiresAt: tokenResult.expiresAt.toISOString(),
+    ...(typeof selectedKey === 'number' ? { authuser: selectedKey } : {}),
   });
+}));
+
+/**
+ * @openapi
+ * /auth/refresh-all:
+ *   post:
+ *     tags:
+ *       - Authentication
+ *     security: []
+ *     summary: Rotate every device-local account in a single round-trip
+ *     description: >
+ *       Rebuilds the Google-style multi-account view for a device. The browser
+ *       presents every `oxy_rt*` cookie it has (legacy un-suffixed + every
+ *       indexed `oxy_rt_${authuser}`); the server rotates each in parallel and
+ *       returns one entry per VALID account. Per-slot reuse-detection still
+ *       applies: a lone used cookie revokes ONLY that slot's family and is
+ *       simply omitted from the response — siblings are unaffected. Slot-level
+ *       errors are logged (warn) but never fail the endpoint as a whole; the
+ *       worst case is a `200 { accounts: [] }`.
+ *     responses:
+ *       200:
+ *         description: Zero or more rotated accounts, sorted by authuser asc.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 accounts:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       authuser:
+ *                         type: integer
+ *                         nullable: true
+ *                       accessToken:
+ *                         type: string
+ *                       expiresAt:
+ *                         type: string
+ *                         format: date-time
+ *                       sessionId:
+ *                         type: string
+ *                       user:
+ *                         $ref: '#/components/schemas/User'
+ *       403:
+ *         description: Origin not allowlisted (BAD_ORIGIN).
+ *       429:
+ *         description: Too many requests from this IP.
+ */
+router.post('/refresh-all', refreshLimiter, requireSameSiteOrigin, asyncHandler(async (req, res) => {
+  const buckets = parseAllRefreshCookies(req.headers.cookie);
+  if (buckets.size === 0) {
+    return res.json({ accounts: [] });
+  }
+
+  type AccountEntry = {
+    authuser: number | null;
+    accessToken: string;
+    expiresAt: string;
+    sessionId: string;
+    user: unknown;
+  };
+  const accounts: AccountEntry[] = [];
+
+  // Sort slots: indexed `0..N-1` ascending, legacy last. This yields a
+  // deterministic response order even when the browser sent the cookies in
+  // any order.
+  const slotKeys: Array<number | 'legacy'> = [];
+  for (const key of buckets.keys()) {
+    slotKeys.push(key);
+  }
+  slotKeys.sort((a, b) => {
+    if (a === 'legacy') return 1;
+    if (b === 'legacy') return -1;
+    return a - b;
+  });
+
+  for (const key of slotKeys) {
+    const rawList = buckets.get(key) ?? [];
+    try {
+      const classification = await selectActiveCandidate(rawList);
+
+      if (classification.kind === 'used') {
+        // Theft signal isolated to THIS slot: revoke its family + deactivate
+        // its session, but do not abort the multi-account rebuild.
+        await revokeFamily(classification.family, classification.sessionId);
+        if (key === 'legacy') {
+          clearRefreshCookie(res);
+        } else {
+          clearRefreshCookie(res, { authuser: key });
+        }
+        logger.warn('[RefreshAll] Reuse detected — family revoked', {
+          slot: typeof key === 'number' ? `oxy_rt_${key}` : 'oxy_rt',
+        });
+        continue;
+      }
+
+      if (classification.kind === 'none') {
+        // Unknown/expired/garbage in this slot — clear it but don't fail the
+        // overall response.
+        if (key === 'legacy') {
+          clearRefreshCookie(res);
+        } else {
+          clearRefreshCookie(res, { authuser: key });
+        }
+        continue;
+      }
+
+      const outcome = await rotateRefreshToken(classification.rawToken);
+      if (!outcome.ok) {
+        if (key === 'legacy') {
+          clearRefreshCookie(res);
+        } else {
+          clearRefreshCookie(res, { authuser: key });
+        }
+        logger.warn('[RefreshAll] Slot rotation failed', {
+          slot: typeof key === 'number' ? `oxy_rt_${key}` : 'oxy_rt',
+          reason: outcome.reason,
+        });
+        continue;
+      }
+
+      // Re-emit the rotated cookie into the same slot.
+      if (key === 'legacy') {
+        setRefreshCookie(res, outcome.token);
+      } else {
+        setRefreshCookie(res, outcome.token, { authuser: key });
+      }
+
+      const tokenResult = await sessionService.getAccessToken(outcome.sessionId);
+      if (!tokenResult) {
+        logger.warn('[RefreshAll] Missing access token for rotated session', {
+          slot: typeof key === 'number' ? `oxy_rt_${key}` : 'oxy_rt',
+          sessionId: outcome.sessionId,
+        });
+        continue;
+      }
+
+      const userDoc = await User.findById(outcome.userId)
+        .select('username name avatar email color publicKey verified privacySettings language bio description locations links linksMetadata')
+        .lean();
+      if (!userDoc) {
+        logger.warn('[RefreshAll] Session present but user not found', {
+          slot: typeof key === 'number' ? `oxy_rt_${key}` : 'oxy_rt',
+          userId: outcome.userId,
+        });
+        continue;
+      }
+
+      accounts.push({
+        authuser: typeof key === 'number' ? key : null,
+        accessToken: tokenResult.accessToken,
+        expiresAt: tokenResult.expiresAt.toISOString(),
+        sessionId: outcome.sessionId,
+        user: formatUserResponse(userDoc),
+      });
+    } catch (error) {
+      logger.warn('[RefreshAll] Slot processing threw — continuing with siblings', {
+        slot: typeof key === 'number' ? `oxy_rt_${key}` : 'oxy_rt',
+        error: error instanceof Error ? error.message : String(error),
+      });
+      continue;
+    }
+  }
+
+  return res.json({ accounts });
 }));
 
 // ---------------------------------------------------------------------------
@@ -808,7 +1049,7 @@ router.post('/refresh', refreshLimiter, asyncHandler(async (req, res) => {
  *       429:
  *         description: Too many requests from this IP.
  */
-router.post('/session', refreshLimiter, rejectQueryToken, authMiddleware, asyncHandler(async (req: AuthRequest, res) => {
+router.post('/session', refreshLimiter, requireSameSiteOrigin, rejectQueryToken, authMiddleware, asyncHandler(async (req: AuthRequest, res) => {
   // OWNERSHIP CHECK (load-bearing):
   // We never accept a sessionId from the URL/body/query — that unauthenticated
   // token-minting / auth-downgrade pattern was a HIGH vuln and was reverted. The
@@ -829,18 +1070,29 @@ router.post('/session', refreshLimiter, rejectQueryToken, authMiddleware, asyncH
 
   // Mint + set the first-party cookie for THIS caller's own session, then mint a
   // fresh access token off that same bound session (exactly like /refresh).
-  await issueAndSetRefreshCookie(res, sessionId, userId);
-
-  const tokenResult = await sessionService.getAccessToken(sessionId);
-  if (!tokenResult) {
+  // `cookieHeader` is forwarded so the helper resolves the device-local
+  // `authuser` slot for Google-style multi-account; legacy clients with no
+  // existing `oxy_rt*` cookies fall back to the un-suffixed legacy slot. The
+  // helper returns the freshly-minted access token so we never round-trip
+  // through getAccessToken a second time.
+  try {
+    const issued = await issueAndSetRefreshCookie(res, sessionId, userId, {
+      cookieHeader: req.headers.cookie,
+    });
+    return res.json({
+      accessToken: issued.accessToken,
+      expiresAt: issued.expiresAt.toISOString(),
+      ...(issued.authuser !== null ? { authuser: issued.authuser } : {}),
+    });
+  } catch (error) {
+    logger.error('[Auth] Failed to issue refresh cookie on /auth/session', error instanceof Error ? error : new Error(String(error)), {
+      component: 'authRoutes',
+      method: 'POST /auth/session',
+      sessionId,
+    });
     clearRefreshCookie(res);
     return res.status(401).json({ message: 'Session no longer valid' });
   }
-
-  return res.json({
-    accessToken: tokenResult.accessToken,
-    expiresAt: tokenResult.expiresAt.toISOString(),
-  });
 }));
 
 /**
@@ -874,20 +1126,51 @@ router.post('/session', refreshLimiter, rejectQueryToken, authMiddleware, asyncH
  *       429:
  *         description: Too many requests from this IP.
  */
-router.post('/logout', refreshLimiter, asyncHandler(async (req, res) => {
-  // Best-effort family revocation. A mid-migration browser can present TWO
-  // `oxy_rt` cookies (legacy `Path=/auth/refresh` + new `Path=/auth`); both
-  // belong to THIS signing-out user, so we revoke every presented candidate's
-  // family to be sure the right one is nuked. revokeFamilyByRawToken never throws
-  // on an unknown/garbage token, so logout always proceeds to clear.
+router.post('/logout', refreshLimiter, requireSameSiteOrigin, asyncHandler(async (req, res) => {
+  // Best-effort family revocation. Two modes:
+  //   1. `?authuser=N` -> sign out ONLY that device-local account: revoke its
+  //      family + deactivate its session, then clear ONLY `oxy_rt_N`. Sibling
+  //      accounts stay signed in.
+  //   2. No param -> sign out EVERY presented account on this device: revoke
+  //      each presented candidate's family, then clear every recognised
+  //      refresh cookie (legacy + each indexed slot).
+  // `revokeFamilyByRawToken` is idempotent on unknown/garbage tokens, so logout
+  // always proceeds to clear and returns 200.
+  const authuser = parseAuthuserParam(req);
+
+  if (authuser !== null) {
+    const buckets = parseAllRefreshCookies(req.headers.cookie);
+    const rawList = buckets.get(authuser) ?? [];
+    for (const raw of rawList) {
+      await revokeFamilyByRawToken(raw);
+    }
+    clearRefreshCookie(res, { authuser });
+    return res.json({ success: true });
+  }
+
   const candidates = parseRefreshTokenCandidates(req.headers.cookie);
   for (const raw of candidates) {
     await revokeFamilyByRawToken(raw);
   }
+  // Also revoke families bound to the indexed slots (the legacy parser only
+  // covers `oxy_rt`).
+  const allBuckets = parseAllRefreshCookies(req.headers.cookie);
+  for (const [key, rawList] of allBuckets.entries()) {
+    if (key === 'legacy') {
+      continue;
+    }
+    for (const raw of rawList) {
+      await revokeFamilyByRawToken(raw);
+    }
+  }
 
-  // ALWAYS clear the cookie on BOTH paths, regardless of whether a token existed.
-  // Logout must never 401/500 on a missing/garbage cookie — it always succeeds.
-  clearRefreshCookie(res);
+  clearAllRefreshCookies(res, req.headers.cookie);
+  // Always emit the legacy clear even when no `oxy_rt` cookie was sent — old
+  // SDK clients rely on the cleared `Path=/auth/refresh` duplicate during the
+  // migration window.
+  if (!allBuckets.has('legacy')) {
+    clearRefreshCookie(res);
+  }
 
   return res.json({ success: true });
 }));
@@ -1108,7 +1391,6 @@ router.get('/user/:publicKey', validate({ params: getUserByPublicKeyParams }), S
 // ============================================
 
 import AuthSession from '../models/AuthSession';
-import Session from '../models/Session';
 
 /**
  * @openapi

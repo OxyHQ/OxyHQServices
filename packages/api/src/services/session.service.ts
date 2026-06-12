@@ -315,7 +315,10 @@ class SessionService {
   ): Promise<ISession> {
     try {
       const { deviceName, deviceFingerprint } = options;
-      let deviceInfo = extractDeviceInfo(req, undefined, deviceName);
+      // Pass userId so the derived deviceId is scoped per-user — two users
+      // behind the same NAT on the same Chrome no longer collide on the same
+      // device-id (security review H1).
+      let deviceInfo = extractDeviceInfo(req, undefined, deviceName, userId);
       
       // Pass userId to optimize device lookup - reduces Session collection scan
       if (deviceFingerprint) {

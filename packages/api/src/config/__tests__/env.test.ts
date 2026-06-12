@@ -7,7 +7,13 @@
  * (scheme, port, spaces, `;`, `,`, control chars) must fail fast at startup.
  */
 
-import { isValidHostname, validateRequiredEnvVars, ConfigurationError } from '../env';
+import {
+  isValidHostname,
+  validateRequiredEnvVars,
+  ConfigurationError,
+  DEV_DEVICE_ID_SALT_DEFAULT,
+} from '../env';
+import { logger } from '../../utils/logger';
 
 jest.mock('../../utils/logger', () => ({
   logger: { warn: jest.fn(), error: jest.fn(), info: jest.fn(), debug: jest.fn() },
@@ -97,5 +103,83 @@ describe('validateRequiredEnvVars — REFRESH_COOKIE_DOMAIN', () => {
     process.env.REFRESH_COOKIE_DOMAIN = value;
     expect(() => validateRequiredEnvVars()).toThrow(ConfigurationError);
     expect(() => validateRequiredEnvVars()).toThrow(/REFRESH_COOKIE_DOMAIN/);
+  });
+});
+
+describe('validateRequiredEnvVars — DEVICE_ID_SALT (security review H1)', () => {
+  const originalEnv = process.env;
+  const STRONG_SALT = 'x'.repeat(48);
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    process.env = { ...originalEnv, ...REQUIRED_BASE_ENV };
+    delete process.env.REFRESH_COOKIE_DOMAIN;
+    delete process.env.DEVICE_ID_SALT;
+  });
+
+  afterAll(() => {
+    process.env = originalEnv;
+  });
+
+  describe('in production', () => {
+    beforeEach(() => {
+      process.env.NODE_ENV = 'production';
+    });
+
+    it('fails fast when DEVICE_ID_SALT is unset', () => {
+      expect(() => validateRequiredEnvVars()).toThrow(ConfigurationError);
+      expect(() => validateRequiredEnvVars()).toThrow(/DEVICE_ID_SALT/);
+    });
+
+    it('fails fast when DEVICE_ID_SALT is too short', () => {
+      process.env.DEVICE_ID_SALT = 'too-short';
+      expect(() => validateRequiredEnvVars()).toThrow(ConfigurationError);
+      expect(() => validateRequiredEnvVars()).toThrow(/DEVICE_ID_SALT/);
+      expect(() => validateRequiredEnvVars()).toThrow(/at least 32/);
+    });
+
+    it('passes for a strong salt and does NOT log a placeholder warning', () => {
+      process.env.DEVICE_ID_SALT = STRONG_SALT;
+      expect(() => validateRequiredEnvVars()).not.toThrow();
+      const warnCalls = (logger.warn as jest.Mock).mock.calls.flat().join(' ');
+      expect(warnCalls).not.toMatch(/development-only placeholder/);
+    });
+
+    it('NEVER installs the dev placeholder in production', () => {
+      expect(() => validateRequiredEnvVars()).toThrow();
+      expect(process.env.DEVICE_ID_SALT).toBeUndefined();
+    });
+  });
+
+  describe('in development', () => {
+    beforeEach(() => {
+      process.env.NODE_ENV = 'development';
+    });
+
+    it('installs the documented dev placeholder when DEVICE_ID_SALT is unset', () => {
+      expect(() => validateRequiredEnvVars()).not.toThrow();
+      expect(process.env.DEVICE_ID_SALT).toBe(DEV_DEVICE_ID_SALT_DEFAULT);
+    });
+
+    it('logs an explicit WARN when falling back to the dev placeholder', () => {
+      validateRequiredEnvVars();
+      const warnCalls = (logger.warn as jest.Mock).mock.calls;
+      const matched = warnCalls.some(([msg]) =>
+        typeof msg === 'string' && /development-only placeholder/.test(msg)
+      );
+      expect(matched).toBe(true);
+    });
+
+    it('does NOT overwrite an operator-provided dev salt', () => {
+      process.env.DEVICE_ID_SALT = STRONG_SALT;
+      validateRequiredEnvVars();
+      expect(process.env.DEVICE_ID_SALT).toBe(STRONG_SALT);
+    });
+
+    it('still rejects a too-short salt in development', () => {
+      process.env.DEVICE_ID_SALT = 'too-short';
+      expect(() => validateRequiredEnvVars()).toThrow(ConfigurationError);
+      expect(() => validateRequiredEnvVars()).toThrow(/DEVICE_ID_SALT/);
+    });
   });
 });

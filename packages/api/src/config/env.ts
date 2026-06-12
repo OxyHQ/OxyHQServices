@@ -22,6 +22,11 @@ export interface RequiredEnvVars {
   FEDCM_TOKEN_SECRET: string;
   FEDCM_ISSUER?: string;
 
+  // Device-id derivation salt (security review H1). Required in production
+  // (no default). Optional in development (auto-filled with a documented
+  // placeholder + WARNING). Must be ≥32 chars whenever it is set.
+  DEVICE_ID_SALT: string;
+
   // AWS/S3 Configuration
   AWS_REGION: string;
   AWS_ACCESS_KEY_ID: string;
@@ -65,6 +70,21 @@ export class ConfigurationError extends Error {
 const HOSTNAME_LABEL = '[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?';
 const HOSTNAME_REGEX = new RegExp(`^${HOSTNAME_LABEL}(?:\\.${HOSTNAME_LABEL})*$`);
 const MAX_HOSTNAME_LENGTH = 253;
+
+/**
+ * Minimum acceptable length for `DEVICE_ID_SALT`. 32 chars ≈ 192 bits of
+ * entropy when using a base64-ish alphabet, well above what's needed to
+ * prevent salt-guessing brute-force against the truncated SHA-256 device id.
+ */
+const MIN_DEVICE_ID_SALT_LENGTH = 32;
+
+/**
+ * Development-only default for `DEVICE_ID_SALT`. NEVER use this in production —
+ * production startup will fail-fast if `DEVICE_ID_SALT` is unset (see
+ * `validateRequiredEnvVars`). The literal value is intentionally
+ * recognisable so accidental prod usage is easy to grep for in logs.
+ */
+export const DEV_DEVICE_ID_SALT_DEFAULT = 'dev-only-device-id-salt-do-not-use-in-prod';
 
 /**
  * Check whether a value is a strictly valid hostname suitable for
@@ -132,6 +152,42 @@ export function validateRequiredEnvVars(): void {
         warnings.push(`${key} is set to a default placeholder — generate a strong secret with: openssl rand -base64 64`);
       }
     }
+  }
+
+  // DEVICE_ID_SALT scopes the derived deviceId hash (see
+  // `packages/api/src/utils/deviceUtils.ts`). Without it, two users behind
+  // the same NAT/proxy on the same browser collide on the same deviceId and
+  // can read each other's session listings (security review H1).
+  //
+  // - Production: required, no default, ≥32 chars. Fail fast on startup.
+  // - Development: optional. If unset, we install a documented placeholder
+  //   into `process.env.DEVICE_ID_SALT` and emit a WARNING so the deriver
+  //   still functions deterministically across requests during local
+  //   development. Operators MUST set a real value in prod.
+  // - In every environment, if set it must be ≥32 chars.
+  const deviceIdSalt = process.env.DEVICE_ID_SALT;
+  if (!deviceIdSalt || deviceIdSalt.length === 0) {
+    if (isProduction()) {
+      missing.push(
+        'DEVICE_ID_SALT (required: generate with `openssl rand -base64 48` — ' +
+        'scopes the derived deviceId hash; without it, two users behind the ' +
+        'same NAT on the same browser collide on the same deviceId)'
+      );
+    } else {
+      // Dev-mode: install the placeholder so the derivation works in tests
+      // and local runs, and warn loudly so it never silently reaches prod.
+      process.env.DEVICE_ID_SALT = DEV_DEVICE_ID_SALT_DEFAULT;
+      logger.warn(
+        'DEVICE_ID_SALT is unset — using a development-only placeholder. ' +
+        'Set DEVICE_ID_SALT to a strong random value (≥32 chars) before ' +
+        'deploying. Generate one with: openssl rand -base64 48',
+        { component: 'env', placeholder: DEV_DEVICE_ID_SALT_DEFAULT }
+      );
+    }
+  } else if (deviceIdSalt.length < MIN_DEVICE_ID_SALT_LENGTH) {
+    missing.push(
+      `DEVICE_ID_SALT (insecure: must be at least ${MIN_DEVICE_ID_SALT_LENGTH} characters; got ${deviceIdSalt.length})`
+    );
   }
 
   // REFRESH_COOKIE_DOMAIN is interpolated into a hand-built Set-Cookie header

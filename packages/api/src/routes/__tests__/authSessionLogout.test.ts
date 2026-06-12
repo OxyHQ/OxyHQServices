@@ -237,15 +237,15 @@ interface JsonResponse {
 }
 
 /**
- * Cookie-aware JSON request helper. Sends optional Cookie + Authorization
- * headers and returns the parsed body plus the raw `set-cookie` array.
+ * Cookie-aware JSON request helper. Sends optional Cookie + Authorization +
+ * Origin headers and returns the parsed body plus the raw `set-cookie` array.
  */
 async function requestJson(
   srv: http.Server,
   method: string,
   path: string,
   payload: unknown,
-  opts: { cookieHeader?: string; bearer?: string } = {}
+  opts: { cookieHeader?: string; bearer?: string; origin?: string } = {}
 ): Promise<JsonResponse> {
   const address = srv.address() as AddressInfo;
   const body = JSON.stringify(payload ?? {});
@@ -259,6 +259,9 @@ async function requestJson(
     }
     if (opts.bearer) {
       headers.authorization = `Bearer ${opts.bearer}`;
+    }
+    if (opts.origin) {
+      headers.origin = opts.origin;
     }
     const req = http.request(
       { method, host: '127.0.0.1', port: address.port, path, headers },
@@ -347,7 +350,13 @@ describe('POST /auth/session', () => {
     mockCreate.mockResolvedValueOnce({});
     mockGetAccessToken.mockResolvedValueOnce({ accessToken: 'access-jwt', expiresAt });
 
-    const res = await requestJson(server, 'POST', '/auth/session', {}, { bearer: 'bearer-access-jwt' });
+    const res = await requestJson(
+      server,
+      'POST',
+      '/auth/session',
+      {},
+      { bearer: 'bearer-access-jwt', origin: 'https://accounts.oxy.so' }
+    );
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
@@ -435,7 +444,7 @@ describe('POST /auth/logout', () => {
       'POST',
       '/auth/logout',
       {},
-      { cookieHeader: `${REFRESH_COOKIE_NAME}=${presented}` }
+      { cookieHeader: `${REFRESH_COOKIE_NAME}=${presented}`, origin: 'https://oxy.so' }
     );
 
     expect(res.status).toBe(200);
@@ -530,5 +539,229 @@ describe('POST /auth/logout', () => {
     const cleared = res.setCookie.find((c) => c.startsWith(`${REFRESH_COOKIE_NAME}=`));
     expect(cleared).toBeDefined();
     expect(cleared).toMatch(/Max-Age=0/i);
+  });
+});
+
+describe('POST /auth/logout — Google-style multi-account', () => {
+  it('with ?authuser=0 revokes ONLY that family and clears ONLY oxy_rt_0', async () => {
+    const tok0 = 'tok-zero';
+    const tok1 = 'tok-one';
+    stageToken(buildStoredToken(tok0, {
+      _id: 'rt-0', sessionId: 'sess-0', family: 'fam-0',
+    }));
+    stageToken(buildStoredToken(tok1, {
+      _id: 'rt-1', sessionId: 'sess-1', family: 'fam-1',
+    }));
+    mockUpdateMany.mockResolvedValue({ modifiedCount: 1 });
+    mockDeactivateSession.mockResolvedValue(true);
+
+    const res = await requestJson(
+      server,
+      'POST',
+      '/auth/logout?authuser=0',
+      {},
+      { cookieHeader: `oxy_rt_0=${tok0}; oxy_rt_1=${tok1}` }
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ success: true });
+    // Only fam-0 revoked, only sess-0 deactivated. Sibling slot untouched.
+    expect(mockUpdateMany).toHaveBeenCalledTimes(1);
+    expect(mockUpdateMany).toHaveBeenCalledWith(
+      { family: 'fam-0', revokedAt: null },
+      { $set: { revokedAt: expect.any(Date) } }
+    );
+    expect(mockDeactivateSession).toHaveBeenCalledTimes(1);
+    expect(mockDeactivateSession).toHaveBeenCalledWith('sess-0');
+    // Only oxy_rt_0 cleared; oxy_rt_1 NOT cleared.
+    const clearedZero = res.setCookie.find(
+      (c) => c.startsWith('oxy_rt_0=') && /Max-Age=0/i.test(c)
+    );
+    const clearedOne = res.setCookie.find(
+      (c) => c.startsWith('oxy_rt_1=') && /Max-Age=0/i.test(c)
+    );
+    expect(clearedZero).toBeDefined();
+    expect(clearedOne).toBeUndefined();
+  });
+
+  it('with NO ?authuser= revokes EVERY presented family (indexed + legacy) and clears every slot', async () => {
+    const tokLegacy = 'tok-legacy';
+    const tok0 = 'tok-zero';
+    const tok1 = 'tok-one';
+    stageToken(buildStoredToken(tokLegacy, {
+      _id: 'rt-legacy', sessionId: 'sess-legacy', family: 'fam-legacy',
+    }));
+    stageToken(buildStoredToken(tok0, {
+      _id: 'rt-0', sessionId: 'sess-0', family: 'fam-0',
+    }));
+    stageToken(buildStoredToken(tok1, {
+      _id: 'rt-1', sessionId: 'sess-1', family: 'fam-1',
+    }));
+    mockUpdateMany.mockResolvedValue({ modifiedCount: 1 });
+    mockDeactivateSession.mockResolvedValue(true);
+
+    const res = await requestJson(
+      server,
+      'POST',
+      '/auth/logout',
+      {},
+      { cookieHeader: `${REFRESH_COOKIE_NAME}=${tokLegacy}; oxy_rt_0=${tok0}; oxy_rt_1=${tok1}` }
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ success: true });
+    // All three families revoked.
+    expect(mockUpdateMany).toHaveBeenCalledWith(
+      { family: 'fam-legacy', revokedAt: null },
+      { $set: { revokedAt: expect.any(Date) } }
+    );
+    expect(mockUpdateMany).toHaveBeenCalledWith(
+      { family: 'fam-0', revokedAt: null },
+      { $set: { revokedAt: expect.any(Date) } }
+    );
+    expect(mockUpdateMany).toHaveBeenCalledWith(
+      { family: 'fam-1', revokedAt: null },
+      { $set: { revokedAt: expect.any(Date) } }
+    );
+    expect(mockDeactivateSession).toHaveBeenCalledWith('sess-legacy');
+    expect(mockDeactivateSession).toHaveBeenCalledWith('sess-0');
+    expect(mockDeactivateSession).toHaveBeenCalledWith('sess-1');
+
+    // Every indexed slot cleared + legacy cleared on both paths.
+    const clearedZero = res.setCookie.find(
+      (c) => c.startsWith('oxy_rt_0=') && /Max-Age=0/i.test(c)
+    );
+    const clearedOne = res.setCookie.find(
+      (c) => c.startsWith('oxy_rt_1=') && /Max-Age=0/i.test(c)
+    );
+    expect(clearedZero).toBeDefined();
+    expect(clearedOne).toBeDefined();
+    expect(findClearForPath(res.setCookie, REFRESH_COOKIE_PATH)).toBeDefined();
+    expect(findClearForPath(res.setCookie, LEGACY_REFRESH_COOKIE_PATH)).toBeDefined();
+  });
+
+  it('with ?authuser=2 but no oxy_rt_2 cookie -> no-op revoke, still clears that slot', async () => {
+    const tok0 = 'tok-zero';
+    stageToken(buildStoredToken(tok0, {
+      _id: 'rt-0', sessionId: 'sess-0', family: 'fam-0',
+    }));
+
+    const res = await requestJson(
+      server,
+      'POST',
+      '/auth/logout?authuser=2',
+      {},
+      { cookieHeader: `oxy_rt_0=${tok0}` }
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ success: true });
+    // Nothing to revoke: empty slot.
+    expect(mockUpdateMany).not.toHaveBeenCalled();
+    expect(mockDeactivateSession).not.toHaveBeenCalled();
+    // oxy_rt_0 must NOT be cleared (sibling slot).
+    const clearedZero = res.setCookie.find(
+      (c) => c.startsWith('oxy_rt_0=') && /Max-Age=0/i.test(c)
+    );
+    expect(clearedZero).toBeUndefined();
+  });
+
+  it('rejects ?authuser=foo with 400 BadRequest', async () => {
+    const res = await requestJson(server, 'POST', '/auth/logout?authuser=foo', {});
+    expect(res.status).toBe(400);
+    expect(mockUpdateMany).not.toHaveBeenCalled();
+  });
+});
+
+describe('Origin guard on the cookie-credentialed auth endpoints (MED-1)', () => {
+  // requireSameSiteOrigin runs BEFORE every route-specific middleware/handler:
+  // a cross-site Origin gets a 403 BAD_ORIGIN with NO cookie minted, NO family
+  // revoked, and NO session touched.
+  const BAD_ORIGIN_BODY = {
+    error: {
+      code: 'BAD_ORIGIN',
+      message: 'Request origin is not allowed for this endpoint',
+    },
+  };
+
+  it('POST /auth/session rejects a non-allowlisted Origin with 403 before any work', async () => {
+    const res = await requestJson(
+      server,
+      'POST',
+      '/auth/session',
+      {},
+      { bearer: 'bearer-access-jwt', origin: 'https://evil.com' }
+    );
+
+    expect(res.status).toBe(403);
+    expect(res.body).toEqual(BAD_ORIGIN_BODY);
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(mockGetAccessToken).not.toHaveBeenCalled();
+    const cookie = res.setCookie.find((c) => c.startsWith(`${REFRESH_COOKIE_NAME}=`));
+    expect(cookie).toBeUndefined();
+  });
+
+  it('POST /auth/logout rejects a non-allowlisted Origin with 403 and revokes nothing', async () => {
+    const presented = 'present-raw-token';
+    stageToken(buildStoredToken(presented));
+
+    const res = await requestJson(
+      server,
+      'POST',
+      '/auth/logout',
+      {},
+      { cookieHeader: `${REFRESH_COOKIE_NAME}=${presented}`, origin: 'https://attacker.example' }
+    );
+
+    expect(res.status).toBe(403);
+    expect(res.body).toEqual(BAD_ORIGIN_BODY);
+    expect(mockUpdateMany).not.toHaveBeenCalled();
+    expect(mockDeactivateSession).not.toHaveBeenCalled();
+  });
+
+  it('POST /auth/refresh rejects a non-allowlisted Origin with 403 and never reads the cookie', async () => {
+    const presented = 'present-raw-token';
+    stageToken(buildStoredToken(presented));
+
+    const res = await requestJson(
+      server,
+      'POST',
+      '/auth/refresh',
+      {},
+      { cookieHeader: `${REFRESH_COOKIE_NAME}=${presented}`, origin: 'https://oxy.so.evil.com' }
+    );
+
+    expect(res.status).toBe(403);
+    expect(res.body).toEqual(BAD_ORIGIN_BODY);
+    expect(mockFindOne).not.toHaveBeenCalled();
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it('POST /auth/refresh proceeds normally with an allowlisted Origin', async () => {
+    // No cookie staged -> the handler runs and returns its normal 401, proving
+    // the guard let the request through to the real route logic.
+    const res = await requestJson(
+      server,
+      'POST',
+      '/auth/refresh',
+      {},
+      { origin: 'https://api.oxy.so' }
+    );
+
+    expect(res.status).toBe(401);
+    expect(res.body).toEqual({ message: 'No refresh token' });
+  });
+
+  it('POST /auth/logout proceeds normally with an allowlisted subdomain Origin', async () => {
+    const res = await requestJson(
+      server,
+      'POST',
+      '/auth/logout',
+      {},
+      { origin: 'https://accounts.oxy.so' }
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ success: true });
   });
 });

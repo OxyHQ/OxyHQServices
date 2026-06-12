@@ -161,7 +161,10 @@ class SecurityActivityService {
     // Extract device info from request if available and not already in metadata
     let finalDeviceId = deviceId;
     if (req && !finalDeviceId) {
-      const deviceInfo = extractDeviceInfo(req);
+      // Scope the derived deviceId to this user so security-activity events
+      // logged under the same UA/IP for two different users don't collide
+      // on the same device-id (security review H1).
+      const deviceInfo = extractDeviceInfo(req, undefined, undefined, userId);
       finalDeviceId = deviceInfo.deviceId;
       if (!sanitizedMetadata.deviceName && deviceInfo.deviceName) {
         sanitizedMetadata.deviceName = this.sanitizeString(deviceInfo.deviceName, 100);

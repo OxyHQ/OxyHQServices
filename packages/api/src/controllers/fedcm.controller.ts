@@ -57,8 +57,15 @@ export async function exchangeIdToken(req: Request, res: Response) {
     // Plant the first-party httpOnly refresh cookie for cold-boot session
     // persistence. `result.user.id` is a string ObjectId; issueRefreshToken
     // accepts string | ObjectId. A failure here must never break the exchange.
+    // `cookieHeader` is forwarded so the helper resolves the device-local
+    // `authuser` slot (Google-style multi-account: append to existing accounts,
+    // reuse an existing slot for this user, or evict the LRU at the device cap).
+    let fedcmAuthuser: number | null = null;
     try {
-      await issueAndSetRefreshCookie(res, result.sessionId, result.user.id);
+      const issued = await issueAndSetRefreshCookie(res, result.sessionId, result.user.id, {
+        cookieHeader: req.headers.cookie,
+      });
+      fedcmAuthuser = issued.authuser;
     } catch (error) {
       logger.error('Failed to set refresh cookie during FedCM exchange', error instanceof Error ? error : new Error(String(error)), {
         component: 'FedCMController',
@@ -67,7 +74,9 @@ export async function exchangeIdToken(req: Request, res: Response) {
       });
     }
 
-    return res.json(result);
+    const responseWithAuthuser: typeof result & { authuser?: number } =
+      fedcmAuthuser === null ? result : { ...result, authuser: fedcmAuthuser };
+    return res.json(responseWithAuthuser);
   } catch (error) {
     logger.error('FedCM token exchange error:', error);
     return res.status(500).json({
