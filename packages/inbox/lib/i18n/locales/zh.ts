@@ -197,6 +197,7 @@ const zh: LocaleDict = {
       offlineSync_one: '已同步 {{count}} 条离线操作。',
       offlineSync_other: '已同步 {{count}} 条离线操作。',
       newVersionAvailable: '有新版本 — 请刷新以更新。',
+      newEmail: '来自 {{sender}} 的新邮件',
     },
   },
 

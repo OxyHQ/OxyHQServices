@@ -19,6 +19,7 @@ import { InboxPrefsProvider } from '@/contexts/inbox-prefs-context';
 import { LocaleProvider, useTranslation } from '@/lib/i18n';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { AuthGate } from '@/components/AuthGate';
+import { useInboxSocket } from '@/hooks/useInboxSocket';
 import { registerServiceWorker } from '@/utils/registerServiceWorker';
 import { onConnectivityChange, flushQueue } from '@/utils/offlineQueue';
 import * as SplashScreen from 'expo-splash-screen';
@@ -153,6 +154,11 @@ function RootLayoutContent({ themeMode, colorPreset }: RootLayoutContentProps) {
  */
 function RootEffects() {
   const { t } = useTranslation();
+
+  // Real-time inbox updates. The hook is a no-op until a user is signed in
+  // and tears the socket down on sign-out — react-query caches survive,
+  // so reconciling fetches happen the moment a new session is restored.
+  useInboxSocket({ baseURL: API_URL });
 
   // Register service worker on web
   useEffect(() => {

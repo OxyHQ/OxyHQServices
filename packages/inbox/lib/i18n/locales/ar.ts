@@ -200,6 +200,7 @@ const ar: LocaleDict = {
       offlineSync_one: 'تمت مزامنة {{count}} إجراء دون اتصال.',
       offlineSync_other: 'تمت مزامنة {{count}} إجراءات دون اتصال.',
       newVersionAvailable: 'تتوفّر نسخة جديدة — أعد التحميل للتحديث.',
+      newEmail: 'رسالة جديدة من {{sender}}',
     },
   },
 

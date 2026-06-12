@@ -199,6 +199,7 @@ const ja: LocaleDict = {
       offlineSync_one: 'オフライン操作 {{count}} 件を同期しました。',
       offlineSync_other: 'オフライン操作 {{count}} 件を同期しました。',
       newVersionAvailable: '新しいバージョンが利用可能です — 更新してください。',
+      newEmail: '{{sender}}から新着メール',
     },
   },
 

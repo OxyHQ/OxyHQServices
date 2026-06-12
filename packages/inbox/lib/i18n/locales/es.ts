@@ -202,6 +202,7 @@ const es: LocaleDict = {
       offlineSync_one: 'Sincronizada {{count}} acción sin conexión.',
       offlineSync_other: 'Sincronizadas {{count}} acciones sin conexión.',
       newVersionAvailable: 'Hay una versión nueva — recarga para actualizar.',
+      newEmail: 'Nuevo email de {{sender}}',
     },
   },
 

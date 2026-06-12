@@ -202,6 +202,7 @@ const ca: LocaleDict = {
       offlineSync_one: "S'ha sincronitzat {{count}} acció sense connexió.",
       offlineSync_other: "S'han sincronitzat {{count}} accions sense connexió.",
       newVersionAvailable: 'Hi ha una versió nova — recarrega per actualitzar.',
+      newEmail: 'Nou correu de {{sender}}',
     },
   },
 

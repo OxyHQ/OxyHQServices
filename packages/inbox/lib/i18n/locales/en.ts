@@ -206,6 +206,7 @@ const en: LocaleDict = {
       offlineSync_one: 'Synced {{count}} offline action.',
       offlineSync_other: 'Synced {{count}} offline actions.',
       newVersionAvailable: 'New version available — refresh to update.',
+      newEmail: 'New email from {{sender}}',
     },
   },
 
