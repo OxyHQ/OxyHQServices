@@ -1,13 +1,20 @@
 /**
  * CORS (Cross-Origin Resource Sharing) Configuration
  *
- * Reflects the request origin in Access-Control-Allow-Origin.
- * The Oxy ecosystem has many apps — maintaining a whitelist creates
- * friction for new apps. Authentication and authorization are handled
- * by session/token validation, not by CORS origin checks.
+ * Strict Origin allowlist (MED-1 CSRF hardening, Phase A). Only first-party
+ * Oxy ecosystem origins (and their https subdomains) receive
+ * `Access-Control-Allow-Origin` — and ALWAYS with the specific origin echoed
+ * back, NEVER `*`, because responses carry `Access-Control-Allow-Credentials:
+ * true`. Non-allowlisted origins get no ACAO header at all, so the browser
+ * fails the preflight/response check and never delivers a credentialed
+ * cross-origin response.
+ *
+ * The allowlist itself lives in `./allowedOrigins` and is shared with the
+ * Origin guard middleware (single source of truth).
  */
 
 import { Request, Response, NextFunction } from 'express';
+import { isAllowedOrigin } from './allowedOrigins';
 
 /**
  * Standard HTTP methods allowed for CORS
@@ -65,8 +72,13 @@ export const EXPOSED_HEADERS = [
 export const PREFLIGHT_MAX_AGE = 86400;
 
 /**
- * CORS middleware factory
- * Reflects the request origin with credentials support.
+ * CORS middleware factory.
+ *
+ * Echoes the request origin in `Access-Control-Allow-Origin` ONLY when it
+ * passes the strict allowlist. Disallowed origins receive no ACAO header
+ * (the preflight fails; the browser will not send the credentialed request).
+ * `Vary: Origin` is always set so caches never serve one origin's headers
+ * to another.
  */
 export function createCorsMiddleware() {
   const allowedMethodsStr = ALLOWED_METHODS.join(', ');
@@ -76,14 +88,14 @@ export function createCorsMiddleware() {
   return (req: Request, res: Response, next: NextFunction): void => {
     const origin = req.headers.origin;
 
-    if (origin) {
+    if (origin && isAllowedOrigin(origin)) {
       res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
     }
 
     res.setHeader('Access-Control-Allow-Methods', allowedMethodsStr);
     res.setHeader('Access-Control-Allow-Headers', allowedHeadersStr);
     res.setHeader('Access-Control-Expose-Headers', exposedHeadersStr);
-    res.setHeader('Access-Control-Allow-Credentials', 'true');
     res.setHeader('Vary', 'Origin');
 
     if (req.method === 'OPTIONS') {
@@ -97,10 +109,19 @@ export function createCorsMiddleware() {
 }
 
 /**
- * Socket.IO CORS configuration — allows all origins with credentials
+ * Socket.IO CORS configuration — same strict allowlist as the HTTP layer.
  */
 export const SOCKET_IO_CORS_CONFIG = {
-  origin: true,
+  origin: (
+    origin: string | undefined,
+    callback: (err: Error | null, allow?: boolean) => void
+  ): void => {
+    if (!origin || isAllowedOrigin(origin)) {
+      callback(null, true);
+      return;
+    }
+    callback(null, false);
+  },
   methods: ['GET', 'POST'],
   credentials: true,
 };
