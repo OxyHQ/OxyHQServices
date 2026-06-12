@@ -1,7 +1,8 @@
 import { useRef, useState } from "react"
 import { buildApiUrl, buildAuthUrl } from "@/lib/oxy-api-client"
 import {
-    meResponseSchema,
+    refreshResponseSchema,
+    currentUserResponseSchema,
     deviceSessionsResponseSchema,
     safeParse,
 } from "@/lib/schemas"
@@ -10,7 +11,7 @@ import type { Account, DeviceAccount } from "@/lib/types"
 type DeviceAccountsState = {
     /** True until the session probe settles. */
     isLoading: boolean
-    /** The account whose IdP session cookie is currently active (`/users/me`). */
+    /** The account whose persistent IdP session is active (resolved via refresh). */
     currentAccount: Account | null
     /** The current account's session id (used to mint its token on "Continue"). */
     currentSessionId: string | null
@@ -23,6 +24,13 @@ type DeviceAccountsState = {
 
 const INITIAL_STATE: DeviceAccountsState = {
     isLoading: true,
+    currentAccount: null,
+    currentSessionId: null,
+    accounts: [],
+}
+
+const LOGGED_OUT_STATE: DeviceAccountsState = {
+    isLoading: false,
     currentAccount: null,
     currentSessionId: null,
     accounts: [],
@@ -43,23 +51,50 @@ function resolveDisplayName(user: {
 }
 
 /**
+ * Decode a JWT payload WITHOUT verifying its signature, returning the `sessionId`
+ * claim. Reading a claim for client-side routing is safe: the server re-verifies
+ * the token's signature on every protected request, so a forged claim here would
+ * simply fail the subsequent `/users/me` / `/session/*` calls. The Oxy access
+ * token embeds `{ userId, sessionId, deviceId }`.
+ */
+function readSessionIdFromToken(accessToken: string): string | null {
+    try {
+        const segments = accessToken.split(".")
+        if (segments.length !== 3) return null
+        const payloadSegment = segments[1].replace(/-/g, "+").replace(/_/g, "/")
+        const padded = payloadSegment.padEnd(
+            payloadSegment.length + ((4 - (payloadSegment.length % 4)) % 4),
+            "="
+        )
+        const json = JSON.parse(atob(padded)) as { sessionId?: unknown }
+        return typeof json.sessionId === "string" && json.sessionId.length > 0
+            ? json.sessionId
+            : null
+    } catch {
+        return null
+    }
+}
+
+/**
  * Detect the accounts available on this device for the Google-style chooser.
  *
- * Strategy (lightest existing, cookie-authenticated calls — no FedCM browser
- * APIs, which the `Sec-Fetch-Dest: webidentity` CSRF guard makes uncallable
- * from page JS):
- *   1. `GET /users/me` resolves the CURRENT account + its `sessionId` from the
- *      IdP session cookie. A 401 / empty result means logged out → show the
- *      sign-in form.
- *   2. With that `sessionId`, `GET /session/device/sessions/:sessionId` lists
- *      every account signed in on this physical device (deduplicated per user).
- *      This is what lets the chooser show "other signed-in accounts" once
- *      multi-session lands. Best-effort: if it fails we still show the single
- *      current account.
+ * The persistent session on a cold-boot page load lives ONLY in the durable
+ * httpOnly `oxy_rt` cookie (Path=/auth/refresh). There is no in-memory access
+ * token yet, so the bearer-protected `/users/me` would 401 on its own. We
+ * therefore bootstrap exactly like the reload-persistence path:
+ *   1. `POST /auth/refresh` (credentials included, NO Authorization header)
+ *      rotates the single-use cookie and mints a fresh access token. A
+ *      401/non-2xx/network failure means no persistent session → sign-in form.
+ *   2. The access token's JWT carries the `sessionId`; we decode it and plant
+ *      both token + sessionId in `sessionStorage` so the chooser's continue /
+ *      OAuth-consent handlers (which read those keys) work seamlessly.
+ *   3. `GET /users/me` WITH the bearer → the current account.
+ *   4. `GET /session/device/sessions/:sessionId` WITH the bearer → sibling
+ *      accounts (1..N), best-effort.
  *
- * The fetch is kicked off once during render via a ref guard (matching the
- * existing login-form pattern) — no `useEffect` for the prop→state sync the
- * app's conventions forbid.
+ * `/auth/refresh` is single-use and rotates the cookie on each call — the
+ * detection IS a legitimate refresh, so it MUST run at most once per page load
+ * (guarded by the ref in `useDeviceAccounts`).
  */
 export function useDeviceAccounts(): DeviceAccountsState {
     const [state, setState] = useState<DeviceAccountsState>(INITIAL_STATE)
@@ -74,43 +109,71 @@ export function useDeviceAccounts(): DeviceAccountsState {
 }
 
 async function detectAccounts(): Promise<DeviceAccountsState> {
-    let currentAccount: Account | null = null
-    let currentSessionId: string | null = null
+    // 1. Bootstrap an access token from the durable refresh cookie.
+    let accessToken: string
+    try {
+        const refreshRes = await fetch(buildApiUrl("/auth/refresh"), {
+            method: "POST",
+            credentials: "include",
+        })
+        if (!refreshRes.ok) return LOGGED_OUT_STATE
+        const refreshed = safeParse(
+            refreshResponseSchema,
+            await refreshRes.json()
+        )
+        if (!refreshed?.accessToken) return LOGGED_OUT_STATE
+        accessToken = refreshed.accessToken
+    } catch {
+        // No persistent session / network failure → sign-in form.
+        return LOGGED_OUT_STATE
+    }
 
+    // 2. Recover the session id from the token and plant credentials so the
+    //    chooser's continue / consent handlers can reuse them.
+    const currentSessionId = readSessionIdFromToken(accessToken)
+    if (!currentSessionId) return LOGGED_OUT_STATE
+    sessionStorage.setItem("oxy_access_token", accessToken)
+    sessionStorage.setItem("oxy_session_id", currentSessionId)
+
+    const authHeaders = { Authorization: `Bearer ${accessToken}` }
+
+    // 3. Resolve the current account (bearer-authenticated).
+    let currentAccount: Account | null = null
     try {
         const meRes = await fetch(buildApiUrl("/users/me"), {
             credentials: "include",
+            headers: authHeaders,
         })
         if (meRes.ok) {
-            const parsed = safeParse(meResponseSchema, await meRes.json())
-            if (parsed?.user && parsed.sessionId) {
-                currentAccount = parsed.user as Account
-                currentSessionId = parsed.sessionId
+            const parsed = safeParse(
+                currentUserResponseSchema,
+                await meRes.json()
+            )
+            if (parsed?.data?.id) {
+                currentAccount = {
+                    id: parsed.data.id,
+                    username: parsed.data.username,
+                    email: parsed.data.email,
+                    avatar: parsed.data.avatar,
+                    displayName: resolveDisplayName(parsed.data),
+                }
             }
         }
     } catch {
-        // Network/parse failure — treated as logged out (sign-in form shown).
+        // Fall through — handled by the guard below.
     }
 
-    if (!currentAccount || !currentSessionId) {
-        return {
-            isLoading: false,
-            currentAccount: null,
-            currentSessionId: null,
-            accounts: [],
-        }
-    }
+    if (!currentAccount) return LOGGED_OUT_STATE
 
     const accounts: DeviceAccount[] = [
         { sessionId: currentSessionId, account: currentAccount, isCurrent: true },
     ]
 
-    // Enrich with any sibling accounts signed in on the same device. Failures
-    // are non-fatal: the chooser still renders the current account alone.
+    // 4. Enrich with sibling accounts on the same device (best-effort).
     try {
         const devRes = await fetch(
             buildAuthUrl(`/device/sessions/${currentSessionId}`),
-            { credentials: "include" }
+            { credentials: "include", headers: authHeaders }
         )
         if (devRes.ok) {
             const list = safeParse(
@@ -120,7 +183,6 @@ async function detectAccounts(): Promise<DeviceAccountsState> {
             if (list) {
                 for (const entry of list) {
                     if (!entry.user?.id) continue
-                    // Skip the current account — already added above.
                     if (entry.sessionId === currentSessionId) continue
                     if (entry.user.id === currentAccount.id) continue
                     accounts.push({

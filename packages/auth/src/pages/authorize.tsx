@@ -117,7 +117,6 @@ export function AuthorizePage() {
     currentSessionId: chooserSessionId,
   } = useDeviceAccounts();
   const [chooserDismissed, setChooserDismissed] = useState(false);
-  const [pendingSessionId, setPendingSessionId] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadData() {
@@ -265,30 +264,21 @@ export function AuthorizePage() {
     );
   }
 
-  async function handleChooseAccount(entry: DeviceAccount): Promise<void> {
-    // Only the active account can proceed without re-auth: mint its token,
-    // plant it for the approve handler, then reveal the consent screen.
+  function handleChooseAccount(entry: DeviceAccount): void {
+    // Only the active account can proceed without re-auth. The chooser's session
+    // probe already minted+planted a fresh access token via the durable refresh
+    // cookie, so reuse it and reveal the consent screen below. If it is somehow
+    // absent, fall back to a full re-auth via /login (the bearer-protected
+    // /token endpoint cannot be reached with cookies alone).
     if (entry.isCurrent) {
-      setPendingSessionId(entry.sessionId);
-      setSubmitting(true);
-      try {
-        const res = await fetch(buildAuthUrl(`/token/${entry.sessionId}`), {
-          credentials: "include",
-        });
-        const tokenData = await res.json().catch(() => ({}));
-        if (!res.ok || !tokenData.accessToken) {
-          // Stale session — fall back to a full re-auth.
-          gotoLoginWithHint(entry.account.username || entry.account.email);
-          return;
-        }
-        sessionStorage.setItem("oxy_session_id", entry.sessionId);
-        sessionStorage.setItem("oxy_access_token", tokenData.accessToken);
-        setData((prev) => ({ ...prev, sessionId: entry.sessionId }));
-        setChooserDismissed(true);
-      } finally {
-        setPendingSessionId(null);
-        setSubmitting(false);
+      const planted = sessionStorage.getItem("oxy_access_token");
+      if (!planted) {
+        gotoLoginWithHint(entry.account.username || entry.account.email);
+        return;
       }
+      sessionStorage.setItem("oxy_session_id", entry.sessionId);
+      setData((prev) => ({ ...prev, sessionId: entry.sessionId }));
+      setChooserDismissed(true);
       return;
     }
     // A different signed-in account: re-authenticate via /login.
@@ -536,7 +526,6 @@ export function AuthorizePage() {
         appName={data.appName}
         onSelectAccount={handleChooseAccount}
         onUseAnother={() => gotoLoginWithHint()}
-        pendingSessionId={pendingSessionId}
         isLoading={submitting}
       />
     );

@@ -38,22 +38,44 @@ export const tokenResponseSchema = z.object({
     expiresAt: z.string().optional(),
 })
 
-export const oauthStateSchema = z.object({
-    provider: z.string(),
-    sessionToken: z.string().optional(),
-    redirectUri: z.string().optional(),
-    state: z.string().optional(),
+/**
+ * `POST /auth/refresh` reads the durable httpOnly `oxy_rt` cookie, rotates it,
+ * and mints a fresh access token. It returns ONLY `{ accessToken, expiresAt }`
+ * (no `sessionId` — that is decoded from the access token's JWT claims).
+ */
+export const refreshResponseSchema = z.object({
+    accessToken: z.string(),
+    expiresAt: z.string().optional(),
 })
 
-export const meResponseSchema = z.object({
-    user: z.object({
+/**
+ * `GET /users/me` returns the user object wrapped in the API success envelope
+ * (`{ data: <user> }` via `sendSuccess`). The user mirrors `formatUserResponse`
+ * (id is `id`, never `_id`); `name` may be an object. There is NO `sessionId`
+ * here — the session id comes from the refreshed access token's claims.
+ */
+export const currentUserResponseSchema = z.object({
+    data: z.object({
         id: z.string(),
         username: z.string().optional(),
         email: z.string().optional(),
         avatar: z.string().optional(),
         displayName: z.string().optional(),
-    }).optional(),
-    sessionId: z.string().optional(),
+        name: z
+            .object({
+                first: z.string().optional(),
+                last: z.string().optional(),
+                full: z.string().optional(),
+            })
+            .optional(),
+    }),
+})
+
+export const oauthStateSchema = z.object({
+    provider: z.string(),
+    sessionToken: z.string().optional(),
+    redirectUri: z.string().optional(),
+    state: z.string().optional(),
 })
 
 /**

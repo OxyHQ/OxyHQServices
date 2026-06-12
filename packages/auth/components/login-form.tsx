@@ -351,15 +351,26 @@ export function LoginForm({
     }
 
     /**
-     * Continue with the currently-active account (its IdP session cookie is
-     * live). Mints a fresh access token for that session and funnels into the
-     * SAME post-login redirect the password flow uses — no re-auth needed.
+     * Continue with the currently-active account. The chooser's session probe
+     * already minted a fresh access token (via the durable refresh cookie) and
+     * planted it in `sessionStorage`, so we reuse it directly and funnel into
+     * the SAME post-login redirect the password flow uses — no re-auth needed.
+     * If the planted token is somehow absent, re-mint it with the bearer the
+     * probe stored (`/token/:sessionId` is bearer-protected — cookies alone 401).
      */
     async function continueWithCurrentAccount(sessionId: string): Promise<void> {
         setPendingSessionId(sessionId)
         setIsSubmitting(true)
         try {
-            const res = await fetch(buildAuthUrl(`/token/${sessionId}`), { credentials: "include" })
+            const planted = sessionStorage.getItem("oxy_access_token")
+            if (planted) {
+                await redirectAfterLogin(sessionId, planted)
+                return
+            }
+
+            const res = await fetch(buildAuthUrl(`/token/${sessionId}`), {
+                credentials: "include",
+            })
             const data = await res.json().catch(() => ({}))
 
             if (!res.ok || !data.accessToken) {
