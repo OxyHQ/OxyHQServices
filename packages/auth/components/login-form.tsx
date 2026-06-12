@@ -191,9 +191,23 @@ export function LoginForm({
             setAvatarAsLogo(result.avatar)
             setIsSubmitting(false)
             goToStep("password", "forward")
-        } catch {
-            setLocalError("Couldn't find your account. Check your username and try again.")
+        } catch (err) {
             setIsSubmitting(false)
+            const status = (err as { status?: number; response?: { status?: number } } | undefined)?.status
+                ?? (err as { response?: { status?: number } } | undefined)?.response?.status
+            if (status === 429) {
+                startRateLimitCountdown(60)
+                setLocalError("Too many attempts. Please wait a minute and try again.")
+                return
+            }
+            if (status === 404) {
+                setLocalError("Couldn't find your account. Check your username and try again.")
+                return
+            }
+            const message = err instanceof Error && err.message
+                ? err.message
+                : "Sign in is temporarily unavailable. Please try again."
+            setLocalError(message)
         }
     }
 

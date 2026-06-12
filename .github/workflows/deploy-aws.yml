@@ -58,10 +58,42 @@ jobs:
       - name: Deploy to ECS (rolling; skipped until the service exists)
         run: |
           STATUS=$(aws ecs describe-services --cluster "$CLUSTER" --services "$APP" --query 'services[0].status' --output text 2>/dev/null || echo NONE)
-          if [ "$STATUS" = "ACTIVE" ]; then
-            aws ecs update-service --cluster "$CLUSTER" --service "$APP" --force-new-deployment >/dev/null
-            aws ecs wait services-stable --cluster "$CLUSTER" --services "$APP"
-            echo "deployed $APP"
-          else
+          if [ "$STATUS" != "ACTIVE" ]; then
             echo "ECS service $APP not created yet — image is in ECR, skipping deploy"
+            exit 0
           fi
+
+          aws ecs update-service --cluster "$CLUSTER" --service "$APP" --force-new-deployment >/dev/null
+          echo "Forced new deployment for $APP; polling rollout state"
+
+          # Poll the service's PRIMARY deployment until it reaches steady
+          # state. AWS's `services-stable` waiter caps at 10 minutes which is
+          # too tight when a fresh task pulls the image and warms up against
+          # the ALB target group; raise the ceiling to 20 minutes.
+          DEADLINE=$(( $(date +%s) + 20 * 60 ))
+          while :; do
+            now=$(date +%s)
+            if [ "$now" -gt "$DEADLINE" ]; then
+              echo "::error::Deployment did not stabilize within 20 minutes"
+              aws ecs describe-services --cluster "$CLUSTER" --services "$APP" \
+                --query 'services[0].deployments' --output table || true
+              exit 1
+            fi
+            PRIMARY=$(aws ecs describe-services --cluster "$CLUSTER" --services "$APP" \
+              --query 'services[0].deployments[?status==`PRIMARY`] | [0]')
+            ROLLOUT=$(echo "$PRIMARY" | jq -r '.rolloutState // "IN_PROGRESS"')
+            RUNNING=$(echo "$PRIMARY" | jq -r '.runningCount // 0')
+            DESIRED=$(echo "$PRIMARY" | jq -r '.desiredCount // 0')
+            echo "  rolloutState=$ROLLOUT  running=$RUNNING/$DESIRED"
+            case "$ROLLOUT" in
+              COMPLETED)
+                echo "deployed $APP"
+                exit 0
+                ;;
+              FAILED)
+                echo "::error::Rollout failed"
+                exit 1
+                ;;
+            esac
+            sleep 15
+          done

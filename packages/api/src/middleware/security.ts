@@ -32,11 +32,17 @@ const rateLimiter = rateLimit({
   skip: (req: Request) => req.path.startsWith('/files/upload'),
 });
 
-// Stricter rate limiting for authentication endpoints
+// Per-IP rate limiting for /auth/*. This guards against blanket abuse of the
+// auth surface; individual sensitive endpoints (/auth/challenge, /auth/verify,
+// /auth/login, /auth/lookup, /auth/refresh, ...) layer their own tighter
+// limiters on top. The ceiling here must stay well above realistic per-IP
+// traffic for shared NAT egress (offices, mobile carriers): a single user
+// signing in hits ~5–8 /auth/* endpoints, and active sessions refresh on
+// /auth/refresh roughly every 15 minutes.
 const authRateLimiter = rateLimit({
   ...makeStore(),
   windowMs: 15 * 60 * 1000,
-  max: isProd ? 50 : 500,
+  max: isProd ? 300 : 2000,
   message: "Too many authentication attempts from this IP, please try again later.",
   standardHeaders: true,
   legacyHeaders: false,
