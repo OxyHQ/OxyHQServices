@@ -8,6 +8,8 @@ The backend (`oxy-api`) runs on **AWS ECS Fargate** (region `eu-west-1`, cluster
 - **Deploy**: `git push origin main` → `.github/workflows/deploy-aws.yml` builds a `linux/arm64` Docker image → pushes to ECR (`237343248947.dkr.ecr.eu-west-1.amazonaws.com/oxy/oxy-api`) → `aws ecs update-service --force-new-deployment`
 - **Auth**: GitHub OIDC → role `oxy-github-deploy`. No AWS keys stored in GitHub.
 - **Secrets**: GitHub Actions secrets are the source of truth. The deploy workflow syncs them to AWS SSM (`/oxy/oxy-api/*`; shared secrets to `/oxy/_shared/*`); ECS injects them into the container. To change a secret: edit it in GitHub — the next deploy applies it.
+- **Empty/placeholder secret guard**: `.github/workflows/deploy-aws.yml` SKIPS syncing any secret whose value is empty or literally `-`. This is defense-in-depth after an incident (commit `641cea67`) where a `REDIS_URL=-` placeholder was synced and crash-looped `oxy-api` with `getaddrinfo ENOTFOUND -` from `ioredis`. **NEVER register a GitHub secret with a placeholder value (`-`, empty, `TODO`, etc.). If you don't have the real value yet, don't create the secret yet.**
+- **SSM path convention**: per-app secrets → `/oxy/<app>/<KEY>`; shared infra (`REDIS_URL`, `AWS_*`, `LIVEKIT_*`) → `/oxy/_shared/<KEY>`. ECS task definitions reference these paths directly.
 - **Dockerfile**: must build for `linux/arm64` (Graviton).
 - **WARNING**: Never put secret values in this file.
 
@@ -57,6 +59,30 @@ aws --profile oxy --region eu-west-1 logs tail /oxy/ecs --log-stream-name-prefix
 - DNS A record `mail.oxy.so` (→ `159.223.227.58`) deleted.
 - Worker `email-inbound` redeployed with `API_URL=https://api.oxy.so` (ECS).
 - Outbound: SES via `SMTP_RELAY_HOST` only. nodemailer v8 removed the legacy `{ direct: true }` MX path — `smtp.outbound.ts` now fails fast if `SMTP_RELAY_HOST` is unset.
+
+## Containers (oxy-api Docker / ECS one-shot tasks)
+
+The `oxy-api` Dockerfile uses Bun 1.3's **isolated linker** (default). Dependencies do NOT live at `/app/node_modules/<pkg>` — they live at:
+
+```
+/app/node_modules/.bun/<pkg>@<version>+<hash>/node_modules/<pkg>
+```
+
+This breaks naive `require('<pkg>')` from a `node -e` one-liner inside the container. To resolve, either:
+
+- Run via a script file that lives inside the package's own resolution graph (where Node's normal resolution works), OR
+- Use an **absolute path** to the isolated location.
+
+**Cleaning Redis from a dev laptop**: the Valkey/Redis security group only accepts traffic from ECS task security groups, so you cannot connect from a laptop. Instead, run a one-shot Fargate task that overrides the container `command` to execute an inline cleanup. Example:
+
+```bash
+aws --profile oxy --region eu-west-1 ecs run-task \
+  --cluster oxy-cluster --task-definition oxy-api --launch-type FARGATE \
+  --network-configuration 'awsvpcConfiguration={subnets=[subnet-0012b3093e9af9f57,subnet-09dfe34a5a68a889d],securityGroups=[sg-02137cbd3bcbe11a4],assignPublicIp=ENABLED}' \
+  --overrides '{"containerOverrides":[{"name":"oxy-api","command":["sh","-c","node -e \"const Redis=require('"'"'/app/node_modules/.bun/ioredis@5.11.1+f89edaf472774726/node_modules/ioredis'"'"');/* ... */\""]}]}'
+```
+
+Look up the exact `.bun/<pkg>@<ver>+<hash>/` directory in the running image (it changes on every install) before invoking. The full path is required because the inline `-e` script is not inside any package's resolution graph.
 
 ## Custom Agents
 
@@ -201,6 +227,29 @@ app.use('/internal', oxy.serviceAuth());
 
 **Every** API route that modifies user state (`updateUserProfile`, `PATCH /privacy/:id/privacy`, `PUT /users/:userId/privacy`, etc.) MUST call `userCache.invalidate(userId)` after the write. Skipping this causes the in-memory cache to return stale pre-write data on the next `getUserBySession`, silently reverting client updates.
 
+Every `rateLimit()` call MUST also pass a unique `prefix` (see "Rate Limiting" below) — the factory in `packages/api/src/middleware/rateLimiter.ts` enforces it as required.
+
+## Rate Limiting (api)
+
+All limiters use `rate-limit-redis` with a shared ioredis client. The factory `rateLimit({ windowMs, max, prefix, ... })` in `packages/api/src/middleware/rateLimiter.ts` requires a unique `prefix` per limiter instance.
+
+**Why unique prefixes are mandatory** (commit `ef222ecc`): without a per-instance `prefix`, every `rate-limit-redis` store writes to the same default Redis key. When a request passes through the global limiter AND a route-specific limiter, the same key is incremented twice and `rate-limit-redis` throws `ERR_ERL_DOUBLE_COUNT`, halving the effective budget. Each limiter MUST own its own key namespace.
+
+**Convention**: `rl:<scope>:` where scope identifies the limiter purpose.
+
+**Prefixes in use:**
+- `rl:general:` — global limiter (1000 / 15min)
+- `rl:auth:` — broad auth routes (`authRateLimiter`, 300 / 15min)
+- `rl:user:` — user routes (`userRateLimiter`, 200 / 15min)
+- `rl:auth:challenge:`, `rl:auth:verify:`, `rl:auth:refresh:`, `rl:auth:lookup:`, `rl:auth:session-claim:`, `rl:auth:oauth-authorize:`, `rl:auth:oauth-token:`, `rl:auth:service-token:`
+- `rl:fedcm:nonce:`
+- `rl:contacts:discover:` (200 hashes/request, 5 req/min/user)
+- `rl:social-auth:`
+- `rl:email:inbound:`, `rl:email:proxy:`
+- `rl:userdata:write:`
+
+**General limiter threshold** (commit `641cea67`): raised 150 → **1000 / 15min**. The 150 ceiling was below a single authenticated user's normal traffic (feed scroll + socket fallback polling + profile loads + FedCM exchanges). Per-endpoint limiters (`authRateLimiter` 300, `userRateLimiter` 200, `checkLimiter` 10/min, etc.) remain the relevant defense-in-depth. **Do NOT lower the general limiter below 1000 without measuring real production traffic.**
+
 ## useCurrentUser Pattern (services)
 
 - `queryFn` must be pure — never call `useAuthStore.setUser()` inside a `queryFn`.
@@ -338,16 +387,44 @@ Activated inside `FileManagementScreen` when `isImageOnlyPicker` is true. Apple 
 - BottomSheet pan context must use a **primitive** `SharedValue` (`contextY = useSharedValue(0)`), NEVER an object-valued SharedValue — object SharedValues mutated inside worklets crash under `react-native-worklets@0.8.3` (`removeListener` on UI thread).
 - `hooks/mergeRefs.ts` returns a plain `(instance: T|null) => void` (not `React.RefCallback`) so the ref stays assignable across duplicate `@types/react` copies (RN 0.85 / React 19).
 
-## Published Package Versions (as of 2026-05-30)
+## Published Package Versions
 
 | Package | Version | Notes |
 |---------|---------|-------|
-| `@oxyhq/core` | **1.11.22** | `verifyChallenge` plants tokens; silent-SSO guard reverted to consumers |
-| `@oxyhq/services` | **6.10.6** | `useWebSSO` owns module-level `silentSSOAttempted` Set + per-instance `hasCheckedRef` |
-| `@oxyhq/auth` | **2.0.9** | `useWebSSO` owns module-level `silentSSOAttempted` Set + per-instance `hasCheckedRef` |
-| `@oxyhq/bloom` | **0.6.7** | RN-0.85 line; monorepo override pins `^0.6.7` |
+| `@oxyhq/core` | **2.0.0** | Major bump alongside `@oxyhq/auth` 3.x / `@oxyhq/services` 8.x line |
+| `@oxyhq/auth` | **3.0.0** | Major bump |
+| `@oxyhq/services` | **8.0.1** | Fixes `expo-crypto` shim (`randomUUID`, not `getRandomUUID`) |
+| `@oxyhq/bloom` | **0.6.14** | RN-0.85 line |
 
-External consumers (Mention, Allo, Homiio, TNP) should bump to these versions.
+### Breaking changes in `@oxyhq/services` 8.x
+
+**`@tanstack/*` moved from `dependencies` → `peerDependencies`** (commit `e3c0e8e9`). Consumers (RN/Expo apps) MUST add to their own `dependencies`:
+
+- `@tanstack/react-query ^5.100.0`
+- `@tanstack/react-query-persist-client ^5.100.0`
+- `@tanstack/query-async-storage-persister ^5.100.0`
+
+Web-only optional peer (declared in `peerDependenciesMeta`):
+
+- `@tanstack/query-sync-storage-persister ^5.100.0`
+
+**Reason**: an SDK that ships TanStack Query as a hard `dependency` creates a second `QueryClient` instance when the consumer app also imports `@tanstack/react-query`, breaking cache sharing. **Rule**: never declare in the SDK's `dependencies` any library where a duplicated instance would break the consumer (TanStack Query, OxyServices itself, React, etc.) — use peerDependencies.
+
+**`RouteName` union (BottomSheet routes)**: `'AccountSettings'` and `'AccountCenter'` were unified into a single `'ManageAccount'` route. The screen `ManageAccountScreen` replaces the old `AccountOverview` + `AccountSettings` pair. Migrate any consumer calls:
+
+```diff
+- showBottomSheet?.('AccountSettings')
+- showBottomSheet?.('AccountCenter')
++ showBottomSheet?.('ManageAccount')
+```
+
+### `expo-crypto` shim (services 8.0.1)
+
+The real Expo SDK 56 API is `randomUUID()`, NOT `getRandomUUID()`. Validated against `node_modules/expo-crypto/build/Crypto.d.ts:67` (`export declare function randomUUID(): string;`). The shim at `packages/services/src/types/expo-crypto.d.ts` previously declared the wrong name and was fixed in commit `34773e8c`.
+
+**Rule**: whenever you author a `.d.ts` shim for a dynamic-imported module (`await import('<pkg>')`), validate every declared name against a real consumer's `node_modules/<pkg>/build/*.d.ts`. TypeScript will accept a wrong-named shim silently — the failure only shows up at runtime as `TypeError: undefined is not a function`.
+
+External consumers (Mention, Allo, Homiio, TNP) should bump to the versions above.
 
 ## Terminology
 
