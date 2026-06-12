@@ -149,9 +149,11 @@ async function detectAccounts(): Promise<DeviceAccountsState> {
                 currentUserResponseSchema,
                 await meRes.json()
             )
-            if (parsed?.data?.id) {
+            // `/users/me` returns the raw doc — the id field is `_id`, not `id`.
+            const userId = parsed?.data?._id ?? parsed?.data?.id
+            if (parsed && userId) {
                 currentAccount = {
-                    id: parsed.data.id,
+                    id: userId,
                     username: parsed.data.username,
                     email: parsed.data.email,
                     avatar: parsed.data.avatar,

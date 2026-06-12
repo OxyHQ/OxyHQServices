@@ -49,14 +49,17 @@ export const refreshResponseSchema = z.object({
 })
 
 /**
- * `GET /users/me` returns the user object wrapped in the API success envelope
- * (`{ data: <user> }` via `sendSuccess`). The user mirrors `formatUserResponse`
- * (id is `id`, never `_id`); `name` may be an object. There is NO `sessionId`
- * here — the session id comes from the refreshed access token's claims.
+ * `GET /users/me` returns the RAW Mongo user document wrapped in the API success
+ * envelope (`{ data: <user> }` via `sendSuccess`). It does NOT go through
+ * `formatUserResponse`, so the id field is `_id` (NOT `id`), and `name` / `avatar`
+ * may be absent. We accept either id form (and keep every other field optional)
+ * and resolve the id at the call site. There is NO `sessionId` here — the session
+ * id comes from the refreshed access token's claims.
  */
 export const currentUserResponseSchema = z.object({
     data: z.object({
-        id: z.string(),
+        _id: z.string().optional(),
+        id: z.string().optional(),
         username: z.string().optional(),
         email: z.string().optional(),
         avatar: z.string().optional(),
