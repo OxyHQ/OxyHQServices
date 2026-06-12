@@ -4,7 +4,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom"
 import { BloomThemeProvider } from "@oxyhq/bloom/theme"
 import { Toaster } from "@/components/ui/sonner"
 import { FedCMLoginStatus } from "@/components/fedcm-login-status"
-import { getBloomThemeCSS } from "@/lib/bloom-css"
+import { getBloomThemeCSS, setBasePreset } from "@/lib/bloom-css"
 import { LayoutProvider } from "@/lib/layout-context"
 import { LocaleProvider } from "@/lib/i18n"
 import { AuthLayout } from "@/src/pages/layout"
@@ -27,11 +27,15 @@ function ExternalRedirect({ url }: { url: string }) {
     return null
 }
 
-// Inject bloom theme CSS vars before first paint (FOUC prevention)
+// Inject bloom theme CSS vars before first paint (FOUC prevention). The
+// synchronous string injection keeps the very first render themed; the
+// `setBasePreset` call right after captures the same preset so hover overlays
+// in the chooser know how to restore it.
 const bloomCSS = getBloomThemeCSS()
 const styleEl = document.createElement("style")
 styleEl.textContent = bloomCSS
 document.head.appendChild(styleEl)
+setBasePreset("oxy")
 
 function App() {
     return (

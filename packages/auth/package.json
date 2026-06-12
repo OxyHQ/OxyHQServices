@@ -11,7 +11,7 @@
     "build:server": "bun build server/node.ts --outdir dist-server --target node --format esm",
     "build:all": "bun run build && bun run build:server",
     "start": "bun run dist-server/node.js",
-    "test": "bun test server/__tests__",
+    "test": "bun test server/__tests__ lib/__tests__ components/__tests__",
     "lint": "eslint"
   },
   "dependencies": {

@@ -27,5 +27,11 @@
     "vite.config.ts",
     "vite-env.d.ts"
   ],
-  "exclude": ["node_modules", "dist", "server"]
+  "exclude": [
+    "node_modules",
+    "dist",
+    "server",
+    "lib/**/__tests__/**",
+    "components/**/__tests__/**"
+  ]
 }

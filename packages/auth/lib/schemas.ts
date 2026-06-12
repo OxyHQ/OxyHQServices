@@ -64,6 +64,7 @@ export const currentUserResponseSchema = z.object({
         email: z.string().optional(),
         avatar: z.string().optional(),
         displayName: z.string().optional(),
+        color: z.string().nullable().optional(),
         name: z
             .object({
                 first: z.string().optional(),
@@ -98,6 +99,7 @@ export const deviceSessionsResponseSchema = z.array(
                 email: z.string().optional(),
                 avatar: z.string().optional(),
                 displayName: z.string().optional(),
+                color: z.string().nullable().optional(),
                 name: z
                     .object({
                         first: z.string().optional(),

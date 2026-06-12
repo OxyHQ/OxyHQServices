@@ -8,6 +8,12 @@ export type Account = {
     email?: string
     avatar?: string
     displayName?: string
+    /**
+     * The account's Bloom color preset name (e.g. `"blue"`, `"oxy"`). Used to
+     * re-theme the chooser on hover/focus. `null` / `undefined` means no
+     * preference — leave the base preset alone.
+     */
+    color?: string | null
 }
 
 /**

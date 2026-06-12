@@ -158,6 +158,7 @@ async function detectAccounts(): Promise<DeviceAccountsState> {
                     email: parsed.data.email,
                     avatar: parsed.data.avatar,
                     displayName: resolveDisplayName(parsed.data),
+                    color: parsed.data.color ?? null,
                 }
             }
         }
@@ -196,6 +197,7 @@ async function detectAccounts(): Promise<DeviceAccountsState> {
                             email: entry.user.email,
                             avatar: entry.user.avatar,
                             displayName: resolveDisplayName(entry.user),
+                            color: entry.user.color ?? null,
                         },
                     })
                 }

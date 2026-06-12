@@ -1,37 +1,128 @@
 /**
  * Bloom color preset utilities for the auth app.
- * Generates and applies CSS custom properties from bloom's color presets.
+ *
+ * Each preset is rendered as a `<style id="bloom-color-preset-${scope}">` block
+ * in `<head>` containing `:root { ... }` + `.dark { ... }` CSS custom property
+ * declarations. Scopes layer via document-order cascade:
+ *   - `"base"` — the persistent app theme, set once on boot via `setBasePreset`
+ *     and updated whenever the active user/account changes (lookup, sign-in).
+ *   - any other scope (e.g. `"chooser-hover"`) — transient overlays whose rules
+ *     win over `"base"` because they're appended later. Removing the scope
+ *     element via `restoreBasePreset(scope)` lets the base preset bleed through.
  */
-import { APP_COLOR_PRESETS, type AppColorName } from '@oxyhq/bloom/color-presets';
+import {
+    APP_COLOR_PRESETS,
+    APP_COLOR_NAMES,
+    type AppColorName,
+} from "@oxyhq/bloom/color-presets"
+
+const BASE_SCOPE = "base"
+const STYLE_ID_PREFIX = "bloom-color-preset-"
+
+let _bloomBasePreset: AppColorName | null = null
+
+function styleIdFor(scope: string): string {
+    return `${STYLE_ID_PREFIX}${scope}`
+}
 
 function presetToCSS(vars: Record<string, string>): string {
-  return Object.entries(vars)
-    .map(([key, value]) => `  ${key}: hsl(${value});`)
-    .join('\n');
+    return Object.entries(vars)
+        .map(([key, value]) => `  ${key}: hsl(${value});`)
+        .join("\n")
+}
+
+function presetToScopedCSS(preset: AppColorName): string {
+    const p = APP_COLOR_PRESETS[preset]
+    return `:root {\n${presetToCSS(p.light)}\n}\n.dark {\n${presetToCSS(p.dark)}\n}`
 }
 
 /**
- * Returns a <style> string with :root and .dark CSS custom properties.
- * Used for early injection to prevent FOUC.
+ * Returns a `<style>`-ready CSS string with `:root` + `.dark` custom properties
+ * for the given preset. Used for synchronous early injection from the document
+ * head (FOUC prevention) before React mounts.
  */
-export function getBloomThemeCSS(preset: AppColorName = 'oxy'): string {
-  const p = APP_COLOR_PRESETS[preset];
-  return `:root {\n${presetToCSS(p.light)}\n}\n.dark {\n${presetToCSS(p.dark)}\n}`;
+export function getBloomThemeCSS(preset: AppColorName = "oxy"): string {
+    return presetToScopedCSS(preset)
+}
+
+function isAppColorName(value: unknown): value is AppColorName {
+    return (
+        typeof value === "string" &&
+        (APP_COLOR_NAMES as readonly string[]).includes(value)
+    )
 }
 
 /**
- * Apply a color preset's CSS custom properties to :root immediately.
- * Picks light or dark vars based on the current document class.
+ * Inject (or update) a scoped color preset style block. Unknown presets are a
+ * no-op: callers may pass user-controlled / null / undefined values without
+ * risk. Re-appending on every apply keeps the scope's rules positioned AFTER
+ * earlier scopes in document order, so later applies win the cascade.
  */
-export function applyColorPreset(preset: AppColorName): void {
-  const config = APP_COLOR_PRESETS[preset];
-  if (!config) return;
+export function applyColorPreset(
+    preset: AppColorName | string | null | undefined,
+    scope: string = BASE_SCOPE
+): void {
+    if (typeof document === "undefined") return
+    if (!isAppColorName(preset)) return
 
-  const isDark = document.documentElement.classList.contains('dark');
-  const vars = isDark ? config.dark : config.light;
-  const root = document.documentElement.style;
+    const id = styleIdFor(scope)
+    const css = presetToScopedCSS(preset)
 
-  for (const [key, value] of Object.entries(vars)) {
-    root.setProperty(key, `hsl(${value})`);
-  }
+    const existing = document.getElementById(id)
+    if (existing instanceof HTMLStyleElement) {
+        if (existing.textContent !== css) existing.textContent = css
+        // Re-append so the scope wins over any earlier styles in the cascade
+        // (matters when a transient scope is layered on top of the base).
+        document.head.appendChild(existing)
+        return
+    }
+
+    const el = document.createElement("style")
+    el.id = id
+    el.textContent = css
+    document.head.appendChild(el)
+}
+
+/**
+ * Capture the base preset at app boot (or whenever the active account's theme
+ * changes) AND apply it to the `"base"` scope. Subsequent `restoreBasePreset`
+ * calls will reapply this preset defensively if the base style block has been
+ * removed.
+ */
+export function setBasePreset(preset: AppColorName | string | null | undefined): void {
+    if (!isAppColorName(preset)) return
+    _bloomBasePreset = preset
+    applyColorPreset(preset, BASE_SCOPE)
+}
+
+/**
+ * Tear down a transient scope (e.g. a hover overlay) so the base preset's rules
+ * apply unobstructed. Pass the `scope` you applied with `applyColorPreset`.
+ *
+ * - The base scope itself is never removed by this function; callers must use
+ *   `setBasePreset` to change it.
+ * - As a defensive measure, the base preset is re-applied if it was previously
+ *   captured via `setBasePreset` — this guarantees the base style block is
+ *   present after the transient scope is removed.
+ */
+export function restoreBasePreset(scope: string): void {
+    if (typeof document === "undefined") return
+    if (scope !== BASE_SCOPE) {
+        const el = document.getElementById(styleIdFor(scope))
+        if (el) el.remove()
+    }
+    if (_bloomBasePreset) {
+        applyColorPreset(_bloomBasePreset, BASE_SCOPE)
+    }
+}
+
+/**
+ * Test-only reset. Clears the captured base preset AND removes every preset
+ * style block from the document. Not part of the production surface.
+ */
+export function __resetBloomCSSForTests(): void {
+    _bloomBasePreset = null
+    if (typeof document === "undefined") return
+    const nodes = document.head.querySelectorAll(`style[id^="${STYLE_ID_PREFIX}"]`)
+    nodes.forEach((node) => node.remove())
 }

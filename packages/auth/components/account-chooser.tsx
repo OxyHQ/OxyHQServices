@@ -5,6 +5,7 @@ import { Avatar } from "@oxyhq/bloom/avatar"
 import { AuthFormHeader } from "@/components/auth-form-layout"
 import { getAvatarUrl } from "@/lib/oxy-api-client"
 import type { DeviceAccount } from "@/lib/types"
+import { useHoverColorPreset } from "@/lib/use-hover-color-preset"
 
 type AccountChooserProps = React.ComponentProps<"div"> & {
     /** Accounts signed in on this device (1..N), current account first. */
@@ -46,6 +47,8 @@ export function AccountChooser({
         ? `to continue to ${appName}`
         : "Choose an account to continue"
 
+    const hoverPreset = useHoverColorPreset("chooser-hover")
+
     return (
         <div className={cn("flex flex-col gap-6", className)} {...props}>
             <AuthFormHeader title="Choose an account" description={description} />
@@ -53,6 +56,7 @@ export function AccountChooser({
                 {accounts.map((entry) => {
                     const { account } = entry
                     const isPending = pendingSessionId === entry.sessionId
+                    const hoverHandlers = hoverPreset.getHandlers(account.color)
                     return (
                         <Button
                             key={entry.sessionId}
@@ -62,6 +66,10 @@ export function AccountChooser({
                             onClick={() => onSelectAccount(entry)}
                             disabled={isLoading}
                             aria-busy={isPending}
+                            onMouseEnter={hoverHandlers.onMouseEnter}
+                            onMouseLeave={hoverHandlers.onMouseLeave}
+                            onFocus={hoverHandlers.onFocus}
+                            onBlur={hoverHandlers.onBlur}
                         >
                             <Avatar
                                 source={

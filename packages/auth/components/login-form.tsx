@@ -3,11 +3,10 @@ import { useNavigate, Link } from "react-router-dom"
 import { toast } from "sonner"
 import { ArrowLeft, ShieldAlert } from "lucide-react"
 import { OxyServices } from "@oxyhq/core"
-import type { AppColorName } from "@oxyhq/bloom/theme"
 import { Avatar } from "@oxyhq/bloom/avatar"
 import { buildAuthUrl, buildApiUrl, getApiBaseUrl, getAvatarUrl } from "@/lib/oxy-api-client"
 import { setFedCMLoginStatus, registerFedCMSession, buildPostLoginRedirect, completeFedCMLogin } from "@/lib/auth-utils"
-import { applyColorPreset } from "@/lib/bloom-css"
+import { setBasePreset } from "@/lib/bloom-css"
 import { useLayoutContext } from "@/lib/layout-context"
 import { loginResponseSchema, safeParse } from "@/lib/schemas"
 import type { DeviceAccount } from "@/lib/types"
@@ -100,7 +99,7 @@ export function LoginForm({
     const mountedRef = useRef(false)
     if (!mountedRef.current) {
         mountedRef.current = true
-        applyColorPreset("oxy")
+        setBasePreset("oxy")
     }
 
     // One-time toasts from URL params
@@ -151,7 +150,7 @@ export function LoginForm({
     function goToStep(next: LoginStep, dir: "forward" | "back" = "forward") {
         setLocalError(undefined)
         if (next === "identifier") {
-            applyColorPreset("oxy")
+            setBasePreset("oxy")
             setLookupResult(null)
             setLogoSlot(null)
         }
@@ -187,7 +186,7 @@ export function LoginForm({
                 avatar: result.avatar,
                 color: result.color,
             })
-            if (result.color) applyColorPreset(result.color as AppColorName)
+            if (result.color) setBasePreset(result.color)
             setAvatarAsLogo(result.avatar)
             setIsSubmitting(false)
             goToStep("password", "forward")
