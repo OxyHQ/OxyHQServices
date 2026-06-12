@@ -7,7 +7,8 @@ import mongoose, { Document, Schema } from "mongoose";
  * cold-boot session persistence. When a user signs in (password, FedCM, or
  * public-key flow) the server mints an opaque refresh token, stores ONLY its
  * SHA-256 hash here, and drops the raw token into an httpOnly + Secure cookie
- * scoped to `/auth/refresh`. On a cold boot the browser replays the cookie to
+ * scoped to `/auth` (so it reaches `/auth/session`, `/auth/refresh`, and
+ * `/auth/logout`). On a cold boot the browser replays the cookie to
  * `POST /auth/refresh`, which rotates the token and mints a fresh access token
  * — no bearer credential ever lives in JS-readable storage.
  *

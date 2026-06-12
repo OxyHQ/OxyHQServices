@@ -457,6 +457,6 @@ describe('clearRefreshCookie', () => {
     expect(cookies).toHaveLength(1);
     expect(cookies[0]).toMatch(new RegExp(`^${REFRESH_COOKIE_NAME}=`));
     expect(cookies[0]).toMatch(/Max-Age=0/);
-    expect(cookies[0]).toContain(`Path=${'/auth/refresh'}`);
+    expect(cookies[0]).toContain(`Path=${'/auth'}`);
   });
 });

@@ -78,6 +78,23 @@ export class OxyServicesBase {
   }
 
   /**
+   * Get the base URL the SDK's first-party session/refresh calls should target.
+   *
+   * Returns the configured `sessionBaseUrl` when provided, otherwise falls back
+   * to the API `baseURL` (`getBaseURL()`). Per the 2026 session architecture
+   * (docs/SESSION-ARCHITECTURE.md), non-`oxy.so` apps point this at their own
+   * same-site backend (e.g. `https://api.mention.earth`) whose session bridge
+   * forwards the user's refresh credential to `api.oxy.so`; `*.oxy.so` apps
+   * leave it unset so it resolves to `https://api.oxy.so` and nothing changes.
+   *
+   * This is additive: it only exposes configuration for `@oxyhq/services` to
+   * consume in a later phase. No refresh/auth logic in core reads it yet.
+   */
+  public getSessionBaseUrl(): string {
+    return this.config.sessionBaseUrl ?? this.getBaseURL();
+  }
+
+  /**
    * Get the HTTP service instance
    * Useful for advanced use cases where direct access to the HTTP service is needed
    */

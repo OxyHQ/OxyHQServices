@@ -27,10 +27,13 @@ import { issueAuthCode, exchangeAuthCode, AUTH_CODE_TTL_MS } from '../services/o
 import { claimAuthSession } from '../services/authSession.service';
 import {
   rotateRefreshToken,
+  issueAndSetRefreshCookie,
+  revokeFamilyByRawToken,
   setRefreshCookie,
   clearRefreshCookie,
   REFRESH_COOKIE_NAME,
 } from '../services/refreshToken.service';
+import { extractTokenFromRequest, decodeToken } from '../middleware/authUtils';
 import {
   signupSchema,
   loginSchema,
@@ -714,6 +717,142 @@ router.post('/refresh', refreshLimiter, asyncHandler(async (req, res) => {
     accessToken: tokenResult.accessToken,
     expiresAt: tokenResult.expiresAt.toISOString(),
   });
+}));
+
+// ---------------------------------------------------------------------------
+// Session-bridge contract (per-app, forwarding model)
+// ---------------------------------------------------------------------------
+// A non-oxy.so app backend (api.mention.earth, api.homiio.com, api.alia.onl)
+// mounts a thin same-site "session bridge" that:
+//   1. on its OWN domain sets/reads the first-party `oxy_rt`-equivalent cookie,
+//      and
+//   2. FORWARDS the user's OWN refresh credential to api.oxy.so to rotate.
+// The bridge mints NO service token and holds NO secret of its own — it only
+// moves the user's own credential between the app domain and this central
+// store. The three endpoints below are exactly what such a bridge talks to:
+//   - POST /auth/session  (bearer-authenticated; establish the cookie)
+//   - POST /auth/refresh  (cookie-authenticated; rotate + reuse-detect)
+//   - POST /auth/logout   (cookie-authenticated; revoke + clear)
+// The external-app bridge wiring is NOT implemented here. Phase 1 is `*.oxy.so`
+// only (the cookie is already first-party there); mention/homiio/alia are not
+// touched until the foundation is verified on *.oxy.so.
+
+/**
+ * @openapi
+ * /auth/session:
+ *   post:
+ *     tags:
+ *       - Authentication
+ *     security:
+ *       - bearerAuth: []
+ *     summary: Establish the first-party refresh cookie for the caller's session
+ *     description: >
+ *       Called by an app (or its same-site session bridge) right after a
+ *       successful FedCM / interactive sign-in to obtain its first-party
+ *       httpOnly refresh cookie (`oxy_rt`). REQUIRES the user's bearer access
+ *       token: the session the cookie is bound to is derived ONLY from that
+ *       already-validated token — never from the URL, body, or query. On
+ *       success a fresh `oxy_rt` cookie is set (scoped to `/auth`) and a new
+ *       short-lived access token is returned in the body, mirroring
+ *       `POST /auth/refresh`.
+ *     responses:
+ *       200:
+ *         description: Refresh cookie established; a fresh access token is minted.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 accessToken:
+ *                   type: string
+ *                 expiresAt:
+ *                   type: string
+ *                   format: date-time
+ *       401:
+ *         description: Missing, invalid, or expired bearer access token.
+ *       429:
+ *         description: Too many requests from this IP.
+ */
+router.post('/session', refreshLimiter, authMiddleware, asyncHandler(async (req: AuthRequest, res) => {
+  // OWNERSHIP CHECK (load-bearing):
+  // We never accept a sessionId from the URL/body/query — that unauthenticated
+  // token-minting / auth-downgrade pattern was a HIGH vuln and was reverted. The
+  // sessionId is taken ONLY from the caller's own bearer token, which
+  // authMiddleware has already validated, and the cookie is bound to that same
+  // session + user. There is no path-or-body sessionId anywhere in this handler.
+  const token = extractTokenFromRequest(req);
+  const decoded = token ? decodeToken(token) : null;
+  const sessionId = decoded?.sessionId;
+  const userId = req.user?._id;
+
+  // Defensive: authMiddleware guarantees a valid session-based token reached us,
+  // so both of these are present in practice. If either is somehow missing we
+  // refuse rather than mint a cookie we cannot bind correctly.
+  if (!sessionId || !userId) {
+    return res.status(401).json({ message: 'Invalid session' });
+  }
+
+  // Mint + set the first-party cookie for THIS caller's own session, then mint a
+  // fresh access token off that same bound session (exactly like /refresh).
+  await issueAndSetRefreshCookie(res, sessionId, userId);
+
+  const tokenResult = await sessionService.getAccessToken(sessionId);
+  if (!tokenResult) {
+    clearRefreshCookie(res);
+    return res.status(401).json({ message: 'Session no longer valid' });
+  }
+
+  return res.json({
+    accessToken: tokenResult.accessToken,
+    expiresAt: tokenResult.expiresAt.toISOString(),
+  });
+}));
+
+/**
+ * @openapi
+ * /auth/logout:
+ *   post:
+ *     tags:
+ *       - Authentication
+ *     security: []
+ *     summary: Revoke the refresh family and clear the first-party cookie
+ *     description: >
+ *       Signs the caller out of the first-party session. Reads the httpOnly
+ *       `oxy_rt` cookie (the credential being revoked) and, if present, revokes
+ *       the entire rotation family server-side and deactivates the underlying
+ *       session so reuse-detection state stays clean. ALWAYS clears the cookie
+ *       and returns 200 — it is idempotent and best-effort, so a missing or
+ *       garbage cookie still succeeds. No `Authorization` header is required: a
+ *       logged-out client may no longer hold a valid access token, and the
+ *       cookie itself is the thing being revoked.
+ *     responses:
+ *       200:
+ *         description: Logged out; the `oxy_rt` cookie is cleared.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *       429:
+ *         description: Too many requests from this IP.
+ */
+router.post('/logout', refreshLimiter, asyncHandler(async (req, res) => {
+  // Best-effort family revocation: if a cookie is present, revoke its whole
+  // family + deactivate the session server-side. revokeFamilyByRawToken never
+  // throws on an unknown/garbage token, so logout always proceeds to clear.
+  const raw = req.cookies?.[REFRESH_COOKIE_NAME];
+  if (typeof raw === 'string' && raw.length > 0) {
+    await revokeFamilyByRawToken(raw);
+  }
+
+  // ALWAYS clear the cookie (Path=/auth), regardless of whether a token existed.
+  // Logout must never 401/500 on a missing/garbage cookie — it always succeeds.
+  clearRefreshCookie(res);
+
+  return res.json({ success: true });
 }));
 
 // Strict rate limit for enumeration-sensitive check endpoints (10/min per IP)

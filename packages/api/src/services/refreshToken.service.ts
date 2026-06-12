@@ -10,8 +10,15 @@
  *   1. `issueRefreshToken(...)` mints a cryptographically random 256-bit token
  *      (independent of the sessionId), stores ONLY its SHA-256 hash bound to a
  *      session + user + rotation `family`, and returns the raw token. The raw
- *      token is dropped into an httpOnly + Secure cookie scoped to
- *      `/auth/refresh` — it is never readable from JavaScript (XSS-proof).
+ *      token is dropped into an httpOnly + Secure cookie scoped to `/auth` — it
+ *      is never readable from JavaScript (XSS-proof). Scoping to `/auth` (rather
+ *      than just `/auth/refresh`) lets the browser also replay the cookie to
+ *      `/auth/session` and `/auth/logout`, the other first-party session routes.
+ *      This is backward-compatible: a cookie previously stored with
+ *      `Path=/auth/refresh` keeps being sent to `/auth/refresh` (the only place
+ *      the old client posts), while newly issued/rotated cookies use `Path=/auth`
+ *      and reach all of `/auth/session`, `/auth/refresh`, and `/auth/logout`.
+ *      No existing user is logged out by broadening the path.
  *   2. On cold boot the browser replays the cookie to `POST /auth/refresh`.
  *      `rotateRefreshToken(...)` consumes the presented token (atomic
  *      `{ usedAt: null } -> set`) and issues a NEW token in the SAME family
@@ -44,11 +51,17 @@ export const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 /** Name of the first-party httpOnly refresh-token cookie. */
 export const REFRESH_COOKIE_NAME = 'oxy_rt';
 /**
- * Path the cookie is scoped to. The browser only sends `oxy_rt` to
- * `POST /auth/refresh`, minimising its exposure surface. MUST match the
- * mounted route path (`/auth` mount + `/refresh` route = `/auth/refresh`).
+ * Path the cookie is scoped to. Scoped to the `/auth` mount so the browser sends
+ * `oxy_rt` to all of the first-party session routes — `/auth/session` (establish
+ * the cookie right after login), `/auth/refresh` (rotate it), and `/auth/logout`
+ * (revoke it) — while still keeping it off every other route.
+ *
+ * Backward-compatible: a cookie previously issued with `Path=/auth/refresh` keeps
+ * being sent to `/auth/refresh` (the only route the old client posts to), so no
+ * existing user is logged out by broadening the path; newly issued/rotated
+ * cookies use `Path=/auth` and additionally reach `/auth/session` + `/auth/logout`.
  */
-export const REFRESH_COOKIE_PATH = '/auth/refresh';
+export const REFRESH_COOKIE_PATH = '/auth';
 
 export interface IssueRefreshTokenOptions {
   sessionId: string;
@@ -144,6 +157,24 @@ export async function revokeAllUserFamilies(userId: string): Promise<void> {
 }
 
 /**
+ * Revoke the rotation family for a presented RAW refresh token (logout via the
+ * httpOnly cookie). Hashes the raw token, looks up the stored row by its
+ * `tokenHash`, and — if found — revokes the whole family AND deactivates the
+ * underlying session (both handled by `revokeFamily`).
+ *
+ * Best-effort and idempotent: an unknown/garbage token is a no-op (logout must
+ * always succeed and clear the cookie regardless of what the client presents).
+ * This NEVER mints, rotates, or consumes a token — it only revokes.
+ */
+export async function revokeFamilyByRawToken(rawToken: string): Promise<void> {
+  const tokenHash = sha256Hex(rawToken);
+  const stored = await RefreshToken.findOne({ tokenHash });
+  if (stored) {
+    await revokeFamily(stored.family, stored.sessionId);
+  }
+}
+
+/**
  * Rotate a presented refresh token.
  *
  * Single-use + reuse-detection: the atomic `findOneAndUpdate({ usedAt: null,
@@ -227,7 +258,8 @@ export interface RefreshCookieOptions {
  *   cross-site sub-requests, blunting CSRF while preserving cold-boot replay.
  * - `domain` — defaults to `oxy.so` (configurable via REFRESH_COOKIE_DOMAIN) so
  *   the cookie is shared across `*.oxy.so` subdomains.
- * - `path: /auth/refresh` — the browser only ever sends it to the refresh route.
+ * - `path: /auth` — the browser sends it to the first-party session routes
+ *   (`/auth/session`, `/auth/refresh`, `/auth/logout`) and nowhere else.
  * - `maxAge` — express `res.cookie` takes maxAge in MILLISECONDS and converts to
  *   the `Max-Age` header (seconds) itself, so we pass the 30-day TTL in ms.
  */
