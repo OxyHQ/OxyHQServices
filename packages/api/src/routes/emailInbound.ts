@@ -24,7 +24,137 @@ import { spamService } from '../services/spam.service';
 import { EMAIL_DOMAIN, extractUsername, extractAliasTag } from '../config/email.config';
 import { getEnvVar } from '../config/env';
 import User from '../models/User';
+import { Message } from '../models/Message';
+import { Mailbox } from '../models/Mailbox';
 import { logger } from '../utils/logger';
+import { getIO } from '../utils/socket';
+import type { EmailNewEvent, EmailUnreadCountEvent } from '../types/socketEvents';
+
+const SNIPPET_MAX_LENGTH = 140;
+
+/**
+ * Build a short plain-text snippet from a message body. Prefers `text` when
+ * present; otherwise strips tags and entities from `html` with a minimal
+ * regex (no new dependency). The result has whitespace collapsed and is
+ * trimmed to {@link SNIPPET_MAX_LENGTH} characters.
+ */
+function buildSnippet(text?: string, html?: string): string {
+  const source = text && text.trim().length > 0
+    ? text
+    : html
+      ? html
+          .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+          .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+          .replace(/<[^>]+>/g, ' ')
+          .replace(/&nbsp;/gi, ' ')
+          .replace(/&amp;/gi, '&')
+          .replace(/&lt;/gi, '<')
+          .replace(/&gt;/gi, '>')
+          .replace(/&quot;/gi, '"')
+          .replace(/&#39;/gi, "'")
+      : '';
+  const collapsed = source.replace(/\s+/g, ' ').trim();
+  return collapsed.length > SNIPPET_MAX_LENGTH
+    ? collapsed.slice(0, SNIPPET_MAX_LENGTH)
+    : collapsed;
+}
+
+interface StoredIncomingMessage {
+  id?: string;
+  _id?: { toString(): string };
+  mailboxId: { toString(): string };
+  receivedAt?: Date | string;
+  date?: Date | string;
+}
+
+/**
+ * Resolve the recipient's mailbox folder name for the socket payload. Falls
+ * back to `'inbox'` for spam-routed deliveries so clients always receive a
+ * meaningful folder hint without an extra round-trip.
+ */
+function resolveFolder(specialUse: string | null | undefined, mailboxName: string | null | undefined): string {
+  if (specialUse === '\\Junk') return 'spam';
+  if (specialUse === '\\Inbox') return 'inbox';
+  if (typeof mailboxName === 'string' && mailboxName.trim().length > 0) {
+    return mailboxName.toLowerCase();
+  }
+  return 'inbox';
+}
+
+/**
+ * Fan out real-time inbox events for a freshly stored message. Failures are
+ * isolated: if the IO singleton is unavailable or Redis is unhealthy we log a
+ * warning and continue so the webhook can still respond 200 to Cloudflare.
+ */
+async function emitInboxSocketEvents(args: {
+  userId: string;
+  stored: StoredIncomingMessage;
+  fallbackText?: string;
+  fallbackHtml?: string;
+  senderName: string;
+  senderAddress: string;
+  subject: string;
+}): Promise<void> {
+  try {
+    const io = getIO();
+    if (!io) {
+      logger.warn('Inbox socket emit skipped: Socket.IO not initialised');
+      return;
+    }
+
+    const messageId = args.stored.id ?? args.stored._id?.toString();
+    if (!messageId) {
+      logger.warn('Inbox socket emit skipped: stored message missing id');
+      return;
+    }
+
+    const mailboxIdStr = args.stored.mailboxId.toString();
+    const room = `user:${args.userId}`;
+
+    const mailbox = await Mailbox.findById(mailboxIdStr)
+      .select('name specialUse')
+      .lean<{ name?: string; specialUse?: string }>();
+
+    const receivedAtRaw = args.stored.receivedAt ?? args.stored.date ?? new Date();
+    const receivedAt = receivedAtRaw instanceof Date
+      ? receivedAtRaw.toISOString()
+      : new Date(receivedAtRaw).toISOString();
+
+    const snippet = buildSnippet(args.fallbackText, args.fallbackHtml);
+
+    const emailNewPayload: EmailNewEvent = {
+      messageId,
+      mailboxId: mailboxIdStr,
+      folder: resolveFolder(mailbox?.specialUse, mailbox?.name),
+      from: args.senderName
+        ? { name: args.senderName, address: args.senderAddress }
+        : { address: args.senderAddress },
+      subject: args.subject,
+      snippet,
+      receivedAt,
+      unread: true,
+    };
+
+    io.to(room).emit('email:new', emailNewPayload);
+
+    const unread = await Message.countDocuments({
+      mailboxId: mailboxIdStr,
+      'flags.seen': false,
+    });
+
+    const unreadPayload: EmailUnreadCountEvent = {
+      mailboxId: mailboxIdStr,
+      unread,
+    };
+
+    io.to(room).emit('email:unread_count', unreadPayload);
+  } catch (err) {
+    logger.warn('Inbox socket emit failed', {
+      userId: args.userId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
 
 const router = Router();
 
@@ -90,12 +220,12 @@ router.post(
     }
 
     // Validate at least one recipient exists
-    const validRecipients: Array<{ address: string; username: string; aliasTag?: string }> = [];
+    const validRecipients: Array<{ address: string; username: string; userId: string; aliasTag?: string }> = [];
     for (const addr of envelopeTo) {
       const username = extractUsername(addr);
       if (!username) continue;
 
-      const user = await User.findOne({ username }).select('_id').lean();
+      const user = await User.findOne({ username }).select('_id').lean<{ _id: { toString(): string } }>();
       if (!user) {
         logger.info('Inbound webhook: recipient not found', { address: addr });
         continue;
@@ -104,6 +234,7 @@ router.post(
       validRecipients.push({
         address: addr,
         username,
+        userId: user._id.toString(),
         aliasTag: extractAliasTag(addr) ?? undefined,
       });
     }
@@ -155,7 +286,7 @@ router.post(
     const results: Array<{ recipient: string; status: string }> = [];
     for (const rcpt of validRecipients) {
       try {
-        await emailService.storeIncomingMessage({
+        const stored = await emailService.storeIncomingMessage({
           recipientUsername: rcpt.username,
           from: {
             name: fromAddr?.name || '',
@@ -187,6 +318,16 @@ router.post(
           from: senderAddress,
           to: rcpt.address,
           subject: parsed.subject,
+        });
+
+        await emitInboxSocketEvents({
+          userId: rcpt.userId,
+          stored,
+          fallbackText: parsed.text,
+          fallbackHtml: typeof parsed.html === 'string' ? parsed.html : undefined,
+          senderName: fromAddr?.name || '',
+          senderAddress,
+          subject: parsed.subject || '',
         });
       } catch (err) {
         logger.error('Inbound webhook: delivery failed', err instanceof Error ? err : new Error(String(err)), {
