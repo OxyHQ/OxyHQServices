@@ -1,6 +1,6 @@
 {
   "name": "@oxyhq/services",
-  "version": "6.10.8",
+  "version": "7.0.0",
   "description": "OxyHQ Expo/React Native SDK — UI components, screens, and native features",
   "main": "lib/commonjs/index.js",
   "module": "lib/module/index.js",
@@ -160,7 +160,7 @@
   "peerDependencies": {
     "@expo/vector-icons": "^15.0.3",
     "@oxyhq/bloom": ">=0.5.0",
-    "@oxyhq/core": "*",
+    "@oxyhq/core": "^2.0.0",
     "@react-native-community/netinfo": "^11.4.1",
     "@react-navigation/native": "^7.1.8",
     "@types/react": "*",
