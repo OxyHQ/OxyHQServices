@@ -23,8 +23,7 @@ declare module 'expo-crypto' {
 
   export function getRandomBytes(byteCount: number): Uint8Array;
   export function getRandomBytesAsync(byteCount: number): Promise<Uint8Array>;
-  export function getRandomUUID(): string;
-  export function getRandomUUIDAsync(): Promise<string>;
+  export function randomUUID(): string;
 }
 
 

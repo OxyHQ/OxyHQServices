@@ -38,7 +38,7 @@ jest.mock('@oxyhq/core', () => {
 
 jest.mock('expo-crypto', () => ({
   __esModule: true,
-  getRandomUUID: jest.fn(() => 'test-uuid-0000'),
+  randomUUID: jest.fn(() => 'test-uuid-0000'),
 }), { virtual: true });
 
 jest.mock('../../src/ui/utils/sessionHelpers', () => ({
