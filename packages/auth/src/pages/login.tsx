@@ -16,6 +16,7 @@ export function LoginPage() {
       state={searchParams.get("state") ?? undefined}
       responseType={searchParams.get("response_type") ?? undefined}
       clientId={searchParams.get("client_id") ?? undefined}
+      loginHint={searchParams.get("login_hint") ?? undefined}
     />
   );
 }

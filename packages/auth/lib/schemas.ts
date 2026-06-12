@@ -57,6 +57,36 @@ export const meResponseSchema = z.object({
 })
 
 /**
+ * `GET /session/device/sessions/:sessionId` returns the deduplicated list of
+ * accounts signed in on this physical device (one entry per user, most recent
+ * session). Backs the multi-account chooser. The user object mirrors
+ * `formatUserResponse` (id is `id`, never `_id`); `name` may be an object.
+ */
+export const deviceSessionsResponseSchema = z.array(
+    z.object({
+        sessionId: z.string(),
+        isCurrent: z.boolean().optional(),
+        user: z
+            .object({
+                id: z.string(),
+                username: z.string().optional(),
+                email: z.string().optional(),
+                avatar: z.string().optional(),
+                displayName: z.string().optional(),
+                name: z
+                    .object({
+                        first: z.string().optional(),
+                        last: z.string().optional(),
+                        full: z.string().optional(),
+                    })
+                    .optional(),
+            })
+            .nullable()
+            .optional(),
+    })
+)
+
+/**
  * Safely parse a JSON response with a Zod schema.
  * Returns the parsed data or null if validation fails.
  */

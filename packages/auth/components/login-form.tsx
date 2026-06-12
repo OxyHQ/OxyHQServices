@@ -9,13 +9,14 @@ import { buildAuthUrl, buildApiUrl, getApiBaseUrl, getAvatarUrl } from "@/lib/ox
 import { setFedCMLoginStatus, registerFedCMSession, buildPostLoginRedirect, completeFedCMLogin } from "@/lib/auth-utils"
 import { applyColorPreset } from "@/lib/bloom-css"
 import { useLayoutContext } from "@/lib/layout-context"
-import { meResponseSchema, loginResponseSchema, safeParse } from "@/lib/schemas"
-import type { Account } from "@/lib/types"
+import { loginResponseSchema, safeParse } from "@/lib/schemas"
+import type { DeviceAccount } from "@/lib/types"
+import { useDeviceAccounts } from "@/lib/use-device-accounts"
 import { Button } from "@/components/ui/button"
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { PasswordInput } from "@/components/password-input"
-import { AccountSwitcher } from "@/components/account-switcher"
+import { AccountChooser } from "@/components/account-chooser"
 import { SocialLoginButtons } from "@/components/social-login-buttons"
 import { AuthFormLayout, AuthFormHeader, LoadingSpinner } from "@/components/auth-form-layout"
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp"
@@ -28,6 +29,12 @@ type LoginFormProps = React.ComponentProps<"div"> & {
     state?: string
     responseType?: string
     clientId?: string
+    /**
+     * Username to pre-fill and re-authenticate. Set when the account chooser
+     * routes a non-active account here — bypasses the chooser and jumps to the
+     * password step for that account.
+     */
+    loginHint?: string
 }
 
 type LoginStep = "identifier" | "password" | "2fa" | "security-alert"
@@ -48,6 +55,7 @@ export function LoginForm({
     state,
     responseType,
     clientId,
+    loginHint,
     ...props
 }: LoginFormProps) {
     const isOAuthFlow = responseType === "token" && redirectUri
@@ -60,10 +68,15 @@ export function LoginForm({
     const displayError = rateLimitSeconds > 0 ? `Too many attempts. Try again in ${rateLimitSeconds}s.` : (localError ?? error)
 
     const [isSubmitting, setIsSubmitting] = useState(false)
-    const [isLoading, setIsLoading] = useState(true)
-    const [existingAccount, setExistingAccount] = useState<Account | null>(null)
-    const [existingSessionId, setExistingSessionId] = useState<string | null>(null)
-    const [showLoginForm, setShowLoginForm] = useState(false)
+    const [pendingSessionId, setPendingSessionId] = useState<string | null>(null)
+    // When a login_hint is supplied (the chooser routed a non-active account
+    // here for re-auth), bypass the chooser and go straight to the sign-in form.
+    const [showLoginForm, setShowLoginForm] = useState(Boolean(loginHint))
+
+    // Detect every account signed in on this device (1..N). The chooser is shown
+    // as an additive front screen whenever at least one account is present and
+    // the user hasn't opted into "Use a different account".
+    const { isLoading, currentSessionId, accounts } = useDeviceAccounts()
 
     const [stepState, setStepState] = useState<{ step: LoginStep; direction: "forward" | "back" }>({
         step: "identifier",
@@ -71,7 +84,7 @@ export function LoginForm({
     })
     const { step, direction } = stepState
 
-    const [identifier, setIdentifier] = useState("")
+    const [identifier, setIdentifier] = useState(loginHint ?? "")
     const [lookupResult, setLookupResult] = useState<LookupResult | null>(null)
     const [loginToken, setLoginToken] = useState("")
     const [otpValue, setOtpValue] = useState("")
@@ -102,21 +115,12 @@ export function LoginForm({
         queueMicrotask(() => toast.error("Sign in failed", { description: error }))
     }
 
-    // Check existing session on mount
-    const sessionCheckedRef = useRef(false)
-    if (!sessionCheckedRef.current) {
-        sessionCheckedRef.current = true
-        fetch(buildApiUrl("/users/me"), { credentials: "include" })
-            .then((res) => res.ok ? res.json() : null)
-            .then((data) => {
-                const parsed = safeParse(meResponseSchema, data)
-                if (parsed?.user && parsed.sessionId) {
-                    setExistingAccount(parsed.user as Account)
-                    setExistingSessionId(parsed.sessionId)
-                }
-            })
-            .catch(() => {})
-            .finally(() => setIsLoading(false))
+    // Account chooser re-auth: when routed here with a login_hint, look the
+    // account up once and advance straight to its password step.
+    const hintLookupRef = useRef(false)
+    if (loginHint && !hintLookupRef.current) {
+        hintLookupRef.current = true
+        queueMicrotask(() => { void runLookup(loginHint) })
     }
 
     // Rate limit countdown
@@ -167,14 +171,14 @@ export function LoginForm({
         )
     }
 
-    async function handleIdentifierSubmit(e: React.FormEvent<HTMLFormElement>) {
-        e.preventDefault()
-        const username = identifier.trim()
-        if (!username || rateLimitSeconds > 0) return
-
+    /**
+     * Look an account up by username, apply its color/avatar branding, and
+     * advance to the password step. Shared by the manual identifier form and the
+     * chooser's "re-auth a different signed-in account" path.
+     */
+    async function runLookup(username: string): Promise<void> {
         setLocalError(undefined)
         setIsSubmitting(true)
-
         try {
             const result = await oxy.lookupUsername(username)
             setLookupResult({
@@ -191,6 +195,13 @@ export function LoginForm({
             setLocalError("Couldn't find your account. Check your username and try again.")
             setIsSubmitting(false)
         }
+    }
+
+    async function handleIdentifierSubmit(e: React.FormEvent<HTMLFormElement>) {
+        e.preventDefault()
+        const username = identifier.trim()
+        if (!username || rateLimitSeconds > 0) return
+        await runLookup(username)
     }
 
     async function redirectAfterLogin(sessionId: string, accessToken?: string, expiresAt?: string) {
@@ -339,28 +350,56 @@ export function LoginForm({
         }
     }
 
-    async function handleContinueWithAccount() {
-        if (!existingSessionId) return
+    /**
+     * Continue with the currently-active account (its IdP session cookie is
+     * live). Mints a fresh access token for that session and funnels into the
+     * SAME post-login redirect the password flow uses — no re-auth needed.
+     */
+    async function continueWithCurrentAccount(sessionId: string): Promise<void> {
+        setPendingSessionId(sessionId)
         setIsSubmitting(true)
-
         try {
-            const res = await fetch(buildAuthUrl(`/token/${existingSessionId}`), { credentials: "include" })
+            const res = await fetch(buildAuthUrl(`/token/${sessionId}`), { credentials: "include" })
             const data = await res.json().catch(() => ({}))
 
             if (!res.ok || !data.accessToken) {
-                setExistingAccount(null)
-                setExistingSessionId(null)
                 setShowLoginForm(true)
+                setPendingSessionId(null)
                 toast.error("Session expired", { description: "Please sign in again" })
                 setIsSubmitting(false)
                 return
             }
 
-            await redirectAfterLogin(existingSessionId, data.accessToken, data.expiresAt)
+            await redirectAfterLogin(sessionId, data.accessToken, data.expiresAt)
         } catch (err) {
             setLocalError(err instanceof Error ? err.message : "Unable to continue")
+            setPendingSessionId(null)
             setIsSubmitting(false)
         }
+    }
+
+    /**
+     * A chooser row was selected. The current account continues silently; any
+     * other signed-in account cannot have a token minted from the current
+     * cookie (server enforces session ownership), so it funnels into the sign-in
+     * form pre-filled with that account's username — Google's re-auth prompt.
+     */
+    async function handleSelectAccount(entry: DeviceAccount): Promise<void> {
+        if (entry.isCurrent) {
+            await continueWithCurrentAccount(entry.sessionId)
+            return
+        }
+        const hint = entry.account.username || entry.account.email
+        if (hint) setIdentifier(hint)
+        setShowLoginForm(true)
+        if (entry.account.username) {
+            await runLookup(entry.account.username)
+        }
+    }
+
+    function handleUseDifferentAccount(): void {
+        setIdentifier("")
+        setShowLoginForm(true)
     }
 
     function handleSecurityAlertDismiss() {
@@ -374,13 +413,14 @@ export function LoginForm({
 
     if (isLoading) return <LoadingSpinner className={className} />
 
-    if (existingAccount && existingSessionId && !showLoginForm) {
+    if (accounts.length > 0 && currentSessionId && !showLoginForm) {
         return (
-            <AccountSwitcher
+            <AccountChooser
                 className={className}
-                account={existingAccount}
-                onContinue={handleContinueWithAccount}
-                onUseAnother={() => setShowLoginForm(true)}
+                accounts={accounts}
+                onSelectAccount={handleSelectAccount}
+                onUseAnother={handleUseDifferentAccount}
+                pendingSessionId={pendingSessionId}
                 isLoading={isSubmitting}
                 {...props}
             />

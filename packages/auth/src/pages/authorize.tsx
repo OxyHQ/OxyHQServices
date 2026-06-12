@@ -12,6 +12,9 @@ import {
   isPopupWindow,
   tryClosePopup,
 } from "@/components/auth-form-layout";
+import { AccountChooser } from "@/components/account-chooser";
+import { useDeviceAccounts } from "@/lib/use-device-accounts";
+import type { DeviceAccount } from "@/lib/types";
 import {
   getAvatarUrl,
   buildRelativeUrl,
@@ -103,6 +106,18 @@ export function AuthorizePage() {
   });
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+
+  // Google-style account chooser shown as an additive front screen before the
+  // consent UI. Detect accounts signed in on this device; selecting the active
+  // account mints+plants its token and reveals consent, while any other account
+  // re-routes to /login (the current cookie cannot mint another account's
+  // token). Dismissed once a choice is made.
+  const {
+    accounts: deviceAccounts,
+    currentSessionId: chooserSessionId,
+  } = useDeviceAccounts();
+  const [chooserDismissed, setChooserDismissed] = useState(false);
+  const [pendingSessionId, setPendingSessionId] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadData() {
@@ -230,6 +245,55 @@ export function AuthorizePage() {
       return () => clearTimeout(timer);
     }
   }, [data.sessionStatus]);
+
+  // Re-routes to /login carrying the full authorization request context (plus
+  // OAuth2 PKCE params) so the user lands back on this consent screen after
+  // re-authenticating. `hint` pre-fills the username for a known account.
+  function gotoLoginWithHint(hint?: string): void {
+    navigate(
+      buildRelativeUrl("/login", {
+        token: token || undefined,
+        redirect_uri: redirectUri || undefined,
+        state: state || undefined,
+        response_type: searchParams.get("response_type") || undefined,
+        client_id: clientId || undefined,
+        code_challenge: codeChallenge || undefined,
+        code_challenge_method: codeChallengeMethod || undefined,
+        scope: scope || undefined,
+        login_hint: hint || undefined,
+      })
+    );
+  }
+
+  async function handleChooseAccount(entry: DeviceAccount): Promise<void> {
+    // Only the active account can proceed without re-auth: mint its token,
+    // plant it for the approve handler, then reveal the consent screen.
+    if (entry.isCurrent) {
+      setPendingSessionId(entry.sessionId);
+      setSubmitting(true);
+      try {
+        const res = await fetch(buildAuthUrl(`/token/${entry.sessionId}`), {
+          credentials: "include",
+        });
+        const tokenData = await res.json().catch(() => ({}));
+        if (!res.ok || !tokenData.accessToken) {
+          // Stale session — fall back to a full re-auth.
+          gotoLoginWithHint(entry.account.username || entry.account.email);
+          return;
+        }
+        sessionStorage.setItem("oxy_session_id", entry.sessionId);
+        sessionStorage.setItem("oxy_access_token", tokenData.accessToken);
+        setData((prev) => ({ ...prev, sessionId: entry.sessionId }));
+        setChooserDismissed(true);
+      } finally {
+        setPendingSessionId(null);
+        setSubmitting(false);
+      }
+      return;
+    }
+    // A different signed-in account: re-authenticate via /login.
+    gotoLoginWithHint(entry.account.username || entry.account.email);
+  }
 
   async function handleDecision(decision: "approve" | "deny") {
     if (!token) return;
@@ -459,6 +523,24 @@ export function AuthorizePage() {
     redirect_uri: redirectUri || undefined,
     state: state || undefined,
   });
+
+  // Additive front screen: when the consent request is still actionable and at
+  // least one account is signed in on this device, show the Google-style
+  // chooser first. Selecting the active account plants its token and dismisses
+  // the chooser to reveal the consent UI below; other accounts re-route to
+  // /login. The chooser never intercepts a completed (approved/denied) state.
+  if (showActions && !chooserDismissed && chooserSessionId && deviceAccounts.length > 0) {
+    return (
+      <AccountChooser
+        accounts={deviceAccounts}
+        appName={data.appName}
+        onSelectAccount={handleChooseAccount}
+        onUseAnother={() => gotoLoginWithHint()}
+        pendingSessionId={pendingSessionId}
+        isLoading={submitting}
+      />
+    );
+  }
 
   return (
     <AuthFormLayout>
