@@ -50,8 +50,14 @@ export interface AuthActions {
    * Sign in
    * - Web: Opens popup to auth.oxy.so (no public key needed)
    * - Native: Uses cryptographic identity from keychain
+   *
+   * @param publicKey - Native: identity public key. Ignored on web.
+   * @param preOpenedPopup - Web only: a popup the caller already opened
+   *   SYNCHRONOUSLY on the raw click via `oxyServices.openBlankPopup()`. This
+   *   keeps Chrome's user-activation alive across any prior `await` and is
+   *   the only reliable way to avoid the popup blocker on cross-domain flows.
    */
-  signIn: (publicKey?: string) => Promise<User>;
+  signIn: (publicKey?: string, preOpenedPopup?: Window | null) => Promise<User>;
 
   /**
    * Sign out current session
@@ -106,7 +112,7 @@ export function useAuth(): UseAuthReturn {
     openAvatarPicker,
   } = useOxy();
 
-  const signIn = useCallback(async (publicKey?: string): Promise<User> => {
+  const signIn = useCallback(async (publicKey?: string, preOpenedPopup?: Window | null): Promise<User> => {
     // Check if we're on the identity provider itself
     // Only the IdP has local login forms - other apps are client apps
     const authWebUrl = oxyServices.config?.authWebUrl;
@@ -122,8 +128,18 @@ export function useAuth(): UseAuthReturn {
     // FedCM silent SSO already runs on page load via useWebSSO
     // If user is clicking "Sign In", they need interactive auth NOW
     if (isWebBrowser() && !publicKey && !isIdentityProvider) {
+      // Open the popup SYNCHRONOUSLY before any `await` runs so Chrome's
+      // transient user-activation is preserved across the async chain
+      // (React state updates + the `await` into `signInWithPopup`). If the
+      // caller already pre-opened one (e.g. they did so to be extra safe
+      // ahead of their own awaits), reuse it.
+      const popup: Window | null = preOpenedPopup
+        ?? oxyServices.openBlankPopup?.()
+        ?? null;
       try {
-        const popupSession = await oxyServices.signInWithPopup?.();
+        const popupSession = await oxyServices.signInWithPopup?.({
+          popup,
+        });
         if (popupSession?.user) {
           // The popup auth flow fetches full user data, so the session user
           // contains full User fields even though the base type is MinimalUserData.
@@ -137,6 +153,9 @@ export function useAuth(): UseAuthReturn {
         }
         throw new Error('Sign-in failed. Please try again.');
       } catch (popupError) {
+        if (popup && !popup.closed) {
+          popup.close();
+        }
         if (popupError instanceof Error && popupError.message.includes('blocked')) {
           throw new Error('Popup blocked. Please allow popups for this site.');
         }

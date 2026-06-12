@@ -57,6 +57,14 @@ export interface CrossDomainAuthOptions {
    * Callback when auth method is selected
    */
   onMethodSelected?: (method: 'fedcm' | 'popup' | 'redirect') => void;
+
+  /**
+   * A popup window the caller already opened SYNCHRONOUSLY in the user-gesture
+   * handler. Forwarded to `OxyServices.signInWithPopup` so the popup is not
+   * blocked by Chrome after any prior `await` (FedCM / silent SSO) has
+   * consumed the transient user activation. See `OxyServices.openBlankPopup`.
+   */
+  popup?: Window | null;
 }
 
 export class CrossDomainAuth {
@@ -76,9 +84,20 @@ export class CrossDomainAuth {
   async signIn(options: CrossDomainAuthOptions = {}): Promise<SessionLoginResponse | null> {
     const method = options.method || 'auto';
 
-    // If specific method requested, use it directly
+    // If specific method requested, use it directly. The caller MAY have
+    // pre-opened a popup on the raw click (the standard pattern in
+    // WebOxyProvider / services useAuth). For the FedCM and redirect paths
+    // that popup is unused — close it so it doesn't linger as an orphaned
+    // blank window. Close in both success and failure paths.
     if (method === 'fedcm') {
-      return this.signInWithFedCM(options);
+      try {
+        const session = await this.signInWithFedCM(options);
+        this.closeOrphanPopup(options.popup);
+        return session;
+      } catch (error) {
+        this.closeOrphanPopup(options.popup);
+        throw error;
+      }
     }
 
     if (method === 'popup') {
@@ -86,12 +105,26 @@ export class CrossDomainAuth {
     }
 
     if (method === 'redirect') {
+      this.closeOrphanPopup(options.popup);
       this.signInWithRedirect(options);
       return null; // Redirect doesn't return immediately
     }
 
     // Auto mode: Try methods in order of preference
     return this.autoSignIn(options);
+  }
+
+  /**
+   * Close a caller-supplied popup window that is no longer needed (e.g. the
+   * resolved auth method didn't end up using it). Safe against null / already
+   * closed handles.
+   *
+   * @private
+   */
+  private closeOrphanPopup(popup: Window | null | undefined): void {
+    if (popup && !popup.closed) {
+      popup.close();
+    }
   }
 
   /**
@@ -104,7 +137,11 @@ export class CrossDomainAuth {
     if (this.isFedCMSupported()) {
       try {
         options.onMethodSelected?.('fedcm');
-        return await this.signInWithFedCM(options);
+        const session = await this.signInWithFedCM(options);
+        // FedCM succeeded — close the pre-opened popup so it doesn't linger
+        // as an orphaned blank window.
+        this.closeOrphanPopup(options.popup);
+        return session;
       } catch (error) {
         console.warn('[CrossDomainAuth] FedCM failed, trying popup...', error);
       }
@@ -116,6 +153,8 @@ export class CrossDomainAuth {
       return await this.signInWithPopup(options);
     } catch (error) {
       console.warn('[CrossDomainAuth] Popup failed, falling back to redirect...', error);
+      // Popup path failed — close the pre-opened popup before redirecting.
+      this.closeOrphanPopup(options.popup);
     }
 
     // 3. Fallback to redirect (always works)
@@ -145,6 +184,7 @@ export class CrossDomainAuth {
       mode: options.isSignup ? 'signup' : 'login',
       width: options.popupDimensions?.width,
       height: options.popupDimensions?.height,
+      popup: options.popup ?? undefined,
     });
   }
 
@@ -206,6 +246,17 @@ export class CrossDomainAuth {
    */
   restoreSession(): boolean {
     return this.oxyServices.restoreSession?.() || false;
+  }
+
+  /**
+   * Open a blank popup SYNCHRONOUSLY (call from a raw user-gesture handler
+   * BEFORE any `await`). Returns `null` if the popup was blocked. Pass the
+   * handle into `signIn({ popup })` / `signInWithPopup({ popup })` so the
+   * popup is not blocked by Chrome after any prior `await` consumed the
+   * transient user activation. Delegates to `OxyServices.openBlankPopup`.
+   */
+  openBlankPopup(width?: number, height?: number): Window | null {
+    return this.oxyServices.openBlankPopup(width, height);
   }
 
   /**

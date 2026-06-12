@@ -28,6 +28,7 @@ interface MockOxyState {
   oxyServices: {
     config?: { authWebUrl?: string };
     signInWithPopup?: jest.Mock;
+    openBlankPopup?: jest.Mock;
   };
   hasIdentity: jest.Mock;
   getPublicKey: jest.Mock;
@@ -49,6 +50,7 @@ const defaultMockState = (): MockOxyState => ({
   oxyServices: {
     config: { authWebUrl: 'https://auth.oxy.so' },
     signInWithPopup: jest.fn(),
+    openBlankPopup: jest.fn(() => null),
   },
   hasIdentity: jest.fn(async () => false),
   getPublicKey: jest.fn(async () => null),

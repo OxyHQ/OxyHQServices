@@ -31,6 +31,7 @@ interface MockOxyState {
   oxyServices: {
     config?: { authWebUrl?: string };
     signInWithPopup?: jest.Mock;
+    openBlankPopup?: jest.Mock;
   };
   hasIdentity: jest.Mock;
   getPublicKey: jest.Mock;
@@ -56,6 +57,11 @@ const defaultMockState = (): MockOxyState => ({
       deviceId: 'dev-1',
       expiresAt: '2030-01-01',
       user: { id: 'popup-user', username: 'alice' },
+    })),
+    openBlankPopup: jest.fn(() => ({
+      closed: false,
+      close: jest.fn(),
+      location: { href: '', replace: jest.fn() },
     })),
   },
   hasIdentity: jest.fn(async () => false),
@@ -179,6 +185,111 @@ describe('useAuth.signIn — web popup path', () => {
     });
 
     expect((caught as Error).message).toMatch(/Sign-in failed/);
+  });
+
+  it('pre-opens a popup SYNCHRONOUSLY and forwards the handle to signInWithPopup', async () => {
+    // Regression test for §6c: the click handler must open the popup BEFORE
+    // any `await` consumes Chrome's transient user-activation, and forward
+    // the handle into the mixin so the navigation reuses the live window
+    // instead of issuing a fresh (now-blocked) `window.open`.
+    const preOpenedPopup = {
+      closed: false,
+      close: jest.fn(),
+      location: { href: '', replace: jest.fn() },
+    };
+    mockState.oxyServices.openBlankPopup = jest.fn(() => preOpenedPopup);
+
+    const { result } = renderHook(() => useAuth());
+
+    await act(async () => {
+      await result.current.signIn();
+    });
+
+    // The hook called the synchronous helper exactly once.
+    expect(mockState.oxyServices.openBlankPopup).toHaveBeenCalledTimes(1);
+    // And forwarded the SAME handle into signInWithPopup.
+    expect(mockState.oxyServices.signInWithPopup).toHaveBeenCalledTimes(1);
+    const popupCallArg = (mockState.oxyServices.signInWithPopup as jest.Mock).mock.calls[0][0] as { popup: unknown };
+    expect(popupCallArg).toBeDefined();
+    expect(popupCallArg.popup).toBe(preOpenedPopup);
+  });
+
+  it('reuses a caller-supplied pre-opened popup instead of opening a new one', async () => {
+    const callerPopup = {
+      closed: false,
+      close: jest.fn(),
+      location: { href: '', replace: jest.fn() },
+    };
+    const openBlankPopupMock = jest.fn(() => ({
+      closed: false,
+      close: jest.fn(),
+      location: { href: '', replace: jest.fn() },
+    }));
+    mockState.oxyServices.openBlankPopup = openBlankPopupMock;
+
+    const { result } = renderHook(() => useAuth());
+
+    await act(async () => {
+      await result.current.signIn(undefined, callerPopup as unknown as Window);
+    });
+
+    // Caller pre-opened one — hook must not open a second.
+    expect(openBlankPopupMock).not.toHaveBeenCalled();
+    const popupCallArg = (mockState.oxyServices.signInWithPopup as jest.Mock).mock.calls[0][0] as { popup: unknown };
+    expect(popupCallArg.popup).toBe(callerPopup);
+  });
+
+  it('closes the pre-opened popup when signInWithPopup throws', async () => {
+    const preOpenedPopup = {
+      closed: false,
+      close: jest.fn(),
+      location: { href: '', replace: jest.fn() },
+    };
+    mockState.oxyServices.openBlankPopup = jest.fn(() => preOpenedPopup);
+    mockState.oxyServices.signInWithPopup = jest.fn(async () => {
+      throw new Error('Sign-in window was closed before authentication could start.');
+    });
+
+    const { result } = renderHook(() => useAuth());
+
+    await act(async () => {
+      try {
+        await result.current.signIn();
+      } catch {
+        // expected
+      }
+    });
+
+    expect(preOpenedPopup.close).toHaveBeenCalledTimes(1);
+  });
+
+  it('does NOT re-map the "window was closed" cancel error to "Popup blocked"', async () => {
+    // Distinguishing cancel from blocked is the core of issue #2. A user
+    // closing the blank popup must surface as a cancel, never as the
+    // misleading "Popup blocked. Please allow popups for this site." UX.
+    const preOpenedPopup = {
+      closed: false,
+      close: jest.fn(),
+      location: { href: '', replace: jest.fn() },
+    };
+    mockState.oxyServices.openBlankPopup = jest.fn(() => preOpenedPopup);
+    mockState.oxyServices.signInWithPopup = jest.fn(async () => {
+      throw new Error('Sign-in window was closed before authentication could start.');
+    });
+
+    const { result } = renderHook(() => useAuth());
+
+    let caught: unknown;
+    await act(async () => {
+      try {
+        await result.current.signIn();
+      } catch (error) {
+        caught = error;
+      }
+    });
+
+    expect((caught as Error).message).toMatch(/window was closed/);
+    expect((caught as Error).message).not.toMatch(/blocked/);
   });
 });
 

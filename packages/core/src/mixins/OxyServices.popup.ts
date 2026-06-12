@@ -10,6 +10,23 @@ export interface PopupAuthOptions {
   height?: number;
   timeout?: number;
   mode?: 'login' | 'signup';
+  /**
+   * A popup window handle the caller already opened SYNCHRONOUSLY inside the
+   * user-gesture event handler (e.g. an `onClick`). The mixin will navigate
+   * this window to the auth URL instead of calling `window.open` itself.
+   *
+   * Why this exists: Chrome (and other modern browsers) only honor
+   * `window.open` while a transient user-activation is in scope. The
+   * activation is consumed by the FIRST `await` in the click handler — so any
+   * caller that awaits FedCM / silent SSO before reaching `signInWithPopup`
+   * loses the activation and sees the popup blocked. The caller can dodge
+   * this by opening a blank popup on the raw click via `openBlankPopup()`,
+   * then passing the handle in here.
+   *
+   * `null` is accepted (and is the same as omitting the option) so consumers
+   * can pass through the result of `openBlankPopup()` without an extra guard.
+   */
+  popup?: Window | null;
 }
 
 export interface SilentAuthOptions {
@@ -104,7 +121,37 @@ export function OxyServicesPopupAuthMixin<T extends typeof OxyServicesBase>(Base
       redirectUri: `${this.resolveAuthUrl()}/auth/callback`,
     });
 
-    const popup = this.openCenteredPopup(authUrl, 'Oxy Sign In', width, height);
+    // If the caller pre-opened a popup on the raw user gesture (recommended
+    // path — see `openBlankPopup` and `PopupAuthOptions.popup`), navigate it
+    // to the auth URL instead of issuing a fresh `window.open` (which would
+    // be blocked once any prior `await` has consumed the user activation).
+    let popup: Window | null;
+    const preOpened = options.popup ?? null;
+    if (preOpened) {
+      if (preOpened.closed) {
+        // The pre-opened popup is gone — distinguish a user cancel (they
+        // closed the blank window before sign-in could navigate it) from a
+        // blocker rejection. Lumping these together as "Popup blocked" is
+        // misleading: the popup was NOT blocked, it was opened successfully
+        // and then dismissed.
+        throw new OxyAuthenticationError(
+          'Sign-in window was closed before authentication could start.'
+        );
+      }
+      try {
+        preOpened.location.replace(authUrl);
+      } catch (replaceError) {
+        // `location.replace` can throw in sandboxed / cross-origin-locked
+        // environments. Fall back to `href` assignment, which is more
+        // permissive. Logged at debug-level so consumers can correlate
+        // unusual sign-in behaviour without producing noise in normal flows.
+        debug.warn('location.replace failed, falling back to location.href', replaceError);
+        preOpened.location.href = authUrl;
+      }
+      popup = preOpened;
+    } else {
+      popup = this.openCenteredPopup(authUrl, 'Oxy Sign In', width, height);
+    }
 
     if (!popup) {
       throw new OxyAuthenticationError(
@@ -267,6 +314,37 @@ export function OxyServicesPopupAuthMixin<T extends typeof OxyServicesBase>(Base
     } finally {
       document.body.removeChild(iframe);
     }
+  }
+
+  /**
+   * Open a blank, centered popup window SYNCHRONOUSLY.
+   *
+   * Use this in a click (or other user-gesture) handler BEFORE any `await`
+   * to capture the transient user-activation. Pass the returned handle into
+   * `signInWithPopup({ popup })` once the async portion of the flow runs.
+   *
+   * Returns `null` if the browser's popup blocker rejected the open.
+   *
+   * @example
+   * ```typescript
+   * const onSignInClick = () => {
+   *   const popup = oxyServices.openBlankPopup();
+   *   (async () => {
+   *     const silent = await oxyServices.silentSignInWithFedCM();
+   *     if (silent) { popup?.close(); return; }
+   *     await oxyServices.signInWithPopup({ popup });
+   *   })();
+   * };
+   * ```
+   */
+  public openBlankPopup(width?: number, height?: number): Window | null {
+    if (typeof window === 'undefined') {
+      return null;
+    }
+    const ctor = this.constructor as unknown as { POPUP_WIDTH: number; POPUP_HEIGHT: number };
+    const w = width ?? ctor.POPUP_WIDTH;
+    const h = height ?? ctor.POPUP_HEIGHT;
+    return this.openCenteredPopup('about:blank', 'Oxy Sign In', w, h);
   }
 
   /**

@@ -40,9 +40,21 @@ export interface WebAuthState {
 }
 
 export interface WebAuthActions {
-  signIn: () => Promise<void>;
+  /**
+   * Sign in via the preferred method (auto / fedcm / popup / redirect).
+   *
+   * @param preOpenedPopup - A popup the caller opened SYNCHRONOUSLY on the
+   *   raw click via `oxyServices.openBlankPopup()` (or
+   *   `crossDomainAuth.openBlankPopup()`). Required to defeat Chrome's
+   *   popup blocker when any prior `await` (FedCM / silent SSO) has consumed
+   *   the transient user activation.
+   */
+  signIn: (preOpenedPopup?: Window | null) => Promise<void>;
   signInWithFedCM: () => Promise<void>;
-  signInWithPopup: () => Promise<void>;
+  /**
+   * @param preOpenedPopup - See `signIn`. Required for cross-domain reliability.
+   */
+  signInWithPopup: (preOpenedPopup?: Window | null) => Promise<void>;
   signInWithRedirect: () => void;
   signOut: () => Promise<void>;
   isFedCMSupported: () => boolean;
@@ -251,8 +263,33 @@ export function WebOxyProvider({
     onAuthStateChange?.(user);
   }, [user, onAuthStateChange]);
 
-  const signIn = useCallback(async () => {
-    if (signingInRef.current) return;
+  const signIn = useCallback(async (preOpenedPopup?: Window | null) => {
+    if (signingInRef.current) {
+      // Already signing in — the popup the caller just opened is now orphaned.
+      // Close it to avoid leaving a blank window on screen.
+      if (preOpenedPopup && !preOpenedPopup.closed) {
+        preOpenedPopup.close();
+      }
+      return;
+    }
+
+    // Open the popup SYNCHRONOUSLY in the user-gesture event handler BEFORE
+    // any `await` runs. `signIn` is async and the auto-method path awaits
+    // FedCM first — without this, the transient user-activation is consumed
+    // by FedCM's `navigator.credentials.get` and Chrome blocks the popup. If
+    // the caller already pre-opened one (e.g. their own click handler did so
+    // for safety), reuse it. Method-specific entry points (`fedcm`,
+    // `redirect`) don't need a popup, so we skip the open in those cases.
+    let popup: Window | null = preOpenedPopup ?? null;
+    if (
+      !popup &&
+      typeof window !== 'undefined' &&
+      preferredAuthMethod !== 'fedcm' &&
+      preferredAuthMethod !== 'redirect'
+    ) {
+      popup = oxyServices.openBlankPopup();
+    }
+
     signingInRef.current = true;
     setError(null);
     setIsLoading(true);
@@ -262,6 +299,7 @@ export function WebOxyProvider({
     try {
       const session = await crossDomainAuth.signIn({
         method: preferredAuthMethod,
+        popup,
         onMethodSelected: (method) => {
           selectedMethod = method as 'fedcm' | 'popup' | 'redirect';
         },
@@ -273,11 +311,14 @@ export function WebOxyProvider({
         setIsLoading(false);
       }
     } catch (err) {
+      if (popup && !popup.closed) {
+        popup.close();
+      }
       handleAuthError(err);
     } finally {
       signingInRef.current = false;
     }
-  }, [crossDomainAuth, preferredAuthMethod, handleAuthSuccess, handleAuthError]);
+  }, [oxyServices, crossDomainAuth, preferredAuthMethod, handleAuthSuccess, handleAuthError]);
 
   const signInWithFedCM = useCallback(async () => {
     if (signingInRef.current) return;
@@ -294,20 +335,40 @@ export function WebOxyProvider({
     }
   }, [crossDomainAuth, handleAuthSuccess, handleAuthError]);
 
-  const signInWithPopup = useCallback(async () => {
-    if (signingInRef.current) return;
+  const signInWithPopup = useCallback(async (preOpenedPopup?: Window | null) => {
+    if (signingInRef.current) {
+      if (preOpenedPopup && !preOpenedPopup.closed) {
+        preOpenedPopup.close();
+      }
+      return;
+    }
+
+    // Open the popup SYNCHRONOUSLY before any `await` (see `signIn` for the
+    // rationale). The mixin's own `window.open` runs AFTER React state
+    // updates and the await chain, which in some browsers is already enough
+    // to lose the transient user-activation.
+    let popup: Window | null = preOpenedPopup ?? null;
+    if (!popup && typeof window !== 'undefined') {
+      popup = oxyServices.openBlankPopup();
+    }
+
     signingInRef.current = true;
     setError(null);
     setIsLoading(true);
     try {
-      const session = await crossDomainAuth.signInWithPopup();
+      const session = await crossDomainAuth.signInWithPopup({
+        popup,
+      });
       await handleAuthSuccess(session, 'popup');
     } catch (err) {
+      if (popup && !popup.closed) {
+        popup.close();
+      }
       handleAuthError(err);
     } finally {
       signingInRef.current = false;
     }
-  }, [crossDomainAuth, handleAuthSuccess, handleAuthError]);
+  }, [oxyServices, crossDomainAuth, handleAuthSuccess, handleAuthError]);
 
   const signInWithRedirect = useCallback(() => {
     setError(null);

@@ -49,6 +49,55 @@ Consequences:
    layer with a configurable `sessionBaseUrl` per app. Refresh goes to the app's
    OWN backend; access token kept in memory; native uses SecureStore.
 
+## Scaling to many apps — the professional model is OIDC (not a shared worker)
+
+> An earlier draft proposed a shared Cloudflare Worker forwarding ONE central cookie
+> to every vanity domain. **That is SUPERSEDED — it's a clever shortcut, not how the
+> pros do it.** The professional, standard, Google/Meta/Auth0/Okta-grade model is
+> **OIDC**: the central IdP (`auth.oxy.so`) + each app as a Relying Party (RP). Oxy
+> already has the OAuth/OIDC bones (`/authorize`, `/fedcm`, `oauthCode.service.ts`,
+> the `DeveloperApp` client registry, the account chooser) — LEAN INTO THEM.
+
+**Sign-in (uniform, every app):** the app sends the user to `auth.oxy.so/authorize`
+(OIDC authorization code + PKCE). Because that's a TOP-LEVEL navigation to the IdP, the
+IdP's session cookie is FIRST-PARTY there → the **account chooser shows the user's
+active sessions** (Google-style — built into the flow, every app gets it for free). The
+IdP returns a code; the app exchanges it for tokens. FedCM (Chrome) gives the same
+"pick an existing account" UX with no redirect.
+
+**Persistence — each app keeps its OWN first-party session, tiered by what it has:**
+- **Tier 1 — `*.oxy.so` apps** (accounts, inbox, console, allo…): same-site with
+  `api.oxy.so` → use its first-party cookie directly (the Phase-1 foundation, already
+  built). No redirect on reload.
+- **Tier 2 — vanity-domain apps WITH a backend** (mention.earth, homiio.com,
+  alia.onl): **BFF (Backend-For-Frontend) — the professional standard, what every
+  Google property does.** The app's OWN backend is the OIDC confidential client: it
+  does the code+PKCE exchange, holds the refresh token SERVER-SIDE, and sets a
+  first-party httpOnly session cookie on the app's OWN domain. Tokens are scoped to
+  that app's `client_id` (per-app isolation — compromising one app can't touch
+  others). No redirect on reload. These apps ALREADY have backends.
+- **Tier 3 — frontend-only vanity apps**: OIDC public client + **FedCM** (Chrome:
+  silent renewal, no redirect, no third-party cookie) with a silent-redirect/popup
+  fallback (Safari/Firefox). Access token in MEMORY (never localStorage). Per-app =
+  a `client_id` + the SDK; ZERO per-app infra. Standard SPA model (Auth0/Firebase/
+  Clerk) and exactly what Google does for frontend RPs post-3p-cookie.
+
+**Why OIDC beats the shared-worker idea:** it's the industry standard (auditable,
+library-supported, what Google/Meta/Okta use); gives PER-APP token scoping (better
+isolation than passing one central cookie around); builds the account chooser into the
+flow uniformly; and avoids the shared-`oxy.so`-cookie CSRF surface (MED-1, §4) by giving
+each app its own cookie on its own domain. Scale = register a `client_id` + use the
+SDK; the IdP is the ONE shared piece (already exists). No per-app worker, no per-app
+bridge code.
+
+**The SDK hides all tiers** behind one API (`useOxy()` / `restoreSession()`): same-site
+cookie (tier 1), BFF cookie (tier 2), or FedCM/silent-renewal (tier 3) — chosen
+automatically. App devs never hand-roll auth.
+
+> NOTE: the Phase-1 `*.oxy.so` foundation (the three `/auth/*` endpoints + single
+> `oxy_rt` cookie) stays as tier 1. Tiers 2–3 are the NEXT design work and should reuse
+> Oxy's existing OAuth/OIDC + FedCM rather than the deprecated worker idea.
+
 ### Session bridge — forwarding contract (Phase 1 reference)
 
 The central session store on `api.oxy.so` exposes exactly three endpoints. A

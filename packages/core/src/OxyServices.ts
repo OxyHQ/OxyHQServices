@@ -139,6 +139,13 @@ export interface OxyServices extends InstanceType<ReturnType<typeof composeOxySe
   // Popup authentication
   signInWithPopup(options?: PopupAuthOptions): Promise<SessionLoginResponse>;
   signUpWithPopup(options?: PopupAuthOptions): Promise<SessionLoginResponse>;
+  /**
+   * Open a blank popup SYNCHRONOUSLY (call from a raw user-gesture handler
+   * BEFORE any `await`). Returns `null` if the popup was blocked. Pass the
+   * handle into `signInWithPopup({ popup })` to navigate it to auth.oxy.so
+   * after the async portion of the sign-in flow runs.
+   */
+  openBlankPopup(width?: number, height?: number): Window | null;
 
   // Redirect authentication
   signInWithRedirect(options?: RedirectAuthOptions): void;
