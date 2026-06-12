@@ -32,6 +32,27 @@ export interface SimpleAuthRequest extends Request {
 }
 
 /**
+ * Reject requests that carry a bearer token in the URL query string
+ * (`?token=` / `?access_token=`).
+ *
+ * Tokens in URLs leak into proxy/ALB access logs, browser history, and
+ * Referer headers. Session-establishment endpoints (e.g. POST /auth/session)
+ * must accept the bearer token ONLY via the Authorization header, so this
+ * guard runs BEFORE authMiddleware (which otherwise also accepts query
+ * tokens for legacy media-streaming flows) and fails loudly with a 400
+ * instead of silently processing the leaked credential.
+ */
+export const rejectQueryToken = (req: Request, res: Response, next: NextFunction) => {
+  if (req.query.token !== undefined || req.query.access_token !== undefined) {
+    return res.status(400).json({
+      error: 'Token in URL not allowed',
+      message: 'This endpoint accepts the bearer token only via the Authorization header. Remove the token/access_token query parameter.'
+    });
+  }
+  next();
+};
+
+/**
  * Authentication middleware that validates JWT tokens and attaches the full user object to the request
  * 
  * Optimized for high-scale usage:

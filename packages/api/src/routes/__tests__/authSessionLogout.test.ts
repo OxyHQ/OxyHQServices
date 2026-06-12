@@ -109,6 +109,8 @@ jest.mock('../../middleware/auth', () => ({
     next();
   },
   serviceAuthMiddleware: jest.fn(),
+  // REAL guard under test: /auth/session must reject ?token= with a 400.
+  rejectQueryToken: jest.requireActual('../../middleware/auth').rejectQueryToken,
 }));
 
 // ---- authUtils: the route reads the bearer token and decodes it from here. ----
@@ -367,6 +369,42 @@ describe('POST /auth/session', () => {
     // Value is a real token, not empty (i.e. not a clear).
     const value = (cookie as string).split(';')[0].slice(`${REFRESH_COOKIE_NAME}=`.length);
     expect(value.length).toBeGreaterThan(0);
+  });
+
+  it('returns 400 and mints no cookie when the token arrives via ?token= in the URL', async () => {
+    // Tokens in URLs leak into proxy/access logs — the endpoint is
+    // header-only and must reject loudly, BEFORE authMiddleware runs.
+    const res = await requestJson(
+      server,
+      'POST',
+      '/auth/session?token=leaked-access-jwt',
+      {},
+      { bearer: 'bearer-access-jwt' }
+    );
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual(
+      expect.objectContaining({ error: 'Token in URL not allowed' })
+    );
+    // The handler never ran: no cookie minted, no access token issued.
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(mockGetAccessToken).not.toHaveBeenCalled();
+    const cookie = res.setCookie.find((c) => c.startsWith(`${REFRESH_COOKIE_NAME}=`));
+    expect(cookie).toBeUndefined();
+  });
+
+  it('returns 400 when the token arrives via ?access_token= in the URL', async () => {
+    const res = await requestJson(
+      server,
+      'POST',
+      '/auth/session?access_token=leaked-access-jwt',
+      {},
+      { bearer: 'bearer-access-jwt' }
+    );
+
+    expect(res.status).toBe(400);
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(mockGetAccessToken).not.toHaveBeenCalled();
   });
 
   it('returns 401 and mints no cookie when the bearer is missing/invalid', async () => {

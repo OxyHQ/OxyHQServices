@@ -12,7 +12,7 @@ import jwt from 'jsonwebtoken';
 import { SessionController } from '../controllers/session.controller';
 import { User } from '../models/User';
 import { DeveloperApp } from '../models/DeveloperApp';
-import { authMiddleware, type AuthRequest } from '../middleware/auth';
+import { authMiddleware, rejectQueryToken, type AuthRequest } from '../middleware/auth';
 import { rateLimit } from '../middleware/rateLimiter';
 import { asyncHandler, sendSuccess } from '../utils/asyncHandler';
 import { BadRequestError, NotFoundError, UnauthorizedError, ForbiddenError } from '../utils/error';
@@ -801,12 +801,14 @@ router.post('/refresh', refreshLimiter, asyncHandler(async (req, res) => {
  *                 expiresAt:
  *                   type: string
  *                   format: date-time
+ *       400:
+ *         description: Bearer token was sent in the URL query string (header-only endpoint).
  *       401:
  *         description: Missing, invalid, or expired bearer access token.
  *       429:
  *         description: Too many requests from this IP.
  */
-router.post('/session', refreshLimiter, authMiddleware, asyncHandler(async (req: AuthRequest, res) => {
+router.post('/session', refreshLimiter, rejectQueryToken, authMiddleware, asyncHandler(async (req: AuthRequest, res) => {
   // OWNERSHIP CHECK (load-bearing):
   // We never accept a sessionId from the URL/body/query — that unauthenticated
   // token-minting / auth-downgrade pattern was a HIGH vuln and was reverted. The

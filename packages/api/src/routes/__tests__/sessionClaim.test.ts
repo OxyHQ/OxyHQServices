@@ -33,6 +33,7 @@ const mockFormatUserResponse = jest.fn();
 jest.mock('../../middleware/auth', () => ({
   authMiddleware: jest.fn(),
   serviceAuthMiddleware: jest.fn(),
+  rejectQueryToken: (_req: unknown, _res: unknown, next: () => void) => next(),
 }));
 
 jest.mock('../../middleware/rateLimiter', () => ({

@@ -54,6 +54,27 @@ export class ConfigurationError extends Error {
 }
 
 /**
+ * Strict hostname validation (RFC 1123 labels).
+ *
+ * Accepts only dot-separated alphanumeric labels with internal hyphens
+ * (e.g. `oxy.so`, `api.oxy.so`). Rejects schemes, ports, paths, leading
+ * dots, spaces, control characters, and cookie-attribute metacharacters
+ * (`;`, `,`) — anything that could smuggle attributes into a hand-built
+ * `Set-Cookie` header.
+ */
+const HOSTNAME_LABEL = '[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?';
+const HOSTNAME_REGEX = new RegExp(`^${HOSTNAME_LABEL}(?:\\.${HOSTNAME_LABEL})*$`);
+const MAX_HOSTNAME_LENGTH = 253;
+
+/**
+ * Check whether a value is a strictly valid hostname suitable for
+ * interpolation into a `Set-Cookie` `Domain=` attribute.
+ */
+export function isValidHostname(value: string): boolean {
+  return value.length <= MAX_HOSTNAME_LENGTH && HOSTNAME_REGEX.test(value);
+}
+
+/**
  * Validate that required environment variables are set
  * 
  * @throws {ConfigurationError} If required variables are missing
@@ -111,6 +132,18 @@ export function validateRequiredEnvVars(): void {
         warnings.push(`${key} is set to a default placeholder — generate a strong secret with: openssl rand -base64 64`);
       }
     }
+  }
+
+  // REFRESH_COOKIE_DOMAIN is interpolated into a hand-built Set-Cookie header
+  // (appendLegacyRefreshCookieDeletion in refreshToken.service.ts), so a
+  // malformed value could inject cookie attributes. Fail fast on anything
+  // that is not a bare hostname.
+  const refreshCookieDomain = process.env.REFRESH_COOKIE_DOMAIN;
+  if (refreshCookieDomain && !isValidHostname(refreshCookieDomain)) {
+    missing.push(
+      'REFRESH_COOKIE_DOMAIN (invalid: must be a bare hostname like "oxy.so" — ' +
+      'no scheme, port, path, spaces, or ";"/"," characters)'
+    );
   }
 
   // Log warnings

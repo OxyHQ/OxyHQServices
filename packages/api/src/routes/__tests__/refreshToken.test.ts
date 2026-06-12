@@ -95,6 +95,7 @@ jest.mock('../../services/session.service', () => ({
 jest.mock('../../middleware/auth', () => ({
   authMiddleware: jest.fn(),
   serviceAuthMiddleware: jest.fn(),
+  rejectQueryToken: (_req: unknown, _res: unknown, next: () => void) => next(),
 }));
 
 jest.mock('../../middleware/rateLimiter', () => ({

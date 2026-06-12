@@ -29,6 +29,7 @@ const mockAuthCodeCreate = jest.fn();
 jest.mock('../../middleware/auth', () => ({
   authMiddleware: (...args: unknown[]) => mockAuthMiddleware(...args),
   serviceAuthMiddleware: jest.fn(),
+  rejectQueryToken: (_req: unknown, _res: unknown, next: () => void) => next(),
 }));
 
 jest.mock('../../middleware/rateLimiter', () => ({
