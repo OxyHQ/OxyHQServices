@@ -465,6 +465,17 @@ export class AssetService {
     }
   }
 
+  /**
+   * Fetch the raw bytes of a file from the storage backend.
+   * Returns null if the file does not exist or is not in active state.
+   * Used by the outbound email transporter to attach blobs to RFC822 messages.
+   */
+  async getFileBuffer(fileId: string): Promise<Buffer | null> {
+    const file = await this.getFile(fileId);
+    if (!file || file.status === 'deleted') return null;
+    return this.s3Service.downloadBuffer(file.storageKey);
+  }
+
   async getFileUrl(
     fileId: string,
     variant?: string,

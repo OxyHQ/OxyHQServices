@@ -8,14 +8,97 @@
 import { Request, Response } from 'express';
 import { emailService } from '../services/email.service';
 import { smtpOutbound } from '../services/smtp.outbound';
+import { assetService } from '../services/assetServiceSingleton';
 import { resolveEmailAddress } from '../config/email.config';
 import User from '../models/User';
-import { Message } from '../models/Message';
+import { Message, IAttachment } from '../models/Message';
+import type { IFile } from '../models/File';
 import {
   BadRequestError,
-  UnauthorizedError,
+  ForbiddenError,
   NotFoundError,
 } from '../utils/error';
+import { logger } from '../utils/logger';
+import type { RecipientInput, AttachmentInput } from '../schemas/email.schemas';
+
+/**
+ * Resolve user-supplied { fileId, contentId?, isInline? } references into the
+ * canonical IAttachment shape persisted on Message. Each fileId MUST:
+ *   - exist
+ *   - be in status 'active' (not trash/deleted)
+ *   - be accessible to the requesting user (assetService.canUserAccessFile)
+ *
+ * The IAttachment is built from the IFile so the Message subdocument carries
+ * a stable snapshot of name/contentType/size at send time, regardless of any
+ * later changes to the underlying file's originalName.
+ */
+async function resolveAttachmentInputs(
+  inputs: AttachmentInput[],
+  userId: string
+): Promise<{ resolved: IAttachment[]; files: IFile[] }> {
+  const fileIds = inputs.map((a) => a.fileId);
+  const files = await assetService.getFilesByIds(fileIds);
+  const byId = new Map<string, IFile>();
+  for (const f of files) {
+    if (f.status === 'active') {
+      byId.set(f._id.toString(), f);
+    }
+  }
+
+  const resolved: IAttachment[] = [];
+  const usedFiles: IFile[] = [];
+
+  for (const input of inputs) {
+    const file = byId.get(input.fileId);
+    if (!file) {
+      throw new BadRequestError(`Attachment file not found or not active: ${input.fileId}`);
+    }
+    const allowed = await assetService.canUserAccessFile(file, userId);
+    if (!allowed) {
+      throw new ForbiddenError(`Not authorized to attach file ${file._id}`);
+    }
+    resolved.push({
+      fileId: file._id.toString(),
+      name: file.originalName || file._id.toString(),
+      contentType: file.mime,
+      size: file.size,
+      ...(input.contentId ? { contentId: input.contentId } : {}),
+      isInline: input.isInline ?? false,
+    });
+    usedFiles.push(file);
+  }
+
+  return { resolved, files: usedFiles };
+}
+
+/**
+ * Best-effort link of each File to the freshly-stored Message under the
+ * oxy-mail app namespace. Failure is logged but never propagated — the email
+ * has already been sent / scheduled; failing to record the link must not
+ * surface as a send failure to the client.
+ */
+async function linkAttachmentsToMessage(
+  files: IFile[],
+  messageId: string,
+  userId: string
+): Promise<void> {
+  for (const file of files) {
+    try {
+      await assetService.linkFile(file._id.toString(), {
+        app: 'oxy-mail',
+        entityType: 'message',
+        entityId: messageId,
+        createdBy: userId,
+      });
+    } catch (err) {
+      logger.warn('Failed to link attachment file to email message', {
+        fileId: file._id.toString(),
+        messageId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+}
 
 
 interface AuthRequest extends Request {
@@ -306,16 +389,36 @@ export async function deleteLabel(req: AuthRequest, res: Response): Promise<void
 
 export async function sendMessage(req: AuthRequest, res: Response): Promise<void> {
   const userId = req.user!.id;
-  const { to, cc, bcc, subject, text, html, inReplyTo, references, attachments, scheduledAt, requestReadReceipt } = req.body;
+  const {
+    to,
+    cc,
+    bcc,
+    subject,
+    text,
+    html,
+    inReplyTo,
+    references,
+    attachments,
+    scheduledAt,
+    requestReadReceipt,
+  } = req.body as {
+    to: RecipientInput[];
+    cc?: RecipientInput[];
+    bcc?: RecipientInput[];
+    subject?: string;
+    text?: string;
+    html?: string;
+    inReplyTo?: string;
+    references?: string[];
+    attachments?: AttachmentInput[];
+    scheduledAt?: string;
+    requestReadReceipt?: boolean;
+  };
 
-  if (!to || !Array.isArray(to) || to.length === 0) {
-    throw new BadRequestError('At least one recipient (to) is required');
-  }
+  // Schema validation already guarantees to.length >= 1 and recipient shape.
 
-  // Enforce send limit
   await emailService.enforceSendLimit(userId);
 
-  // Get sender info
   const user = await User.findById(userId).select('username name');
   if (!user || !user.username) {
     throw new BadRequestError('User must have a username to send email');
@@ -326,7 +429,15 @@ export async function sendMessage(req: AuthRequest, res: Response): Promise<void
     ? `${user.name.first} ${user.name.last || ''}`.trim()
     : user.username;
 
-  // Handle scheduled send
+  const allRecipients = [...to, ...(cc ?? []), ...(bcc ?? [])];
+
+  // Resolve { fileId } references → canonical IAttachment[] for storage and
+  // outbound transport. Throws 400/403 on missing / non-active / unauthorized
+  // fileIds before any side effects.
+  const { resolved: resolvedAttachments, files: attachedFiles } = attachments && attachments.length > 0
+    ? await resolveAttachmentInputs(attachments, userId)
+    : { resolved: [] as IAttachment[], files: [] as IFile[] };
+
   if (scheduledAt) {
     const scheduledDate = new Date(scheduledAt);
     if (isNaN(scheduledDate.getTime()) || scheduledDate.getTime() <= Date.now()) {
@@ -335,38 +446,32 @@ export async function sendMessage(req: AuthRequest, res: Response): Promise<void
 
     const scheduled = await emailService.scheduleMessage(userId, {
       from: { name: fromName, address: fromAddress },
-      to: to.map((addr: string) => ({ address: addr })),
-      cc: cc?.map((addr: string) => ({ address: addr })),
-      bcc: bcc?.map((addr: string) => ({ address: addr })),
-      subject: subject || '',
+      to,
+      cc,
+      bcc,
+      subject: subject ?? '',
       text,
       html,
       inReplyTo,
       references,
-      attachments,
+      attachments: resolvedAttachments,
       scheduledAt: scheduledDate,
     });
 
-    // If replying, mark original message as answered (best-effort)
+    if (attachedFiles.length > 0) {
+      // scheduleMessage returns message.toJSON(): `id` is the Mongo _id string.
+      await linkAttachmentsToMessage(attachedFiles, String(scheduled.id ?? scheduled.messageId), userId);
+    }
+
     if (inReplyTo) {
-      try {
-        const original = await Message.findOne({ userId, messageId: inReplyTo });
-        if (original) {
-          await emailService.updateMessageFlags(userId, original._id.toString(), { answered: true });
-        }
-      } catch {
-        // Best-effort
+      const original = await Message.findOne({ userId, messageId: inReplyTo });
+      if (original) {
+        await emailService.updateMessageFlags(userId, original._id.toString(), { answered: true });
       }
     }
 
-    // Fire-and-forget: auto-collect contacts from recipients
-    const scheduledRecipients: Array<{ name?: string; address: string }> = [
-      ...(to || []).map((addr: string) => ({ address: addr })),
-      ...(cc || []).map((addr: string) => ({ address: addr })),
-      ...(bcc || []).map((addr: string) => ({ address: addr })),
-    ];
-    emailService.autoCollectContacts(userId, scheduledRecipients).catch(() => {
-      // Non-critical
+    emailService.autoCollectContacts(userId, allRecipients).catch((err) => {
+      logger.warn('autoCollectContacts failed', { userId, error: err instanceof Error ? err.message : String(err) });
     });
 
     res.status(202).json({
@@ -385,34 +490,28 @@ export async function sendMessage(req: AuthRequest, res: Response): Promise<void
     to,
     cc,
     bcc,
-    subject: subject || '',
+    subject: subject ?? '',
     text,
     html,
     inReplyTo,
     references,
-    attachments,
+    attachments: resolvedAttachments,
+    requestReadReceipt,
   });
 
-  // If replying, mark original message as answered (best-effort)
+  if (attachedFiles.length > 0) {
+    await linkAttachmentsToMessage(attachedFiles, result.messageId, userId);
+  }
+
   if (inReplyTo) {
-    try {
-      const original = await Message.findOne({ userId, messageId: inReplyTo });
-      if (original) {
-        await emailService.updateMessageFlags(userId, original._id.toString(), { answered: true });
-      }
-    } catch {
-      // Best-effort: don't fail the send if we can't update the original
+    const original = await Message.findOne({ userId, messageId: inReplyTo });
+    if (original) {
+      await emailService.updateMessageFlags(userId, original._id.toString(), { answered: true });
     }
   }
 
-  // Fire-and-forget: auto-collect contacts from recipients
-  const allRecipients: Array<{ name?: string; address: string }> = [
-    ...(to || []).map((addr: string) => ({ address: addr })),
-    ...(cc || []).map((addr: string) => ({ address: addr })),
-    ...(bcc || []).map((addr: string) => ({ address: addr })),
-  ];
-  emailService.autoCollectContacts(userId, allRecipients).catch(() => {
-    // Non-critical — don't slow down sending
+  emailService.autoCollectContacts(userId, allRecipients).catch((err) => {
+    logger.warn('autoCollectContacts failed', { userId, error: err instanceof Error ? err.message : String(err) });
   });
 
   res.status(202).json({
@@ -485,47 +584,6 @@ export async function getQuota(req: AuthRequest, res: Response): Promise<void> {
   const userId = req.user!.id;
   const quota = await emailService.getQuotaUsage(userId);
   res.json({ data: quota });
-}
-
-// ─── Attachments ────────────────────────────────────────────────
-
-export async function uploadAttachment(req: AuthRequest, res: Response): Promise<void> {
-  const userId = req.user!.id;
-  const file = req.file;
-
-  if (!file) {
-    throw new BadRequestError('File is required');
-  }
-
-  const attachment = await emailService.uploadAttachment(userId, {
-    buffer: file.buffer,
-    originalname: file.originalname,
-    mimetype: file.mimetype,
-  });
-
-  res.status(201).json({ data: attachment });
-}
-
-export async function getAttachmentUrl(req: AuthRequest, res: Response): Promise<void> {
-  const userId = req.user!.id;
-  const { s3Key } = req.params;
-
-  // Verify the attachment belongs to a message owned by this user
-  // Check both the S3 key prefix and that a message with this attachment exists
-  if (!s3Key.startsWith(`${userId}/`)) {
-    throw new UnauthorizedError('Not authorized to access this attachment');
-  }
-
-  const ownsAttachment = await Message.exists({
-    userId,
-    'attachments.s3Key': s3Key,
-  });
-  if (!ownsAttachment) {
-    throw new UnauthorizedError('Not authorized to access this attachment');
-  }
-
-  const url = await emailService.getAttachmentUrl(s3Key);
-  res.json({ data: { url } });
 }
 
 // ─── Settings ───────────────────────────────────────────────────

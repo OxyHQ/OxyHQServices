@@ -1,7 +1,6 @@
 import express from 'express';
 import multer from 'multer';
-import { AssetService } from '../services/assetService';
-import { createS3Service } from '../services/s3Service';
+import { assetService, s3Service } from '../services/assetServiceSingleton';
 import { authMiddleware } from '../middleware/auth';
 import { optionalAuthMiddleware, getUserId } from '../middleware/optionalAuth';
 import { mediaHeadersMiddleware } from '../middleware/mediaHeaders';
@@ -32,18 +31,9 @@ const upload = multer(); // memory storage
 
 // Auth applied per-route: authMiddleware for private routes,
 // optionalAuthMiddleware for public stream/download endpoints.
-
-// Initialize S3 service and Asset service
-const s3Config = {
-  region: process.env.AWS_REGION || 'us-east-1',
-  accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
-  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
-  bucketName: process.env.AWS_S3_BUCKET || '',
-  endpointUrl: process.env.AWS_ENDPOINT_URL,
-};
-
-const s3Service = createS3Service(s3Config);
-const assetService = new AssetService(s3Service);
+// AssetService is a shared singleton (services/assetServiceSingleton.ts) so
+// every consumer (assets routes, email controller, email service) shares the
+// same in-memory fileCache.
 
 // Validation schemas
 const initUploadSchema = z.object({

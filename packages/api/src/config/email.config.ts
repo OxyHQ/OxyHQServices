@@ -1,8 +1,9 @@
 /**
  * Email Server Configuration
  *
- * Centralizes all email-related settings: domain, DKIM, S3 storage,
- * SMTP ports, spam filtering, and per-tier quota limits.
+ * Centralizes all email-related settings: domain, DKIM, SMTP ports,
+ * spam filtering, and per-tier quota limits. Attachment storage lives in
+ * the Oxy file manager (AssetService) — there is no email-specific bucket.
  */
 
 import { getEnvVar, getEnvNumber, getEnvBoolean } from './env';
@@ -16,15 +17,6 @@ export const DKIM_CONFIG = {
   keySelector: getEnvVar('DKIM_SELECTOR', 'default'),
   /** PEM-encoded private key (set via env or file path) */
   privateKey: getEnvVar('DKIM_PRIVATE_KEY', ''),
-};
-
-/** S3 bucket dedicated to email attachments */
-export const EMAIL_S3_CONFIG = {
-  bucket: getEnvVar('EMAIL_S3_BUCKET', 'oxy-email'),
-  region: getEnvVar('EMAIL_S3_REGION', getEnvVar('AWS_REGION', 'us-east-1')),
-  accessKeyId: getEnvVar('EMAIL_S3_ACCESS_KEY_ID', getEnvVar('AWS_ACCESS_KEY_ID', '')),
-  secretAccessKey: getEnvVar('EMAIL_S3_SECRET_ACCESS_KEY', getEnvVar('AWS_SECRET_ACCESS_KEY', '')),
-  endpoint: getEnvVar('EMAIL_S3_ENDPOINT', getEnvVar('AWS_ENDPOINT_URL', '')),
 };
 
 /** SMTP inbound server settings */

@@ -4,24 +4,13 @@ import {
   SMTP_OUTBOUND_CONFIG,
   DKIM_CONFIG,
   EMAIL_DOMAIN,
-  EMAIL_S3_CONFIG,
-  resolveEmailAddress,
 } from '../config/email.config';
 import { emailService } from './email.service';
+import { assetService } from './assetServiceSingleton';
 import { IEmailAddress, IAttachment } from '../models/Message';
-import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { logger } from '../utils/logger';
 import { v4 as uuidv4 } from 'uuid';
 import { getRedisClient } from '../config/redis';
-
-const emailS3 = new S3Client({
-  region: EMAIL_S3_CONFIG.region,
-  credentials: {
-    accessKeyId: EMAIL_S3_CONFIG.accessKeyId,
-    secretAccessKey: EMAIL_S3_CONFIG.secretAccessKey,
-  },
-  ...(EMAIL_S3_CONFIG.endpoint ? { endpoint: EMAIL_S3_CONFIG.endpoint, forcePathStyle: true } : {}),
-});
 
 interface OutboundMessage {
   userId: string;
@@ -260,30 +249,31 @@ class SmtpOutboundService {
   private async resolveAttachments(
     attachments: IAttachment[]
   ): Promise<Array<{ filename: string; content: Buffer; contentType: string; cid?: string }>> {
+    type ResolvedAttachment = { filename: string; content: Buffer; contentType: string; cid?: string };
+
     const results = await Promise.all(
-      attachments.map(async (att) => {
+      attachments.map(async (att): Promise<ResolvedAttachment | null> => {
         try {
-          const response = await emailS3.send(
-            new GetObjectCommand({ Bucket: EMAIL_S3_CONFIG.bucket, Key: att.s3Key })
+          const buffer = await assetService.getFileBuffer(att.fileId);
+          if (!buffer) return null;
+          return {
+            filename: att.name,
+            content: buffer,
+            contentType: att.contentType,
+            ...(att.contentId ? { cid: att.contentId } : {}),
+          };
+        } catch (err) {
+          logger.error(
+            'Failed to fetch attachment from Oxy file manager',
+            err instanceof Error ? err : new Error(String(err)),
+            { fileId: att.fileId }
           );
-          const body = await response.Body?.transformToByteArray();
-          if (body) {
-            return {
-              filename: att.filename,
-              content: Buffer.from(body),
-              contentType: att.contentType,
-              ...(att.contentId ? { cid: att.contentId } : {}),
-            };
-          }
-        } catch (error) {
-          logger.error('Failed to fetch attachment from S3', error instanceof Error ? error : new Error(String(error)), {
-            s3Key: att.s3Key,
-          });
+          return null;
         }
-        return null;
       })
     );
-    return results.filter(Boolean) as any;
+
+    return results.filter((r): r is ResolvedAttachment => r !== null);
   }
 
   // --- Retry queue (Redis-backed with local fallback) ---

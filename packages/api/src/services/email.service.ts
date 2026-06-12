@@ -17,15 +17,12 @@ import { getAvatarPathsBatch } from './senderAvatar.service';
 import {
   DEFAULT_MAILBOXES,
   EMAIL_QUOTAS,
-  EMAIL_S3_CONFIG,
   EMAIL_DOMAIN,
   resolveEmailAddress,
   extractUsername,
   extractAliasTag,
   SubscriptionTier,
 } from '../config/email.config';
-import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { logger } from '../utils/logger';
 import { NotFoundError, BadRequestError } from '../utils/error';
 import { v4 as uuidv4 } from 'uuid';
@@ -37,17 +34,8 @@ import { aiLabelingService } from './aiLabeling.service';
 import { cardExtractionService } from './cardExtraction.service';
 import { smtpOutbound } from './smtp.outbound';
 import { pushService } from './push.service';
+import { assetService } from './assetServiceSingleton';
 import { simpleParser } from 'mailparser';
-
-// Dedicated S3 client for the email attachments bucket
-const emailS3 = new S3Client({
-  region: EMAIL_S3_CONFIG.region,
-  credentials: {
-    accessKeyId: EMAIL_S3_CONFIG.accessKeyId,
-    secretAccessKey: EMAIL_S3_CONFIG.secretAccessKey,
-  },
-  ...(EMAIL_S3_CONFIG.endpoint ? { endpoint: EMAIL_S3_CONFIG.endpoint, forcePathStyle: true } : {}),
-});
 
 class EmailService {
   // ─── Mailbox Management ───────────────────────────────────────────
@@ -685,27 +673,30 @@ class EmailService {
     const mailbox = await this.getMailboxBySpecialUse(userId, targetSpecialUse);
     if (!mailbox) throw new NotFoundError('Target mailbox not found');
 
-    // Upload attachments to S3
+    // Upload attachments to the Oxy file manager (canonical asset storage).
+    // The message persists a reference {fileId, name, contentType, size, ...};
+    // the actual blob lives in the File model + S3 via assetService.
     const storedAttachments: IAttachment[] = [];
+    const uploadedFiles: Array<{ fileId: string }> = [];
     if (params.attachments && params.attachments.length > 0) {
       for (const att of params.attachments) {
-        const s3Key = `${userId}/${uuidv4()}/${att.filename}`;
-        await emailS3.send(
-          new PutObjectCommand({
-            Bucket: EMAIL_S3_CONFIG.bucket,
-            Key: s3Key,
-            Body: att.content,
-            ContentType: att.contentType,
-          })
+        const file = await assetService.uploadFileDirect(
+          userId,
+          att.content,
+          att.contentType,
+          att.filename,
+          'private',
+          { source: 'email-inbound' }
         );
         storedAttachments.push({
-          filename: att.filename,
-          contentType: att.contentType,
-          size: att.content.length,
-          s3Key,
-          contentId: att.contentId,
+          fileId: file._id.toString(),
+          name: file.originalName || att.filename,
+          contentType: file.mime,
+          size: file.size,
+          ...(att.contentId ? { contentId: att.contentId } : {}),
           isInline: att.isInline ?? false,
         });
+        uploadedFiles.push({ fileId: file._id.toString() });
       }
     }
 
@@ -743,6 +734,30 @@ class EmailService {
     await Mailbox.findByIdAndUpdate(mailbox._id, {
       $inc: { totalMessages: 1, unseenMessages: 1, size: totalSize },
     });
+
+    // Link each uploaded file to the newly-stored Message under the oxy-mail
+    // app namespace. Best-effort: if linking fails the message is already
+    // persisted and the file is owned by the recipient, so the inbound path
+    // must not fail.
+    if (uploadedFiles.length > 0) {
+      const msgIdForLink = message._id.toString();
+      for (const { fileId } of uploadedFiles) {
+        try {
+          await assetService.linkFile(fileId, {
+            app: 'oxy-mail',
+            entityType: 'message',
+            entityId: msgIdForLink,
+            createdBy: userId,
+          });
+        } catch (err) {
+          logger.warn('Failed to link inbound attachment to message', {
+            fileId,
+            messageId: msgIdForLink,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+    }
 
     logger.info('Incoming email stored', {
       userId,
@@ -1767,27 +1782,28 @@ class EmailService {
 
         const rawSize = file.buffer.length;
 
-        // Upload attachments to S3
+        // Upload attachments to the Oxy file manager
         const storedAttachments: IAttachment[] = [];
+        const importedFileIds: string[] = [];
         if (parsed.attachments?.length) {
           for (const att of parsed.attachments) {
-            const s3Key = `${userId}/${uuidv4()}/${att.filename || 'attachment'}`;
-            await emailS3.send(
-              new PutObjectCommand({
-                Bucket: EMAIL_S3_CONFIG.bucket,
-                Key: s3Key,
-                Body: att.content,
-                ContentType: att.contentType || 'application/octet-stream',
-              }),
+            const uploadedFile = await assetService.uploadFileDirect(
+              userId,
+              att.content,
+              att.contentType || 'application/octet-stream',
+              att.filename || 'attachment',
+              'private',
+              { source: 'email-import' }
             );
             storedAttachments.push({
-              filename: att.filename || 'attachment',
-              contentType: att.contentType || 'application/octet-stream',
-              size: att.size,
-              s3Key,
-              contentId: att.contentId || undefined,
+              fileId: uploadedFile._id.toString(),
+              name: uploadedFile.originalName || att.filename || 'attachment',
+              contentType: uploadedFile.mime,
+              size: uploadedFile.size,
+              ...(att.contentId ? { contentId: att.contentId } : {}),
               isInline: att.related ?? false,
             });
+            importedFileIds.push(uploadedFile._id.toString());
           }
         }
 
@@ -1822,6 +1838,24 @@ class EmailService {
         await Mailbox.findByIdAndUpdate(inbox._id, {
           $inc: { totalMessages: 1, size: totalSize },
         });
+
+        // Best-effort link of imported attachments to the new message
+        for (const importedFileId of importedFileIds) {
+          try {
+            await assetService.linkFile(importedFileId, {
+              app: 'oxy-mail',
+              entityType: 'message',
+              entityId: message._id.toString(),
+              createdBy: userId,
+            });
+          } catch (linkErr) {
+            logger.warn('Failed to link imported attachment to message', {
+              fileId: importedFileId,
+              messageId: message._id.toString(),
+              error: linkErr instanceof Error ? linkErr.message : String(linkErr),
+            });
+          }
+        }
 
         // Fire-and-forget AI processing
         const msgId = message._id.toString();
@@ -1951,47 +1985,6 @@ class EmailService {
     if (count >= limit) {
       throw new BadRequestError('Daily send limit reached');
     }
-  }
-
-  // ─── Attachments ──────────────────────────────────────────────────
-
-  async uploadAttachment(
-    userId: string,
-    file: { buffer: Buffer; originalname: string; mimetype: string }
-  ): Promise<IAttachment> {
-    const tier = await this.getUserTier(userId);
-    const maxSize = EMAIL_QUOTAS[tier].maxAttachmentSize;
-    if (file.buffer.length > maxSize) {
-      throw new BadRequestError(
-        `Attachment exceeds maximum size of ${Math.round(maxSize / (1024 * 1024))} MB`
-      );
-    }
-
-    const s3Key = `${userId}/${uuidv4()}/${file.originalname}`;
-    await emailS3.send(
-      new PutObjectCommand({
-        Bucket: EMAIL_S3_CONFIG.bucket,
-        Key: s3Key,
-        Body: file.buffer,
-        ContentType: file.mimetype,
-      })
-    );
-
-    return {
-      filename: file.originalname,
-      contentType: file.mimetype,
-      size: file.buffer.length,
-      s3Key,
-      isInline: false,
-    };
-  }
-
-  async getAttachmentUrl(s3Key: string): Promise<string> {
-    const command = new GetObjectCommand({
-      Bucket: EMAIL_S3_CONFIG.bucket,
-      Key: s3Key,
-    });
-    return getSignedUrl(emailS3, command, { expiresIn: 3600 });
   }
 
   // ─── User lifecycle ───────────────────────────────────────────────
@@ -2470,26 +2463,40 @@ class EmailService {
     }
   }
 
-  private async deleteMessageAttachments(message: any): Promise<void> {
-    for (const att of message.attachments) {
-      try {
-        await emailS3.send(
-          new DeleteObjectCommand({
-            Bucket: EMAIL_S3_CONFIG.bucket,
-            Key: att.s3Key,
-          })
-        );
-      } catch (error) {
-        logger.error('Failed to delete attachment from S3', error instanceof Error ? error : new Error(String(error)), {
-          s3Key: att.s3Key,
-        });
+  /**
+   * Unlink every attachment's File from this message in the Oxy file manager.
+   * AssetService moves a file to trash automatically when its last link is
+   * removed; the blob itself is never deleted here — the file manager owns
+   * blob lifecycle.
+   *
+   * Links are recorded under two entityId conventions: outbound sends link by
+   * the RFC Message-ID (the Mongo _id of the Sent copy is created later inside
+   * storeSentMessage), while inbound/import link by the Mongo _id. Unlinking
+   * is a no-op when a link doesn't exist, so we clear both.
+   */
+  private async deleteMessageAttachments(message: Pick<IMessage, '_id' | 'messageId' | 'attachments'>): Promise<void> {
+    const entityIds = [message._id.toString()];
+    if (message.messageId && !entityIds.includes(message.messageId)) {
+      entityIds.push(message.messageId);
+    }
+
+    for (const att of message.attachments ?? []) {
+      for (const entityId of entityIds) {
+        try {
+          await assetService.unlinkFile(att.fileId, 'oxy-mail', 'message', entityId);
+        } catch (error) {
+          logger.error('Failed to unlink attachment file from message', error instanceof Error ? error : new Error(String(error)), {
+            fileId: att.fileId,
+            entityId,
+          });
+        }
       }
     }
   }
 
   private async deleteAttachmentsForMailbox(userId: string, mailboxId: string): Promise<void> {
     const cursor = Message.find({ userId, mailboxId })
-      .select('attachments')
+      .select('attachments messageId')
       .cursor();
 
     for await (const msg of cursor) {
@@ -2499,7 +2506,7 @@ class EmailService {
 
   private async deleteAttachmentsForUser(userId: string): Promise<void> {
     const cursor = Message.find({ userId })
-      .select('attachments')
+      .select('attachments messageId')
       .cursor();
 
     for await (const msg of cursor) {

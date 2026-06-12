@@ -63,8 +63,6 @@ import {
   saveDraft,
   searchMessages,
   getQuota,
-  uploadAttachment,
-  getAttachmentUrl,
   getEmailSettings,
   updateEmailSettings,
   listSubscriptions,
@@ -98,7 +96,9 @@ import {
 
 const router = Router();
 
-// Multer for attachment uploads (in-memory, max 50 MB to allow for base64 overhead)
+// Multer for .eml uploads on POST /import (in-memory, max 50 MB / file).
+// Attachment uploads no longer flow through this route — clients upload files
+// to the Oxy file manager (/assets) and reference them by fileId on send.
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 50 * 1024 * 1024 },
@@ -160,12 +160,10 @@ router.get('/search', asyncHandler(searchMessages));
 
 router.get('/quota', asyncHandler(getQuota));
 
-// ─── Attachments ──────────────────────────────────────────────────
-
-router.post('/attachments', upload.single('file'), asyncHandler(uploadAttachment));
-router.get('/attachments/:s3Key(*)', asyncHandler(getAttachmentUrl));
-
 // ─── Import ───────────────────────────────────────────────────────
+// .eml files are uploaded as multipart via multer; attachments inside the
+// .eml are extracted server-side and persisted via the Oxy file manager
+// (assetService.uploadFileDirect), exactly like inbound MIME from Cloudflare.
 
 router.post('/import', upload.array('files', 50), asyncHandler(importMessages));
 

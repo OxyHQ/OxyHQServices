@@ -6,11 +6,17 @@ export interface IEmailAddress {
 }
 
 export interface IAttachment {
-  filename: string;
+  /** Canonical File _id in the Oxy file manager (AssetService / File model) */
+  fileId: string;
+  /** User-facing filename, mirrored from File.originalName at link time */
+  name: string;
+  /** Mirrored from File.mime */
   contentType: string;
+  /** Mirrored from File.size */
   size: number;
-  s3Key: string;
+  /** MIME Content-ID for inline `cid:` references in HTML bodies */
   contentId?: string;
+  /** True if rendered inline in the HTML body, false if a standalone attachment */
   isInline: boolean;
 }
 
@@ -103,12 +109,12 @@ const EmailAddressSchema = new Schema(
 
 const AttachmentSchema = new Schema(
   {
-    filename: { type: String, required: true },
+    fileId: { type: String, required: true },
+    name: { type: String, required: true },
     contentType: { type: String, required: true },
     size: { type: Number, required: true, min: 0 },
-    s3Key: { type: String, required: true },
     contentId: { type: String, default: null },
-    isInline: { type: Boolean, default: false },
+    isInline: { type: Boolean, required: true, default: false },
   },
   { _id: false }
 );
@@ -327,6 +333,8 @@ MessageSchema.index({ snoozedUntil: 1 }, { sparse: true });
 MessageSchema.index({ scheduledAt: 1 }, { sparse: true });
 // Retention / cleanup
 MessageSchema.index({ mailboxId: 1, receivedAt: 1 });
+// Reverse-lookup: which messages reference a given File from the Oxy file manager
+MessageSchema.index({ userId: 1, 'attachments.fileId': 1 });
 
 MessageSchema.set('toJSON', {
   virtuals: true,

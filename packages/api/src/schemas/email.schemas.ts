@@ -80,32 +80,64 @@ export const updateLabelSchema = z.object({
   color: z.string().trim().optional(),
 });
 
+// Canonical recipient shape used across the inbound path (storeIncomingMessage),
+// the Mongoose Message model (IEmailAddress), the outbound transporter
+// (smtpOutbound.send), and the inbox UI. RFC 5321 address-spec is required;
+// display name is optional. We do NOT accept bare strings or "Name <addr>"
+// — clients must parse and submit the canonical object.
+const recipientSchema = z.object({
+  name: z.string().trim().max(255).optional(),
+  address: z
+    .string()
+    .trim()
+    .min(3)
+    .max(320) // RFC 5321 addr-spec maximum
+    .email('Recipient address must be a valid email address'),
+});
+
+export type RecipientInput = z.infer<typeof recipientSchema>;
+
+// Canonical attachment input — a Message attachment is just a reference into
+// the Oxy File Manager. The server resolves the File record, mirrors its
+// originalName/mime/size into the Message subdocument, and creates a link
+// (app: 'oxy-mail') so the file isn't orphaned. Only the file owner may
+// reference their own files (enforced via assetService.canUserAccessFile).
+const attachmentInputSchema = z.object({
+  fileId: z.string().trim().min(1),
+  contentId: z.string().trim().optional(),
+  isInline: z.boolean().optional(),
+});
+
+export type AttachmentInput = z.infer<typeof attachmentInputSchema>;
+
 // POST /email/messages (send)
 export const sendMessageSchema = z.object({
-  to: z.array(z.string().min(1)).min(1),
-  cc: z.array(z.string()).optional(),
-  bcc: z.array(z.string()).optional(),
-  subject: z.string().optional(),
+  to: z.array(recipientSchema).min(1).max(100),
+  cc: z.array(recipientSchema).max(100).optional(),
+  bcc: z.array(recipientSchema).max(100).optional(),
+  subject: z.string().max(998).optional(), // RFC 5322 line length limit
   text: z.string().optional(),
   html: z.string().optional(),
-  inReplyTo: z.string().optional(),
-  references: z.array(z.string()).optional(),
-  attachments: z.array(z.any()).optional(),
+  inReplyTo: z.string().trim().optional(),
+  references: z.array(z.string().trim()).optional(),
+  attachments: z.array(attachmentInputSchema).max(20).optional(),
   scheduledAt: z.string().optional(),
   requestReadReceipt: z.boolean().optional(),
 });
 
 // POST /email/drafts
+// Drafts do not carry attachments in this migration. Composers attach via
+// the file-manager flow and send (or save the body only, then re-open later).
 export const saveDraftSchema = z.object({
-  to: z.array(z.string()).optional(),
-  cc: z.array(z.string()).optional(),
-  bcc: z.array(z.string()).optional(),
-  subject: z.string().optional(),
+  to: z.array(recipientSchema).max(100).optional(),
+  cc: z.array(recipientSchema).max(100).optional(),
+  bcc: z.array(recipientSchema).max(100).optional(),
+  subject: z.string().max(998).optional(),
   text: z.string().optional(),
   html: z.string().optional(),
-  inReplyTo: z.string().optional(),
-  references: z.array(z.string()).optional(),
-  existingDraftId: z.string().optional(),
+  inReplyTo: z.string().trim().optional(),
+  references: z.array(z.string().trim()).optional(),
+  existingDraftId: z.string().trim().optional(),
 });
 
 // POST /email/subscriptions/unsubscribe
