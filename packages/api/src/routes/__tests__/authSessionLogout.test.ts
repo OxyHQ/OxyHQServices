@@ -38,7 +38,24 @@ interface StoredToken {
   createdAt: Date;
 }
 
-const mockFindOne = jest.fn();
+// ---- A tokenHash-keyed store so RefreshToken.findOne({ tokenHash }) resolves
+// the matching staged row regardless of call ORDER or call COUNT. Logout now
+// revokes EVERY presented candidate's family (a mid-migration browser can send a
+// legacy + a new oxy_rt cookie), so we stage one row per token. ----
+const tokenStore = new Map<string, StoredToken>();
+
+/** Stage a stored row, keyed by its tokenHash, for findOne lookups. */
+function stageToken(token: StoredToken): void {
+  tokenStore.set(token.tokenHash, token);
+}
+
+const mockFindOne = jest.fn((query?: { tokenHash?: string }) => {
+  const hash = query?.tokenHash;
+  if (typeof hash === 'string' && tokenStore.has(hash)) {
+    return Promise.resolve(tokenStore.get(hash));
+  }
+  return Promise.resolve(null);
+});
 const mockFindOneAndUpdate = jest.fn();
 const mockCreate = jest.fn();
 const mockUpdateMany = jest.fn();
@@ -202,7 +219,11 @@ jest.mock('../socialAuth', () => ({
 import cookieParser from 'cookie-parser';
 import authRouter from '../auth';
 import { errorHandler } from '../../middleware/errorHandler';
-import { REFRESH_COOKIE_NAME } from '../../services/refreshToken.service';
+import {
+  REFRESH_COOKIE_NAME,
+  REFRESH_COOKIE_PATH,
+  LEGACY_REFRESH_COOKIE_PATH,
+} from '../../services/refreshToken.service';
 // sha256Hex is the REAL implementation (the oauthCode mock spreads `...actual`),
 // matching exactly what the refresh service uses to hash presented tokens.
 import { sha256Hex } from '../../services/oauthCode.service';
@@ -300,8 +321,19 @@ afterAll((done) => {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  tokenStore.clear();
   authBehavior = 'pass';
 });
+
+/** Find a Max-Age=0 oxy_rt clear Set-Cookie scoped to the given path. */
+function findClearForPath(setCookie: string[], path: string): string | undefined {
+  return setCookie.find(
+    (c) =>
+      c.startsWith(`${REFRESH_COOKIE_NAME}=`) &&
+      c.includes(`Path=${path}`) &&
+      /Max-Age=0/i.test(c)
+  );
+}
 
 describe('POST /auth/session', () => {
   it('mints + sets the oxy_rt cookie for the bearer-authenticated session', async () => {
@@ -356,7 +388,7 @@ describe('POST /auth/logout', () => {
   it('revokes the family + deactivates the session and clears the cookie when a known cookie is present', async () => {
     const presented = 'present-raw-token';
     const stored = buildStoredToken(presented);
-    mockFindOne.mockResolvedValueOnce(stored);
+    stageToken(stored);
     mockUpdateMany.mockResolvedValueOnce({ modifiedCount: 2 });
     mockDeactivateSession.mockResolvedValueOnce(true);
 
@@ -379,11 +411,51 @@ describe('POST /auth/logout', () => {
     // The underlying session is deactivated.
     expect(mockDeactivateSession).toHaveBeenCalledWith('sess-123');
 
-    // The cookie is cleared (Max-Age=0, Path=/auth).
-    const cleared = res.setCookie.find((c) => c.startsWith(`${REFRESH_COOKIE_NAME}=`));
-    expect(cleared).toBeDefined();
-    expect(cleared).toMatch(/Max-Age=0/i);
-    expect(cleared).toContain('Path=/auth');
+    // The cookie is cleared on BOTH paths (Max-Age=0).
+    expect(findClearForPath(res.setCookie, REFRESH_COOKIE_PATH)).toBeDefined();
+    expect(findClearForPath(res.setCookie, LEGACY_REFRESH_COOKIE_PATH)).toBeDefined();
+  });
+
+  it('revokes BOTH families and clears both paths for duplicate cookies (legacy + new)', async () => {
+    // A mid-migration browser sends a legacy `/auth/refresh` cookie AND a new
+    // `/auth` cookie — both belong to THIS signing-out user, so logout revokes
+    // every presented candidate's family.
+    const legacy = 'legacy-raw-token';
+    const current = 'current-raw-token';
+    const legacyRow = buildStoredToken(legacy, { _id: 'rt-legacy', family: 'fam-legacy', sessionId: 'sess-legacy' });
+    const currentRow = buildStoredToken(current, { _id: 'rt-current', family: 'fam-current', sessionId: 'sess-current' });
+    stageToken(legacyRow);
+    stageToken(currentRow);
+    mockUpdateMany.mockResolvedValue({ modifiedCount: 1 });
+    mockDeactivateSession.mockResolvedValue(true);
+
+    const res = await requestJson(
+      server,
+      'POST',
+      '/auth/logout',
+      {},
+      { cookieHeader: `${REFRESH_COOKIE_NAME}=${legacy}; ${REFRESH_COOKIE_NAME}=${current}` }
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ success: true });
+
+    // BOTH families are revoked server-side.
+    expect(mockUpdateMany).toHaveBeenCalledWith(
+      { family: 'fam-legacy', revokedAt: null },
+      { $set: { revokedAt: expect.any(Date) } }
+    );
+    expect(mockUpdateMany).toHaveBeenCalledWith(
+      { family: 'fam-current', revokedAt: null },
+      { $set: { revokedAt: expect.any(Date) } }
+    );
+    // Both underlying sessions are deactivated.
+    expect(mockDeactivateSession).toHaveBeenCalledWith('sess-legacy');
+    expect(mockDeactivateSession).toHaveBeenCalledWith('sess-current');
+
+    // The cookie is cleared on BOTH paths (Max-Age=0).
+    expect(findClearForPath(res.setCookie, REFRESH_COOKIE_PATH)).toBeDefined();
+    expect(findClearForPath(res.setCookie, LEGACY_REFRESH_COOKIE_PATH)).toBeDefined();
   });
 
   it('still succeeds and clears the cookie when no cookie is present', async () => {

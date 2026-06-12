@@ -62,6 +62,15 @@ export const REFRESH_COOKIE_NAME = 'oxy_rt';
  * cookies use `Path=/auth` and additionally reach `/auth/session` + `/auth/logout`.
  */
 export const REFRESH_COOKIE_PATH = '/auth';
+/**
+ * The OLD path the cookie used before Phase 1 widened it to `/auth`. We never
+ * issue at this path any more, but a mid-migration browser can still hold a
+ * stale `oxy_rt` cookie scoped here. We emit an explicit deletion for this path
+ * on every set/clear so the browser drops the legacy duplicate — see
+ * `appendLegacyRefreshCookieDeletion`. NOTE: this is intentionally a hardcoded
+ * literal, NOT `REFRESH_COOKIE_PATH` (which is now `/auth`).
+ */
+export const LEGACY_REFRESH_COOKIE_PATH = '/auth/refresh';
 
 export interface IssueRefreshTokenOptions {
   sessionId: string;
@@ -238,6 +247,114 @@ export async function rotateRefreshToken(rawToken: string): Promise<RotateOutcom
   };
 }
 
+/**
+ * Parse EVERY `oxy_rt` value out of a raw `Cookie` request header.
+ *
+ * WHY this exists: Phase 1 widened the `oxy_rt` cookie Path from `/auth/refresh`
+ * to `/auth`. A mid-migration browser can therefore hold TWO `oxy_rt` cookies at
+ * once — a legacy one at `Path=/auth/refresh` and a new one at `Path=/auth` —
+ * and send BOTH to `/auth/refresh`. `cookie-parser` collapses duplicates and
+ * exposes only the FIRST value via `req.cookies.oxy_rt`, which (per RFC 6265,
+ * longer-path-first) is the legacy one — even when it is the stale/used token.
+ * Reading just that one value silently logs the real user out. This helper
+ * returns ALL presented values so the caller can pick the valid sibling.
+ *
+ * Parsing is deliberately tolerant: we split on `;`, split each part on the
+ * FIRST `=` only (cookie values may legitimately contain `=`), trim the name,
+ * and keep the RAW (non-URL-decoded) value. Our tokens are URL-safe base64url
+ * (`[A-Za-z0-9_-]`), so decode/encode is identity and the raw value matches what
+ * we hashed at issue time. Empty values are skipped; duplicates are de-duped
+ * preserving first-seen order.
+ */
+export function parseRefreshTokenCandidates(cookieHeader: string | undefined): string[] {
+  if (!cookieHeader) {
+    return [];
+  }
+
+  const seen = new Set<string>();
+  const candidates: string[] = [];
+
+  for (const part of cookieHeader.split(';')) {
+    const eqIndex = part.indexOf('=');
+    if (eqIndex === -1) {
+      continue;
+    }
+    const name = part.slice(0, eqIndex).trim();
+    if (name !== REFRESH_COOKIE_NAME) {
+      continue;
+    }
+    const value = part.slice(eqIndex + 1).trim();
+    if (value.length === 0 || seen.has(value)) {
+      continue;
+    }
+    seen.add(value);
+    candidates.push(value);
+  }
+
+  return candidates;
+}
+
+export type CandidateClassification =
+  | { kind: 'valid'; rawToken: string }
+  | { kind: 'used'; family: string; sessionId: string }
+  | { kind: 'none' };
+
+/**
+ * Classify a list of presented raw refresh-token candidates WITHOUT consuming
+ * any of them (purely a lookup — no `usedAt` mutation, no rotation).
+ *
+ * SECURITY RATIONALE (load-bearing — do not weaken): a browser only ever sends
+ * its OWN httpOnly cookies, so multiple candidates can ONLY be the legitimate
+ * user's own migration duplicates (legacy `Path=/auth/refresh` + new
+ * `Path=/auth`). Picking the VALID sibling and ignoring a USED sibling is
+ * therefore safe — it is the same user's two cookies, one already rotated.
+ *
+ * A genuine theft replay is a LONE used token with NO valid sibling among the
+ * candidates: that still classifies as `'used'`, so the caller fires
+ * reuse-detection (revoke family + deactivate session). We never weaken that —
+ * if ANY candidate is valid `'valid'` wins first, but with no valid sibling a
+ * used/revoked token is treated exactly as before: theft.
+ *
+ * Order of resolution:
+ *   1. First VALID candidate wins → `{ kind: 'valid' }` (returned immediately).
+ *   2. Else, first candidate whose stored row is used OR revoked →
+ *      `{ kind: 'used' }` (revoked is bucketed with used because it means the
+ *      family was already nuked, and we want reuse-detection to re-assert it).
+ *   3. Else → `{ kind: 'none' }` (unknown/expired/garbage only).
+ */
+export async function classifyRefreshCandidates(
+  rawCandidates: string[]
+): Promise<CandidateClassification> {
+  const now = new Date();
+  let firstUsed: { family: string; sessionId: string } | null = null;
+
+  for (const rawToken of rawCandidates) {
+    const tokenHash = sha256Hex(rawToken);
+    const stored = await RefreshToken.findOne({ tokenHash });
+    if (!stored) {
+      continue;
+    }
+
+    const isValid =
+      stored.usedAt == null && stored.revokedAt == null && stored.expiresAt > now;
+    if (isValid) {
+      return { kind: 'valid', rawToken };
+    }
+
+    // A used OR revoked row with no valid sibling is the reuse-detection signal.
+    // Remember the FIRST such row so the caller revokes the correct family.
+    if (firstUsed === null && (stored.usedAt != null || stored.revokedAt != null)) {
+      firstUsed = { family: stored.family, sessionId: stored.sessionId };
+    }
+  }
+
+  if (firstUsed !== null) {
+    return { kind: 'used', family: firstUsed.family, sessionId: firstUsed.sessionId };
+  }
+
+  return { kind: 'none' };
+}
+
 export interface RefreshCookieOptions {
   httpOnly: true;
   secure: boolean;
@@ -274,18 +391,48 @@ export function buildRefreshCookieOptions(): RefreshCookieOptions {
   };
 }
 
-/** Set the refresh-token cookie on the response. */
-export function setRefreshCookie(res: Response, token: string): void {
-  res.cookie(REFRESH_COOKIE_NAME, token, buildRefreshCookieOptions());
+/**
+ * Append a deletion for the LEGACY `Path=/auth/refresh` cookie as a SECOND
+ * `Set-Cookie` header so a mid-migration browser drops its stale duplicate.
+ *
+ * We must use `res.append` (not a second `res.cookie`) because Express keys
+ * outgoing cookies by name and a second `res.cookie(oxy_rt, ...)` would
+ * OVERWRITE the real `Path=/auth` cookie instead of adding a sibling header.
+ * The deletion mirrors `buildRefreshCookieOptions()` exactly for domain/secure
+ * (a mismatched domain/secure on a clear is silently ignored by the browser);
+ * the Path is the OLD `/auth/refresh` so it targets the legacy cookie only and
+ * leaves the real `/auth` cookie untouched. `Secure;` is emitted only in
+ * production, matching the real cookie in local http dev.
+ */
+function appendLegacyRefreshCookieDeletion(res: Response): void {
+  const { domain } = buildRefreshCookieOptions();
+  const securePart = isProduction() ? 'Secure; ' : '';
+  const legacyDelete =
+    `${REFRESH_COOKIE_NAME}=; Domain=${domain}; Path=${LEGACY_REFRESH_COOKIE_PATH}; ` +
+    `Max-Age=0; HttpOnly; ${securePart}SameSite=Lax`;
+  res.append('Set-Cookie', legacyDelete);
 }
 
 /**
- * Clear the refresh-token cookie. We emit an explicit `Max-Age=0` cookie with
- * the exact same domain/path attributes so the browser reliably drops it (a
- * mismatched domain/path on a clear is silently ignored by the browser).
+ * Set the refresh-token cookie on the response (real cookie at `Path=/auth`) and
+ * ALSO append a deletion of the legacy `Path=/auth/refresh` duplicate so a
+ * mid-migration browser stops sending two `oxy_rt` cookies.
+ */
+export function setRefreshCookie(res: Response, token: string): void {
+  res.cookie(REFRESH_COOKIE_NAME, token, buildRefreshCookieOptions());
+  appendLegacyRefreshCookieDeletion(res);
+}
+
+/**
+ * Clear the refresh-token cookie on BOTH paths. We emit an explicit `Max-Age=0`
+ * cookie with the exact same domain/path attributes so the browser reliably
+ * drops it (a mismatched domain/path on a clear is silently ignored by the
+ * browser): one for the real `Path=/auth` cookie and a second, appended header
+ * for the legacy `Path=/auth/refresh` duplicate.
  */
 export function clearRefreshCookie(res: Response): void {
   res.cookie(REFRESH_COOKIE_NAME, '', { ...buildRefreshCookieOptions(), maxAge: 0 });
+  appendLegacyRefreshCookieDeletion(res);
 }
 
 /**

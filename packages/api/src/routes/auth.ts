@@ -29,9 +29,11 @@ import {
   rotateRefreshToken,
   issueAndSetRefreshCookie,
   revokeFamilyByRawToken,
+  revokeFamily,
   setRefreshCookie,
   clearRefreshCookie,
-  REFRESH_COOKIE_NAME,
+  parseRefreshTokenCandidates,
+  classifyRefreshCandidates,
 } from '../services/refreshToken.service';
 import { extractTokenFromRequest, decodeToken } from '../middleware/authUtils';
 import {
@@ -679,17 +681,48 @@ const refreshLimiter = rateLimit({
  *         description: Too many refresh attempts from this IP.
  */
 router.post('/refresh', refreshLimiter, asyncHandler(async (req, res) => {
-  // The refresh token is read ONLY from the httpOnly cookie — never the body,
-  // query, or path. Set/clear the cookie BEFORE sending the response so the
-  // Set-Cookie header is always emitted; we respond directly (rather than
-  // throwing) for the same reason.
-  const raw = req.cookies?.[REFRESH_COOKIE_NAME];
-  if (typeof raw !== 'string' || raw.length === 0) {
+  // The refresh token is read ONLY from the httpOnly cookie(s) — never the body,
+  // query, or path. A mid-migration browser can present TWO `oxy_rt` cookies
+  // (legacy `Path=/auth/refresh` + new `Path=/auth`), so we parse ALL presented
+  // values and classify them WITHOUT consuming any, then act on the result.
+  // Set/clear the cookie BEFORE sending the response so the Set-Cookie header is
+  // always emitted; we respond directly (rather than throwing) for the same
+  // reason.
+  const candidates = parseRefreshTokenCandidates(req.headers.cookie);
+  if (candidates.length === 0) {
     clearRefreshCookie(res);
     return res.status(401).json({ message: 'No refresh token' });
   }
 
-  const outcome = await rotateRefreshToken(raw);
+  const classification = await classifyRefreshCandidates(candidates);
+
+  if (classification.kind === 'used') {
+    // REUSE DETECTED. SECURITY: a lone used/revoked token with NO valid sibling
+    // among the presented cookies is a theft signal — the token was already
+    // rotated away and is being replayed. We revoke the whole family + deactivate
+    // the session (exactly like `rotateRefreshToken`'s reuse path). This branch
+    // is NEVER reached when a valid sibling exists, because `'valid'` wins first
+    // in `classifyRefreshCandidates` — so a legit user's own migration duplicate
+    // (used legacy + valid new) does NOT trip reuse-detection.
+    await revokeFamily(classification.family, classification.sessionId);
+    clearRefreshCookie(res);
+    logger.warn('[RefreshToken] Reuse detected — family revoked', { reason: 'reuse_detected' });
+    return res.status(401).json({ message: 'Invalid refresh token' });
+  }
+
+  if (classification.kind === 'none') {
+    // No valid, used, or revoked row matched any candidate (unknown/expired/
+    // garbage only) — nothing to revoke; just clear and refuse.
+    clearRefreshCookie(res);
+    logger.debug('[RefreshToken] Refresh rejected', { reason: 'not_found' });
+    return res.status(401).json({ message: 'Invalid refresh token' });
+  }
+
+  // A valid candidate exists — rotate THAT token (single-use). Rotation can still
+  // legitimately fail (e.g. a concurrent request wins the atomic claim → the
+  // service treats the lost race as reuse and has already revoked the family);
+  // preserve the existing generic-401 behaviour and logging for that case.
+  const outcome = await rotateRefreshToken(classification.rawToken);
 
   if (!outcome.ok) {
     clearRefreshCookie(res);
@@ -840,15 +873,17 @@ router.post('/session', refreshLimiter, authMiddleware, asyncHandler(async (req:
  *         description: Too many requests from this IP.
  */
 router.post('/logout', refreshLimiter, asyncHandler(async (req, res) => {
-  // Best-effort family revocation: if a cookie is present, revoke its whole
-  // family + deactivate the session server-side. revokeFamilyByRawToken never
-  // throws on an unknown/garbage token, so logout always proceeds to clear.
-  const raw = req.cookies?.[REFRESH_COOKIE_NAME];
-  if (typeof raw === 'string' && raw.length > 0) {
+  // Best-effort family revocation. A mid-migration browser can present TWO
+  // `oxy_rt` cookies (legacy `Path=/auth/refresh` + new `Path=/auth`); both
+  // belong to THIS signing-out user, so we revoke every presented candidate's
+  // family to be sure the right one is nuked. revokeFamilyByRawToken never throws
+  // on an unknown/garbage token, so logout always proceeds to clear.
+  const candidates = parseRefreshTokenCandidates(req.headers.cookie);
+  for (const raw of candidates) {
     await revokeFamilyByRawToken(raw);
   }
 
-  // ALWAYS clear the cookie (Path=/auth), regardless of whether a token existed.
+  // ALWAYS clear the cookie on BOTH paths, regardless of whether a token existed.
   // Logout must never 401/500 on a missing/garbage cookie — it always succeeds.
   clearRefreshCookie(res);
 
