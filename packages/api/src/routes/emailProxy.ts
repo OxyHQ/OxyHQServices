@@ -21,6 +21,7 @@ const router = Router();
 
 // Rate limit: 100 requests per minute per IP
 const proxyRateLimit = rateLimit({
+  prefix: 'rl:email:proxy:',
   windowMs: 60 * 1000,
   max: 100,
   keyGenerator: (req) => (req as { ip?: string }).ip || 'unknown',

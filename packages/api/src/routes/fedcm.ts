@@ -47,6 +47,7 @@ function serviceTokenOnly(req: Request, res: Response, next: NextFunction) {
 // nonces are cheap server-side but expensive to enumerate, so cap both
 // per-IP and overall throughput.
 const nonceLimiter = rateLimit({
+  prefix: 'rl:fedcm:nonce:',
   windowMs: 60 * 1000,
   max: process.env.NODE_ENV === 'development' ? 200 : 60,
 });

@@ -28,6 +28,7 @@ const router = Router();
 
 // Rate limit social sign-in: 10 attempts per minute per IP (relaxed in dev)
 const socialLimiter = rateLimit({
+  prefix: 'rl:social-auth:',
   windowMs: 60 * 1000,
   max: process.env.NODE_ENV === 'development' ? 100 : 10,
   message: 'Too many sign-in attempts, please try again later.',

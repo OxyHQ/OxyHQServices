@@ -539,6 +539,7 @@ router.post('/register', validate({ body: registerPublicKeySchema }), SessionCon
  *         description: Rate limit exceeded (10 / minute / IP).
  */
 const challengeLimiter = rateLimit({
+  prefix: 'rl:auth:challenge:',
   windowMs: 60 * 1000,
   max: process.env.NODE_ENV === 'development' ? 100 : 10 // 10 per minute (100 in dev)
 });
@@ -596,6 +597,7 @@ router.post('/challenge', challengeLimiter, validate({ body: challengeSchema }),
  *         description: Rate limit exceeded (5 / minute / IP).
  */
 const verifyLimiter = rateLimit({
+  prefix: 'rl:auth:verify:',
   windowMs: 60 * 1000,
   max: process.env.NODE_ENV === 'development' ? 50 : 5 // 5 per minute (50 in dev)
 });
@@ -639,6 +641,7 @@ router.get('/validate', asyncHandler(async (req, res) => {
 // exercised far more tightly than a counter could. The IP limit blunts blind
 // guessing against the 256-bit token space (computationally infeasible anyway).
 const refreshLimiter = rateLimit({
+  prefix: 'rl:auth:refresh:',
   windowMs: 60 * 1000,
   max: process.env.NODE_ENV === 'development' ? 200 : 60,
 });
@@ -1177,6 +1180,7 @@ router.post('/logout', refreshLimiter, requireSameSiteOrigin, asyncHandler(async
 
 // Strict rate limit for enumeration-sensitive check endpoints (10/min per IP)
 const checkLimiter = rateLimit({
+  prefix: 'rl:auth:lookup:',
   windowMs: 60 * 1000,
   max: process.env.NODE_ENV === 'development' ? 100 : 10,
   message: 'Too many lookup requests, please try again later.',
@@ -1718,6 +1722,7 @@ router.post('/session/authorize/:sessionToken', authMiddleware, validate({ param
 // guessing is computationally infeasible (10^7 RPS for 100 years to
 // hit a 50 % collision).
 const authSessionClaimLimiter = rateLimit({
+  prefix: 'rl:auth:session-claim:',
   windowMs: 60 * 1000,
   max: process.env.NODE_ENV === 'development' ? 100 : 30,
 });
@@ -1949,11 +1954,13 @@ function isAllowedRedirectUri(app: { redirectUris?: string[] }, redirectUri: str
 }
 
 const oauthAuthorizeLimiter = rateLimit({
+  prefix: 'rl:auth:oauth-authorize:',
   windowMs: 60 * 1000,
   max: process.env.NODE_ENV === 'development' ? 100 : 20,
 });
 
 const oauthTokenLimiter = rateLimit({
+  prefix: 'rl:auth:oauth-token:',
   windowMs: 60 * 1000,
   max: process.env.NODE_ENV === 'development' ? 100 : 30,
 });
@@ -2214,6 +2221,7 @@ router.post(
 const SERVICE_TOKEN_EXPIRY = 3600; // 1 hour in seconds
 
 const serviceTokenLimiter = rateLimit({
+  prefix: 'rl:auth:service-token:',
   windowMs: 5 * 60 * 1000, // 5-minute window
   max: process.env.NODE_ENV === 'development' ? 100 : 10 // 10 per 5 minutes (2/min avg)
 });

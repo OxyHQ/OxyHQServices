@@ -9,12 +9,17 @@ import { AuthRequest } from "./auth";
 
 const isProd = process.env.NODE_ENV !== 'development';
 
-// Build Redis-backed store options if available, otherwise fall back to in-memory
-function makeStore() {
+// Build Redis-backed store options if available, otherwise fall back to in-memory.
+// Each limiter MUST pass a unique `prefix` so that hits land in distinct Redis
+// keys; otherwise a request that flows through both the global limiter and a
+// per-route limiter increments the same counter twice and express-rate-limit
+// emits ERR_ERL_DOUBLE_COUNT (and the user's effective budget is halved).
+function makeStore(prefix: string) {
   const redis = getRedisClient();
   if (!redis) return {};
   return {
     store: new RedisStore({
+      prefix,
       sendCommand: (...args: string[]) =>
         redis.call(args[0], ...args.slice(1)) as Promise<RedisReply>,
     }),
@@ -28,7 +33,7 @@ function makeStore() {
 // unrelated endpoints. The userRateLimiter below still caps per-account
 // traffic.
 const rateLimiter = rateLimit({
-  ...makeStore(),
+  ...makeStore('rl:general:'),
   windowMs: 15 * 60 * 1000,
   max: isProd ? 1000 : 2000,
   message: "Too many requests from this IP, please try again later.",
@@ -45,7 +50,7 @@ const rateLimiter = rateLimit({
 // signing in hits ~5–8 /auth/* endpoints, and active sessions refresh on
 // /auth/refresh roughly every 15 minutes.
 const authRateLimiter = rateLimit({
-  ...makeStore(),
+  ...makeStore('rl:auth:'),
   windowMs: 15 * 60 * 1000,
   max: isProd ? 300 : 2000,
   message: "Too many authentication attempts from this IP, please try again later.",
@@ -56,7 +61,7 @@ const authRateLimiter = rateLimit({
 
 // Per-user rate limiting for authenticated requests
 const userRateLimiter = rateLimit({
-  ...makeStore(),
+  ...makeStore('rl:user:'),
   windowMs: 15 * 60 * 1000,
   max: isProd ? 200 : 2000,
   message: "Too many requests, please try again later.",

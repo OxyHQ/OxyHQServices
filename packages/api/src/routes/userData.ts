@@ -42,6 +42,7 @@ const router = Router();
  * `authMiddleware` anyway, but the limiter still gets a stable key).
  */
 const writeLimiter = rateLimit({
+  prefix: 'rl:userdata:write:',
   windowMs: 60 * 1000,
   max: 100,
   message: 'Too many app-data writes. Please slow down and try again shortly.',

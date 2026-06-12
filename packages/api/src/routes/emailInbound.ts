@@ -162,6 +162,7 @@ const INBOUND_WEBHOOK_SECRET = getEnvVar('EMAIL_INBOUND_WEBHOOK_SECRET', '');
 
 // Rate limit: 60 emails per minute (generous for inbound webhook)
 const inboundRateLimit = rateLimit({
+  prefix: 'rl:email:inbound:',
   windowMs: 60 * 1000,
   max: 60,
   keyGenerator: () => 'email-inbound-global',

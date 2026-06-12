@@ -41,6 +41,7 @@ const router = Router();
  * don't share buckets.
  */
 const discoverLimiter = rateLimit({
+  prefix: 'rl:contacts:discover:',
   windowMs: 60 * 1000,
   max: 5,
   message:
