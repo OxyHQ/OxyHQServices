@@ -8,6 +8,8 @@ import { handleAuthError, isInvalidSessionError } from '../utils/errorHandlers';
 import type { OxyServices } from '@oxyhq/core';
 import type { QueryClient } from '@tanstack/react-query';
 import { clearQueryCache } from './queryClient';
+import { isWebBrowser } from './useWebSSO';
+import { writeActiveAuthuser } from '../utils/activeAuthuser';
 
 export interface UseSessionManagementOptions {
   oxyServices: OxyServices;
@@ -265,6 +267,33 @@ export const useSessionManagement = ({
   const switchSession = useCallback(
     async (sessionId: string): Promise<User> => {
       try {
+        // Web multi-account: when the target session was sourced from
+        // `refreshAllSessions` it carries its `authuser` slot index. We
+        // proactively plant that slot's access token via the httpOnly
+        // refresh cookie BEFORE validating, so the bearer-protected
+        // validate/getCurrentUser calls don't need a token that was never
+        // in memory (cold reload / different browser tab). The native path
+        // has no per-session cookies and continues to rely on
+        // `validateSession` + `getTokenBySession` directly.
+        if (isWebBrowser()) {
+          const targetSession = sessionsRef.current.find((s) => s.sessionId === sessionId);
+          const targetAuthuser = targetSession?.authuser;
+          if (typeof targetAuthuser === 'number') {
+            const refreshed = await oxyServices.refreshTokenViaCookie({ authuser: targetAuthuser });
+            if (refreshed === null) {
+              // Slot's refresh cookie is missing / expired / reused. Fall
+              // through to the invalid-session branch below by throwing the
+              // canonical invalid-session error.
+              throw new Error('Session is invalid or expired');
+            }
+            // Plant the slot's fresh access token; subsequent bearer calls
+            // (`validateSession`, `getCurrentUser`) will use it. The server
+            // also rotated the cookie at this point.
+            oxyServices.httpService.setTokens(refreshed.accessToken);
+            writeActiveAuthuser(targetAuthuser);
+          }
+        }
+
         const validation = await oxyServices.validateSession(sessionId, { useHeaderValidation: true });
         if (!validation?.valid) {
           throw new Error('Session is invalid or expired');

@@ -49,6 +49,36 @@ export const refreshResponseSchema = z.object({
 })
 
 /**
+ * `POST /auth/refresh-all` reads EVERY device-local `oxy_rt_${authuser}` cookie
+ * present on this device, rotates each in parallel, and returns one entry per
+ * VALID account sorted by `authuser` ascending. Empty array means "no signed-in
+ * accounts on this device" (the IdP must show the sign-in form).
+ *
+ * Slot-level errors are silently omitted; the response is always 200 with a
+ * (possibly empty) `accounts` array — a 404 from the server means the endpoint
+ * is not yet deployed and the caller MUST fall back to the legacy
+ * single-account `/auth/refresh` path.
+ */
+export const refreshAllResponseSchema = z.object({
+    accounts: z.array(
+        z.object({
+            authuser: z.number().int().nonnegative(),
+            accessToken: z.string(),
+            expiresAt: z.string(),
+            sessionId: z.string(),
+            user: z.object({
+                id: z.string(),
+                username: z.string(),
+                name: z.string().optional(),
+                avatar: z.string().nullable().optional(),
+                email: z.string().optional(),
+                color: z.string().nullable().optional(),
+            }),
+        })
+    ),
+})
+
+/**
  * `GET /users/me` returns the RAW Mongo user document wrapped in the API success
  * envelope (`{ data: <user> }` via `sendSuccess`). It does NOT go through
  * `formatUserResponse`, so the id field is `_id` (NOT `id`), and `name` / `avatar`

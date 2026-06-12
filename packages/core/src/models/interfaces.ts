@@ -124,7 +124,41 @@ export interface User {
   // Managed account fields
   isManagedAccount?: boolean;
   managedBy?: string;
+  // User-controlled notification preferences. All channels default to on; users
+  // opt out per-channel. Updated via `PUT /users/me`.
+  notificationPreferences?: NotificationPreferences;
+  // General app-wide user preferences. Updated via `PUT /users/me`.
+  userPreferences?: UserPreferences;
   [key: string]: unknown;
+}
+
+/**
+ * User-controlled notification channels. Persisted on the User document.
+ */
+export interface NotificationPreferences {
+  /** Push notifications on registered devices. */
+  pushEnabled?: boolean;
+  /** Periodic email digest of activity. */
+  emailDigest?: boolean;
+  /** Security/account alerts (sign-ins, recovery, key changes). */
+  securityAlerts?: boolean;
+  /** Marketing / product update emails. */
+  marketingEmails?: boolean;
+}
+
+/**
+ * General per-user preferences applied across all Oxy apps for the user.
+ * Persisted on the User document.
+ */
+export interface UserPreferences {
+  /** BCP-47 language tag, e.g. "en-US", "es-ES". Empty string = follow device. */
+  language?: string;
+  /** Theme mode preference. */
+  theme?: 'light' | 'dark' | 'system';
+  /** Mirror of OS reduce-motion preference, persisted server-side. */
+  reduceMotion?: boolean;
+  /** IANA timezone, e.g. "Europe/Madrid". Empty string = follow device. */
+  timezone?: string;
 }
 
 export interface LoginResponse {
@@ -603,4 +637,72 @@ export interface DeviceSessionLogoutResponse {
 export interface UpdateDeviceNameResponse {
   message: string;
   deviceName: string;
+}
+
+// ---------------------------------------------------------------------------
+// Multi-account "refresh-all" (Google-style)
+// ---------------------------------------------------------------------------
+// Wire shape of `POST /auth/refresh-all`. The server rotates every device-local
+// `oxy_rt_${authuser}` cookie in parallel and returns one entry per VALID
+// account, sorted by `authuser` ascending. Slot-level errors are silently
+// omitted; the response is `{ accounts: [] }` in the worst case (no signed-in
+// accounts, all cookies expired, or origin not allowlisted).
+
+/**
+ * Minimal user shape included in a `RefreshAllAccount` entry. The server
+ * projects a small whitelist (`username name avatar email color`) so the
+ * client can render the account chooser without an extra `/users/me` round
+ * trip per account.
+ *
+ * `avatar` and `color` are `string | null` because they are stored as nullable
+ * fields in the user document.
+ */
+export interface RefreshAllAccountUser {
+  id: string;
+  username: string;
+  name?: string;
+  avatar?: string | null;
+  email?: string;
+  color?: string | null;
+}
+
+/**
+ * One rotated account entry returned by `POST /auth/refresh-all`. `authuser` is
+ * the device-local slot index (0..N-1) the cookie was bound to. The legacy
+ * un-suffixed `oxy_rt` cookie yields `authuser: null` server-side, but the SDK
+ * normalises that to `0` before exposing it (the chooser always operates on
+ * numeric indices).
+ *
+ * `user` is `null` only on the SDK-side synthesised legacy fallback (when the
+ * server is too old to support `/auth/refresh-all` and we wrap a
+ * `/auth/refresh` response — that endpoint does not project a user shape).
+ * On the modern path every accepted entry carries a non-null user.
+ */
+export interface RefreshAllAccount {
+  authuser: number;
+  accessToken: string;
+  expiresAt: string;
+  sessionId: string;
+  user: RefreshAllAccountUser | null;
+}
+
+/**
+ * Wire shape of `POST /auth/refresh-all`. Always 200 with a (possibly empty)
+ * accounts array — 401 means "no accounts signed in on this device" and is
+ * normalised to `{ accounts: [] }` at the SDK layer.
+ */
+export interface RefreshAllResponse {
+  accounts: RefreshAllAccount[];
+}
+
+/**
+ * Wire shape of `POST /auth/refresh` (single-account refresh, optionally
+ * targeting a specific `?authuser=N` slot). The server includes `authuser` in
+ * the response when an indexed slot was rotated; the legacy slot yields
+ * `authuser: null`.
+ */
+export interface RefreshCookieResponse {
+  accessToken: string;
+  expiresAt: string;
+  authuser: number | null;
 }

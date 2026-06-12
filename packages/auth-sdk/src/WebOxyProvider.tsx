@@ -26,6 +26,7 @@ import type {
   User,
   SessionLoginResponse,
   ClientSession,
+  AuthManagerAccount,
 } from '@oxyhq/core';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { attachQueryPersistence, createQueryClient } from './hooks/queryClient';
@@ -36,7 +37,22 @@ export interface WebAuthState {
   isLoading: boolean;
   error: string | null;
   activeSessionId: string | null;
+  /**
+   * Legacy multi-session shape kept for API compatibility with downstream
+   * consumers. Derived from `accounts` — every `AuthManagerAccount` is
+   * projected into a `ClientSession` with `authuser` populated. New
+   * consumers should prefer `accounts` directly.
+   */
   sessions: ClientSession[];
+  /**
+   * Every device-local account the AuthManager knows about, sorted by
+   * `authuser` ascending. Populated by the cookie-path
+   * `restoreFromCookies()` on cold boot and refreshed by `switchAccount`
+   * / `signOutAccount` / `signOutAll`.
+   */
+  accounts: AuthManagerAccount[];
+  /** Currently-active `authuser` slot, or `null` when no slots are signed in. */
+  activeAuthuser: number | null;
 }
 
 export interface WebAuthActions {
@@ -58,7 +74,31 @@ export interface WebAuthActions {
   signInWithRedirect: () => void;
   signOut: () => Promise<void>;
   isFedCMSupported: () => boolean;
+  /**
+   * Switch to a different session by its server-side session id. Web
+   * implementation resolves the corresponding `authuser` slot and rotates
+   * it via the httpOnly refresh cookie.
+   */
   switchSession: (sessionId: string) => Promise<void>;
+  /**
+   * Multi-account: switch to a different device-local slot by `authuser`
+   * index. Mints a fresh access token via `POST /auth/refresh?authuser=N`
+   * (no bearer required) and updates the active state.
+   */
+  switchAccount: (authuser: number) => Promise<void>;
+  /**
+   * Multi-account: sign out a specific device-local slot. Clears the
+   * `oxy_rt_${authuser}` cookie server-side and drops the slot from the
+   * registry. If the active slot was signed out, the lowest remaining
+   * authuser is promoted to active.
+   */
+  signOutAccount: (authuser: number) => Promise<void>;
+  /**
+   * Multi-account: sign out EVERY device-local slot at once. Clears every
+   * `oxy_rt_${n}` cookie server-side. Equivalent to `signOut()` in the
+   * cookie path.
+   */
+  signOutAll: () => Promise<void>;
   clearSessionState: () => Promise<void>;
 }
 
@@ -127,7 +167,15 @@ export function WebOxyProvider({
 }: WebOxyProviderProps) {
   const [oxyServices] = useState(() => new OxyServices({ baseURL, authWebUrl }));
   const [crossDomainAuth] = useState(() => new CrossDomainAuth(oxyServices));
-  const [authManager] = useState(() => createAuthManager(oxyServices, { autoRefresh: true }));
+  // Web is cookie-only by design: refresh tokens live in httpOnly
+  // `oxy_rt_${authuser}` cookies and access tokens live in-memory inside
+  // the AuthManager registry. The legacy localStorage path
+  // (`oxy_access_token` / `oxy_refresh_token` / `oxy_session`) is OFF on
+  // the web — we never persist token material to JS-accessible storage.
+  const [authManager] = useState(() => createAuthManager(oxyServices, {
+    autoRefresh: true,
+    cookieOnly: true,
+  }));
   const [queryClient] = useState(() => createQueryClient());
 
   // Block first render until the persisted localStorage cache has been
@@ -159,9 +207,39 @@ export function WebOxyProvider({
   const [error, setError] = useState<string | null>(null);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
 
-  // Sessions array kept as constant empty for API compatibility.
-  // Multi-session management is handled by @oxyhq/services (OxyContext) for RN apps.
-  const sessions: ClientSession[] = [];
+  // Multi-account state — populated by the AuthManager cookie path
+  // (`restoreFromCookies` / `switchAuthuser` / `signOutAuthuser`). `sessions`
+  // is derived from `accounts` for backwards compatibility with the
+  // pre-multi-account API.
+  const [accounts, setAccounts] = useState<AuthManagerAccount[]>([]);
+  const [activeAuthuser, setActiveAuthuserState] = useState<number | null>(null);
+
+  /**
+   * Refresh the React-visible multi-account state from the AuthManager.
+   * Called after every cookie-path operation so the UI sees the latest
+   * snapshot atomically.
+   */
+  const syncAccountsFromManager = useCallback(() => {
+    setAccounts(authManager.getAccounts());
+    setActiveAuthuserState(authManager.getActiveAuthuser());
+  }, [authManager]);
+
+  // Derive the legacy `sessions: ClientSession[]` shape from `accounts` so
+  // existing consumers reading `useAuth().sessions` keep working. Each
+  // `AuthManagerAccount` becomes one `ClientSession` with `authuser`
+  // populated. The active slot is flagged `isCurrent: true`.
+  const sessions = useMemo<ClientSession[]>(() => {
+    const now = new Date().toISOString();
+    return accounts.map((account) => ({
+      sessionId: account.sessionId,
+      deviceId: '',
+      expiresAt: account.expiresAt,
+      lastActive: now,
+      userId: account.user?.id ?? '',
+      isCurrent: account.authuser === activeAuthuser,
+      authuser: account.authuser,
+    }));
+  }, [accounts, activeAuthuser]);
 
   const isAuthenticated = !!user;
 
@@ -183,7 +261,20 @@ export function WebOxyProvider({
     setUser(session.user as User);
     setError(null);
     setIsLoading(false);
-  }, [authManager]);
+
+    // A fresh login appends a new device-local slot server-side (via
+    // `Set-Cookie: oxy_rt_${n}`). Pull the canonical snapshot so the
+    // multi-account state reflects the new slot AND any pre-existing
+    // siblings whose cookies just rotated as part of the response.
+    try {
+      await authManager.restoreFromCookies();
+    } catch {
+      // The login itself succeeded — a follow-up restore failure must
+      // not surface as an auth error. The single-session API still
+      // works via the bearer token planted by `handleAuthSuccess`.
+    }
+    syncAccountsFromManager();
+  }, [authManager, syncAccountsFromManager]);
 
   const handleAuthError = useCallback((err: unknown) => {
     const errorMessage = err instanceof Error ? err.message : 'Authentication failed';
@@ -206,8 +297,19 @@ export function WebOxyProvider({
           return;
         }
 
+        // Cookie-path restore: `authManager.initialize()` calls
+        // `restoreFromCookies()` first (cookieOnly mode), which contacts
+        // `POST /auth/refresh-all` and seeds every device-local slot. On
+        // success, the AuthManager has already planted the active slot's
+        // access token on the HTTP client — we just need to mirror the
+        // user into React state and surface the multi-account snapshot.
         const restoredUser = await authManager.initialize();
         if (restoredUser && mounted) {
+          syncAccountsFromManager();
+          const activeAccount = authManager.getActiveAccount();
+          if (activeAccount) {
+            setActiveSessionId(activeAccount.sessionId);
+          }
           try {
             const currentUser = await oxyServices.getCurrentUser();
             if (mounted && currentUser) {
@@ -216,13 +318,25 @@ export function WebOxyProvider({
               return;
             }
           } catch {
-            await authManager.signOut();
+            // The bearer call failed even though the AuthManager said it
+            // had restored — treat as a stale session and fall through to
+            // unauthenticated. Use the cookie-path sign-out so we don't
+            // touch the legacy localStorage keys.
+            await authManager.signOutAllViaCookies();
+            syncAccountsFromManager();
           }
         }
 
-        // FedCM silent sign-in: run AT MOST ONCE per page load. A remount
-        // (route change / StrictMode / error recovery) must not re-trigger
-        // the browser credential request.
+        // FedCM silent sign-in: run AT MOST ONCE per page load AND only
+        // when the cookie path didn't restore any accounts. If we already
+        // have valid refresh cookies on this device, kicking
+        // `navigator.credentials.get` is pointless and wastes the
+        // browser's one auto-reauthn cooldown.
+        if (authManager.getAccounts().length > 0) {
+          if (mounted) setIsLoading(false);
+          return;
+        }
+
         const ssoKey = silentSignInKey();
         if (!fedcmSilentSignInAttempted.has(ssoKey)) {
           fedcmSilentSignInAttempted.add(ssoKey);
@@ -384,34 +498,93 @@ export function WebOxyProvider({
   const signOut = useCallback(async () => {
     setError(null);
     try {
-      await authManager.signOut();
+      // Web is cookie-only: "sign out" clears every device-local slot.
+      // The cookie endpoint clears every `oxy_rt_${n}` cookie via
+      // `Set-Cookie` server-side AND revokes every refresh-token family.
+      await authManager.signOutAllViaCookies();
       setUser(null);
       setActiveSessionId(null);
+      syncAccountsFromManager();
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Sign out failed';
       setError(errorMessage);
       onError?.(err instanceof Error ? err : new Error(errorMessage));
     }
-  }, [authManager, onError]);
+  }, [authManager, onError, syncAccountsFromManager]);
 
-  const switchSession = useCallback(async (sessionId: string) => {
+  const switchAccount = useCallback(async (authuser: number) => {
+    setError(null);
     try {
-      const result = await oxyServices.getTokenBySession(sessionId);
-      if (result) {
-        setActiveSessionId(sessionId);
+      await authManager.switchAuthuser(authuser);
+      const active = authManager.getActiveAccount();
+      if (active) {
+        setActiveSessionId(active.sessionId);
+        // Fetch the canonical User shape with the freshly planted token —
+        // the refresh-all projection is minimal (id/username/avatar/...)
+        // and consumers expect the full User document.
         const currentUser = await oxyServices.getCurrentUser();
         if (currentUser) setUser(currentUser);
       }
+      syncAccountsFromManager();
     } catch (err) {
+      // `switchAuthuser` already dropped the dead slot from the registry;
+      // re-sync so the chooser doesn't keep offering it.
+      syncAccountsFromManager();
       handleAuthError(err);
     }
-  }, [oxyServices, handleAuthError]);
+  }, [authManager, oxyServices, syncAccountsFromManager, handleAuthError]);
+
+  const switchSession = useCallback(async (sessionId: string) => {
+    // Resolve the `authuser` slot from the session id via the AuthManager
+    // registry. If the requested session isn't one of ours (e.g. a stale
+    // id from before a refresh), surface a clear error rather than
+    // silently no-oping.
+    const target = authManager.getAccounts().find((a) => a.sessionId === sessionId);
+    if (!target) {
+      handleAuthError(new Error(`Unknown session id: ${sessionId}`));
+      return;
+    }
+    await switchAccount(target.authuser);
+  }, [authManager, handleAuthError, switchAccount]);
+
+  const signOutAccount = useCallback(async (authuser: number) => {
+    setError(null);
+    try {
+      await authManager.signOutAuthuser(authuser);
+      const active = authManager.getActiveAccount();
+      if (active) {
+        // Active slot may have changed (promoted lowest remaining) —
+        // refresh the user / session state to match.
+        setActiveSessionId(active.sessionId);
+        try {
+          const currentUser = await oxyServices.getCurrentUser();
+          if (currentUser) setUser(currentUser);
+        } catch {
+          // Promoted slot's access token might be expired; the
+          // AuthManager's auto-refresh will kick in shortly.
+        }
+      } else {
+        // No slots left — fully signed out.
+        setUser(null);
+        setActiveSessionId(null);
+      }
+      syncAccountsFromManager();
+    } catch (err) {
+      syncAccountsFromManager();
+      handleAuthError(err);
+    }
+  }, [authManager, oxyServices, syncAccountsFromManager, handleAuthError]);
+
+  const signOutAll = useCallback(async () => {
+    await signOut();
+  }, [signOut]);
 
   const clearSessionState = useCallback(async () => {
-    await authManager.signOut();
+    await authManager.signOutAllViaCookies();
     setUser(null);
     setActiveSessionId(null);
-  }, [authManager]);
+    syncAccountsFromManager();
+  }, [authManager, syncAccountsFromManager]);
 
   useEffect(() => {
     return () => { authManager.destroy(); };
@@ -424,6 +597,8 @@ export function WebOxyProvider({
     error,
     activeSessionId,
     sessions,
+    accounts,
+    activeAuthuser,
     oxyServices,
     crossDomainAuth,
     authManager,
@@ -434,12 +609,17 @@ export function WebOxyProvider({
     signOut,
     isFedCMSupported,
     switchSession,
+    switchAccount,
+    signOutAccount,
+    signOutAll,
     clearSessionState,
   }), [
     user, isAuthenticated, isLoading, error, activeSessionId, sessions,
+    accounts, activeAuthuser,
     oxyServices, crossDomainAuth, authManager,
     signIn, signInWithFedCM, signInWithPopup, signInWithRedirect,
-    signOut, isFedCMSupported, switchSession, clearSessionState,
+    signOut, isFedCMSupported, switchSession,
+    switchAccount, signOutAccount, signOutAll, clearSessionState,
   ]);
 
   // Mirror the RN OxyProvider pattern: don't expose the QueryClient (or
@@ -499,6 +679,8 @@ export function useAuth() {
     error: ctx.error,
     activeSessionId: ctx.activeSessionId,
     sessions: ctx.sessions,
+    accounts: ctx.accounts,
+    activeAuthuser: ctx.activeAuthuser,
     signIn: ctx.signIn,
     signInWithFedCM: ctx.signInWithFedCM,
     signInWithPopup: ctx.signInWithPopup,
@@ -506,6 +688,9 @@ export function useAuth() {
     signOut: ctx.signOut,
     isFedCMSupported: ctx.isFedCMSupported,
     switchSession: ctx.switchSession,
+    switchAccount: ctx.switchAccount,
+    signOutAccount: ctx.signOutAccount,
+    signOutAll: ctx.signOutAll,
     oxyServices: ctx.oxyServices,
     authManager: ctx.authManager,
   };

@@ -58,6 +58,9 @@ interface FakeServices {
   getUserBySession: jest.Mock;
   logoutSession: jest.Mock;
   logoutAllSessions: jest.Mock;
+  logoutSessionByAuthuser: jest.Mock;
+  logoutAllSessionsViaCookie: jest.Mock;
+  refreshTokenViaCookie: jest.Mock;
 }
 
 const makeOxyServices = (overrides: Partial<FakeServices> = {}): FakeServices => ({
@@ -86,6 +89,11 @@ const makeOxyServices = (overrides: Partial<FakeServices> = {}): FakeServices =>
   } as User)),
   logoutSession: jest.fn(async () => undefined),
   logoutAllSessions: jest.fn(async () => undefined),
+  // Web multi-account cookie endpoints — used when `isWebBrowser()` is true
+  // (jest's jsdom env) and the target session has an `authuser` slot.
+  logoutSessionByAuthuser: jest.fn(async () => undefined),
+  logoutAllSessionsViaCookie: jest.fn(async () => undefined),
+  refreshTokenViaCookie: jest.fn(async () => ({ accessToken: 'cookie-refreshed', expiresAt: '2030-01-01' })),
   ...overrides,
 });
 
@@ -375,6 +383,29 @@ describe('useAuthOperations.logout', () => {
     );
   });
 
+  // Web multi-account: when the target session has an `authuser` slot index
+  // (i.e. it was sourced from `POST /auth/refresh-all`), `logout` routes to
+  // the cookie-cleared endpoint so the device-local `oxy_rt_${n}` is wiped
+  // by `Set-Cookie` AND the family is revoked. Sessions without an
+  // `authuser` (legacy / native) still take the bearer endpoint.
+  it('routes the cookie endpoint when the target session has an authuser slot (web)', async () => {
+    const sessionsWithAuthuser: ClientSession[] = [
+      { sessionId: 'session-1', deviceId: 'd-1', expiresAt: '2030', lastActive: '2025', userId: 'user-1', authuser: 0 },
+      { sessionId: 'session-2', deviceId: 'd-1', expiresAt: '2030', lastActive: '2025', userId: 'user-2', authuser: 1 },
+    ];
+    const helpers = setup({ activeSessionId: 'session-1', sessions: sessionsWithAuthuser });
+    await act(async () => {
+      await helpers.result.current.logout('session-2');
+    });
+    expect(helpers.oxyServices.logoutSessionByAuthuser).toHaveBeenCalledWith(1);
+    // The bearer endpoint is NOT used when the cookie path applies.
+    expect(helpers.oxyServices.logoutSession).not.toHaveBeenCalled();
+    expect(helpers.updateSessions).toHaveBeenCalledWith(
+      [expect.objectContaining({ sessionId: 'session-1' })],
+      { merge: false },
+    );
+  });
+
   it('clears local state when the server reports the session as invalid (401 fast-path)', async () => {
     const helpers = setup({
       activeSessionId: 'session-1',
@@ -431,20 +462,32 @@ describe('useAuthOperations.logoutAll', () => {
     }));
   });
 
-  it('clears all session state on success', async () => {
+  // Under jest's jsdom env `isWebBrowser()` returns true, so `logoutAll`
+  // takes the web cookie-cleared branch. The bearer-protected
+  // `logoutAllSessions` is reserved for native and is NOT called on web —
+  // see the "Semantics intentionally diverge by platform" comment in
+  // `useAuthOperations.logoutAll` for why this is correct UX.
+  it('clears every device-local cookie + every session state on success (web)', async () => {
     const helpers = setup({ activeSessionId: 'session-1' });
     await act(async () => {
       await helpers.result.current.logoutAll();
     });
-    expect(helpers.oxyServices.logoutAllSessions).toHaveBeenCalledWith('session-1');
+    expect(helpers.oxyServices.logoutAllSessionsViaCookie).toHaveBeenCalledTimes(1);
+    // The bearer "revoke every session of this user across devices" endpoint
+    // is intentionally NOT called on web — the cookie endpoint covers the
+    // chooser's "Sign out of all accounts" semantics.
+    expect(helpers.oxyServices.logoutAllSessions).not.toHaveBeenCalled();
     expect(helpers.clearSessionState).toHaveBeenCalledTimes(1);
+    // The persisted active-authuser slot is cleared so the next cold boot
+    // starts from a clean slate.
+    expect(window.localStorage.getItem('oxy_active_authuser')).toBeNull();
   });
 
-  it('re-throws and reports when the server fails', async () => {
+  it('re-throws and reports when the server fails (web cookie endpoint)', async () => {
     const helpers = setup({
       activeSessionId: 'session-1',
       oxyServices: {
-        logoutAllSessions: jest.fn(async () => {
+        logoutAllSessionsViaCookie: jest.fn(async () => {
           throw new Error('server down');
         }),
       },

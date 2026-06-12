@@ -117,6 +117,13 @@ export function AuthorizePage() {
     currentSessionId: chooserSessionId,
   } = useDeviceAccounts();
   const [chooserDismissed, setChooserDismissed] = useState(false);
+  // The sessionId currently being switched-to via the cookie-mint path. Shown
+  // as a per-row busy state in `<AccountChooser>` and disables sibling rows so
+  // the user can't fire a second mint while one is in flight. Cleared on
+  // success (consent reveal) or on failure (re-auth fallback).
+  const [chooserPendingSessionId, setChooserPendingSessionId] = useState<
+    string | null
+  >(null);
 
   useEffect(() => {
     async function loadData() {
@@ -264,12 +271,17 @@ export function AuthorizePage() {
     );
   }
 
-  function handleChooseAccount(entry: DeviceAccount): void {
-    // Only the active account can proceed without re-auth. The chooser's session
-    // probe already minted+planted a fresh access token via the durable refresh
-    // cookie, so reuse it and reveal the consent screen below. If it is somehow
-    // absent, fall back to a full re-auth via /login (the bearer-protected
-    // /token endpoint cannot be reached with cookies alone).
+  async function handleChooseAccount(entry: DeviceAccount): Promise<void> {
+    // Google/Meta/Apple multi-account UX: selecting ANY signed-in account
+    // (active OR a sibling slot) should reveal the consent screen WITHOUT
+    // asking for the password again. The durable per-slot refresh cookie
+    // (`oxy_rt_${authuser}`) lets us silently mint a fresh access token via
+    // `POST /auth/refresh?authuser=N`. Only when that mint fails (the slot's
+    // cookie has expired or been revoked server-side) do we fall back to
+    // `/login` with a hint to make the user re-authenticate explicitly.
+    //
+    // The active account already has a token planted by `useDeviceAccounts`,
+    // so it can short-circuit straight to the consent reveal.
     if (entry.isCurrent) {
       const planted = sessionStorage.getItem("oxy_access_token");
       if (!planted) {
@@ -281,8 +293,62 @@ export function AuthorizePage() {
       setChooserDismissed(true);
       return;
     }
-    // A different signed-in account: re-authenticate via /login.
-    gotoLoginWithHint(entry.account.username || entry.account.email);
+
+    // Sibling slot: pre-mint silently via the per-slot refresh cookie.
+    // Without a known `authuser` slot index we cannot target a specific
+    // cookie — fall back to explicit re-auth.
+    if (typeof entry.authuser !== "number") {
+      gotoLoginWithHint(entry.account.username || entry.account.email);
+      return;
+    }
+
+    setChooserPendingSessionId(entry.sessionId);
+    try {
+      const refreshUrl = `${buildAuthUrl("/refresh")}?authuser=${encodeURIComponent(
+        String(entry.authuser)
+      )}`;
+      const response = await fetch(refreshUrl, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        credentials: "include",
+      });
+      if (!response.ok) {
+        // 401 = slot cookie expired/revoked; any other non-2xx = transient
+        // server error. Both route to explicit re-auth so the user is never
+        // stuck on a spinning chooser row.
+        gotoLoginWithHint(entry.account.username || entry.account.email);
+        return;
+      }
+      const payload = (await response.json().catch(() => null)) as
+        | { accessToken?: string; expiresAt?: string }
+        | null;
+      if (!payload?.accessToken) {
+        gotoLoginWithHint(entry.account.username || entry.account.email);
+        return;
+      }
+      // Plant the freshly-minted access token + sibling sessionId so the
+      // consent reveal (and the downstream `/token` / `/authorize` exchange)
+      // sees the SAME credentials the active row would have provided.
+      sessionStorage.setItem("oxy_access_token", payload.accessToken);
+      sessionStorage.setItem("oxy_session_id", entry.sessionId);
+      setData((prev) => ({
+        ...prev,
+        sessionId: entry.sessionId,
+        user: {
+          id: entry.account.id,
+          username: entry.account.username,
+          email: entry.account.email,
+          avatar: entry.account.avatar,
+          displayName: entry.account.displayName,
+        },
+      }));
+      setChooserDismissed(true);
+    } catch {
+      // Network failure: explicit re-auth, never silent retry.
+      gotoLoginWithHint(entry.account.username || entry.account.email);
+    } finally {
+      setChooserPendingSessionId(null);
+    }
   }
 
   async function handleDecision(decision: "approve" | "deny") {
@@ -526,7 +592,8 @@ export function AuthorizePage() {
         appName={data.appName}
         onSelectAccount={handleChooseAccount}
         onUseAnother={() => gotoLoginWithHint()}
-        isLoading={submitting}
+        pendingSessionId={chooserPendingSessionId}
+        isLoading={submitting || chooserPendingSessionId !== null}
       />
     );
   }

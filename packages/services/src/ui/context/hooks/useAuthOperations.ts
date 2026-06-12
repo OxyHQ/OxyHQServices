@@ -8,6 +8,8 @@ import { handleAuthError, isInvalidSessionError } from '../../utils/errorHandler
 import type { StorageInterface } from '../../utils/storageHelpers';
 import type { OxyServices } from '@oxyhq/core';
 import { SignatureService } from '@oxyhq/core';
+import { isWebBrowser } from '../../hooks/useWebSSO';
+import { clearActiveAuthuser } from '../../utils/activeAuthuser';
 
 /** Type guard for error objects with optional code and status properties */
 function isErrorWithCodeOrStatus(error: unknown): error is { code?: string; status?: number; message?: string } {
@@ -300,7 +302,19 @@ export const useAuthOperations = ({
 
       try {
         const sessionToLogout = targetSessionId || activeSessionId;
-        await oxyServices.logoutSession(activeSessionId, sessionToLogout);
+        // Web multi-account: when the target session carries an `authuser`
+        // slot index it is backed by an httpOnly `oxy_rt_${n}` cookie. Use
+        // the cookie-cleared logout endpoint so the server can `Set-Cookie`
+        // an immediate expiry alongside revoking the family. Native and
+        // legacy sessions (no `authuser` plumbed yet) fall through to the
+        // bearer-protected endpoint.
+        const targetSession = sessionsRef.current.find((s) => s.sessionId === sessionToLogout);
+        const targetAuthuser = targetSession?.authuser;
+        if (isWebBrowser() && typeof targetAuthuser === 'number') {
+          await oxyServices.logoutSessionByAuthuser(targetAuthuser);
+        } else {
+          await oxyServices.logoutSession(activeSessionId, sessionToLogout);
+        }
 
         const filteredSessions = sessionsRef.current.filter((session) => session.sessionId !== sessionToLogout);
         updateSessions(filteredSessions, { merge: false });
@@ -355,7 +369,27 @@ export const useAuthOperations = ({
     }
 
     try {
-      await oxyServices.logoutAllSessions(activeSessionId);
+      // Semantics intentionally diverge by platform to match user expectation:
+      //   - Web: "Sign out of all accounts" = sign out every device-local
+      //     account on THIS device. The cookie endpoint is the only path
+      //     that can `Set-Cookie` an immediate expiry on every
+      //     `oxy_rt_${n}` slot (plus legacy `oxy_rt`) AND revoke every
+      //     presented family server-side. The bearer-protected
+      //     `logoutAllSessions(activeSessionId)` would only revoke the
+      //     active user's sessions across devices and leave sibling
+      //     accounts' cookies sitting on this device — wrong UX for the
+      //     chooser's "Sign out of all accounts".
+      //   - Native: there are no per-account cookies; "Sign out of all"
+      //     keeps its long-standing "revoke every session of THIS user"
+      //     meaning via the bearer endpoint.
+      // After clearing on web, also drop the persisted active-authuser so
+      // the next cold boot starts from a clean slate.
+      if (isWebBrowser()) {
+        await oxyServices.logoutAllSessionsViaCookie();
+        clearActiveAuthuser();
+      } else {
+        await oxyServices.logoutAllSessions(activeSessionId);
+      }
       await clearSessionState();
     } catch (error) {
       handleAuthError(error, {

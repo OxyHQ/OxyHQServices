@@ -5,6 +5,14 @@ export interface ClientSession {
   lastActive: string;
   userId?: string;
   isCurrent?: boolean;
+  /**
+   * Web-only: the device-local refresh-cookie slot index (0..N) that backs
+   * this session. Populated from `POST /auth/refresh-all` and from login /
+   * signup / fedcm-exchange responses. Required for per-session web token
+   * refresh via `refreshTokenViaCookie({ authuser })` without a bearer token.
+   * Absent on native (RN uses the bearer-protected session id directly).
+   */
+  authuser?: number;
 }
 
 export interface StorageKeys {

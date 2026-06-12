@@ -25,6 +25,7 @@ import { useAuthOperations } from './hooks/useAuthOperations';
 import { useDeviceManagement } from '../hooks/useDeviceManagement';
 import { getStorageKeys, createPlatformStorage, type StorageInterface } from '../utils/storageHelpers';
 import { isInvalidSessionError, isTimeoutOrNetworkError } from '../utils/errorHandlers';
+import { readActiveAuthuser, writeActiveAuthuser } from '../utils/activeAuthuser';
 import type { RouteName } from '../navigation/routes';
 import { showBottomSheet as globalShowBottomSheet } from '../navigation/bottomSheetManager';
 import { useQueryClient } from '@tanstack/react-query';
@@ -97,76 +98,9 @@ export interface OxyContextState {
 
 const OxyContext = createContext<OxyContextState | null>(null);
 
-/**
- * Minimal, decode-only shape of the session access-token JWT claims the
- * `POST /auth/refresh` endpoint returns. We only read `sessionId` (and `userId`
- * as a fallback). The token is already signed and verified server-side; the
- * client decodes the payload purely to recover the session id — it does NOT and
- * MUST NOT verify the signature.
- */
-interface RefreshAccessTokenClaims {
-  sessionId?: string;
-  userId?: string;
-  id?: string;
-}
-
-/**
- * Decode the payload of a JWT WITHOUT verifying its signature.
- *
- * The server (`POST /auth/refresh`) has already minted and signed this access
- * token; we only need to recover the `sessionId` claim from it on cold boot.
- * Returns `null` for any malformed input rather than throwing, so a bad token
- * simply falls through to the unauthenticated path.
- *
- * Implemented with manual base64url decoding (no `jwt-decode` dependency added
- * to `@oxyhq/services`). Works on web (where this cold-boot path runs) via
- * `atob`; if `atob` is unavailable (non-browser runtime) it is treated as
- * undecodable and returns `null`.
- */
-function decodeAccessTokenClaims(token: string): RefreshAccessTokenClaims | null {
-  if (!token || typeof token !== 'string') {
-    return null;
-  }
-  const segments = token.split('.');
-  if (segments.length !== 3) {
-    return null;
-  }
-  const payloadSegment = segments[1];
-  if (!payloadSegment) {
-    return null;
-  }
-  try {
-    const base64 = payloadSegment.replace(/-/g, '+').replace(/_/g, '/');
-    const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), '=');
-    if (typeof atob !== 'function') {
-      return null;
-    }
-    const json = decodeURIComponent(
-      atob(padded)
-        .split('')
-        .map((char) => `%${`00${char.charCodeAt(0).toString(16)}`.slice(-2)}`)
-        .join(''),
-    );
-    const parsed: unknown = JSON.parse(json);
-    if (parsed === null || typeof parsed !== 'object') {
-      return null;
-    }
-    const claims = parsed as Record<string, unknown>;
-    return {
-      sessionId: typeof claims.sessionId === 'string' ? claims.sessionId : undefined,
-      userId: typeof claims.userId === 'string' ? claims.userId : undefined,
-      id: typeof claims.id === 'string' ? claims.id : undefined,
-    };
-  } catch {
-    return null;
-  }
-}
-
-/** Server response shape of `POST /auth/refresh`. */
-interface RefreshCookieResponse {
-  accessToken?: string;
-  sessionId?: string;
-}
+// Active-authuser persistence helpers (web localStorage; native no-op) live in
+// `../utils/activeAuthuser` so the session-management and auth-operations hooks
+// can share them without re-importing this 1k-line context file.
 
 export interface OxyContextProviderProps {
   children: ReactNode;
@@ -519,111 +453,93 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   const onAuthStateChangeRef = useRef(onAuthStateChange);
   onAuthStateChangeRef.current = onAuthStateChange;
 
-  // Cold-boot session restore via the secure refresh cookie (web only).
+  // Cold-boot session restore via the secure refresh cookies (web only).
   //
-  // On a hard reload the in-app, bearer-protected token fetch
-  // (`getTokenBySession` → `/session/token/:id`) 401s because there is no token
-  // in memory yet, which previously cleared the session and bounced the user to
-  // sign-in. Instead we call `POST {apiBaseUrl}/auth/refresh` with
-  // `credentials: 'include'` and NO Authorization header: the browser
-  // automatically attaches the first-party httpOnly `oxy_rt` cookie (set at
-  // login/signup/fedcm-exchange), the server validates + rotates it and returns
-  // a fresh session access token. JS never sees the refresh cookie (httpOnly) —
-  // that is the security property.
+  // Calls `oxyServices.refreshAllSessions()` → `POST /auth/refresh-all` with
+  // `credentials: 'include'`. The server rotates every device-local
+  // `oxy_rt_${authuser}` cookie in parallel and returns one entry per valid
+  // account (Google-style multi-account). On an older server that lacks the
+  // multi-account endpoint, the SDK transparently falls back to the legacy
+  // `/auth/refresh` single-account path and wraps the result in the same
+  // shape, so this caller doesn't branch.
   //
-  // Returns `true` when the session was restored (caller short-circuits the
-  // bearer path); `false` on 401 / no durable cookie / any failure (caller
-  // proceeds unauthenticated through the existing flow — nothing is cleared).
+  // Active-account selection: the persisted `oxy_active_authuser` slot index
+  // wins when it matches a returned account; otherwise the lowest `authuser`
+  // is picked. JS never sees the refresh cookies (httpOnly).
+  //
+  // Returns `true` when at least one session was restored (caller short-
+  // circuits the bearer path); `false` on no signed-in accounts / any failure
+  // (caller proceeds unauthenticated through the existing flow — nothing is
+  // cleared).
   const restoreViaRefreshCookie = useCallback(async (): Promise<boolean> => {
     if (!isWebBrowser()) {
       return false;
     }
 
-    const apiBaseUrl = oxyServices.getBaseURL();
-    if (!apiBaseUrl) {
-      return false;
-    }
-
-    let response: Response;
+    let snapshot;
     try {
-      // Direct credentialed, no-auth POST. We deliberately bypass the SDK's
-      // HttpService here: it would attach the (absent) bearer and does not send
-      // cookies. The refresh cookie is scoped to `Path=/auth/refresh` and sent
-      // automatically same-site.
-      response = await fetch(`${apiBaseUrl.replace(/\/$/, '')}/auth/refresh`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { Accept: 'application/json' },
-      });
+      snapshot = await oxyServices.refreshAllSessions();
     } catch (fetchError) {
       // Offline / network error — fall through to the cached/stored-session flow.
       if (__DEV__) {
-        loggerUtil.debug('Refresh-cookie restore network error (expected when offline)', { component: 'OxyContext', method: 'restoreViaRefreshCookie' }, fetchError as unknown);
+        loggerUtil.debug('Refresh-all cookie restore network error (expected when offline)', { component: 'OxyContext', method: 'restoreViaRefreshCookie' }, fetchError as unknown);
       }
       return false;
     }
 
-    // 401 (no/expired/reused cookie) and any non-2xx → no durable session.
-    if (!response.ok) {
+    if (snapshot.accounts.length === 0) {
       return false;
     }
 
-    let payload: RefreshCookieResponse;
-    try {
-      payload = (await response.json()) as RefreshCookieResponse;
-    } catch {
-      return false;
-    }
+    // Pick the active account: persisted authuser if it still matches a returned
+    // account, otherwise the lowest authuser (deterministic). The server has
+    // already sorted ascending so [0] is the lowest.
+    const persistedAuthuser = readActiveAuthuser();
+    const matched = persistedAuthuser !== null
+      ? snapshot.accounts.find((a) => a.authuser === persistedAuthuser)
+      : undefined;
+    const activeAccount = matched ?? snapshot.accounts[0];
 
-    const accessToken = payload.accessToken;
-    if (!accessToken) {
-      return false;
-    }
+    // Plant the active access token. Sibling accounts' access tokens stay in
+    // the snapshot (the chooser can drive a per-account refresh via
+    // `refreshTokenViaCookie({authuser})` on switch).
+    oxyServices.httpService.setTokens(activeAccount.accessToken);
 
-    // Recover the session id from the (server-signed) access-token claims, or
-    // from the response body if the server included it. Decode-only; the server
-    // already verified the signature.
-    const claims = decodeAccessTokenClaims(accessToken);
-    const sessionId = payload.sessionId ?? claims?.sessionId;
-    if (!sessionId) {
-      // A token with no resolvable session id cannot drive multi-session state.
-      return false;
-    }
-
-    // Plant the fresh access token. The refresh token stays in the httpOnly
-    // cookie and is never touched by JS.
-    oxyServices.httpService.setTokens(accessToken);
-
-    // Fetch the full user with the freshly planted token.
+    // Fetch the full user with the freshly planted token. The refresh-all
+    // payload includes a minimal user shape (id, username, name, avatar,
+    // email, color) — sufficient for the chooser but the auth store wants the
+    // canonical User document for downstream rendering.
     let fullUser: User;
     try {
       fullUser = await oxyServices.getCurrentUser();
     } catch (userError) {
-      // Token planted but profile fetch failed (e.g. transient network). Do not
-      // claim a restored session; fall through so the stored-session flow can
-      // retry. Leave the planted token in place — it is valid and harmless.
+      // Token planted but profile fetch failed (e.g. transient network). Do
+      // not claim a restored session; fall through so the stored-session flow
+      // can retry. Leave the planted token in place — it is valid and harmless.
       if (__DEV__) {
-        loggerUtil.debug('Refresh-cookie restore: getCurrentUser failed', { component: 'OxyContext', method: 'restoreViaRefreshCookie' }, userError as unknown);
+        loggerUtil.debug('Refresh-all cookie restore: getCurrentUser failed', { component: 'OxyContext', method: 'restoreViaRefreshCookie' }, userError as unknown);
       }
       return false;
     }
 
-    const userId = fullUser.id?.toString() ?? claims?.userId ?? '';
+    // Build a ClientSession per returned account so the multi-session store
+    // reflects every device-local slot, not just the active one. The active
+    // account is flagged `isCurrent: true`.
     const now = new Date();
-    const clientSession: ClientSession = {
-      sessionId,
+    const clientSessions: ClientSession[] = snapshot.accounts.map((account) => ({
+      sessionId: account.sessionId,
       deviceId: '',
-      expiresAt: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      expiresAt: account.expiresAt || new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString(),
       lastActive: now.toISOString(),
-      userId,
-      isCurrent: true,
-    };
+      userId: account.user?.id,
+      isCurrent: account.sessionId === activeAccount.sessionId,
+      authuser: account.authuser,
+    }));
 
-    // Restore the active session into the multi-session store (merge: keep any
-    // other sessions intact) and durably persist BEFORE notifying listeners.
-    updateSessionsRef.current([clientSession], { merge: true });
-    setActiveSessionIdRef.current(sessionId);
-    await persistSessionDurably(sessionId);
+    updateSessionsRef.current(clientSessions, { merge: true });
+    setActiveSessionIdRef.current(activeAccount.sessionId);
+    writeActiveAuthuser(activeAccount.authuser);
+    await persistSessionDurably(activeAccount.sessionId);
 
     loginSuccessRef.current(fullUser);
     onAuthStateChangeRef.current?.(fullUser);

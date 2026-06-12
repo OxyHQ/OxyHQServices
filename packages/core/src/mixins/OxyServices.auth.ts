@@ -3,7 +3,12 @@
  *
  * Supports password-based login (email/username) and public key challenge-response.
  */
-import type { User } from '../models/interfaces';
+import type {
+  User,
+  RefreshAllResponse,
+  RefreshAllAccount,
+  RefreshCookieResponse,
+} from '../models/interfaces';
 import type { SessionLoginResponse } from '../models/session';
 import type { OxyServicesBase } from '../OxyServices.base';
 import { OxyAuthenticationError } from '../OxyServices.errors';
@@ -533,6 +538,268 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
         return res;
       } catch (error) {
         throw this.handleError(error);
+      }
+    }
+
+    /**
+     * Refresh every device-local refresh-cookie slot in a single round trip
+     * (Google-style multi-account rebuild).
+     *
+     * Calls `POST {sessionBaseUrl}/auth/refresh-all` with `credentials: 'include'`
+     * and NO bearer. The browser attaches every `oxy_rt*` cookie it has; the
+     * server rotates each in parallel and returns one entry per VALID account.
+     *
+     * Failure handling:
+     * - 401 → no signed-in accounts on this device → returns `{ accounts: [] }`
+     *   (NOT an error; this is the cold-boot "not signed in" path).
+     * - 404 → server is older than the multi-account endpoint. We fall back to
+     *   `POST /auth/refresh` (single-slot) and wrap its response in the
+     *   refresh-all shape so callers can treat the two paths uniformly. The
+     *   fallback entry has `authuser: 0` (the legacy slot maps to slot 0 by
+     *   convention) and a minimal `user` shape — consumers needing the full
+     *   user must fetch it separately. Always exactly one account in this
+     *   shape.
+     * - Any other non-2xx → throws via `handleError`.
+     *
+     * The refresh cookie itself never enters JS — only the rotated access
+     * tokens do. Each access token still needs to be planted via
+     * `setTokens(...)` (or per-account in-memory storage) at the consumer.
+     */
+    async refreshAllSessions(): Promise<RefreshAllResponse> {
+      const url = `${this.getSessionBaseUrl().replace(/\/$/, '')}/auth/refresh-all`;
+
+      let response: Response;
+      try {
+        response = await fetch(url, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { Accept: 'application/json' },
+        });
+      } catch (error) {
+        throw this.handleError(error);
+      }
+
+      if (response.status === 401) {
+        return { accounts: [] };
+      }
+
+      if (response.status === 404) {
+        // Legacy single-account refresh fallback. Wrap the response so the
+        // caller can treat both paths identically.
+        const legacy = await this._refreshCookieRaw();
+        if (!legacy) {
+          return { accounts: [] };
+        }
+        const fallbackAccount: RefreshAllAccount = {
+          authuser: 0,
+          accessToken: legacy.accessToken,
+          expiresAt: legacy.expiresAt,
+          sessionId: this._decodeSessionIdFromAccessToken(legacy.accessToken) ?? '',
+          // Legacy /auth/refresh does NOT project the user shape; the caller
+          // (AuthManager) is expected to hydrate via /users/me after planting.
+          user: null,
+        };
+        return { accounts: [fallbackAccount] };
+      }
+
+      if (!response.ok) {
+        throw this.handleError(
+          new Error(`Refresh-all failed with HTTP ${response.status}`)
+        );
+      }
+
+      const payload = (await response.json()) as { accounts?: unknown };
+      const raw = Array.isArray(payload.accounts) ? payload.accounts : [];
+      const accounts: RefreshAllAccount[] = [];
+
+      for (const entry of raw) {
+        if (entry === null || typeof entry !== 'object') {
+          continue;
+        }
+        const e = entry as {
+          authuser?: number | null;
+          accessToken?: string;
+          expiresAt?: string;
+          sessionId?: string;
+          user?: { id?: string; _id?: string; username?: string; name?: string; avatar?: string | null; email?: string; color?: string | null };
+        };
+        if (!e.accessToken || !e.expiresAt || !e.sessionId || !e.user) {
+          continue;
+        }
+        const userId = e.user.id ?? e.user._id;
+        if (!userId || !e.user.username) {
+          continue;
+        }
+        // Normalise the legacy un-suffixed cookie (`authuser: null` on the
+        // wire) to slot 0. The SDK surface always operates on numeric indices.
+        const authuser = typeof e.authuser === 'number' ? e.authuser : 0;
+        accounts.push({
+          authuser,
+          accessToken: e.accessToken,
+          expiresAt: e.expiresAt,
+          sessionId: e.sessionId,
+          user: {
+            id: userId,
+            username: e.user.username,
+            name: e.user.name,
+            avatar: e.user.avatar ?? null,
+            email: e.user.email,
+            color: e.user.color ?? null,
+          },
+        });
+      }
+
+      return { accounts };
+    }
+
+    /**
+     * Rotate a single refresh-cookie slot and return the fresh access token.
+     *
+     * When `authuser` is provided, the server rotates ONLY that slot
+     * (`oxy_rt_${authuser}`) — sibling accounts on the same device stay
+     * untouched. When omitted, the server picks the lowest indexed slot
+     * present (legacy fallback applies). The refresh cookie itself never
+     * enters JS.
+     *
+     * Returns `null` on 401 (no cookie / expired / reused) so the caller can
+     * fall through cleanly to the unauthenticated path.
+     */
+    async refreshTokenViaCookie(
+      opts: { authuser?: number } = {}
+    ): Promise<RefreshCookieResponse | null> {
+      const result = await this._refreshCookieRaw(opts.authuser);
+      return result;
+    }
+
+    /**
+     * Sign out a single device-local account by its authuser slot index.
+     *
+     * Revokes that slot's refresh-token family and deactivates its session;
+     * sibling indexed slots stay signed in. The browser-side `oxy_rt_${n}`
+     * cookie is cleared by the server's `Set-Cookie` response header.
+     */
+    async logoutSessionByAuthuser(authuser: number): Promise<void> {
+      const url = `${this.getSessionBaseUrl().replace(/\/$/, '')}/auth/logout?authuser=${encodeURIComponent(String(authuser))}`;
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { Accept: 'application/json' },
+        });
+        if (!response.ok && response.status !== 401) {
+          throw new Error(`Logout (authuser=${authuser}) failed with HTTP ${response.status}`);
+        }
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
+    /**
+     * Sign out EVERY device-local account on this device by clearing every
+     * presented refresh-cookie slot at once. Revokes every family + clears
+     * every slot. Always succeeds (idempotent on unknown/garbage tokens).
+     */
+    async logoutAllSessionsViaCookie(): Promise<void> {
+      const url = `${this.getSessionBaseUrl().replace(/\/$/, '')}/auth/logout`;
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { Accept: 'application/json' },
+        });
+        if (!response.ok && response.status !== 401) {
+          throw new Error(`Logout-all failed with HTTP ${response.status}`);
+        }
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
+    /**
+     * Internal: raw `POST /auth/refresh[?authuser=N]` call returning the
+     * minted access token. Returns `null` on 401 / non-2xx. Used as both the
+     * implementation of `refreshTokenViaCookie` and the legacy fallback for
+     * `refreshAllSessions` against older servers.
+     *
+     * @internal
+     */
+    async _refreshCookieRaw(authuser?: number): Promise<RefreshCookieResponse | null> {
+      const base = this.getSessionBaseUrl().replace(/\/$/, '');
+      const url = typeof authuser === 'number'
+        ? `${base}/auth/refresh?authuser=${encodeURIComponent(String(authuser))}`
+        : `${base}/auth/refresh`;
+
+      let response: Response;
+      try {
+        response = await fetch(url, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { Accept: 'application/json' },
+        });
+      } catch (error) {
+        throw this.handleError(error);
+      }
+
+      if (!response.ok) {
+        return null;
+      }
+
+      const payload = (await response.json()) as {
+        accessToken?: unknown;
+        expiresAt?: unknown;
+        authuser?: unknown;
+      };
+      if (typeof payload.accessToken !== 'string' || !payload.accessToken) {
+        return null;
+      }
+      const expiresAt = typeof payload.expiresAt === 'string' ? payload.expiresAt : '';
+      const respAuthuser = typeof payload.authuser === 'number' ? payload.authuser : null;
+      return {
+        accessToken: payload.accessToken,
+        expiresAt,
+        authuser: respAuthuser,
+      };
+    }
+
+    /**
+     * Internal: decode (without verifying) the `sessionId` claim from a
+     * server-signed access token. The server already verified the signature;
+     * the client only reads the claim to drive multi-session state.
+     *
+     * @internal
+     */
+    _decodeSessionIdFromAccessToken(token: string): string | null {
+      if (!token || typeof token !== 'string') {
+        return null;
+      }
+      const segments = token.split('.');
+      if (segments.length !== 3) {
+        return null;
+      }
+      const payloadSegment = segments[1];
+      if (!payloadSegment) {
+        return null;
+      }
+      try {
+        const base64 = payloadSegment.replace(/-/g, '+').replace(/_/g, '/');
+        const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), '=');
+        if (typeof atob !== 'function') {
+          return null;
+        }
+        const json = decodeURIComponent(
+          atob(padded)
+            .split('')
+            .map((char) => `%${`00${char.charCodeAt(0).toString(16)}`.slice(-2)}`)
+            .join(''),
+        );
+        const parsed: unknown = JSON.parse(json);
+        if (parsed === null || typeof parsed !== 'object') {
+          return null;
+        }
+        const claims = parsed as Record<string, unknown>;
+        return typeof claims.sessionId === 'string' ? claims.sessionId : null;
+      } catch {
+        return null;
       }
     }
 

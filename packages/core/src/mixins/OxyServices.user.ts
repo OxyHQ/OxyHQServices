@@ -1,7 +1,15 @@
 /**
  * User Management Methods Mixin
  */
-import type { User, Notification, SearchProfilesResponse, PaginationInfo, PrivacySettings } from '../models/interfaces';
+import type {
+  User,
+  Notification,
+  NotificationPreferences,
+  UserPreferences,
+  SearchProfilesResponse,
+  PaginationInfo,
+  PrivacySettings,
+} from '../models/interfaces';
 import type { OxyServicesBase } from '../OxyServices.base';
 import { buildSearchParams, buildPaginationParams, type PaginationParams } from '../utils/apiUtils';
 import { KeyManager } from '../crypto/keyManager';
@@ -269,6 +277,30 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
       } catch (error) {
         throw this.handleError(error);
       }
+    }
+
+    /**
+     * Update the authenticated user's notification preferences.
+     *
+     * Thin wrapper over `updateProfile` that constrains the patch to known
+     * notification channels — same persistence path, same cache invalidation,
+     * but type-safe at the call site.
+     */
+    async updateNotificationPreferences(
+      preferences: Partial<NotificationPreferences>
+    ): Promise<User> {
+      return this.updateProfile({ notificationPreferences: preferences });
+    }
+
+    /**
+     * Update the authenticated user's general preferences (language, theme,
+     * reduce-motion, timezone). Persisted on the User document via
+     * `PUT /users/me` — same cache-invalidation behaviour as `updateProfile`.
+     */
+    async updateUserPreferences(
+      preferences: Partial<UserPreferences>
+    ): Promise<User> {
+      return this.updateProfile({ userPreferences: preferences });
     }
 
     /**

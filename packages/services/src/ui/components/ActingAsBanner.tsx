@@ -13,7 +13,7 @@ import { useOxy } from '../context/OxyContext';
 /**
  * ActingAsBanner - Shows a subtle banner when the user is acting as a managed account.
  *
- * - Tap to open the AccountSwitcher screen.
+ * - Tap to open the ManageAccount screen (account switcher lives in AccountMenu).
  * - Long-press to switch back to the primary account immediately.
  *
  * Place this component in your app's layout where you want the banner to appear
@@ -39,7 +39,7 @@ const ActingAsBanner: React.FC = () => {
       : activeAccount.name || activeAccount.username;
 
   const handlePress = () => {
-    showBottomSheet?.('AccountSwitcher');
+    showBottomSheet?.('ManageAccount');
   };
 
   const handleLongPress = () => {

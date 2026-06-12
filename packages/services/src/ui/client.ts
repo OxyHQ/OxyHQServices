@@ -16,7 +16,11 @@ export { default as Avatar } from './components/Avatar';
 export { default as FollowButton } from './components/FollowButton';
 export { default as OxyPayButton } from './components/OxyPayButton';
 export { FontLoader, setupFonts } from './components/FontLoader';
-export { OxyIcon } from './components/icon';
+export { default as OxyIcon } from './components/icon/OxyIcon';
+export { default as AccountMenu } from './components/AccountMenu';
+export type { AccountMenuProps } from './components/AccountMenu';
+export { default as AccountMenuButton } from './components/AccountMenuButton';
+export type { AccountMenuButtonProps } from './components/AccountMenuButton';
 
 // Context
 export { useOxy } from './context/OxyContext';
@@ -24,12 +28,13 @@ export { useOxy } from './context/OxyContext';
 // Hooks
 export { useAuth } from './hooks/useAuth';
 export type { AuthState, AuthActions, UseAuthReturn } from './hooks/useAuth';
-export { useFollow } from './hooks';
+export { useFollow } from './hooks/useFollow';
 export { useStorage } from './hooks/useStorage';
 export type { UseStorageOptions, UseStorageResult } from './hooks/useStorage';
 
 // Screens
 export { default as ProfileScreen } from './screens/ProfileScreen';
+export { default as ManageAccountScreen } from './screens/ManageAccountScreen';
 
 // Stores
 export { useAuthStore } from './stores/authStore';

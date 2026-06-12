@@ -78,7 +78,7 @@ export interface AuthActions {
 export interface UseAuthReturn extends AuthState, AuthActions {
   /** Access to full OxyServices instance for advanced usage */
   oxyServices: ReturnType<typeof useOxy>['oxyServices'];
-  /** Open a bottom sheet screen (e.g. 'AccountSettings', 'FileManagement') */
+  /** Open a bottom sheet screen (e.g. 'ManageAccount', 'FileManagement') */
   showBottomSheet: ReturnType<typeof useOxy>['showBottomSheet'];
   /** Open the avatar picker bottom sheet */
   openAvatarPicker: ReturnType<typeof useOxy>['openAvatarPicker'];
