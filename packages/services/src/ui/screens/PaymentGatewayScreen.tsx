@@ -9,23 +9,21 @@ import {
     useWindowDimensions,
 } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
-import { useThemeColors } from '../styles';
+import { useThemeColors } from '../styles/theme';
 import { normalizeTheme } from '../utils/themeUtils';
 import { Button } from '@oxyhq/bloom/button';
 import { Ionicons } from '@expo/vector-icons';
 import { useI18n } from '../hooks/useI18n';
 import QRCode from 'react-native-qrcode-svg';
 
-import {
-    PaymentSummaryStep,
-    PaymentMethodStep,
-    PaymentDetailsStep,
-    PaymentReviewStep,
-    PaymentSuccessStep,
-    PAYMENT_METHODS,
-    createPaymentStyles,
-} from '../components/payment';
-import type { PaymentItem, PaymentGatewayResult, CardDetails } from '../components/payment';
+import PaymentSummaryStep from '../components/payment/PaymentSummaryStep';
+import PaymentMethodStep from '../components/payment/PaymentMethodStep';
+import PaymentDetailsStep from '../components/payment/PaymentDetailsStep';
+import PaymentReviewStep from '../components/payment/PaymentReviewStep';
+import PaymentSuccessStep from '../components/payment/PaymentSuccessStep';
+import { PAYMENT_METHODS } from '../components/payment/constants';
+import { createPaymentStyles } from '../components/payment/paymentStyles';
+import type { PaymentItem, PaymentGatewayResult, CardDetails } from '../components/payment/types';
 
 export type { PaymentItem, PaymentGatewayResult };
 
@@ -166,7 +164,7 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
         if (onPaymentResult) {
             onPaymentResult({ success: true });
         }
-        navigate?.('AccountOverview');
+        navigate?.('ManageAccount');
     }, [onPaymentResult, navigate]);
 
     const handleClose = useCallback(() => {

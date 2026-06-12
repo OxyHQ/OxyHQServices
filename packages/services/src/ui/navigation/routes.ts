@@ -8,12 +8,8 @@ import type { BaseScreenProps } from '../types/navigation';
 // Define all available route names
 export type RouteName =
     | 'OxyAuth'          // Sign in with Oxy (QR code / deep link to Accounts app)
-    | 'AccountOverview'
-    | 'AccountSettings'
-    | 'AccountCenter'
-    | 'AccountSwitcher'
+    | 'ManageAccount'    // Unified "Manage your Oxy Account" surface
     | 'AccountVerification'
-    | 'SessionManagement'
     | 'PaymentGateway'
     | 'Profile'
     | 'LanguageSelector'
@@ -41,18 +37,17 @@ export type RouteName =
     | 'FollowersList'  // List of user's followers
     | 'FollowingList' // List of users being followed
     | 'CreateManagedAccount' // Create a new managed sub-account
-    | 'AvatarCrop'; // Square-crop editor presented before avatar upload
+    | 'AvatarCrop' // Square-crop editor presented before avatar upload
+    | 'Notifications' // Per-channel notification preferences
+    | 'ConnectedApps' // FedCM-authorized RP apps the user can revoke
+    | 'Preferences'; // General user preferences (theme, reduce-motion, etc.)
 
 // Lazy screen loaders - functions that return screen components on-demand
 // This breaks the require cycle by deferring imports until screens are actually needed
 const screenLoaders: Record<RouteName, () => ComponentType<BaseScreenProps>> = {
     OxyAuth: () => require('../screens/OxyAuthScreen').default,
-    AccountOverview: () => require('../screens/AccountOverviewScreen').default,
-    AccountSettings: () => require('../screens/AccountSettingsScreen').default,
-    AccountCenter: () => require('../screens/AccountCenterScreen').default,
-    AccountSwitcher: () => require('../screens/AccountSwitcherScreen').default,
+    ManageAccount: () => require('../screens/ManageAccountScreen').default,
     AccountVerification: () => require('../screens/AccountVerificationScreen').default,
-    SessionManagement: () => require('../screens/SessionManagementScreen').default,
     PaymentGateway: () => require('../screens/PaymentGatewayScreen').default,
     Profile: () => require('../screens/ProfileScreen').default,
     LanguageSelector: () => require('../screens/LanguageSelectorScreen').default,
@@ -84,6 +79,9 @@ const screenLoaders: Record<RouteName, () => ComponentType<BaseScreenProps>> = {
     FollowingList: () => require('../screens/FollowingListScreen').default,
     CreateManagedAccount: () => require('../screens/CreateManagedAccountScreen').default,
     AvatarCrop: () => require('../screens/AvatarCropScreen').default,
+    Notifications: () => require('../screens/NotificationsScreen').default,
+    ConnectedApps: () => require('../screens/ConnectedAppsScreen').default,
+    Preferences: () => require('../screens/PreferencesScreen').default,
 };
 
 // Cache loaded components to avoid re-requiring

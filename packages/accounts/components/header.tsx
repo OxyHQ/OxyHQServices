@@ -94,7 +94,7 @@ export function Header({ }: HeaderProps) {
     }, []);
 
     const handleAvatarPress = useCallback(() => {
-        showBottomSheet?.('AccountOverview');
+        showBottomSheet?.('ManageAccount');
     }, [showBottomSheet]);
 
     const handleMenuPress = useCallback(() => {

@@ -1,0 +1,534 @@
+import type React from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+    View,
+    Text,
+    TouchableOpacity,
+    StyleSheet,
+    ScrollView,
+    Modal,
+    Pressable,
+    Platform,
+    ActivityIndicator,
+    type ViewStyle,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { toast, useDialogControl, Dialog } from '@oxyhq/bloom';
+import { useTheme } from '@oxyhq/bloom/theme';
+import Avatar from './Avatar';
+import { useOxy } from '../context/OxyContext';
+import { useI18n } from '../hooks/useI18n';
+import { logger as loggerUtil } from '@oxyhq/core';
+import { buildAccountRows, type AccountRow } from './accountMenuRows';
+
+export interface AccountMenuProps {
+    open: boolean;
+    onClose: () => void;
+    onNavigateManage: () => void;
+    onAddAccount: () => void;
+    /** Optional anchor coords (web only). Native ignores this and uses bottom-sheet style. */
+    anchor?: { top: number; right: number } | null;
+}
+
+const isWeb = Platform.OS === 'web';
+
+/**
+ * Reusable account menu modeled after the Google account chooser. Opens from
+ * the avatar entry point (`AccountMenuButton`) or any other trigger.
+ *
+ * Reads everything it needs from `useOxy()` — never receive a session via
+ * props. Renders as a popover anchored to the trigger on web, and as a
+ * full-width bottom-sheet style modal on native.
+ */
+const AccountMenu: React.FC<AccountMenuProps> = ({
+    open,
+    onClose,
+    onNavigateManage,
+    onAddAccount,
+    anchor,
+}) => {
+    const {
+        user,
+        sessions,
+        activeSessionId,
+        switchSession,
+        logout,
+        logoutAll,
+        oxyServices,
+    } = useOxy();
+    const { t, locale } = useI18n();
+    const bloomTheme = useTheme();
+
+    const [busySessionId, setBusySessionId] = useState<string | null>(null);
+    const [signingOut, setSigningOut] = useState(false);
+    const [signingOutAll, setSigningOutAll] = useState(false);
+
+    const signOutDialog = useDialogControl();
+    const signOutAllDialog = useDialogControl();
+
+    const containerRef = useRef<View | null>(null);
+    const firstActionRef = useRef<View | null>(null);
+
+    const rows = useMemo<AccountRow[]>(() => buildAccountRows({
+        sessions,
+        activeSessionId,
+        user,
+        locale,
+        getAvatarUrl: (avatarId) => oxyServices.getFileDownloadUrl(avatarId, 'thumb'),
+    }), [sessions, activeSessionId, user, locale, oxyServices]);
+
+    const activeRow = useMemo<AccountRow | null>(() => {
+        return rows.find((r) => r.isActive) ?? null;
+    }, [rows]);
+
+    const inactiveRows = useMemo<AccountRow[]>(() => {
+        return rows.filter((r) => !r.isActive);
+    }, [rows]);
+
+    const handleSwitch = useCallback(async (sessionId: string) => {
+        if (sessionId === activeSessionId || busySessionId) {
+            return;
+        }
+        setBusySessionId(sessionId);
+        try {
+            await switchSession(sessionId);
+            toast.success(t('accountSwitcher.toasts.switchSuccess') || 'Switched account');
+            onClose();
+        } catch (error) {
+            if (!__DEV__) {
+                loggerUtil.warn('Switch account failed', { component: 'AccountMenu' }, error as unknown);
+            }
+            toast.error(t('accountSwitcher.toasts.switchFailed') || 'Failed to switch account');
+        } finally {
+            setBusySessionId(null);
+        }
+    }, [activeSessionId, busySessionId, switchSession, t, onClose]);
+
+    const performSignOut = useCallback(async () => {
+        if (signingOut) {
+            return;
+        }
+        setSigningOut(true);
+        try {
+            await logout();
+            toast.success(t('common.actions.signedOut') || 'Signed out');
+            onClose();
+        } catch (error) {
+            loggerUtil.warn('Sign out failed', { component: 'AccountMenu' }, error as unknown);
+            toast.error(t('common.errors.signOutFailed') || 'Failed to sign out');
+        } finally {
+            setSigningOut(false);
+        }
+    }, [signingOut, logout, t, onClose]);
+
+    const performSignOutAll = useCallback(async () => {
+        if (signingOutAll) {
+            return;
+        }
+        setSigningOutAll(true);
+        try {
+            await logoutAll();
+            toast.success(t('accountSwitcher.toasts.signOutAllSuccess') || 'Signed out of all accounts');
+            onClose();
+        } catch (error) {
+            loggerUtil.warn('Sign out all failed', { component: 'AccountMenu' }, error as unknown);
+            toast.error(t('common.errors.signOutAllFailed') || 'Failed to sign out of all accounts');
+        } finally {
+            setSigningOutAll(false);
+        }
+    }, [signingOutAll, logoutAll, t, onClose]);
+
+    // Escape-to-close + focus management (web only).
+    useEffect(() => {
+        if (!open || !isWeb || typeof document === 'undefined') {
+            return undefined;
+        }
+        const onKey = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+                event.stopPropagation();
+                onClose();
+            }
+        };
+        document.addEventListener('keydown', onKey, true);
+        return () => document.removeEventListener('keydown', onKey, true);
+    }, [open, onClose]);
+
+    if (!open) {
+        return null;
+    }
+
+    const overlayStyles: ViewStyle = isWeb
+        ? styles.webOverlay
+        : styles.nativeOverlay;
+
+    const panelStyles: ViewStyle[] = isWeb
+        ? [
+            styles.panelBase,
+            styles.panelWeb,
+            anchor
+                ? { top: anchor.top, right: anchor.right }
+                : { top: 64, right: 16 },
+            { backgroundColor: bloomTheme.colors.background, borderColor: bloomTheme.colors.border },
+        ]
+        : [
+            styles.panelBase,
+            styles.panelNative,
+            { backgroundColor: bloomTheme.colors.background },
+        ];
+
+    const content = (
+        <View
+            ref={containerRef}
+            style={panelStyles}
+            accessibilityRole="menu"
+            accessibilityLabel={t('accountMenu.label') || 'Account menu'}
+        >
+            {/* 1) Header */}
+            {activeRow ? (
+                <View style={styles.header}>
+                    <Avatar
+                        uri={activeRow.avatarUri}
+                        name={activeRow.displayName}
+                        size={64}
+                    />
+                    <Text
+                        style={[styles.headerName, { color: bloomTheme.colors.text }]}
+                        numberOfLines={1}
+                    >
+                        {activeRow.displayName}
+                    </Text>
+                    {activeRow.secondary ? (
+                        <Text
+                            style={[styles.headerSecondary, { color: bloomTheme.colors.textSecondary }]}
+                            numberOfLines={1}
+                        >
+                            {activeRow.secondary}
+                        </Text>
+                    ) : null}
+                </View>
+            ) : (
+                <View style={styles.header}>
+                    <Text style={[styles.headerName, { color: bloomTheme.colors.text }]}>
+                        {t('common.status.notSignedIn') || 'Not signed in'}
+                    </Text>
+                </View>
+            )}
+
+            {/* 2) Manage account */}
+            <TouchableOpacity
+                ref={firstActionRef as React.RefObject<View>}
+                accessibilityRole="menuitem"
+                accessibilityLabel={t('accountMenu.manage') || 'Manage your Oxy Account'}
+                style={[styles.primaryButton, { borderColor: bloomTheme.colors.border }]}
+                onPress={() => {
+                    onClose();
+                    onNavigateManage();
+                }}
+            >
+                <Text style={[styles.primaryButtonText, { color: bloomTheme.colors.primary }]}>
+                    {t('accountMenu.manage') || 'Manage your Oxy Account'}
+                </Text>
+            </TouchableOpacity>
+
+            {/* 3) Account list */}
+            {rows.length > 0 ? (
+                <ScrollView
+                    style={styles.list}
+                    contentContainerStyle={styles.listContent}
+                    showsVerticalScrollIndicator={false}
+                >
+                    {rows.map((row) => {
+                        const isBusy = busySessionId === row.sessionId;
+                        return (
+                            <TouchableOpacity
+                                key={`account-${row.sessionId}`}
+                                accessibilityRole="menuitem"
+                                accessibilityLabel={row.displayName}
+                                accessibilityState={{ selected: row.isActive }}
+                                onPress={() => handleSwitch(row.sessionId)}
+                                disabled={row.isActive || isBusy}
+                                style={[
+                                    styles.row,
+                                    row.isActive && {
+                                        backgroundColor: bloomTheme.colors.primarySubtle,
+                                    },
+                                ]}
+                            >
+                                <Avatar
+                                    uri={row.avatarUri}
+                                    name={row.displayName}
+                                    size={36}
+                                />
+                                <View style={styles.rowInfo}>
+                                    <Text
+                                        style={[styles.rowName, { color: bloomTheme.colors.text }]}
+                                        numberOfLines={1}
+                                    >
+                                        {row.displayName}
+                                    </Text>
+                                    {row.secondary ? (
+                                        <Text
+                                            style={[styles.rowSecondary, { color: bloomTheme.colors.textSecondary }]}
+                                            numberOfLines={1}
+                                        >
+                                            {row.secondary}
+                                        </Text>
+                                    ) : null}
+                                </View>
+                                {isBusy ? (
+                                    <ActivityIndicator color={bloomTheme.colors.primary} size="small" />
+                                ) : row.isActive ? (
+                                    <Ionicons
+                                        name="checkmark-circle"
+                                        size={20}
+                                        color={bloomTheme.colors.primary}
+                                    />
+                                ) : null}
+                            </TouchableOpacity>
+                        );
+                    })}
+                </ScrollView>
+            ) : null}
+
+            {/* 4) Add another account */}
+            <TouchableOpacity
+                accessibilityRole="menuitem"
+                accessibilityLabel={t('accountMenu.addAnother') || 'Add another account'}
+                onPress={() => {
+                    onClose();
+                    onAddAccount();
+                }}
+                style={[styles.row, styles.actionRow]}
+            >
+                <View
+                    style={[
+                        styles.actionIcon,
+                        { backgroundColor: bloomTheme.colors.primarySubtle },
+                    ]}
+                >
+                    <Ionicons
+                        name="person-add-outline"
+                        size={18}
+                        color={bloomTheme.colors.primary}
+                    />
+                </View>
+                <View style={styles.rowInfo}>
+                    <Text style={[styles.rowName, { color: bloomTheme.colors.text }]}>
+                        {t('accountMenu.addAnother') || 'Add another account'}
+                    </Text>
+                </View>
+            </TouchableOpacity>
+
+            {/* 5) Sign out + sign out of all */}
+            <View style={[styles.footer, { borderTopColor: bloomTheme.colors.border }]}>
+                <TouchableOpacity
+                    accessibilityRole="menuitem"
+                    accessibilityLabel={t('common.actions.signOut') || 'Sign out'}
+                    onPress={() => signOutDialog.open()}
+                    disabled={signingOut || signingOutAll}
+                    style={styles.footerButton}
+                >
+                    {signingOut ? (
+                        <ActivityIndicator color={bloomTheme.colors.error} size="small" />
+                    ) : (
+                        <Text style={[styles.footerButtonText, { color: bloomTheme.colors.error }]}>
+                            {t('common.actions.signOut') || 'Sign out'}
+                        </Text>
+                    )}
+                </TouchableOpacity>
+                {rows.length > 1 ? (
+                    <TouchableOpacity
+                        accessibilityRole="menuitem"
+                        accessibilityLabel={t('accountMenu.signOutAll') || 'Sign out of all accounts'}
+                        onPress={() => signOutAllDialog.open()}
+                        disabled={signingOut || signingOutAll}
+                        style={styles.footerButton}
+                    >
+                        {signingOutAll ? (
+                            <ActivityIndicator color={bloomTheme.colors.error} size="small" />
+                        ) : (
+                            <Text style={[styles.footerButtonText, { color: bloomTheme.colors.error }]}>
+                                {t('accountMenu.signOutAll') || 'Sign out of all accounts'}
+                            </Text>
+                        )}
+                    </TouchableOpacity>
+                ) : null}
+            </View>
+        </View>
+    );
+
+    return (
+        <Modal
+            visible={open}
+            transparent
+            animationType={isWeb ? 'fade' : 'slide'}
+            onRequestClose={onClose}
+        >
+            <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t('common.actions.close') || 'Close'}
+                onPress={onClose}
+                style={overlayStyles}
+            >
+                {/* Stop propagation: tapping the panel must not close it. */}
+                <Pressable onPress={() => undefined} style={styles.panelTouchable}>
+                    {content}
+                </Pressable>
+            </Pressable>
+
+            <Dialog
+                control={signOutDialog}
+                title={t('common.actions.signOut') || 'Sign out'}
+                description={t('common.confirms.signOut') || 'Are you sure you want to sign out?'}
+                actions={[
+                    {
+                        label: t('common.actions.signOut') || 'Sign out',
+                        color: 'destructive',
+                        onPress: performSignOut,
+                    },
+                    { label: t('common.cancel') || 'Cancel', color: 'cancel' },
+                ]}
+            />
+            <Dialog
+                control={signOutAllDialog}
+                title={t('accountMenu.signOutAll') || 'Sign out of all accounts'}
+                description={t('common.confirms.signOutAll') || 'Are you sure you want to sign out of all accounts?'}
+                actions={[
+                    {
+                        label: t('accountMenu.signOutAll') || 'Sign out of all accounts',
+                        color: 'destructive',
+                        onPress: performSignOutAll,
+                    },
+                    { label: t('common.cancel') || 'Cancel', color: 'cancel' },
+                ]}
+            />
+        </Modal>
+    );
+};
+
+const styles = StyleSheet.create({
+    webOverlay: {
+        flex: 1,
+        backgroundColor: 'transparent',
+    },
+    nativeOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.32)',
+        justifyContent: 'flex-end',
+    },
+    panelTouchable: {
+        // Pressable wrapper that owns no styling — just absorbs taps.
+    },
+    panelBase: {
+        borderRadius: 24,
+        paddingVertical: 12,
+        shadowColor: '#000',
+        shadowOpacity: 0.18,
+        shadowRadius: 24,
+        shadowOffset: { width: 0, height: 8 },
+        elevation: 12,
+        overflow: 'hidden',
+    },
+    panelWeb: {
+        position: 'absolute',
+        width: 360,
+        maxHeight: '85%',
+        borderWidth: 1,
+    },
+    panelNative: {
+        marginHorizontal: 0,
+        borderTopLeftRadius: 28,
+        borderTopRightRadius: 28,
+        borderBottomLeftRadius: 0,
+        borderBottomRightRadius: 0,
+        paddingTop: 20,
+        paddingBottom: 24,
+        maxHeight: '85%',
+    },
+    header: {
+        alignItems: 'center',
+        paddingHorizontal: 20,
+        paddingVertical: 16,
+    },
+    headerName: {
+        fontSize: 18,
+        fontWeight: '600',
+        marginTop: 12,
+        textAlign: 'center',
+    },
+    headerSecondary: {
+        fontSize: 14,
+        marginTop: 4,
+        textAlign: 'center',
+    },
+    primaryButton: {
+        marginHorizontal: 20,
+        marginBottom: 12,
+        paddingVertical: 12,
+        paddingHorizontal: 16,
+        borderRadius: 999,
+        borderWidth: 1,
+        alignItems: 'center',
+    },
+    primaryButtonText: {
+        fontSize: 14,
+        fontWeight: '600',
+    },
+    list: {
+        maxHeight: 280,
+    },
+    listContent: {
+        paddingHorizontal: 12,
+        paddingBottom: 4,
+    },
+    row: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 10,
+        paddingHorizontal: 12,
+        borderRadius: 16,
+        marginVertical: 2,
+    },
+    actionRow: {
+        marginHorizontal: 12,
+        marginTop: 4,
+    },
+    actionIcon: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    rowInfo: {
+        flex: 1,
+        marginLeft: 12,
+    },
+    rowName: {
+        fontSize: 15,
+        fontWeight: '500',
+    },
+    rowSecondary: {
+        fontSize: 13,
+        marginTop: 2,
+    },
+    footer: {
+        marginTop: 12,
+        paddingTop: 8,
+        paddingHorizontal: 12,
+        borderTopWidth: StyleSheet.hairlineWidth,
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        justifyContent: 'space-around',
+    },
+    footerButton: {
+        paddingVertical: 10,
+        paddingHorizontal: 12,
+    },
+    footerButtonText: {
+        fontSize: 14,
+        fontWeight: '600',
+    },
+});
+
+export default AccountMenu;

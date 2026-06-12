@@ -1060,6 +1060,7 @@
       "resetPassword": "Reset Password"
     },
     "cancel": "Cancel",
+    "revoke": "Revoke",
     "retry": "Retry",
     "save": "Save",
     "saved": "Saved successfully",
@@ -1411,6 +1412,88 @@
     "confirms": {
       "deleteFile": "Are you sure you want to delete \"{{filename}}\"? This action cannot be undone.",
       "deleteFiles": "Are you sure you want to delete {{count}} file(s)? This action cannot be undone."
+    }
+  },
+  "notifications": {
+    "title": "Notifications",
+    "subtitle": "Manage push, email, and security alerts",
+    "updateError": "Failed to update notification preferences",
+    "sections": {
+      "channels": "Channels",
+      "alerts": "Alerts",
+      "marketing": "Marketing"
+    },
+    "items": {
+      "push": {
+        "title": "Push notifications",
+        "subtitle": "Real-time alerts on your devices"
+      },
+      "emailDigest": {
+        "title": "Email digest",
+        "subtitle": "Periodic summary of your account activity"
+      },
+      "securityAlerts": {
+        "title": "Security alerts",
+        "subtitle": "Sign-ins, recovery codes, and key changes"
+      },
+      "marketingEmails": {
+        "title": "Marketing emails",
+        "subtitle": "Product news and occasional offers"
+      }
+    }
+  },
+  "preferences": {
+    "title": "Preferences",
+    "subtitle": "Theme, motion, and regional settings",
+    "sections": {
+      "appearance": "Appearance",
+      "language": "Language",
+      "region": "Region"
+    },
+    "theme": {
+      "light": "Light",
+      "dark": "Dark",
+      "system": "System default"
+    },
+    "items": {
+      "theme": {
+        "title": "Theme"
+      },
+      "reduceMotion": {
+        "title": "Reduce motion",
+        "subtitle": "Minimise animations across Oxy apps",
+        "systemOn": "Following system: reduce motion is on"
+      },
+      "language": {
+        "title": "Language"
+      },
+      "timezone": {
+        "title": "Timezone",
+        "unknown": "Unable to detect timezone"
+      },
+      "about": {
+        "title": "About preferences",
+        "subtitle": "Preferences sync across every Oxy app you sign into"
+      }
+    }
+  },
+  "connectedApps": {
+    "title": "Connected apps",
+    "subtitle": "Manage third-party app access",
+    "empty": {
+      "title": "No connected apps",
+      "subtitle": "Apps you authorize to sign in with your Oxy account will appear here"
+    },
+    "item": {
+      "lastUsed": "Last used {{relative}}"
+    },
+    "confirm": {
+      "title": "Revoke access",
+      "message": "Revoke {{name}}'s access to your Oxy account?"
+    },
+    "toasts": {
+      "revoked": "Revoked access for {{name}}",
+      "revokeFailed": "Failed to revoke access"
     }
   }
 }

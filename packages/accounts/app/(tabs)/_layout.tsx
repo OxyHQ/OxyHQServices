@@ -98,7 +98,7 @@ export default function TabLayout() {
   }, [refreshSessions]);
 
   const handleDevices = useCallback(() => {
-    showBottomSheet?.('SessionManagement');
+    showBottomSheet?.('ManageAccount');
   }, [showBottomSheet]);
 
   const handleScanQR = useCallback(() => {

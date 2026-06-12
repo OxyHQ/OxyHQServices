@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useQuery, useQueries, useQueryClient } from '@tanstack/react-query';
 import { authenticatedApiCall } from '@oxyhq/core';
-import type { User } from '@oxyhq/core';
+import type { AuthorizedApp, User } from '@oxyhq/core';
 import { queryKeys } from './queryKeys';
 import { mutationKeys } from '../mutations/mutationKeys';
 import { useOxy } from '../../context/OxyContext';
@@ -201,6 +201,30 @@ export const useUsersBySessions = (sessionIds: string[], options?: { enabled?: b
     enabled: (options?.enabled !== false) && sessionIds.length > 0,
     staleTime: 5 * 60 * 1000,
     gcTime: 30 * 60 * 1000,
+  });
+};
+
+/**
+ * List the authenticated user's authorized RP apps (FedCM grants).
+ *
+ * Returns the intersection of the user's grants with the currently-approved
+ * RP catalog. Drives the "Connected apps" management screen.
+ */
+export const useAuthorizedApps = (options?: { enabled?: boolean }) => {
+  const { oxyServices, activeSessionId, isAuthenticated } = useOxy();
+
+  return useQuery<AuthorizedApp[]>({
+    queryKey: queryKeys.connectedApps.list(),
+    queryFn: async () => {
+      return authenticatedApiCall<AuthorizedApp[]>(
+        oxyServices,
+        activeSessionId,
+        () => oxyServices.listAuthorizedApps()
+      );
+    },
+    enabled: (options?.enabled !== false) && isAuthenticated,
+    staleTime: 30 * 1000, // 30 seconds — short, drives a management UI
+    gcTime: 5 * 60 * 1000,
   });
 };
 

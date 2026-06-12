@@ -14,6 +14,12 @@ export const mutationKeys = {
     uploadAvatar: ['mutation', 'account', 'uploadAvatar'] as const,
     updateSettings: ['mutation', 'account', 'updateSettings'] as const,
     updatePrivacySettings: ['mutation', 'account', 'updatePrivacySettings'] as const,
+    updateNotificationPreferences: [
+      'mutation',
+      'account',
+      'updateNotificationPreferences',
+    ] as const,
+    updateUserPreferences: ['mutation', 'account', 'updateUserPreferences'] as const,
     uploadFile: ['mutation', 'account', 'uploadFile'] as const,
   },
 
@@ -24,5 +30,10 @@ export const mutationKeys = {
     logoutAll: ['mutation', 'session', 'logoutAll'] as const,
     updateDeviceName: ['mutation', 'session', 'updateDeviceName'] as const,
     removeDevice: ['mutation', 'session', 'removeDevice'] as const,
+  },
+
+  // Connected apps (FedCM grants)
+  connectedApps: {
+    revoke: ['mutation', 'connectedApps', 'revoke'] as const,
   },
 } as const;

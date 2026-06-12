@@ -284,6 +284,7 @@
       "resetPassword": "Restablecer contraseña"
     },
     "cancel": "Cancelar",
+    "revoke": "Revocar",
     "retry": "Reintentar",
     "save": "Guardar",
     "saved": "Guardado correctamente",
@@ -326,13 +327,25 @@
     "actions": {
       "manage": "Gestionar"
     },
-    "loadingAdditional": { "title": "Cargando cuentas...", "subtitle": "Espera mientras cargamos tus cuentas adicionales" },
+    "loadingAdditional": {
+      "title": "Cargando cuentas...",
+      "subtitle": "Espera mientras cargamos tus cuentas adicionales"
+    },
     "additional": {
-      "noAccounts": { "title": "No hay otras cuentas", "subtitle": "Añade otra cuenta para cambiar entre ellas" }
+      "noAccounts": {
+        "title": "No hay otras cuentas",
+        "subtitle": "Añade otra cuenta para cambiar entre ellas"
+      }
     },
     "items": {
-      "addAccount": { "title": "Añadir otra cuenta", "subtitle": "Inicia sesión con otra cuenta" },
-      "signOutAll": { "title": "Cerrar sesión en todas las cuentas", "subtitle": "Eliminar todas las cuentas de este dispositivo" },
+      "addAccount": {
+        "title": "Añadir otra cuenta",
+        "subtitle": "Inicia sesión con otra cuenta"
+      },
+      "signOutAll": {
+        "title": "Cerrar sesión en todas las cuentas",
+        "subtitle": "Eliminar todas las cuentas de este dispositivo"
+      },
       "accountSwitcher": {
         "switchPrompt": "¿Cambiar a {{username}}?",
         "titleShow": "Mostrar conmutador de cuentas",
@@ -1399,6 +1412,88 @@
     "confirms": {
       "deleteFile": "¿Seguro que quieres eliminar \"{{filename}}\"? Esta acción no se puede deshacer.",
       "deleteFiles": "¿Seguro que quieres eliminar {{count}} archivo(s)? Esta acción no se puede deshacer."
+    }
+  },
+  "notifications": {
+    "title": "Notificaciones",
+    "subtitle": "Gestiona las alertas push, por correo y de seguridad",
+    "updateError": "No se han podido actualizar las preferencias de notificación",
+    "sections": {
+      "channels": "Canales",
+      "alerts": "Alertas",
+      "marketing": "Marketing"
+    },
+    "items": {
+      "push": {
+        "title": "Notificaciones push",
+        "subtitle": "Alertas en tiempo real en tus dispositivos"
+      },
+      "emailDigest": {
+        "title": "Resumen por correo",
+        "subtitle": "Resumen periódico de la actividad de tu cuenta"
+      },
+      "securityAlerts": {
+        "title": "Alertas de seguridad",
+        "subtitle": "Inicios de sesión, códigos de recuperación y cambios de claves"
+      },
+      "marketingEmails": {
+        "title": "Correos de marketing",
+        "subtitle": "Novedades del producto y ofertas ocasionales"
+      }
+    }
+  },
+  "preferences": {
+    "title": "Preferencias",
+    "subtitle": "Tema, movimiento y configuración regional",
+    "sections": {
+      "appearance": "Apariencia",
+      "language": "Idioma",
+      "region": "Región"
+    },
+    "theme": {
+      "light": "Claro",
+      "dark": "Oscuro",
+      "system": "Predeterminado del sistema"
+    },
+    "items": {
+      "theme": {
+        "title": "Tema"
+      },
+      "reduceMotion": {
+        "title": "Reducir movimiento",
+        "subtitle": "Minimizar animaciones en todas las apps de Oxy",
+        "systemOn": "Siguiendo al sistema: reducir movimiento activado"
+      },
+      "language": {
+        "title": "Idioma"
+      },
+      "timezone": {
+        "title": "Zona horaria",
+        "unknown": "No se ha podido detectar la zona horaria"
+      },
+      "about": {
+        "title": "Acerca de las preferencias",
+        "subtitle": "Las preferencias se sincronizan en todas las apps de Oxy en las que inicies sesión"
+      }
+    }
+  },
+  "connectedApps": {
+    "title": "Aplicaciones conectadas",
+    "subtitle": "Gestiona el acceso de aplicaciones de terceros",
+    "empty": {
+      "title": "Sin aplicaciones conectadas",
+      "subtitle": "Las apps que autorices a iniciar sesión con tu cuenta Oxy aparecerán aquí"
+    },
+    "item": {
+      "lastUsed": "Último uso: {{relative}}"
+    },
+    "confirm": {
+      "title": "Revocar acceso",
+      "message": "¿Revocar el acceso de {{name}} a tu cuenta Oxy?"
+    },
+    "toasts": {
+      "revoked": "Acceso revocado para {{name}}",
+      "revokeFailed": "No se ha podido revocar el acceso"
     }
   }
 }

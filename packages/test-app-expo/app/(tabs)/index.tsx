@@ -50,7 +50,7 @@ export default function HomeScreen() {
       return;
     }
 
-    showBottomSheet('AccountSettings');
+    showBottomSheet('ManageAccount');
   }, [showBottomSheet]);
 
   const handleOpenScreen = useCallback((screen: string) => {
@@ -180,12 +180,12 @@ export default function HomeScreen() {
               <GroupedSection
                 items={[
                   {
-                    id: 'account-overview',
+                    id: 'manage-account',
                     icon: 'cellphone',
                     iconColor: colors.iconHome,
-                    title: 'Account Overview',
-                    subtitle: 'Main account screen with all features',
-                    onPress: () => handleOpenScreen('AccountOverview'),
+                    title: 'Manage your Oxy Account',
+                    subtitle: 'Profile, sessions, security and more',
+                    onPress: () => handleOpenScreen('ManageAccount'),
                     showChevron: true,
                   },
                 ]}
@@ -222,33 +222,6 @@ export default function HomeScreen() {
             <Section title="Account Management">
               <GroupedSection
                 items={[
-                  {
-                    id: 'account-center',
-                    icon: 'home',
-                    iconColor: colors.iconHome,
-                    title: 'Account Center',
-                    subtitle: 'Main account hub',
-                    onPress: () => handleOpenScreen('AccountCenter'),
-                    showChevron: true,
-                  },
-                  {
-                    id: 'account-switcher',
-                    icon: 'account-group',
-                    iconColor: colors.iconData,
-                    title: 'Switch Account',
-                    subtitle: 'Switch between accounts',
-                    onPress: () => handleOpenScreen('AccountSwitcher'),
-                    showChevron: true,
-                  },
-                  {
-                    id: 'session-management',
-                    icon: 'cellphone',
-                    iconColor: colors.iconSecurity,
-                    title: 'Sessions',
-                    subtitle: 'Manage device sessions',
-                    onPress: () => handleOpenScreen('SessionManagement'),
-                    showChevron: true,
-                  },
                   {
                     id: 'account-verification',
                     icon: 'check-circle',

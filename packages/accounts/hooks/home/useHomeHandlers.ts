@@ -51,7 +51,7 @@ export function useHomeHandlers(): HomeHandlers {
   }, [router]);
 
   const handleMenu = useCallback(() => {
-    showBottomSheet?.('AccountOverview');
+    showBottomSheet?.('ManageAccount');
   }, [showBottomSheet]);
 
   const handlePersonalInfo = useCallback(() => {

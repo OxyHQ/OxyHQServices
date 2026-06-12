@@ -134,7 +134,7 @@ export default function PersonalInfoScreen() {
       iconColor: colors.sidebarIconSecurity,
       title: t('personalInfo.actions.manageSessions'),
       subtitle: t('personalInfo.actions.manageSessionsSubtitle'),
-      onPress: () => showBottomSheet?.('SessionManagement'),
+      onPress: () => showBottomSheet?.('ManageAccount'),
       showChevron: true,
     },
     {
@@ -152,7 +152,7 @@ export default function PersonalInfoScreen() {
       iconColor: colors.sidebarIconSecurity,
       title: t('personalInfo.actions.identitySecurity'),
       subtitle: t('personalInfo.actions.identitySecuritySubtitle'),
-      onPress: () => showBottomSheet?.('AccountOverview'),
+      onPress: () => showBottomSheet?.('ManageAccount'),
       showChevron: true,
     },
   ], [colors.sidebarIconSecurity, colors.sidebarIconPayments, showBottomSheet, t]);

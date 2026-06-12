@@ -1,7 +1,19 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { authenticatedApiCall } from '@oxyhq/core';
-import type { AssetUploadInput, PrivacySettings, User } from '@oxyhq/core';
-import { queryKeys, invalidateAccountQueries, invalidateUserQueries, invalidateSessionQueries } from '../queries/queryKeys';
+import type {
+  AssetUploadInput,
+  NotificationPreferences,
+  PrivacySettings,
+  User,
+  UserPreferences,
+} from '@oxyhq/core';
+import {
+  queryKeys,
+  invalidateAccountQueries,
+  invalidateConnectedAppsQueries,
+  invalidateUserQueries,
+  invalidateSessionQueries,
+} from '../queries/queryKeys';
 import { mutationKeys } from './mutationKeys';
 import { useOxy } from '../../context/OxyContext';
 import { toast } from '@oxyhq/bloom';
@@ -504,6 +516,146 @@ interface UploadResult {
   files?: UploadedFile[];
   id?: string;
 }
+
+/**
+ * Update the authenticated user's notification preferences with optimistic
+ * updates. Persisted on the User document via `PUT /users/me` — same cache-
+ * invalidation behaviour as `useUpdateProfile`.
+ */
+export const useUpdateNotificationPreferences = () => {
+  const { oxyServices, activeSessionId } = useOxy();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationKey: [...mutationKeys.account.updateNotificationPreferences],
+    mutationFn: async (preferences: Partial<NotificationPreferences>) => {
+      return authenticatedApiCall<User>(
+        oxyServices,
+        activeSessionId,
+        () => oxyServices.updateNotificationPreferences(preferences)
+      );
+    },
+    onMutate: async (preferences) => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.accounts.current() });
+      const previousUser = queryClient.getQueryData<User>(queryKeys.accounts.current());
+
+      if (previousUser) {
+        queryClient.setQueryData<User>(queryKeys.accounts.current(), {
+          ...previousUser,
+          notificationPreferences: {
+            ...previousUser.notificationPreferences,
+            ...preferences,
+          },
+        });
+      }
+
+      return { previousUser };
+    },
+    onError: (error, _preferences, context) => {
+      if (context?.previousUser) {
+        const current = queryClient.getQueryData<User>(queryKeys.accounts.current());
+        if (current) {
+          queryClient.setQueryData<User>(queryKeys.accounts.current(), {
+            ...current,
+            notificationPreferences: context.previousUser.notificationPreferences,
+          });
+        }
+      }
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : 'Failed to update notification preferences'
+      );
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(queryKeys.accounts.current(), data);
+      useAuthStore.getState().setUser(data);
+      invalidateAccountQueries(queryClient);
+    },
+  });
+};
+
+/**
+ * Update the authenticated user's general preferences (language, theme,
+ * reduce-motion, timezone). Persisted on the User document via
+ * `PUT /users/me`.
+ */
+export const useUpdateUserPreferences = () => {
+  const { oxyServices, activeSessionId } = useOxy();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationKey: [...mutationKeys.account.updateUserPreferences],
+    mutationFn: async (preferences: Partial<UserPreferences>) => {
+      return authenticatedApiCall<User>(
+        oxyServices,
+        activeSessionId,
+        () => oxyServices.updateUserPreferences(preferences)
+      );
+    },
+    onMutate: async (preferences) => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.accounts.current() });
+      const previousUser = queryClient.getQueryData<User>(queryKeys.accounts.current());
+
+      if (previousUser) {
+        queryClient.setQueryData<User>(queryKeys.accounts.current(), {
+          ...previousUser,
+          userPreferences: {
+            ...previousUser.userPreferences,
+            ...preferences,
+          },
+        });
+      }
+
+      return { previousUser };
+    },
+    onError: (error, _preferences, context) => {
+      if (context?.previousUser) {
+        const current = queryClient.getQueryData<User>(queryKeys.accounts.current());
+        if (current) {
+          queryClient.setQueryData<User>(queryKeys.accounts.current(), {
+            ...current,
+            userPreferences: context.previousUser.userPreferences,
+          });
+        }
+      }
+      toast.error(error instanceof Error ? error.message : 'Failed to update preferences');
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(queryKeys.accounts.current(), data);
+      useAuthStore.getState().setUser(data);
+      invalidateAccountQueries(queryClient);
+    },
+  });
+};
+
+/**
+ * Revoke the authenticated user's authorization for a specific RP origin.
+ * Removes the FedCM grant so the origin no longer appears in the user's
+ * "Connected apps" list — next sign-in from that origin will require explicit
+ * re-consent.
+ */
+export const useRevokeAuthorizedApp = () => {
+  const { oxyServices, activeSessionId } = useOxy();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationKey: [...mutationKeys.connectedApps.revoke],
+    mutationFn: async (origin: string) => {
+      return authenticatedApiCall<void>(oxyServices, activeSessionId, () =>
+        oxyServices.revokeAuthorizedApp(origin)
+      );
+    },
+    onSuccess: () => {
+      invalidateConnectedAppsQueries(queryClient);
+    },
+    onError: (error) => {
+      toast.error(
+        error instanceof Error ? error.message : 'Failed to revoke authorized app'
+      );
+    },
+  });
+};
 
 /**
  * Upload file with authentication handling and progress tracking

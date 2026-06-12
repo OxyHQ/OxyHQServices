@@ -1,11 +1,13 @@
 /**
  * Centralized query keys for TanStack Query
- * 
+ *
  * Following best practices:
  * - Use arrays for hierarchical keys
  * - Include all parameters in the key
  * - Use consistent naming conventions
  */
+
+import type { QueryClient } from '@tanstack/react-query';
 
 export const queryKeys = {
   // Account queries
@@ -72,6 +74,12 @@ export const queryKeys = {
     usage: () => [...queryKeys.storage.all, 'usage'] as const,
   },
 
+  // Connected apps (FedCM grants the user has authorized)
+  connectedApps: {
+    all: ['connectedApps'] as const,
+    list: () => [...queryKeys.connectedApps.all, 'list'] as const,
+  },
+
   // Payment / wallet / subscription queries
   payments: {
     all: ['payments'] as const,
@@ -96,21 +104,63 @@ export const queryKeys = {
 /**
  * Helper to invalidate all account-related queries
  */
-export const invalidateAccountQueries = (queryClient: any) => {
+export const invalidateAccountQueries = (queryClient: QueryClient): void => {
   queryClient.invalidateQueries({ queryKey: queryKeys.accounts.all });
 };
 
 /**
  * Helper to invalidate all user-related queries
  */
-export const invalidateUserQueries = (queryClient: any) => {
+export const invalidateUserQueries = (queryClient: QueryClient): void => {
   queryClient.invalidateQueries({ queryKey: queryKeys.users.all });
 };
 
 /**
  * Helper to invalidate all session-related queries
  */
-export const invalidateSessionQueries = (queryClient: any) => {
+export const invalidateSessionQueries = (queryClient: QueryClient): void => {
   queryClient.invalidateQueries({ queryKey: queryKeys.sessions.all });
+};
+
+/**
+ * Helper to invalidate all device-related queries
+ */
+export const invalidateDeviceQueries = (queryClient: QueryClient): void => {
+  queryClient.invalidateQueries({ queryKey: queryKeys.devices.all });
+};
+
+/**
+ * Helper to invalidate all privacy-settings queries
+ */
+export const invalidatePrivacyQueries = (queryClient: QueryClient): void => {
+  queryClient.invalidateQueries({ queryKey: queryKeys.privacy.all });
+};
+
+/**
+ * Helper to invalidate all security-activity queries
+ */
+export const invalidateSecurityQueries = (queryClient: QueryClient): void => {
+  queryClient.invalidateQueries({ queryKey: queryKeys.security.all });
+};
+
+/**
+ * Helper to invalidate all storage-usage queries
+ */
+export const invalidateStorageQueries = (queryClient: QueryClient): void => {
+  queryClient.invalidateQueries({ queryKey: queryKeys.storage.all });
+};
+
+/**
+ * Helper to invalidate all payments / wallet / subscription queries
+ */
+export const invalidatePaymentsQueries = (queryClient: QueryClient): void => {
+  queryClient.invalidateQueries({ queryKey: queryKeys.payments.all });
+};
+
+/**
+ * Helper to invalidate the user's connected-apps list
+ */
+export const invalidateConnectedAppsQueries = (queryClient: QueryClient): void => {
+  queryClient.invalidateQueries({ queryKey: queryKeys.connectedApps.all });
 };
 

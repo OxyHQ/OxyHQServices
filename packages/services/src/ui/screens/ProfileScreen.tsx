@@ -4,7 +4,7 @@ import { View, Text, StyleSheet, ActivityIndicator, ScrollView, TouchableOpacity
 import type { BaseScreenProps } from '../types/navigation';
 import { useTheme } from '@oxyhq/bloom/theme';
 import Avatar from '../components/Avatar';
-import { FollowButton } from '../components';
+import FollowButton from '../components/FollowButton';
 import { useFollow } from '../hooks/useFollow';
 import { Ionicons } from '@expo/vector-icons';
 import { useI18n } from '../hooks/useI18n';
@@ -227,7 +227,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                             <TouchableOpacity
                                 style={styles.actionButton}
                                 className="bg-background border-primary"
-                                onPress={() => navigate?.('AccountSettings')}
+                                onPress={() => navigate?.('ManageAccount')}
                             >
                                 <Text style={styles.actionButtonText} className="text-primary">{t('editProfile.title') || 'Edit Profile'}</Text>
                             </TouchableOpacity>

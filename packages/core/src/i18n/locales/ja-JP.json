@@ -1,119 +1,202 @@
 {
-    "signin": {
-        "title": "サインイン",
-        "subtitle": "続けるにはサインインしてください",
-        "addAccountTitle": "別のアカウントを追加",
-        "addAccountSubtitle": "別のアカウントでサインイン",
-        "username": {
-            "label": "ユーザー名",
-            "placeholder": "ユーザー名を入力",
-            "helper": "3-30文字、英数字のみ",
-            "required": "ユーザー名を入力してください。",
-            "minLength": "ユーザー名は3文字以上である必要があります。"
-        },
-        "password": {
-            "label": "パスワード",
-            "placeholder": "パスワードを入力",
-            "required": "パスワードを入力してください。",
-            "hint": "サインインするにはパスワードを入力してください"
-        },
-        "actions": {
-            "continue": "続ける",
-            "back": "戻る",
-            "signIn": "サインイン",
-            "verify": "確認",
-            "openAccountSwitcher": "別のアカウントに切り替え",
-            "openAccountSwitcherSubtitle": "{{count}}個の他のアカウントが利用可能",
-            "openAccountSwitcherSubtitle_singular": "1個の他のアカウントが利用可能",
-            "openAccountSwitcherSubtitle_zero": "保存されたアカウントを確認",
-            "manageAccounts": "保存されたアカウントを管理",
-            "manageAccountsSubtitle": "セッションを確認、削除、またはサインアウト",
-            "loadingOtherAccounts": "他のアカウントを読み込み中…",
-            "switchAccountFailed": "アカウントを切り替えられませんでした。もう一度お試しください。"
-        },
-        "forgotPrompt": "パスワードをお忘れですか？",
-        "security": {
-            "dataSecure": "データは暗号化され、安全です"
-        },
-        "currentlySignedInAs": "現在サインイン中：",
-        "alreadySignedInWith": "既にサインイン中：",
-        "alreadySignedIn": "既にサインイン済み",
-        "alreadySignedInMessage": "このアカウントは既にサインインしています。このアカウントで続けますか？",
-        "continueWithAccount": "続ける",
-        "currentAccount": "現在",
-        "or": "または",
-        "viewAllAccounts": "さらに{{count}}件を表示",
-        "status": {
-            "accountSwitched": "{{name}}を使用中"
-        }
+  "signin": {
+    "title": "サインイン",
+    "subtitle": "続けるにはサインインしてください",
+    "addAccountTitle": "別のアカウントを追加",
+    "addAccountSubtitle": "別のアカウントでサインイン",
+    "username": {
+      "label": "ユーザー名",
+      "placeholder": "ユーザー名を入力",
+      "helper": "3-30文字、英数字のみ",
+      "required": "ユーザー名を入力してください。",
+      "minLength": "ユーザー名は3文字以上である必要があります。"
     },
-    "signup": {
-        "welcome": {
-            "title": "Oxyへようこそ！",
-            "subtitle": "数ステップでアカウントを作成",
-            "haveAccount": "既にアカウントをお持ちですか？",
-            "signInCta": "サインイン"
-        },
-        "identity": {
-            "title": "あなたは誰ですか？",
-            "subtitle": "ユーザー名を選択し、メールアドレスを入力してください"
-        },
-        "username": {
-            "helper": "3-30文字、英数字のみ",
-            "required": "ユーザー名を入力してください",
-            "minLength": "ユーザー名は3文字以上である必要があります"
-        },
-        "email": {
-            "required": "メールアドレスを入力してください",
-            "invalid": "有効なメールアドレスを入力してください",
-            "helper": "メールアドレスを共有することはありません"
-        },
-        "security": {
-            "title": "アカウントを保護",
-            "subtitle": "アカウントを保護するための強力なパスワードを作成"
-        },
-        "password": {
-            "helper": "8文字以上",
-            "required": "パスワードを入力してください",
-            "minLength": "パスワードは8文字以上である必要があります",
-            "confirmRequired": "パスワードを確認してください",
-            "mismatch": "パスワードが一致しません",
-            "confirmHint": "確認のため、パスワードを再入力してください"
-        },
-        "summary": {
-            "title": "もうすぐ完了です！",
-            "subtitle": "情報を確認してアカウントを作成",
-            "sectionTitle": "アカウント情報",
-            "fields": {
-                "username": "ユーザー名",
-                "email": "メール",
-                "password": "パスワード"
-            },
-            "notSet": "未設定",
-            "securityTip": "より強力なセキュリティのため、アカウント作成後、アカウント設定から生体認証を有効にしてください。",
-            "legalReminder": "アカウントを作成することで、利用規約とプライバシーポリシーに同意したことになります。"
-        }
+    "password": {
+      "label": "パスワード",
+      "placeholder": "パスワードを入力",
+      "required": "パスワードを入力してください。",
+      "hint": "サインインするにはパスワードを入力してください"
     },
-    "common": {
-        "actions": {
-            "back": "戻る",
-            "continue": "続ける",
-            "next": "次へ",
-            "getStarted": "始める",
-            "createAccount": "アカウントを作成",
-            "signIn": "サインイン",
-            "verify": "確認",
-            "resetPassword": "パスワードをリセット"
-        },
-        "links": {
-            "recoverAccount": "アカウントを回復",
-            "signUp": "サインアップ"
-        },
-        "labels": {
-            "username": "ユーザー名",
-            "email": "メール",
-            "password": "パスワード",
-            "confirmPassword": "パスワードを確認"
-        }
+    "actions": {
+      "continue": "続ける",
+      "back": "戻る",
+      "signIn": "サインイン",
+      "verify": "確認",
+      "openAccountSwitcher": "別のアカウントに切り替え",
+      "openAccountSwitcherSubtitle": "{{count}}個の他のアカウントが利用可能",
+      "openAccountSwitcherSubtitle_singular": "1個の他のアカウントが利用可能",
+      "openAccountSwitcherSubtitle_zero": "保存されたアカウントを確認",
+      "manageAccounts": "保存されたアカウントを管理",
+      "manageAccountsSubtitle": "セッションを確認、削除、またはサインアウト",
+      "loadingOtherAccounts": "他のアカウントを読み込み中…",
+      "switchAccountFailed": "アカウントを切り替えられませんでした。もう一度お試しください。"
+    },
+    "forgotPrompt": "パスワードをお忘れですか？",
+    "security": {
+      "dataSecure": "データは暗号化され、安全です"
+    },
+    "currentlySignedInAs": "現在サインイン中：",
+    "alreadySignedInWith": "既にサインイン中：",
+    "alreadySignedIn": "既にサインイン済み",
+    "alreadySignedInMessage": "このアカウントは既にサインインしています。このアカウントで続けますか？",
+    "continueWithAccount": "続ける",
+    "currentAccount": "現在",
+    "or": "または",
+    "viewAllAccounts": "さらに{{count}}件を表示",
+    "status": {
+      "accountSwitched": "{{name}}を使用中"
     }
+  },
+  "signup": {
+    "welcome": {
+      "title": "Oxyへようこそ！",
+      "subtitle": "数ステップでアカウントを作成",
+      "haveAccount": "既にアカウントをお持ちですか？",
+      "signInCta": "サインイン"
+    },
+    "identity": {
+      "title": "あなたは誰ですか？",
+      "subtitle": "ユーザー名を選択し、メールアドレスを入力してください"
+    },
+    "username": {
+      "helper": "3-30文字、英数字のみ",
+      "required": "ユーザー名を入力してください",
+      "minLength": "ユーザー名は3文字以上である必要があります"
+    },
+    "email": {
+      "required": "メールアドレスを入力してください",
+      "invalid": "有効なメールアドレスを入力してください",
+      "helper": "メールアドレスを共有することはありません"
+    },
+    "security": {
+      "title": "アカウントを保護",
+      "subtitle": "アカウントを保護するための強力なパスワードを作成"
+    },
+    "password": {
+      "helper": "8文字以上",
+      "required": "パスワードを入力してください",
+      "minLength": "パスワードは8文字以上である必要があります",
+      "confirmRequired": "パスワードを確認してください",
+      "mismatch": "パスワードが一致しません",
+      "confirmHint": "確認のため、パスワードを再入力してください"
+    },
+    "summary": {
+      "title": "もうすぐ完了です！",
+      "subtitle": "情報を確認してアカウントを作成",
+      "sectionTitle": "アカウント情報",
+      "fields": {
+        "username": "ユーザー名",
+        "email": "メール",
+        "password": "パスワード"
+      },
+      "notSet": "未設定",
+      "securityTip": "より強力なセキュリティのため、アカウント作成後、アカウント設定から生体認証を有効にしてください。",
+      "legalReminder": "アカウントを作成することで、利用規約とプライバシーポリシーに同意したことになります。"
+    }
+  },
+  "common": {
+    "actions": {
+      "back": "戻る",
+      "continue": "続ける",
+      "next": "次へ",
+      "getStarted": "始める",
+      "createAccount": "アカウントを作成",
+      "signIn": "サインイン",
+      "verify": "確認",
+      "resetPassword": "パスワードをリセット"
+    },
+    "links": {
+      "recoverAccount": "アカウントを回復",
+      "signUp": "サインアップ"
+    },
+    "labels": {
+      "username": "ユーザー名",
+      "email": "メール",
+      "password": "パスワード",
+      "confirmPassword": "パスワードを確認"
+    },
+    "revoke": "Revoke"
+  },
+  "notifications": {
+    "title": "Notifications",
+    "subtitle": "Manage push, email, and security alerts",
+    "updateError": "Failed to update notification preferences",
+    "sections": {
+      "channels": "Channels",
+      "alerts": "Alerts",
+      "marketing": "Marketing"
+    },
+    "items": {
+      "push": {
+        "title": "Push notifications",
+        "subtitle": "Real-time alerts on your devices"
+      },
+      "emailDigest": {
+        "title": "Email digest",
+        "subtitle": "Periodic summary of your account activity"
+      },
+      "securityAlerts": {
+        "title": "Security alerts",
+        "subtitle": "Sign-ins, recovery codes, and key changes"
+      },
+      "marketingEmails": {
+        "title": "Marketing emails",
+        "subtitle": "Product news and occasional offers"
+      }
+    }
+  },
+  "preferences": {
+    "title": "Preferences",
+    "subtitle": "Theme, motion, and regional settings",
+    "sections": {
+      "appearance": "Appearance",
+      "language": "Language",
+      "region": "Region"
+    },
+    "theme": {
+      "light": "Light",
+      "dark": "Dark",
+      "system": "System default"
+    },
+    "items": {
+      "theme": {
+        "title": "Theme"
+      },
+      "reduceMotion": {
+        "title": "Reduce motion",
+        "subtitle": "Minimise animations across Oxy apps",
+        "systemOn": "Following system: reduce motion is on"
+      },
+      "language": {
+        "title": "Language"
+      },
+      "timezone": {
+        "title": "Timezone",
+        "unknown": "Unable to detect timezone"
+      },
+      "about": {
+        "title": "About preferences",
+        "subtitle": "Preferences sync across every Oxy app you sign into"
+      }
+    }
+  },
+  "connectedApps": {
+    "title": "Connected apps",
+    "subtitle": "Manage third-party app access",
+    "empty": {
+      "title": "No connected apps",
+      "subtitle": "Apps you authorize to sign in with your Oxy account will appear here"
+    },
+    "item": {
+      "lastUsed": "Last used {{relative}}"
+    },
+    "confirm": {
+      "title": "Revoke access",
+      "message": "Revoke {{name}}'s access to your Oxy account?"
+    },
+    "toasts": {
+      "revoked": "Revoked access for {{name}}",
+      "revokeFailed": "Failed to revoke access"
+    }
+  }
 }
