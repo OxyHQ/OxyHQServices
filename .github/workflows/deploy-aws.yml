@@ -37,10 +37,22 @@ jobs:
         env:
           SECRETS_JSON: ${{ toJSON(secrets) }}
         run: |
+          # Secrets that are shared across all Oxy services live under
+          # /oxy/_shared/; everything else is scoped to this app.
           SHARED="AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY REDIS_URL LIVEKIT_API_KEY LIVEKIT_API_SECRET"
           echo "$SECRETS_JSON" | jq -r 'to_entries[] | select((.key|ascii_upcase) as $k | ($k=="GITHUB_TOKEN" or ($k|startswith("ACTIONS_")))|not) | [.key,.value]|@tsv' | \
           while IFS=$'\t' read -r k v; do
             [ -z "$k" ] && continue
+            # Defence in depth: a secret left as an empty string or a single
+            # dash placeholder is almost always a mistake (forgot to set a
+            # value, or scripted with `gh secret set REDIS_URL --body '-'`).
+            # Skipping the sync preserves the previous SSM value rather than
+            # nuking production with garbage — exactly the failure mode that
+            # took the API down in the 2026-06-12 incident.
+            if [ -z "$v" ] || [ "$v" = "-" ]; then
+              echo "::warning::skip empty/placeholder secret $k (value=${v:-<empty>}); SSM unchanged"
+              continue
+            fi
             case " $SHARED " in *" $k "*) path="/oxy/_shared/$k";; *) path="/oxy/$APP/$k";; esac
             aws ssm put-parameter --name "$path" --value "$v" --type SecureString --overwrite >/dev/null && echo "synced -> $path"
           done

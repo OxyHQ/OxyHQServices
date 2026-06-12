@@ -21,11 +21,16 @@ function makeStore() {
   };
 }
 
-// General rate limiting middleware (exclude file uploads)
+// General rate limiting middleware (exclude file uploads). The previous
+// ceiling of 150/15min was below what a single signed-in user generates
+// against the API in normal usage (feed scrolling, profile loads, sockets'
+// REST fallback, FedCM exchanges), which surfaced as misleading 429s on
+// unrelated endpoints. The userRateLimiter below still caps per-account
+// traffic.
 const rateLimiter = rateLimit({
   ...makeStore(),
   windowMs: 15 * 60 * 1000,
-  max: isProd ? 150 : 2000,
+  max: isProd ? 1000 : 2000,
   message: "Too many requests from this IP, please try again later.",
   standardHeaders: true,
   legacyHeaders: false,
