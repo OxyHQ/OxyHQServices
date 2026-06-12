@@ -80,19 +80,19 @@ type AttachmentInfo = {
 
 function getAttachmentInfo(att: Attachment): AttachmentInfo {
   const ct = att.contentType.toLowerCase();
-  if (ct.startsWith('image/')) return { icon: 'image-outline', hugeIcon: Image01Icon as unknown as IconSvgElement, label: att.filename, color: '#34A853' };
-  if (ct.startsWith('video/')) return { icon: 'play-circle-outline', hugeIcon: PlayCircle02Icon as unknown as IconSvgElement, label: att.filename, color: '#EA4335' };
-  if (ct.startsWith('audio/')) return { icon: 'music-note-outline', hugeIcon: MusicNote01Icon as unknown as IconSvgElement, label: att.filename, color: '#9334E6' };
-  if (ct.includes('pdf')) return { icon: 'file-pdf-box', hugeIcon: Pdf01Icon as unknown as IconSvgElement, label: att.filename, color: '#EA4335' };
+  if (ct.startsWith('image/')) return { icon: 'image-outline', hugeIcon: Image01Icon as unknown as IconSvgElement, label: att.name, color: '#34A853' };
+  if (ct.startsWith('video/')) return { icon: 'play-circle-outline', hugeIcon: PlayCircle02Icon as unknown as IconSvgElement, label: att.name, color: '#EA4335' };
+  if (ct.startsWith('audio/')) return { icon: 'music-note-outline', hugeIcon: MusicNote01Icon as unknown as IconSvgElement, label: att.name, color: '#9334E6' };
+  if (ct.includes('pdf')) return { icon: 'file-pdf-box', hugeIcon: Pdf01Icon as unknown as IconSvgElement, label: att.name, color: '#EA4335' };
   if (ct.includes('spreadsheet') || ct.includes('excel') || ct.includes('csv'))
-    return { icon: 'file-excel-outline', hugeIcon: Xls01Icon as unknown as IconSvgElement, label: att.filename, color: '#34A853' };
+    return { icon: 'file-excel-outline', hugeIcon: Xls01Icon as unknown as IconSvgElement, label: att.name, color: '#34A853' };
   if (ct.includes('presentation') || ct.includes('powerpoint'))
-    return { icon: 'file-powerpoint-outline', hugeIcon: Ppt01Icon as unknown as IconSvgElement, label: att.filename, color: '#E8710A' };
+    return { icon: 'file-powerpoint-outline', hugeIcon: Ppt01Icon as unknown as IconSvgElement, label: att.name, color: '#E8710A' };
   if (ct.includes('document') || ct.includes('word') || ct.includes('msword'))
-    return { icon: 'file-word-outline', hugeIcon: Doc01Icon as unknown as IconSvgElement, label: att.filename, color: '#1A73E8' };
+    return { icon: 'file-word-outline', hugeIcon: Doc01Icon as unknown as IconSvgElement, label: att.name, color: '#1A73E8' };
   if (ct.includes('zip') || ct.includes('rar') || ct.includes('tar') || ct.includes('gz'))
-    return { icon: 'zip-box-outline', hugeIcon: FileZipIcon as unknown as IconSvgElement, label: att.filename, color: '#5F6368' };
-  return { icon: 'file-outline', hugeIcon: File01Icon as unknown as IconSvgElement, label: att.filename, color: '#5F6368' };
+    return { icon: 'zip-box-outline', hugeIcon: FileZipIcon as unknown as IconSvgElement, label: att.name, color: '#5F6368' };
+  return { icon: 'file-outline', hugeIcon: File01Icon as unknown as IconSvgElement, label: att.name, color: '#5F6368' };
 }
 
 function formatSnoozeTime(dateStr: string): string {
@@ -379,7 +379,7 @@ function MessageRowInner({
               {imageAtts.length > 0 && (
                 <View style={styles.thumbnailRow}>
                   {imageAtts.slice(0, maxThumbs).map((att, i) => (
-                    <AttachmentThumbnail key={att.s3Key || i} s3Key={att.s3Key} size={48} />
+                    <AttachmentThumbnail key={att.fileId || i} fileId={att.fileId} size={48} />
                   ))}
                   {extraImages > 0 && (
                     <View style={[styles.thumbnailOverflow, { backgroundColor: colors.surfaceVariant }]}>

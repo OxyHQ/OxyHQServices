@@ -15,7 +15,6 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import * as DocumentPicker from 'expo-document-picker';
 import { Dialog, useDialogControl } from '@oxyhq/bloom';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
@@ -30,6 +29,7 @@ import {
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useOxy } from '@oxyhq/services';
+import type { FileMetadata } from '@oxyhq/core';
 import { toast } from '@oxyhq/bloom';
 
 import { useColors } from '@/constants/theme';
@@ -40,7 +40,28 @@ import { AiComposeToolbar } from '@/components/AiComposeToolbar';
 import { RichTextEditor, stripHtml, type RichTextEditorHandle } from '@/components/RichTextEditor';
 import { ScheduleSendSheet } from '@/components/ScheduleSendSheet';
 import { TemplatePicker } from '@/components/TemplatePicker';
-import type { Attachment, ContactSuggestion, EmailTemplate } from '@/services/emailApi';
+import type { ContactSuggestion, EmailTemplate } from '@/services/emailApi';
+
+/**
+ * Local composer representation of an attachment. Just enough to render the
+ * chip and to map onto the API `{ fileId }` payload — every attachment is a
+ * reference into the user's Oxy File Manager.
+ */
+interface ComposerAttachment {
+  fileId: string;
+  name: string;
+  contentType: string;
+  size: number;
+}
+
+function fileMetadataToAttachment(file: FileMetadata): ComposerAttachment {
+  return {
+    fileId: file.id,
+    name: file.filename || file.id,
+    contentType: file.contentType || 'application/octet-stream',
+    size: file.length,
+  };
+}
 
 const isWeb = Platform.OS === 'web';
 
@@ -66,7 +87,7 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
     () => ({ paddingLeft: 16 + insets.left, paddingRight: 16 + insets.right }),
     [insets.left, insets.right],
   );
-  const { user } = useOxy();
+  const { user, showBottomSheet } = useOxy();
   const api = useEmailStore((s) => s._api);
   const { sendWithUndo, isPending: sendPending } = useSendMessageWithUndo();
   const sendMessageMutation = useSendMessage();
@@ -79,11 +100,8 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
   const [subject, setSubject] = useState(initialSubject || '');
   const [body, setBody] = useState(initialBody || '');
   const [showCcBcc, setShowCcBcc] = useState(!!(initialCc));
-  const [attachments, setAttachments] = useState<Attachment[]>([]);
-  const [uploading, setUploading] = useState(false);
+  const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
   const [signatureLoaded, setSignatureLoaded] = useState(false);
-  const [isDragging, setIsDragging] = useState(false);
-  const dragCounterRef = useRef(0);
 
   // Auto-insert signature from settings
   useEffect(() => {
@@ -186,60 +204,39 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
       .map((addr) => ({ address: addr }));
   };
 
-  const handleAttachFile = useCallback(async () => {
-    if (!api) return;
-    if (Platform.OS === 'web') {
-      const input = document.createElement('input');
-      input.type = 'file';
-      input.multiple = true;
-      input.onchange = async () => {
-        if (!input.files) return;
-        setUploading(true);
-        try {
-          for (const file of Array.from(input.files)) {
-            const attachment = await api.uploadAttachment(file, file.name);
-            setAttachments((prev) => [...prev, attachment]);
-          }
-        } catch (err: unknown) {
-          const message = err instanceof Error ? err.message : 'Failed to upload attachment.';
-          toast.error(message);
-        }
-        setUploading(false);
-      };
-      input.click();
-    } else {
-      try {
-        const result = await DocumentPicker.getDocumentAsync({ multiple: true });
-        if (result.canceled) return;
-        setUploading(true);
-        for (const asset of result.assets) {
-          const response = await fetch(asset.uri);
-          const blob = await response.blob();
-          const attachment = await api.uploadAttachment(blob, asset.name);
-          setAttachments((prev) => [...prev, attachment]);
-        }
-      } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : 'Failed to upload attachment.';
-        toast.error(message);
+  // Append a selected file to the attachment list, de-duplicating by fileId so
+  // that picking the same Cloud file twice doesn't create a duplicate chip.
+  const appendAttachments = useCallback((files: FileMetadata[]) => {
+    if (files.length === 0) return;
+    setAttachments((prev) => {
+      const seen = new Set(prev.map((a) => a.fileId));
+      const next = [...prev];
+      for (const file of files) {
+        if (seen.has(file.id)) continue;
+        seen.add(file.id);
+        next.push(fileMetadataToAttachment(file));
       }
-      setUploading(false);
-    }
-  }, [api]);
+      return next;
+    });
+  }, []);
 
-  const handleDropFiles = useCallback(async (files: FileList) => {
-    if (!api || files.length === 0) return;
-    setUploading(true);
-    try {
-      for (const file of Array.from(files)) {
-        const attachment = await api.uploadAttachment(file, file.name);
-        setAttachments((prev) => [...prev, attachment]);
-      }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Failed to upload attachment.';
-      toast.error(message);
-    }
-    setUploading(false);
-  }, [api]);
+  const handleAttachFile = useCallback(() => {
+    if (!showBottomSheet) return;
+    showBottomSheet({
+      screen: 'FileManagement',
+      props: {
+        selectMode: true,
+        multiSelect: true,
+        afterSelect: 'back',
+        onSelect: (file: FileMetadata) => {
+          appendAttachments([file]);
+        },
+        onConfirmSelection: (files: FileMetadata[]) => {
+          appendAttachments(files);
+        },
+      },
+    });
+  }, [showBottomSheet, appendAttachments]);
 
   const handleRemoveAttachment = useCallback((index: number) => {
     setAttachments((prev) => prev.filter((_, i) => i !== index));
@@ -267,7 +264,7 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
         text: isWeb ? stripHtml(body) : body,
         html: isWeb ? body : undefined,
         inReplyTo: replyTo,
-        attachments: attachments.length > 0 ? attachments.map((a) => a.s3Key) : undefined,
+        attachments: attachments.length > 0 ? attachments.map((a) => ({ fileId: a.fileId })) : undefined,
       },
       {
         onSuccess: () => router.back(),
@@ -378,7 +375,7 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
         text: isWeb ? stripHtml(body) : body,
         html: isWeb ? body : undefined,
         inReplyTo: replyTo,
-        attachments: attachments.length > 0 ? attachments.map((a) => a.s3Key) : undefined,
+        attachments: attachments.length > 0 ? attachments.map((a) => ({ fileId: a.fileId })) : undefined,
         scheduledAt: scheduledDate.toISOString(),
       },
       {
@@ -401,42 +398,6 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
     );
   }, [to, cc, bcc, subject, body, replyTo, attachments, sendMessageMutation, router]);
 
-  // Web drag-and-drop event handlers
-  const webDropProps = useMemo(() => {
-    if (Platform.OS !== 'web') return {};
-    return {
-      onDragEnter: (e: { preventDefault(): void; stopPropagation(): void; dataTransfer?: DataTransfer }) => {
-        e.preventDefault();
-        e.stopPropagation();
-        dragCounterRef.current += 1;
-        if (e.dataTransfer?.types?.includes('Files')) {
-          setIsDragging(true);
-        }
-      },
-      onDragOver: (e: { preventDefault(): void; stopPropagation(): void }) => {
-        e.preventDefault();
-        e.stopPropagation();
-      },
-      onDragLeave: (e: { preventDefault(): void; stopPropagation(): void }) => {
-        e.preventDefault();
-        e.stopPropagation();
-        dragCounterRef.current -= 1;
-        if (dragCounterRef.current === 0) {
-          setIsDragging(false);
-        }
-      },
-      onDrop: (e: { preventDefault(): void; stopPropagation(): void; dataTransfer?: DataTransfer }) => {
-        e.preventDefault();
-        e.stopPropagation();
-        dragCounterRef.current = 0;
-        setIsDragging(false);
-        if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
-          handleDropFiles(e.dataTransfer.files);
-        }
-      },
-    };
-  }, [handleDropFiles]);
-
   return (
     <KeyboardAvoidingView
       style={[
@@ -445,24 +406,7 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
         mode === 'standalone' && { paddingTop: insets.top },
       ]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      {...webDropProps}
     >
-      {/* Drop zone overlay (web only) */}
-      {Platform.OS === 'web' && isDragging && (
-        <View
-          style={[
-            styles.dropZoneOverlay,
-            { borderColor: colors.primary, backgroundColor: colors.surface },
-          ]}
-          pointerEvents="none"
-        >
-          <MaterialCommunityIcons name="tray-arrow-down" size={40} color={colors.primary} />
-          <Text style={[styles.dropZoneText, { color: colors.primary }]}>
-            Drop files to attach
-          </Text>
-        </View>
-      )}
-
       {/* Header */}
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
         {mode === 'standalone' && (
@@ -478,11 +422,11 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
           {replyTo ? 'Reply' : forward ? 'Forward' : 'Compose'}
         </Text>
         <View style={styles.headerSpacer} />
-        <TouchableOpacity onPress={handleAttachFile} style={styles.iconButton} disabled={uploading}>
+        <TouchableOpacity onPress={handleAttachFile} style={styles.iconButton}>
           {Platform.OS === 'web' ? (
-            <HugeiconsIcon icon={Attachment01Icon as unknown as IconSvgElement} size={22} color={uploading ? colors.secondaryText : colors.icon} />
+            <HugeiconsIcon icon={Attachment01Icon as unknown as IconSvgElement} size={22} color={colors.icon} />
           ) : (
-            <MaterialCommunityIcons name="paperclip" size={22} color={uploading ? colors.secondaryText : colors.icon} />
+            <MaterialCommunityIcons name="paperclip" size={22} color={colors.icon} />
           )}
         </TouchableOpacity>
         <TemplatePicker onSelect={handleTemplateSelect} />
@@ -699,10 +643,10 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
         {attachments.length > 0 && (
           <View style={[styles.attachmentsSection, fieldRowInset, { borderBottomColor: colors.border }]}>
             {attachments.map((att, i) => (
-              <View key={i} style={[styles.attachmentChip, { backgroundColor: colors.surfaceVariant }]}>
+              <View key={att.fileId} style={[styles.attachmentChip, { backgroundColor: colors.surfaceVariant }]}>
                 <MaterialCommunityIcons name="paperclip" size={14} color={colors.secondaryText} />
                 <Text style={[styles.attachmentName, { color: colors.text }]} numberOfLines={1}>
-                  {att.filename}
+                  {att.name}
                 </Text>
                 <Text style={[styles.attachmentSize, { color: colors.secondaryText }]}>
                   {formatSize(att.size)}
@@ -903,25 +847,5 @@ const styles = StyleSheet.create({
   suggestionAddress: {
     fontSize: 13,
     flexShrink: 0,
-  },
-  dropZoneOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    zIndex: 100,
-    borderWidth: 2,
-    borderStyle: 'dashed',
-    borderRadius: 12,
-    margin: 8,
-    opacity: 0.9,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  dropZoneText: {
-    fontSize: 16,
-    fontWeight: '600',
   },
 });

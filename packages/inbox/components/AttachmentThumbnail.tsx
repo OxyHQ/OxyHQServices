@@ -1,6 +1,6 @@
 /**
  * Small image thumbnail for attachment previews in message rows.
- * Fetches a presigned S3 URL and renders a cached image.
+ * Fetches a signed File Manager URL and renders a cached image.
  */
 
 import React, { useState } from 'react';
@@ -11,13 +11,13 @@ import { useAttachmentUrl } from '@/hooks/queries/useAttachmentUrl';
 import { useColors } from '@/constants/theme';
 
 interface AttachmentThumbnailProps {
-  s3Key: string;
+  fileId: string;
   size?: number;
 }
 
-export function AttachmentThumbnail({ s3Key, size = 48 }: AttachmentThumbnailProps) {
+export function AttachmentThumbnail({ fileId, size = 48 }: AttachmentThumbnailProps) {
   const colors = useColors();
-  const { url, isLoading } = useAttachmentUrl(s3Key);
+  const { url, isLoading } = useAttachmentUrl(fileId, true, 'thumb');
   const [errored, setErrored] = useState(false);
 
   const containerStyle = [

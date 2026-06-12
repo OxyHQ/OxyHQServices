@@ -1,20 +1,19 @@
 import { useQuery } from '@tanstack/react-query';
-import { useEmailStore } from '@/hooks/useEmail';
+import { useOxy } from '@oxyhq/services';
 
 /**
- * Fetches and caches a presigned S3 URL for an attachment.
- * Presigned URLs expire in 60 min; staleTime is 45 min to refresh before expiry.
+ * Resolves a download/preview URL for an attachment, which is a file in the
+ * Oxy File Manager. Uses the core SDK's `getFileDownloadUrlAsync` (signed CDN
+ * URL with a fallback to the authenticated `/assets/:id/stream` endpoint).
+ * Signed URLs expire in 60 min; staleTime is 45 min to refresh before expiry.
  */
-export function useAttachmentUrl(s3Key: string, enabled = true) {
-  const api = useEmailStore((s) => s._api);
+export function useAttachmentUrl(fileId: string, enabled = true, variant?: string) {
+  const { oxyServices } = useOxy();
 
   const { data: url = null, isLoading } = useQuery({
-    queryKey: ['attachment-url', s3Key],
-    queryFn: async () => {
-      if (!api) throw new Error('Email API not initialized');
-      return await api.getAttachmentUrl(s3Key);
-    },
-    enabled: enabled && !!api && !!s3Key,
+    queryKey: ['attachment-url', fileId, variant ?? null],
+    queryFn: () => oxyServices.getFileDownloadUrlAsync(fileId, variant),
+    enabled: enabled && !!fileId,
     staleTime: 45 * 60 * 1000,
   });
 

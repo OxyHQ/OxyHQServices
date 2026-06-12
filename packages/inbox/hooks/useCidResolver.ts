@@ -1,17 +1,19 @@
 /**
  * Hook to resolve CID inline image references in email HTML.
  *
- * Fetches signed S3 URLs for inline attachments and replaces cid: references
- * in the HTML with the actual URLs. Returns a stable map of messageId → resolvedHtml.
+ * Fetches signed File Manager URLs for inline attachments and replaces cid:
+ * references in the HTML with the actual URLs. Returns a stable map of
+ * messageId → resolvedHtml.
  */
 
 import { useState, useRef, useEffect, useMemo } from 'react';
-import type { Message, EmailApiInstance } from '@/services/emailApi';
+import type { OxyServices } from '@oxyhq/core';
+import type { Message } from '@/services/emailApi';
 import { resolveCidImages } from '@/utils/htmlTransform';
 
 export function useCidResolver(
   messages: Message[],
-  api: EmailApiInstance | null | undefined,
+  oxyServices: OxyServices | null | undefined,
   resetKey: string,
 ): Record<string, string> {
   const [cidMaps, setCidMaps] = useState<Record<string, Record<string, string>>>({});
@@ -23,9 +25,9 @@ export function useCidResolver(
     resolvedIds.current = new Set();
   }, [resetKey]);
 
-  // Fetch signed S3 URLs for inline CID attachments
+  // Fetch signed File Manager URLs for inline CID attachments
   useEffect(() => {
-    if (!api) return;
+    if (!oxyServices) return;
     let cancelled = false;
 
     (async () => {
@@ -46,7 +48,7 @@ export function useCidResolver(
         await Promise.all(
           inlineAtts.map(async (att) => {
             try {
-              cidMap[att.contentId] = await api.getAttachmentUrl(att.s3Key);
+              cidMap[att.contentId] = await oxyServices.getFileDownloadUrlAsync(att.fileId);
             } catch { /* skip failed attachments */ }
           }),
         );
@@ -63,7 +65,7 @@ export function useCidResolver(
     })();
 
     return () => { cancelled = true; };
-  }, [messages, api]);
+  }, [messages, oxyServices]);
 
   // Pre-compute resolved HTML per message — stable references
   return useMemo(() => {

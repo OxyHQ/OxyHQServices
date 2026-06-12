@@ -153,8 +153,8 @@ function MessageDetailInner({ mode, messageId }: MessageDetailProps) {
   const sentiment = useSentimentAnalysis(currentMessage);
 
   // Get current user for stale thread detection
-  const { user } = useOxy();
-  const userEmail = user?.email || user?.emails?.[0]?.address;
+  const { user, oxyServices } = useOxy();
+  const userEmail = user?.email;
 
   // Auto-mark message as read when opened
   const toggleReadMutate = toggleRead.mutate;
@@ -273,13 +273,12 @@ function MessageDetailInner({ mode, messageId }: MessageDetailProps) {
   // Detect stale threads that need a response
   const staleInfo = useStaleThread(sortedThread, userEmail);
 
-  // Resolve CID inline image references to signed S3 URLs
-  const resolvedHtmlMap = useCidResolver(sortedThread, api, messageId);
+  // Resolve CID inline image references to signed File Manager URLs
+  const resolvedHtmlMap = useCidResolver(sortedThread, oxyServices, messageId);
 
-  const handleAttachment = useCallback(async (s3Key: string, filename: string) => {
-    if (!api) return;
+  const handleAttachment = useCallback(async (fileId: string, filename: string) => {
     try {
-      const url = await api.getAttachmentUrl(s3Key);
+      const url = await oxyServices.getFileDownloadUrlAsync(fileId);
       if (Platform.OS === 'web') {
         window.open(url, '_blank');
       } else {
@@ -298,14 +297,14 @@ function MessageDetailInner({ mode, messageId }: MessageDetailProps) {
       }
     } catch {
       try {
-        const url = await api.getAttachmentUrl(s3Key);
+        const url = await oxyServices.getFileDownloadUrlAsync(fileId);
         await Linking.openURL(url);
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : 'Failed to download attachment.';
         toast.error(message);
       }
     }
-  }, [api]);
+  }, [oxyServices]);
 
   const handleToggleLabel = useCallback((labelName: string) => {
     if (!currentMessage) return;
@@ -899,9 +898,9 @@ function MessageDetailInner({ mode, messageId }: MessageDetailProps) {
                   <View style={[styles.attachmentsBar, { borderColor: colors.border }]}>
                     {msg.attachments.map((att, i) => (
                       <TouchableOpacity
-                        key={i}
+                        key={att.fileId || i}
                         style={[styles.attachmentChip, { backgroundColor: colors.surfaceVariant }]}
-                        onPress={() => handleAttachment(att.s3Key, att.filename)}
+                        onPress={() => handleAttachment(att.fileId, att.name)}
                         activeOpacity={0.7}
                       >
                         {Platform.OS === 'web' ? (
@@ -910,7 +909,7 @@ function MessageDetailInner({ mode, messageId }: MessageDetailProps) {
                           <MaterialCommunityIcons name="paperclip" size={14} color={colors.secondaryText} />
                         )}
                         <Text style={[styles.attachmentName, { color: colors.text }]} numberOfLines={1}>
-                          {att.filename}
+                          {att.name}
                         </Text>
                       </TouchableOpacity>
                     ))}

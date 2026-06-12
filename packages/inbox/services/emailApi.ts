@@ -19,10 +19,10 @@ export const EmailAddressSchema = z.object({
 });
 
 export const AttachmentSchema = z.object({
-  filename: z.string(),
+  fileId: z.string(),
+  name: z.string(),
   contentType: z.string(),
   size: z.number(),
-  s3Key: z.string(),
   contentId: z.string().optional(),
   isInline: z.boolean().optional(),
 });
@@ -413,7 +413,7 @@ export function createEmailApi(http: HttpService) {
       html?: string;
       inReplyTo?: string;
       references?: string[];
-      attachments?: string[];
+      attachments?: Array<{ fileId: string; contentId?: string; isInline?: boolean }>;
       scheduledAt?: string;
     }): Promise<{ messageId: string; queued: boolean; message: string }> {
       const res = await http.post('/email/messages', message);
@@ -479,22 +479,6 @@ export function createEmailApi(http: HttpService) {
     async getQuota(): Promise<QuotaUsage> {
       const res = await http.get('/email/quota');
       return QuotaUsageSchema.parse(res);
-    },
-
-    // ─── Attachments ────────────────────────────────────────────────
-
-    async uploadAttachment(file: File | Blob, filename: string): Promise<Attachment> {
-      const formData = new FormData();
-      formData.append('file', file, filename);
-      const res = await http.post('/email/attachments', formData);
-      return AttachmentSchema.parse(res);
-    },
-
-    async getAttachmentUrl(s3Key: string): Promise<string> {
-      const res = await http.get(
-        `/email/attachments/${encodeURIComponent(s3Key)}`,
-      );
-      return z.object({ url: z.string() }).parse(res).url;
     },
 
     // ─── Settings ───────────────────────────────────────────────────
@@ -745,12 +729,13 @@ export function createEmailApi(http: HttpService) {
      * The caller is responsible for triggering the download.
      */
     async exportMessage(messageId: string): Promise<{ content: string; filename: string }> {
-      const res = await http.get(`/email/messages/${messageId}/export`, {
-        responseType: 'text',
+      // The export endpoint responds with `message/rfc822`; HttpService returns
+      // non-JSON content types as raw text.
+      const res = await http.get<string>(`/email/messages/${messageId}/export`, {
         headers: { Accept: 'message/rfc822' },
       });
       return {
-        content: res as unknown as string,
+        content: res,
         filename: 'message.eml',
       };
     },
