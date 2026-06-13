@@ -236,4 +236,80 @@ describe('PUT /users/resolve (C4)', () => {
     expect(res.status).toBe(200);
     expect(mockUserFindOneAndUpdate).toHaveBeenCalledTimes(1);
   });
+
+  it('refresh: re-downloads avatar even when a stored file id already exists', async () => {
+    const newAvatarUrl = 'https://mastodon.social/avatars/alice.png';
+
+    // First findOne: type-immutability check — no existing user found.
+    const immutabilityLean = jest.fn().mockResolvedValue(null);
+    const immutabilitySelect = jest.fn().mockReturnValue({ lean: immutabilityLean });
+    // Second findOne: avatar lookup — existing user already has a stored file id.
+    const avatarLean = jest.fn().mockResolvedValue({ avatar: 'file-abc' });
+    const avatarSelect = jest.fn().mockReturnValue({ lean: avatarLean });
+    mockUserFindOne
+      .mockReturnValueOnce({ select: immutabilitySelect })
+      .mockReturnValueOnce({ select: avatarSelect });
+
+    // Forced refresh re-downloads and yields a new stored file id.
+    mockFederationDownloadAvatar.mockResolvedValueOnce('file-new');
+
+    const newUserDoc = {
+      _id: 'new-user',
+      username: 'alice@mastodon.social',
+      type: 'federated',
+      avatar: 'file-new',
+    };
+    const updateLean = jest.fn().mockResolvedValue(newUserDoc);
+    const updateSelect = jest.fn().mockReturnValue({ lean: updateLean });
+    mockUserFindOneAndUpdate.mockReturnValueOnce({ select: updateSelect });
+
+    const res = await requestJson(server, 'PUT', '/users/resolve', {
+      type: 'federated',
+      username: 'alice@mastodon.social',
+      actorUri: 'https://mastodon.social/users/alice',
+      domain: 'mastodon.social',
+      avatar: newAvatarUrl,
+      refresh: true,
+    });
+
+    expect(res.status).toBe(200);
+    expect(mockFederationDownloadAvatar).toHaveBeenCalledWith(newAvatarUrl, 'file-abc');
+    expect(mockUserFindOneAndUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it('no refresh flag: keeps the stored file-id avatar without re-downloading', async () => {
+    const newAvatarUrl = 'https://mastodon.social/avatars/alice.png';
+
+    // First findOne: type-immutability check — no existing user found.
+    const immutabilityLean = jest.fn().mockResolvedValue(null);
+    const immutabilitySelect = jest.fn().mockReturnValue({ lean: immutabilityLean });
+    // Second findOne: avatar lookup — existing user already has a stored file id.
+    const avatarLean = jest.fn().mockResolvedValue({ avatar: 'file-abc' });
+    const avatarSelect = jest.fn().mockReturnValue({ lean: avatarLean });
+    mockUserFindOne
+      .mockReturnValueOnce({ select: immutabilitySelect })
+      .mockReturnValueOnce({ select: avatarSelect });
+
+    const newUserDoc = {
+      _id: 'new-user',
+      username: 'alice@mastodon.social',
+      type: 'federated',
+      avatar: 'file-abc',
+    };
+    const updateLean = jest.fn().mockResolvedValue(newUserDoc);
+    const updateSelect = jest.fn().mockReturnValue({ lean: updateLean });
+    mockUserFindOneAndUpdate.mockReturnValueOnce({ select: updateSelect });
+
+    const res = await requestJson(server, 'PUT', '/users/resolve', {
+      type: 'federated',
+      username: 'alice@mastodon.social',
+      actorUri: 'https://mastodon.social/users/alice',
+      domain: 'mastodon.social',
+      avatar: newAvatarUrl,
+    });
+
+    expect(res.status).toBe(200);
+    expect(mockFederationDownloadAvatar).not.toHaveBeenCalled();
+    expect(mockUserFindOneAndUpdate).toHaveBeenCalledTimes(1);
+  });
 });
