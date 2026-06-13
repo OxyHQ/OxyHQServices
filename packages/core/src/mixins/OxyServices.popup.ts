@@ -31,6 +31,25 @@ export interface PopupAuthOptions {
 
 export interface SilentAuthOptions {
   timeout?: number;
+  /**
+   * Override the auth-web (IdP) origin used for the silent iframe, instead of
+   * the instance's configured `resolveAuthUrl()`.
+   *
+   * Why this exists: an instance configured with the CENTRAL IdP
+   * (`authWebUrl=https://auth.oxy.so`, for the opaque-code `/sso` bounce and
+   * FedCM) cannot read the DURABLE per-apex `fedcm_session` cookie via the
+   * central host — that cookie is first-party only on `auth.<rp-apex>` (e.g.
+   * `auth.mention.earth`). The cross-domain reload-restore path must point the
+   * `/auth/silent` iframe at the PER-APEX host so the cookie is same-site to
+   * the RP page (first-party under Safari ITP / Firefox TCP) and the restore
+   * is NOT a top-level navigation (no flash, works in a backgrounded tab).
+   *
+   * When provided this value is used BOTH for the iframe `src` AND for the
+   * `postMessage` origin validation in {@link waitForIframeAuth}, so the
+   * security check still matches the exact origin the iframe was loaded from.
+   * Must be an absolute origin (`https://auth.<apex>`); ignored if empty.
+   */
+  authWebUrlOverride?: string;
 }
 
 /**
@@ -244,6 +263,16 @@ export function OxyServicesPopupAuthMixin<T extends typeof OxyServicesBase>(Base
     const nonce = this.generateNonce();
     const clientId = window.location.origin;
 
+    // Resolve the IdP origin for the iframe. An explicit per-apex override (the
+    // durable cross-domain reload path — see `SilentAuthOptions.authWebUrlOverride`)
+    // wins over the instance's configured central auth URL. The SAME origin is
+    // handed to `waitForIframeAuth` so the postMessage origin check matches the
+    // exact host the iframe was loaded from.
+    const authOrigin =
+      options.authWebUrlOverride && options.authWebUrlOverride.length > 0
+        ? options.authWebUrlOverride
+        : this.resolveAuthUrl();
+
     const iframe = document.createElement('iframe');
     iframe.style.display = 'none';
     iframe.style.position = 'absolute';
@@ -251,13 +280,13 @@ export function OxyServicesPopupAuthMixin<T extends typeof OxyServicesBase>(Base
     iframe.style.height = '0';
     iframe.style.border = 'none';
 
-    const silentUrl = `${this.resolveAuthUrl()}/auth/silent?` + `client_id=${encodeURIComponent(clientId)}&` + `nonce=${nonce}`;
+    const silentUrl = `${authOrigin}/auth/silent?` + `client_id=${encodeURIComponent(clientId)}&` + `nonce=${nonce}`;
 
     iframe.src = silentUrl;
     document.body.appendChild(iframe);
 
     try {
-      const session = await this.waitForIframeAuth(iframe, timeout, clientId);
+      const session = await this.waitForIframeAuth(iframe, timeout, authOrigin);
 
       // Bail early on incomplete responses. The iframe contract requires
       // both an access token and a session id; anything less is unusable.
@@ -475,8 +504,11 @@ export function OxyServicesPopupAuthMixin<T extends typeof OxyServicesBase>(Base
       }, timeout);
 
       const messageHandler = (event: MessageEvent) => {
-        // Verify origin
-        if (event.origin !== this.resolveAuthUrl()) {
+        // Verify origin against the EXACT host the iframe was loaded from
+        // (`expectedOrigin`). For the per-apex durable-restore path this is
+        // `auth.<rp-apex>`, not the instance's central `resolveAuthUrl()` — so
+        // we must honour the caller-supplied origin, never re-derive it here.
+        if (event.origin !== expectedOrigin) {
           return;
         }
 
