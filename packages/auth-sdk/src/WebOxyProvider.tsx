@@ -19,18 +19,22 @@ import {
 import {
   OxyServices,
   CrossDomainAuth,
-  AuthManager,
   createAuthManager,
+  autoDetectAuthWebUrl,
+  runColdBoot,
+  logger,
 } from '@oxyhq/core';
 import type {
+  AuthManager,
   User,
   SessionLoginResponse,
   ClientSession,
   AuthManagerAccount,
+  ColdBootStep,
+  ColdBootOutcome,
 } from '@oxyhq/core';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { attachQueryPersistence, createQueryClient } from './hooks/queryClient';
-import { autoDetectAuthWebUrl } from './utils/fapiAutoDetect';
 
 export interface WebAuthState {
   user: User | null;
@@ -112,20 +116,55 @@ export interface WebOxyContextValue extends WebAuthState, WebAuthActions {
 const WebOxyContext = createContext<WebOxyContextValue | null>(null);
 
 /**
- * Module-level run-once guard for FedCM silent sign-in.
+ * Discriminated union carried by each cold-boot step's `kind: 'session'`
+ * result. The `method` tag lets the post-runner switch reproduce today's exact
+ * per-branch commit:
+ *   - `redirect` / `fedcm` → `handleAuthSuccess(session, method)`.
+ *   - `cookie` → the AuthManager restore path (`setUser` + `syncAccounts*` +
+ *     `setActiveSessionId`), which deliberately does NOT funnel through
+ *     `handleAuthSuccess`.
+ *
+ * The `redirect` and `fedcm` variants carry a fully-hydrated
+ * `SessionLoginResponse` (real user, never the empty-id placeholder). The
+ * `cookie` variant carries the already-fetched `User` plus the active session
+ * id resolved from the AuthManager registry.
+ */
+type ColdBootSession =
+  | { method: 'redirect' | 'fedcm'; session: SessionLoginResponse }
+  | { method: 'cookie'; user: User; activeSessionId: string | null };
+
+/**
+ * Module-level run-once guard for the composite silent sign-in step.
  *
  * The init effect runs again whenever the provider remounts (route change,
  * StrictMode double-invoke, error-boundary recovery). The redirect-callback
- * and local-session-restore steps are cheap and idempotent, but the FedCM
- * `silentSignIn()` step triggers `navigator.credentials.get`, which must fire
- * AT MOST ONCE per page load — otherwise a remount storm becomes a credential
- * request storm. Keyed by origin so the guard survives instance churn; never
- * cleared because only a fresh page load can change the IdP session state.
+ * and local-session-restore steps are cheap and idempotent, but the silent
+ * sign-in step triggers `navigator.credentials.get` (FedCM) — and, on
+ * browsers without FedCM, a first-party iframe load against the IdP — both of
+ * which must fire AT MOST ONCE per page load. Otherwise a remount storm becomes
+ * a credential-request storm.
+ *
+ * Keyed on `origin|baseURL` (the same signature `useWebSSO.ssoSignature` uses)
+ * so two providers on the same origin pointed at different APIs each get their
+ * own one-shot budget, while same-origin same-API remounts share one. The set
+ * is intentionally never cleared: only a fresh page load (a fresh module scope)
+ * can change the IdP session state.
  */
 const fedcmSilentSignInAttempted = new Set<string>();
 
-function silentSignInKey(): string {
-  return typeof window !== 'undefined' ? window.location.origin : 'no-origin';
+/**
+ * Build the run-once signature for the silent sign-in guard. Matches
+ * `useWebSSO.ssoSignature` exactly: `${origin}|${baseURL}`.
+ */
+function silentSignInKey(oxyServices: OxyServices): string {
+  const origin = typeof window !== 'undefined' ? window.location.origin : 'no-origin';
+  let baseURL = '';
+  try {
+    baseURL = oxyServices.getBaseURL?.() ?? '';
+  } catch {
+    baseURL = '';
+  }
+  return `${origin}|${baseURL}`;
 }
 
 export interface WebOxyProviderProps {
@@ -300,90 +339,144 @@ export function WebOxyProvider({
     let mounted = true;
 
     const initAuth = async () => {
-      try {
-        // 1) Redirect callback wins: an in-flight popup/redirect flow just
-        // landed back on this page with a session payload. Honour it
-        // unconditionally before touching FedCM or cookies.
-        const callbackSession = crossDomainAuth.handleRedirectCallback();
-        if (callbackSession && mounted) {
-          await handleAuthSuccess(callbackSession, 'redirect');
+      // Cold boot resolves a recovered session by trying, in order:
+      //   1) `redirect`      — an in-flight popup/redirect flow that just
+      //                        landed back on this page with a session.
+      //   2) `fedcm-silent`  — `crossDomainAuth.silentSignIn()`, a composite
+      //                        that tries FedCM `mediation: 'silent'` first and
+      //                        then a first-party iframe against the IdP. The
+      //                        iframe fallback is what restores cross-domain
+      //                        sessions on Safari/Firefox (no FedCM), so this
+      //                        step is gated ONLY on the module-level run-once
+      //                        guard — never on `isFedCMSupported`.
+      //   3) `cookie`        — `authManager.initialize()`, the transitional
+      //                        same-origin cookie path (`POST /auth/refresh-all`).
+      //
+      // Each step returns a `kind: 'session'` carrying the commit `method` so
+      // the post-runner switch reproduces today's exact per-branch commit.
+      // CRITICAL: the `redirect` and `cookie` steps MUST hydrate a REAL user
+      // before claiming a session. `handleAuthCallback()` returns a placeholder
+      // user with an empty `id`; if the follow-up `getCurrentUser()` throws we
+      // return `{ kind: 'skip' }`, NOT a placeholder session.
+      const ssoKey = silentSignInKey(oxyServices);
+
+      const steps: ReadonlyArray<ColdBootStep<ColdBootSession>> = [
+        {
+          id: 'redirect',
+          run: async () => {
+            const callbackSession = crossDomainAuth.handleRedirectCallback();
+            if (!callbackSession) return { kind: 'skip' };
+            // The callback session's user is a placeholder (empty id). Hydrate
+            // the real user via the freshly-planted bearer token before
+            // committing — a failed hydration must not surface a placeholder.
+            try {
+              const currentUser = await oxyServices.getCurrentUser();
+              if (!currentUser) return { kind: 'skip' };
+              return {
+                kind: 'session',
+                session: {
+                  method: 'redirect',
+                  session: { ...callbackSession, user: currentUser },
+                },
+              };
+            } catch {
+              return { kind: 'skip' };
+            }
+          },
+        },
+        {
+          id: 'fedcm-silent',
+          // The composite silent sign-in (FedCM-then-iframe) fires
+          // `navigator.credentials.get` / a hidden iframe load, which must
+          // happen AT MOST ONCE per page load. Gate purely on the run-once
+          // guard so the iframe fallback stays available for Safari/Firefox.
+          enabled: () => !fedcmSilentSignInAttempted.has(ssoKey),
+          run: async () => {
+            fedcmSilentSignInAttempted.add(ssoKey);
+            const session = await crossDomainAuth.silentSignIn();
+            if (!session?.user) return { kind: 'skip' };
+            return {
+              kind: 'session',
+              session: { method: 'fedcm', session },
+            };
+          },
+        },
+        {
+          id: 'cookie',
+          // Transitional same-origin cookie path — removed in Phase 3 once
+          // FedCM silent reauthn has soaked in prod. Resurrects every
+          // device-local slot via `POST /auth/refresh-all` when the IdP
+          // cookie rides along in this origin's jar.
+          run: async () => {
+            const restoredUser = await authManager.initialize();
+            if (!restoredUser) return { kind: 'skip' };
+            try {
+              const currentUser = await oxyServices.getCurrentUser();
+              if (!currentUser) {
+                // AuthManager claimed a restore but the bearer call returned
+                // nothing — treat as a stale session.
+                await authManager.signOutAllViaCookies();
+                syncAccountsFromManager();
+                return { kind: 'skip' };
+              }
+              const activeAccount = authManager.getActiveAccount();
+              return {
+                kind: 'session',
+                session: {
+                  method: 'cookie',
+                  user: currentUser,
+                  activeSessionId: activeAccount ? activeAccount.sessionId : null,
+                },
+              };
+            } catch {
+              // Bearer call failed even though AuthManager said it restored —
+              // treat as a stale session and fall through to unauthenticated.
+              // Use the cookie-path sign-out so we don't touch legacy
+              // localStorage keys.
+              await authManager.signOutAllViaCookies();
+              syncAccountsFromManager();
+              return { kind: 'skip' };
+            }
+          },
+        },
+      ];
+
+      const outcome: ColdBootOutcome<ColdBootSession> = await runColdBoot({
+        steps,
+        onStepError: (id, err) => {
+          // Cold-boot step errors are the EXPECTED branch for logged-out
+          // visitors and FedCM-less browsers — log at debug so they don't
+          // spam the console every page load.
+          logger.debug(
+            'cold-boot step did not resolve a session',
+            { component: 'WebOxyProvider', method: 'initAuth', step: id },
+            err
+          );
+        },
+      });
+
+      if (!mounted) return;
+
+      if (outcome.kind === 'unauthenticated') {
+        setIsLoading(false);
+        return;
+      }
+
+      // Reproduce today's exact per-branch commit.
+      switch (outcome.session.method) {
+        case 'redirect':
+        case 'fedcm':
+          await handleAuthSuccess(outcome.session.session, outcome.session.method);
+          return;
+        case 'cookie': {
+          syncAccountsFromManager();
+          if (outcome.session.activeSessionId) {
+            setActiveSessionId(outcome.session.activeSessionId);
+          }
+          setUser(outcome.session.user);
+          setIsLoading(false);
           return;
         }
-
-        // 2) FedCM-first cold boot. The IdP at auth.oxy.so owns the
-        // canonical session for the entire Oxy ecosystem; consumer RPs
-        // (mention.earth, alia.onl, homiio.com, …) deliberately hold NO
-        // long-lived session state. On every cold boot we ask the
-        // browser's FedCM API (`mediation: 'silent'`) to reauthenticate
-        // the user from the IdP. This is the SAME pattern Clerk uses with
-        // its per-app FAPI domain and the W3C FedCM 2026 spec endorses.
-        //
-        // Why FedCM-first (not cookie-first):
-        //   - Cookies are scoped to a single eTLD+1 — they never restore
-        //     a cross-domain session. FedCM does.
-        //   - The cookie path runs `POST /auth/refresh-all` and silently
-        //     returns `{accounts: []}` whenever the cookie didn't ride
-        //     along (cross-domain, third-party-cookie blocking, fresh
-        //     browser), wasting the one shot we have at FedCM silent
-        //     reauthn for that page load.
-        //   - The legacy `Set-Cookie: oxy_rt_*` flow is being retired
-        //     (Phase 2 marks it `Deprecation:` + `Sunset:`; Phase 3
-        //     deletes it). FedCM-first is the forward-compatible default.
-        //
-        // The guard `fedcmSilentSignInAttempted` is keyed on
-        // `origin+baseURL` and lives at module scope so React StrictMode
-        // double-invokes, navigations within the same SPA, and HMR all
-        // share the same one-shot budget.
-        const ssoKey = silentSignInKey();
-        if (!fedcmSilentSignInAttempted.has(ssoKey)) {
-          fedcmSilentSignInAttempted.add(ssoKey);
-          try {
-            const session = await crossDomainAuth.silentSignIn();
-            if (mounted && session?.user) {
-              await handleAuthSuccess(session, 'fedcm');
-              return;
-            }
-          } catch {
-            // Silent sign-in didn't resolve — fall through to the
-            // (transitional) cookie path. A FedCM rejection is the
-            // expected branch for first-time visitors and for browsers
-            // that don't implement FedCM yet.
-          }
-        }
-
-        // 3) Cookie-path restore (transitional — will be removed in
-        // Phase 3 once FedCM silent reauthn has soaked in prod). When
-        // the IdP cookie is present in *this* origin's cookie jar
-        // (i.e. the user is on `auth.oxy.so` itself, or an RP that
-        // still shares the `oxy.so` cookie domain), `POST
-        // /auth/refresh-all` resurrects every device-local slot.
-        const restoredUser = await authManager.initialize();
-        if (restoredUser && mounted) {
-          syncAccountsFromManager();
-          const activeAccount = authManager.getActiveAccount();
-          if (activeAccount) {
-            setActiveSessionId(activeAccount.sessionId);
-          }
-          try {
-            const currentUser = await oxyServices.getCurrentUser();
-            if (mounted && currentUser) {
-              setUser(currentUser);
-              setIsLoading(false);
-              return;
-            }
-          } catch {
-            // The bearer call failed even though the AuthManager said it
-            // had restored — treat as a stale session and fall through to
-            // unauthenticated. Use the cookie-path sign-out so we don't
-            // touch the legacy localStorage keys.
-            await authManager.signOutAllViaCookies();
-            syncAccountsFromManager();
-          }
-        }
-
-        if (mounted) setIsLoading(false);
-      } catch {
-        if (mounted) setIsLoading(false);
       }
     };
 
@@ -395,13 +488,24 @@ export function WebOxyProvider({
       }
     }, INIT_TIMEOUT_MS);
 
-    initAuth().finally(() => clearTimeout(timeoutId));
+    initAuth()
+      .catch((err) => {
+        // The post-runner commit (`handleAuthSuccess`) awaits a token plant
+        // before it flips `setIsLoading(false)`. If anything throws BEFORE
+        // that flip, the rejection would otherwise be unhandled and
+        // `isLoading` would stay true until the 15s safety timeout. Route it
+        // through the existing error handler so loading resets immediately.
+        if (mounted) {
+          handleAuthError(err);
+        }
+      })
+      .finally(() => clearTimeout(timeoutId));
 
     return () => {
       mounted = false;
       clearTimeout(timeoutId);
     };
-  }, [oxyServices, crossDomainAuth, authManager, skipAutoCheck, handleAuthSuccess]);
+  }, [oxyServices, crossDomainAuth, authManager, skipAutoCheck, handleAuthSuccess, handleAuthError, syncAccountsFromManager]);
 
   useEffect(() => {
     onAuthStateChange?.(user);
