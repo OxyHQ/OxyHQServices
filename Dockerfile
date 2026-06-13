@@ -56,6 +56,14 @@ RUN bun install --production
 COPY --from=builder /app/packages/api/dist packages/api/dist
 COPY --from=builder /app/packages/core/dist packages/core/dist
 
+# Copy admin scripts + their src dependencies so one-shot ECS tasks can run them
+# via `bun run packages/api/scripts/<name>.ts`. Scripts intentionally live outside
+# tsconfig's rootDir; they are executed with bun (which interprets TS on the fly)
+# and import from packages/api/src/* + packages/core/src/* at runtime.
+COPY --from=builder /app/packages/api/scripts packages/api/scripts
+COPY --from=builder /app/packages/api/src packages/api/src
+COPY --from=builder /app/packages/core/src packages/core/src
+
 # Main API entry point (includes SMTP when SMTP_ENABLED=true)
 CMD ["node", "packages/api/dist/server.js"]
 
