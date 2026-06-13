@@ -929,8 +929,25 @@ router.delete(
  * @body {string} [avatar]      - Avatar URL or asset ID
  * @body {string} [bio]         - Profile bio
  * @body {string} [ownerId]     - Owner user ID (for agent/automated)
+ * @body {boolean} [refresh]            - When true, force re-downloading an http
+ *                                        avatar even if a stored file id already
+ *                                        exists (eventually-fresh refresh).
+ * @body {boolean} [forceAvatarRefresh] - Alias for `refresh`; either truthy forces it.
  * @returns {User} The resolved user document
  */
+interface ResolveUserBody {
+  type?: unknown;
+  username?: unknown;
+  actorUri?: unknown;
+  domain?: unknown;
+  displayName?: unknown;
+  avatar?: unknown;
+  bio?: unknown;
+  ownerId?: unknown;
+  refresh?: unknown;
+  forceAvatarRefresh?: unknown;
+}
+
 router.put(
   '/resolve',
   serviceAuthMiddleware,
@@ -942,9 +959,18 @@ router.put(
       throw new ForbiddenError('Missing required scope: federation:write');
     }
 
-    const { type, username, actorUri, domain, displayName, avatar, bio, ownerId } = req.body;
+    const body = req.body as ResolveUserBody;
+    const { type, username, actorUri, domain, displayName, avatar, bio, ownerId } = body;
+    // Either flag (truthy) forces an http avatar to be re-downloaded, replacing
+    // any existing stored file id. Mention passes `refresh: true` on its
+    // scheduled federated-actor refresh.
+    const forceAvatarRefresh = body.refresh === true || body.forceAvatarRefresh === true;
 
-    if (!type || !['federated', 'agent', 'automated'].includes(type)) {
+    const RESOLVE_USER_TYPES = ['federated', 'agent', 'automated'] as const;
+    type ResolveUserType = (typeof RESOLVE_USER_TYPES)[number];
+    const isResolveUserType = (value: unknown): value is ResolveUserType =>
+      typeof value === 'string' && (RESOLVE_USER_TYPES as readonly string[]).includes(value);
+    if (!isResolveUserType(type)) {
       throw new BadRequestError('type must be "federated", "agent", or "automated"');
     }
     if (!username || typeof username !== 'string') {
@@ -1014,14 +1040,17 @@ router.put(
       setFields.bio = bio;
     }
 
-    // For avatar URLs, download and store as an Oxy file instead of
-    // saving raw external URLs. Only overwrite if the user doesn't
-    // already have a stored file ID (avoids clobbering good avatars).
+    // For avatar URLs, download and store as an Oxy file instead of saving raw
+    // external URLs. By default we don't clobber an avatar that's already a
+    // stored file id (avoids re-downloading on every resolve). When the caller
+    // forces a refresh (`refresh` / `forceAvatarRefresh`), we always re-download
+    // so the stored avatar tracks the remote one — this is what lets federated
+    // avatars actually update after the first fetch.
     if (typeof avatar === 'string' && avatar.startsWith('http')) {
       const existingUser = await User.findOne(filter).select('avatar').lean();
-      const existingAvatar = existingUser?.avatar as string | undefined;
-      const alreadyHasFileId = existingAvatar && !existingAvatar.startsWith('http');
-      if (!alreadyHasFileId) {
+      const existingAvatar = typeof existingUser?.avatar === 'string' ? existingUser.avatar : undefined;
+      const alreadyHasFileId = existingAvatar !== undefined && !existingAvatar.startsWith('http');
+      if (forceAvatarRefresh || !alreadyHasFileId) {
         const fileId = await federationService.downloadAndStoreAvatar(avatar, existingAvatar);
         if (fileId) {
           setFields.avatar = fileId;
@@ -1043,6 +1072,11 @@ router.put(
     if (!user) {
       throw new Error('Failed to resolve user');
     }
+
+    // This route mutates user state (avatar/name/bio/federation fields), so the
+    // in-memory user cache must be invalidated — otherwise getUserBySession can
+    // serve a stale record and silently revert this update.
+    userCache.invalidate(user._id.toString());
 
     logger.info('External user resolved', { type, username, userId: user._id });
 

@@ -12,6 +12,7 @@ import User, { IUser } from '../models/User';
 import { AssetService } from './assetService';
 import { createS3Service } from './s3Service';
 import { logger } from '../utils/logger';
+import userCache from '../utils/userCache';
 
 /** Decode common HTML entities (&#39; &amp; &lt; &gt; &quot; and numeric). */
 function decodeHtmlEntities(text: string): string {
@@ -34,12 +35,38 @@ const AP_ACCEPT_TYPES = [
 const AP_DOMAIN = process.env.FEDERATION_DOMAIN || 'oxy.so';
 const MENTION_API_DOMAIN = process.env.MENTION_API_DOMAIN || 'api.mention.earth';
 const USER_AGENT = 'OxyHQ/1.0 (ActivityPub)';
+
+/**
+ * A cached federated record older than this is considered stale and triggers a
+ * background refresh on the next resolve. The cached record is still returned
+ * immediately — the refresh runs fire-and-forget. Bluesky-style: fast now,
+ * eventually fresh.
+ */
 const STALE_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+/**
+ * Minimum gap between background refresh attempts for the same actor. Guards
+ * against refresh storms when many requests hit a stale record at once (each
+ * request would otherwise schedule its own background fetch).
+ */
+const REFRESH_MIN_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
 const FEDIVERSE_HANDLE_REGEX = /^@?[\w.-]+@[\w.-]+\.\w+$/;
 
 // System user ID for federated avatar ownership
 const FEDERATION_SYSTEM_USER = '__federation__';
+
+/**
+ * Actor URIs (or, when no actorUri is known yet, lowercased handles) currently
+ * mid-refresh. Prevents two concurrent background refreshes of the same actor.
+ */
+const _refreshInFlight = new Set<string>();
+
+/**
+ * Last time a background refresh was *attempted* for a given key, used with
+ * {@link REFRESH_MIN_INTERVAL_MS} to throttle repeated attempts.
+ */
+const _lastRefreshAttemptAt = new Map<string, number>();
 
 /**
  * Check if a string looks like a fediverse handle (@user@domain or user@domain).
@@ -435,11 +462,16 @@ class FederationService {
 
   /**
    * Full pipeline: resolve a fediverse handle to an Oxy user.
-   * 1. Check local cache (existing user with matching federation.actorUri, <24h old)
-   * 2. WebFinger → actor URI
-   * 3. Fetch actor profile (with HTTP Signature)
-   * 4. Download avatar to Oxy Cloud
-   * 5. Upsert as Oxy user with type=federated
+   *
+   * Fast + eventually-fresh (Bluesky-style):
+   * 1. If a cached federated user exists, RETURN IT IMMEDIATELY — never block
+   *    on remote I/O when we already have a row. If that row is stale (older
+   *    than {@link STALE_MS}) or still has a raw-URL avatar that needs
+   *    downloading, kick off a fire-and-forget background refresh that replaces
+   *    avatar/name/bio in place, but still return the cached record now.
+   * 2. If NO cached row exists, do the first-time blocking fetch:
+   *    WebFinger → fetch actor profile (HTTP Signature) → download avatar →
+   *    upsert as type=federated → return.
    */
   async resolveAndUpsert(handle: string): Promise<IUser | null> {
     const cleaned = handle.replace(/^@/, '');
@@ -448,7 +480,7 @@ class FederationService {
 
     const domain = cleaned.substring(atIndex + 1);
 
-    // Check cache: existing user fetched recently.
+    // Check cache: existing federated user.
     // Fediverse usernames are case-insensitive; we store them lowercased.
     const existing = await User.findOne({
       type: 'federated',
@@ -458,39 +490,37 @@ class FederationService {
       .select('-password -refreshToken')
       .lean({ virtuals: true }) as IUser | null;
 
-    // An avatar stored as a URL (from PUT /users/resolve) must be re-downloaded
-    // so it becomes a proper Oxy file. Skip the cache shortcut in that case.
-    const avatarNeedsDownload = existing?.avatar
-      && typeof existing.avatar === 'string'
-      && existing.avatar.startsWith('http');
+    if (existing) {
+      // We have a row — never block the caller on remote I/O. Decide whether a
+      // background refresh is warranted: either the record is stale, or its
+      // avatar is still a raw http URL (e.g. set by PUT /users/resolve) that
+      // hasn't been downloaded into an Oxy file yet.
+      const isStale = !existing.updatedAt
+        || Date.now() - new Date(existing.updatedAt).getTime() >= STALE_MS;
+      const avatarNeedsDownload = typeof existing.avatar === 'string'
+        && existing.avatar.startsWith('http');
 
-    if (
-      existing?.updatedAt
-      && Date.now() - new Date(existing.updatedAt).getTime() < STALE_MS
-      && !avatarNeedsDownload
-    ) {
+      if (isStale || avatarNeedsDownload) {
+        this.scheduleBackgroundRefresh(existing, cleaned);
+      }
+
       return existing;
     }
 
-    // WebFinger resolution
+    // No cached row — first-time blocking fetch (the only allowed blocking case).
     const actorUri = await this.resolveWebFinger(cleaned);
     if (!actorUri) return null;
 
-    // Fetch actor profile
     const profile = await this.fetchActorProfile(actorUri);
     if (!profile) return null;
 
-    // Download avatar to Oxy Cloud (replaces old avatar if exists)
+    // Download avatar to Oxy Cloud (no existing file to replace on first fetch).
     let avatarFileId: string | undefined;
     if (profile.avatarUrl) {
-      const storedId = await this.downloadAndStoreAvatar(
-        profile.avatarUrl,
-        existing?.avatar,
-      );
+      const storedId = await this.downloadAndStoreAvatar(profile.avatarUrl);
       if (storedId) avatarFileId = storedId;
     }
 
-    // Upsert into Oxy users collection
     const setFields: Record<string, unknown> = {
       type: 'federated',
       username: profile.username.toLowerCase(),
@@ -519,6 +549,116 @@ class FederationService {
     }
 
     return user;
+  }
+
+  /**
+   * Fire-and-forget scheduler for {@link refreshFederatedUser}.
+   *
+   * Storm guard: a given actor is refreshed at most once concurrently
+   * ({@link _refreshInFlight}) and at most once per {@link REFRESH_MIN_INTERVAL_MS}
+   * ({@link _lastRefreshAttemptAt}). The refresh key is the actor URI when known,
+   * otherwise the lowercased handle. This method NEVER awaits and NEVER throws —
+   * a rejected refresh is caught and logged so it can't surface as an unhandled
+   * rejection or crash the process.
+   */
+  private scheduleBackgroundRefresh(existing: IUser, handle: string): void {
+    const key = existing.federation?.actorUri || handle.toLowerCase();
+
+    if (_refreshInFlight.has(key)) return;
+
+    const lastAttempt = _lastRefreshAttemptAt.get(key);
+    if (lastAttempt !== undefined && Date.now() - lastAttempt < REFRESH_MIN_INTERVAL_MS) {
+      return;
+    }
+
+    _refreshInFlight.add(key);
+    _lastRefreshAttemptAt.set(key, Date.now());
+
+    void this.refreshFederatedUser(existing, handle)
+      .catch((err) => {
+        logger.warn(
+          `Background federated refresh failed for ${key}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      })
+      .finally(() => {
+        _refreshInFlight.delete(key);
+      });
+  }
+
+  /**
+   * Re-fetch a federated actor's avatar/name/bio and update the cached Oxy user
+   * in place. Runs in the background (fire-and-forget). Wraps its whole body so
+   * a rejection can never escape the caller — all failures are logged.
+   *
+   * @param existing - The cached federated user to refresh.
+   * @param handle   - The lowercased handle, used to re-WebFinger if no actorUri.
+   */
+  private async refreshFederatedUser(existing: IUser, handle: string): Promise<void> {
+    const userId = existing._id.toString();
+    try {
+      // Resolve the actor URI: reuse the stored one, else re-WebFinger.
+      const actorUri = existing.federation?.actorUri
+        || await this.resolveWebFinger(handle);
+      if (!actorUri) {
+        logger.warn(`Background refresh: could not resolve actor URI for ${handle}`);
+        return;
+      }
+
+      const profile = await this.fetchActorProfile(actorUri);
+      if (!profile) {
+        logger.warn(`Background refresh: actor profile fetch returned null for ${actorUri}`);
+        return;
+      }
+
+      const setFields: Record<string, unknown> = {};
+
+      if (profile.displayName) {
+        setFields['name.first'] = profile.displayName;
+      }
+      if (profile.bio) {
+        setFields.bio = profile.bio;
+        setFields.description = profile.bio;
+      }
+
+      // Download the latest avatar and replace the old stored file. Only set the
+      // avatar field when the download succeeded — never clobber a good avatar
+      // with null because the remote fetch failed.
+      if (profile.avatarUrl) {
+        const existingAvatar = typeof existing.avatar === 'string' ? existing.avatar : undefined;
+        const newAvatarFileId = await this.downloadAndStoreAvatar(profile.avatarUrl, existingAvatar);
+        if (newAvatarFileId) {
+          setFields.avatar = newAvatarFileId;
+        } else {
+          logger.warn(`Background refresh: avatar download failed for ${actorUri} (keeping existing)`);
+        }
+      }
+
+      if (Object.keys(setFields).length === 0) {
+        // Nothing new to persist; touch updatedAt so we don't re-attempt every
+        // request until the next stale window.
+        await User.updateOne({ _id: existing._id }, { $set: { updatedAt: new Date() } });
+        userCache.invalidate(userId);
+        return;
+      }
+
+      await User.updateOne({ _id: existing._id }, { $set: setFields });
+
+      // CRITICAL: every path that mutates user state must invalidate the cache,
+      // otherwise getUserBySession serves stale in-memory data and silently
+      // reverts this update.
+      userCache.invalidate(userId);
+
+      logger.info(
+        `Background-refreshed federated user ${existing.username || handle} (${actorUri})`,
+      );
+    } catch (err) {
+      // Defensive: refreshFederatedUser must never throw out of the
+      // fire-and-forget caller. The scheduler also has a .catch, but we log here
+      // with full context too.
+      logger.error(
+        `Background refresh threw for ${handle} (${userId}): ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 }
 
