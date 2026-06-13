@@ -24,6 +24,7 @@
 
 import type { OxyServices } from './OxyServices';
 import type { SessionLoginResponse } from './models/session';
+import { logger } from './utils/loggerUtils';
 
 export interface CrossDomainAuthOptions {
   /**
@@ -143,7 +144,7 @@ export class CrossDomainAuth {
         this.closeOrphanPopup(options.popup);
         return session;
       } catch (error) {
-        console.warn('[CrossDomainAuth] FedCM failed, trying popup...', error);
+        logger.warn('FedCM failed, trying popup', { component: 'CrossDomainAuth', method: 'autoSignIn' }, error);
       }
     }
 
@@ -152,7 +153,7 @@ export class CrossDomainAuth {
       options.onMethodSelected?.('popup');
       return await this.signInWithPopup(options);
     } catch (error) {
-      console.warn('[CrossDomainAuth] Popup failed, falling back to redirect...', error);
+      logger.warn('Popup failed, falling back to redirect', { component: 'CrossDomainAuth', method: 'autoSignIn' }, error);
       // Popup path failed — close the pre-opened popup before redirecting.
       this.closeOrphanPopup(options.popup);
     }
@@ -226,7 +227,7 @@ export class CrossDomainAuth {
           return session;
         }
       } catch (error) {
-        console.warn('[CrossDomainAuth] FedCM silent sign-in failed:', error);
+        logger.debug('FedCM silent sign-in did not resolve', { component: 'CrossDomainAuth', method: 'silentSignIn' }, error);
       }
     }
 
@@ -234,7 +235,7 @@ export class CrossDomainAuth {
     try {
       return await this.oxyServices.silentSignIn();
     } catch (error) {
-      console.warn('[CrossDomainAuth] Silent sign-in failed:', error);
+      logger.debug('iframe silent sign-in did not resolve', { component: 'CrossDomainAuth', method: 'silentSignIn' }, error);
       return null;
     }
   }
@@ -326,7 +327,7 @@ export class CrossDomainAuth {
           };
         }
       } catch (error) {
-        console.warn('[CrossDomainAuth] Stored session invalid:', error);
+        logger.debug('stored session invalid', { component: 'CrossDomainAuth', method: 'initialize' }, error);
       }
     }
 
