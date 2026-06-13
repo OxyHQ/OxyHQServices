@@ -697,6 +697,25 @@ const MULTIPART_TLDS: ReadonlySet<string> = new Set([
 const CENTRAL_IDP_APEX = 'oxy.so';
 
 /**
+ * The issuer the API's `POST /fedcm/exchange` validates every assertion against
+ * (the central-SSO model): `https://auth.<CENTRAL_IDP_APEX>` = `https://auth.oxy.so`.
+ *
+ * On the central host (`auth.oxy.so`) `resolveConfig().fedcmIssuer` already
+ * derives to this value, so `GET /sso` mints assertions the API accepts. But the
+ * per-apex second hop (`GET /sso/establish`) runs on `auth.<rp-apex>` (e.g.
+ * `auth.mention.earth`), where `resolveConfig().fedcmIssuer` would derive to the
+ * RP's host and the API would REJECT the exchange (`Invalid issuer`). This worker
+ * is the SAME IdP serving every `auth.<apex>` CNAME and shares
+ * `FEDCM_TOKEN_SECRET` with the API, so it is legitimate for it to mint a
+ * central-issuer assertion from the per-apex host — exactly as `/sso` already
+ * does on `auth.oxy.so`. The establish mint forces this value (see
+ * `mintSessionForClient` callsite in `GET /sso/establish`). The per-apex
+ * `Set-Cookie` is unaffected — the `fedcm_session` cookie is host-only on
+ * `auth.<apex>`, independent of the assertion issuer.
+ */
+const CENTRAL_FEDCM_ISSUER = `https://auth.${CENTRAL_IDP_APEX}`;
+
+/**
  * Derive the per-apex first-party IdP host (`auth.<eTLD+1>`) for an approved
  * client origin, mirroring core `autoDetectAuthWebUrl`'s eTLD+1 logic
  * (last-two-labels with the multi-part-TLD guard).
@@ -1821,7 +1840,17 @@ app.get('/sso/establish', async (c) => {
   //    Either failure → error bounce (the durable cookie is already set, so a
   //    reload will still restore first-party even if this immediate handoff
   //    failed).
-  const session = await mintSessionForClient(config, user, approvedOrigin);
+  //
+  //    CRITICAL: this hop runs on `auth.<rp-apex>` (e.g. auth.mention.earth), so
+  //    `config.fedcmIssuer` derives to the RP's host. The API's `/fedcm/exchange`
+  //    validates the assertion issuer against the CENTRAL `https://auth.oxy.so`
+  //    only and would reject a per-apex issuer (`Invalid issuer`). Force the
+  //    central issuer for the mint — legitimate because this worker is the SAME
+  //    IdP serving every `auth.<apex>` CNAME and shares `FEDCM_TOKEN_SECRET` with
+  //    the API (exactly as `/sso` mints on auth.oxy.so). The host-only cookie
+  //    planted in step 6 is independent of the assertion issuer.
+  const mintConfig: ResolvedConfig = { ...config, fedcmIssuer: CENTRAL_FEDCM_ISSUER };
+  const session = await mintSessionForClient(mintConfig, user, approvedOrigin);
   if (!session) {
     return redirectToCallback(c, returnTo, buildSsoFragment('error', state));
   }

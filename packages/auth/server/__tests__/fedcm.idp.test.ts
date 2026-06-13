@@ -1093,8 +1093,8 @@ function parseEstablishRedirect(res: Response): { location: string; url: URL } {
 }
 
 /** Decode the (unverified) payload of an establish-token for claim assertions. */
-function decodeJwtPayload(token: string): Record<string, unknown> {
-  const [, payloadB64] = token.split('.');
+function decodeJwtPayload(token: string | undefined): Record<string, unknown> {
+  const [, payloadB64] = (token ?? '..').split('.');
   const json = Buffer.from(payloadB64.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
   return JSON.parse(json) as Record<string, unknown>;
 }
@@ -1195,6 +1195,65 @@ describe('GET /sso -> /sso/establish second hop (cross-domain durable session)',
     expect(capturedSsoCode?.session?.sessionId).toBe(STUB_EXCHANGE_SESSION_ID);
     // No access token leaks into the redirect URL.
     expect(location).not.toContain(STUB_ACCESS_TOKEN);
+
+    // The mint hop ran on auth.mention.earth, but the assertion it sent to the
+    // API's /fedcm/exchange MUST carry the CENTRAL issuer (https://auth.oxy.so),
+    // because the API validates every assertion issuer against the central host
+    // only — a per-apex issuer is rejected with `Invalid issuer`. The aud stays
+    // the RP origin.
+    const establishPayload = decodeJwtPayload(capturedExchange?.idToken);
+    expect(establishPayload.iss).toBe('https://auth.oxy.so');
+    expect(establishPayload.aud).toBe(CROSS_RP);
+  });
+
+  it('mints with the CENTRAL issuer even when the per-apex host derives its own issuer (prod regression)', async () => {
+    // Reproduces production: FEDCM_ISSUER is NOT set on the oxy-auth Pages
+    // project (setting it would break multi-domain FAPI), so resolveConfig()
+    // derives fedcmIssuer from the request host. On the /sso/establish hop that
+    // host is auth.mention.earth — but the assertion the worker sends to the
+    // API's /fedcm/exchange MUST still carry the CENTRAL issuer, or the API
+    // rejects it with `Invalid issuer expected https://auth.oxy.so got
+    // https://auth.mention.earth` and the hop returns #oxy_sso=error.
+    const originalIssuer = process.env.FEDCM_ISSUER;
+    delete process.env.FEDCM_ISSUER;
+    installApiStub();
+    try {
+      approveCrossRp();
+      const hop = await app.request(
+        ssoUrl({ client_id: CROSS_RP, return_to: CROSS_RETURN_TO, state: 'xd-iss', prompt: 'none' }),
+        { headers: { cookie: SESSION_COOKIE } }
+      );
+      const et = parseEstablishRedirect(hop).url.searchParams.get('et') as string;
+
+      const res = await app.request(
+        `https://${CROSS_APEX_HOST}/sso/establish?et=${encodeURIComponent(et)}&return_to=${encodeURIComponent(
+          CROSS_RETURN_TO
+        )}&state=xd-iss`
+      );
+      expect(res.status).toBe(303);
+
+      // The handoff succeeds (ok + code), NOT #oxy_sso=error.
+      const { frag } = parseSsoRedirect(res);
+      expect(frag.get('oxy_sso')).toBe('ok');
+
+      // Decisive proof: the assertion issuer is the central host, not the
+      // per-apex host the request derived.
+      const payload = decodeJwtPayload(capturedExchange?.idToken);
+      expect(payload.iss).toBe('https://auth.oxy.so');
+      expect(payload.iss).not.toBe(`https://${CROSS_APEX_HOST}`);
+      expect(payload.aud).toBe(CROSS_RP);
+
+      // The durable cookie is still planted host-only on the per-apex host —
+      // independent of the (central) assertion issuer.
+      const setCookie = res.headers.get('set-cookie') || '';
+      expect(setCookie).toContain('fedcm_session=sess_abc');
+      expect(setCookie.toLowerCase()).not.toContain('domain=');
+    } finally {
+      if (originalIssuer !== undefined) {
+        process.env.FEDCM_ISSUER = originalIssuer;
+      }
+      installApiStub();
+    }
   });
 
   it('rejects an et with a tampered audience (re-validated against the live allow-list)', async () => {
