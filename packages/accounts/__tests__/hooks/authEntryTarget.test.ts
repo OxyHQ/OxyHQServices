@@ -13,8 +13,12 @@ import { getWebAuthEntryTarget } from '@/hooks/authEntryTarget';
  * route web visitors back into the (now-forbidden) create-identity flow.
  */
 describe('getWebAuthEntryTarget (web auth-entry routing)', () => {
-  it('routes a fully-onboarded session into the app shell', () => {
-    expect(getWebAuthEntryTarget('complete')).toBe('/(tabs)');
+  it('renders a backdrop (null) for a fully-onboarded session and lets the root Stack swap groups', () => {
+    // The root Stack in `app/_layout.tsx` owns the `(auth)`↔`(tabs)` boundary
+    // via `redirect={!needsAuth}`. The web entry must NOT navigate to `(tabs)`
+    // itself — doing so races the root swap and can blank the app. It renders a
+    // backdrop and lets the root Stack perform the single authoritative swap.
+    expect(getWebAuthEntryTarget('complete')).toBeNull();
   });
 
   it('renders a backdrop (null) while the status is still resolving', () => {
@@ -37,12 +41,15 @@ describe('getWebAuthEntryTarget (web auth-entry routing)', () => {
     expect(target).not.toBe('/(auth)/create-identity');
   });
 
-  it('never returns a create-identity or welcome route for any status', () => {
+  it('never returns a create-identity, welcome, or (tabs) route for any status', () => {
+    // `(tabs)` is forbidden too: the root Stack owns the `(auth)`↔`(tabs)`
+    // swap. The entry navigating there would race that swap and blank the app.
     const statuses = ['checking', 'none', 'in_progress', 'complete'] as const;
     for (const status of statuses) {
       const target = getWebAuthEntryTarget(status);
       expect(target).not.toBe('/(auth)/create-identity');
       expect(target).not.toBe('/(auth)/welcome');
+      expect(target).not.toBe('/(tabs)');
     }
   });
 });

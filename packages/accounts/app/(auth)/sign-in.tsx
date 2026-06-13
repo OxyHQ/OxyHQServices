@@ -75,14 +75,21 @@ export default function SignInScreen() {
   }, []);
 
   // Already authenticated (e.g. silent SSO succeeded while this screen was
-  // mounted, or a deep link landed here with a live session) → enter the app.
+  // mounted, or a deep link landed here with a live session). We do NOT redirect
+  // to `/(tabs)` from here: the root Stack in `app/_layout.tsx` owns the
+  // `(auth)`↔`(tabs)` boundary via `redirect={!needsAuth}`. When SSO succeeds,
+  // `needsAuth` flips to false and the root Stack swaps the active group into
+  // `(tabs)`. Navigating to `(tabs)` here would race that swap and can blank the
+  // app. Render a neutral backdrop and let the root Stack perform the swap.
   if (isAuthenticated) {
-    return <Redirect href="/(tabs)" />;
+    return <View style={[styles.container, { backgroundColor: colors.background }]} />;
   }
 
   // Defensive: this screen is web-only. On native, identity creation is the
   // entry point, so never render sign-in UI there — send users to the welcome
-  // flow. This keeps the route loop-safe if reached via history or deep link.
+  // flow. `welcome` is a route WITHIN the `(auth)` group, so this does not race
+  // the root Stack's cross-group swap. Keeps the route loop-safe if reached via
+  // history or deep link.
   if (Platform.OS !== 'web') {
     return <Redirect href="/(auth)/welcome" />;
   }

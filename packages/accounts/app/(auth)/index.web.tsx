@@ -15,7 +15,11 @@ import { getWebAuthEntryTarget } from '@/hooks/authEntryTarget';
  * screen, and authenticated visitors into the app shell.
  *
  * Routing:
- *   - `status === 'complete'` → `/(tabs)` (fully onboarded; enter the app)
+ *   - `status === 'complete'` → blank backdrop. The root Stack in
+ *     `app/_layout.tsx` owns the `(auth)`↔`(tabs)` boundary via
+ *     `redirect={!needsAuth}`; once onboarded it swaps the active group to
+ *     `(tabs)`. This entry must NOT navigate to `(tabs)` itself — doing so
+ *     races the root swap and can blank the app — so it just renders a backdrop.
  *   - `status === 'checking'` → blank backdrop while silent FedCM SSO and the
  *     identity/session lookups resolve (a real terminal frame, never a loop)
  *   - otherwise (`none` / `in_progress`) → `/(auth)/sign-in`
@@ -31,9 +35,11 @@ export default function AuthIndexWebScreen() {
   const { status } = useOnboardingStatus();
   const target = getWebAuthEntryTarget(status);
 
-  // Still resolving the session/identity answer (silent FedCM SSO may be in
-  // flight). Render a plain backdrop — not the sign-in CTA — so we don't flash
-  // a "Sign in" button at a user whose silent SSO is about to succeed.
+  // `null` covers two states: 'complete' (fully onboarded — the root Stack is
+  // swapping the active group to (tabs); we must NOT navigate there ourselves
+  // and race it) and 'checking' (still resolving; silent FedCM SSO may be in
+  // flight, so don't flash a "Sign in" button at a user whose SSO is about to
+  // succeed). Both render a plain backdrop and never navigate.
   if (target === null) {
     return <View style={[styles.container, { backgroundColor: colors.background }]} />;
   }

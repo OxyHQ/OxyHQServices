@@ -104,12 +104,20 @@ export default function AuthIndexScreen() {
   // renders. We only redirect when status has settled to `'in_progress'`
   // (which implies hasIdentity is true) — never during `'checking'`,
   // because that would race with the identity detection effect.
-  // Fully-onboarded users should never land on the marketing splash. If they
-  // do (deep link, stale route history), bounce them into the app shell.
+  //
+  // Fully-onboarded users should never land on the marketing splash. But we do
+  // NOT redirect to `/(tabs)` from here: the root Stack in `app/_layout.tsx`
+  // owns the `(auth)`↔`(tabs)` boundary via `redirect={!needsAuth}` and already
+  // performs that group-swap once onboarded. Navigating to `(tabs)` here would
+  // create a SECOND navigation authority racing the root swap and can land
+  // expo-router on no matching route → blank screen. Render a neutral backdrop
+  // and let the root Stack perform the single authoritative swap.
   if (status === 'complete') {
-    return <Redirect href="/(tabs)" />;
+    return <View style={[styles.container, { backgroundColor }]} />;
   }
 
+  // `create-identity` is a route WITHIN the `(auth)` group, so redirecting to it
+  // does NOT race the root Stack's cross-group swap — it's safe here.
   if (hasIdentity && status === 'in_progress') {
     return <Redirect href="/(auth)/create-identity" />;
   }
