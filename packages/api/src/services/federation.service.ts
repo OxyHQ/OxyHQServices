@@ -51,6 +51,17 @@ const STALE_MS = 24 * 60 * 60 * 1000; // 24 hours
  */
 const REFRESH_MIN_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
+/**
+ * Minimum gap between forced avatar re-downloads for the same user. Even when a
+ * caller passes `refresh: true` to PUT /users/resolve, we skip re-downloading
+ * the avatar if it was fetched within this window. The persisted
+ * `federation.lastAvatarFetchedAt` is the authority across restarts; the
+ * in-memory {@link _lastAvatarAttemptAt} map coalesces bursts within a process.
+ * 5 minutes matches {@link REFRESH_MIN_INTERVAL_MS} — a single avatar can't
+ * meaningfully change faster than the actor record it belongs to.
+ */
+const AVATAR_REFRESH_MIN_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+
 const FEDIVERSE_HANDLE_REGEX = /^@?[\w.-]+@[\w.-]+\.\w+$/;
 
 // System user ID for federated avatar ownership
@@ -67,6 +78,21 @@ const _refreshInFlight = new Set<string>();
  * {@link REFRESH_MIN_INTERVAL_MS} to throttle repeated attempts.
  */
 const _lastRefreshAttemptAt = new Map<string, number>();
+
+/**
+ * User ids whose avatar is currently mid-download via
+ * {@link FederationService.scheduleAvatarRefresh}. Prevents two concurrent
+ * background avatar downloads for the same user (e.g. a burst of PUT
+ * /users/resolve calls).
+ */
+const _avatarRefreshInFlight = new Set<string>();
+
+/**
+ * Last time an avatar download was *attempted* for a given user id, used with
+ * {@link AVATAR_REFRESH_MIN_INTERVAL_MS} to coalesce in-process bursts. The
+ * persisted `federation.lastAvatarFetchedAt` remains the cross-restart authority.
+ */
+const _lastAvatarAttemptAt = new Map<string, number>();
 
 /**
  * Check if a string looks like a fediverse handle (@user@domain or user@domain).
@@ -380,26 +406,59 @@ class FederationService {
   }
 
   /**
-   * Download a remote avatar image, upload it to Oxy Cloud, and return the file ID.
-   * If the user already has an avatar file, deletes the old one first.
-   */
-  /**
-   * Download a remote avatar image, upload it to Oxy Cloud, and return the file ID.
-   * If the user already has an avatar file, deletes the old one first.
+   * Download a remote avatar image, upload it to Oxy Cloud, and return the file
+   * ID along with the validators the host advertised.
+   *
+   * Conditional requests: when `conditional.etag` / `conditional.lastModified`
+   * are supplied (from a previous fetch), they are replayed as `If-None-Match` /
+   * `If-Modified-Since`. A `304 Not Modified` response means the stored file is
+   * still current — we skip the download+upload round-trip entirely and signal
+   * `notModified: true` so the caller can still advance its throttle clock.
+   *
+   * If the user already has an avatar file, the old one is deleted before the
+   * new upload (only when we actually downloaded a new image).
+   *
+   * @param avatarUrl              - Remote avatar URL to fetch.
+   * @param existingAvatarFileId   - Current stored file id (deleted on replace).
+   * @param conditional            - Stored validators to replay as conditional headers.
    */
   async downloadAndStoreAvatar(
     avatarUrl: string,
     existingAvatarFileId?: string,
-  ): Promise<string | null> {
+    conditional?: { etag?: string; lastModified?: string },
+  ): Promise<{ fileId: string | null; etag?: string; lastModified?: string; notModified: boolean }> {
     try {
+      const requestHeaders: Record<string, string> = { 'User-Agent': USER_AGENT };
+      if (conditional?.etag) {
+        requestHeaders['If-None-Match'] = conditional.etag;
+      }
+      if (conditional?.lastModified) {
+        requestHeaders['If-Modified-Since'] = conditional.lastModified;
+      }
+
       const res = await fetch(avatarUrl, {
-        headers: { 'User-Agent': USER_AGENT },
+        headers: requestHeaders,
         signal: AbortSignal.timeout(15_000),
       });
+
+      // 304: the host confirms our stored copy is still current. Skip re-upload,
+      // keep the existing validators, and tell the caller it was unchanged.
+      if (res.status === 304) {
+        return {
+          fileId: null,
+          etag: conditional?.etag,
+          lastModified: conditional?.lastModified,
+          notModified: true,
+        };
+      }
+
       if (!res.ok) {
         logger.warn(`Avatar download failed: HTTP ${res.status} for ${avatarUrl}`);
-        return null;
+        return { fileId: null, notModified: false };
       }
+
+      const etag = res.headers.get('etag') || undefined;
+      const lastModified = res.headers.get('last-modified') || undefined;
 
       // Sanitize content-type: strip parameters (e.g. "image/jpeg; charset=utf-8" → "image/jpeg")
       const rawContentType = res.headers.get('content-type') || 'image/png';
@@ -408,11 +467,13 @@ class FederationService {
       // Accept image/* and common binary types that CDNs return for images
       if (!contentType.startsWith('image/') && contentType !== 'application/octet-stream') {
         logger.warn(`Avatar download skipped: non-image content-type "${rawContentType}" for ${avatarUrl}`);
-        return null;
+        return { fileId: null, etag, lastModified, notModified: false };
       }
 
       const buffer = Buffer.from(await res.arrayBuffer());
-      if (buffer.length === 0 || buffer.length > 5 * 1024 * 1024) return null; // max 5MB
+      if (buffer.length === 0 || buffer.length > 5 * 1024 * 1024) {
+        return { fileId: null, etag, lastModified, notModified: false }; // max 5MB
+      }
 
       // For application/octet-stream, infer MIME from URL extension or default to png
       let mime = contentType;
@@ -453,10 +514,10 @@ class FederationService {
         'public',
       );
 
-      return file._id.toString();
+      return { fileId: file._id.toString(), etag, lastModified, notModified: false };
     } catch (err) {
       logger.warn(`Failed to download/store federated avatar: ${err}`);
-      return null;
+      return { fileId: null, notModified: false };
     }
   }
 
@@ -514,11 +575,16 @@ class FederationService {
     const profile = await this.fetchActorProfile(actorUri);
     if (!profile) return null;
 
-    // Download avatar to Oxy Cloud (no existing file to replace on first fetch).
+    // Download avatar to Oxy Cloud (no existing file to replace on first fetch,
+    // and no stored validators yet so the request is unconditional).
     let avatarFileId: string | undefined;
+    let avatarETag: string | undefined;
+    let avatarLastModified: string | undefined;
     if (profile.avatarUrl) {
-      const storedId = await this.downloadAndStoreAvatar(profile.avatarUrl);
-      if (storedId) avatarFileId = storedId;
+      const stored = await this.downloadAndStoreAvatar(profile.avatarUrl);
+      if (stored.fileId) avatarFileId = stored.fileId;
+      avatarETag = stored.etag;
+      avatarLastModified = stored.lastModified;
     }
 
     const setFields: Record<string, unknown> = {
@@ -531,6 +597,9 @@ class FederationService {
 
     if (avatarFileId) {
       setFields.avatar = avatarFileId;
+      setFields['federation.lastAvatarFetchedAt'] = new Date();
+      if (avatarETag) setFields['federation.avatarETag'] = avatarETag;
+      if (avatarLastModified) setFields['federation.avatarLastModified'] = avatarLastModified;
     }
     if (profile.bio) {
       setFields.bio = profile.bio;
@@ -586,6 +655,146 @@ class FederationService {
   }
 
   /**
+   * Fire-and-forget scheduler that moves a remote avatar download OFF the
+   * request path (used by PUT /users/resolve). The caller upserts the user and
+   * returns immediately; this replaces the user's `avatar` file id once the
+   * download completes and invalidates the user cache.
+   *
+   * Throttle: at most one download per user concurrently
+   * ({@link _avatarRefreshInFlight}) and at most one per
+   * {@link AVATAR_REFRESH_MIN_INTERVAL_MS} per process
+   * ({@link _lastAvatarAttemptAt}). The persisted
+   * `federation.lastAvatarFetchedAt`, re-read inside {@link downloadAvatarForUser},
+   * is the cross-restart authority. This method NEVER awaits and NEVER throws —
+   * a rejection is caught and logged so it can't surface as an unhandled
+   * rejection.
+   *
+   * @param userId               - The upserted user's id (resolved fresh inside).
+   * @param remoteAvatarUrl      - The http(s) avatar URL to download.
+   * @param existingAvatarFileId - Current stored avatar file id (deleted on replace).
+   * @param opts.force           - When true (a `refresh`/`forceAvatarRefresh`
+   *                               request), re-download even if a stored file id
+   *                               already exists — still subject to the throttle.
+   */
+  scheduleAvatarRefresh(
+    userId: string,
+    remoteAvatarUrl: string,
+    existingAvatarFileId: string | undefined,
+    opts: { force: boolean },
+  ): void {
+    if (_avatarRefreshInFlight.has(userId)) return;
+
+    const lastAttempt = _lastAvatarAttemptAt.get(userId);
+    if (lastAttempt !== undefined && Date.now() - lastAttempt < AVATAR_REFRESH_MIN_INTERVAL_MS) {
+      return;
+    }
+
+    _avatarRefreshInFlight.add(userId);
+    _lastAvatarAttemptAt.set(userId, Date.now());
+
+    void this.downloadAvatarForUser(userId, remoteAvatarUrl, existingAvatarFileId, opts)
+      .catch((err) => {
+        logger.warn(
+          `Background avatar refresh failed for ${userId}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      })
+      .finally(() => {
+        _avatarRefreshInFlight.delete(userId);
+      });
+  }
+
+  /**
+   * Background worker for {@link scheduleAvatarRefresh}. Resolves the user fresh
+   * from its id so it reads the authoritative persisted throttle clock and
+   * conditional-request validators, downloads the avatar (conditionally), and
+   * persists the result. Wraps its whole body so a rejection can never escape
+   * the fire-and-forget caller — all failures are logged.
+   */
+  private async downloadAvatarForUser(
+    userId: string,
+    remoteAvatarUrl: string,
+    existingAvatarFileId: string | undefined,
+    opts: { force: boolean },
+  ): Promise<void> {
+    try {
+      const user = await User.findById(userId)
+        .select('avatar federation')
+        .lean() as Pick<IUser, '_id' | 'avatar' | 'federation'> | null;
+      if (!user) {
+        logger.warn(`Background avatar refresh: user ${userId} not found`);
+        return;
+      }
+
+      const storedAvatar = typeof user.avatar === 'string' ? user.avatar : existingAvatarFileId;
+      const alreadyHasFileId = typeof storedAvatar === 'string'
+        && storedAvatar.length > 0
+        && !storedAvatar.startsWith('http');
+
+      // Persisted authority: skip a forced re-download inside the throttle window.
+      // The in-memory guard in scheduleAvatarRefresh handles the common in-process
+      // burst; this catches forced refreshes across process restarts.
+      const lastFetched = user.federation?.lastAvatarFetchedAt;
+      if (
+        opts.force
+        && alreadyHasFileId
+        && lastFetched
+        && Date.now() - new Date(lastFetched).getTime() < AVATAR_REFRESH_MIN_INTERVAL_MS
+      ) {
+        return;
+      }
+
+      // Without a force flag, never re-download once we hold a stored file id.
+      if (!opts.force && alreadyHasFileId) {
+        return;
+      }
+
+      const stored = await this.downloadAndStoreAvatar(remoteAvatarUrl, storedAvatar, {
+        etag: user.federation?.avatarETag,
+        lastModified: user.federation?.avatarLastModified,
+      });
+
+      const setFields: Record<string, unknown> = {
+        'federation.lastAvatarFetchedAt': new Date(),
+      };
+
+      if (stored.notModified) {
+        // Host says our copy is current — only advance the fetch clock.
+        await User.updateOne({ _id: userId }, { $set: setFields });
+        userCache.invalidate(userId);
+        return;
+      }
+
+      if (!stored.fileId) {
+        // Download failed — keep the existing avatar, but advance the clock so a
+        // forced refresh can't hammer a broken remote every request.
+        await User.updateOne({ _id: userId }, { $set: setFields });
+        userCache.invalidate(userId);
+        logger.warn(`Background avatar refresh: download failed for ${userId} (keeping existing)`);
+        return;
+      }
+
+      setFields.avatar = stored.fileId;
+      if (stored.etag) setFields['federation.avatarETag'] = stored.etag;
+      if (stored.lastModified) setFields['federation.avatarLastModified'] = stored.lastModified;
+
+      await User.updateOne({ _id: userId }, { $set: setFields });
+
+      // CRITICAL: every path that mutates user state must invalidate the cache,
+      // otherwise getUserBySession serves stale in-memory data and silently
+      // reverts this update.
+      userCache.invalidate(userId);
+
+      logger.info(`Background-refreshed federated avatar for ${userId}`);
+    } catch (err) {
+      // Defensive: this worker must never throw out of the fire-and-forget
+      // caller. The scheduler also has a .catch, but we log here with context too.
+      logger.error(
+        `Background avatar refresh threw for ${userId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  /**
    * Re-fetch a federated actor's avatar/name/bio and update the cached Oxy user
    * in place. Runs in the background (fire-and-forget). Wraps its whole body so
    * a rejection can never escape the caller — all failures are logged.
@@ -620,14 +829,24 @@ class FederationService {
         setFields.description = profile.bio;
       }
 
-      // Download the latest avatar and replace the old stored file. Only set the
-      // avatar field when the download succeeded — never clobber a good avatar
-      // with null because the remote fetch failed.
+      // Download the latest avatar and replace the old stored file, replaying any
+      // stored validators as a conditional request. Only set the avatar field
+      // when the download succeeded — never clobber a good avatar with null
+      // because the remote fetch failed. On 304 we keep the existing file but
+      // still advance the fetch clock so we don't re-attempt every request.
       if (profile.avatarUrl) {
         const existingAvatar = typeof existing.avatar === 'string' ? existing.avatar : undefined;
-        const newAvatarFileId = await this.downloadAndStoreAvatar(profile.avatarUrl, existingAvatar);
-        if (newAvatarFileId) {
-          setFields.avatar = newAvatarFileId;
+        const stored = await this.downloadAndStoreAvatar(profile.avatarUrl, existingAvatar, {
+          etag: existing.federation?.avatarETag,
+          lastModified: existing.federation?.avatarLastModified,
+        });
+        if (stored.notModified) {
+          setFields['federation.lastAvatarFetchedAt'] = new Date();
+        } else if (stored.fileId) {
+          setFields.avatar = stored.fileId;
+          setFields['federation.lastAvatarFetchedAt'] = new Date();
+          if (stored.etag) setFields['federation.avatarETag'] = stored.etag;
+          if (stored.lastModified) setFields['federation.avatarLastModified'] = stored.lastModified;
         } else {
           logger.warn(`Background refresh: avatar download failed for ${actorUri} (keeping existing)`);
         }

@@ -17,6 +17,7 @@
  */
 
 const mockUserFindOne = jest.fn();
+const mockUserFindById = jest.fn();
 const mockUserUpdateOne = jest.fn();
 const mockUserFindOneAndUpdate = jest.fn();
 const mockCacheInvalidate = jest.fn();
@@ -43,6 +44,7 @@ jest.mock('../../models/User', () => ({
   __esModule: true,
   default: {
     findOne: mockUserFindOne,
+    findById: mockUserFindById,
     updateOne: mockUserUpdateOne,
     findOneAndUpdate: mockUserFindOneAndUpdate,
   },
@@ -136,7 +138,8 @@ describe('FederationService.resolveAndUpsert (fast + eventually-fresh)', () => {
     jest.clearAllMocks();
     webfingerSpy = jest.spyOn(federationService, 'resolveWebFinger');
     actorSpy = jest.spyOn(federationService, 'fetchActorProfile');
-    avatarSpy = jest.spyOn(federationService, 'downloadAndStoreAvatar').mockResolvedValue('new-file-id');
+    avatarSpy = jest.spyOn(federationService, 'downloadAndStoreAvatar')
+      .mockResolvedValue({ fileId: 'new-file-id', notModified: false });
     mockUserUpdateOne.mockResolvedValue({ acknowledged: true });
   });
 
@@ -186,7 +189,10 @@ describe('FederationService.resolveAndUpsert (fast + eventually-fresh)', () => {
     await flushMicrotasks();
 
     expect(actorSpy).toHaveBeenCalledWith(fx.actorUri);
-    expect(avatarSpy).toHaveBeenCalledWith(NEW_AVATAR_URL, 'stored-file-id');
+    expect(avatarSpy).toHaveBeenCalledWith(NEW_AVATAR_URL, 'stored-file-id', {
+      etag: undefined,
+      lastModified: undefined,
+    });
 
     const updateArgs = mockUserUpdateOne.mock.calls[0];
     expect(updateArgs[0]).toEqual({ _id: cached._id });
@@ -260,5 +266,108 @@ describe('FederationService.resolveAndUpsert (fast + eventually-fresh)', () => {
     await flushMicrotasks();
 
     expect(mockCacheInvalidate).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * scheduleAvatarRefresh — off-request-path avatar download.
+ *
+ * The in-memory throttle map (_lastAvatarAttemptAt) is keyed by user id and
+ * persists across tests in this process, so each test uses a UNIQUE user id to
+ * avoid cross-test coalescing.
+ */
+describe('FederationService.scheduleAvatarRefresh (off request path)', () => {
+  let avatarUserCounter = 0;
+
+  function mockFindByIdReturning(user: unknown): void {
+    const lean = jest.fn().mockResolvedValue(user);
+    const select = jest.fn().mockReturnValue({ lean });
+    mockUserFindById.mockReturnValueOnce({ select });
+  }
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockUserUpdateOne.mockResolvedValue({ acknowledged: true });
+  });
+
+  it('skips the forced re-download when lastAvatarFetchedAt is within the throttle window', async () => {
+    avatarUserCounter += 1;
+    const userId = `throttle-user-${avatarUserCounter}`;
+    const avatarSpy = jest.spyOn(federationService, 'downloadAndStoreAvatar')
+      .mockResolvedValue({ fileId: 'should-not-be-used', notModified: false });
+
+    // Persisted authority: avatar was fetched 1 minute ago — inside the 5min window.
+    mockFindByIdReturning({
+      _id: { toString: () => userId },
+      avatar: 'stored-file-id',
+      federation: { lastAvatarFetchedAt: new Date(Date.now() - 60 * 1000) },
+    });
+
+    federationService.scheduleAvatarRefresh(
+      userId,
+      'https://cdn.example/avatar.png',
+      'stored-file-id',
+      { force: true },
+    );
+    await flushMicrotasks();
+
+    // Forced refresh inside the window is a no-op: no download, no write.
+    expect(avatarSpy).not.toHaveBeenCalled();
+    expect(mockUserUpdateOne).not.toHaveBeenCalled();
+    expect(mockCacheInvalidate).not.toHaveBeenCalled();
+
+    avatarSpy.mockRestore();
+  });
+
+  it('on 304 Not Modified: skips re-upload but advances lastAvatarFetchedAt and invalidates cache', async () => {
+    avatarUserCounter += 1;
+    const userId = `notmod-user-${avatarUserCounter}`;
+    const avatarUrl = 'https://cdn.example/avatar-304.png';
+
+    // No spy on downloadAndStoreAvatar — exercise the REAL conditional-request
+    // logic against a mocked fetch that returns 304 for a conditional request.
+    const fetchSpy = jest.spyOn(global, 'fetch').mockImplementation(((
+      _url: string,
+      init?: { headers?: Record<string, string> },
+    ) => {
+      // The stored validators must be replayed as conditional headers.
+      expect(init?.headers?.['If-None-Match']).toBe('"etag-v1"');
+      expect(init?.headers?.['If-Modified-Since']).toBe('Wed, 21 Oct 2025 07:28:00 GMT');
+      return Promise.resolve({
+        status: 304,
+        ok: false,
+        headers: { get: () => null },
+        arrayBuffer: () => Promise.resolve(new ArrayBuffer(0)),
+      });
+    }) as unknown as typeof fetch);
+
+    // Stale by time so a forced refresh actually runs, but with stored validators.
+    mockFindByIdReturning({
+      _id: { toString: () => userId },
+      avatar: 'stored-file-id',
+      federation: {
+        lastAvatarFetchedAt: new Date(Date.now() - 10 * 60 * 1000), // 10min ago, outside window
+        avatarETag: '"etag-v1"',
+        avatarLastModified: 'Wed, 21 Oct 2025 07:28:00 GMT',
+      },
+    });
+
+    federationService.scheduleAvatarRefresh(userId, avatarUrl, 'stored-file-id', { force: true });
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+
+    // 304 → no avatar field change, but lastAvatarFetchedAt advances. The $set
+    // key is a literal Mongoose dot-path string (not a nested object), so we
+    // check own-key presence rather than toHaveProperty (which walks dots).
+    const updateArgs = mockUserUpdateOne.mock.calls[0];
+    const updateSet = updateArgs[1].$set as Record<string, unknown>;
+    expect(updateArgs[0]).toEqual({ _id: userId });
+    expect(Object.keys(updateSet)).toContain('federation.lastAvatarFetchedAt');
+    expect(Object.keys(updateSet)).not.toContain('avatar');
+    expect(mockCacheInvalidate).toHaveBeenCalledWith(userId);
+
+    fetchSpy.mockRestore();
   });
 });

@@ -1040,22 +1040,20 @@ router.put(
       setFields.bio = bio;
     }
 
-    // For avatar URLs, download and store as an Oxy file instead of saving raw
-    // external URLs. By default we don't clobber an avatar that's already a
-    // stored file id (avoids re-downloading on every resolve). When the caller
-    // forces a refresh (`refresh` / `forceAvatarRefresh`), we always re-download
-    // so the stored avatar tracks the remote one — this is what lets federated
-    // avatars actually update after the first fetch.
+    // Avatar handling splits two ways:
+    //  - A raw http(s) URL is downloaded into an Oxy file OFF the request path
+    //    (fire-and-forget after the upsert) so we never block the response on
+    //    remote I/O. The avatar field may therefore lag one refresh cycle: the
+    //    response carries the previous (or absent) avatar and the new file id
+    //    lands shortly after. The scheduler throttles forced re-downloads and
+    //    sends conditional (ETag / Last-Modified) requests.
+    //  - A non-URL value is already a stored file id; set it synchronously.
+    let remoteAvatarUrl: string | undefined;
+    let existingAvatarFileId: string | undefined;
     if (typeof avatar === 'string' && avatar.startsWith('http')) {
       const existingUser = await User.findOne(filter).select('avatar').lean();
-      const existingAvatar = typeof existingUser?.avatar === 'string' ? existingUser.avatar : undefined;
-      const alreadyHasFileId = existingAvatar !== undefined && !existingAvatar.startsWith('http');
-      if (forceAvatarRefresh || !alreadyHasFileId) {
-        const fileId = await federationService.downloadAndStoreAvatar(avatar, existingAvatar);
-        if (fileId) {
-          setFields.avatar = fileId;
-        }
-      }
+      existingAvatarFileId = typeof existingUser?.avatar === 'string' ? existingUser.avatar : undefined;
+      remoteAvatarUrl = avatar;
     } else if (typeof avatar === 'string') {
       // Non-URL avatar (already a file ID) — set directly
       setFields.avatar = avatar;
@@ -1077,6 +1075,19 @@ router.put(
     // in-memory user cache must be invalidated — otherwise getUserBySession can
     // serve a stale record and silently revert this update.
     userCache.invalidate(user._id.toString());
+
+    // Kick the remote avatar download off the request path. The scheduler
+    // resolves the user fresh, honours the throttle + conditional requests, and
+    // invalidates the cache again once the new file id is persisted. Never
+    // awaited — must not delay the response.
+    if (remoteAvatarUrl) {
+      federationService.scheduleAvatarRefresh(
+        user._id.toString(),
+        remoteAvatarUrl,
+        existingAvatarFileId,
+        { force: forceAvatarRefresh },
+      );
+    }
 
     logger.info('External user resolved', { type, username, userId: user._id });
 

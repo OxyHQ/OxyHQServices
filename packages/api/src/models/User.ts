@@ -42,6 +42,17 @@ export interface IUser extends Document {
     actorUri?: string;  // ActivityPub actor URI (globally unique identifier)
     domain?: string;    // e.g. "mastodon.social"
     actorId?: string;   // Ref to FederatedActor._id in app DB
+    /**
+     * When the remote avatar was last (re-)fetched. Authoritative throttle
+     * source across process restarts — a forced avatar refresh is skipped when
+     * this is within the min-interval window. Set even on a 304 Not Modified so
+     * the throttle advances without a re-download.
+     */
+    lastAvatarFetchedAt?: Date;
+    /** ETag returned by the remote avatar host, replayed as `If-None-Match`. */
+    avatarETag?: string;
+    /** Last-Modified returned by the remote avatar host, replayed as `If-Modified-Since`. */
+    avatarLastModified?: string;
   };
   automation?: {
     ownerId?: string;   // User ID of the human owner/creator
@@ -445,6 +456,11 @@ const UserSchema: Schema = new Schema(
       actorUri: { type: String, index: { sparse: true, unique: true } },
       domain: { type: String, index: { sparse: true } },
       actorId: { type: String, sparse: true },
+      // Avatar conditional-request + throttle bookkeeping. Maintained by
+      // federation.service when it (re-)downloads a remote avatar.
+      lastAvatarFetchedAt: { type: Date },
+      avatarETag: { type: String },
+      avatarLastModified: { type: String },
     },
     automation: {
       ownerId: { type: String, index: { sparse: true } },

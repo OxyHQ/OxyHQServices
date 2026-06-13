@@ -19,7 +19,7 @@ const mockServiceAuthMiddleware = jest.fn();
 const mockAuthMiddleware = jest.fn();
 const mockUserFindOne = jest.fn();
 const mockUserFindOneAndUpdate = jest.fn();
-const mockFederationDownloadAvatar = jest.fn();
+const mockScheduleAvatarRefresh = jest.fn();
 
 jest.mock('../../middleware/auth', () => ({
   authMiddleware: (...args: unknown[]) => mockAuthMiddleware(...args),
@@ -32,7 +32,7 @@ jest.mock('../../services/email.service', () => ({
   emailService: { deleteAllUserData: jest.fn() },
 }));
 jest.mock('../../services/federation.service', () => ({
-  federationService: { downloadAndStoreAvatar: mockFederationDownloadAvatar },
+  federationService: { scheduleAvatarRefresh: mockScheduleAvatarRefresh },
 }));
 jest.mock('../../services/user.service', () => ({
   userService: {},
@@ -237,7 +237,7 @@ describe('PUT /users/resolve (C4)', () => {
     expect(mockUserFindOneAndUpdate).toHaveBeenCalledTimes(1);
   });
 
-  it('refresh: re-downloads avatar even when a stored file id already exists', async () => {
+  it('refresh: schedules an off-request-path avatar download with force=true and returns immediately', async () => {
     const newAvatarUrl = 'https://mastodon.social/avatars/alice.png';
 
     // First findOne: type-immutability check — no existing user found.
@@ -250,14 +250,13 @@ describe('PUT /users/resolve (C4)', () => {
       .mockReturnValueOnce({ select: immutabilitySelect })
       .mockReturnValueOnce({ select: avatarSelect });
 
-    // Forced refresh re-downloads and yields a new stored file id.
-    mockFederationDownloadAvatar.mockResolvedValueOnce('file-new');
-
+    // The upsert returns the user with its PREVIOUS avatar — the new download
+    // happens off the request path and lands afterwards.
     const newUserDoc = {
       _id: 'new-user',
       username: 'alice@mastodon.social',
       type: 'federated',
-      avatar: 'file-new',
+      avatar: 'file-abc',
     };
     const updateLean = jest.fn().mockResolvedValue(newUserDoc);
     const updateSelect = jest.fn().mockReturnValue({ lean: updateLean });
@@ -273,11 +272,17 @@ describe('PUT /users/resolve (C4)', () => {
     });
 
     expect(res.status).toBe(200);
-    expect(mockFederationDownloadAvatar).toHaveBeenCalledWith(newAvatarUrl, 'file-abc');
+    // The download is scheduled, not awaited: the route never blocks on it.
+    expect(mockScheduleAvatarRefresh).toHaveBeenCalledWith(
+      'new-user',
+      newAvatarUrl,
+      'file-abc',
+      { force: true },
+    );
     expect(mockUserFindOneAndUpdate).toHaveBeenCalledTimes(1);
   });
 
-  it('no refresh flag: keeps the stored file-id avatar without re-downloading', async () => {
+  it('no refresh flag: still schedules an avatar download with force=false (scheduler decides to skip)', async () => {
     const newAvatarUrl = 'https://mastodon.social/avatars/alice.png';
 
     // First findOne: type-immutability check — no existing user found.
@@ -309,7 +314,14 @@ describe('PUT /users/resolve (C4)', () => {
     });
 
     expect(res.status).toBe(200);
-    expect(mockFederationDownloadAvatar).not.toHaveBeenCalled();
+    // Scheduling is unconditional for http avatars; the scheduler (not the
+    // route) decides whether a stored file id makes the download a no-op.
+    expect(mockScheduleAvatarRefresh).toHaveBeenCalledWith(
+      'new-user',
+      newAvatarUrl,
+      'file-abc',
+      { force: false },
+    );
     expect(mockUserFindOneAndUpdate).toHaveBeenCalledTimes(1);
   });
 });
