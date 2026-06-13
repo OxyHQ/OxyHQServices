@@ -397,3 +397,101 @@ describe('POST /fedcm/set-session', () => {
     expect(res.headers.get('set-cookie')).toBeNull();
   });
 });
+
+describe('Multi-domain FAPI (Clerk-style CNAME)', () => {
+  // When a relying party CNAMEs `auth.<rp-domain>` to this worker, the IdP
+  // must respond as if it lives on the RP's own apex. This keeps every FedCM
+  // endpoint, the session cookie, and the icon URLs same-site with the RP —
+  // the only way to get a first-party cookie in Safari ITP / Firefox Total
+  // Cookie Protection without third-party cookie access.
+  const originalIssuer = process.env.FEDCM_ISSUER;
+
+  beforeAll(() => {
+    // Unset the explicit FEDCM_ISSUER override so the worker derives the
+    // issuer from the request URL — the production behaviour we want to
+    // verify. Tests that need the override re-set it locally.
+    delete process.env.FEDCM_ISSUER;
+  });
+
+  afterAll(() => {
+    if (originalIssuer !== undefined) {
+      process.env.FEDCM_ISSUER = originalIssuer;
+    }
+  });
+
+  it('serves /.well-known/web-identity with provider_urls pointing at the request host', async () => {
+    const res = await app.request('https://auth.mention.earth/.well-known/web-identity');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { provider_urls: string[] };
+    expect(body.provider_urls).toEqual(['https://auth.mention.earth/fedcm.json']);
+  });
+
+  it('serves /fedcm.json dynamically with icons rooted at the request host', async () => {
+    const res = await app.request('https://auth.homiio.com/fedcm.json');
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('application/json');
+    const body = (await res.json()) as {
+      accounts_endpoint: string;
+      id_assertion_endpoint: string;
+      disconnect_endpoint: string;
+      login_url: string;
+      branding: { icons: Array<{ url: string; size: number }> };
+    };
+    // Endpoint paths stay relative — the browser resolves them against the
+    // issuer it loaded the manifest from.
+    expect(body.accounts_endpoint).toBe('/fedcm/accounts');
+    expect(body.id_assertion_endpoint).toBe('/fedcm/assertion');
+    expect(body.disconnect_endpoint).toBe('/fedcm/disconnect');
+    expect(body.login_url).toBe('/login');
+    // Icons MUST be absolute and on the same host the manifest was served
+    // from. Otherwise the browser fetches them third-party from auth.oxy.so
+    // and ITP/Total-Cookie-Protection treat them as cross-site.
+    for (const icon of body.branding.icons) {
+      expect(icon.url.startsWith('https://auth.homiio.com/icons/')).toBe(true);
+    }
+  });
+
+  it('mints an id_token whose iss matches the request host (per FedCM spec)', async () => {
+    const nonce = 'nonce-multi-domain';
+    const res = await app.request('https://auth.alia.onl/fedcm/assertion', {
+      method: 'POST',
+      headers: {
+        ...WEBIDENTITY,
+        'content-type': 'application/x-www-form-urlencoded',
+        origin: 'https://alia.onl',
+        cookie: SESSION_COOKIE,
+      },
+      body: new URLSearchParams({
+        account_id: TEST_USER_ID,
+        client_id: 'https://alia.onl',
+        nonce,
+      }).toString(),
+    });
+    expect(res.status).toBe(200);
+    const { token } = (await res.json()) as { token: string };
+    // Decode the JWT payload (HS256 — header.payload.signature, base64url).
+    const [, payloadB64] = token.split('.');
+    const payload = JSON.parse(
+      Buffer.from(payloadB64.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8')
+    ) as { iss: string; aud: string; sub: string; nonce: string };
+    // The issuer the RP sees in the id_token MUST match the host that
+    // served the FedCM config — otherwise OIDC verification at the RP
+    // rejects the token as cross-issuer.
+    expect(payload.iss).toBe('https://auth.alia.onl');
+    expect(payload.aud).toBe('https://alia.onl');
+    expect(payload.sub).toBe(TEST_USER_ID);
+    expect(payload.nonce).toBe(nonce);
+  });
+
+  it('honours FEDCM_ISSUER env override even when the request host differs (local dev / tests)', async () => {
+    process.env.FEDCM_ISSUER = 'https://auth.example-override.test';
+    try {
+      const res = await app.request('https://auth.mention.earth/.well-known/web-identity');
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { provider_urls: string[] };
+      expect(body.provider_urls).toEqual(['https://auth.example-override.test/fedcm.json']);
+    } finally {
+      delete process.env.FEDCM_ISSUER;
+    }
+  });
+});

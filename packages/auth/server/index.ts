@@ -96,12 +96,30 @@ function readEnv(env: WorkerEnv | undefined, key: keyof WorkerEnv): string | und
  * Pages secrets arrive per-request via `c.env`; under Bun/Node they come from
  * `process.env`. We resolve per-request (not at module load) because the
  * Workers runtime does not expose bindings at module-evaluation time.
+ *
+ * `fedcmIssuer` is derived from the incoming request origin, NOT pinned to a
+ * single hostname. Clerk-style multi-domain: any RP can CNAME their own
+ * `auth.<rp-domain>` to this worker, and the IdP responds with an issuer
+ * that matches the RP's own apex. The browser treats every endpoint as
+ * same-site with the RP, so the `fedcm_session` cookie is first-party in
+ * Safari and Firefox just like it is on Chromium-with-FedCM. The
+ * `FEDCM_ISSUER` env var is still honoured as an explicit override for
+ * local dev and tests, where the request URL is `http://localhost:<port>`
+ * but the issuer must match a stable test hostname.
  */
 function resolveConfig(c: AppContext): ResolvedConfig {
   const env = c.env;
+  const issuerOverride = readEnv(env, 'FEDCM_ISSUER');
+  let fedcmIssuer: string;
+  if (issuerOverride) {
+    fedcmIssuer = issuerOverride.replace(/\/+$/, '');
+  } else {
+    const url = new URL(c.req.url);
+    fedcmIssuer = `${url.protocol}//${url.host}`;
+  }
   return {
     apiBaseUrl: (readEnv(env, 'OXY_API_URL') || 'https://api.oxy.so').replace(/\/+$/, ''),
-    fedcmIssuer: (readEnv(env, 'FEDCM_ISSUER') || 'https://auth.oxy.so').replace(/\/+$/, ''),
+    fedcmIssuer,
     fedcmTokenSecret: readEnv(env, 'FEDCM_TOKEN_SECRET') || '',
   };
 }
@@ -329,6 +347,42 @@ const app = new Hono<{ Bindings: WorkerEnv }>();
 app.get('/.well-known/web-identity', (c) => {
   const { fedcmIssuer } = resolveConfig(c);
   return c.json({ provider_urls: [`${fedcmIssuer}/fedcm.json`] });
+});
+
+/**
+ * GET /fedcm.json
+ *
+ * The IdP config manifest. Served dynamically (instead of as a static asset
+ * under `public/fedcm.json`) so the icon URLs are always absolute to the
+ * issuer the RP actually configured. When a relying party CNAMEs
+ * `auth.<rp-domain>` to this worker, the browser pulls icons from
+ * `auth.<rp-domain>/icons/...` rather than `auth.oxy.so/icons/...` — keeping
+ * the entire FedCM flow single-origin (no third-party fetch) so Safari ITP /
+ * Firefox Total Cookie Protection have nothing to gate.
+ *
+ * The endpoint paths (`accounts_endpoint`, `id_assertion_endpoint`,
+ * `disconnect_endpoint`, `login_url`) stay relative — the browser resolves
+ * them against the issuer it loaded the manifest from.
+ *
+ * Spec: https://w3c-fedid.github.io/FedCM/#idp-api-config-file
+ */
+app.get('/fedcm.json', (c) => {
+  const { fedcmIssuer } = resolveConfig(c);
+  return c.json({
+    accounts_endpoint: '/fedcm/accounts',
+    id_assertion_endpoint: '/fedcm/assertion',
+    disconnect_endpoint: '/fedcm/disconnect',
+    login_url: '/login',
+    branding: {
+      background_color: '#7C3AED',
+      color: '#ffffff',
+      icons: [
+        { url: `${fedcmIssuer}/icons/icon-25.png`, size: 25 },
+        { url: `${fedcmIssuer}/icons/icon-40.png`, size: 40 },
+        { url: `${fedcmIssuer}/icons/icon-512.png`, size: 512 },
+      ],
+    },
+  });
 });
 
 /**
