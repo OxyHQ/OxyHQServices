@@ -11,6 +11,8 @@
 // Components
 export { default as OxyProvider } from './components/OxyProvider';
 export { default as OxySignInButton } from './components/OxySignInButton';
+export { default as OxyAuthPrompt } from './components/OxyAuthPrompt';
+export type { OxyAuthPromptProps } from './components/OxyAuthPrompt';
 export { default as OxyLogo } from './components/OxyLogo';
 export { default as Avatar } from './components/Avatar';
 export { default as FollowButton } from './components/FollowButton';
