@@ -1,7 +1,7 @@
 import { Redirect, Slot, useRouter, usePathname } from 'expo-router';
 import { Drawer } from 'expo-router/drawer';
 import React, { useRef, useCallback, useState } from 'react';
-import { View, ScrollView, StyleSheet, Platform, useWindowDimensions, TextInput, TouchableOpacity, type ViewStyle } from 'react-native';
+import { View, StyleSheet, Platform, useWindowDimensions, TextInput, TouchableOpacity, type ViewStyle } from 'react-native';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { Loading } from '@oxyhq/bloom/loading';
 import { useColors } from '@/hooks/useColors';
@@ -81,10 +81,8 @@ export default function TabLayout() {
 
   // Use custom hook for search navigation management (has side effects)
   useSearchNavigation({ searchInputRef });
-  const { setIsScrolled, scrollToTop, scrollY } = useScrollContext();
+  const { scrollToTop, scrollY } = useScrollContext();
   const [showGoToTopButton, setShowGoToTopButton] = useState(false);
-
-  const { scrollRef } = useScrollContext();
 
   const handlePressIn = useHapticPress();
 
@@ -142,11 +140,6 @@ export default function TabLayout() {
     };
   }, []);
 
-  const handleScroll = useCallback((event: { nativeEvent: { contentOffset: { y: number } } }) => {
-    const offsetY = event.nativeEvent.contentOffset.y;
-    setIsScrolled(offsetY > 10);
-  }, [setIsScrolled]);
-
   // Protected zone: redirect unauthenticated users to the auth welcome
   // screen. During the initial auth-resolution window render a neutral
   // spinner so a freshly-launched authenticated user does not flicker
@@ -175,16 +168,9 @@ export default function TabLayout() {
           </View>
           <View style={styles.desktopContentColumn}>
             <View style={styles.desktopContentWrapper}>
-              <ScrollView
-                ref={scrollRef as React.RefObject<ScrollView>}
-                style={styles.desktopMain}
-                contentContainerStyle={styles.desktopMainContent}
-                showsVerticalScrollIndicator={false}
-                onScroll={handleScroll}
-                scrollEventThrottle={16}
-              >
+              <View style={styles.desktopMain}>
                 <Slot />
-              </ScrollView>
+              </View>
             </View>
           </View>
         </View>
@@ -317,10 +303,11 @@ const styles = StyleSheet.create({
   },
   desktopMain: {
     flex: 1,
-  },
-  desktopMainContent: {
-    padding: 24,
-    paddingTop: 88,
+    // Allow this flex column to shrink below its content's intrinsic height so
+    // the inner ScreenContentWrapper scroller (flex:1) can size against it and
+    // own the scroll. Without minHeight:0 the column refuses to shrink and the
+    // single scroller collapses to height 0 -> blank page on desktop web.
+    minHeight: 0,
   },
   circleButton: {
     alignItems: 'center',

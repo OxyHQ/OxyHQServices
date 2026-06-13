@@ -68,9 +68,14 @@ export function ScreenContentWrapper({ children, refreshing = false, onRefresh }
   const contentContainerStyle = useMemo(() => {
     return [
       styles.contentContainer,
-      isMobile && {
-        paddingTop: headerHeight,
-      },
+      isMobile
+        ? {
+            paddingTop: headerHeight,
+          }
+        : // Desktop web: this single scroller now owns the insets that the
+          // (tabs) layout's outer container used to apply (paddingTop:88 to
+          // clear the fixed Header, 24px horizontal/bottom gutter).
+          styles.desktopContentPadding,
     ];
   }, [isMobile, headerHeight]);
 
@@ -111,6 +116,11 @@ const styles = StyleSheet.create({
   contentContainer: {
     flexGrow: 1,
     paddingBottom: 20,
+  },
+  desktopContentPadding: {
+    paddingTop: 88,
+    paddingHorizontal: 24,
+    paddingBottom: 24,
   },
 });
 
