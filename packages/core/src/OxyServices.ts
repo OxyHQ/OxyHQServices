@@ -151,6 +151,10 @@ export interface OxyServices extends InstanceType<ReturnType<typeof composeOxySe
   signInWithRedirect(options?: RedirectAuthOptions): void;
   signUpWithRedirect(options?: RedirectAuthOptions): void;
 
+  // Central cross-domain SSO (opaque single-use code exchange)
+  exchangeSsoCode(code: string): Promise<SessionLoginResponse>;
+  generateSsoState(): string;
+
   // Express.js middleware
   auth(options?: {
     debug?: boolean;

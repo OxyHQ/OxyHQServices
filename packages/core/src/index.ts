@@ -369,6 +369,13 @@ export type { QuickAccount, DisplayNameUserShape } from './utils/accountUtils';
 // Cross-domain SSO infrastructure
 // ---------------------------------------------------------------------------
 export { autoDetectAuthWebUrl } from './utils/fapiAutoDetect';
+
+// Central cross-domain SSO (opaque single-use code bounce via auth.oxy.so)
+export { CENTRAL_AUTH_URL, resolveCentralAuthUrl } from './utils/authWebUrl';
+export { parseSsoReturnFragment } from './utils/ssoReturn';
+export type { SsoReturnKind, SsoReturnResult } from './utils/ssoReturn';
+export { generateSsoState } from './mixins/OxyServices.sso';
+
 export { runColdBoot } from './utils/coldBoot';
 export type {
     ColdBootStep,

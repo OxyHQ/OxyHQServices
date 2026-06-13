@@ -10,6 +10,7 @@ import { OxyServicesAuthMixin } from './OxyServices.auth';
 import { OxyServicesFedCMMixin } from './OxyServices.fedcm';
 import { OxyServicesPopupAuthMixin } from './OxyServices.popup';
 import { OxyServicesRedirectAuthMixin } from './OxyServices.redirect';
+import { OxyServicesSsoMixin } from './OxyServices.sso';
 import { OxyServicesUserMixin } from './OxyServices.user';
 import { OxyServicesPrivacyMixin } from './OxyServices.privacy';
 import { OxyServicesLanguageMixin } from './OxyServices.language';
@@ -42,6 +43,7 @@ type AllMixinInstances =
   & InstanceType<ReturnType<typeof OxyServicesFedCMMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesPopupAuthMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesRedirectAuthMixin<typeof OxyServicesBase>>>
+  & InstanceType<ReturnType<typeof OxyServicesSsoMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesUserMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesPrivacyMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesLanguageMixin<typeof OxyServicesBase>>>
@@ -98,6 +100,10 @@ const MIXIN_PIPELINE: MixinFunction[] = [
     OxyServicesFedCMMixin,
     OxyServicesPopupAuthMixin,
     OxyServicesRedirectAuthMixin,
+
+    // Central cross-domain SSO (opaque-code exchange). After Popup so it can
+    // reuse the popup mixin's secure-random `generateState()`.
+    OxyServicesSsoMixin,
 
     // User management (requires auth)
     OxyServicesUserMixin,

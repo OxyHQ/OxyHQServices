@@ -8,7 +8,7 @@ import type { OxyConfig as OxyConfigBase, ApiError, User } from './models/interf
 import { handleHttpError } from './utils/errorUtils';
 import { HttpService, type RequestOptions } from './HttpService';
 import { OxyAuthenticationError, OxyAuthenticationTimeoutError } from './OxyServices.errors';
-import { autoDetectAuthWebUrl } from './utils/fapiAutoDetect';
+import { resolveCentralAuthUrl } from './utils/authWebUrl';
 
 export interface OxyConfig extends OxyConfigBase {
   cloudURL?: string;
@@ -36,18 +36,17 @@ export class OxyServicesBase {
       throw new Error('OxyConfig is required');
     }
 
-    // Auto-detect the first-party IdP (`auth.<rp-apex>`) when the caller did not
-    // pin `authWebUrl` explicitly. This mirrors the provider-`baseURL` path in
-    // `@oxyhq/services` (OxyContext), so apps that construct their OWN
-    // `OxyServices` instance and pass it to `<OxyProvider oxyServices={...} />`
-    // get the same same-site IdP resolution. On web at `https://mention.earth`
-    // this yields `https://auth.mention.earth`; on native/SSR (no `window`)
-    // `autoDetectAuthWebUrl()` returns `undefined`, leaving the auth mixins'
-    // `DEFAULT_AUTH_URL` fallback in effect — native behavior is unchanged.
+    // Default `authWebUrl` to the CENTRAL IdP (`auth.oxy.so`) when the caller
+    // did not pin it explicitly. TRUE central cross-domain SSO (Google/Meta/
+    // Clerk style) routes every RP through the one central IdP — it owns the
+    // host-only `fedcm_session` cookie and the central session store — so the
+    // SDK no longer derives a per-apex `auth.<rp-apex>` IdP by default.
+    // `autoDetectAuthWebUrl` is still exported for any call site that opts into
+    // per-apex resolution, but it is NOT the constructor default anymore.
     // An explicit `authWebUrl` always wins (we only fill it when absent).
     const resolvedConfig: OxyConfig = config.authWebUrl
       ? config
-      : { ...config, authWebUrl: autoDetectAuthWebUrl() };
+      : { ...config, authWebUrl: resolveCentralAuthUrl(config.authWebUrl) };
 
     this.config = resolvedConfig;
     this.cloudURL = resolvedConfig.cloudURL || 'https://cloud.oxy.so';

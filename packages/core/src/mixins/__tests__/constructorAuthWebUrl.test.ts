@@ -1,29 +1,26 @@
 /**
- * `OxyServices` constructor first-party IdP auto-detection.
+ * `OxyServices` constructor central-IdP defaulting.
  *
- * `@oxyhq/services` 8.2.0 added cross-domain SSO that auto-detects the IdP as
- * `https://auth.<rp-apex>` via `autoDetectAuthWebUrl()`. That detection used to
- * run ONLY on the provider-`baseURL` branch of OxyContext — apps that construct
- * their OWN `OxyServices` instance and pass it to
- * `<OxyProvider oxyServices={...} />` never hit it, so an omitted `authWebUrl`
- * fell back to the hardcoded `DEFAULT_AUTH_URL` ('https://auth.oxy.so'),
- * forcing a third-party IdP and breaking Safari/Firefox cross-domain restore.
+ * TRUE central cross-domain SSO (Google/Meta/Clerk style, 2026-06-13) routes
+ * every Relying Party through ONE central IdP at `auth.oxy.so` — it owns the
+ * host-only `fedcm_session` cookie and the central session store. The SDK
+ * therefore defaults `authWebUrl` to the central IdP when the caller omits it,
+ * via `resolveCentralAuthUrl(config.authWebUrl)`.
  *
- * The constructor now derives `authWebUrl` itself when the caller omits it, so
- * BOTH construction paths behave identically:
- *   - web at `https://mention.earth` -> `https://auth.mention.earth`
- *   - native/SSR (no `window`)       -> undefined (mixins fall back to
- *     `DEFAULT_AUTH_URL`, exactly as before)
- *   - explicit `authWebUrl`          -> respected verbatim (explicit wins)
+ * This replaces the previous behaviour, where the constructor auto-detected a
+ * per-apex IdP (`auth.<rp-apex>`) from `window.location`. `autoDetectAuthWebUrl`
+ * is still exported for call sites that opt into per-apex resolution, but it is
+ * NO LONGER the constructor default.
+ *
+ * Contract:
+ *   - authWebUrl omitted, no window (native/SSR) -> 'https://auth.oxy.so'
+ *   - authWebUrl omitted, window present         -> 'https://auth.oxy.so'
+ *     (the page host is irrelevant — central only)
+ *   - authWebUrl explicit                        -> respected verbatim (wins)
  */
 
 import { OxyServices } from '../../OxyServices';
-
-// The hardcoded fallback the auth mixins resolve to when `authWebUrl` is unset
-// (`this.config.authWebUrl || DEFAULT_AUTH_URL`). Mirrors the static
-// `DEFAULT_AUTH_URL` on the redirect/popup mixins. Native/SSR must keep
-// resolving to this exact value after the constructor auto-detect change.
-const DEFAULT_AUTH_URL = 'https://auth.oxy.so';
+import { CENTRAL_AUTH_URL } from '../../utils/authWebUrl';
 
 function installWindowLocation(hostname: string, protocol = 'https:'): void {
   (globalThis as unknown as { window: unknown }).window = {
@@ -35,74 +32,54 @@ function clearWindow(): void {
   delete (globalThis as Record<string, unknown>).window;
 }
 
-describe('OxyServices constructor — first-party authWebUrl auto-detection', () => {
+describe('OxyServices constructor — central IdP defaulting', () => {
   afterEach(() => {
     clearWindow();
   });
 
-  it('leaves authWebUrl undefined on native/SSR (no window)', () => {
-    // No `window` is installed -> autoDetectAuthWebUrl() returns undefined.
+  it('defaults authWebUrl to the central IdP on native/SSR (no window)', () => {
     const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
 
-    expect(oxy.config.authWebUrl).toBeUndefined();
-    // Auth flows must still resolve to the hardcoded default on native.
-    expect(oxy.config.authWebUrl || DEFAULT_AUTH_URL).toBe('https://auth.oxy.so');
+    expect(oxy.config.authWebUrl).toBe(CENTRAL_AUTH_URL);
+    expect(oxy.config.authWebUrl).toBe('https://auth.oxy.so');
   });
 
-  it('derives auth.<apex> on web when authWebUrl is omitted', () => {
+  it('defaults to the central IdP on web regardless of page host', () => {
+    // The page is mention.earth, but central SSO never derives a per-apex IdP.
     installWindowLocation('mention.earth');
 
     const oxy = new OxyServices({ baseURL: 'https://api.mention.earth' });
 
-    expect(oxy.config.authWebUrl).toBe('https://auth.mention.earth');
+    expect(oxy.config.authWebUrl).toBe('https://auth.oxy.so');
   });
 
-  it('strips a leading subdomain down to the apex on web', () => {
+  it('defaults to the central IdP even on a subdomain page host', () => {
     installWindowLocation('www.homiio.com');
 
     const oxy = new OxyServices({ baseURL: 'https://api.homiio.com' });
 
-    expect(oxy.config.authWebUrl).toBe('https://auth.homiio.com');
+    expect(oxy.config.authWebUrl).toBe('https://auth.oxy.so');
   });
 
-  it('derives auth.<host> for preview hosts (e.g. *.pages.dev)', () => {
-    installWindowLocation('foo.pages.dev');
-
-    const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
-
-    expect(oxy.config.authWebUrl).toBe('https://auth.pages.dev');
-  });
-
-  it('respects an explicit authWebUrl even when a window is present (explicit wins)', () => {
+  it('respects an explicit authWebUrl (explicit wins)', () => {
     installWindowLocation('mention.earth');
 
     const oxy = new OxyServices({
       baseURL: 'https://api.mention.earth',
-      authWebUrl: 'https://auth.oxy.so',
+      authWebUrl: 'https://auth.mention.earth',
     });
 
-    // The page is mention.earth, but the caller pinned auth.oxy.so — honour it.
-    expect(oxy.config.authWebUrl).toBe('https://auth.oxy.so');
+    // The caller pinned a per-apex IdP explicitly — honour it verbatim.
+    expect(oxy.config.authWebUrl).toBe('https://auth.mention.earth');
   });
 
   it('does not mutate the caller-supplied config object', () => {
-    installWindowLocation('mention.earth');
-
     const input = { baseURL: 'https://api.mention.earth' };
     const oxy = new OxyServices(input);
 
-    // The stored config carries the detected IdP...
-    expect(oxy.config.authWebUrl).toBe('https://auth.mention.earth');
+    // The stored config carries the central IdP default...
+    expect(oxy.config.authWebUrl).toBe('https://auth.oxy.so');
     // ...but the caller's own object reference is untouched.
     expect((input as { authWebUrl?: string }).authWebUrl).toBeUndefined();
-  });
-
-  it('falls back to DEFAULT_AUTH_URL on host shapes auto-detect declines (localhost)', () => {
-    installWindowLocation('localhost', 'http:');
-
-    const oxy = new OxyServices({ baseURL: 'http://localhost:3000' });
-
-    expect(oxy.config.authWebUrl).toBeUndefined();
-    expect(oxy.config.authWebUrl || DEFAULT_AUTH_URL).toBe('https://auth.oxy.so');
   });
 });
