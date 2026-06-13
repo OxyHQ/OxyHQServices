@@ -41,6 +41,23 @@ const COOKIE_MAX_AGE = 30 * 24 * 60 * 60; // 30 days in seconds
 const TOKEN_LIFETIME = 600; // 10 minutes for id_tokens
 
 /**
+ * Lifetime (seconds) of the signed `establish-token` that carries a validated
+ * central session across the second SSO hop to `auth.<rp-apex>`. Kept very
+ * short: it only needs to survive a single 303 redirect + the browser's
+ * immediate follow-up GET to `/sso/establish`. A tight 60s window shrinks the
+ * replay surface to nothing meaningful while tolerating a slow network hop.
+ */
+const ESTABLISH_TOKEN_LIFETIME = 60; // 60 seconds
+
+/**
+ * The opaque `purpose` claim stamped on (and required of) the establish-token.
+ * Scoping the token to a single purpose means a token minted for the SSO
+ * establish hop can never be replayed as, e.g., a FedCM id_token even though
+ * both are HS256-signed with the same `FEDCM_TOKEN_SECRET`.
+ */
+const ESTABLISH_TOKEN_PURPOSE = 'sso-establish';
+
+/**
  * The single, fixed path on the RP origin that GET /sso is allowed to redirect
  * back to. The RP serves a tiny callback page here whose only job is to read the
  * `#oxy_sso=…&code=…&state=…` fragment, redeem the code at `POST /sso/exchange`,
@@ -181,6 +198,99 @@ async function createHS256JWT(payload: Record<string, unknown>, secret: string):
   const signature = base64url(new Uint8Array(signatureBuffer));
 
   return `${signatureInput}.${signature}`;
+}
+
+/** Decode a base64url string to its UTF-8 text, or `null` on malformed input. */
+function base64urlDecode(input: string): string | null {
+  try {
+    const padded = input.replace(/-/g, '+').replace(/_/g, '/');
+    const binary = atob(padded);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return new TextDecoder().decode(bytes);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Verify an HS256 JWT against `secret` using Web Crypto's constant-time
+ * `crypto.subtle.verify` (no hand-rolled string compare → no timing leak).
+ * Returns the decoded payload object ONLY when the signature is valid and the
+ * header declares `alg: HS256`; returns `null` on any structural, signature, or
+ * algorithm mismatch. Expiry/claims are checked by the caller.
+ *
+ * The explicit `alg === 'HS256'` gate rejects an `alg: none` (or other-alg)
+ * forgery: an attacker cannot strip the signature and have it accepted.
+ */
+async function verifyHS256JWT(
+  token: string,
+  secret: string
+): Promise<Record<string, unknown> | null> {
+  if (!secret) return null;
+  const parts = token.split('.');
+  if (parts.length !== 3) return null;
+  const [headerB64, bodyB64, signatureB64] = parts;
+
+  const headerJson = base64urlDecode(headerB64);
+  if (!headerJson) return null;
+  let header: Record<string, unknown>;
+  try {
+    header = JSON.parse(headerJson) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+  if (header.alg !== 'HS256') return null;
+
+  const signatureBytes = base64urlBytes(signatureB64);
+  if (!signatureBytes) return null;
+
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['verify']
+  );
+  const valid = await crypto.subtle.verify(
+    'HMAC',
+    key,
+    signatureBytes,
+    new TextEncoder().encode(`${headerB64}.${bodyB64}`)
+  );
+  if (!valid) return null;
+
+  const bodyJson = base64urlDecode(bodyB64);
+  if (!bodyJson) return null;
+  try {
+    return JSON.parse(bodyJson) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Decode a base64url string to raw bytes over a freshly-allocated, NON-shared
+ * `ArrayBuffer`, or `null` on malformed input. The explicit `ArrayBuffer`
+ * backing (rather than the default `ArrayBufferLike`, which TS widens to a
+ * possible `SharedArrayBuffer`) is required so the result is accepted as a
+ * `BufferSource` by `crypto.subtle.verify`.
+ */
+function base64urlBytes(input: string): Uint8Array<ArrayBuffer> | null {
+  try {
+    const padded = input.replace(/-/g, '+').replace(/_/g, '/');
+    const binary = atob(padded);
+    const buffer = new ArrayBuffer(binary.length);
+    const bytes = new Uint8Array(buffer);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes;
+  } catch {
+    return null;
+  }
 }
 
 interface ResolvedUser {
@@ -553,6 +663,83 @@ function isReturnToOnClient(returnTo: string, approvedOrigin: string): boolean {
   return url.pathname === SSO_CALLBACK_PATH;
 }
 
+/**
+ * Known multi-part public suffixes where the registrable domain is the LAST
+ * THREE labels, not two. This MUST mirror `MULTIPART_TLDS` in
+ * `packages/core/src/utils/fapiAutoDetect.ts` — the client derives
+ * `auth.<rp-apex>` through that helper, and this server must derive the SAME
+ * per-apex IdP host so the second SSO hop lands on a first-party origin. If the
+ * two lists ever diverge, an RP on a multi-part TLD would be bounced to a host
+ * the client never CNAMEs. Deriving an apex from `labels.slice(-2)` against any
+ * of these would also yield an attacker-registrable suffix (e.g. `auth.co.uk`),
+ * so we bail (treat as no per-apex hop) instead.
+ */
+const MULTIPART_TLDS: ReadonlySet<string> = new Set([
+  'co.uk',
+  'com.au',
+  'co.jp',
+  'co.nz',
+  'com.br',
+  'co.za',
+  'com.mx',
+  'co.in',
+  'co.kr',
+  'com.sg',
+]);
+
+/**
+ * The registrable-domain apex of the CENTRAL IdP host. When a client's apex
+ * equals this, `auth.<apex>` IS `auth.oxy.so` (the central IdP) — already
+ * first-party to the client via the top-level `/sso` bounce — so the second
+ * establish hop is unnecessary and we mint the code directly. This is the
+ * `*.oxy.so` skip case.
+ */
+const CENTRAL_IDP_APEX = 'oxy.so';
+
+/**
+ * Derive the per-apex first-party IdP host (`auth.<eTLD+1>`) for an approved
+ * client origin, mirroring core `autoDetectAuthWebUrl`'s eTLD+1 logic
+ * (last-two-labels with the multi-part-TLD guard).
+ *
+ * Returns `null` — meaning "no per-apex hop, use the central IdP directly" —
+ * when:
+ *   - the origin is unparseable,
+ *   - the host is an IP literal (v4 or v6) or has fewer than two labels,
+ *   - the trailing two labels form a known multi-part public suffix (the apex
+ *     would be an attacker-registrable suffix), OR
+ *   - the apex equals `CENTRAL_IDP_APEX` (`oxy.so`) — `auth.oxy.so` is already
+ *     first-party to the client, so the central bounce already carries the
+ *     durable credential and a second hop would be pure overhead.
+ *
+ * For an honest cross-registrable-domain client (e.g. `https://mention.earth`)
+ * it returns `auth.mention.earth`, the host the client CNAMEs to this worker
+ * and which is same-registrable-domain (first-party) with the RP page.
+ */
+function apexAuthHostForClient(clientOrigin: string): string | null {
+  let hostname: string;
+  try {
+    hostname = new URL(clientOrigin).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+  if (!hostname) return null;
+  // IPv4 / IPv6 literals have no registrable apex.
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(hostname)) return null;
+  if (hostname.startsWith('[') || hostname.includes(':')) return null;
+
+  const labels = hostname.split('.');
+  if (labels.length < 2) return null;
+
+  const lastTwo = labels.slice(-2).join('.');
+  if (MULTIPART_TLDS.has(lastTwo)) return null;
+
+  // Same registrable domain as the central IdP → `auth.oxy.so` is already
+  // first-party; skip the hop.
+  if (lastTwo === CENTRAL_IDP_APEX) return null;
+
+  return `auth.${lastTwo}`;
+}
+
 /** The non-secret outcome reported to the RP callback via the URL fragment. */
 type SsoOutcome = 'ok' | 'none' | 'error';
 
@@ -622,6 +809,99 @@ async function createSsoCode(
   } catch {
     return null;
   }
+}
+
+/**
+ * The verified claims of an establish-token. The token is the ONLY credential
+ * that crosses the second SSO hop to `auth.<rp-apex>`; it never reaches JS and
+ * only ever drives a Set-Cookie on a re-validated session.
+ */
+interface EstablishClaims {
+  /** The central session id this token authorises planting first-party. */
+  sessionId: string;
+  /** The approved client origin the token is bound to (audience). */
+  clientOrigin: string;
+  /** The per-apex IdP host the cookie may be planted on. */
+  apexAuthHost: string;
+}
+
+/**
+ * Mint a short-lived, signed establish-token that carries an already-validated
+ * central session across the second SSO hop to `auth.<rp-apex>`. Signed HS256
+ * with the EXISTING `FEDCM_TOKEN_SECRET` (no new secret), bound to the approved
+ * `clientOrigin` (aud) and the derived `apexAuthHost` (host), and stamped with
+ * `purpose: 'sso-establish'` + a <=60s expiry. The token is opaque to the
+ * browser (it only rides in the redirect URL and is re-verified server-side at
+ * `/sso/establish`); it never returns a token to JS.
+ */
+async function createEstablishToken(
+  config: ResolvedConfig,
+  sessionId: string,
+  clientOrigin: string,
+  apexAuthHost: string
+): Promise<string | null> {
+  if (!config.fedcmTokenSecret) return null;
+  const now = Math.floor(Date.now() / 1000);
+  const payload: Record<string, unknown> = {
+    sub: sessionId,
+    aud: clientOrigin,
+    host: apexAuthHost,
+    purpose: ESTABLISH_TOKEN_PURPOSE,
+    iat: now,
+    exp: now + ESTABLISH_TOKEN_LIFETIME,
+  };
+  return createHS256JWT(payload, config.fedcmTokenSecret);
+}
+
+/**
+ * Verify an establish-token at `/sso/establish`: checks the HS256 signature
+ * (constant-time, alg-pinned), that `purpose` is exactly `'sso-establish'`,
+ * that it has not expired, and that the bound `host` matches the request host
+ * (so a token minted for `auth.mention.earth` cannot be replayed against
+ * `auth.homiio.com`). Returns the typed claims, or `null` on ANY failure.
+ *
+ * The audience (`aud` == approved client origin) is returned for the caller to
+ * re-validate against the live approved-clients allow-list — verification here
+ * proves authenticity, the caller proves the client is still approved.
+ */
+async function verifyEstablishToken(
+  config: ResolvedConfig,
+  token: string,
+  requestHost: string
+): Promise<EstablishClaims | null> {
+  const payload = await verifyHS256JWT(token, config.fedcmTokenSecret);
+  if (!payload) return null;
+  if (payload.purpose !== ESTABLISH_TOKEN_PURPOSE) return null;
+
+  const exp = payload.exp;
+  if (typeof exp !== 'number') return null;
+  if (Math.floor(Date.now() / 1000) >= exp) return null;
+
+  const sub = payload.sub;
+  const aud = payload.aud;
+  const host = payload.host;
+  if (typeof sub !== 'string' || sub.length === 0) return null;
+  if (typeof aud !== 'string' || aud.length === 0) return null;
+  if (typeof host !== 'string' || host.length === 0) return null;
+
+  // The token is pinned to the host it was minted for. The request must be
+  // served on exactly that host — defence against replaying a token captured
+  // for one apex against a different (also-CNAMEd) apex.
+  if (host.toLowerCase() !== requestHost.toLowerCase()) return null;
+
+  return { sessionId: sub, clientOrigin: aud, apexAuthHost: host };
+}
+
+/**
+ * Apply the no-store / no-referrer headers every sensitive SSO bounce sets.
+ * These responses carry (or are one redirect away from) a single-use credential
+ * and a callback URL — they must never be cached anywhere, and the Referer must
+ * be stripped so the RP callback URL is not leaked onward.
+ */
+function applyNoStoreHeaders(c: AppContext): void {
+  c.header('Cache-Control', 'no-store, no-cache, must-revalidate');
+  c.header('Pragma', 'no-cache');
+  c.header('Referrer-Policy', 'no-referrer');
 }
 
 /**
@@ -1325,9 +1605,7 @@ app.get('/auth/session-check', async (c) => {
 app.get('/sso', async (c) => {
   // 1. This is a sensitive auth bounce — never cache it anywhere, and strip the
   //    Referer so the RP callback URL is not leaked onward.
-  c.header('Cache-Control', 'no-store, no-cache, must-revalidate');
-  c.header('Pragma', 'no-cache');
-  c.header('Referrer-Policy', 'no-referrer');
+  applyNoStoreHeaders(c);
 
   const config = resolveConfig(c);
   const clientId = c.req.query('client_id');
@@ -1383,24 +1661,178 @@ app.get('/sso', async (c) => {
     return redirectToCallback(c, returnTo, buildSsoFragment('none', state));
   }
 
-  // 8. Mint a real Oxy session for the approved origin via the full, already-
-  //    audited FedCM nonce + exchange pipeline (server nonce born + burned
-  //    inside this call). On any failure → error bounce (no token leaks).
+  // 8. DURABLE-SESSION SECOND HOP. This bounce runs on the CENTRAL IdP host
+  //    (auth.oxy.so), which is THIRD-PARTY to a cross-registrable-domain RP
+  //    (e.g. mention.earth) under Safari ITP / Firefox TCP. Minting the code
+  //    here would work for THIS load, but the RP could never restore the
+  //    session on a reload without re-bouncing (the only refresh cookie lives
+  //    on a third-party origin). To make the session durable we route through
+  //    the RP's OWN per-apex IdP host (`auth.<rp-apex>`, CNAMEd to this worker
+  //    and FIRST-PARTY to the RP), which plants its own host-only fedcm_session
+  //    cookie. We carry the validated session there via a short-lived, signed,
+  //    audience+host-bound establish-token (no credential in the URL but that
+  //    token, which only ever sets a cookie — never returns a token to JS).
+  //
+  //    For *.oxy.so clients (apex == oxy.so) `apexAuthHostForClient` returns
+  //    null — auth.oxy.so is ALREADY first-party to the client, so the central
+  //    bounce already carries the durable credential. Skip the hop and mint the
+  //    code directly (steps 9–10 below), exactly as before.
+  const apexAuthHost = apexAuthHostForClient(approvedOrigin);
+  if (apexAuthHost) {
+    const establishToken = await createEstablishToken(
+      config,
+      sessionId,
+      approvedOrigin,
+      apexAuthHost
+    );
+    if (!establishToken) {
+      return redirectToCallback(c, returnTo, buildSsoFragment('error', state));
+    }
+    const establishUrl = new URL(`https://${apexAuthHost}/sso/establish`);
+    establishUrl.searchParams.set('et', establishToken);
+    establishUrl.searchParams.set('return_to', returnTo);
+    establishUrl.searchParams.set('state', state);
+    // 303 forces a GET on the follow-up so the browser lands on /sso/establish
+    // top-level on auth.<rp-apex> — first-party to the RP — where the durable
+    // host-only cookie is planted.
+    return c.redirect(establishUrl.toString(), 303);
+  }
+
+  // 9. (*.oxy.so path) Mint a real Oxy session for the approved origin via the
+  //    full, already-audited FedCM nonce + exchange pipeline (server nonce born
+  //    + burned inside this call). On any failure → error bounce (no leaks).
   const session = await mintSessionForClient(config, user, approvedOrigin);
   if (!session) {
     return redirectToCallback(c, returnTo, buildSsoFragment('error', state));
   }
 
-  // 9. Wrap the session in an opaque, single-use, origin-bound code via the
-  //    internal `POST /sso/code` (X-Oxy-Internal secret). On failure → error
-  //    bounce. The code — never the session — travels in the fragment.
+  // 10. Wrap the session in an opaque, single-use, origin-bound code via the
+  //     internal `POST /sso/code` (X-Oxy-Internal secret). On failure → error
+  //     bounce. The code — never the session — travels in the fragment.
   const code = await createSsoCode(config, approvedOrigin, session);
   if (!code) {
     return redirectToCallback(c, returnTo, buildSsoFragment('error', state));
   }
 
-  // 10. Success: bounce back with `oxy_sso=ok`, the opaque `code`, and `state`
+  // 11. Success: bounce back with `oxy_sso=ok`, the opaque `code`, and `state`
   //     in the FRAGMENT. The RP callback redeems the code at /sso/exchange.
+  return redirectToCallback(c, returnTo, buildSsoFragment('ok', state, code));
+});
+
+/**
+ * GET /sso/establish
+ *
+ * The SECOND SSO hop, served on the RP's per-apex IdP host (`auth.<rp-apex>`,
+ * CNAMEd to this worker). Because that host is same-registrable-domain with the
+ * RP page, it is FIRST-PARTY to the RP even under Safari ITP / Firefox Total
+ * Cookie Protection. Its job: plant a durable, host-only `fedcm_session` cookie
+ * for THIS host (so future reloads restore via the first-party `/auth/silent`
+ * iframe with NO top-level re-bounce/flash), then complete the SSO handoff by
+ * minting the opaque code and bouncing to the RP callback.
+ *
+ * The browser arrives here via the 303 from the central `/sso` bounce. The ONLY
+ * credential it carries is the signed, short-lived, audience+host-bound
+ * establish-token (`?et=`). No session/token is ever exposed to JS.
+ *
+ * Query (all REQUIRED):
+ *   et         — the signed establish-token (HS256, FEDCM_TOKEN_SECRET)
+ *   return_to  — absolute https URL on the approved client, path == SSO_CALLBACK_PATH
+ *   state      — opaque RP value echoed verbatim in the fragment (RP CSRF binding)
+ *
+ * SECURITY — every step fails CLOSED:
+ *   - The establish-token signature + expiry + `purpose` + `host`==request-host
+ *     are verified before anything else (forged/expired/replayed → HTML 400).
+ *   - `clientOrigin` (the token's aud) is RE-validated against the live
+ *     approved-clients allow-list (a client revoked between hops is rejected).
+ *   - `return_to` is RE-validated with `isReturnToOnClient` (open-redirect guard).
+ *   - The session is RE-validated against the API; the cookie is planted ONLY
+ *     on a still-valid session for a still-approved client. On an invalid
+ *     session we bounce `oxy_sso=error` and plant NOTHING.
+ */
+app.get('/sso/establish', async (c) => {
+  applyNoStoreHeaders(c);
+
+  const config = resolveConfig(c);
+  const et = c.req.query('et');
+  const returnTo = c.req.query('return_to');
+  const state = c.req.query('state');
+
+  // `state` and `return_to` are load-bearing (we echo `state` and redirect to
+  // `return_to`). A missing one is malformed — render an HTML 400, no redirect.
+  if (typeof state !== 'string' || state.length === 0) {
+    return c.html(renderSsoErrorHtml('invalid_request'), 400);
+  }
+  if (typeof returnTo !== 'string' || returnTo.length === 0) {
+    return c.html(renderSsoErrorHtml('invalid_request'), 400);
+  }
+  if (typeof et !== 'string' || et.length === 0) {
+    return c.html(renderSsoErrorHtml('invalid_request'), 400);
+  }
+
+  // 1. Verify the establish-token: HS256 signature (constant-time, alg-pinned),
+  //    purpose == 'sso-establish', not expired, and pinned host == this request
+  //    host. Any failure → HTML 400 (never a redirect — we have no blessed
+  //    target until the embedded return_to is independently re-validated).
+  const requestHost = new URL(c.req.url).host;
+  const claims = await verifyEstablishToken(config, et, requestHost);
+  if (!claims) {
+    return c.html(renderSsoErrorHtml('invalid_request'), 400);
+  }
+
+  // 2. RE-validate the token's audience against the LIVE approved-clients
+  //    allow-list (a client could have been revoked between the two hops).
+  const approvedOrigin = await resolveApprovedClientOrigin(config.apiBaseUrl, claims.clientOrigin);
+  if (!approvedOrigin) {
+    return c.html(renderSsoErrorHtml('invalid_request'), 400);
+  }
+
+  // 3. RE-validate return_to (https, on the approved origin, fixed callback
+  //    path). Until this passes we emit NO Location — open-redirect guard.
+  if (!isReturnToOnClient(returnTo, approvedOrigin)) {
+    return c.html(renderSsoErrorHtml('invalid_request'), 400);
+  }
+
+  // 4. From here the ONLY redirect target is the validated `returnTo`.
+
+  // 5. RE-validate the session against the API. The cookie is planted ONLY on a
+  //    still-valid session. A session revoked between hops → error bounce, no
+  //    cookie planted.
+  const user = await fetchUserFromAPI(config.apiBaseUrl, claims.sessionId);
+  if (!user) {
+    return redirectToCallback(c, returnTo, buildSsoFragment('error', state));
+  }
+
+  // 6. PLANT THE DURABLE FIRST-PARTY CREDENTIAL. Set the host-only
+  //    `fedcm_session` cookie for THIS request host (auth.<rp-apex>) using the
+  //    SAME options `/fedcm/set-session` uses (no Domain, Secure, HttpOnly,
+  //    SameSite=None, 30d). The value is the validated central sessionId,
+  //    exactly as the central host stores it. Because this host is first-party
+  //    to the RP, the cookie survives ITP/TCP — future reloads restore via the
+  //    first-party `/auth/silent` iframe with no top-level re-bounce.
+  setCookie(c, COOKIE_NAME, claims.sessionId, {
+    ...FEDCM_COOKIE_OPTIONS,
+    maxAge: COOKIE_MAX_AGE,
+  });
+  c.header('Set-Login', 'logged-in');
+
+  // 7. Complete the SSO handoff: mint a real Oxy session for the approved
+  //    origin via the full FedCM nonce + exchange pipeline (server nonce born +
+  //    burned inside), then wrap it in an opaque, single-use, origin-bound code.
+  //    Either failure → error bounce (the durable cookie is already set, so a
+  //    reload will still restore first-party even if this immediate handoff
+  //    failed).
+  const session = await mintSessionForClient(config, user, approvedOrigin);
+  if (!session) {
+    return redirectToCallback(c, returnTo, buildSsoFragment('error', state));
+  }
+  const code = await createSsoCode(config, approvedOrigin, session);
+  if (!code) {
+    return redirectToCallback(c, returnTo, buildSsoFragment('error', state));
+  }
+
+  // 8. Success: bounce back to the RP callback with `oxy_sso=ok`, the opaque
+  //    `code`, and `state` in the FRAGMENT. The RP redeems the code at
+  //    /sso/exchange; subsequent reloads restore via the cookie we just planted.
   return redirectToCallback(c, returnTo, buildSsoFragment('ok', state, code));
 });
 

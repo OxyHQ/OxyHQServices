@@ -1041,6 +1041,311 @@ describe('GET /sso (central top-level-redirect cross-domain SSO)', () => {
     expect(res.status).toBe(400);
     expect(res.headers.get('location')).toBeNull();
   });
+
+  it('SKIPS the per-apex establish hop for an *.oxy.so client (auth.oxy.so is already first-party)', async () => {
+    // accounts.oxy.so's apex IS oxy.so → auth.oxy.so is already first-party →
+    // no second hop. The handler mints the code and bounces straight to the RP
+    // callback (no /sso/establish redirect).
+    const res = await app.request(
+      ssoUrl({
+        client_id: RP_ORIGIN,
+        return_to: VALID_RETURN_TO,
+        state: 'skip-1',
+        prompt: 'none',
+      }),
+      { headers: { cookie: SESSION_COOKIE } }
+    );
+    expect(res.status).toBe(303);
+    const { location, frag } = parseSsoRedirect(res);
+    // Goes to the RP callback, NOT to an /sso/establish hop.
+    expect(location).not.toContain('/sso/establish');
+    expect(location.startsWith(`${VALID_RETURN_TO}#`)).toBe(true);
+    expect(frag.get('oxy_sso')).toBe('ok');
+    expect(frag.get('code')).toBe(STUB_SSO_CODE);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Durable-session second hop: GET /sso (cross-domain) -> GET /sso/establish
+//
+// For a cross-registrable-domain RP (e.g. mention.earth) auth.oxy.so is THIRD-
+// party. The central /sso bounce hops through the RP's own per-apex IdP host
+// (auth.mention.earth, FIRST-party to the RP) so it can plant a durable host-
+// only fedcm_session cookie. The session is carried over the hop in a signed,
+// short-lived, audience+host-bound establish-token (?et=).
+// ---------------------------------------------------------------------------
+
+const CROSS_RP = 'https://mention.earth';
+const CROSS_APEX_HOST = 'auth.mention.earth';
+const CROSS_RETURN_TO = `${CROSS_RP}${SSO_CALLBACK_PATH}`;
+
+/** Approve a cross-domain RP (origin allow-list + user grants) and re-stub. */
+function approveCrossRp(): void {
+  stubbedApprovedClients = [RP_ORIGIN, CROSS_RP];
+  stubbedGrantedOrigins = [RP_ORIGIN, CROSS_RP];
+  installApiStub();
+}
+
+/** Parse a `/sso/establish` redirect Location into URL + query params. */
+function parseEstablishRedirect(res: Response): { location: string; url: URL } {
+  const location = res.headers.get('location') ?? '';
+  return { location, url: new URL(location) };
+}
+
+/** Decode the (unverified) payload of an establish-token for claim assertions. */
+function decodeJwtPayload(token: string): Record<string, unknown> {
+  const [, payloadB64] = token.split('.');
+  const json = Buffer.from(payloadB64.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
+  return JSON.parse(json) as Record<string, unknown>;
+}
+
+/**
+ * Re-sign an establish-token payload with the test secret (HS256) so tests can
+ * forge expired / tampered / wrong-purpose tokens. Mirrors `createHS256JWT`.
+ */
+function signEstablishToken(payload: Record<string, unknown>): string {
+  const b64url = (s: string): string =>
+    Buffer.from(s, 'utf8').toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+  const header = b64url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
+  const body = b64url(JSON.stringify(payload));
+  const signingInput = `${header}.${body}`;
+  const sig = createHmac('sha256', TEST_SECRET)
+    .update(signingInput)
+    .digest('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=/g, '');
+  return `${signingInput}.${sig}`;
+}
+
+describe('GET /sso -> /sso/establish second hop (cross-domain durable session)', () => {
+  it('303-redirects a cross-domain client to auth.<apex>/sso/establish with a valid et', async () => {
+    approveCrossRp();
+    const res = await app.request(
+      ssoUrl({
+        client_id: CROSS_RP,
+        return_to: CROSS_RETURN_TO,
+        state: 'xd-1',
+        prompt: 'none',
+      }),
+      { headers: { cookie: SESSION_COOKIE } }
+    );
+    expect(res.status).toBe(303);
+    const { url } = parseEstablishRedirect(res);
+    // The hop targets the RP's OWN per-apex IdP host (first-party to the RP).
+    expect(url.host).toBe(CROSS_APEX_HOST);
+    expect(url.pathname).toBe('/sso/establish');
+    // return_to + state are carried through the hop (in the query, not fragment).
+    expect(url.searchParams.get('return_to')).toBe(CROSS_RETURN_TO);
+    expect(url.searchParams.get('state')).toBe('xd-1');
+
+    // The et is a valid, short-lived, audience+host-bound establish-token.
+    const et = url.searchParams.get('et');
+    expect(typeof et).toBe('string');
+    const claims = decodeJwtPayload(et as string);
+    expect(claims.purpose).toBe('sso-establish');
+    expect(claims.aud).toBe(CROSS_RP);
+    expect(claims.host).toBe(CROSS_APEX_HOST);
+    expect(typeof claims.sub).toBe('string');
+    // <= 60s TTL.
+    expect((claims.exp as number) - (claims.iat as number)).toBeLessThanOrEqual(60);
+
+    // No code minted on the central host — that happens on the per-apex hop.
+    expect(capturedSsoCode).toBeUndefined();
+    // The session/access token never travels in the hop URL — only the et.
+    expect(url.toString()).not.toContain(STUB_ACCESS_TOKEN);
+  });
+
+  it('GET /sso/establish with a valid et sets the host-only fedcm_session cookie and returns oxy_sso=ok&code', async () => {
+    approveCrossRp();
+    // First obtain a real et from the central /sso bounce.
+    const hop = await app.request(
+      ssoUrl({ client_id: CROSS_RP, return_to: CROSS_RETURN_TO, state: 'xd-2', prompt: 'none' }),
+      { headers: { cookie: SESSION_COOKIE } }
+    );
+    const et = parseEstablishRedirect(hop).url.searchParams.get('et') as string;
+
+    // Now follow the hop ON the per-apex host (first-party to the RP).
+    const res = await app.request(
+      `https://${CROSS_APEX_HOST}/sso/establish?et=${encodeURIComponent(et)}&return_to=${encodeURIComponent(
+        CROSS_RETURN_TO
+      )}&state=xd-2`
+    );
+    expect(res.status).toBe(303);
+
+    // PROOF: a durable, host-only, first-party fedcm_session cookie is planted
+    // for auth.mention.earth. Host-only => NO Domain attribute; the value is the
+    // validated central sessionId.
+    const setCookie = res.headers.get('set-cookie') || '';
+    expect(setCookie).toContain('fedcm_session=sess_abc');
+    expect(setCookie.toLowerCase()).not.toContain('domain=');
+    expect(setCookie.toLowerCase()).toContain('httponly');
+    expect(setCookie.toLowerCase()).toContain('secure');
+    expect(setCookie.toLowerCase()).toContain('samesite=none');
+
+    // The SSO handoff completes: oxy_sso=ok + opaque code + state in the fragment.
+    const { location, frag } = parseSsoRedirect(res);
+    expect(location.startsWith(`${CROSS_RETURN_TO}#`)).toBe(true);
+    expect(frag.get('oxy_sso')).toBe('ok');
+    expect(frag.get('code')).toBe(STUB_SSO_CODE);
+    expect(frag.get('state')).toBe('xd-2');
+
+    // The internal code mint is bound to the cross-domain origin + session.
+    expect(capturedSsoCode?.clientOrigin).toBe(CROSS_RP);
+    expect(capturedSsoCode?.session?.sessionId).toBe(STUB_EXCHANGE_SESSION_ID);
+    // No access token leaks into the redirect URL.
+    expect(location).not.toContain(STUB_ACCESS_TOKEN);
+  });
+
+  it('rejects an et with a tampered audience (re-validated against the live allow-list)', async () => {
+    approveCrossRp();
+    // Forge an et whose aud is an UNAPPROVED origin but host matches the request.
+    const now = Math.floor(Date.now() / 1000);
+    const forged = signEstablishToken({
+      sub: 'sess_abc',
+      aud: 'https://evil.example.com',
+      host: CROSS_APEX_HOST,
+      purpose: 'sso-establish',
+      iat: now,
+      exp: now + 60,
+    });
+    const res = await app.request(
+      `https://${CROSS_APEX_HOST}/sso/establish?et=${encodeURIComponent(forged)}&return_to=${encodeURIComponent(
+        CROSS_RETURN_TO
+      )}&state=xd-3`
+    );
+    expect(res.status).toBe(400);
+    expect(res.headers.get('location')).toBeNull();
+    // No cookie planted for an unapproved audience.
+    expect(res.headers.get('set-cookie')).toBeNull();
+  });
+
+  it('rejects an expired et (HTML 400, no cookie)', async () => {
+    approveCrossRp();
+    const past = Math.floor(Date.now() / 1000) - 120;
+    const expired = signEstablishToken({
+      sub: 'sess_abc',
+      aud: CROSS_RP,
+      host: CROSS_APEX_HOST,
+      purpose: 'sso-establish',
+      iat: past,
+      exp: past + 60, // expired 60s ago
+    });
+    const res = await app.request(
+      `https://${CROSS_APEX_HOST}/sso/establish?et=${encodeURIComponent(expired)}&return_to=${encodeURIComponent(
+        CROSS_RETURN_TO
+      )}&state=xd-4`
+    );
+    expect(res.status).toBe(400);
+    expect(res.headers.get('set-cookie')).toBeNull();
+  });
+
+  it('rejects an et whose signature was tampered (HTML 400, no cookie)', async () => {
+    approveCrossRp();
+    const hop = await app.request(
+      ssoUrl({ client_id: CROSS_RP, return_to: CROSS_RETURN_TO, state: 'xd-5', prompt: 'none' }),
+      { headers: { cookie: SESSION_COOKIE } }
+    );
+    const et = parseEstablishRedirect(hop).url.searchParams.get('et') as string;
+    // Flip the last char of the signature → signature verification must fail.
+    const tampered = et.slice(0, -1) + (et.endsWith('A') ? 'B' : 'A');
+    const res = await app.request(
+      `https://${CROSS_APEX_HOST}/sso/establish?et=${encodeURIComponent(tampered)}&return_to=${encodeURIComponent(
+        CROSS_RETURN_TO
+      )}&state=xd-5`
+    );
+    expect(res.status).toBe(400);
+    expect(res.headers.get('set-cookie')).toBeNull();
+  });
+
+  it('rejects an et whose pinned host does not match the request host (replay across apexes)', async () => {
+    approveCrossRp();
+    // Token minted for auth.mention.earth, replayed against auth.homiio.com.
+    const now = Math.floor(Date.now() / 1000);
+    const forHomiio = signEstablishToken({
+      sub: 'sess_abc',
+      aud: CROSS_RP,
+      host: CROSS_APEX_HOST, // pinned to mention's apex host
+      purpose: 'sso-establish',
+      iat: now,
+      exp: now + 60,
+    });
+    const res = await app.request(
+      `https://auth.homiio.com/sso/establish?et=${encodeURIComponent(forHomiio)}&return_to=${encodeURIComponent(
+        CROSS_RETURN_TO
+      )}&state=xd-6`
+    );
+    expect(res.status).toBe(400);
+    expect(res.headers.get('set-cookie')).toBeNull();
+  });
+
+  it('rejects an et with the wrong purpose claim (e.g. a FedCM id_token replayed)', async () => {
+    approveCrossRp();
+    const now = Math.floor(Date.now() / 1000);
+    const wrongPurpose = signEstablishToken({
+      sub: 'sess_abc',
+      aud: CROSS_RP,
+      host: CROSS_APEX_HOST,
+      purpose: 'id_token', // NOT 'sso-establish'
+      iat: now,
+      exp: now + 60,
+    });
+    const res = await app.request(
+      `https://${CROSS_APEX_HOST}/sso/establish?et=${encodeURIComponent(wrongPurpose)}&return_to=${encodeURIComponent(
+        CROSS_RETURN_TO
+      )}&state=xd-7`
+    );
+    expect(res.status).toBe(400);
+    expect(res.headers.get('set-cookie')).toBeNull();
+  });
+
+  it('does not plant a cookie when the session no longer validates (oxy_sso=error)', async () => {
+    approveCrossRp();
+    const hop = await app.request(
+      ssoUrl({ client_id: CROSS_RP, return_to: CROSS_RETURN_TO, state: 'xd-8', prompt: 'none' }),
+      { headers: { cookie: SESSION_COOKIE } }
+    );
+    const et = parseEstablishRedirect(hop).url.searchParams.get('et') as string;
+
+    // Now make the session validation fail on the establish hop.
+    globalThis.fetch = (async (input: RequestInfo | URL): Promise<Response> => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.includes('/fedcm/clients/approved')) {
+        return new Response(JSON.stringify({ success: true, clients: [RP_ORIGIN, CROSS_RP] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      if (url.includes('/session/validate/')) {
+        return new Response(JSON.stringify({ valid: false }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
+    }) as typeof fetch;
+
+    const res = await app.request(
+      `https://${CROSS_APEX_HOST}/sso/establish?et=${encodeURIComponent(et)}&return_to=${encodeURIComponent(
+        CROSS_RETURN_TO
+      )}&state=xd-8`
+    );
+    expect(res.status).toBe(303);
+    // NO cookie planted on an invalid session.
+    expect(res.headers.get('set-cookie')).toBeNull();
+    const { frag } = parseSsoRedirect(res);
+    expect(frag.get('oxy_sso')).toBe('error');
+    expect(frag.get('state')).toBe('xd-8');
+  });
+
+  it('renders an HTML 400 when et is missing', async () => {
+    approveCrossRp();
+    const res = await app.request(
+      `https://${CROSS_APEX_HOST}/sso/establish?return_to=${encodeURIComponent(CROSS_RETURN_TO)}&state=xd-9`
+    );
+    expect(res.status).toBe(400);
+    expect(res.headers.get('location')).toBeNull();
+  });
 });
 
 describe('POST /fedcm/set-session cross-site hardening (M2)', () => {
