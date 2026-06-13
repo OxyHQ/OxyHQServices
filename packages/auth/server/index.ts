@@ -41,6 +41,18 @@ const COOKIE_MAX_AGE = 30 * 24 * 60 * 60; // 30 days in seconds
 const TOKEN_LIFETIME = 600; // 10 minutes for id_tokens
 
 /**
+ * The single, fixed path on the RP origin that GET /sso is allowed to redirect
+ * back to. The RP serves a tiny callback page here whose only job is to read the
+ * `#oxy_sso=…&code=…&state=…` fragment, redeem the code at `POST /sso/exchange`,
+ * and replace history. Pinning the callback path (not just the origin) shrinks
+ * the open-redirect surface to a single, RP-owned, well-known location: even a
+ * fully-approved RP origin cannot be coerced into bouncing the code to an
+ * arbitrary path on its own site (e.g. a user-content or proxy path that might
+ * leak the fragment).
+ */
+const SSO_CALLBACK_PATH = '/__oxy/sso-callback';
+
+/**
  * Shared attributes for the `fedcm_session` cookie (set AND delete).
  *
  * `sameSite: 'None'` is REQUIRED — FedCM reads this cookie in a cross-site
@@ -69,6 +81,12 @@ interface WorkerEnv {
   OXY_API_URL?: string;
   FEDCM_ISSUER?: string;
   FEDCM_TOKEN_SECRET?: string;
+  // Shared secret presented as the `X-Oxy-Internal` header on the
+  // server-to-server `POST /sso/code` mint call. MUST equal the API's
+  // `SSO_INTERNAL_SECRET` (GitHub secret → SSM `/oxy/oxy-api/SSO_INTERNAL_SECRET`).
+  // When unset, GET /sso fails closed (it cannot mint a code, so it bounces the
+  // RP with `oxy_sso=error` rather than silently issuing an unauthenticated one).
+  SSO_INTERNAL_SECRET?: string;
   NODE_ENV?: string;
   ASSETS?: { fetch: typeof fetch };
 }
@@ -79,6 +97,7 @@ interface ResolvedConfig {
   apiBaseUrl: string;
   fedcmIssuer: string;
   fedcmTokenSecret: string;
+  ssoInternalSecret: string;
 }
 
 /** Read a config value from the Worker `env` binding, falling back to Node `process.env`. */
@@ -123,6 +142,7 @@ function resolveConfig(c: AppContext): ResolvedConfig {
     apiBaseUrl: (readEnv(env, 'OXY_API_URL') || 'https://api.oxy.so').replace(/\/+$/, ''),
     fedcmIssuer,
     fedcmTokenSecret: readEnv(env, 'FEDCM_TOKEN_SECRET') || '',
+    ssoInternalSecret: readEnv(env, 'SSO_INTERNAL_SECRET') || '',
   };
 }
 
@@ -475,6 +495,149 @@ async function mintSessionForClient(
   }
 }
 
+// ---------------------------------------------------------------------------
+// Central top-level-redirect SSO (GET /sso)
+//
+// THREAT MODEL
+// ------------
+// `GET /sso` is the central, Clerk/Google/Meta-style cross-domain SSO entry.
+// The RP performs a TOP-LEVEL navigation (window.location.assign) to
+// `auth.oxy.so/sso?client_id=<rp>&return_to=<rp-callback>&state=<s>&prompt=none`.
+// Because it is a top-level navigation (NOT an iframe/fetch), the host-only,
+// first-party `fedcm_session` cookie on auth.oxy.so IS sent even under Safari
+// ITP / Firefox Total Cookie Protection / Chrome's third-party-cookie phase-out.
+//
+// The endpoint NEVER puts a token/JWT/session in a URL. On success it redirects
+// back to the RP callback with an OPAQUE, single-use, 30s-TTL `code` in the URL
+// FRAGMENT (not the query — fragments are not sent to servers, not logged in
+// access logs, and not leaked via Referer). The RP's callback page redeems the
+// code at `POST /sso/exchange` for the real session.
+//
+// Controls layered here:
+//   1. `prompt` MUST be `'none'` — this is a SILENT, no-UI bounce. Any other
+//      value is rejected with an HTML 400 (never a redirect), so the endpoint
+//      can never be coerced into showing a login UI cross-site.
+//   2. `client_id` MUST be on the authoritative approved-clients allow-list
+//      (`resolveApprovedClientOrigin`, the SAME list FedCM exchange enforces).
+//   3. `return_to` MUST parse as https, its origin MUST equal the approved
+//      client origin, AND its path MUST equal the fixed `SSO_CALLBACK_PATH`.
+//      Until BOTH pass we never emit a redirect — the only `Location` this
+//      handler ever writes is a fully-validated `return_to`. No open redirect.
+//   4. The `code` is minted by the API (`POST /sso/code`, gated by the
+//      `X-Oxy-Internal` shared secret) and bound to the approved origin there;
+//      `/sso/exchange` re-checks the redeeming Origin == minted origin. A worker
+//      bug cannot bypass approval — the API is the sole authority.
+//   5. `state` is echoed verbatim in the fragment for the RP's own CSRF binding.
+// ---------------------------------------------------------------------------
+
+/**
+ * Validate the RP-supplied `return_to` against the already-approved client
+ * origin. Returns `true` ONLY when ALL hold:
+ *   - it parses as an absolute URL,
+ *   - its scheme is exactly `https:` (no http downgrade, no `javascript:` etc.),
+ *   - its normalised origin equals the approved client origin, AND
+ *   - its path is exactly `SSO_CALLBACK_PATH` (the single RP-owned callback).
+ *
+ * Fails CLOSED on any parse error. This is the open-redirect guard: GET /sso
+ * NEVER writes a `Location` to a target this function has not blessed.
+ */
+function isReturnToOnClient(returnTo: string, approvedOrigin: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(returnTo);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== 'https:') return false;
+  if (normaliseOrigin(url.origin) !== approvedOrigin) return false;
+  return url.pathname === SSO_CALLBACK_PATH;
+}
+
+/** The non-secret outcome reported to the RP callback via the URL fragment. */
+type SsoOutcome = 'ok' | 'none' | 'error';
+
+/**
+ * Build the fragment params for the RP callback redirect. `state` is always
+ * echoed verbatim; `code` is present only on the `ok` outcome. The order is
+ * stable (oxy_sso, then code, then state) so the fragment is deterministic.
+ */
+function buildSsoFragment(outcome: SsoOutcome, state: string, code?: string): Record<string, string> {
+  const frag: Record<string, string> = { oxy_sso: outcome };
+  if (outcome === 'ok' && typeof code === 'string' && code.length > 0) {
+    frag.code = code;
+  }
+  frag.state = state;
+  return frag;
+}
+
+/**
+ * Redirect the top-level navigation back to the RP callback, carrying the SSO
+ * outcome in the URL FRAGMENT (never the query/path). A 303 See Other forces
+ * the browser to issue a GET and drops any request body.
+ *
+ * `returnTo` MUST already have passed `isReturnToOnClient` — this function does
+ * NOT re-validate; it only serialises the fragment onto the blessed target. The
+ * constructed URL (which may contain the single-use `code`) is NEVER logged.
+ */
+function redirectToCallback(
+  c: AppContext,
+  returnTo: string,
+  fragObj: Record<string, string>
+): Response {
+  const url = new URL(returnTo);
+  url.hash = new URLSearchParams(fragObj).toString();
+  return c.redirect(url.toString(), 303);
+}
+
+/**
+ * Mint a single-use SSO code for `session` bound to the approved `clientOrigin`
+ * by calling the internal `POST /sso/code` on api.oxy.so with the
+ * `X-Oxy-Internal` shared secret. The API validates `clientOrigin` against the
+ * approved-clients allow-list again and stores the session under `sha256(code)`
+ * with a 30s TTL. Returns the opaque `code`, or `null` on any failure (no
+ * secret leaks: a `null` becomes an `oxy_sso=error` bounce, never a token).
+ */
+async function createSsoCode(
+  config: ResolvedConfig,
+  clientOrigin: string,
+  session: SilentRestoreSession
+): Promise<string | null> {
+  if (!config.ssoInternalSecret) return null;
+  try {
+    const res = await fetch(`${config.apiBaseUrl}/sso/code`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        'X-Oxy-Internal': config.ssoInternalSecret,
+      },
+      body: JSON.stringify({ clientOrigin, session }),
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as Record<string, unknown>;
+    const code = data.code;
+    if (typeof code !== 'string' || code.length === 0) return null;
+    return code;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Render the HTML error page GET /sso returns for a malformed/unauthorised
+ * request (bad `prompt`, unapproved `client_id`, or invalid `return_to`). We
+ * deliberately render an HTML page with an HTTP 4xx status instead of
+ * redirecting — when validation fails we have NO blessed target to redirect to,
+ * so emitting any `Location` would risk an open redirect. The `reason` is a
+ * fixed, non-sensitive token (`invalid_request`); no request values are
+ * reflected into the page (no XSS sink).
+ */
+function renderSsoErrorHtml(reason: string): string {
+  const safeReason = reason.replace(/[^a-z_]/g, '');
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="robots" content="noindex"><title>Sign-in error</title></head><body><h1>Sign-in could not continue</h1><p>The single sign-on request was rejected (${safeReason}). Please return to the application and try again.</p></body></html>`;
+}
+
 /**
  * Serialise a value to a `<script>`-safe JSON literal. JSON cannot contain a
  * raw `<` / `>` / U+2028 / U+2029, but escaping them defends against a `</script>`
@@ -558,6 +721,48 @@ function renderSessionCheckHtml(targetOrigin: string, hasSession: boolean): stri
  */
 function hasWebIdentityDest(c: AppContext): boolean {
   return c.req.header('sec-fetch-dest') === 'webidentity';
+}
+
+/**
+ * Same-origin guard for the `POST /fedcm/set-session` cookie-planting endpoint.
+ *
+ * THREAT: `/fedcm/set-session` plants the host-only `fedcm_session` cookie that
+ * every other IdP endpoint (FedCM accounts/assertion, `/auth/silent`, `/sso`)
+ * trusts to identify the logged-in user. If an attacker page on a different
+ * site could drive this endpoint with `credentials: 'include'`, it could plant
+ * an ATTACKER-controlled sessionId — a session-fixation / login-CSRF vector
+ * that would then be honoured by the silent and `/sso` flows.
+ *
+ * The ONLY legitimate caller is the SPA itself, which is SAME-ORIGIN with the
+ * IdP (it runs on `auth.oxy.so` — or on a CNAME'd `auth.<rp-apex>` host that is
+ * same-origin with the endpoint it calls). So we require BOTH:
+ *
+ *   - `Sec-Fetch-Site: same-origin` (or `none` for a direct address-bar load /
+ *     same-document fetch). A cross-site page cannot forge this header — it is
+ *     set by the browser. We REJECT `same-site` and `cross-site`.
+ *   - When an `Origin` header is present (it is on any fetch/XHR), it MUST equal
+ *     the request's own origin. Defence-in-depth alongside Sec-Fetch-Site for
+ *     older engines, and it makes the same-origin contract explicit.
+ *
+ * Requests from clients that omit BOTH headers (non-browser tooling, server-to-
+ * server) are allowed through — they cannot be a cross-site browser attack by
+ * construction, and the endpoint still independently validates the sessionId
+ * against the API before planting anything.
+ */
+function isSameOriginSetSession(c: AppContext): boolean {
+  const secFetchSite = c.req.header('sec-fetch-site');
+  if (secFetchSite && secFetchSite !== 'same-origin' && secFetchSite !== 'none') {
+    return false;
+  }
+
+  const origin = c.req.header('origin');
+  if (origin) {
+    const requestOrigin = normaliseOrigin(c.req.url);
+    if (!requestOrigin || normaliseOrigin(origin) !== requestOrigin) {
+      return false;
+    }
+  }
+  return true;
 }
 
 /**
@@ -963,6 +1168,12 @@ app.get('/fedcm/login-status', async (c) => {
  * login flow and the FedCM server-side session tracking.
  */
 app.post('/fedcm/set-session', async (c) => {
+  // Reject any cross-site attempt to plant/clear the cookie. The only
+  // legitimate caller is the same-origin SPA (see `isSameOriginSetSession`).
+  if (!isSameOriginSetSession(c)) {
+    return c.json({ error: 'invalid_request' }, 403);
+  }
+
   const { apiBaseUrl } = resolveConfig(c);
   const body = await c.req.json().catch(() => ({})) as Record<string, string>;
   const sessionId = body.sessionId;
@@ -1088,6 +1299,109 @@ app.get('/auth/session-check', async (c) => {
     deleteCookie(c, COOKIE_NAME, { ...FEDCM_COOKIE_OPTIONS });
   }
   return c.html(renderSessionCheckHtml(target, valid));
+});
+
+/**
+ * GET /sso
+ *
+ * Central, top-level-redirect cross-domain SSO (Clerk/Google/Meta pattern). The
+ * RP performs a TOP-LEVEL navigation here so the first-party `fedcm_session`
+ * cookie on auth.oxy.so is sent even under Safari ITP / Firefox TCP / Chrome's
+ * third-party-cookie phase-out. On success the RP is bounced back to its
+ * callback with an OPAQUE, single-use `code` in the URL FRAGMENT — NEVER a
+ * token/JWT/session in any URL.
+ *
+ * Query (all REQUIRED):
+ *   client_id  — the RP origin (validated against the approved-clients list)
+ *   return_to  — absolute https URL on client_id, path == SSO_CALLBACK_PATH
+ *   state      — opaque RP value echoed verbatim in the fragment (RP CSRF binding)
+ *   prompt     — only `'none'` is honoured (silent, no-UI bounce)
+ *
+ * See the "Central top-level-redirect SSO" threat-model comment for the full
+ * control layering. The ONLY redirect target this handler ever writes is a
+ * fully-validated `return_to`; every failure before validation renders an HTML
+ * error page (no `Location`), so there is no open-redirect surface.
+ */
+app.get('/sso', async (c) => {
+  // 1. This is a sensitive auth bounce — never cache it anywhere, and strip the
+  //    Referer so the RP callback URL is not leaked onward.
+  c.header('Cache-Control', 'no-store, no-cache, must-revalidate');
+  c.header('Pragma', 'no-cache');
+  c.header('Referrer-Policy', 'no-referrer');
+
+  const config = resolveConfig(c);
+  const clientId = c.req.query('client_id');
+  const returnTo = c.req.query('return_to');
+  const state = c.req.query('state');
+  const prompt = c.req.query('prompt');
+
+  // 2. prompt MUST be exactly 'none' (silent bounce). Anything else is an
+  //    invalid request — render an HTML error, never redirect. `state` may be
+  //    absent here; we still cannot honour a non-silent prompt.
+  if (prompt !== 'none') {
+    return c.html(renderSsoErrorHtml('invalid_request'), 400);
+  }
+
+  // `state` and `return_to` are load-bearing for every downstream branch
+  // (we echo `state` and redirect to `return_to`). A missing one is malformed.
+  if (typeof state !== 'string' || state.length === 0) {
+    return c.html(renderSsoErrorHtml('invalid_request'), 400);
+  }
+  if (typeof returnTo !== 'string' || returnTo.length === 0) {
+    return c.html(renderSsoErrorHtml('invalid_request'), 400);
+  }
+
+  // 3. client_id MUST be an approved RP origin (authoritative allow-list — the
+  //    same list FedCM exchange enforces). Fails closed to an HTML error.
+  const approvedOrigin = await resolveApprovedClientOrigin(config.apiBaseUrl, clientId);
+  if (!approvedOrigin) {
+    return c.html(renderSsoErrorHtml('invalid_request'), 400);
+  }
+
+  // 4. return_to MUST be https, on the approved origin, at the fixed callback
+  //    path. Until this passes we have NO blessed redirect target — render an
+  //    HTML error rather than emit any Location (open-redirect guard).
+  if (!isReturnToOnClient(returnTo, approvedOrigin)) {
+    return c.html(renderSsoErrorHtml('invalid_request'), 400);
+  }
+
+  // 5. From here the ONLY redirect target is `returnTo` (origin == approved,
+  //    path == SSO_CALLBACK_PATH). The outcome rides in the fragment.
+
+  // 6. No session cookie → not logged in at the IdP. Silent prompt=none means
+  //    an immediate logged-out bounce — NEVER show a login UI.
+  const sessionId = getCookie(c, COOKIE_NAME);
+  if (!sessionId) {
+    return redirectToCallback(c, returnTo, buildSsoFragment('none', state));
+  }
+
+  // 7. Resolve the cookie → user via the public, cookie-less endpoint. A stale
+  //    cookie (session expired/revoked) → clear it and bounce logged-out.
+  const user = await fetchUserFromAPI(config.apiBaseUrl, sessionId);
+  if (!user) {
+    deleteCookie(c, COOKIE_NAME, { ...FEDCM_COOKIE_OPTIONS });
+    return redirectToCallback(c, returnTo, buildSsoFragment('none', state));
+  }
+
+  // 8. Mint a real Oxy session for the approved origin via the full, already-
+  //    audited FedCM nonce + exchange pipeline (server nonce born + burned
+  //    inside this call). On any failure → error bounce (no token leaks).
+  const session = await mintSessionForClient(config, user, approvedOrigin);
+  if (!session) {
+    return redirectToCallback(c, returnTo, buildSsoFragment('error', state));
+  }
+
+  // 9. Wrap the session in an opaque, single-use, origin-bound code via the
+  //    internal `POST /sso/code` (X-Oxy-Internal secret). On failure → error
+  //    bounce. The code — never the session — travels in the fragment.
+  const code = await createSsoCode(config, approvedOrigin, session);
+  if (!code) {
+    return redirectToCallback(c, returnTo, buildSsoFragment('error', state));
+  }
+
+  // 10. Success: bounce back with `oxy_sso=ok`, the opaque `code`, and `state`
+  //     in the FRAGMENT. The RP callback redeems the code at /sso/exchange.
+  return redirectToCallback(c, returnTo, buildSsoFragment('ok', state, code));
 });
 
 // NOTE: there is deliberately NO catch-all `*` route on `app`. Static-asset

@@ -28,7 +28,12 @@ const TEST_USER_ID = '507f1f77bcf86cd799439011';
 process.env.FEDCM_TOKEN_SECRET = TEST_SECRET;
 process.env.FEDCM_ISSUER = 'https://auth.oxy.so';
 process.env.OXY_API_URL = 'https://api.oxy.so';
+process.env.SSO_INTERNAL_SECRET = 'test-sso-internal-secret-32-chars-long!!';
 process.env.NODE_ENV = 'test';
+
+// The fixed RP callback path GET /sso is allowed to redirect to. Must match
+// `SSO_CALLBACK_PATH` in server/index.ts.
+const SSO_CALLBACK_PATH = '/__oxy/sso-callback';
 
 // Stub the upstream Oxy API. The IdP server resolves the FedCM session cookie
 // to a user via the PUBLIC, cookie-less endpoint:
@@ -63,9 +68,23 @@ interface CapturedExchange {
 let capturedNonceOrigin: string | undefined;
 let capturedExchange: CapturedExchange | undefined;
 
+// Captures the internal `POST /sso/code` call GET /sso makes so tests can
+// assert the X-Oxy-Internal secret + clientOrigin + session payload shape.
+interface CapturedSsoCode {
+  internalSecret?: string;
+  clientOrigin?: string;
+  session?: { sessionId?: string; accessToken?: string; user?: { id?: string } };
+}
+let capturedSsoCode: CapturedSsoCode | undefined;
+// The opaque single-use code the stubbed `/sso/code` returns. Mutable so a test
+// can simulate the mint failing (no code → error bounce).
+const STUB_SSO_CODE = 'opaque-sso-code-123';
+let stubbedSsoCode: string | null = STUB_SSO_CODE;
+
 function installApiStub(): void {
   capturedNonceOrigin = undefined;
   capturedExchange = undefined;
+  capturedSsoCode = undefined;
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = typeof input === 'string' ? input : input.toString();
     const headers = new Headers(init?.headers);
@@ -123,6 +142,29 @@ function installApiStub(): void {
         { status: 200, headers: { 'content-type': 'application/json' } }
       );
     }
+    // Internal SSO code mint — capture the X-Oxy-Internal secret + payload, and
+    // return an opaque code (or simulate a failure when `stubbedSsoCode` is null).
+    if (url.includes('/sso/code')) {
+      const bodyText = typeof init?.body === 'string' ? init.body : '';
+      let parsed: CapturedSsoCode = {};
+      try {
+        const json = JSON.parse(bodyText) as { clientOrigin?: string; session?: CapturedSsoCode['session'] };
+        parsed = { clientOrigin: json.clientOrigin, session: json.session };
+      } catch {
+        parsed = {};
+      }
+      capturedSsoCode = { ...parsed, internalSecret: headers.get('x-oxy-internal') ?? undefined };
+      if (stubbedSsoCode === null) {
+        return new Response(JSON.stringify({ message: 'fail' }), {
+          status: 500,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      return new Response(JSON.stringify({ code: stubbedSsoCode, expiresInSeconds: 30 }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
     return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
   }) as typeof fetch;
 }
@@ -143,6 +185,7 @@ afterAll(() => {
 beforeEach(() => {
   stubbedGrantedOrigins = [RP_ORIGIN];
   stubbedApprovedClients = [RP_ORIGIN];
+  stubbedSsoCode = STUB_SSO_CODE;
   installApiStub();
 });
 
@@ -763,5 +806,293 @@ describe('GET /auth/session-check (IdP liveness probe — no token)', () => {
     expect(res.headers.get('set-cookie') || '').toContain('fedcm_session=');
     const { message } = extractPostedMessage(await res.text());
     expect(message).toEqual({ type: 'oxy-session-check', hasSession: false });
+  });
+});
+
+/**
+ * Parse the `Location` header of a GET /sso 303 redirect and return the fragment
+ * params. The single-use `code` + `state` + `oxy_sso` outcome ride in the URL
+ * FRAGMENT (never the query/path) so they are not logged or sent to a server.
+ */
+function parseSsoRedirect(res: Response): { location: string; frag: URLSearchParams } {
+  const location = res.headers.get('location') ?? '';
+  const hashIndex = location.indexOf('#');
+  const fragString = hashIndex >= 0 ? location.slice(hashIndex + 1) : '';
+  return { location, frag: new URLSearchParams(fragString) };
+}
+
+function ssoUrl(params: Record<string, string>): string {
+  const qs = new URLSearchParams(params).toString();
+  return `/sso?${qs}`;
+}
+
+const VALID_RETURN_TO = `${RP_ORIGIN}${SSO_CALLBACK_PATH}`;
+
+describe('GET /sso (central top-level-redirect cross-domain SSO)', () => {
+  it('renders an HTML 400 (never a redirect) when prompt is not "none"', async () => {
+    const res = await app.request(
+      ssoUrl({
+        client_id: RP_ORIGIN,
+        return_to: VALID_RETURN_TO,
+        state: 'st-1',
+        prompt: 'login',
+      }),
+      { headers: { cookie: SESSION_COOKIE } }
+    );
+    expect(res.status).toBe(400);
+    expect(res.headers.get('content-type')).toContain('text/html');
+    // No open redirect on the rejected request.
+    expect(res.headers.get('location')).toBeNull();
+  });
+
+  it('renders an HTML 400 for an unapproved client_id', async () => {
+    stubbedApprovedClients = [RP_ORIGIN];
+    installApiStub();
+    const evil = 'https://evil.example.com';
+    const res = await app.request(
+      ssoUrl({
+        client_id: evil,
+        return_to: `${evil}${SSO_CALLBACK_PATH}`,
+        state: 'st-2',
+        prompt: 'none',
+      }),
+      { headers: { cookie: SESSION_COOKIE } }
+    );
+    expect(res.status).toBe(400);
+    expect(res.headers.get('content-type')).toContain('text/html');
+    expect(res.headers.get('location')).toBeNull();
+    // No code minted for an unapproved client.
+    expect(capturedSsoCode).toBeUndefined();
+  });
+
+  it('renders an HTML 400 when return_to is on a different origin than client_id', async () => {
+    const res = await app.request(
+      ssoUrl({
+        client_id: RP_ORIGIN,
+        return_to: `https://evil.example.com${SSO_CALLBACK_PATH}`,
+        state: 'st-3',
+        prompt: 'none',
+      }),
+      { headers: { cookie: SESSION_COOKIE } }
+    );
+    expect(res.status).toBe(400);
+    expect(res.headers.get('location')).toBeNull();
+  });
+
+  it('renders an HTML 400 when return_to path is not the fixed callback path', async () => {
+    const res = await app.request(
+      ssoUrl({
+        client_id: RP_ORIGIN,
+        return_to: `${RP_ORIGIN}/some/other/path`,
+        state: 'st-4',
+        prompt: 'none',
+      }),
+      { headers: { cookie: SESSION_COOKIE } }
+    );
+    expect(res.status).toBe(400);
+    expect(res.headers.get('location')).toBeNull();
+  });
+
+  it('renders an HTML 400 when return_to is an http (non-https) URL', async () => {
+    const res = await app.request(
+      ssoUrl({
+        client_id: RP_ORIGIN,
+        return_to: `http://accounts.oxy.so${SSO_CALLBACK_PATH}`,
+        state: 'st-4b',
+        prompt: 'none',
+      }),
+      { headers: { cookie: SESSION_COOKIE } }
+    );
+    expect(res.status).toBe(400);
+    expect(res.headers.get('location')).toBeNull();
+  });
+
+  it('303-redirects with fragment oxy_sso=none (no token) when there is no cookie', async () => {
+    const res = await app.request(
+      ssoUrl({
+        client_id: RP_ORIGIN,
+        return_to: VALID_RETURN_TO,
+        state: 'st-5',
+        prompt: 'none',
+      })
+    );
+    expect(res.status).toBe(303);
+    const { location, frag } = parseSsoRedirect(res);
+    // Redirect target is the validated return_to (origin + callback path).
+    expect(location.startsWith(`${VALID_RETURN_TO}#`)).toBe(true);
+    expect(frag.get('oxy_sso')).toBe('none');
+    expect(frag.get('state')).toBe('st-5');
+    expect(frag.get('code')).toBeNull();
+    // No session minting/code attempted for a logged-out bounce.
+    expect(capturedExchange).toBeUndefined();
+    expect(capturedSsoCode).toBeUndefined();
+  });
+
+  it('303-redirects with oxy_sso=ok&code&state for a valid cookie + approved client', async () => {
+    const res = await app.request(
+      ssoUrl({
+        client_id: RP_ORIGIN,
+        return_to: VALID_RETURN_TO,
+        state: 'st-6',
+        prompt: 'none',
+      }),
+      { headers: { cookie: SESSION_COOKIE } }
+    );
+    expect(res.status).toBe(303);
+    const { location, frag } = parseSsoRedirect(res);
+    expect(location.startsWith(`${VALID_RETURN_TO}#`)).toBe(true);
+    expect(frag.get('oxy_sso')).toBe('ok');
+    expect(frag.get('code')).toBe(STUB_SSO_CODE);
+    expect(frag.get('state')).toBe('st-6');
+
+    // The session minting drove the FedCM nonce + exchange bound to the origin.
+    expect(capturedNonceOrigin).toBe(RP_ORIGIN);
+    expect(capturedExchange?.origin).toBe(RP_ORIGIN);
+
+    // The internal /sso/code mint carried the secret + approved origin + the
+    // exchanged session (NOT a raw token in any URL).
+    expect(capturedSsoCode?.internalSecret).toBe(process.env.SSO_INTERNAL_SECRET);
+    expect(capturedSsoCode?.clientOrigin).toBe(RP_ORIGIN);
+    expect(capturedSsoCode?.session?.sessionId).toBe(STUB_EXCHANGE_SESSION_ID);
+    expect(capturedSsoCode?.session?.accessToken).toBe(STUB_ACCESS_TOKEN);
+    expect(capturedSsoCode?.session?.user?.id).toBe(TEST_USER_ID);
+
+    // The opaque code never reveals the access token, and the token is never in
+    // the redirect URL.
+    expect(location).not.toContain(STUB_ACCESS_TOKEN);
+  });
+
+  it('303-redirects with oxy_sso=error when the /sso/code mint fails', async () => {
+    stubbedSsoCode = null; // simulate the API mint failing
+    installApiStub();
+    const res = await app.request(
+      ssoUrl({
+        client_id: RP_ORIGIN,
+        return_to: VALID_RETURN_TO,
+        state: 'st-7',
+        prompt: 'none',
+      }),
+      { headers: { cookie: SESSION_COOKIE } }
+    );
+    expect(res.status).toBe(303);
+    const { frag } = parseSsoRedirect(res);
+    expect(frag.get('oxy_sso')).toBe('error');
+    expect(frag.get('state')).toBe('st-7');
+    expect(frag.get('code')).toBeNull();
+  });
+
+  it('sets no-store cache headers on the bounce', async () => {
+    const res = await app.request(
+      ssoUrl({
+        client_id: RP_ORIGIN,
+        return_to: VALID_RETURN_TO,
+        state: 'st-8',
+        prompt: 'none',
+      }),
+      { headers: { cookie: SESSION_COOKIE } }
+    );
+    expect(res.headers.get('cache-control')).toContain('no-store');
+    expect(res.headers.get('referrer-policy')).toBe('no-referrer');
+  });
+
+  it('clears a stale cookie and bounces oxy_sso=none when the session no longer validates', async () => {
+    globalThis.fetch = (async (input: RequestInfo | URL): Promise<Response> => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.includes('/fedcm/clients/approved')) {
+        return new Response(JSON.stringify({ success: true, clients: [RP_ORIGIN] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      if (url.includes('/session/validate/')) {
+        return new Response(JSON.stringify({ valid: false }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
+    }) as typeof fetch;
+
+    const res = await app.request(
+      ssoUrl({
+        client_id: RP_ORIGIN,
+        return_to: VALID_RETURN_TO,
+        state: 'st-9',
+        prompt: 'none',
+      }),
+      { headers: { cookie: SESSION_COOKIE } }
+    );
+    expect(res.status).toBe(303);
+    expect(res.headers.get('set-cookie') || '').toContain('fedcm_session=');
+    const { frag } = parseSsoRedirect(res);
+    expect(frag.get('oxy_sso')).toBe('none');
+    expect(frag.get('state')).toBe('st-9');
+  });
+
+  it('renders an HTML 400 when required state is missing', async () => {
+    const res = await app.request(
+      ssoUrl({
+        client_id: RP_ORIGIN,
+        return_to: VALID_RETURN_TO,
+        prompt: 'none',
+      }),
+      { headers: { cookie: SESSION_COOKIE } }
+    );
+    expect(res.status).toBe(400);
+    expect(res.headers.get('location')).toBeNull();
+  });
+});
+
+describe('POST /fedcm/set-session cross-site hardening (M2)', () => {
+  it('rejects a cross-site attempt to plant the cookie (Sec-Fetch-Site: cross-site)', async () => {
+    const res = await app.request('/fedcm/set-session', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'sec-fetch-site': 'cross-site',
+        origin: 'https://evil.example.com',
+      },
+      body: JSON.stringify({ sessionId: 'attacker-session', action: 'login' }),
+    });
+    expect(res.status).toBe(403);
+    expect(res.headers.get('set-cookie')).toBeNull();
+  });
+
+  it('rejects a same-site (but cross-origin subdomain) attempt', async () => {
+    const res = await app.request('/fedcm/set-session', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'sec-fetch-site': 'same-site',
+        origin: 'https://evil.oxy.so',
+      },
+      body: JSON.stringify({ sessionId: 'attacker-session', action: 'login' }),
+    });
+    expect(res.status).toBe(403);
+    expect(res.headers.get('set-cookie')).toBeNull();
+  });
+
+  it('allows the same-origin SPA to plant the cookie (Sec-Fetch-Site: same-origin)', async () => {
+    const res = await app.request('http://localhost/fedcm/set-session', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'sec-fetch-site': 'same-origin',
+        origin: 'http://localhost',
+      },
+      body: JSON.stringify({ sessionId: 'sess_abc', action: 'login' }),
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('set-cookie') || '').toContain('fedcm_session=');
+  });
+
+  it('still allows a server-to-server caller that sends neither header', async () => {
+    const res = await app.request('/fedcm/set-session', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sessionId: 'sess_abc', action: 'login' }),
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('set-cookie') || '').toContain('fedcm_session=');
   });
 });
