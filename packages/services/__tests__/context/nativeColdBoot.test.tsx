@@ -5,13 +5,14 @@
  *
  * On React Native `isWebBrowser()` is false (no DOM). The cold-boot sequence
  * MUST therefore run ONLY the `stored-session` step — every web-only step
- * (`redirect`, `fedcm-silent`, `silent-iframe`, `cookie-restore`) is disabled.
- * This test forces the native branch by mocking `isWebBrowser` → false and
- * asserts:
+ * (`redirect`, `sso-return`, `fedcm-silent`, `cookie-restore`, `sso-bounce`) is
+ * disabled. This test forces the native branch by mocking `isWebBrowser` → false
+ * and asserts:
  *
  *   - `validateSession` (the stored-session bearer path) IS called.
- *   - NONE of `handleAuthCallback` / `silentSignInWithFedCM` / `silentSignIn` /
- *     `refreshAllSessions` are EVER called.
+ *   - NONE of `handleAuthCallback` / `silentSignInWithFedCM` /
+ *     `refreshAllSessions` / `exchangeSsoCode` / `generateSsoState` are EVER
+ *     called, and NO central SSO bounce navigation happens (`ssoNavigate`).
  *
  * The jsdom URL is irrelevant here — the mock, not the environment, decides the
  * platform.
@@ -41,6 +42,7 @@ jest.mock('../../src/ui/hooks/useWebSSO', () => ({
 import { OxyContextProvider, useOxy } from '../../src/ui/context/OxyContext';
 import type { User } from '@oxyhq/core';
 import { useAuthStore } from '../../src/ui/stores/authStore';
+import * as ssoBounce from '../../src/ui/utils/ssoBounce';
 
 const API_BASE_URL = 'https://api.mention.earth';
 const STORED_SESSION_ID = 'sess_stored_native';
@@ -64,8 +66,9 @@ function Capture() {
 
 const handleAuthCallbackSpy = jest.fn(() => null);
 const silentSignInWithFedCMSpy = jest.fn(async () => null);
-const silentSignInSpy = jest.fn(async () => null);
 const refreshAllSessionsSpy = jest.fn(async () => ({ accounts: [] as unknown[] }));
+const exchangeSsoCodeSpy = jest.fn(async () => null);
+const generateSsoStateSpy = jest.fn(() => 'should-never-be-called');
 const validateSessionSpy = jest.fn(async () => ({
   valid: true,
   user: { id: STORED_USER_ID, username: 'nativeuser' },
@@ -85,8 +88,9 @@ function buildStub() {
     isFedCMSupported: jest.fn(() => false),
     handleAuthCallback: handleAuthCallbackSpy,
     silentSignInWithFedCM: silentSignInWithFedCMSpy,
-    silentSignIn: silentSignInSpy,
     refreshAllSessions: refreshAllSessionsSpy,
+    exchangeSsoCode: exchangeSsoCodeSpy,
+    generateSsoState: generateSsoStateSpy,
     validateSession: validateSessionSpy,
     // `switchSession` in session-management calls `getTokenBySession` +
     // `validateSession` again; provide them.
@@ -112,18 +116,26 @@ function renderProvider(oxyServices: unknown) {
 }
 
 describe('Native cold boot runs ONLY the stored-session step', () => {
+  let ssoNavigateSpy: jest.SpyInstance;
+
   beforeEach(() => {
     window.localStorage.clear();
     captured = { isAuthenticated: false, userId: undefined, isTokenReady: false };
     handleAuthCallbackSpy.mockClear();
     silentSignInWithFedCMSpy.mockClear();
-    silentSignInSpy.mockClear();
     refreshAllSessionsSpy.mockClear();
+    exchangeSsoCodeSpy.mockClear();
+    generateSsoStateSpy.mockClear();
     validateSessionSpy.mockClear();
+    ssoNavigateSpy = jest.spyOn(ssoBounce, 'ssoNavigate').mockImplementation(() => undefined);
     useAuthStore.getState().logout();
     // Seed a durable stored session so the stored-session step has work to do.
     window.localStorage.setItem(SESSION_IDS_KEY, JSON.stringify([STORED_SESSION_ID]));
     window.localStorage.setItem(ACTIVE_SESSION_KEY, STORED_SESSION_ID);
+  });
+
+  afterEach(() => {
+    ssoNavigateSpy.mockRestore();
   });
 
   it('validates the stored session and never touches any web step', async () => {
@@ -136,10 +148,14 @@ describe('Native cold boot runs ONLY the stored-session step', () => {
     // cold boot has executed.
     await waitFor(() => expect(validateSessionSpy).toHaveBeenCalled());
 
-    // NONE of the web-only steps were ever invoked.
+    // NONE of the web-only steps were ever invoked (no redirect, no FedCM, no
+    // cookie restore, and — critically — no central SSO return/bounce: no
+    // exchange, no state generation, no top-level navigation off the app).
     expect(handleAuthCallbackSpy).not.toHaveBeenCalled();
     expect(silentSignInWithFedCMSpy).not.toHaveBeenCalled();
-    expect(silentSignInSpy).not.toHaveBeenCalled();
     expect(refreshAllSessionsSpy).not.toHaveBeenCalled();
+    expect(exchangeSsoCodeSpy).not.toHaveBeenCalled();
+    expect(generateSsoStateSpy).not.toHaveBeenCalled();
+    expect(ssoNavigateSpy).not.toHaveBeenCalled();
   });
 });

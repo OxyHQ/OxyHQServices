@@ -31,6 +31,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { OxyContextProvider, useOxy } from '../../src/ui/context/OxyContext';
 import type { User } from '@oxyhq/core';
 import { useAuthStore } from '../../src/ui/stores/authStore';
+import * as ssoBounce from '../../src/ui/utils/ssoBounce';
 
 const SESSION_IDS_KEY = 'oxy_session_session_ids';
 const ACTIVE_SESSION_KEY = 'oxy_session_active_session_id';
@@ -88,13 +89,15 @@ function baseStub(overrides: StubOverrides = {}) {
     clearTokens: jest.fn(),
     clearCache: jest.fn(),
     isFedCMSupported: isFedCMSupportedSpy,
-    // Cold boot now runs an ordered `runColdBoot` sequence. The redirect and
-    // silent-iframe steps run BEFORE the cookie step, so the stub must answer
-    // them too: no redirect callback in URL (`null`), and no silent iframe
-    // session (`null`). Both fall through so the cookie step is reached.
+    // Cold boot now runs an ordered `runColdBoot` sequence. The redirect, the
+    // SSO-return, and the FedCM-silent steps all run BEFORE the cookie step, so
+    // the stub must answer them: no redirect callback in URL (`null`) and no
+    // silent FedCM session (`null`). They fall through so the cookie step runs.
+    // `generateSsoState` is provided for the terminal `sso-bounce` step, which
+    // fires on `accounts.oxy.so` only when the cookie step also finds nothing.
     handleAuthCallback: jest.fn(() => null),
-    silentSignIn: jest.fn(async () => null),
     silentSignInWithFedCM: jest.fn(async () => null),
+    generateSsoState: jest.fn(() => 'first-party-state'),
     // The provider now routes the cold-boot cookie restore through
     // `oxyServices.refreshAllSessions()`. The stub returns the multi-account
     // snapshot; per-test `beforeEach` re-binds this with the desired shape.
@@ -124,13 +127,24 @@ function renderProvider(oxyServices: unknown) {
 }
 
 describe('Cold-boot restore via secure refresh cookies (multi-account)', () => {
+  let ssoNavigateSpy: jest.SpyInstance;
+
   beforeEach(() => {
     window.localStorage.clear();
+    window.sessionStorage.clear();
     captured = { isAuthenticated: false, userId: undefined, isTokenReady: false };
     setTokensSpy.mockClear();
     getTokenBySessionSpy.mockClear();
     isFedCMSupportedSpy.mockClear();
+    // `accounts.oxy.so` is a first-party RP, NOT the central IdP, so a fully
+    // logged-out cold boot ends in the terminal `sso-bounce`. Spy the
+    // navigation seam so it is observable and never tears down jsdom.
+    ssoNavigateSpy = jest.spyOn(ssoBounce, 'ssoNavigate').mockImplementation(() => undefined);
     useAuthStore.getState().logout();
+  });
+
+  afterEach(() => {
+    ssoNavigateSpy.mockRestore();
   });
 
   it('CASE single account: signs the user in from the refresh-all snapshot, plants the token, and persists session id + authuser', async () => {
@@ -169,16 +183,21 @@ describe('Cold-boot restore via secure refresh cookies (multi-account)', () => {
     // Cold boot did NOT depend on the bearer-protected token fetch — the user
     // was signed in from the cookies alone, no FedCM silent re-auth needed.
     expect(getTokenBySessionSpy).not.toHaveBeenCalled();
+
+    // The cookie step won → the terminal central-SSO bounce never fired.
+    expect(ssoNavigateSpy).not.toHaveBeenCalled();
   });
 
-  it('CASE empty: a `{accounts:[]}` snapshot leaves the user logged out without throwing and without planting a token', async () => {
+  it('CASE empty: a `{accounts:[]}` snapshot leaves the user logged out, plants nothing, and bounces to central SSO', async () => {
     const stub = baseStub();
     // `refreshAllSessions` already defaults to `{accounts: []}` via baseStub.
 
     renderProvider(stub);
 
     await waitFor(() => expect(stub.refreshAllSessions).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(captured.isTokenReady).toBe(true));
+    // Every recovery step skipped → the terminal central-SSO bounce fires once
+    // (a logged-out first-party RP delegates to the central IdP).
+    await waitFor(() => expect(ssoNavigateSpy).toHaveBeenCalledTimes(1));
 
     expect(captured.isAuthenticated).toBe(false);
     expect(captured.userId).toBeUndefined();
@@ -187,9 +206,14 @@ describe('Cold-boot restore via secure refresh cookies (multi-account)', () => {
     expect(window.localStorage.getItem(SESSION_IDS_KEY)).toBeNull();
     expect(window.localStorage.getItem(ACTIVE_SESSION_KEY)).toBeNull();
     expect(window.localStorage.getItem(ACTIVE_AUTHUSER_KEY)).toBeNull();
+
+    const assigned = new URL(ssoNavigateSpy.mock.calls[0][0] as string);
+    expect(assigned.origin).toBe('https://auth.oxy.so');
+    expect(assigned.pathname).toBe('/sso');
+    expect(assigned.searchParams.get('client_id')).toBe('https://accounts.oxy.so');
   });
 
-  it('CASE network error: a refreshAllSessions rejection falls through unauthenticated without throwing', async () => {
+  it('CASE network error: a refreshAllSessions rejection falls through unauthenticated, then bounces to central SSO', async () => {
     const stub = baseStub();
     stub.refreshAllSessions = jest.fn(async () => {
       throw new TypeError('Failed to fetch');
@@ -198,7 +222,7 @@ describe('Cold-boot restore via secure refresh cookies (multi-account)', () => {
     renderProvider(stub);
 
     await waitFor(() => expect(stub.refreshAllSessions).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(captured.isTokenReady).toBe(true));
+    await waitFor(() => expect(ssoNavigateSpy).toHaveBeenCalledTimes(1));
     expect(captured.isAuthenticated).toBe(false);
     expect(setTokensSpy).not.toHaveBeenCalled();
   });
