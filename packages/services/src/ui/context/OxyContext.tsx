@@ -14,7 +14,7 @@ import type { User, ApiError, SessionLoginResponse } from '@oxyhq/core';
 import type { ManagedAccount, CreateManagedAccountInput } from '@oxyhq/core';
 import { KeyManager } from '@oxyhq/core';
 import type { ClientSession } from '@oxyhq/core';
-import { runColdBoot, resolveCentralAuthUrl, parseSsoReturnFragment } from '@oxyhq/core';
+import { runColdBoot, resolveCentralAuthUrl, parseSsoReturnFragment, autoDetectAuthWebUrl } from '@oxyhq/core';
 import { toast } from '@oxyhq/bloom';
 import {
   SSO_CALLBACK_PATH,
@@ -847,9 +847,13 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   // web-only step is gated by `isWebBrowser()`, so on native ONLY
   // `stored-session` runs.
   //
-  // Order (web): redirect callback → SSO return → FedCM silent → cookie restore
-  // → stored session → SSO bounce (terminal). Order (native): stored session
-  // only (every web-only step is disabled off-browser).
+  // Order (web): redirect callback → SSO return → FedCM silent (central) →
+  // silent iframe (per-apex, the durable reload path) → cookie restore →
+  // stored session → SSO bounce (terminal). The per-apex silent iframe is what
+  // restores a durable cross-domain session on reload WITHOUT a top-level
+  // bounce, so when it wins `sso-bounce` never fires (no flash, no loop).
+  // Order (native): stored session only (every web-only step is disabled
+  // off-browser).
   const restoreSessionsFromStorage = useCallback(async (): Promise<void> => {
     if (!storage) {
       return;
@@ -916,7 +920,44 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
             },
           },
           {
-            // 3) Refresh-cookie restore (first-party only). On `*.oxy.so` the
+            // 3) First-party silent iframe at the PER-APEX IdP — the DURABLE
+            // cross-domain reload-restore path. The durable session lives as a
+            // first-party `fedcm_session` cookie on `auth.<rp-apex>` (e.g.
+            // `auth.mention.earth`), established during the `/sso` bounce's
+            // `/sso/establish` hop. That host is SAME-SITE to the RP page, so
+            // the cookie is first-party under Safari ITP / Firefox TCP — and
+            // an iframe read is NOT a top-level navigation, so it restores on
+            // reload with NO flash and works in a backgrounded tab. This is the
+            // step that prevents the re-bounce loop: when it finds a session,
+            // the terminal `sso-bounce` never fires.
+            //
+            // The instance is configured with `authWebUrl=auth.oxy.so` (central,
+            // for the bounce + FedCM), so we explicitly point the iframe at the
+            // per-apex host via `autoDetectAuthWebUrl()` and `silentSignIn`'s
+            // `authWebUrlOverride`. On a `*.oxy.so` RP the per-apex host IS the
+            // central host (`auth.oxy.so`), so this is a same-host no-op-
+            // equivalent. When auto-detection bails (localhost/IP/single-label)
+            // there is no per-apex IdP and the step skips. Web only; on native
+            // `isWebBrowser()` gates it off, so native never runs an iframe.
+            id: 'silent-iframe',
+            enabled: () => isWebBrowser(),
+            run: async () => {
+              const perApexAuthUrl = autoDetectAuthWebUrl();
+              if (!perApexAuthUrl || !commitWebSession) {
+                return { kind: 'skip' };
+              }
+              const session = await oxyServices.silentSignIn?.({
+                authWebUrlOverride: perApexAuthUrl,
+              });
+              if (!session?.user || !session?.sessionId) {
+                return { kind: 'skip' };
+              }
+              await commitWebSession(session);
+              return { kind: 'session', session: true };
+            },
+          },
+          {
+            // 4) Refresh-cookie restore (first-party only). On `*.oxy.so` the
             // httpOnly `oxy_rt_${n}` cookies ride along and resurrect every
             // device-local slot. On a cross-domain RP (mention.earth, …) the
             // cookie is `Domain=oxy.so` so it never reaches `api.<apex>` —
@@ -930,7 +971,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
             },
           },
           {
-            // 4) Stored-session bearer restore. NO `enabled` gate — runs on ALL
+            // 5) Stored-session bearer restore. NO `enabled` gate — runs on ALL
             // platforms. This is native's ONLY restore path (every web-only step
             // is disabled off-browser, so native reaches exactly this).
             id: 'stored-session',
@@ -940,7 +981,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
             },
           },
           {
-            // 5) SSO bounce (TERMINAL, web only, at most once). No local session
+            // 6) SSO bounce (TERMINAL, web only, at most once). No local session
             // was found by any step above. Top-level navigate to the central
             // `auth.oxy.so/sso?prompt=none` so the IdP can either mint a session
             // (returning an opaque code we exchange on the callback) or report
