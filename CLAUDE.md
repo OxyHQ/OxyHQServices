@@ -393,7 +393,7 @@ Activated inside `FileManagementScreen` when `isImageOnlyPicker` is true. Apple 
 |---------|---------|-------|
 | `@oxyhq/core` | **2.0.0** | Major bump alongside `@oxyhq/auth` 3.x / `@oxyhq/services` 8.x line |
 | `@oxyhq/auth` | **3.0.0** | Major bump |
-| `@oxyhq/services` | **8.0.1** | Fixes `expo-crypto` shim (`randomUUID`, not `getRandomUUID`) |
+| `@oxyhq/services` | **8.1.1** | 8.1.1: removed legacy `@react-navigation/native` peer. 8.1.0: added `OxyAuthPrompt` component. 8.0.1: fixed `expo-crypto` shim (`randomUUID`, not `getRandomUUID`) |
 | `@oxyhq/bloom` | **0.6.14** | RN-0.85 line |
 
 ### Breaking changes in `@oxyhq/services` 8.x
