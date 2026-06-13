@@ -18,7 +18,7 @@ configureReanimatedLogger({
 
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { OxyProvider, ActingAsBanner } from '@oxyhq/services';
-import { useTheme } from '@oxyhq/bloom/theme';
+import { BloomThemeProvider, useTheme } from '@oxyhq/bloom/theme';
 
 import { ScrollProvider } from '@/contexts/scroll-context';
 import { ThemeModeProvider, useThemeMode } from '@/contexts/theme-mode-context';
@@ -101,23 +101,26 @@ function RootLayoutInner() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <KeyboardProvider>
-        {/* OxyProvider renders its own <BloomThemeProvider> internally, so we
-            do not wrap a second one here — duplicate providers create
-            mismatched contexts (especially when the bloom package gets
-            duplicated across the monorepo) and overlay theme overrides. */}
-        <OxyProvider baseURL={API_URL} themeMode={themeMode}>
-          <LocaleProvider>
-            <AppHead />
-            {!appIsReady ? (
-              <AppSplashScreen
-                startFade={startFade}
-                onFadeComplete={handleSplashFadeComplete}
-              />
-            ) : (
-              <AppStackContent />
-            )}
-          </LocaleProvider>
-        </OxyProvider>
+        {/* OxyProvider does NOT wrap a BloomThemeProvider — by design, to
+            avoid duplicate contexts when an app already ships its own (see
+            packages/services/src/ui/components/OxyProvider.tsx). The consumer
+            (this app) owns the BloomThemeProvider and feeds it the resolved
+            theme mode from ThemeModeProvider. */}
+        <BloomThemeProvider mode={themeMode}>
+          <OxyProvider baseURL={API_URL}>
+            <LocaleProvider>
+              <AppHead />
+              {!appIsReady ? (
+                <AppSplashScreen
+                  startFade={startFade}
+                  onFadeComplete={handleSplashFadeComplete}
+                />
+              ) : (
+                <AppStackContent />
+              )}
+            </LocaleProvider>
+          </OxyProvider>
+        </BloomThemeProvider>
       </KeyboardProvider>
     </GestureHandlerRootView>
   );

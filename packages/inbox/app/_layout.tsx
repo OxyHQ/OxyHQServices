@@ -51,19 +51,19 @@ export default function RootLayout() {
 }
 
 /**
- * Reads the persisted theme preferences from `AppThemeProvider` and threads
- * them into BOTH `BloomThemeProvider` (used by `useNavigationTheme` to build
- * the react-navigation theme) AND `OxyProvider` (which mounts its own inner
- * `BloomThemeProvider` that shadows this one, so the prop must be passed
- * along). Keeping the two trees in sync ensures the entire UI — chrome and
- * content — tracks the user's selection in real time.
+ * Reads the persisted theme preferences from `AppThemeProvider` and feeds
+ * them into `BloomThemeProvider`, which owns the react-navigation theme
+ * (via `useNavigationTheme`) AND the resolved colors consumed throughout
+ * the tree. `OxyProvider` does NOT mount its own `BloomThemeProvider`
+ * (see `packages/services/src/ui/components/OxyProvider.tsx`), so this is
+ * the single source of truth.
  */
 function ThemedRoot() {
   const { themePreference, colorPreset } = useThemeContext();
   const themeMode = themePreference as ThemeMode;
   return (
     <BloomThemeProvider mode={themeMode} colorPreset={colorPreset}>
-      <RootLayoutContent themeMode={themeMode} colorPreset={colorPreset} />
+      <RootLayoutContent />
     </BloomThemeProvider>
   );
 }
@@ -97,28 +97,18 @@ function useNavigationTheme() {
   );
 }
 
-interface RootLayoutContentProps {
-  themeMode: ThemeMode;
-  colorPreset: ReturnType<typeof useThemeContext>['colorPreset'];
-}
-
-function RootLayoutContent({ themeMode, colorPreset }: RootLayoutContentProps) {
+function RootLayoutContent() {
   const navTheme = useNavigationTheme();
 
   return (
     <QueryClientProvider client={queryClient}>
       <KeyboardProvider>
         {/*
-          OxyProvider mounts its own internal BloomThemeProvider that shadows
-          any outer one — so we MUST forward themeMode + colorPreset here, or
-          the entire UI under OxyProvider falls back to Bloom's default
-          `oxy` preset, no matter what the outer BloomThemeProvider sees.
-
           LocaleProvider sits INSIDE OxyProvider so it can read the signed-in
           user's `language` preference via `useOxy()` and seed the initial
           locale accordingly. Persisted overrides flow through AsyncStorage.
         */}
-        <OxyProvider baseURL={API_URL} themeMode={themeMode} colorPreset={colorPreset}>
+        <OxyProvider baseURL={API_URL}>
           <LocaleProvider>
             <SafeAreaProvider>
               <PortalProvider>
