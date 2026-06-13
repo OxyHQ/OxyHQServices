@@ -30,6 +30,7 @@ import type {
 } from '@oxyhq/core';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { attachQueryPersistence, createQueryClient } from './hooks/queryClient';
+import { autoDetectAuthWebUrl } from './utils/fapiAutoDetect';
 
 export interface WebAuthState {
   user: User | null;
@@ -130,6 +131,13 @@ function silentSignInKey(): string {
 export interface WebOxyProviderProps {
   children: ReactNode;
   baseURL: string;
+  /**
+   * The FAPI (Federated Auth API / IdP) origin. When omitted, the provider
+   * auto-detects `https://auth.<rp-domain>` from `window.location.hostname`
+   * so an RP only needs to CNAME `auth.<rp-domain>` → the central IdP and
+   * everything else (FedCM config URL, popup target, redirect URL) follows.
+   * Pass explicitly to override (e.g. point at a staging IdP).
+   */
   authWebUrl?: string;
   onAuthStateChange?: (user: User | null) => void;
   onError?: (error: Error) => void;
@@ -165,7 +173,9 @@ export function WebOxyProvider({
   preferredAuthMethod = 'auto',
   skipAutoCheck = false,
 }: WebOxyProviderProps) {
-  const [oxyServices] = useState(() => new OxyServices({ baseURL, authWebUrl }));
+  const [oxyServices] = useState(
+    () => new OxyServices({ baseURL, authWebUrl: authWebUrl ?? autoDetectAuthWebUrl() })
+  );
   const [crossDomainAuth] = useState(() => new CrossDomainAuth(oxyServices));
   // Web is cookie-only by design: refresh tokens live in httpOnly
   // `oxy_rt_${authuser}` cookies and access tokens live in-memory inside

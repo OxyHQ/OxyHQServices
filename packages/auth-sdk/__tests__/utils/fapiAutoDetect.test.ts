@@ -1,0 +1,79 @@
+/**
+ * Auto-detect of `auth.<rp-apex>` from `window.location` for the Clerk-style
+ * multi-domain FAPI setup. The IdP backend independently derives `iss` and
+ * the FedCM manifest from the request host, so the only contract the SDK
+ * needs to honour is: build URLs against the same host the page is on,
+ * one subdomain over.
+ */
+
+import { autoDetectAuthWebUrl } from '../../src/utils/fapiAutoDetect';
+
+function loc(hostname: string, protocol = 'https:'): Pick<Location, 'hostname' | 'protocol'> {
+  return { hostname, protocol };
+}
+
+describe('autoDetectAuthWebUrl', () => {
+  describe('returns auth.<apex> for public hostnames', () => {
+    it('derives from the apex itself', () => {
+      expect(autoDetectAuthWebUrl(loc('mention.earth'))).toBe('https://auth.mention.earth');
+    });
+
+    it('strips one leading subdomain', () => {
+      expect(autoDetectAuthWebUrl(loc('www.mention.earth'))).toBe('https://auth.mention.earth');
+      expect(autoDetectAuthWebUrl(loc('app.alia.onl'))).toBe('https://auth.alia.onl');
+    });
+
+    it('strips multiple leading subdomains down to the last two labels', () => {
+      // The heuristic is "last two labels" — fine for our use case because
+      // the IdP itself validates the request host. Deeply-nested hostnames
+      // resolve to the trailing two-label apex.
+      expect(autoDetectAuthWebUrl(loc('deep.app.homiio.com'))).toBe('https://auth.homiio.com');
+    });
+
+    it('honours the request protocol so dev http stays http', () => {
+      expect(autoDetectAuthWebUrl(loc('staging.example.test', 'http:'))).toBe(
+        'http://auth.example.test'
+      );
+    });
+  });
+
+  describe('returns current origin when already on the IdP', () => {
+    it('keeps everything same-origin instead of hopping to a sibling IdP', () => {
+      expect(autoDetectAuthWebUrl(loc('auth.mention.earth'))).toBe('https://auth.mention.earth');
+      expect(autoDetectAuthWebUrl(loc('auth.oxy.so'))).toBe('https://auth.oxy.so');
+    });
+  });
+
+  describe('returns undefined where auto-detect would be wrong', () => {
+    it('skips localhost and 127.0.0.1 (dev)', () => {
+      expect(autoDetectAuthWebUrl(loc('localhost', 'http:'))).toBeUndefined();
+      expect(autoDetectAuthWebUrl(loc('127.0.0.1', 'http:'))).toBeUndefined();
+    });
+
+    it('skips IPv4 literals', () => {
+      expect(autoDetectAuthWebUrl(loc('192.168.1.10'))).toBeUndefined();
+      expect(autoDetectAuthWebUrl(loc('10.0.0.1'))).toBeUndefined();
+    });
+
+    it('skips IPv6 literals (bracketed)', () => {
+      expect(autoDetectAuthWebUrl(loc('[::1]'))).toBeUndefined();
+    });
+
+    it('skips single-label hostnames', () => {
+      expect(autoDetectAuthWebUrl(loc('intranet'))).toBeUndefined();
+    });
+
+    it('skips unknown protocols', () => {
+      expect(autoDetectAuthWebUrl({ hostname: 'mention.earth', protocol: 'file:' })).toBeUndefined();
+      expect(autoDetectAuthWebUrl({ hostname: 'mention.earth', protocol: 'ftp:' })).toBeUndefined();
+    });
+
+    it('skips empty/missing hostnames', () => {
+      expect(autoDetectAuthWebUrl(loc(''))).toBeUndefined();
+    });
+
+    it('returns undefined when no location is available (SSR / non-browser)', () => {
+      expect(autoDetectAuthWebUrl(undefined)).toBeUndefined();
+    });
+  });
+});
