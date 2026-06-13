@@ -44,9 +44,32 @@ const realFetch = globalThis.fetch;
 // Mutable so individual tests can assert empty vs populated `approved_clients`.
 let stubbedGrantedOrigins: string[] = [RP_ORIGIN];
 
+// Origins the stubbed API reports as approved FedCM clients (drives both
+// `GET /fedcm/clients/approved` allow-listing and `/fedcm/exchange` approval).
+// Mutable so tests can assert the silent path refuses unapproved client_ids.
+let stubbedApprovedClients: string[] = [RP_ORIGIN];
+
+// Server-minted nonce + access token the stubbed `/fedcm/exchange` returns.
+const STUB_SERVER_NONCE = 'server-minted-nonce-xyz';
+const STUB_ACCESS_TOKEN = 'oxy-access-token-abc';
+const STUB_EXCHANGE_SESSION_ID = 'sess_exchanged_999';
+
+// Captures the outbound calls the worker makes to the API during silent
+// restore so tests can assert the Origin header binding + payload shape.
+interface CapturedExchange {
+  origin?: string;
+  idToken?: string;
+}
+let capturedNonceOrigin: string | undefined;
+let capturedExchange: CapturedExchange | undefined;
+
 function installApiStub(): void {
-  globalThis.fetch = (async (input: RequestInfo | URL): Promise<Response> => {
+  capturedNonceOrigin = undefined;
+  capturedExchange = undefined;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = typeof input === 'string' ? input : input.toString();
+    const headers = new Headers(init?.headers);
+
     if (url.includes('/session/validate/')) {
       return new Response(
         JSON.stringify({
@@ -61,6 +84,42 @@ function installApiStub(): void {
     if (url.includes('/fedcm/grants/')) {
       return new Response(
         JSON.stringify({ origins: stubbedGrantedOrigins }),
+        { status: 200, headers: { 'content-type': 'application/json' } }
+      );
+    }
+    // Authoritative approved-clients allow-list consumed by the silent path.
+    if (url.includes('/fedcm/clients/approved')) {
+      return new Response(
+        JSON.stringify({ success: true, clients: stubbedApprovedClients }),
+        { status: 200, headers: { 'content-type': 'application/json' } }
+      );
+    }
+    // Server-bound nonce mint — capture the Origin the worker sends.
+    if (url.includes('/fedcm/nonce')) {
+      capturedNonceOrigin = headers.get('origin') ?? undefined;
+      return new Response(
+        JSON.stringify({ nonce: STUB_SERVER_NONCE, expiresAt: new Date(Date.now() + 60000).toISOString() }),
+        { status: 200, headers: { 'content-type': 'application/json' } }
+      );
+    }
+    // Token exchange — capture the Origin + id_token, return an Oxy session.
+    if (url.includes('/fedcm/exchange')) {
+      const bodyText = typeof init?.body === 'string' ? init.body : '';
+      let idToken: string | undefined;
+      try {
+        idToken = (JSON.parse(bodyText) as { id_token?: string }).id_token;
+      } catch {
+        idToken = undefined;
+      }
+      capturedExchange = { origin: headers.get('origin') ?? undefined, idToken };
+      return new Response(
+        JSON.stringify({
+          sessionId: STUB_EXCHANGE_SESSION_ID,
+          deviceId: 'dev_1',
+          expiresAt: new Date(Date.now() + 3600000).toISOString(),
+          accessToken: STUB_ACCESS_TOKEN,
+          user: { id: TEST_USER_ID, username: 'tester', email: 'tester@oxy.so', name: 'Test User' },
+        }),
         { status: 200, headers: { 'content-type': 'application/json' } }
       );
     }
@@ -83,6 +142,7 @@ afterAll(() => {
 
 beforeEach(() => {
   stubbedGrantedOrigins = [RP_ORIGIN];
+  stubbedApprovedClients = [RP_ORIGIN];
   installApiStub();
 });
 
@@ -493,5 +553,215 @@ describe('Multi-domain FAPI (Clerk-style CNAME)', () => {
     } finally {
       delete process.env.FEDCM_ISSUER;
     }
+  });
+});
+
+/**
+ * Decode the `oxy_silent_auth` / `oxy-session-check` postMessage out of the
+ * HTML document the silent-restore endpoints return. The inline script embeds
+ * the message as a `<script>`-safe JSON literal assigned to `var message = …;`.
+ */
+function extractPostedMessage(html: string): { message: unknown; targetOrigin: string } {
+  const messageMatch = html.match(/var message = (.+?);\n/);
+  const targetMatch = html.match(/var targetOrigin = (.+?);\n/);
+  if (!messageMatch || !targetMatch) {
+    throw new Error('Could not extract postMessage payload from silent HTML');
+  }
+  // Reverse the `<`/`>`/U+2028/U+2029 escaping applied by `jsonForScript`.
+  const unescape = (s: string): string =>
+    s
+      .replace(/\\u003c/g, '<')
+      .replace(/\\u003e/g, '>')
+      .replace(/\\u2028/g, ' ')
+      .replace(/\\u2029/g, ' ');
+  return {
+    message: JSON.parse(unescape(messageMatch[1])),
+    targetOrigin: JSON.parse(unescape(targetMatch[1])) as string,
+  };
+}
+
+interface SilentMessage {
+  type: string;
+  session: { sessionId: string; accessToken: string; user?: { id: string } } | null;
+  nonce: string | null;
+}
+
+describe('GET /auth/silent (Safari/Firefox first-party restore)', () => {
+  it('returns HTML that posts a real session to the approved client_id origin', async () => {
+    const res = await app.request(
+      `/auth/silent?client_id=${encodeURIComponent(RP_ORIGIN)}&nonce=rp-nonce-1`,
+      { headers: { cookie: SESSION_COOKIE } }
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('text/html');
+
+    const html = await res.text();
+    const { message, targetOrigin } = extractPostedMessage(html);
+    const msg = message as SilentMessage;
+
+    // Contract with OxyServices.popup.ts waitForIframeAuth.
+    expect(msg.type).toBe('oxy_silent_auth');
+    expect(msg.nonce).toBe('rp-nonce-1');
+    expect(msg.session?.sessionId).toBe(STUB_EXCHANGE_SESSION_ID);
+    expect(msg.session?.accessToken).toBe(STUB_ACCESS_TOKEN);
+    expect(msg.session?.user?.id).toBe(TEST_USER_ID);
+
+    // Token is delivered ONLY to the validated client origin — never '*'.
+    expect(targetOrigin).toBe(RP_ORIGIN);
+  });
+
+  it('binds the server nonce + exchange to the validated client origin (Origin header)', async () => {
+    await app.request(
+      `/auth/silent?client_id=${encodeURIComponent(RP_ORIGIN)}&nonce=rp-nonce-2`,
+      { headers: { cookie: SESSION_COOKIE } }
+    );
+    // The worker must drive the api `/fedcm/nonce` + `/fedcm/exchange` calls
+    // with Origin == the approved client origin, or the API rejects them
+    // (origin_aud_mismatch / nonce_origin_mismatch).
+    expect(capturedNonceOrigin).toBe(RP_ORIGIN);
+    expect(capturedExchange?.origin).toBe(RP_ORIGIN);
+    expect(typeof capturedExchange?.idToken).toBe('string');
+
+    // The minted ID token must carry iss/aud/sub/nonce the API verifies.
+    const [, payloadB64] = (capturedExchange?.idToken ?? '..').split('.');
+    const payload = JSON.parse(
+      Buffer.from(payloadB64.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8')
+    ) as { iss: string; aud: string; sub: string; nonce: string };
+    expect(payload.aud).toBe(RP_ORIGIN);
+    expect(payload.sub).toBe(TEST_USER_ID);
+    expect(payload.nonce).toBe(STUB_SERVER_NONCE);
+  });
+
+  it('posts a null session (no token) when there is no fedcm_session cookie', async () => {
+    const res = await app.request(
+      `/auth/silent?client_id=${encodeURIComponent(RP_ORIGIN)}&nonce=rp-nonce-3`
+    );
+    expect(res.status).toBe(200);
+    const { message } = extractPostedMessage(await res.text());
+    const msg = message as SilentMessage;
+    expect(msg.type).toBe('oxy_silent_auth');
+    expect(msg.session).toBeNull();
+    // No exchange attempted.
+    expect(capturedExchange).toBeUndefined();
+  });
+
+  it('REFUSES to mint a token for an unapproved client_id even with a valid cookie', async () => {
+    // The cookie is present and the session is valid, but the requesting
+    // client_id is NOT on the approved-clients allow-list — the primary
+    // server-side control. No token may be issued or delivered.
+    stubbedApprovedClients = [RP_ORIGIN]; // evil origin is NOT in this list
+    installApiStub();
+    const evil = 'https://evil.example.com';
+    const res = await app.request(
+      `/auth/silent?client_id=${encodeURIComponent(evil)}&nonce=rp-nonce-4`,
+      { headers: { cookie: SESSION_COOKIE } }
+    );
+    expect(res.status).toBe(200);
+    const { message, targetOrigin } = extractPostedMessage(await res.text());
+    const msg = message as SilentMessage;
+    expect(msg.session).toBeNull();
+    // Never post to the unapproved origin; never '*'.
+    expect(targetOrigin).not.toBe(evil);
+    expect(targetOrigin).not.toBe('*');
+    // No exchange attempted for the unapproved origin.
+    expect(capturedExchange).toBeUndefined();
+  });
+
+  it('posts null and never targets * when client_id is missing entirely', async () => {
+    const res = await app.request('/auth/silent', { headers: { cookie: SESSION_COOKIE } });
+    expect(res.status).toBe(200);
+    const { message, targetOrigin } = extractPostedMessage(await res.text());
+    expect((message as SilentMessage).session).toBeNull();
+    expect(targetOrigin).not.toBe('*');
+    expect(capturedExchange).toBeUndefined();
+  });
+
+  it('clears a stale cookie and posts null when the session no longer validates', async () => {
+    globalThis.fetch = (async (input: RequestInfo | URL): Promise<Response> => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.includes('/fedcm/clients/approved')) {
+        return new Response(JSON.stringify({ success: true, clients: [RP_ORIGIN] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      if (url.includes('/session/validate/')) {
+        return new Response(JSON.stringify({ valid: false }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
+    }) as typeof fetch;
+
+    const res = await app.request(
+      `/auth/silent?client_id=${encodeURIComponent(RP_ORIGIN)}&nonce=rp-nonce-5`,
+      { headers: { cookie: SESSION_COOKIE } }
+    );
+    expect(res.status).toBe(200);
+    // Stale cookie is cleared.
+    expect(res.headers.get('set-cookie') || '').toContain('fedcm_session=');
+    const { message } = extractPostedMessage(await res.text());
+    expect((message as SilentMessage).session).toBeNull();
+  });
+});
+
+describe('GET /auth/session-check (IdP liveness probe — no token)', () => {
+  it('reports hasSession:true for a live session, targeting the approved origin', async () => {
+    const res = await app.request(
+      `/auth/session-check?client_id=${encodeURIComponent(RP_ORIGIN)}`,
+      { headers: { cookie: SESSION_COOKIE } }
+    );
+    expect(res.status).toBe(200);
+    const { message, targetOrigin } = extractPostedMessage(await res.text());
+    expect(message).toEqual({ type: 'oxy-session-check', hasSession: true });
+    expect(targetOrigin).toBe(RP_ORIGIN);
+  });
+
+  it('NEVER returns a token (only a boolean liveness bit)', async () => {
+    const res = await app.request(
+      `/auth/session-check?client_id=${encodeURIComponent(RP_ORIGIN)}`,
+      { headers: { cookie: SESSION_COOKIE } }
+    );
+    const html = await res.text();
+    expect(html).not.toContain(STUB_ACCESS_TOKEN);
+    expect(html).not.toContain('accessToken');
+    // The liveness path must not perform a token exchange.
+    expect(capturedExchange).toBeUndefined();
+  });
+
+  it('reports hasSession:false when no cookie is present', async () => {
+    const res = await app.request(`/auth/session-check?client_id=${encodeURIComponent(RP_ORIGIN)}`);
+    expect(res.status).toBe(200);
+    const { message } = extractPostedMessage(await res.text());
+    expect(message).toEqual({ type: 'oxy-session-check', hasSession: false });
+  });
+
+  it('reports hasSession:false and clears the cookie when the session is invalid', async () => {
+    globalThis.fetch = (async (input: RequestInfo | URL): Promise<Response> => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.includes('/fedcm/clients/approved')) {
+        return new Response(JSON.stringify({ success: true, clients: [RP_ORIGIN] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      if (url.includes('/session/validate/')) {
+        return new Response(JSON.stringify({ valid: false }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
+    }) as typeof fetch;
+
+    const res = await app.request(
+      `/auth/session-check?client_id=${encodeURIComponent(RP_ORIGIN)}`,
+      { headers: { cookie: SESSION_COOKIE } }
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get('set-cookie') || '').toContain('fedcm_session=');
+    const { message } = extractPostedMessage(await res.text());
+    expect(message).toEqual({ type: 'oxy-session-check', hasSession: false });
   });
 });

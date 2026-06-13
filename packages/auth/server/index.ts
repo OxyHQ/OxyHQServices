@@ -23,6 +23,8 @@
  *   POST /fedcm/disconnect        - Disconnects an RP
  *   GET  /fedcm/login-status      - Returns Set-Login header for the browser
  *   POST /fedcm/set-session       - Called by the SPA after login to set cookie
+ *   GET  /auth/silent             - First-party silent restore for Safari/Firefox
+ *   GET  /auth/session-check      - IdP-session liveness probe (no token)
  *   *    /*                       - Serves the Vite SPA (static assets)
  */
 
@@ -265,6 +267,280 @@ async function validateSession(apiBaseUrl: string, sessionId: string): Promise<b
 /** Build the avatar URL for a user. */
 function getAvatarUrl(apiBaseUrl: string, fileId: string): string {
   return `${apiBaseUrl}/assets/${encodeURIComponent(fileId)}/stream?variant=thumb&fallback=placeholderVisible`;
+}
+
+// ---------------------------------------------------------------------------
+// First-party silent-restore helpers (Safari / Firefox — no FedCM)
+//
+// THREAT MODEL
+// -----------
+// `/auth/silent` issues a real Oxy access token from a host-only, first-party
+// `fedcm_session` cookie. It exists because Safari (ITP) and Firefox (Total
+// Cookie Protection) do not implement FedCM, so the Chrome path
+// (navigator.credentials.get -> /fedcm/assertion -> api /fedcm/exchange) is
+// unavailable there. Instead the RP embeds a hidden iframe pointing at
+// `auth.<apex>/auth/silent`; because the RP CNAMEs `auth.<rp-domain>` to this
+// worker (Clerk-style multi-domain FAPI), that iframe is SAME-SITE with the
+// RP's own apex, so the browser DOES send the first-party `fedcm_session`
+// cookie even under ITP/TCP. The endpoint reads that cookie and posts a token
+// back to the embedder.
+//
+// Because a cookie-driven token issuer is a juicy target, this endpoint must
+// hold the same security bar as FedCM itself. Two independent controls:
+//
+//  1. Browser cookie partitioning (defence in depth, NOT relied upon alone):
+//     the `fedcm_session` cookie is host-only (no Domain attribute) and
+//     first-party to `auth.<apex>`. A cross-site embedder on an UNRELATED apex
+//     loads the iframe in a third-party context, so ITP/TCP withhold the
+//     cookie and the endpoint sees no session -> posts a null result. This
+//     stops the obvious "evil.example.com iframes auth.oxy.so" attack on
+//     Safari/Firefox by construction.
+//
+//  2. Server-side client_id allow-listing (the PRIMARY control): we never
+//     trust the embedder. The `client_id` query param (the RP origin the token
+//     is destined for) is validated against the SAME approved-clients allow-
+//     list the FedCM `/fedcm/exchange` endpoint enforces (`isClientApproved`).
+//     The postMessage target origin is ALWAYS the validated `client_id` — never
+//     '*'. So even if a browser leaked the cookie to an unapproved embedder
+//     (e.g. an Oxy-owned-but-unregistered subdomain that IS same-site), the
+//     token is only ever delivered to an origin Oxy has explicitly approved.
+//     A malicious page that is somehow same-site but not on the allow-list
+//     receives a null result, never a token.
+//
+// The token itself is obtained WITHOUT any new crypto or new API endpoint: we
+// reuse the exact, already-audited Chrome pipeline server-side — mint the same
+// HS256 FedCM ID token the `/fedcm/assertion` endpoint mints, then call the
+// PUBLIC `POST /fedcm/nonce` + `POST /fedcm/exchange` on api.oxy.so with the
+// `Origin` header set to the validated client_id. The API performs its full
+// independent verification (issuer, signature, audience-approved, nonce,
+// origin==aud) before issuing the session. The worker never signs an Oxy
+// access token directly; api.oxy.so remains the sole session authority.
+// ---------------------------------------------------------------------------
+
+/** The session payload posted back to the RP iframe on a successful restore. */
+interface SilentRestoreSession {
+  sessionId: string;
+  accessToken: string;
+  expiresAt?: string;
+  user?: { id: string; username?: string; email?: string; avatar?: string; name?: string };
+}
+
+/**
+ * Normalise an origin for allow-list comparison: strip a trailing slash and
+ * lowercase scheme + host. Returns `null` when the value is not a parseable
+ * absolute origin (a bare path, empty string, etc.) so the caller treats it as
+ * disallowed rather than throwing.
+ */
+function normaliseOrigin(value: string): string | null {
+  try {
+    const url = new URL(value);
+    const port = url.port ? `:${url.port}` : '';
+    return `${url.protocol.toLowerCase()}//${url.hostname.toLowerCase()}${port}`;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Validate a candidate RP `client_id` against the authoritative approved-
+ * clients allow-list served by the Oxy API (`GET /fedcm/clients/approved`).
+ * This is the SAME list `/fedcm/exchange` enforces via `isClientApproved`, so
+ * the silent path cannot deliver a token to any origin the FedCM path would
+ * itself reject. Returns the normalised, approved origin or `null`.
+ *
+ * Fails CLOSED: any network/parse error yields `null` (no token issued). The
+ * endpoint is cookie-less and the response carries only public approved
+ * origins, so no auth token is needed for this server-to-server call.
+ */
+async function resolveApprovedClientOrigin(
+  apiBaseUrl: string,
+  clientId: string | undefined
+): Promise<string | null> {
+  if (!clientId) return null;
+  const candidate = normaliseOrigin(clientId);
+  if (!candidate) return null;
+
+  try {
+    const res = await fetch(`${apiBaseUrl}/fedcm/clients/approved`, {
+      headers: { Accept: 'application/json' },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as Record<string, unknown>;
+    // The controller responds `{ success, clients: string[] }`; tolerate an
+    // `origins` alias defensively in case the shape ever changes.
+    const list = (Array.isArray(data.clients) ? data.clients : data.origins) as unknown;
+    if (!Array.isArray(list)) return null;
+    for (const entry of list) {
+      if (typeof entry !== 'string') continue;
+      if (normaliseOrigin(entry) === candidate) return candidate;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Mint a real Oxy access token + session for `userId`, destined for the
+ * already-validated, approved `clientOrigin`. Reuses the existing,
+ * independently-verified Chrome token pipeline end-to-end:
+ *
+ *   1. Mint the same HS256 FedCM ID token `/fedcm/assertion` mints (iss/sub/aud
+ *      + a fresh nonce), signed with `FEDCM_TOKEN_SECRET`.
+ *   2. `POST /fedcm/nonce` (Origin = clientOrigin) -> a server-bound, single-
+ *      use nonce. The API binds the nonce to that Origin.
+ *   3. Re-sign the ID token with the server nonce embedded (the API requires
+ *      `nonce` and burns it on exchange).
+ *   4. `POST /fedcm/exchange` (Origin = clientOrigin, `{ id_token }`) -> the
+ *      API verifies issuer + signature + audience-approved + nonce + Origin==aud
+ *      and returns `{ accessToken, sessionId, user, ... }`.
+ *
+ * The worker sets the outbound `Origin` header to `clientOrigin` so the API's
+ * `origin == aud` and nonce-origin-binding checks pass. (Outbound `fetch` on
+ * the Workers/Bun runtime — unlike a browser — may set `Origin`.) The API does
+ * its OWN full verification, so a worker bug cannot bypass approval.
+ *
+ * Returns `null` on any failure (no token leaks).
+ */
+async function mintSessionForClient(
+  config: ResolvedConfig,
+  user: ResolvedUser,
+  clientOrigin: string
+): Promise<SilentRestoreSession | null> {
+  const { apiBaseUrl, fedcmIssuer, fedcmTokenSecret } = config;
+  if (!fedcmTokenSecret) return null;
+
+  try {
+    // 1. Obtain a server-minted, origin-bound nonce. A locally-generated nonce
+    //    is rejected by `/fedcm/exchange` with `invalid_nonce`.
+    const nonceRes = await fetch(`${apiBaseUrl}/fedcm/nonce`, {
+      method: 'POST',
+      headers: { Accept: 'application/json', Origin: clientOrigin },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!nonceRes.ok) return null;
+    const nonceData = (await nonceRes.json()) as Record<string, unknown>;
+    const serverNonce = nonceData.nonce;
+    if (typeof serverNonce !== 'string' || serverNonce.length === 0) return null;
+
+    // 2. Mint the FedCM ID token (identical claims to /fedcm/assertion).
+    const now = Math.floor(Date.now() / 1000);
+    const idTokenPayload: Record<string, unknown> = {
+      iss: fedcmIssuer,
+      sub: user.id,
+      aud: clientOrigin,
+      iat: now,
+      exp: now + TOKEN_LIFETIME,
+      nonce: serverNonce,
+    };
+    if (user.email) idTokenPayload.email = user.email;
+    if (user.name) idTokenPayload.name = user.name;
+    if (user.username) idTokenPayload.preferred_username = user.username;
+    const idToken = await createHS256JWT(idTokenPayload, fedcmTokenSecret);
+
+    // 3. Exchange for a real Oxy session. The API re-verifies everything.
+    const exchangeRes = await fetch(`${apiBaseUrl}/fedcm/exchange`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        Origin: clientOrigin,
+      },
+      body: JSON.stringify({ id_token: idToken }),
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!exchangeRes.ok) return null;
+    const exchanged = (await exchangeRes.json()) as Record<string, unknown>;
+    const accessToken = exchanged.accessToken;
+    const sessionId = exchanged.sessionId;
+    if (typeof accessToken !== 'string' || typeof sessionId !== 'string') return null;
+    if (!accessToken || !sessionId) return null;
+
+    const exchangedUser = exchanged.user as ResolvedUser | undefined;
+    return {
+      sessionId,
+      accessToken,
+      expiresAt: typeof exchanged.expiresAt === 'string' ? exchanged.expiresAt : undefined,
+      user: exchangedUser ?? {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        avatar: user.avatar,
+        name: user.name,
+      },
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Serialise a value to a `<script>`-safe JSON literal. JSON cannot contain a
+ * raw `<` / `>` / U+2028 / U+2029, but escaping them defends against a `</script>`
+ * break-out and ancient line-terminator parser bugs even though every value
+ * embedded here is server-controlled (tokens minted by us, the validated
+ * origin). Defence in depth for an HTML-templating sink.
+ */
+function jsonForScript(value: unknown): string {
+  return JSON.stringify(value)
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
+}
+
+/**
+ * Render the HTML document the `/auth/silent` iframe returns. Its inline script
+ * posts the session (or `null`) to `window.parent` targeting ONLY the validated
+ * `targetOrigin` — never '*'. Matches `OxyServices.popup.ts` `waitForIframeAuth`:
+ * `{ type: 'oxy_silent_auth', session, nonce }`. The client verifies
+ * `event.origin === resolveAuthUrl()` (this IdP) and reads `event.data.session`.
+ */
+function renderSilentHtml(
+  targetOrigin: string,
+  session: SilentRestoreSession | null,
+  nonce: string | undefined
+): string {
+  const message = {
+    type: 'oxy_silent_auth',
+    session,
+    nonce: nonce ?? null,
+  };
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Oxy Silent Auth</title></head><body><script>
+(function () {
+  var message = ${jsonForScript(message)};
+  var targetOrigin = ${jsonForScript(targetOrigin)};
+  try {
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage(message, targetOrigin);
+    }
+  } catch (e) {}
+})();
+</script></body></html>`;
+}
+
+/**
+ * Render the HTML document the `/auth/session-check` iframe returns. Its inline
+ * script posts a liveness result to `window.parent` targeting ONLY the validated
+ * `targetOrigin`. Matches the poller in `@oxyhq/services` OxyContext:
+ * `{ type: 'oxy-session-check', hasSession: boolean }`. This path NEVER returns
+ * a token — it only tells the RP whether the IdP session is still alive so the
+ * RP can drop a locally-cached session that was revoked elsewhere.
+ */
+function renderSessionCheckHtml(targetOrigin: string, hasSession: boolean): string {
+  const message = { type: 'oxy-session-check', hasSession };
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Oxy Session Check</title></head><body><script>
+(function () {
+  var message = ${jsonForScript(message)};
+  var targetOrigin = ${jsonForScript(targetOrigin)};
+  try {
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage(message, targetOrigin);
+    }
+  } catch (e) {}
+})();
+</script></body></html>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -715,6 +991,103 @@ app.post('/fedcm/set-session', async (c) => {
 
   c.header('Set-Login', 'logged-in');
   return c.json({ success: true });
+});
+
+/**
+ * GET /auth/silent
+ *
+ * First-party silent session restore for browsers WITHOUT FedCM (Safari ITP,
+ * Firefox Total Cookie Protection). The RP embeds this as a hidden iframe at
+ * `auth.<rp-apex>/auth/silent?client_id=<rp-origin>&nonce=<n>`. Because the RP
+ * CNAMEs `auth.<rp-apex>` to this worker, the iframe is same-site with the RP's
+ * apex, so the browser sends the first-party host-only `fedcm_session` cookie
+ * even under ITP/TCP. We read it, validate the session, mint a real Oxy access
+ * token destined for the validated RP origin, and postMessage it back.
+ *
+ * Returns an HTML document (NOT JSON) so the embedding iframe's inline script
+ * can `window.parent.postMessage(...)`. The client contract is
+ * `OxyServices.popup.ts` `waitForIframeAuth`: it expects
+ * `{ type: 'oxy_silent_auth', session }` from `event.origin === resolveAuthUrl()`.
+ *
+ * SECURITY: see the "First-party silent-restore helpers" threat-model comment.
+ * The postMessage target is ALWAYS the allow-listed `client_id` origin, never
+ * '*'. A request whose `client_id` is missing, unparseable, or not on the
+ * approved-clients list receives a `null` session posted to a SAFE fallback
+ * target (the request's own Origin/Referer apex, or — when neither is present —
+ * the IdP issuer itself, so the token-less null can never leak cross-origin).
+ */
+app.get('/auth/silent', async (c) => {
+  const config = resolveConfig(c);
+  const clientIdParam = c.req.query('client_id');
+  const nonce = c.req.query('nonce');
+
+  // Resolve the postMessage target. ONLY an approved client_id may receive a
+  // session. For the negative/error cases we still need *some* same-origin-ish
+  // target to post the `null` result to (so the iframe resolves rather than
+  // hanging until the client's 5s timeout) — fall back to the request Origin,
+  // then the issuer. We NEVER post to '*'.
+  const approvedOrigin = await resolveApprovedClientOrigin(config.apiBaseUrl, clientIdParam);
+  const requestOrigin = normaliseOrigin(c.req.header('origin') || '') ?? config.fedcmIssuer;
+  const nullTarget = approvedOrigin ?? requestOrigin;
+
+  // No cookie -> not logged in at this IdP. Post a null session.
+  const sessionId = getCookie(c, COOKIE_NAME);
+  if (!sessionId) {
+    return c.html(renderSilentHtml(nullTarget, null, nonce));
+  }
+
+  // The client_id MUST be an approved RP origin. If it isn't, we refuse to
+  // mint or deliver a token even though the cookie is present — defence against
+  // a same-site-but-unapproved embedder receiving credentials.
+  if (!approvedOrigin) {
+    return c.html(renderSilentHtml(nullTarget, null, nonce));
+  }
+
+  // Validate the session id -> user via the public, cookie-less endpoint.
+  const user = await fetchUserFromAPI(config.apiBaseUrl, sessionId);
+  if (!user) {
+    // Stale cookie: clear it and report no session.
+    deleteCookie(c, COOKIE_NAME, { ...FEDCM_COOKIE_OPTIONS });
+    return c.html(renderSilentHtml(approvedOrigin, null, nonce));
+  }
+
+  // Mint a real Oxy access token for the validated, approved origin by reusing
+  // the existing FedCM nonce + exchange pipeline (api.oxy.so is the authority).
+  const session = await mintSessionForClient(config, user, approvedOrigin);
+  return c.html(renderSilentHtml(approvedOrigin, session, nonce));
+});
+
+/**
+ * GET /auth/session-check
+ *
+ * Lightweight IdP-session liveness probe for the `@oxyhq/services` poller
+ * (OxyContext): when an authenticated tab regains focus it loads this in a
+ * hidden iframe to confirm the IdP still has a session, dropping its local
+ * session if the user signed out elsewhere. NEVER returns a token — only a
+ * boolean `hasSession`. The client contract is
+ * `{ type: 'oxy-session-check', hasSession }` from `event.origin === idpOrigin`.
+ *
+ * Same client_id allow-listing as `/auth/silent`: we post ONLY to the validated
+ * RP origin (falling back to the request Origin / issuer for the negative case),
+ * never '*'. Disclosing a boolean liveness bit is far lower-stakes than a token,
+ * but allow-listing the target keeps the postMessage from leaking even that.
+ */
+app.get('/auth/session-check', async (c) => {
+  const config = resolveConfig(c);
+  const approvedOrigin = await resolveApprovedClientOrigin(config.apiBaseUrl, c.req.query('client_id'));
+  const requestOrigin = normaliseOrigin(c.req.header('origin') || '') ?? config.fedcmIssuer;
+  const target = approvedOrigin ?? requestOrigin;
+
+  const sessionId = getCookie(c, COOKIE_NAME);
+  if (!sessionId) {
+    return c.html(renderSessionCheckHtml(target, false));
+  }
+
+  const valid = await validateSession(config.apiBaseUrl, sessionId);
+  if (!valid) {
+    deleteCookie(c, COOKIE_NAME, { ...FEDCM_COOKIE_OPTIONS });
+  }
+  return c.html(renderSessionCheckHtml(target, valid));
 });
 
 // NOTE: there is deliberately NO catch-all `*` route on `app`. Static-asset
