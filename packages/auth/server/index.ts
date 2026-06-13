@@ -282,6 +282,33 @@ function applyAssertionCors(c: AppContext): void {
   }
 }
 
+/**
+ * Preflight (OPTIONS) handler for the cross-origin credentialed POST
+ * endpoints `/fedcm/assertion` and `/fedcm/disconnect`.
+ *
+ * The FedCM browser flow itself does NOT preflight `webidentity` requests,
+ * but any non-spec JS client (tests, RP-side fetch, monitoring) that posts
+ * with `credentials: 'include'` will. Returning a spec-compliant preflight
+ * keeps these endpoints predictable for tooling and matches what the
+ * `id_assertion`/`disconnect` POST responses already advertise.
+ */
+function preflightAssertionCors(c: AppContext): Response {
+  const origin = c.req.header('origin');
+  const requestedHeaders = c.req.header('access-control-request-headers');
+  if (origin) {
+    c.header('Access-Control-Allow-Origin', origin);
+    c.header('Access-Control-Allow-Credentials', 'true');
+    c.header('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    c.header(
+      'Access-Control-Allow-Headers',
+      requestedHeaders || 'content-type, sec-fetch-dest'
+    );
+    c.header('Access-Control-Max-Age', '600');
+    c.header('Vary', 'Origin, Access-Control-Request-Headers');
+  }
+  return c.body(null, 204);
+}
+
 // ---------------------------------------------------------------------------
 // App
 // ---------------------------------------------------------------------------
@@ -413,6 +440,8 @@ app.get('/fedcm/accounts', async (c) => {
  *
  * Spec: https://fedidcg.github.io/FedCM/#idp-api-id-assertion-endpoint
  */
+app.options('/fedcm/assertion', (c) => preflightAssertionCors(c));
+
 app.post('/fedcm/assertion', async (c) => {
   // The browser issues this cross-origin POST with credentials. Echo the RP
   // origin so the browser accepts the token (required by the FedCM spec).
@@ -499,6 +528,8 @@ app.post('/fedcm/assertion', async (c) => {
  *
  * Spec: https://fedidcg.github.io/FedCM/#idp-api-disconnect-endpoint
  */
+app.options('/fedcm/disconnect', (c) => preflightAssertionCors(c));
+
 app.post('/fedcm/disconnect', async (c) => {
   // Cross-origin credentialed request — echo RP origin like the assertion
   // endpoint so the browser accepts the response.

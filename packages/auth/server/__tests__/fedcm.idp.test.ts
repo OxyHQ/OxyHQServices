@@ -269,6 +269,50 @@ describe('POST /fedcm/assertion', () => {
   });
 });
 
+describe('OPTIONS preflight for cross-origin endpoints', () => {
+  it('responds 204 with full CORS headers on /fedcm/assertion', async () => {
+    const res = await app.request('/fedcm/assertion', {
+      method: 'OPTIONS',
+      headers: {
+        origin: RP_ORIGIN,
+        'access-control-request-method': 'POST',
+        'access-control-request-headers': 'content-type',
+      },
+    });
+    expect(res.status).toBe(204);
+    expect(res.headers.get('access-control-allow-origin')).toBe(RP_ORIGIN);
+    expect(res.headers.get('access-control-allow-credentials')).toBe('true');
+    expect(res.headers.get('access-control-allow-methods')).toBe('POST, OPTIONS');
+    expect(res.headers.get('access-control-allow-headers')).toBe('content-type');
+    expect(res.headers.get('access-control-max-age')).toBe('600');
+  });
+
+  it('responds 204 with full CORS headers on /fedcm/disconnect', async () => {
+    const res = await app.request('/fedcm/disconnect', {
+      method: 'OPTIONS',
+      headers: {
+        origin: RP_ORIGIN,
+        'access-control-request-method': 'POST',
+        'access-control-request-headers': 'content-type, sec-fetch-dest',
+      },
+    });
+    expect(res.status).toBe(204);
+    expect(res.headers.get('access-control-allow-origin')).toBe(RP_ORIGIN);
+    expect(res.headers.get('access-control-allow-credentials')).toBe('true');
+    expect(res.headers.get('access-control-allow-methods')).toBe('POST, OPTIONS');
+    expect(res.headers.get('access-control-allow-headers')).toBe('content-type, sec-fetch-dest');
+  });
+
+  it('falls back to default headers when no Access-Control-Request-Headers sent', async () => {
+    const res = await app.request('/fedcm/disconnect', {
+      method: 'OPTIONS',
+      headers: { origin: RP_ORIGIN, 'access-control-request-method': 'POST' },
+    });
+    expect(res.status).toBe(204);
+    expect(res.headers.get('access-control-allow-headers')).toBe('content-type, sec-fetch-dest');
+  });
+});
+
 describe('POST /fedcm/disconnect', () => {
   it('rejects requests without Sec-Fetch-Dest: webidentity', async () => {
     const res = await app.request('/fedcm/disconnect', {
