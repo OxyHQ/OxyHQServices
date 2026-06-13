@@ -20,7 +20,8 @@ import {
   OxyServices,
   CrossDomainAuth,
   createAuthManager,
-  autoDetectAuthWebUrl,
+  resolveCentralAuthUrl,
+  parseSsoReturnFragment,
   runColdBoot,
   logger,
 } from '@oxyhq/core';
@@ -35,6 +36,17 @@ import type {
 } from '@oxyhq/core';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { attachQueryPersistence, createQueryClient } from './hooks/queryClient';
+import { isWebBrowser } from './hooks/useWebSSO';
+import {
+  SSO_CALLBACK_PATH,
+  ssoStateKey,
+  ssoNoSessionKey,
+  ssoGuardKey,
+  ssoDestKey,
+  isCentralIdPOrigin,
+  guardActive,
+  buildSsoBounceUrl,
+} from './utils/ssoBounce';
 
 export interface WebAuthState {
   user: User | null;
@@ -130,19 +142,26 @@ const WebOxyContext = createContext<WebOxyContextValue | null>(null);
  * id resolved from the AuthManager registry.
  */
 type ColdBootSession =
-  | { method: 'redirect' | 'fedcm'; session: SessionLoginResponse }
+  | { method: 'redirect' | 'fedcm' | 'sso'; session: SessionLoginResponse }
   | { method: 'cookie'; user: User; activeSessionId: string | null };
 
 /**
- * Module-level run-once guard for the composite silent sign-in step.
+ * The precise result of the `sso-return` step — always the `sso` variant or
+ * `null`. Returned by `runSsoReturn` so both call sites (the cold-boot step and
+ * the bfcache `pageshow` handler) can read `.session` without narrowing the
+ * full {@link ColdBootSession} union.
+ */
+type SsoReturnSession = { method: 'sso'; session: SessionLoginResponse };
+
+/**
+ * Module-level run-once guard for the central FedCM silent sign-in step.
  *
  * The init effect runs again whenever the provider remounts (route change,
  * StrictMode double-invoke, error-boundary recovery). The redirect-callback
- * and local-session-restore steps are cheap and idempotent, but the silent
- * sign-in step triggers `navigator.credentials.get` (FedCM) — and, on
- * browsers without FedCM, a first-party iframe load against the IdP — both of
- * which must fire AT MOST ONCE per page load. Otherwise a remount storm becomes
- * a credential-request storm.
+ * and cookie-restore steps are cheap and idempotent, but the FedCM silent step
+ * triggers `navigator.credentials.get` (`mediation: 'silent'`) against the
+ * central IdP, which must fire AT MOST ONCE per page load. Otherwise a remount
+ * storm becomes a credential-request storm.
  *
  * Keyed on `origin|baseURL` (the same signature `useWebSSO.ssoSignature` uses)
  * so two providers on the same origin pointed at different APIs each get their
@@ -213,7 +232,10 @@ export function WebOxyProvider({
   skipAutoCheck = false,
 }: WebOxyProviderProps) {
   const [oxyServices] = useState(
-    () => new OxyServices({ baseURL, authWebUrl: authWebUrl ?? autoDetectAuthWebUrl() })
+    // Central cross-domain SSO targets ONE IdP (`auth.oxy.so`). Resolve the
+    // auth web URL via the central default — an explicit `authWebUrl` still
+    // wins (e.g. to point at a staging IdP).
+    () => new OxyServices({ baseURL, authWebUrl: resolveCentralAuthUrl(authWebUrl) })
   );
   const [crossDomainAuth] = useState(() => new CrossDomainAuth(oxyServices));
   // Web is cookie-only by design: refresh tokens live in httpOnly
@@ -332,6 +354,149 @@ export function WebOxyProvider({
     onError?.(err instanceof Error ? err : new Error(errorMessage));
   }, [onError]);
 
+  /**
+   * SSO return (cold-boot step 1).
+   *
+   * We may be back from a top-level bounce to the central IdP. Parse
+   * `window.location.hash`, validate the round-tripped `state` against the one
+   * we stashed at bounce time, and exchange the opaque single-use `code` for
+   * the real session.
+   *
+   * Returns a `ColdBootSession` to be committed by the caller (the cold-boot
+   * post-runner switch OR the bfcache `pageshow` handler), or `null` to skip.
+   * It does NOT commit the session itself — keeping it side-effect-light makes
+   * it safe to call from both entry points.
+   *
+   * Security/loop invariants (mirrors the services provider exactly):
+   *   - The fragment is stripped via `history.replaceState` FIRST so the opaque
+   *     code never lingers in the URL / history / a `Referer`.
+   *   - State must match (CSRF). A mismatch or a missing code sets the
+   *     NO_SESSION flag so `sso-bounce` is disabled (no rebounce loop).
+   *   - `none`/`error` outcomes set the NO_SESSION flag (the load2 half of the
+   *     loop proof).
+   *   - After a successful exchange landing on the callback path, the real
+   *     destination is restored from the DEST key.
+   */
+  const runSsoReturn = useCallback(async (): Promise<SsoReturnSession | null> => {
+    if (!isWebBrowser()) return null;
+
+    const ret = parseSsoReturnFragment(window.location.hash);
+    if (!ret) return null;
+
+    const origin = window.location.origin;
+    const expectedState = window.sessionStorage.getItem(ssoStateKey(origin));
+    const stateOk = !!ret.state && !!expectedState && ret.state === expectedState;
+
+    // Strip the fragment FIRST so the opaque code never lingers in the URL,
+    // browser history, or a `Referer` header.
+    window.history.replaceState(
+      null,
+      '',
+      window.location.pathname + window.location.search,
+    );
+    window.sessionStorage.removeItem(ssoStateKey(origin));
+
+    // The in-flight bounce is now resolved — drop its guard so a later cold
+    // boot (e.g. after sign-out) can bounce again.
+    window.sessionStorage.removeItem(ssoGuardKey(origin));
+
+    if (ret.kind === 'none' || ret.kind === 'error') {
+      window.sessionStorage.setItem(ssoNoSessionKey(origin), '1');
+      return null;
+    }
+
+    if (!stateOk || !ret.code) {
+      window.sessionStorage.setItem(ssoNoSessionKey(origin), '1');
+      return null;
+    }
+
+    const session = await oxyServices.exchangeSsoCode(ret.code);
+    if (!session?.sessionId) {
+      window.sessionStorage.setItem(ssoNoSessionKey(origin), '1');
+      return null;
+    }
+
+    // If we landed on the internal callback path, restore the user's real
+    // destination (captured at bounce time) and clear it.
+    if (window.location.pathname === SSO_CALLBACK_PATH) {
+      const dest = window.sessionStorage.getItem(ssoDestKey(origin));
+      window.sessionStorage.removeItem(ssoDestKey(origin));
+      if (dest) {
+        try {
+          const destUrl = new URL(dest, origin);
+          // Only restore same-origin destinations — never honour an attacker
+          // who planted a cross-origin URL in this origin's sessionStorage.
+          if (destUrl.origin === origin) {
+            window.history.replaceState(
+              null,
+              '',
+              destUrl.pathname + destUrl.search + destUrl.hash,
+            );
+          }
+        } catch {
+          // Malformed stored destination — leave the URL on the callback path.
+        }
+      }
+    }
+
+    return { method: 'sso', session };
+  }, [oxyServices]);
+
+  // The cold-boot step references `runSsoReturn` through a ref because the
+  // steps array is built inside the init effect, which must not list every
+  // callback as a dependency (it would re-run the whole cold boot on each
+  // callback identity change). Assigned synchronously on every render so the
+  // ref is populated before the init effect (or the bfcache handler) fires.
+  const runSsoReturnRef = useRef(runSsoReturn);
+  runSsoReturnRef.current = runSsoReturn;
+
+  /**
+   * SSO bounce gate (cold-boot step 5 `enabled`).
+   *
+   * Only bounce when:
+   *   - we are a top-level web document (never inside an iframe), AND
+   *   - we are NOT sitting on the central IdP itself (never loop it), AND
+   *   - the NO_SESSION flag is not set (a prior `none`/`error`/mismatch this
+   *     page-session already proved there is no central session), AND
+   *   - no fresh bounce guard is active (a bounce younger than the 30s TTL is
+   *     in flight; a stale one self-heals).
+   */
+  const evaluateSsoBounce = useCallback((): boolean => {
+    if (!isWebBrowser() || window.top !== window.self) return false;
+    const origin = window.location.origin;
+    if (isCentralIdPOrigin(origin)) return false;
+    if (window.sessionStorage.getItem(ssoNoSessionKey(origin)) === '1') return false;
+    if (guardActive(origin, window.sessionStorage)) return false;
+    return true;
+  }, []);
+
+  /**
+   * SSO bounce (cold-boot step 5 `run`). TERMINAL: navigates the top-level
+   * document to the central IdP's `/sso` endpoint with `prompt=none`. The
+   * document is torn down, so nothing after `window.location.assign` runs in
+   * practice.
+   */
+  const runSsoBounce = useCallback((): void => {
+    if (!isWebBrowser()) return;
+    const origin = window.location.origin;
+
+    const state = oxyServices.generateSsoState();
+    window.sessionStorage.setItem(ssoStateKey(origin), state);
+    window.sessionStorage.setItem(ssoGuardKey(origin), String(Date.now()));
+    // Capture the real destination so it can be restored after the callback.
+    window.sessionStorage.setItem(ssoDestKey(origin), window.location.href);
+
+    // Honour an explicit `authWebUrl` override (e.g. a staging IdP) for the
+    // SSO bounce exactly as it drives FedCM — mirroring the services
+    // `OxyContext`, which builds from
+    // `resolveCentralAuthUrl(oxyServices.config?.authWebUrl)`. The constructor
+    // above already resolved `config.authWebUrl` to the central default when no
+    // override was supplied, so reading it here is sufficient.
+    window.location.assign(
+      buildSsoBounceUrl(origin, state, oxyServices.config?.authWebUrl),
+    );
+  }, [oxyServices]);
+
   // Initialize
   useEffect(() => {
     if (skipAutoCheck) return;
@@ -339,30 +504,36 @@ export function WebOxyProvider({
     let mounted = true;
 
     const initAuth = async () => {
-      // Cold boot resolves a recovered session by trying, in order:
-      //   1) `redirect`      — an in-flight popup/redirect flow that just
-      //                        landed back on this page with a session.
-      //   2) `fedcm-silent`  — `crossDomainAuth.silentSignIn()`, a composite
-      //                        that tries FedCM `mediation: 'silent'` first and
-      //                        then a first-party iframe against the IdP. The
-      //                        iframe fallback is what restores cross-domain
-      //                        sessions on Safari/Firefox (no FedCM), so this
-      //                        step is gated ONLY on the module-level run-once
-      //                        guard — never on `isFedCMSupported`.
-      //   3) `cookie`        — `authManager.initialize()`, the transitional
-      //                        same-origin cookie path (`POST /auth/refresh-all`).
+      // Cold boot — the single, ordered, short-circuit session-recovery
+      // sequence, consuming the SAME `runColdBoot` core primitive as the
+      // services `OxyContext`. The FIRST step that yields a session wins; every
+      // later step is skipped. Step ids + guard logic mirror the services
+      // provider EXACTLY (consistency mandate) even though `WebOxyProvider` is
+      // web-only.
       //
-      // Each step returns a `kind: 'session'` carrying the commit `method` so
-      // the post-runner switch reproduces today's exact per-branch commit.
-      // CRITICAL: the `redirect` and `cookie` steps MUST hydrate a REAL user
-      // before claiming a session. `handleAuthCallback()` returns a placeholder
-      // user with an empty `id`; if the follow-up `getCurrentUser()` throws we
-      // return `{ kind: 'skip' }`, NOT a placeholder session.
+      // Order (web):
+      //   0. redirect       — existing popup `?access_token=` query callback.
+      //   1. sso-return     — parse `window.location.hash`; on `ok` exchange the
+      //                       opaque code via `oxyServices.exchangeSsoCode` and
+      //                       commit; on `none`/`error` set the no-rebounce flag.
+      //   2. fedcm-silent   — silent FedCM against the CENTRAL `auth.oxy.so`
+      //                       (Chrome enhancement). Fires once per page load.
+      //   3. cookie-restore — `authManager.initialize()` refresh-cookie restore;
+      //                       first-party only on `*.oxy.so`, empty cross-domain.
+      //   4. stored-session — bearer restore; the ONLY path native reaches.
+      //   5. sso-bounce     — TERMINAL top-level navigation to `auth.oxy.so/sso`.
+      //
+      // CRITICAL: the `redirect`, `cookie-restore`, and `stored-session` steps
+      // MUST hydrate a REAL user before claiming a session. A placeholder user
+      // (empty id) is never exposed (R4).
       const ssoKey = silentSignInKey(oxyServices);
 
       const steps: ReadonlyArray<ColdBootStep<ColdBootSession>> = [
         {
+          // 0) Redirect callback: a popup/redirect sign-in just landed back on
+          // this page with `access_token`/`session_id` query params.
           id: 'redirect',
+          enabled: () => isWebBrowser(),
           run: async () => {
             const callbackSession = crossDomainAuth.handleRedirectCallback();
             if (!callbackSession) return { kind: 'skip' };
@@ -385,15 +556,32 @@ export function WebOxyProvider({
           },
         },
         {
+          // 1) SSO return: we are back from a top-level bounce to the central
+          // IdP. Parse the fragment, validate state, exchange the opaque code.
+          id: 'sso-return',
+          enabled: () => isWebBrowser(),
+          run: async () => {
+            const session = await runSsoReturnRef.current();
+            if (!session) return { kind: 'skip' };
+            return { kind: 'session', session };
+          },
+        },
+        {
+          // 2) FedCM silent reauthn (Chrome) against the CENTRAL IdP
+          // (`auth.oxy.so`). Fires `navigator.credentials.get` with
+          // `mediation: 'silent'`, which must happen AT MOST ONCE per page
+          // load — gate on the module-level run-once guard. This is the
+          // FedCM-only silent path (the legacy per-apex `silentSignIn()` iframe
+          // fallback is removed; cross-domain restore on non-FedCM browsers is
+          // owned by the `sso-bounce` step). Only runs where FedCM is supported.
           id: 'fedcm-silent',
-          // The composite silent sign-in (FedCM-then-iframe) fires
-          // `navigator.credentials.get` / a hidden iframe load, which must
-          // happen AT MOST ONCE per page load. Gate purely on the run-once
-          // guard so the iframe fallback stays available for Safari/Firefox.
-          enabled: () => !fedcmSilentSignInAttempted.has(ssoKey),
+          enabled: () =>
+            isWebBrowser() &&
+            oxyServices.isFedCMSupported() === true &&
+            !fedcmSilentSignInAttempted.has(ssoKey),
           run: async () => {
             fedcmSilentSignInAttempted.add(ssoKey);
-            const session = await crossDomainAuth.silentSignIn();
+            const session = await oxyServices.silentSignInWithFedCM();
             if (!session?.user) return { kind: 'skip' };
             return {
               kind: 'session',
@@ -402,11 +590,13 @@ export function WebOxyProvider({
           },
         },
         {
-          id: 'cookie',
-          // Transitional same-origin cookie path — removed in Phase 3 once
-          // FedCM silent reauthn has soaked in prod. Resurrects every
-          // device-local slot via `POST /auth/refresh-all` when the IdP
-          // cookie rides along in this origin's jar.
+          // 3) Refresh-cookie restore. On `*.oxy.so` the httpOnly `oxy_rt_${n}`
+          // cookies ride along and resurrect every device-local slot. On a
+          // cross-domain RP (mention.earth, …) the cookie never reaches
+          // `api.<apex>`, so `POST /auth/refresh-all` returns no accounts and
+          // this skips. That is correct; the `sso-bounce` step handles it.
+          id: 'cookie-restore',
+          enabled: () => isWebBrowser(),
           run: async () => {
             const restoredUser = await authManager.initialize();
             if (!restoredUser) return { kind: 'skip' };
@@ -430,13 +620,36 @@ export function WebOxyProvider({
               };
             } catch {
               // Bearer call failed even though AuthManager said it restored —
-              // treat as a stale session and fall through to unauthenticated.
-              // Use the cookie-path sign-out so we don't touch legacy
-              // localStorage keys.
+              // treat as a stale session and fall through. Use the cookie-path
+              // sign-out so we don't touch legacy localStorage keys.
               await authManager.signOutAllViaCookies();
               syncAccountsFromManager();
               return { kind: 'skip' };
             }
+          },
+        },
+        {
+          // 4) Stored-session bearer restore. Present for step-id parity with
+          // the services `OxyContext`, where this is native's ONLY restore path
+          // (`validateSession`/`switchSession` against the persisted bearer
+          // session). `WebOxyProvider` is web-only and cookie-only — it never
+          // persists a bearer session to JS-accessible storage — so the
+          // effective web restore is the cookie path (step 3) and this step is
+          // always a skip here. Kept (not removed) so the cold-boot step order
+          // is identical across both providers.
+          id: 'stored-session',
+          run: async () => ({ kind: 'skip' }),
+        },
+        {
+          // 5) SSO bounce (TERMINAL, once). No local session was recovered by
+          // any prior step. Navigate top-level to the central IdP's `/sso`
+          // endpoint with `prompt=none`. The document is torn down, so `run`
+          // returns `skip` only if `assign` no-ops (e.g. blocked navigation).
+          id: 'sso-bounce',
+          enabled: () => evaluateSsoBounce(),
+          run: async () => {
+            runSsoBounce();
+            return { kind: 'skip' };
           },
         },
       ];
@@ -466,7 +679,8 @@ export function WebOxyProvider({
       switch (outcome.session.method) {
         case 'redirect':
         case 'fedcm':
-          await handleAuthSuccess(outcome.session.session, outcome.session.method);
+        case 'sso':
+          await handleAuthSuccess(outcome.session.session, outcome.session.method === 'sso' ? 'credentials' : outcome.session.method);
           return;
         case 'cookie': {
           syncAccountsFromManager();
@@ -505,7 +719,50 @@ export function WebOxyProvider({
       mounted = false;
       clearTimeout(timeoutId);
     };
-  }, [oxyServices, crossDomainAuth, authManager, skipAutoCheck, handleAuthSuccess, handleAuthError, syncAccountsFromManager]);
+  }, [oxyServices, crossDomainAuth, authManager, skipAutoCheck, handleAuthSuccess, handleAuthError, syncAccountsFromManager, evaluateSsoBounce, runSsoBounce]);
+
+  // bfcache restore handler — registered ONCE, OUTSIDE the cold boot.
+  //
+  // When the browser restores this page from the back/forward cache
+  // (`pageshow` with `event.persisted === true`), React state is preserved but
+  // the cold-boot effect does NOT re-run. If the user signed in on the central
+  // IdP and hit "back", the restored page would otherwise miss the new session.
+  // Re-run the `sso-return` parse so a pending `#oxy_sso=ok` fragment is
+  // exchanged and committed, and re-evaluate the bounce gate so a now-stale
+  // NO_SESSION/guard does not strand the page logged-out.
+  useEffect(() => {
+    if (!isWebBrowser()) return;
+
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (!event.persisted) return;
+
+      runSsoReturnRef.current()
+        .then(async (session) => {
+          if (session) {
+            await handleAuthSuccess(session.session, 'credentials');
+            return;
+          }
+          // No SSO return to commit. Re-evaluate the bounce gate: if a session
+          // could now be recovered centrally (NO_SESSION cleared by a sign-in
+          // elsewhere) and we have no local user, trigger one terminal bounce.
+          if (!user && evaluateSsoBounce()) {
+            runSsoBounce();
+          }
+        })
+        .catch((err) => {
+          logger.debug(
+            'bfcache sso-return did not resolve a session',
+            { component: 'WebOxyProvider', method: 'onPageShow' },
+            err,
+          );
+        });
+    };
+
+    window.addEventListener('pageshow', onPageShow);
+    return () => {
+      window.removeEventListener('pageshow', onPageShow);
+    };
+  }, [handleAuthSuccess, evaluateSsoBounce, runSsoBounce, user]);
 
   useEffect(() => {
     onAuthStateChange?.(user);

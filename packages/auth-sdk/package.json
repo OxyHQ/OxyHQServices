@@ -1,6 +1,6 @@
 {
   "name": "@oxyhq/auth",
-  "version": "3.2.0",
+  "version": "3.3.0",
   "description": "OxyHQ Web Authentication SDK — headless auth with React hooks for Next.js, Vite, and web apps",
   "main": "dist/cjs/index.js",
   "module": "dist/esm/index.js",
@@ -81,7 +81,7 @@
     "zustand": "^5.0.9"
   },
   "peerDependencies": {
-    "@oxyhq/core": "^2.1.0",
+    "@oxyhq/core": "^2.2.0",
     "react": ">=18.0.0",
     "socket.io-client": "^4.8.1"
   },
