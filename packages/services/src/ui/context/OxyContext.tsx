@@ -14,6 +14,7 @@ import type { User, ApiError, SessionLoginResponse } from '@oxyhq/core';
 import type { ManagedAccount, CreateManagedAccountInput } from '@oxyhq/core';
 import { KeyManager } from '@oxyhq/core';
 import type { ClientSession } from '@oxyhq/core';
+import { autoDetectAuthWebUrl, runColdBoot } from '@oxyhq/core';
 import { toast } from '@oxyhq/bloom';
 import { useAuthStore, type AuthState } from '../stores/authStore';
 import { useShallow } from 'zustand/react/shallow';
@@ -113,6 +114,72 @@ export interface OxyContextProviderProps {
   onError?: (error: ApiError) => void;
 }
 
+/**
+ * Module-level run-once guard for the cold-boot silent SSO steps
+ * (`fedcm-silent` and `silent-iframe`).
+ *
+ * Both steps trigger a one-shot browser credential / iframe handshake that must
+ * fire AT MOST ONCE per page load — otherwise a provider remount storm (route
+ * churn, StrictMode double-invoke, error-boundary recovery) becomes a credential
+ * request storm. A per-instance ref resets on every remount, so the guard must
+ * live at module scope. Keyed on `origin|baseURL` so two providers pointed at
+ * the same API from the same origin share one attempt; never cleared because
+ * only a fresh page load can change the IdP session state, and a fresh page load
+ * starts a fresh module scope.
+ *
+ * This is a NEW, dedicated set — distinct from `useWebSSO`'s `silentSSOAttempted`
+ * (which guards the post-boot INTERACTIVE button path) and never a core
+ * module-level singleton (that re-evaluates under Metro web bundling and the
+ * guard would not hold).
+ */
+const servicesSilentAttempted = new Set<string>();
+
+/**
+ * Build the `origin|baseURL` signature used as the silent-cold-boot guard key.
+ */
+function silentColdBootKey(oxyServices: OxyServices): string {
+  const origin = typeof window !== 'undefined' ? window.location.origin : 'no-origin';
+  let baseURL = '';
+  try {
+    baseURL = oxyServices.getBaseURL?.() ?? '';
+  } catch {
+    baseURL = '';
+  }
+  return `${origin}|${baseURL}`;
+}
+
+/**
+ * Whether `idpOrigin` is a same-site, first-party host of the current page —
+ * i.e. it shares the page's registrable apex (last two labels), so a "no
+ * session" answer from its `/auth/session-check` iframe is authoritative for
+ * THIS app and may force a local sign-out.
+ *
+ * On a cross-site IdP (or any host whose relationship to the page can't be
+ * positively established) this returns `false`, so the visibility-driven check
+ * may surface a session-ended toast but MUST NOT clear local state — a
+ * third-party / undetermined IdP answer can never force logout. Returns `false`
+ * off-browser.
+ */
+function isSameSiteIdP(idpOrigin: string): boolean {
+  if (typeof window === 'undefined') return false;
+  let idpHostname: string;
+  try {
+    idpHostname = new URL(idpOrigin).hostname;
+  } catch {
+    return false;
+  }
+  const pageHostname = window.location.hostname;
+  if (!idpHostname || !pageHostname) return false;
+  if (idpHostname === pageHostname) return true;
+  const apexOf = (hostname: string): string => hostname.split('.').slice(-2).join('.');
+  const pageApex = apexOf(pageHostname);
+  // Require a real registrable apex (≥2 labels) AND an exact apex match AND that
+  // the IdP host is the page apex itself or a subdomain of it.
+  if (pageHostname.split('.').length < 2) return false;
+  if (apexOf(idpHostname) !== pageApex) return false;
+  return idpHostname === pageApex || idpHostname.endsWith(`.${pageApex}`);
+}
+
 let cachedUseFollowHook: UseFollowHook | null = null;
 
 const loadUseFollowHook = (): UseFollowHook => {
@@ -159,9 +226,19 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     if (providedOxyServices) {
       oxyServicesRef.current = providedOxyServices;
     } else if (baseURL) {
+      // Auto-detect the FAPI (IdP) origin from the current browser hostname so
+      // a consuming RP (mention.earth, homiio.com, alia.onl, …) targets
+      // `auth.<rp-apex>` for FedCM + the silent iframe WITHOUT passing
+      // `authWebUrl` explicitly — that is what makes both the FedCM config and
+      // the `/auth/silent` iframe first-party with the RP (Safari ITP /
+      // Firefox TCP need first-party). An explicit `authWebUrl` prop still
+      // wins. On native `autoDetectAuthWebUrl()` returns `undefined`
+      // (off-browser), leaving the value unchanged. We only auto-detect on the
+      // baseURL-only path — a consumer-provided `OxyServices` instance is
+      // never mutated.
       oxyServicesRef.current = new OxyServices({
         baseURL,
-        authWebUrl,
+        authWebUrl: authWebUrl ?? autoDetectAuthWebUrl(),
         authRedirectUri,
       });
     } else {
@@ -234,7 +311,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
   const logger = useCallback((message: string, err?: unknown) => {
     if (__DEV__) {
-      console.warn(`[OxyContext] ${message}`, err);
+      loggerUtil.warn(message, { component: 'OxyContext' }, err);
     }
   }, []);
 
@@ -453,6 +530,14 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   const onAuthStateChangeRef = useRef(onAuthStateChange);
   onAuthStateChangeRef.current = onAuthStateChange;
 
+  // `handleWebSSOSession` is declared further down (it depends on values that
+  // are only available there). The FedCM/iframe cold-boot steps need to commit
+  // a recovered session through it, so we route the call through a ref that is
+  // populated once the callback exists. The ref is assigned synchronously on
+  // every render before the cold-boot effect can fire (the effect is gated on
+  // `storage` + `initialized`, both of which settle after first render).
+  const handleWebSSOSessionRef = useRef<((session: SessionLoginResponse) => Promise<void>) | null>(null);
+
   // Cold-boot session restore via the secure refresh cookies (web only).
   //
   // Calls `oxyServices.refreshAllSessions()` → `POST /auth/refresh-all` with
@@ -546,6 +631,118 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     return true;
   }, [oxyServices, persistSessionDurably]);
 
+  // Native (and offline) stored-session restore — the ONLY restore path that
+  // runs on React Native, and the web fallback when no cross-domain step won.
+  //
+  // Verbatim-extracted from the previous `restoreSessionsFromStorage` body: it
+  // reads the durable `session_ids` / `active_session_id` slots, validates each
+  // stored session in parallel (bearer `validateSession`), and switches to the
+  // stored active session via the session-management `switchSession`. This body
+  // is platform-agnostic and gated by NO `enabled()` predicate so it runs on
+  // every platform — on native it is reached unconditionally (every web-only
+  // step ahead of it is disabled by `isWebBrowser()`), so native restore is
+  // exactly this and nothing else (no FedCM / iframe / refresh-all /
+  // handleAuthCallback).
+  const restoreStoredSession = useCallback(async (): Promise<boolean> => {
+    if (!storage) {
+      return false;
+    }
+
+    const storedSessionIdsJson = await storage.getItem(storageKeys.sessionIds);
+    const storedSessionIds: string[] = storedSessionIdsJson ? JSON.parse(storedSessionIdsJson) : [];
+    const storedActiveSessionId = await storage.getItem(storageKeys.activeSessionId);
+
+    let validSessions: ClientSession[] = [];
+
+    if (storedSessionIds.length > 0) {
+      // Validate all sessions in parallel (with 8s timeout per session) to avoid
+      // sequential blocking that freezes the app on startup
+      const VALIDATION_TIMEOUT = 8000;
+      const results = await Promise.allSettled(
+        storedSessionIds.map(async (sessionId) => {
+          const timeoutPromise = new Promise<null>((resolve) =>
+            setTimeout(() => resolve(null), VALIDATION_TIMEOUT),
+          );
+          const validationPromise = oxyServices
+            .validateSession(sessionId, { useHeaderValidation: true })
+            .catch((validationError: unknown) => {
+              if (!isInvalidSessionError(validationError) && !isTimeoutOrNetworkError(validationError)) {
+                logger('Session validation failed during init', validationError);
+              } else if (__DEV__ && isTimeoutOrNetworkError(validationError)) {
+                loggerUtil.debug('Session validation timeout (expected when offline)', { component: 'OxyContext', method: 'restoreStoredSession' }, validationError as unknown);
+              }
+              return null;
+            });
+
+          return Promise.race([validationPromise, timeoutPromise]).then((validation) => {
+            if (validation?.valid && validation.user) {
+              const now = new Date();
+              return {
+                sessionId,
+                deviceId: '',
+                expiresAt: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+                lastActive: now.toISOString(),
+                userId: validation.user.id?.toString() ?? '',
+                isCurrent: sessionId === storedActiveSessionId,
+              } as ClientSession;
+            }
+            return null;
+          });
+        }),
+      );
+
+      validSessions = results
+        .filter((r): r is PromiseFulfilledResult<ClientSession | null> => r.status === 'fulfilled')
+        .map((r) => r.value)
+        .filter((s): s is ClientSession => s !== null);
+
+      // Always persist validated sessions to storage (even empty list)
+      // to clear stale/expired session IDs that would cause 401 loops on restart
+      updateSessionsRef.current(validSessions, { merge: false });
+    }
+
+    if (storedActiveSessionId) {
+      try {
+        await switchSessionRef.current(storedActiveSessionId);
+        return true;
+      } catch (switchError) {
+        // Silently handle expected errors (invalid sessions, timeouts, network issues)
+        if (isInvalidSessionError(switchError)) {
+          await storage.removeItem(storageKeys.activeSessionId);
+          updateSessionsRef.current(
+            validSessions.filter((session) => session.sessionId !== storedActiveSessionId),
+            { merge: false },
+          );
+          // Don't log expected session errors during restoration
+        } else if (isTimeoutOrNetworkError(switchError)) {
+          // Timeout/network error - non-critical, don't block
+          if (__DEV__) {
+            loggerUtil.debug('Active session validation timeout (expected when offline)', { component: 'OxyContext', method: 'restoreStoredSession' }, switchError as unknown);
+          }
+        } else {
+          // Only log unexpected errors
+          logger('Active session validation error', switchError);
+        }
+      }
+    }
+
+    return false;
+  }, [
+    logger,
+    oxyServices,
+    storage,
+    storageKeys.activeSessionId,
+    storageKeys.sessionIds,
+  ]);
+
+  // Cold boot — the single, ordered, short-circuit session-recovery sequence,
+  // consuming the SAME `runColdBoot` core primitive as `WebOxyProvider`. The
+  // FIRST step that yields a session wins; every later step is skipped. Each
+  // web-only step is gated by `isWebBrowser()`, so on native ONLY
+  // `stored-session` runs.
+  //
+  // Order (web): redirect callback → FedCM silent → silent iframe → refresh
+  // cookie → stored session. Order (native): stored session only.
   const restoreSessionsFromStorage = useCallback(async (): Promise<void> => {
     if (!storage) {
       return;
@@ -553,91 +750,111 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
     setTokenReady(false);
 
+    const commitWebSession = handleWebSSOSessionRef.current;
+    const silentKey = silentColdBootKey(oxyServices);
+    const fedcmSupported = isWebBrowser() && oxyServices.isFedCMSupported?.() === true;
+
     try {
-      // Web cold-boot fast path: restore the active session from the secure
-      // httpOnly refresh cookie before the bearer-protected stored-session
-      // validation (which 401s on a hard reload). On success we are signed in
-      // from the cookie alone — no FedCM needed. On failure we fall through to
-      // the existing stored-session flow below; nothing is cleared.
-      if (await restoreViaRefreshCookie()) {
-        return;
-      }
-
-      const storedSessionIdsJson = await storage.getItem(storageKeys.sessionIds);
-      const storedSessionIds: string[] = storedSessionIdsJson ? JSON.parse(storedSessionIdsJson) : [];
-      const storedActiveSessionId = await storage.getItem(storageKeys.activeSessionId);
-
-      let validSessions: ClientSession[] = [];
-
-      if (storedSessionIds.length > 0) {
-        // Validate all sessions in parallel (with 8s timeout per session) to avoid
-        // sequential blocking that freezes the app on startup
-        const VALIDATION_TIMEOUT = 8000;
-        const results = await Promise.allSettled(
-          storedSessionIds.map(async (sessionId) => {
-            const timeoutPromise = new Promise<null>((resolve) =>
-              setTimeout(() => resolve(null), VALIDATION_TIMEOUT),
-            );
-            const validationPromise = oxyServices
-              .validateSession(sessionId, { useHeaderValidation: true })
-              .catch((validationError: unknown) => {
-                if (!isInvalidSessionError(validationError) && !isTimeoutOrNetworkError(validationError)) {
-                  logger('Session validation failed during init', validationError);
-                } else if (__DEV__ && isTimeoutOrNetworkError(validationError)) {
-                  loggerUtil.debug('Session validation timeout (expected when offline)', { component: 'OxyContext', method: 'restoreSessionsFromStorage' }, validationError as unknown);
-                }
-                return null;
-              });
-
-            return Promise.race([validationPromise, timeoutPromise]).then((validation) => {
-              if (validation?.valid && validation.user) {
-                const now = new Date();
-                return {
-                  sessionId,
-                  deviceId: '',
-                  expiresAt: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-                  lastActive: now.toISOString(),
-                  userId: validation.user.id?.toString() ?? '',
-                  isCurrent: sessionId === storedActiveSessionId,
-                } as ClientSession;
+      const outcome = await runColdBoot<true>({
+        steps: [
+          {
+            // 1) Redirect callback wins: a popup/redirect sign-in just landed
+            // back on this page with `access_token`/`session_id` query params.
+            // `handleAuthCallback` plants the token but returns a PLACEHOLDER
+            // user (empty id), so we hydrate the REAL user via `getCurrentUser`
+            // and commit through `handleWebSSOSession` before claiming a
+            // session — never expose a placeholder user (R4).
+            id: 'redirect',
+            enabled: () => isWebBrowser(),
+            run: async () => {
+              const callbackSession = oxyServices.handleAuthCallback?.();
+              if (!callbackSession || !commitWebSession) {
+                return { kind: 'skip' };
               }
-              return null;
-            });
-          }),
-        );
-
-        validSessions = results
-          .filter((r): r is PromiseFulfilledResult<ClientSession | null> => r.status === 'fulfilled')
-          .map((r) => r.value)
-          .filter((s): s is ClientSession => s !== null);
-
-        // Always persist validated sessions to storage (even empty list)
-        // to clear stale/expired session IDs that would cause 401 loops on restart
-        updateSessionsRef.current(validSessions, { merge: false });
-      }
-
-      if (storedActiveSessionId) {
-        try {
-          await switchSessionRef.current(storedActiveSessionId);
-        } catch (switchError) {
-          // Silently handle expected errors (invalid sessions, timeouts, network issues)
-          if (isInvalidSessionError(switchError)) {
-            await storage.removeItem(storageKeys.activeSessionId);
-            updateSessionsRef.current(
-              validSessions.filter((session) => session.sessionId !== storedActiveSessionId),
-              { merge: false },
+              const fullUser = await oxyServices.getCurrentUser();
+              await commitWebSession({ ...callbackSession, user: fullUser });
+              return { kind: 'session', session: true };
+            },
+          },
+          {
+            // 2) FedCM silent reauthn (Chrome). `silentSignInWithFedCM` plants
+            // the access token internally; we commit the returned session via
+            // `handleWebSSOSession`. Guarded so it fires at most once per page
+            // load across remounts.
+            id: 'fedcm-silent',
+            enabled: () => fedcmSupported && !servicesSilentAttempted.has(silentKey),
+            run: async () => {
+              servicesSilentAttempted.add(silentKey);
+              const session = await oxyServices.silentSignInWithFedCM?.();
+              if (!session || !commitWebSession) {
+                return { kind: 'skip' };
+              }
+              await commitWebSession(session);
+              return { kind: 'session', session: true };
+            },
+          },
+          {
+            // 3) Silent first-party iframe ({authWebUrl}/auth/silent) for
+            // browsers without FedCM (Safari / Firefox). After auto-detection
+            // `authWebUrl` is `auth.<rp-apex>`, so the iframe + its
+            // `fedcm_session` cookie are first-party with the RP. Shares the
+            // one-shot guard with the FedCM step.
+            id: 'silent-iframe',
+            enabled: () =>
+              isWebBrowser() &&
+              oxyServices.isFedCMSupported?.() !== true &&
+              !servicesSilentAttempted.has(silentKey),
+            run: async () => {
+              servicesSilentAttempted.add(silentKey);
+              const session = await oxyServices.silentSignIn?.();
+              if (!session || !commitWebSession) {
+                return { kind: 'skip' };
+              }
+              await commitWebSession(session);
+              return { kind: 'session', session: true };
+            },
+          },
+          {
+            // 4) Refresh-cookie restore (same-site only). On `*.oxy.so` the
+            // httpOnly `oxy_rt_${n}` cookies ride along and resurrect every
+            // device-local slot. On a cross-domain RP (mention.earth, …) the
+            // cookie is `Domain=oxy.so` so it never reaches `api.<apex>` —
+            // `refreshAllSessions` returns `{accounts:[]}` and this skips.
+            // That is correct; there is deliberately NO `api.<apex>` bridge.
+            id: 'cookie-restore',
+            enabled: () => isWebBrowser(),
+            run: async () => {
+              const restored = await restoreViaRefreshCookie();
+              return restored ? { kind: 'session', session: true } : { kind: 'skip' };
+            },
+          },
+          {
+            // 5) Stored-session bearer restore. NO `enabled` gate — runs on ALL
+            // platforms. This is native's ONLY restore path (every web-only
+            // step above is disabled off-browser).
+            id: 'stored-session',
+            run: async () => {
+              const restored = await restoreStoredSession();
+              return restored ? { kind: 'session', session: true } : { kind: 'skip' };
+            },
+          },
+        ],
+        onStepError: (id, error) => {
+          if (__DEV__) {
+            loggerUtil.debug(
+              `Cold-boot step "${id}" errored (non-fatal, falling through)`,
+              { component: 'OxyContext', method: 'restoreSessionsFromStorage' },
+              error,
             );
-            // Don't log expected session errors during restoration
-          } else if (isTimeoutOrNetworkError(switchError)) {
-            // Timeout/network error - non-critical, don't block
-            if (__DEV__) {
-              loggerUtil.debug('Active session validation timeout (expected when offline)', { component: 'OxyContext', method: 'restoreSessionsFromStorage' }, switchError as unknown);
-            }
-          } else {
-            // Only log unexpected errors
-            logger('Active session validation error', switchError);
           }
-        }
+        },
+      });
+
+      if (__DEV__ && outcome.kind === 'session') {
+        loggerUtil.debug(
+          `Cold boot recovered a session via "${outcome.via}"`,
+          { component: 'OxyContext', method: 'restoreSessionsFromStorage' },
+        );
       }
     } catch (error) {
       if (__DEV__) {
@@ -648,12 +865,10 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       setTokenReady(true);
     }
   }, [
-    logger,
     oxyServices,
     storage,
-    storageKeys.activeSessionId,
-    storageKeys.sessionIds,
     restoreViaRefreshCookie,
+    restoreStoredSession,
   ]);
 
   useEffect(() => {
@@ -729,7 +944,21 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     onAuthStateChange?.(fullUser);
   }, [oxyServices, updateSessions, setActiveSessionId, loginSuccess, onAuthStateChange, persistSessionDurably]);
 
-  // Enable web SSO only after local storage check completes and no user found
+  // Expose `handleWebSSOSession` to the cold-boot FedCM/iframe/redirect steps,
+  // which reference it through a ref because they are declared above this
+  // callback. Assigned synchronously on every render so the ref is populated
+  // before the cold-boot effect (gated on `storage`/`initialized`) can fire.
+  handleWebSSOSessionRef.current = handleWebSSOSession;
+
+  // Cross-domain silent SSO is now owned by the `fedcm-silent` / `silent-iframe`
+  // cold-boot steps above (the ordered `runColdBoot` sequence). `useWebSSO`
+  // remains mounted for its module-level run-once guard and its interactive
+  // FedCM helpers, and as a bounded post-boot safety net: it can fire at most
+  // once per page load (its own module guard), and only AFTER cold boot has
+  // finished (`tokenReady`) with no user recovered. We deliberately keep
+  // `shouldTryWebSSO` as `tokenReady && !user && initialized` — it is NOT
+  // loosened; cold boot runs while `tokenReady` is false, so this never races
+  // the cold-boot silent step.
   const shouldTryWebSSO = isWebBrowser() && tokenReady && !user && initialized;
 
   useWebSSO({
@@ -749,8 +978,17 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   const lastIdPCheckRef = useRef<number>(0);
   const pendingIdPCleanupRef = useRef<(() => void) | null>(null);
 
+  // Use the RESOLVED IdP origin (the auto-detected `auth.<rp-apex>` planted on
+  // the instance config), not the raw `authWebUrl` prop — on a cross-domain RP
+  // the prop is undefined but the instance was constructed with the detected
+  // value, so the check must target the same first-party IdP the cold-boot
+  // iframe used.
+  const resolvedAuthWebUrl = oxyServices.config?.authWebUrl;
+
   useEffect(() => {
     if (!isWebBrowser() || !user || !initialized) return;
+
+    const idpOrigin = resolvedAuthWebUrl || 'https://auth.oxy.so';
 
     const checkIdPSession = () => {
       // Debounce: check at most once per 30 seconds
@@ -764,7 +1002,6 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       // Load hidden iframe to check IdP session via postMessage
       const iframe = document.createElement('iframe');
       iframe.style.cssText = 'display:none;width:0;height:0;border:0';
-      const idpOrigin = authWebUrl || 'https://auth.oxy.so';
       iframe.src = `${idpOrigin}/auth/session-check?client_id=${encodeURIComponent(window.location.origin)}`;
 
       let cleaned = false;
@@ -781,8 +1018,15 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         cleanup();
 
         if (!event.data.hasSession) {
-          toast.info('Your session has ended. Please sign in again.');
-          await clearSessionState();
+          // Only a SAME-SITE, first-party IdP answer is authoritative enough to
+          // force a local sign-out. On a cross-site / undetermined IdP the
+          // "no session" answer must never clear local state (a third-party
+          // can't be trusted to end this app's session). Surface the toast in
+          // both cases, but gate the destructive `clearSessionState()`.
+          if (isSameSiteIdP(idpOrigin)) {
+            toast.info('Your session has ended. Please sign in again.');
+            await clearSessionState();
+          }
         }
       };
 
@@ -804,7 +1048,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       pendingIdPCleanupRef.current?.();
       pendingIdPCleanupRef.current = null;
     };
-  }, [user, initialized, clearSessionState, authWebUrl]);
+  }, [user, initialized, clearSessionState, resolvedAuthWebUrl]);
 
   const activeSession = activeSessionId
     ? sessions.find((session) => session.sessionId === activeSessionId)

@@ -88,7 +88,14 @@ function baseStub(overrides: StubOverrides = {}) {
     clearTokens: jest.fn(),
     clearCache: jest.fn(),
     isFedCMSupported: isFedCMSupportedSpy,
-    // The provider now routes the cold-boot restore through
+    // Cold boot now runs an ordered `runColdBoot` sequence. The redirect and
+    // silent-iframe steps run BEFORE the cookie step, so the stub must answer
+    // them too: no redirect callback in URL (`null`), and no silent iframe
+    // session (`null`). Both fall through so the cookie step is reached.
+    handleAuthCallback: jest.fn(() => null),
+    silentSignIn: jest.fn(async () => null),
+    silentSignInWithFedCM: jest.fn(async () => null),
+    // The provider now routes the cold-boot cookie restore through
     // `oxyServices.refreshAllSessions()`. The stub returns the multi-account
     // snapshot; per-test `beforeEach` re-binds this with the desired shape.
     refreshAllSessions: jest.fn(async () => ({ accounts: [] })),

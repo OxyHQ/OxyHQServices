@@ -5,6 +5,7 @@ import { OxyContextProvider, type OxyContextProviderProps } from '../context/Oxy
 import { QueryClientProvider, focusManager, onlineManager } from '@tanstack/react-query';
 import { BloomDialogProvider } from '@oxyhq/bloom';
 import { ToastOutlet } from '@oxyhq/bloom/toast';
+import { logger as loggerUtil } from '@oxyhq/core';
 import { setupFonts } from './FontLoader';
 import { attachQueryPersistence, createQueryClient } from '../hooks/queryClient';
 import { createPlatformStorage, type StorageInterface } from '../utils/storageHelpers';
@@ -50,7 +51,7 @@ const LazyBottomSheetRouter = lazy((): Promise<{ default: ComponentType }> =>
         (mod) => ({ default: mod.default as unknown as ComponentType }),
         (error) => {
             if (__DEV__) {
-                console.error('[OxyProvider] Failed to load BottomSheetRouter:', error);
+                loggerUtil.error('Failed to load BottomSheetRouter', error instanceof Error ? error : new Error(String(error)), { component: 'OxyProvider' });
             }
             return { default: (() => null) as FC };
         },
@@ -120,7 +121,7 @@ const OxyProvider: FC<OxyProviderProps> = ({
             .then((mod) => setKBProvider(() => mod.KeyboardProvider))
             .catch((error) => {
                 if (__DEV__) {
-                    console.warn('[OxyProvider] react-native-keyboard-controller not available, skipping keyboard support', error);
+                    loggerUtil.warn('react-native-keyboard-controller not available, skipping keyboard support', { component: 'OxyProvider' }, error);
                 }
             });
     }, []);
@@ -162,7 +163,7 @@ const OxyProvider: FC<OxyProviderProps> = ({
                 storage = await createPlatformStorage();
             } catch (error) {
                 if (__DEV__) {
-                    console.warn('[OxyProvider] Failed to initialize storage for query persistence', error);
+                    loggerUtil.warn('Failed to initialize storage for query persistence', { component: 'OxyProvider' }, error);
                 }
             }
 

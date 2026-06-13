@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ApiError, User } from '@oxyhq/core';
 import type { ClientSession } from '@oxyhq/core';
 import { mergeSessions, normalizeAndSortSessions, sessionsArraysEqual } from '@oxyhq/core';
-import { fetchSessionsWithFallback, mapSessionsToClient, validateSessionBatch } from '../utils/sessionHelpers';
+import { fetchSessionsWithFallback, validateSessionBatch } from '../utils/sessionHelpers';
 import { getStorageKeys, type StorageInterface } from '../utils/storageHelpers';
 import { handleAuthError, isInvalidSessionError } from '../utils/errorHandlers';
 import type { OxyServices } from '@oxyhq/core';
@@ -364,7 +364,11 @@ export const useSessionManagement = ({
 
   const refreshSessions = useCallback(
     async (activeUserId?: string): Promise<void> => {
-      if (!activeSessionIdRef.current) return;
+      // Capture the active session id once so the async closure below uses a
+      // narrowed, non-null local instead of re-reading the ref (which the
+      // compiler cannot prove stays non-null across awaits).
+      const activeSessionId = activeSessionIdRef.current;
+      if (!activeSessionId) return;
 
       if (refreshInFlightRef.current) {
         await refreshInFlightRef.current;
@@ -379,7 +383,7 @@ export const useSessionManagement = ({
 
       const refreshPromise = (async () => {
         try {
-          const deviceSessions = await fetchSessionsWithFallback(oxyServices, activeSessionIdRef.current!, {
+          const deviceSessions = await fetchSessionsWithFallback(oxyServices, activeSessionId, {
             fallbackUserId: activeUserId,
             logger,
           });
@@ -389,7 +393,7 @@ export const useSessionManagement = ({
             const otherSessions = sessionsRef.current
               .filter(
                 (session) =>
-                  session.sessionId !== activeSessionIdRef.current &&
+                  session.sessionId !== activeSessionId &&
                   !removedSessionsRef.current.has(session.sessionId),
               )
               .map((session) => session.sessionId);
