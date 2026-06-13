@@ -291,18 +291,62 @@ export function WebOxyProvider({
 
     const initAuth = async () => {
       try {
+        // 1) Redirect callback wins: an in-flight popup/redirect flow just
+        // landed back on this page with a session payload. Honour it
+        // unconditionally before touching FedCM or cookies.
         const callbackSession = crossDomainAuth.handleRedirectCallback();
         if (callbackSession && mounted) {
           await handleAuthSuccess(callbackSession, 'redirect');
           return;
         }
 
-        // Cookie-path restore: `authManager.initialize()` calls
-        // `restoreFromCookies()` first (cookieOnly mode), which contacts
-        // `POST /auth/refresh-all` and seeds every device-local slot. On
-        // success, the AuthManager has already planted the active slot's
-        // access token on the HTTP client — we just need to mirror the
-        // user into React state and surface the multi-account snapshot.
+        // 2) FedCM-first cold boot. The IdP at auth.oxy.so owns the
+        // canonical session for the entire Oxy ecosystem; consumer RPs
+        // (mention.earth, alia.onl, homiio.com, …) deliberately hold NO
+        // long-lived session state. On every cold boot we ask the
+        // browser's FedCM API (`mediation: 'silent'`) to reauthenticate
+        // the user from the IdP. This is the SAME pattern Clerk uses with
+        // its per-app FAPI domain and the W3C FedCM 2026 spec endorses.
+        //
+        // Why FedCM-first (not cookie-first):
+        //   - Cookies are scoped to a single eTLD+1 — they never restore
+        //     a cross-domain session. FedCM does.
+        //   - The cookie path runs `POST /auth/refresh-all` and silently
+        //     returns `{accounts: []}` whenever the cookie didn't ride
+        //     along (cross-domain, third-party-cookie blocking, fresh
+        //     browser), wasting the one shot we have at FedCM silent
+        //     reauthn for that page load.
+        //   - The legacy `Set-Cookie: oxy_rt_*` flow is being retired
+        //     (Phase 2 marks it `Deprecation:` + `Sunset:`; Phase 3
+        //     deletes it). FedCM-first is the forward-compatible default.
+        //
+        // The guard `fedcmSilentSignInAttempted` is keyed on
+        // `origin+baseURL` and lives at module scope so React StrictMode
+        // double-invokes, navigations within the same SPA, and HMR all
+        // share the same one-shot budget.
+        const ssoKey = silentSignInKey();
+        if (!fedcmSilentSignInAttempted.has(ssoKey)) {
+          fedcmSilentSignInAttempted.add(ssoKey);
+          try {
+            const session = await crossDomainAuth.silentSignIn();
+            if (mounted && session?.user) {
+              await handleAuthSuccess(session, 'fedcm');
+              return;
+            }
+          } catch {
+            // Silent sign-in didn't resolve — fall through to the
+            // (transitional) cookie path. A FedCM rejection is the
+            // expected branch for first-time visitors and for browsers
+            // that don't implement FedCM yet.
+          }
+        }
+
+        // 3) Cookie-path restore (transitional — will be removed in
+        // Phase 3 once FedCM silent reauthn has soaked in prod). When
+        // the IdP cookie is present in *this* origin's cookie jar
+        // (i.e. the user is on `auth.oxy.so` itself, or an RP that
+        // still shares the `oxy.so` cookie domain), `POST
+        // /auth/refresh-all` resurrects every device-local slot.
         const restoredUser = await authManager.initialize();
         if (restoredUser && mounted) {
           syncAccountsFromManager();
@@ -324,30 +368,6 @@ export function WebOxyProvider({
             // touch the legacy localStorage keys.
             await authManager.signOutAllViaCookies();
             syncAccountsFromManager();
-          }
-        }
-
-        // FedCM silent sign-in: run AT MOST ONCE per page load AND only
-        // when the cookie path didn't restore any accounts. If we already
-        // have valid refresh cookies on this device, kicking
-        // `navigator.credentials.get` is pointless and wastes the
-        // browser's one auto-reauthn cooldown.
-        if (authManager.getAccounts().length > 0) {
-          if (mounted) setIsLoading(false);
-          return;
-        }
-
-        const ssoKey = silentSignInKey();
-        if (!fedcmSilentSignInAttempted.has(ssoKey)) {
-          fedcmSilentSignInAttempted.add(ssoKey);
-          try {
-            const session = await crossDomainAuth.silentSignIn();
-            if (mounted && session?.user) {
-              await handleAuthSuccess(session, 'fedcm');
-              return;
-            }
-          } catch {
-            // Silent sign-in failed — resolve to unauthenticated below.
           }
         }
 
