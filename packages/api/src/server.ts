@@ -25,6 +25,7 @@ import devicesRouter from './routes/devices';
 import securityRoutes from './routes/security';
 import subscriptionRoutes from './routes/subscription.routes';
 import fedcmRoutes from './routes/fedcm';
+import ssoRoutes, { ssoExchangeCors } from './routes/sso';
 import authLinkingRoutes from './routes/authLinking';
 import fedcmService from './services/fedcm.service';
 import emailRoutes from './routes/email';
@@ -108,6 +109,14 @@ app.use((req, res, next) => {
 
 // Performance monitoring middleware (before routes)
 app.use(performanceMiddleware);
+
+// Dedicated CORS for the cross-domain SSO exchange — MUST run before the global
+// CORS middleware so it owns the response for `/sso/exchange`: it echoes the
+// validated APPROVED client origin with `Access-Control-Allow-Credentials:
+// false` (the session token rides in the JSON body, never a cookie) and answers
+// the OPTIONS preflight itself. The global middleware below is credentialed and
+// apex-scoped, which is the wrong policy for this token-in-body endpoint.
+app.use('/sso/exchange', ssoExchangeCors);
 
 // CORS middleware - reflects request origin with credentials
 app.use(createCorsMiddleware());
@@ -432,6 +441,7 @@ app.use('/devices', userRateLimiter, csrfProtection, devicesRouter);
 app.use('/security', userRateLimiter, csrfProtection, securityRoutes);
 app.use('/subscription', userRateLimiter, csrfProtection, subscriptionRoutes);
 app.use('/fedcm', fedcmRoutes);
+app.use('/sso', ssoRoutes); // central cross-domain SSO code store (mint + exchange)
 app.use('/email/proxy', emailProxyRoutes); // public, no auth — must be before /email
 app.use('/email/inbound', emailInboundRoutes); // Cloudflare Email Routing webhook — must be before /email
 app.use('/email', userRateLimiter, csrfProtection, emailRoutes);

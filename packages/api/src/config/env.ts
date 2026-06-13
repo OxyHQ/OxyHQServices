@@ -22,6 +22,13 @@ export interface RequiredEnvVars {
   FEDCM_TOKEN_SECRET: string;
   FEDCM_ISSUER?: string;
 
+  // Central cross-domain SSO: shared secret the auth.oxy.so worker presents in
+  // the `X-Oxy-Internal` header on `POST /sso/code`. Must be provisioned
+  // (GitHub secret → SSM `/oxy/oxy-api/SSO_INTERNAL_SECRET`) and match the
+  // worker's value. When unset the `/sso/code` mint endpoint fails closed
+  // (returns 404 to every caller), disabling code-based SSO. ≥32 chars.
+  SSO_INTERNAL_SECRET?: string;
+
   // Device-id derivation salt (security review H1). Required in production
   // (no default). Optional in development (auto-filled with a documented
   // placeholder + WARNING). Must be ≥32 chars whenever it is set.
@@ -152,6 +159,24 @@ export function validateRequiredEnvVars(): void {
         warnings.push(`${key} is set to a default placeholder — generate a strong secret with: openssl rand -base64 64`);
       }
     }
+  }
+
+  // SSO_INTERNAL_SECRET gates the internal `POST /sso/code` mint endpoint that
+  // the auth.oxy.so worker calls server-to-server. It is NOT required for the
+  // API to boot — when unset, `/sso/code` fails closed (returns 404), which
+  // only disables code-based cross-domain SSO. But when it IS set it must be
+  // strong (≥32 chars), since it is a bearer-equivalent shared secret.
+  const ssoInternalSecret = process.env.SSO_INTERNAL_SECRET;
+  if (ssoInternalSecret && ssoInternalSecret.length > 0) {
+    if (ssoInternalSecret.length < 32 || WEAK_SECRETS.includes(ssoInternalSecret)) {
+      missing.push('SSO_INTERNAL_SECRET (insecure: must be at least 32 characters and not a default placeholder)');
+    }
+  } else if (isProduction()) {
+    warnings.push(
+      'SSO_INTERNAL_SECRET is unset — central cross-domain SSO (POST /sso/code) is disabled. ' +
+      'Provision it (GitHub secret → SSM /oxy/oxy-api/SSO_INTERNAL_SECRET) and set the matching ' +
+      'value on the auth.oxy.so worker to enable code-based SSO. Generate with: openssl rand -base64 48'
+    );
   }
 
   // DEVICE_ID_SALT scopes the derived deviceId hash (see
