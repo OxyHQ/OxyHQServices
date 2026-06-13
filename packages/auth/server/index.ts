@@ -538,8 +538,21 @@ async function mintSessionForClient(
   user: ResolvedUser,
   clientOrigin: string
 ): Promise<SilentRestoreSession | null> {
-  const { apiBaseUrl, fedcmIssuer, fedcmTokenSecret } = config;
+  const { apiBaseUrl, fedcmTokenSecret } = config;
   if (!fedcmTokenSecret) return null;
+
+  // CRITICAL: the assertion `iss` claim MUST be the CENTRAL issuer, NEVER the
+  // per-apex `config.fedcmIssuer`. The API's `POST /fedcm/exchange` validates
+  // every assertion against the single central `https://auth.oxy.so` and rejects
+  // any per-apex issuer (`Invalid issuer expected https://auth.oxy.so got
+  // https://auth.mention.earth`). Because this function ONLY ever mints
+  // API-bound assertions (mint ID token -> /fedcm/exchange), forcing the central
+  // issuer here is correct for EVERY callsite and guarantees no caller — present
+  // or future, central or per-apex host — can regress this. The per-apex
+  // `config.fedcmIssuer` is still used UNCHANGED by the browser-native FedCM UI
+  // surfaces (`/.well-known/web-identity`, the dynamic `/fedcm.json`), which MUST
+  // keep returning the per-apex issuer; only this assertion mint is centralised.
+  const fedcmIssuer = CENTRAL_FEDCM_ISSUER;
 
   try {
     // 1. Obtain a server-minted, origin-bound nonce. A locally-generated nonce
@@ -708,10 +721,14 @@ const CENTRAL_IDP_APEX = 'oxy.so';
  * is the SAME IdP serving every `auth.<apex>` CNAME and shares
  * `FEDCM_TOKEN_SECRET` with the API, so it is legitimate for it to mint a
  * central-issuer assertion from the per-apex host — exactly as `/sso` already
- * does on `auth.oxy.so`. The establish mint forces this value (see
- * `mintSessionForClient` callsite in `GET /sso/establish`). The per-apex
- * `Set-Cookie` is unaffected — the `fedcm_session` cookie is host-only on
- * `auth.<apex>`, independent of the assertion issuer.
+ * does on `auth.oxy.so`. `mintSessionForClient` forces this value for the
+ * assertion `iss` at a SINGLE source of truth, so EVERY callsite (central
+ * `/sso`, per-apex `/sso/establish`, per-apex `/auth/silent`) is correct and no
+ * caller can regress it. The per-apex `Set-Cookie` is unaffected — the
+ * `fedcm_session` cookie is host-only on `auth.<apex>`, independent of the
+ * assertion issuer. NOTE: this is the ASSERTION-MINT issuer only; the
+ * browser-native FedCM UI surfaces (`/.well-known/web-identity`, `/fedcm.json`)
+ * MUST keep returning the PER-APEX issuer from `resolveConfig().fedcmIssuer`.
  */
 const CENTRAL_FEDCM_ISSUER = `https://auth.${CENTRAL_IDP_APEX}`;
 
@@ -1841,16 +1858,13 @@ app.get('/sso/establish', async (c) => {
   //    reload will still restore first-party even if this immediate handoff
   //    failed).
   //
-  //    CRITICAL: this hop runs on `auth.<rp-apex>` (e.g. auth.mention.earth), so
-  //    `config.fedcmIssuer` derives to the RP's host. The API's `/fedcm/exchange`
-  //    validates the assertion issuer against the CENTRAL `https://auth.oxy.so`
-  //    only and would reject a per-apex issuer (`Invalid issuer`). Force the
-  //    central issuer for the mint — legitimate because this worker is the SAME
-  //    IdP serving every `auth.<apex>` CNAME and shares `FEDCM_TOKEN_SECRET` with
-  //    the API (exactly as `/sso` mints on auth.oxy.so). The host-only cookie
+  //    This hop runs on `auth.<rp-apex>` (e.g. auth.mention.earth), so
+  //    `config.fedcmIssuer` derives to the RP's host — but `mintSessionForClient`
+  //    forces the CENTRAL `https://auth.oxy.so` issuer for the assertion `iss`
+  //    internally (the API's `/fedcm/exchange` accepts only the central issuer),
+  //    so the per-apex `config` is safe to pass directly. The host-only cookie
   //    planted in step 6 is independent of the assertion issuer.
-  const mintConfig: ResolvedConfig = { ...config, fedcmIssuer: CENTRAL_FEDCM_ISSUER };
-  const session = await mintSessionForClient(mintConfig, user, approvedOrigin);
+  const session = await mintSessionForClient(config, user, approvedOrigin);
   if (!session) {
     return redirectToCallback(c, returnTo, buildSsoFragment('error', state));
   }

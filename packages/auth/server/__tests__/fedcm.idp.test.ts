@@ -1256,6 +1256,53 @@ describe('GET /sso -> /sso/establish second hop (cross-domain durable session)',
     }
   });
 
+  it('GET /auth/silent on the per-apex host mints with the CENTRAL issuer when FEDCM_ISSUER is unset (prod regression)', async () => {
+    // Reproduces production for the DURABLE reload-restore path: /auth/silent is
+    // the first-party iframe Safari/Firefox/every reload uses. It runs on
+    // auth.<rp-apex> (auth.mention.earth) where resolveConfig() derives
+    // fedcmIssuer from the request host because FEDCM_ISSUER is NOT set on the
+    // oxy-auth Pages project. The assertion the worker sends to the API's
+    // /fedcm/exchange MUST still carry the CENTRAL issuer (https://auth.oxy.so),
+    // or the API rejects it with `Invalid issuer expected https://auth.oxy.so got
+    // https://auth.mention.earth`, mintSessionForClient returns null, and the
+    // iframe posts a NULL session — silently breaking cross-domain persistence.
+    //
+    // WITHOUT the fix (forcing CENTRAL_FEDCM_ISSUER inside mintSessionForClient)
+    // this test FAILS: the minted assertion's iss is https://auth.mention.earth.
+    const originalIssuer = process.env.FEDCM_ISSUER;
+    delete process.env.FEDCM_ISSUER;
+    approveCrossRp();
+    try {
+      const res = await app.request(
+        `https://${CROSS_APEX_HOST}/auth/silent?client_id=${encodeURIComponent(
+          CROSS_RP
+        )}&nonce=rp-silent-xd`,
+        { headers: { cookie: SESSION_COOKIE } }
+      );
+      expect(res.status).toBe(200);
+
+      // The iframe posts a REAL session to the approved cross-domain RP origin.
+      const { message, targetOrigin } = extractPostedMessage(await res.text());
+      const msg = message as SilentMessage;
+      expect(msg.type).toBe('oxy_silent_auth');
+      expect(msg.session?.sessionId).toBe(STUB_EXCHANGE_SESSION_ID);
+      expect(msg.session?.accessToken).toBe(STUB_ACCESS_TOKEN);
+      expect(targetOrigin).toBe(CROSS_RP);
+
+      // Decisive proof: the assertion sent to /fedcm/exchange carries the CENTRAL
+      // issuer, NOT the per-apex host the request derived. aud stays the RP.
+      const payload = decodeJwtPayload(capturedExchange?.idToken);
+      expect(payload.iss).toBe('https://auth.oxy.so');
+      expect(payload.iss).not.toBe(`https://${CROSS_APEX_HOST}`);
+      expect(payload.aud).toBe(CROSS_RP);
+    } finally {
+      if (originalIssuer !== undefined) {
+        process.env.FEDCM_ISSUER = originalIssuer;
+      }
+      installApiStub();
+    }
+  });
+
   it('rejects an et with a tampered audience (re-validated against the live allow-list)', async () => {
     approveCrossRp();
     // Forge an et whose aud is an UNAPPROVED origin but host matches the request.
