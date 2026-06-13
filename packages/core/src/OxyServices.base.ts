@@ -8,6 +8,7 @@ import type { OxyConfig as OxyConfigBase, ApiError, User } from './models/interf
 import { handleHttpError } from './utils/errorUtils';
 import { HttpService, type RequestOptions } from './HttpService';
 import { OxyAuthenticationError, OxyAuthenticationTimeoutError } from './OxyServices.errors';
+import { autoDetectAuthWebUrl } from './utils/fapiAutoDetect';
 
 export interface OxyConfig extends OxyConfigBase {
   cloudURL?: string;
@@ -34,11 +35,25 @@ export class OxyServicesBase {
     if (!config || typeof config !== 'object') {
       throw new Error('OxyConfig is required');
     }
-    this.config = config;
-    this.cloudURL = config.cloudURL || 'https://cloud.oxy.so';
+
+    // Auto-detect the first-party IdP (`auth.<rp-apex>`) when the caller did not
+    // pin `authWebUrl` explicitly. This mirrors the provider-`baseURL` path in
+    // `@oxyhq/services` (OxyContext), so apps that construct their OWN
+    // `OxyServices` instance and pass it to `<OxyProvider oxyServices={...} />`
+    // get the same same-site IdP resolution. On web at `https://mention.earth`
+    // this yields `https://auth.mention.earth`; on native/SSR (no `window`)
+    // `autoDetectAuthWebUrl()` returns `undefined`, leaving the auth mixins'
+    // `DEFAULT_AUTH_URL` fallback in effect — native behavior is unchanged.
+    // An explicit `authWebUrl` always wins (we only fill it when absent).
+    const resolvedConfig: OxyConfig = config.authWebUrl
+      ? config
+      : { ...config, authWebUrl: autoDetectAuthWebUrl() };
+
+    this.config = resolvedConfig;
+    this.cloudURL = resolvedConfig.cloudURL || 'https://cloud.oxy.so';
 
     // Initialize unified HTTP service (handles auth, caching, deduplication, queuing, retry)
-    this.httpService = new HttpService(config);
+    this.httpService = new HttpService(resolvedConfig);
   }
 
   // Test-only utility to reset tokens on this instance between jest tests
