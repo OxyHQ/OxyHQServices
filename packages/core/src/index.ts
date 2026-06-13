@@ -366,6 +366,20 @@ export {
 export type { QuickAccount, DisplayNameUserShape } from './utils/accountUtils';
 
 // ---------------------------------------------------------------------------
+// Cross-domain SSO infrastructure
+// ---------------------------------------------------------------------------
+export { autoDetectAuthWebUrl } from './utils/fapiAutoDetect';
+export { runColdBoot } from './utils/coldBoot';
+export type {
+    ColdBootStep,
+    ColdBootStepResult,
+    ColdBootSession,
+    ColdBootSkip,
+    ColdBootOutcome,
+    RunColdBootOptions,
+} from './utils/coldBoot';
+
+// ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 export { packageInfo } from './constants/version';
