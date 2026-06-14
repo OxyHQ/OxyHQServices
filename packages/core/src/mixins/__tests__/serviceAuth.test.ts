@@ -333,6 +333,98 @@ describe('H1: getServiceToken per-credential cache + secret verification', () =>
 });
 
 // ---------------------------------------------------------------------------
+// invalidateServiceToken — clears the cached service token so the next
+// getServiceToken() mints anew, enabling recovery from a mid-run 401 (e.g.
+// credential revocation) without waiting for natural token expiry.
+// ---------------------------------------------------------------------------
+
+describe('invalidateServiceToken: forces a fresh mint after a same-run 401', () => {
+  let oxy: OxyServices;
+  let makeRequestSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    oxy = new OxyServices({ baseURL: 'http://test.invalid' });
+    makeRequestSpy = jest.spyOn(oxy as unknown as { makeRequest: jest.Mock }, 'makeRequest');
+  });
+
+  afterEach(() => {
+    makeRequestSpy.mockRestore();
+  });
+
+  it('re-mints on the next getServiceToken() after invalidation (configured credential)', async () => {
+    makeRequestSpy
+      .mockResolvedValueOnce({ token: 'token-first', expiresIn: 3600, appName: 'tenant-A' })
+      .mockResolvedValueOnce({ token: 'token-second', expiresIn: 3600, appName: 'tenant-A' });
+
+    oxy.configureServiceAuth('key-A', 'secret-A');
+
+    const first = await oxy.getServiceToken();
+    // Cached — would normally be returned again without re-minting.
+    const cached = await oxy.getServiceToken();
+    expect(first).toBe('token-first');
+    expect(cached).toBe('token-first');
+    expect(makeRequestSpy).toHaveBeenCalledTimes(1);
+
+    // Simulate a 401: invalidate, then the very next call must mint anew.
+    oxy.invalidateServiceToken();
+
+    const fresh = await oxy.getServiceToken();
+    expect(fresh).toBe('token-second');
+    expect(makeRequestSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('clears only the targeted apiKey entry, leaving other tenants cached', async () => {
+    makeRequestSpy
+      .mockResolvedValueOnce({ token: 'token-A1', expiresIn: 3600, appName: 'tenant-A' })
+      .mockResolvedValueOnce({ token: 'token-B1', expiresIn: 3600, appName: 'tenant-B' })
+      .mockResolvedValueOnce({ token: 'token-A2', expiresIn: 3600, appName: 'tenant-A' });
+
+    await oxy.getServiceToken('key-A', 'secret-A');
+    await oxy.getServiceToken('key-B', 'secret-B');
+    expect(makeRequestSpy).toHaveBeenCalledTimes(2);
+
+    // Invalidate only tenant A.
+    oxy.invalidateServiceToken('key-A');
+
+    // Tenant A re-mints...
+    const a2 = await oxy.getServiceToken('key-A', 'secret-A');
+    expect(a2).toBe('token-A2');
+    expect(makeRequestSpy).toHaveBeenCalledTimes(3);
+
+    // ...tenant B is still cached (no extra mint).
+    const b1 = await oxy.getServiceToken('key-B', 'secret-B');
+    expect(b1).toBe('token-B1');
+    expect(makeRequestSpy).toHaveBeenCalledTimes(3);
+  });
+
+  it('clears every entry when no key is configured and none is passed', async () => {
+    makeRequestSpy
+      .mockResolvedValueOnce({ token: 'token-A1', expiresIn: 3600, appName: 'tenant-A' })
+      .mockResolvedValueOnce({ token: 'token-B1', expiresIn: 3600, appName: 'tenant-B' })
+      .mockResolvedValueOnce({ token: 'token-A2', expiresIn: 3600, appName: 'tenant-A' })
+      .mockResolvedValueOnce({ token: 'token-B2', expiresIn: 3600, appName: 'tenant-B' });
+
+    await oxy.getServiceToken('key-A', 'secret-A');
+    await oxy.getServiceToken('key-B', 'secret-B');
+    expect(makeRequestSpy).toHaveBeenCalledTimes(2);
+
+    // No configureServiceAuth() and no argument → clear all.
+    oxy.invalidateServiceToken();
+
+    const a2 = await oxy.getServiceToken('key-A', 'secret-A');
+    const b2 = await oxy.getServiceToken('key-B', 'secret-B');
+    expect(a2).toBe('token-A2');
+    expect(b2).toBe('token-B2');
+    expect(makeRequestSpy).toHaveBeenCalledTimes(4);
+  });
+
+  it('is a no-op safe to call when nothing is cached', () => {
+    expect(() => oxy.invalidateServiceToken()).not.toThrow();
+    expect(() => oxy.invalidateServiceToken('key-unknown')).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // H2 — malformed tokens must yield 401, not 500. Uses class-based error
 // detection so future failure modes can't silently fall through.
 // ---------------------------------------------------------------------------

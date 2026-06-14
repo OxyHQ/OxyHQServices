@@ -65,6 +65,12 @@ interface ServiceTokenCacheEntry {
   secretBuf: Buffer;
   /** In-flight refresh promise (deduplicates concurrent callers) */
   pending: Promise<string> | null;
+  /**
+   * The raw apiKey that produced this entry. Retained so a targeted, fully
+   * synchronous `invalidateServiceToken(apiKey)` can locate the entry without
+   * re-deriving the async `SHA-256(apiKey)` Map key. Never logged or returned.
+   */
+  apiKey: string;
 }
 
 /**
@@ -210,6 +216,7 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
           expiresAt: 0,
           secretBuf: providedSecretBuf,
           pending: null,
+          apiKey: key,
         };
         this._serviceTokenCache.set(cacheKey, entry);
       }
@@ -260,10 +267,57 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
           expiresAt,
           secretBuf,
           pending: null,
+          apiKey: key,
         });
       }
 
       return response.token;
+    }
+
+    /**
+     * Invalidate cached service token(s), forcing the next `getServiceToken()`
+     * call to mint a fresh token from `/auth/service-token`.
+     *
+     * `getServiceToken()` only refreshes on expiry (with a 60s clock-drift
+     * buffer), so a credential that is revoked or rotated mid-run — surfaced as
+     * a 401 on a downstream service request — cannot otherwise be recovered
+     * within the same process: the still-unexpired cached token keeps being
+     * returned. Call this after such a 401 to clear the stale entry; the very
+     * next `getServiceToken()` for that credential re-mints.
+     *
+     * Fully synchronous and deterministic: the call completes before it
+     * returns, so a `getServiceToken()` issued immediately afterwards is
+     * guaranteed to see the cleared cache and mint anew.
+     *
+     * @param apiKey - When provided, clears only the cache entry for that
+     *   specific apiKey. When omitted, clears the entry for the credential set
+     *   via `configureServiceAuth()`; if neither is available (no key to
+     *   target), clears the entire cache. Passing no argument is the common
+     *   case for hosts that configured a single service credential at startup.
+     *
+     * The cache Map is keyed by an asynchronously-computed `SHA-256(apiKey)`
+     * that cannot be reproduced synchronously, so a targeted clear scans the
+     * entries and removes the one whose stored raw `apiKey` matches — keeping
+     * this method synchronous. The fully-untargeted call (no argument and no
+     * configured key) clears every entry, which is safe because each credential
+     * pair is independently re-minted on its next request.
+     */
+    invalidateServiceToken(apiKey?: string): void {
+      const targetKey = apiKey ?? this._serviceApiKey;
+
+      // No specific credential to target — clear everything. The next
+      // getServiceToken() for any credential re-mints from scratch.
+      if (!targetKey) {
+        this._serviceTokenCache.clear();
+        return;
+      }
+
+      for (const [cacheKey, entry] of this._serviceTokenCache) {
+        if (entry.apiKey === targetKey) {
+          this._serviceTokenCache.delete(cacheKey);
+          return;
+        }
+      }
     }
 
     /**
