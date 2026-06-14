@@ -1,155 +1,66 @@
-import { createFileRoute } from '@tanstack/react-router';
-import { useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { useGlobalUsage } from '@/hooks/use-developer';
+import { createFileRoute, Link } from '@tanstack/react-router';
+import { HugeiconsIcon } from '@hugeicons/react';
+import { ArrowRight01Icon, ChartLineData02Icon } from '@hugeicons/core-free-icons';
+import { useApplications } from '@/hooks/use-applications';
 
 export const Route = createFileRoute('/_layout/usage')({
   component: UsagePage,
 });
 
-const periods = [
-  { value: '24h', label: '24h' },
-  { value: '7d', label: '7d' },
-  { value: '30d', label: '30d' },
-  { value: '90d', label: '90d' },
-];
-
 function UsagePage() {
-  const [period, setPeriod] = useState('7d');
-  const { data: usage, isLoading } = useGlobalUsage(period);
-
-  const summary = usage?.summary;
-  const successRate =
-    summary && summary.totalRequests > 0
-      ? Math.round(((summary.successfulRequests ?? 0) / summary.totalRequests) * 100)
-      : 0;
+  const { data: applications = [], isLoading } = useApplications();
 
   return (
     <div className="flex-1 bg-background">
       {/* Header */}
       <div className="px-6 py-6 border-b border-border">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold text-foreground">Usage</h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              Monitor your API usage and statistics
+        <h1 className="text-2xl font-semibold text-foreground">Usage</h1>
+        <p className="text-sm text-muted-foreground mt-1">
+          API usage is tracked per application. Select an application to view its statistics.
+        </p>
+      </div>
+
+      <div className="px-6 py-6">
+        {isLoading ? (
+          <div className="space-y-2">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="h-16 rounded-lg bg-muted animate-pulse" />
+            ))}
+          </div>
+        ) : applications.length === 0 ? (
+          <div className="py-12 text-center">
+            <HugeiconsIcon
+              icon={ChartLineData02Icon}
+              size={48}
+              className="text-muted-foreground mx-auto mb-4"
+            />
+            <p className="text-sm font-medium text-foreground mb-1">No applications yet</p>
+            <p className="text-sm text-muted-foreground max-w-md mx-auto">
+              Create an application to start tracking API usage.
             </p>
           </div>
-          <div className="flex gap-1">
-            {periods.map((p) => (
-              <Button
-                key={p.value}
-                variant={period === p.value ? 'default' : 'ghost'}
-                size="sm"
-                onClick={() => setPeriod(p.value)}
-              >
-                {p.label}
-              </Button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Stats Overview */}
-      <div className="px-6 py-6 border-b border-border">
-        <p className="text-sm font-semibold text-foreground mb-4">Overview</p>
-        {isLoading ? (
-          <div className="animate-pulse flex flex-row gap-12">
-            <div className="h-12 w-24 bg-muted rounded" />
-            <div className="h-12 w-24 bg-muted rounded" />
-            <div className="h-12 w-24 bg-muted rounded" />
-            <div className="h-12 w-24 bg-muted rounded" />
-            <div className="h-12 w-24 bg-muted rounded" />
-          </div>
         ) : (
-          <div className="flex flex-row gap-12">
-            <div>
-              <p className="text-2xl font-semibold text-foreground">
-                {(summary?.totalRequests ?? 0).toLocaleString()}
-              </p>
-              <p className="text-sm text-muted-foreground mt-0.5">Total requests</p>
-            </div>
-            <div>
-              <p className="text-2xl font-semibold text-foreground">
-                {(summary?.totalTokens ?? 0).toLocaleString()}
-              </p>
-              <p className="text-sm text-muted-foreground mt-0.5">Total tokens</p>
-            </div>
-            <div>
-              <p className="text-2xl font-semibold text-foreground">
-                {(summary?.totalCredits ?? 0).toLocaleString()}
-              </p>
-              <p className="text-sm text-muted-foreground mt-0.5">Credits used</p>
-            </div>
-            <div>
-              <p className="text-2xl font-semibold text-foreground">
-                {Math.round(summary?.avgResponseTime ?? 0)}ms
-              </p>
-              <p className="text-sm text-muted-foreground mt-0.5">Avg response</p>
-            </div>
-            <div>
-              <p className="text-2xl font-semibold text-foreground">{successRate}%</p>
-              <p className="text-sm text-muted-foreground mt-0.5">Success rate</p>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Usage by Day */}
-      <div className="px-6 py-6 border-b border-border">
-        <p className="text-sm font-semibold text-foreground mb-4">Usage by day</p>
-        {isLoading ? (
-          <div className="h-24 flex items-center justify-center">
-            <p className="text-sm text-muted-foreground">Loading...</p>
-          </div>
-        ) : usage?.byDay && usage.byDay.length > 0 ? (
-          <div className="space-y-2">
-            {usage.byDay.map((day) => (
-              <div
-                key={day._id}
-                className="flex items-center justify-between py-2 border-b border-border last:border-0"
+          <div className="divide-y divide-border rounded-lg border border-border">
+            {applications.map((app) => (
+              <Link
+                key={app._id}
+                to="/apps/$appId/settings"
+                params={{ appId: app._id }}
+                className="flex items-center justify-between gap-4 px-4 py-4 transition-colors hover:bg-muted/50"
               >
-                <p className="text-sm text-foreground">{day._id}</p>
-                <div className="flex gap-6 text-sm text-muted-foreground">
-                  <span>{day.requests.toLocaleString()} requests</span>
-                  <span>{day.tokens.toLocaleString()} tokens</span>
-                  <span>{day.credits.toLocaleString()} credits</span>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-foreground truncate">{app.name}</p>
+                  {app.description && (
+                    <p className="text-sm text-muted-foreground line-clamp-1">{app.description}</p>
+                  )}
                 </div>
-              </div>
+                <HugeiconsIcon
+                  icon={ArrowRight01Icon}
+                  size={16}
+                  className="text-muted-foreground shrink-0"
+                />
+              </Link>
             ))}
-          </div>
-        ) : (
-          <div className="py-8 text-center text-sm text-muted-foreground">
-            No usage data available for this period
-          </div>
-        )}
-      </div>
-
-      {/* Usage by Endpoint */}
-      <div className="px-6 py-6">
-        <p className="text-sm font-semibold text-foreground mb-4">Usage by endpoint</p>
-        {isLoading ? (
-          <div className="h-24 flex items-center justify-center">
-            <p className="text-sm text-muted-foreground">Loading...</p>
-          </div>
-        ) : usage?.byEndpoint && usage.byEndpoint.length > 0 ? (
-          <div className="space-y-2">
-            {usage.byEndpoint.map((endpoint) => (
-              <div
-                key={endpoint._id}
-                className="flex items-center justify-between py-2 border-b border-border last:border-0"
-              >
-                <p className="text-sm text-foreground font-mono">{endpoint._id}</p>
-                <div className="flex gap-6 text-sm text-muted-foreground">
-                  <span>{endpoint.requests.toLocaleString()} requests</span>
-                  <span>{endpoint.tokens.toLocaleString()} tokens</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="py-8 text-center text-sm text-muted-foreground">
-            No endpoint data available for this period
           </div>
         )}
       </div>

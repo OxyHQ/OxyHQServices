@@ -1,10 +1,9 @@
 import { Link } from '@tanstack/react-router';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
-  Key01Icon,
+  Package01Icon,
   MoreHorizontalSquare01Icon,
   Settings01Icon,
-  ChartLineData02Icon,
 } from '@hugeicons/core-free-icons';
 import {
   DropdownMenu,
@@ -21,13 +20,13 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from '@/components/ui/sidebar';
-import { useApps } from '@/hooks/use-developer';
+import { useApplications } from '@/hooks/use-applications';
 
 export function NavApps() {
   const { isMobile } = useSidebar();
-  const { data: apps = [] } = useApps();
+  const { data: applications = [] } = useApplications();
 
-  if (apps.length === 0) {
+  if (applications.length === 0) {
     return null;
   }
 
@@ -35,11 +34,11 @@ export function NavApps() {
     <SidebarGroup className="group-data-[collapsible=icon]:hidden">
       <SidebarGroupLabel>Your Apps</SidebarGroupLabel>
       <SidebarMenu>
-        {apps.slice(0, 5).map((app) => (
+        {applications.slice(0, 5).map((app) => (
           <SidebarMenuItem key={app._id}>
             <SidebarMenuButton asChild>
-              <Link to="/apps/$appId" params={{ appId: app._id }}>
-                <HugeiconsIcon icon={Key01Icon} size={16} />
+              <Link to="/apps/$appId/settings" params={{ appId: app._id }}>
+                <HugeiconsIcon icon={Package01Icon} size={16} />
                 <span>{app.name}</span>
               </Link>
             </SidebarMenuButton>
@@ -56,37 +55,29 @@ export function NavApps() {
                 align={isMobile ? 'end' : 'start'}
               >
                 <DropdownMenuItem asChild>
-                  <Link to="/apps/$appId" params={{ appId: app._id }}>
-                    <HugeiconsIcon icon={Key01Icon} size={14} className="text-muted-foreground" />
-                    <span>View Details</span>
-                  </Link>
-                </DropdownMenuItem>
-                <DropdownMenuItem asChild>
                   <Link to="/apps/$appId/settings" params={{ appId: app._id }}>
-                    <HugeiconsIcon icon={Settings01Icon} size={14} className="text-muted-foreground" />
-                    <span>Settings</span>
-                  </Link>
-                </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link to="/apps/$appId/usage" params={{ appId: app._id }}>
                     <HugeiconsIcon
-                      icon={ChartLineData02Icon}
+                      icon={Settings01Icon}
                       size={14}
                       className="text-muted-foreground"
                     />
-                    <span>Usage</span>
+                    <span>Open</span>
                   </Link>
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </SidebarMenuItem>
         ))}
-        {apps.length > 5 && (
+        {applications.length > 5 && (
           <SidebarMenuItem>
             <SidebarMenuButton asChild className="text-sidebar-foreground/70">
               <Link to="/apps">
-                <HugeiconsIcon icon={MoreHorizontalSquare01Icon} size={16} className="text-sidebar-foreground/70" />
-                <span>View all ({apps.length})</span>
+                <HugeiconsIcon
+                  icon={MoreHorizontalSquare01Icon}
+                  size={16}
+                  className="text-sidebar-foreground/70"
+                />
+                <span>View all ({applications.length})</span>
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>

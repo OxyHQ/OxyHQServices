@@ -63,6 +63,35 @@ export type {
 export { OxyAppDataIdentifierError } from './mixins/OxyServices.appData';
 
 // ---------------------------------------------------------------------------
+// Applications (multi-user apps: membership, roles, credentials)
+// ---------------------------------------------------------------------------
+export type {
+    Application,
+    ApplicationMember,
+    ApplicationCredential,
+    ApplicationRole,
+    ApplicationType,
+    ApplicationStatus,
+    ApplicationMemberStatus,
+    ApplicationCredentialType,
+    ApplicationCredentialStatus,
+    ApplicationEnvironment,
+    CreateApplicationInput,
+    UpdateApplicationInput,
+    InviteApplicationMemberInput,
+    UpdateApplicationMemberInput,
+    TransferApplicationOwnershipInput,
+    CreateApplicationCredentialInput,
+    ApplicationCredentialWithSecret,
+    ApplicationUsagePeriod,
+    ApplicationUsageSummary,
+    ApplicationUsageByDay,
+    ApplicationUsageByEndpoint,
+    ApplicationUsageStats,
+    ApplicationSuccessResult,
+} from './mixins/OxyServices.applications';
+
+// ---------------------------------------------------------------------------
 // Auth helpers (token refresh, error normalisation, retry policies)
 // ---------------------------------------------------------------------------
 export {

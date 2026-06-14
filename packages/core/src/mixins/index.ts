@@ -17,7 +17,7 @@ import { OxyServicesLanguageMixin } from './OxyServices.language';
 import { OxyServicesPaymentMixin } from './OxyServices.payment';
 import { OxyServicesKarmaMixin } from './OxyServices.karma';
 import { OxyServicesAssetsMixin } from './OxyServices.assets';
-import { OxyServicesDeveloperMixin } from './OxyServices.developer';
+import { OxyServicesApplicationsMixin } from './OxyServices.applications';
 import { OxyServicesLocationMixin } from './OxyServices.location';
 import { OxyServicesAnalyticsMixin } from './OxyServices.analytics';
 import { OxyServicesDevicesMixin } from './OxyServices.devices';
@@ -50,7 +50,7 @@ type AllMixinInstances =
   & InstanceType<ReturnType<typeof OxyServicesPaymentMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesKarmaMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesAssetsMixin<typeof OxyServicesBase>>>
-  & InstanceType<ReturnType<typeof OxyServicesDeveloperMixin<typeof OxyServicesBase>>>
+  & InstanceType<ReturnType<typeof OxyServicesApplicationsMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesLocationMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesAnalyticsMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesDevicesMixin<typeof OxyServicesBase>>>
@@ -114,7 +114,7 @@ const MIXIN_PIPELINE: MixinFunction[] = [
     OxyServicesPaymentMixin,
     OxyServicesKarmaMixin,
     OxyServicesAssetsMixin,
-    OxyServicesDeveloperMixin,
+    OxyServicesApplicationsMixin,
     OxyServicesLocationMixin,
     OxyServicesAnalyticsMixin,
     OxyServicesDevicesMixin,

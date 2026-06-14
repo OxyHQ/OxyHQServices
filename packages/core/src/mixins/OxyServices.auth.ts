@@ -157,8 +157,8 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
      * legitimate multi-tenant hosts that need to switch credentials cannot leak
      * one tenant's token to another tenant on the same instance.
      *
-     * @param apiKey - DeveloperApp API key (oxy_dk_*)
-     * @param apiSecret - DeveloperApp API secret
+     * @param apiKey - Application credential public key (oxy_dk_*)
+     * @param apiSecret - Application credential secret
      */
     configureServiceAuth(apiKey: string, apiSecret: string): void {
       this._serviceApiKey = apiKey;
@@ -181,8 +181,8 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
      * This prevents an attacker who learned a peer's apiKey from extracting
      * their service token by polling with a wrong secret.
      *
-     * @param apiKey - DeveloperApp API key (optional if configureServiceAuth was called)
-     * @param apiSecret - DeveloperApp API secret (optional if configureServiceAuth was called)
+     * @param apiKey - Application credential public key (optional if configureServiceAuth was called)
+     * @param apiSecret - Application credential secret (optional if configureServiceAuth was called)
      */
     async getServiceToken(apiKey?: string, apiSecret?: string): Promise<string> {
       const key = apiKey || this._serviceApiKey;

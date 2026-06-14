@@ -1,78 +1,68 @@
-import { createFileRoute, Link } from '@tanstack/react-router';
 import { useState } from 'react';
-import { HugeiconsIcon } from '@hugeicons/react';
-import { ArrowLeft01Icon } from '@hugeicons/core-free-icons';
 import { Button } from '@/components/ui/button';
-import { useApp, useAppUsage } from '@/hooks/use-developer';
+import {
+  useApplicationUsage,
+  type Application,
+  type CallerAccess,
+} from '@/hooks/use-applications';
 
-export const Route = createFileRoute('/_layout/apps/$appId/usage')({
-  component: AppUsagePage,
-});
-
-const periods = [
+const PERIODS = [
   { value: '24h', label: '24h' },
   { value: '7d', label: '7d' },
   { value: '30d', label: '30d' },
   { value: '90d', label: '90d' },
 ];
 
-function AppUsagePage() {
-  const { appId } = Route.useParams();
-  const [period, setPeriod] = useState('7d');
-  const { data: app, isLoading: isLoadingApp } = useApp(appId);
-  const { data: usage, isLoading: isLoadingUsage } = useAppUsage(appId, period);
+interface UsageSectionProps {
+  application: Application;
+  access: CallerAccess;
+}
 
-  if (isLoadingApp || !app) {
+export function UsageSection({ application, access }: UsageSectionProps) {
+  const canRead = access.can('usage:read');
+  const [period, setPeriod] = useState('7d');
+  const { data: usage, isLoading } = useApplicationUsage(application._id, period, canRead);
+
+  if (!canRead) {
     return (
-      <div className="flex-1 bg-background flex items-center justify-center">
-        <p className="text-sm text-muted-foreground">Loading...</p>
+      <div className="py-12 text-center text-sm text-muted-foreground">
+        You do not have permission to view usage.
       </div>
     );
   }
 
   return (
-    <div className="flex-1 bg-background">
-      {/* Header */}
-      <div className="px-6 py-6 border-b border-border">
-        <Link
-          to="/apps/$appId"
-          params={{ appId }}
-          className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors mb-3"
-        >
-          <HugeiconsIcon icon={ArrowLeft01Icon} size={14} />
-          Back to {app.name}
-        </Link>
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold text-foreground">Usage statistics</h1>
-            <p className="text-sm text-muted-foreground mt-1">Monitor API usage for {app.name}</p>
-          </div>
-          <div className="flex gap-1">
-            {periods.map((p) => (
-              <Button
-                key={p.value}
-                variant={period === p.value ? 'default' : 'ghost'}
-                size="sm"
-                onClick={() => setPeriod(p.value)}
-              >
-                {p.label}
-              </Button>
-            ))}
-          </div>
+    <div className="space-y-8">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-sm font-semibold text-foreground">Usage</h2>
+          <p className="text-sm text-muted-foreground">API usage for this application.</p>
+        </div>
+        <div className="flex gap-1">
+          {PERIODS.map((p) => (
+            <Button
+              key={p.value}
+              variant={period === p.value ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setPeriod(p.value)}
+            >
+              {p.label}
+            </Button>
+          ))}
         </div>
       </div>
 
-      {/* Stats Overview */}
-      <div className="px-6 py-6 border-b border-border">
+      {/* Overview */}
+      <section>
         <p className="text-sm font-semibold text-foreground mb-4">Overview</p>
-        {isLoadingUsage ? (
+        {isLoading ? (
           <div className="animate-pulse flex flex-row gap-12">
             <div className="h-12 w-24 bg-muted rounded" />
             <div className="h-12 w-24 bg-muted rounded" />
             <div className="h-12 w-24 bg-muted rounded" />
           </div>
         ) : (
-          <div className="flex flex-row gap-12">
+          <div className="flex flex-row flex-wrap gap-12">
             <div>
               <p className="text-2xl font-semibold text-foreground">
                 {(usage?.summary?.totalRequests ?? 0).toLocaleString()}
@@ -93,19 +83,19 @@ function AppUsagePage() {
             </div>
             <div>
               <p className="text-2xl font-semibold text-foreground">
-                {usage?.summary?.avgResponseTime ?? 0}ms
+                {Math.round(usage?.summary?.avgResponseTime ?? 0)}ms
               </p>
               <p className="text-sm text-muted-foreground mt-0.5">Avg response</p>
             </div>
           </div>
         )}
-      </div>
+      </section>
 
-      {/* Usage by Day */}
-      <div className="px-6 py-6 border-b border-border">
+      {/* Usage by day */}
+      <section>
         <p className="text-sm font-semibold text-foreground mb-4">Usage by day</p>
-        {isLoadingUsage ? (
-          <div className="h-48 flex items-center justify-center">
+        {isLoading ? (
+          <div className="h-24 flex items-center justify-center">
             <p className="text-sm text-muted-foreground">Loading...</p>
           </div>
         ) : usage?.byDay && usage.byDay.length > 0 ? (
@@ -129,12 +119,12 @@ function AppUsagePage() {
             No usage data available for this period
           </div>
         )}
-      </div>
+      </section>
 
-      {/* Usage by Endpoint */}
-      <div className="px-6 py-6">
+      {/* Usage by endpoint */}
+      <section>
         <p className="text-sm font-semibold text-foreground mb-4">Usage by endpoint</p>
-        {isLoadingUsage ? (
+        {isLoading ? (
           <div className="h-24 flex items-center justify-center">
             <p className="text-sm text-muted-foreground">Loading...</p>
           </div>
@@ -158,7 +148,7 @@ function AppUsagePage() {
             No endpoint data available for this period
           </div>
         )}
-      </div>
+      </section>
     </div>
   );
 }

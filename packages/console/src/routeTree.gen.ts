@@ -26,9 +26,7 @@ import { Route as LayoutDocumentationModelsRouteImport } from './routes/_layout/
 import { Route as LayoutDocumentationChatCompletionsRouteImport } from './routes/_layout/documentation/chat-completions'
 import { Route as LayoutDocumentationAuthenticationRouteImport } from './routes/_layout/documentation/authentication'
 import { Route as LayoutAppsAppIdIndexRouteImport } from './routes/_layout/apps/$appId/index'
-import { Route as LayoutAppsAppIdUsageRouteImport } from './routes/_layout/apps/$appId/usage'
 import { Route as LayoutAppsAppIdSettingsRouteImport } from './routes/_layout/apps/$appId/settings'
-import { Route as LayoutAppsAppIdKeysKeyIdRouteImport } from './routes/_layout/apps/$appId/keys/$keyId'
 
 const LayoutRoute = LayoutRouteImport.update({
   id: '/_layout',
@@ -119,22 +117,11 @@ const LayoutAppsAppIdIndexRoute = LayoutAppsAppIdIndexRouteImport.update({
   path: '/apps/$appId/',
   getParentRoute: () => LayoutRoute,
 } as any)
-const LayoutAppsAppIdUsageRoute = LayoutAppsAppIdUsageRouteImport.update({
-  id: '/apps/$appId/usage',
-  path: '/apps/$appId/usage',
-  getParentRoute: () => LayoutRoute,
-} as any)
 const LayoutAppsAppIdSettingsRoute = LayoutAppsAppIdSettingsRouteImport.update({
   id: '/apps/$appId/settings',
   path: '/apps/$appId/settings',
   getParentRoute: () => LayoutRoute,
 } as any)
-const LayoutAppsAppIdKeysKeyIdRoute =
-  LayoutAppsAppIdKeysKeyIdRouteImport.update({
-    id: '/apps/$appId/keys/$keyId',
-    path: '/apps/$appId/keys/$keyId',
-    getParentRoute: () => LayoutRoute,
-  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -153,9 +140,7 @@ export interface FileRoutesByFullPath {
   '/apps/': typeof LayoutAppsIndexRoute
   '/documentation/': typeof LayoutDocumentationIndexRoute
   '/apps/$appId/settings': typeof LayoutAppsAppIdSettingsRoute
-  '/apps/$appId/usage': typeof LayoutAppsAppIdUsageRoute
   '/apps/$appId/': typeof LayoutAppsAppIdIndexRoute
-  '/apps/$appId/keys/$keyId': typeof LayoutAppsAppIdKeysKeyIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -174,9 +159,7 @@ export interface FileRoutesByTo {
   '/apps': typeof LayoutAppsIndexRoute
   '/documentation': typeof LayoutDocumentationIndexRoute
   '/apps/$appId/settings': typeof LayoutAppsAppIdSettingsRoute
-  '/apps/$appId/usage': typeof LayoutAppsAppIdUsageRoute
   '/apps/$appId': typeof LayoutAppsAppIdIndexRoute
-  '/apps/$appId/keys/$keyId': typeof LayoutAppsAppIdKeysKeyIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -197,9 +180,7 @@ export interface FileRoutesById {
   '/_layout/apps/': typeof LayoutAppsIndexRoute
   '/_layout/documentation/': typeof LayoutDocumentationIndexRoute
   '/_layout/apps/$appId/settings': typeof LayoutAppsAppIdSettingsRoute
-  '/_layout/apps/$appId/usage': typeof LayoutAppsAppIdUsageRoute
   '/_layout/apps/$appId/': typeof LayoutAppsAppIdIndexRoute
-  '/_layout/apps/$appId/keys/$keyId': typeof LayoutAppsAppIdKeysKeyIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -220,9 +201,7 @@ export interface FileRouteTypes {
     | '/apps/'
     | '/documentation/'
     | '/apps/$appId/settings'
-    | '/apps/$appId/usage'
     | '/apps/$appId/'
-    | '/apps/$appId/keys/$keyId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -241,9 +220,7 @@ export interface FileRouteTypes {
     | '/apps'
     | '/documentation'
     | '/apps/$appId/settings'
-    | '/apps/$appId/usage'
     | '/apps/$appId'
-    | '/apps/$appId/keys/$keyId'
   id:
     | '__root__'
     | '/'
@@ -263,9 +240,7 @@ export interface FileRouteTypes {
     | '/_layout/apps/'
     | '/_layout/documentation/'
     | '/_layout/apps/$appId/settings'
-    | '/_layout/apps/$appId/usage'
     | '/_layout/apps/$appId/'
-    | '/_layout/apps/$appId/keys/$keyId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -394,25 +369,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutAppsAppIdIndexRouteImport
       parentRoute: typeof LayoutRoute
     }
-    '/_layout/apps/$appId/usage': {
-      id: '/_layout/apps/$appId/usage'
-      path: '/apps/$appId/usage'
-      fullPath: '/apps/$appId/usage'
-      preLoaderRoute: typeof LayoutAppsAppIdUsageRouteImport
-      parentRoute: typeof LayoutRoute
-    }
     '/_layout/apps/$appId/settings': {
       id: '/_layout/apps/$appId/settings'
       path: '/apps/$appId/settings'
       fullPath: '/apps/$appId/settings'
       preLoaderRoute: typeof LayoutAppsAppIdSettingsRouteImport
-      parentRoute: typeof LayoutRoute
-    }
-    '/_layout/apps/$appId/keys/$keyId': {
-      id: '/_layout/apps/$appId/keys/$keyId'
-      path: '/apps/$appId/keys/$keyId'
-      fullPath: '/apps/$appId/keys/$keyId'
-      preLoaderRoute: typeof LayoutAppsAppIdKeysKeyIdRouteImport
       parentRoute: typeof LayoutRoute
     }
   }
@@ -434,9 +395,7 @@ interface LayoutRouteChildren {
   LayoutAppsIndexRoute: typeof LayoutAppsIndexRoute
   LayoutDocumentationIndexRoute: typeof LayoutDocumentationIndexRoute
   LayoutAppsAppIdSettingsRoute: typeof LayoutAppsAppIdSettingsRoute
-  LayoutAppsAppIdUsageRoute: typeof LayoutAppsAppIdUsageRoute
   LayoutAppsAppIdIndexRoute: typeof LayoutAppsAppIdIndexRoute
-  LayoutAppsAppIdKeysKeyIdRoute: typeof LayoutAppsAppIdKeysKeyIdRoute
 }
 
 const LayoutRouteChildren: LayoutRouteChildren = {
@@ -457,9 +416,7 @@ const LayoutRouteChildren: LayoutRouteChildren = {
   LayoutAppsIndexRoute: LayoutAppsIndexRoute,
   LayoutDocumentationIndexRoute: LayoutDocumentationIndexRoute,
   LayoutAppsAppIdSettingsRoute: LayoutAppsAppIdSettingsRoute,
-  LayoutAppsAppIdUsageRoute: LayoutAppsAppIdUsageRoute,
   LayoutAppsAppIdIndexRoute: LayoutAppsAppIdIndexRoute,
-  LayoutAppsAppIdKeysKeyIdRoute: LayoutAppsAppIdKeysKeyIdRoute,
 }
 
 const LayoutRouteWithChildren =

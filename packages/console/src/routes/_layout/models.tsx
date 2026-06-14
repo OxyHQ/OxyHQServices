@@ -3,7 +3,7 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { CheckmarkCircle01Icon, Cancel01Icon } from '@hugeicons/core-free-icons';
-import { useModelsStats } from '@/hooks/use-developer';
+import { useModelsStats } from '@/hooks/use-models';
 
 export const Route = createFileRoute('/_layout/models')({
   component: ModelsPage,

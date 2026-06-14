@@ -54,7 +54,7 @@ export interface ServiceActingAsVerification {
 /**
  * Service app metadata attached to requests authenticated with service tokens.
  * `scopes` reflects the scopes granted to the app at signup time (from the
- * `DeveloperApp.scopes` field); route-level checks can require additional
+ * `Application.scopes` field); route-level checks can require additional
  * scope-narrowing via `requireScope()`.
  */
 export interface ServiceApp {

@@ -1,147 +1,128 @@
-import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
-import { useState, useEffect } from 'react';
+import { createFileRoute, Link } from '@tanstack/react-router';
 import { HugeiconsIcon } from '@hugeicons/react';
-import { ArrowLeft01Icon } from '@hugeicons/core-free-icons';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { useApp, useUpdateApp } from '@/hooks/use-developer';
-import { toast } from 'sonner';
+import {
+  ArrowLeft01Icon,
+  Settings01Icon,
+  UserMultiple02Icon,
+  Key01Icon,
+  ChartLineData02Icon,
+} from '@hugeicons/core-free-icons';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Spinner } from '@/components/ui/spinner';
+import {
+  useApplication,
+  useApplicationMembers,
+  useCallerAccess,
+} from '@/hooks/use-applications';
+import { GeneralSection } from '@/components/apps/general-section';
+import { MembersSection } from '@/components/apps/members-section';
+import { CredentialsSection } from '@/components/apps/credentials-section';
+import { UsageSection } from '@/components/apps/usage-section';
 
 export const Route = createFileRoute('/_layout/apps/$appId/settings')({
   component: AppSettingsPage,
 });
 
 function AppSettingsPage() {
-  const navigate = useNavigate();
   const { appId } = Route.useParams();
-  const { data: app, isLoading } = useApp(appId);
-  const updateAppMutation = useUpdateApp();
+  const { data: application, isLoading, isError } = useApplication(appId);
+  // Members are also used as a fallback source for the caller's own access when
+  // the API does not embed `callerMembership`; the request is authorized
+  // server-side, so it is safe to issue here.
+  const { data: members } = useApplicationMembers(appId);
+  const access = useCallerAccess(application, members);
 
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [websiteUrl, setWebsiteUrl] = useState('');
-
-  useEffect(() => {
-    if (app) {
-      setName(app.name);
-      setDescription(app.description || '');
-      setWebsiteUrl(app.websiteUrl || '');
-    }
-  }, [app]);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!name.trim()) {
-      toast.error('Name is required');
-      return;
-    }
-
-    try {
-      await updateAppMutation.mutateAsync({
-        id: appId,
-        data: {
-          name: name.trim(),
-          description: description.trim() || undefined,
-          websiteUrl: websiteUrl.trim() || undefined,
-        },
-      });
-      toast.success('App updated successfully');
-      navigate({ to: '/apps/$appId', params: { appId } });
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to update app');
-    }
-  };
-
-  if (isLoading || !app) {
+  if (isLoading) {
     return (
       <div className="flex-1 bg-background flex items-center justify-center">
-        <p className="text-sm text-muted-foreground">Loading...</p>
+        <Spinner />
       </div>
     );
   }
 
+  if (isError || !application) {
+    return (
+      <div className="flex-1 bg-background flex flex-col items-center justify-center gap-3">
+        <p className="text-sm text-muted-foreground">This application could not be loaded.</p>
+        <Link to="/apps" className="text-sm text-foreground underline underline-offset-4">
+          Back to applications
+        </Link>
+      </div>
+    );
+  }
+
+  const showMembersTab = access.can('members:read');
+  const showCredentialsTab = access.can('credentials:read');
+  const showUsageTab = access.can('usage:read');
+
   return (
-    <div className="flex-1 bg-background max-w-2xl">
+    <ScrollArea className="flex-1 bg-background">
       {/* Header */}
       <div className="px-6 py-6 border-b border-border">
         <Link
-          to="/apps/$appId"
-          params={{ appId }}
+          to="/apps"
           className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors mb-3"
         >
           <HugeiconsIcon icon={ArrowLeft01Icon} size={14} />
-          Back to {app.name}
+          Back to applications
         </Link>
-        <h1 className="text-2xl font-semibold text-foreground">App settings</h1>
-        <p className="text-sm text-muted-foreground mt-1">Update your app configuration</p>
+        <h1 className="text-2xl font-semibold text-foreground">{application.name}</h1>
+        {application.description && (
+          <p className="text-sm text-muted-foreground mt-1">{application.description}</p>
+        )}
       </div>
 
-      {/* Form */}
-      <form onSubmit={handleSubmit}>
-        <div className="px-6 py-6 border-b border-border">
-          <p className="text-sm font-semibold text-foreground mb-4">General</p>
+      <div className="px-6 py-6">
+        <Tabs defaultValue="general" className="gap-6">
+          <TabsList variant="line">
+            <TabsTrigger value="general">
+              <HugeiconsIcon icon={Settings01Icon} size={16} />
+              General
+            </TabsTrigger>
+            {showMembersTab && (
+              <TabsTrigger value="members">
+                <HugeiconsIcon icon={UserMultiple02Icon} size={16} />
+                Members
+              </TabsTrigger>
+            )}
+            {showCredentialsTab && (
+              <TabsTrigger value="credentials">
+                <HugeiconsIcon icon={Key01Icon} size={16} />
+                Credentials
+              </TabsTrigger>
+            )}
+            {showUsageTab && (
+              <TabsTrigger value="usage">
+                <HugeiconsIcon icon={ChartLineData02Icon} size={16} />
+                Usage
+              </TabsTrigger>
+            )}
+          </TabsList>
 
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="name" className="text-sm">
-                Name *
-              </Label>
-              <Input
-                id="name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="My Awesome App"
-                required
-              />
-            </div>
+          <TabsContent value="general" className="max-w-2xl">
+            <GeneralSection application={application} access={access} />
+          </TabsContent>
 
-            <div className="space-y-2">
-              <Label htmlFor="description" className="text-sm">
-                Description
-              </Label>
-              <Textarea
-                id="description"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="A brief description of your app"
-                rows={3}
-              />
-            </div>
+          {showMembersTab && (
+            <TabsContent value="members" className="max-w-3xl">
+              <MembersSection application={application} access={access} />
+            </TabsContent>
+          )}
 
-            <div className="space-y-2">
-              <Label htmlFor="websiteUrl" className="text-sm">
-                Website URL
-              </Label>
-              <Input
-                id="websiteUrl"
-                type="url"
-                value={websiteUrl}
-                onChange={(e) => setWebsiteUrl(e.target.value)}
-                placeholder="https://example.com"
-              />
-            </div>
-          </div>
-        </div>
+          {showCredentialsTab && (
+            <TabsContent value="credentials" className="max-w-3xl">
+              <CredentialsSection application={application} access={access} />
+            </TabsContent>
+          )}
 
-        <div className="px-6 py-6">
-          <div className="flex gap-3">
-            <Button type="submit" size="sm" disabled={updateAppMutation.isPending || !name.trim()}>
-              {updateAppMutation.isPending ? 'Saving...' : 'Save changes'}
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => navigate({ to: '/apps/$appId', params: { appId } })}
-            >
-              Cancel
-            </Button>
-          </div>
-        </div>
-      </form>
-    </div>
+          {showUsageTab && (
+            <TabsContent value="usage" className="max-w-3xl">
+              <UsageSection application={application} access={access} />
+            </TabsContent>
+          )}
+        </Tabs>
+      </div>
+    </ScrollArea>
   );
 }

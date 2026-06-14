@@ -3,11 +3,9 @@ import { useState } from 'react';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
   Add01Icon,
-  Key01Icon,
+  Package01Icon,
   ArrowRight01Icon,
   Settings01Icon,
-  ChartLineData02Icon,
-  Delete02Icon,
   Copy01Icon,
 } from '@hugeicons/core-free-icons';
 import { Button } from '@/components/ui/button';
@@ -32,43 +30,38 @@ import {
   ContextMenuShortcut,
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { useApps, useCreateApp, useDeleteApp } from '@/hooks/use-developer';
+import { useApplications, useCreateApplication } from '@/hooks/use-applications';
 import { toast } from 'sonner';
 
 export const Route = createFileRoute('/_layout/apps/')({
   component: AppsPage,
 });
 
+function getErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  return fallback;
+}
+
 function AppsPage() {
   const navigate = useNavigate();
-  const { data: apps = [], isLoading } = useApps();
-  const createAppMutation = useCreateApp();
-  const deleteAppMutation = useDeleteApp();
+  const { data: applications = [], isLoading } = useApplications();
+  const createApplicationMutation = useCreateApplication();
 
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [websiteUrl, setWebsiteUrl] = useState('');
-  const [deleteAppId, setDeleteAppId] = useState<string | null>(null);
 
-  const handleCreateApp = async () => {
+  const handleCreateApplication = async () => {
     if (!name.trim()) {
-      toast.error('Please enter an app name');
+      toast.error('Please enter an application name');
       return;
     }
 
     try {
-      const newApp = await createAppMutation.mutateAsync({
+      const newApp = await createApplicationMutation.mutateAsync({
         name: name.trim(),
         description: description.trim() || undefined,
         websiteUrl: websiteUrl.trim() || undefined,
@@ -77,27 +70,16 @@ function AppsPage() {
       setName('');
       setDescription('');
       setWebsiteUrl('');
-      toast.success('App created successfully');
-      navigate({ to: '/apps/$appId', params: { appId: newApp._id } });
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to create app');
-    }
-  };
-
-  const handleDeleteApp = async () => {
-    if (!deleteAppId) return;
-    try {
-      await deleteAppMutation.mutateAsync(deleteAppId);
-      setDeleteAppId(null);
-      toast.success('App deleted successfully');
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to delete app');
+      toast.success('Application created');
+      navigate({ to: '/apps/$appId/settings', params: { appId: newApp._id } });
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Failed to create application'));
     }
   };
 
   const handleCopyAppId = (appId: string) => {
     navigator.clipboard.writeText(appId);
-    toast.success('App ID copied to clipboard');
+    toast.success('Application ID copied to clipboard');
   };
 
   const handleOpenCreate = () => {
@@ -107,27 +89,25 @@ function AppsPage() {
     setShowCreateDialog(true);
   };
 
-  const appToDelete = apps.find((app) => app._id === deleteAppId);
-
   return (
     <ScrollArea className="flex-1 bg-background">
       {/* Header */}
       <div className="px-6 py-6 border-b border-border">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-semibold text-foreground">API Keys</h1>
+            <h1 className="text-2xl font-semibold text-foreground">Applications</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              Manage your applications and API keys
+              Applications you own or collaborate on
             </p>
           </div>
           <Button size="sm" onClick={handleOpenCreate}>
             <HugeiconsIcon icon={Add01Icon} size={16} className="mr-2" />
-            Create app
+            Create application
           </Button>
         </div>
       </div>
 
-      {/* Apps List */}
+      {/* Applications List */}
       <div className="px-6">
         {isLoading ? (
           <div className="py-6">
@@ -138,39 +118,44 @@ function AppsPage() {
               </div>
             ))}
           </div>
-        ) : apps.length === 0 ? (
+        ) : applications.length === 0 ? (
           <div className="py-12 text-center">
             <HugeiconsIcon
-              icon={Key01Icon}
+              icon={Package01Icon}
               size={48}
               className="text-muted-foreground mx-auto mb-4"
             />
-            <p className="text-sm font-medium text-foreground mb-1">No apps yet</p>
+            <p className="text-sm font-medium text-foreground mb-1">No applications yet</p>
             <p className="text-sm text-muted-foreground mb-4 max-w-md mx-auto">
-              Create your first application to generate API keys and start using the Oxy API.
+              Create your first application to manage members, credentials, and usage.
             </p>
             <Button size="sm" onClick={handleOpenCreate}>
               <HugeiconsIcon icon={Add01Icon} size={16} className="mr-2" />
-              Create your first app
+              Create your first application
             </Button>
           </div>
         ) : (
           <div>
-            {apps.map((app, index) => (
+            {applications.map((app, index) => (
               <ContextMenu key={app._id}>
                 <ContextMenuTrigger asChild>
                   <Link
-                    to="/apps/$appId"
+                    to="/apps/$appId/settings"
                     params={{ appId: app._id }}
                     className={`flex items-center justify-between py-4 hover:bg-muted/50 -mx-3 px-3 rounded-lg transition-colors ${
-                      index < apps.length - 1 ? 'border-b border-border mx-0 px-0 rounded-none hover:bg-transparent hover:opacity-70' : ''
+                      index < applications.length - 1
+                        ? 'border-b border-border mx-0 px-0 rounded-none hover:bg-transparent hover:opacity-70'
+                        : ''
                     }`}
                   >
                     <div className="flex-1">
                       <div className="flex items-center gap-2">
                         <p className="text-sm font-medium text-foreground">{app.name}</p>
-                        <Badge variant={app.isActive ? 'default' : 'secondary'} className="text-xs">
-                          {app.isActive ? 'Active' : 'Inactive'}
+                        <Badge
+                          variant={app.status === 'active' ? 'default' : 'secondary'}
+                          className="text-xs"
+                        >
+                          {app.status === 'active' ? 'Active' : 'Inactive'}
                         </Badge>
                       </div>
                       {app.description && (
@@ -193,29 +178,11 @@ function AppsPage() {
                   <ContextMenuItem
                     onClick={(e) => {
                       e.preventDefault();
-                      navigate({ to: '/apps/$appId', params: { appId: app._id } });
-                    }}
-                  >
-                    <HugeiconsIcon icon={Key01Icon} className="mr-2 size-4" />
-                    View Details
-                  </ContextMenuItem>
-                  <ContextMenuItem
-                    onClick={(e) => {
-                      e.preventDefault();
                       navigate({ to: '/apps/$appId/settings', params: { appId: app._id } });
                     }}
                   >
                     <HugeiconsIcon icon={Settings01Icon} className="mr-2 size-4" />
-                    Settings
-                  </ContextMenuItem>
-                  <ContextMenuItem
-                    onClick={(e) => {
-                      e.preventDefault();
-                      navigate({ to: '/apps/$appId/usage', params: { appId: app._id } });
-                    }}
-                  >
-                    <HugeiconsIcon icon={ChartLineData02Icon} className="mr-2 size-4" />
-                    Usage
+                    Open
                   </ContextMenuItem>
                   <ContextMenuSeparator />
                   <ContextMenuItem
@@ -225,20 +192,8 @@ function AppsPage() {
                     }}
                   >
                     <HugeiconsIcon icon={Copy01Icon} className="mr-2 size-4" />
-                    Copy App ID
+                    Copy application ID
                     <ContextMenuShortcut>⌘C</ContextMenuShortcut>
-                  </ContextMenuItem>
-                  <ContextMenuSeparator />
-                  <ContextMenuItem
-                    variant="destructive"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      setDeleteAppId(app._id);
-                    }}
-                  >
-                    <HugeiconsIcon icon={Delete02Icon} className="mr-2 size-4" />
-                    Delete
-                    <ContextMenuShortcut>⌫</ContextMenuShortcut>
                   </ContextMenuItem>
                 </ContextMenuContent>
               </ContextMenu>
@@ -247,13 +202,13 @@ function AppsPage() {
         )}
       </div>
 
-      {/* Create App Dialog */}
+      {/* Create Application Dialog */}
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Create app</DialogTitle>
+            <DialogTitle>Create application</DialogTitle>
             <DialogDescription>
-              Create a new application to generate API keys and start using the Oxy API.
+              Create a new application to manage members, credentials, and usage.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
@@ -277,8 +232,9 @@ function AppsPage() {
                 id="description"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="A brief description of your app"
+                placeholder="A brief description of your application"
                 rows={3}
+                maxLength={500}
               />
             </div>
             <div className="space-y-2">
@@ -299,37 +255,14 @@ function AppsPage() {
               Cancel
             </Button>
             <Button
-              onClick={handleCreateApp}
-              disabled={createAppMutation.isPending || !name.trim()}
+              onClick={handleCreateApplication}
+              disabled={createApplicationMutation.isPending || !name.trim()}
             >
-              {createAppMutation.isPending ? 'Creating...' : 'Create app'}
+              {createApplicationMutation.isPending ? 'Creating...' : 'Create application'}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* Delete App Confirmation */}
-      <AlertDialog open={!!deleteAppId} onOpenChange={(open) => !open && setDeleteAppId(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete app</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete "{appToDelete?.name}"? This will also delete all API
-              keys and usage data. This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDeleteApp}
-              disabled={deleteAppMutation.isPending}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              {deleteAppMutation.isPending ? 'Deleting...' : 'Delete'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </ScrollArea>
   );
 }

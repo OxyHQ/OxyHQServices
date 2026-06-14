@@ -85,7 +85,7 @@ import { composeOxyServices } from './mixins';
  * - **Payment**: Payment processing
  * - **Karma**: Karma system
  * - **Assets**: File upload and asset management
- * - **Developer**: Developer API management
+ * - **Applications**: Application, membership, and credential management
  * - **Location**: Location-based features
  * - **Analytics**: Analytics tracking
  * - **Devices**: Device management

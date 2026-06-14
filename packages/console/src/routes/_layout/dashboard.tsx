@@ -5,7 +5,7 @@ import {
   CheckmarkCircle01Icon,
   UserMultiple02Icon,
 } from '@hugeicons/core-free-icons';
-import { useDeveloperStats } from '@/hooks/use-developer';
+import { useApplications } from '@/hooks/use-applications';
 import { useCredits } from '@/hooks/use-billing';
 import { Button } from '@/components/ui/button';
 
@@ -14,12 +14,11 @@ export const Route = createFileRoute('/_layout/dashboard')({
 });
 
 function DashboardPage() {
-  const { data: developerStats } = useDeveloperStats();
+  const { data: applications = [] } = useApplications();
   const { data: credits } = useCredits();
 
   const hasCredits = (credits?.credits ?? 0) > 0;
-  const hasApiKey = (developerStats?.totalKeys ?? 0) > 0;
-  const hasRequests = (developerStats?.last30Days?.totalRequests ?? 0) > 0;
+  const hasApplication = applications.length > 0;
 
   const onboardingSteps = [
     {
@@ -30,18 +29,18 @@ function DashboardPage() {
       action: 'Purchase',
     },
     {
-      id: 'api-key',
-      title: 'Create your first API key',
-      completed: hasApiKey,
+      id: 'application',
+      title: 'Create your first application',
+      completed: hasApplication,
       href: '/apps',
-      action: hasApiKey ? undefined : 'Create',
+      action: hasApplication ? undefined : 'Create',
     },
     {
       id: 'request',
       title: 'Make your first request',
-      completed: hasRequests,
+      completed: false,
       href: '/examples',
-      action: hasRequests ? undefined : 'View docs',
+      action: 'View docs',
     },
   ];
 
@@ -134,25 +133,11 @@ function DashboardPage() {
           </div>
 
           {/* Stats below card when user has activity */}
-          {(developerStats?.totalApps ?? 0) > 0 && (
-            <div className="mt-6 grid grid-cols-3 gap-4 text-center">
+          {applications.length > 0 && (
+            <div className="mt-6 grid grid-cols-1 gap-4 text-center">
               <div>
-                <p className="text-2xl font-semibold text-foreground">
-                  {developerStats?.totalApps ?? 0}
-                </p>
-                <p className="text-xs text-muted-foreground">Apps</p>
-              </div>
-              <div>
-                <p className="text-2xl font-semibold text-foreground">
-                  {developerStats?.totalKeys ?? 0}
-                </p>
-                <p className="text-xs text-muted-foreground">API Keys</p>
-              </div>
-              <div>
-                <p className="text-2xl font-semibold text-foreground">
-                  {(developerStats?.last30Days?.totalRequests ?? 0).toLocaleString()}
-                </p>
-                <p className="text-xs text-muted-foreground">Requests</p>
+                <p className="text-2xl font-semibold text-foreground">{applications.length}</p>
+                <p className="text-xs text-muted-foreground">Applications</p>
               </div>
             </div>
           )}

@@ -65,7 +65,7 @@ import { Slider } from '@/components/ui/slider';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { useModelsStats } from '@/hooks/use-developer';
+import { useModelsStats } from '@/hooks/use-models';
 import { useAuth } from '@oxyhq/auth';
 import config from '@/lib/config';
 import { toast } from 'sonner';
