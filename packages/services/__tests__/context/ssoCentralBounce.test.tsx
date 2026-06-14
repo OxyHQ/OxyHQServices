@@ -23,7 +23,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { OxyContextProvider, useOxy } from '../../src/ui/context/OxyContext';
 import type { SessionLoginResponse, User } from '@oxyhq/core';
 import { useAuthStore } from '../../src/ui/stores/authStore';
-import * as ssoBounce from '../../src/ui/utils/ssoBounce';
+import * as oxyCore from '@oxyhq/core';
 
 const ORIGIN = 'https://app.mention.earth';
 const EXCHANGED_USER_ID = 'sso_user_1';
@@ -118,7 +118,7 @@ describe('Central SSO return (sso-return step)', () => {
     window.history.replaceState(null, '', '/__oxy/sso-callback');
     // Spy the navigation seam so a terminal bounce (if one fired) is observable
     // and never tears down jsdom.
-    assignSpy = jest.spyOn(ssoBounce, 'ssoNavigate').mockImplementation(() => undefined);
+    assignSpy = jest.spyOn(oxyCore, 'ssoNavigate').mockImplementation(() => undefined);
   });
 
   afterEach(() => {

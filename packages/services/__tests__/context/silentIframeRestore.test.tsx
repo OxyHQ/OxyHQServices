@@ -37,7 +37,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { OxyContextProvider, useOxy } from '../../src/ui/context/OxyContext';
 import type { SessionLoginResponse, User } from '@oxyhq/core';
 import { useAuthStore } from '../../src/ui/stores/authStore';
-import * as ssoBounce from '../../src/ui/utils/ssoBounce';
+import * as oxyCore from '@oxyhq/core';
 
 const API_BASE_URL = 'https://api.mention.earth';
 const IFRAME_USER_ID = 'iframe_user_1';
@@ -133,7 +133,7 @@ describe('Cold-boot per-apex silent iframe (durable cross-domain reload restore)
     setTokensSpy.mockClear();
     silentSignInSpy.mockReset();
     useAuthStore.getState().logout();
-    ssoNavigateSpy = jest.spyOn(ssoBounce, 'ssoNavigate').mockImplementation(() => undefined);
+    ssoNavigateSpy = jest.spyOn(oxyCore, 'ssoNavigate').mockImplementation(() => undefined);
   });
 
   afterEach(() => {

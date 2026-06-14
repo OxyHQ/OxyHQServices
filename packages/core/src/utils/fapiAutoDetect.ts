@@ -47,7 +47,7 @@
  * before relying on this helper, otherwise auto-detection silently bails to
  * `undefined` and the consumer must pass `authWebUrl` explicitly.
  */
-const MULTIPART_TLDS: ReadonlySet<string> = new Set([
+export const MULTIPART_TLDS: ReadonlySet<string> = new Set([
   'co.uk',
   'com.au',
   'co.jp',
@@ -60,6 +60,42 @@ const MULTIPART_TLDS: ReadonlySet<string> = new Set([
   'com.sg',
 ]);
 
+/**
+ * Compute the bare registrable apex (eTLD+1) of a hostname, guarding against
+ * multi-part public suffixes.
+ *
+ * This is the pure host-handling kernel shared by {@link autoDetectAuthWebUrl}
+ * and the IdP worker — it performs NO protocol handling, NO `auth.` prefixing,
+ * and builds NO URL. It only answers "what is the registrable domain of this
+ * host, or is that undefinable?".
+ *
+ * Returns `null` (apex undefinable) for:
+ *   - empty input;
+ *   - IPv4 literals (`192.168.1.10`);
+ *   - IPv6 literals or any host carrying a port (`[::1]`, anything with `:`);
+ *   - single-label hosts (`intranet`, `localhost`);
+ *   - hosts whose trailing two labels form a known multi-part public suffix
+ *     (e.g. `foo.co.uk`), where `labels.slice(-2)` would yield an
+ *     attacker-registrable suffix (`co.uk`) rather than a real registrable
+ *     domain. Such hosts MUST configure `authWebUrl` explicitly.
+ *
+ * @param hostname - A bare hostname (no scheme), e.g. `www.mention.earth`.
+ * @returns The eTLD+1 (`mention.earth`), or `null` when undefinable.
+ */
+export function registrableApex(hostname: string): string | null {
+  if (!hostname) return null;
+  const host = hostname.toLowerCase();
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(host)) return null;
+  // IPv6 literals are bracketed; any remaining ':' implies a port — neither
+  // yields a registrable apex.
+  if (host.startsWith('[') || host.includes(':')) return null;
+  const labels = host.split('.');
+  if (labels.length < 2) return null;
+  const lastTwo = labels.slice(-2).join('.');
+  if (MULTIPART_TLDS.has(lastTwo)) return null;
+  return lastTwo;
+}
+
 export function autoDetectAuthWebUrl(
   location: Pick<Location, 'hostname' | 'protocol'> | undefined =
     typeof window !== 'undefined' ? window.location : undefined
@@ -71,12 +107,12 @@ export function autoDetectAuthWebUrl(
   if (hostname === 'localhost' || hostname === '127.0.0.1') return undefined;
   if (/^\d+\.\d+\.\d+\.\d+$/.test(hostname)) return undefined;
   if (hostname.startsWith('[')) return undefined;
+  // Already ON the IdP — keep everything same-origin instead of hopping to a
+  // sibling host.
   if (hostname.startsWith('auth.')) {
     return `${protocol}//${hostname}`;
   }
-  const labels = hostname.split('.');
-  if (labels.length < 2) return undefined;
-  if (MULTIPART_TLDS.has(labels.slice(-2).join('.'))) return undefined;
-  const apex = labels.slice(-2).join('.');
+  const apex = registrableApex(hostname);
+  if (apex === null) return undefined;
   return `${protocol}//auth.${apex}`;
 }

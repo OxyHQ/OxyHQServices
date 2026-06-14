@@ -14,18 +14,21 @@ import type { User, ApiError, SessionLoginResponse } from '@oxyhq/core';
 import type { ManagedAccount, CreateManagedAccountInput } from '@oxyhq/core';
 import { KeyManager } from '@oxyhq/core';
 import type { ClientSession } from '@oxyhq/core';
-import { runColdBoot, resolveCentralAuthUrl, parseSsoReturnFragment, autoDetectAuthWebUrl } from '@oxyhq/core';
-import { toast } from '@oxyhq/bloom';
 import {
-  SSO_CALLBACK_PATH,
+  runColdBoot,
+  resolveCentralAuthUrl,
+  autoDetectAuthWebUrl,
   ssoStateKey,
   ssoGuardKey,
   ssoDestKey,
   ssoNoSessionKey,
   isCentralIdPOrigin,
   guardActive,
-} from '../utils/ssoBounce';
-import * as ssoBounce from '../utils/ssoBounce';
+  ssoNavigate,
+  buildSsoBounceUrl,
+  consumeSsoReturn,
+} from '@oxyhq/core';
+import { toast } from '@oxyhq/bloom';
 import { useAuthStore, type AuthState } from '../stores/authStore';
 import { useShallow } from 'zustand/react/shallow';
 import { useSessionSocket } from '../hooks/useSessionSocket';
@@ -745,99 +748,42 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     storageKeys.sessionIds,
   ]);
 
-  // Central cross-domain SSO return handler (web). Parses the IdP redirect
-  // fragment, validates the CSRF `state`, exchanges the opaque single-use code
-  // for the real session, commits it, and restores the user's pre-bounce
-  // destination. Shared by the `sso-return` cold-boot step AND the bfcache
-  // `pageshow` re-evaluation, so the same security-critical logic runs exactly
-  // once per delivered fragment regardless of how the page was (re)shown.
+  // Central cross-domain SSO return handler (web). A THIN wrapper over core's
+  // `consumeSsoReturn`, which performs the entire security-critical kernel —
+  // parse the IdP redirect fragment, validate the CSRF `state`, strip the
+  // fragment FIRST, exchange the opaque single-use code, restore the user's
+  // pre-bounce destination (same-origin only), and set the per-origin
+  // NO_SESSION loop breaker on every non-ok outcome — and RETURNS the exchanged
+  // session (or `null`) WITHOUT committing. We preserve services' contract by
+  // committing the returned session here via `handleWebSSOSession`. Shared by
+  // the `sso-return` cold-boot step AND the bfcache `pageshow` re-evaluation, so
+  // the same kernel runs exactly once per delivered fragment regardless of how
+  // the page was (re)shown.
   //
   // Returns `true` when a session was committed (caller short-circuits), `false`
-  // otherwise. On ANY non-ok outcome — `none`/`error`, state mismatch, missing
-  // code, or a failed/forged exchange — it sets the per-origin NO_SESSION flag
-  // so `sso-bounce` is disabled and the page cannot loop. Off-browser it is a
-  // no-op returning `false` (native never reaches it).
+  // otherwise. Off-browser `consumeSsoReturn` is a no-op returning `null`, so
+  // this returns `false` (native never reaches it).
   const runSsoReturn = useCallback(async (): Promise<boolean> => {
-    if (!isWebBrowser()) {
-      return false;
-    }
-
-    const ret = parseSsoReturnFragment(window.location.hash);
-    if (!ret) {
-      // Not an oxy_sso fragment — nothing to do (do NOT touch any flags).
-      return false;
-    }
-
-    const origin = window.location.origin;
-    const expectedState = window.sessionStorage.getItem(ssoStateKey(origin));
-    const stateOk = !!ret.state && !!expectedState && ret.state === expectedState;
-
-    // Strip the fragment FIRST so the opaque code never lingers in the address
-    // bar, history, or a copy-paste — even if a later step throws.
-    window.history.replaceState(null, '', window.location.pathname + window.location.search);
-    window.sessionStorage.removeItem(ssoStateKey(origin));
-
-    const markNoSession = () => {
-      window.sessionStorage.setItem(ssoNoSessionKey(origin), '1');
-    };
-
-    if (ret.kind === 'none' || ret.kind === 'error') {
-      // The central IdP had no session (or the bounce failed). Record it so we
-      // do not bounce again this tab — the definitive loop breaker.
-      markNoSession();
-      return false;
-    }
-
-    if (!stateOk || !ret.code) {
-      // Forged / replayed / stale fragment, or a malformed ok with no code.
-      // Treat exactly like "no session": never exchange, never loop.
-      markNoSession();
-      return false;
-    }
-
-    const commitWebSession = handleWebSSOSessionRef.current;
-    let session: SessionLoginResponse;
-    try {
-      session = await oxyServices.exchangeSsoCode(ret.code);
-    } catch (error) {
-      if (__DEV__) {
-        loggerUtil.debug(
-          'SSO code exchange failed (treating as no session)',
-          { component: 'OxyContext', method: 'runSsoReturn' },
-          error,
-        );
-      }
-      markNoSession();
-      return false;
-    }
-
-    if (!session?.sessionId || !commitWebSession) {
-      markNoSession();
-      return false;
-    }
-
-    await commitWebSession(session);
-
-    // Restore the user's real destination captured before the bounce. We only
-    // rewrite the URL when we are sitting on the callback path — otherwise the
-    // current URL is already the destination.
-    if (window.location.pathname === SSO_CALLBACK_PATH) {
-      const dest = window.sessionStorage.getItem(ssoDestKey(origin));
-      if (dest) {
-        try {
-          const destUrl = new URL(dest);
-          // Same-origin only — never honour a cross-origin destination that
-          // could have been planted to redirect the freshly signed-in user.
-          if (destUrl.origin === origin) {
-            window.history.replaceState(null, '', destUrl.pathname + destUrl.search + destUrl.hash);
-          }
-        } catch {
-          // Malformed stored destination — leave the URL on the callback path.
+    const session = await consumeSsoReturn(oxyServices, {
+      isWeb: isWebBrowser,
+      onExchangeError: (error) => {
+        if (__DEV__) {
+          loggerUtil.debug(
+            'SSO code exchange failed (treating as no session)',
+            { component: 'OxyContext', method: 'runSsoReturn' },
+            error,
+          );
         }
-      }
+      },
+    });
+    if (!session) {
+      return false;
     }
-    window.sessionStorage.removeItem(ssoDestKey(origin));
-
+    const commitWebSession = handleWebSSOSessionRef.current;
+    if (!commitWebSession) {
+      return false;
+    }
+    await commitWebSession(session);
     return true;
   }, [oxyServices]);
 
@@ -1013,17 +959,13 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
               window.sessionStorage.setItem(ssoGuardKey(origin), String(Date.now()));
               window.sessionStorage.setItem(ssoDestKey(origin), window.location.href);
 
-              const url = new URL('/sso', resolveCentralAuthUrl(oxyServices.config?.authWebUrl));
-              url.searchParams.set('prompt', 'none');
-              url.searchParams.set('client_id', origin);
-              url.searchParams.set('return_to', origin + SSO_CALLBACK_PATH);
-              url.searchParams.set('state', state);
+              const url = buildSsoBounceUrl(origin, state, oxyServices.config?.authWebUrl);
 
               // TERMINAL: the document is torn down by this navigation. The
               // `skip` below is only reached if `assign` is a no-op (e.g. the
               // navigation is blocked); in that case we fall through
               // unauthenticated, which is correct.
-              ssoBounce.ssoNavigate(url.toString());
+              ssoNavigate(url);
               return { kind: 'skip' };
             },
           },

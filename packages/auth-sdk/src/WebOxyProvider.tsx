@@ -21,9 +21,17 @@ import {
   CrossDomainAuth,
   createAuthManager,
   resolveCentralAuthUrl,
-  parseSsoReturnFragment,
   runColdBoot,
   logger,
+  SSO_CALLBACK_PATH,
+  ssoStateKey,
+  ssoNoSessionKey,
+  ssoGuardKey,
+  ssoDestKey,
+  isCentralIdPOrigin,
+  guardActive,
+  buildSsoBounceUrl,
+  consumeSsoReturn,
 } from '@oxyhq/core';
 import type {
   AuthManager,
@@ -37,16 +45,6 @@ import type {
 import { QueryClientProvider } from '@tanstack/react-query';
 import { attachQueryPersistence, createQueryClient } from './hooks/queryClient';
 import { isWebBrowser } from './hooks/useWebSSO';
-import {
-  SSO_CALLBACK_PATH,
-  ssoStateKey,
-  ssoNoSessionKey,
-  ssoGuardKey,
-  ssoDestKey,
-  isCentralIdPOrigin,
-  guardActive,
-  buildSsoBounceUrl,
-} from './utils/ssoBounce';
 
 export interface WebAuthState {
   user: User | null;
@@ -357,89 +355,31 @@ export function WebOxyProvider({
   /**
    * SSO return (cold-boot step 1).
    *
-   * We may be back from a top-level bounce to the central IdP. Parse
-   * `window.location.hash`, validate the round-tripped `state` against the one
-   * we stashed at bounce time, and exchange the opaque single-use `code` for
-   * the real session.
+   * We may be back from a top-level bounce to the central IdP. Delegates the
+   * entire security-critical CSRF/fragment-strip/state-check/exchange/dest-
+   * restore/loop-breaker sequence to core's `consumeSsoReturn`, which is
+   * byte-for-byte identical across `@oxyhq/auth` and `@oxyhq/services` (the
+   * security-sensitive parts MUST NOT diverge). `consumeSsoReturn` is
+   * COMMIT-FREE — it returns the exchanged session (or `null`) and never touches
+   * UI/auth state — so this provider commits it AROUND the call: the cold-boot
+   * post-runner switch (`'sso'` → `handleAuthSuccess`) and the bfcache
+   * `pageshow` handler both consume the returned `SsoReturnSession | null`.
    *
-   * Returns a `ColdBootSession` to be committed by the caller (the cold-boot
-   * post-runner switch OR the bfcache `pageshow` handler), or `null` to skip.
-   * It does NOT commit the session itself — keeping it side-effect-light makes
-   * it safe to call from both entry points.
-   *
-   * Security/loop invariants (mirrors the services provider exactly):
-   *   - The fragment is stripped via `history.replaceState` FIRST so the opaque
-   *     code never lingers in the URL / history / a `Referer`.
-   *   - State must match (CSRF). A mismatch or a missing code sets the
-   *     NO_SESSION flag so `sso-bounce` is disabled (no rebounce loop).
-   *   - `none`/`error` outcomes set the NO_SESSION flag (the load2 half of the
-   *     loop proof).
-   *   - After a successful exchange landing on the callback path, the real
-   *     destination is restored from the DEST key.
+   * Web-detection (`isWeb`) is wired to `isWebBrowser` so it matches the rest of
+   * the provider exactly; storage / location / history default to the `window.*`
+   * globals (the same surfaces the previous inline implementation used).
    */
   const runSsoReturn = useCallback(async (): Promise<SsoReturnSession | null> => {
-    if (!isWebBrowser()) return null;
-
-    const ret = parseSsoReturnFragment(window.location.hash);
-    if (!ret) return null;
-
-    const origin = window.location.origin;
-    const expectedState = window.sessionStorage.getItem(ssoStateKey(origin));
-    const stateOk = !!ret.state && !!expectedState && ret.state === expectedState;
-
-    // Strip the fragment FIRST so the opaque code never lingers in the URL,
-    // browser history, or a `Referer` header.
-    window.history.replaceState(
-      null,
-      '',
-      window.location.pathname + window.location.search,
-    );
-    window.sessionStorage.removeItem(ssoStateKey(origin));
-
-    // The in-flight bounce is now resolved — drop its guard so a later cold
-    // boot (e.g. after sign-out) can bounce again.
-    window.sessionStorage.removeItem(ssoGuardKey(origin));
-
-    if (ret.kind === 'none' || ret.kind === 'error') {
-      window.sessionStorage.setItem(ssoNoSessionKey(origin), '1');
-      return null;
-    }
-
-    if (!stateOk || !ret.code) {
-      window.sessionStorage.setItem(ssoNoSessionKey(origin), '1');
-      return null;
-    }
-
-    const session = await oxyServices.exchangeSsoCode(ret.code);
-    if (!session?.sessionId) {
-      window.sessionStorage.setItem(ssoNoSessionKey(origin), '1');
-      return null;
-    }
-
-    // If we landed on the internal callback path, restore the user's real
-    // destination (captured at bounce time) and clear it.
-    if (window.location.pathname === SSO_CALLBACK_PATH) {
-      const dest = window.sessionStorage.getItem(ssoDestKey(origin));
-      window.sessionStorage.removeItem(ssoDestKey(origin));
-      if (dest) {
-        try {
-          const destUrl = new URL(dest, origin);
-          // Only restore same-origin destinations — never honour an attacker
-          // who planted a cross-origin URL in this origin's sessionStorage.
-          if (destUrl.origin === origin) {
-            window.history.replaceState(
-              null,
-              '',
-              destUrl.pathname + destUrl.search + destUrl.hash,
-            );
-          }
-        } catch {
-          // Malformed stored destination — leave the URL on the callback path.
-        }
-      }
-    }
-
-    return { method: 'sso', session };
+    const session = await consumeSsoReturn(oxyServices, {
+      isWeb: isWebBrowser,
+      onExchangeError: (err) =>
+        logger.debug(
+          'SSO code exchange failed (treating as no session)',
+          { component: 'WebOxyProvider', method: 'runSsoReturn' },
+          err,
+        ),
+    });
+    return session ? { method: 'sso', session } : null;
   }, [oxyServices]);
 
   // The cold-boot step references `runSsoReturn` through a ref because the
@@ -466,7 +406,7 @@ export function WebOxyProvider({
     const origin = window.location.origin;
     if (isCentralIdPOrigin(origin)) return false;
     if (window.sessionStorage.getItem(ssoNoSessionKey(origin)) === '1') return false;
-    if (guardActive(origin, window.sessionStorage)) return false;
+    if (guardActive(window.sessionStorage, origin)) return false;
     return true;
   }, []);
 
@@ -520,12 +460,18 @@ export function WebOxyProvider({
       //                       (Chrome enhancement). Fires once per page load.
       //   3. cookie-restore — `authManager.initialize()` refresh-cookie restore;
       //                       first-party only on `*.oxy.so`, empty cross-domain.
-      //   4. stored-session — bearer restore; the ONLY path native reaches.
-      //   5. sso-bounce     — TERMINAL top-level navigation to `auth.oxy.so/sso`.
+      //   4. sso-bounce     — TERMINAL top-level navigation to `auth.oxy.so/sso`.
       //
-      // CRITICAL: the `redirect`, `cookie-restore`, and `stored-session` steps
-      // MUST hydrate a REAL user before claiming a session. A placeholder user
-      // (empty id) is never exposed (R4).
+      // NOTE: the services `OxyContext` has an additional `stored-session`
+      // bearer-restore step between `cookie-restore` and `sso-bounce` — that is
+      // native's ONLY restore path. `WebOxyProvider` is web-only and cookie-only
+      // (it never persists a bearer session to JS-accessible storage), so that
+      // step was a guaranteed no-op here and has been dropped; the effective web
+      // restore is the cookie path (step 3).
+      //
+      // CRITICAL: the `redirect` and `cookie-restore` steps MUST hydrate a REAL
+      // user before claiming a session. A placeholder user (empty id) is never
+      // exposed (R4).
       const ssoKey = silentSignInKey(oxyServices);
 
       const steps: ReadonlyArray<ColdBootStep<ColdBootSession>> = [
@@ -629,19 +575,7 @@ export function WebOxyProvider({
           },
         },
         {
-          // 4) Stored-session bearer restore. Present for step-id parity with
-          // the services `OxyContext`, where this is native's ONLY restore path
-          // (`validateSession`/`switchSession` against the persisted bearer
-          // session). `WebOxyProvider` is web-only and cookie-only — it never
-          // persists a bearer session to JS-accessible storage — so the
-          // effective web restore is the cookie path (step 3) and this step is
-          // always a skip here. Kept (not removed) so the cold-boot step order
-          // is identical across both providers.
-          id: 'stored-session',
-          run: async () => ({ kind: 'skip' }),
-        },
-        {
-          // 5) SSO bounce (TERMINAL, once). No local session was recovered by
+          // 4) SSO bounce (TERMINAL, once). No local session was recovered by
           // any prior step. Navigate top-level to the central IdP's `/sso`
           // endpoint with `prompt=none`. The document is torn down, so `run`
           // returns `skip` only if `assign` no-ops (e.g. blocked navigation).

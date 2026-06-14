@@ -31,7 +31,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { OxyContextProvider, useOxy } from '../../src/ui/context/OxyContext';
 import type { User } from '@oxyhq/core';
 import { useAuthStore } from '../../src/ui/stores/authStore';
-import * as ssoBounce from '../../src/ui/utils/ssoBounce';
+import * as oxyCore from '@oxyhq/core';
 
 const SESSION_IDS_KEY = 'oxy_session_session_ids';
 const ACTIVE_SESSION_KEY = 'oxy_session_active_session_id';
@@ -139,7 +139,7 @@ describe('Cold-boot restore via secure refresh cookies (multi-account)', () => {
     // `accounts.oxy.so` is a first-party RP, NOT the central IdP, so a fully
     // logged-out cold boot ends in the terminal `sso-bounce`. Spy the
     // navigation seam so it is observable and never tears down jsdom.
-    ssoNavigateSpy = jest.spyOn(ssoBounce, 'ssoNavigate').mockImplementation(() => undefined);
+    ssoNavigateSpy = jest.spyOn(oxyCore, 'ssoNavigate').mockImplementation(() => undefined);
     useAuthStore.getState().logout();
   });
 

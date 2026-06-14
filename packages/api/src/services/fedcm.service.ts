@@ -4,6 +4,7 @@ import FedCMGrant from '../models/FedCMGrant';
 import { User } from '../models/User';
 import { logger } from '../utils/logger';
 import { normaliseOrigin } from '../utils/origin';
+import approvedClientsCache from '../utils/approvedClientsCache';
 import sessionService from './session.service';
 import { Request } from 'express';
 import * as crypto from 'crypto';
@@ -131,9 +132,11 @@ function verifyIdToken(token: string): FedCMTokenPayload {
  */
 class FedCMService {
   /**
-   * Get all approved client origins
+   * Uncached read of all approved client origins straight from Mongo.
+   * Fail-soft: returns `[]` on error so callers (and the cache loader) never
+   * throw on a transient DB hiccup.
    */
-  async getApprovedClientOrigins(): Promise<string[]> {
+  private async fetchApprovedClientOrigins(): Promise<string[]> {
     try {
       const clients = await FedCMClient.find({ approved: true })
         .select('origin')
@@ -147,16 +150,20 @@ class FedCMService {
   }
 
   /**
-   * Check if a client origin is approved
+   * Get all approved client origins (short-TTL cached — see approvedClientsCache).
+   */
+  async getApprovedClientOrigins(): Promise<string[]> {
+    return approvedClientsCache.getApprovedOrigins(() => this.fetchApprovedClientOrigins());
+  }
+
+  /**
+   * Check if a client origin is approved (short-TTL cached membership test).
+   * Fail-closed: any unexpected throw resolves to `false`, and the cache loader
+   * itself returns `[]` on Mongo error so a DB hiccup denies rather than admits.
    */
   async isClientApproved(origin: string): Promise<boolean> {
     try {
-      const client = await FedCMClient.findOne({
-        origin,
-        approved: true,
-      }).select('_id').lean();
-
-      return !!client;
+      return await approvedClientsCache.isApproved(origin, () => this.fetchApprovedClientOrigins());
     } catch (error) {
       logger.error('Error checking FedCM client approval:', error);
       return false;
@@ -244,6 +251,9 @@ class FedCMService {
       }
 
       logger.info(`Seeded ${defaultClients.length} FedCM approved clients`);
+      // Drop any list cached before/during seeding so the first read after
+      // boot reflects the freshly-seeded allow-list.
+      approvedClientsCache.invalidate();
     } catch (error) {
       logger.error('Error seeding FedCM clients:', error);
       throw error;
@@ -270,6 +280,7 @@ class FedCMService {
     });
 
     logger.info(`Added new FedCM approved client: ${origin}`);
+    approvedClientsCache.invalidate();
     return client;
   }
 
@@ -278,6 +289,7 @@ class FedCMService {
    */
   async removeApprovedClient(origin: string): Promise<boolean> {
     const result = await FedCMClient.deleteOne({ origin });
+    approvedClientsCache.invalidate();
     return result.deletedCount > 0;
   }
 
@@ -362,6 +374,9 @@ class FedCMService {
           .select('clientOrigin firstGrantedAt lastUsedAt')
           .sort({ lastUsedAt: -1 })
           .lean(),
+        // Intentionally NOT routed through approvedClientsCache: this is the
+        // Connected-apps UI which needs the richer { origin, name, description }
+        // projection, not just the origin list the cache stores.
         FedCMClient.find({ approved: true })
           .select('origin name description')
           .lean(),

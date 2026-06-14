@@ -10,7 +10,7 @@
  * MULTIPART_TLDS guard.
  */
 
-import { autoDetectAuthWebUrl } from '../fapiAutoDetect';
+import { autoDetectAuthWebUrl, registrableApex } from '../fapiAutoDetect';
 
 function loc(hostname: string, protocol = 'https:'): Pick<Location, 'hostname' | 'protocol'> {
   return { hostname, protocol };
@@ -89,5 +89,66 @@ describe('autoDetectAuthWebUrl', () => {
     it('does not derive auth.com.au from a two-label com.au host', () => {
       expect(autoDetectAuthWebUrl(loc('shop.com.au'))).toBeUndefined();
     });
+  });
+
+  // Regression guard: the refactor to delegate host handling to `registrableApex`
+  // must not change any of the pre-existing return values.
+  describe('regression — unchanged values after registrableApex extraction', () => {
+    const cases: Array<[string, string | undefined]> = [
+      ['mention.earth', 'https://auth.mention.earth'],
+      ['www.mention.earth', 'https://auth.mention.earth'],
+      ['deep.app.homiio.com', 'https://auth.homiio.com'],
+      ['auth.oxy.so', 'https://auth.oxy.so'],
+      ['auth.mention.earth', 'https://auth.mention.earth'],
+      ['localhost', undefined],
+      ['192.168.1.10', undefined],
+      ['[::1]', undefined],
+      ['intranet', undefined],
+      ['', undefined],
+      ['foo.co.uk', undefined],
+    ];
+    it.each(cases)('autoDetectAuthWebUrl(%s) === %s', (hostname, expected) => {
+      const protocol = hostname === 'localhost' || hostname === '[::1]' ? 'http:' : 'https:';
+      expect(autoDetectAuthWebUrl(loc(hostname, protocol))).toBe(expected);
+    });
+  });
+});
+
+describe('registrableApex', () => {
+  it('returns the eTLD+1 for a normal two-label host', () => {
+    expect(registrableApex('mention.earth')).toBe('mention.earth');
+  });
+
+  it('strips subdomains down to the trailing two labels', () => {
+    expect(registrableApex('www.mention.earth')).toBe('mention.earth');
+    expect(registrableApex('deep.app.homiio.com')).toBe('homiio.com');
+  });
+
+  it('lower-cases the input', () => {
+    expect(registrableApex('WWW.Mention.EARTH')).toBe('mention.earth');
+  });
+
+  it('returns null for a multi-part public suffix (foo.co.uk -> null)', () => {
+    expect(registrableApex('foo.co.uk')).toBeNull();
+    expect(registrableApex('shop.com.au')).toBeNull();
+  });
+
+  it('returns null for IPv4 literals', () => {
+    expect(registrableApex('192.168.1.10')).toBeNull();
+    expect(registrableApex('10.0.0.1')).toBeNull();
+  });
+
+  it('returns null for IPv6 literals and hosts carrying a port', () => {
+    expect(registrableApex('[::1]')).toBeNull();
+    expect(registrableApex('mention.earth:3000')).toBeNull();
+  });
+
+  it('returns null for single-label hosts', () => {
+    expect(registrableApex('intranet')).toBeNull();
+    expect(registrableApex('localhost')).toBeNull();
+  });
+
+  it('returns null for empty input', () => {
+    expect(registrableApex('')).toBeNull();
   });
 });

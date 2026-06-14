@@ -32,7 +32,7 @@ jest.mock('../../src/ui/hooks/useWebSSO', () => ({
 import { OxyContextProvider, useOxy } from '../../src/ui/context/OxyContext';
 import type { SessionLoginResponse, User } from '@oxyhq/core';
 import { useAuthStore } from '../../src/ui/stores/authStore';
-import * as ssoBounce from '../../src/ui/utils/ssoBounce';
+import * as oxyCore from '@oxyhq/core';
 
 const API_BASE_URL = 'https://api.mention.earth';
 const SESSION_IDS_KEY = 'oxy_session_session_ids';
@@ -119,7 +119,7 @@ describe('Native cold boot NEVER attempts the per-apex silent iframe', () => {
     silentSignInSpy.mockClear();
     validateSessionSpy.mockClear();
     useAuthStore.getState().logout();
-    ssoNavigateSpy = jest.spyOn(ssoBounce, 'ssoNavigate').mockImplementation(() => undefined);
+    ssoNavigateSpy = jest.spyOn(oxyCore, 'ssoNavigate').mockImplementation(() => undefined);
     window.localStorage.setItem(SESSION_IDS_KEY, JSON.stringify([STORED_SESSION_ID]));
     window.localStorage.setItem(ACTIVE_SESSION_KEY, STORED_SESSION_ID);
   });

@@ -4,16 +4,17 @@
  * Cold-boot orchestration for `WebOxyProvider` — TRUE central cross-domain SSO.
  *
  * The provider drives session recovery through `runColdBoot` (from
- * `@oxyhq/core`) with six ordered steps that mirror the services `OxyContext`
- * EXACTLY (consistency mandate):
+ * `@oxyhq/core`) with five ordered steps that mirror the services `OxyContext`
+ * (consistency mandate). The services `stored-session` bearer-restore step is
+ * omitted on web — it is native's only restore path and was a guaranteed no-op
+ * here (web is cookie-only), so it was dropped:
  *
  *   0. redirect       — popup `?access_token=` query callback.
  *   1. sso-return     — parse `location.hash`; on `ok` exchange the opaque code
  *                       and commit; on `none`/`error`/mismatch set NO_SESSION.
  *   2. fedcm-silent   — silent FedCM against the CENTRAL `auth.oxy.so` (Chrome).
  *   3. cookie-restore — refresh-cookie restore (first-party only on *.oxy.so).
- *   4. stored-session — web no-op (cookie-only); parity with services/native.
- *   5. sso-bounce     — TERMINAL top-level navigation to `auth.oxy.so/sso`.
+ *   4. sso-bounce     — TERMINAL top-level navigation to `auth.oxy.so/sso`.
  *
  * These tests pin the contract:
  *   1. The first step that yields a real session wins; later steps never run.
@@ -84,11 +85,23 @@ jest.mock('@oxyhq/core', () => {
   const actual = jest.requireActual('@oxyhq/core');
   return {
     __esModule: true,
-    // Real cold-boot primitives + SSO helpers.
+    // Real cold-boot primitives + SSO helpers. The provider delegates the
+    // security-critical CSRF/fragment/exchange/dest sequence to the REAL
+    // `consumeSsoReturn`, and reads the REAL per-origin key derivation + bounce
+    // helpers — so these tests exercise the exact production logic.
     runColdBoot: actual.runColdBoot,
     resolveCentralAuthUrl: actual.resolveCentralAuthUrl,
     CENTRAL_AUTH_URL: actual.CENTRAL_AUTH_URL,
     parseSsoReturnFragment: actual.parseSsoReturnFragment,
+    consumeSsoReturn: actual.consumeSsoReturn,
+    SSO_CALLBACK_PATH: actual.SSO_CALLBACK_PATH,
+    ssoStateKey: actual.ssoStateKey,
+    ssoNoSessionKey: actual.ssoNoSessionKey,
+    ssoGuardKey: actual.ssoGuardKey,
+    ssoDestKey: actual.ssoDestKey,
+    isCentralIdPOrigin: actual.isCentralIdPOrigin,
+    guardActive: actual.guardActive,
+    buildSsoBounceUrl: actual.buildSsoBounceUrl,
     logger: actual.logger,
     // Stubbed service / auth surfaces.
     OxyServices: class {
@@ -130,7 +143,9 @@ jest.mock('@oxyhq/core', () => {
   };
 });
 
-// Import AFTER the mock is registered.
+// Import AFTER the mock is registered. The SSO helpers resolve to the REAL
+// `@oxyhq/core` implementations (passed through the mock above) — the same ones
+// the provider consumes — so the per-origin keys and bounce URL match exactly.
 import { WebOxyProvider, useAuth } from '../src/WebOxyProvider';
 import {
   ssoStateKey,
@@ -139,7 +154,7 @@ import {
   ssoDestKey,
   SSO_CALLBACK_PATH,
   buildSsoBounceUrl,
-} from '../src/utils/ssoBounce';
+} from '@oxyhq/core';
 
 const ORIGIN = 'https://mention.earth';
 const realUser: User = { id: 'u1', username: 'tester' } as User;

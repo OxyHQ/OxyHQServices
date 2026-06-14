@@ -18,7 +18,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { OxyContextProvider, useOxy } from '../../src/ui/context/OxyContext';
 import type { User } from '@oxyhq/core';
 import { useAuthStore } from '../../src/ui/stores/authStore';
-import * as ssoBounce from '../../src/ui/utils/ssoBounce';
+import * as oxyCore from '@oxyhq/core';
 
 const ORIGIN = 'https://app.mention.earth';
 const GUARD_KEY = `oxy_sso_guard:${ORIGIN}`;
@@ -80,7 +80,7 @@ describe('SSO bounce guard (loop prevention + self-heal)', () => {
     captured = { isTokenReady: false };
     useAuthStore.getState().logout();
     window.history.replaceState(null, '', '/');
-    assignSpy = jest.spyOn(ssoBounce, 'ssoNavigate').mockImplementation(() => undefined);
+    assignSpy = jest.spyOn(oxyCore, 'ssoNavigate').mockImplementation(() => undefined);
   });
 
   afterEach(() => {

@@ -42,7 +42,7 @@ jest.mock('../../src/ui/hooks/useWebSSO', () => ({
 import { OxyContextProvider, useOxy } from '../../src/ui/context/OxyContext';
 import type { User } from '@oxyhq/core';
 import { useAuthStore } from '../../src/ui/stores/authStore';
-import * as ssoBounce from '../../src/ui/utils/ssoBounce';
+import * as oxyCore from '@oxyhq/core';
 
 const API_BASE_URL = 'https://api.mention.earth';
 const STORED_SESSION_ID = 'sess_stored_native';
@@ -127,7 +127,7 @@ describe('Native cold boot runs ONLY the stored-session step', () => {
     exchangeSsoCodeSpy.mockClear();
     generateSsoStateSpy.mockClear();
     validateSessionSpy.mockClear();
-    ssoNavigateSpy = jest.spyOn(ssoBounce, 'ssoNavigate').mockImplementation(() => undefined);
+    ssoNavigateSpy = jest.spyOn(oxyCore, 'ssoNavigate').mockImplementation(() => undefined);
     useAuthStore.getState().logout();
     // Seed a durable stored session so the stored-session step has work to do.
     window.localStorage.setItem(SESSION_IDS_KEY, JSON.stringify([STORED_SESSION_ID]));

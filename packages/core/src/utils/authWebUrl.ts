@@ -18,10 +18,22 @@
  */
 
 /**
- * The canonical central Identity Provider origin for the Oxy ecosystem.
- * No trailing slash.
+ * The registrable apex (eTLD+1) of the Oxy ecosystem's central Identity
+ * Provider. The central IdP is reachable at `auth.${CENTRAL_IDP_APEX}` and the
+ * ID-token assertion issuer is always `https://auth.${CENTRAL_IDP_APEX}`
+ * regardless of which per-apex `auth.<rp>` host served a given request.
+ *
+ * Kept as a standalone constant so the IdP worker and the SDK derive the same
+ * literal from one source of truth (the worker imports it to brand assertions).
  */
-export const CENTRAL_AUTH_URL = 'https://auth.oxy.so';
+export const CENTRAL_IDP_APEX = 'oxy.so';
+
+/**
+ * The canonical central Identity Provider origin for the Oxy ecosystem.
+ * No trailing slash. Derived from {@link CENTRAL_IDP_APEX} so the apex and the
+ * full origin never drift apart.
+ */
+export const CENTRAL_AUTH_URL = `https://auth.${CENTRAL_IDP_APEX}`;
 
 /**
  * Resolve the central IdP origin, honouring an explicit override.

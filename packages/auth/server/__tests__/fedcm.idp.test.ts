@@ -19,6 +19,7 @@
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'bun:test';
 import { createHmac } from 'node:crypto';
+import { SSO_CALLBACK_PATH } from '@oxyhq/core';
 
 const RP_ORIGIN = 'https://accounts.oxy.so';
 const TEST_SECRET = 'test-fedcm-secret';
@@ -31,9 +32,9 @@ process.env.OXY_API_URL = 'https://api.oxy.so';
 process.env.SSO_INTERNAL_SECRET = 'test-sso-internal-secret-32-chars-long!!';
 process.env.NODE_ENV = 'test';
 
-// The fixed RP callback path GET /sso is allowed to redirect to. Must match
-// `SSO_CALLBACK_PATH` in server/index.ts.
-const SSO_CALLBACK_PATH = '/__oxy/sso-callback';
+// The fixed RP callback path GET /sso is allowed to redirect to. Imported from
+// `@oxyhq/core` — the SINGLE SOURCE OF TRUTH shared by the worker and the client
+// SDK, so this test can never drift from the value the server actually enforces.
 
 // Stub the upstream Oxy API. The IdP server resolves the FedCM session cookie
 // to a user via the PUBLIC, cookie-less endpoint:

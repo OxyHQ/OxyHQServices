@@ -5,12 +5,22 @@
  * `auth.oxy.so` origin is returned. No DOM, no side effects.
  */
 
-import { CENTRAL_AUTH_URL, resolveCentralAuthUrl } from '../authWebUrl';
+import { CENTRAL_AUTH_URL, CENTRAL_IDP_APEX, resolveCentralAuthUrl } from '../authWebUrl';
+
+describe('CENTRAL_IDP_APEX', () => {
+  it('is the central IdP registrable apex', () => {
+    expect(CENTRAL_IDP_APEX).toBe('oxy.so');
+  });
+});
 
 describe('CENTRAL_AUTH_URL', () => {
   it('is the central IdP origin with no trailing slash', () => {
     expect(CENTRAL_AUTH_URL).toBe('https://auth.oxy.so');
     expect(CENTRAL_AUTH_URL.endsWith('/')).toBe(false);
+  });
+
+  it('is derived from CENTRAL_IDP_APEX (apex and origin never drift)', () => {
+    expect(CENTRAL_AUTH_URL).toBe(`https://auth.${CENTRAL_IDP_APEX}`);
   });
 });
 

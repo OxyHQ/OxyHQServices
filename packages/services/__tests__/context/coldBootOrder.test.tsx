@@ -27,7 +27,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { OxyContextProvider, useOxy } from '../../src/ui/context/OxyContext';
 import type { SessionLoginResponse, User } from '@oxyhq/core';
 import { useAuthStore } from '../../src/ui/stores/authStore';
-import * as ssoBounce from '../../src/ui/utils/ssoBounce';
+import * as oxyCore from '@oxyhq/core';
 
 const API_BASE_URL = 'https://api.mention.earth';
 const FEDCM_USER_ID = 'fedcm_user_1';
@@ -124,9 +124,10 @@ describe('Cold-boot order (web cross-domain, central SSO)', () => {
     setTokensSpy.mockClear();
     useAuthStore.getState().logout();
     // The terminal `sso-bounce` step navigates via `ssoNavigate` (a thin wrapper
-    // over `window.location.assign`, which jsdom makes non-mockable). Spy the
-    // wrapper so the navigation is observable without tearing down jsdom.
-    assignSpy = jest.spyOn(ssoBounce, 'ssoNavigate').mockImplementation(() => undefined);
+    // over `window.location.assign`, which jsdom makes non-mockable) now exported
+    // from `@oxyhq/core`. Spy the wrapper so the navigation is observable without
+    // tearing down jsdom.
+    assignSpy = jest.spyOn(oxyCore, 'ssoNavigate').mockImplementation(() => undefined);
   });
 
   afterEach(() => {

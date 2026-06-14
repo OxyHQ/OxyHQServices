@@ -368,13 +368,27 @@ export type { QuickAccount, DisplayNameUserShape } from './utils/accountUtils';
 // ---------------------------------------------------------------------------
 // Cross-domain SSO infrastructure
 // ---------------------------------------------------------------------------
-export { autoDetectAuthWebUrl } from './utils/fapiAutoDetect';
+export { autoDetectAuthWebUrl, registrableApex, MULTIPART_TLDS } from './utils/fapiAutoDetect';
 
 // Central cross-domain SSO (opaque single-use code bounce via auth.oxy.so)
-export { CENTRAL_AUTH_URL, resolveCentralAuthUrl } from './utils/authWebUrl';
-export { parseSsoReturnFragment } from './utils/ssoReturn';
-export type { SsoReturnKind, SsoReturnResult } from './utils/ssoReturn';
+export { CENTRAL_AUTH_URL, CENTRAL_IDP_APEX, resolveCentralAuthUrl } from './utils/authWebUrl';
+export { parseSsoReturnFragment, consumeSsoReturn } from './utils/ssoReturn';
+export type { SsoReturnKind, SsoReturnResult, ConsumeSsoReturnDeps } from './utils/ssoReturn';
 export { generateSsoState } from './mixins/OxyServices.sso';
+
+// SSO bounce — per-origin sessionStorage keys, bounce URL builder, predicates
+export {
+    SSO_CALLBACK_PATH,
+    SSO_GUARD_TTL_MS,
+    ssoStateKey,
+    ssoGuardKey,
+    ssoDestKey,
+    ssoNoSessionKey,
+    ssoNavigate,
+    buildSsoBounceUrl,
+    isCentralIdPOrigin,
+    guardActive,
+} from './utils/ssoBounce';
 
 export { runColdBoot } from './utils/coldBoot';
 export type {

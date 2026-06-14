@@ -31,6 +31,7 @@
 import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
+import { registrableApex, CENTRAL_IDP_APEX, SSO_CALLBACK_PATH } from '@oxyhq/core';
 
 // ---------------------------------------------------------------------------
 // Runtime configuration
@@ -56,18 +57,6 @@ const ESTABLISH_TOKEN_LIFETIME = 60; // 60 seconds
  * both are HS256-signed with the same `FEDCM_TOKEN_SECRET`.
  */
 const ESTABLISH_TOKEN_PURPOSE = 'sso-establish';
-
-/**
- * The single, fixed path on the RP origin that GET /sso is allowed to redirect
- * back to. The RP serves a tiny callback page here whose only job is to read the
- * `#oxy_sso=…&code=…&state=…` fragment, redeem the code at `POST /sso/exchange`,
- * and replace history. Pinning the callback path (not just the origin) shrinks
- * the open-redirect surface to a single, RP-owned, well-known location: even a
- * fully-approved RP origin cannot be coerced into bouncing the code to an
- * arbitrary path on its own site (e.g. a user-content or proxy path that might
- * leak the fragment).
- */
-const SSO_CALLBACK_PATH = '/__oxy/sso-callback';
 
 /**
  * Shared attributes for the `fedcm_session` cookie (set AND delete).
@@ -668,39 +657,6 @@ function isReturnToOnClient(returnTo: string, approvedOrigin: string): boolean {
 }
 
 /**
- * Known multi-part public suffixes where the registrable domain is the LAST
- * THREE labels, not two. This MUST mirror `MULTIPART_TLDS` in
- * `packages/core/src/utils/fapiAutoDetect.ts` — the client derives
- * `auth.<rp-apex>` through that helper, and this server must derive the SAME
- * per-apex IdP host so the second SSO hop lands on a first-party origin. If the
- * two lists ever diverge, an RP on a multi-part TLD would be bounced to a host
- * the client never CNAMEs. Deriving an apex from `labels.slice(-2)` against any
- * of these would also yield an attacker-registrable suffix (e.g. `auth.co.uk`),
- * so we bail (treat as no per-apex hop) instead.
- */
-const MULTIPART_TLDS: ReadonlySet<string> = new Set([
-  'co.uk',
-  'com.au',
-  'co.jp',
-  'co.nz',
-  'com.br',
-  'co.za',
-  'com.mx',
-  'co.in',
-  'co.kr',
-  'com.sg',
-]);
-
-/**
- * The registrable-domain apex of the CENTRAL IdP host. When a client's apex
- * equals this, `auth.<apex>` IS `auth.oxy.so` (the central IdP) — already
- * first-party to the client via the top-level `/sso` bounce — so the second
- * establish hop is unnecessary and we mint the code directly. This is the
- * `*.oxy.so` skip case.
- */
-const CENTRAL_IDP_APEX = 'oxy.so';
-
-/**
  * The issuer the API's `POST /fedcm/exchange` validates every assertion against
  * (the central-SSO model): `https://auth.<CENTRAL_IDP_APEX>` = `https://auth.oxy.so`.
  *
@@ -749,22 +705,18 @@ function apexAuthHostForClient(clientOrigin: string): string | null {
   } catch {
     return null;
   }
-  if (!hostname) return null;
-  // IPv4 / IPv6 literals have no registrable apex.
-  if (/^\d+\.\d+\.\d+\.\d+$/.test(hostname)) return null;
-  if (hostname.startsWith('[') || hostname.includes(':')) return null;
-
-  const labels = hostname.split('.');
-  if (labels.length < 2) return null;
-
-  const lastTwo = labels.slice(-2).join('.');
-  if (MULTIPART_TLDS.has(lastTwo)) return null;
+  // `registrableApex` (core SINGLE SOURCE OF TRUTH) applies the same guards the
+  // old inline code did: empty host, IPv4 (`/^\d+\.\d+\.\d+\.\d+$/`) / IPv6
+  // (`[` / `:`) literals, `labels.length < 2`, and the `MULTIPART_TLDS`
+  // multi-part-public-suffix bail. Returns the bare eTLD+1 or `null`.
+  const apex = registrableApex(hostname);
+  if (!apex) return null;
 
   // Same registrable domain as the central IdP → `auth.oxy.so` is already
   // first-party; skip the hop.
-  if (lastTwo === CENTRAL_IDP_APEX) return null;
+  if (apex === CENTRAL_IDP_APEX) return null;
 
-  return `auth.${lastTwo}`;
+  return `auth.${apex}`;
 }
 
 /** The non-secret outcome reported to the RP callback via the URL fragment. */
