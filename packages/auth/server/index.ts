@@ -202,17 +202,8 @@ async function createHS256JWT(payload: Record<string, unknown>, secret: string):
 
 /** Decode a base64url string to its UTF-8 text, or `null` on malformed input. */
 function base64urlDecode(input: string): string | null {
-  try {
-    const padded = input.replace(/-/g, '+').replace(/_/g, '/');
-    const binary = atob(padded);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) {
-      bytes[i] = binary.charCodeAt(i);
-    }
-    return new TextDecoder().decode(bytes);
-  } catch {
-    return null;
-  }
+  const bytes = base64urlBytes(input);
+  return bytes ? new TextDecoder().decode(bytes) : null;
 }
 
 /**
