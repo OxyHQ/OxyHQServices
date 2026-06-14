@@ -52,6 +52,14 @@ const PUBLIC_KEY_RANDOM_BYTES = 24;
 const SECRET_RANDOM_BYTES = 32;
 const WEBHOOK_SECRET_RANDOM_BYTES = 24;
 
+/**
+ * Grace window during which a credential that has been rotated away keeps
+ * working. On rotation the previous credential is marked `deprecated` and its
+ * `expiresAt` is set to `now + CREDENTIAL_ROTATION_GRACE_MS`, giving callers
+ * time to roll out the new secret with zero downtime (7 days).
+ */
+const CREDENTIAL_ROTATION_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
+
 const router = express.Router();
 
 // All application routes require an authenticated user.
@@ -171,6 +179,9 @@ function serializeCredential(credential: IApplicationCredential) {
     status: credential.status,
     lastUsedAt: credential.lastUsedAt,
     expiresAt: credential.expiresAt,
+    rotatedFromCredentialId: credential.rotatedFromCredentialId
+      ? credential.rotatedFromCredentialId.toString()
+      : undefined,
     createdByUserId: credential.createdByUserId.toString(),
     createdAt: credential.createdAt,
     updatedAt: credential.updatedAt,
@@ -761,8 +772,12 @@ router.get(
 );
 
 /**
- * Create a credential. The plaintext `secret` is returned ONCE; only its hash
- * is stored. `public` credentials carry no secret.
+ * Create a credential.
+ *
+ * The plaintext `secret` is returned in the response body EXACTLY ONCE and can
+ * never be retrieved again — only its SHA-256 hash is persisted. Store it
+ * immediately; if lost, rotate the credential to obtain a fresh secret.
+ * `public` credentials carry no secret (the `secret` field is `null`).
  */
 router.post(
   '/:appId/credentials',
@@ -812,7 +827,19 @@ router.post(
 );
 
 /**
- * Rotate a credential's secret. Returns the new plaintext `secret` ONCE.
+ * Rotate a credential — zero-downtime.
+ *
+ * Rotation does NOT overwrite the existing secret in place. Instead it issues a
+ * brand-new credential (fresh `publicKey` + `secret`) that inherits the source
+ * credential's `name`, `type`, `environment`, and `scopes`, and links back via
+ * `rotatedFromCredentialId`. The previous credential is marked `deprecated` and
+ * given an `expiresAt` `CREDENTIAL_ROTATION_GRACE_MS` (7 days) in the future, so
+ * it keeps authenticating until then — callers can roll out the new secret with
+ * no downtime. Once the grace window elapses (or the old credential is revoked),
+ * the previous secret stops working.
+ *
+ * The new plaintext `secret` is returned EXACTLY ONCE and cannot be retrieved
+ * again — only its hash is stored.
  */
 router.post(
   '/:appId/credentials/:credId/rotate',
@@ -828,30 +855,56 @@ router.post(
       throw new NotFoundError('Credential not found');
     }
 
-    const credential = await ApplicationCredential.findOne({
+    const previous = await ApplicationCredential.findOne({
       _id: req.params.credId,
       applicationId: application._id,
       status: { $ne: 'revoked' },
     });
-    if (!credential) {
+    if (!previous) {
       throw new NotFoundError('Credential not found');
     }
 
-    if (credential.type === 'public') {
+    if (previous.type === 'public') {
       throw new BadRequestError('Public credentials do not have a rotatable secret');
     }
 
-    const secret = crypto.randomBytes(SECRET_RANDOM_BYTES).toString('hex');
-    credential.secretHash = crypto.createHash('sha256').update(secret).digest('hex');
-    await credential.save();
+    const { publicKey, secret, secretHash } = generateCredentialMaterial();
+
+    // Mint the replacement credential first; only then deprecate the old one so
+    // a failure mid-rotation never leaves the application without a usable
+    // credential during the grace window.
+    const rotated = await ApplicationCredential.create({
+      applicationId: application._id,
+      name: previous.name,
+      publicKey,
+      secretHash,
+      type: previous.type,
+      environment: previous.environment,
+      scopes: previous.scopes,
+      status: 'active',
+      rotatedFromCredentialId: previous._id,
+      createdByUserId: new mongoose.Types.ObjectId(requireUserId(req)),
+    });
+
+    const graceExpiresAt = new Date(Date.now() + CREDENTIAL_ROTATION_GRACE_MS);
+    previous.status = 'deprecated';
+    previous.expiresAt = graceExpiresAt;
+    await previous.save();
 
     logger.info('Application credential rotated', {
       applicationId: application._id.toString(),
-      credentialId: credential._id.toString(),
+      previousCredentialId: previous._id.toString(),
+      newCredentialId: rotated._id.toString(),
+      graceExpiresAt: graceExpiresAt.toISOString(),
       by: requireUserId(req),
     });
 
-    res.json({ credential: serializeCredential(credential), secret });
+    res.json({
+      credential: serializeCredential(rotated),
+      secret,
+      rotatedFrom: previous._id.toString(),
+      graceExpiresAt,
+    });
   })
 );
 

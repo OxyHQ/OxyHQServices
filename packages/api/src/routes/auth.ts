@@ -13,6 +13,7 @@ import { SessionController } from '../controllers/session.controller';
 import { User } from '../models/User';
 import { Application } from '../models/Application';
 import { ApplicationCredential } from '../models/ApplicationCredential';
+import { isCredentialUsable } from '../utils/credentialUsability';
 import { authMiddleware, rejectQueryToken, type AuthRequest } from '../middleware/auth';
 import { requireSameSiteOrigin } from '../middleware/originGuard';
 import { rateLimit } from '../middleware/rateLimiter';
@@ -2047,12 +2048,14 @@ router.post(
     }
 
     // The ApplicationCredential.publicKey serves as the OAuth `client_id`.
+    // Accept `active` OR `deprecated`-but-within-grace credentials; reject
+    // `revoked` and any whose rotation grace window has expired.
     const credential = await ApplicationCredential.findOne({
       publicKey: clientId,
-      status: 'active',
+      status: { $ne: 'revoked' },
     });
-    if (!credential) {
-      // Don't leak whether the client exists vs is revoked.
+    if (!credential || !isCredentialUsable(credential)) {
+      // Don't leak whether the client exists vs is revoked/expired.
       throw new BadRequestError('Invalid client');
     }
 
@@ -2158,11 +2161,13 @@ router.post(
       codeVerifier?: string;
     };
 
+    // Accept `active` OR `deprecated`-but-within-grace credentials; reject
+    // `revoked` and any whose rotation grace window has expired.
     const credential = await ApplicationCredential.findOne({
       publicKey: clientId,
-      status: 'active',
+      status: { $ne: 'revoked' },
     });
-    if (!credential) {
+    if (!credential || !isCredentialUsable(credential)) {
       throw new UnauthorizedError('invalid_client');
     }
 
@@ -2260,7 +2265,12 @@ const serviceTokenLimiter = rateLimit({
  *       Internal service-to-service authentication endpoint.
  *       Exchange ApplicationCredential credentials (apiKey = publicKey,
  *       apiSecret = plaintext secret) for a short-lived service JWT (1 hour).
- *       Requires an active credential of type `service` on an active application.
+ *       Requires a usable credential of type `service` on an active
+ *       application: either `active`, or `deprecated` but still within its
+ *       rotation grace window (a credential rotated within the last 7 days keeps
+ *       minting tokens until its grace `expiresAt`). `revoked` and grace-expired
+ *       credentials are rejected. The minted JWT carries `appId` (Application
+ *       `_id`) and `credentialId` (the minting ApplicationCredential `_id`).
  *     requestBody:
  *       required: true
  *       content:
@@ -2329,11 +2339,16 @@ router.post('/service-token', serviceTokenLimiter, validate({ body: serviceToken
     throw new Error('Server configuration error');
   }
 
-  // Find the credential by its public key (apiKey). The credential must be an
-  // active `service` credential.
-  const credential = await ApplicationCredential.findOne({ publicKey: apiKey, status: 'active' });
+  // Find the credential by its public key (apiKey). The credential must be a
+  // `service` credential that is currently usable: `active`, or `deprecated`
+  // but still inside its rotation grace window. `revoked` and grace-expired
+  // credentials are rejected.
+  const credential = await ApplicationCredential.findOne({
+    publicKey: apiKey,
+    status: { $ne: 'revoked' },
+  });
 
-  if (!credential) {
+  if (!credential || !isCredentialUsable(credential)) {
     logger.warn('[ServiceToken] Invalid apiKey attempt', { apiKey: apiKey.substring(0, 12) + '...' });
     throw new UnauthorizedError('Invalid credentials');
   }
@@ -2375,13 +2390,17 @@ router.post('/service-token', serviceTokenLimiter, validate({ body: serviceToken
   // Generate stateless service JWT — embed granted scopes so downstream
   // middleware can do per-scope authorisation without an extra DB lookup. The
   // `appId` claim is the Application `_id` (UNCHANGED claim name — see contract
-  // §5). Scopes come from the credential, falling back to the application.
+  // §5). `credentialId` is the specific ApplicationCredential `_id` that minted
+  // this token, so downstream can attribute calls to a credential (e.g. for
+  // post-rotation revocation). Scopes come from the credential, falling back to
+  // the application.
   const scopes = credential.scopes.length > 0 ? credential.scopes : app.scopes ?? [];
   const token = jwt.sign(
     {
       type: 'service',
       appId: app._id.toString(),
       appName: app.name,
+      credentialId: credential._id.toString(),
       scopes,
     },
     process.env.ACCESS_TOKEN_SECRET,

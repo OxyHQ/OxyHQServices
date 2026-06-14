@@ -83,6 +83,7 @@ export type {
     TransferApplicationOwnershipInput,
     CreateApplicationCredentialInput,
     ApplicationCredentialWithSecret,
+    RotateApplicationCredentialResult,
     ApplicationUsagePeriod,
     ApplicationUsageSummary,
     ApplicationUsageByDay,

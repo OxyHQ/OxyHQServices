@@ -35,6 +35,12 @@ export interface IApplicationCredential extends Omit<Document, '_id'> {
   status: ApplicationCredentialStatus;
   lastUsedAt?: Date;
   expiresAt?: Date;
+  /**
+   * When this credential was minted by rotating another credential, the `_id`
+   * of the previous (now `deprecated`) credential it superseded. Provides an
+   * audit trail linking a new secret back to the one it replaced.
+   */
+  rotatedFromCredentialId?: mongoose.Types.ObjectId;
   createdByUserId: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
@@ -88,6 +94,10 @@ const ApplicationCredentialSchema = new Schema<IApplicationCredential>(
     },
     expiresAt: {
       type: Date,
+    },
+    rotatedFromCredentialId: {
+      type: Schema.Types.ObjectId,
+      ref: 'ApplicationCredential',
     },
     createdByUserId: {
       type: Schema.Types.ObjectId,

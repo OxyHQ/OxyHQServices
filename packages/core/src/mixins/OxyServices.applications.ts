@@ -100,6 +100,11 @@ export interface ApplicationCredential {
   status: ApplicationCredentialStatus;
   lastUsedAt?: string;
   expiresAt?: string;
+  /**
+   * Audit link to the credential this one was rotated FROM. Populated by the
+   * API on credentials created via rotation; absent on original credentials.
+   */
+  rotatedFromCredentialId?: string;
   createdByUserId: string;
   createdAt: string;
   updatedAt: string;
@@ -152,10 +157,23 @@ export interface CreateApplicationCredentialInput {
   scopes?: string[];
 }
 
-/** Result of creating or rotating a credential — `secret` is returned ONCE. */
+/** Result of creating a credential — `secret` is returned ONCE. */
 export interface ApplicationCredentialWithSecret {
   credential: ApplicationCredential;
   secret: string;
+}
+
+/**
+ * Result of rotating a credential. Extends the create result with audit fields:
+ * the new plaintext `secret` is returned ONCE, plus `rotatedFrom` (the previous
+ * credential's `credentialId`) and `graceExpiresAt` (ISO string marking when the
+ * old credential stops being honoured during the rotation grace window).
+ */
+export interface RotateApplicationCredentialResult extends ApplicationCredentialWithSecret {
+  /** The previous credential's `credentialId` that this rotation supersedes. */
+  rotatedFrom: string;
+  /** ISO timestamp at which the rotated-from credential's grace window ends. */
+  graceExpiresAt: string;
 }
 
 /** Time window for application usage statistics. */
@@ -445,16 +463,18 @@ export function OxyServicesApplicationsMixin<T extends typeof OxyServicesBase>(B
 
     /**
      * Rotate a credential's secret. The new plaintext `secret` is returned
-     * exactly ONCE.
+     * exactly ONCE, along with audit fields: `rotatedFrom` (the previous
+     * credentialId) and `graceExpiresAt` (ISO string for the grace window during
+     * which the old credential is still honoured).
      * @param applicationId - The application's Mongo `_id`.
      * @param credentialId - The credential's Mongo `_id`.
      */
     async rotateApplicationCredential(
       applicationId: string,
       credentialId: string,
-    ): Promise<ApplicationCredentialWithSecret> {
+    ): Promise<RotateApplicationCredentialResult> {
       try {
-        return await this.makeRequest<ApplicationCredentialWithSecret>(
+        return await this.makeRequest<RotateApplicationCredentialResult>(
           'POST',
           `/applications/${applicationId}/credentials/${credentialId}/rotate`,
           undefined,

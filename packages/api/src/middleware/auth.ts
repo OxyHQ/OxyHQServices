@@ -219,6 +219,11 @@ export interface ServiceTokenPayload {
   type: 'service';
   appId: string;
   appName: string;
+  /**
+   * The specific ApplicationCredential `_id` that minted this token. Optional
+   * for backwards-compat with tokens issued before this claim existed.
+   */
+  credentialId?: string;
   scopes: string[];
   iat?: number;
   exp?: number;
@@ -272,6 +277,7 @@ export const serviceAuthMiddleware = (req: ServiceAuthRequest, res: Response, ne
       type?: string;
       appId?: string;
       appName?: string;
+      credentialId?: string;
       scopes?: unknown;
       iat?: number;
       exp?: number;
@@ -300,6 +306,7 @@ export const serviceAuthMiddleware = (req: ServiceAuthRequest, res: Response, ne
       type: 'service',
       appId: decoded.appId,
       appName: decoded.appName,
+      credentialId: typeof decoded.credentialId === 'string' ? decoded.credentialId : undefined,
       scopes,
       iat: decoded.iat,
       exp: decoded.exp,

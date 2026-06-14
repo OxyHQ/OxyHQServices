@@ -18,6 +18,7 @@ interface JwtPayload {
   sessionId?: string;
   type?: string;
   appId?: string;
+  credentialId?: string;
   appName?: string;
   scopes?: string[];
   aud?: string | string[];
@@ -61,6 +62,13 @@ export interface ServiceApp {
   appId: string;
   appName: string;
   scopes: string[];
+  /**
+   * The credentialId of the specific service credential that minted this token.
+   * Carried by newer service-token JWTs alongside `appId`; absent on tokens
+   * issued before credential-level audit linking. Use for per-credential audit
+   * trails and rotation alignment (GitHub #215).
+   */
+  credentialId?: string;
 }
 
 /**
@@ -618,6 +626,9 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
               appId,
               appName: decoded.appName || 'unknown',
               scopes: Array.isArray(decoded.scopes) ? decoded.scopes : [],
+              ...(typeof decoded.credentialId === 'string' && decoded.credentialId.length > 0
+                ? { credentialId: decoded.credentialId }
+                : {}),
             };
 
             if (debug) {

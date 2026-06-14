@@ -78,6 +78,7 @@ interface FakeCredential {
   status: string;
   lastUsedAt?: Date;
   expiresAt?: Date;
+  rotatedFromCredentialId?: Types.ObjectId;
   createdByUserId: Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
@@ -257,6 +258,7 @@ const ApplicationCredentialMock = {
       environment: doc.environment as string,
       scopes: (doc.scopes as string[]) ?? [],
       status: (doc.status as string) ?? 'active',
+      rotatedFromCredentialId: doc.rotatedFromCredentialId as Types.ObjectId | undefined,
       createdByUserId: doc.createdByUserId as Types.ObjectId,
       createdAt: now,
       updatedAt: now,
@@ -323,6 +325,8 @@ interface JsonResponse {
     credential?: Record<string, unknown>;
     credentials?: Array<Record<string, unknown>>;
     secret?: string | null;
+    rotatedFrom?: string;
+    graceExpiresAt?: string;
     success?: boolean;
     error?: string;
     message?: string;
@@ -739,17 +743,85 @@ describe('credentials lifecycle', () => {
     expect(res.body.credentials?.[0].publicKey).toBeDefined();
   });
 
-  it('rotate issues a new secret and changes the stored hash', async () => {
+  it('rotate issues a NEW credential + new secret once, deprecates the old one with a future grace expiry', async () => {
     const cred = seedCredential({ secretHash: 'old-hash' });
     const res = await requestJson(
       server,
       'POST',
       `/applications/${APP_ID}/credentials/${cred._id.toString()}/rotate`
     );
+
     expect(res.status).toBe(200);
+    // A NEW credential is returned (different _id + publicKey from the source).
+    const returned = res.body.credential as {
+      _id?: string;
+      publicKey?: string;
+      status?: string;
+      rotatedFromCredentialId?: string;
+    };
+    expect(returned._id).not.toBe(cred._id.toString());
+    expect(returned.publicKey).not.toBe(cred.publicKey);
+    expect(returned.status).toBe('active');
+    expect(returned.rotatedFromCredentialId).toBe(cred._id.toString());
+
+    // New plaintext secret returned exactly once; never the hash.
     expect(typeof res.body.secret).toBe('string');
-    expect(cred.secretHash).not.toBe('old-hash');
-    expect(cred.secretHash).not.toBe(res.body.secret);
+    expect((res.body.secret as string).length).toBeGreaterThan(0);
+    expect(res.body.credential).not.toHaveProperty('secretHash');
+
+    // rotatedFrom + graceExpiresAt are surfaced for the caller.
+    expect(res.body.rotatedFrom).toBe(cred._id.toString());
+    expect(typeof res.body.graceExpiresAt).toBe('string');
+
+    // The previous credential is now deprecated with a future expiry; its
+    // secret hash is UNCHANGED (it must keep authenticating during grace).
+    const previous = credentials.find((c) => c._id.equals(cred._id));
+    expect(previous?.status).toBe('deprecated');
+    expect(previous?.secretHash).toBe('old-hash');
+    expect(previous?.expiresAt).toBeInstanceOf(Date);
+    expect((previous?.expiresAt as Date).getTime()).toBeGreaterThan(Date.now());
+
+    // The new credential carries a fresh hash distinct from the plaintext.
+    const fresh = credentials.find((c) => c._id.toString() === returned._id);
+    expect(fresh?.secretHash).toBeDefined();
+    expect(fresh?.secretHash).not.toBe(res.body.secret);
+    expect(fresh?.rotatedFromCredentialId?.toString()).toBe(cred._id.toString());
+  });
+
+  it('rotate inherits name/type/environment/scopes from the source credential', async () => {
+    const cred = seedCredential({
+      name: 'Inherit me',
+      type: 'service',
+      environment: 'staging',
+      scopes: ['user:read', 'files:read'],
+    });
+    const res = await requestJson(
+      server,
+      'POST',
+      `/applications/${APP_ID}/credentials/${cred._id.toString()}/rotate`
+    );
+
+    expect(res.status).toBe(200);
+    const returned = res.body.credential as {
+      name?: string;
+      type?: string;
+      environment?: string;
+      scopes?: string[];
+    };
+    expect(returned.name).toBe('Inherit me');
+    expect(returned.type).toBe('service');
+    expect(returned.environment).toBe('staging');
+    expect(returned.scopes).toEqual(['user:read', 'files:read']);
+  });
+
+  it('public credentials cannot be rotated', async () => {
+    const cred = seedCredential({ type: 'public', secretHash: undefined });
+    const res = await requestJson(
+      server,
+      'POST',
+      `/applications/${APP_ID}/credentials/${cred._id.toString()}/rotate`
+    );
+    expect(res.status).toBe(400);
   });
 
   it('revoke sets status=revoked and a revoked credential cannot be rotated', async () => {
