@@ -1,7 +1,12 @@
 import crypto from 'crypto';
+import { Readable, Transform } from 'stream';
 import mongoose from 'mongoose';
 import { File, IFile, IFileLink, IFileVariant, FileVisibility } from '../models/File';
 import { S3Service } from './s3Service';
+import {
+  FEDERATION_CACHE_OWNER_ID,
+  FEDERATION_MEDIA_CACHE_PURPOSE,
+} from '../constants/federationCache';
 import { VariantService } from './variantService';
 import { logger } from '../utils/logger';
 import path from 'path';
@@ -15,6 +20,17 @@ import {
 import { mediaPrivacyService } from './mediaPrivacyService';
 import { MediaAccessContext } from '../types/mediaPrivacy.types';
 import fileCache from '../utils/fileCache';
+
+/**
+ * A readable stream that may also emit the HTTP `'aborted'` event. Express
+ * requests (`IncomingMessage`) are `Readable` AND emit `'aborted'` when the
+ * client disconnects; `Readable`'s own typings do not declare that event, so
+ * we widen the listener overloads here instead of casting.
+ */
+type AbortableReadable = Readable & {
+  on(event: 'aborted', listener: () => void): AbortableReadable;
+  removeListener(event: 'aborted', listener: () => void): AbortableReadable;
+};
 
 export class AssetService {
   private variantService: VariantService;
@@ -225,6 +241,208 @@ export class AssetService {
       logger.error('Error uploading file directly:', error);
       throw error;
     }
+  }
+
+  /**
+   * Stream a remote/federated media file into the reserved cache namespace.
+   *
+   * Unlike {@link uploadFileDirect}, the bytes are never buffered in memory:
+   * the source stream is piped to S3 via the multipart `Upload` manager while
+   * a parallel hash computes the SHA-256 for content addressing and dedup.
+   *
+   * Hardening: the asset is force-owned by {@link FEDERATION_CACHE_OWNER_ID}
+   * and stamped with {@link FEDERATION_MEDIA_CACHE_PURPOSE}; callers cannot
+   * override the owner or purpose. Visibility is `public` so the existing
+   * public download/stream routes can serve cached media without auth.
+   *
+   * Abort handling: when the client disconnects or the request times out the
+   * source emits `'aborted'`/`'close'` before completion. We abort the in-flight
+   * S3 multipart upload and delete the partial temp object so a cancelled
+   * upload never leaks orphaned parts.
+   *
+   * @throws if more than `maxBytes` are streamed (the partial S3 object is
+   *         cleaned up before the error propagates).
+   */
+  async uploadCachedMediaStream(
+    source: AbortableReadable,
+    mimeType: string,
+    originalName: string,
+    maxBytes: number
+  ): Promise<IFile> {
+    const hash = crypto.createHash('sha256');
+    let size = 0;
+
+    // Insert a hashing + byte-cap stage directly into the pipeline. Because it
+    // is part of the pipe chain, S3 backpressure naturally throttles the
+    // source, every byte is hashed exactly once in order, and exceeding the
+    // cap destroys the chain so the upload aborts instead of buffering.
+    const meter = new Transform({
+      transform(chunk: Buffer, _encoding, callback) {
+        size += chunk.length;
+        if (size > maxBytes) {
+          const error = new Error('Cached media exceeds the maximum allowed size');
+          error.name = 'CacheMediaTooLargeError';
+          callback(error);
+          return;
+        }
+        hash.update(chunk);
+        callback(null, chunk);
+      },
+    });
+    source.on('error', (err) => {
+      meter.destroy(err instanceof Error ? err : new Error(String(err)));
+    });
+    const body = source.pipe(meter);
+
+    // Stream first into a temporary key — the content-addressed key is only
+    // known once the full SHA-256 is computed.
+    const tempKey = `cache/incoming/${crypto.randomUUID()}`;
+
+    // Wire client/timeout abort: cancel the S3 upload and drop the temp object
+    // if the request is torn down before the upload finishes. `completed`
+    // guards against the handlers firing cleanup after a successful upload.
+    const abortController = new AbortController();
+    let completed = false;
+    const onSourceAbort = (): void => {
+      if (!completed) {
+        abortController.abort();
+      }
+    };
+    source.on('aborted', onSourceAbort);
+    source.on('close', onSourceAbort);
+
+    const deleteTempKey = async (reason: string): Promise<void> => {
+      try {
+        await this.s3Service.deleteFile(tempKey);
+      } catch (cleanupError) {
+        logger.warn(reason, {
+          tempKey,
+          error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+        });
+      }
+    };
+
+    try {
+      await this.s3Service.uploadStream(tempKey, body, {
+        contentType: mimeType,
+        abortSignal: abortController.signal,
+      });
+      completed = true;
+    } catch (error) {
+      // Best-effort cleanup of any partial multipart object (thrown error,
+      // size-cap breach, or client/timeout abort all land here).
+      await deleteTempKey('Failed to clean up partial cache upload');
+      source.removeListener('aborted', onSourceAbort);
+      source.removeListener('close', onSourceAbort);
+      throw error;
+    }
+
+    source.removeListener('aborted', onSourceAbort);
+    source.removeListener('close', onSourceAbort);
+
+    const sha256 = hash.digest('hex');
+
+    // Dedup: if this exact content already exists (cache or otherwise), reuse
+    // it and drop the temp object.
+    const existingFile = await File.findOne({ sha256, status: { $ne: 'deleted' } });
+    if (existingFile) {
+      await deleteTempKey('Failed to clean up deduplicated cache upload');
+      logger.info('Cached media already exists, returning existing', {
+        sha256,
+        fileId: existingFile._id,
+      });
+      return existingFile;
+    }
+
+    // Promote the temp object to its content-addressed key (server-side copy,
+    // no RAM), then drop the temp object.
+    const ext = this.getExtensionFromMime(mimeType);
+    const storageKey = this.generateStorageKey(sha256, mimeType);
+    await this.s3Service.copyFile(tempKey, storageKey);
+    await deleteTempKey('Failed to delete temp key after cache promotion');
+
+    // `visibility: 'public'` is an app-level ACL meaning "served without a user
+    // session via the presigned-redirect stream route (GET /:id/stream)". It is
+    // NOT an S3 ACL: the underlying object stays bucket-private and is only
+    // reachable through short-lived presigned URLs, exactly like every other
+    // public asset. We deliberately do not set `publicRead` on the upload —
+    // making the raw S3 object public would let it be fetched/listed directly,
+    // bypassing the stream route's access checks.
+    const file = new File({
+      sha256,
+      size,
+      mime: mimeType,
+      ext,
+      ownerUserId: FEDERATION_CACHE_OWNER_ID,
+      purpose: FEDERATION_MEDIA_CACHE_PURPOSE,
+      status: 'active',
+      storageKey,
+      originalName,
+      visibility: 'public',
+      metadata: {},
+      links: [],
+      variants: [],
+    });
+
+    await file.save();
+
+    logger.info('Cached media uploaded via stream', {
+      fileId: file._id,
+      sha256,
+      size,
+      mime: mimeType,
+    });
+
+    return file;
+  }
+
+  /**
+   * Delete a cached-media asset created via {@link uploadCachedMediaStream}.
+   *
+   * Hard scoping: the asset MUST belong to the reserved cache owner AND carry
+   * the cache purpose, otherwise the call is rejected so a service token can
+   * never delete user-owned media. The boolean return distinguishes
+   * "not found" from "found but out of scope".
+   */
+  async deleteCachedMedia(fileId: string): Promise<{ deleted: boolean; outOfScope: boolean }> {
+    if (!mongoose.Types.ObjectId.isValid(fileId)) {
+      return { deleted: false, outOfScope: false };
+    }
+
+    const file = await File.findById(fileId);
+    if (!file || file.status === 'deleted') {
+      return { deleted: false, outOfScope: false };
+    }
+
+    const inCacheNamespace =
+      file.purpose === FEDERATION_MEDIA_CACHE_PURPOSE &&
+      file.ownerUserId === FEDERATION_CACHE_OWNER_ID;
+
+    if (!inCacheNamespace) {
+      logger.warn('Refusing to delete non-cache asset via cache endpoint', {
+        fileId,
+        purpose: file.purpose,
+        ownerUserId: file.ownerUserId,
+      });
+      return { deleted: false, outOfScope: true };
+    }
+
+    await this.s3Service.deleteFile(file.storageKey);
+    for (const variant of file.variants) {
+      try {
+        await this.s3Service.deleteFile(variant.key);
+      } catch (error) {
+        logger.warn('Failed to delete cache variant', { variant: variant.key, error });
+      }
+    }
+
+    file.status = 'deleted';
+    await file.save();
+    fileCache.invalidate(fileId);
+
+    logger.info('Cached media deleted', { fileId });
+
+    return { deleted: true, outOfScope: false };
   }
 
   /**

@@ -1,12 +1,13 @@
 import express from 'express';
 import multer from 'multer';
 import { assetService, s3Service } from '../services/assetServiceSingleton';
-import { authMiddleware } from '../middleware/auth';
+import { authMiddleware, serviceAuthMiddleware, type ServiceAuthRequest } from '../middleware/auth';
 import { optionalAuthMiddleware, getUserId } from '../middleware/optionalAuth';
 import { mediaHeadersMiddleware } from '../middleware/mediaHeaders';
+import { rateLimit } from '../middleware/rateLimiter';
 import { logger } from '../utils/logger';
 import { asyncHandler, sendSuccess } from '../utils/asyncHandler';
-import { BadRequestError, NotFoundError, UnauthorizedError, ForbiddenError, ValidationError, ConflictError } from '../utils/error';
+import { ApiError, BadRequestError, NotFoundError, UnauthorizedError, ForbiddenError, ValidationError, ConflictError } from '../utils/error';
 import { z } from 'zod';
 import { FileVisibility } from '../models/File';
 import { validate } from '../middleware/validate';
@@ -18,6 +19,7 @@ import {
   batchAccessSchema,
 } from '../schemas/assets.schemas';
 import { generateMissingFilePlaceholder, TRANSPARENT_PNG_PLACEHOLDER } from '../utils/placeholders';
+import { FEDERATION_CACHE_MAX_BYTES, isAllowedCacheMime } from '../constants/federationCache';
 
 interface AuthenticatedRequest extends express.Request {
   user?: {
@@ -459,6 +461,159 @@ router.post('/upload', authMiddleware, upload.single('file'), asyncHandler(async
     }
   });
 }));
+
+// ---------------------------------------------------------------------------
+// Service-token media cache (federation)
+//
+// Scoped, service-token-only surface that lets backend services (e.g. the
+// Mention backend) cache federated/remote media to Oxy S3 and evict it. These
+// routes do NOT touch the user-facing /assets/upload or DELETE /assets/:id
+// paths, which stay session-only. Every asset created here is force-owned by
+// the reserved cache namespace and tagged with the cache purpose, so a leaked
+// service token can only ever touch cache objects — never user media.
+//
+// Registered BEFORE the wildcard `/:id` routes below so the more specific
+// `/service/cache` paths are never shadowed.
+// ---------------------------------------------------------------------------
+
+// Cache rate-limit tuning. Bounds the write budget a single (possibly abused)
+// service token can drive. At 256 MiB/object the upload cap is the cost lever:
+// 30 uploads/min × 256 MiB ≈ 7.5 GB/min sustained worst case, bounded — vs.
+// ~30 GB/min at the previous 120/min. Deletes are cheap (S3 DELETE), so they
+// keep a higher ceiling.
+const CACHE_RATE_WINDOW_MS = 60 * 1000;
+const CACHE_UPLOAD_MAX_PER_MINUTE = 30;
+const CACHE_DELETE_MAX_PER_MINUTE = 240;
+
+/**
+ * Per-app rate limit for cache uploads. Keyed on the service `appId` (falling
+ * back to IP) so one misbehaving service can't exhaust the budget for others.
+ * Unique redis prefix per the rate-limiter convention to avoid double-counting.
+ */
+const cacheUploadLimiter = rateLimit({
+  prefix: 'rl:asset-cache:upload:',
+  windowMs: CACHE_RATE_WINDOW_MS,
+  max: CACHE_UPLOAD_MAX_PER_MINUTE,
+  message: 'Too many media cache uploads. Please slow down.',
+  keyGenerator: (req: express.Request) => {
+    const serviceApp = (req as ServiceAuthRequest).serviceApp;
+    if (serviceApp?.appId) {
+      return `asset-cache:upload:${serviceApp.appId}`;
+    }
+    return `asset-cache:upload:ip:${req.ip ?? 'unknown'}`;
+  },
+});
+
+const cacheDeleteLimiter = rateLimit({
+  prefix: 'rl:asset-cache:delete:',
+  windowMs: CACHE_RATE_WINDOW_MS,
+  max: CACHE_DELETE_MAX_PER_MINUTE,
+  message: 'Too many media cache deletions. Please slow down.',
+  keyGenerator: (req: express.Request) => {
+    const serviceApp = (req as ServiceAuthRequest).serviceApp;
+    if (serviceApp?.appId) {
+      return `asset-cache:delete:${serviceApp.appId}`;
+    }
+    return `asset-cache:delete:ip:${req.ip ?? 'unknown'}`;
+  },
+});
+
+/**
+ * @route POST /api/assets/service/cache
+ * @desc Stream-upload a remote/federated media file into the reserved cache
+ *       namespace. The raw bytes are sent as the request body (NOT multipart)
+ *       so large video streams straight to S3 without buffering in RAM.
+ *       Content-Type must be image/*, video/*, or audio/*.
+ * @access Service token only (serviceAuthMiddleware)
+ */
+router.post(
+  '/service/cache',
+  serviceAuthMiddleware,
+  cacheUploadLimiter,
+  asyncHandler(async (req: ServiceAuthRequest, res: express.Response) => {
+    const mime = (req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
+    if (!mime) {
+      throw new BadRequestError('Content-Type header is required');
+    }
+    if (!isAllowedCacheMime(mime)) {
+      throw new ApiError(415, 'Unsupported media type for cache', 'UNSUPPORTED_MEDIA_TYPE');
+    }
+
+    // Reject oversized payloads up front when the client declares a length.
+    const declaredLength = Number(req.headers['content-length']);
+    if (Number.isFinite(declaredLength) && declaredLength > FEDERATION_CACHE_MAX_BYTES) {
+      throw new ApiError(413, 'Cached media exceeds the maximum allowed size', 'PAYLOAD_TOO_LARGE');
+    }
+
+    const originalNameHeader = req.headers['x-original-name'];
+    const originalName =
+      typeof originalNameHeader === 'string' && originalNameHeader.trim().length > 0
+        ? originalNameHeader.trim().slice(0, 255)
+        : 'federation-cache-media';
+
+    try {
+      const file = await assetService.uploadCachedMediaStream(
+        req,
+        mime,
+        originalName,
+        FEDERATION_CACHE_MAX_BYTES
+      );
+
+      logger.info('Federation media cached', {
+        appId: req.serviceApp?.appId,
+        appName: req.serviceApp?.appName,
+        fileId: file._id,
+        mime,
+        size: file.size,
+      });
+
+      sendSuccess(res, {
+        file: {
+          id: file._id.toString(),
+        },
+      });
+    } catch (error) {
+      if (error instanceof Error && error.name === 'CacheMediaTooLargeError') {
+        throw new ApiError(413, 'Cached media exceeds the maximum allowed size', 'PAYLOAD_TOO_LARGE');
+      }
+      throw error;
+    }
+  })
+);
+
+/**
+ * @route DELETE /api/assets/service/cache/:id
+ * @desc Evict a cached media asset by id. Rejects (403) anything that is not
+ *       in the reserved cache namespace, so a service token can never delete
+ *       user-owned media.
+ * @access Service token only (serviceAuthMiddleware)
+ */
+router.delete(
+  '/service/cache/:id',
+  serviceAuthMiddleware,
+  cacheDeleteLimiter,
+  validate({ params: assetIdParams }),
+  asyncHandler(async (req: ServiceAuthRequest, res: express.Response) => {
+    const { id: fileId } = req.params;
+
+    const result = await assetService.deleteCachedMedia(fileId);
+
+    if (result.outOfScope) {
+      throw new ForbiddenError('Asset is not a federation media-cache object');
+    }
+    if (!result.deleted) {
+      throw new NotFoundError('Cached asset not found');
+    }
+
+    logger.info('Federation media cache evicted', {
+      appId: req.serviceApp?.appId,
+      appName: req.serviceApp?.appName,
+      fileId,
+    });
+
+    sendSuccess(res, { message: 'Cached asset deleted successfully' });
+  })
+);
 
 /**
  * @route POST /api/assets/:id/links

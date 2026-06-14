@@ -63,6 +63,11 @@ export function mediaHeadersMiddleware(
   // Cross-Origin-Resource-Policy: defense-in-depth (also set globally via Helmet)
   res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
 
+  // X-Content-Type-Options: never let the browser MIME-sniff cached media into
+  // an executable type (e.g. treating a spoofed image as HTML). Defense-in-depth
+  // for the media read path (also set globally via Helmet).
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+
   // Expose media-specific headers the client needs (Content-Range, Accept-Ranges, etc.)
   // General CORS headers are handled by the global CORS middleware.
   res.setHeader('Access-Control-Expose-Headers', MEDIA_EXPOSE_HEADERS);

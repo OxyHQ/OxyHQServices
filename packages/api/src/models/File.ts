@@ -44,12 +44,27 @@ export interface IFile extends Omit<Document, '_id'> {
   
   // Virtual property for usage count
   usageCount: number;
-  
+
   // Storage information
   storageKey: string;
   originalName?: string;
   metadata?: Record<string, any>;
+
+  /**
+   * Optional classification tag for system-owned assets. `'user'` (the
+   * default) marks ordinary user uploads. `'federation-media-cache'` marks
+   * assets created via the scoped service cache endpoints; deletion through
+   * that path is gated on this value so a service token can only evict cache
+   * objects, never user media.
+   */
+  purpose: FilePurpose;
 }
+
+/**
+ * File purpose classification. `'user'` is the implicit default for every
+ * existing record; system-owned namespaces use a dedicated value.
+ */
+export type FilePurpose = 'user' | 'federation-media-cache';
 
 const FileLinkSchema = new Schema<IFileLink>({
   app: { type: String, required: true, index: true },
@@ -97,6 +112,12 @@ const FileSchema = new Schema<IFile>({
     default: 'private',
     index: true
   },
+  purpose: {
+    type: String,
+    enum: ['user', 'federation-media-cache'],
+    default: 'user',
+    index: true
+  },
   links: [FileLinkSchema],
   variants: [FileVariantSchema],
   storageKey: { type: String, required: true },
@@ -119,6 +140,7 @@ FileSchema.index({ ownerUserId: 1, visibility: 1, status: 1 });
 FileSchema.index({ visibility: 1, status: 1 }); // For public file queries
 FileSchema.index({ 'links.app': 1, 'links.entityType': 1, 'links.entityId': 1 });
 FileSchema.index({ sha256: 1, status: 1 });
+FileSchema.index({ purpose: 1, ownerUserId: 1, status: 1 }); // For cache-namespace lookups
 FileSchema.index({ createdAt: -1 });
 
 // Index for efficient link queries

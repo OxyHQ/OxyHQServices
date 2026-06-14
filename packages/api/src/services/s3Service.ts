@@ -1,7 +1,9 @@
 import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, ListObjectsV2Command, CopyObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
+import { Upload } from '@aws-sdk/lib-storage';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { createReadStream, createWriteStream } from 'fs';
 import { pipeline } from 'stream/promises';
+import type { Readable } from 'stream';
 import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
 import {
@@ -16,6 +18,13 @@ import { logger } from '../utils/logger';
 export interface UploadOptions extends S3UploadOptions {
   publicRead?: boolean;
   folder?: string;
+  /**
+   * Optional abort signal. When it fires, the in-flight multipart `Upload` is
+   * aborted (any uploaded parts are discarded by S3) and `uploadStream`
+   * rejects. Used by the cache stream-upload to cancel cleanly when the client
+   * disconnects or the request times out.
+   */
+  abortSignal?: AbortSignal;
 }
 
 export class S3Service {
@@ -132,6 +141,69 @@ export class S3Service {
       };
     } catch (error) {
       throw new Error(`Failed to upload buffer to S3: ${error}`);
+    }
+  }
+
+  /**
+   * Upload a file to S3 from a readable stream using the AWS SDK multipart
+   * `Upload` manager. Unlike `uploadBuffer`, this never materialises the whole
+   * object in memory — the stream is chunked and uploaded as it arrives, so a
+   * multi-hundred-megabyte video stays bounded by the configured part size.
+   *
+   * Used by the federation media-cache path where backend services stream
+   * remote media straight through to S3.
+   */
+  async uploadStream(
+    key: string,
+    body: Readable,
+    options: UploadOptions = {}
+  ): Promise<FileInfo> {
+    const contentType = options.contentType || 'application/octet-stream';
+    const { finalKey, metadata, acl } = this.prepareObjectOptions(key, options);
+
+    try {
+      const upload = new Upload({
+        client: this.s3Client,
+        params: {
+          Bucket: this.bucketName,
+          Key: finalKey,
+          Body: body,
+          ContentType: contentType,
+          Metadata: metadata,
+          ACL: acl,
+        },
+      });
+
+      // Cancel the in-flight multipart upload if the caller aborts (client
+      // disconnect / request timeout). `upload.abort()` rejects `done()`.
+      const { abortSignal } = options;
+      if (abortSignal) {
+        if (abortSignal.aborted) {
+          await upload.abort();
+        } else {
+          abortSignal.addEventListener('abort', () => {
+            upload.abort().catch((abortError) => {
+              logger.warn('Failed to abort in-flight S3 upload', {
+                key: finalKey,
+                error: abortError instanceof Error ? abortError.message : String(abortError),
+              });
+            });
+          }, { once: true });
+        }
+      }
+
+      await upload.done();
+
+      return {
+        key: finalKey,
+        size: 0,
+        lastModified: new Date(),
+        contentType,
+        metadata: metadata || {},
+        url: options.publicRead ? this.generatePublicUrl(finalKey) : undefined,
+      };
+    } catch (error) {
+      throw new Error(`Failed to upload stream to S3: ${error}`);
     }
   }
 
