@@ -42,6 +42,7 @@ import { useDeviceManagement } from '../hooks/useDeviceManagement';
 import { getStorageKeys, createPlatformStorage, type StorageInterface } from '../utils/storageHelpers';
 import { isInvalidSessionError, isTimeoutOrNetworkError } from '../utils/errorHandlers';
 import { readActiveAuthuser, writeActiveAuthuser } from '../utils/activeAuthuser';
+import { resolveAppDisplayName } from '../utils/appName';
 import type { RouteName } from '../navigation/routes';
 import { showBottomSheet as globalShowBottomSheet } from '../navigation/bottomSheetManager';
 import { useQueryClient } from '@tanstack/react-query';
@@ -114,6 +115,13 @@ export interface OxyContextState {
   clearSessionState: () => Promise<void>;
   clearAllAccountData: () => Promise<void>;
   storageKeyPrefix: string;
+  /**
+   * Resolved human-readable app display name surfaced on the central Oxy
+   * sign-in / consent experience (e.g. "Mention wants to access your Oxy
+   * account"). Always non-empty — derived from the `appName` prop, then
+   * `storageKeyPrefix`, then `document.title` (web), then the platform.
+   */
+  appName: string;
   oxyServices: OxyServices;
   useFollow?: UseFollowHook;
   showBottomSheet?: (screenOrConfig: RouteName | { screen: RouteName; props?: Record<string, unknown> }) => void;
@@ -140,6 +148,11 @@ export interface OxyContextProviderProps {
   authWebUrl?: string;
   authRedirectUri?: string;
   storageKeyPrefix?: string;
+  /**
+   * Human-readable name of the consuming app shown on the central Oxy
+   * sign-in / consent experience. See {@link OxyContextState.appName}.
+   */
+  appName?: string;
   onAuthStateChange?: (user: User | null) => void;
   onError?: (error: ApiError) => void;
 }
@@ -301,6 +314,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   authWebUrl,
   authRedirectUri,
   storageKeyPrefix = 'oxy_session',
+  appName: appNameProp,
   onAuthStateChange,
   onError,
 }) => {
@@ -409,6 +423,14 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   }, []);
 
   const storageKeys = useMemo(() => getStorageKeys(storageKeyPrefix), [storageKeyPrefix]);
+
+  // Human-readable app display name for the central sign-in / consent UI.
+  // Derived once from the consumer config; never "web" unless the app supplies
+  // no name, no custom prefix, and no document title.
+  const appName = useMemo(
+    () => resolveAppDisplayName(appNameProp, storageKeyPrefix),
+    [appNameProp, storageKeyPrefix],
+  );
 
   // Storage initialization.
   //
@@ -1644,6 +1666,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     clearSessionState,
     clearAllAccountData,
     storageKeyPrefix,
+    appName,
     oxyServices,
     useFollow: useFollowHook,
     showBottomSheet: showBottomSheetForContext,
@@ -1672,6 +1695,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     logoutAllDeviceSessions,
     oxyServices,
     storageKeyPrefix,
+    appName,
     refreshSessionsWithUser,
     sessions,
     setLanguage,
@@ -1749,6 +1773,7 @@ const LOADING_STATE: OxyContextState = {
   clearSessionState: () => rejectMissingProvider<void>(),
   clearAllAccountData: () => rejectMissingProvider<void>(),
   storageKeyPrefix: 'oxy_session',
+  appName: resolveAppDisplayName(undefined, undefined),
   oxyServices: LOADING_STATE_OXY_SERVICES,
   openAvatarPicker: () => {},
   actingAs: null,

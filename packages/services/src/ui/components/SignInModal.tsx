@@ -93,7 +93,7 @@ const SignInModal: React.FC = () => {
 
     const insets = useSafeAreaInsets();
     const theme = useTheme();
-    const { oxyServices, switchSession } = useOxy();
+    const { oxyServices, switchSession, appName } = useOxy();
 
     const socketRef = useRef<Socket | null>(null);
     const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -273,7 +273,7 @@ const SignInModal: React.FC = () => {
             await oxyServices.makeRequest('POST', '/auth/session/create', {
                 sessionToken,
                 expiresAt,
-                appId: Platform.OS,
+                appId: appName,
             }, { cache: false });
 
             setAuthSession({ sessionToken, expiresAt });
@@ -284,7 +284,7 @@ const SignInModal: React.FC = () => {
         } finally {
             setIsLoading(false);
         }
-    }, [oxyServices, connectSocket]);
+    }, [oxyServices, connectSocket, appName]);
 
     // Generate a cryptographically random session token.
     // 16 random bytes -> 32 hex chars (128 bits of entropy) — unguessable.

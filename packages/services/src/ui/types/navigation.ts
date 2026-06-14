@@ -52,6 +52,14 @@ export interface OxyProviderProps {
     children?: ReactNode;
     onAuthStateChange?: (user: unknown) => void;
     storageKeyPrefix?: string;
+    /**
+     * Human-readable name of the consuming app (e.g. "Mention", "Homiio").
+     * Surfaced on the central Oxy sign-in / consent experience as
+     * "{appName} wants to access your Oxy account". When omitted, the SDK
+     * derives a name from `storageKeyPrefix`, then `document.title` (web),
+     * falling back to the platform. Set this to guarantee correct branding.
+     */
+    appName?: string;
     baseURL?: string;
     authWebUrl?: string;
     authRedirectUri?: string;
