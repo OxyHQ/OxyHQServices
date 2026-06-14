@@ -111,6 +111,54 @@ export function deriveStableDeviceId(
 }
 
 /**
+ * Derive a stable, non-PII deviceId for an IdP/FedCM-issued session, keyed by
+ * `(userId, key)` instead of the request's UA/IP. The output is the first 32
+ * hex chars of `sha256("${salt}|${userId}|fedcm|${key}")`.
+ *
+ * **Why a separate helper?** FedCM token exchange runs server-to-server from
+ * the IdP Cloudflare Worker, so the request's User-Agent is `'unknown'` and
+ * the egress IP varies per call. Feeding that into `deriveStableDeviceId`
+ * yields a fresh random id every exchange → a brand-new "FedCM Sign-In"
+ * session row on every silent-auth / SSO bounce. Keying off the RP origin
+ * (`key`) instead makes one `(user, RP)` reuse a single session that simply
+ * refreshes its tokens/expiry.
+ *
+ * **Why the `'fedcm'` namespace segment?** It guarantees the output can never
+ * collide with an IP/UA-derived id from `deriveStableDeviceId` (whose hash
+ * input never contains the literal `fedcm` in that position), so the two
+ * device-id spaces stay disjoint.
+ *
+ * **Per-user scoping is MANDATORY (security review H1):** `userId` is mixed
+ * into the hash so two users with the same RP `key` can never derive the same
+ * deviceId, which would otherwise leak/terminate one user's session via the
+ * other.
+ *
+ * **Fail-closed on missing salt:** production ALWAYS has `DEVICE_ID_SALT` set
+ * (`validateRequiredEnvVars` enforces it). Unlike `deriveStableDeviceId`
+ * (which falls back to a random id when the salt is unset), this path MUST NOT
+ * silently sprawl a new session per call, so it THROWS instead of returning a
+ * weak/unsalted id.
+ *
+ * @param userId - Authenticated user id. Required for per-user scoping.
+ * @param key - Stable per-RP key (the FedCM `clientOrigin` / token aud).
+ * @throws Error when `DEVICE_ID_SALT` is unset (fail-closed).
+ */
+export function deriveServiceDeviceId(userId: string, key: string): string {
+  const salt = getDeviceIdSalt();
+  if (!salt) {
+    throw new Error(
+      'deriveServiceDeviceId: DEVICE_ID_SALT is not set. ' +
+        'Refusing to derive an unsalted IdP device id (would sprawl one session per request).'
+    );
+  }
+  return crypto
+    .createHash('sha256')
+    .update(`${salt}|${userId}|fedcm|${key}`)
+    .digest('hex')
+    .slice(0, 32);
+}
+
+/**
  * Generate a device fingerprint for device identification
  * This helps identify if it's the same physical device
  */

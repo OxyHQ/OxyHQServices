@@ -18,7 +18,7 @@ jest.mock('../../models/Session', () => ({ __esModule: true, default: {} }));
 jest.mock('../sessionCache', () => ({ __esModule: true, default: { invalidate: jest.fn() } }));
 jest.mock('../userTransform', () => ({ formatUserResponse: jest.fn() }));
 
-import { deriveStableDeviceId } from '../deviceUtils';
+import { deriveStableDeviceId, deriveServiceDeviceId } from '../deviceUtils';
 
 const STRONG_SALT_A = 'a'.repeat(48);
 const STRONG_SALT_B = 'b'.repeat(48);
@@ -114,5 +114,77 @@ describe('deriveStableDeviceId', () => {
     ])('returns null for %s', (_label, ua, ip) => {
       expect(deriveStableDeviceId(ua, ip, LANG, 'user-1')).toBeNull();
     });
+  });
+});
+
+/**
+ * deviceUtils — `deriveServiceDeviceId` tests.
+ *
+ * The IdP/FedCM-issued device id is keyed by (server-salt + userId + RP key),
+ * NOT by the IdP worker's UA/IP. These tests pin: determinism (so one
+ * (user, RP) reuses one session), per-user scoping (security review H1),
+ * per-RP scoping, and fail-closed behaviour when the salt is unset.
+ */
+describe('deriveServiceDeviceId', () => {
+  const RP_A = 'https://relying.party.example';
+  const RP_B = 'https://other.party.example';
+  const SAVED_SALT = process.env.DEVICE_ID_SALT;
+
+  beforeEach(() => {
+    process.env.DEVICE_ID_SALT = STRONG_SALT_A;
+  });
+
+  afterEach(() => {
+    if (SAVED_SALT === undefined) {
+      delete process.env.DEVICE_ID_SALT;
+    } else {
+      process.env.DEVICE_ID_SALT = SAVED_SALT;
+    }
+  });
+
+  it('returns a 32-char hex string for valid inputs', () => {
+    const id = deriveServiceDeviceId('user-1', RP_A);
+    expect(id).toMatch(/^[0-9a-f]{32}$/);
+  });
+
+  it('is deterministic for the same (userId, key) inputs', () => {
+    const a = deriveServiceDeviceId('user-1', RP_A);
+    const b = deriveServiceDeviceId('user-1', RP_A);
+    expect(a).toBe(b);
+  });
+
+  it('produces DIFFERENT ids for two distinct users with the same RP key (per-user scoping, H1)', () => {
+    const userA = deriveServiceDeviceId('user-A', RP_A);
+    const userB = deriveServiceDeviceId('user-B', RP_A);
+    expect(userA).not.toBe(userB);
+  });
+
+  it('produces DIFFERENT ids for the same user across two distinct RP keys (per-RP scoping)', () => {
+    const rpA = deriveServiceDeviceId('user-1', RP_A);
+    const rpB = deriveServiceDeviceId('user-1', RP_B);
+    expect(rpA).not.toBe(rpB);
+  });
+
+  it('produces a DIFFERENT id when the server salt changes', () => {
+    const withSaltA = deriveServiceDeviceId('user-1', RP_A);
+    process.env.DEVICE_ID_SALT = STRONG_SALT_B;
+    const withSaltB = deriveServiceDeviceId('user-1', RP_A);
+    expect(withSaltA).not.toBe(withSaltB);
+  });
+
+  it('can never collide with a UA/IP-derived id (distinct "fedcm" namespace)', () => {
+    const serviceId = deriveServiceDeviceId('user-1', RP_A);
+    const stableId = deriveStableDeviceId(UA, IP, LANG, 'user-1');
+    expect(serviceId).not.toBe(stableId);
+  });
+
+  it('THROWS (fail-closed) when DEVICE_ID_SALT is unset', () => {
+    delete process.env.DEVICE_ID_SALT;
+    expect(() => deriveServiceDeviceId('user-1', RP_A)).toThrow(/DEVICE_ID_SALT/);
+  });
+
+  it('THROWS (fail-closed) when DEVICE_ID_SALT is empty', () => {
+    process.env.DEVICE_ID_SALT = '';
+    expect(() => deriveServiceDeviceId('user-1', RP_A)).toThrow(/DEVICE_ID_SALT/);
   });
 });

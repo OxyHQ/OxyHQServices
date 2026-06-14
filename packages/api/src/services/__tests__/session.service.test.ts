@@ -98,20 +98,27 @@ jest.mock('../../utils/sessionUtils', () => ({
 }));
 
 jest.mock('../../utils/deviceUtils', () => ({
-  extractDeviceInfo: jest.fn().mockReturnValue({
-    deviceId: 'device-123',
-    deviceName: 'Test Device',
-    deviceType: 'desktop',
-    platform: 'web',
-    browser: 'Chrome',
-    os: 'Linux',
-    ipAddress: '127.0.0.1',
-    userAgent: 'test-agent',
-    location: undefined,
-    fingerprint: undefined,
-  }),
+  // Echo an explicitly-provided deviceId (the stableDeviceKey path feeds the
+  // derived id in as `providedDeviceId`). Falls back to the fixed default when
+  // no id is provided, so the legacy real-device-login tests are unchanged.
+  extractDeviceInfo: jest
+    .fn()
+    .mockImplementation((_req: unknown, providedDeviceId?: string) => ({
+      deviceId: providedDeviceId ?? 'device-123',
+      deviceName: 'Test Device',
+      deviceType: 'desktop',
+      platform: 'web',
+      browser: 'Chrome',
+      os: 'Linux',
+      ipAddress: '127.0.0.1',
+      userAgent: 'test-agent',
+      location: undefined,
+      fingerprint: undefined,
+    })),
   generateDeviceFingerprint: jest.fn().mockReturnValue('fingerprint-hash'),
   registerDevice: jest.fn().mockImplementation((info: Record<string, unknown>) => Promise.resolve(info)),
+  // Use the REAL derivation so per-RP / per-user scoping is exercised end-to-end.
+  deriveServiceDeviceId: jest.requireActual('../../utils/deviceUtils').deriveServiceDeviceId,
 }));
 
 jest.mock('../securityActivityService', () => ({
@@ -210,6 +217,130 @@ describe('Session Service', () => {
       expect(result.deviceInfo.browser).toBe('Chrome');
       expect(result.deviceInfo.ipAddress).toBe('127.0.0.1');
       expect(result.deviceId).toBe('device-123');
+    });
+  });
+
+  /**
+   * IdP/FedCM-issued sessions (stableDeviceKey path).
+   *
+   * Proves the production bug fix: a given (userId, clientOrigin) reuses ONE
+   * session that refreshes its tokens/expiry, instead of minting a brand-new
+   * "FedCM Sign-In" session on every exchange. Two DIFFERENT clientOrigins
+   * derive two DIFFERENT deviceIds → two DIFFERENT sessions.
+   */
+  describe('createSession with stableDeviceKey (FedCM/IdP path)', () => {
+    const SAVED_SALT = process.env.DEVICE_ID_SALT;
+    const RP_A = 'https://relying.party.example';
+    const RP_B = 'https://other.party.example';
+
+    beforeEach(() => {
+      process.env.DEVICE_ID_SALT = 'x'.repeat(48);
+    });
+
+    afterEach(() => {
+      if (SAVED_SALT === undefined) {
+        delete process.env.DEVICE_ID_SALT;
+      } else {
+        process.env.DEVICE_ID_SALT = SAVED_SALT;
+      }
+    });
+
+    it('reuses the SAME session for repeated exchanges of the same (user, clientOrigin)', async () => {
+      // First exchange: no existing device session → creates a brand-new one.
+      // (The new-session path returns the constructed doc whose sessionId is a
+      // freshly generated UUID, so we read it back rather than asserting it.)
+      mockFindOneResults.push(null); // isNewDevice check: none
+      mockFindOneResults.push(null); // active-session reuse lookup: none
+      mockSave.mockResolvedValueOnce(undefined);
+
+      const first = await sessionService.createSession('user-123', createMockRequest(), {
+        deviceName: 'FedCM Sign-In',
+        stableDeviceKey: RP_A,
+      });
+
+      const firstSessionId = first.sessionId;
+      expect(firstSessionId).toEqual(expect.any(String));
+      // The deviceId persisted on the new session is the derived stable id, NOT
+      // the IdP worker's random UA/IP id.
+      const newDeviceId = (Session as unknown as jest.Mock).mock.calls[0][0].deviceId;
+      expect(newDeviceId).toMatch(/^[0-9a-f]{32}$/);
+
+      // Second exchange for the SAME (user, RP): the reuse lookup now finds the
+      // existing session, and createSession refreshes its tokens/expiry rather
+      // than minting a new row. The refresh branch returns the findOneAndUpdate
+      // result, so its sessionId is what the caller receives.
+      mockFindOneResults.push({ _id: 'mongo-id-123' }); // isNewDevice check: device already seen
+      mockFindOneResults.push(
+        createMockSession({ sessionId: firstSessionId }) // active-session reuse lookup: HIT
+      );
+      const refreshed = createMockSession({
+        sessionId: firstSessionId,
+        accessToken: 'refreshed-access-token',
+      });
+      mockFindOneAndUpdate.mockResolvedValueOnce(refreshed);
+
+      const second = await sessionService.createSession('user-123', createMockRequest(), {
+        deviceName: 'FedCM Sign-In',
+        stableDeviceKey: RP_A,
+      });
+
+      // SAME session id reused; the refresh path (findOneAndUpdate) ran exactly
+      // once; save was called only ONCE total (the first, new-session call) —
+      // no second row was minted.
+      expect(second.sessionId).toBe(firstSessionId);
+      expect(second.accessToken).toBe('refreshed-access-token');
+      expect(mockFindOneAndUpdate).toHaveBeenCalledTimes(1);
+      expect(mockSave).toHaveBeenCalledTimes(1);
+
+      // Both exchanges keyed the reuse lookup on the SAME derived deviceId
+      // (deterministic from userId + RP_A) — that's why the second call hit
+      // the existing-session branch. Every Session.findOne reuse filter carries
+      // that one deviceId.
+      const reuseDeviceIds = (Session as unknown as jest.Mock).findOne.mock.calls
+        .map((call: unknown[]) => (call[0] as { deviceId?: string })?.deviceId)
+        .filter((d: string | undefined): d is string => typeof d === 'string');
+      const uniqueDeviceIds = Array.from(new Set(reuseDeviceIds));
+      expect(uniqueDeviceIds).toHaveLength(1);
+      expect(uniqueDeviceIds[0]).toBe(newDeviceId);
+    });
+
+    it('creates DIFFERENT sessions for two DIFFERENT clientOrigins (per-RP deviceId)', async () => {
+      // Exchange for RP_A → new session A.
+      const sessA = createMockSession({ sessionId: 'fedcm-sess-A', deviceId: 'will-be-overwritten' });
+      mockFindOneResults.push(null); // isNewDevice
+      mockFindOneResults.push(null); // reuse lookup: none
+      mockSave.mockResolvedValueOnce(sessA);
+
+      await sessionService.createSession('user-123', createMockRequest(), {
+        deviceName: 'FedCM Sign-In',
+        stableDeviceKey: RP_A,
+      });
+
+      // Capture the deviceId used for RP_A from the Session constructor call.
+      const ctorCallsAfterA = (Session as unknown as jest.Mock).mock.calls.length;
+      const deviceIdA = (Session as unknown as jest.Mock).mock.calls[ctorCallsAfterA - 1][0].deviceId;
+
+      // Exchange for RP_B → because the derived deviceId differs, the reuse
+      // lookup misses and a new session is created.
+      const sessB = createMockSession({ sessionId: 'fedcm-sess-B' });
+      mockFindOneResults.push(null); // isNewDevice
+      mockFindOneResults.push(null); // reuse lookup: none (different deviceId)
+      mockSave.mockResolvedValueOnce(sessB);
+
+      await sessionService.createSession('user-123', createMockRequest(), {
+        deviceName: 'FedCM Sign-In',
+        stableDeviceKey: RP_B,
+      });
+
+      const ctorCallsAfterB = (Session as unknown as jest.Mock).mock.calls.length;
+      const deviceIdB = (Session as unknown as jest.Mock).mock.calls[ctorCallsAfterB - 1][0].deviceId;
+
+      // Two distinct RPs → two distinct derived deviceIds → two distinct sessions.
+      expect(deviceIdA).toMatch(/^[0-9a-f]{32}$/);
+      expect(deviceIdB).toMatch(/^[0-9a-f]{32}$/);
+      expect(deviceIdA).not.toBe(deviceIdB);
+      expect(mockSave).toHaveBeenCalledTimes(2);
+      expect(mockFindOneAndUpdate).not.toHaveBeenCalled();
     });
   });
 

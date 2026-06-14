@@ -5,11 +5,12 @@ import sessionCache from '../utils/sessionCache';
 import userCache from '../utils/userCache';
 import { Types } from 'mongoose';
 import securityActivityService from './securityActivityService';
-import { 
-  extractDeviceInfo, 
-  generateDeviceFingerprint, 
+import {
+  extractDeviceInfo,
+  generateDeviceFingerprint,
   registerDevice,
-  DeviceFingerprint 
+  deriveServiceDeviceId,
+  DeviceFingerprint
 } from '../utils/deviceUtils';
 import { generateSessionTokens, validateAccessToken, validateRefreshToken } from '../utils/sessionUtils';
 import { Request } from 'express';
@@ -314,14 +315,44 @@ class SessionService {
     options: SessionCreateOptions = {}
   ): Promise<ISession> {
     try {
-      const { deviceName, deviceFingerprint } = options;
+      const { deviceName, deviceFingerprint, stableDeviceKey } = options;
+      // For IdP/FedCM-issued sessions the request is a server-to-server call
+      // from the IdP (UA = 'unknown', egress IP varies per call), so the
+      // UA/IP-derived deviceId would be random every time and sprawl a new
+      // session per exchange. When a `stableDeviceKey` is supplied, derive a
+      // deterministic deviceId from (userId, key) and feed it as the provided
+      // deviceId so `extractDeviceInfo` skips the UA/IP derivation entirely —
+      // one (user, RP) then reuses a single session via the lookup below.
+      const stableId = stableDeviceKey
+        ? deriveServiceDeviceId(userId, stableDeviceKey)
+        : undefined;
       // Pass userId so the derived deviceId is scoped per-user — two users
       // behind the same NAT on the same Chrome no longer collide on the same
       // device-id (security review H1).
-      let deviceInfo = extractDeviceInfo(req, undefined, deviceName, userId);
-      
-      // Pass userId to optimize device lookup - reduces Session collection scan
-      if (deviceFingerprint) {
+      let deviceInfo = extractDeviceInfo(req, stableId, deviceName, userId);
+
+      // Mutual exclusion: when a `stableDeviceKey` is supplied, the derived
+      // stable deviceId MUST win. Running the `deviceFingerprint` →
+      // `registerDevice` override below would call `findExistingDeviceId` and
+      // could silently replace the stable id with a fingerprint-matched one,
+      // re-introducing the FedCM session-sprawl this fix exists to prevent.
+      // So we skip that path entirely on the stable-key branch. If a future
+      // caller passes BOTH, `stableDeviceKey` takes precedence and the
+      // `deviceFingerprint` is ignored (with a single dev warning).
+      if (stableId) {
+        if (deviceFingerprint) {
+          logger.warn(
+            '[SessionService] deviceFingerprint ignored because stableDeviceKey was provided; stable deviceId wins',
+            {
+              component: 'SessionService',
+              method: 'createSession',
+              userId,
+            }
+          );
+        }
+      } else if (deviceFingerprint) {
+        // Real device-login path (no stableDeviceKey) — unchanged.
+        // Pass userId to optimize device lookup - reduces Session collection scan.
         deviceInfo = await registerDevice(deviceInfo, generateDeviceFingerprint(deviceFingerprint), userId);
       }
 

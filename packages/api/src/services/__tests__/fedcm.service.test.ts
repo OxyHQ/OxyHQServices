@@ -244,7 +244,10 @@ describe('FedCM exchangeIdToken (H9)', () => {
     if ('error' in result) return;
     expect(result.sessionId).toBe('sess-123');
     expect(result.accessToken).toBe('token-xyz');
-    expect(mockCreateSession).toHaveBeenCalledWith('user-123', expect.anything(), { deviceName: 'FedCM Sign-In' });
+    expect(mockCreateSession).toHaveBeenCalledWith('user-123', expect.anything(), {
+      deviceName: 'FedCM Sign-In',
+      stableDeviceKey: APPROVED_ORIGIN,
+    });
   });
 
   it('records a FedCM grant for the user+origin on a successful exchange', async () => {

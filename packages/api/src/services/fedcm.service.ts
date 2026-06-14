@@ -577,9 +577,16 @@ class FedCMService {
         return { error: 'user_not_found' };
       }
 
-      // Create a new session for this user
+      // Create (or reuse) a session for this user. `req` here is the IdP
+      // Cloudflare Worker's server-to-server request (UA = 'unknown', egress
+      // IP varies per call), so we pass a `stableDeviceKey` of the RP origin:
+      // the deviceId is derived deterministically from (userId, clientOrigin)
+      // so a given (user, RP) reuses ONE session that just refreshes its
+      // tokens/expiry on each silent-auth / SSO bounce — instead of minting a
+      // brand-new "FedCM Sign-In" session every exchange.
       const session = await sessionService.createSession(userId, req, {
         deviceName: 'FedCM Sign-In',
+        stableDeviceKey: clientOrigin,
       });
 
       // Record the grant: the user just actively authorized this RP origin via
