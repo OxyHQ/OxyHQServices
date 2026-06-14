@@ -212,7 +212,8 @@ export const authMiddleware = async (req: AuthRequest, res: Response, next: Next
 /**
  * Decoded payload for service-to-service JWTs minted via
  * `POST /auth/service-token`. Carries the `scopes` granted to the
- * DeveloperApp so downstream middleware can do per-scope authorisation.
+ * Application so downstream middleware can do per-scope authorisation.
+ * The `appId` claim is the Application `_id`.
  */
 export interface ServiceTokenPayload {
   type: 'service';

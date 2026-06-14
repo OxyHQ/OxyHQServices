@@ -145,9 +145,15 @@ jest.mock('../../models/AuthCode', () => ({
   default: { create: jest.fn() },
 }));
 
-jest.mock('../../models/DeveloperApp', () => ({
+jest.mock('../../models/Application', () => ({
   __esModule: true,
-  DeveloperApp: { findOne: jest.fn() },
+  Application: { findOne: jest.fn() },
+  default: { findOne: jest.fn() },
+}));
+
+jest.mock('../../models/ApplicationCredential', () => ({
+  __esModule: true,
+  ApplicationCredential: { findOne: jest.fn() },
   default: { findOne: jest.fn() },
 }));
 

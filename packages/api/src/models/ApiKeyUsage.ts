@@ -3,6 +3,7 @@ import mongoose, { Schema, Document } from 'mongoose';
 export interface IApiKeyUsage extends Document {
   apiKeyId?: mongoose.Types.ObjectId;
   userId: string;
+  /** Application ObjectId this usage record is attributed to. */
   appId?: mongoose.Types.ObjectId;
   endpoint: string;
   method: string;
@@ -30,7 +31,7 @@ const ApiKeyUsageSchema = new Schema<IApiKeyUsage>(
     },
     appId: {
       type: Schema.Types.ObjectId,
-      ref: 'DeveloperApp',
+      ref: 'Application',
       required: false,
     },
     authType: {

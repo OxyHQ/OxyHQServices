@@ -23,7 +23,8 @@ const mockAuthMiddleware = jest.fn();
 const mockAuthSessionFindOne = jest.fn();
 const mockCreateSession = jest.fn();
 const mockEmitAuthSessionUpdate = jest.fn();
-const mockDeveloperAppFindOne = jest.fn();
+const mockApplicationFindOne = jest.fn();
+const mockApplicationCredentialFindOne = jest.fn();
 const mockAuthCodeCreate = jest.fn();
 
 jest.mock('../../middleware/auth', () => ({
@@ -66,10 +67,16 @@ jest.mock('../../models/AuthCode', () => ({
   default: { create: mockAuthCodeCreate },
 }));
 
-jest.mock('../../models/DeveloperApp', () => ({
+jest.mock('../../models/Application', () => ({
   __esModule: true,
-  DeveloperApp: { findOne: mockDeveloperAppFindOne },
-  default: { findOne: mockDeveloperAppFindOne },
+  Application: { findOne: mockApplicationFindOne },
+  default: { findOne: mockApplicationFindOne },
+}));
+
+jest.mock('../../models/ApplicationCredential', () => ({
+  __esModule: true,
+  ApplicationCredential: { findOne: mockApplicationCredentialFindOne },
+  default: { findOne: mockApplicationCredentialFindOne },
 }));
 
 jest.mock('../../models/User', () => ({

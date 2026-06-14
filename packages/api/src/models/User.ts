@@ -71,6 +71,13 @@ export interface IUser extends Document {
     full?: string; // virtual
   };
   verified?: boolean;
+  /**
+   * Oxy platform staff flag. Grants access to staff-only operations such as
+   * editing an Application's `type`/`isOfficial`/`isInternal`/`capabilities`
+   * fields. Set in the DB by a platform administrator only — never via any
+   * self-service API route. Gated by the `requireStaff` middleware.
+   */
+  isStaff?: boolean;
   language?: string;
   privacySettings: {
     isPrivateAccount: boolean;
@@ -296,6 +303,10 @@ const UserSchema: Schema = new Schema(
       },
     }],
     verified: {
+      type: Boolean,
+      default: false,
+    },
+    isStaff: {
       type: Boolean,
       default: false,
     },

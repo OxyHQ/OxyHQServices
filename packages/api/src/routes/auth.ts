@@ -11,7 +11,8 @@ import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { SessionController } from '../controllers/session.controller';
 import { User } from '../models/User';
-import { DeveloperApp } from '../models/DeveloperApp';
+import { Application } from '../models/Application';
+import { ApplicationCredential } from '../models/ApplicationCredential';
 import { authMiddleware, rejectQueryToken, type AuthRequest } from '../middleware/auth';
 import { requireSameSiteOrigin } from '../middleware/originGuard';
 import { rateLimit } from '../middleware/rateLimiter';
@@ -1924,7 +1925,7 @@ router.post('/session/cancel/:sessionToken', validate({ params: authSessionToken
 //   1. User signs into the auth UI.
 //   2. UI calls POST /auth/oauth/authorize (Bearer auth) with `clientId`,
 //      `redirectUri`, optional PKCE `codeChallenge` (S256) and `state`.
-//   3. Server validates the `redirectUri` against the DeveloperApp
+//   3. Server validates the `redirectUri` against the Application
 //      `redirectUris` allowlist and mints a single-use authorization code.
 //   4. UI redirects the browser to `redirectUri?code=<code>&state=<state>`.
 //   5. The third-party app's backend (or a public client with the matching
@@ -1934,7 +1935,7 @@ router.post('/session/cancel/:sessionToken', validate({ params: authSessionToken
 // Access tokens never appear in the URL bar.
 
 /**
- * Validate a redirect URI against the DeveloperApp allowlist using an exact
+ * Validate a redirect URI against the Application allowlist using an exact
  * match (per OAuth2 RFC 6749 §3.1.2). Partial / prefix matching is the
  * source of countless open-redirect vulnerabilities — we never normalise
  * away path or query for the comparison. Constant-time equality keeps the
@@ -1978,7 +1979,7 @@ const oauthTokenLimiter = rateLimit({
  *       Bearer access token. Returns a short-lived single-use code that the
  *       client app exchanges for tokens via `POST /auth/oauth/token`.
  *
- *       The `redirectUri` MUST exactly match one of the DeveloperApp's
+ *       The `redirectUri` MUST exactly match one of the Application's
  *       registered `redirectUris` — otherwise the request is rejected.
  *     security:
  *       - bearerAuth: []
@@ -1994,7 +1995,7 @@ const oauthTokenLimiter = rateLimit({
  *             properties:
  *               clientId:
  *                 type: string
- *                 description: DeveloperApp apiKey
+ *                 description: ApplicationCredential publicKey (OAuth client_id)
  *               redirectUri:
  *                 type: string
  *                 format: uri
@@ -2045,10 +2046,18 @@ router.post(
       throw new BadRequestError('Only S256 code_challenge_method is supported');
     }
 
-    // The DeveloperApp.apiKey serves as the OAuth `client_id`.
-    const app = await DeveloperApp.findOne({ apiKey: clientId, status: 'active' });
+    // The ApplicationCredential.publicKey serves as the OAuth `client_id`.
+    const credential = await ApplicationCredential.findOne({
+      publicKey: clientId,
+      status: 'active',
+    });
+    if (!credential) {
+      // Don't leak whether the client exists vs is revoked.
+      throw new BadRequestError('Invalid client');
+    }
+
+    const app = await Application.findOne({ _id: credential.applicationId, status: 'active' });
     if (!app) {
-      // Don't leak whether the client exists vs is suspended.
       throw new BadRequestError('Invalid client');
     }
 
@@ -2149,18 +2158,32 @@ router.post(
       codeVerifier?: string;
     };
 
-    const app = await DeveloperApp.findOne({ apiKey: clientId, status: 'active' });
+    const credential = await ApplicationCredential.findOne({
+      publicKey: clientId,
+      status: 'active',
+    });
+    if (!credential) {
+      throw new UnauthorizedError('invalid_client');
+    }
+
+    const app = await Application.findOne({ _id: credential.applicationId, status: 'active' });
     if (!app) {
       throw new UnauthorizedError('invalid_client');
     }
 
     // If the caller asserts a confidential client secret, verify it in
     // constant time BEFORE we attempt the code exchange — that way an
-    // attacker without a secret can't probe the code-binding outcomes.
+    // attacker without a secret can't probe the code-binding outcomes. The
+    // secret is compared as a SHA-256 hash against the stored `secretHash`.
     let clientSecretProvided = false;
     if (clientSecret) {
-      const expected = Buffer.from(app.apiSecret);
-      const provided = Buffer.from(clientSecret);
+      if (!credential.secretHash) {
+        throw new UnauthorizedError('invalid_client');
+      }
+      const expected = Buffer.from(credential.secretHash);
+      const provided = Buffer.from(
+        crypto.createHash('sha256').update(clientSecret).digest('hex')
+      );
       if (expected.length !== provided.length || !crypto.timingSafeEqual(expected, provided)) {
         throw new UnauthorizedError('invalid_client');
       }
@@ -2235,8 +2258,9 @@ const serviceTokenLimiter = rateLimit({
  *     summary: Exchange credentials for a service token
  *     description: >
  *       Internal service-to-service authentication endpoint.
- *       Exchange DeveloperApp credentials (apiKey + apiSecret) for a short-lived
- *       service JWT (1 hour). Only available to apps with isInternal flag set.
+ *       Exchange ApplicationCredential credentials (apiKey = publicKey,
+ *       apiSecret = plaintext secret) for a short-lived service JWT (1 hour).
+ *       Requires an active credential of type `service` on an active application.
  *     requestBody:
  *       required: true
  *       content:
@@ -2249,11 +2273,11 @@ const serviceTokenLimiter = rateLimit({
  *             properties:
  *               apiKey:
  *                 type: string
- *                 description: DeveloperApp API key
+ *                 description: ApplicationCredential publicKey
  *                 example: oxy_dk_abc123
  *               apiSecret:
  *                 type: string
- *                 description: DeveloperApp API secret
+ *                 description: ApplicationCredential plaintext secret
  *     responses:
  *       200:
  *         description: Service token issued
@@ -2285,7 +2309,7 @@ const serviceTokenLimiter = rateLimit({
  *             schema:
  *               $ref: '#/components/schemas/Error'
  *       403:
- *         description: App is not an internal service
+ *         description: Credential is not a service credential
  *         content:
  *           application/json:
  *             schema:
@@ -2305,55 +2329,74 @@ router.post('/service-token', serviceTokenLimiter, validate({ body: serviceToken
     throw new Error('Server configuration error');
   }
 
-  // Find app by apiKey
-  const app = await DeveloperApp.findOne({ apiKey, status: 'active' });
+  // Find the credential by its public key (apiKey). The credential must be an
+  // active `service` credential.
+  const credential = await ApplicationCredential.findOne({ publicKey: apiKey, status: 'active' });
 
-  if (!app) {
+  if (!credential) {
     logger.warn('[ServiceToken] Invalid apiKey attempt', { apiKey: apiKey.substring(0, 12) + '...' });
     throw new UnauthorizedError('Invalid credentials');
   }
 
-  // Verify this is an internal app
-  if (!app.isInternal) {
-    logger.warn('[ServiceToken] Non-internal app attempted service token', {
-      appId: app._id,
-      appName: app.name,
+  if (credential.type !== 'service') {
+    logger.warn('[ServiceToken] Non-service credential attempted service token', {
+      credentialId: credential._id.toString(),
+      applicationId: credential.applicationId.toString(),
     });
-    throw new ForbiddenError('Service tokens are only available to internal apps');
+    throw new ForbiddenError('Service tokens are only available to service credentials');
   }
 
-  // Validate apiSecret with timing-safe comparison
-  const expectedBuffer = Buffer.from(app.apiSecret);
-  const providedBuffer = Buffer.from(apiSecret);
+  // Validate the secret as a SHA-256 hash with a timing-safe comparison.
+  if (!credential.secretHash) {
+    throw new UnauthorizedError('Invalid credentials');
+  }
+  const expectedBuffer = Buffer.from(credential.secretHash);
+  const providedBuffer = Buffer.from(crypto.createHash('sha256').update(apiSecret).digest('hex'));
 
   if (expectedBuffer.length !== providedBuffer.length ||
       !crypto.timingSafeEqual(expectedBuffer, providedBuffer)) {
     logger.warn('[ServiceToken] Invalid apiSecret attempt', {
-      appId: app._id,
-      appName: app.name,
+      credentialId: credential._id.toString(),
+      applicationId: credential.applicationId.toString(),
+    });
+    throw new UnauthorizedError('Invalid credentials');
+  }
+
+  // The owning application must be active.
+  const app = await Application.findOne({ _id: credential.applicationId, status: 'active' });
+  if (!app) {
+    logger.warn('[ServiceToken] Application inactive for service credential', {
+      credentialId: credential._id.toString(),
+      applicationId: credential.applicationId.toString(),
     });
     throw new UnauthorizedError('Invalid credentials');
   }
 
   // Generate stateless service JWT — embed granted scopes so downstream
-  // middleware can do per-scope authorisation without an extra DB lookup.
+  // middleware can do per-scope authorisation without an extra DB lookup. The
+  // `appId` claim is the Application `_id` (UNCHANGED claim name — see contract
+  // §5). Scopes come from the credential, falling back to the application.
+  const scopes = credential.scopes.length > 0 ? credential.scopes : app.scopes ?? [];
   const token = jwt.sign(
     {
       type: 'service',
       appId: app._id.toString(),
       appName: app.name,
-      scopes: app.scopes ?? [],
+      scopes,
     },
     process.env.ACCESS_TOKEN_SECRET,
     { expiresIn: SERVICE_TOKEN_EXPIRY }
   );
 
-  // Update lastUsedAt
+  // Update lastUsedAt on the credential and the application.
+  credential.lastUsedAt = new Date();
+  await credential.save();
   app.lastUsedAt = new Date();
   await app.save();
 
   logger.info('[ServiceToken] Service token issued', {
-    appId: app._id,
+    credentialId: credential._id.toString(),
+    applicationId: app._id.toString(),
     appName: app.name,
     expiresIn: SERVICE_TOKEN_EXPIRY,
     ip: req.ip,

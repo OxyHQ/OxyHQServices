@@ -5,7 +5,7 @@ import { Message } from '../models/Message';
 import Notification from '../models/Notification';
 import { File } from '../models/File';
 import { Transaction } from '../models/Transaction';
-import { DeveloperApp } from '../models/DeveloperApp';
+import { Application } from '../models/Application';
 import Follow from '../models/Follow';
 import { logger } from '../utils/logger';
 
@@ -29,7 +29,7 @@ async function fetchStats() {
     totalNotifications,
     totalFiles,
     totalTransactions,
-    totalDeveloperApps,
+    totalApplications,
     totalFollows,
     topCountries,
     regionCount,
@@ -40,7 +40,7 @@ async function fetchStats() {
     Notification.countDocuments(),
     File.countDocuments(),
     Transaction.countDocuments(),
-    DeveloperApp.countDocuments({ status: 'active' }),
+    Application.countDocuments({ status: 'active' }),
     Follow.countDocuments(),
     Session.aggregate([
       { $match: { isActive: true, 'deviceInfo.location': { $exists: true, $ne: '' } } },
@@ -61,7 +61,7 @@ async function fetchStats() {
     totalNotifications,
     totalFiles,
     totalTransactions,
-    totalDeveloperApps,
+    totalApplications,
     totalFollows,
     aiModels: 4,
     topCountries: topCountries.map((c: any) => ({

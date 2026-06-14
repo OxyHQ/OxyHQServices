@@ -33,7 +33,7 @@ const DeveloperApiKeySchema = new Schema<IDeveloperApiKey>(
     },
     appId: {
       type: Schema.Types.ObjectId,
-      ref: 'DeveloperApp',
+      ref: 'Application',
       required: true,
       index: true,
     },

@@ -27,7 +27,7 @@ export interface IAuthCode extends Document {
   codeHash: string;
   /** ObjectId of the user that approved this grant. */
   userId: mongoose.Types.ObjectId;
-  /** DeveloperApp ObjectId issued the code for. */
+  /** Application ObjectId (string) the code was issued for. */
   appId: string;
   /** Exact redirect URI used at issue time — must match exchange request. */
   redirectUri: string;

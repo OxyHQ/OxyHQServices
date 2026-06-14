@@ -909,7 +909,7 @@ router.delete(
  * Find or create a non-local user (federated, agent, or automated).
  * Called by Oxy ecosystem services when they encounter an external user
  * that needs an Oxy identity. Requires a valid service token whose
- * DeveloperApp has been granted the `federation:write` scope.
+ * Application has been granted the `federation:write` scope.
  *
  * Hardening (C4):
  *  - Scope check: rejects service tokens that lack `federation:write`.
