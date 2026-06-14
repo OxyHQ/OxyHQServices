@@ -41,6 +41,18 @@ export interface AuthState {
   /** Whether the auth token is ready for API calls */
   isReady: boolean;
 
+  /**
+   * Whether the initial auth determination has concluded.
+   *
+   * `false` from mount until the first cold-boot session restore finishes;
+   * while `false`, `isAuthenticated: false` is UNDETERMINED (not a definitive
+   * "logged out"). Flips to `true` once — when a session is committed or none
+   * is found — and never reverts. Defer the first auth-dependent fetch until
+   * this is `true` so a cold-boot reload with an existing session does not load
+   * anonymous data.
+   */
+  isAuthResolved: boolean;
+
   /** Current error message, if any */
   error: string | null;
 }
@@ -99,6 +111,7 @@ export function useAuth(): UseAuthReturn {
     isAuthenticated,
     isLoading,
     isTokenReady,
+    isAuthResolved,
     error,
     signIn: oxySignIn,
     handlePopupSession,
@@ -219,6 +232,7 @@ export function useAuth(): UseAuthReturn {
     isAuthenticated,
     isLoading,
     isReady: isTokenReady,
+    isAuthResolved,
     error,
 
     // Actions

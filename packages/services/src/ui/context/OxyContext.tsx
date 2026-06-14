@@ -58,6 +58,21 @@ export interface OxyContextState {
   isAuthenticated: boolean;
   isLoading: boolean;
   isTokenReady: boolean;
+  /**
+   * Whether the initial auth determination has concluded.
+   *
+   * `false` from mount until the FIRST cold-boot session restore finishes —
+   * during that window `isAuthenticated: false` is UNDETERMINED, not a
+   * definitive "logged out". Flips to `true` exactly once the restore concludes
+   * (a session was committed OR none exists) and never reverts. Consumers should
+   * defer their first auth-dependent fetch until this is `true` so a cold-boot
+   * web reload with an existing session does not fetch anonymous data.
+   *
+   * On native, cold boot runs only the `stored-session` step, so this resolves
+   * promptly. It is set in the restore `finally`, so the success, no-session,
+   * and error paths all reach `true` — it can never get stuck `false`.
+   */
+  isAuthResolved: boolean;
   isStorageReady: boolean;
   error: string | null;
   currentLanguage: string;
@@ -284,6 +299,11 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   );
 
   const [tokenReady, setTokenReady] = useState(true);
+  // Whether the FIRST cold-boot auth restore has concluded. Starts `false`
+  // (auth undetermined) and flips to `true` exactly once in the restore
+  // `finally` — monotonic, never reverts. See `isAuthResolved` on the context
+  // type for the consumer contract.
+  const [authResolved, setAuthResolved] = useState(false);
   const [initialized, setInitialized] = useState(false);
   const setAuthState = useAuthStore.setState;
 
@@ -1029,6 +1049,13 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       await clearSessionStateRef.current();
     } finally {
       setTokenReady(true);
+      // Auth determination is now complete (session committed, none found, or
+      // the error path ran clear-state). Monotonic: `setAuthResolved` is a no-op
+      // on subsequent restores since it is already `true`. Runs on every exit
+      // path — success, no-session, AND error→catch→finally — and on native
+      // (which only runs the `stored-session` step), so it can never hang
+      // `false`.
+      setAuthResolved(true);
     }
   }, [
     oxyServices,
@@ -1436,6 +1463,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     isAuthenticated,
     isLoading,
     isTokenReady: tokenReady,
+    isAuthResolved: authResolved,
     isStorageReady: storage !== null,
     error,
     currentLanguage,
@@ -1492,6 +1520,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     storage,
     switchSessionForContext,
     tokenReady,
+    authResolved,
     updateDeviceName,
     clearAllAccountData,
     useFollowHook,
@@ -1539,6 +1568,7 @@ const LOADING_STATE: OxyContextState = {
   isAuthenticated: false,
   isLoading: true,
   isTokenReady: false,
+  isAuthResolved: false,
   isStorageReady: false,
   error: null,
   currentLanguage: 'en',
