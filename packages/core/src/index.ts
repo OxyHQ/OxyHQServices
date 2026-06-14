@@ -384,6 +384,7 @@ export {
     ssoGuardKey,
     ssoDestKey,
     ssoNoSessionKey,
+    ssoAttemptedKey,
     ssoNavigate,
     buildSsoBounceUrl,
     isCentralIdPOrigin,

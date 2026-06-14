@@ -23,6 +23,7 @@ import * as oxyCore from '@oxyhq/core';
 const ORIGIN = 'https://app.mention.earth';
 const GUARD_KEY = `oxy_sso_guard:${ORIGIN}`;
 const NO_SESSION_KEY = `oxy_sso_no_session:${ORIGIN}`;
+const ATTEMPTED_KEY = `oxy_sso_attempted:${ORIGIN}`;
 
 interface CapturedState {
   isTokenReady: boolean;
@@ -112,6 +113,50 @@ describe('SSO bounce guard (loop prevention + self-heal)', () => {
     await waitFor(() => expect(captured.isTokenReady).toBe(true));
     await new Promise((r) => setTimeout(r, 0));
     expect(assignSpy).not.toHaveBeenCalled();
+  });
+
+  it('does NOT bounce when the attempted-flag is already set (runs at most once)', async () => {
+    // Only the outcome-independent attempted-flag is set — NO NO_SESSION key and
+    // NO guard. The bounce must still be disabled (the definitive loop breaker).
+    window.sessionStorage.setItem(ATTEMPTED_KEY, '1');
+    const stub = buildStub('https://api.mention.earth/guard-attempted');
+
+    renderProvider(stub, 'https://api.mention.earth/guard-attempted');
+
+    await waitFor(() => expect(captured.isTokenReady).toBe(true));
+    // Settle any trailing microtasks from cold boot before asserting "never".
+    await new Promise((r) => setTimeout(r, 0));
+    expect(assignSpy).not.toHaveBeenCalled();
+  });
+
+  it('LOOP PROOF: a fresh cold boot bounces once + sets the attempted-flag, and never re-bounces even after the 30s guard TTL lapses', async () => {
+    const t0 = 12_000_000;
+    nowSpy = jest.spyOn(Date, 'now').mockReturnValue(t0);
+
+    // First render: a genuinely fresh cold boot (no flags). It bounces exactly
+    // once AND stamps the attempted-flag before navigating.
+    const firstStub = buildStub('https://api.mention.earth/loop-proof-1');
+    const first = renderProvider(firstStub, 'https://api.mention.earth/loop-proof-1');
+
+    await waitFor(() => expect(assignSpy).toHaveBeenCalledTimes(1));
+    expect(window.sessionStorage.getItem(ATTEMPTED_KEY)).toBe('1');
+    first.unmount();
+
+    // Advance Date.now past the original guard's 30s TTL so the self-heal guard
+    // would otherwise have lapsed (cf. the `self-heals` test, which DOES
+    // re-bounce because it has no attempted-flag). The attempted-flag — which
+    // survives the guard TTL — must keep the bounce suppressed.
+    nowSpy.mockReturnValue(t0 + 31_000);
+
+    // Second render in the SAME sessionStorage (NOT cleared between renders).
+    // A distinct baseURL avoids the useWebSSO module-level guard interfering.
+    const secondStub = buildStub('https://api.mention.earth/loop-proof-2');
+    renderProvider(secondStub, 'https://api.mention.earth/loop-proof-2');
+
+    await waitFor(() => expect(captured.isTokenReady).toBe(true));
+    await new Promise((r) => setTimeout(r, 0));
+    // Total assigns still 1 — the attempted-flag broke the loop.
+    expect(assignSpy).toHaveBeenCalledTimes(1);
   });
 
   it('self-heals: bounces again once the 30s guard TTL has lapsed', async () => {

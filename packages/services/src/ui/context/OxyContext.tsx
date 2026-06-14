@@ -22,6 +22,7 @@ import {
   ssoGuardKey,
   ssoDestKey,
   ssoNoSessionKey,
+  ssoAttemptedKey,
   isCentralIdPOrigin,
   guardActive,
   ssoNavigate,
@@ -947,6 +948,9 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
               if (window.sessionStorage.getItem(ssoNoSessionKey(origin)) === '1') {
                 return false;
               }
+              if (window.sessionStorage.getItem(ssoAttemptedKey(origin)) === '1') {
+                return false;
+              }
               if (guardActive(window.sessionStorage, origin, Date.now())) {
                 return false;
               }
@@ -958,6 +962,10 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
               window.sessionStorage.setItem(ssoStateKey(origin), state);
               window.sessionStorage.setItem(ssoGuardKey(origin), String(Date.now()));
               window.sessionStorage.setItem(ssoDestKey(origin), window.location.href);
+              // OUTCOME-INDEPENDENT once-guard: mark the probe attempted the instant we
+              // commit to the bounce, so even if the callback never lands cleanly no
+              // second bounce can ever fire this tab (the definitive loop breaker).
+              window.sessionStorage.setItem(ssoAttemptedKey(origin), '1');
 
               const url = buildSsoBounceUrl(origin, state, oxyServices.config?.authWebUrl);
 

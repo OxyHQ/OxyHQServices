@@ -14,6 +14,7 @@ import {
   ssoGuardKey,
   ssoDestKey,
   ssoNoSessionKey,
+  ssoAttemptedKey,
 } from '../ssoBounce';
 import type { SessionLoginResponse } from '../../models/session';
 
@@ -116,8 +117,29 @@ describe('consumeSsoReturn', () => {
     expect(result).toBeNull();
     expect(oxy.exchangeSsoCode).not.toHaveBeenCalled();
     expect(storage.map.get(ssoNoSessionKey(ORIGIN))).toBe('1');
+    expect(storage.map.get(ssoAttemptedKey(ORIGIN))).toBe('1');
     expect(storage.map.has(ssoStateKey(ORIGIN))).toBe(false);
     expect(storage.map.has(ssoGuardKey(ORIGIN))).toBe(false);
+  });
+
+  it('sets BOTH ssoNoSessionKey AND ssoAttemptedKey on a none outcome', async () => {
+    const oxy = okExchange();
+    const storage = makeStorage({ [ssoStateKey(ORIGIN)]: 's' });
+    const history = makeHistory();
+    const result = await consumeSsoReturn(oxy, {
+      isWeb: () => true,
+      storage,
+      location: makeLocation({ hash: '#oxy_sso=none&state=s' }),
+      history,
+    });
+
+    expect(result).toBeNull();
+    expect(oxy.exchangeSsoCode).not.toHaveBeenCalled();
+    expect(storage.map.get(ssoNoSessionKey(ORIGIN))).toBe('1');
+    expect(storage.map.get(ssoAttemptedKey(ORIGIN))).toBe('1');
+    // Fragment stripped FIRST (history.replaceState called).
+    expect(history.calls.length).toBeGreaterThanOrEqual(1);
+    expect(history.calls[0]?.[2]).toBe(SSO_CALLBACK_PATH);
   });
 
   it('sets NO_SESSION and returns null on an "error" outcome', async () => {
@@ -132,6 +154,7 @@ describe('consumeSsoReturn', () => {
 
     expect(result).toBeNull();
     expect(storage.map.get(ssoNoSessionKey(ORIGIN))).toBe('1');
+    expect(storage.map.get(ssoAttemptedKey(ORIGIN))).toBe('1');
   });
 
   it('sets NO_SESSION and returns null on a state mismatch (CSRF)', async () => {
@@ -147,6 +170,7 @@ describe('consumeSsoReturn', () => {
     expect(result).toBeNull();
     expect(oxy.exchangeSsoCode).not.toHaveBeenCalled();
     expect(storage.map.get(ssoNoSessionKey(ORIGIN))).toBe('1');
+    expect(storage.map.get(ssoAttemptedKey(ORIGIN))).toBe('1');
   });
 
   it('sets NO_SESSION and returns null when ok carries no code', async () => {
@@ -162,6 +186,7 @@ describe('consumeSsoReturn', () => {
     expect(result).toBeNull();
     expect(oxy.exchangeSsoCode).not.toHaveBeenCalled();
     expect(storage.map.get(ssoNoSessionKey(ORIGIN))).toBe('1');
+    expect(storage.map.get(ssoAttemptedKey(ORIGIN))).toBe('1');
   });
 
   it('exchanges, returns the session, strips the fragment, and removes state/guard keys on ok', async () => {
@@ -187,6 +212,9 @@ describe('consumeSsoReturn', () => {
     expect(storage.map.has(ssoStateKey(ORIGIN))).toBe(false);
     expect(storage.map.has(ssoGuardKey(ORIGIN))).toBe(false);
     expect(storage.map.has(ssoNoSessionKey(ORIGIN))).toBe(false);
+    // The ok happy-path must NOT set the attempted-flag — a future sign-out
+    // should be able to re-probe the central IdP.
+    expect(storage.map.has(ssoAttemptedKey(ORIGIN))).toBe(false);
     // Fragment stripped to pathname+search (the first replaceState).
     expect(history.calls[0]?.[2]).toBe('/feed?tab=home');
   });
@@ -242,6 +270,7 @@ describe('consumeSsoReturn', () => {
     expect(result).toBeNull();
     expect(onExchangeError).toHaveBeenCalledWith(boom);
     expect(storage.map.get(ssoNoSessionKey(ORIGIN))).toBe('1');
+    expect(storage.map.get(ssoAttemptedKey(ORIGIN))).toBe('1');
   });
 
   it('does not throw when the exchange throws and no onExchangeError hook is given', async () => {
@@ -277,6 +306,7 @@ describe('consumeSsoReturn', () => {
 
     expect(result).toBeNull();
     expect(storage.map.get(ssoNoSessionKey(ORIGIN))).toBe('1');
+    expect(storage.map.get(ssoAttemptedKey(ORIGIN))).toBe('1');
   });
 
   describe('dest restore', () => {

@@ -28,6 +28,7 @@ import {
   ssoNoSessionKey,
   ssoGuardKey,
   ssoDestKey,
+  ssoAttemptedKey,
   isCentralIdPOrigin,
   guardActive,
   buildSsoBounceUrl,
@@ -182,6 +183,28 @@ function silentSignInKey(oxyServices: OxyServices): string {
     baseURL = '';
   }
   return `${origin}|${baseURL}`;
+}
+
+/**
+ * Clear all per-origin SSO bounce sessionStorage keys. Called ONLY on EXPLICIT
+ * user sign-out (`signOut` / `clearSessionState`) — never on a cold-boot
+ * failure path — so a fresh deliberate sign-in can re-probe the central IdP.
+ * Clearing on cold-boot failure would reintroduce the redirect loop.
+ *
+ * No-ops off-web and on any storage failure (best-effort).
+ */
+function clearSsoBounceStateWeb(): void {
+  if (!isWebBrowser() || typeof window.sessionStorage === 'undefined') return;
+  const origin = window.location.origin;
+  try {
+    window.sessionStorage.removeItem(ssoAttemptedKey(origin));
+    window.sessionStorage.removeItem(ssoNoSessionKey(origin));
+    window.sessionStorage.removeItem(ssoGuardKey(origin));
+    window.sessionStorage.removeItem(ssoStateKey(origin));
+    window.sessionStorage.removeItem(ssoDestKey(origin));
+  } catch {
+    // Best-effort; swallow SecurityError (e.g. Safari private mode).
+  }
 }
 
 export interface WebOxyProviderProps {
@@ -406,6 +429,7 @@ export function WebOxyProvider({
     const origin = window.location.origin;
     if (isCentralIdPOrigin(origin)) return false;
     if (window.sessionStorage.getItem(ssoNoSessionKey(origin)) === '1') return false;
+    if (window.sessionStorage.getItem(ssoAttemptedKey(origin)) === '1') return false;
     if (guardActive(window.sessionStorage, origin)) return false;
     return true;
   }, []);
@@ -425,6 +449,10 @@ export function WebOxyProvider({
     window.sessionStorage.setItem(ssoGuardKey(origin), String(Date.now()));
     // Capture the real destination so it can be restored after the callback.
     window.sessionStorage.setItem(ssoDestKey(origin), window.location.href);
+    // OUTCOME-INDEPENDENT once-guard: mark the probe attempted the instant we
+    // commit to the bounce, so even if the callback never lands cleanly no
+    // second bounce can ever fire this tab (the definitive loop breaker).
+    window.sessionStorage.setItem(ssoAttemptedKey(origin), '1');
 
     // Honour an explicit `authWebUrl` override (e.g. a staging IdP) for the
     // SSO bounce exactly as it drives FedCM — mirroring the services
@@ -830,6 +858,10 @@ export function WebOxyProvider({
       setUser(null);
       setActiveSessionId(null);
       syncAccountsFromManager();
+      // EXPLICIT user sign-out: clear the per-origin SSO bounce state so a fresh
+      // deliberate sign-in can re-probe the central IdP. Never done on a
+      // cold-boot failure path (that would reintroduce the redirect loop).
+      clearSsoBounceStateWeb();
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Sign out failed';
       setError(errorMessage);
@@ -909,6 +941,10 @@ export function WebOxyProvider({
     setUser(null);
     setActiveSessionId(null);
     syncAccountsFromManager();
+    // EXPLICIT user sign-out (this provider has no cold-boot path that calls
+    // this): clear the per-origin SSO bounce state so a fresh deliberate
+    // sign-in can re-probe the central IdP.
+    clearSsoBounceStateWeb();
   }, [authManager, syncAccountsFromManager]);
 
   useEffect(() => {

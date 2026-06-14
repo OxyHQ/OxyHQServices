@@ -18,10 +18,22 @@
  * outside the browser.
  */
 
+import {
+  ssoAttemptedKey,
+  ssoNoSessionKey,
+  ssoGuardKey,
+  ssoStateKey,
+  ssoDestKey,
+} from '@oxyhq/core';
+
 const ACTIVE_AUTHUSER_KEY = 'oxy_active_authuser';
 
 function hasLocalStorage(): boolean {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
+}
+
+function hasSessionStorage(): boolean {
+  return typeof window !== 'undefined' && typeof window.sessionStorage !== 'undefined';
 }
 
 /**
@@ -72,6 +84,28 @@ export function clearActiveAuthuser(): void {
     window.localStorage.removeItem(ACTIVE_AUTHUSER_KEY);
   } catch {
     // Best-effort.
+  }
+}
+
+/**
+ * Clear all per-origin SSO bounce sessionStorage keys. Called ONLY on EXPLICIT
+ * user sign-out (logout / logoutAll) — never on a cold-boot failure path — so a
+ * fresh deliberate sign-in can re-probe the central IdP. Clearing on cold-boot
+ * failure would reintroduce the redirect loop.
+ *
+ * No-ops on native and on any storage failure (best-effort).
+ */
+export function clearSsoBounceState(): void {
+  if (!hasSessionStorage()) return;
+  const origin = window.location.origin;
+  try {
+    window.sessionStorage.removeItem(ssoAttemptedKey(origin));
+    window.sessionStorage.removeItem(ssoNoSessionKey(origin));
+    window.sessionStorage.removeItem(ssoGuardKey(origin));
+    window.sessionStorage.removeItem(ssoStateKey(origin));
+    window.sessionStorage.removeItem(ssoDestKey(origin));
+  } catch {
+    // Best-effort; swallow SecurityError (e.g. Safari private mode).
   }
 }
 

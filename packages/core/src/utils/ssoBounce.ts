@@ -26,11 +26,15 @@
  *      the session, then restores the original destination.
  *
  * Loop proof (logged-out): first load all steps skip → `sso-bounce` sets
- * guard/state/dest and navigates; the IdP (no central session) returns
+ * guard/state/dest + the outcome-independent attempted-flag
+ * ({@link ssoAttemptedKey}) and navigates; the IdP (no central session) returns
  * `#oxy_sso=none`; the callback load's `sso-return` sees `none`, sets the
  * NO_SESSION flag ({@link ssoNoSessionKey}), and `sso-bounce` is then disabled.
  * Exactly ONE bounce, no loop. An interrupted bounce (user hit back
  * mid-redirect) self-heals once the {@link SSO_GUARD_TTL_MS} guard TTL lapses.
+ * The attempted-flag is the definitive, outcome-INDEPENDENT loop breaker: it is
+ * set pre-bounce so even if the return-side NO_SESSION write never lands, the
+ * bounce can never re-fire this tab after the self-heal TTL lapses.
  *
  * All state lives in `sessionStorage` (per tab, cleared on tab close) and is
  * keyed per-origin so two RPs hosted in the same browser never collide. The
@@ -62,6 +66,7 @@ const STATE_KEY_PREFIX = 'oxy_sso_state:';
 const GUARD_KEY_PREFIX = 'oxy_sso_guard:';
 const DEST_KEY_PREFIX = 'oxy_sso_dest:';
 const NO_SESSION_KEY_PREFIX = 'oxy_sso_no_session:';
+const ATTEMPTED_KEY_PREFIX = 'oxy_sso_attempted:';
 
 /** Per-origin CSRF state key (matched on return to defeat fragment forgery). */
 export function ssoStateKey(origin: string): string {
@@ -85,6 +90,19 @@ export function ssoDestKey(origin: string): string {
  */
 export function ssoNoSessionKey(origin: string): string {
   return `${NO_SESSION_KEY_PREFIX}${origin}`;
+}
+
+/**
+ * Per-origin, OUTCOME-INDEPENDENT once-guard. Set in `sessionStorage` BEFORE
+ * the terminal SSO bounce navigates. Gates the bounce so the silent
+ * cross-domain probe fires AT MOST ONCE per tab session — independent of
+ * whether the return-side NO_SESSION flag ever lands. The definitive loop
+ * breaker; survives the 30s self-heal `ssoGuardKey` TTL. Cleared only on an
+ * explicit sign-out/clear so a later cold boot (after the user signs in
+ * centrally) can probe again.
+ */
+export function ssoAttemptedKey(origin: string): string {
+  return `${ATTEMPTED_KEY_PREFIX}${origin}`;
 }
 
 /**

@@ -28,6 +28,7 @@ import {
   ssoGuardKey,
   ssoDestKey,
   ssoNoSessionKey,
+  ssoAttemptedKey,
 } from './ssoBounce';
 
 /**
@@ -149,8 +150,8 @@ export interface ConsumeSsoReturnDeps {
  *     or a `Referer` header even if a later step throws.
  *   - `state` must match (CSRF). A mismatch or a missing code sets the
  *     NO_SESSION flag so `sso-bounce` is disabled (no rebounce loop).
- *   - `none`/`error` outcomes set the NO_SESSION flag (the load2 half of the
- *     loop proof).
+ *   - `none`/`error` outcomes set BOTH the NO_SESSION flag and the
+ *     outcome-independent attempted-flag (the load2 half of the loop proof).
  *   - A throwing exchange is caught, reported via `onExchangeError`, and
  *     treated exactly like "no session" (never loops, never rethrows).
  *   - After a successful exchange landing on {@link SSO_CALLBACK_PATH}, the real
@@ -204,6 +205,10 @@ export async function consumeSsoReturn(
 
   const markNoSession = () => {
     storage.setItem(ssoNoSessionKey(origin), '1');
+    // A return was consumed, so the probe definitively happened. Set the
+    // outcome-independent attempted-flag too so the bounce can never re-fire
+    // even if some consumer path skipped setting it pre-bounce.
+    storage.setItem(ssoAttemptedKey(origin), '1');
   };
 
   if (ret.kind === 'none' || ret.kind === 'error') {

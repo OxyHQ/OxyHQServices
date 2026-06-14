@@ -14,6 +14,7 @@ import {
   ssoGuardKey,
   ssoDestKey,
   ssoNoSessionKey,
+  ssoAttemptedKey,
   buildSsoBounceUrl,
   isCentralIdPOrigin,
   guardActive,
@@ -35,6 +36,7 @@ describe('per-origin key builders', () => {
     expect(ssoGuardKey(origin)).toBe('oxy_sso_guard:https://mention.earth');
     expect(ssoDestKey(origin)).toBe('oxy_sso_dest:https://mention.earth');
     expect(ssoNoSessionKey(origin)).toBe('oxy_sso_no_session:https://mention.earth');
+    expect(ssoAttemptedKey(origin)).toBe('oxy_sso_attempted:https://mention.earth');
   });
 
   it('namespaces keys per origin so two RPs never collide', () => {

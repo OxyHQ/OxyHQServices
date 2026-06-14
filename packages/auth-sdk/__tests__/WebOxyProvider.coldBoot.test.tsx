@@ -99,6 +99,7 @@ jest.mock('@oxyhq/core', () => {
     ssoNoSessionKey: actual.ssoNoSessionKey,
     ssoGuardKey: actual.ssoGuardKey,
     ssoDestKey: actual.ssoDestKey,
+    ssoAttemptedKey: actual.ssoAttemptedKey,
     isCentralIdPOrigin: actual.isCentralIdPOrigin,
     guardActive: actual.guardActive,
     buildSsoBounceUrl: actual.buildSsoBounceUrl,
@@ -152,6 +153,7 @@ import {
   ssoNoSessionKey,
   ssoGuardKey,
   ssoDestKey,
+  ssoAttemptedKey,
   SSO_CALLBACK_PATH,
   buildSsoBounceUrl,
 } from '@oxyhq/core';
@@ -357,6 +359,9 @@ describe('WebOxyProvider cold boot (central SSO)', () => {
     expect(window.sessionStorage.getItem(ssoGuardKey(ORIGIN))).not.toBeNull();
     // The real destination (not the bare callback path) is captured for restore.
     expect(window.sessionStorage.getItem(ssoDestKey(ORIGIN))).toBe(`${ORIGIN}/feed?tab=home`);
+    // The outcome-independent attempted-flag is stamped BEFORE the bounce
+    // navigates — the definitive loop breaker, set regardless of return outcome.
+    expect(window.sessionStorage.getItem(ssoAttemptedKey(ORIGIN))).toBe('1');
 
     // The bounce target the provider builds points at the central IdP /sso with
     // the right params (verified through the same pure helper the provider uses).
@@ -385,6 +390,19 @@ describe('WebOxyProvider cold boot (central SSO)', () => {
   it('9) LOOP PROOF: NO_SESSION flag suppresses the bounce entirely', async () => {
     resetStubs('https://api.test-9');
     window.sessionStorage.setItem(ssoNoSessionKey(ORIGIN), '1');
+
+    let latest: ProbeState = { isAuthenticated: false, userId: null, isLoading: true };
+    renderProvider(stubs.baseURL, (s) => { latest = s; });
+
+    await waitFor(() => expect(latest.isLoading).toBe(false));
+    expect(bounced()).toBe(false);
+  });
+
+  it('11) LOOP PROOF: attempted-flag suppresses the bounce entirely', async () => {
+    resetStubs('https://api.test-11');
+    // Only the outcome-independent attempted-flag is set — no NO_SESSION, no
+    // guard. The bounce must still be suppressed (the definitive loop breaker).
+    window.sessionStorage.setItem(ssoAttemptedKey(ORIGIN), '1');
 
     let latest: ProbeState = { isAuthenticated: false, userId: null, isLoading: true };
     renderProvider(stubs.baseURL, (s) => { latest = s; });

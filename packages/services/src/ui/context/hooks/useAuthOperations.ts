@@ -9,7 +9,7 @@ import type { StorageInterface } from '../../utils/storageHelpers';
 import type { OxyServices } from '@oxyhq/core';
 import { SignatureService } from '@oxyhq/core';
 import { isWebBrowser } from '../../hooks/useWebSSO';
-import { clearActiveAuthuser } from '../../utils/activeAuthuser';
+import { clearActiveAuthuser, clearSsoBounceState } from '../../utils/activeAuthuser';
 
 /** Type guard for error objects with optional code and status properties */
 function isErrorWithCodeOrStatus(error: unknown): error is { code?: string; status?: number; message?: string } {
@@ -323,6 +323,9 @@ export const useAuthOperations = ({
           if (filteredSessions.length > 0) {
             await switchSession(filteredSessions[0].sessionId);
           } else {
+            // Genuine FULL sign-out (no sessions remain): clear the per-origin
+            // SSO bounce state so a fresh deliberate sign-in can re-probe.
+            clearSsoBounceState();
             await clearSessionState();
             return;
           }
@@ -331,6 +334,8 @@ export const useAuthOperations = ({
         const isInvalid = isInvalidSessionError(error);
 
         if (isInvalid && targetSessionId === activeSessionId) {
+          // The active session is invalid → full sign-out; clear SSO state too.
+          clearSsoBounceState();
           await clearSessionState();
           return;
         }
@@ -390,6 +395,9 @@ export const useAuthOperations = ({
       } else {
         await oxyServices.logoutAllSessions(activeSessionId);
       }
+      // logoutAll is ALWAYS a full sign-out: clear the per-origin SSO bounce
+      // state (web-guarded internally) so a fresh sign-in can re-probe.
+      clearSsoBounceState();
       await clearSessionState();
     } catch (error) {
       handleAuthError(error, {
