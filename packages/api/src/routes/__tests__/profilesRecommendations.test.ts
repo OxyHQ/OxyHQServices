@@ -23,7 +23,6 @@ import { AddressInfo } from 'net';
 // profiles route relies on (`new Types.ObjectId(...)`, `instanceof` checks).
 // Restore the REAL mongoose so the route's ObjectId handling runs unmocked.
 jest.mock('mongoose', () => jest.requireActual('mongoose'));
-// eslint-disable-next-line import/first
 import { Types } from 'mongoose';
 
 const mockFollowFind = jest.fn();
