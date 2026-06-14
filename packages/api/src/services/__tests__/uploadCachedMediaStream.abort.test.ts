@@ -26,8 +26,9 @@ jest.mock('../../utils/logger', () => ({
 // `Schema.Types.Mixed`, which File.ts touches at module-eval time. The abort
 // path under test rejects in `uploadStream` BEFORE any File model access, so we
 // stub the model module purely to make the import side-effect succeed.
+const mockFileFindOne = jest.fn();
 jest.mock('../../models/File', () => ({
-  File: { findOne: jest.fn(), findById: jest.fn() },
+  File: { findOne: (...args: unknown[]) => mockFileFindOne(...args), findById: jest.fn() },
   FileVisibility: {},
 }));
 
@@ -59,6 +60,10 @@ function buildAssetService(fake: FakeS3): { service: AssetService; fake: FakeS3 
 }
 
 describe('uploadCachedMediaStream — abort cleanup', () => {
+  beforeEach(() => {
+    mockFileFindOne.mockReset();
+  });
+
   it('aborts the S3 upload and deletes the temp object when the source aborts', async () => {
     let capturedTempKey: string | undefined;
     let abortObserved = false;
@@ -112,5 +117,67 @@ describe('uploadCachedMediaStream — abort cleanup', () => {
 
     // Tear down the never-ending source so no stream handle leaks past the test.
     source.destroy();
+  });
+
+  it('does NOT abort the S3 upload when the source closes after a clean end', async () => {
+    // Regression guard: Node's `'close'` event ALSO fires on normal successful
+    // completion (right after the body is fully read), BEFORE `completed` flips
+    // to true. The handler must NOT treat that as a client/timeout abort — it
+    // previously did, self-aborting every clean upload into a 500.
+    let abortObserved = false;
+    let resolveUpload: ((info: FileInfo) => void) | undefined;
+
+    const uploadStream = jest.fn(
+      (_key: string, _body: Readable, options?: UploadOptions): Promise<FileInfo> => {
+        const signal = options?.abortSignal;
+        signal?.addEventListener('abort', () => { abortObserved = true; }, { once: true });
+        return new Promise<FileInfo>((resolve) => { resolveUpload = resolve; });
+      }
+    );
+
+    const deleteFile = jest.fn((): Promise<void> => Promise.resolve());
+    const { service } = buildAssetService({ uploadStream, deleteFile });
+
+    // Dedup short-circuit: returning an existing file lets the success path
+    // resolve without constructing a File model (out of scope for this unit).
+    const existingFile = { _id: '64c000000000000000000abc', size: 4 };
+    mockFileFindOne.mockResolvedValueOnce(existingFile);
+
+    // A source that delivers a small body and ends cleanly, exactly like a
+    // fully-received request body piped through the byte-meter Transform.
+    const source = new Readable({
+      read() {
+        this.push(Buffer.from('PNG!'));
+        this.push(null);
+      },
+    });
+
+    const promise = service.uploadCachedMediaStream(
+      source,
+      'image/png',
+      'federation-cache-media',
+      CACHE_MAX_BYTES
+    );
+
+    // Let the meter drain the body so the source's 'end' fires and
+    // `readableEnded` becomes true, then emit the normal-completion 'close'.
+    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(source.readableEnded).toBe(true);
+    source.emit('close');
+
+    // The clean-end close must NOT have tripped the abort signal.
+    expect(abortObserved).toBe(false);
+
+    // Now let the S3 upload finish; the call resolves to the deduped file.
+    resolveUpload?.({ key: 'cache/incoming/x', size: 4, contentType: 'image/png' } as FileInfo);
+
+    await expect(promise).resolves.toBe(existingFile);
+
+    // The abort signal stayed clean through the whole success path. The single
+    // deleteFile here is the legitimate dedup temp-object cleanup, never an
+    // abort-driven one.
+    expect(abortObserved).toBe(false);
+    expect(deleteFile).toHaveBeenCalledTimes(1);
   });
 });

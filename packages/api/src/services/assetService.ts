@@ -304,7 +304,9 @@ export class AssetService {
     const abortController = new AbortController();
     let completed = false;
     const onSourceAbort = (): void => {
-      if (!completed) {
+      // 'close' also fires on normal completion (after the body is fully read);
+      // only treat it as a client/timeout abort if the stream did NOT end cleanly.
+      if (!completed && !source.readableEnded) {
         abortController.abort();
       }
     };
