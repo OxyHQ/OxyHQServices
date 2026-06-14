@@ -3,6 +3,7 @@ import FedCMNonce from '../models/FedCMNonce';
 import FedCMGrant from '../models/FedCMGrant';
 import { User } from '../models/User';
 import { logger } from '../utils/logger';
+import { normaliseOrigin } from '../utils/origin';
 import sessionService from './session.service';
 import { Request } from 'express';
 import * as crypto from 'crypto';
@@ -24,13 +25,18 @@ function timingSafeStringEqual(a: string, b: string): boolean {
 }
 
 /**
- * Normalise an origin string for equality checks. Strips trailing slash and
- * lowercases scheme + host. Throws if the input is not a parseable URL.
+ * Local wrapper that preserves the previous throw-on-invalid contract of this
+ * service's call sites. The shared `normaliseOrigin` helper fails closed
+ * (returns `null`); several FedCM call sites historically relied on a throw
+ * (either propagated to the caller or caught and turned into a validation
+ * error), so this re-throws to keep that observable behaviour identical.
  */
-function normaliseOrigin(value: string): string {
-  const url = new URL(value);
-  const port = url.port ? `:${url.port}` : '';
-  return `${url.protocol.toLowerCase()}//${url.hostname.toLowerCase()}${port}`;
+function normaliseOriginOrThrow(value: string): string {
+  const normalised = normaliseOrigin(value);
+  if (normalised === null) {
+    throw new TypeError(`Invalid URL: ${value}`);
+  }
+  return normalised;
 }
 
 // FedCM ID token issuer - must match auth server's NEXT_PUBLIC_OXY_AUTH_URL
@@ -290,7 +296,7 @@ class FedCMService {
    */
   async recordGrant(userId: string, clientOrigin: string): Promise<void> {
     try {
-      const normalisedOrigin = normaliseOrigin(clientOrigin);
+      const normalisedOrigin = normaliseOriginOrThrow(clientOrigin);
       const now = new Date();
       await FedCMGrant.findOneAndUpdate(
         { userId, clientOrigin: normalisedOrigin },
@@ -322,7 +328,7 @@ class FedCMService {
       const approvedSet = new Set(
         approvedOrigins.map((origin) => {
           try {
-            return normaliseOrigin(origin);
+            return normaliseOriginOrThrow(origin);
           } catch {
             return origin;
           }
@@ -365,7 +371,7 @@ class FedCMService {
       for (const client of approvedClients) {
         let key = client.origin;
         try {
-          key = normaliseOrigin(client.origin);
+          key = normaliseOriginOrThrow(client.origin);
         } catch {
           // Keep raw origin if normalisation fails (defensive — should not happen)
         }
@@ -400,7 +406,7 @@ class FedCMService {
    */
   async revokeUserGrant(userId: string, clientOrigin: string): Promise<boolean> {
     try {
-      const normalised = normaliseOrigin(clientOrigin);
+      const normalised = normaliseOriginOrThrow(clientOrigin);
       const result = await FedCMGrant.deleteOne({ userId, clientOrigin: normalised });
       return result.deletedCount > 0;
     } catch (error) {
@@ -417,7 +423,7 @@ class FedCMService {
    * nonce minted for origin A can't be used by origin B.
    */
   async mintNonce(origin: string): Promise<{ nonce: string; expiresAt: string }> {
-    const normalisedOrigin = normaliseOrigin(origin);
+    const normalisedOrigin = normaliseOriginOrThrow(origin);
     const raw = crypto.randomBytes(NONCE_BYTES).toString('base64url');
     const expiresAt = new Date(Date.now() + NONCE_TTL_MS);
     await FedCMNonce.create({
@@ -491,7 +497,7 @@ class FedCMService {
       // leaked token (H9).
       let clientOrigin: string;
       try {
-        clientOrigin = normaliseOrigin(tokenPayload.aud);
+        clientOrigin = normaliseOriginOrThrow(tokenPayload.aud);
       } catch {
         logger.warn('FedCM: Token aud is not a valid origin', { aud: tokenPayload.aud });
         return { error: 'invalid_audience' };
@@ -509,7 +515,7 @@ class FedCMService {
       if (typeof requestOriginRaw === 'string' && requestOriginRaw.length > 0) {
         let requestOrigin: string;
         try {
-          requestOrigin = normaliseOrigin(requestOriginRaw);
+          requestOrigin = normaliseOriginOrThrow(requestOriginRaw);
         } catch {
           logger.warn('FedCM: Request Origin header is not a valid origin', { origin: requestOriginRaw });
           return { error: 'invalid_request_origin' };

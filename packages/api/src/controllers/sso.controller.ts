@@ -21,22 +21,7 @@ import { Request, Response } from 'express';
 import fedcmService from '../services/fedcm.service';
 import { mintSsoCode, redeemSsoCode, SsoSessionPayload } from '../services/ssoCode.service';
 import { logger } from '../utils/logger';
-
-/**
- * Normalise an origin string for equality checks: lowercase scheme + host,
- * strip a trailing slash, preserve an explicit port. Returns `null` when the
- * value is not a parseable absolute origin (so the caller fails closed rather
- * than throwing).
- */
-function normaliseOrigin(value: string): string | null {
-  try {
-    const url = new URL(value);
-    const port = url.port ? `:${url.port}` : '';
-    return `${url.protocol.toLowerCase()}//${url.hostname.toLowerCase()}${port}`;
-  } catch {
-    return null;
-  }
-}
+import { normaliseOrigin } from '../utils/origin';
 
 /** Constant-time string equality (length-tolerant; no early-exit leak). */
 function timingSafeStringEqual(a: string, b: string): boolean {

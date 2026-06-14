@@ -3,22 +3,9 @@ import type { Request, Response, NextFunction } from 'express';
 import { rateLimit } from '../middleware/rateLimiter';
 import { issueSsoCode, exchangeSsoCode } from '../controllers/sso.controller';
 import fedcmService from '../services/fedcm.service';
+import { normaliseOrigin } from '../utils/origin';
 
 const router = express.Router();
-
-/**
- * Normalise an origin for the allow-list lookup (lowercase scheme+host, drop a
- * trailing slash, preserve port). Returns null for an unparseable value.
- */
-function normaliseOrigin(value: string): string | null {
-  try {
-    const url = new URL(value);
-    const port = url.port ? `:${url.port}` : '';
-    return `${url.protocol.toLowerCase()}//${url.hostname.toLowerCase()}${port}`;
-  } catch {
-    return null;
-  }
-}
 
 /**
  * Dedicated CORS handler for `POST /sso/exchange`.
