@@ -92,6 +92,27 @@ const followCountLookupStages = [
   },
 ];
 
+/**
+ * Shape of a single recommendation/profile row produced by
+ * {@link profileProjectionStage} and {@link userProfileProjectionStage}.
+ * Both projections emit the same fields, so every recommendation pipeline
+ * (personalized, public, similar, random fill) yields this row shape and it
+ * feeds {@link formatProfileResult}.
+ */
+interface RecommendationRow {
+  _id: Types.ObjectId;
+  username?: string;
+  name?: { first?: string; last?: string } | string | null;
+  avatar?: string | null;
+  description?: string | null;
+  type?: string;
+  federation?: { domain?: string } | null;
+  automation?: unknown;
+  mutualCount?: number;
+  followersCount?: number;
+  followingCount?: number;
+}
+
 const profileProjectionStage = {
   $project: {
     _id: 1,
@@ -125,7 +146,7 @@ const userProfileProjectionStage = {
   },
 };
 
-function formatProfileResult(u: any) {
+function formatProfileResult(u: RecommendationRow) {
   return {
     id: u._id,
     username: u.username,
@@ -485,10 +506,10 @@ router.get(
       ),
     ];
 
-    let similar: any[] = [];
+    let similar: RecommendationRow[] = [];
 
     if (targetFollowerIds.length > 0) {
-      similar = await Follow.aggregate([
+      similar = await Follow.aggregate<RecommendationRow>([
         {
           $match: {
             followerUserId: { $in: targetFollowerIds },
@@ -593,7 +614,7 @@ router.get(
     // the private/excludeTypes filter, then re-limit, so the post-lookup filter
     // can't starve the result below `limit`.
     if (!currentUserId) {
-      const followerRanked = await Follow.aggregate([
+      const followerRanked = await Follow.aggregate<RecommendationRow>([
         { $match: { followType: FollowType.USER } },
         { $group: { _id: '$followedId', followersCount: { $sum: 1 } } },
         { $sort: { followersCount: -1, _id: 1 } },
@@ -619,7 +640,7 @@ router.get(
         profileProjectionStage,
       ]);
 
-      let publicProfiles = followerRanked;
+      let publicProfiles: RecommendationRow[] = followerRanked;
 
       // Fallback for a near-empty social graph (e.g. fresh install): if no one
       // has followers yet, surface a random sample of public profiles so the
@@ -628,7 +649,7 @@ router.get(
         const alreadyIncludedIds = publicProfiles.map((u) => u._id);
         const fillLimit = parsedLimit - publicProfiles.length;
 
-        const randomUsers = await User.aggregate([
+        const randomUsers = await User.aggregate<RecommendationRow>([
           { $match: { _id: { $nin: alreadyIncludedIds }, ...baseUserMatch } },
           { $sample: { size: fillLimit } },
           ...followCountLookupStages,
@@ -668,10 +689,10 @@ router.get(
 
     excludeIds = excludeIds.concat(followingIds);
 
-    let recommendations: any[] = [];
+    let recommendations: RecommendationRow[] = [];
 
     if (followingIds.length > 0) {
-      recommendations = await Follow.aggregate([
+      recommendations = await Follow.aggregate<RecommendationRow>([
         {
           $match: {
             followerUserId: { $in: followingIds },
@@ -712,7 +733,7 @@ router.get(
       const alreadyRecommendedIds = recommendations.map((u) => u._id);
       const fillLimit = parsedLimit - recommendations.length;
 
-      const randomUsers = await User.aggregate([
+      const randomUsers = await User.aggregate<RecommendationRow>([
         {
           $match: {
             _id: { $nin: excludeIds.concat(alreadyRecommendedIds) },
