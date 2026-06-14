@@ -18,6 +18,7 @@ import {
   runColdBoot,
   resolveCentralAuthUrl,
   autoDetectAuthWebUrl,
+  SSO_CALLBACK_PATH,
   ssoStateKey,
   ssoGuardKey,
   ssoDestKey,
@@ -749,6 +750,11 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     storageKeys.sessionIds,
   ]);
 
+  // Shared in-flight `runSsoReturn` promise — see the CONCURRENCY note on
+  // `runSsoReturn` below. Lets the eager interception effect and the cold-boot
+  // `sso-return` step share one `consumeSsoReturn` invocation race-free.
+  const inFlightSsoReturnRef = useRef<Promise<boolean> | null>(null);
+
   // Central cross-domain SSO return handler (web). A THIN wrapper over core's
   // `consumeSsoReturn`, which performs the entire security-critical kernel —
   // parse the IdP redirect fragment, validate the CSRF `state`, strip the
@@ -764,8 +770,22 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   // Returns `true` when a session was committed (caller short-circuits), `false`
   // otherwise. Off-browser `consumeSsoReturn` is a no-op returning `null`, so
   // this returns `false` (native never reaches it).
-  const runSsoReturn = useCallback(async (): Promise<boolean> => {
-    const session = await consumeSsoReturn(oxyServices, {
+  //
+  // CONCURRENCY: the eager SSO-callback interception effect and the cold-boot
+  // `sso-return` step can both invoke this in the same tick when we land on the
+  // callback path. `consumeSsoReturn` strips the fragment FIRST, so a naive
+  // second invocation would parse an already-stripped URL and return `null` —
+  // leaving the losing caller with no session (and on an `ok` outcome could let
+  // the terminal bounce fire spuriously). The FIRST call's promise is memoised in
+  // `inFlightSsoReturnRef` and SHARED with every concurrent caller, so the single
+  // `consumeSsoReturn` invocation — and its single commit via `handleWebSSOSession`
+  // — is delivered identically to both paths. Cleared once it settles so a later,
+  // genuinely-separate return (e.g. a bfcache restore) runs a fresh pass.
+  const runSsoReturn = useCallback((): Promise<boolean> => {
+    if (inFlightSsoReturnRef.current) {
+      return inFlightSsoReturnRef.current;
+    }
+    const inFlight = consumeSsoReturn(oxyServices, {
       isWeb: isWebBrowser,
       onExchangeError: (error) => {
         if (__DEV__) {
@@ -776,16 +796,23 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
           );
         }
       },
-    });
-    if (!session) {
-      return false;
-    }
-    const commitWebSession = handleWebSSOSessionRef.current;
-    if (!commitWebSession) {
-      return false;
-    }
-    await commitWebSession(session);
-    return true;
+    })
+      .then(async (session): Promise<boolean> => {
+        if (!session) {
+          return false;
+        }
+        const commitWebSession = handleWebSSOSessionRef.current;
+        if (!commitWebSession) {
+          return false;
+        }
+        await commitWebSession(session);
+        return true;
+      })
+      .finally(() => {
+        inFlightSsoReturnRef.current = null;
+      });
+    inFlightSsoReturnRef.current = inFlight;
+    return inFlight;
   }, [oxyServices]);
 
   // Cold boot — the single, ordered, short-circuit session-recovery sequence,
@@ -1055,6 +1082,54 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     };
     window.addEventListener('pageshow', onPageShow);
     return () => window.removeEventListener('pageshow', onPageShow);
+  }, []);
+
+  // EAGER, universal SSO-callback interception (web only, once on mount).
+  //
+  // When the central IdP redirects the RP back to the internal callback path
+  // ({@link SSO_CALLBACK_PATH}), the app's own router would otherwise mount on
+  // `/__oxy/sso-callback` — a route NO app declares — and briefly flash its
+  // +not-found screen before the storage-gated cold-boot `sso-return` step gets
+  // a chance to strip the fragment and restore the real destination.
+  //
+  // This effect fires the SAME `runSsoReturn` kernel the instant we mount ON the
+  // callback path, BEFORE the cold boot (which awaits storage init). It restores
+  // the pre-bounce destination (and, on `ok`, commits the exchanged session via
+  // `handleWebSSOSession`) immediately, so the router re-syncs off the callback
+  // path and never lingers on it. Because the SDK owns this interception
+  // entirely, NO app needs a `/__oxy/sso-callback` route — it works identically
+  // across every consumer with zero per-app code.
+  //
+  // It is purely ADDITIVE. The later cold-boot `sso-return` step stays as
+  // defense-in-depth for the non-callback-path case; `consumeSsoReturn` strips
+  // the fragment first, so once this eager pass has run the cold-boot step is a
+  // harmless idempotent no-op (a second parse of the now-fragment-less URL
+  // returns `null`). The path guard scopes this strictly to the callback path,
+  // so a normal page load is untouched. Routed through `runSsoReturnRef` (the
+  // SAME ref the bfcache handler uses) so deps stay `[]` and it registers once.
+  //
+  // Timing: `handleWebSSOSessionRef.current` is assigned SYNCHRONOUSLY during
+  // render (see below, around the `handleWebSSOSession` declaration), and effects
+  // run only after the render commits, so on an `ok` outcome the commit path is
+  // already wired when this fires at eager-mount time. If for any reason it were
+  // not yet set, the later cold-boot `sso-return` step would commit it — but the
+  // ref IS set during render, so the eager `ok` commit works.
+  useEffect(() => {
+    if (!isWebBrowser()) {
+      return;
+    }
+    if (window.location.pathname !== SSO_CALLBACK_PATH) {
+      return;
+    }
+    runSsoReturnRef.current().catch((error) => {
+      if (__DEV__) {
+        loggerUtil.debug(
+          'Eager SSO callback interception failed (non-fatal)',
+          { component: 'OxyContext', method: 'eagerSsoCallbackIntercept' },
+          error,
+        );
+      }
+    });
   }, []);
 
   // Web SSO: Automatically check for cross-domain session on web platforms

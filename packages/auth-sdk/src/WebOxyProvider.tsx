@@ -368,6 +368,14 @@ export function WebOxyProvider({
     syncAccountsFromManager();
   }, [authManager, syncAccountsFromManager]);
 
+  // `handleAuthSuccess` routed through a ref so the eager SSO-callback
+  // interception effect (registered once with deps `[]`) can commit an `ok`
+  // session without listing `handleAuthSuccess` as a dependency — which would
+  // re-fire the effect on every callback-identity change. Assigned synchronously
+  // on every render so the ref is populated before any effect fires.
+  const handleAuthSuccessRef = useRef(handleAuthSuccess);
+  handleAuthSuccessRef.current = handleAuthSuccess;
+
   const handleAuthError = useCallback((err: unknown) => {
     const errorMessage = err instanceof Error ? err.message : 'Authentication failed';
     setError(errorMessage);
@@ -391,9 +399,26 @@ export function WebOxyProvider({
    * Web-detection (`isWeb`) is wired to `isWebBrowser` so it matches the rest of
    * the provider exactly; storage / location / history default to the `window.*`
    * globals (the same surfaces the previous inline implementation used).
+   *
+   * CONCURRENCY: the eager SSO-callback interception effect and the cold-boot
+   * `sso-return` step can both invoke this in the same tick (both fire on mount
+   * when we land on the callback path). `consumeSsoReturn` strips the fragment
+   * FIRST, so a naive second invocation would parse an already-stripped URL and
+   * return `null` — leaving whichever caller lost the race with no session, which
+   * on an `ok` outcome would let the cold-boot terminal bounce fire spuriously.
+   * To make the two paths race-free, the FIRST call's promise is memoised in
+   * `inFlightSsoReturnRef` and SHARED with every concurrent caller, so the single
+   * `consumeSsoReturn` invocation's result (the exchanged session, or `null`) is
+   * delivered identically to both the eager effect and the cold-boot step. The
+   * shared promise is cleared once it settles so a later, genuinely-separate
+   * return (e.g. a bfcache restore with a fresh fragment) runs a fresh pass.
    */
-  const runSsoReturn = useCallback(async (): Promise<SsoReturnSession | null> => {
-    const session = await consumeSsoReturn(oxyServices, {
+  const inFlightSsoReturnRef = useRef<Promise<SsoReturnSession | null> | null>(null);
+  const runSsoReturn = useCallback((): Promise<SsoReturnSession | null> => {
+    if (inFlightSsoReturnRef.current) {
+      return inFlightSsoReturnRef.current;
+    }
+    const inFlight = consumeSsoReturn(oxyServices, {
       isWeb: isWebBrowser,
       onExchangeError: (err) =>
         logger.debug(
@@ -401,8 +426,13 @@ export function WebOxyProvider({
           { component: 'WebOxyProvider', method: 'runSsoReturn' },
           err,
         ),
-    });
-    return session ? { method: 'sso', session } : null;
+    })
+      .then((session): SsoReturnSession | null => (session ? { method: 'sso', session } : null))
+      .finally(() => {
+        inFlightSsoReturnRef.current = null;
+      });
+    inFlightSsoReturnRef.current = inFlight;
+    return inFlight;
   }, [oxyServices]);
 
   // The cold-boot step references `runSsoReturn` through a ref because the
@@ -725,6 +755,45 @@ export function WebOxyProvider({
       window.removeEventListener('pageshow', onPageShow);
     };
   }, [handleAuthSuccess, evaluateSsoBounce, runSsoBounce, user]);
+
+  // EAGER, universal SSO-callback interception (web only, once on mount).
+  //
+  // When the central IdP redirects the RP back to the internal callback path
+  // ({@link SSO_CALLBACK_PATH}), the app's own router would otherwise mount on
+  // `/__oxy/sso-callback` — a route NO app declares — and briefly flash its
+  // +not-found screen before the cold-boot `sso-return` step strips the fragment
+  // and restores the real destination.
+  //
+  // This effect runs the SAME `runSsoReturn` kernel the instant we mount ON the
+  // callback path, BEFORE the init effect's cold boot. It restores the pre-bounce
+  // destination (and, on `ok`, commits the exchanged session via
+  // `handleAuthSuccess` — exactly as the bfcache handler does) immediately, so
+  // the router re-syncs off the callback path and never lingers on it. Because
+  // the SDK owns this interception, NO app needs a `/__oxy/sso-callback` route.
+  //
+  // Purely ADDITIVE: the cold-boot `sso-return` step stays as defense-in-depth.
+  // `consumeSsoReturn` strips the fragment first, so once this eager pass has run
+  // the cold-boot step is a harmless idempotent no-op. The path guard scopes this
+  // strictly to the callback path. Routed through `runSsoReturnRef` and
+  // `handleAuthSuccessRef` so deps stay `[]` and it registers exactly once.
+  useEffect(() => {
+    if (!isWebBrowser()) return;
+    if (window.location.pathname !== SSO_CALLBACK_PATH) return;
+
+    runSsoReturnRef.current()
+      .then(async (session) => {
+        if (session) {
+          await handleAuthSuccessRef.current(session.session, 'credentials');
+        }
+      })
+      .catch((err) => {
+        logger.debug(
+          'Eager SSO callback interception failed (non-fatal)',
+          { component: 'WebOxyProvider', method: 'eagerSsoCallbackIntercept' },
+          err,
+        );
+      });
+  }, []);
 
   useEffect(() => {
     onAuthStateChange?.(user);

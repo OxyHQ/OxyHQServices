@@ -1,10 +1,15 @@
 /**
+ * @jest-environment jsdom
+ *
  * `consumeSsoReturn` — the commit-free, security-critical kernel of the
  * cross-domain SSO `sso-return` step.
  *
  * Every web seam is injected (storage / location / history / isWeb) so the
  * full CSRF / fragment-strip-order / exchange / dest-restore / loop-breaker
- * sequence is asserted deterministically without a DOM.
+ * sequence is asserted deterministically. The injected-seam tests do not need
+ * a DOM; the `default dispatchPopState` suite exercises the real
+ * `window.dispatchEvent(new PopStateEvent(...))` path, so this file runs under
+ * the jsdom environment.
  */
 
 import { consumeSsoReturn } from '../ssoReturn';
@@ -88,13 +93,15 @@ describe('consumeSsoReturn', () => {
 
   it('returns null for a non-oxy fragment without touching any flags', async () => {
     const oxy = okExchange();
-    const storage = makeStorage();
+    const storage = makeStorage({ [ssoDestKey(ORIGIN)]: `${ORIGIN}/profile` });
     const history = makeHistory();
+    const dispatchPopState = jest.fn();
     const result = await consumeSsoReturn(oxy, {
       isWeb: () => true,
       storage,
       location: makeLocation({ hash: '#section=about' }),
       history,
+      dispatchPopState,
     });
 
     expect(result).toBeNull();
@@ -102,6 +109,9 @@ describe('consumeSsoReturn', () => {
     expect(storage.map.has(ssoNoSessionKey(ORIGIN))).toBe(false);
     // No fragment strip for an unrelated fragment.
     expect(history.calls).toHaveLength(0);
+    // Nothing was consumed — the dest key must be untouched and no popstate.
+    expect(storage.map.get(ssoDestKey(ORIGIN))).toBe(`${ORIGIN}/profile`);
+    expect(dispatchPopState).not.toHaveBeenCalled();
   });
 
   it('sets NO_SESSION and returns null on a "none" outcome', async () => {
@@ -310,13 +320,14 @@ describe('consumeSsoReturn', () => {
   });
 
   describe('dest restore', () => {
-    it('restores a same-origin destination when on the callback path and removes the dest key', async () => {
+    it('restores a same-origin destination when on the callback path, removes the dest key, and dispatches popstate', async () => {
       const oxy = okExchange();
       const storage = makeStorage({
         [ssoStateKey(ORIGIN)]: 's',
         [ssoDestKey(ORIGIN)]: `${ORIGIN}/profile?x=1#frag`,
       });
       const history = makeHistory();
+      const dispatchPopState = jest.fn();
 
       const result = await consumeSsoReturn(oxy, {
         isWeb: () => true,
@@ -326,6 +337,7 @@ describe('consumeSsoReturn', () => {
           pathname: SSO_CALLBACK_PATH,
         }),
         history,
+        dispatchPopState,
       });
 
       expect(result).toEqual(SESSION);
@@ -333,6 +345,8 @@ describe('consumeSsoReturn', () => {
       const last = history.calls[history.calls.length - 1];
       expect(last?.[2]).toBe('/profile?x=1#frag');
       expect(storage.map.has(ssoDestKey(ORIGIN))).toBe(false);
+      // URL-driven routers must be told the location changed.
+      expect(dispatchPopState).toHaveBeenCalledTimes(1);
     });
 
     it('restores a relative same-origin destination (new URL(dest, origin))', async () => {
@@ -426,6 +440,185 @@ describe('consumeSsoReturn', () => {
       expect(history.calls).toHaveLength(1);
       expect(history.calls[0]?.[2]).toBe('/already-here?a=1');
       expect(storage.map.has(ssoDestKey(ORIGIN))).toBe(false);
+    });
+
+    it('restores dest + dispatches popstate on a "none" outcome (no-stranding regression)', async () => {
+      const oxy = okExchange();
+      const storage = makeStorage({
+        [ssoStateKey(ORIGIN)]: 's',
+        [ssoDestKey(ORIGIN)]: `${ORIGIN}/explore?x=1#sec`,
+      });
+      const history = makeHistory();
+      const dispatchPopState = jest.fn();
+
+      const result = await consumeSsoReturn(oxy, {
+        isWeb: () => true,
+        storage,
+        location: makeLocation({
+          hash: '#oxy_sso=none&state=s',
+          pathname: SSO_CALLBACK_PATH,
+        }),
+        history,
+        dispatchPopState,
+      });
+
+      expect(result).toBeNull();
+      expect(oxy.exchangeSsoCode).not.toHaveBeenCalled();
+      // Last replaceState targets the captured dest — the user is returned.
+      const last = history.calls[history.calls.length - 1];
+      expect(last?.[2]).toBe('/explore?x=1#sec');
+      expect(storage.map.has(ssoDestKey(ORIGIN))).toBe(false);
+      expect(dispatchPopState).toHaveBeenCalledTimes(1);
+      // Loop-breaker flags must still be set.
+      expect(storage.map.get(ssoNoSessionKey(ORIGIN))).toBe('1');
+      expect(storage.map.get(ssoAttemptedKey(ORIGIN))).toBe('1');
+    });
+
+    it('restores dest + dispatches popstate on an "error" outcome', async () => {
+      const oxy = okExchange();
+      const storage = makeStorage({
+        [ssoStateKey(ORIGIN)]: 's',
+        [ssoDestKey(ORIGIN)]: `${ORIGIN}/feed`,
+      });
+      const history = makeHistory();
+      const dispatchPopState = jest.fn();
+
+      const result = await consumeSsoReturn(oxy, {
+        isWeb: () => true,
+        storage,
+        location: makeLocation({
+          hash: '#oxy_sso=error&state=s',
+          pathname: SSO_CALLBACK_PATH,
+        }),
+        history,
+        dispatchPopState,
+      });
+
+      expect(result).toBeNull();
+      const last = history.calls[history.calls.length - 1];
+      expect(last?.[2]).toBe('/feed');
+      expect(storage.map.has(ssoDestKey(ORIGIN))).toBe(false);
+      expect(dispatchPopState).toHaveBeenCalledTimes(1);
+      expect(storage.map.get(ssoNoSessionKey(ORIGIN))).toBe('1');
+      expect(storage.map.get(ssoAttemptedKey(ORIGIN))).toBe('1');
+    });
+
+    it('restores dest + dispatches popstate on a state mismatch', async () => {
+      const oxy = okExchange();
+      const storage = makeStorage({
+        [ssoStateKey(ORIGIN)]: 'expected',
+        [ssoDestKey(ORIGIN)]: `${ORIGIN}/notifications`,
+      });
+      const history = makeHistory();
+      const dispatchPopState = jest.fn();
+
+      const result = await consumeSsoReturn(oxy, {
+        isWeb: () => true,
+        storage,
+        location: makeLocation({
+          hash: '#oxy_sso=ok&code=c&state=forged',
+          pathname: SSO_CALLBACK_PATH,
+        }),
+        history,
+        dispatchPopState,
+      });
+
+      expect(result).toBeNull();
+      expect(oxy.exchangeSsoCode).not.toHaveBeenCalled();
+      const last = history.calls[history.calls.length - 1];
+      expect(last?.[2]).toBe('/notifications');
+      expect(storage.map.has(ssoDestKey(ORIGIN))).toBe(false);
+      expect(dispatchPopState).toHaveBeenCalledTimes(1);
+      expect(storage.map.get(ssoNoSessionKey(ORIGIN))).toBe('1');
+    });
+
+    it('does NOT restore dest on a "none" outcome when not on the callback path', async () => {
+      const oxy = okExchange();
+      const storage = makeStorage({
+        [ssoStateKey(ORIGIN)]: 's',
+        [ssoDestKey(ORIGIN)]: `${ORIGIN}/should-not-apply`,
+      });
+      const history = makeHistory();
+      const dispatchPopState = jest.fn();
+
+      const result = await consumeSsoReturn(oxy, {
+        isWeb: () => true,
+        storage,
+        location: makeLocation({
+          hash: '#oxy_sso=none&state=s',
+          pathname: '/explore',
+          search: '?a=1',
+        }),
+        history,
+        dispatchPopState,
+      });
+
+      expect(result).toBeNull();
+      // Only the fragment strip ran — no dest restore off the callback path.
+      expect(history.calls).toHaveLength(1);
+      expect(history.calls[0]?.[2]).toBe('/explore?a=1');
+      expect(storage.map.has(ssoDestKey(ORIGIN))).toBe(false);
+      expect(dispatchPopState).not.toHaveBeenCalled();
+    });
+
+    it('rejects a cross-origin dest on a "none" outcome and does NOT dispatch popstate', async () => {
+      const oxy = okExchange();
+      const storage = makeStorage({
+        [ssoStateKey(ORIGIN)]: 's',
+        [ssoDestKey(ORIGIN)]: 'https://evil.example/phish',
+      });
+      const history = makeHistory();
+      const dispatchPopState = jest.fn();
+
+      const result = await consumeSsoReturn(oxy, {
+        isWeb: () => true,
+        storage,
+        location: makeLocation({
+          hash: '#oxy_sso=none&state=s',
+          pathname: SSO_CALLBACK_PATH,
+        }),
+        history,
+        dispatchPopState,
+      });
+
+      expect(result).toBeNull();
+      // Only the fragment-strip replaceState ran — the cross-origin dest is rejected.
+      expect(history.calls).toHaveLength(1);
+      expect(storage.map.has(ssoDestKey(ORIGIN))).toBe(false);
+      expect(dispatchPopState).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('default dispatchPopState (jsdom)', () => {
+    it('fires a real popstate listener after a "none" dest restore on the callback path', async () => {
+      const oxy = okExchange();
+      const storage = makeStorage({
+        [ssoStateKey(ORIGIN)]: 's',
+        [ssoDestKey(ORIGIN)]: '/dashboard?tab=home',
+      });
+      const history = makeHistory();
+      const onPopState = jest.fn();
+      window.addEventListener('popstate', onPopState);
+
+      try {
+        const result = await consumeSsoReturn(oxy, {
+          isWeb: () => true,
+          storage,
+          location: makeLocation({
+            hash: '#oxy_sso=none&state=s',
+            pathname: SSO_CALLBACK_PATH,
+          }),
+          history,
+          // No injected dispatchPopState — exercise the real default.
+        });
+
+        expect(result).toBeNull();
+        const last = history.calls[history.calls.length - 1];
+        expect(last?.[2]).toBe('/dashboard?tab=home');
+        expect(onPopState).toHaveBeenCalledTimes(1);
+      } finally {
+        window.removeEventListener('popstate', onPopState);
+      }
     });
   });
 });

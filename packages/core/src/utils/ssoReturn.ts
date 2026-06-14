@@ -130,6 +130,14 @@ export interface ConsumeSsoReturnDeps {
    * fails. NEVER rethrown — `consumeSsoReturn` is total. Default: no-op.
    */
   onExchangeError?: (error: unknown) => void;
+  /**
+   * Notify URL-driven routers (Expo Router / React Navigation web) that the
+   * location changed via `history.replaceState`, which does NOT itself emit
+   * `popstate`. Default: dispatch a real `PopStateEvent` on `window` when
+   * present; no-op off-web. Called ONLY after a successful same-origin
+   * dest restore (never when the dest is rejected/absent). NEVER throws.
+   */
+  dispatchPopState?: () => void;
 }
 
 /**
@@ -154,10 +162,16 @@ export interface ConsumeSsoReturnDeps {
  *     outcome-independent attempted-flag (the load2 half of the loop proof).
  *   - A throwing exchange is caught, reported via `onExchangeError`, and
  *     treated exactly like "no session" (never loops, never rethrows).
- *   - After a successful exchange landing on {@link SSO_CALLBACK_PATH}, the real
- *     destination is restored from the DEST key — same-origin only (an
- *     attacker-planted cross-origin or relative-evil dest is rejected). The
- *     DEST key is removed unconditionally.
+ *   - On EVERY consumed outcome (ok, none, error, state-mismatch, no-code,
+ *     failed-exchange, no-sessionId) — not just ok — if the page landed on
+ *     {@link SSO_CALLBACK_PATH}, the real pre-bounce destination is restored
+ *     from the DEST key so the user is never stranded on the internal callback
+ *     path. Same-origin only (an attacker-planted cross-origin or relative-evil
+ *     dest is rejected). The DEST key is removed unconditionally.
+ *   - After a same-origin dest restore (which uses `history.replaceState`, that
+ *     does NOT itself emit `popstate`), a synthetic `popstate` is dispatched so
+ *     URL-driven routers (Expo Router / React Navigation web) re-sync to the
+ *     restored route. It is NOT dispatched when the dest is rejected/absent.
  *
  * Total: this function NEVER throws. Off-web it is a no-op returning `null`.
  *
@@ -183,6 +197,22 @@ export async function consumeSsoReturn(
   const location = deps.location ?? window.location;
   const history = deps.history ?? window.history;
   const onExchangeError = deps.onExchangeError;
+
+  // Default: emit a synthetic `popstate` so URL-driven routers re-sync after a
+  // `history.replaceState` (which does NOT emit `popstate` on its own). Feature-
+  // detected end to end so it never throws in any environment.
+  const dispatchPopState =
+    deps.dispatchPopState ??
+    (() => {
+      if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') {
+        return;
+      }
+      if (typeof PopStateEvent !== 'undefined') {
+        window.dispatchEvent(new PopStateEvent('popstate'));
+      } else if (typeof Event !== 'undefined') {
+        window.dispatchEvent(new Event('popstate'));
+      }
+    });
 
   const ret = parseSsoReturnFragment(location.hash);
   if (!ret) {
@@ -211,10 +241,39 @@ export async function consumeSsoReturn(
     storage.setItem(ssoAttemptedKey(origin), '1');
   };
 
+  // Restore the user's real pre-bounce destination so they are never stranded
+  // on the internal callback path — invoked on EVERY consumed outcome, not just
+  // success. Same-origin only — never honour a cross-origin/protocol-relative
+  // dest that could have been planted to redirect the user. The DEST key is
+  // removed unconditionally. After a successful same-origin restore a synthetic
+  // `popstate` is dispatched so URL-driven routers re-sync.
+  const restoreDest = (): void => {
+    if (location.pathname === SSO_CALLBACK_PATH) {
+      const dest = storage.getItem(ssoDestKey(origin));
+      if (dest) {
+        try {
+          const destUrl = new URL(dest, origin);
+          if (destUrl.origin === origin) {
+            history.replaceState(
+              null,
+              '',
+              destUrl.pathname + destUrl.search + destUrl.hash,
+            );
+            dispatchPopState();
+          }
+        } catch {
+          // Malformed stored destination — leave the URL on the callback path.
+        }
+      }
+    }
+    storage.removeItem(ssoDestKey(origin));
+  };
+
   if (ret.kind === 'none' || ret.kind === 'error') {
     // The central IdP had no session (or the bounce failed). Record it so we do
     // not bounce again this tab — the definitive loop breaker.
     markNoSession();
+    restoreDest();
     return null;
   }
 
@@ -222,6 +281,7 @@ export async function consumeSsoReturn(
     // Forged / replayed / stale fragment, or a malformed ok with no code. Treat
     // exactly like "no session": never exchange, never loop.
     markNoSession();
+    restoreDest();
     return null;
   }
 
@@ -231,37 +291,17 @@ export async function consumeSsoReturn(
   } catch (error) {
     onExchangeError?.(error);
     markNoSession();
+    restoreDest();
     return null;
   }
 
   if (!session?.sessionId) {
     markNoSession();
+    restoreDest();
     return null;
   }
 
-  // If we landed on the internal callback path, restore the user's real
-  // destination (captured at bounce time). Same-origin only — never honour a
-  // cross-origin destination that could have been planted to redirect the
-  // freshly signed-in user. `new URL(dest, origin)` tolerates relative dests
-  // and is still re-checked against the page origin.
-  if (location.pathname === SSO_CALLBACK_PATH) {
-    const dest = storage.getItem(ssoDestKey(origin));
-    if (dest) {
-      try {
-        const destUrl = new URL(dest, origin);
-        if (destUrl.origin === origin) {
-          history.replaceState(
-            null,
-            '',
-            destUrl.pathname + destUrl.search + destUrl.hash,
-          );
-        }
-      } catch {
-        // Malformed stored destination — leave the URL on the callback path.
-      }
-    }
-  }
-  storage.removeItem(ssoDestKey(origin));
+  restoreDest();
 
   return session;
 }
