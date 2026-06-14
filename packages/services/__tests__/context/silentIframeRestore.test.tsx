@@ -156,9 +156,11 @@ describe('Cold-boot per-apex silent iframe (durable cross-domain reload restore)
     expect(silentSignInSpy).toHaveBeenCalledTimes(1);
 
     // CRITICAL: it targeted the PER-APEX host (`auth.mention.earth`), NOT the
-    // central `auth.oxy.so` the instance is configured with.
+    // central `auth.oxy.so` the instance is configured with. It is ALSO bounded
+    // by the fail-fast SILENT_IFRAME_TIMEOUT (2500ms — FIX D) so a no-message
+    // iframe cannot stall cold boot.
     expect(silentSignInSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ authWebUrlOverride: PER_APEX_AUTH_URL }),
+      expect.objectContaining({ authWebUrlOverride: PER_APEX_AUTH_URL, timeout: 2500 }),
     );
 
     // The durable reload path won → the terminal central bounce NEVER fired,

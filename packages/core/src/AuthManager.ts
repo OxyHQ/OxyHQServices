@@ -20,6 +20,7 @@ import type {
 import type {
   AuthManagerAccount,
   RestoreFromCookiesResult,
+  RestoreFromCookiesOptions,
   SwitchAuthuserResult,
 } from './AuthManagerTypes';
 import { retryAsync } from './utils/asyncUtils';
@@ -899,9 +900,10 @@ export class AuthManager {
    * Returns the active user on success, or `null` when neither path
    * restored a session.
    */
-  async initialize(): Promise<MinimalUserData | null> {
-    // 1. Cookie path (preferred).
-    const cookieResult = await this.restoreFromCookies();
+  async initialize(options: RestoreFromCookiesOptions = {}): Promise<MinimalUserData | null> {
+    // 1. Cookie path (preferred). Forward the optional cold-boot fail-fast
+    // timeout so a cross-domain stall cannot hang provider init.
+    const cookieResult = await this.restoreFromCookies(options);
     if (cookieResult.accounts.length > 0) {
       return this.currentUser;
     }
@@ -1126,7 +1128,7 @@ export class AuthManager {
    * proceed unauthenticated. State is NOT cleared on failure; existing
    * accounts (if any) remain intact.
    */
-  async restoreFromCookies(): Promise<RestoreFromCookiesResult> {
+  async restoreFromCookies(options: RestoreFromCookiesOptions = {}): Promise<RestoreFromCookiesResult> {
     // Cross-tab cascade debounce. If we restored within the last
     // _RESTORE_DEBOUNCE_MS for the currently-active slot, skip the network
     // round-trip and return the cached registry verbatim. A burst of N
@@ -1145,7 +1147,9 @@ export class AuthManager {
 
     let snapshot: RefreshAllResponse;
     try {
-      snapshot = await this.oxyServices.refreshAllSessions();
+      // Forward the optional cold-boot fail-fast timeout. Undefined (the warm
+      // cross-tab cascade default) preserves the wait-indefinitely behaviour.
+      snapshot = await this.oxyServices.refreshAllSessions({ timeout: options.timeout });
     } catch {
       return { accounts: [], activeAuthuser: null };
     }

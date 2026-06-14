@@ -60,6 +60,24 @@ export interface RestoreFromCookiesResult {
 }
 
 /**
+ * Options for `AuthManager.restoreFromCookies()` / `AuthManager.initialize()`.
+ */
+export interface RestoreFromCookiesOptions {
+  /**
+   * Abort the underlying `POST /auth/refresh-all` after this many milliseconds
+   * and treat it as "no signed-in accounts" instead of hanging. Forwarded
+   * verbatim to `OxyServices.refreshAllSessions({ timeout })`.
+   *
+   * Intended for the cold-boot cookie-restore step on a cross-domain RP, where
+   * the `Domain=oxy.so` refresh cookie never reaches `api.<apex>` and the
+   * request can stall with no useful answer. Omit (the default) to wait
+   * indefinitely — the warm cross-tab cascade path passes nothing, preserving
+   * its existing behaviour.
+   */
+  timeout?: number;
+}
+
+/**
  * Outcome of `AuthManager.switchAuthuser()`.
  *
  * Mirrors the wire `RefreshCookieResponse` but with `authuser` narrowed to

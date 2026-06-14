@@ -522,8 +522,25 @@ export function OxyServicesPopupAuthMixin<T extends typeof OxyServicesBase>(Base
         resolve(session || null);
       };
 
+      // Fail-fast on a load failure. When the per-apex `/auth/silent` host is
+      // unreachable, blocked by CSP `frame-ancestors`/`X-Frame-Options`, or the
+      // network drops, the iframe never posts a message — without this handler
+      // the silent restore would block for the FULL `timeout` (dead latency in
+      // the cold-boot critical path). `onerror`/`onabort` fire on a failed load,
+      // so resolve `null` immediately and let the next cold-boot step run. The
+      // success path posts a message and is handled above; these only catch the
+      // no-message failure modes.
+      const failFast = () => {
+        cleanup();
+        resolve(null);
+      };
+      iframe.onerror = failFast;
+      iframe.onabort = failFast;
+
       const cleanup = () => {
         clearTimeout(timeoutId);
+        iframe.onerror = null;
+        iframe.onabort = null;
         window.removeEventListener('message', messageHandler);
       };
 

@@ -202,12 +202,17 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
   }
 
   public static readonly FEDCM_TIMEOUT = 15000; // 15 seconds for interactive
-  // Silent mediation runs on page load (e.g. re-signing-in a user whose stored
-  // session was cleared after a cold-boot token fetch 401'd). The real silent
-  // round-trip — mint nonce → navigator.credentials.get → /fedcm/exchange — was
-  // measured to take more than 3s for live users, so a 3s budget timed out and
-  // left them signed out on reload. 10s gives ample margin while staying bounded.
-  public static readonly FEDCM_SILENT_TIMEOUT = 10000; // 10 seconds for silent mediation
+  // Silent mediation runs on page load as ONE step of the ordered cold-boot
+  // sequence (mint nonce → navigator.credentials.get → /fedcm/exchange). The
+  // real round-trip was measured at >3s for live users, so the budget must stay
+  // comfortably above 3s. It must ALSO be tight: on a logged-out browser this
+  // step never resolves a credential, and every millisecond it spends timing
+  // out is pure latency in front of the steps that actually hold the answer
+  // (stored-session bearer, the per-apex silent iframe, the /sso bounce). 4s is
+  // the floor that preserves the >3s success margin while bounding the dead
+  // wait — down from the previous 10s, which alone could account for most of a
+  // 20-30s cold-boot stall. Do NOT lower below 4s (it would clip live success).
+  public static readonly FEDCM_SILENT_TIMEOUT = 4000; // 4 seconds for silent mediation
 
   /**
    * Check if FedCM is supported in the current browser
@@ -418,6 +423,21 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
     let credential: FedCMTokenResult | null = null;
 
     const loginHint = this.getStoredLoginHint();
+
+    // Fast-skip: with no stored login hint this browser has never completed a
+    // FedCM sign-in for any Oxy account, so silent mediation cannot return a
+    // credential — the IdP has nothing to silently re-issue. Doing the full
+    // round-trip anyway (mint a nonce via `POST /fedcm/nonce`, then a
+    // `navigator.credentials.get` that aborts after `FEDCM_SILENT_TIMEOUT`) is
+    // pure latency in the cold-boot critical path. Return `null` immediately so
+    // the next cold-boot step (stored-session / iframe / bounce) runs without
+    // the wasted nonce mint + abort wait. A genuinely associated browser always
+    // has a hint (it is stored only after a real exchange), so this never skips
+    // a recoverable session.
+    if (!loginHint) {
+      debug.log('Silent SSO: No stored login hint — skipping silent mediation (no association on this browser)');
+      return null;
+    }
 
     try {
       // Server-minted, origin-bound nonce — required for `/fedcm/exchange`

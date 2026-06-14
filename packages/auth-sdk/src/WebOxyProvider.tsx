@@ -171,6 +171,19 @@ type SsoReturnSession = { method: 'sso'; session: SessionLoginResponse };
 const fedcmSilentSignInAttempted = new Set<string>();
 
 /**
+ * Per-step fail-fast budget for the cold-boot refresh-cookie restore
+ * (`authManager.initialize()` → `refreshAllSessions`).
+ *
+ * On a cross-domain RP the `Domain=oxy.so` refresh cookie never reaches
+ * `api.<apex>`, so this request returns no accounts (or stalls behind a slow
+ * endpoint) with no useful answer. As one cold-boot step it must not block the
+ * fall-through to the terminal `/sso` bounce. 3s bounds the wait while leaving
+ * ample headroom for a genuine first-party `*.oxy.so` rotation round-trip.
+ * Mirrors the services `OxyContext` constant of the same name.
+ */
+const COOKIE_RESTORE_TIMEOUT = 3000;
+
+/**
  * Build the run-once signature for the silent sign-in guard. Matches
  * `useWebSSO.ssoSignature` exactly: `${origin}|${baseURL}`.
  */
@@ -518,14 +531,22 @@ export function WebOxyProvider({
       //                       (Chrome enhancement). Fires once per page load.
       //   3. cookie-restore — `authManager.initialize()` refresh-cookie restore;
       //                       first-party only on `*.oxy.so`, empty cross-domain.
+      //                       Bounded by COOKIE_RESTORE_TIMEOUT (FIX D) so a
+      //                       cross-domain stall cannot hang cold boot.
       //   4. sso-bounce     — TERMINAL top-level navigation to `auth.oxy.so/sso`.
       //
       // NOTE: the services `OxyContext` has an additional `stored-session`
-      // bearer-restore step between `cookie-restore` and `sso-bounce` — that is
-      // native's ONLY restore path. `WebOxyProvider` is web-only and cookie-only
-      // (it never persists a bearer session to JS-accessible storage), so that
-      // step was a guaranteed no-op here and has been dropped; the effective web
-      // restore is the cookie path (step 3).
+      // bearer-restore step (native's ONLY restore path; in services it now also
+      // runs BEFORE the slow web probes so a local reload wins fast — FIX A).
+      // `WebOxyProvider` is web-only and cookie-only (it never persists a bearer
+      // session to JS-accessible storage), so that step was a guaranteed no-op
+      // here and has been dropped; the effective web restore is the cookie path
+      // (step 3). The FIX-A reorder and FIX-B gating therefore do not apply here
+      // (there is no stored-session step to move/gate); only the FIX-D
+      // cookie-restore timeout is mirrored. The early `setIsLoading(false)` at
+      // every commit site already gives WebOxyProvider FIX-C behaviour inherently
+      // (each commit branch flips loading immediately; there is no
+      // deferred-until-chain-completes gate to decouple).
       //
       // CRITICAL: the `redirect` and `cookie-restore` steps MUST hydrate a REAL
       // user before claiming a session. A placeholder user (empty id) is never
@@ -602,7 +623,10 @@ export function WebOxyProvider({
           id: 'cookie-restore',
           enabled: () => isWebBrowser(),
           run: async () => {
-            const restoredUser = await authManager.initialize();
+            // FIX-D: bound the cookie restore so a cross-domain/stalled
+            // `refresh-all` cannot hang cold boot in front of the terminal
+            // `/sso` bounce (see COOKIE_RESTORE_TIMEOUT).
+            const restoredUser = await authManager.initialize({ timeout: COOKIE_RESTORE_TIMEOUT });
             if (!restoredUser) return { kind: 'skip' };
             try {
               const currentUser = await oxyServices.getCurrentUser();

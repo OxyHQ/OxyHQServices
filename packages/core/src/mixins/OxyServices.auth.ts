@@ -20,6 +20,26 @@ export interface ChallengeResponse {
   expiresAt: string;
 }
 
+/**
+ * Options for {@link refreshAllSessions}.
+ */
+export interface RefreshAllOptions {
+  /**
+   * Abort the `POST /auth/refresh-all` request after this many milliseconds and
+   * resolve as "no signed-in accounts" (`{ accounts: [] }`) rather than hanging.
+   *
+   * Why: on a cross-domain RP (e.g. `mention.earth`) the `Domain=oxy.so` refresh
+   * cookie never reaches `api.<apex>`, so this request can stall behind a slow
+   * or unreachable endpoint with no useful answer coming back. As one step of
+   * the ordered cold-boot sequence, a stalled refresh is dead latency in front
+   * of the steps that actually hold the answer. A bounded abort lets cold boot
+   * fall through quickly. Omit (or pass `0`/negative) to wait indefinitely
+   * (the legacy behaviour). The abort is treated identically to a 401 — the
+   * "not signed in on this device" path — never an error.
+   */
+  timeout?: number;
+}
+
 export interface RegistrationRequest {
   publicKey: string;
   username: string;
@@ -619,8 +639,19 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
      * tokens do. Each access token still needs to be planted via
      * `setTokens(...)` (or per-account in-memory storage) at the consumer.
      */
-    async refreshAllSessions(): Promise<RefreshAllResponse> {
+    async refreshAllSessions(options: RefreshAllOptions = {}): Promise<RefreshAllResponse> {
       const url = `${this.getSessionBaseUrl().replace(/\/$/, '')}/auth/refresh-all`;
+
+      // Optional bounded abort (see `RefreshAllOptions.timeout`). A positive
+      // timeout arms an `AbortController` that aborts the in-flight request; an
+      // abort is treated as "no signed-in accounts on this device" — the same
+      // outcome as a 401 — so a cross-domain stall falls through cleanly instead
+      // of hanging the cold boot.
+      const timeout = typeof options.timeout === 'number' && options.timeout > 0 ? options.timeout : undefined;
+      const controller = timeout !== undefined ? new AbortController() : undefined;
+      const timeoutId = timeout !== undefined && controller
+        ? setTimeout(() => controller.abort(), timeout)
+        : undefined;
 
       let response: Response;
       try {
@@ -628,9 +659,21 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
           method: 'POST',
           credentials: 'include',
           headers: { Accept: 'application/json' },
+          signal: controller?.signal,
         });
       } catch (error) {
+        // A bounded-timeout abort is the "not signed in / cross-domain stall"
+        // path, NOT an error. The browser raises a DOMException named
+        // 'AbortError' (some runtimes use a generic Error); match on the name so
+        // we never throw the timeout into the cold-boot error handler.
+        if (error instanceof Error && error.name === 'AbortError') {
+          return { accounts: [] };
+        }
         throw this.handleError(error);
+      } finally {
+        if (timeoutId !== undefined) {
+          clearTimeout(timeoutId);
+        }
       }
 
       if (response.status === 401) {

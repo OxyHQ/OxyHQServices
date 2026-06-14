@@ -82,6 +82,11 @@ describe('OxyServices FedCM nonce binding', () => {
     });
 
     const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
+    // Silent mediation now fast-skips when there is NO stored login hint (a
+    // browser with no prior FedCM association can never get a silent credential,
+    // so the nonce mint + credential request would be pure latency). Seed a hint
+    // so the silent round-trip actually runs and we can assert the nonce binding.
+    localStorage.setItem('oxy_fedcm_login_hint', 'prior-user-id');
     const makeRequest = jest
       .spyOn(oxy, 'makeRequest')
       .mockImplementation(async (_method: string, url: string) => {
@@ -147,6 +152,9 @@ describe('OxyServices FedCM nonce binding', () => {
     });
 
     const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
+    // Seed a login hint so the silent path runs past the no-hint fast-skip and
+    // exercises the nonce-mint fallback.
+    localStorage.setItem('oxy_fedcm_login_hint', 'prior-user-id');
     jest.spyOn(oxy, 'makeRequest').mockImplementation(async (_method: string, url: string) => {
       if (url === '/fedcm/nonce') {
         throw new Error('network down');
@@ -306,6 +314,9 @@ describe('OxyServices FedCM mode enum (active/passive)', () => {
     });
 
     const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
+    // Seed a login hint so the silent path runs past the no-hint fast-skip and
+    // reaches `navigator.credentials.get` (where the mode/mediation are set).
+    localStorage.setItem('oxy_fedcm_login_hint', 'prior-user-id');
     jest.spyOn(oxy, 'makeRequest').mockImplementation(async (_method: string, url: string) => {
       if (url === '/fedcm/nonce') {
         return { nonce: 'n', expiresAt: new Date(Date.now() + 60000).toISOString() } as never;
@@ -463,6 +474,10 @@ describe('OxyServices FedCM single-flight lock (interactive aborts silent)', () 
     let interactiveRan = false;
 
     const store = new Map<string, string>();
+    // Seed a stored login hint so the silent request runs past the no-hint
+    // fast-skip and actually reaches `navigator.credentials.get` (where it then
+    // hangs, which is what this test needs to observe being aborted).
+    store.set('oxy_fedcm_login_hint', 'prior-user-id');
     const localStorageStub = {
       getItem: (k: string) => (store.has(k) ? (store.get(k) as string) : null),
       setItem: (k: string, v: string) => { store.set(k, v); },
@@ -548,7 +563,53 @@ describe('OxyServices FedCM single-flight lock (interactive aborts silent)', () 
 });
 
 describe('OxyServices FedCM silent timeout', () => {
-  it('uses a 10s silent timeout (enough budget for the real on-load round-trip)', () => {
-    expect(OxyServices.FEDCM_SILENT_TIMEOUT).toBe(10000);
+  it('uses a 4s silent timeout (above the >3s live round-trip, tight enough to bound cold-boot latency)', () => {
+    // 4s keeps the >3s measured live success margin while bounding the dead
+    // wait on a logged-out browser. Lowered from 10s, which alone could account
+    // for most of a 20-30s serial cold-boot stall. Must never drop below 4s.
+    expect(OxyServices.FEDCM_SILENT_TIMEOUT).toBe(4000);
+    expect(OxyServices.FEDCM_SILENT_TIMEOUT).toBeGreaterThanOrEqual(4000);
+  });
+});
+
+/**
+ * Silent FedCM no-login-hint fast-skip regression test.
+ *
+ * A browser that has never completed a FedCM sign-in for any Oxy account has no
+ * stored login hint, so silent mediation can never return a credential — the
+ * IdP has nothing to silently re-issue. Doing the full round-trip anyway (mint a
+ * nonce, then a `navigator.credentials.get` that aborts after the silent
+ * timeout) is pure latency in the cold-boot critical path. The silent path must
+ * return `null` immediately WITHOUT minting a nonce or calling
+ * `navigator.credentials.get`.
+ */
+describe('OxyServices FedCM silent fast-skip with no login hint', () => {
+  afterEach(() => {
+    clearBrowserGlobals();
+    jest.restoreAllMocks();
+  });
+
+  it('returns null immediately without minting a nonce or calling credentials.get when no hint is stored', async () => {
+    let credentialsGetCalled = false;
+    installBrowserGlobals({
+      credentialsGet: async () => {
+        credentialsGetCalled = true;
+        return null;
+      },
+    });
+
+    const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
+    // No stored login hint (fresh empty localStorage) → fast-skip.
+    const makeRequest = jest.spyOn(oxy, 'makeRequest').mockImplementation(async (_method: string, url: string) => {
+      throw new Error(`unexpected request to ${url}`);
+    });
+
+    const result = await oxy.silentSignInWithFedCM();
+
+    expect(result).toBeNull();
+    // The nonce mint was NOT attempted and the browser credential UI was never
+    // touched — the round-trip was skipped entirely.
+    expect(makeRequest).not.toHaveBeenCalled();
+    expect(credentialsGetCalled).toBe(false);
   });
 });

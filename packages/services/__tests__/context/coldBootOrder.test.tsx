@@ -8,17 +8,26 @@
  * session wins and every later step is SKIPPED. This file pins the
  * cross-domain (mention.earth) ordering contract for the CENTRAL-SSO design:
  *
- *   Order (web): redirect → sso-return → fedcm-silent → cookie-restore →
- *   stored-session → sso-bounce (terminal).
+ *   Order (web): redirect → sso-return → stored-session → fedcm-silent →
+ *   silent-iframe → cookie-restore → sso-bounce (terminal).
  *
- *   1. FedCM silent short-circuits BEFORE the cookie step when FedCM is
- *      supported and silent reauthn returns a session — `refreshAllSessions`
- *      and the terminal `sso-bounce` are never reached.
- *   2. When every recovery step skips on a logged-out cross-domain RP, the
+ *   LATENCY FIX (A): `stored-session` runs BEFORE the slow no-redirect probes
+ *   (`fedcm-silent`, `silent-iframe`, `cookie-restore`) so a normal reload with
+ *   a valid local bearer wins in one round-trip and the slow probes never run.
+ *
+ *   1. HAS LOCAL SESSION reload: `stored-session` wins → the FedCM-silent /
+ *      cookie / bounce steps NEVER run (FIX A + FIX B). `silentSignInWithFedCM`
+ *      and `refreshAllSessions` are never called; no bounce.
+ *   2. FedCM silent short-circuits BEFORE the cookie step when there is NO local
+ *      session, FedCM is supported, and silent reauthn returns a session —
+ *      `refreshAllSessions` and the terminal `sso-bounce` are never reached.
+ *      This proves the cross-domain fallback chain is preserved.
+ *   3. When every recovery step skips on a logged-out cross-domain RP, the
  *      TERMINAL `sso-bounce` step fires exactly once: it records the CSRF state
  *      + guard + destination in `sessionStorage` and top-level-navigates to the
  *      central `auth.oxy.so/sso?prompt=none`. `window.location.assign` is the
- *      observable side effect (jsdom does not actually navigate).
+ *      observable side effect (jsdom does not actually navigate). This proves
+ *      the first-visit-no-local-session fallback is preserved.
  */
 
 import React from 'react';
@@ -87,6 +96,10 @@ function buildStub(cfg: StubConfig) {
       isFedCMSupported: jest.fn(() => cfg.fedcmSupported),
       handleAuthCallback: jest.fn(() => null),
       silentSignInWithFedCM: jest.fn(async () => cfg.silentFedCM ?? null),
+      // The per-apex silent iframe step. Default returns no session so it skips
+      // (auto-detection may also bail on this origin); tests that need to assert
+      // it never runs read this spy.
+      silentSignIn: jest.fn(async () => null),
       refreshAllSessions,
       generateSsoState: jest.fn(() => 'state-token-xyz'),
       exchangeSsoCode: jest.fn(async () => null),
@@ -95,7 +108,14 @@ function buildStub(cfg: StubConfig) {
         async (): Promise<User> =>
           ({ id: cfg.currentUserId ?? FEDCM_USER_ID, username: 'tester' } as User),
       ),
-      validateSession: jest.fn(async () => ({ valid: true, user: { id: FEDCM_USER_ID } })),
+      validateSession: jest.fn(async () => ({ valid: true, user: { id: cfg.currentUserId ?? FEDCM_USER_ID, username: 'tester' } })),
+      // Stored-session `switchSession` → `activateSession` →
+      // `fetchSessionsWithFallback` reads device/user sessions; provide both so
+      // the has-local-session reload path completes.
+      getDeviceSessions: jest.fn(async () => []),
+      getSessionsBySessionId: jest.fn(async () => []),
+      getUserBySession: jest.fn(async (): Promise<User> => ({ id: cfg.currentUserId ?? FEDCM_USER_ID, username: 'tester' } as User)),
+      refreshTokenViaCookie: jest.fn(async () => null),
       setActingAs: jest.fn(),
       getManagedAccounts: jest.fn(async () => []),
     },
@@ -134,7 +154,40 @@ describe('Cold-boot order (web cross-domain, central SSO)', () => {
     assignSpy.mockRestore();
   });
 
-  it('FedCM silent short-circuits BEFORE the cookie step and the SSO bounce', async () => {
+  it('HAS LOCAL SESSION reload: stored-session wins; FedCM-silent / silent-iframe / cookie / bounce never run (FIX A + B)', async () => {
+    const STORED_SESSION_ID = 'sess_stored_web';
+    const SESSION_IDS_KEY = 'oxy_session_session_ids';
+    const ACTIVE_SESSION_KEY = 'oxy_session_active_session_id';
+    // Seed a durable stored session so `stored-session` has a local bearer to
+    // validate. FedCM is supported here so that, WITHOUT the reorder, the slow
+    // silent step would have run first — proving the reorder is what makes
+    // stored-session win.
+    window.localStorage.setItem(SESSION_IDS_KEY, JSON.stringify([STORED_SESSION_ID]));
+    window.localStorage.setItem(ACTIVE_SESSION_KEY, STORED_SESSION_ID);
+
+    const { stub, refreshAllSessions, baseURL } = buildStub({
+      fedcmSupported: true,
+      silentFedCM: fedcmSession,
+      currentUserId: FEDCM_USER_ID,
+      baseURL: 'https://api.mention.earth/case-stored-wins',
+    });
+
+    renderProvider(stub, baseURL);
+
+    await waitFor(() => expect(captured.isAuthenticated).toBe(true));
+    expect(captured.userId).toBe(FEDCM_USER_ID);
+
+    // The stored bearer was validated (the winning step's work).
+    expect(stub.validateSession).toHaveBeenCalled();
+    // The slow probes that sit BEHIND stored-session in the new order were
+    // short-circuited (FIX A) and gated off (FIX B) — none of them ran.
+    expect(stub.silentSignInWithFedCM).not.toHaveBeenCalled();
+    expect(stub.silentSignIn).not.toHaveBeenCalled();
+    expect(refreshAllSessions).not.toHaveBeenCalled();
+    expect(assignSpy).not.toHaveBeenCalled();
+  });
+
+  it('FedCM silent short-circuits BEFORE the cookie step and the SSO bounce (no local session)', async () => {
     const { stub, refreshAllSessions, baseURL } = buildStub({
       fedcmSupported: true,
       silentFedCM: fedcmSession,
@@ -162,8 +215,9 @@ describe('Cold-boot order (web cross-domain, central SSO)', () => {
 
     renderProvider(stub, baseURL);
 
-    // The cookie step is reached (both FedCM + sso-return skipped), returns no
-    // accounts, then stored-session skips, then the terminal bounce fires.
+    // FIRST-VISIT-NO-LOCAL-SESSION fallback (preserved): stored-session skips
+    // (no stored ids), FedCM is unsupported, the silent iframe skips, the cookie
+    // step is reached and returns no accounts, then the terminal bounce fires.
     await waitFor(() => expect(assignSpy).toHaveBeenCalledTimes(1));
     expect(refreshAllSessions).toHaveBeenCalledTimes(1);
 

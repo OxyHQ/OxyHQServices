@@ -179,6 +179,32 @@ function silentColdBootKey(oxyServices: OxyServices): string {
 }
 
 /**
+ * Per-step fail-fast budget for the cold-boot silent iframe (`silentSignIn`
+ * against the per-apex `/auth/silent` host).
+ *
+ * This step ONLY succeeds when a durable per-apex `fedcm_session` cookie exists
+ * (established by a prior `/sso` bounce). On the common reload of a logged-out
+ * tab — or a tab that restores via the now-earlier stored-session step — the
+ * iframe never posts a message, so the full wait would be dead latency in front
+ * of the terminal `/sso` bounce. `silentSignIn` already fails fast on a load
+ * error via `iframe.onerror`; this caps the no-message case. 2.5s is well above
+ * a same-origin iframe handshake yet a fraction of the legacy 5s default.
+ */
+const SILENT_IFRAME_TIMEOUT = 2500;
+
+/**
+ * Per-step fail-fast budget for the cold-boot refresh-cookie restore
+ * (`refreshAllSessions`).
+ *
+ * On a cross-domain RP the `Domain=oxy.so` refresh cookie never reaches
+ * `api.<apex>`, so this request returns no accounts (or stalls behind a slow
+ * endpoint) with no useful answer. As one cold-boot step it must not block the
+ * fall-through to the terminal `/sso` bounce. 3s bounds the wait while leaving
+ * ample headroom for a genuine first-party `*.oxy.so` rotation round-trip.
+ */
+const COOKIE_RESTORE_TIMEOUT = 3000;
+
+/**
  * Whether `idpOrigin` is a same-site, first-party host of the current page —
  * i.e. it shares the page's registrable apex (last two labels), so a "no
  * session" answer from its `/auth/session-check` iframe is authoritative for
@@ -300,10 +326,14 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
   const [tokenReady, setTokenReady] = useState(true);
   // Whether the FIRST cold-boot auth restore has concluded. Starts `false`
-  // (auth undetermined) and flips to `true` exactly once in the restore
-  // `finally` — monotonic, never reverts. See `isAuthResolved` on the context
-  // type for the consumer contract.
+  // (auth undetermined) and flips to `true` exactly once — monotonic, never
+  // reverts. It now flips the MOMENT a session commits (the common reload case
+  // unblocks immediately, without waiting for the rest of the cold-boot chain),
+  // with the restore `finally` as the no-session/error backstop. The ref makes
+  // the flip idempotent across both sites so the setters fire at most once. See
+  // `isAuthResolved` on the context type for the consumer contract.
   const [authResolved, setAuthResolved] = useState(false);
+  const authResolvedRef = useRef(false);
   const [initialized, setInitialized] = useState(false);
   const setAuthState = useAuthStore.setState;
 
@@ -565,6 +595,26 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   const onAuthStateChangeRef = useRef(onAuthStateChange);
   onAuthStateChangeRef.current = onAuthStateChange;
 
+  // Flip the auth-resolution gate (`authResolved` + `tokenReady`) the MOMENT a
+  // session commits, instead of waiting for the whole cold-boot chain to finish.
+  // Idempotent and monotonic via `authResolvedRef`: the first call wins and the
+  // setters fire at most once, so the restore `finally` backstop becomes a no-op
+  // once a commit site has already marked resolution. Called from EVERY place a
+  // user is actually committed (the FedCM/iframe/redirect/SSO path
+  // `handleWebSSOSession`, the cookie-restore path, and the stored-session path)
+  // so the common reload case unblocks the loading gate without sitting behind
+  // the remaining (now-skipped) cold-boot steps.
+  const markAuthResolved = useCallback(() => {
+    if (authResolvedRef.current) {
+      return;
+    }
+    authResolvedRef.current = true;
+    setTokenReady(true);
+    setAuthResolved(true);
+  }, []);
+  const markAuthResolvedRef = useRef(markAuthResolved);
+  markAuthResolvedRef.current = markAuthResolved;
+
   // `handleWebSSOSession` is declared further down (it depends on values that
   // are only available there). The FedCM/iframe cold-boot steps need to commit
   // a recovered session through it, so we route the call through a ref that is
@@ -598,7 +648,9 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
     let snapshot;
     try {
-      snapshot = await oxyServices.refreshAllSessions();
+      // Bound the refresh so a cross-domain/stalled call cannot hang the cold
+      // boot in front of the terminal `/sso` bounce (see COOKIE_RESTORE_TIMEOUT).
+      snapshot = await oxyServices.refreshAllSessions({ timeout: COOKIE_RESTORE_TIMEOUT });
     } catch (fetchError) {
       // Offline / network error — fall through to the cached/stored-session flow.
       if (__DEV__) {
@@ -662,6 +714,9 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     await persistSessionDurably(activeAccount.sessionId);
 
     loginSuccessRef.current(fullUser);
+    // A session is now committed — unblock the auth-resolution gate immediately
+    // rather than waiting for `runColdBoot` to return (idempotent).
+    markAuthResolvedRef.current();
     onAuthStateChangeRef.current?.(fullUser);
     return true;
   }, [oxyServices, persistSessionDurably]);
@@ -739,6 +794,11 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     if (storedActiveSessionId) {
       try {
         await switchSessionRef.current(storedActiveSessionId);
+        // The stored session is committed (this is native's ONLY restore path
+        // and the common web reload winner). Unblock the auth-resolution gate
+        // immediately so the loading screen clears without waiting for the
+        // remaining cold-boot steps to be evaluated/short-circuited (idempotent).
+        markAuthResolvedRef.current();
         return true;
       } catch (switchError) {
         // Silently handle expected errors (invalid sessions, timeouts, network issues)
@@ -841,11 +901,21 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   // web-only step is gated by `isWebBrowser()`, so on native ONLY
   // `stored-session` runs.
   //
-  // Order (web): redirect callback → SSO return → FedCM silent (central) →
-  // silent iframe (per-apex, the durable reload path) → cookie restore →
-  // stored session → SSO bounce (terminal). The per-apex silent iframe is what
-  // restores a durable cross-domain session on reload WITHOUT a top-level
-  // bounce, so when it wins `sso-bounce` never fires (no flash, no loop).
+  // Order (web): redirect callback → SSO return → stored session → FedCM silent
+  // (central) → silent iframe (per-apex, the durable reload path) → cookie
+  // restore → SSO bounce (terminal).
+  //
+  // LATENCY (FIX A): `stored-session` runs BEFORE the slow no-redirect probes
+  // (`fedcm-silent`, `silent-iframe`, `cookie-restore`). On a normal reload the
+  // local bearer validates in one round-trip and wins, so `runColdBoot`
+  // short-circuits and never sits through those probes' timeouts (the prior
+  // serial sum was a ~20-30s stall). `redirect` and `sso-return` MUST stay
+  // first — they consume the URL fragment before anything can strip it. On a
+  // first visit with no local session, `stored-session` skips and the
+  // cross-domain fallback chain (fedcm → iframe → cookie → sso-bounce) runs
+  // exactly as before; the per-apex silent iframe still restores a durable
+  // cross-domain session on reload WITHOUT a top-level bounce, so when it wins
+  // `sso-bounce` never fires (no flash, no loop).
   // Order (native): stored session only (every web-only step is disabled
   // off-browser).
   const restoreSessionsFromStorage = useCallback(async (): Promise<void> => {
@@ -858,6 +928,16 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     const commitWebSession = handleWebSSOSessionRef.current;
     const silentKey = silentColdBootKey(oxyServices);
     const fedcmSupported = isWebBrowser() && oxyServices.isFedCMSupported?.() === true;
+
+    // FIX-B precondition flag: set true the instant the (now-earlier)
+    // `stored-session` step recovers a local bearer session. The slow web-only
+    // probes (`fedcm-silent`, `silent-iframe`) AND `enabled` on `!storedSessionRestored`
+    // so they are explicitly skipped once a local session won. `runColdBoot`
+    // already short-circuits on the first `{kind:'session'}`, so on a winning
+    // reload those `enabled` bodies are never even reached — this flag makes the
+    // intent explicit and is redundant-safe. On a first-visit-no-local-session,
+    // `stored-session` skips, this stays false, and the probes run as before.
+    let storedSessionRestored = false;
 
     try {
       const outcome = await runColdBoot<true>({
@@ -895,14 +975,47 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
             },
           },
           {
-            // 2) FedCM silent reauthn (Chrome) against the CENTRAL IdP
+            // 2) Stored-session bearer restore. NO `enabled` gate — runs on ALL
+            // platforms. This is native's ONLY restore path (every web-only step
+            // is disabled off-browser, so native reaches exactly this) AND the
+            // common WEB reload winner.
+            //
+            // ORDERING (FIX A): this step now runs BEFORE the slow web-only
+            // probes (`fedcm-silent`, `silent-iframe`, `cookie-restore`). On a
+            // normal reload the local bearer validates in one round-trip and
+            // wins; `runColdBoot` then short-circuits and never even evaluates
+            // the slow no-redirect probes that would otherwise time out (the
+            // ~20-30s serial stall). The `redirect` and `sso-return` steps stay
+            // AHEAD of this one — they must consume the URL fragment before any
+            // later step (or anything else) strips it. On a first visit with no
+            // local session this step skips and the cross-domain fallback chain
+            // (fedcm → iframe → cookie → sso-bounce) runs exactly as before.
+            id: 'stored-session',
+            run: async () => {
+              const restored = await restoreStoredSession();
+              if (restored) {
+                // FIX-B: record the win so the slow probes below explicitly skip
+                // (belt-and-suspenders; `runColdBoot` already short-circuits).
+                storedSessionRestored = true;
+                return { kind: 'session', session: true };
+              }
+              return { kind: 'skip' };
+            },
+          },
+          {
+            // 3) FedCM silent reauthn (Chrome) against the CENTRAL IdP
             // (auth.oxy.so). `silentSignInWithFedCM` plants the access token
             // internally; we commit the returned session via
             // `handleWebSSOSession`. Guarded so it fires at most once per page
             // load across remounts. This is an enhancement layered above the
             // opaque-code bounce: when it succeeds the bounce never fires.
+            //
+            // FIX-B: additionally skipped when the earlier `stored-session` step
+            // already recovered a local session — the probe cannot improve on a
+            // valid local bearer, and skipping it avoids the silent round-trip.
             id: 'fedcm-silent',
-            enabled: () => fedcmSupported && !servicesSilentAttempted.has(silentKey),
+            enabled: () =>
+              !storedSessionRestored && fedcmSupported && !servicesSilentAttempted.has(silentKey),
             run: async () => {
               servicesSilentAttempted.add(silentKey);
               const session = await oxyServices.silentSignInWithFedCM?.();
@@ -914,7 +1027,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
             },
           },
           {
-            // 3) First-party silent iframe at the PER-APEX IdP — the DURABLE
+            // 4) First-party silent iframe at the PER-APEX IdP — the DURABLE
             // cross-domain reload-restore path. The durable session lives as a
             // first-party `fedcm_session` cookie on `auth.<rp-apex>` (e.g.
             // `auth.mention.earth`), established during the `/sso` bounce's
@@ -933,8 +1046,12 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
             // equivalent. When auto-detection bails (localhost/IP/single-label)
             // there is no per-apex IdP and the step skips. Web only; on native
             // `isWebBrowser()` gates it off, so native never runs an iframe.
+            //
+            // FIX-B: additionally skipped when `stored-session` already won.
+            // FIX-D: bounded by `SILENT_IFRAME_TIMEOUT` (plus `iframe.onerror`
+            // fail-fast in core) so a no-message iframe cannot stall cold boot.
             id: 'silent-iframe',
-            enabled: () => isWebBrowser(),
+            enabled: () => !storedSessionRestored && isWebBrowser(),
             run: async () => {
               const perApexAuthUrl = autoDetectAuthWebUrl();
               if (!perApexAuthUrl || !commitWebSession) {
@@ -942,6 +1059,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
               }
               const session = await oxyServices.silentSignIn?.({
                 authWebUrlOverride: perApexAuthUrl,
+                timeout: SILENT_IFRAME_TIMEOUT,
               });
               if (!session?.user || !session?.sessionId) {
                 return { kind: 'skip' };
@@ -951,26 +1069,18 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
             },
           },
           {
-            // 4) Refresh-cookie restore (first-party only). On `*.oxy.so` the
+            // 5) Refresh-cookie restore (first-party only). On `*.oxy.so` the
             // httpOnly `oxy_rt_${n}` cookies ride along and resurrect every
             // device-local slot. On a cross-domain RP (mention.earth, …) the
             // cookie is `Domain=oxy.so` so it never reaches `api.<apex>` —
             // `refreshAllSessions` returns `{accounts:[]}` and this skips. That
             // is correct; cross-domain restore is handled by the SSO bounce.
+            // FIX-D: `restoreViaRefreshCookie` bounds the request with
+            // `COOKIE_RESTORE_TIMEOUT` so a cross-domain stall cannot hang here.
             id: 'cookie-restore',
             enabled: () => isWebBrowser(),
             run: async () => {
               const restored = await restoreViaRefreshCookie();
-              return restored ? { kind: 'session', session: true } : { kind: 'skip' };
-            },
-          },
-          {
-            // 5) Stored-session bearer restore. NO `enabled` gate — runs on ALL
-            // platforms. This is native's ONLY restore path (every web-only step
-            // is disabled off-browser, so native reaches exactly this).
-            id: 'stored-session',
-            run: async () => {
-              const restored = await restoreStoredSession();
               return restored ? { kind: 'session', session: true } : { kind: 'skip' };
             },
           },
@@ -1048,14 +1158,14 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       }
       await clearSessionStateRef.current();
     } finally {
-      setTokenReady(true);
-      // Auth determination is now complete (session committed, none found, or
-      // the error path ran clear-state). Monotonic: `setAuthResolved` is a no-op
-      // on subsequent restores since it is already `true`. Runs on every exit
-      // path — success, no-session, AND error→catch→finally — and on native
-      // (which only runs the `stored-session` step), so it can never hang
-      // `false`.
-      setAuthResolved(true);
+      // Backstop: mark auth resolved on EVERY exit path — success, no-session,
+      // AND error→catch→finally — and on native (which only runs the
+      // `stored-session` step), so the gate can never hang `false`. Idempotent
+      // via `markAuthResolved`'s ref: when a commit site already flipped it
+      // mid-chain (the common reload case), this is a no-op. When no session was
+      // recovered (the unauthenticated/error path), this is where `tokenReady` +
+      // `authResolved` finally flip. Monotonic — never reverts on later restores.
+      markAuthResolved();
     }
   }, [
     oxyServices,
@@ -1063,6 +1173,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     restoreViaRefreshCookie,
     restoreStoredSession,
     runSsoReturn,
+    markAuthResolved,
   ]);
 
   useEffect(() => {
@@ -1216,6 +1327,10 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       fullUser = session.user as unknown as User;
     }
     loginSuccess(fullUser);
+    // A session is now committed (FedCM silent / per-apex iframe / redirect /
+    // SSO-return / popup all funnel through here) — unblock the auth-resolution
+    // gate immediately, ahead of the cold-boot chain returning (idempotent).
+    markAuthResolvedRef.current();
     onAuthStateChange?.(fullUser);
   }, [oxyServices, updateSessions, setActiveSessionId, loginSuccess, onAuthStateChange, persistSessionDurably]);
 

@@ -305,3 +305,70 @@ describe('OxyServices popup mixin — openBlankPopup helper', () => {
     expect(oxy.openBlankPopup()).toBeNull();
   });
 });
+
+/**
+ * `waitForIframeAuth` fail-fast regression tests.
+ *
+ * The cross-domain durable-restore iframe (`/auth/silent` at the per-apex host)
+ * posts a message on success. On a FAILED load — host unreachable, blocked by
+ * CSP `frame-ancestors`/`X-Frame-Options`, or a dropped network — it never
+ * posts, so without an `onerror`/`onabort` handler the silent restore would
+ * block for the FULL timeout (dead latency in the cold-boot critical path). The
+ * handler must resolve `null` immediately on a load failure, well before the
+ * timeout fires.
+ */
+interface FakeIframe {
+  onerror: ((this: unknown, ...args: unknown[]) => unknown) | null;
+  onabort: ((this: unknown, ...args: unknown[]) => unknown) | null;
+}
+
+describe('OxyServices waitForIframeAuth fail-fast on iframe load error', () => {
+  afterEach(() => {
+    clearBrowserGlobals();
+    jest.restoreAllMocks();
+  });
+
+  it('resolves null immediately when the iframe fires onerror (does not wait for the timeout)', async () => {
+    installBrowserGlobals();
+
+    const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
+    const iframe: FakeIframe = { onerror: null, onabort: null };
+
+    // A long timeout proves the resolution comes from `onerror`, not the timer.
+    const LONG_TIMEOUT = 100000;
+    const settled = oxy.waitForIframeAuth(
+      iframe as unknown as HTMLIFrameElement,
+      LONG_TIMEOUT,
+      'https://auth.mention.earth',
+    );
+
+    // The handler is installed synchronously; fire it on the next tick.
+    await Promise.resolve();
+    expect(typeof iframe.onerror).toBe('function');
+    iframe.onerror?.call(iframe);
+
+    await expect(settled).resolves.toBeNull();
+    // Cleanup detaches the handlers so a late event cannot double-resolve.
+    expect(iframe.onerror).toBeNull();
+    expect(iframe.onabort).toBeNull();
+  });
+
+  it('resolves null immediately when the iframe fires onabort', async () => {
+    installBrowserGlobals();
+
+    const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
+    const iframe: FakeIframe = { onerror: null, onabort: null };
+
+    const settled = oxy.waitForIframeAuth(
+      iframe as unknown as HTMLIFrameElement,
+      100000,
+      'https://auth.mention.earth',
+    );
+
+    await Promise.resolve();
+    expect(typeof iframe.onabort).toBe('function');
+    iframe.onabort?.call(iframe);
+
+    await expect(settled).resolves.toBeNull();
+  });
+});

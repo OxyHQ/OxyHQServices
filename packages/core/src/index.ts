@@ -39,6 +39,7 @@ export type {
 export type {
     AuthManagerAccount,
     RestoreFromCookiesResult,
+    RestoreFromCookiesOptions,
     SwitchAuthuserResult,
 } from './AuthManagerTypes';
 
