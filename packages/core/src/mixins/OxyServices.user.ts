@@ -135,6 +135,13 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
 
     /**
      * Get profile recommendations, optionally filtering out specific user types.
+     *
+     * Public discovery read — works WITHOUT authentication. The SDK attaches the
+     * access token automatically when one is available (personalized via
+     * mutual-connection overlap), and falls back to popular public profiles when
+     * the caller is logged out. This deliberately does NOT use `withAuthRetry`,
+     * which would throw an authentication timeout for logged-out callers before
+     * the request is ever sent.
      */
     async getProfileRecommendations(options?: {
       excludeTypes?: Array<'federated' | 'agent' | 'automated'>;
@@ -152,12 +159,14 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
       _count?: { followers: number; following: number };
       [key: string]: unknown;
     }>> {
-      const params = options?.excludeTypes?.length
-        ? { excludeTypes: options.excludeTypes.join(',') }
-        : undefined;
-      return this.withAuthRetry(async () => {
+      try {
+        const params = options?.excludeTypes?.length
+          ? { excludeTypes: options.excludeTypes.join(',') }
+          : undefined;
         return await this.makeRequest('GET', '/profiles/recommendations', params, { cache: true });
-      }, 'getProfileRecommendations');
+      } catch (error) {
+        throw this.handleError(error);
+      }
     }
 
     /**

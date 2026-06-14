@@ -8,6 +8,8 @@
 import { Router, Request, Response } from 'express';
 import { Types } from 'mongoose';
 import { authMiddleware } from '../middleware/auth';
+import { optionalAuthMiddleware, getUserId } from '../middleware/optionalAuth';
+import { AuthenticatedRequest } from '../middleware/authUtils';
 import { logger } from '../utils/logger';
 import { asyncHandler, sendSuccess, sendPaginated } from '../utils/asyncHandler';
 import {
@@ -40,6 +42,10 @@ import { PAGINATION } from '../utils/constants';
 const VALID_EXCLUDE_TYPES = new Set(['federated', 'agent', 'automated']);
 const MIN_USERNAME_LENGTH = 3;
 const MAX_USERNAME_LENGTH = 30;
+// Extra follower-ranked candidates fetched before the private/excludeTypes
+// filter on the public recommendations path, so post-lookup filtering can't
+// shrink the page below the requested limit.
+const PUBLIC_FILTER_HEADROOM = 20;
 
 /**
  * Shared aggregation stages that look up follower and following counts
@@ -528,27 +534,33 @@ router.get(
 /**
  * GET /profiles/recommendations
  *
- * Get recommended user profiles based on mutual connections
- * 
+ * Get recommended user profiles.
+ *
+ * Optional auth: when a valid session token is present the response is
+ * personalized via mutual-connection overlap (people followed by the people
+ * you follow), topped up with a random sample. When NO user is present
+ * (logged-out / public callers) the personalized aggregate is skipped and
+ * the endpoint returns popular public profiles ranked by follower count.
+ * Private accounts are always excluded; `excludeTypes` filters out
+ * federated/agent/automated users on either path.
+ *
  * @query {number} limit - Number of results (max 100, default 10)
  * @query {number} offset - Pagination offset (default 0)
+ * @query {string} excludeTypes - Comma-separated user types to exclude
+ *   (federated, agent, automated)
  * @returns {UserProfile[]} List of recommended profiles
  */
 router.get(
   '/recommendations',
-  authMiddleware,
+  optionalAuthMiddleware,
   validatePagination,
-  asyncHandler(async (req: AuthRequest, res: Response) => {
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const { limit, offset, excludeTypes: excludeTypesRaw } = req.query as PaginationQuery & { excludeTypes?: string };
-    const currentUserId = req.user?.id;
+    const currentUserId = getUserId(req);
 
     const excludeTypes = excludeTypesRaw
       ? excludeTypesRaw.split(',').filter(t => VALID_EXCLUDE_TYPES.has(t.trim())).map(t => t.trim())
       : [];
-
-    if (!currentUserId) {
-      throw new UnauthorizedError('Authentication required');
-    }
 
     const parsedLimit = limit
       ? Math.min(parseInt(limit, 10), PAGINATION.MAX_LIMIT)
@@ -556,11 +568,86 @@ router.get(
     const parsedOffset = offset ? parseInt(offset, 10) : 0;
 
     logger.debug('GET /profiles/recommendations', {
-      currentUserId,
+      currentUserId: currentUserId ?? null,
+      authenticated: !!currentUserId,
       limit: parsedLimit,
       offset: parsedOffset,
     });
 
+    // Base filter applied to every fill/public query: never surface private
+    // accounts to recommendation surfaces, and honour the caller's
+    // excludeTypes (federated/agent/automated).
+    const baseUserMatch: Record<string, unknown> = {
+      'privacySettings.isPrivateAccount': { $ne: true },
+    };
+    if (excludeTypes.length > 0) {
+      baseUserMatch.type = { $nin: excludeTypes };
+    }
+
+    // ---- Public / logged-out path: popular profiles by follower count ----
+    //
+    // Rank candidates from the Follow collection (grouped by followedId, the
+    // same proven aggregation the personalized path uses) so we never scan the
+    // whole users collection with a per-user lookup. The `followType` match is
+    // index-backed by the unique compound index. We over-fetch a window before
+    // the private/excludeTypes filter, then re-limit, so the post-lookup filter
+    // can't starve the result below `limit`.
+    if (!currentUserId) {
+      const followerRanked = await Follow.aggregate([
+        { $match: { followType: FollowType.USER } },
+        { $group: { _id: '$followedId', followersCount: { $sum: 1 } } },
+        { $sort: { followersCount: -1, _id: 1 } },
+        { $skip: parsedOffset },
+        { $limit: parsedLimit + PUBLIC_FILTER_HEADROOM },
+        {
+          $lookup: {
+            from: 'users',
+            localField: '_id',
+            foreignField: '_id',
+            as: 'user',
+          },
+        },
+        { $unwind: '$user' },
+        {
+          $match: {
+            'user.privacySettings.isPrivateAccount': { $ne: true },
+            ...(excludeTypes.length > 0 ? { 'user.type': { $nin: excludeTypes } } : {}),
+          },
+        },
+        { $limit: parsedLimit },
+        ...followCountLookupStages,
+        profileProjectionStage,
+      ]);
+
+      let publicProfiles = followerRanked;
+
+      // Fallback for a near-empty social graph (e.g. fresh install): if no one
+      // has followers yet, surface a random sample of public profiles so the
+      // discovery surface is never blank.
+      if (publicProfiles.length < parsedLimit && parsedOffset === 0) {
+        const alreadyIncludedIds = publicProfiles.map((u) => u._id);
+        const fillLimit = parsedLimit - publicProfiles.length;
+
+        const randomUsers = await User.aggregate([
+          { $match: { _id: { $nin: alreadyIncludedIds }, ...baseUserMatch } },
+          { $sample: { size: fillLimit } },
+          ...followCountLookupStages,
+          userProfileProjectionStage,
+        ]);
+
+        publicProfiles = publicProfiles.concat(randomUsers);
+      }
+
+      const formattedPublic = publicProfiles.map(formatProfileResult);
+
+      logger.debug('GET /profiles/recommendations (public)', {
+        recommendationsCount: formattedPublic.length,
+      });
+
+      return sendSuccess(res, formattedPublic);
+    }
+
+    // ---- Personalized path: mutual-connection overlap + random fill ----
     let excludeIds: Types.ObjectId[] = [];
     let followingIds: Types.ObjectId[] = [];
 
@@ -610,9 +697,12 @@ router.get(
           },
         },
         { $unwind: '$user' },
-        ...(excludeTypes.length > 0
-          ? [{ $match: { 'user.type': { $nin: excludeTypes } } }]
-          : []),
+        {
+          $match: {
+            'user.privacySettings.isPrivateAccount': { $ne: true },
+            ...(excludeTypes.length > 0 ? { 'user.type': { $nin: excludeTypes } } : {}),
+          },
+        },
         ...followCountLookupStages,
         profileProjectionStage,
       ]);
@@ -622,9 +712,13 @@ router.get(
       const alreadyRecommendedIds = recommendations.map((u) => u._id);
       const fillLimit = parsedLimit - recommendations.length;
 
-      const typeFilter = excludeTypes.length > 0 ? { type: { $nin: excludeTypes } } : {};
       const randomUsers = await User.aggregate([
-        { $match: { _id: { $nin: excludeIds.concat(alreadyRecommendedIds) }, ...typeFilter } },
+        {
+          $match: {
+            _id: { $nin: excludeIds.concat(alreadyRecommendedIds) },
+            ...baseUserMatch,
+          },
+        },
         { $sample: { size: fillLimit } },
         ...followCountLookupStages,
         userProfileProjectionStage,
