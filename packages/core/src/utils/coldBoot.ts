@@ -74,6 +74,16 @@ export type ColdBootOutcome<S> =
   | { readonly kind: 'unauthenticated' };
 
 /**
+ * The unique sentinel a step's `run()` resolves to (via the internal race)
+ * when the overall cold-boot deadline expires before that step settled. It is
+ * NOT a {@link ColdBootStepResult} — the runner detects it by identity and
+ * treats it as "this step did not settle in time; move on".
+ *
+ * @internal
+ */
+const DEADLINE_EXPIRED: unique symbol = Symbol('coldBoot.deadlineExpired');
+
+/**
  * Options for {@link runColdBoot}.
  */
 export interface RunColdBootOptions<S> {
@@ -85,6 +95,32 @@ export interface RunColdBootOptions<S> {
    * the runner does not guard against an observer that itself throws.
    */
   readonly onStepError?: (id: string, error: unknown) => void;
+  /**
+   * Optional HARD overall deadline (ms) for the entire ordered step loop —
+   * defense-in-depth so a single non-settling step can NEVER hang the whole
+   * cold boot forever.
+   *
+   * Each step's `run()` is raced against the SHARED remaining time. If a step
+   * fails to settle before the deadline, the runner abandons the await for that
+   * step (reporting it via `onStepDeadline`) and CONTINUES to the next step,
+   * each now racing against an already-expired deadline. This is deliberate:
+   * the runner keeps iterating so the TERMINAL step (e.g. the `/sso` bounce,
+   * whose `run()` performs its side effect synchronously before its first
+   * `await`) still gets to fire. A step that has nothing to contribute after
+   * the deadline simply doesn't settle and is skipped in turn.
+   *
+   * Per-step timeouts inside `run()` remain the first line of defense and
+   * should keep every step well under this budget on a healthy load; this only
+   * trips when one of them regresses (the production FedCM-silent hang). When
+   * omitted there is NO overall deadline (unchanged legacy behaviour).
+   */
+  readonly overallDeadlineMs?: number;
+  /**
+   * Optional observer invoked once per step that was abandoned because the
+   * overall deadline expired before it settled. Receives the step `id`. Must
+   * not throw.
+   */
+  readonly onStepDeadline?: (id: string) => void;
 }
 
 /**
@@ -105,32 +141,75 @@ export interface RunColdBootOptions<S> {
 export async function runColdBoot<S>(
   options: RunColdBootOptions<S>
 ): Promise<ColdBootOutcome<S>> {
-  const { steps, onStepError } = options;
+  const { steps, onStepError, overallDeadlineMs, onStepDeadline } = options;
 
-  for (const step of steps) {
-    if (step.enabled) {
-      let isEnabled: boolean;
+  // Arm the optional overall deadline. The budget is SHARED across the whole
+  // loop (not reset per step): a single timer resolves a reusable
+  // `DEADLINE_EXPIRED` sentinel that every per-step race can observe. Once it
+  // fires, later steps race against an already-resolved promise and so never
+  // block, yet the loop keeps iterating so the terminal step still fires.
+  const deadlineMs =
+    typeof overallDeadlineMs === 'number' &&
+    Number.isFinite(overallDeadlineMs) &&
+    overallDeadlineMs > 0
+      ? overallDeadlineMs
+      : null;
+
+  let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+  let deadlinePromise: Promise<typeof DEADLINE_EXPIRED> | undefined;
+  if (deadlineMs !== null) {
+    deadlinePromise = new Promise<typeof DEADLINE_EXPIRED>((resolve) => {
+      deadlineTimer = setTimeout(() => resolve(DEADLINE_EXPIRED), deadlineMs);
+    });
+  }
+
+  try {
+    for (const step of steps) {
+      if (step.enabled) {
+        let isEnabled: boolean;
+        try {
+          isEnabled = step.enabled();
+        } catch (error) {
+          onStepError?.(step.id, error);
+          continue;
+        }
+        if (!isEnabled) continue;
+      }
+
+      let result: ColdBootStepResult<S> | typeof DEADLINE_EXPIRED;
       try {
-        isEnabled = step.enabled();
+        // Without a deadline: legacy behaviour — await the step directly.
+        // With a deadline: race the step against the shared deadline. The
+        // step's `run()` still STARTS synchronously up to its first `await`
+        // (so a terminal step's synchronous navigation side effect always
+        // executes), but a non-settling step can no longer block the loop —
+        // the race resolves with the sentinel and we move on.
+        result = deadlinePromise
+          ? await Promise.race([step.run(), deadlinePromise])
+          : await step.run();
       } catch (error) {
         onStepError?.(step.id, error);
         continue;
       }
-      if (!isEnabled) continue;
+
+      if (result === DEADLINE_EXPIRED) {
+        // The deadline tripped before this step settled. Abandon the await and
+        // continue: subsequent steps race against the already-resolved deadline
+        // (so they cannot block), which lets a terminal side-effect step still
+        // run while guaranteeing the loop terminates promptly.
+        onStepDeadline?.(step.id);
+        continue;
+      }
+
+      if (result.kind === 'session') {
+        return { kind: 'session', via: step.id, session: result.session };
+      }
     }
 
-    let result: ColdBootStepResult<S>;
-    try {
-      result = await step.run();
-    } catch (error) {
-      onStepError?.(step.id, error);
-      continue;
-    }
-
-    if (result.kind === 'session') {
-      return { kind: 'session', via: step.id, session: result.session };
+    return { kind: 'unauthenticated' };
+  } finally {
+    if (deadlineTimer !== undefined) {
+      clearTimeout(deadlineTimer);
     }
   }
-
-  return { kind: 'unauthenticated' };
 }

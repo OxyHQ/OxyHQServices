@@ -192,6 +192,58 @@ describe('OxyServices FedCM nonce binding', () => {
 
     await expect(oxy.silentSignInWithFedCM()).resolves.toBeNull();
   });
+
+  /**
+   * Production-hang regression. `navigator.credentials.get()` is a
+   * browser-internal FedCM primitive that, in some Chrome states, IGNORES its
+   * abort signal — the awaited promise never settles. The cooperative
+   * `setTimeout`→`controller.abort()` alone cannot unblock that await, so the
+   * `fedcm-silent` cold-boot step (and the whole cold boot) hangs forever and
+   * the terminal `/sso` bounce never fires.
+   *
+   * The hard settle guarantee (`Promise.race` against a timer that resolves
+   * `null` at `FEDCM_SILENT_TIMEOUT + FEDCM_ABORT_SETTLE_GRACE_MS`) must resolve
+   * the request to `null` regardless. This test models the hung primitive and
+   * asserts `silentSignInWithFedCM()` settles to `null` within that bound.
+   */
+  it('hard-settles to null when navigator.credentials.get never settles (ignores abort)', async () => {
+    jest.useFakeTimers();
+    try {
+      installBrowserGlobals({
+        // Never resolves or rejects, and never observes the abort signal —
+        // models the production hung FedCM credential request.
+        credentialsGet: () => new Promise<unknown>(() => {}),
+      });
+
+      const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
+      localStorage.setItem('oxy_fedcm_login_hint', 'prior-user-id');
+      jest.spyOn(oxy, 'makeRequest').mockImplementation(async (_method: string, url: string) => {
+        if (url === '/fedcm/nonce') {
+          return { nonce: 'n', expiresAt: new Date(Date.now() + 60000).toISOString() } as never;
+        }
+        throw new Error(`unexpected request to ${url}`);
+      });
+
+      let settled = false;
+      const promise = oxy.silentSignInWithFedCM().then((r) => {
+        settled = true;
+        return r;
+      });
+
+      // Before the hard-settle deadline it must still be pending — proving the
+      // primitive really is hung (so the test would fail without the fix).
+      await jest.advanceTimersByTimeAsync(4000);
+      expect(settled).toBe(false);
+
+      // FEDCM_SILENT_TIMEOUT (4000) + FEDCM_ABORT_SETTLE_GRACE_MS (500) = 4500.
+      await jest.advanceTimersByTimeAsync(600);
+      await expect(promise).resolves.toBeNull();
+      expect(settled).toBe(true);
+    } finally {
+      jest.runOnlyPendingTimers();
+      jest.useRealTimers();
+    }
+  });
 });
 
 /**

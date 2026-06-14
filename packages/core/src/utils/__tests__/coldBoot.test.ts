@@ -223,4 +223,154 @@ describe('runColdBoot', () => {
       session: { userId: 'u-ok' },
     });
   });
+
+  describe('overall deadline (defense-in-depth)', () => {
+    beforeEach(() => {
+      jest.useFakeTimers();
+    });
+    afterEach(() => {
+      jest.runOnlyPendingTimers();
+      jest.useRealTimers();
+    });
+
+    /**
+     * Reproduces the production hang: a step whose `run()` promise NEVER
+     * settles (the FedCM-silent `navigator.credentials.get` that ignored its
+     * abort signal). WITHOUT a deadline the whole `runColdBoot` promise hangs
+     * forever and the terminal step never runs.
+     */
+    it('hangs forever when a step never settles and no deadline is set', async () => {
+      const terminalRan = jest.fn();
+      let settled = false;
+
+      const outcomePromise = runColdBoot<TestSession>({
+        steps: [
+          {
+            id: 'never-settles',
+            // Never resolves or rejects — models the hung FedCM credential get.
+            run: () => new Promise<ColdBootStepResult<TestSession>>(() => {}),
+          },
+          {
+            id: 'terminal',
+            run: async (): Promise<ColdBootStepResult<TestSession>> => {
+              terminalRan();
+              return { kind: 'skip' };
+            },
+          },
+        ],
+      }).then((o) => {
+        settled = true;
+        return o;
+      });
+
+      // Advance well past any reasonable budget; nothing can unblock it.
+      await jest.advanceTimersByTimeAsync(120000);
+
+      expect(settled).toBe(false);
+      expect(terminalRan).not.toHaveBeenCalled();
+
+      // Avoid a dangling unhandled promise in the test runner.
+      void outcomePromise;
+    });
+
+    /**
+     * With `overallDeadlineMs` set, the non-settling step is abandoned at the
+     * deadline, the runner CONTINUES to the terminal step (so the cross-domain
+     * `/sso` bounce equivalent still fires), and the whole boot settles to
+     * `unauthenticated` within the bounded budget.
+     */
+    it('abandons a non-settling step at the deadline and still runs the terminal step', async () => {
+      const terminalRan = jest.fn();
+      const onStepDeadline = jest.fn();
+
+      const outcomePromise = runColdBoot<TestSession>({
+        overallDeadlineMs: 5000,
+        onStepDeadline,
+        steps: [
+          {
+            id: 'never-settles',
+            run: () => new Promise<ColdBootStepResult<TestSession>>(() => {}),
+          },
+          {
+            id: 'terminal',
+            run: async (): Promise<ColdBootStepResult<TestSession>> => {
+              terminalRan();
+              return { kind: 'skip' };
+            },
+          },
+        ],
+      });
+
+      await jest.advanceTimersByTimeAsync(5000);
+      const outcome = await outcomePromise;
+
+      expect(onStepDeadline).toHaveBeenCalledWith('never-settles');
+      expect(terminalRan).toHaveBeenCalledTimes(1);
+      expect(outcome).toEqual({ kind: 'unauthenticated' });
+    });
+
+    /**
+     * The terminal step's synchronous side effect (the real `sso-bounce`
+     * navigates BEFORE its first await) must still execute when the deadline
+     * trips on an earlier step — the cross-domain fallback is preserved.
+     */
+    it('lets the terminal step fire its synchronous side effect after the deadline trips', async () => {
+      const bounced = jest.fn();
+
+      const outcomePromise = runColdBoot<TestSession>({
+        overallDeadlineMs: 3000,
+        steps: [
+          {
+            id: 'never-settles',
+            run: () => new Promise<ColdBootStepResult<TestSession>>(() => {}),
+          },
+          {
+            id: 'sso-bounce',
+            run: async (): Promise<ColdBootStepResult<TestSession>> => {
+              // Synchronous navigation side effect, exactly like the real bounce.
+              bounced();
+              return { kind: 'skip' };
+            },
+          },
+        ],
+      });
+
+      await jest.advanceTimersByTimeAsync(3000);
+      await outcomePromise;
+
+      expect(bounced).toHaveBeenCalledTimes(1);
+    });
+
+    /**
+     * A healthy step that settles BEFORE the deadline still wins and
+     * short-circuits — the deadline never alters the happy path.
+     */
+    it('a step that settles before the deadline wins and short-circuits', async () => {
+      const laterRan = jest.fn();
+
+      const outcomePromise = runColdBoot<TestSession>({
+        overallDeadlineMs: 10000,
+        steps: [
+          {
+            id: 'fast-winner',
+            run: async (): Promise<ColdBootStepResult<TestSession>> => {
+              await Promise.resolve();
+              return { kind: 'session', session: { userId: 'u-fast' } };
+            },
+          },
+          sessionStep('later', 'u-later', laterRan),
+        ],
+      });
+
+      await jest.advanceTimersByTimeAsync(0);
+      const outcome = await outcomePromise;
+
+      expect(outcome).toEqual({
+        kind: 'session',
+        via: 'fast-winner',
+        session: { userId: 'u-fast' },
+      });
+      expect(laterRan).not.toHaveBeenCalled();
+    });
+  });
 });

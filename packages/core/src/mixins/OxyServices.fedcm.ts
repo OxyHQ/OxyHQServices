@@ -214,6 +214,17 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
   // 20-30s cold-boot stall. Do NOT lower below 4s (it would clip live success).
   public static readonly FEDCM_SILENT_TIMEOUT = 4000; // 4 seconds for silent mediation
 
+  // Grace margin between the cooperative abort deadline (`FEDCM_SILENT_TIMEOUT`
+  // / `FEDCM_TIMEOUT`) and the HARD settle of `requestIdentityCredential`. The
+  // abort fires first; a well-behaved browser surfaces its own `AbortError`
+  // within this window (keeping the existing error path intact). If — as seen
+  // in production — `navigator.credentials.get()` ignores the abort and the
+  // awaited promise never settles, the hard settle resolves the request to
+  // `null` this many ms later, guaranteeing the cold-boot step always settles.
+  // 500ms is ample for a browser to deliver an abort rejection while keeping the
+  // worst-case dead wait tight (silent: 4.5s, interactive: 15.5s).
+  public static readonly FEDCM_ABORT_SETTLE_GRACE_MS = 500;
+
   /**
    * Check if FedCM is supported in the current browser
    */
@@ -606,6 +617,37 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
       controller.abort();
     }, timeoutMs);
 
+    // Hard settle guarantee for the timeout path.
+    //
+    // The `setTimeout` above aborts the request's `AbortController`, which is
+    // the COOPERATIVE cancel signal. For a regular `fetch` an abort deterministically
+    // rejects the awaited promise — but `navigator.credentials.get()` is a
+    // browser-internal FedCM primitive whose abort behaviour is NOT guaranteed
+    // to settle the awaited promise in every Chrome version / internal state
+    // (the credential request can sit "pending" while the browser-side flow is
+    // stuck, ignoring the signal). If that happens, `await credentials.get(...)`
+    // never resolves OR rejects, this IIFE hangs forever, and — because this is
+    // ONE step of the ordered cold-boot sequence — the whole cold boot hangs and
+    // the terminal `/sso` bounce never fires. That was the production hang.
+    //
+    // `settlePromise` races the credential lookup against a timer that ALWAYS
+    // resolves to `null` shortly after the abort deadline. The abort still fires
+    // first (so the browser is asked to cancel), but even if `credentials.get`
+    // never settles, the race resolves and the step falls through cleanly to the
+    // next cold-boot step. The small `FEDCM_ABORT_SETTLE_GRACE_MS` margin gives a
+    // well-behaved browser the chance to surface its own AbortError (preserving
+    // the existing error path) before we force a clean `null`.
+    let settleTimer: ReturnType<typeof setTimeout> | undefined;
+    const settlePromise = new Promise<FedCMIdentityCredential | null>((resolve) => {
+      const ctor = this.constructor as typeof OxyServicesBase & {
+        FEDCM_ABORT_SETTLE_GRACE_MS: number;
+      };
+      settleTimer = setTimeout(() => {
+        debug.log('Request hard-settled to null', timeoutMs + ctor.FEDCM_ABORT_SETTLE_GRACE_MS, 'ms (credentials.get never settled after abort)');
+        resolve(null);
+      }, timeoutMs + ctor.FEDCM_ABORT_SETTLE_GRACE_MS);
+    });
+
     // Normalise the caller's mode to the modern W3C value first. A modern
     // browser accepts it; an older one (Chrome 125–131) rejects it with a
     // synchronous TypeError, in which case we retry with the legacy value.
@@ -645,7 +687,13 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
         debug.log('Calling navigator.credentials.get with mediation:', requestedMediation, modernMode ? `mode: ${modernMode}` : '');
         let credential: FedCMIdentityCredential | null;
         try {
-          credential = await credentials.get(buildCredentialOptions(modernMode));
+          // Race the browser FedCM lookup against the hard settle guarantee so
+          // a `credentials.get` that ignores the abort signal can never hang
+          // the cold boot (see `settlePromise`).
+          credential = await Promise.race([
+            credentials.get(buildCredentialOptions(modernMode)),
+            settlePromise,
+          ]);
         } catch (modeError) {
           // Chrome 125–131 only knows the legacy 'button'/'widget' enum and
           // throws a synchronous TypeError for the modern 'active'/'passive'
@@ -653,7 +701,10 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
           if (modernMode && isUnknownModeEnumError(modeError)) {
             const legacyMode = MODERN_TO_LEGACY_MODE[modernMode];
             debug.log(`Browser rejected modern mode '${modernMode}'; retrying with legacy mode '${legacyMode}'`);
-            credential = await credentials.get(buildCredentialOptions(legacyMode));
+            credential = await Promise.race([
+              credentials.get(buildCredentialOptions(legacyMode)),
+              settlePromise,
+            ]);
           } else {
             throw modeError;
           }
@@ -680,6 +731,9 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
         throw error;
       } finally {
         clearTimeout(timeout);
+        if (settleTimer !== undefined) {
+          clearTimeout(settleTimer);
+        }
         // Only reset the shared lock if it still belongs to THIS request. When an
         // interactive request aborts a slow silent one, the silent settles (and
         // runs this `finally`) AFTER the interactive has already taken over the

@@ -205,6 +205,34 @@ const SILENT_IFRAME_TIMEOUT = 2500;
 const COOKIE_RESTORE_TIMEOUT = 3000;
 
 /**
+ * HARD overall deadline (ms) for the entire cold-boot step loop —
+ * defense-in-depth so a single non-settling step can NEVER hang auth resolution
+ * forever (the production regression: a `navigator.credentials.get()` that
+ * ignored its abort signal left the `fedcm-silent` step's promise unsettled, so
+ * `runColdBoot` never advanced to the terminal `/sso` bounce and auth hung
+ * indefinitely).
+ *
+ * Every step ALREADY bounds its own network work (the stored-session bearer
+ * validation at 8s, the silent iframe at `SILENT_IFRAME_TIMEOUT`, the refresh
+ * cookie at `COOKIE_RESTORE_TIMEOUT`, FedCM silent at `FEDCM_SILENT_TIMEOUT`
+ * plus its hard settle). On a healthy load the FIRST recovering step wins in a
+ * single round-trip (1–3s) and the chain short-circuits long before this fires.
+ * This budget only trips when one of those per-step bounds regresses.
+ *
+ * 20s is the chosen value: comfortably ABOVE the worst-case bounded
+ * stored-session path under transient slowness (the 8s parallel validation
+ * window plus a `switchSession` round-trip) so a genuinely slow-but-healthy
+ * reload is never cut off, yet well BELOW the ~28–30s the previous
+ * probe-first ordering took — and, critically, finite, so the user can never
+ * sit on an indefinite spinner. When the deadline trips, `runColdBoot` keeps
+ * iterating to the terminal `sso-bounce` step (whose navigation side effect
+ * runs synchronously), so a genuine no-local-session first visit STILL reaches
+ * the cross-domain `/sso` fallback. Native runs only the stored-session step,
+ * which is bounded well under this, so the deadline never alters native flow.
+ */
+const COLD_BOOT_OVERALL_DEADLINE = 20000;
+
+/**
  * Whether `idpOrigin` is a same-site, first-party host of the current page —
  * i.e. it shares the page's registrable apex (last two labels), so a "no
  * session" answer from its `/auth/session-check` iframe is authoritative for
@@ -1141,6 +1169,21 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
               `Cold-boot step "${id}" errored (non-fatal, falling through)`,
               { component: 'OxyContext', method: 'restoreSessionsFromStorage' },
               error,
+            );
+          }
+        },
+        // Defense-in-depth: a single step whose promise never settles (the
+        // production FedCM-silent hang) can no longer block the chain forever.
+        // On expiry the runner keeps iterating to the terminal `sso-bounce`
+        // step so a genuine no-local-session visit still reaches the
+        // cross-domain `/sso` fallback; the `finally` backstop flips
+        // `authResolved` regardless. See `COLD_BOOT_OVERALL_DEADLINE`.
+        overallDeadlineMs: COLD_BOOT_OVERALL_DEADLINE,
+        onStepDeadline: (id) => {
+          if (__DEV__) {
+            loggerUtil.debug(
+              `Cold-boot step "${id}" exceeded the overall deadline (abandoned, falling through)`,
+              { component: 'OxyContext', method: 'restoreSessionsFromStorage' },
             );
           }
         },
