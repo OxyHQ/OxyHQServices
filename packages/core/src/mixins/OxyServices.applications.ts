@@ -172,6 +172,11 @@ export interface CreateApplicationInput {
   icon?: string;
   redirectUris?: string[];
   scopes?: string[];
+  /**
+   * Optional workspace `_id` to create the app in. Omitted → API defaults to
+   * the caller's personal workspace.
+   */
+  workspaceId?: string;
 }
 
 /** Input accepted by `updateApplication`. Staff-only fields are not settable here. */
