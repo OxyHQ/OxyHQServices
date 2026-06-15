@@ -18,10 +18,26 @@ const mockFindOneAndUpdate = jest.fn();
 const mockNonceCreate = jest.fn();
 const mockClientFindOne = jest.fn();
 const mockClientFind = jest.fn();
+const mockClientFindOneAndUpdate = jest.fn();
+const mockAppFind = jest.fn();
 const mockUserFindById = jest.fn();
 const mockCreateSession = jest.fn();
 const mockGrantFindOneAndUpdate = jest.fn();
 const mockGrantFind = jest.fn();
+const mockCacheInvalidate = jest.fn();
+
+/**
+ * Build a chainable Mongoose query stub that resolves `rows`. Supports the
+ * `.select(...).lean()` and `.select(...).sort(...).lean()` chains used across
+ * the service (each link returns the same chainable object).
+ */
+function leanQuery(rows: unknown[]) {
+  const chain: Record<string, jest.Mock> = {};
+  chain.select = jest.fn().mockReturnValue(chain);
+  chain.sort = jest.fn().mockReturnValue(chain);
+  chain.lean = jest.fn().mockResolvedValue(rows);
+  return chain;
+}
 
 jest.mock('../../models/FedCMNonce', () => ({
   __esModule: true,
@@ -36,6 +52,28 @@ jest.mock('../../models/FedCMClient', () => ({
   default: {
     findOne: mockClientFindOne,
     find: mockClientFind,
+    findOneAndUpdate: mockClientFindOneAndUpdate,
+  },
+}));
+
+// The canonical Application registry — production RP origins are derived from
+// each active application's redirectUris.
+jest.mock('../../models/Application', () => ({
+  __esModule: true,
+  Application: { find: mockAppFind },
+  default: { find: mockAppFind },
+}));
+
+// Pass-through cache: read methods delegate straight to the loader (the
+// uncached Mongo read driven by the FedCMClient mocks above) so approval
+// lookups behave exactly as before; only `invalidate` is asserted on.
+jest.mock('../../utils/approvedClientsCache', () => ({
+  __esModule: true,
+  default: {
+    getApprovedOrigins: (loader: () => Promise<string[]>) => loader(),
+    isApproved: async (origin: string, loader: () => Promise<string[]>) =>
+      (await loader()).includes(origin),
+    invalidate: mockCacheInvalidate,
   },
 }));
 
@@ -118,12 +156,12 @@ function createReq(originHeader?: string | null): Request {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  // Default approval lookup: APPROVED_ORIGIN is approved.
-  mockClientFindOne.mockImplementation((query: { origin: string }) => ({
-    select: jest.fn().mockReturnValue({
-      lean: jest.fn().mockResolvedValue(query.origin === APPROVED_ORIGIN ? { _id: 'client-1' } : null),
-    }),
-  }));
+  // Default approval source: an ACTIVE Application whose redirectUri lives on
+  // APPROVED_ORIGIN — so the derived approved-origins set contains it. This is
+  // the new single source of truth (replaces the old hardcoded FedCMClient list).
+  mockAppFind.mockReturnValue(
+    leanQuery([{ name: 'Relying Party', redirectUris: [`${APPROVED_ORIGIN}/__oxy/sso-callback`] }])
+  );
   // Default nonce claim: succeeds for the expected origin.
   mockFindOneAndUpdate.mockResolvedValue({
     nonceHash: 'placeholder',
@@ -144,24 +182,19 @@ beforeEach(() => {
   // Grant recording succeeds by default.
   mockGrantFindOneAndUpdate.mockResolvedValue({});
   // Grant lookup: no prior grants by default (overridden per-test).
-  mockGrantFind.mockReturnValue({
-    select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([]) }),
-  });
-  // Approved-clients list (used by getUserGrantedOrigins to intersect grants).
-  mockClientFind.mockReturnValue({
-    select: jest.fn().mockReturnValue({
-      lean: jest.fn().mockResolvedValue([{ origin: APPROVED_ORIGIN }]),
-    }),
-  });
+  mockGrantFind.mockReturnValue(leanQuery([]));
+  // Manual/admin FedCMClient escape-hatch rows: none by default (dev/native
+  // origins still flow through the DEV_NATIVE constant, not this mock).
+  mockClientFind.mockReturnValue(leanQuery([]));
+  mockClientFindOne.mockImplementation(() => leanQuery([])); // vestigial path
+  // Seed upsert succeeds by default.
+  mockClientFindOneAndUpdate.mockResolvedValue({});
 });
 
 describe('FedCM exchangeIdToken (H9)', () => {
   it('rejects tokens whose aud is not on the approved-clients list', async () => {
-    // Make the client lookup say nothing is approved.
-    mockClientFindOne.mockImplementationOnce(() => ({
-      select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue(null) }),
-    }));
-
+    // The default registry only approves APPROVED_ORIGIN, so WRONG_ORIGIN
+    // (https://evil.example) is not a derived approved origin → rejected.
     const token = mintToken({ aud: WRONG_ORIGIN });
     const result = await fedcmService.exchangeIdToken(token, createReq(WRONG_ORIGIN));
 
@@ -289,15 +322,13 @@ describe('FedCM exchangeIdToken (H9)', () => {
 
 describe('FedCM getUserGrantedOrigins', () => {
   it('returns the user grants intersected with the approved-clients list', async () => {
-    mockGrantFind.mockReturnValueOnce({
-      select: jest.fn().mockReturnValue({
-        lean: jest.fn().mockResolvedValue([
-          { clientOrigin: APPROVED_ORIGIN },
-          // A grant whose origin is no longer approved must be filtered out.
-          { clientOrigin: 'https://deapproved.example' },
-        ]),
-      }),
-    });
+    mockGrantFind.mockReturnValueOnce(
+      leanQuery([
+        { clientOrigin: APPROVED_ORIGIN },
+        // A grant whose origin is no longer approved must be filtered out.
+        { clientOrigin: 'https://deapproved.example' },
+      ])
+    );
 
     const origins = await fedcmService.getUserGrantedOrigins('user-123');
     expect(origins).toEqual([APPROVED_ORIGIN]);
@@ -322,6 +353,179 @@ describe('FedCM recordGrant', () => {
   it('swallows errors (never throws)', async () => {
     mockGrantFindOneAndUpdate.mockRejectedValueOnce(new Error('db down'));
     await expect(fedcmService.recordGrant('user-123', APPROVED_ORIGIN)).resolves.toBeUndefined();
+  });
+});
+
+describe('FedCM approved-origins derivation (Application registry = single source of truth)', () => {
+  const DEV_NATIVE = ['http://localhost:3000', 'http://localhost:8081', 'astro://auth'];
+
+  it('derives every active application redirectUri origin (so a new app is auto-approved)', async () => {
+    // 12-app prod shape: registering an app with a /__oxy/sso-callback redirect
+    // auto-approves its SSO origin — the fix for console.oxy.so being rejected.
+    mockAppFind.mockReturnValueOnce(
+      leanQuery([
+        { name: 'Oxy Website', redirectUris: ['https://oxy.so/__oxy/sso-callback', 'https://fairco.in/__oxy/sso-callback'] },
+        { name: 'Oxy Accounts', redirectUris: ['https://accounts.oxy.so/__oxy/sso-callback'] },
+        { name: 'Oxy Console', redirectUris: ['https://console.oxy.so/__oxy/sso-callback'] },
+        { name: 'Oxy Inbox', redirectUris: ['https://inbox.oxy.so/__oxy/sso-callback'] },
+        { name: 'Oxy Pay', redirectUris: ['https://pay.oxy.so/__oxy/sso-callback'] },
+        { name: 'Allo', redirectUris: ['https://allo.oxy.so/__oxy/sso-callback'] },
+        { name: 'Syra', redirectUris: ['https://syra.oxy.so/__oxy/sso-callback'] },
+        { name: 'Homiio', redirectUris: ['https://homiio.com/__oxy/sso-callback'] },
+        { name: 'Mention', redirectUris: ['https://mention.earth/__oxy/sso-callback'] },
+        { name: 'Alia', redirectUris: ['https://alia.onl/__oxy/sso-callback'] },
+        { name: 'TNP', redirectUris: ['https://tnp.network/__oxy/sso-callback'] },
+        // An app with no redirectUris contributes no origin (Oxy Auth IdP).
+        { name: 'Oxy Auth', redirectUris: [] },
+      ])
+    );
+
+    const origins = await fedcmService.getApprovedClientOrigins();
+
+    for (const expected of [
+      'https://oxy.so', 'https://fairco.in', 'https://accounts.oxy.so', 'https://console.oxy.so',
+      'https://inbox.oxy.so', 'https://pay.oxy.so', 'https://allo.oxy.so', 'https://syra.oxy.so',
+      'https://homiio.com', 'https://mention.earth', 'https://alia.onl', 'https://tnp.network',
+    ]) {
+      expect(origins).toContain(expected);
+    }
+    // The Application registry MUST be the source (not a hardcoded FedCMClient list).
+    expect(mockAppFind).toHaveBeenCalledWith({ status: 'active' });
+  });
+
+  it('always includes the dev/native origins (not modelled as Applications)', async () => {
+    mockAppFind.mockReturnValueOnce(leanQuery([])); // no apps at all
+    const origins = await fedcmService.getApprovedClientOrigins();
+    for (const dev of DEV_NATIVE) {
+      expect(origins).toContain(dev);
+    }
+  });
+
+  it('does NOT approve an origin from a suspended/deleted app (only status:active is queried)', async () => {
+    // The service only queries { status: 'active' }; a suspended app is never
+    // returned by that query, so its origin must not appear.
+    mockAppFind.mockReturnValueOnce(
+      leanQuery([{ name: 'Active App', redirectUris: ['https://active.example/__oxy/sso-callback'] }])
+    );
+    const origins = await fedcmService.getApprovedClientOrigins();
+
+    expect(origins).toContain('https://active.example');
+    expect(origins).not.toContain('https://suspended.example');
+    // Guard: the query filters to active only.
+    expect(mockAppFind).toHaveBeenCalledWith({ status: 'active' });
+  });
+
+  it('normalises derived origins (lowercases host, strips path/trailing slash)', async () => {
+    mockAppFind.mockReturnValueOnce(
+      leanQuery([{ name: 'Mixed Case', redirectUris: ['HTTPS://Console.OXY.so/__oxy/sso-callback'] }])
+    );
+    const origins = await fedcmService.getApprovedClientOrigins();
+    expect(origins).toContain('https://console.oxy.so');
+    expect(origins).not.toContain('HTTPS://Console.OXY.so/__oxy/sso-callback');
+  });
+
+  it('unions manually-approved FedCMClient escape-hatch origins', async () => {
+    mockAppFind.mockReturnValueOnce(leanQuery([]));
+    mockClientFind.mockReturnValueOnce(leanQuery([{ origin: 'https://manual.example' }]));
+    const origins = await fedcmService.getApprovedClientOrigins();
+    expect(origins).toContain('https://manual.example');
+  });
+
+  it('fails soft to the dev/native set when the registry read throws', async () => {
+    mockAppFind.mockReturnValueOnce({
+      select: jest.fn().mockReturnValue({ lean: jest.fn().mockRejectedValue(new Error('db down')) }),
+    });
+    const origins = await fedcmService.getApprovedClientOrigins();
+    // Still fail-closed for everything else, but the dev/native set survives.
+    for (const dev of DEV_NATIVE) {
+      expect(origins).toContain(dev);
+    }
+  });
+});
+
+describe('FedCM seedApprovedClients (dev/native only — prod origins derive from the registry)', () => {
+  function seededOrigins(): string[] {
+    return mockClientFindOneAndUpdate.mock.calls.map((call) => call[0].origin);
+  }
+
+  it('seeds ONLY the dev/native origins (never a hardcoded prod app list)', async () => {
+    await fedcmService.seedApprovedClients();
+    const origins = seededOrigins();
+
+    expect(origins).toEqual(
+      expect.arrayContaining(['http://localhost:3000', 'http://localhost:8081', 'astro://auth'])
+    );
+    // The hardcoded prod app list is GONE — these must NOT be seeded as FedCMClient
+    // rows; they are derived from the Application registry instead.
+    for (const prod of ['https://console.oxy.so', 'https://mention.earth', 'https://oxy.so', 'https://fairco.in']) {
+      expect(origins).not.toContain(prod);
+    }
+  });
+
+  it('upserts each dev/native origin with approved:true via $set (additive, never downgrades)', async () => {
+    await fedcmService.seedApprovedClients();
+
+    for (const call of mockClientFindOneAndUpdate.mock.calls) {
+      const [filter, update, options] = call;
+      expect(filter).toEqual({ origin: expect.any(String) });
+      expect(update.$set).toEqual({ approved: true, autoSignIn: true });
+      expect(update.$setOnInsert.origin).toBe(filter.origin);
+      expect(update.$setOnInsert.name).toEqual(expect.any(String));
+      expect(update.$setOnInsert.approvedAt).toBeInstanceOf(Date);
+      expect(options).toEqual({ upsert: true, new: true });
+    }
+  });
+
+  it('is idempotent: re-running upserts the same dev/native origin set', async () => {
+    await fedcmService.seedApprovedClients();
+    const firstRun = seededOrigins();
+    expect(new Set(firstRun).size).toBe(firstRun.length);
+
+    mockClientFindOneAndUpdate.mockClear();
+
+    await fedcmService.seedApprovedClients();
+    const secondRun = seededOrigins();
+    expect(secondRun).toEqual(firstRun);
+  });
+
+  it('invalidates the approved-clients cache after seeding', async () => {
+    await fedcmService.seedApprovedClients();
+    expect(mockCacheInvalidate).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('FedCM getUserAuthorizedApps (display names from the Application registry)', () => {
+  it('labels a granted origin with its Application name + description', async () => {
+    mockAppFind.mockReturnValue(
+      leanQuery([
+        { name: 'Oxy Console', description: 'Developer console', redirectUris: ['https://console.oxy.so/__oxy/sso-callback'] },
+      ])
+    );
+    mockGrantFind.mockReturnValueOnce(
+      leanQuery([
+        { clientOrigin: 'https://console.oxy.so', firstGrantedAt: new Date('2026-01-01'), lastUsedAt: new Date('2026-06-01') },
+      ])
+    );
+
+    const apps = await fedcmService.getUserAuthorizedApps('user-123');
+    expect(apps).toHaveLength(1);
+    expect(apps[0]).toMatchObject({
+      origin: 'https://console.oxy.so',
+      name: 'Oxy Console',
+      description: 'Developer console',
+    });
+  });
+
+  it('drops a granted origin that has no active Application (de-approval never leaks back)', async () => {
+    mockAppFind.mockReturnValue(leanQuery([])); // no active apps
+    mockGrantFind.mockReturnValueOnce(
+      leanQuery([
+        { clientOrigin: 'https://gone.example', firstGrantedAt: new Date(), lastUsedAt: new Date() },
+      ])
+    );
+
+    const apps = await fedcmService.getUserAuthorizedApps('user-123');
+    expect(apps).toEqual([]);
   });
 });
 

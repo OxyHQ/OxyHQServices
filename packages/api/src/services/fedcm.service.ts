@@ -1,6 +1,7 @@
 import FedCMClient from '../models/FedCMClient';
 import FedCMNonce from '../models/FedCMNonce';
 import FedCMGrant from '../models/FedCMGrant';
+import { Application } from '../models/Application';
 import { User } from '../models/User';
 import { logger } from '../utils/logger';
 import { normaliseOrigin } from '../utils/origin';
@@ -8,6 +9,20 @@ import approvedClientsCache from '../utils/approvedClientsCache';
 import sessionService from './session.service';
 import { Request } from 'express';
 import * as crypto from 'crypto';
+
+/**
+ * Origins that must be approved as FedCM/SSO clients but are NOT represented by
+ * a registered {@link Application} — local dev servers and the native app
+ * callback scheme. These are intentionally a small, explicit constant: every
+ * PRODUCTION RP origin is derived from the Application registry instead (see
+ * `deriveApprovedOrigins`), so a newly-registered app is auto-approved and no
+ * production origin is ever "forgotten" in a hand-maintained list.
+ */
+const DEV_NATIVE_APPROVED_ORIGINS = [
+  'http://localhost:3000',
+  'http://localhost:8081',
+  'astro://auth',
+] as const;
 
 const NONCE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const NONCE_BYTES = 32;
@@ -133,20 +148,95 @@ function verifyIdToken(token: string): FedCMTokenPayload {
 class FedCMService {
   /**
    * Uncached read of all approved client origins straight from Mongo.
-   * Fail-soft: returns `[]` on error so callers (and the cache loader) never
-   * throw on a transient DB hiccup.
+   *
+   * Single source of truth: the production RP origins are DERIVED from the
+   * canonical {@link Application} registry — for every `status: 'active'`
+   * application, each of its `redirectUris` contributes its origin
+   * (`new URL(uri).origin`, normalised). Registering an app with a
+   * `https://<app>/__oxy/sso-callback` redirect therefore auto-approves its SSO
+   * origin; nothing has to be added to a hand-maintained list, so no app is
+   * ever forgotten (the bug that rejected console.oxy.so).
+   *
+   * Unioned with:
+   *  - {@link DEV_NATIVE_APPROVED_ORIGINS} (localhost dev + native scheme — not
+   *    modelled as Applications);
+   *  - any explicitly `approved` {@link FedCMClient} rows — the admin escape
+   *    hatch (`POST /fedcm/clients/approved`) for one-off origins that don't
+   *    (yet) have an Application. `seedApprovedClients` only ever seeds the
+   *    dev/native entries here.
+   *
+   * Fail-soft: returns the dev/native fallback on error so callers (and the
+   * cache loader) never throw on a transient DB hiccup; the FedCM exchange
+   * remains fail-closed for everything else (an unknown origin is rejected).
    */
   private async fetchApprovedClientOrigins(): Promise<string[]> {
-    try {
-      const clients = await FedCMClient.find({ approved: true })
-        .select('origin')
-        .lean();
+    const origins = new Set<string>();
 
-      return clients.map(client => client.origin);
-    } catch (error) {
-      logger.error('Error fetching approved FedCM clients:', error);
-      return [];
+    // Dev/native origins are always approved (a small, explicit constant).
+    for (const dev of DEV_NATIVE_APPROVED_ORIGINS) {
+      const normalised = normaliseOrigin(dev);
+      if (normalised) origins.add(normalised);
     }
+
+    try {
+      const [apps, manualClients] = await Promise.all([
+        Application.find({ status: 'active' }).select('redirectUris').lean(),
+        // Manual/admin-approved escape-hatch entries (not Applications).
+        FedCMClient.find({ approved: true }).select('origin').lean(),
+      ]);
+
+      for (const app of apps) {
+        for (const uri of app.redirectUris ?? []) {
+          const normalised = normaliseOrigin(uri);
+          if (normalised) origins.add(normalised);
+        }
+      }
+
+      for (const client of manualClients) {
+        const normalised = normaliseOrigin(client.origin);
+        if (normalised) origins.add(normalised);
+      }
+    } catch (error) {
+      logger.error('Error deriving approved FedCM origins from Application registry:', error);
+      // Fall through with whatever we have (the dev/native set) — fail-soft for
+      // the cache loader, still fail-closed for any origin not in the set.
+    }
+
+    return Array.from(origins);
+  }
+
+  /**
+   * Build an origin → friendly-display-name catalog for the "Connected apps"
+   * UI. Sourced from the {@link Application} registry (origin derived from each
+   * active app's `redirectUris`), with {@link FedCMClient} names as a fallback
+   * for manual/dev origins that have no Application. Fail-soft: returns an empty
+   * map on error.
+   */
+  private async fetchApprovedClientCatalog(): Promise<
+    Map<string, { name: string; description?: string }>
+  > {
+    const catalog = new Map<string, { name: string; description?: string }>();
+    try {
+      const [apps, manualClients] = await Promise.all([
+        Application.find({ status: 'active' }).select('name description redirectUris').lean(),
+        FedCMClient.find({ approved: true }).select('origin name description').lean(),
+      ]);
+
+      // FedCMClient first so an Application name wins when both exist.
+      for (const client of manualClients) {
+        const normalised = normaliseOrigin(client.origin);
+        if (normalised) catalog.set(normalised, { name: client.name, description: client.description });
+      }
+      for (const app of apps) {
+        for (const uri of app.redirectUris ?? []) {
+          const normalised = normaliseOrigin(uri);
+          if (normalised) catalog.set(normalised, { name: app.name, description: app.description });
+        }
+      }
+    } catch (error) {
+      logger.error('Error building approved-clients catalog:', error);
+    }
+    return catalog;
   }
 
   /**
@@ -171,86 +261,57 @@ class FedCMService {
   }
 
   /**
-   * Seed initial approved clients (run once during setup)
+   * Seed the dev/native FedCM clients (idempotent — run on startup).
+   *
+   * PRODUCTION RP origins are NOT seeded here: they are derived live from the
+   * {@link Application} registry by {@link fetchApprovedClientOrigins}. This
+   * function only persists the small {@link DEV_NATIVE_APPROVED_ORIGINS} set
+   * (localhost + native scheme) as {@link FedCMClient} rows so they survive in
+   * the admin-visible collection and the `getUserAuthorizedApps` catalog.
+   *
+   * Per-origin upsert: `$setOnInsert` writes the immutable creation metadata
+   * only on first insert (never duplicates a row or rewrites `approvedAt`);
+   * `$set: { approved, autoSignIn }` is applied on every run so a missing entry
+   * lands on the next boot and an accidentally-disapproved one is re-approved —
+   * it never removes or disapproves an existing client.
    */
   async seedApprovedClients(): Promise<void> {
     try {
-      const defaultClients = [
-        {
-          origin: 'https://oxy.so',
-          name: 'Oxy',
-          description: 'Oxy main platform',
-          approved: true,
-          autoSignIn: true,
-          approvedAt: new Date(),
-        },
-        {
-          origin: 'https://accounts.oxy.so',
-          name: 'Oxy Accounts',
-          description: 'Oxy accounts portal',
-          approved: true,
-          autoSignIn: true,
-          approvedAt: new Date(),
-        },
-        {
-          origin: 'https://homiio.com',
-          name: 'Homiio',
-          description: 'Homiio social platform',
-          approved: true,
-          autoSignIn: true,
-          approvedAt: new Date(),
-        },
-        {
-          origin: 'https://mention.earth',
-          name: 'Mention Earth',
-          description: 'Mention Earth platform',
-          approved: true,
-          autoSignIn: true,
-          approvedAt: new Date(),
-        },
-        {
-          origin: 'https://alia.onl',
-          name: 'Alia',
-          description: 'Alia platform',
-          approved: true,
-          autoSignIn: true,
-          approvedAt: new Date(),
-        },
+      const devNativeClients: Array<{ origin: string; name: string; description: string }> = [
         {
           origin: 'http://localhost:3000',
           name: 'Local Development (3000)',
           description: 'Development environment',
-          approved: true,
-          autoSignIn: true,
-          approvedAt: new Date(),
         },
         {
           origin: 'http://localhost:8081',
           name: 'Local Development (8081)',
           description: 'Expo development environment',
-          approved: true,
-          autoSignIn: true,
-          approvedAt: new Date(),
         },
         {
           origin: 'astro://auth',
           name: 'Astro Browser',
           description: 'Astro browser native auth callback',
-          approved: true,
-          autoSignIn: true,
-          approvedAt: new Date(),
         },
       ];
 
-      for (const clientData of defaultClients) {
+      for (const clientData of devNativeClients) {
         await FedCMClient.findOneAndUpdate(
           { origin: clientData.origin },
-          { $setOnInsert: clientData },
+          {
+            $set: { approved: true, autoSignIn: true },
+            $setOnInsert: {
+              origin: clientData.origin,
+              name: clientData.name,
+              description: clientData.description,
+              approvedAt: new Date(),
+            },
+          },
           { upsert: true, new: true }
         );
       }
 
-      logger.info(`Seeded ${defaultClients.length} FedCM approved clients`);
+      logger.info(`Seeded ${devNativeClients.length} dev/native FedCM clients (production origins derive from the Application registry)`);
       // Drop any list cached before/during seeding so the first read after
       // boot reflects the freshly-seeded allow-list.
       approvedClientsCache.invalidate();
@@ -369,29 +430,19 @@ class FedCMService {
    */
   async getUserAuthorizedApps(userId: string): Promise<AuthorizedAppSummary[]> {
     try {
-      const [grants, approvedClients] = await Promise.all([
+      // The friendly-name catalog is derived from the Application registry
+      // (origin → name/description), with FedCMClient names as the fallback for
+      // dev/native origins. Intersecting grants with this catalog also enforces
+      // the "de-approved origins never leak back" invariant: an origin with no
+      // active Application (and no manual FedCMClient row) has no catalog entry
+      // and is skipped below.
+      const [grants, approvedMap] = await Promise.all([
         FedCMGrant.find({ userId })
           .select('clientOrigin firstGrantedAt lastUsedAt')
           .sort({ lastUsedAt: -1 })
           .lean(),
-        // Intentionally NOT routed through approvedClientsCache: this is the
-        // Connected-apps UI which needs the richer { origin, name, description }
-        // projection, not just the origin list the cache stores.
-        FedCMClient.find({ approved: true })
-          .select('origin name description')
-          .lean(),
+        this.fetchApprovedClientCatalog(),
       ]);
-
-      const approvedMap = new Map<string, { name: string; description?: string }>();
-      for (const client of approvedClients) {
-        let key = client.origin;
-        try {
-          key = normaliseOriginOrThrow(client.origin);
-        } catch {
-          // Keep raw origin if normalisation fails (defensive — should not happen)
-        }
-        approvedMap.set(key, { name: client.name, description: client.description });
-      }
 
       const apps: AuthorizedAppSummary[] = [];
       for (const grant of grants) {
