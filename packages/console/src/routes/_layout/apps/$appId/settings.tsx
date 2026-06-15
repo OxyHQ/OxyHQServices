@@ -10,6 +10,7 @@ import {
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Spinner } from '@/components/ui/spinner';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   useApplication,
   useApplicationMembers,
@@ -67,10 +68,22 @@ function AppSettingsPage() {
           <HugeiconsIcon icon={ArrowLeft01Icon} size={14} />
           Back to applications
         </Link>
-        <h1 className="text-2xl font-semibold text-foreground">{application.name}</h1>
-        {application.description && (
-          <p className="text-sm text-muted-foreground mt-1">{application.description}</p>
-        )}
+        <div className="flex items-center gap-3">
+          <Avatar size="lg" className="rounded-lg after:rounded-lg">
+            {application.icon && (
+              <AvatarImage src={application.icon} alt={application.name} className="rounded-lg" />
+            )}
+            <AvatarFallback className="rounded-lg text-lg uppercase">
+              {application.name.charAt(0)}
+            </AvatarFallback>
+          </Avatar>
+          <div className="min-w-0">
+            <h1 className="text-2xl font-semibold text-foreground">{application.name}</h1>
+            {application.description && (
+              <p className="text-sm text-muted-foreground mt-1">{application.description}</p>
+            )}
+          </div>
+        </div>
       </div>
 
       <div className="px-6 py-6">

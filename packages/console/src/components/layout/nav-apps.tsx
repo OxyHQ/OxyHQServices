@@ -38,7 +38,15 @@ export function NavApps() {
           <SidebarMenuItem key={app._id}>
             <SidebarMenuButton asChild>
               <Link to="/apps/$appId/settings" params={{ appId: app._id }}>
-                <HugeiconsIcon icon={Package01Icon} size={16} />
+                {app.icon ? (
+                  <img
+                    src={app.icon}
+                    alt=""
+                    className="size-4 shrink-0 rounded-sm object-cover"
+                  />
+                ) : (
+                  <HugeiconsIcon icon={Package01Icon} size={16} />
+                )}
                 <span>{app.name}</span>
               </Link>
             </SidebarMenuButton>

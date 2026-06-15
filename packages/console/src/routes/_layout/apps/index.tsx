@@ -10,6 +10,7 @@ import {
 } from '@hugeicons/core-free-icons';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -148,24 +149,32 @@ function AppsPage() {
                         : ''
                     }`}
                   >
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm font-medium text-foreground">{app.name}</p>
-                        <Badge
-                          variant={app.status === 'active' ? 'default' : 'secondary'}
-                          className="text-xs"
-                        >
-                          {app.status === 'active' ? 'Active' : 'Inactive'}
-                        </Badge>
-                      </div>
-                      {app.description && (
-                        <p className="text-sm text-muted-foreground mt-0.5 line-clamp-1">
-                          {app.description}
+                    <div className="flex flex-1 items-start gap-3">
+                      <Avatar size="default" className="mt-0.5 rounded-lg after:rounded-lg">
+                        {app.icon && <AvatarImage src={app.icon} alt={app.name} className="rounded-lg" />}
+                        <AvatarFallback className="rounded-lg uppercase">
+                          {app.name.charAt(0)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-medium text-foreground">{app.name}</p>
+                          <Badge
+                            variant={app.status === 'active' ? 'default' : 'secondary'}
+                            className="text-xs"
+                          >
+                            {app.status === 'active' ? 'Active' : 'Inactive'}
+                          </Badge>
+                        </div>
+                        {app.description && (
+                          <p className="text-sm text-muted-foreground mt-0.5 line-clamp-1">
+                            {app.description}
+                          </p>
+                        )}
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Created {new Date(app.createdAt).toLocaleDateString()}
                         </p>
-                      )}
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Created {new Date(app.createdAt).toLocaleDateString()}
-                      </p>
+                      </div>
                     </div>
                     <HugeiconsIcon
                       icon={ArrowRight01Icon}

@@ -287,14 +287,14 @@ export function useInviteWorkspaceMember() {
   return useMutation({
     mutationFn: ({
       workspaceId,
-      userId,
+      usernameOrEmail,
       role,
     }: {
       workspaceId: string;
-      userId: string;
+      usernameOrEmail: string;
       role: AssignableWorkspaceRole;
     }): Promise<WorkspaceMember> =>
-      oxyServices.inviteWorkspaceMember(workspaceId, { userId, role }),
+      oxyServices.inviteWorkspaceMember(workspaceId, { usernameOrEmail, role }),
     onSuccess: (member) => {
       queryClient.invalidateQueries({ queryKey: workspaceQueryKeys.members(member.workspaceId) });
     },

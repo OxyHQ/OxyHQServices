@@ -101,8 +101,14 @@ export function SidebarHeaderBrand() {
                 size="lg"
                 className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
               >
-                <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                  {currentWorkspace.type === 'personal' ? (
+                <div className="flex aspect-square size-8 items-center justify-center overflow-hidden rounded-lg bg-primary text-primary-foreground">
+                  {currentWorkspace.icon ? (
+                    <img
+                      src={currentWorkspace.icon}
+                      alt={currentWorkspace.name}
+                      className="size-full object-cover"
+                    />
+                  ) : currentWorkspace.type === 'personal' ? (
                     <HugeiconsIcon icon={AiBrain01Icon} size={18} />
                   ) : (
                     <HugeiconsIcon icon={UserMultiple02Icon} size={18} />
@@ -132,8 +138,14 @@ export function SidebarHeaderBrand() {
                   className="gap-2 p-2"
                   onClick={() => handleSelectWorkspace(workspace)}
                 >
-                  <div className="flex size-6 items-center justify-center rounded-md border bg-primary text-primary-foreground">
-                    {workspace.type === 'personal' ? (
+                  <div className="flex size-6 items-center justify-center overflow-hidden rounded-md border bg-primary text-primary-foreground">
+                    {workspace.icon ? (
+                      <img
+                        src={workspace.icon}
+                        alt={workspace.name}
+                        className="size-full object-cover"
+                      />
+                    ) : workspace.type === 'personal' ? (
                       <HugeiconsIcon icon={AiBrain01Icon} size={14} />
                     ) : (
                       <HugeiconsIcon icon={UserMultiple02Icon} size={14} />

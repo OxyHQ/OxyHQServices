@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useState } from 'react';
+import { useAuth } from '@oxyhq/auth';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
   ArrowLeft01Icon,
@@ -18,6 +19,7 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { ImageUploadField } from '@/components/ui/image-upload-field';
 import {
   Select,
   SelectContent,
@@ -54,6 +56,11 @@ import {
   type AssignableWorkspaceRole,
 } from '@/hooks/use-workspace';
 import { toast } from 'sonner';
+import {
+  getErrorMessage,
+  isUserNotFoundError,
+  USER_NOT_FOUND_MESSAGE,
+} from '@/lib/api-error';
 
 export const Route = createFileRoute('/_layout/settings/workspace')({
   component: WorkspaceSettingsPage,
@@ -74,19 +81,13 @@ const roleDescriptions: Record<AssignableWorkspaceRole, string> = {
 
 const ASSIGNABLE_ROLES: AssignableWorkspaceRole[] = ['admin', 'member', 'viewer'];
 
-function getErrorMessage(error: unknown, fallback: string): string {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-  return fallback;
-}
-
 /** Short, readable handle for a member identified only by user id. */
 function shortUserId(userId: string): string {
   return userId.length > 10 ? `${userId.slice(0, 6)}…${userId.slice(-4)}` : userId;
 }
 
 function WorkspaceSettingsPage() {
+  const { oxyServices } = useAuth();
   const {
     currentWorkspace,
     updateWorkspace,
@@ -115,12 +116,14 @@ function WorkspaceSettingsPage() {
   // the inputs stay editable without an effect resetting them on every render.
   const [name, setName] = useState(() => currentWorkspace?.name ?? '');
   const [description, setDescription] = useState(() => currentWorkspace?.description ?? '');
+  const [icon, setIcon] = useState(() => currentWorkspace?.icon ?? '');
   const [isSaving, setIsSaving] = useState(false);
 
   // Invite dialog state
   const [showInviteDialog, setShowInviteDialog] = useState(false);
-  const [inviteUserId, setInviteUserId] = useState('');
+  const [inviteIdentifier, setInviteIdentifier] = useState('');
   const [inviteRole, setInviteRole] = useState<AssignableWorkspaceRole>('member');
+  const [inviteError, setInviteError] = useState<string | null>(null);
 
   // Delete dialog state
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
@@ -140,7 +143,8 @@ function WorkspaceSettingsPage() {
 
   const handleSave = async () => {
     const trimmed = name.trim();
-    if (!trimmed) {
+    // Personal workspaces cannot be renamed — never send a name change for them.
+    if (!isPersonal && !trimmed) {
       toast.error('Workspace name is required');
       return;
     }
@@ -148,7 +152,8 @@ function WorkspaceSettingsPage() {
     setIsSaving(true);
     try {
       await updateWorkspace(workspaceId, {
-        name: trimmed,
+        // Omit `name` for personal workspaces (rename is blocked server-side).
+        ...(isPersonal ? {} : { name: trimmed }),
         description: description.trim() || null,
       });
       toast.success('Workspace updated');
@@ -159,24 +164,54 @@ function WorkspaceSettingsPage() {
     }
   };
 
+  // The avatar uploader resolves a public URL, then persists it immediately so
+  // the change lands without requiring the (team-only) "Save changes" button.
+  // Works for personal AND team workspaces — only renames are blocked for personal.
+  const handleAvatarChange = async (url: string) => {
+    setIcon(url);
+    try {
+      await updateWorkspace(workspaceId, { icon: url || null });
+      toast.success(url ? 'Workspace avatar updated' : 'Workspace avatar removed');
+    } catch (error) {
+      // Revert the local preview to the persisted value on failure.
+      setIcon(currentWorkspace.icon ?? '');
+      toast.error(getErrorMessage(error, 'Failed to update workspace avatar'));
+    }
+  };
+
+  const handleInviteDialogChange = (open: boolean) => {
+    setShowInviteDialog(open);
+    if (!open) {
+      setInviteIdentifier('');
+      setInviteRole('member');
+      setInviteError(null);
+    }
+  };
+
   const handleInvite = async () => {
-    const trimmed = inviteUserId.trim();
-    if (!trimmed) {
-      toast.error('User ID is required');
+    const usernameOrEmail = inviteIdentifier.trim();
+    if (!usernameOrEmail) {
+      setInviteError('Enter a username or email to invite');
       return;
     }
+    setInviteError(null);
 
     try {
       await inviteMemberMutation.mutateAsync({
         workspaceId,
-        userId: trimmed,
+        usernameOrEmail,
         role: inviteRole,
       });
       toast.success('Invitation sent');
       setShowInviteDialog(false);
-      setInviteUserId('');
+      setInviteIdentifier('');
       setInviteRole('member');
     } catch (error) {
+      if (isUserNotFoundError(error)) {
+        setInviteError(USER_NOT_FOUND_MESSAGE);
+        toast.error(USER_NOT_FOUND_MESSAGE);
+        return;
+      }
       toast.error(getErrorMessage(error, 'Failed to send invitation'));
     }
   };
@@ -250,8 +285,16 @@ function WorkspaceSettingsPage() {
           Back to dashboard
         </Link>
         <div className="flex items-center gap-3">
-          <div className="flex aspect-square size-10 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            <HugeiconsIcon icon={UserMultiple02Icon} size={20} />
+          <div className="flex aspect-square size-10 items-center justify-center overflow-hidden rounded-lg bg-primary text-primary-foreground">
+            {currentWorkspace.icon ? (
+              <img
+                src={currentWorkspace.icon}
+                alt={currentWorkspace.name}
+                className="size-full object-cover"
+              />
+            ) : (
+              <HugeiconsIcon icon={UserMultiple02Icon} size={20} />
+            )}
           </div>
           <div>
             <h1 className="text-2xl font-semibold text-foreground">Workspace Settings</h1>
@@ -264,6 +307,20 @@ function WorkspaceSettingsPage() {
       <div className="px-6 py-6 border-b border-border">
         <h2 className="text-sm font-semibold text-foreground mb-4">General</h2>
         <div className="space-y-4 max-w-md">
+          <div className="space-y-2">
+            <Label>Avatar</Label>
+            <ImageUploadField
+              oxyServices={oxyServices}
+              value={icon}
+              onChange={handleAvatarChange}
+              disabled={!canEdit}
+              label="Workspace avatar"
+              onError={(message) => toast.error(message)}
+              fallback={
+                <HugeiconsIcon icon={UserMultiple02Icon} size={24} className="text-muted-foreground" />
+              }
+            />
+          </div>
           <div className="space-y-2">
             <Label htmlFor="name">Workspace name</Label>
             <Input
@@ -478,24 +535,41 @@ function WorkspaceSettingsPage() {
       )}
 
       {/* Invite Dialog */}
-      <Dialog open={showInviteDialog} onOpenChange={setShowInviteDialog}>
+      <Dialog open={showInviteDialog} onOpenChange={handleInviteDialogChange}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Invite team member</DialogTitle>
             <DialogDescription>
-              Add a member by their Oxy user ID and choose their role.
+              Add a member by their username or email and choose their role.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="invite-user-id">User ID</Label>
+              <Label htmlFor="invite-identifier">Username or email</Label>
               <Input
-                id="invite-user-id"
-                value={inviteUserId}
-                onChange={(e) => setInviteUserId(e.target.value)}
-                placeholder="64f0c1a2b3c4d5e6f7a8b9c0"
-                className="font-mono"
+                id="invite-identifier"
+                value={inviteIdentifier}
+                onChange={(e) => {
+                  setInviteIdentifier(e.target.value);
+                  if (inviteError) {
+                    setInviteError(null);
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    void handleInvite();
+                  }
+                }}
+                placeholder="alice or alice@example.com"
+                aria-invalid={inviteError ? true : undefined}
+                aria-describedby={inviteError ? 'invite-identifier-error' : undefined}
               />
+              {inviteError && (
+                <p id="invite-identifier-error" className="text-sm text-destructive">
+                  {inviteError}
+                </p>
+              )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="invite-role">Role</Label>
@@ -522,12 +596,12 @@ function WorkspaceSettingsPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowInviteDialog(false)}>
+            <Button variant="outline" onClick={() => handleInviteDialogChange(false)}>
               Cancel
             </Button>
             <Button
               onClick={handleInvite}
-              disabled={inviteMemberMutation.isPending || !inviteUserId.trim()}
+              disabled={inviteMemberMutation.isPending || !inviteIdentifier.trim()}
             >
               {inviteMemberMutation.isPending ? 'Sending...' : 'Send invite'}
             </Button>

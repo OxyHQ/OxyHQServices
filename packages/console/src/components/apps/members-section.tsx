@@ -36,6 +36,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
+import { getErrorMessage, isUserNotFoundError, USER_NOT_FOUND_MESSAGE } from '@/lib/api-error';
 import {
   useApplicationMembers,
   useInviteMember,
@@ -51,13 +52,6 @@ import {
 
 /** Roles assignable via invite — everything except `owner`. */
 type AssignableRole = InviteMemberInput['role'];
-
-function getErrorMessage(error: unknown, fallback: string): string {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-  return fallback;
-}
 
 // Roles that can be assigned to a non-owner member. Ownership is changed only
 // via the transfer-ownership flow.
@@ -95,28 +89,45 @@ export function MembersSection({ application, access }: MembersSectionProps) {
   const transferOwnership = useTransferOwnership();
 
   const [showInviteDialog, setShowInviteDialog] = useState(false);
-  const [inviteUserId, setInviteUserId] = useState('');
+  const [inviteIdentifier, setInviteIdentifier] = useState('');
   const [inviteRole, setInviteRole] = useState<AssignableRole>('developer');
+  const [inviteError, setInviteError] = useState<string | null>(null);
   const [memberToRemove, setMemberToRemove] = useState<ApplicationMember | null>(null);
   const [memberToPromote, setMemberToPromote] = useState<ApplicationMember | null>(null);
 
   const ownerCount = members.filter((m) => m.role === 'owner').length;
 
+  const handleInviteDialogChange = (open: boolean) => {
+    setShowInviteDialog(open);
+    if (!open) {
+      setInviteIdentifier('');
+      setInviteRole('developer');
+      setInviteError(null);
+    }
+  };
+
   const handleInvite = async () => {
-    if (!inviteUserId.trim()) {
-      toast.error('Enter a user ID to invite');
+    const usernameOrEmail = inviteIdentifier.trim();
+    if (!usernameOrEmail) {
+      setInviteError('Enter a username or email to invite');
       return;
     }
+    setInviteError(null);
     try {
       await inviteMember.mutateAsync({
         appId,
-        data: { userId: inviteUserId.trim(), role: inviteRole },
+        data: { usernameOrEmail, role: inviteRole },
       });
       setShowInviteDialog(false);
-      setInviteUserId('');
+      setInviteIdentifier('');
       setInviteRole('developer');
       toast.success('Member added');
     } catch (error) {
+      if (isUserNotFoundError(error)) {
+        setInviteError(USER_NOT_FOUND_MESSAGE);
+        toast.error(USER_NOT_FOUND_MESSAGE);
+        return;
+      }
       toast.error(getErrorMessage(error, 'Failed to add member'));
     }
   };
@@ -298,26 +309,43 @@ export function MembersSection({ application, access }: MembersSectionProps) {
       )}
 
       {/* Invite Member Dialog */}
-      <Dialog open={showInviteDialog} onOpenChange={setShowInviteDialog}>
+      <Dialog open={showInviteDialog} onOpenChange={handleInviteDialogChange}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Add member</DialogTitle>
             <DialogDescription>
-              Add a member by their user ID and choose their role.
+              Add a member by their username or email and choose their role.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="invite-user-id" className="text-sm">
-                User ID
+              <Label htmlFor="invite-identifier" className="text-sm">
+                Username or email
               </Label>
               <Input
-                id="invite-user-id"
-                value={inviteUserId}
-                onChange={(e) => setInviteUserId(e.target.value)}
-                placeholder="64f0c1a2b3c4d5e6f7a8b9c0"
-                className="font-mono"
+                id="invite-identifier"
+                value={inviteIdentifier}
+                onChange={(e) => {
+                  setInviteIdentifier(e.target.value);
+                  if (inviteError) {
+                    setInviteError(null);
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    void handleInvite();
+                  }
+                }}
+                placeholder="alice or alice@example.com"
+                aria-invalid={inviteError ? true : undefined}
+                aria-describedby={inviteError ? 'invite-identifier-error' : undefined}
               />
+              {inviteError && (
+                <p id="invite-identifier-error" className="text-sm text-destructive">
+                  {inviteError}
+                </p>
+              )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="invite-role" className="text-sm">
@@ -344,10 +372,13 @@ export function MembersSection({ application, access }: MembersSectionProps) {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowInviteDialog(false)}>
+            <Button variant="outline" onClick={() => handleInviteDialogChange(false)}>
               Cancel
             </Button>
-            <Button onClick={handleInvite} disabled={inviteMember.isPending || !inviteUserId.trim()}>
+            <Button
+              onClick={handleInvite}
+              disabled={inviteMember.isPending || !inviteIdentifier.trim()}
+            >
               {inviteMember.isPending ? 'Adding...' : 'Add member'}
             </Button>
           </DialogFooter>

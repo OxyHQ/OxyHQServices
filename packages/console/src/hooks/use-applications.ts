@@ -70,7 +70,11 @@ export type ApplicationPermission =
   | 'ownership:transfer';
 
 export interface InviteMemberInput {
-  userId: string;
+  /**
+   * The username or email of the user to invite. Resolved to a user server-side;
+   * an unknown value yields a 404 "User not found".
+   */
+  usernameOrEmail: string;
   /** Owner cannot be invited — ownership is transferred, never granted. */
   role: Exclude<ApplicationRole, 'owner'>;
 }
@@ -231,7 +235,7 @@ export function useInviteMember() {
       data: InviteMemberInput;
     }): Promise<ApplicationMember> =>
       oxyServices.inviteApplicationMember(appId, {
-        userId: data.userId,
+        usernameOrEmail: data.usernameOrEmail,
         role: data.role,
       }),
     onSuccess: (member) => {

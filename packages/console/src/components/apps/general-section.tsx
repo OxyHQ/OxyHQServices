@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
+import { useAuth } from '@oxyhq/auth';
 import { HugeiconsIcon } from '@hugeicons/react';
-import { Add01Icon, Delete02Icon } from '@hugeicons/core-free-icons';
+import { Add01Icon, Delete02Icon, Image01Icon } from '@hugeicons/core-free-icons';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { ImageUploadField } from '@/components/ui/image-upload-field';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -18,19 +20,13 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
+import { getErrorMessage } from '@/lib/api-error';
 import {
   useUpdateApplication,
   useDeleteApplication,
   type Application,
   type CallerAccess,
 } from '@/hooks/use-applications';
-
-function getErrorMessage(error: unknown, fallback: string): string {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-  return fallback;
-}
 
 function arraysEqual(a: string[], b: string[]): boolean {
   if (a.length !== b.length) {
@@ -46,6 +42,7 @@ interface GeneralSectionProps {
 
 export function GeneralSection({ application, access }: GeneralSectionProps) {
   const navigate = useNavigate();
+  const { oxyServices } = useAuth();
   const canEdit = access.can('app:update');
   const canDelete = access.can('app:delete');
   const updateApplication = useUpdateApplication();
@@ -96,7 +93,9 @@ export function GeneralSection({ application, access }: GeneralSectionProps) {
           name: name.trim(),
           description: description.trim() || undefined,
           websiteUrl: websiteUrl.trim() || undefined,
-          icon: icon.trim() || undefined,
+          // Sent verbatim (empty string clears the logo) since the value comes
+          // from the upload widget, never free-text.
+          icon: icon.trim(),
           redirectUris,
         },
       });
@@ -169,16 +168,23 @@ export function GeneralSection({ application, access }: GeneralSectionProps) {
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="app-icon" className="text-sm">
-            Icon URL
-          </Label>
-          <Input
-            id="app-icon"
-            type="url"
+          <Label className="text-sm">Logo</Label>
+          <ImageUploadField
+            oxyServices={oxyServices}
             value={icon}
-            onChange={(e) => setIcon(e.target.value)}
-            placeholder="https://example.com/icon.png"
+            onChange={setIcon}
             disabled={!canEdit}
+            label="Application logo"
+            onError={(message) => toast.error(message)}
+            fallback={
+              application.name ? (
+                <span className="text-lg font-semibold uppercase">
+                  {application.name.charAt(0)}
+                </span>
+              ) : (
+                <HugeiconsIcon icon={Image01Icon} size={24} />
+              )
+            }
           />
         </div>
       </section>
