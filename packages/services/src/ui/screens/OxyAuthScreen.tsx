@@ -221,8 +221,11 @@ const OxyAuthScreen: React.FC<BaseScreenProps> = ({
 
     socket.on('connect_error', (err) => {
       debug.log('Socket connection error, falling back to polling:', (err instanceof Error ? err.message : null));
-      // Fall back to polling if socket fails
+      // Realtime transport errored — reflect the honest connection state. The
+      // poll is already running (started unconditionally in
+      // `generateAuthSession`), so `startPolling` here is a no-op backstop.
       socket.disconnect();
+      setConnectionType('polling');
       startPolling(sessionToken);
     });
 
@@ -231,9 +234,13 @@ const OxyAuthScreen: React.FC<BaseScreenProps> = ({
     });
   }, [oxyServices, handleAuthSuccess]);
 
-  // Start polling for authorization (fallback)
+  // Start polling for authorization.
+  //
+  // Idempotent: if a poll interval is already running this is a no-op, so the
+  // `connect_error` path (which also calls this) cannot stack a second interval
+  // on top of the always-on poll started in `generateAuthSession`.
   const startPolling = useCallback((sessionToken: string) => {
-    setConnectionType('polling');
+    if (pollingIntervalRef.current) return;
 
     pollingIntervalRef.current = setInterval(async () => {
       if (isProcessingRef.current) return;
@@ -312,14 +319,17 @@ const OxyAuthScreen: React.FC<BaseScreenProps> = ({
       setAuthSession({ sessionToken, expiresAt });
       setIsWaiting(true);
 
-      // Try socket first, will fall back to polling if needed
+      // Socket is the fast path; the poll is a transport-independent backstop
+      // that guarantees completion even if the socket connects but silently
+      // never delivers auth_update (RN transport / idle-timeout).
       connectSocket(sessionToken);
+      startPolling(sessionToken);
     } catch (err: unknown) {
       setError((err instanceof Error ? err.message : null) || 'Failed to create auth session');
     } finally {
       setIsLoading(false);
     }
-  }, [oxyServices, connectSocket, clientId]);
+  }, [oxyServices, connectSocket, startPolling, clientId]);
 
   // Generate a random session token
   const generateSessionToken = (): string => {

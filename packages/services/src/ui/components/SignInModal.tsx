@@ -233,8 +233,14 @@ const SignInModal: React.FC = () => {
         });
     }, [oxyServices, handleAuthSuccess, cleanup]);
 
-    // Start polling for authorization (fallback)
+    // Start polling for authorization.
+    //
+    // Idempotent: if a poll interval is already running this is a no-op, so the
+    // `connect_error` path (which also calls this) cannot stack a second
+    // interval on top of the always-on poll started in `generateAuthSession`.
     const startPolling = useCallback((sessionToken: string) => {
+        if (pollingIntervalRef.current) return;
+
         pollingIntervalRef.current = setInterval(async () => {
             if (isProcessingRef.current) return;
 
@@ -292,13 +298,18 @@ const SignInModal: React.FC = () => {
 
             setAuthSession({ sessionToken, expiresAt });
             setIsWaiting(true);
+            // Socket is the fast path; the poll is a transport-independent
+            // backstop that guarantees completion even if the socket connects
+            // but silently never delivers auth_update (RN transport /
+            // idle-timeout).
             connectSocket(sessionToken);
+            startPolling(sessionToken);
         } catch (err: unknown) {
             setError((err instanceof Error ? err.message : null) || 'Failed to create auth session');
         } finally {
             setIsLoading(false);
         }
-    }, [oxyServices, connectSocket, clientId]);
+    }, [oxyServices, connectSocket, startPolling, clientId]);
 
     // Generate a cryptographically random session token.
     // 16 random bytes -> 32 hex chars (128 bits of entropy) — unguessable.
