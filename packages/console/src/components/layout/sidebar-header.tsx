@@ -46,24 +46,25 @@ export function SidebarHeaderBrand() {
   const [newWorkspaceDescription, setNewWorkspaceDescription] = React.useState('');
   const [isCreating, setIsCreating] = React.useState(false);
 
-  const handleCreateWorkspace = () => {
-    if (!newWorkspaceName.trim()) {
+  const handleCreateWorkspace = async () => {
+    const name = newWorkspaceName.trim();
+    if (!name) {
       toast.error('Please enter a workspace name');
       return;
     }
 
     setIsCreating(true);
     try {
-      createWorkspace({
-        name: newWorkspaceName.trim(),
+      await createWorkspace({
+        name,
         description: newWorkspaceDescription.trim() || undefined,
       });
-      toast.success(`Workspace "${newWorkspaceName.trim()}" created`);
+      toast.success(`Workspace "${name}" created`);
       setShowCreateDialog(false);
       setNewWorkspaceName('');
       setNewWorkspaceDescription('');
-    } catch {
-      toast.error('Failed to create workspace');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to create workspace');
     } finally {
       setIsCreating(false);
     }
@@ -127,7 +128,7 @@ export function SidebarHeaderBrand() {
               </DropdownMenuLabel>
               {workspaces.map((workspace) => (
                 <DropdownMenuItem
-                  key={workspace.id}
+                  key={workspace._id}
                   className="gap-2 p-2"
                   onClick={() => handleSelectWorkspace(workspace)}
                 >
@@ -139,7 +140,7 @@ export function SidebarHeaderBrand() {
                     )}
                   </div>
                   <span className="flex-1">{workspace.name}</span>
-                  {currentWorkspace.id === workspace.id && (
+                  {currentWorkspace._id === workspace._id && (
                     <HugeiconsIcon icon={Tick02Icon} size={14} className="text-primary" />
                   )}
                 </DropdownMenuItem>

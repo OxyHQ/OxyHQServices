@@ -125,6 +125,11 @@ export function MembersSection({ application, access }: MembersSectionProps) {
     if (role === member.role) {
       return;
     }
+    // Synthetic, workspace-derived memberships have no `_id` and are managed
+    // via Workspace settings, not per-app.
+    if (!member._id) {
+      return;
+    }
     try {
       await updateMember.mutateAsync({ appId, memberId: member._id, data: { role } });
       toast.success('Role updated');
@@ -134,7 +139,7 @@ export function MembersSection({ application, access }: MembersSectionProps) {
   };
 
   const handleRemove = async () => {
-    if (!memberToRemove) {
+    if (!memberToRemove || !memberToRemove._id) {
       return;
     }
     try {
@@ -196,13 +201,20 @@ export function MembersSection({ application, access }: MembersSectionProps) {
             const isOwner = member.role === 'owner';
             const isSelf = member.userId === access.membership?.userId;
             const isLastOwner = isOwner && ownerCount <= 1;
+            // Synthetic, workspace-derived rows (`_id: null` / `source: 'workspace'`)
+            // are managed in Workspace settings, never per-app — render them
+            // read-only here.
+            const isWorkspaceManaged = member._id === null || member.source === 'workspace';
             // An owner's role cannot be changed inline; admins cannot modify owners.
-            const canEditThisRole = canUpdate && !isOwner;
-            const canRemoveThisMember = canRemove && !isLastOwner && (!isOwner || canTransfer);
+            const canEditThisRole = canUpdate && !isOwner && !isWorkspaceManaged;
+            const canRemoveThisMember =
+              canRemove && !isLastOwner && !isWorkspaceManaged && (!isOwner || canTransfer);
+            const canTransferToThis =
+              canTransfer && !isOwner && !isWorkspaceManaged && member.status === 'active';
 
             return (
               <div
-                key={member._id}
+                key={member._id ?? `workspace:${member.userId}`}
                 className="flex items-center justify-between gap-4 px-4 py-3"
               >
                 <div className="min-w-0 flex-1">
@@ -222,6 +234,11 @@ export function MembersSection({ application, access }: MembersSectionProps) {
                     {isSelf && (
                       <Badge variant="outline" className="text-xs">
                         You
+                      </Badge>
+                    )}
+                    {isWorkspaceManaged && (
+                      <Badge variant="secondary" className="text-xs">
+                        Workspace
                       </Badge>
                     )}
                   </div>
@@ -250,7 +267,7 @@ export function MembersSection({ application, access }: MembersSectionProps) {
                     <Badge variant="outline">{roleLabel(member.role)}</Badge>
                   )}
 
-                  {canTransfer && !isOwner && member.status === 'active' && (
+                  {canTransferToThis && (
                     <Button
                       variant="ghost"
                       size="icon-sm"

@@ -8,6 +8,7 @@ import {
   UserMultiple02Icon,
   Mail01Icon,
   Cancel01Icon,
+  CrownIcon,
 } from '@hugeicons/core-free-icons';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -44,9 +45,13 @@ import {
 } from '@/components/ui/alert-dialog';
 import {
   useWorkspace,
+  useWorkspaceMembers,
+  useInviteWorkspaceMember,
+  useUpdateWorkspaceMember,
+  useRemoveWorkspaceMember,
   type WorkspaceRole,
   type WorkspaceMember,
-  type WorkspaceInvite,
+  type AssignableWorkspaceRole,
 } from '@/hooks/use-workspace';
 import { toast } from 'sonner';
 
@@ -61,42 +66,68 @@ const roleLabels: Record<WorkspaceRole, string> = {
   viewer: 'Viewer',
 };
 
-const roleDescriptions: Record<WorkspaceRole, string> = {
-  owner: 'Full access, can delete workspace',
+const roleDescriptions: Record<AssignableWorkspaceRole, string> = {
   admin: 'Can manage members and settings',
   member: 'Can create apps and API keys',
   viewer: 'Read-only access',
 };
+
+const ASSIGNABLE_ROLES: AssignableWorkspaceRole[] = ['admin', 'member', 'viewer'];
+
+function getErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  return fallback;
+}
+
+/** Short, readable handle for a member identified only by user id. */
+function shortUserId(userId: string): string {
+  return userId.length > 10 ? `${userId.slice(0, 6)}…${userId.slice(-4)}` : userId;
+}
 
 function WorkspaceSettingsPage() {
   const {
     currentWorkspace,
     updateWorkspace,
     deleteWorkspace,
-    inviteMember,
-    removeMember,
-    updateMemberRole,
-    cancelInvite,
     canEditWorkspace,
     canManageMembers,
     canDeleteWorkspace,
   } = useWorkspace();
 
-  const [name, setName] = useState(currentWorkspace?.name || '');
-  const [description, setDescription] = useState(currentWorkspace?.description || '');
+  const workspaceId = currentWorkspace?._id;
+  const isPersonal = currentWorkspace?.type === 'personal';
+
+  // Members are fetched only for team workspaces with permission to read them.
+  const canManage = currentWorkspace ? canManageMembers(currentWorkspace) : false;
+  const membersQuery = useWorkspaceMembers(workspaceId, !!currentWorkspace && !isPersonal);
+  const members = membersQuery.data ?? [];
+  const activeMembers = members.filter((m) => m.status === 'active');
+  const pendingInvites = members.filter((m) => m.status === 'invited');
+  const ownerCount = activeMembers.filter((m) => m.role === 'owner').length;
+
+  const inviteMemberMutation = useInviteWorkspaceMember();
+  const updateMemberMutation = useUpdateWorkspaceMember();
+  const removeMemberMutation = useRemoveWorkspaceMember();
+
+  // General form — seeded from the current workspace via lazy initializers so
+  // the inputs stay editable without an effect resetting them on every render.
+  const [name, setName] = useState(() => currentWorkspace?.name ?? '');
+  const [description, setDescription] = useState(() => currentWorkspace?.description ?? '');
   const [isSaving, setIsSaving] = useState(false);
 
   // Invite dialog state
   const [showInviteDialog, setShowInviteDialog] = useState(false);
-  const [inviteEmail, setInviteEmail] = useState('');
-  const [inviteRole, setInviteRole] = useState<WorkspaceRole>('member');
-  const [isInviting, setIsInviting] = useState(false);
+  const [inviteUserId, setInviteUserId] = useState('');
+  const [inviteRole, setInviteRole] = useState<AssignableWorkspaceRole>('member');
 
   // Delete dialog state
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [deleteConfirmation, setDeleteConfirmation] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
 
-  if (!currentWorkspace) {
+  if (!currentWorkspace || !workspaceId) {
     return (
       <div className="flex-1 bg-background flex items-center justify-center">
         <p className="text-sm text-muted-foreground">Loading...</p>
@@ -105,89 +136,105 @@ function WorkspaceSettingsPage() {
   }
 
   const canEdit = canEditWorkspace(currentWorkspace);
-  const canManage = canManageMembers(currentWorkspace);
-  const canDelete = canDeleteWorkspace(currentWorkspace);
-  const isPersonal = currentWorkspace.type === 'personal';
+  const canDelete = canDeleteWorkspace(currentWorkspace) && !isPersonal;
 
-  const handleSave = () => {
-    if (!name.trim()) {
+  const handleSave = async () => {
+    const trimmed = name.trim();
+    if (!trimmed) {
       toast.error('Workspace name is required');
       return;
     }
 
     setIsSaving(true);
     try {
-      updateWorkspace(currentWorkspace.id, {
-        name: name.trim(),
-        description: description.trim() || undefined,
+      await updateWorkspace(workspaceId, {
+        name: trimmed,
+        description: description.trim() || null,
       });
       toast.success('Workspace updated');
-    } catch {
-      toast.error('Failed to update workspace');
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Failed to update workspace'));
     } finally {
       setIsSaving(false);
     }
   };
 
-  const handleInvite = () => {
-    if (!inviteEmail.trim()) {
-      toast.error('Email is required');
+  const handleInvite = async () => {
+    const trimmed = inviteUserId.trim();
+    if (!trimmed) {
+      toast.error('User ID is required');
       return;
     }
 
-    setIsInviting(true);
     try {
-      const invite = inviteMember(currentWorkspace.id, inviteEmail.trim(), inviteRole);
-      if (invite) {
-        toast.success(`Invite sent to ${inviteEmail}`);
-        setShowInviteDialog(false);
-        setInviteEmail('');
-        setInviteRole('member');
-      } else {
-        toast.error('Failed to send invite');
-      }
-    } catch {
-      toast.error('Failed to send invite');
-    } finally {
-      setIsInviting(false);
+      await inviteMemberMutation.mutateAsync({
+        workspaceId,
+        userId: trimmed,
+        role: inviteRole,
+      });
+      toast.success('Invitation sent');
+      setShowInviteDialog(false);
+      setInviteUserId('');
+      setInviteRole('member');
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Failed to send invitation'));
     }
   };
 
-  const handleRemoveMember = (member: WorkspaceMember) => {
-    if (removeMember(currentWorkspace.id, member.id)) {
-      toast.success(`${member.name || member.email} removed`);
-    } else {
-      toast.error('Failed to remove member');
+  const handleRemoveMember = async (member: WorkspaceMember) => {
+    try {
+      await removeMemberMutation.mutateAsync({ workspaceId, memberId: member._id });
+      toast.success('Member removed');
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Failed to remove member'));
     }
   };
 
-  const handleRoleChange = (member: WorkspaceMember, role: WorkspaceRole) => {
-    if (updateMemberRole(currentWorkspace.id, member.id, role)) {
-      toast.success(`Role updated for ${member.name || member.email}`);
-    } else {
-      toast.error('Failed to update role');
+  const handleRoleChange = async (member: WorkspaceMember, role: AssignableWorkspaceRole) => {
+    if (role === member.role) {
+      return;
+    }
+    try {
+      await updateMemberMutation.mutateAsync({ workspaceId, memberId: member._id, role });
+      toast.success('Role updated');
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Failed to update role'));
     }
   };
 
-  const handleCancelInvite = (invite: WorkspaceInvite) => {
-    if (cancelInvite(currentWorkspace.id, invite.id)) {
-      toast.success('Invite cancelled');
-    } else {
-      toast.error('Failed to cancel invite');
+  // Invitations are members with `status: 'invited'`; cancelling one is the
+  // same operation as removing a member.
+  const handleCancelInvite = async (invite: WorkspaceMember) => {
+    try {
+      await removeMemberMutation.mutateAsync({ workspaceId, memberId: invite._id });
+      toast.success('Invitation cancelled');
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Failed to cancel invitation'));
     }
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (deleteConfirmation !== currentWorkspace.name) {
       toast.error('Please type the workspace name to confirm');
       return;
     }
 
-    if (deleteWorkspace(currentWorkspace.id)) {
+    setIsDeleting(true);
+    try {
+      await deleteWorkspace(workspaceId);
       toast.success('Workspace deleted');
       setShowDeleteDialog(false);
-    } else {
-      toast.error('Failed to delete workspace');
+      setDeleteConfirmation('');
+    } catch (error) {
+      // The API returns 409 when the workspace still owns applications.
+      toast.error(
+        getErrorMessage(
+          error,
+          'Failed to delete workspace. Move or delete its apps first.'
+        )
+      );
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -265,78 +312,113 @@ function WorkspaceSettingsPage() {
           </div>
 
           {/* Members List */}
-          <div className="space-y-2">
-            {currentWorkspace.members?.map((member) => (
-              <div
-                key={member.id}
-                className="flex items-center justify-between py-3 px-4 rounded-lg border"
-              >
-                <div className="flex items-center gap-3">
-                  <Avatar className="size-8">
-                    <AvatarFallback>
-                      {member.name?.[0]?.toUpperCase() || member.email[0].toUpperCase()}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div>
-                    <p className="text-sm font-medium">{member.name || member.email}</p>
-                    <p className="text-xs text-muted-foreground">{member.email}</p>
+          {membersQuery.isLoading ? (
+            <div className="space-y-2">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="h-14 rounded-lg bg-muted animate-pulse" />
+              ))}
+            </div>
+          ) : activeMembers.length === 0 ? (
+            <p className="py-8 text-center text-sm text-muted-foreground">No members yet.</p>
+          ) : (
+            <div className="space-y-2">
+              {activeMembers.map((member) => {
+                const isOwner = member.role === 'owner';
+                const isLastOwner = isOwner && ownerCount <= 1;
+                const canEditThisRole = canManage && !isOwner;
+                const canRemoveThisMember = canManage && !isOwner && !isLastOwner;
+
+                return (
+                  <div
+                    key={member._id}
+                    className="flex items-center justify-between py-3 px-4 rounded-lg border"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <Avatar className="size-8">
+                        <AvatarFallback>
+                          {member.userId[0]?.toUpperCase() ?? '?'}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="min-w-0">
+                        <p className="text-sm font-mono truncate" title={member.userId}>
+                          {shortUserId(member.userId)}
+                        </p>
+                        <p className="text-xs text-muted-foreground">{roleLabels[member.role]}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {isOwner ? (
+                        <Badge variant="secondary" className="gap-1">
+                          <HugeiconsIcon icon={CrownIcon} size={12} />
+                          Owner
+                        </Badge>
+                      ) : canEditThisRole ? (
+                        <Select
+                          value={member.role}
+                          onValueChange={(value) =>
+                            handleRoleChange(member, value as AssignableWorkspaceRole)
+                          }
+                        >
+                          <SelectTrigger className="w-28 h-8">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {ASSIGNABLE_ROLES.map((role) => (
+                              <SelectItem key={role} value={role}>
+                                {roleLabels[role]}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <Badge variant="outline">{roleLabels[member.role]}</Badge>
+                      )}
+                      {canRemoveThisMember && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-destructive"
+                          onClick={() => handleRemoveMember(member)}
+                          aria-label="Remove member"
+                        >
+                          <HugeiconsIcon icon={Cancel01Icon} size={14} />
+                        </Button>
+                      )}
+                    </div>
                   </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  {member.role === 'owner' ? (
-                    <Badge variant="secondary">Owner</Badge>
-                  ) : canManage ? (
-                    <Select
-                      value={member.role}
-                      onValueChange={(value) => handleRoleChange(member, value as WorkspaceRole)}
-                    >
-                      <SelectTrigger className="w-28 h-8">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="admin">Admin</SelectItem>
-                        <SelectItem value="member">Member</SelectItem>
-                        <SelectItem value="viewer">Viewer</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  ) : (
-                    <Badge variant="outline">{roleLabels[member.role]}</Badge>
-                  )}
-                  {canManage && member.role !== 'owner' && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-destructive"
-                      onClick={() => handleRemoveMember(member)}
-                    >
-                      <HugeiconsIcon icon={Cancel01Icon} size={14} />
-                    </Button>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
+                );
+              })}
+            </div>
+          )}
 
           {/* Pending Invites */}
-          {currentWorkspace.invites && currentWorkspace.invites.length > 0 && (
+          {pendingInvites.length > 0 && (
             <>
               <Separator className="my-4" />
               <h3 className="text-sm font-medium text-muted-foreground mb-3">Pending Invites</h3>
               <div className="space-y-2">
-                {currentWorkspace.invites.map((invite) => (
+                {pendingInvites.map((invite) => (
                   <div
-                    key={invite.id}
+                    key={invite._id}
                     className="flex items-center justify-between py-3 px-4 rounded-lg border border-dashed"
                   >
-                    <div className="flex items-center gap-3">
-                      <div className="flex items-center justify-center size-8 rounded-full bg-muted">
-                        <HugeiconsIcon icon={Mail01Icon} size={14} className="text-muted-foreground" />
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="flex items-center justify-center size-8 rounded-full bg-muted shrink-0">
+                        <HugeiconsIcon
+                          icon={Mail01Icon}
+                          size={14}
+                          className="text-muted-foreground"
+                        />
                       </div>
-                      <div>
-                        <p className="text-sm">{invite.email}</p>
+                      <div className="min-w-0">
+                        <p className="text-sm font-mono truncate" title={invite.userId}>
+                          {shortUserId(invite.userId)}
+                        </p>
                         <p className="text-xs text-muted-foreground">
-                          Invited as {roleLabels[invite.role]} •{' '}
-                          {new Date(invite.invitedAt).toLocaleDateString()}
+                          Invited as {roleLabels[invite.role]}
+                          {invite.createdAt
+                            ? ` • ${new Date(invite.createdAt).toLocaleDateString()}`
+                            : ''}
                         </p>
                       </div>
                     </div>
@@ -357,16 +439,15 @@ function WorkspaceSettingsPage() {
         </div>
       )}
 
-      {/* Billing */}
+      {/* Billing — workspace billing isn't a backend concept here; the dedicated
+          Billing page covers it. */}
       <div className="px-6 py-6 border-b border-border">
         <h2 className="text-sm font-semibold text-foreground mb-4">Billing</h2>
         <div className="flex items-center justify-between p-4 rounded-lg border">
           <div>
-            <p className="text-sm font-medium capitalize">
-              {currentWorkspace.billing?.plan || 'Free'} Plan
-            </p>
+            <p className="text-sm font-medium">Billing &amp; usage</p>
             <p className="text-xs text-muted-foreground">
-              {currentWorkspace.billing?.credits?.toLocaleString() || 0} credits available
+              Manage your plan, credits, and invoices.
             </p>
           </div>
           <Button variant="outline" size="sm" asChild>
@@ -384,7 +465,7 @@ function WorkspaceSettingsPage() {
               <div>
                 <p className="text-sm font-medium">Delete workspace</p>
                 <p className="text-xs text-muted-foreground">
-                  This will permanently delete the workspace and all associated data.
+                  This permanently deletes the workspace. Move or delete its apps first.
                 </p>
               </div>
               <Button variant="destructive" size="sm" onClick={() => setShowDeleteDialog(true)}>
@@ -402,45 +483,40 @@ function WorkspaceSettingsPage() {
           <DialogHeader>
             <DialogTitle>Invite team member</DialogTitle>
             <DialogDescription>
-              Send an invitation to join this workspace.
+              Add a member by their Oxy user ID and choose their role.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="invite-email">Email address</Label>
+              <Label htmlFor="invite-user-id">User ID</Label>
               <Input
-                id="invite-email"
-                type="email"
-                value={inviteEmail}
-                onChange={(e) => setInviteEmail(e.target.value)}
-                placeholder="colleague@example.com"
+                id="invite-user-id"
+                value={inviteUserId}
+                onChange={(e) => setInviteUserId(e.target.value)}
+                placeholder="64f0c1a2b3c4d5e6f7a8b9c0"
+                className="font-mono"
               />
             </div>
             <div className="space-y-2">
               <Label htmlFor="invite-role">Role</Label>
-              <Select value={inviteRole} onValueChange={(v) => setInviteRole(v as WorkspaceRole)}>
-                <SelectTrigger>
+              <Select
+                value={inviteRole}
+                onValueChange={(v) => setInviteRole(v as AssignableWorkspaceRole)}
+              >
+                <SelectTrigger id="invite-role">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="admin">
-                    <div>
-                      <span className="font-medium">Admin</span>
-                      <p className="text-xs text-muted-foreground">{roleDescriptions.admin}</p>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="member">
-                    <div>
-                      <span className="font-medium">Member</span>
-                      <p className="text-xs text-muted-foreground">{roleDescriptions.member}</p>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="viewer">
-                    <div>
-                      <span className="font-medium">Viewer</span>
-                      <p className="text-xs text-muted-foreground">{roleDescriptions.viewer}</p>
-                    </div>
-                  </SelectItem>
+                  {ASSIGNABLE_ROLES.map((role) => (
+                    <SelectItem key={role} value={role}>
+                      <div className="flex flex-col">
+                        <span className="font-medium">{roleLabels[role]}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {roleDescriptions[role]}
+                        </span>
+                      </div>
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -449,8 +525,11 @@ function WorkspaceSettingsPage() {
             <Button variant="outline" onClick={() => setShowInviteDialog(false)}>
               Cancel
             </Button>
-            <Button onClick={handleInvite} disabled={isInviting || !inviteEmail.trim()}>
-              {isInviting ? 'Sending...' : 'Send invite'}
+            <Button
+              onClick={handleInvite}
+              disabled={inviteMemberMutation.isPending || !inviteUserId.trim()}
+            >
+              {inviteMemberMutation.isPending ? 'Sending...' : 'Send invite'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -463,7 +542,7 @@ function WorkspaceSettingsPage() {
             <AlertDialogTitle>Delete workspace</AlertDialogTitle>
             <AlertDialogDescription>
               This action cannot be undone. This will permanently delete the workspace "
-              {currentWorkspace.name}" and all associated data including apps and API keys.
+              {currentWorkspace.name}". The workspace must have no apps before it can be deleted.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="py-4">
@@ -483,10 +562,10 @@ function WorkspaceSettingsPage() {
             <AlertDialogCancel onClick={() => setDeleteConfirmation('')}>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDelete}
-              disabled={deleteConfirmation !== currentWorkspace.name}
+              disabled={deleteConfirmation !== currentWorkspace.name || isDeleting}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Delete workspace
+              {isDeleting ? 'Deleting...' : 'Delete workspace'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

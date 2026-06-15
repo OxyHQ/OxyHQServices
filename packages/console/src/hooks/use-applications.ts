@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@oxyhq/auth';
+import { useWorkspace } from '@/hooks/use-workspace';
 import type {
   Application,
   ApplicationMember,
@@ -89,8 +90,14 @@ export interface CreateCredentialInput {
 // Query keys
 // ===========================================================================
 
+/**
+ * Prefix matching every workspace-scoped applications list. Used to patch all
+ * cached lists (across workspaces) on update/delete via a partial key match.
+ */
+const APPLICATIONS_LIST_PREFIX = ['applications'] as const;
+
 const queryKeys = {
-  applications: ['applications'] as const,
+  applications: (workspaceId: string | undefined) => ['applications', workspaceId ?? null] as const,
   application: (appId: string) => ['application', appId] as const,
   members: (appId: string) => ['application-members', appId] as const,
   credentials: (appId: string) => ['application-credentials', appId] as const,
@@ -103,13 +110,15 @@ const queryKeys = {
 
 export function useApplications() {
   const { oxyServices, isAuthenticated, isReady } = useAuth();
+  const { currentWorkspace } = useWorkspace();
+  const workspaceId = currentWorkspace?._id;
 
   return useQuery({
-    queryKey: queryKeys.applications,
-    queryFn: () => oxyServices.getApplications(),
+    queryKey: queryKeys.applications(workspaceId),
+    queryFn: () => oxyServices.getApplications(workspaceId),
     staleTime: 1000 * 60 * 5,
     retry: 2,
-    enabled: isReady && isAuthenticated,
+    enabled: isReady && isAuthenticated && !!workspaceId,
   });
 }
 
@@ -127,13 +136,19 @@ export function useApplication(appId: string) {
 
 export function useCreateApplication() {
   const { oxyServices } = useAuth();
+  const { currentWorkspace } = useWorkspace();
   const queryClient = useQueryClient();
+  const workspaceId = currentWorkspace?._id;
 
   return useMutation({
     mutationFn: (data: CreateApplicationInput): Promise<Application> =>
-      oxyServices.createApplication(data),
+      // New apps land in the current workspace. An explicit `workspaceId` on
+      // the input still wins; otherwise scope to the active workspace.
+      oxyServices.createApplication(
+        workspaceId ? { workspaceId, ...data } : data
+      ),
     onSuccess: (newApp) => {
-      queryClient.setQueryData<Application[]>(queryKeys.applications, (old) =>
+      queryClient.setQueryData<Application[]>(queryKeys.applications(workspaceId), (old) =>
         old ? [newApp, ...old] : [newApp]
       );
       queryClient.setQueryData(queryKeys.application(newApp._id), newApp);
@@ -154,8 +169,11 @@ export function useUpdateApplication() {
       data: UpdateApplicationInput;
     }): Promise<Application> => oxyServices.updateApplication(appId, data),
     onSuccess: (updatedApp) => {
-      queryClient.setQueryData<Application[]>(queryKeys.applications, (old) =>
-        old ? old.map((app) => (app._id === updatedApp._id ? updatedApp : app)) : [updatedApp]
+      // Patch the app in every cached workspace-scoped list (prefix match).
+      queryClient.setQueriesData<Application[]>(
+        { queryKey: APPLICATIONS_LIST_PREFIX },
+        (old) =>
+          old ? old.map((app) => (app._id === updatedApp._id ? updatedApp : app)) : old
       );
       queryClient.setQueryData(queryKeys.application(updatedApp._id), updatedApp);
     },
@@ -172,8 +190,10 @@ export function useDeleteApplication() {
       return appId;
     },
     onSuccess: (appId) => {
-      queryClient.setQueryData<Application[]>(queryKeys.applications, (old) =>
-        old ? old.filter((app) => app._id !== appId) : []
+      // Drop the app from every cached workspace-scoped list (prefix match).
+      queryClient.setQueriesData<Application[]>(
+        { queryKey: APPLICATIONS_LIST_PREFIX },
+        (old) => (old ? old.filter((app) => app._id !== appId) : old)
       );
       queryClient.removeQueries({ queryKey: queryKeys.application(appId) });
       queryClient.removeQueries({ queryKey: queryKeys.members(appId) });

@@ -1,55 +1,51 @@
 import * as React from 'react';
+import { useQuery, useMutation, useQueryClient, type UseQueryResult } from '@tanstack/react-query';
 import { useAuth } from '@oxyhq/auth';
+import type {
+  Workspace,
+  WorkspaceMember,
+  WorkspaceRole,
+  WorkspaceType,
+  WorkspaceStatus,
+  WorkspaceMemberStatus,
+  CreateWorkspaceInput,
+  UpdateWorkspaceInput,
+} from '@oxyhq/core';
 
-export type WorkspaceRole = 'owner' | 'admin' | 'member' | 'viewer';
+// ===========================================================================
+// Types — re-exported from @oxyhq/core so the Console shares the single
+// source of truth (the `workspaces` mixin) rather than maintaining a
+// parallel copy that can drift from the API contract.
+// ===========================================================================
 
-export interface WorkspaceMember {
-  id: string;
-  email: string;
-  name?: string;
-  avatar?: string;
-  role: WorkspaceRole;
-  joinedAt: string;
-  invitedBy?: string;
-}
+export type {
+  Workspace,
+  WorkspaceMember,
+  WorkspaceRole,
+  WorkspaceType,
+  WorkspaceStatus,
+  WorkspaceMemberStatus,
+  CreateWorkspaceInput,
+  UpdateWorkspaceInput,
+};
 
-export interface WorkspaceInvite {
-  id: string;
-  email: string;
-  role: WorkspaceRole;
-  invitedAt: string;
-  invitedBy: string;
-  expiresAt: string;
-  status: 'pending' | 'accepted' | 'expired';
-}
+/**
+ * Permission strings derived from the member's role server-side.
+ * The Console gates UI affordances on these values directly — it never
+ * re-derives them from the role, so the role map stays single-sourced in the API.
+ */
+export type WorkspacePermission =
+  | 'workspace:read'
+  | 'workspace:update'
+  | 'workspace:delete'
+  | 'members:read'
+  | 'members:invite'
+  | 'members:update'
+  | 'members:remove'
+  | 'ownership:transfer';
 
-export interface WorkspaceBilling {
-  plan: 'free' | 'pro' | 'enterprise';
-  credits: number;
-  creditsUsed: number;
-  billingEmail?: string;
-  nextBillingDate?: string;
-}
-
-export interface Workspace {
-  id: string;
-  name: string;
-  slug?: string;
-  description?: string;
-  type: 'personal' | 'team';
-  icon?: string;
-  createdAt: string;
-  updatedAt?: string;
-  ownerId?: string;
-  members?: WorkspaceMember[];
-  invites?: WorkspaceInvite[];
-  billing?: WorkspaceBilling;
-  settings?: {
-    defaultRole: WorkspaceRole;
-    allowMemberInvites: boolean;
-    requireApproval: boolean;
-  };
-}
+/** Roles assignable via invite/update — everything except `owner`. */
+export type AssignableWorkspaceRole = Exclude<WorkspaceRole, 'owner'>;
 
 interface WorkspaceContextValue {
   // State
@@ -59,401 +55,178 @@ interface WorkspaceContextValue {
 
   // Workspace CRUD
   setCurrentWorkspace: (workspace: Workspace) => void;
-  createWorkspace: (data: CreateWorkspaceData) => Workspace;
-  updateWorkspace: (id: string, data: UpdateWorkspaceData) => Workspace | null;
-  deleteWorkspace: (id: string) => boolean;
+  createWorkspace: (data: CreateWorkspaceInput) => Promise<Workspace>;
+  updateWorkspace: (id: string, data: UpdateWorkspaceInput) => Promise<Workspace>;
+  deleteWorkspace: (id: string) => Promise<void>;
 
-  // Team Management
-  inviteMember: (workspaceId: string, email: string, role: WorkspaceRole) => WorkspaceInvite | null;
-  removeMember: (workspaceId: string, memberId: string) => boolean;
-  updateMemberRole: (workspaceId: string, memberId: string, role: WorkspaceRole) => boolean;
-  cancelInvite: (workspaceId: string, inviteId: string) => boolean;
-
-  // Permissions
+  // Permissions — derived from the workspace's embedded `callerMembership`.
   canEditWorkspace: (workspace: Workspace) => boolean;
   canManageMembers: (workspace: Workspace) => boolean;
   canDeleteWorkspace: (workspace: Workspace) => boolean;
   getUserRole: (workspace: Workspace) => WorkspaceRole | null;
 }
 
-export interface CreateWorkspaceData {
-  name: string;
-  description?: string;
-  type?: 'personal' | 'team';
-}
-
-export interface UpdateWorkspaceData {
-  name?: string;
-  description?: string;
-  icon?: string;
-  settings?: Workspace['settings'];
-}
-
 const WorkspaceContext = React.createContext<WorkspaceContextValue | null>(null);
 
-const STORAGE_KEY = 'oxy-workspaces';
-const CURRENT_WORKSPACE_KEY = 'oxy-current-workspace';
+const CURRENT_WORKSPACE_KEY = 'oxy-current-workspace-id';
 
-// Workspace, invite, and member IDs are persisted to localStorage as the
-// canonical client-side identifiers (no server-generated ID replaces them),
-// so we use crypto.randomUUID() for proper uniqueness. Available in all
-// modern browsers and Node 19+.
-function generateId() {
-  return crypto.randomUUID();
+const workspaceQueryKeys = {
+  all: ['workspaces'] as const,
+  members: (workspaceId: string) => ['workspace-members', workspaceId] as const,
+};
+
+function readStoredWorkspaceId(): string | null {
+  try {
+    return localStorage.getItem(CURRENT_WORKSPACE_KEY);
+  } catch {
+    // localStorage can throw in privacy modes / SSR — treat as no selection.
+    return null;
+  }
 }
 
-function generateSlug(name: string) {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '');
+function persistWorkspaceId(id: string): void {
+  try {
+    localStorage.setItem(CURRENT_WORKSPACE_KEY, id);
+  } catch (error) {
+    // Persisting the selection is best-effort; surface for diagnostics only.
+    if (import.meta.env.DEV) {
+      console.warn('Failed to persist current workspace id', error);
+    }
+  }
+}
+
+/** Pick the default workspace: the personal one, else the first available. */
+function pickDefaultWorkspace(workspaces: Workspace[]): Workspace | null {
+  if (workspaces.length === 0) {
+    return null;
+  }
+  return workspaces.find((w) => w.type === 'personal') ?? workspaces[0];
+}
+
+/** A workspace permission check that reads the embedded `callerMembership`. */
+function hasPermission(workspace: Workspace, permissions: WorkspacePermission[]): boolean {
+  const granted = workspace.callerMembership?.permissions;
+  if (!granted) {
+    return false;
+  }
+  return permissions.some((p) => granted.includes(p));
 }
 
 export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
-  const { user, isAuthenticated, isReady } = useAuth();
-  const [workspaces, setWorkspaces] = React.useState<Workspace[]>([]);
-  const [currentWorkspace, setCurrentWorkspaceState] = React.useState<Workspace | null>(null);
-  const [isLoading, setIsLoading] = React.useState(true);
+  const { oxyServices, isAuthenticated, isReady } = useAuth();
+  const queryClient = useQueryClient();
 
-  const userId = (user?._id as string) || (user?.id as string) || 'anonymous';
+  const workspacesQuery = useQuery({
+    queryKey: workspaceQueryKeys.all,
+    queryFn: () => oxyServices.getWorkspaces(),
+    enabled: isReady && isAuthenticated,
+    staleTime: 1000 * 60 * 5,
+    retry: 2,
+  });
 
-  // Persist workspaces to localStorage
-  const persistWorkspaces = React.useCallback((updated: Workspace[]) => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-  }, []);
+  const workspaces = React.useMemo(() => workspacesQuery.data ?? [], [workspacesQuery.data]);
 
-  // Initialize workspaces from localStorage
+  // Selected workspace id, seeded from localStorage. Updates are user-driven
+  // (switcher) so a single setter + a small persistence effect is enough.
+  const [selectedId, setSelectedId] = React.useState<string | null>(() => readStoredWorkspaceId());
+
+  // Resolve the current workspace from the selection, falling back to the
+  // default (personal-first) when the selection is missing or invalid.
+  const currentWorkspace = React.useMemo<Workspace | null>(() => {
+    if (workspaces.length === 0) {
+      return null;
+    }
+    const selected = selectedId ? workspaces.find((w) => w._id === selectedId) : undefined;
+    return selected ?? pickDefaultWorkspace(workspaces);
+  }, [workspaces, selectedId]);
+
+  // Keep the persisted selection aligned with the resolved current workspace.
+  // This reconciles a stale/invalid stored id to the actual default once the
+  // list loads. Persistence is the only side-effect, so a small effect is fine.
   React.useEffect(() => {
-    if (!isReady) return;
+    if (currentWorkspace && currentWorkspace._id !== selectedId) {
+      setSelectedId(currentWorkspace._id);
+      persistWorkspaceId(currentWorkspace._id);
+    }
+  }, [currentWorkspace, selectedId]);
 
-    const initWorkspaces = () => {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      let storedWorkspaces: Workspace[] = stored ? JSON.parse(stored) : [];
-
-      if (isAuthenticated && user) {
-        // Create personal workspace if it doesn't exist
-        const personalWorkspace: Workspace = {
-          id: 'personal',
-          name: 'Personal Account',
-          slug: 'personal',
-          type: 'personal',
-          createdAt: new Date().toISOString(),
-          ownerId: userId,
-          members: [
-            {
-              id: userId,
-              email: user.email || '',
-              name: user.username || 'You',
-              role: 'owner',
-              joinedAt: new Date().toISOString(),
-            },
-          ],
-          billing: {
-            plan: 'free',
-            credits: 300,
-            creditsUsed: 0,
-          },
-          settings: {
-            defaultRole: 'member',
-            allowMemberInvites: false,
-            requireApproval: false,
-          },
-        };
-
-        const hasPersonal = storedWorkspaces.some((w) => w.id === 'personal');
-        if (!hasPersonal) {
-          storedWorkspaces = [personalWorkspace, ...storedWorkspaces];
-          persistWorkspaces(storedWorkspaces);
-        } else {
-          // Update personal workspace owner if needed
-          storedWorkspaces = storedWorkspaces.map((w) =>
-            w.id === 'personal' ? { ...w, ownerId: userId } : w
-          );
-        }
-
-        setWorkspaces(storedWorkspaces);
-
-        // Set current workspace
-        const currentId = localStorage.getItem(CURRENT_WORKSPACE_KEY);
-        const current = storedWorkspaces.find((w) => w.id === currentId) || personalWorkspace;
-        setCurrentWorkspaceState(current);
-      } else {
-        setWorkspaces([]);
-        setCurrentWorkspaceState(null);
-      }
-
-      setIsLoading(false);
-    };
-
-    initWorkspaces();
-  }, [isReady, isAuthenticated, user, userId, persistWorkspaces]);
-
-  // Set current workspace
   const setCurrentWorkspace = React.useCallback((workspace: Workspace) => {
-    setCurrentWorkspaceState(workspace);
-    localStorage.setItem(CURRENT_WORKSPACE_KEY, workspace.id);
+    setSelectedId(workspace._id);
+    persistWorkspaceId(workspace._id);
   }, []);
 
-  // Create workspace
+  const createWorkspaceMutation = useMutation({
+    mutationFn: (data: CreateWorkspaceInput): Promise<Workspace> =>
+      oxyServices.createWorkspace(data),
+    onSuccess: (created) => {
+      queryClient.invalidateQueries({ queryKey: workspaceQueryKeys.all });
+      setCurrentWorkspace(created);
+    },
+  });
+
+  const updateWorkspaceMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: UpdateWorkspaceInput }): Promise<Workspace> =>
+      oxyServices.updateWorkspace(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: workspaceQueryKeys.all });
+    },
+  });
+
+  const deleteWorkspaceMutation = useMutation({
+    mutationFn: async (id: string): Promise<void> => {
+      await oxyServices.deleteWorkspace(id);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: workspaceQueryKeys.all });
+    },
+  });
+
   const createWorkspace = React.useCallback(
-    (data: CreateWorkspaceData): Workspace => {
-      const newWorkspace: Workspace = {
-        id: `workspace-${generateId()}`,
-        name: data.name,
-        slug: generateSlug(data.name),
-        description: data.description,
-        type: data.type || 'team',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        ownerId: userId,
-        members: [
-          {
-            id: userId,
-            email: user?.email || '',
-            name: user?.username || 'You',
-            role: 'owner',
-            joinedAt: new Date().toISOString(),
-          },
-        ],
-        invites: [],
-        billing: {
-          plan: 'free',
-          credits: 0,
-          creditsUsed: 0,
-        },
-        settings: {
-          defaultRole: 'member',
-          allowMemberInvites: true,
-          requireApproval: false,
-        },
-      };
-
-      const updatedWorkspaces = [...workspaces, newWorkspace];
-      setWorkspaces(updatedWorkspaces);
-      persistWorkspaces(updatedWorkspaces);
-      setCurrentWorkspace(newWorkspace);
-
-      return newWorkspace;
-    },
-    [workspaces, userId, user, persistWorkspaces, setCurrentWorkspace]
+    (data: CreateWorkspaceInput): Promise<Workspace> => createWorkspaceMutation.mutateAsync(data),
+    [createWorkspaceMutation]
   );
 
-  // Update workspace
   const updateWorkspace = React.useCallback(
-    (id: string, data: UpdateWorkspaceData): Workspace | null => {
-      const workspace = workspaces.find((w) => w.id === id);
-      if (!workspace) return null;
-
-      const updatedWorkspace: Workspace = {
-        ...workspace,
-        ...data,
-        slug: data.name ? generateSlug(data.name) : workspace.slug,
-        updatedAt: new Date().toISOString(),
-        settings: data.settings ? { ...workspace.settings, ...data.settings } : workspace.settings,
-      };
-
-      const updatedWorkspaces = workspaces.map((w) => (w.id === id ? updatedWorkspace : w));
-      setWorkspaces(updatedWorkspaces);
-      persistWorkspaces(updatedWorkspaces);
-
-      // Update current workspace if it's the one being edited
-      if (currentWorkspace?.id === id) {
-        setCurrentWorkspaceState(updatedWorkspace);
-      }
-
-      return updatedWorkspace;
-    },
-    [workspaces, currentWorkspace, persistWorkspaces]
+    (id: string, data: UpdateWorkspaceInput): Promise<Workspace> =>
+      updateWorkspaceMutation.mutateAsync({ id, data }),
+    [updateWorkspaceMutation]
   );
 
-  // Delete workspace
   const deleteWorkspace = React.useCallback(
-    (id: string): boolean => {
-      if (id === 'personal') return false; // Can't delete personal workspace
-
-      const updatedWorkspaces = workspaces.filter((w) => w.id !== id);
-      setWorkspaces(updatedWorkspaces);
-      persistWorkspaces(updatedWorkspaces);
-
-      // Switch to personal if deleting current workspace
-      if (currentWorkspace?.id === id) {
-        const personal = updatedWorkspaces.find((w) => w.id === 'personal');
-        if (personal) {
-          setCurrentWorkspace(personal);
-        }
-      }
-
-      return true;
-    },
-    [workspaces, currentWorkspace, persistWorkspaces, setCurrentWorkspace]
+    (id: string): Promise<void> => deleteWorkspaceMutation.mutateAsync(id),
+    [deleteWorkspaceMutation]
   );
 
-  // Invite member
-  const inviteMember = React.useCallback(
-    (workspaceId: string, email: string, role: WorkspaceRole): WorkspaceInvite | null => {
-      const workspace = workspaces.find((w) => w.id === workspaceId);
-      if (!workspace) return null;
-
-      const invite: WorkspaceInvite = {
-        id: `invite-${generateId()}`,
-        email,
-        role,
-        invitedAt: new Date().toISOString(),
-        invitedBy: userId,
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // 7 days
-        status: 'pending',
-      };
-
-      const updatedWorkspace: Workspace = {
-        ...workspace,
-        invites: [...(workspace.invites || []), invite],
-        updatedAt: new Date().toISOString(),
-      };
-
-      const updatedWorkspaces = workspaces.map((w) => (w.id === workspaceId ? updatedWorkspace : w));
-      setWorkspaces(updatedWorkspaces);
-      persistWorkspaces(updatedWorkspaces);
-
-      if (currentWorkspace?.id === workspaceId) {
-        setCurrentWorkspaceState(updatedWorkspace);
-      }
-
-      return invite;
-    },
-    [workspaces, userId, currentWorkspace, persistWorkspaces]
-  );
-
-  // Remove member
-  const removeMember = React.useCallback(
-    (workspaceId: string, memberId: string): boolean => {
-      const workspace = workspaces.find((w) => w.id === workspaceId);
-      if (!workspace || !workspace.members) return false;
-
-      // Can't remove owner
-      const member = workspace.members.find((m) => m.id === memberId);
-      if (member?.role === 'owner') return false;
-
-      const updatedWorkspace: Workspace = {
-        ...workspace,
-        members: workspace.members.filter((m) => m.id !== memberId),
-        updatedAt: new Date().toISOString(),
-      };
-
-      const updatedWorkspaces = workspaces.map((w) => (w.id === workspaceId ? updatedWorkspace : w));
-      setWorkspaces(updatedWorkspaces);
-      persistWorkspaces(updatedWorkspaces);
-
-      if (currentWorkspace?.id === workspaceId) {
-        setCurrentWorkspaceState(updatedWorkspace);
-      }
-
-      return true;
-    },
-    [workspaces, currentWorkspace, persistWorkspaces]
-  );
-
-  // Update member role
-  const updateMemberRole = React.useCallback(
-    (workspaceId: string, memberId: string, role: WorkspaceRole): boolean => {
-      const workspace = workspaces.find((w) => w.id === workspaceId);
-      if (!workspace || !workspace.members) return false;
-
-      // Can't change owner's role
-      const member = workspace.members.find((m) => m.id === memberId);
-      if (member?.role === 'owner') return false;
-
-      const updatedWorkspace: Workspace = {
-        ...workspace,
-        members: workspace.members.map((m) => (m.id === memberId ? { ...m, role } : m)),
-        updatedAt: new Date().toISOString(),
-      };
-
-      const updatedWorkspaces = workspaces.map((w) => (w.id === workspaceId ? updatedWorkspace : w));
-      setWorkspaces(updatedWorkspaces);
-      persistWorkspaces(updatedWorkspaces);
-
-      if (currentWorkspace?.id === workspaceId) {
-        setCurrentWorkspaceState(updatedWorkspace);
-      }
-
-      return true;
-    },
-    [workspaces, currentWorkspace, persistWorkspaces]
-  );
-
-  // Cancel invite
-  const cancelInvite = React.useCallback(
-    (workspaceId: string, inviteId: string): boolean => {
-      const workspace = workspaces.find((w) => w.id === workspaceId);
-      if (!workspace || !workspace.invites) return false;
-
-      const updatedWorkspace: Workspace = {
-        ...workspace,
-        invites: workspace.invites.filter((i) => i.id !== inviteId),
-        updatedAt: new Date().toISOString(),
-      };
-
-      const updatedWorkspaces = workspaces.map((w) => (w.id === workspaceId ? updatedWorkspace : w));
-      setWorkspaces(updatedWorkspaces);
-      persistWorkspaces(updatedWorkspaces);
-
-      if (currentWorkspace?.id === workspaceId) {
-        setCurrentWorkspaceState(updatedWorkspace);
-      }
-
-      return true;
-    },
-    [workspaces, currentWorkspace, persistWorkspaces]
-  );
-
-  // Permission helpers
   const getUserRole = React.useCallback(
-    (workspace: Workspace): WorkspaceRole | null => {
-      if (workspace.type === 'personal') return 'owner';
-      const member = workspace.members?.find((m) => m.id === userId);
-      return member?.role || null;
-    },
-    [userId]
+    (workspace: Workspace): WorkspaceRole | null => workspace.callerMembership?.role ?? null,
+    []
   );
 
   const canEditWorkspace = React.useCallback(
-    (workspace: Workspace): boolean => {
-      const role = getUserRole(workspace);
-      return role === 'owner' || role === 'admin';
-    },
-    [getUserRole]
+    (workspace: Workspace): boolean => hasPermission(workspace, ['workspace:update']),
+    []
   );
 
   const canManageMembers = React.useCallback(
-    (workspace: Workspace): boolean => {
-      if (workspace.type === 'personal') return false;
-      const role = getUserRole(workspace);
-      return role === 'owner' || role === 'admin';
-    },
-    [getUserRole]
+    (workspace: Workspace): boolean =>
+      hasPermission(workspace, ['members:invite', 'members:update', 'members:remove']),
+    []
   );
 
   const canDeleteWorkspace = React.useCallback(
-    (workspace: Workspace): boolean => {
-      if (workspace.id === 'personal') return false;
-      return getUserRole(workspace) === 'owner';
-    },
-    [getUserRole]
+    (workspace: Workspace): boolean => hasPermission(workspace, ['workspace:delete']),
+    []
   );
 
-  const value = React.useMemo(
+  const value = React.useMemo<WorkspaceContextValue>(
     () => ({
       workspaces,
       currentWorkspace,
-      isLoading,
+      isLoading: workspacesQuery.isLoading,
       setCurrentWorkspace,
       createWorkspace,
       updateWorkspace,
       deleteWorkspace,
-      inviteMember,
-      removeMember,
-      updateMemberRole,
-      cancelInvite,
       canEditWorkspace,
       canManageMembers,
       canDeleteWorkspace,
@@ -462,15 +235,11 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     [
       workspaces,
       currentWorkspace,
-      isLoading,
+      workspacesQuery.isLoading,
       setCurrentWorkspace,
       createWorkspace,
       updateWorkspace,
       deleteWorkspace,
-      inviteMember,
-      removeMember,
-      updateMemberRole,
-      cancelInvite,
       canEditWorkspace,
       canManageMembers,
       canDeleteWorkspace,
@@ -487,4 +256,89 @@ export function useWorkspace() {
     throw new Error('useWorkspace must be used within WorkspaceProvider');
   }
   return context;
+}
+
+// ===========================================================================
+// Members — queried per-workspace. There is NO separate "invite" entity:
+// invitations are members with `status: 'invited'`. Pending invites are
+// therefore `members.filter((m) => m.status === 'invited')`, and cancelling an
+// invite is the same operation as removing a member.
+// ===========================================================================
+
+export function useWorkspaceMembers(
+  workspaceId: string | undefined,
+  enabled: boolean = true
+): UseQueryResult<WorkspaceMember[]> {
+  const { oxyServices, isAuthenticated, isReady } = useAuth();
+
+  return useQuery({
+    queryKey: workspaceQueryKeys.members(workspaceId ?? ''),
+    queryFn: () => oxyServices.getWorkspaceMembers(workspaceId ?? ''),
+    enabled: isReady && isAuthenticated && !!workspaceId && enabled,
+    staleTime: 1000 * 60 * 2,
+    retry: 1,
+  });
+}
+
+export function useInviteWorkspaceMember() {
+  const { oxyServices } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      workspaceId,
+      userId,
+      role,
+    }: {
+      workspaceId: string;
+      userId: string;
+      role: AssignableWorkspaceRole;
+    }): Promise<WorkspaceMember> =>
+      oxyServices.inviteWorkspaceMember(workspaceId, { userId, role }),
+    onSuccess: (member) => {
+      queryClient.invalidateQueries({ queryKey: workspaceQueryKeys.members(member.workspaceId) });
+    },
+  });
+}
+
+export function useUpdateWorkspaceMember() {
+  const { oxyServices } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      workspaceId,
+      memberId,
+      role,
+    }: {
+      workspaceId: string;
+      memberId: string;
+      role: AssignableWorkspaceRole;
+    }): Promise<WorkspaceMember> =>
+      oxyServices.updateWorkspaceMember(workspaceId, memberId, { role }),
+    onSuccess: (member) => {
+      queryClient.invalidateQueries({ queryKey: workspaceQueryKeys.members(member.workspaceId) });
+    },
+  });
+}
+
+export function useRemoveWorkspaceMember() {
+  const { oxyServices } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      workspaceId,
+      memberId,
+    }: {
+      workspaceId: string;
+      memberId: string;
+    }): Promise<{ workspaceId: string; memberId: string }> => {
+      await oxyServices.removeWorkspaceMember(workspaceId, memberId);
+      return { workspaceId, memberId };
+    },
+    onSuccess: ({ workspaceId }) => {
+      queryClient.invalidateQueries({ queryKey: workspaceQueryKeys.members(workspaceId) });
+    },
+  });
 }
