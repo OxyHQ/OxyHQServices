@@ -97,7 +97,7 @@ export interface OxyContextState {
   // Session management
   logout: (targetSessionId?: string) => Promise<void>;
   logoutAll: () => Promise<void>;
-  switchSession: (sessionId: string) => Promise<void>;
+  switchSession: (sessionId: string) => Promise<User>;
   removeSession: (sessionId: string) => Promise<void>;
   refreshSessions: () => Promise<void>;
   setLanguage: (languageId: string) => Promise<void>;
@@ -1555,8 +1555,12 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   });
 
   const switchSessionForContext = useCallback(
-    async (sessionId: string): Promise<void> => {
-      await switchSession(sessionId);
+    async (sessionId: string): Promise<User> => {
+      // Propagate the activated user so callers (the device-flow sign-in,
+      // `useSwitchSession`'s cache write, account chooser) receive it. The
+      // underlying session-management `switchSession` already resolves the
+      // `User`; the previous `Promise<void>` wrapper discarded it.
+      return switchSession(sessionId);
     },
     [switchSession],
   );
@@ -1776,7 +1780,7 @@ const LOADING_STATE: OxyContextState = {
   handlePopupSession: () => rejectMissingProvider<void>(),
   logout: () => rejectMissingProvider<void>(),
   logoutAll: () => rejectMissingProvider<void>(),
-  switchSession: () => rejectMissingProvider<void>(),
+  switchSession: () => rejectMissingProvider<User>(),
   removeSession: () => rejectMissingProvider<void>(),
   refreshSessions: () => rejectMissingProvider<void>(),
   setLanguage: () => rejectMissingProvider<void>(),

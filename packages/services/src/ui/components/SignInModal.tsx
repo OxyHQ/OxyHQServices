@@ -35,6 +35,7 @@ import { Loading } from '@oxyhq/bloom/loading';
 import { useOxy } from '../context/OxyContext';
 import OxyLogo from './OxyLogo';
 import { createDebugLogger } from '@oxyhq/core';
+import { completeDeviceFlowSignIn } from '../../utils/deviceFlowSignIn';
 
 const debug = createDebugLogger('SignInModal');
 
@@ -153,16 +154,18 @@ const SignInModal: React.FC = () => {
         isProcessingRef.current = true;
 
         try {
-            // Plant the bearer + refresh tokens for this newly-authorized
-            // session. Single-use — replay attempts on this sessionToken
-            // are rejected by the API.
-            await oxyServices.claimSessionByToken(sessionToken);
-
-            // Now the SDK has a bearer token, the normal session
-            // management path can hydrate state from the sessionId.
-            if (switchSession) {
-                await switchSession(sessionId);
+            // Claim the first access token with the secret sessionToken, then
+            // hydrate the session. Shared with the native `OxyAuthScreen` via
+            // `completeDeviceFlowSignIn` so the two paths cannot drift.
+            if (!switchSession) {
+                throw new Error('Session management unavailable');
             }
+            await completeDeviceFlowSignIn({
+                oxyServices,
+                sessionId,
+                sessionToken,
+                switchSession,
+            });
 
             hideSignInModal();
         } catch (err) {

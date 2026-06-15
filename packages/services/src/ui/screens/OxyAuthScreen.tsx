@@ -30,6 +30,7 @@ import { useOxy } from '../context/OxyContext';
 import QRCode from 'react-native-qrcode-svg';
 import OxyLogo from '../components/OxyLogo';
 import { createDebugLogger } from '@oxyhq/core';
+import { completeDeviceFlowSignIn } from '../../utils/deviceFlowSignIn';
 
 const debug = createDebugLogger('OxyAuthScreen');
 
@@ -119,7 +120,7 @@ const OxyAuthScreen: React.FC<BaseScreenProps> = ({
   theme,
 }) => {
   const bloomTheme = useTheme();
-  const { oxyServices, signIn, switchSession, clientId } = useOxy();
+  const { oxyServices, switchSession, clientId } = useOxy();
 
   const [authSession, setAuthSession] = useState<AuthSession | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -132,25 +133,42 @@ const OxyAuthScreen: React.FC<BaseScreenProps> = ({
   const isProcessingRef = useRef(false);
   const linkingHandledRef = useRef(false);
 
-  // Handle successful authorization
-  const handleAuthSuccess = useCallback(async (sessionId: string) => {
+  // Handle successful authorization.
+  //
+  // The auth-session socket / poll (or deep-link return) hands us the
+  // authorized `sessionId`. Before any session-management code can touch it we
+  // MUST first exchange the secret `sessionToken` (held only by this client,
+  // generated for THIS flow) for the first access token via
+  // `claimSessionByToken` — the device-flow equivalent of OAuth's
+  // code-for-token exchange (RFC 8628 §3.4).
+  //
+  // Without that exchange the SDK has no bearer token, so the subsequent
+  // `switchSession` -> `getTokenBySession` call (`GET /session/token/:id`) 401s
+  // against the C1-hardened API — the session is authorized server-side but the
+  // app never becomes authenticated and the sheet sits "Waiting for
+  // authorization..." forever. Once `claimSessionByToken` plants the tokens in
+  // the HttpService, the rest of the session wiring flows through the normal
+  // `switchSession` path. This mirrors `SignInModal`'s web flow exactly.
+  const handleAuthSuccess = useCallback(async (sessionId: string, sessionToken: string) => {
     if (isProcessingRef.current) return;
     isProcessingRef.current = true;
 
     try {
-      // Switch to the new session (this will get token, user data, and update state)
-      if (switchSession) {
-        const user = await switchSession(sessionId);
-        if (onAuthenticated) {
-          onAuthenticated(user);
-        }
-      } else {
-        // Fallback if switchSession not available (shouldn't happen, but for safety)
-        await oxyServices.getTokenBySession(sessionId);
-        const user = await oxyServices.getUserBySession(sessionId);
-        if (onAuthenticated) {
-          onAuthenticated(user);
-        }
+      // Claim the first access token with the secret sessionToken, then
+      // hydrate the session. The claim step is what the native screen was
+      // previously missing — see `completeDeviceFlowSignIn`. `switchSession`
+      // is always provided by the context here; the helper requires it.
+      if (!switchSession) {
+        throw new Error('Session management unavailable');
+      }
+      const user = await completeDeviceFlowSignIn({
+        oxyServices,
+        sessionId,
+        sessionToken,
+        switchSession,
+      });
+      if (onAuthenticated) {
+        onAuthenticated(user);
       }
     } catch (err) {
       debug.error('Error completing auth:', err);
@@ -189,7 +207,9 @@ const OxyAuthScreen: React.FC<BaseScreenProps> = ({
 
       if (payload.status === 'authorized' && payload.sessionId) {
         cleanup();
-        handleAuthSuccess(payload.sessionId);
+        // `sessionToken` is this flow's secret credential (in closure) — pass
+        // it through so `handleAuthSuccess` can claim the first access token.
+        handleAuthSuccess(payload.sessionId, sessionToken);
       } else if (payload.status === 'cancelled') {
         cleanup();
         setError('Authorization was denied.');
@@ -228,7 +248,9 @@ const OxyAuthScreen: React.FC<BaseScreenProps> = ({
 
         if (response.authorized && response.sessionId) {
           cleanup();
-          handleAuthSuccess(response.sessionId);
+          // Pass the original sessionToken (in closure) through; the claim
+          // exchange needs it to mint the first access token.
+          handleAuthSuccess(response.sessionId, sessionToken);
         } else if (response.status === 'cancelled') {
           cleanup();
           setError('Authorization was denied.');
@@ -379,10 +401,20 @@ const OxyAuthScreen: React.FC<BaseScreenProps> = ({
     }
 
     if (params.sessionId) {
+      // The deep-link return carries only `session_id` — the secret
+      // `sessionToken` for this flow lives in component state (generated in
+      // `generateAuthSession`). Without it we cannot claim the first access
+      // token, so the flow would 401 in `handleAuthSuccess`. If it is somehow
+      // unavailable, fall through to the socket/poll path (which carries the
+      // token in closure) rather than attempting an unauthenticated claim.
+      const flowSessionToken = authSession?.sessionToken;
+      if (!flowSessionToken) {
+        return;
+      }
       cleanup();
-      handleAuthSuccess(params.sessionId);
+      handleAuthSuccess(params.sessionId, flowSessionToken);
     }
-  }, [cleanup, handleAuthSuccess]);
+  }, [authSession, cleanup, handleAuthSuccess]);
 
   useEffect(() => {
     if (Platform.OS === 'web') {
