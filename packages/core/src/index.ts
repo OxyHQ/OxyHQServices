@@ -452,6 +452,30 @@ export type {
 } from './utils/coldBoot';
 
 // ---------------------------------------------------------------------------
+// API response contracts (single source of truth — producer + consumers share)
+// ---------------------------------------------------------------------------
+export {
+    userNameSchema,
+    userResponseSchema,
+    refreshAllAccountSchema,
+    refreshAllResponseSchema,
+    currentUserResponseSchema,
+    deviceSessionAccountSchema,
+    deviceSessionsResponseSchema,
+    resolveUserId,
+    safeParseContract,
+} from './contracts/userResponse';
+export type {
+    UserNameResponse,
+    UserResponse,
+    RefreshAllAccountResponse,
+    RefreshAllResponseContract,
+    CurrentUserResponseContract,
+    DeviceSessionAccountResponse,
+    DeviceSessionsResponseContract,
+} from './contracts/userResponse';
+
+// ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 export { packageInfo } from './constants/version';

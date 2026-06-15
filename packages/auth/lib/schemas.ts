@@ -1,7 +1,29 @@
 /**
  * Zod schemas for validating API responses in the auth app.
+ *
+ * The user / account / session RESPONSE contracts (`refreshAllResponseSchema`,
+ * `currentUserResponseSchema`, `deviceSessionsResponseSchema`) are NOT defined
+ * here — they are owned by `@oxyhq/core` as the single source of truth shared
+ * between the API (producer) and every consumer. Re-exporting them keeps the
+ * existing `@/lib/schemas` import sites working while eliminating the drift that
+ * previously broke session restore (a local `name: z.string()` rejected every
+ * structured-name account). Only the auth-app-specific schemas (login, signup,
+ * lookup, session-status, token, refresh, OAuth state) live locally.
  */
 import { z } from "zod"
+import {
+    refreshAllResponseSchema,
+    currentUserResponseSchema,
+    deviceSessionsResponseSchema,
+    safeParseContract,
+} from "@oxyhq/core"
+
+// Canonical, core-owned contracts re-exported for local import sites.
+export {
+    refreshAllResponseSchema,
+    currentUserResponseSchema,
+    deviceSessionsResponseSchema,
+}
 
 export const loginResponseSchema = z.object({
     sessionId: z.string().optional(),
@@ -48,82 +70,6 @@ export const refreshResponseSchema = z.object({
     expiresAt: z.string().optional(),
 })
 
-/**
- * `POST /auth/refresh-all` reads EVERY device-local `oxy_rt_${authuser}` cookie
- * present on this device, rotates each in parallel, and returns one entry per
- * VALID account sorted by `authuser` ascending. Empty array means "no signed-in
- * accounts on this device" (the IdP must show the sign-in form).
- *
- * Slot-level errors are silently omitted; the response is always 200 with a
- * (possibly empty) `accounts` array — a 404 from the server means the endpoint
- * is not yet deployed and the caller MUST fall back to the legacy
- * single-account `/auth/refresh` path.
- */
-export const refreshAllResponseSchema = z.object({
-    accounts: z.array(
-        z.object({
-            // The server emits `authuser: null` for the legacy un-suffixed
-            // `oxy_rt` cookie slot (see `POST /auth/refresh-all`). Accept null
-            // so a browser holding a legacy cookie is NOT dropped from the
-            // chooser; the consumer treats a missing index as "no slot hint".
-            authuser: z.number().int().nonnegative().nullable(),
-            accessToken: z.string(),
-            expiresAt: z.string(),
-            sessionId: z.string(),
-            user: z.object({
-                id: z.string(),
-                // The User model makes `username` optional (publicKey-only
-                // accounts have none), and `formatUserResponse` forwards it
-                // verbatim — so it can be absent. `resolveDisplayName` already
-                // falls back to email / name when there is no username.
-                username: z.string().optional(),
-                // `formatUserResponse` returns the structured `name` subdocument
-                // `{ first, last, full }` (a Mongoose `NameSchema`), NOT a plain
-                // string. The previous `z.string()` here rejected EVERY account
-                // that has a name, collapsing the whole parse to null and
-                // suppressing the account chooser on cold boot.
-                name: z
-                    .object({
-                        first: z.string().optional(),
-                        last: z.string().optional(),
-                        full: z.string().optional(),
-                    })
-                    .optional(),
-                avatar: z.string().nullable().optional(),
-                email: z.string().optional(),
-                color: z.string().nullable().optional(),
-            }),
-        })
-    ),
-})
-
-/**
- * `GET /users/me` returns the RAW Mongo user document wrapped in the API success
- * envelope (`{ data: <user> }` via `sendSuccess`). It does NOT go through
- * `formatUserResponse`, so the id field is `_id` (NOT `id`), and `name` / `avatar`
- * may be absent. We accept either id form (and keep every other field optional)
- * and resolve the id at the call site. There is NO `sessionId` here — the session
- * id comes from the refreshed access token's claims.
- */
-export const currentUserResponseSchema = z.object({
-    data: z.object({
-        _id: z.string().optional(),
-        id: z.string().optional(),
-        username: z.string().optional(),
-        email: z.string().optional(),
-        avatar: z.string().optional(),
-        displayName: z.string().optional(),
-        color: z.string().nullable().optional(),
-        name: z
-            .object({
-                first: z.string().optional(),
-                last: z.string().optional(),
-                full: z.string().optional(),
-            })
-            .optional(),
-    }),
-})
-
 export const oauthStateSchema = z.object({
     provider: z.string(),
     sessionToken: z.string().optional(),
@@ -132,41 +78,8 @@ export const oauthStateSchema = z.object({
 })
 
 /**
- * `GET /session/device/sessions/:sessionId` returns the deduplicated list of
- * accounts signed in on this physical device (one entry per user, most recent
- * session). Backs the multi-account chooser. The user object mirrors
- * `formatUserResponse` (id is `id`, never `_id`); `name` may be an object.
+ * Safely parse a JSON response with a Zod schema. Returns the parsed data or
+ * `null` if validation fails. Delegates to core's `safeParseContract` so there
+ * is exactly one parse helper across the ecosystem.
  */
-export const deviceSessionsResponseSchema = z.array(
-    z.object({
-        sessionId: z.string(),
-        isCurrent: z.boolean().optional(),
-        user: z
-            .object({
-                id: z.string(),
-                username: z.string().optional(),
-                email: z.string().optional(),
-                avatar: z.string().optional(),
-                displayName: z.string().optional(),
-                color: z.string().nullable().optional(),
-                name: z
-                    .object({
-                        first: z.string().optional(),
-                        last: z.string().optional(),
-                        full: z.string().optional(),
-                    })
-                    .optional(),
-            })
-            .nullable()
-            .optional(),
-    })
-)
-
-/**
- * Safely parse a JSON response with a Zod schema.
- * Returns the parsed data or null if validation fails.
- */
-export function safeParse<T>(schema: z.ZodType<T>, data: unknown): T | null {
-    const result = schema.safeParse(data)
-    return result.success ? result.data : null
-}
+export const safeParse = safeParseContract

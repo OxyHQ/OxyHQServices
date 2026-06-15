@@ -33,8 +33,25 @@ function stageToken(token: StoredToken): void {
   tokenStore.set(token.tokenHash, token);
 }
 
-const userStore = new Map<string, { _id: string; username: string; color?: string; email?: string }>();
-function stageUser(id: string, data: { username: string; color?: string; email?: string }): void {
+const userStore = new Map<
+  string,
+  {
+    _id: string;
+    username: string;
+    color?: string;
+    email?: string;
+    name?: { first?: string; last?: string; full?: string };
+  }
+>();
+function stageUser(
+  id: string,
+  data: {
+    username: string;
+    color?: string;
+    email?: string;
+    name?: { first?: string; last?: string; full?: string };
+  }
+): void {
   userStore.set(id, { _id: id, ...data });
 }
 
@@ -321,6 +338,40 @@ describe('POST /auth/refresh-all', () => {
     expect(accounts[0].sessionId).toBe('sess-zero');
     expect((accounts[0].user as { color?: string }).color).toBe('#FF00AA');
     expect((accounts[0].user as { username?: string }).username).toBe('alice');
+  });
+
+  it('composes user.name.full from a lean doc (no virtual) so the switcher shows the real name', async () => {
+    // Regression for the account-switcher bug: the lean .select() read carries
+    // only name.first / name.last (NO `full` virtual). formatUserResponse must
+    // still compose `name.full` so the IdP switcher shows the correctly-cased
+    // composed name instead of falling back to the lowercase username.
+    const tok = 'tok-named';
+    stageToken(buildStoredToken(tok, { sessionId: 'sess-named', family: 'fam-named', userId: { toString: () => 'u-named' } }));
+    stageUser('u-named', { username: 'janedoe', color: '#ABCDEF', name: { first: 'Jane', last: 'Doe' } });
+    mockFindOneAndUpdate.mockResolvedValueOnce({
+      _id: 'rt-named',
+      family: 'fam-named',
+      sessionId: 'sess-named',
+      userId: { toString: () => 'u-named' },
+      usedAt: new Date(),
+    });
+    mockCreate.mockResolvedValueOnce({});
+    mockGetAccessToken.mockResolvedValueOnce({
+      accessToken: 'a-named',
+      expiresAt: new Date(Date.now() + 15 * 60 * 1000),
+    });
+
+    const res = await requestJson(server, 'POST', '/auth/refresh-all', {}, {
+      cookieHeader: `oxy_rt_0=${tok}`,
+    });
+
+    expect(res.status).toBe(200);
+    const accounts = res.body.accounts as Array<Record<string, unknown>>;
+    expect(accounts).toHaveLength(1);
+    const user = accounts[0].user as { name?: { first?: string; last?: string; full?: string } };
+    expect(user.name?.first).toBe('Jane');
+    expect(user.name?.last).toBe('Doe');
+    expect(user.name?.full).toBe('Jane Doe');
   });
 
   it('returns three accounts in authuser ASC order for three indexed cookies', async () => {

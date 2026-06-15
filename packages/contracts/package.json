@@ -1,0 +1,84 @@
+{
+  "name": "@oxyhq/contracts",
+  "version": "0.1.0",
+  "description": "OxyHQ API contracts — single source of truth for request/response Zod schemas and inferred types, shared by the backend and the client SDKs",
+  "main": "dist/cjs/index.js",
+  "module": "dist/esm/index.js",
+  "types": "dist/types/index.d.ts",
+  "source": "src/index.ts",
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    ".": {
+      "react-native": "./dist/esm/index.js",
+      "import": {
+        "types": "./dist/types/index.d.ts",
+        "default": "./dist/esm/index.js"
+      },
+      "require": {
+        "types": "./dist/types/index.d.ts",
+        "default": "./dist/cjs/index.js"
+      },
+      "default": "./dist/esm/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "keywords": [
+    "oxyhq",
+    "sdk",
+    "contracts",
+    "zod",
+    "schemas",
+    "api"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/oxyhq/sdk",
+    "directory": "packages/contracts"
+  },
+  "author": "OxyHQ",
+  "license": "MIT",
+  "homepage": "https://oxy.so",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "build": "bun run build:cjs && bun run build:esm && bun run build:types",
+    "build:cjs": "tsc -p tsconfig.cjs.json",
+    "build:esm": "tsc -p tsconfig.esm.json && node scripts/fix-esm-imports.mjs",
+    "build:types": "tsc -p tsconfig.types.json",
+    "clean": "rm -rf dist",
+    "typescript": "tsc --noEmit",
+    "test": "jest --passWithNoTests",
+    "lint": "biome lint --error-on-warnings ./src",
+    "release": "rm -rf dist && bun run build && release-it"
+  },
+  "release-it": {
+    "git": {
+      "tagName": "@oxyhq/contracts@${version}",
+      "tagAnnotation": "Release @oxyhq/contracts@${version}",
+      "commitMessage": "chore(contracts): release @oxyhq/contracts@${version}"
+    },
+    "github": {
+      "release": true,
+      "releaseName": "@oxyhq/contracts@${version}"
+    },
+    "npm": {
+      "publish": true
+    }
+  },
+  "dependencies": {
+    "zod": "^3.25.64"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@types/node": "^20.19.9",
+    "release-it": "^19.0.6",
+    "typescript": "^5.9.2"
+  }
+}

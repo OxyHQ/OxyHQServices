@@ -37,15 +37,3 @@ export type DeviceAccount = {
     isCurrent: boolean
     authuser?: number
 }
-
-export type UserInfo = {
-    id: string
-    username?: string
-    email?: string
-    avatar?: string
-    displayName?: string
-    name?: {
-        first?: string
-        last?: string
-    }
-}

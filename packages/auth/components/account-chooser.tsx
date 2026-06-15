@@ -1,4 +1,5 @@
 import { ChevronRight, UserPlus } from "lucide-react"
+import { getAccountDisplayName } from "@oxyhq/core"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Avatar } from "@oxyhq/bloom/avatar"
@@ -22,8 +23,15 @@ type AccountChooserProps = React.ComponentProps<"div"> & {
     isLoading?: boolean
 }
 
+/**
+ * Resolve the row's display name via the canonical `getAccountDisplayName`
+ * helper. `Account.displayName` is already populated upstream by the same helper
+ * (in `useDeviceAccounts`), so this is a belt-and-suspenders convergence: it
+ * never re-derives a hand-rolled `displayName || username` chain that could pick
+ * the lowercase handle for a first-name-only account.
+ */
 function displayNameFor(account: DeviceAccount["account"]): string {
-    return account.displayName || account.username || account.email || "User"
+    return getAccountDisplayName(account)
 }
 
 /**

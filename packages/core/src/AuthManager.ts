@@ -1071,7 +1071,9 @@ export class AuthManager {
     const hydrated: RefreshAllAccountUser = {
       id: me.id,
       username: me.username,
-      name: typeof me.name === 'string' ? me.name : undefined,
+      // `User.name` and `RefreshAllAccountUser.name` are the same canonical
+      // structured `UserNameResponse` shape, so forward it verbatim.
+      name: me.name,
       avatar: me.avatar ?? null,
       email: me.email,
       color: me.color ?? null,

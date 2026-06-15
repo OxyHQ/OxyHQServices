@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useSearchParams, Link, useNavigate, Navigate } from "react-router-dom";
+import { getAccountDisplayName } from "@oxyhq/core";
 import type { PublicApplication } from "@oxyhq/core";
 
 import { Button } from "@/components/ui/button";
@@ -72,13 +73,6 @@ async function resolvePublicApplication(
   } catch {
     return null;
   }
-}
-
-function getDisplayName(user: UserInfo): string {
-  if (user.name?.first && user.name?.last) {
-    return `${user.name.first} ${user.name.last}`;
-  }
-  return user.username || user.email || "User";
 }
 
 // Native app schemes that are allowed as redirect targets.
@@ -625,7 +619,7 @@ export function AuthorizePage() {
   const application = data.application;
   const expiresAt = data.expiresAt;
   const currentUser = data.user;
-  const displayName = currentUser ? getDisplayName(currentUser) : null;
+  const displayName = currentUser ? getAccountDisplayName(currentUser) : null;
   const userEmail = currentUser?.email;
   const showActions =
     !pageError && (!effectiveStatus || effectiveStatus === "pending");

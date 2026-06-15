@@ -503,6 +503,20 @@ External consumers (Mention, Allo, Homiio, TNP) should bump to the versions abov
 
 Standalone Vite app for authentication flows (sign in, sign up, authorize, recover, FedCM IdP).
 
+**ARCHITECTURE: the auth app IS the IdP, not a Relying Party (CRITICAL — do not refactor)**
+- `WebOxyProvider` + `runColdBoot` are for RP apps (Mention, accounts, console, inbox, Allo, Homiio) that CONSUME the central IdP. Their cold-boot chain (FedCM silent → `/auth/silent` iframe → `/sso` top-level bounce) all points AT `auth.oxy.so`.
+- The auth app is the IdP — source of truth for sessions (`fedcm_session` + `oxy_rt_*` cookies, `Domain=oxy.so`). Using `WebOxyProvider` here would create a circular loop: IdP bouncing to itself for session restore.
+- Correct pattern: `useDeviceAccounts()` (`packages/auth/lib/use-device-accounts.ts`) → `POST api.oxy.so/auth/refresh-all` (`credentials: include`) — reads shared refresh cookies directly. This is the intended IdP exception to the global "SSO logic in the shared SDK" rule, which governs RPs only.
+- DO NOT refactor the auth app onto `WebOxyProvider`/`runColdBoot`.
+
+**Zod schema contract — `packages/auth/lib/schemas.ts` MUST mirror the real API (commit 58f3c935)**
+- `user.name` is ALWAYS the structured object `{ first?, last?, full? }` — NEVER a plain `z.string()`. Shape drift makes `safeParse` silently return null → whole parse collapses → `LOGGED_OUT_STATE` → account switcher never appears despite valid cookies.
+- `username` is optional (`z.string().optional()`) — publicKey-only accounts have none.
+- `/auth/refresh-all` `authuser` field is nullable (`z.number().nullable()`) — the legacy un-suffixed `oxy_rt` slot emits `authuser: null`.
+- `slotRank()` sorts the null-authuser legacy slot last.
+- Keep `refreshAllResponseSchema`, `currentUserResponseSchema`, `deviceSessionsResponseSchema` consistent with `formatUserResponse` in `packages/api/src/utils/userTransform.ts`. Any field-shape mismatch silently degrades the UI to logged-out state.
+- Regression test: `packages/auth/lib/__tests__/refresh-all-schema.test.ts`.
+
 **Key patterns:**
 - `AuthFormLayout` + `AuthFormHeader` — shared layout for all auth screens
 - `AuthLayout` (route layout) — persistent logo/footer, route-level fade transitions via `useNavigationType()`

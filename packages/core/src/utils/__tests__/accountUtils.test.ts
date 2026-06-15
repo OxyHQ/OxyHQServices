@@ -1,0 +1,142 @@
+import {
+    getAccountDisplayName,
+    getAccountFallbackHandle,
+    formatPublicKeyHandle,
+} from '../accountUtils';
+
+/**
+ * Regression coverage for the auth-app display-name drift (Phase 1 of the
+ * contract-centralisation refactor).
+ *
+ * The auth app previously required BOTH `name.first` AND `name.last` to compose
+ * a display name, falling back to the lowercase `username` for first-name-only
+ * accounts. The canonical resolver in core MUST be first-name-only safe: a user
+ * with only a first name resolves to that first name, never to the username.
+ */
+describe('getAccountDisplayName', () => {
+    it('returns first name for first-name-only accounts (NOT the username)', () => {
+        const result = getAccountDisplayName({
+            name: { first: 'Nate' },
+            username: 'nateus',
+        });
+        expect(result).toBe('Nate');
+        expect(result).not.toBe('nateus');
+    });
+
+    it('composes first + last when both are present', () => {
+        expect(
+            getAccountDisplayName({
+                name: { first: 'Nate', last: 'Isern' },
+                username: 'nateus',
+            }),
+        ).toBe('Nate Isern');
+    });
+
+    it('returns last name only when first is missing', () => {
+        expect(
+            getAccountDisplayName({
+                name: { last: 'Isern' },
+                username: 'nateus',
+            }),
+        ).toBe('Isern');
+    });
+
+    it('prefers name.full when present', () => {
+        expect(
+            getAccountDisplayName({
+                name: { first: 'Nate', last: 'Isern', full: 'Nathaniel Isern' },
+                username: 'nateus',
+            }),
+        ).toBe('Nathaniel Isern');
+    });
+
+    it('uses the structured name over a server displayName virtual', () => {
+        // Server `displayName` virtual = `username || truncatedKey`; it ignores
+        // the structured name. A real name must win so a first-only account is
+        // never collapsed to its username.
+        expect(
+            getAccountDisplayName({
+                name: { first: 'Nate' },
+                displayName: 'nateus',
+                username: 'nateus',
+            }),
+        ).toBe('Nate');
+    });
+
+    it('uses displayName when there is no structured name', () => {
+        expect(
+            getAccountDisplayName({
+                displayName: 'Cool Display',
+                username: 'nateus',
+            }),
+        ).toBe('Cool Display');
+    });
+
+    it('supports name stored as a plain string', () => {
+        expect(getAccountDisplayName({ name: 'Legacy Name', username: 'nateus' })).toBe(
+            'Legacy Name',
+        );
+    });
+
+    it('falls back to username when there is no name', () => {
+        expect(getAccountDisplayName({ username: 'nateus' })).toBe('nateus');
+    });
+
+    it('falls back to the public-key handle when there is no name or username', () => {
+        const result = getAccountDisplayName({
+            publicKey: '0x1234567890abcdef',
+        });
+        // common.accountFallback = "Account {{handle}}"; handle truncated to 0x12345678…
+        expect(result).toBe('Account 0x12345678…');
+        expect(result).not.toContain('Unknown');
+    });
+
+    it('returns the translated unnamed fallback when nothing is available', () => {
+        expect(getAccountDisplayName({})).toBe('Unnamed');
+        expect(getAccountDisplayName(null)).toBe('Unnamed');
+        expect(getAccountDisplayName(undefined)).toBe('Unnamed');
+    });
+
+    it('ignores whitespace-only name fields', () => {
+        expect(
+            getAccountDisplayName({
+                name: { first: '   ', last: '   ' },
+                username: 'nateus',
+            }),
+        ).toBe('nateus');
+    });
+
+    it('honours the locale for the fallback strings', () => {
+        expect(getAccountDisplayName({}, 'es-ES')).toBe('Sin nombre');
+        expect(getAccountDisplayName({ publicKey: '0x1234567890abcdef' }, 'es-ES')).toBe(
+            'Cuenta 0x12345678…',
+        );
+    });
+});
+
+describe('getAccountFallbackHandle', () => {
+    it('returns the bare username when present', () => {
+        expect(getAccountFallbackHandle({ username: 'nateus' })).toBe('nateus');
+    });
+
+    it('falls back to a truncated public-key handle', () => {
+        expect(getAccountFallbackHandle({ publicKey: '0x1234567890abcdef' })).toBe('0x12345678…');
+    });
+
+    it('returns undefined when neither username nor publicKey is present', () => {
+        expect(getAccountFallbackHandle({})).toBeUndefined();
+        expect(getAccountFallbackHandle(null)).toBeUndefined();
+    });
+});
+
+describe('formatPublicKeyHandle', () => {
+    it('truncates a long key and strips the 0x prefix before re-adding it', () => {
+        expect(formatPublicKeyHandle('0x1234567890abcdef')).toBe('0x12345678…');
+        expect(formatPublicKeyHandle('1234567890abcdef')).toBe('0x12345678…');
+    });
+
+    it('returns the raw (prefixed) key when too short to truncate', () => {
+        expect(formatPublicKeyHandle('0xabcd')).toBe('0xabcd');
+        expect(formatPublicKeyHandle('abcd')).toBe('0xabcd');
+    });
+});

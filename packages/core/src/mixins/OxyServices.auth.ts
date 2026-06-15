@@ -9,6 +9,7 @@ import type {
   RefreshAllAccount,
   RefreshCookieResponse,
 } from '../models/interfaces';
+import type { UserNameResponse } from '../contracts/userResponse';
 import type { SessionLoginResponse } from '../models/session';
 import type { OxyServicesBase } from '../OxyServices.base';
 import { OxyAuthenticationError } from '../OxyServices.errors';
@@ -718,7 +719,7 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
           accessToken?: string;
           expiresAt?: string;
           sessionId?: string;
-          user?: { id?: string; _id?: string; username?: string; name?: string; avatar?: string | null; email?: string; color?: string | null };
+          user?: { id?: string; _id?: string; username?: string; name?: UserNameResponse; avatar?: string | null; email?: string; color?: string | null };
         };
         if (!e.accessToken || !e.expiresAt || !e.sessionId || !e.user) {
           continue;

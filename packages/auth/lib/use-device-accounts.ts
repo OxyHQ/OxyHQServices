@@ -1,4 +1,6 @@
 import { useRef, useState } from "react"
+import { getAccountDisplayName, resolveUserId } from "@oxyhq/core"
+import type { UserResponse } from "@oxyhq/core"
 import { buildApiUrl, buildAuthUrl } from "@/lib/oxy-api-client"
 import {
     refreshAllResponseSchema,
@@ -42,19 +44,25 @@ const LOGGED_OUT_STATE: DeviceAccountsState = {
     accounts: [],
 }
 
-function resolveDisplayName(user: {
-    displayName?: string
-    username?: string
-    email?: string
-    name?: { first?: string; last?: string; full?: string } | string
-}): string | undefined {
-    if (user.displayName) return user.displayName
-    if (typeof user.name === "string") return user.name
-    if (user.name?.full) return user.name.full
-    if (user.name?.first && user.name?.last) {
-        return `${user.name.first} ${user.name.last}`
+/**
+ * Map a parsed core `UserResponse` into the auth app's `Account` shape, resolving
+ * the display name via the canonical `getAccountDisplayName` helper (first-name
+ * -only safe: a user with only a first name renders that first name, NOT the
+ * lowercase username). `getAccountDisplayName` always returns a non-empty string
+ * (falling back to a public-key handle or the translated "Unnamed" sentinel), so
+ * the chooser never shows a blank row.
+ */
+function toAccount(user: UserResponse): Account | null {
+    const id = resolveUserId(user)
+    if (!id) return null
+    return {
+        id,
+        username: user.username,
+        email: user.email,
+        avatar: user.avatar ?? undefined,
+        displayName: getAccountDisplayName(user),
+        color: user.color ?? null,
     }
-    return user.username || user.email
 }
 
 /**
@@ -191,30 +199,26 @@ async function detectAccountsViaRefreshAll(): Promise<DeviceAccountsState | "fal
     sessionStorage.setItem("oxy_access_token", current.accessToken)
     sessionStorage.setItem("oxy_session_id", currentSessionId)
 
-    const currentAccount: Account = {
-        id: current.user.id,
-        username: current.user.username,
-        email: current.user.email,
-        avatar: current.user.avatar ?? undefined,
-        displayName: resolveDisplayName(current.user),
-        color: current.user.color ?? null,
+    const currentAccount = toAccount(current.user)
+    if (!currentAccount) {
+        // The active slot's user document is missing its id — treat as logged out
+        // rather than render a chooser with an unselectable current row.
+        return LOGGED_OUT_STATE
     }
 
-    const accounts: DeviceAccount[] = sorted.map((entry) => ({
-        sessionId: entry.sessionId,
-        isCurrent: entry.sessionId === currentSessionId,
-        // `DeviceAccount.authuser` is `number | undefined`; the legacy slot's
-        // null index maps to undefined ("no slot hint").
-        authuser: entry.authuser ?? undefined,
-        account: {
-            id: entry.user.id,
-            username: entry.user.username,
-            email: entry.user.email,
-            avatar: entry.user.avatar ?? undefined,
-            displayName: resolveDisplayName(entry.user),
-            color: entry.user.color ?? null,
-        },
-    }))
+    const accounts: DeviceAccount[] = []
+    for (const entry of sorted) {
+        const account = toAccount(entry.user)
+        if (!account) continue
+        accounts.push({
+            sessionId: entry.sessionId,
+            isCurrent: entry.sessionId === currentSessionId,
+            // `DeviceAccount.authuser` is `number | undefined`; the legacy slot's
+            // null index maps to undefined ("no slot hint").
+            authuser: entry.authuser ?? undefined,
+            account,
+        })
+    }
 
     return {
         isLoading: false,
@@ -267,16 +271,8 @@ async function detectAccountsLegacy(): Promise<DeviceAccountsState> {
                 currentUserResponseSchema,
                 await meRes.json()
             )
-            const userId = parsed?.data?._id ?? parsed?.data?.id
-            if (parsed && userId) {
-                currentAccount = {
-                    id: userId,
-                    username: parsed.data.username,
-                    email: parsed.data.email,
-                    avatar: parsed.data.avatar,
-                    displayName: resolveDisplayName(parsed.data),
-                    color: parsed.data.color ?? null,
-                }
+            if (parsed) {
+                currentAccount = toAccount(parsed.data)
             }
         }
     } catch {
@@ -301,20 +297,15 @@ async function detectAccountsLegacy(): Promise<DeviceAccountsState> {
             )
             if (list) {
                 for (const entry of list) {
-                    if (!entry.user?.id) continue
                     if (entry.sessionId === currentSessionId) continue
-                    if (entry.user.id === currentAccount.id) continue
+                    if (!entry.user) continue
+                    const account = toAccount(entry.user)
+                    if (!account) continue
+                    if (account.id === currentAccount.id) continue
                     accounts.push({
                         sessionId: entry.sessionId,
                         isCurrent: false,
-                        account: {
-                            id: entry.user.id,
-                            username: entry.user.username,
-                            email: entry.user.email,
-                            avatar: entry.user.avatar,
-                            displayName: resolveDisplayName(entry.user),
-                            color: entry.user.color ?? null,
-                        },
+                        account,
                     })
                 }
             }
