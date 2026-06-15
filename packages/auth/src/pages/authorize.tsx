@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useSearchParams, Link, useNavigate, Navigate } from "react-router-dom";
-import { Check, Shield } from "lucide-react";
+import type { PublicApplication } from "@oxyhq/core";
 
 import { Button } from "@/components/ui/button";
 import { FieldDescription } from "@/components/ui/field";
@@ -13,6 +13,7 @@ import {
   tryClosePopup,
 } from "@/components/auth-form-layout";
 import { AccountChooser } from "@/components/account-chooser";
+import { AppIdentityCard } from "@/components/app-identity-card";
 import { useDeviceAccounts } from "@/lib/use-device-accounts";
 import type { DeviceAccount } from "@/lib/types";
 import {
@@ -38,11 +39,40 @@ type AuthorizeData = {
   user: UserInfo | null;
   sessionId: string | null;
   sessionStatus: string | null;
-  appName: string | null;
+  application: PublicApplication | null;
   expiresAt: string | null;
   error: string | null;
   redirected: boolean;
 };
+
+/** Error shown when the requesting application cannot be resolved. */
+const UNRESOLVED_APP_ERROR = "Unable to identify the requesting application.";
+
+/**
+ * Resolve a `client_id` to its public application identity via the unauthenticated
+ * `GET /auth/oauth/client/:clientId` endpoint. Returns null when the client is
+ * unknown (404) or the response is malformed — the caller renders the explicit
+ * unresolved-application error rather than any generic fallback.
+ */
+async function resolvePublicApplication(
+  clientId: string
+): Promise<PublicApplication | null> {
+  try {
+    const response = await fetch(
+      buildApiUrl(`/auth/oauth/client/${encodeURIComponent(clientId)}`),
+      { credentials: "include" }
+    );
+    if (!response.ok) return null;
+    const result = await response.json();
+    const application = (result?.data ?? result)?.application;
+    if (application && typeof application.id === "string") {
+      return application as PublicApplication;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 function getDisplayName(user: UserInfo): string {
   if (user.name?.first && user.name?.last) {
@@ -99,7 +129,7 @@ export function AuthorizePage() {
     user: null,
     sessionId: null,
     sessionStatus: statusParam,
-    appName: null,
+    application: null,
     expiresAt: null,
     error: urlError,
     redirected: false,
@@ -155,6 +185,14 @@ export function AuthorizePage() {
           // No existing session — handled by the page-level redirect below.
         }
 
+        // OAuth code flow: resolve the requesting application from its
+        // `client_id`. This runs whenever a client_id is present (with or
+        // without a device-flow token) and is the authoritative identity source
+        // for the OAuth path.
+        const oauthApplication = clientId
+          ? await resolvePublicApplication(clientId)
+          : null;
+
         // If we have an auth session token, check its status
         if (!statusParam && token) {
           try {
@@ -175,6 +213,16 @@ export function AuthorizePage() {
             // The Oxy API wraps in {data: ...}
             const sessionInfo = statusResult.data || statusResult;
 
+            // Device flow: the status response carries the resolved public
+            // application directly. OAuth code flow: prefer the client-resolved
+            // application. Either way there is NO free-string app-name fallback.
+            const deviceApplication: PublicApplication | null =
+              sessionInfo.application &&
+              typeof sessionInfo.application.id === "string"
+                ? (sessionInfo.application as PublicApplication)
+                : null;
+            const application = oauthApplication ?? deviceApplication;
+
             if (sessionInfo.status !== "pending") {
               const err =
                 sessionInfo.status === "expired"
@@ -186,7 +234,7 @@ export function AuthorizePage() {
                 sessionId,
                 user,
                 sessionStatus: sessionInfo.status,
-                appName: sessionInfo.appId,
+                application,
                 expiresAt: null,
                 error: err,
                 redirected: false,
@@ -198,9 +246,9 @@ export function AuthorizePage() {
               sessionId: sessionId || sessionInfo.sessionId,
               user,
               sessionStatus: sessionInfo.status,
-              appName: sessionInfo.appId,
+              application,
               expiresAt: sessionInfo.expiresAt,
-              error: null,
+              error: application ? null : UNRESOLVED_APP_ERROR,
               redirected: false,
             });
             return;
@@ -209,7 +257,7 @@ export function AuthorizePage() {
               sessionId,
               user,
               sessionStatus: null,
-              appName: null,
+              application: oauthApplication,
               expiresAt: null,
               error:
                 err instanceof Error
@@ -221,13 +269,21 @@ export function AuthorizePage() {
           }
         }
 
+        // OAuth code flow without a device-flow token (or with status already
+        // resolved via the URL). The application MUST resolve from client_id.
+        const resolvedError = urlError
+          ? urlError
+          : clientId && !oauthApplication
+            ? UNRESOLVED_APP_ERROR
+            : null;
+
         setData({
           sessionId,
           user,
           sessionStatus: statusParam,
-          appName: null,
+          application: oauthApplication,
           expiresAt: null,
-          error: urlError,
+          error: resolvedError,
           redirected: false,
         });
       } catch {
@@ -237,7 +293,7 @@ export function AuthorizePage() {
       }
     }
     loadData();
-  }, [token, redirectUri, state, statusParam, urlError]);
+  }, [token, redirectUri, state, statusParam, urlError, clientId]);
 
   // Auto-close popup when authorization is complete
   useEffect(() => {
@@ -566,13 +622,20 @@ export function AuthorizePage() {
 
   const effectiveStatus = data.sessionStatus;
   const pageError = data.error;
-  const appName = data.appName || "This app";
+  const application = data.application;
   const expiresAt = data.expiresAt;
   const currentUser = data.user;
   const displayName = currentUser ? getDisplayName(currentUser) : null;
   const userEmail = currentUser?.email;
   const showActions =
     !pageError && (!effectiveStatus || effectiveStatus === "pending");
+
+  // OAuth code flow: prefer the explicitly requested `scope` URL param (space-
+  // separated) over the application's full configured scope list. Empty for the
+  // device flow, where the card falls back to base permissions.
+  const requestedScopes = scope
+    ? scope.split(/\s+/).filter((s) => s.length > 0)
+    : [];
 
   const loginUrl = buildRelativeUrl("/login", {
     token: token || undefined,
@@ -589,7 +652,7 @@ export function AuthorizePage() {
     return (
       <AccountChooser
         accounts={deviceAccounts}
-        appName={data.appName}
+        appName={application?.name}
         onSelectAccount={handleChooseAccount}
         onUseAnother={() => gotoLoginWithHint()}
         pendingSessionId={chooserPendingSessionId}
@@ -649,11 +712,21 @@ export function AuthorizePage() {
             </div>
           ) : null}
 
-          {/* Heading */}
-          <AuthFormHeader
-            title={`Sign in to ${appName}`}
-            description={`${appName} wants to access your Oxy account`}
-          />
+          {/* Resolved requesting-application identity + requested scopes.
+              Rendered only when the application resolved — there is no generic
+              "This app" fallback. An unresolved request surfaces as the error
+              box below instead. */}
+          {application ? (
+            <AppIdentityCard
+              app={application}
+              requestedScopes={requestedScopes}
+            />
+          ) : (
+            <AuthFormHeader
+              title="Authorization request"
+              description="We couldn't load the details of this request."
+            />
+          )}
 
           {/* Error state */}
           {pageError && (
@@ -662,26 +735,9 @@ export function AuthorizePage() {
             </div>
           )}
 
-          {/* Permissions section */}
+          {/* Action section */}
           {showActions ? (
             <>
-              <div className="space-y-3">
-                <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                  <Shield className="size-4" />
-                  <span>This will allow {appName} to:</span>
-                </div>
-                <ul className="space-y-2 pl-1">
-                  <li className="flex items-start gap-2.5 text-sm">
-                    <Check className="size-4 text-primary shrink-0 mt-0.5" />
-                    <span>See your basic profile information</span>
-                  </li>
-                  <li className="flex items-start gap-2.5 text-sm">
-                    <Check className="size-4 text-primary shrink-0 mt-0.5" />
-                    <span>Access your account on your behalf</span>
-                  </li>
-                </ul>
-              </div>
-
               {expiresAt ? (
                 <FieldDescription className="text-xs">
                   Request expires at {expiresAt}.
