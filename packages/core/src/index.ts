@@ -67,6 +67,7 @@ export { OxyAppDataIdentifierError } from './mixins/OxyServices.appData';
 // ---------------------------------------------------------------------------
 export type {
     Application,
+    PublicApplication,
     ApplicationMember,
     ApplicationCredential,
     ApplicationRole,

@@ -12,7 +12,9 @@ import jwt from 'jsonwebtoken';
 import { SessionController } from '../controllers/session.controller';
 import { User } from '../models/User';
 import { Application } from '../models/Application';
+import type { IApplication } from '../models/Application';
 import { ApplicationCredential } from '../models/ApplicationCredential';
+import type { IApplicationCredential } from '../models/ApplicationCredential';
 import { isCredentialUsable } from '../utils/credentialUsability';
 import { authMiddleware, rejectQueryToken, type AuthRequest } from '../middleware/auth';
 import { requireSameSiteOrigin } from '../middleware/originGuard';
@@ -64,7 +66,10 @@ import {
   serviceTokenSchema,
   oauthAuthorizeSchema,
   oauthTokenSchema,
+  oauthClientParams,
 } from '../schemas/auth.schemas';
+import { serializePublicApplication } from '../utils/serializeApplication';
+import { isValidObjectId } from '../utils/validation';
 
 const router = express.Router();
 const USERNAME_REGEX = /^[a-zA-Z0-9]{3,30}$/;
@@ -1459,7 +1464,13 @@ import AuthSession from '../models/AuthSession';
  *         description: Missing field or token already in use.
  */
 router.post('/session/create', validate({ body: authSessionCreateSchema }), asyncHandler(async (req, res) => {
-  const { sessionToken, expiresAt, appId } = req.body;
+  const { sessionToken, expiresAt, appId, clientId, applicationId } = req.body as {
+    sessionToken: string;
+    appId: string;
+    clientId?: string;
+    applicationId?: string;
+    expiresAt?: string | number;
+  };
 
   if (!sessionToken || !appId) {
     throw new BadRequestError('sessionToken and appId are required');
@@ -1473,6 +1484,33 @@ router.post('/session/create', validate({ body: authSessionCreateSchema }), asyn
     expiresAtDate = defaultExpiresAt;
   }
 
+  // Resolve a canonical Application when an app reference is supplied. `appId`
+  // is only a free-form display label; `clientId` / `applicationId` bind the
+  // session to a registered Application record for the consent UI.
+  // Legacy callers that supply neither keep the prior behaviour exactly.
+  let resolvedApp: IApplication | null = null;
+  if (clientId) {
+    const credential = await resolveUsableCredential(clientId);
+    if (credential) {
+      resolvedApp = await Application.findById(credential.applicationId);
+    }
+    if (!resolvedApp) {
+      throw new BadRequestError('Invalid application');
+    }
+  } else if (applicationId) {
+    if (isValidObjectId(applicationId)) {
+      resolvedApp = await Application.findById(applicationId);
+    }
+    if (!resolvedApp) {
+      throw new BadRequestError('Invalid application');
+    }
+  }
+
+  if (resolvedApp && resolvedApp.status !== 'active') {
+    // Suspended / deleted / pending_review applications cannot start flows.
+    throw new ForbiddenError('Application is not available');
+  }
+
   // Check if session token already exists (generic error to prevent enumeration)
   const existing = await AuthSession.findOne({ sessionToken });
   if (existing) {
@@ -1483,11 +1521,16 @@ router.post('/session/create', validate({ body: authSessionCreateSchema }), asyn
   const authSession = await AuthSession.create({
     sessionToken,
     appId,
+    applicationId: resolvedApp ? resolvedApp._id : null,
     expiresAt: expiresAtDate,
     status: 'pending',
   });
 
-  logger.debug('Auth session created', { sessionToken: sessionToken.substring(0, 8) + '...', appId });
+  logger.debug('Auth session created', {
+    sessionToken: sessionToken.substring(0, 8) + '...',
+    appId,
+    applicationId: resolvedApp ? resolvedApp._id.toString() : null,
+  });
 
   sendSuccess(res, {
     sessionToken: authSession.sessionToken,
@@ -1583,11 +1626,25 @@ router.get('/session/status/:sessionToken', validate({ params: authSessionTokenP
     await authSession.save();
   }
 
+  // Resolve sanitized public application metadata for the consent UI. A
+  // canonical `applicationId` (resolved at create-time) is authoritative; if
+  // the app was later deleted/suspended or never resolved, we return null
+  // rather than throwing — the UI falls back to the `appId` label.
+  let application = null;
+  if (authSession.applicationId) {
+    const app = await Application.findById(authSession.applicationId);
+    if (app && app.status === 'active') {
+      const developerName = await resolveDeveloperName(app);
+      application = serializePublicApplication(app, developerName);
+    }
+  }
+
   sendSuccess(res, {
     status: authSession.status,
     authorized: authSession.status === 'authorized',
     sessionToken: authSession.sessionToken,
     appId: authSession.appId,
+    application,
     expiresAt: authSession.expiresAt.toISOString(),
     sessionId: authSession.authorizedSessionId || null,
     publicKey: authSession.authorizedBy || null,
@@ -1955,6 +2012,46 @@ function isAllowedRedirectUri(app: { redirectUris?: string[] }, redirectUri: str
   return false;
 }
 
+/**
+ * Resolve an OAuth `clientId` (= ApplicationCredential.publicKey) to its
+ * usable credential. Accepts `active` OR `deprecated`-within-grace credentials;
+ * rejects `revoked` and any whose rotation grace has elapsed. Returns null when
+ * no usable credential exists. Mirrors the resolution in `/oauth/authorize`
+ * and `/oauth/token`.
+ */
+async function resolveUsableCredential(clientId: string): Promise<IApplicationCredential | null> {
+  const credential = await ApplicationCredential.findOne({
+    publicKey: clientId,
+    status: { $ne: 'revoked' },
+  });
+  if (!credential || !isCredentialUsable(credential)) {
+    return null;
+  }
+  return credential;
+}
+
+/**
+ * Best-effort owner display name for the consent UI. Only meaningful for
+ * non-official apps. Never throws — a missing/deleted owner yields undefined so
+ * the serializer simply omits the attribution.
+ */
+async function resolveDeveloperName(app: IApplication): Promise<string | undefined> {
+  if (app.isOfficial) {
+    return undefined;
+  }
+  const owner = await User.findById(app.createdByUserId)
+    .select('username name')
+    .lean<{ username?: string; name?: { first?: string; last?: string } } | null>();
+  if (!owner) {
+    return undefined;
+  }
+  const first = typeof owner.name?.first === 'string' ? owner.name.first : '';
+  const last = typeof owner.name?.last === 'string' ? owner.name.last : '';
+  const full = [first, last].filter(Boolean).join(' ').trim();
+  const display = full || (typeof owner.username === 'string' ? owner.username.trim() : '');
+  return display || undefined;
+}
+
 const oauthAuthorizeLimiter = rateLimit({
   prefix: 'rl:auth:oauth-authorize:',
   windowMs: 60 * 1000,
@@ -1965,6 +2062,12 @@ const oauthTokenLimiter = rateLimit({
   prefix: 'rl:auth:oauth-token:',
   windowMs: 60 * 1000,
   max: process.env.NODE_ENV === 'development' ? 100 : 30,
+});
+
+const oauthClientLookupLimiter = rateLimit({
+  prefix: 'rl:auth:client-lookup:',
+  windowMs: 60 * 1000,
+  max: process.env.NODE_ENV === 'development' ? 200 : 60,
 });
 
 /**
@@ -2238,6 +2341,91 @@ router.post(
       expires_in: 15 * 60,
       session_id: session.sessionId,
       user: userData,
+    });
+  })
+);
+
+/**
+ * @openapi
+ * /auth/oauth/client/{clientId}:
+ *   get:
+ *     tags:
+ *       - Authentication
+ *     security: []
+ *     summary: Public lookup of an application's consent-UI metadata
+ *     description: >
+ *       Resolves an OAuth `client_id` (= ApplicationCredential public key) to
+ *       the sanitized public metadata of its registered Application so the auth
+ *       web consent screen can render the app's name, icon, official badge, and
+ *       requested scopes. No bearer token is required. Secrets, webhook config,
+ *       owner identity, and capabilities are never returned. Returns a generic
+ *       404 for unknown, revoked, expired, or inactive clients (no enumeration).
+ *     parameters:
+ *       - name: clientId
+ *         in: path
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Sanitized application metadata.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 application:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                     name:
+ *                       type: string
+ *                     description:
+ *                       type: string
+ *                     icon:
+ *                       type: string
+ *                     websiteUrl:
+ *                       type: string
+ *                     type:
+ *                       type: string
+ *                       enum: [first_party, third_party, internal, system]
+ *                     isOfficial:
+ *                       type: boolean
+ *                     isInternal:
+ *                       type: boolean
+ *                     scopes:
+ *                       type: array
+ *                       items:
+ *                         type: string
+ *                     developerName:
+ *                       type: string
+ *                       description: Best-effort owner display name (non-official apps only).
+ *       404:
+ *         description: Application not found.
+ */
+router.get(
+  '/oauth/client/:clientId',
+  oauthClientLookupLimiter,
+  validate({ params: oauthClientParams }),
+  asyncHandler(async (req, res) => {
+    const { clientId } = req.params;
+
+    const credential = await resolveUsableCredential(clientId);
+    if (!credential) {
+      // Generic 404 — don't disclose existence vs revoked/expired.
+      throw new NotFoundError('Application not found');
+    }
+
+    const app = await Application.findOne({ _id: credential.applicationId, status: 'active' });
+    if (!app) {
+      throw new NotFoundError('Application not found');
+    }
+
+    const developerName = await resolveDeveloperName(app);
+
+    sendSuccess(res, {
+      application: serializePublicApplication(app, developerName),
     });
   })
 );

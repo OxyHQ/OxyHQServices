@@ -89,9 +89,17 @@ export const getUserByPublicKeyParams = z.object({
 });
 
 // POST /auth/session/create
+//
+// `appId` remains required as a free-form legacy/display fallback label.
+// When the caller knows the registered application it should ALSO supply
+// either `clientId` (an ApplicationCredential.publicKey / OAuth client_id) or
+// `applicationId` (an Application _id) so the session can be bound to the
+// canonical Application record for the consent UI.
 export const authSessionCreateSchema = z.object({
   sessionToken: z.string().trim().min(1),
   appId: z.string().trim().min(1),
+  clientId: z.string().trim().min(1).optional(),
+  applicationId: z.string().trim().min(1).optional(),
   expiresAt: z.union([z.string(), z.number()]).optional(),
 });
 
@@ -153,3 +161,9 @@ export const oauthTokenSchema = z.object({
   (data) => Boolean(data.clientSecret) || Boolean(data.codeVerifier),
   { message: 'Either clientSecret (confidential client) or codeVerifier (PKCE) is required' }
 );
+
+// GET /auth/oauth/client/:clientId
+// Public lookup of sanitized application metadata for the consent UI.
+export const oauthClientParams = z.object({
+  clientId: z.string().trim().min(1),
+});

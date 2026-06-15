@@ -110,6 +110,39 @@ export interface ApplicationCredential {
   updatedAt: string;
 }
 
+/**
+ * Sanitized, PUBLIC application identity returned by the API when resolving a
+ * cross-app/OAuth client to a registered {@link Application}.
+ *
+ * Unlike {@link Application}, this shape carries NO sensitive or membership
+ * fields — it is safe to display unauthenticated in consent/authorize screens
+ * and device-flow approval UIs. The API resolves a `client_id` (OAuth
+ * credential public key) to the owning application and projects only the
+ * fields below. `id` is the application's `_id` as a string.
+ */
+export interface PublicApplication {
+  /** The application's Mongo `_id` as a string. */
+  id: string;
+  /** Human-readable application name shown to the user. */
+  name: string;
+  /** Optional short description of what the application does. */
+  description?: string;
+  /** Optional icon URL for the application. */
+  icon?: string;
+  /** Optional public website/homepage URL for the application. */
+  websiteUrl?: string;
+  /** Application classification (set by Oxy platform staff). */
+  type: ApplicationType;
+  /** Whether the application is an officially endorsed Oxy application. */
+  isOfficial: boolean;
+  /** Whether the application is an internal Oxy ecosystem application. */
+  isInternal: boolean;
+  /** OAuth scopes the application is configured to request. */
+  scopes: string[];
+  /** Optional display name of the developer/owner organisation. */
+  developerName?: string;
+}
+
 /** Input accepted by `createApplication`. Staff-only fields are not settable here. */
 export interface CreateApplicationInput {
   name: string;
@@ -220,6 +253,30 @@ export function OxyServicesApplicationsMixin<T extends typeof OxyServicesBase>(B
   return class extends Base {
     constructor(...args: any[]) {
       super(...(args as [any]));
+    }
+
+    /**
+     * Resolve an OAuth client identifier to the owning application's PUBLIC
+     * identity. No authentication required — the API returns only sanitized,
+     * display-safe metadata ({@link PublicApplication}). Use this to render the
+     * requesting application's name/icon in consent, authorize, and device-flow
+     * approval UIs before any session exists.
+     *
+     * @param clientId - The OAuth `client_id` (an active credential's public
+     *   key). URL-encoded before being placed in the path.
+     */
+    async getPublicApplication(clientId: string): Promise<PublicApplication> {
+      try {
+        const res = await this.makeRequest<{ application: PublicApplication }>(
+          'GET',
+          `/auth/oauth/client/${encodeURIComponent(clientId)}`,
+          undefined,
+          { cache: true, cacheTTL: CACHE_TIMES.MEDIUM },
+        );
+        return res.application;
+      } catch (error) {
+        throw this.handleError(error);
+      }
     }
 
     /**

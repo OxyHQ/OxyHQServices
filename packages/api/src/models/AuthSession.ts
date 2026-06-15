@@ -16,12 +16,23 @@ import mongoose, { Document, Schema } from "mongoose";
  *                 (single-use, enforced via atomic findOneAndUpdate)
  *   expired    -> TTL elapsed before authorization completed
  *   cancelled  -> user denied the authorization
+ *
+ * App identity:
+ *   `appId`         is a legacy/display fallback LABEL (free-form string). It is
+ *                   still accepted and stored for backwards-compat and as the
+ *                   consent-UI fallback when no registered app is resolved.
+ *   `applicationId` is the resolved, canonical reference to a registered
+ *                   `Application` record (when the caller supplied a `clientId`
+ *                   or `applicationId`). Prefer this for authoritative app
+ *                   identity; it links the session to real, sanitized app
+ *                   metadata (name/icon/badge/scopes).
  */
 export type AuthSessionStatus = 'pending' | 'authorized' | 'consumed' | 'expired' | 'cancelled';
 
 export interface IAuthSession extends Document {
   sessionToken: string;      // Unique token for this auth session (128-bit secret held only by the originating client)
-  appId: string;             // Identifier for the requesting app
+  appId: string;             // Legacy/display fallback label for the requesting app (free-form string)
+  applicationId?: mongoose.Types.ObjectId; // Canonical reference to a registered Application (when resolvable)
   status: AuthSessionStatus;
   authorizedBy?: string;     // Public key of the user who authorized
   authorizedUserId?: mongoose.Types.ObjectId; // MongoDB user ID of the authorizing user
@@ -43,6 +54,12 @@ const AuthSessionSchema: Schema = new Schema(
     appId: {
       type: String,
       required: true,
+    },
+    applicationId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Application',
+      default: null,
+      index: true,
     },
     status: {
       type: String,
