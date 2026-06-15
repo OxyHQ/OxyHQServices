@@ -5,6 +5,7 @@ import { SidebarProvider, SidebarInset, SidebarTrigger } from '@/components/ui/s
 import { AppSidebar } from '@/components/layout/app-sidebar';
 import { Separator } from '@/components/ui/separator';
 import { CommandMenuTrigger } from '@/components/command-menu';
+import { SplashScreen } from '@/components/splash-screen';
 
 export const Route = createFileRoute('/_layout')({
   component: LayoutComponent,
@@ -20,11 +21,7 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   }, [isReady, isAuthenticated, signIn]);
 
   if (!isReady || !isAuthenticated) {
-    return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="text-muted-foreground">Loading...</div>
-      </div>
-    );
+    return <SplashScreen />;
   }
 
   return <>{children}</>;

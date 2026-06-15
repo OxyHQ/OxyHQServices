@@ -152,3 +152,33 @@
     @apply font-sans;
     }
 }
+
+/*
+ * macOS-boot-style indeterminate progress bar used by the app-boot SplashScreen
+ * (src/components/splash-screen.tsx). The bar element is a ~40% wide segment
+ * that sweeps across its clipped track and eases back, like the macOS boot bar.
+ * Keep in sync with the inline splash in index.html.
+ */
+@keyframes oxy-splash-sweep {
+  0% {
+    transform: translateX(-100%) scaleX(0.4);
+  }
+  50% {
+    transform: translateX(40%) scaleX(0.6);
+  }
+  100% {
+    transform: translateX(150%) scaleX(0.4);
+  }
+}
+
+.oxy-splash-bar {
+  transform-origin: left center;
+  animation: oxy-splash-sweep 1.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .oxy-splash-bar {
+    animation: none;
+    transform: scaleX(0.6);
+  }
+}
