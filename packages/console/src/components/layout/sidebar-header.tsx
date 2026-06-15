@@ -2,7 +2,6 @@ import * as React from 'react';
 import { Link } from '@tanstack/react-router';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
-  AiBrain01Icon,
   ArrowDown01Icon,
   Add01Icon,
   Tick02Icon,
@@ -29,6 +28,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   SidebarMenu,
   SidebarMenuButton,
@@ -36,11 +36,30 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar';
 import { useWorkspace, type Workspace } from '@/hooks/use-workspace';
+import { useAuth } from '@oxyhq/auth';
 import { toast } from 'sonner';
 
 export function SidebarHeaderBrand() {
   const { isMobile } = useSidebar();
+  const { user, oxyServices } = useAuth();
   const { workspaces, currentWorkspace, setCurrentWorkspace, createWorkspace, isLoading } = useWorkspace();
+
+  // The personal workspace represents the signed-in user, so its switcher icon
+  // is the user's own avatar (resolved the same way as `nav-user.tsx`), with
+  // initials as the fallback. Team workspaces keep their uploaded `icon`.
+  const userAvatarUrl = ((): string | undefined => {
+    if (!user?.avatar) return undefined;
+    if (user.avatar.startsWith('http')) return user.avatar;
+    return oxyServices.getFileDownloadUrl(user.avatar, 'thumb');
+  })();
+
+  const userInitials = ((): string => {
+    const name = user?.name as { first?: string; last?: string } | undefined;
+    if (name?.first && name?.last) {
+      return `${name.first[0]}${name.last[0]}`.toUpperCase();
+    }
+    return (name?.first?.[0] || user?.username?.[0] || 'U').toUpperCase();
+  })();
   const [showCreateDialog, setShowCreateDialog] = React.useState(false);
   const [newWorkspaceName, setNewWorkspaceName] = React.useState('');
   const [newWorkspaceDescription, setNewWorkspaceDescription] = React.useState('');
@@ -101,19 +120,24 @@ export function SidebarHeaderBrand() {
                 size="lg"
                 className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
               >
-                <div className="flex aspect-square size-8 items-center justify-center overflow-hidden rounded-lg bg-primary text-primary-foreground">
-                  {currentWorkspace.icon ? (
-                    <img
-                      src={currentWorkspace.icon}
-                      alt={currentWorkspace.name}
-                      className="size-full object-cover"
-                    />
-                  ) : currentWorkspace.type === 'personal' ? (
-                    <HugeiconsIcon icon={AiBrain01Icon} size={18} />
-                  ) : (
-                    <HugeiconsIcon icon={UserMultiple02Icon} size={18} />
-                  )}
-                </div>
+                {currentWorkspace.type === 'personal' ? (
+                  <Avatar className="size-8 rounded-lg">
+                    <AvatarImage src={userAvatarUrl} alt={currentWorkspace.name} />
+                    <AvatarFallback className="rounded-lg">{userInitials}</AvatarFallback>
+                  </Avatar>
+                ) : (
+                  <div className="flex aspect-square size-8 items-center justify-center overflow-hidden rounded-lg bg-primary text-primary-foreground">
+                    {currentWorkspace.icon ? (
+                      <img
+                        src={currentWorkspace.icon}
+                        alt={currentWorkspace.name}
+                        className="size-full object-cover"
+                      />
+                    ) : (
+                      <HugeiconsIcon icon={UserMultiple02Icon} size={18} />
+                    )}
+                  </div>
+                )}
                 <div className="grid flex-1 text-left text-sm leading-tight">
                   <span className="truncate font-semibold">{currentWorkspace.name}</span>
                   <span className="truncate text-xs text-muted-foreground">
@@ -138,19 +162,24 @@ export function SidebarHeaderBrand() {
                   className="gap-2 p-2"
                   onClick={() => handleSelectWorkspace(workspace)}
                 >
-                  <div className="flex size-6 items-center justify-center overflow-hidden rounded-md border bg-primary text-primary-foreground">
-                    {workspace.icon ? (
-                      <img
-                        src={workspace.icon}
-                        alt={workspace.name}
-                        className="size-full object-cover"
-                      />
-                    ) : workspace.type === 'personal' ? (
-                      <HugeiconsIcon icon={AiBrain01Icon} size={14} />
-                    ) : (
-                      <HugeiconsIcon icon={UserMultiple02Icon} size={14} />
-                    )}
-                  </div>
+                  {workspace.type === 'personal' ? (
+                    <Avatar className="size-6 rounded-md">
+                      <AvatarImage src={userAvatarUrl} alt={workspace.name} />
+                      <AvatarFallback className="rounded-md text-xs">{userInitials}</AvatarFallback>
+                    </Avatar>
+                  ) : (
+                    <div className="flex size-6 items-center justify-center overflow-hidden rounded-md border bg-primary text-primary-foreground">
+                      {workspace.icon ? (
+                        <img
+                          src={workspace.icon}
+                          alt={workspace.name}
+                          className="size-full object-cover"
+                        />
+                      ) : (
+                        <HugeiconsIcon icon={UserMultiple02Icon} size={14} />
+                      )}
+                    </div>
+                  )}
                   <span className="flex-1">{workspace.name}</span>
                   {currentWorkspace._id === workspace._id && (
                     <HugeiconsIcon icon={Tick02Icon} size={14} className="text-primary" />

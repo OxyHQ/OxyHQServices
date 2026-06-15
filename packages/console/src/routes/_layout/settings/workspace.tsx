@@ -18,8 +18,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ImageUploadField } from '@/components/ui/image-upload-field';
+import config from '@/lib/config';
 import {
   Select,
   SelectContent,
@@ -87,7 +88,7 @@ function shortUserId(userId: string): string {
 }
 
 function WorkspaceSettingsPage() {
-  const { oxyServices } = useAuth();
+  const { user, oxyServices } = useAuth();
   const {
     currentWorkspace,
     updateWorkspace,
@@ -99,6 +100,22 @@ function WorkspaceSettingsPage() {
 
   const workspaceId = currentWorkspace?._id;
   const isPersonal = currentWorkspace?.type === 'personal';
+
+  // Personal workspaces show the signed-in user's avatar (read-only — it is
+  // managed in the user's Oxy account). Resolved the same way as `nav-user.tsx`.
+  const userAvatarUrl = ((): string | undefined => {
+    if (!user?.avatar) return undefined;
+    if (user.avatar.startsWith('http')) return user.avatar;
+    return oxyServices.getFileDownloadUrl(user.avatar, 'thumb');
+  })();
+
+  const userInitials = ((): string => {
+    const name = user?.name as { first?: string; last?: string } | undefined;
+    if (name?.first && name?.last) {
+      return `${name.first[0]}${name.last[0]}`.toUpperCase();
+    }
+    return (name?.first?.[0] || user?.username?.[0] || 'U').toUpperCase();
+  })();
 
   // Members are fetched only for team workspaces with permission to read them.
   const canManage = currentWorkspace ? canManageMembers(currentWorkspace) : false;
@@ -165,8 +182,9 @@ function WorkspaceSettingsPage() {
   };
 
   // The avatar uploader resolves a public URL, then persists it immediately so
-  // the change lands without requiring the (team-only) "Save changes" button.
-  // Works for personal AND team workspaces — only renames are blocked for personal.
+  // the change lands without requiring the "Save changes" button. Only rendered
+  // for team workspaces — personal workspaces inherit the user's account avatar
+  // and expose no uploader.
   const handleAvatarChange = async (url: string) => {
     setIcon(url);
     try {
@@ -309,17 +327,37 @@ function WorkspaceSettingsPage() {
         <div className="space-y-4 max-w-md">
           <div className="space-y-2">
             <Label>Avatar</Label>
-            <ImageUploadField
-              oxyServices={oxyServices}
-              value={icon}
-              onChange={handleAvatarChange}
-              disabled={!canEdit}
-              label="Workspace avatar"
-              onError={(message) => toast.error(message)}
-              fallback={
-                <HugeiconsIcon icon={UserMultiple02Icon} size={24} className="text-muted-foreground" />
-              }
-            />
+            {isPersonal ? (
+              <div className="flex items-center gap-3">
+                <Avatar className="size-14 rounded-lg">
+                  <AvatarImage src={userAvatarUrl} alt={currentWorkspace.name} />
+                  <AvatarFallback className="rounded-lg text-base">{userInitials}</AvatarFallback>
+                </Avatar>
+                <p className="text-xs text-muted-foreground">
+                  Your personal workspace uses your account avatar.{' '}
+                  <a
+                    href={config.accountsUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-medium text-foreground underline-offset-2 hover:underline"
+                  >
+                    Managed in your Oxy account
+                  </a>
+                </p>
+              </div>
+            ) : (
+              <ImageUploadField
+                oxyServices={oxyServices}
+                value={icon}
+                onChange={handleAvatarChange}
+                disabled={!canEdit}
+                label="Workspace avatar"
+                onError={(message) => toast.error(message)}
+                fallback={
+                  <HugeiconsIcon icon={UserMultiple02Icon} size={24} className="text-muted-foreground" />
+                }
+              />
+            )}
           </div>
           <div className="space-y-2">
             <Label htmlFor="name">Workspace name</Label>
