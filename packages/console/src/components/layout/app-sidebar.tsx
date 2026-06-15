@@ -12,6 +12,7 @@ import {
   CommandIcon,
 } from '@hugeicons/core-free-icons';
 import { useAuth } from '@oxyhq/auth';
+import config from '@/lib/config';
 import {
   Sidebar,
   SidebarContent,
@@ -61,15 +62,9 @@ const resourceNavItems = [
   },
   {
     title: 'Documentation',
-    url: '/documentation',
+    url: config.docsUrl,
     icon: Doc01Icon,
-    items: [
-      { title: 'Quick Start', url: '/documentation/quickstart' },
-      { title: 'Authentication', url: '/documentation/authentication' },
-      { title: 'Chat Completions', url: '/documentation/chat-completions' },
-      { title: 'Models', url: '/documentation/models' },
-      { title: 'SDKs', url: '/documentation/sdks' },
-    ],
+    external: true,
   },
   {
     title: 'Examples',
@@ -109,7 +104,7 @@ export function AppSidebar() {
         {isAuthenticated ? (
           <NavUser />
         ) : (
-          <Button variant="ghost" className="w-full justify-start gap-2 px-2" onClick={signIn}>
+          <Button variant="ghost" className="w-full justify-start gap-2 px-2" onClick={() => signIn()}>
             <HugeiconsIcon icon={Login01Icon} size={18} />
             <span>Sign in</span>
           </Button>

@@ -5,6 +5,7 @@ import {
   Money01Icon,
   ArrowUp01Icon,
   Notification01Icon,
+  UserCircleIcon,
 } from '@hugeicons/core-free-icons';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
@@ -24,6 +25,7 @@ import {
 } from '@/components/ui/sidebar';
 import { useAuth } from '@oxyhq/auth';
 import { Link } from '@tanstack/react-router';
+import config from '@/lib/config';
 
 export function NavUser() {
   const { isMobile } = useSidebar();
@@ -102,6 +104,12 @@ export function NavUser() {
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
+              <DropdownMenuItem asChild>
+                <a href={config.accountsUrl} target="_blank" rel="noopener noreferrer">
+                  <HugeiconsIcon icon={UserCircleIcon} size={16} />
+                  Manage account
+                </a>
+              </DropdownMenuItem>
               <DropdownMenuItem asChild>
                 <Link to="/billing">
                   <HugeiconsIcon icon={Money01Icon} size={16} />

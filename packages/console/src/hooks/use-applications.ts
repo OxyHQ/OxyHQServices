@@ -1,44 +1,48 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@oxyhq/auth';
-import apiClient from '@/lib/api/client';
+import type {
+  Application,
+  ApplicationMember,
+  ApplicationCredential,
+  ApplicationRole,
+  ApplicationType,
+  ApplicationStatus,
+  ApplicationMemberStatus,
+  ApplicationCredentialType,
+  ApplicationCredentialStatus,
+  ApplicationEnvironment,
+  CreateApplicationInput,
+  UpdateApplicationInput,
+  ApplicationCredentialWithSecret,
+  ApplicationUsageStats,
+} from '@oxyhq/core';
 
 // ===========================================================================
-// Types — mirror the issue #213 API contract.
-// Mongo `_id` and dates are serialized as strings on the wire.
+// Types — re-exported from @oxyhq/core so the Console shares the single
+// source of truth (the `applications` mixin) rather than maintaining a
+// parallel copy that can drift from the API contract.
 // ===========================================================================
 
-export type ApplicationType = 'first_party' | 'third_party' | 'internal' | 'system';
-export type ApplicationStatus = 'active' | 'suspended' | 'deleted' | 'pending_review';
+export type {
+  Application,
+  ApplicationMember,
+  ApplicationCredential,
+  ApplicationRole,
+  ApplicationType,
+  ApplicationStatus,
+  ApplicationMemberStatus,
+  ApplicationCredentialType,
+  ApplicationCredentialStatus,
+  ApplicationEnvironment,
+  CreateApplicationInput,
+  UpdateApplicationInput,
+};
 
-export interface Application {
-  _id: string;
-  name: string;
-  description?: string;
-  websiteUrl?: string;
-  icon?: string;
-  type: ApplicationType;
-  status: ApplicationStatus;
-  isOfficial: boolean;
-  isInternal: boolean;
-  capabilities: string[];
-  redirectUris: string[];
-  scopes: string[];
-  webhookUrl?: string;
-  devWebhookUrl?: string;
-  createdByUserId: string;
-  createdAt: string;
-  updatedAt: string;
-  /**
-   * The authenticated caller's membership for this application, when the API
-   * embeds it. Used to gate Console UI affordances on the caller's own role —
-   * it lets a member (e.g. a `developer`) discover their own permissions
-   * without `members:read` access to the full member list.
-   */
-  callerMembership?: ApplicationMember;
-}
+/** Result of creating/rotating a credential — the secret is returned ONCE. */
+export type CredentialWithSecret = ApplicationCredentialWithSecret;
 
-export type ApplicationRole = 'owner' | 'admin' | 'developer' | 'viewer' | 'billing';
-export type ApplicationMemberStatus = 'active' | 'invited' | 'removed';
+/** Usage statistics for an application over a period. */
+export type AppUsageStats = ApplicationUsageStats;
 
 /**
  * Permission strings derived from the member's role server-side.
@@ -64,63 +68,10 @@ export type ApplicationPermission =
   | 'billing:manage'
   | 'ownership:transfer';
 
-export interface ApplicationMember {
-  _id: string;
-  applicationId: string;
-  userId: string;
-  role: ApplicationRole;
-  permissions: ApplicationPermission[];
-  invitedByUserId?: string;
-  joinedAt?: string;
-  status: ApplicationMemberStatus;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export type ApplicationCredentialType = 'public' | 'confidential' | 'service';
-export type ApplicationEnvironment = 'development' | 'staging' | 'production';
-export type ApplicationCredentialStatus = 'active' | 'deprecated' | 'revoked';
-
-export interface ApplicationCredential {
-  _id: string;
-  applicationId: string;
-  name: string;
-  publicKey: string;
-  type: ApplicationCredentialType;
-  environment: ApplicationEnvironment;
-  scopes: string[];
-  status: ApplicationCredentialStatus;
-  lastUsedAt?: string;
-  expiresAt?: string;
-  createdByUserId: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface CreateApplicationInput {
-  name: string;
-  description?: string;
-  websiteUrl?: string;
-  icon?: string;
-  redirectUris?: string[];
-  scopes?: string[];
-}
-
-export interface UpdateApplicationInput {
-  name?: string;
-  description?: string;
-  websiteUrl?: string;
-  icon?: string;
-  redirectUris?: string[];
-  scopes?: string[];
-  webhookUrl?: string;
-  devWebhookUrl?: string;
-  status?: ApplicationStatus;
-}
-
 export interface InviteMemberInput {
   userId: string;
-  role: ApplicationRole;
+  /** Owner cannot be invited — ownership is transferred, never granted. */
+  role: Exclude<ApplicationRole, 'owner'>;
 }
 
 export interface UpdateMemberInput {
@@ -132,39 +83,6 @@ export interface CreateCredentialInput {
   type: ApplicationCredentialType;
   environment: ApplicationEnvironment;
   scopes?: string[];
-}
-
-export interface CredentialWithSecret {
-  credential: ApplicationCredential;
-  secret: string;
-}
-
-export interface UsageSummary {
-  totalRequests: number;
-  totalTokens: number;
-  totalCredits: number;
-  avgResponseTime: number;
-  successfulRequests: number;
-  errorRequests: number;
-}
-
-export interface UsageByDay {
-  _id: string;
-  requests: number;
-  tokens: number;
-  credits: number;
-}
-
-export interface UsageByEndpoint {
-  _id: string;
-  requests: number;
-  tokens: number;
-}
-
-export interface AppUsageStats {
-  summary: UsageSummary;
-  byDay: UsageByDay[];
-  byEndpoint: UsageByEndpoint[];
 }
 
 // ===========================================================================
@@ -183,34 +101,24 @@ const queryKeys = {
 // Applications
 // ===========================================================================
 
-async function fetchApplications(): Promise<Application[]> {
-  const response = await apiClient.get<{ applications: Application[] }>('/applications');
-  return response.data.applications;
-}
-
 export function useApplications() {
-  const { isAuthenticated, isReady } = useAuth();
+  const { oxyServices, isAuthenticated, isReady } = useAuth();
 
   return useQuery({
     queryKey: queryKeys.applications,
-    queryFn: fetchApplications,
+    queryFn: () => oxyServices.getApplications(),
     staleTime: 1000 * 60 * 5,
     retry: 2,
     enabled: isReady && isAuthenticated,
   });
 }
 
-async function fetchApplication(appId: string): Promise<Application> {
-  const response = await apiClient.get<{ application: Application }>(`/applications/${appId}`);
-  return response.data.application;
-}
-
 export function useApplication(appId: string) {
-  const { isAuthenticated, isReady } = useAuth();
+  const { oxyServices, isAuthenticated, isReady } = useAuth();
 
   return useQuery({
     queryKey: queryKeys.application(appId),
-    queryFn: () => fetchApplication(appId),
+    queryFn: () => oxyServices.getApplication(appId),
     enabled: isReady && isAuthenticated && !!appId,
     staleTime: 1000 * 60 * 2,
     retry: 1,
@@ -218,13 +126,12 @@ export function useApplication(appId: string) {
 }
 
 export function useCreateApplication() {
+  const { oxyServices } = useAuth();
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (data: CreateApplicationInput): Promise<Application> => {
-      const response = await apiClient.post<{ application: Application }>('/applications', data);
-      return response.data.application;
-    },
+    mutationFn: (data: CreateApplicationInput): Promise<Application> =>
+      oxyServices.createApplication(data),
     onSuccess: (newApp) => {
       queryClient.setQueryData<Application[]>(queryKeys.applications, (old) =>
         old ? [newApp, ...old] : [newApp]
@@ -235,22 +142,17 @@ export function useCreateApplication() {
 }
 
 export function useUpdateApplication() {
+  const { oxyServices } = useAuth();
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({
+    mutationFn: ({
       appId,
       data,
     }: {
       appId: string;
       data: UpdateApplicationInput;
-    }): Promise<Application> => {
-      const response = await apiClient.patch<{ application: Application }>(
-        `/applications/${appId}`,
-        data
-      );
-      return response.data.application;
-    },
+    }): Promise<Application> => oxyServices.updateApplication(appId, data),
     onSuccess: (updatedApp) => {
       queryClient.setQueryData<Application[]>(queryKeys.applications, (old) =>
         old ? old.map((app) => (app._id === updatedApp._id ? updatedApp : app)) : [updatedApp]
@@ -261,11 +163,12 @@ export function useUpdateApplication() {
 }
 
 export function useDeleteApplication() {
+  const { oxyServices } = useAuth();
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: async (appId: string): Promise<string> => {
-      await apiClient.delete(`/applications/${appId}`);
+      await oxyServices.deleteApplication(appId);
       return appId;
     },
     onSuccess: (appId) => {
@@ -283,19 +186,12 @@ export function useDeleteApplication() {
 // Members
 // ===========================================================================
 
-async function fetchMembers(appId: string): Promise<ApplicationMember[]> {
-  const response = await apiClient.get<{ members: ApplicationMember[] }>(
-    `/applications/${appId}/members`
-  );
-  return response.data.members;
-}
-
 export function useApplicationMembers(appId: string, enabled: boolean = true) {
-  const { isAuthenticated, isReady } = useAuth();
+  const { oxyServices, isAuthenticated, isReady } = useAuth();
 
   return useQuery({
     queryKey: queryKeys.members(appId),
-    queryFn: () => fetchMembers(appId),
+    queryFn: () => oxyServices.getApplicationMembers(appId),
     enabled: isReady && isAuthenticated && !!appId && enabled,
     staleTime: 1000 * 60 * 2,
     retry: 1,
@@ -303,22 +199,21 @@ export function useApplicationMembers(appId: string, enabled: boolean = true) {
 }
 
 export function useInviteMember() {
+  const { oxyServices } = useAuth();
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({
+    mutationFn: ({
       appId,
       data,
     }: {
       appId: string;
       data: InviteMemberInput;
-    }): Promise<ApplicationMember> => {
-      const response = await apiClient.post<{ member: ApplicationMember }>(
-        `/applications/${appId}/members`,
-        data
-      );
-      return response.data.member;
-    },
+    }): Promise<ApplicationMember> =>
+      oxyServices.inviteApplicationMember(appId, {
+        userId: data.userId,
+        role: data.role,
+      }),
     onSuccess: (member) => {
       queryClient.setQueryData<ApplicationMember[]>(queryKeys.members(member.applicationId), (old) =>
         old ? [...old, member] : [member]
@@ -328,10 +223,11 @@ export function useInviteMember() {
 }
 
 export function useUpdateMember() {
+  const { oxyServices } = useAuth();
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({
+    mutationFn: ({
       appId,
       memberId,
       data,
@@ -339,13 +235,7 @@ export function useUpdateMember() {
       appId: string;
       memberId: string;
       data: UpdateMemberInput;
-    }): Promise<ApplicationMember> => {
-      const response = await apiClient.patch<{ member: ApplicationMember }>(
-        `/applications/${appId}/members/${memberId}`,
-        data
-      );
-      return response.data.member;
-    },
+    }): Promise<ApplicationMember> => oxyServices.updateApplicationMember(appId, memberId, data),
     onSuccess: (member) => {
       queryClient.setQueryData<ApplicationMember[]>(queryKeys.members(member.applicationId), (old) =>
         old ? old.map((m) => (m._id === member._id ? member : m)) : [member]
@@ -355,6 +245,7 @@ export function useUpdateMember() {
 }
 
 export function useRemoveMember() {
+  const { oxyServices } = useAuth();
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -365,7 +256,7 @@ export function useRemoveMember() {
       appId: string;
       memberId: string;
     }): Promise<{ appId: string; memberId: string }> => {
-      await apiClient.delete(`/applications/${appId}/members/${memberId}`);
+      await oxyServices.removeApplicationMember(appId, memberId);
       return { appId, memberId };
     },
     onSuccess: ({ appId, memberId }) => {
@@ -377,22 +268,18 @@ export function useRemoveMember() {
 }
 
 export function useTransferOwnership() {
+  const { oxyServices } = useAuth();
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({
+    mutationFn: ({
       appId,
       userId,
     }: {
       appId: string;
       userId: string;
-    }): Promise<{ success: boolean }> => {
-      const response = await apiClient.post<{ success: boolean }>(
-        `/applications/${appId}/transfer-ownership`,
-        { userId }
-      );
-      return response.data;
-    },
+    }): Promise<{ success: boolean }> =>
+      oxyServices.transferApplicationOwnership(appId, { userId }),
     onSuccess: (_data, { appId }) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.members(appId) });
     },
@@ -403,19 +290,12 @@ export function useTransferOwnership() {
 // Credentials
 // ===========================================================================
 
-async function fetchCredentials(appId: string): Promise<ApplicationCredential[]> {
-  const response = await apiClient.get<{ credentials: ApplicationCredential[] }>(
-    `/applications/${appId}/credentials`
-  );
-  return response.data.credentials;
-}
-
 export function useApplicationCredentials(appId: string, enabled: boolean = true) {
-  const { isAuthenticated, isReady } = useAuth();
+  const { oxyServices, isAuthenticated, isReady } = useAuth();
 
   return useQuery({
     queryKey: queryKeys.credentials(appId),
-    queryFn: () => fetchCredentials(appId),
+    queryFn: () => oxyServices.getApplicationCredentials(appId),
     enabled: isReady && isAuthenticated && !!appId && enabled,
     staleTime: 1000 * 60 * 2,
     retry: 1,
@@ -423,22 +303,23 @@ export function useApplicationCredentials(appId: string, enabled: boolean = true
 }
 
 export function useCreateCredential() {
+  const { oxyServices } = useAuth();
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({
+    mutationFn: ({
       appId,
       data,
     }: {
       appId: string;
       data: CreateCredentialInput;
-    }): Promise<CredentialWithSecret> => {
-      const response = await apiClient.post<CredentialWithSecret>(
-        `/applications/${appId}/credentials`,
-        data
-      );
-      return response.data;
-    },
+    }): Promise<CredentialWithSecret> =>
+      oxyServices.createApplicationCredential(appId, {
+        name: data.name,
+        type: data.type,
+        environment: data.environment,
+        scopes: data.scopes,
+      }),
     onSuccess: ({ credential }) => {
       queryClient.setQueryData<ApplicationCredential[]>(
         queryKeys.credentials(credential.applicationId),
@@ -449,21 +330,18 @@ export function useCreateCredential() {
 }
 
 export function useRotateCredential() {
+  const { oxyServices } = useAuth();
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({
+    mutationFn: ({
       appId,
       credentialId,
     }: {
       appId: string;
       credentialId: string;
-    }): Promise<CredentialWithSecret> => {
-      const response = await apiClient.post<CredentialWithSecret>(
-        `/applications/${appId}/credentials/${credentialId}/rotate`
-      );
-      return response.data;
-    },
+    }): Promise<CredentialWithSecret> =>
+      oxyServices.rotateApplicationCredential(appId, credentialId),
     onSuccess: ({ credential }) => {
       queryClient.setQueryData<ApplicationCredential[]>(
         queryKeys.credentials(credential.applicationId),
@@ -474,6 +352,7 @@ export function useRotateCredential() {
 }
 
 export function useRevokeCredential() {
+  const { oxyServices } = useAuth();
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -484,7 +363,7 @@ export function useRevokeCredential() {
       appId: string;
       credentialId: string;
     }): Promise<{ appId: string; credentialId: string }> => {
-      await apiClient.delete(`/applications/${appId}/credentials/${credentialId}`);
+      await oxyServices.revokeApplicationCredential(appId, credentialId);
       return { appId, credentialId };
     },
     onSuccess: ({ appId, credentialId }) => {
@@ -503,19 +382,12 @@ export function useRevokeCredential() {
 // Usage
 // ===========================================================================
 
-async function fetchUsage(appId: string, period: string): Promise<AppUsageStats> {
-  const response = await apiClient.get<AppUsageStats>(
-    `/applications/${appId}/usage?period=${period}`
-  );
-  return response.data;
-}
-
 export function useApplicationUsage(appId: string, period: string = '7d', enabled: boolean = true) {
-  const { isAuthenticated, isReady } = useAuth();
+  const { oxyServices, isAuthenticated, isReady } = useAuth();
 
   return useQuery({
     queryKey: queryKeys.usage(appId, period),
-    queryFn: () => fetchUsage(appId, period),
+    queryFn: () => oxyServices.getApplicationUsage(appId, period as '24h' | '7d' | '30d' | '90d'),
     enabled: isReady && isAuthenticated && !!appId && enabled,
     staleTime: 1000 * 60,
     retry: 1,
@@ -543,7 +415,7 @@ function buildCallerAccess(
   membership: ApplicationMember | undefined,
   isResolved: boolean
 ): CallerAccess {
-  const permissions = new Set(membership?.permissions ?? []);
+  const permissions = new Set<string>(membership?.permissions ?? []);
   return {
     membership,
     role: membership?.role,

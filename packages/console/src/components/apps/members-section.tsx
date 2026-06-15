@@ -45,8 +45,12 @@ import {
   type Application,
   type ApplicationMember,
   type ApplicationRole,
+  type InviteMemberInput,
   type CallerAccess,
 } from '@/hooks/use-applications';
+
+/** Roles assignable via invite — everything except `owner`. */
+type AssignableRole = InviteMemberInput['role'];
 
 function getErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message) {
@@ -57,7 +61,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
 
 // Roles that can be assigned to a non-owner member. Ownership is changed only
 // via the transfer-ownership flow.
-const ASSIGNABLE_ROLES: { value: ApplicationRole; label: string; description: string }[] = [
+const ASSIGNABLE_ROLES: { value: AssignableRole; label: string; description: string }[] = [
   { value: 'admin', label: 'Admin', description: 'Manage members, credentials, and settings' },
   { value: 'developer', label: 'Developer', description: 'Manage credentials and webhooks' },
   { value: 'viewer', label: 'Viewer', description: 'Read-only access' },
@@ -92,7 +96,7 @@ export function MembersSection({ application, access }: MembersSectionProps) {
 
   const [showInviteDialog, setShowInviteDialog] = useState(false);
   const [inviteUserId, setInviteUserId] = useState('');
-  const [inviteRole, setInviteRole] = useState<ApplicationRole>('developer');
+  const [inviteRole, setInviteRole] = useState<AssignableRole>('developer');
   const [memberToRemove, setMemberToRemove] = useState<ApplicationMember | null>(null);
   const [memberToPromote, setMemberToPromote] = useState<ApplicationMember | null>(null);
 
@@ -304,7 +308,7 @@ export function MembersSection({ application, access }: MembersSectionProps) {
               </Label>
               <Select
                 value={inviteRole}
-                onValueChange={(value) => setInviteRole(value as ApplicationRole)}
+                onValueChange={(value) => setInviteRole(value as AssignableRole)}
               >
                 <SelectTrigger id="invite-role" className="w-full">
                   <SelectValue />

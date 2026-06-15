@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import apiClient from '@/lib/api/client';
+import { useAuth } from '@oxyhq/auth';
 
 export interface ModelStats {
   id: string;
@@ -24,15 +24,12 @@ export interface ModelsStatsResponse {
   timestamp: string;
 }
 
-async function fetchModelsStats(): Promise<ModelsStatsResponse> {
-  const response = await apiClient.get<ModelsStatsResponse>('/models/stats');
-  return response.data;
-}
-
 export function useModelsStats() {
+  const { oxyServices } = useAuth();
+
   return useQuery({
     queryKey: ['models-stats'],
-    queryFn: fetchModelsStats,
+    queryFn: () => oxyServices.makeRequest<ModelsStatsResponse>('GET', '/models/stats'),
     staleTime: 1000 * 60 * 2,
     retry: 2,
   });

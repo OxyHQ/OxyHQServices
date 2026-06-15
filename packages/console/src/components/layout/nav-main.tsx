@@ -1,5 +1,6 @@
 import { Link, useLocation } from '@tanstack/react-router';
 import { HugeiconsIcon } from '@hugeicons/react';
+import type { IconSvgElement } from '@hugeicons/react';
 import { ArrowRight01Icon } from '@hugeicons/core-free-icons';
 import {
   Collapsible,
@@ -20,8 +21,10 @@ import {
 interface NavItem {
   title: string;
   url: string;
-  icon: any;
+  icon: IconSvgElement;
   isActive?: boolean;
+  /** Render as an external anchor (opens in a new tab) instead of a router link. */
+  external?: boolean;
   items?: {
     title: string;
     url: string;
@@ -82,6 +85,19 @@ export function NavMain({ items, label = 'Platform' }: NavMainProps) {
                   </CollapsibleContent>
                 </SidebarMenuItem>
               </Collapsible>
+            );
+          }
+
+          if (item.external) {
+            return (
+              <SidebarMenuItem key={item.title}>
+                <SidebarMenuButton asChild tooltip={item.title}>
+                  <a href={item.url} target="_blank" rel="noopener noreferrer">
+                    <HugeiconsIcon icon={item.icon} size={18} />
+                    <span>{item.title}</span>
+                  </a>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
             );
           }
 

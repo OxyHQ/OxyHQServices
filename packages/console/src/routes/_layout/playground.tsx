@@ -138,7 +138,7 @@ function PlaygroundPage() {
     abortControllerRef.current = new AbortController();
 
     try {
-      const response = await fetch(`${config.apiUrl}/v1/chat/completions`, {
+      const response = await fetch(`${config.oxyUrl}/v1/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
