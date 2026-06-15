@@ -337,3 +337,52 @@ describe('AuthManager.initialize (cookieOnly)', () => {
     expect(services.httpService.setTokens).not.toHaveBeenCalled();
   });
 });
+
+describe('AuthManager.getAccessToken (cookieOnly in-memory fallback)', () => {
+  it('returns the in-memory token after a cold-boot cookie restore even though storage holds no token', async () => {
+    // Regression: the cookie restore path plants the active token ONLY in memory
+    // (`_lastKnownAccessToken` + httpService) and intentionally NEVER writes
+    // `oxy_access_token`. getAccessToken() must fall back to that in-memory token,
+    // otherwise standalone API clients reading `authManager.getAccessToken()` send
+    // no Authorization header → 401 on every authed endpoint after every reload.
+    const services = makeMockServices();
+    services.refreshAllSessions.mockResolvedValueOnce(TWO_ACCOUNTS);
+    const storage = new InMemoryStorage();
+    const manager = makeManager(services, storage);
+
+    await manager.restoreFromCookies();
+
+    // Storage was never touched for the access token (cookieOnly contract holds).
+    expect(storage.has('oxy_access_token')).toBe(false);
+
+    // getAccessToken still resolves the active slot's token from memory.
+    const token = await manager.getAccessToken();
+    expect(token).toBe(TOKEN_SLOT_0);
+  });
+
+  it('returns null when neither storage nor the in-memory token is present', async () => {
+    const services = makeMockServices();
+    const storage = new InMemoryStorage();
+    const manager = makeManager(services, storage);
+
+    const token = await manager.getAccessToken();
+    expect(token).toBeNull();
+  });
+
+  it('prefers the storage token over the in-memory token when both are present', async () => {
+    const services = makeMockServices();
+    services.refreshAllSessions.mockResolvedValueOnce(TWO_ACCOUNTS);
+    const storage = new InMemoryStorage();
+    const manager = makeManager(services, storage);
+
+    // After restore the in-memory token is TOKEN_SLOT_0.
+    await manager.restoreFromCookies();
+
+    // Simulate a path that DID write storage (legacy/bearer flow). Storage wins.
+    const STORAGE_TOKEN = buildAccessToken({ sessionId: 'sess-storage', userId: 'user-storage', exp: 9999999999 });
+    storage.setItem('oxy_access_token', STORAGE_TOKEN);
+
+    const token = await manager.getAccessToken();
+    expect(token).toBe(STORAGE_TOKEN);
+  });
+});

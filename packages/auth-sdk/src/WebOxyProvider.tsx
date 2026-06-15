@@ -52,6 +52,13 @@ export interface WebAuthState {
   isAuthenticated: boolean;
   isLoading: boolean;
   error: string | null;
+  /**
+   * The app's Oxy OAuth client id (ApplicationCredential publicKey), as
+   * supplied via the `clientId` prop. Used to identify this app in OAuth
+   * authorize / consent flows (issue #214). Normalized to a trimmed non-empty
+   * string, or `null` when the consuming app did not configure one.
+   */
+  clientId: string | null;
   activeSessionId: string | null;
   /**
    * Legacy multi-session shape kept for API compatibility with downstream
@@ -231,6 +238,15 @@ export interface WebOxyProviderProps {
    * Pass explicitly to override (e.g. point at a staging IdP).
    */
   authWebUrl?: string;
+  /**
+   * The app's Oxy OAuth client id (ApplicationCredential publicKey). Used to
+   * identify this app in OAuth authorize / consent flows (issue #214).
+   *
+   * Stored on `OxyServices.config.clientId` and surfaced on the web context as
+   * `clientId`. Purely declarative — unrelated to the cross-domain
+   * `/sso?client_id=<rp-origin>` bounce, which is left untouched.
+   */
+  clientId?: string;
   onAuthStateChange?: (user: User | null) => void;
   onError?: (error: Error) => void;
   preferredAuthMethod?: 'auto' | 'fedcm' | 'popup' | 'redirect';
@@ -260,16 +276,30 @@ export function WebOxyProvider({
   children,
   baseURL,
   authWebUrl,
+  clientId: clientIdProp,
   onAuthStateChange,
   onError,
   preferredAuthMethod = 'auto',
   skipAutoCheck = false,
 }: WebOxyProviderProps) {
+  // Normalize the app's OAuth client id to a trimmed non-empty string, or
+  // `null` when the consumer did not configure one. Surfaced on the web
+  // context as `clientId` and stored on `OxyServices.config.clientId` for
+  // later OAuth-authorize use (issue #214).
+  const clientId = useMemo(() => {
+    const trimmed = clientIdProp?.trim();
+    return trimmed ? trimmed : null;
+  }, [clientIdProp]);
   const [oxyServices] = useState(
     // Central cross-domain SSO targets ONE IdP (`auth.oxy.so`). Resolve the
     // auth web URL via the central default — an explicit `authWebUrl` still
-    // wins (e.g. to point at a staging IdP).
-    () => new OxyServices({ baseURL, authWebUrl: resolveCentralAuthUrl(authWebUrl) })
+    // wins (e.g. to point at a staging IdP). `clientId` is stored on the
+    // config for later OAuth-authorize use; it does NOT affect SSO bounce.
+    () => new OxyServices({
+      baseURL,
+      authWebUrl: resolveCentralAuthUrl(authWebUrl),
+      clientId: clientIdProp?.trim() || undefined,
+    })
   );
   const [crossDomainAuth] = useState(() => new CrossDomainAuth(oxyServices));
   // Web is cookie-only by design: refresh tokens live in httpOnly
@@ -1049,6 +1079,7 @@ export function WebOxyProvider({
     isAuthenticated,
     isLoading,
     error,
+    clientId,
     activeSessionId,
     sessions,
     accounts,
@@ -1068,7 +1099,7 @@ export function WebOxyProvider({
     signOutAll,
     clearSessionState,
   }), [
-    user, isAuthenticated, isLoading, error, activeSessionId, sessions,
+    user, isAuthenticated, isLoading, error, clientId, activeSessionId, sessions,
     accounts, activeAuthuser,
     oxyServices, crossDomainAuth, authManager,
     signIn, signInWithFedCM, signInWithPopup, signInWithRedirect,
@@ -1131,6 +1162,7 @@ export function useAuth() {
     isLoading: ctx.isLoading,
     isReady: !ctx.isLoading,
     error: ctx.error,
+    clientId: ctx.clientId,
     activeSessionId: ctx.activeSessionId,
     sessions: ctx.sessions,
     accounts: ctx.accounts,

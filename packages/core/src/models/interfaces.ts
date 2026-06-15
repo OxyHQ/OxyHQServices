@@ -17,6 +17,15 @@ export interface OxyConfig {
   sessionBaseUrl?: string;
   authWebUrl?: string;
   authRedirectUri?: string;
+  /**
+   * The app's Oxy OAuth client id (ApplicationCredential publicKey).
+   *
+   * Identifies this app in OAuth authorize / consent flows (issue #214). Purely
+   * declarative: the SDK stores it on `OxyServices.config.clientId` for later
+   * OAuth-authorize use. It is unrelated to the cross-domain `/sso?client_id=…`
+   * bounce (which uses the RP origin, not this registered client id).
+   */
+  clientId?: string;
   // Performance & caching options
   enableCache?: boolean;
   cacheTTL?: number; // Cache TTL in milliseconds (default: 5 minutes)

@@ -851,7 +851,14 @@ export class AuthManager {
    * Get a valid access token, refreshing automatically if expired or expiring soon.
    */
   async getAccessToken(): Promise<string | null> {
-    const token = await this.storage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
+    // In cookieOnly / cookie-restore flows the active access token lives only in
+    // memory (`_lastKnownAccessToken` + httpService) and is intentionally never
+    // written to JS storage — the cookieOnly contract forbids persisting tokens
+    // in JS-accessible storage. Fall back to the in-memory token when storage has
+    // none, otherwise getAccessToken returns null after every cold-boot/reload and
+    // standalone API clients (e.g. the Console axios client) send no Authorization
+    // header → 401 on every authed endpoint while `isAuthenticated` is still true.
+    const token = (await this.storage.getItem(STORAGE_KEYS.ACCESS_TOKEN)) ?? this._lastKnownAccessToken;
     if (!token) return null;
 
     try {
@@ -862,7 +869,9 @@ export class AuthManager {
         if (decoded.exp - now < buffer) {
           const refreshed = await this.refreshToken();
           if (refreshed) {
-            return this.storage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
+            // refreshToken() updates both storage and `_lastKnownAccessToken`;
+            // prefer storage but fall back to memory for the cookieOnly path.
+            return (await this.storage.getItem(STORAGE_KEYS.ACCESS_TOKEN)) ?? this._lastKnownAccessToken;
           }
         }
       }
