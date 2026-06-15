@@ -27,6 +27,7 @@ import { AppInitializer } from '@/lib/appInitializer';
 import { useOnboardingStatus } from '@/hooks/useOnboardingStatus';
 import { LocaleProvider, useTranslation } from '@/lib/i18n';
 import { MinimalErrorFallback } from '@/components/error-fallback';
+import { OXY_CLIENT_ID } from '@/constants/oxy';
 import * as SplashScreen from 'expo-splash-screen';
 
 // Prevent the splash screen from auto-hiding before asset loading is complete
@@ -107,7 +108,7 @@ function RootLayoutInner() {
             (this app) owns the BloomThemeProvider and feeds it the resolved
             theme mode from ThemeModeProvider. */}
         <BloomThemeProvider mode={themeMode}>
-          <OxyProvider baseURL={API_URL}>
+          <OxyProvider baseURL={API_URL} clientId={OXY_CLIENT_ID}>
             <LocaleProvider>
               <AppHead />
               {!appIsReady ? (

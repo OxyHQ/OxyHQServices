@@ -40,7 +40,7 @@ function RootComponent() {
     <QueryClientProvider client={queryClient}>
       <LocaleProvider>
         <BloomThemeProvider mode="system" colorPreset="oxy">
-          <WebOxyProvider baseURL={config.oxyUrl}>
+          <WebOxyProvider baseURL={config.oxyUrl} clientId={config.clientId}>
             <WorkspaceProvider>
               <TooltipProvider delayDuration={300}>
                 <Outlet />

@@ -22,6 +22,7 @@ import { AuthGate } from '@/components/AuthGate';
 import { useInboxSocket } from '@/hooks/useInboxSocket';
 import { registerServiceWorker } from '@/utils/registerServiceWorker';
 import { onConnectivityChange, flushQueue } from '@/utils/offlineQueue';
+import { OXY_CLIENT_ID } from '@/constants/oxy';
 import * as SplashScreen from 'expo-splash-screen';
 
 // Hide the native splash immediately on import. `BloomThemeProvider` configures
@@ -108,7 +109,7 @@ function RootLayoutContent() {
           user's `language` preference via `useOxy()` and seed the initial
           locale accordingly. Persisted overrides flow through AsyncStorage.
         */}
-        <OxyProvider baseURL={API_URL}>
+        <OxyProvider baseURL={API_URL} clientId={OXY_CLIENT_ID}>
           <LocaleProvider>
             <SafeAreaProvider>
               <PortalProvider>
