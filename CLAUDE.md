@@ -107,7 +107,11 @@ bun run dev                      # Dev mode across workspaces
 bun install                      # Install all workspace deps
 ```
 
-**Test runner — MUST use Jest, NEVER `bun test` (CRITICAL):** Tests are Jest-based (ts-jest). Run via `bun run test` (which delegates to jest/turbo) or the per-package `jest` script. NEVER run `bun test` directly — Bun's native test runner auto-discovers files and runs them under its own runtime, which does NOT implement `jest.resetModules`, `jest.advanceTimersByTimeAsync`, and other Jest APIs. This produces dozens of FALSE failures (observed: ~32 in core, ~81 in api) that do not occur under Jest and mask real regressions as "pre-existing" noise. Per-package Jest suites are green: core 333, api 489, auth 86, services 178.
+**Test runners — per-package split (CRITICAL):**
+- `@oxyhq/api`, `@oxyhq/core`, `@oxyhq/services`, `@oxyhq/auth` (auth-sdk), `@oxyhq/contracts` use **Jest** (ts-jest). Their `test` script invokes `jest`.
+- `packages/auth` (the standalone Vite IdP app) uses **Bun's native `bun test`** — configured via `packages/auth/bunfig.toml` (`[test] preload`), NOT jest. Its `test` script is `bun test server/__tests__ lib/__tests__ components/__tests__`.
+- THE RULE: always run each package's OWN `bun run test` script, which dispatches to the correct runner. At the monorepo root, `bun run test` delegates through turbo and is safe. NEVER blanket-invoke `bun test` across the monorepo — it runs Bun's native runner over the Jest packages, producing ~32 false failures in core and ~81 in api (`jest.resetModules`, `jest.advanceTimersByTimeAsync`, and other Jest APIs are unavailable under Bun's runner). Do NOT assume all packages are Jest — the auth app (`packages/auth`) is bun-test.
+- Per-package baselines (when run under the correct runner): core 333, api 489, auth-sdk 86, services 178.
 
 ## Architecture
 
@@ -195,6 +199,15 @@ Package: `packages/contracts` → `@oxyhq/contracts` v0.1.0. SINGLE SOURCE OF TR
 **Dockerfile:** both builder and production stages MUST include `packages/contracts`: COPY the directory, build it before core/api, copy its `dist` into the production stage. Any future workspace package consumed by oxy-api MUST be added to the Dockerfile the same way or `bun install` in the ECS image fails to resolve `workspace:*`.
 
 **Rule:** new shared API contracts go in `@oxyhq/contracts`. Server validates output against them; clients validate input and derive `z.infer<>` types. This prevents the Zod-drift class of bug (field-shape mismatch causing `safeParse` to silently return null and the auth app to show logged-out state). Do NOT re-introduce local schema copies in `packages/auth/lib/schemas.ts` — use `@oxyhq/contracts` directly or keep schemas strictly in sync.
+
+**CI / test build-order — resolve workspace deps from source (CRITICAL):**
+`.github/workflows/ci.yml` job `api-test` runs `bun install` then `bun run test` in `packages/api` — it does NOT build workspace deps first. `@oxyhq/contracts` ships compiled (`main → dist/cjs/index.js`), so a test importing it failed in CI with `Cannot find module '@oxyhq/contracts'` (the contracts `dist/` does not exist in that CI job). Fixed in commit `f4ecd6cb` by resolving the package from its TypeScript source in test configs:
+- **api (Jest):** `moduleNameMapper` in `packages/api/jest.config.js` → `'^@oxyhq/contracts$': '<rootDir>/../contracts/src/index.ts'`.
+- **auth (bun test):** `mock.module('@oxyhq/contracts', …)` in `packages/auth/lib/__tests__/setup-contracts-source.ts`, loaded first via `packages/auth/lib/__tests__/preload.ts` (mirrors the existing `mock.module` pattern in `lib/__tests__/setup-mocks.ts` for `@oxyhq/bloom/avatar`).
+
+RULE: any package whose tests import a build-required workspace dep (`@oxyhq/contracts`, etc.) MUST either map that dep to `src/` in the test config (Jest `moduleNameMapper` or bun-test `mock.module` preload) OR the CI job must build the dep first. The contracts source uses extensionless relative imports (`from './userResponse'`), which work under both ts-jest and bun's resolver.
+
+Build-vs-source distinction: production/Docker consumes the built `dist/` (the Dockerfile builds `packages/contracts` before `packages/api`); tests consume the TS source via the mappings above. Both are intentional.
 
 ## Key Entry Points
 
