@@ -893,8 +893,29 @@ function applyNoStoreHeaders(c: AppContext): void {
  * reflected into the page (no XSS sink).
  */
 function renderSsoErrorHtml(reason: string): string {
+  // `safeReason` is sanitised to a fixed token alphabet so nothing
+  // request-derived can ever reach the markup. No other request value is
+  // reflected — this preserves the no-reflected-input / no-XSS guarantee.
   const safeReason = reason.replace(/[^a-z_]/g, '');
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="robots" content="noindex"><title>Sign-in error</title></head><body><h1>Sign-in could not continue</h1><p>The single sign-on request was rejected (${safeReason}). Please return to the application and try again.</p></body></html>`;
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>Sign-in error · Oxy</title><style>
+:root{color-scheme:light dark;--oxy-primary:hsl(277 66% 56%);--oxy-primary-soft:hsl(277 66% 56% / 0.12);--bg:hsl(277 30% 98%);--card:#ffffff;--fg:hsl(240 10% 12%);--muted:hsl(240 6% 42%);--border:hsl(277 25% 90%);--code-bg:hsl(277 30% 96%);--shadow:0 10px 40px -12px hsl(277 40% 30% / 0.22)}
+@media (prefers-color-scheme:dark){:root{--bg:hsl(265 22% 8%);--card:hsl(265 18% 12%);--fg:hsl(0 0% 96%);--muted:hsl(265 8% 64%);--border:hsl(265 15% 22%);--oxy-primary:hsl(277 72% 70%);--oxy-primary-soft:hsl(277 66% 56% / 0.18);--code-bg:hsl(265 18% 16%);--shadow:0 10px 40px -12px hsl(0 0% 0% / 0.55)}}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px;background:var(--bg);color:var(--fg);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,system-ui,sans-serif,"Apple Color Emoji","Segoe UI Emoji";line-height:1.55;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+.card{width:100%;max-width:420px;background:var(--card);border:1px solid var(--border);border-radius:20px;padding:40px 32px;box-shadow:var(--shadow);text-align:center}
+.brand{font-size:26px;font-weight:800;letter-spacing:-0.02em;color:var(--oxy-primary);margin:0 0 24px}
+.icon{width:56px;height:56px;margin:0 auto 20px;border-radius:50%;background:var(--oxy-primary-soft);color:var(--oxy-primary);display:flex;align-items:center;justify-content:center}
+.icon svg{width:28px;height:28px;display:block}
+h1{font-size:20px;font-weight:700;margin:0 0 10px;letter-spacing:-0.01em}
+p{font-size:15px;color:var(--muted);margin:0 0 8px}
+.reason{display:inline-block;margin-top:14px;padding:4px 10px;border-radius:8px;background:var(--code-bg);color:var(--muted);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px}
+.actions{margin-top:28px}
+button{appearance:none;border:0;cursor:pointer;font:inherit;font-weight:600;font-size:15px;padding:11px 22px;border-radius:12px;background:var(--oxy-primary);color:#fff;transition:filter .15s ease}
+button:hover{filter:brightness(1.06)}
+button:active{filter:brightness(0.94)}
+button:focus-visible{outline:2px solid var(--oxy-primary);outline-offset:3px}
+</style></head><body><main class="card"><div class="brand">Oxy</div><div class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><line x1="12" y1="8" x2="12" y2="13"></line><line x1="12" y1="16.5" x2="12.01" y2="16.5"></line></svg></div><h1>Sign-in could not continue</h1><p>We couldn't complete the single sign-on request. Please head back to the app and try signing in again.</p><p class="reason">${safeReason}</p><div class="actions"><button type="button" onclick="history.back()">Go back</button></div></main></body></html>`;
 }
 
 /**
