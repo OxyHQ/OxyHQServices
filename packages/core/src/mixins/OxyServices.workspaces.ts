@@ -82,7 +82,11 @@ export interface UpdateWorkspaceInput {
 
 /** Input accepted by `inviteWorkspaceMember`. The owner role cannot be invited. */
 export interface InviteWorkspaceMemberInput {
-  userId: string;
+  /**
+   * The username or email of the user to invite. Resolved to a user server-side;
+   * an unknown value yields a 404 "User not found".
+   */
+  usernameOrEmail: string;
   role: Exclude<WorkspaceRole, 'owner'>;
 }
 
@@ -220,7 +224,9 @@ export function OxyServicesWorkspacesMixin<T extends typeof OxyServicesBase>(Bas
     /**
      * Add a member to a workspace.
      * @param workspaceId - The workspace's Mongo `_id`.
-     * @param data - Target user id and role (never `owner`).
+     * @param data - Target user's username or email and role (never `owner`).
+     *   The server resolves `usernameOrEmail` to a user; an unknown value yields
+     *   a 404 "User not found".
      */
     async inviteWorkspaceMember(
       workspaceId: string,

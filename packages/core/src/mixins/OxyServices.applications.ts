@@ -194,7 +194,11 @@ export interface UpdateApplicationInput {
 
 /** Input accepted by `inviteApplicationMember`. The owner role cannot be invited. */
 export interface InviteApplicationMemberInput {
-  userId: string;
+  /**
+   * The username or email of the user to invite. Resolved to a user server-side;
+   * an unknown value yields a 404 "User not found".
+   */
+  usernameOrEmail: string;
   role: Exclude<ApplicationRole, 'owner'>;
 }
 
@@ -427,7 +431,9 @@ export function OxyServicesApplicationsMixin<T extends typeof OxyServicesBase>(B
     /**
      * Add a member to an application.
      * @param applicationId - The application's Mongo `_id`.
-     * @param data - Target user id and role (never `owner`).
+     * @param data - Target user's username or email and role (never `owner`).
+     *   The server resolves `usernameOrEmail` to a user; an unknown value yields
+     *   a 404 "User not found".
      */
     async inviteApplicationMember(
       applicationId: string,
