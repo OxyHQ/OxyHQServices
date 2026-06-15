@@ -50,6 +50,7 @@ import { useAvatarPicker } from '../hooks/useAvatarPicker';
 import { useAccountStore } from '../stores/accountStore';
 import { logger as loggerUtil } from '@oxyhq/core';
 import { useWebSSO, isWebBrowser } from '../hooks/useWebSSO';
+import { buildSilentGuardKey } from '../../utils/silentGuardKey';
 
 export interface OxyContextState {
   user: User | null;
@@ -184,14 +185,15 @@ const servicesSilentAttempted = new Set<string>();
  * Build the `origin|baseURL` signature used as the silent-cold-boot guard key.
  */
 function silentColdBootKey(oxyServices: OxyServices): string {
-  const origin = typeof window !== 'undefined' ? window.location.origin : 'no-origin';
-  let baseURL = '';
-  try {
-    baseURL = oxyServices.getBaseURL?.() ?? '';
-  } catch {
-    baseURL = '';
-  }
-  return `${origin}|${baseURL}`;
+  // `buildSilentGuardKey` reads `window.location.origin` behind a guard that
+  // also verifies `window.location` exists. This is critical: it runs
+  // UNCONDITIONALLY at the top of `restoreSessionsFromStorage` (before the
+  // cold-boot try/catch) on EVERY platform, and React Native aliases a global
+  // `window` with NO `window.location`. Without that guard the read threw
+  // `Cannot read property 'origin' of undefined` on native, escaping the
+  // restore path so `markAuthResolved` never ran and stored-session restore was
+  // never reached.
+  return buildSilentGuardKey(() => oxyServices.getBaseURL?.());
 }
 
 /**
@@ -261,7 +263,12 @@ const COLD_BOOT_OVERALL_DEADLINE = 20000;
  * off-browser.
  */
 function isSameSiteIdP(idpOrigin: string): boolean {
-  if (typeof window === 'undefined') return false;
+  // Native defines a global `window` but no `window.location`; guard the
+  // latter so reading `.hostname` can never throw off-browser. (Only reachable
+  // from the web-only visibility check, but kept robust for parity.)
+  if (typeof window === 'undefined' || typeof window.location === 'undefined') {
+    return false;
+  }
   let idpHostname: string;
   try {
     idpHostname = new URL(idpOrigin).hostname;

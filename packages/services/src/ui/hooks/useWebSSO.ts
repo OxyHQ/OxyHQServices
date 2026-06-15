@@ -18,6 +18,7 @@
 import { useEffect, useRef, useCallback } from 'react';
 import type { OxyServices } from '@oxyhq/core';
 import type { SessionLoginResponse } from '@oxyhq/core';
+import { buildSilentGuardKey } from '../../utils/silentGuardKey';
 
 interface UseWebSSOOptions {
   oxyServices: OxyServices;
@@ -58,14 +59,12 @@ const silentSSOAttempted = new Set<string>();
  * pointed at the same API from the same origin share one attempt.
  */
 function ssoSignature(oxyServices: OxyServices): string {
-  const origin = typeof window !== 'undefined' ? window.location.origin : 'no-origin';
-  let baseURL = '';
-  try {
-    baseURL = oxyServices.getBaseURL?.() ?? '';
-  } catch {
-    baseURL = '';
-  }
-  return `${origin}|${baseURL}`;
+  // Shared with `OxyContext.silentColdBootKey`. `buildSilentGuardKey` reads
+  // `window.location.origin` behind a guard that also verifies
+  // `window.location` exists — React Native aliases a global `window` with NO
+  // `window.location`, so a `typeof window`-only check would throw
+  // `Cannot read property 'origin' of undefined` off-browser.
+  return buildSilentGuardKey(() => oxyServices.getBaseURL?.());
 }
 
 /**
