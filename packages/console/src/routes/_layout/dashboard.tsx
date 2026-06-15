@@ -87,9 +87,11 @@ function DashboardPage() {
           </p>
 
           <div className="mt-12">
-            <Button variant="outline" className="gap-2">
-              <HugeiconsIcon icon={UserMultiple02Icon} size={18} />
-              Invite your team
+            <Button asChild variant="outline" className="gap-2">
+              <Link to="/settings/workspace">
+                <HugeiconsIcon icon={UserMultiple02Icon} size={18} />
+                Invite your team
+              </Link>
             </Button>
           </div>
         </div>
