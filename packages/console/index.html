@@ -10,7 +10,7 @@
     <link rel="manifest" href="/manifest.json" />
     <meta name="theme-color" content="#0a0a0a" />
     <meta name="description" content="Oxy Developers Console" />
-    <title>Oxy Console</title>
+    <title>%APP_NAME%</title>
     <!--
       Pre-mount splash: painted before the JS bundle loads so the first frame
       already shows the Oxy logo + macOS-style loading bar (no blank/"Loading..."
@@ -36,6 +36,13 @@
         border-radius: 22px;
         user-select: none;
         -webkit-user-drag: none;
+      }
+      #oxy-boot-splash #oxy-boot-title {
+        font-size: 16px;
+        font-weight: 500;
+        line-height: 1;
+        text-align: center;
+        color: hsl(0 0% 93%);
       }
       #oxy-boot-splash .oxy-boot-track {
         width: 160px;
@@ -75,6 +82,7 @@
     <div id="root">
       <div id="oxy-boot-splash">
         <img src="/icon-192.png" alt="Oxy" width="80" height="80" />
+        <div id="oxy-boot-title">%APP_NAME%</div>
         <div class="oxy-boot-track">
           <div class="oxy-boot-fill"></div>
         </div>

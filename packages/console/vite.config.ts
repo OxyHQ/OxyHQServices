@@ -1,6 +1,7 @@
+import { readFileSync } from 'fs'
 import { dirname, resolve } from 'path'
 import { fileURLToPath } from 'url'
-import { defineConfig } from 'vite'
+import { defineConfig, type Plugin } from 'vite'
 import { TanStackRouterVite } from '@tanstack/router-plugin/vite'
 import viteReact from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
@@ -9,8 +10,23 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 
 const emptyModule = resolve(__dirname, './src/empty-module.js')
 
+// Single source of truth for the app display name: public/manifest.json
+// `short_name`. Read once at config load, then injected both as a global
+// constant (__APP_NAME__) for React code and as an `%APP_NAME%` token in
+// index.html. The literal app name lives ONLY in manifest.json.
+const manifestPath = resolve(__dirname, './public/manifest.json')
+const appName = (JSON.parse(readFileSync(manifestPath, 'utf8')) as { short_name: string }).short_name
+
+const appNamePlugin: Plugin = {
+  name: 'oxy-app-name',
+  transformIndexHtml(html) {
+    return html.replaceAll('%APP_NAME%', appName)
+  },
+}
+
 const config = defineConfig({
   plugins: [
+    appNamePlugin,
     TanStackRouterVite(),
     tailwindcss(),
     viteReact(),
@@ -34,6 +50,7 @@ const config = defineConfig({
   },
   define: {
     __DEV__: JSON.stringify(process.env.NODE_ENV !== 'production'),
+    __APP_NAME__: JSON.stringify(appName),
   },
   optimizeDeps: {
     exclude: ['@oxyhq/auth'],

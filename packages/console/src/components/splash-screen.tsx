@@ -7,6 +7,9 @@
  * the logo size, bar dimensions and animation in sync between the two.
  */
 export function SplashScreen() {
+  // Single source of truth for the app name is public/manifest.json
+  // `short_name`, injected at build time by Vite (see vite.config.ts). Never
+  // hardcode it here.
   return (
     <div className="flex h-screen w-full flex-col items-center justify-center gap-6 bg-background">
       <img
@@ -17,6 +20,7 @@ export function SplashScreen() {
         className="h-20 w-20 rounded-[22px]"
         draggable={false}
       />
+      <p className="text-base font-medium text-foreground">{__APP_NAME__}</p>
       <div className="h-[5px] w-40 overflow-hidden rounded-full bg-muted">
         <div className="oxy-splash-bar h-full w-full rounded-full bg-primary" />
       </div>
