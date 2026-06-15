@@ -46,7 +46,20 @@ interface FakeApp {
   webhookUrl?: string;
   webhookSecret?: string;
   devWebhookUrl?: string;
+  workspaceId: Types.ObjectId;
   createdByUserId: Types.ObjectId;
+  createdAt: Date;
+  updatedAt: Date;
+  save: jest.Mock;
+}
+
+interface FakeWorkspaceMember {
+  _id: Types.ObjectId;
+  workspaceId: Types.ObjectId;
+  userId: Types.ObjectId;
+  role: 'owner' | 'admin' | 'member' | 'viewer';
+  permissions: string[];
+  status: string;
   createdAt: Date;
   updatedAt: Date;
   save: jest.Mock;
@@ -88,11 +101,13 @@ interface FakeCredential {
 const apps: FakeApp[] = [];
 const members: FakeMember[] = [];
 const credentials: FakeCredential[] = [];
+const workspaceMembers: FakeWorkspaceMember[] = [];
 
 function resetStore(): void {
   apps.length = 0;
   members.length = 0;
   credentials.length = 0;
+  workspaceMembers.length = 0;
 }
 
 /** Test object-id strings (24 hex chars). */
@@ -103,6 +118,12 @@ const DEVELOPER_ID = 'dddddddddddddddddddddddd';
 const VIEWER_ID = 'eeeeeeeeeeeeeeeeeeeeeeee';
 const BILLING_ID = 'ffffffffffffffffffffffff';
 const OUTSIDER_ID = '111111111111111111111111';
+const WORKSPACE_ID = '222222222222222222222222';
+const WS_OWNER_ID = '333333333333333333333333';
+const WS_MEMBER_ID = '444444444444444444444444';
+const WS_VIEWER_ID = '555555555555555555555555';
+/** id returned by the mocked `ensurePersonalWorkspace` for the default path. */
+const PERSONAL_WORKSPACE_ID = '666666666666666666666666';
 
 function matchesId(value: Types.ObjectId, candidate: unknown): boolean {
   return value.toString() === String(candidate);
@@ -131,14 +152,33 @@ const ApplicationMock = {
     )
   ),
   find: jest.fn((query: Record<string, unknown>) => {
+    const matchesClause = (a: FakeApp, clause: Record<string, unknown>): boolean => {
+      const idIn = (clause._id as { $in?: unknown[] } | undefined)?.$in;
+      if (idIn !== undefined && !idIn.some((id) => matchesId(a._id, id))) return false;
+      const wsIn = (clause.workspaceId as { $in?: unknown[] } | undefined)?.$in;
+      if (wsIn !== undefined && !wsIn.some((id) => matchesId(a.workspaceId, id))) return false;
+      return true;
+    };
+    const orClauses = query.$or as Record<string, unknown>[] | undefined;
     const idIn = (query._id as { $in?: unknown[] } | undefined)?.$in;
-    const result = apps.filter(
-      (a) =>
-        (idIn === undefined || idIn.some((id) => matchesId(a._id, id))) &&
-        applyStatusFilter(a, query.status)
-    );
+    const result = apps.filter((a) => {
+      if (!applyStatusFilter(a, query.status)) return false;
+      if (orClauses !== undefined) {
+        return orClauses.some((clause) => matchesClause(a, clause));
+      }
+      return idIn === undefined || idIn.some((id) => matchesId(a._id, id));
+    });
     return { sort: () => Promise.resolve(result) };
   }),
+  countDocuments: jest.fn((query: Record<string, unknown>) =>
+    Promise.resolve(
+      apps.filter(
+        (a) =>
+          (query.workspaceId === undefined || matchesId(a.workspaceId, query.workspaceId)) &&
+          applyStatusFilter(a, query.status)
+      ).length
+    )
+  ),
   create: jest.fn((doc: Record<string, unknown>) => {
     const now = new Date();
     const app: FakeApp = {
@@ -154,6 +194,7 @@ const ApplicationMock = {
       capabilities: (doc.capabilities as string[]) ?? [],
       redirectUris: (doc.redirectUris as string[]) ?? [],
       scopes: (doc.scopes as string[]) ?? [],
+      workspaceId: doc.workspaceId as Types.ObjectId,
       createdByUserId: doc.createdByUserId as Types.ObjectId,
       createdAt: now,
       updatedAt: now,
@@ -269,6 +310,36 @@ const ApplicationCredentialMock = {
   }),
 };
 
+// --- WorkspaceMember model fake -------------------------------------------
+// The /applications routes resolve access via WorkspaceMember in addition to
+// ApplicationMember. The default store is empty so existing per-app-membership
+// tests behave exactly as before; workspace-access tests seed rows explicitly.
+
+const WorkspaceMemberMock = {
+  findOne: jest.fn((query: Record<string, unknown>) =>
+    Promise.resolve(
+      workspaceMembers.find(
+        (m) =>
+          (query.workspaceId === undefined || matchesId(m.workspaceId, query.workspaceId)) &&
+          (query.userId === undefined || matchesId(m.userId, query.userId)) &&
+          applyStatusFilter(m, query.status)
+      ) ?? null
+    )
+  ),
+  find: jest.fn((query: Record<string, unknown>) => {
+    const result = workspaceMembers.filter(
+      (m) =>
+        (query.userId === undefined || matchesId(m.userId, query.userId)) &&
+        (query.workspaceId === undefined || matchesId(m.workspaceId, query.workspaceId)) &&
+        applyStatusFilter(m, query.status)
+    );
+    return {
+      sort: () => Promise.resolve(result),
+      then: (resolve: (value: FakeWorkspaceMember[]) => unknown) => resolve(result),
+    };
+  }),
+};
+
 jest.mock('../../models/Application', () => ({
   __esModule: true,
   Application: ApplicationMock,
@@ -289,6 +360,24 @@ jest.mock('../../models/ApplicationMember', () => ({
   __esModule: true,
   ApplicationMember: ApplicationMemberMock,
   default: ApplicationMemberMock,
+}));
+
+jest.mock('../../models/WorkspaceMember', () => ({
+  __esModule: true,
+  WorkspaceMember: WorkspaceMemberMock,
+  default: WorkspaceMemberMock,
+}));
+
+// The create route defaults to the caller's personal workspace when no
+// `workspaceId` is supplied. Mock the provisioning helper so it returns a stable
+// fake personal workspace without touching the (stubbed) Workspace model.
+const ensurePersonalWorkspaceMock = jest.fn(() =>
+  Promise.resolve({ _id: new Types.ObjectId(PERSONAL_WORKSPACE_ID) })
+);
+
+jest.mock('../../utils/workspaceProvisioning', () => ({
+  __esModule: true,
+  ensurePersonalWorkspace: (...args: unknown[]) => ensurePersonalWorkspaceMock(...args),
 }));
 
 jest.mock('../../models/ApplicationCredential', () => ({
@@ -395,6 +484,7 @@ function seedApp(overrides: Partial<FakeApp> = {}): FakeApp {
     capabilities: [],
     redirectUris: [],
     scopes: [],
+    workspaceId: new Types.ObjectId(WORKSPACE_ID),
     createdByUserId: new Types.ObjectId(OWNER_ID),
     createdAt: now,
     updatedAt: now,
@@ -403,6 +493,63 @@ function seedApp(overrides: Partial<FakeApp> = {}): FakeApp {
   };
   apps.push(app);
   return app;
+}
+
+const WORKSPACE_ROLE_PERMISSIONS: Record<
+  FakeWorkspaceMember['role'],
+  string[]
+> = {
+  owner: [
+    'workspace:read',
+    'workspace:update',
+    'workspace:delete',
+    'members:read',
+    'members:invite',
+    'members:update',
+    'members:remove',
+    'apps:read',
+    'apps:create',
+    'apps:update',
+    'apps:delete',
+    'ownership:transfer',
+  ],
+  admin: [
+    'workspace:read',
+    'workspace:update',
+    'members:read',
+    'members:invite',
+    'members:update',
+    'members:remove',
+    'apps:read',
+    'apps:create',
+    'apps:update',
+    'apps:delete',
+  ],
+  member: ['workspace:read', 'members:read', 'apps:read', 'apps:create'],
+  viewer: ['workspace:read', 'members:read', 'apps:read'],
+};
+
+function seedWorkspaceMember(
+  userId: string,
+  role: FakeWorkspaceMember['role'],
+  workspaceId = WORKSPACE_ID,
+  status = 'active'
+): FakeWorkspaceMember {
+  const now = new Date();
+  const member: FakeWorkspaceMember = {
+    _id: new Types.ObjectId(),
+    workspaceId: new Types.ObjectId(workspaceId),
+    userId: new Types.ObjectId(userId),
+    role,
+    permissions: WORKSPACE_ROLE_PERMISSIONS[role],
+    status,
+    createdAt: now,
+    updatedAt: now,
+    save: jest.fn().mockResolvedValue(undefined),
+  };
+  member.save = jest.fn().mockResolvedValue(member);
+  workspaceMembers.push(member);
+  return member;
 }
 
 function seedMember(userId: string, role: ApplicationRole, status = 'active'): FakeMember {
@@ -478,8 +625,14 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe('POST /applications — create', () => {
-  it('creates the application and an owner membership for the creator', async () => {
+  // The creator must be an active workspace member with `apps:create`.
+  beforeEach(() => {
+    seedWorkspaceMember(OWNER_ID, 'owner');
+  });
+
+  it('creates the application bound to the workspace and an owner membership', async () => {
     const res = await requestJson(server, 'POST', '/applications', {
+      workspaceId: WORKSPACE_ID,
       name: 'My App',
       redirectUris: ['https://app.example.com/callback'],
     });
@@ -487,6 +640,7 @@ describe('POST /applications — create', () => {
     expect(res.status).toBe(201);
     expect(res.body.application?.name).toBe('My App');
     expect(res.body.application?.type).toBe('third_party');
+    expect(res.body.application?.workspaceId).toBe(WORKSPACE_ID);
     expect(res.body.application?.redirectUris).toEqual(['https://app.example.com/callback']);
     expect(ApplicationMemberMock.create).toHaveBeenCalledWith(
       expect.objectContaining({ role: 'owner', status: 'active' })
@@ -495,6 +649,7 @@ describe('POST /applications — create', () => {
 
   it('de-duplicates redirectUris on create, preserving order and exact strings', async () => {
     const res = await requestJson(server, 'POST', '/applications', {
+      workspaceId: WORKSPACE_ID,
       name: 'Dupes',
       redirectUris: [
         'https://a.example.com/cb',
@@ -511,9 +666,54 @@ describe('POST /applications — create', () => {
   });
 
   it('defaults to an empty redirectUris list when not supplied', async () => {
-    const res = await requestJson(server, 'POST', '/applications', { name: 'No Redirects' });
+    const res = await requestJson(server, 'POST', '/applications', {
+      workspaceId: WORKSPACE_ID,
+      name: 'No Redirects',
+    });
     expect(res.status).toBe(201);
     expect(res.body.application?.redirectUris).toEqual([]);
+  });
+
+  it('creates without workspaceId → lands in the caller\'s personal workspace', async () => {
+    // No workspace membership required for the default path: the personal
+    // workspace is auto-provisioned and the caller always owns it.
+    const res = await requestJson(server, 'POST', '/applications', { name: 'No Workspace' });
+
+    expect(res.status).toBe(201);
+    expect(ensurePersonalWorkspaceMock).toHaveBeenCalled();
+    expect(res.body.application?.workspaceId).toBe(PERSONAL_WORKSPACE_ID);
+    expect(res.body.application?.name).toBe('No Workspace');
+    // Per-app owner membership is still created (#213).
+    expect(ApplicationMemberMock.create).toHaveBeenCalledWith(
+      expect.objectContaining({ role: 'owner', status: 'active' })
+    );
+  });
+
+  it('400 when workspaceId is supplied but malformed', async () => {
+    const res = await requestJson(server, 'POST', '/applications', {
+      workspaceId: 'not-an-object-id',
+      name: 'Bad Workspace',
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('403 when the caller is not a member of the supplied workspace', async () => {
+    actAs(OUTSIDER_ID);
+    const res = await requestJson(server, 'POST', '/applications', {
+      workspaceId: WORKSPACE_ID,
+      name: 'Outsider App',
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it('403 when the caller lacks apps:create in the workspace (viewer)', async () => {
+    seedWorkspaceMember(WS_VIEWER_ID, 'viewer');
+    actAs(WS_VIEWER_ID);
+    const res = await requestJson(server, 'POST', '/applications', {
+      workspaceId: WORKSPACE_ID,
+      name: 'Viewer App',
+    });
+    expect(res.status).toBe(403);
   });
 });
 
@@ -563,6 +763,114 @@ describe('GET /applications — list embeds callerMembership for low-permission 
       | undefined;
     expect(callerMembership?.role).toBe('developer');
     expect(callerMembership?.permissions).toEqual(permissionsForRole('developer'));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Workspace-scoped listing + workspace-membership access path
+// ---------------------------------------------------------------------------
+
+describe('GET /applications — workspace scoping + access', () => {
+  it('lists apps in the workspace the caller belongs to (workspace-only access)', async () => {
+    seedApp();
+    // Caller has NO per-app ApplicationMember, only a workspace membership.
+    seedWorkspaceMember(WS_OWNER_ID, 'owner');
+    actAs(WS_OWNER_ID);
+
+    const res = await requestJson(server, 'GET', '/applications');
+
+    expect(res.status).toBe(200);
+    expect(res.body.applications).toHaveLength(1);
+    const callerMembership = res.body.applications?.[0].callerMembership as
+      | { role?: string; source?: string }
+      | undefined;
+    // Synthetic membership derived from the workspace grant.
+    expect(callerMembership?.source).toBe('workspace');
+    expect(callerMembership?.role).toBe('owner');
+  });
+
+  it('?workspaceId= scopes results to that workspace for a member', async () => {
+    seedApp();
+    seedWorkspaceMember(WS_MEMBER_ID, 'member');
+    actAs(WS_MEMBER_ID);
+
+    const res = await requestJson(server, 'GET', `/applications?workspaceId=${WORKSPACE_ID}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.applications).toHaveLength(1);
+    expect(res.body.applications?.[0].workspaceId).toBe(WORKSPACE_ID);
+  });
+
+  it('403 when ?workspaceId= names a workspace the caller is not a member of', async () => {
+    seedApp();
+    actAs(OUTSIDER_ID);
+
+    const res = await requestJson(server, 'GET', `/applications?workspaceId=${WORKSPACE_ID}`);
+    expect(res.status).toBe(403);
+  });
+});
+
+describe('workspace-membership grants application access', () => {
+  it('workspace owner can read an app with no per-app ApplicationMember row', async () => {
+    seedApp();
+    seedWorkspaceMember(WS_OWNER_ID, 'owner');
+    actAs(WS_OWNER_ID);
+
+    const res = await requestJson(server, 'GET', `/applications/${APP_ID}`);
+    expect(res.status).toBe(200);
+    const callerMembership = res.body.application?.callerMembership as
+      | { source?: string; role?: string }
+      | undefined;
+    expect(callerMembership?.source).toBe('workspace');
+    expect(callerMembership?.role).toBe('owner');
+  });
+
+  it('workspace owner/admin can update the app (full app permissions)', async () => {
+    seedApp();
+    seedWorkspaceMember(WS_OWNER_ID, 'admin');
+    actAs(WS_OWNER_ID);
+
+    const res = await requestJson(server, 'PATCH', `/applications/${APP_ID}`, { name: 'WS Rename' });
+    expect(res.status).toBe(200);
+    expect(res.body.application?.name).toBe('WS Rename');
+  });
+
+  it('workspace member gets app:read + app:update but NOT app:delete', async () => {
+    seedApp();
+    seedWorkspaceMember(WS_MEMBER_ID, 'member');
+    actAs(WS_MEMBER_ID);
+
+    const updateRes = await requestJson(server, 'PATCH', `/applications/${APP_ID}`, {
+      name: 'Member Rename',
+    });
+    expect(updateRes.status).toBe(200);
+
+    const deleteRes = await requestJson(server, 'DELETE', `/applications/${APP_ID}`);
+    expect(deleteRes.status).toBe(403);
+  });
+
+  it('workspace viewer gets app:read only', async () => {
+    seedApp();
+    seedWorkspaceMember(WS_VIEWER_ID, 'viewer');
+    actAs(WS_VIEWER_ID);
+
+    const readRes = await requestJson(server, 'GET', `/applications/${APP_ID}`);
+    expect(readRes.status).toBe(200);
+
+    const updateRes = await requestJson(server, 'PATCH', `/applications/${APP_ID}`, { name: 'No' });
+    expect(updateRes.status).toBe(403);
+  });
+
+  it('unions explicit app permissions with workspace permissions (broader wins)', async () => {
+    seedApp();
+    // Explicit per-app viewer (read-only) BUT workspace owner (full) → can delete.
+    seedMember(WS_OWNER_ID, 'viewer');
+    seedWorkspaceMember(WS_OWNER_ID, 'owner');
+    actAs(WS_OWNER_ID);
+
+    const res = await requestJson(server, 'DELETE', `/applications/${APP_ID}`);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
   });
 });
 

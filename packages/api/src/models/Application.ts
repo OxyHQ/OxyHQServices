@@ -66,6 +66,14 @@ export interface IApplication extends Omit<Document, '_id'> {
   webhookUrl?: string;
   webhookSecret?: string;
   devWebhookUrl?: string;
+  /**
+   * The Workspace (organization/tenant) that owns this application. Every
+   * application belongs to exactly one workspace; workspace membership grants
+   * RBAC access to the application (in addition to the per-app
+   * ApplicationMember rows). Set on create; backfilled for legacy apps by
+   * `scripts/migrate-workspaces.ts`.
+   */
+  workspaceId: mongoose.Types.ObjectId;
   /** User who created the application — automatically granted the `owner` member role. */
   createdByUserId: mongoose.Types.ObjectId;
   lastUsedAt?: Date;
@@ -142,6 +150,12 @@ const ApplicationSchema = new Schema<IApplication>(
       type: String,
       trim: true,
     },
+    workspaceId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Workspace',
+      required: true,
+      index: true,
+    },
     createdByUserId: {
       type: Schema.Types.ObjectId,
       ref: 'User',
@@ -156,6 +170,7 @@ const ApplicationSchema = new Schema<IApplication>(
 );
 
 ApplicationSchema.index({ createdByUserId: 1, status: 1 });
+ApplicationSchema.index({ workspaceId: 1, status: 1 });
 ApplicationSchema.index({ status: 1 });
 ApplicationSchema.index({ createdAt: -1 });
 

@@ -34,12 +34,24 @@ const appScopesSchema = z.array(z.enum(APPLICATION_SCOPES)).optional();
 
 /** POST /applications — create. Staff-only fields are intentionally absent. */
 export const createApplicationSchema = z.object({
+  /**
+   * The Workspace that will own the new application. OPTIONAL for rollout
+   * safety: the api deploys before the Console learns to send it, so when
+   * omitted the route defaults to the caller's personal workspace (also good
+   * UX — an app created without a chosen workspace lands in "Personal").
+   */
+  workspaceId: z.string().trim().min(1).optional(),
   name: z.string().trim().min(1).max(100),
   description: z.string().trim().max(500).optional(),
   websiteUrl: websiteUrlSchema,
   icon: z.string().optional(),
   redirectUris: redirectUrisSchema,
   scopes: appScopesSchema,
+});
+
+/** Optional `?workspaceId=` filter on GET /applications. */
+export const listApplicationsQuerySchema = z.object({
+  workspaceId: z.string().trim().min(1).optional(),
 });
 
 /**

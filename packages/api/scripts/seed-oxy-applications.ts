@@ -32,8 +32,12 @@ import mongoose from 'mongoose';
 import { Application } from '../src/models/Application';
 import { ApplicationCredential } from '../src/models/ApplicationCredential';
 import { ApplicationMember } from '../src/models/ApplicationMember';
+import { Workspace } from '../src/models/Workspace';
+import { WorkspaceMember } from '../src/models/WorkspaceMember';
 import { User } from '../src/models/User';
 import { permissionsForRole } from '../src/utils/applicationRoles';
+import { permissionsForRole as workspacePermissionsForRole } from '../src/utils/workspaceRoles';
+import { generateUniqueWorkspaceSlug } from '../src/utils/workspaceProvisioning';
 import { logger } from '../src/utils/logger';
 
 // ── Mirror routes/applications.ts credential generation EXACTLY ──────────────
@@ -182,6 +186,50 @@ async function seed(): Promise<void> {
   const oxyId = owner._id as mongoose.Types.ObjectId;
   logger.info('Resolved owner user', { username: ownerUsername, oxyId: oxyId.toString() });
 
+  // ── Oxy team Workspace: every seeded official app belongs to it ──
+  // Idempotent, keyed by (name='Oxy', ownerId=oxyId, type='team'). Mirrors the
+  // special case in scripts/migrate-workspaces.ts.
+  const oxyWorkspaceName = process.env.OXY_WORKSPACE_NAME || 'Oxy';
+  let oxyWorkspace = await Workspace.findOne({
+    name: oxyWorkspaceName,
+    ownerId: oxyId,
+    type: 'team',
+    status: 'active',
+  });
+  if (!oxyWorkspace && !dryRun) {
+    const slug = await generateUniqueWorkspaceSlug(oxyWorkspaceName);
+    oxyWorkspace = await Workspace.create({
+      name: oxyWorkspaceName,
+      slug,
+      type: 'team',
+      ownerId: oxyId,
+      status: 'active',
+    });
+  }
+  const oxyWorkspaceId =
+    oxyWorkspace?._id ?? new mongoose.Types.ObjectId('000000000000000000000000');
+  if (oxyWorkspace && !dryRun) {
+    const wsMember = await WorkspaceMember.findOne({
+      workspaceId: oxyWorkspace._id,
+      userId: oxyId,
+    });
+    if (!wsMember) {
+      await WorkspaceMember.create({
+        workspaceId: oxyWorkspace._id,
+        userId: oxyId,
+        role: 'owner',
+        permissions: workspacePermissionsForRole('owner'),
+        status: 'active',
+        joinedAt: new Date(),
+      });
+    }
+  }
+  logger.info('Oxy team workspace', {
+    name: oxyWorkspaceName,
+    workspaceId: oxyWorkspaceId.toString(),
+    created: !!oxyWorkspace && oxyWorkspace.isNew,
+  });
+
   const ownerPermissions = permissionsForRole('owner');
   const mapping: MappingRow[] = [];
 
@@ -209,6 +257,7 @@ async function seed(): Promise<void> {
       capabilities: [] as string[],
       redirectUris: spec.redirectUris,
       scopes: ['user:read'] as ('user:read')[],
+      workspaceId: oxyWorkspaceId,
     };
 
     if (!application) {
@@ -233,6 +282,7 @@ async function seed(): Promise<void> {
       application.capabilities = desiredAppFields.capabilities;
       application.redirectUris = desiredAppFields.redirectUris;
       application.scopes = desiredAppFields.scopes;
+      application.workspaceId = desiredAppFields.workspaceId;
       if (application.isModified()) {
         await application.save();
         appsUpdated += 1;
