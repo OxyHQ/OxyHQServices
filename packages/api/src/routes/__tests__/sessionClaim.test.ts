@@ -285,7 +285,7 @@ describe('POST /auth/session/claim', () => {
         sessionToken: 'good-token',
         authorizedSessionId: sessionId,
         authorizedUserId: { toString: () => userId },
-        appId: 'web-app',
+        applicationId: { toString: () => '64f7c2a1b8e9d3f4a1c2b3ab' },
       },
     });
 
@@ -336,7 +336,7 @@ describe('POST /auth/session/claim', () => {
         sessionToken: 'good-token',
         authorizedSessionId: 'sess-missing',
         authorizedUserId: { toString: () => 'uid' },
-        appId: 'app',
+        applicationId: { toString: () => '64f7c2a1b8e9d3f4a1c2b3ac' },
       },
     });
     mockGetAccessToken.mockResolvedValueOnce(null);
@@ -355,7 +355,7 @@ describe('POST /auth/session/claim', () => {
         sessionToken: 'good-token',
         authorizedSessionId: 'sess-vanished',
         authorizedUserId: { toString: () => 'uid' },
-        appId: 'app',
+        applicationId: { toString: () => '64f7c2a1b8e9d3f4a1c2b3ad' },
       },
     });
     mockGetAccessToken.mockResolvedValueOnce({
