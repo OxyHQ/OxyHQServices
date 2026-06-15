@@ -94,6 +94,24 @@ export type {
 } from './mixins/OxyServices.applications';
 
 // ---------------------------------------------------------------------------
+// Workspaces (multi-user containers: membership, roles)
+// ---------------------------------------------------------------------------
+export type {
+    Workspace,
+    WorkspaceMember,
+    WorkspaceRole,
+    WorkspaceType,
+    WorkspaceStatus,
+    WorkspaceMemberStatus,
+    CreateWorkspaceInput,
+    UpdateWorkspaceInput,
+    InviteWorkspaceMemberInput,
+    UpdateWorkspaceMemberInput,
+    TransferWorkspaceOwnershipInput,
+    WorkspaceSuccessResult,
+} from './mixins/OxyServices.workspaces';
+
+// ---------------------------------------------------------------------------
 // Auth helpers (token refresh, error normalisation, retry policies)
 // ---------------------------------------------------------------------------
 export {

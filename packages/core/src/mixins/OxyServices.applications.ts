@@ -58,12 +58,22 @@ export interface Application {
   webhookUrl?: string;
   devWebhookUrl?: string;
   createdByUserId: string;
+  /**
+   * The workspace this application belongs to (workspace `_id`), or `null` for
+   * applications not owned by a workspace. Used by the console to scope apps to
+   * a workspace and to branch on workspace-derived access.
+   */
+  workspaceId: string | null;
   createdAt: string;
   updatedAt: string;
   /**
    * The calling user's own membership in this application, embedded by the API
    * on list (`GET /applications`) and detail (`GET /applications/:appId`)
    * responses. Use `callerMembership.permissions` to gate UI affordances.
+   *
+   * When the caller's access is derived from a workspace membership rather than
+   * a direct application membership, the API returns a synthetic membership
+   * with `source: 'workspace'` and `_id: null`.
    */
   callerMembership?: ApplicationMember;
 }
@@ -73,7 +83,11 @@ export interface Application {
  * on the server at write time.
  */
 export interface ApplicationMember {
-  _id: string;
+  /**
+   * The membership's Mongo `_id`. `null` for a synthetic, workspace-derived
+   * membership (see {@link Application.callerMembership} and `source`).
+   */
+  _id: string | null;
   applicationId: string;
   userId: string;
   role: ApplicationRole;
@@ -81,6 +95,13 @@ export interface ApplicationMember {
   invitedByUserId?: string;
   joinedAt?: string;
   status: ApplicationMemberStatus;
+  /**
+   * Origin of this membership. When `'workspace'`, the membership is synthetic
+   * and derived from the caller's workspace membership rather than a direct
+   * application membership (in which case `_id` is `null`). Absent or any other
+   * value indicates a direct application membership.
+   */
+  source?: 'workspace';
   createdAt: string;
   updatedAt: string;
 }
@@ -281,12 +302,21 @@ export function OxyServicesApplicationsMixin<T extends typeof OxyServicesBase>(B
 
     /**
      * List applications the current user is an active member of.
+     *
+     * @param workspaceId - Optional workspace `_id` to scope the listing to
+     *   applications belonging to that workspace. When provided it is appended
+     *   as a `workspaceId` query parameter (URL-encoded). The query string is
+     *   part of the request path, so the response cache keys on it
+     *   automatically — scoped and unscoped lists never collide.
      */
-    async getApplications(): Promise<Application[]> {
+    async getApplications(workspaceId?: string): Promise<Application[]> {
       try {
+        const path = workspaceId
+          ? `/applications?workspaceId=${encodeURIComponent(workspaceId)}`
+          : '/applications';
         const res = await this.makeRequest<{ applications?: Application[] }>(
           'GET',
-          '/applications',
+          path,
           undefined,
           { cache: true, cacheTTL: CACHE_TIMES.MEDIUM },
         );
