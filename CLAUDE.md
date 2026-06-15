@@ -101,18 +101,21 @@ Use these agents for all implementation work:
 bun run core:build               # Build @oxyhq/core
 bun run auth:build               # Build @oxyhq/auth
 bun run services:build           # Build @oxyhq/services
-bun run build:all                # Build all (order: core -> auth -> services -> rest)
-bun run test                     # Run all workspace tests
+bun run build:all                # Build all (order: contracts -> core -> auth -> services -> rest)
+bun run test                     # Run all workspace tests (Jest via turbo — see note below)
 bun run dev                      # Dev mode across workspaces
 bun install                      # Install all workspace deps
 ```
 
+**Test runner — MUST use Jest, NEVER `bun test` (CRITICAL):** Tests are Jest-based (ts-jest). Run via `bun run test` (which delegates to jest/turbo) or the per-package `jest` script. NEVER run `bun test` directly — Bun's native test runner auto-discovers files and runs them under its own runtime, which does NOT implement `jest.resetModules`, `jest.advanceTimersByTimeAsync`, and other Jest APIs. This produces dozens of FALSE failures (observed: ~32 in core, ~81 in api) that do not occur under Jest and mask real regressions as "pre-existing" noise. Per-package Jest suites are green: core 333, api 489, auth 86, services 178.
+
 ## Architecture
 
-Monorepo (`@oxyhq/sdk`) using Bun workspaces + Turbo. Build order matters: `core` -> `auth` -> `services` -> rest.
+Monorepo (`@oxyhq/sdk`) using Bun workspaces + Turbo. Build order matters: `contracts` -> `core` -> `auth` -> `services` -> rest (turbo derives this from the dependency graph).
 
 ```
 packages/
+  contracts/      @oxyhq/contracts  Contract-first API schemas (Zod) — zero React/RN/Expo
   core/           @oxyhq/core       Platform-agnostic foundation (zero React/RN)
   auth-sdk/       @oxyhq/auth       Web auth SDK (React hooks, zero RN/Expo)
   services/       @oxyhq/services   Expo/React Native SDK (UI, screens, native features)
@@ -125,9 +128,11 @@ packages/
 
 **Dependency graph:**
 ```
-@oxyhq/core           no internal deps
-@oxyhq/auth           peer: @oxyhq/core, react
+@oxyhq/contracts      no internal deps (only zod)
+@oxyhq/core           dep: @oxyhq/contracts
+@oxyhq/auth           peer: @oxyhq/core, react; dep: @oxyhq/contracts
 @oxyhq/services       dep: @oxyhq/core
+@oxyhq/api            dep: @oxyhq/contracts (NOT @oxyhq/core — dropped that dep)
 accounts              dep: @oxyhq/core + @oxyhq/services
 test-app              dep: @oxyhq/services
 test-app-vite         dep: @oxyhq/core + @oxyhq/auth
@@ -135,9 +140,11 @@ test-app-vite         dep: @oxyhq/core + @oxyhq/auth
 
 ## Package Boundaries (strict)
 
+- **@oxyhq/contracts** must never import `react`, `react-native`, or `expo-*`. Only `zod` allowed. Platform-agnostic — both server and client import from it directly.
 - **@oxyhq/core** must never import `react`, `react-native`, or `expo-*`. Dynamic imports (`await import(...)`) for optional RN modules are allowed.
 - **@oxyhq/auth** must never import `react-native` or `expo-*`. Dynamic import of `@react-native-async-storage/async-storage` is the only exception.
 - **@oxyhq/services** does NOT re-export from `@oxyhq/core`. Consumers import core types directly from `@oxyhq/core`.
+- **@oxyhq/api** must NOT depend on `@oxyhq/core` for schemas — import contract schemas directly from `@oxyhq/contracts`. Do NOT route contracts through `@oxyhq/core` re-exports.
 
 ## ESM/CJS Compatibility (critical)
 
@@ -174,12 +181,27 @@ When splitting imports: use `import type` for type-only imports, regular `import
 - `packages/core/` and `packages/auth-sdk/` build with `tsc` (CJS + ESM + types -> `dist/`)
 - `packages/services/` builds with `react-native-builder-bob` (-> `lib/`)
 
+## @oxyhq/contracts — Contract-First API Schemas (2026-06-15)
+
+Package: `packages/contracts` → `@oxyhq/contracts` v0.1.0. SINGLE SOURCE OF TRUTH for API request/response contracts.
+
+**What it contains:**
+- Zod schemas: `userNameSchema`, `userResponseSchema`, `refreshAllAccountSchema`, `refreshAllResponseSchema`, `currentUserResponseSchema`, `deviceSessionAccountSchema`, `deviceSessionsResponseSchema`
+- Helpers: `resolveUserId`, `safeParseContract`
+- Inferred types: `UserNameResponse`, `UserResponse`, `RefreshAllAccountResponse`, `RefreshAllResponseContract`, `CurrentUserResponseContract`, `DeviceSessionAccountResponse`, `DeviceSessionsResponseContract`
+
+**Build:** dual CJS+ESM+types via tsc (same pattern as core: `tsconfig.{cjs,esm,types}.json` + `scripts/fix-esm-imports.mjs`). Zero runtime deps except `zod ^3.25.64`.
+
+**Dockerfile:** both builder and production stages MUST include `packages/contracts`: COPY the directory, build it before core/api, copy its `dist` into the production stage. Any future workspace package consumed by oxy-api MUST be added to the Dockerfile the same way or `bun install` in the ECS image fails to resolve `workspace:*`.
+
+**Rule:** new shared API contracts go in `@oxyhq/contracts`. Server validates output against them; clients validate input and derive `z.infer<>` types. This prevents the Zod-drift class of bug (field-shape mismatch causing `safeParse` to silently return null and the auth app to show logged-out state). Do NOT re-introduce local schema copies in `packages/auth/lib/schemas.ts` — use `@oxyhq/contracts` directly or keep schemas strictly in sync.
+
 ## Key Entry Points
 
+- `packages/contracts/src/index.ts` — all public contract exports (schemas, helpers, types)
 - `packages/core/src/index.ts` — all public core exports
 - `packages/core/src/utils/avatarUtils.ts` — shared avatar visibility logic (platform-agnostic)
-- `packages/core/src/utils/accountUtils.ts` — shared account helpers (`buildAccountsArray`, `createQuickAccount`)
-- `packages/core/src/utils/displayUtils.ts` — `getAccountDisplayName`, `getAccountFallbackHandle`, `formatPublicKeyHandle` (canonical display, falls back to `Account 0x12345678…`)
+- `packages/core/src/utils/accountUtils.ts` — shared account helpers (`buildAccountsArray`, `createQuickAccount`, `getAccountDisplayName`, `getAccountFallbackHandle`, `formatPublicKeyHandle` — canonical display, falls back to `Account 0x12345678…`)
 - `packages/core/src/mixins/OxyServices.contacts.ts` — `contacts.discoverContacts(hashedEmails, hashedPhones)` privacy-first contact discovery
 - `packages/core/src/mixins/OxyServices.workspaces.ts` — `workspaces` mixin (CRUD + members + transfer); `Workspace`/`WorkspaceMember` types
 - `packages/core/src/mixins/OxyServices.applications.ts` — `getApplications(workspaceId?)` + `getPublicApplication(clientId)`; `PublicApplication` type
@@ -188,6 +210,8 @@ When splitting imports: use `import type` for type-only imports, regular `import
 - `packages/services/src/index.ts` — RN-specific exports only; includes `LogoIcon`, `LogoText`
 - `packages/services/src/ui/context/OxyContext.tsx` — React Native auth context
 - `packages/services/src/ui/components/OxyProvider.tsx` — RN provider component
+
+**NOTE:** `getAccountDisplayName` and display helpers live in `packages/core/src/utils/accountUtils.ts` — NOT `displayUtils.ts` (that file does not exist).
 
 ## Application Model (#213 + #216) — replaces DeveloperApp (2026-06-14)
 
@@ -276,6 +300,14 @@ const result = await oxy.makeServiceRequest('POST', '/some/endpoint', data, user
 // Only allows service tokens (rejects user JWTs and API keys)
 app.use('/internal', oxy.serviceAuth());
 ```
+
+## API: User.displayName Virtual (authoritative name composition)
+
+`packages/api/src/models/User.ts` `displayName` virtual composes the human name via `packages/api/src/utils/displayName.ts` (`composeDisplayName`). Precedence: `name.full` (composed from `[first, last].filter(Boolean).join(' ')`, first-only is valid) → `username` → truncated publicKey handle → `'Anonymous'`. Previously returned `username || truncatedPublicKey`, silently ignoring the structured name — that was the root cause behind the account switcher showing handles instead of names.
+
+`formatUserResponse` in `packages/api/src/utils/userTransform.ts` emits the composed `displayName` + `name.full`. Raw fields (`name.first`, `name.last`, `name.full`, `username`, `publicKey`) remain fully exposed.
+
+**Canonical client-side resolver:** `getAccountDisplayName` in `packages/core/src/utils/accountUtils.ts` — order: `name.full` → composed first/last → `displayName` → `username` → `Account 0x…` handle → `'Unnamed'`. Do NOT reimplement name resolution locally in any app.
 
 ## API: userCache Invalidation Rule
 
