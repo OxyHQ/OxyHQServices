@@ -2,10 +2,10 @@
 
 ## AWS Deployment
 
-The backend (`oxy-api`) runs on **AWS ECS Fargate** (region `eu-west-1`, cluster `oxy-cluster`), behind an ALB with ACM HTTPS.
+The backend (`oxy-api`) runs on **AWS ECS Fargate** (region `us-west-2`, cluster `oxy-cluster`), behind an ALB with ACM HTTPS.
 
 - **Port**: `8080` | **Domain**: `api.oxy.so` (also serves `api.website.oxy.so` / `website-api.oxy.so` for the oxy.so/fairco.in website API; outbound email via SES, inbound via Cloudflare Email Routing → Worker `email-inbound` → `POST /email/inbound`)
-- **Deploy**: `git push origin main` → `.github/workflows/deploy-aws.yml` builds a `linux/arm64` Docker image → pushes to ECR (`237343248947.dkr.ecr.eu-west-1.amazonaws.com/oxy/oxy-api`) → `aws ecs update-service --force-new-deployment`
+- **Deploy**: `git push origin main` → `.github/workflows/deploy-aws.yml` builds a `linux/arm64` Docker image → pushes to ECR (`237343248947.dkr.ecr.us-west-2.amazonaws.com/oxy/oxy-api`) → `aws ecs update-service --force-new-deployment`
 - **Auth**: GitHub OIDC → role `oxy-github-deploy`. No AWS keys stored in GitHub.
 - **Secrets**: GitHub Actions secrets are the source of truth. The deploy workflow syncs them to AWS SSM (`/oxy/oxy-api/*`; shared secrets to `/oxy/_shared/*`); ECS injects them into the container. To change a secret: edit it in GitHub — the next deploy applies it.
 - **Empty/placeholder secret guard**: `.github/workflows/deploy-aws.yml` SKIPS syncing any secret whose value is empty or literally `-`. This is defense-in-depth after an incident (commit `641cea67`) where a `REDIS_URL=-` placeholder was synced and crash-looped `oxy-api` with `getaddrinfo ENOTFOUND -` from `ioredis`. **NEVER register a GitHub secret with a placeholder value (`-`, empty, `TODO`, etc.). If you don't have the real value yet, don't create the secret yet.**
@@ -33,9 +33,9 @@ Inbound mail for `*@oxy.so` is delivered as follows:
 ```bash
 cd workers/email-inbound
 export CLOUDFLARE_API_TOKEN=$(cat ~/.config/oxy/cloudflare.token)
-export CLOUDFLARE_ACCOUNT_ID=$(aws --profile oxy --region eu-west-1 ssm get-parameter --name /oxy/oxy-api/CLOUDFLARE_ACCOUNT_ID --with-decryption --query 'Parameter.Value' --output text)
+export CLOUDFLARE_ACCOUNT_ID=$(aws --profile oxy --region us-west-2 ssm get-parameter --name /oxy/oxy-api/CLOUDFLARE_ACCOUNT_ID --with-decryption --query 'Parameter.Value' --output text)
 ./node_modules/.bin/wrangler deploy
-aws --profile oxy --region eu-west-1 ssm get-parameter --name /oxy/oxy-api/EMAIL_INBOUND_WEBHOOK_SECRET --with-decryption --query 'Parameter.Value' --output text \
+aws --profile oxy --region us-west-2 ssm get-parameter --name /oxy/oxy-api/EMAIL_INBOUND_WEBHOOK_SECRET --with-decryption --query 'Parameter.Value' --output text \
   | ./node_modules/.bin/wrangler secret put EMAIL_INBOUND_WEBHOOK_SECRET
 ```
 
@@ -50,7 +50,7 @@ curl -s -H "Authorization: Bearer $(cat ~/.config/oxy/cloudflare.token)" \
 curl -s -o /dev/null -w "%{http_code}\n" -X POST https://api.oxy.so/email/inbound
 
 # 3. CloudWatch (log group is /oxy/ecs, NOT /ecs/oxy-api)
-aws --profile oxy --region eu-west-1 logs tail /oxy/ecs --log-stream-name-prefix oxy-api --since 1h \
+aws --profile oxy --region us-west-2 logs tail /oxy/ecs --log-stream-name-prefix oxy-api --since 1h \
   | grep -iE 'inbound|envelope|delivered'
 ```
 
@@ -76,7 +76,7 @@ This breaks naive `require('<pkg>')` from a `node -e` one-liner inside the conta
 **Cleaning Redis from a dev laptop**: the Valkey/Redis security group only accepts traffic from ECS task security groups, so you cannot connect from a laptop. Instead, run a one-shot Fargate task that overrides the container `command` to execute an inline cleanup. Example:
 
 ```bash
-aws --profile oxy --region eu-west-1 ecs run-task \
+aws --profile oxy --region us-west-2 ecs run-task \
   --cluster oxy-cluster --task-definition oxy-api --launch-type FARGATE \
   --network-configuration 'awsvpcConfiguration={subnets=[subnet-0012b3093e9af9f57,subnet-09dfe34a5a68a889d],securityGroups=[sg-02137cbd3bcbe11a4],assignPublicIp=ENABLED}' \
   --overrides '{"containerOverrides":[{"name":"oxy-api","command":["sh","-c","node -e \"const Redis=require('"'"'/app/node_modules/.bun/ioredis@5.11.1+f89edaf472774726/node_modules/ioredis'"'"');/* ... */\""]}]}'
@@ -181,6 +181,8 @@ When splitting imports: use `import type` for type-only imports, regular `import
 - `packages/core/src/utils/accountUtils.ts` — shared account helpers (`buildAccountsArray`, `createQuickAccount`)
 - `packages/core/src/utils/displayUtils.ts` — `getAccountDisplayName`, `getAccountFallbackHandle`, `formatPublicKeyHandle` (canonical display, falls back to `Account 0x12345678…`)
 - `packages/core/src/mixins/OxyServices.contacts.ts` — `contacts.discoverContacts(hashedEmails, hashedPhones)` privacy-first contact discovery
+- `packages/core/src/mixins/OxyServices.workspaces.ts` — `workspaces` mixin (CRUD + members + transfer); `Workspace`/`WorkspaceMember` types
+- `packages/core/src/mixins/OxyServices.applications.ts` — `getApplications(workspaceId?)` + `getPublicApplication(clientId)`; `PublicApplication` type
 - `packages/auth-sdk/src/index.ts` — all public auth exports
 - `packages/auth-sdk/src/WebOxyProvider.tsx` — web auth context provider
 - `packages/services/src/index.ts` — RN-specific exports only; includes `LogoIcon`, `LogoText`
@@ -208,9 +210,29 @@ When splitting imports: use `import type` for type-only imports, regular `import
 
 **SDK (@oxyhq/core 3.0.0 — BREAKING):** Removed `OxyServices.developer.ts` + `developer` mixin. Replaced by `OxyServices.applications.ts` (getApplications/createApplication + members/credentials/usage methods). Exported interfaces: `Application`, `ApplicationMember`, `ApplicationCredential`, `ApplicationRole`, etc. `configureServiceAuth`/`getServiceToken`/`makeServiceRequest` are UNCHANGED — service token flow unaffected.
 
-**Console:** `use-developer.ts` → `use-applications.ts`; apps list + tabbed app settings (General incl. redirectUris editor / Members / Credentials / Usage), permission-gated; staff-only fields never shown.
+**Console:** `use-developer.ts` → `use-applications.ts`; apps list + tabbed app settings (General incl. redirectUris editor / Members / Credentials / Usage), permission-gated; staff-only fields never shown. Console now uses the shared SDK (bespoke axios client removed) + Bloom theming + macOS splash + app-name from manifest.json + app-logo/workspace-avatar uploads + invite-by-username/email + Manage-account link + docs→website.
 
 **Commits:** api `881f81dc`, core+console `0a341882`, peer bumps `45e49063`.
+
+## Workspaces (2026-06-15)
+
+**Models in `packages/api/src/models/`:**
+- `Workspace` (collection `workspaces`): `type` personal|team, `slug`, `ownerId`. Personal workspace is MANDATORY — created automatically for every user, NOT renamable (PATCH rejects rename for `type:'personal'`), cannot be deleted.
+- `WorkspaceMember` (collection `workspacemembers`): `workspaceId`+`userId` unique; `role` owner|admin|member|viewer.
+
+**Routes:** `packages/api/src/routes/workspaces.ts` at `/workspaces`. `GET /workspaces` calls `ensurePersonalWorkspace` UNCONDITIONALLY so every user always has a Personal workspace. RBAC via `requireWorkspacePermission`.
+
+**Application scoping:** `Application.workspaceId` is REQUIRED. `GET /applications?workspaceId=` filters by workspace; access granted if workspace member OR `ApplicationMember`.
+
+**SDK:** `@oxyhq/core` `workspaces` mixin — `OxyServices.workspaces.ts` with CRUD + members + transfer. `Workspace`/`WorkspaceMember` types exported. `getApplications(workspaceId?)` accepts workspace scope.
+
+**Production "Oxy" team workspace:** `_id 6a2f9d8989b795cfdfac350f`, slug `oxy`, owned by user `oxy` (`_id 69b2d3df5d12f58c9800d651`, username `oxy`, email `hello@oxy.so` — DISTINCT from human `nateus`/`nate@oxy.so`). All 12 official Applications assigned to it. Migration `scripts/migrate-workspaces.ts` ran (idempotent).
+
+## FedCM Approved Clients — Application Registry (2026-06-15)
+
+`fedcm.service.fetchApprovedClientOrigins()` now derives approved RP origins from active `Application.redirectUris` origins (+ a small `DEV_NATIVE_APPROVED_ORIGINS` constant: `localhost:3000`, `localhost:8081`, `astro://auth`). The hardcoded prod seed list was DELETED — it was drift-prone and caused `console.oxy.so` to be rejected with `invalid_request`. Registering an app now auto-approves its SSO origin. The `/sso` IdP error page is branded (was a bare white screen). 60s `approvedClientsCache` retained.
+
+**12 official Applications** created in the `oxy` workspace, each with a `public` `ApplicationCredential` (client_id = `oxy_dk_…` publicKey). Their `clientId` is wired into each app's `OxyProvider`/`WebOxyProvider` via env-with-default.
 
 **Credential rotation (#215 — @oxyhq/core 3.1.0, commit b2b1e100):**
 - `POST /applications/:appId/credentials/:credId/rotate` — mints a new `ApplicationCredential` (new `publicKey` + `secret` returned once), marks the previous one `deprecated` with `expiresAt = now + CREDENTIAL_ROTATION_GRACE_MS` (7 days). Response: `{ credential, secret, rotatedFrom, graceExpiresAt }`. `rotatedFromCredentialId` on the new credential links new → old for audit.
@@ -429,16 +451,14 @@ Activated inside `FileManagementScreen` when `isImageOnlyPicker` is true. Apple 
 
 | Package | Version | Notes |
 |---------|---------|-------|
-| `@oxyhq/core` | **3.1.0** | 3.1.0: additive — `rotatedFromCredentialId` on `ApplicationCredential`; `RotateApplicationCredentialResult` type (`rotatedFrom`/`graceExpiresAt`); `ServiceApp.credentialId`. No breaking changes; `@oxyhq/auth ^4.0.0` + `@oxyhq/services ^9.0.0` peer `^3.0.0` already satisfies. 3.0.0 BREAKING: removed `developer` mixin (`OxyServices.developer.ts`) + all `DeveloperApp` types; added `applications` mixin (`OxyServices.applications.ts`) + `Application`/`ApplicationMember`/`ApplicationCredential`/`ApplicationRole` types. `configureServiceAuth`/`getServiceToken` unchanged. 2.4.1: hard settle guarantee for FedCM silent step — races settle-timer so `fedcm-silent` ALWAYS resolves (fixes hang regression from 2.4.0). 2.4.0: cold-boot latency work; inadvertently exposed FedCM hang — do NOT pin. 2.3.0: single source of truth for cross-domain SSO helpers (`consumeSsoReturn`, full `ssoBounce` API, `registrableApex`, `MULTIPART_TLDS`, `CENTRAL_IDP_APEX`, `SSO_CALLBACK_PATH`) |
-| `@oxyhq/auth` | **3.4.0** | In-repo peer bumped to `@oxyhq/core ^3.0.0` (commit `45e49063`) but NOT yet republished to npm — external consumers still see peer `^2.3.0` until republished. 3.4.0: `WebOxyProvider` consumes core SSO helpers — deleted local `ssoBounce.ts`; `runSsoReturn` wraps core `consumeSsoReturn`; dropped dead `stored-session` no-op cold-boot step. 3.3.0: `/sso/establish` handoff + per-apex `fedcm_session` cookie; `mintSessionForClient` issuer forced to `https://auth.oxy.so`. 3.2.0: `WebOxyProvider` consumes core `runColdBoot` + `autoDetect`; guard key `origin\|baseURL`. 3.0.0: major bump |
-| `@oxyhq/services` | **8.6.1** | In-repo peer bumped to `@oxyhq/core ^3.0.0` (commit `45e49063`) but NOT yet republished to npm — external consumers still see peer `^2.4.1` until republished. 8.6.1: wires `COLD_BOOT_OVERALL_DEADLINE = 20000`; pairs with core 2.4.1. 8.6.0: cold-boot latency work; do NOT pin (FedCM hang regression). 8.5.0: `isAuthResolved` boolean on `useAuth()`/`useOxy()`. 8.4.0: `OxyContext` consumes core SSO helpers — deleted local `ssoBounce.ts`; peer `@oxyhq/core ^2.3.0`. 8.3.1: per-apex `/auth/silent` iframe before `/sso` bounce. 8.2.0: FedCM-first cold boot. 8.1.1: removed `@react-navigation/native` peer. 8.0.1: fixed `expo-crypto` shim |
-| `@oxyhq/bloom` | **0.6.14** | RN-0.85 line |
-
-**PENDING REPUBLISH:** `@oxyhq/auth` and `@oxyhq/services` have their `@oxyhq/core` peer bumped to `^3.0.0` in-repo but the npm packages still advertise the old peer. Republish both to propagate the `^3.0.0` peer to external consumers (Mention, Homiio, Alia).
+| `@oxyhq/core` | **3.2.0** | 3.2.0: additive — `PublicApplication` + `getPublicApplication(clientId)`; `OxyConfig.clientId`; `AuthManager.getAccessToken()` falls back to `_lastKnownAccessToken` (fixes 401 for standalone API clients after cookie-restore); `workspaces` mixin + `Workspace`/`WorkspaceMember` types; `getApplications(workspaceId?)`; `Application.workspaceId`; `ApplicationMember._id`/`source`; invite inputs `{ usernameOrEmail, role }`. 3.2.1 PENDING: `consumeSsoReturn` hard-redirect on non-`ok` outcomes fixes 404 on signed-out SSO return. 3.1.0: credential rotation grace (`rotatedFromCredentialId`, `RotateApplicationCredentialResult`, `ServiceApp.credentialId`). 3.0.0 BREAKING: removed `developer` mixin; added `applications` mixin. 2.4.1: FedCM silent hang fix. 2.3.0: SSO helpers single source of truth. |
+| `@oxyhq/auth` | **4.1.0** | 4.1.0: `WebOxyProvider` optional `clientId` prop; peer `@oxyhq/core ^3.2.0`. 4.0.0: major bump (peer `^3.0.0`). 3.4.0: consumes core SSO helpers; deleted local `ssoBounce.ts`. 3.3.0: `/sso/establish` + per-apex cookie; central issuer fix. 3.2.0: consumes `runColdBoot` + `autoDetect`. |
+| `@oxyhq/services` | **10.0.0** | BREAKING: `appName` removed from `OxyProvider`; `clientId` required for cross-app device sign-in; peer `@oxyhq/core ^3.2.0`. 9.0.1: `silentGuardKey.ts` RN-safe (no `window.location` on RN). 8.6.1: `COLD_BOOT_OVERALL_DEADLINE = 20000`. 8.5.0: `isAuthResolved` on `useAuth()`/`useOxy()`. 8.4.0: core SSO helpers. 8.0.0 BREAKING: `@tanstack/*` → peerDeps; `RouteName` ManageAccount. 8.0.1: `expo-crypto` shim fixed. |
+| `@oxyhq/bloom` | **0.7.0** | 10 new components: `popover`, `command`, `combobox`, `alert-dialog` (web-forked overlays), `slider`, `field`, `input-group`, `label`, `kbd`, `item`. Bloom web = RN-via-react-native-web — DOM apps need RNW Vite alias. 0.6.14: prior RN-0.85 line. |
 
 **CRITICAL — SSO helpers live ONLY in `@oxyhq/core` (2026-06-14):** `consumeSsoReturn`, `buildSsoBounceUrl`, `isCentralIdPOrigin`, `guardActive`, `ssoNavigate`, `ssoStateKey`/`ssoGuardKey`/`ssoDestKey`/`ssoNoSessionKey`, `SSO_CALLBACK_PATH`, `SSO_GUARD_TTL_MS`, `registrableApex`, `MULTIPART_TLDS`, `CENTRAL_IDP_APEX` — all defined once in `@oxyhq/core`, imported by auth-sdk, services, AND the CF Worker. Do NOT add local copies in any consumer. The auth IdP worker (`packages/auth/server/index.ts`) imports `registrableApex`, `CENTRAL_IDP_APEX`, and `SSO_CALLBACK_PATH` directly from `@oxyhq/core` (tree-shakes to ~0.6 KB in the CF Worker bundle). The api added an in-process TTL (60s) `approvedClientsCache` over `FedCMClient` lookups (mirrors `userCache`/`sessionCache`), invalidated on add/remove — removes redundant per-flow Mongo reads on SSO/CORS hot paths.
 
-**Consumer apps on latest (2026-06-14):** Mention on `@oxyhq/services ^8.6.1` + `@oxyhq/core ^3.0.0`. Homiio and Alia on `@oxyhq/services ^8.4.0` + `@oxyhq/core ^2.3.0` (pending upgrade to core 3.0.0 — breaking: must remove any `oxy.developer.*` calls).
+**Consumer apps on latest (2026-06-15):** Mention on `@oxyhq/services ^8.6.1` + `@oxyhq/core ^3.0.0`. Homiio and Alia on `@oxyhq/services ^8.4.0` + `@oxyhq/core ^2.3.0` (pending upgrade to core 3.2.0 — breaking: must remove any `oxy.developer.*` calls first).
 
 ### Breaking changes in `@oxyhq/services` 8.x
 
