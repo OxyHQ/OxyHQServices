@@ -8,7 +8,7 @@ import { buildAuthUrl, buildApiUrl, getApiBaseUrl, getAvatarUrl } from "@/lib/ox
 import { setFedCMLoginStatus, registerFedCMSession, buildPostLoginRedirect, completeFedCMLogin } from "@/lib/auth-utils"
 import { setBasePreset } from "@/lib/bloom-css"
 import { useLayoutContext } from "@/lib/layout-context"
-import { loginResponseSchema, safeParse } from "@/lib/schemas"
+import { loginResponseSchema, refreshResponseSchema, safeParse } from "@/lib/schemas"
 import type { DeviceAccount } from "@/lib/types"
 import { useDeviceAccounts } from "@/lib/use-device-accounts"
 import { getOrCreateDeviceFingerprint } from "@/lib/device-fingerprint"
@@ -30,8 +30,9 @@ type LoginFormProps = React.ComponentProps<"div"> & {
     responseType?: string
     clientId?: string
     /**
-     * Username to pre-fill and re-authenticate. Set when the account chooser
-     * routes a non-active account here — bypasses the chooser and jumps to the
+     * Username to pre-fill and re-authenticate. Set via `?login_hint=` when a
+     * caller (e.g. the OAuth consent page's re-auth fallback) routes a specific
+     * account here for explicit sign-in — bypasses the chooser and jumps to the
      * password step for that account.
      */
     loginHint?: string
@@ -418,22 +419,80 @@ export function LoginForm({
     }
 
     /**
-     * A chooser row was selected. The current account continues silently; any
-     * other signed-in account cannot have a token minted from the current
-     * cookie (server enforces session ownership), so it funnels into the sign-in
-     * form pre-filled with that account's username — Google's re-auth prompt.
+     * Activate a sibling signed-in account WITHOUT a password. Every account in
+     * the chooser already holds a durable per-slot refresh cookie
+     * (`oxy_rt_${authuser}`) that the device shares across `*.oxy.so`. A
+     * `POST /auth/refresh?authuser=N` reads ONLY that slot's httpOnly cookie,
+     * rotates it server-side, and mints a fresh access token bound to that
+     * account's session — no credentials in the request body. We plant the
+     * minted token + sessionId (the same keys the active row plants) and funnel
+     * into the SAME post-login redirect the password flow uses.
+     *
+     * Falls back to explicit re-auth ONLY when the slot cannot be activated:
+     *   - the entry has no `authuser` slot index (legacy single-cookie path), or
+     *   - the slot's cookie has expired / been revoked (refresh returns non-2xx).
+     */
+    async function activateSiblingAccount(entry: DeviceAccount): Promise<void> {
+        if (typeof entry.authuser !== "number") {
+            routeToReauth(entry)
+            return
+        }
+        setPendingSessionId(entry.sessionId)
+        setIsSubmitting(true)
+        try {
+            const refreshUrl = `${buildAuthUrl("/refresh")}?authuser=${encodeURIComponent(String(entry.authuser))}`
+            const response = await fetch(refreshUrl, {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                credentials: "include",
+            })
+            if (!response.ok) {
+                routeToReauth(entry)
+                return
+            }
+            const payload = safeParse(refreshResponseSchema, await response.json().catch(() => null))
+            if (!payload?.accessToken) {
+                routeToReauth(entry)
+                return
+            }
+            await redirectAfterLogin(entry.sessionId, payload.accessToken, payload.expiresAt)
+        } catch (err) {
+            setLocalError(err instanceof Error ? err.message : "Unable to continue")
+            setPendingSessionId(null)
+            setIsSubmitting(false)
+        }
+    }
+
+    /**
+     * Reveal the sign-in form pre-filled for `entry`'s account so the user can
+     * re-authenticate explicitly. Used only when a chosen account's session
+     * cannot be activated silently. Clears any in-flight pending state so the
+     * chooser row never spins while we transition to the password step.
+     */
+    function routeToReauth(entry: DeviceAccount): void {
+        setPendingSessionId(null)
+        setIsSubmitting(false)
+        const hint = entry.account.username || entry.account.email
+        if (hint) setIdentifier(hint)
+        setShowLoginForm(true)
+        if (entry.account.username) {
+            void runLookup(entry.account.username)
+        }
+    }
+
+    /**
+     * A chooser row was selected. Google-style: EVERY signed-in account (active
+     * OR a sibling slot) activates its existing session and continues without a
+     * password — the active account reuses its planted token, siblings mint a
+     * fresh one from their per-slot refresh cookie. The password form is reached
+     * only via "Use a different account" or when a slot can't be activated.
      */
     async function handleSelectAccount(entry: DeviceAccount): Promise<void> {
         if (entry.isCurrent) {
             await continueWithCurrentAccount(entry.sessionId)
             return
         }
-        const hint = entry.account.username || entry.account.email
-        if (hint) setIdentifier(hint)
-        setShowLoginForm(true)
-        if (entry.account.username) {
-            await runLookup(entry.account.username)
-        }
+        await activateSiblingAccount(entry)
     }
 
     function handleUseDifferentAccount(): void {
