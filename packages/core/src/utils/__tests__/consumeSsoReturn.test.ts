@@ -319,8 +319,8 @@ describe('consumeSsoReturn', () => {
     expect(storage.map.get(ssoAttemptedKey(ORIGIN))).toBe('1');
   });
 
-  describe('dest restore', () => {
-    it('restores a same-origin destination when on the callback path, removes the dest key, and dispatches popstate', async () => {
+  describe('ok dest restore (soft replaceState + popstate)', () => {
+    it('restores a same-origin destination when on the callback path, removes the dest key, dispatches popstate, and does NOT hard-redirect', async () => {
       const oxy = okExchange();
       const storage = makeStorage({
         [ssoStateKey(ORIGIN)]: 's',
@@ -328,6 +328,7 @@ describe('consumeSsoReturn', () => {
       });
       const history = makeHistory();
       const dispatchPopState = jest.fn();
+      const hardRedirect = jest.fn();
 
       const result = await consumeSsoReturn(oxy, {
         isWeb: () => true,
@@ -338,6 +339,7 @@ describe('consumeSsoReturn', () => {
         }),
         history,
         dispatchPopState,
+        hardRedirect,
       });
 
       expect(result).toEqual(SESSION);
@@ -347,6 +349,8 @@ describe('consumeSsoReturn', () => {
       expect(storage.map.has(ssoDestKey(ORIGIN))).toBe(false);
       // URL-driven routers must be told the location changed.
       expect(dispatchPopState).toHaveBeenCalledTimes(1);
+      // ok preserves the in-memory session — NEVER a hard navigation.
+      expect(hardRedirect).not.toHaveBeenCalled();
     });
 
     it('restores a relative same-origin destination (new URL(dest, origin))', async () => {
@@ -356,6 +360,7 @@ describe('consumeSsoReturn', () => {
         [ssoDestKey(ORIGIN)]: '/settings?tab=privacy',
       });
       const history = makeHistory();
+      const hardRedirect = jest.fn();
 
       await consumeSsoReturn(oxy, {
         isWeb: () => true,
@@ -365,20 +370,50 @@ describe('consumeSsoReturn', () => {
           pathname: SSO_CALLBACK_PATH,
         }),
         history,
+        hardRedirect,
       });
 
       const last = history.calls[history.calls.length - 1];
       expect(last?.[2]).toBe('/settings?tab=privacy');
       expect(storage.map.has(ssoDestKey(ORIGIN))).toBe(false);
+      expect(hardRedirect).not.toHaveBeenCalled();
     });
 
-    it('rejects a cross-origin (attacker-planted) destination but still removes the dest key', async () => {
+    it('falls back to the app root on ok when NO dest is stored (soft replaceState to "/")', async () => {
+      const oxy = okExchange();
+      const storage = makeStorage({ [ssoStateKey(ORIGIN)]: 's' });
+      const history = makeHistory();
+      const dispatchPopState = jest.fn();
+      const hardRedirect = jest.fn();
+
+      const result = await consumeSsoReturn(oxy, {
+        isWeb: () => true,
+        storage,
+        location: makeLocation({
+          hash: '#oxy_sso=ok&code=c&state=s',
+          pathname: SSO_CALLBACK_PATH,
+        }),
+        history,
+        dispatchPopState,
+        hardRedirect,
+      });
+
+      expect(result).toEqual(SESSION);
+      // First replaceState = fragment strip; last = root fallback.
+      const last = history.calls[history.calls.length - 1];
+      expect(last?.[2]).toBe('/');
+      expect(dispatchPopState).toHaveBeenCalledTimes(1);
+      expect(hardRedirect).not.toHaveBeenCalled();
+    });
+
+    it('falls back to the app root on ok when the stored dest is cross-origin', async () => {
       const oxy = okExchange();
       const storage = makeStorage({
         [ssoStateKey(ORIGIN)]: 's',
         [ssoDestKey(ORIGIN)]: 'https://evil.example/phish',
       });
       const history = makeHistory();
+      const hardRedirect = jest.fn();
 
       await consumeSsoReturn(oxy, {
         isWeb: () => true,
@@ -388,14 +423,16 @@ describe('consumeSsoReturn', () => {
           pathname: SSO_CALLBACK_PATH,
         }),
         history,
+        hardRedirect,
       });
 
-      // Only the fragment-strip replaceState should have run — no dest restore.
-      expect(history.calls).toHaveLength(1);
+      const last = history.calls[history.calls.length - 1];
+      expect(last?.[2]).toBe('/');
       expect(storage.map.has(ssoDestKey(ORIGIN))).toBe(false);
+      expect(hardRedirect).not.toHaveBeenCalled();
     });
 
-    it('rejects a protocol-relative cross-origin destination', async () => {
+    it('falls back to the app root on ok when the stored dest is protocol-relative cross-origin', async () => {
       const oxy = okExchange();
       const storage = makeStorage({
         [ssoStateKey(ORIGIN)]: 's',
@@ -413,7 +450,8 @@ describe('consumeSsoReturn', () => {
         history,
       });
 
-      expect(history.calls).toHaveLength(1);
+      const last = history.calls[history.calls.length - 1];
+      expect(last?.[2]).toBe('/');
       expect(storage.map.has(ssoDestKey(ORIGIN))).toBe(false);
     });
 
@@ -424,6 +462,7 @@ describe('consumeSsoReturn', () => {
         [ssoDestKey(ORIGIN)]: `${ORIGIN}/should-not-apply`,
       });
       const history = makeHistory();
+      const hardRedirect = jest.fn();
 
       await consumeSsoReturn(oxy, {
         isWeb: () => true,
@@ -434,22 +473,24 @@ describe('consumeSsoReturn', () => {
           search: '?a=1',
         }),
         history,
+        hardRedirect,
       });
 
       // Only the fragment strip ran.
       expect(history.calls).toHaveLength(1);
       expect(history.calls[0]?.[2]).toBe('/already-here?a=1');
       expect(storage.map.has(ssoDestKey(ORIGIN))).toBe(false);
+      expect(hardRedirect).not.toHaveBeenCalled();
     });
+  });
 
-    it('restores dest + dispatches popstate on a "none" outcome (no-stranding regression)', async () => {
+  describe('non-ok hard redirect (never strand on the callback path)', () => {
+    it('hard-redirects to the app root on a "none" outcome with NO dest stored', async () => {
       const oxy = okExchange();
-      const storage = makeStorage({
-        [ssoStateKey(ORIGIN)]: 's',
-        [ssoDestKey(ORIGIN)]: `${ORIGIN}/explore?x=1#sec`,
-      });
+      const storage = makeStorage({ [ssoStateKey(ORIGIN)]: 's' });
       const history = makeHistory();
       const dispatchPopState = jest.fn();
+      const hardRedirect = jest.fn();
 
       const result = await consumeSsoReturn(oxy, {
         isWeb: () => true,
@@ -460,28 +501,60 @@ describe('consumeSsoReturn', () => {
         }),
         history,
         dispatchPopState,
+        hardRedirect,
       });
 
       expect(result).toBeNull();
       expect(oxy.exchangeSsoCode).not.toHaveBeenCalled();
-      // Last replaceState targets the captured dest — the user is returned.
-      const last = history.calls[history.calls.length - 1];
-      expect(last?.[2]).toBe('/explore?x=1#sec');
-      expect(storage.map.has(ssoDestKey(ORIGIN))).toBe(false);
-      expect(dispatchPopState).toHaveBeenCalledTimes(1);
+      expect(hardRedirect).toHaveBeenCalledTimes(1);
+      expect(hardRedirect).toHaveBeenCalledWith(`${ORIGIN}/`);
+      // Soft restore is NOT used on a non-ok outcome.
+      expect(dispatchPopState).not.toHaveBeenCalled();
       // Loop-breaker flags must still be set.
       expect(storage.map.get(ssoNoSessionKey(ORIGIN))).toBe('1');
       expect(storage.map.get(ssoAttemptedKey(ORIGIN))).toBe('1');
     });
 
-    it('restores dest + dispatches popstate on an "error" outcome', async () => {
+    it('hard-redirects to a same-origin dest on a "none" outcome', async () => {
+      const oxy = okExchange();
+      const storage = makeStorage({
+        [ssoStateKey(ORIGIN)]: 's',
+        [ssoDestKey(ORIGIN)]: `${ORIGIN}/explore?x=1#sec`,
+      });
+      const history = makeHistory();
+      const dispatchPopState = jest.fn();
+      const hardRedirect = jest.fn();
+
+      const result = await consumeSsoReturn(oxy, {
+        isWeb: () => true,
+        storage,
+        location: makeLocation({
+          hash: '#oxy_sso=none&state=s',
+          pathname: SSO_CALLBACK_PATH,
+        }),
+        history,
+        dispatchPopState,
+        hardRedirect,
+      });
+
+      expect(result).toBeNull();
+      expect(oxy.exchangeSsoCode).not.toHaveBeenCalled();
+      expect(hardRedirect).toHaveBeenCalledTimes(1);
+      expect(hardRedirect).toHaveBeenCalledWith(`${ORIGIN}/explore?x=1#sec`);
+      expect(dispatchPopState).not.toHaveBeenCalled();
+      expect(storage.map.has(ssoDestKey(ORIGIN))).toBe(false);
+      expect(storage.map.get(ssoNoSessionKey(ORIGIN))).toBe('1');
+      expect(storage.map.get(ssoAttemptedKey(ORIGIN))).toBe('1');
+    });
+
+    it('hard-redirects to a same-origin dest on an "error" outcome', async () => {
       const oxy = okExchange();
       const storage = makeStorage({
         [ssoStateKey(ORIGIN)]: 's',
         [ssoDestKey(ORIGIN)]: `${ORIGIN}/feed`,
       });
       const history = makeHistory();
-      const dispatchPopState = jest.fn();
+      const hardRedirect = jest.fn();
 
       const result = await consumeSsoReturn(oxy, {
         isWeb: () => true,
@@ -491,26 +564,25 @@ describe('consumeSsoReturn', () => {
           pathname: SSO_CALLBACK_PATH,
         }),
         history,
-        dispatchPopState,
+        hardRedirect,
       });
 
       expect(result).toBeNull();
-      const last = history.calls[history.calls.length - 1];
-      expect(last?.[2]).toBe('/feed');
+      expect(hardRedirect).toHaveBeenCalledTimes(1);
+      expect(hardRedirect).toHaveBeenCalledWith(`${ORIGIN}/feed`);
       expect(storage.map.has(ssoDestKey(ORIGIN))).toBe(false);
-      expect(dispatchPopState).toHaveBeenCalledTimes(1);
       expect(storage.map.get(ssoNoSessionKey(ORIGIN))).toBe('1');
       expect(storage.map.get(ssoAttemptedKey(ORIGIN))).toBe('1');
     });
 
-    it('restores dest + dispatches popstate on a state mismatch', async () => {
+    it('hard-redirects to the dest on a state mismatch (CSRF)', async () => {
       const oxy = okExchange();
       const storage = makeStorage({
         [ssoStateKey(ORIGIN)]: 'expected',
         [ssoDestKey(ORIGIN)]: `${ORIGIN}/notifications`,
       });
       const history = makeHistory();
-      const dispatchPopState = jest.fn();
+      const hardRedirect = jest.fn();
 
       const result = await consumeSsoReturn(oxy, {
         isWeb: () => true,
@@ -520,19 +592,100 @@ describe('consumeSsoReturn', () => {
           pathname: SSO_CALLBACK_PATH,
         }),
         history,
-        dispatchPopState,
+        hardRedirect,
       });
 
       expect(result).toBeNull();
       expect(oxy.exchangeSsoCode).not.toHaveBeenCalled();
-      const last = history.calls[history.calls.length - 1];
-      expect(last?.[2]).toBe('/notifications');
+      expect(hardRedirect).toHaveBeenCalledTimes(1);
+      expect(hardRedirect).toHaveBeenCalledWith(`${ORIGIN}/notifications`);
       expect(storage.map.has(ssoDestKey(ORIGIN))).toBe(false);
-      expect(dispatchPopState).toHaveBeenCalledTimes(1);
       expect(storage.map.get(ssoNoSessionKey(ORIGIN))).toBe('1');
     });
 
-    it('does NOT restore dest on a "none" outcome when not on the callback path', async () => {
+    it('hard-redirects to the app root when ok carries a code but the exchange fails', async () => {
+      const boom = new Error('exchange failed');
+      const oxy = {
+        exchangeSsoCode: jest.fn(async () => {
+          throw boom;
+        }),
+      };
+      const storage = makeStorage({ [ssoStateKey(ORIGIN)]: 's' });
+      const history = makeHistory();
+      const hardRedirect = jest.fn();
+      const onExchangeError = jest.fn();
+
+      const result = await consumeSsoReturn(oxy, {
+        isWeb: () => true,
+        storage,
+        location: makeLocation({
+          hash: '#oxy_sso=ok&code=c&state=s',
+          pathname: SSO_CALLBACK_PATH,
+        }),
+        history,
+        hardRedirect,
+        onExchangeError,
+      });
+
+      expect(result).toBeNull();
+      expect(onExchangeError).toHaveBeenCalledWith(boom);
+      expect(hardRedirect).toHaveBeenCalledTimes(1);
+      expect(hardRedirect).toHaveBeenCalledWith(`${ORIGIN}/`);
+      expect(storage.map.get(ssoNoSessionKey(ORIGIN))).toBe('1');
+    });
+
+    it('hard-redirects to the app root when ok carries a code but the exchange returns no sessionId', async () => {
+      const oxy = {
+        exchangeSsoCode: jest.fn(async () => ({ sessionId: '' }) as SessionLoginResponse),
+      };
+      const storage = makeStorage({ [ssoStateKey(ORIGIN)]: 's' });
+      const history = makeHistory();
+      const hardRedirect = jest.fn();
+
+      const result = await consumeSsoReturn(oxy, {
+        isWeb: () => true,
+        storage,
+        location: makeLocation({
+          hash: '#oxy_sso=ok&code=c&state=s',
+          pathname: SSO_CALLBACK_PATH,
+        }),
+        history,
+        hardRedirect,
+      });
+
+      expect(result).toBeNull();
+      expect(hardRedirect).toHaveBeenCalledTimes(1);
+      expect(hardRedirect).toHaveBeenCalledWith(`${ORIGIN}/`);
+    });
+
+    it('falls back to the app root on a "none" outcome when the dest is cross-origin', async () => {
+      const oxy = okExchange();
+      const storage = makeStorage({
+        [ssoStateKey(ORIGIN)]: 's',
+        [ssoDestKey(ORIGIN)]: 'https://evil.example/phish',
+      });
+      const history = makeHistory();
+      const hardRedirect = jest.fn();
+
+      const result = await consumeSsoReturn(oxy, {
+        isWeb: () => true,
+        storage,
+        location: makeLocation({
+          hash: '#oxy_sso=none&state=s',
+          pathname: SSO_CALLBACK_PATH,
+        }),
+        history,
+        hardRedirect,
+      });
+
+      expect(result).toBeNull();
+      // Never honour the cross-origin dest — fall back to the same-origin root.
+      expect(hardRedirect).toHaveBeenCalledTimes(1);
+      expect(hardRedirect).toHaveBeenCalledWith(`${ORIGIN}/`);
+      expect(storage.map.has(ssoDestKey(ORIGIN))).toBe(false);
+    });
+
+    it('does NOT hard-redirect on a "none" outcome when NOT on the callback path', async () => {
       const oxy = okExchange();
       const storage = makeStorage({
         [ssoStateKey(ORIGIN)]: 's',
@@ -540,6 +693,7 @@ describe('consumeSsoReturn', () => {
       });
       const history = makeHistory();
       const dispatchPopState = jest.fn();
+      const hardRedirect = jest.fn();
 
       const result = await consumeSsoReturn(oxy, {
         isWeb: () => true,
@@ -551,46 +705,52 @@ describe('consumeSsoReturn', () => {
         }),
         history,
         dispatchPopState,
+        hardRedirect,
       });
 
       expect(result).toBeNull();
-      // Only the fragment strip ran — no dest restore off the callback path.
+      // Only the fragment strip ran — no navigation off the callback path.
       expect(history.calls).toHaveLength(1);
       expect(history.calls[0]?.[2]).toBe('/explore?a=1');
       expect(storage.map.has(ssoDestKey(ORIGIN))).toBe(false);
+      expect(hardRedirect).not.toHaveBeenCalled();
       expect(dispatchPopState).not.toHaveBeenCalled();
     });
 
-    it('rejects a cross-origin dest on a "none" outcome and does NOT dispatch popstate', async () => {
+    it('does NOT hard-redirect on an "ok" outcome when NOT on the callback path', async () => {
       const oxy = okExchange();
       const storage = makeStorage({
         [ssoStateKey(ORIGIN)]: 's',
-        [ssoDestKey(ORIGIN)]: 'https://evil.example/phish',
+        [ssoDestKey(ORIGIN)]: `${ORIGIN}/should-not-apply`,
       });
       const history = makeHistory();
       const dispatchPopState = jest.fn();
+      const hardRedirect = jest.fn();
 
       const result = await consumeSsoReturn(oxy, {
         isWeb: () => true,
         storage,
         location: makeLocation({
-          hash: '#oxy_sso=none&state=s',
-          pathname: SSO_CALLBACK_PATH,
+          hash: '#oxy_sso=ok&code=c&state=s',
+          pathname: '/feed',
+          search: '?tab=home',
         }),
         history,
         dispatchPopState,
+        hardRedirect,
       });
 
-      expect(result).toBeNull();
-      // Only the fragment-strip replaceState ran — the cross-origin dest is rejected.
+      expect(result).toEqual(SESSION);
+      // Only the fragment strip ran — no navigation off the callback path.
       expect(history.calls).toHaveLength(1);
-      expect(storage.map.has(ssoDestKey(ORIGIN))).toBe(false);
+      expect(history.calls[0]?.[2]).toBe('/feed?tab=home');
+      expect(hardRedirect).not.toHaveBeenCalled();
       expect(dispatchPopState).not.toHaveBeenCalled();
     });
   });
 
   describe('default dispatchPopState (jsdom)', () => {
-    it('fires a real popstate listener after a "none" dest restore on the callback path', async () => {
+    it('fires a real popstate listener after an "ok" dest restore on the callback path', async () => {
       const oxy = okExchange();
       const storage = makeStorage({
         [ssoStateKey(ORIGIN)]: 's',
@@ -605,20 +765,52 @@ describe('consumeSsoReturn', () => {
           isWeb: () => true,
           storage,
           location: makeLocation({
-            hash: '#oxy_sso=none&state=s',
+            hash: '#oxy_sso=ok&code=c&state=s',
             pathname: SSO_CALLBACK_PATH,
           }),
           history,
           // No injected dispatchPopState — exercise the real default.
         });
 
-        expect(result).toBeNull();
+        expect(result).toEqual(SESSION);
         const last = history.calls[history.calls.length - 1];
         expect(last?.[2]).toBe('/dashboard?tab=home');
         expect(onPopState).toHaveBeenCalledTimes(1);
       } finally {
         window.removeEventListener('popstate', onPopState);
       }
+    });
+  });
+
+  describe('default hardRedirect (feature-detected, never throws)', () => {
+    it('stays total (resolves null, sets loop-breaker flags) on a non-ok outcome with the real default seam', async () => {
+      const oxy = okExchange();
+      const storage = makeStorage({
+        [ssoStateKey(ORIGIN)]: 's',
+        [ssoDestKey(ORIGIN)]: '/dashboard',
+      });
+      const history = makeHistory();
+
+      // No injected `hardRedirect` — exercise the real default, which reads the
+      // jsdom `window.location.replace`. jsdom routes the resulting navigation
+      // to its virtual console (a "Not implemented" notice) and does NOT throw,
+      // so the function must remain total: resolve null and set the loop-breaker
+      // flags. (The injected-`hardRedirect` suite above asserts the precise
+      // target argument deterministically.)
+      await expect(
+        consumeSsoReturn(oxy, {
+          isWeb: () => true,
+          storage,
+          location: makeLocation({
+            hash: '#oxy_sso=none&state=s',
+            pathname: SSO_CALLBACK_PATH,
+          }),
+          history,
+        }),
+      ).resolves.toBeNull();
+
+      expect(storage.map.get(ssoNoSessionKey(ORIGIN))).toBe('1');
+      expect(storage.map.get(ssoAttemptedKey(ORIGIN))).toBe('1');
     });
   });
 });

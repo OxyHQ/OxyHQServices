@@ -135,9 +135,22 @@ export interface ConsumeSsoReturnDeps {
    * location changed via `history.replaceState`, which does NOT itself emit
    * `popstate`. Default: dispatch a real `PopStateEvent` on `window` when
    * present; no-op off-web. Called ONLY after a successful same-origin
-   * dest restore (never when the dest is rejected/absent). NEVER throws.
+   * dest restore on the `ok` path (never when the dest is rejected/absent).
+   * NEVER throws.
    */
   dispatchPopState?: () => void;
+  /**
+   * Hard, full-document navigation used to leave the internal callback path on
+   * every NON-`ok` outcome (`none`/`error`, state-mismatch, missing code,
+   * failed exchange, missing sessionId). A SOFT `history.replaceState` +
+   * synthetic `popstate` does NOT reliably make Expo Router / TanStack Router
+   * re-resolve away from the 404 they have already rendered for the
+   * unregistered callback route — so for these outcomes (where there is no
+   * in-memory session to preserve) a full navigation is both safe and
+   * guaranteed to clear the 404. Default: `window.location.replace(url)` when
+   * present; feature-detected end to end so it never throws off-web.
+   */
+  hardRedirect?: (url: string) => void;
 }
 
 /**
@@ -164,14 +177,22 @@ export interface ConsumeSsoReturnDeps {
  *     treated exactly like "no session" (never loops, never rethrows).
  *   - On EVERY consumed outcome (ok, none, error, state-mismatch, no-code,
  *     failed-exchange, no-sessionId) — not just ok — if the page landed on
- *     {@link SSO_CALLBACK_PATH}, the real pre-bounce destination is restored
- *     from the DEST key so the user is never stranded on the internal callback
- *     path. Same-origin only (an attacker-planted cross-origin or relative-evil
- *     dest is rejected). The DEST key is removed unconditionally.
- *   - After a same-origin dest restore (which uses `history.replaceState`, that
- *     does NOT itself emit `popstate`), a synthetic `popstate` is dispatched so
- *     URL-driven routers (Expo Router / React Navigation web) re-sync to the
- *     restored route. It is NOT dispatched when the dest is rejected/absent.
+ *     {@link SSO_CALLBACK_PATH}, the user is taken to a same-origin TARGET so
+ *     they are never stranded on the internal callback path (which is an
+ *     unregistered route in every consumer router → a hard 404). The target is
+ *     the stored DEST when it parses as same-origin (an attacker-planted
+ *     cross-origin / protocol-relative dest is rejected), ELSE the app root
+ *     (`origin + '/'`). The DEST key is removed unconditionally.
+ *   - For the `ok` outcome the target is applied via a SOFT
+ *     `history.replaceState` + synthetic `popstate` so the freshly exchanged
+ *     in-memory session the provider is about to commit is preserved (no
+ *     reload). `popstate` is dispatched only on the `ok` same-origin restore.
+ *   - For every NON-`ok` outcome there is no in-memory session to preserve, and
+ *     the consumer router has ALREADY synchronously rendered its 404 for the
+ *     unregistered callback route — a soft replaceState+popstate does not
+ *     reliably make it re-resolve. So these outcomes perform a HARD
+ *     full-document navigation to the target (`hardRedirect`), which is both
+ *     safe (nothing to lose) and guaranteed to clear the 404 in every router.
  *
  * Total: this function NEVER throws. Off-web it is a no-op returning `null`.
  *
@@ -214,6 +235,21 @@ export async function consumeSsoReturn(
       }
     });
 
+  // Default: a hard, full-document navigation used to leave the callback path
+  // on non-`ok` outcomes. Feature-detected end to end so it never throws in any
+  // environment (SSR / native / a stubbed location without `replace`).
+  const hardRedirect =
+    deps.hardRedirect ??
+    ((url: string) => {
+      if (
+        typeof window !== 'undefined' &&
+        window.location &&
+        typeof window.location.replace === 'function'
+      ) {
+        window.location.replace(url);
+      }
+    });
+
   const ret = parseSsoReturnFragment(location.hash);
   if (!ret) {
     // Not an oxy_sso fragment — nothing to do (do NOT touch any flags).
@@ -241,39 +277,56 @@ export async function consumeSsoReturn(
     storage.setItem(ssoAttemptedKey(origin), '1');
   };
 
-  // Restore the user's real pre-bounce destination so they are never stranded
-  // on the internal callback path — invoked on EVERY consumed outcome, not just
-  // success. Same-origin only — never honour a cross-origin/protocol-relative
-  // dest that could have been planted to redirect the user. The DEST key is
-  // removed unconditionally. After a successful same-origin restore a synthetic
-  // `popstate` is dispatched so URL-driven routers re-sync.
-  const restoreDest = (): void => {
-    if (location.pathname === SSO_CALLBACK_PATH) {
-      const dest = storage.getItem(ssoDestKey(origin));
-      if (dest) {
-        try {
-          const destUrl = new URL(dest, origin);
-          if (destUrl.origin === origin) {
-            history.replaceState(
-              null,
-              '',
-              destUrl.pathname + destUrl.search + destUrl.hash,
-            );
-            dispatchPopState();
-          }
-        } catch {
-          // Malformed stored destination — leave the URL on the callback path.
+  // Compute the same-origin TARGET to leave the callback path for. Returns the
+  // stored DEST when present AND it parses as same-origin (never honour a
+  // cross-origin / protocol-relative dest that could have been planted to
+  // redirect the user), ELSE the app root (`origin + '/'`) so the user is never
+  // stranded on the internal callback path even when no dest was stored. The
+  // DEST key is removed unconditionally. Returns the relative path+search+hash
+  // (so it can be fed to either `history.replaceState` or a `hardRedirect`),
+  // or `null` when the page is not on the callback path (nothing to leave).
+  const consumeCallbackTarget = (): string | null => {
+    if (location.pathname !== SSO_CALLBACK_PATH) {
+      // Not on the callback path — still drop the dest key (consumed) but there
+      // is nothing to navigate away from.
+      storage.removeItem(ssoDestKey(origin));
+      return null;
+    }
+    const dest = storage.getItem(ssoDestKey(origin));
+    storage.removeItem(ssoDestKey(origin));
+    if (dest) {
+      try {
+        const destUrl = new URL(dest, origin);
+        if (destUrl.origin === origin) {
+          return destUrl.pathname + destUrl.search + destUrl.hash;
         }
+      } catch {
+        // Malformed stored destination — fall through to the app-root fallback.
       }
     }
-    storage.removeItem(ssoDestKey(origin));
+    // No dest, a cross-origin/protocol-relative dest, or an unparseable dest:
+    // fall back to the app root so the router always leaves the 404.
+    return '/';
+  };
+
+  // Non-`ok` outcomes: there is no in-memory session to preserve, and the
+  // consumer router has already rendered its 404 for the unregistered callback
+  // route — a soft replaceState+popstate does not reliably make it re-resolve.
+  // Perform a HARD full-document navigation to the target (safe: nothing to
+  // lose; guaranteed: every router leaves the 404). Off the callback path this
+  // is a no-op (target is null).
+  const leaveCallbackHard = (): void => {
+    const target = consumeCallbackTarget();
+    if (target !== null) {
+      hardRedirect(origin + target);
+    }
   };
 
   if (ret.kind === 'none' || ret.kind === 'error') {
     // The central IdP had no session (or the bounce failed). Record it so we do
     // not bounce again this tab — the definitive loop breaker.
     markNoSession();
-    restoreDest();
+    leaveCallbackHard();
     return null;
   }
 
@@ -281,7 +334,7 @@ export async function consumeSsoReturn(
     // Forged / replayed / stale fragment, or a malformed ok with no code. Treat
     // exactly like "no session": never exchange, never loop.
     markNoSession();
-    restoreDest();
+    leaveCallbackHard();
     return null;
   }
 
@@ -291,17 +344,25 @@ export async function consumeSsoReturn(
   } catch (error) {
     onExchangeError?.(error);
     markNoSession();
-    restoreDest();
+    leaveCallbackHard();
     return null;
   }
 
   if (!session?.sessionId) {
     markNoSession();
-    restoreDest();
+    leaveCallbackHard();
     return null;
   }
 
-  restoreDest();
+  // `ok`: the provider is about to commit the freshly exchanged in-memory
+  // session — do NOT hard-redirect (a full navigation would discard it). Use a
+  // SOFT `history.replaceState` to the target + a synthetic `popstate` so
+  // URL-driven routers re-sync to the restored route without a reload.
+  const target = consumeCallbackTarget();
+  if (target !== null) {
+    history.replaceState(null, '', target);
+    dispatchPopState();
+  }
 
   return session;
 }
