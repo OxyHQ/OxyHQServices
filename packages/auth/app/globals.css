@@ -106,7 +106,7 @@
   width: 2.5rem;
   height: 2.5rem;
   border-radius: 50%;
-  background: hsl(var(--primary));
+  background: var(--primary);
   animation: morph-blob 1.8s ease-in-out infinite;
 }
 
