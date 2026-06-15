@@ -63,6 +63,7 @@ function resetStore(): void {
   workspaces.length = 0;
   members.length = 0;
   appCountByWorkspace.clear();
+  userDirectory.length = 0;
 }
 
 /** Test object-id strings (24 hex chars). */
@@ -226,6 +227,37 @@ jest.mock('../../models/Application', () => ({
   default: ApplicationMock,
 }));
 
+// --- resolveUserByIdentifier fake ------------------------------------------
+// The invite path resolves a username/email to a User. Mock the resolver with a
+// small in-memory directory keyed by username (case-insensitive) and email
+// (lowercase). Tests register users via `seedUser`.
+
+interface FakeUser {
+  _id: Types.ObjectId;
+  username?: string;
+  email?: string;
+}
+
+const userDirectory: FakeUser[] = [];
+
+const resolveUserByIdentifierMock = jest.fn((identifier: string) => {
+  const trimmed = identifier.trim();
+  if (trimmed.length === 0) return Promise.resolve(null);
+  if (trimmed.includes('@')) {
+    const email = trimmed.toLowerCase();
+    return Promise.resolve(userDirectory.find((u) => u.email === email) ?? null);
+  }
+  const username = trimmed.toLowerCase();
+  return Promise.resolve(
+    userDirectory.find((u) => u.username?.toLowerCase() === username) ?? null
+  );
+});
+
+jest.mock('../../utils/resolveUserIdentifier', () => ({
+  __esModule: true,
+  resolveUserByIdentifier: (identifier: string) => resolveUserByIdentifierMock(identifier),
+}));
+
 jest.mock('../../middleware/auth', () => ({
   authMiddleware: (...args: unknown[]) => mockAuthMiddleware(...args),
 }));
@@ -316,6 +348,16 @@ function seedWorkspace(overrides: Partial<FakeWorkspace> = {}): FakeWorkspace {
   return workspace;
 }
 
+function seedUser(userId: string, fields: { username?: string; email?: string }): FakeUser {
+  const user: FakeUser = {
+    _id: new Types.ObjectId(userId),
+    username: fields.username,
+    email: fields.email,
+  };
+  userDirectory.push(user);
+  return user;
+}
+
 function seedMember(userId: string, role: WorkspaceRole, status = 'active'): FakeMember {
   const now = new Date();
   const member: FakeMember = {
@@ -391,19 +433,20 @@ describe('POST /workspaces — create', () => {
 });
 
 describe('GET /workspaces — list', () => {
-  it('returns the workspaces the caller is an active member of', async () => {
+  it('returns the workspaces the caller is an active member of (incl. the always-present personal one)', async () => {
     seedWorkspace();
     seedMember(OWNER_ID, 'owner');
 
     const res = await requestJson(server, 'GET', '/workspaces');
 
     expect(res.status).toBe(200);
-    expect(res.body.workspaces).toHaveLength(1);
-    expect(res.body.workspaces?.[0]._id).toBe(WORKSPACE_ID);
-    const callerMembership = res.body.workspaces?.[0].callerMembership as
-      | { role?: string }
-      | undefined;
+    // The seeded team workspace plus the unconditionally-provisioned personal one.
+    expect(res.body.workspaces).toHaveLength(2);
+    const team = (res.body.workspaces ?? []).find((w) => w._id === WORKSPACE_ID);
+    expect(team).toBeDefined();
+    const callerMembership = team?.callerMembership as { role?: string } | undefined;
     expect(callerMembership?.role).toBe('owner');
+    expect((res.body.workspaces ?? []).some((w) => w.type === 'personal')).toBe(true);
   });
 
   it('auto-provisions a personal workspace when the caller has none', async () => {
@@ -416,6 +459,46 @@ describe('GET /workspaces — list', () => {
     expect(WorkspaceMock.create).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'personal' })
     );
+  });
+
+  it('always provisions a personal workspace even when the caller is only in a team workspace', async () => {
+    // Caller belongs to a team workspace but has NO personal workspace yet.
+    seedWorkspace();
+    seedMember(MEMBER_ID, 'member');
+    actAs(MEMBER_ID);
+
+    const res = await requestJson(server, 'GET', '/workspaces');
+
+    expect(res.status).toBe(200);
+    // Personal workspace is provisioned unconditionally and appears in the list
+    // alongside the team workspace.
+    expect(WorkspaceMock.create).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'personal' })
+    );
+    const types = (res.body.workspaces ?? []).map((w) => w.type);
+    expect(types).toContain('personal');
+    expect(types).toContain('team');
+    expect(res.body.workspaces).toHaveLength(2);
+  });
+
+  it('does not create a duplicate personal workspace when one already exists', async () => {
+    // Caller already owns an active personal workspace (at WORKSPACE_ID, which
+    // `seedMember` also points its membership at).
+    seedWorkspace({
+      type: 'personal',
+      ownerId: new Types.ObjectId(MEMBER_ID),
+      slug: 'personal-member',
+    });
+    seedMember(MEMBER_ID, 'owner');
+    actAs(MEMBER_ID);
+
+    const res = await requestJson(server, 'GET', '/workspaces');
+
+    expect(res.status).toBe(200);
+    // Idempotent: the existing personal workspace is reused, none created.
+    expect(WorkspaceMock.create).not.toHaveBeenCalled();
+    expect(res.body.workspaces).toHaveLength(1);
+    expect(res.body.workspaces?.[0].type).toBe('personal');
   });
 });
 
@@ -488,6 +571,39 @@ describe('PATCH /workspaces/:id', () => {
   });
 });
 
+describe('PATCH /workspaces/:id — personal workspace guards', () => {
+  beforeEach(() => {
+    // A personal workspace owned by the caller.
+    seedWorkspace({ type: 'personal', name: 'Personal' });
+    seedMember(OWNER_ID, 'owner');
+  });
+
+  it('rejects renaming the personal workspace (400)', async () => {
+    const res = await requestJson(server, 'PATCH', `/workspaces/${WORKSPACE_ID}`, {
+      name: 'My Stuff',
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('allows a no-op name equal to the current name', async () => {
+    const res = await requestJson(server, 'PATCH', `/workspaces/${WORKSPACE_ID}`, {
+      name: 'Personal',
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.workspace?.name).toBe('Personal');
+  });
+
+  it('allows description/icon updates on the personal workspace', async () => {
+    const res = await requestJson(server, 'PATCH', `/workspaces/${WORKSPACE_ID}`, {
+      description: 'just me',
+      icon: 'avatar-file-id',
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.workspace?.description).toBe('just me');
+    expect(res.body.workspace?.icon).toBe('avatar-file-id');
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Delete guards
 // ---------------------------------------------------------------------------
@@ -546,38 +662,62 @@ describe('members', () => {
     expect(res.body.members).toHaveLength(2);
   });
 
-  it('owner can invite a member with permissions derived from role', async () => {
+  it('owner can invite a member by username with permissions derived from role', async () => {
+    seedUser(MEMBER_ID, { username: 'Member' });
     const res = await requestJson(server, 'POST', `/workspaces/${WORKSPACE_ID}/members`, {
-      userId: MEMBER_ID,
+      usernameOrEmail: 'member',
       role: 'member',
     });
     expect(res.status).toBe(201);
     expect(res.body.member?.role).toBe('member');
+    expect(res.body.member?.userId).toBe(MEMBER_ID);
     expect(res.body.member?.permissions).toEqual(permissionsForRole('member'));
   });
 
+  it('owner can invite a member by email (case-insensitive)', async () => {
+    seedUser(MEMBER_ID, { email: 'member@example.com' });
+    const res = await requestJson(server, 'POST', `/workspaces/${WORKSPACE_ID}/members`, {
+      usernameOrEmail: 'Member@Example.com',
+      role: 'admin',
+    });
+    expect(res.status).toBe(201);
+    expect(res.body.member?.role).toBe('admin');
+    expect(res.body.member?.userId).toBe(MEMBER_ID);
+  });
+
+  it('404 when the username/email does not resolve to a user', async () => {
+    const res = await requestJson(server, 'POST', `/workspaces/${WORKSPACE_ID}/members`, {
+      usernameOrEmail: 'ghost@example.com',
+      role: 'member',
+    });
+    expect(res.status).toBe(404);
+  });
+
   it('rejects inviting an already-active member', async () => {
+    seedUser(MEMBER_ID, { username: 'member' });
     seedMember(MEMBER_ID, 'member');
     const res = await requestJson(server, 'POST', `/workspaces/${WORKSPACE_ID}/members`, {
-      userId: MEMBER_ID,
+      usernameOrEmail: 'member',
       role: 'viewer',
     });
     expect(res.status).toBe(400);
   });
 
   it('rejects role=owner on the invite path (owner only via transfer)', async () => {
+    seedUser(MEMBER_ID, { username: 'member' });
     const res = await requestJson(server, 'POST', `/workspaces/${WORKSPACE_ID}/members`, {
-      userId: MEMBER_ID,
+      usernameOrEmail: 'member',
       role: 'owner',
     });
     expect(res.status).toBe(400);
   });
 
   it('viewer cannot invite (no members:invite)', async () => {
+    seedUser(MEMBER_ID, { username: 'member' });
     seedMember(VIEWER_ID, 'viewer');
     actAs(VIEWER_ID);
     const res = await requestJson(server, 'POST', `/workspaces/${WORKSPACE_ID}/members`, {
-      userId: MEMBER_ID,
+      usernameOrEmail: 'member',
       role: 'member',
     });
     expect(res.status).toBe(403);

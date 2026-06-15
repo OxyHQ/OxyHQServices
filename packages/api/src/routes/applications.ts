@@ -21,6 +21,7 @@ import {
 } from '../utils/error';
 import { logger } from '../utils/logger';
 import { ensurePersonalWorkspace } from '../utils/workspaceProvisioning';
+import { resolveUserByIdentifier } from '../utils/resolveUserIdentifier';
 import {
   permissionsForRole,
   appPermissionsForWorkspaceRole,
@@ -790,13 +791,18 @@ router.post(
       throw new NotFoundError('Application not found');
     }
 
-    const { userId: targetUserId, role } = req.body as { userId: string; role: ApplicationRole };
-    if (!mongoose.isValidObjectId(targetUserId)) {
-      throw new BadRequestError('Invalid userId');
+    const { usernameOrEmail, role } = req.body as {
+      usernameOrEmail: string;
+      role: ApplicationRole;
+    };
+
+    const targetUser = await resolveUserByIdentifier(usernameOrEmail);
+    if (!targetUser) {
+      throw new NotFoundError('User not found');
     }
 
     const callerUserId = requireUserId(req);
-    const targetUserObjectId = new mongoose.Types.ObjectId(targetUserId);
+    const targetUserObjectId = targetUser._id;
 
     const existing = await ApplicationMember.findOne({
       applicationId: application._id,

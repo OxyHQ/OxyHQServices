@@ -23,6 +23,7 @@ import {
   ensurePersonalWorkspace,
   generateUniqueWorkspaceSlug,
 } from '../utils/workspaceProvisioning';
+import { resolveUserByIdentifier } from '../utils/resolveUserIdentifier';
 import {
   workspaceIdRouteParams,
   workspaceMemberParams,
@@ -158,22 +159,23 @@ function requireWorkspacePermission(permission: WorkspacePermission) {
 /**
  * List workspaces the caller is an active member of.
  *
- * Auto-provisions the caller's personal workspace when they belong to none, so
- * the list is never empty for an authenticated user.
+ * Every user ALWAYS has a mandatory personal workspace. `ensurePersonalWorkspace`
+ * is idempotent (returns the existing active `type:'personal'` workspace or
+ * creates it), so it is called UNCONDITIONALLY here — guaranteeing the personal
+ * workspace exists and is always in the returned list, even for a user who only
+ * belongs to team workspaces.
  */
 router.get(
   '/',
   asyncHandler(async (req: AuthRequest, res) => {
     const userId = requireUserId(req);
 
-    let memberships = await WorkspaceMember.find({ userId, status: 'active' });
+    // The personal workspace is mandatory and must always exist. Provision it
+    // unconditionally (idempotent → no duplicates) so it is always present,
+    // regardless of any team-workspace memberships.
+    await ensurePersonalWorkspace(userId);
 
-    // Cold start for a brand-new user: ensure a personal workspace exists so the
-    // Console always has at least one workspace to render.
-    if (memberships.length === 0) {
-      await ensurePersonalWorkspace(userId);
-      memberships = await WorkspaceMember.find({ userId, status: 'active' });
-    }
+    const memberships = await WorkspaceMember.find({ userId, status: 'active' });
 
     const membershipByWorkspaceId = new Map<string, IWorkspaceMember>();
     for (const membership of memberships) {
@@ -274,6 +276,17 @@ router.patch(
       description?: string | null;
       icon?: string | null;
     };
+
+    // The personal workspace is mandatory and must NOT be renamable. Allow a
+    // no-op `name` equal to the current name, but reject any actual rename.
+    // `description`/`icon` updates are still permitted (e.g. the icon/avatar).
+    if (
+      workspace.type === 'personal' &&
+      body.name !== undefined &&
+      body.name !== workspace.name
+    ) {
+      throw new BadRequestError('The personal workspace cannot be renamed');
+    }
 
     if (body.name !== undefined) workspace.name = body.name;
     if (body.description !== undefined) {
@@ -386,16 +399,18 @@ router.post(
       throw new NotFoundError('Workspace not found');
     }
 
-    const { userId: targetUserId, role } = req.body as {
-      userId: string;
+    const { usernameOrEmail, role } = req.body as {
+      usernameOrEmail: string;
       role: WorkspaceRole;
     };
-    if (!mongoose.isValidObjectId(targetUserId)) {
-      throw new BadRequestError('Invalid userId');
+
+    const targetUser = await resolveUserByIdentifier(usernameOrEmail);
+    if (!targetUser) {
+      throw new NotFoundError('User not found');
     }
 
     const callerUserId = requireUserId(req);
-    const targetUserObjectId = new mongoose.Types.ObjectId(targetUserId);
+    const targetUserObjectId = targetUser._id;
 
     const existing = await WorkspaceMember.findOne({
       workspaceId: workspace._id,

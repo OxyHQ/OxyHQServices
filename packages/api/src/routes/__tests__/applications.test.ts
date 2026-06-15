@@ -108,6 +108,7 @@ function resetStore(): void {
   members.length = 0;
   credentials.length = 0;
   workspaceMembers.length = 0;
+  userDirectory.length = 0;
 }
 
 /** Test object-id strings (24 hex chars). */
@@ -393,6 +394,37 @@ jest.mock('../../models/ApiKeyUsage', () => ({
   default: { aggregate: jest.fn().mockResolvedValue([]) },
 }));
 
+// --- resolveUserByIdentifier fake ------------------------------------------
+// The invite path resolves a username/email to a User. Mock the resolver with a
+// small in-memory directory keyed by username (case-insensitive) and email
+// (lowercase). Tests register users via `seedUser`.
+
+interface FakeUser {
+  _id: Types.ObjectId;
+  username?: string;
+  email?: string;
+}
+
+const userDirectory: FakeUser[] = [];
+
+const resolveUserByIdentifierMock = jest.fn((identifier: string) => {
+  const trimmed = identifier.trim();
+  if (trimmed.length === 0) return Promise.resolve(null);
+  if (trimmed.includes('@')) {
+    const email = trimmed.toLowerCase();
+    return Promise.resolve(userDirectory.find((u) => u.email === email) ?? null);
+  }
+  const username = trimmed.toLowerCase();
+  return Promise.resolve(
+    userDirectory.find((u) => u.username?.toLowerCase() === username) ?? null
+  );
+});
+
+jest.mock('../../utils/resolveUserIdentifier', () => ({
+  __esModule: true,
+  resolveUserByIdentifier: (identifier: string) => resolveUserByIdentifierMock(identifier),
+}));
+
 jest.mock('../../middleware/auth', () => ({
   authMiddleware: (...args: unknown[]) => mockAuthMiddleware(...args),
 }));
@@ -550,6 +582,16 @@ function seedWorkspaceMember(
   member.save = jest.fn().mockResolvedValue(member);
   workspaceMembers.push(member);
   return member;
+}
+
+function seedUser(userId: string, fields: { username?: string; email?: string }): FakeUser {
+  const user: FakeUser = {
+    _id: new Types.ObjectId(userId),
+    username: fields.username,
+    email: fields.email,
+  };
+  userDirectory.push(user);
+  return user;
 }
 
 function seedMember(userId: string, role: ApplicationRole, status = 'active'): FakeMember {
@@ -929,7 +971,7 @@ describe('membership permission enforcement', () => {
   it('developer cannot invite members (no members:invite)', async () => {
     actAs(DEVELOPER_ID);
     const res = await requestJson(server, 'POST', `/applications/${APP_ID}/members`, {
-      userId: OUTSIDER_ID,
+      usernameOrEmail: 'outsider',
       role: 'viewer',
     });
     expect(res.status).toBe(403);
@@ -1241,32 +1283,57 @@ describe('POST /applications/:appId/members', () => {
     seedMember(OWNER_ID, 'owner');
   });
 
-  it('adds an active member with permissions derived from role', async () => {
+  it('adds an active member by username with permissions derived from role', async () => {
+    seedUser(DEVELOPER_ID, { username: 'Dev' });
     actAs(OWNER_ID);
     const res = await requestJson(server, 'POST', `/applications/${APP_ID}/members`, {
-      userId: DEVELOPER_ID,
+      usernameOrEmail: 'dev',
       role: 'developer',
     });
     expect(res.status).toBe(201);
     expect(res.body.member?.role).toBe('developer');
+    expect(res.body.member?.userId).toBe(DEVELOPER_ID);
     expect(res.body.member?.permissions).toEqual(permissionsForRole('developer'));
     expect(res.body.member?.status).toBe('active');
   });
 
+  it('adds a member by email (case-insensitive)', async () => {
+    seedUser(DEVELOPER_ID, { email: 'dev@example.com' });
+    actAs(OWNER_ID);
+    const res = await requestJson(server, 'POST', `/applications/${APP_ID}/members`, {
+      usernameOrEmail: 'Dev@Example.com',
+      role: 'developer',
+    });
+    expect(res.status).toBe(201);
+    expect(res.body.member?.role).toBe('developer');
+    expect(res.body.member?.userId).toBe(DEVELOPER_ID);
+  });
+
+  it('404 when the username/email does not resolve to a user', async () => {
+    actAs(OWNER_ID);
+    const res = await requestJson(server, 'POST', `/applications/${APP_ID}/members`, {
+      usernameOrEmail: 'ghost',
+      role: 'developer',
+    });
+    expect(res.status).toBe(404);
+  });
+
   it('rejects adding a user who is already an active member', async () => {
+    seedUser(DEVELOPER_ID, { username: 'dev' });
     seedMember(DEVELOPER_ID, 'developer');
     actAs(OWNER_ID);
     const res = await requestJson(server, 'POST', `/applications/${APP_ID}/members`, {
-      userId: DEVELOPER_ID,
+      usernameOrEmail: 'dev',
       role: 'viewer',
     });
     expect(res.status).toBe(400);
   });
 
   it('rejects role=owner on the invite path (owner only via transfer)', async () => {
+    seedUser(DEVELOPER_ID, { username: 'dev' });
     actAs(OWNER_ID);
     const res = await requestJson(server, 'POST', `/applications/${APP_ID}/members`, {
-      userId: DEVELOPER_ID,
+      usernameOrEmail: 'dev',
       role: 'owner',
     });
     expect(res.status).toBe(400);

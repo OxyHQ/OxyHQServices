@@ -39,9 +39,14 @@ const assignableRoles = WORKSPACE_ROLES.filter((role) => role !== 'owner') as Ex
   'owner'
 >[];
 
-/** POST /workspaces/:id/members — invite/add a member. */
+/**
+ * POST /workspaces/:id/members — invite/add a member.
+ *
+ * `usernameOrEmail` is resolved to a userId server-side (people know usernames
+ * and emails, not opaque Mongo ids). See `utils/resolveUserIdentifier.ts`.
+ */
 export const inviteWorkspaceMemberSchema = z.object({
-  userId: z.string().trim().min(1),
+  usernameOrEmail: z.string().trim().min(1),
   role: z.enum(assignableRoles as [typeof assignableRoles[number], ...typeof assignableRoles]),
 });
 
