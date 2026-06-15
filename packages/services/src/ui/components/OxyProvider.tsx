@@ -103,7 +103,7 @@ const OxyProvider: FC<OxyProviderProps> = ({
     children,
     onAuthStateChange,
     storageKeyPrefix,
-    appName,
+    clientId,
     baseURL,
     authWebUrl,
     authRedirectUri,
@@ -297,7 +297,7 @@ const OxyProvider: FC<OxyProviderProps> = ({
                     authWebUrl={authWebUrl}
                     authRedirectUri={authRedirectUri}
                     storageKeyPrefix={storageKeyPrefix}
-                    appName={appName}
+                    clientId={clientId}
                     onAuthStateChange={onAuthStateChange as OxyContextProviderProps['onAuthStateChange']}
                 >
                     {children}

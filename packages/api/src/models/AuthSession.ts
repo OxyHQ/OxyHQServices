@@ -18,21 +18,18 @@ import mongoose, { Document, Schema } from "mongoose";
  *   cancelled  -> user denied the authorization
  *
  * App identity:
- *   `appId`         is a legacy/display fallback LABEL (free-form string). It is
- *                   still accepted and stored for backwards-compat and as the
- *                   consent-UI fallback when no registered app is resolved.
- *   `applicationId` is the resolved, canonical reference to a registered
- *                   `Application` record (when the caller supplied a `clientId`
- *                   or `applicationId`). Prefer this for authoritative app
- *                   identity; it links the session to real, sanitized app
- *                   metadata (name/icon/badge/scopes).
+ *   `applicationId` is the canonical, required reference to a registered
+ *                   `Application` record. Every cross-app auth session is bound
+ *                   to a real Application (resolved from a `clientId` or
+ *                   `applicationId` at create time) — there is no free-form app
+ *                   label. It links the session to authoritative, sanitized app
+ *                   metadata (name/icon/badge/scopes) for the consent UI.
  */
 export type AuthSessionStatus = 'pending' | 'authorized' | 'consumed' | 'expired' | 'cancelled';
 
 export interface IAuthSession extends Document {
   sessionToken: string;      // Unique token for this auth session (128-bit secret held only by the originating client)
-  appId: string;             // Legacy/display fallback label for the requesting app (free-form string)
-  applicationId?: mongoose.Types.ObjectId; // Canonical reference to a registered Application (when resolvable)
+  applicationId: mongoose.Types.ObjectId; // Canonical, required reference to a registered Application
   status: AuthSessionStatus;
   authorizedBy?: string;     // Public key of the user who authorized
   authorizedUserId?: mongoose.Types.ObjectId; // MongoDB user ID of the authorizing user
@@ -51,14 +48,10 @@ const AuthSessionSchema: Schema = new Schema(
       unique: true,
       index: true,
     },
-    appId: {
-      type: String,
-      required: true,
-    },
     applicationId: {
       type: Schema.Types.ObjectId,
       ref: 'Application',
-      default: null,
+      required: true,
       index: true,
     },
     status: {

@@ -24,6 +24,7 @@ const mockAuthSessionFindOne = jest.fn();
 const mockCreateSession = jest.fn();
 const mockEmitAuthSessionUpdate = jest.fn();
 const mockApplicationFindOne = jest.fn();
+const mockApplicationFindById = jest.fn();
 const mockApplicationCredentialFindOne = jest.fn();
 const mockAuthCodeCreate = jest.fn();
 
@@ -69,8 +70,8 @@ jest.mock('../../models/AuthCode', () => ({
 
 jest.mock('../../models/Application', () => ({
   __esModule: true,
-  Application: { findOne: mockApplicationFindOne },
-  default: { findOne: mockApplicationFindOne },
+  Application: { findOne: mockApplicationFindOne, findById: mockApplicationFindById },
+  default: { findOne: mockApplicationFindOne, findById: mockApplicationFindById },
 }));
 
 jest.mock('../../models/ApplicationCredential', () => ({
@@ -246,12 +247,15 @@ describe('POST /auth/session/authorize/:sessionToken (C2)', () => {
 
     const authSession = {
       sessionToken: 'token-abc',
-      appId: 'thirdparty-app',
+      applicationId: { toString: () => '64f7c2a1b8e9d3f4a1c2b3aa' },
       status: 'pending',
       expiresAt: new Date(Date.now() + 60_000),
       save: jest.fn().mockResolvedValue(undefined),
     };
     mockAuthSessionFindOne.mockResolvedValueOnce(authSession);
+
+    // The authorize handler loads the bound Application for the device label.
+    mockApplicationFindById.mockResolvedValueOnce({ name: 'Acme Widgets' });
 
     mockCreateSession.mockResolvedValueOnce({
       sessionId: 'new-sess',
@@ -276,7 +280,7 @@ describe('POST /auth/session/authorize/:sessionToken (C2)', () => {
     expect(mockCreateSession).toHaveBeenCalledWith(
       authenticatedUserId, // taken from the BEARER token, not the header
       expect.anything(),
-      expect.objectContaining({ deviceName: 'thirdparty-app App' })
+      expect.objectContaining({ deviceName: 'Acme Widgets App' })
     );
     expect(authSession.save).toHaveBeenCalled();
   });

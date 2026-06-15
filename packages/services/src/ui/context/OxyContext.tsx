@@ -42,7 +42,6 @@ import { useDeviceManagement } from '../hooks/useDeviceManagement';
 import { getStorageKeys, createPlatformStorage, type StorageInterface } from '../utils/storageHelpers';
 import { isInvalidSessionError, isTimeoutOrNetworkError } from '../utils/errorHandlers';
 import { readActiveAuthuser, writeActiveAuthuser } from '../utils/activeAuthuser';
-import { resolveAppDisplayName } from '../utils/appName';
 import type { RouteName } from '../navigation/routes';
 import { showBottomSheet as globalShowBottomSheet } from '../navigation/bottomSheetManager';
 import { useQueryClient } from '@tanstack/react-query';
@@ -116,12 +115,16 @@ export interface OxyContextState {
   clearAllAccountData: () => Promise<void>;
   storageKeyPrefix: string;
   /**
-   * Resolved human-readable app display name surfaced on the central Oxy
-   * sign-in / consent experience (e.g. "Mention wants to access your Oxy
-   * account"). Always non-empty — derived from the `appName` prop, then
-   * `storageKeyPrefix`, then `document.title` (web), then the platform.
+   * The app's Oxy OAuth client id / ApplicationCredential publicKey, as
+   * supplied via the `clientId` prop. Required for the cross-app device
+   * sign-in flow: the sign-in components send it to
+   * `POST /auth/session/create` so the API can identify the requesting app by
+   * its real registered client id (the consent identity is then resolved
+   * server-side and shown by the central auth web). `null` when the consuming
+   * app did not configure a client id — the device sign-in flow surfaces a
+   * configuration error in that case.
    */
-  appName: string;
+  clientId: string | null;
   oxyServices: OxyServices;
   useFollow?: UseFollowHook;
   showBottomSheet?: (screenOrConfig: RouteName | { screen: RouteName; props?: Record<string, unknown> }) => void;
@@ -149,10 +152,10 @@ export interface OxyContextProviderProps {
   authRedirectUri?: string;
   storageKeyPrefix?: string;
   /**
-   * Human-readable name of the consuming app shown on the central Oxy
-   * sign-in / consent experience. See {@link OxyContextState.appName}.
+   * The app's Oxy OAuth client id / ApplicationCredential publicKey; required
+   * for the cross-app device sign-in flow. See {@link OxyContextState.clientId}.
    */
-  appName?: string;
+  clientId?: string;
   onAuthStateChange?: (user: User | null) => void;
   onError?: (error: ApiError) => void;
 }
@@ -314,7 +317,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   authWebUrl,
   authRedirectUri,
   storageKeyPrefix = 'oxy_session',
-  appName: appNameProp,
+  clientId: clientIdProp,
   onAuthStateChange,
   onError,
 }) => {
@@ -424,13 +427,16 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
   const storageKeys = useMemo(() => getStorageKeys(storageKeyPrefix), [storageKeyPrefix]);
 
-  // Human-readable app display name for the central sign-in / consent UI.
-  // Derived once from the consumer config; never "web" unless the app supplies
-  // no name, no custom prefix, and no document title.
-  const appName = useMemo(
-    () => resolveAppDisplayName(appNameProp, storageKeyPrefix),
-    [appNameProp, storageKeyPrefix],
-  );
+  // The app's Oxy OAuth client id surfaced on the context so the cross-app
+  // device sign-in components (SignInModal / OxyAuthScreen) can identify the
+  // requesting app to `POST /auth/session/create`. Normalized to a trimmed
+  // non-empty string, or `null` when the consumer did not configure one — the
+  // sign-in components surface a clear configuration error in that case rather
+  // than falling back to any display string.
+  const clientId = useMemo(() => {
+    const trimmed = clientIdProp?.trim();
+    return trimmed ? trimmed : null;
+  }, [clientIdProp]);
 
   // Storage initialization.
   //
@@ -1666,7 +1672,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     clearSessionState,
     clearAllAccountData,
     storageKeyPrefix,
-    appName,
+    clientId,
     oxyServices,
     useFollow: useFollowHook,
     showBottomSheet: showBottomSheetForContext,
@@ -1695,7 +1701,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     logoutAllDeviceSessions,
     oxyServices,
     storageKeyPrefix,
-    appName,
+    clientId,
     refreshSessionsWithUser,
     sessions,
     setLanguage,
@@ -1773,7 +1779,7 @@ const LOADING_STATE: OxyContextState = {
   clearSessionState: () => rejectMissingProvider<void>(),
   clearAllAccountData: () => rejectMissingProvider<void>(),
   storageKeyPrefix: 'oxy_session',
-  appName: resolveAppDisplayName(undefined, undefined),
+  clientId: null,
   oxyServices: LOADING_STATE_OXY_SERVICES,
   openAvatarPicker: () => {},
   actingAs: null,

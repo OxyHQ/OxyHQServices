@@ -1426,16 +1426,23 @@ import AuthSession from '../models/AuthSession';
  *             type: object
  *             required:
  *               - sessionToken
- *               - appId
  *             properties:
  *               sessionToken:
  *                 type: string
  *                 description: Random opaque token the client generates and keeps secret.
  *                 example: at_random_4e9c2a1b8e9d3f4a1c2b3d4
- *               appId:
+ *               clientId:
  *                 type: string
- *                 description: App identifier requesting the session.
- *                 example: accounts.oxy.so
+ *                 description: >
+ *                   OAuth client_id (ApplicationCredential public key) of the
+ *                   requesting application. Provide this OR `applicationId`.
+ *                 example: oxy_dk_1a2b3c4d
+ *               applicationId:
+ *                 type: string
+ *                 description: >
+ *                   Application _id of the requesting application. Provide this
+ *                   OR `clientId`.
+ *                 example: 64f7c2a1b8e9d3f4a1c2b3d4
  *               expiresAt:
  *                 oneOf:
  *                   - type: string
@@ -1461,19 +1468,23 @@ import AuthSession from '../models/AuthSession';
  *                   enum: [pending, authorized, cancelled, expired]
  *                   example: pending
  *       400:
- *         description: Missing field or token already in use.
+ *         description: Missing/invalid application reference or token already in use.
+ *       403:
+ *         description: Application is not available (suspended/deleted/pending review).
  */
 router.post('/session/create', validate({ body: authSessionCreateSchema }), asyncHandler(async (req, res) => {
-  const { sessionToken, expiresAt, appId, clientId, applicationId } = req.body as {
+  const { sessionToken, expiresAt, clientId, applicationId } = req.body as {
     sessionToken: string;
-    appId: string;
     clientId?: string;
     applicationId?: string;
     expiresAt?: string | number;
   };
 
-  if (!sessionToken || !appId) {
-    throw new BadRequestError('sessionToken and appId are required');
+  if (!sessionToken) {
+    throw new BadRequestError('sessionToken is required');
+  }
+  if (!clientId && !applicationId) {
+    throw new BadRequestError('Either clientId or applicationId is required');
   }
 
   const now = Date.now();
@@ -1484,29 +1495,25 @@ router.post('/session/create', validate({ body: authSessionCreateSchema }), asyn
     expiresAtDate = defaultExpiresAt;
   }
 
-  // Resolve a canonical Application when an app reference is supplied. `appId`
-  // is only a free-form display label; `clientId` / `applicationId` bind the
-  // session to a registered Application record for the consent UI.
-  // Legacy callers that supply neither keep the prior behaviour exactly.
+  // Resolve the canonical Application. Every session is bound to a real,
+  // active registered Application — there is no free-form app label.
   let resolvedApp: IApplication | null = null;
   if (clientId) {
     const credential = await resolveUsableCredential(clientId);
     if (credential) {
       resolvedApp = await Application.findById(credential.applicationId);
     }
-    if (!resolvedApp) {
-      throw new BadRequestError('Invalid application');
-    }
   } else if (applicationId) {
     if (isValidObjectId(applicationId)) {
       resolvedApp = await Application.findById(applicationId);
     }
-    if (!resolvedApp) {
-      throw new BadRequestError('Invalid application');
-    }
   }
 
-  if (resolvedApp && resolvedApp.status !== 'active') {
+  if (!resolvedApp) {
+    throw new BadRequestError('Invalid application');
+  }
+
+  if (resolvedApp.status !== 'active') {
     // Suspended / deleted / pending_review applications cannot start flows.
     throw new ForbiddenError('Application is not available');
   }
@@ -1520,16 +1527,14 @@ router.post('/session/create', validate({ body: authSessionCreateSchema }), asyn
   // Create new auth session
   const authSession = await AuthSession.create({
     sessionToken,
-    appId,
-    applicationId: resolvedApp ? resolvedApp._id : null,
+    applicationId: resolvedApp._id,
     expiresAt: expiresAtDate,
     status: 'pending',
   });
 
   logger.debug('Auth session created', {
     sessionToken: sessionToken.substring(0, 8) + '...',
-    appId,
-    applicationId: resolvedApp ? resolvedApp._id.toString() : null,
+    applicationId: resolvedApp._id.toString(),
   });
 
   sendSuccess(res, {
@@ -1573,8 +1578,38 @@ router.post('/session/create', validate({ body: authSessionCreateSchema }), asyn
  *                   type: boolean
  *                 sessionToken:
  *                   type: string
- *                 appId:
- *                   type: string
+ *                 application:
+ *                   nullable: true
+ *                   description: >
+ *                     Sanitized public metadata of the registered Application
+ *                     bound to this session, for the consent UI. Null only if
+ *                     the app was hard-deleted after the session was created.
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                     name:
+ *                       type: string
+ *                     description:
+ *                       type: string
+ *                     icon:
+ *                       type: string
+ *                     websiteUrl:
+ *                       type: string
+ *                     type:
+ *                       type: string
+ *                       enum: [first_party, third_party, internal, system]
+ *                     isOfficial:
+ *                       type: boolean
+ *                     isInternal:
+ *                       type: boolean
+ *                     scopes:
+ *                       type: array
+ *                       items:
+ *                         type: string
+ *                     developerName:
+ *                       type: string
+ *                       description: Best-effort owner display name (non-official apps only).
  *                 expiresAt:
  *                   type: string
  *                   format: date-time
@@ -1593,7 +1628,13 @@ router.post('/session/create', validate({ body: authSessionCreateSchema }), asyn
  *                   status: pending
  *                   authorized: false
  *                   sessionToken: at_random_4e9c2a1b8e9d3f4a1c2b3d4
- *                   appId: accounts.oxy.so
+ *                   application:
+ *                     id: 64f7c2a1b8e9d3f4a1c2b3d4
+ *                     name: Oxy Accounts
+ *                     type: first_party
+ *                     isOfficial: true
+ *                     isInternal: false
+ *                     scopes: [user:read]
  *                   expiresAt: '2025-05-25T12:39:56.000Z'
  *                   sessionId: null
  *                   publicKey: null
@@ -1603,7 +1644,15 @@ router.post('/session/create', validate({ body: authSessionCreateSchema }), asyn
  *                   status: authorized
  *                   authorized: true
  *                   sessionToken: at_random_4e9c2a1b8e9d3f4a1c2b3d4
- *                   appId: accounts.oxy.so
+ *                   application:
+ *                     id: 64f7c2a1b8e9d3f4a1c2b3d4
+ *                     name: Acme Widgets
+ *                     type: third_party
+ *                     isOfficial: false
+ *                     isInternal: false
+ *                     scopes: [files:read, user:read]
+ *                     websiteUrl: https://acme.example
+ *                     developerName: Ada Lovelace
  *                   expiresAt: '2025-05-25T12:39:56.000Z'
  *                   sessionId: sess_64f7c2a1b8e9d3f4a1c2b3d4
  *                   publicKey: '02a1b2c3d4e5f6...'
@@ -1626,24 +1675,21 @@ router.get('/session/status/:sessionToken', validate({ params: authSessionTokenP
     await authSession.save();
   }
 
-  // Resolve sanitized public application metadata for the consent UI. A
-  // canonical `applicationId` (resolved at create-time) is authoritative; if
-  // the app was later deleted/suspended or never resolved, we return null
-  // rather than throwing — the UI falls back to the `appId` label.
+  // Resolve sanitized public application metadata for the consent UI. Every
+  // session is bound to a canonical `applicationId` at create-time, so this is
+  // normally always present. If the app was later hard-deleted (or is no longer
+  // active) we return null rather than throwing — defensive only.
   let application = null;
-  if (authSession.applicationId) {
-    const app = await Application.findById(authSession.applicationId);
-    if (app && app.status === 'active') {
-      const developerName = await resolveDeveloperName(app);
-      application = serializePublicApplication(app, developerName);
-    }
+  const app = await Application.findById(authSession.applicationId);
+  if (app && app.status === 'active') {
+    const developerName = await resolveDeveloperName(app);
+    application = serializePublicApplication(app, developerName);
   }
 
   sendSuccess(res, {
     status: authSession.status,
     authorized: authSession.status === 'authorized',
     sessionToken: authSession.sessionToken,
-    appId: authSession.appId,
     application,
     expiresAt: authSession.expiresAt.toISOString(),
     sessionId: authSession.authorizedSessionId || null,
@@ -1731,12 +1777,18 @@ router.post('/session/authorize/:sessionToken', authMiddleware, validate({ param
 
   const authenticatedUserId = authenticatedUser._id.toString();
 
+  // Resolve the bound Application for the device-name label. The session can't
+  // exist without a valid applicationId; fall back to a generic label only if
+  // the app was hard-deleted between create and authorize.
+  const app = await Application.findById(authSession.applicationId);
+  const appLabel = app ? app.name : 'App';
+
   // Create a new session for the third-party app, owned by the
   // authenticated user identified via the bearer token.
   const newSession = await sessionService.createSession(
     authenticatedUserId,
     req,
-    { deviceName: deviceName || `${authSession.appId} App`, deviceFingerprint }
+    { deviceName: deviceName || `${appLabel} App`, deviceFingerprint }
   );
 
   // Update auth session
@@ -1751,7 +1803,7 @@ router.post('/session/authorize/:sessionToken', authMiddleware, validate({ param
   logger.info('Auth session authorized', {
     sessionToken: sessionToken.substring(0, 8) + '...',
     userId: authenticatedUserId,
-    appId: authSession.appId,
+    applicationId: authSession.applicationId.toString(),
   });
 
   // Emit socket event to notify the waiting client
@@ -1925,7 +1977,7 @@ router.post(
       sessionToken: sessionToken.substring(0, 8) + '...',
       sessionId: authSession.authorizedSessionId,
       userId: authSession.authorizedUserId.toString(),
-      appId: authSession.appId,
+      applicationId: authSession.applicationId.toString(),
     });
 
     sendSuccess(res, {
@@ -1941,24 +1993,16 @@ router.post(
 
 /**
  * POST /auth/session/cancel/:sessionToken
- * Cancel an auth session
+ * Cancel an auth session. The `sessionToken` is a 128-bit secret held only by
+ * the originating client, so possessing it IS the ownership proof — no
+ * additional identifier is required.
  */
 router.post('/session/cancel/:sessionToken', validate({ params: authSessionTokenParams }), asyncHandler(async (req, res) => {
   const { sessionToken } = req.params;
-  const { appId } = req.body;
-
-  if (!appId) {
-    throw new BadRequestError('appId is required');
-  }
 
   const authSession = await AuthSession.findOne({ sessionToken });
   if (!authSession) {
     throw new NotFoundError('Auth session not found');
-  }
-
-  // Verify the caller owns this session by matching the appId
-  if (authSession.appId !== appId) {
-    throw new ForbiddenError('Not authorized to cancel this session');
   }
 
   authSession.status = 'cancelled';

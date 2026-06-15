@@ -1,17 +1,18 @@
 /**
  * Application-identity resolution for cross-app auth sessions (issue #214).
  *
- * Cross-app/device auth sessions can now be associated with a REAL registered
- * `Application` record (not only a free-form `appId` string), and the API
- * exposes sanitized public application metadata for the consent UI:
+ * Every cross-app/device auth session is ALWAYS bound to a REAL registered
+ * `Application` record. There is NO free-form `appId` label — the caller must
+ * identify the app via `clientId` or `applicationId`. The API exposes sanitized
+ * public application metadata for the consent UI:
  *
  *  - POST /auth/session/create resolves `clientId` (→ ApplicationCredential →
  *    Application) OR `applicationId` (→ Application) and stores the canonical
- *    `applicationId` on the AuthSession. Unknown refs → 400; non-active apps
- *    (suspended/deleted/pending_review) → 403. Legacy `appId`-only callers are
- *    unchanged.
- *  - GET /auth/session/status/:sessionToken embeds a sanitized `application`
- *    object (or null) without leaking secrets/owner internals.
+ *    `applicationId` on the AuthSession. No app reference → 400; unknown refs →
+ *    400; non-active apps (suspended/deleted/pending_review) → 403.
+ *  - GET /auth/session/status/:sessionToken ALWAYS embeds a sanitized
+ *    `application` object (null only if the app was hard-deleted) and NEVER an
+ *    `appId`, without leaking secrets/owner internals.
  *  - GET /auth/oauth/client/:clientId is a PUBLIC (no-bearer) lookup of the
  *    sanitized metadata; generic 404 for unknown/revoked/inactive clients.
  *
@@ -41,8 +42,8 @@ jest.mock('../../middleware/rateLimiter', () => ({
   rateLimit: () => (_req: unknown, _res: unknown, next: () => void) => next(),
 }));
 
-// Use the REAL validate middleware so the schema (clientId/applicationId
-// optional, appId required) is actually exercised.
+// Use the REAL validate middleware so the schema (one of clientId/applicationId
+// required) is actually exercised.
 jest.unmock('../../middleware/validate');
 
 jest.mock('../../models/AuthSession', () => ({
@@ -169,7 +170,6 @@ interface PublicApplicationBody {
 
 interface SessionStatusData {
   status: string;
-  appId: string;
   application: PublicApplicationBody | null;
   sessionToken: string;
 }
@@ -306,13 +306,12 @@ function usableCredential(applicationId: string) {
 }
 
 describe('POST /auth/session/create — application resolution (#214)', () => {
-  it('(a) resolves a valid clientId and stores the canonical applicationId', async () => {
+  it('(a) resolves a valid clientId and stores the canonical applicationId (no appId)', async () => {
     mockApplicationCredentialFindOne.mockResolvedValueOnce(usableCredential(THIRD_PARTY_APP_ID));
     mockApplicationFindById.mockResolvedValueOnce(thirdPartyApp());
 
     const res = await requestJson(server, 'POST', '/auth/session/create', {
       sessionToken: 'tok-create-1',
-      appId: 'acme.example',
       clientId: 'oxy_dk_client',
     });
 
@@ -321,14 +320,10 @@ describe('POST /auth/session/create — application resolution (#214)', () => {
       publicKey: 'oxy_dk_client',
       status: { $ne: 'revoked' },
     });
-    expect(mockAuthSessionCreate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        appId: 'acme.example',
-        applicationId: expect.objectContaining({ toString: expect.any(Function) }),
-      })
-    );
-    const created = mockAuthSessionCreate.mock.calls[0][0] as { applicationId: { toString: () => string } };
+    const created = mockAuthSessionCreate.mock.calls[0][0] as { applicationId: { toString: () => string }; appId?: unknown };
     expect(created.applicationId.toString()).toBe(THIRD_PARTY_APP_ID);
+    // No free-form label is ever persisted.
+    expect(created.appId).toBeUndefined();
   });
 
   it('(b) resolves a valid applicationId directly', async () => {
@@ -336,7 +331,6 @@ describe('POST /auth/session/create — application resolution (#214)', () => {
 
     const res = await requestJson(server, 'POST', '/auth/session/create', {
       sessionToken: 'tok-create-2',
-      appId: 'acme.example',
       applicationId: THIRD_PARTY_APP_ID,
     });
 
@@ -346,12 +340,22 @@ describe('POST /auth/session/create — application resolution (#214)', () => {
     expect(created.applicationId.toString()).toBe(THIRD_PARTY_APP_ID);
   });
 
+  it('(c0) returns 400 when NEITHER clientId nor applicationId is supplied', async () => {
+    const res = await requestJson(server, 'POST', '/auth/session/create', {
+      sessionToken: 'tok-create-none',
+    });
+
+    expect(res.status).toBe(400);
+    expect(mockApplicationCredentialFindOne).not.toHaveBeenCalled();
+    expect(mockApplicationFindById).not.toHaveBeenCalled();
+    expect(mockAuthSessionCreate).not.toHaveBeenCalled();
+  });
+
   it('(c1) returns 400 for an unknown clientId', async () => {
     mockApplicationCredentialFindOne.mockResolvedValueOnce(null);
 
     const res = await requestJson(server, 'POST', '/auth/session/create', {
       sessionToken: 'tok-create-3',
-      appId: 'acme.example',
       clientId: 'oxy_dk_missing',
     });
 
@@ -364,7 +368,6 @@ describe('POST /auth/session/create — application resolution (#214)', () => {
 
     const res = await requestJson(server, 'POST', '/auth/session/create', {
       sessionToken: 'tok-create-4',
-      appId: 'acme.example',
       applicationId: '64f7c2a1b8e9d3f4a1c2b3ff',
     });
 
@@ -375,7 +378,6 @@ describe('POST /auth/session/create — application resolution (#214)', () => {
   it('(c3) returns 400 for a malformed applicationId (invalid ObjectId, never queried)', async () => {
     const res = await requestJson(server, 'POST', '/auth/session/create', {
       sessionToken: 'tok-create-5',
-      appId: 'acme.example',
       applicationId: 'not-an-objectid',
     });
 
@@ -390,7 +392,6 @@ describe('POST /auth/session/create — application resolution (#214)', () => {
 
     const res = await requestJson(server, 'POST', '/auth/session/create', {
       sessionToken: 'tok-create-6',
-      appId: 'acme.example',
       clientId: 'oxy_dk_client',
     });
 
@@ -403,7 +404,6 @@ describe('POST /auth/session/create — application resolution (#214)', () => {
 
     const res = await requestJson(server, 'POST', '/auth/session/create', {
       sessionToken: 'tok-create-7',
-      appId: 'acme.example',
       applicationId: THIRD_PARTY_APP_ID,
     });
 
@@ -416,34 +416,18 @@ describe('POST /auth/session/create — application resolution (#214)', () => {
 
     const res = await requestJson(server, 'POST', '/auth/session/create', {
       sessionToken: 'tok-create-8',
-      appId: 'acme.example',
       applicationId: THIRD_PARTY_APP_ID,
     });
 
     expect(res.status).toBe(403);
     expect(mockAuthSessionCreate).not.toHaveBeenCalled();
   });
-
-  it('(h) legacy create with only a free appId stores no applicationId and still 200', async () => {
-    const res = await requestJson(server, 'POST', '/auth/session/create', {
-      sessionToken: 'tok-create-legacy',
-      appId: 'free.form.label',
-    });
-
-    expect(res.status).toBe(200);
-    expect(mockApplicationCredentialFindOne).not.toHaveBeenCalled();
-    expect(mockApplicationFindById).not.toHaveBeenCalled();
-    const created = mockAuthSessionCreate.mock.calls[0][0] as { appId: string; applicationId: unknown };
-    expect(created.appId).toBe('free.form.label');
-    expect(created.applicationId).toBeNull();
-  });
 });
 
 describe('GET /auth/session/status/:sessionToken — embedded application (#214)', () => {
-  it('(f1) embeds sanitized metadata for an official app (no developerName)', async () => {
+  it('(f1) embeds sanitized metadata for an official app (no developerName, no appId)', async () => {
     mockAuthSessionFindOne.mockResolvedValueOnce({
       sessionToken: 'tok-status-official',
-      appId: 'accounts.oxy.so',
       applicationId: { toString: () => OFFICIAL_APP_ID },
       status: 'pending',
       authorizedSessionId: null,
@@ -470,14 +454,13 @@ describe('GET /auth/session/status/:sessionToken — embedded application (#214)
     expect(app.developerName).toBeUndefined();
     // Owner lookup must be skipped for official apps.
     expect(mockUserFindById).not.toHaveBeenCalled();
-    // Legacy fields preserved.
-    expect(res.body.data?.appId).toBe('accounts.oxy.so');
+    // `appId` must NEVER appear in the response.
+    expect(res.body.data).not.toHaveProperty('appId');
   });
 
   it('(f2) embeds developerName + websiteUrl for a third-party app', async () => {
     mockAuthSessionFindOne.mockResolvedValueOnce({
       sessionToken: 'tok-status-third',
-      appId: 'acme.example',
       applicationId: { toString: () => THIRD_PARTY_APP_ID },
       status: 'authorized',
       authorizedSessionId: 'sess-1',
@@ -502,12 +485,12 @@ describe('GET /auth/session/status/:sessionToken — embedded application (#214)
       developerName: 'Ada Lovelace',
     });
     expect(app.scopes).toEqual(['files:read', 'user:read']);
+    expect(res.body.data).not.toHaveProperty('appId');
   });
 
-  it('(f3) returns application:null when the bound app was later deleted', async () => {
+  it('(f3) returns application:null when the bound app was later hard-deleted (never appId)', async () => {
     mockAuthSessionFindOne.mockResolvedValueOnce({
       sessionToken: 'tok-status-gone',
-      appId: 'acme.example',
       applicationId: { toString: () => THIRD_PARTY_APP_ID },
       status: 'pending',
       authorizedSessionId: null,
@@ -516,36 +499,15 @@ describe('GET /auth/session/status/:sessionToken — embedded application (#214)
       expiresAt: new Date(Date.now() + 60_000),
       save: jest.fn(),
     });
-    // App not active / removed.
+    // App hard-deleted / removed.
     mockApplicationFindById.mockResolvedValueOnce(null);
 
     const res = await requestJson(server, 'GET', '/auth/session/status/tok-status-gone', null);
 
     expect(res.status).toBe(200);
-    expect(res.body.data?.application).toBeNull();
-    // Legacy label still present.
-    expect(res.body.data?.appId).toBe('acme.example');
-  });
-
-  it('(h) returns application:null for a legacy session with no applicationId', async () => {
-    mockAuthSessionFindOne.mockResolvedValueOnce({
-      sessionToken: 'tok-status-legacy',
-      appId: 'free.form.label',
-      applicationId: null,
-      status: 'pending',
-      authorizedSessionId: null,
-      authorizedBy: null,
-      authorizedUserId: null,
-      expiresAt: new Date(Date.now() + 60_000),
-      save: jest.fn(),
-    });
-
-    const res = await requestJson(server, 'GET', '/auth/session/status/tok-status-legacy', null);
-
-    expect(res.status).toBe(200);
-    expect(res.body.data?.application).toBeNull();
-    expect(mockApplicationFindById).not.toHaveBeenCalled();
-    expect(res.body.data?.appId).toBe('free.form.label');
+    // `application` is present in the payload, defensively null.
+    expect(res.body.data).toHaveProperty('application', null);
+    expect(res.body.data).not.toHaveProperty('appId');
   });
 });
 

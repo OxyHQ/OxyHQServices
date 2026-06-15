@@ -93,7 +93,7 @@ const SignInModal: React.FC = () => {
 
     const insets = useSafeAreaInsets();
     const theme = useTheme();
-    const { oxyServices, switchSession, appName } = useOxy();
+    const { oxyServices, switchSession, clientId } = useOxy();
 
     const socketRef = useRef<Socket | null>(null);
     const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -266,6 +266,17 @@ const SignInModal: React.FC = () => {
         setError(null);
         isProcessingRef.current = false;
 
+        // The cross-app device sign-in flow identifies the requesting app by its
+        // real registered OAuth client id (ApplicationCredential publicKey).
+        // Without it the API cannot resolve the consent identity, so we fail
+        // fast with a clear configuration error rather than creating a session
+        // the server would reject.
+        if (!clientId) {
+            setError('This app is not configured for sign-in (missing clientId).');
+            setIsLoading(false);
+            return;
+        }
+
         try {
             const sessionToken = generateSessionToken();
             const expiresAt = Date.now() + AUTH_SESSION_EXPIRY_MS;
@@ -273,7 +284,7 @@ const SignInModal: React.FC = () => {
             await oxyServices.makeRequest('POST', '/auth/session/create', {
                 sessionToken,
                 expiresAt,
-                appId: appName,
+                clientId,
             }, { cache: false });
 
             setAuthSession({ sessionToken, expiresAt });
@@ -284,7 +295,7 @@ const SignInModal: React.FC = () => {
         } finally {
             setIsLoading(false);
         }
-    }, [oxyServices, connectSocket, appName]);
+    }, [oxyServices, connectSocket, clientId]);
 
     // Generate a cryptographically random session token.
     // 16 random bytes -> 32 hex chars (128 bits of entropy) — unguessable.

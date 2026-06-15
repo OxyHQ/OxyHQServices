@@ -119,7 +119,7 @@ const OxyAuthScreen: React.FC<BaseScreenProps> = ({
   theme,
 }) => {
   const bloomTheme = useTheme();
-  const { oxyServices, signIn, switchSession, appName } = useOxy();
+  const { oxyServices, signIn, switchSession, clientId } = useOxy();
 
   const [authSession, setAuthSession] = useState<AuthSession | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -264,6 +264,17 @@ const OxyAuthScreen: React.FC<BaseScreenProps> = ({
     setError(null);
     isProcessingRef.current = false;
 
+    // The cross-app device sign-in flow identifies the requesting app by its
+    // real registered OAuth client id (ApplicationCredential publicKey).
+    // Without it the API cannot resolve the consent identity, so we fail fast
+    // with a clear configuration error rather than creating a session the
+    // server would reject.
+    if (!clientId) {
+      setError('This app is not configured for sign-in (missing clientId).');
+      setIsLoading(false);
+      return;
+    }
+
     try {
       // Generate a unique session token for this auth request
       const sessionToken = generateSessionToken();
@@ -273,7 +284,7 @@ const OxyAuthScreen: React.FC<BaseScreenProps> = ({
       await oxyServices.makeRequest('POST', '/auth/session/create', {
         sessionToken,
         expiresAt,
-        appId: appName,
+        clientId,
       }, { cache: false });
 
       setAuthSession({ sessionToken, expiresAt });
@@ -286,7 +297,7 @@ const OxyAuthScreen: React.FC<BaseScreenProps> = ({
     } finally {
       setIsLoading(false);
     }
-  }, [oxyServices, connectSocket, appName]);
+  }, [oxyServices, connectSocket, clientId]);
 
   // Generate a random session token
   const generateSessionToken = (): string => {

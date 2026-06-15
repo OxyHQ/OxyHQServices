@@ -53,13 +53,15 @@ export interface OxyProviderProps {
     onAuthStateChange?: (user: unknown) => void;
     storageKeyPrefix?: string;
     /**
-     * Human-readable name of the consuming app (e.g. "Mention", "Homiio").
-     * Surfaced on the central Oxy sign-in / consent experience as
-     * "{appName} wants to access your Oxy account". When omitted, the SDK
-     * derives a name from `storageKeyPrefix`, then `document.title` (web),
-     * falling back to the platform. Set this to guarantee correct branding.
+     * The app's Oxy OAuth client id / ApplicationCredential publicKey.
+     * Required for the cross-app device sign-in flow: the QR / popup
+     * sign-in registers a device-flow session via `POST /auth/session/create`,
+     * which now identifies the requesting app by this real registered
+     * client id. The central Oxy auth experience resolves and renders the
+     * consent identity from it server-side. Without it the device sign-in
+     * flow cannot start.
      */
-    appName?: string;
+    clientId?: string;
     baseURL?: string;
     authWebUrl?: string;
     authRedirectUri?: string;
