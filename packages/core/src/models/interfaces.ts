@@ -1,4 +1,4 @@
-import type { UserNameResponse } from '../contracts/userResponse';
+import type { UserNameResponse } from '@oxyhq/contracts';
 
 export interface OxyConfig {
   baseURL: string;
@@ -98,7 +98,7 @@ export interface User {
    * Structured human name. The canonical wire shape ({@link UserNameResponse}):
    * `{ first?, last?, full? }` where `full` is a Mongoose virtual (present only
    * when the query materialised virtuals). The single source of truth lives in
-   * `contracts/userResponse.ts` — do NOT re-declare a bare `string` here.
+   * `@oxyhq/contracts` — do NOT re-declare a bare `string` here.
    */
   name?: UserNameResponse;
   bio?: string;
@@ -676,7 +676,7 @@ export interface RefreshAllAccountUser {
    * Structured human name as emitted by `formatUserResponse` (the canonical
    * {@link UserNameResponse} `{ first?, last?, full? }` subdocument), NOT a bare
    * string. The server projects `name` verbatim from the user document. The
-   * single source of truth is `contracts/userResponse.ts`.
+   * single source of truth is `@oxyhq/contracts`.
    */
   name?: UserNameResponse;
   avatar?: string | null;

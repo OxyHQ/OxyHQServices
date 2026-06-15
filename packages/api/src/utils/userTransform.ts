@@ -84,11 +84,15 @@ function composeName(name: NameLike): FormattedName | undefined {
 /**
  * Read the server `displayName` virtual when present.
  *
- * NOTE: the server `displayName` virtual resolves to `username || truncatedPublicKey`
- * and IGNORES the structured name — so it is NOT a reliable display source. It is
- * forwarded for contract completeness only; the load-bearing display field is
- * `name.full` (see {@link composeName}). Present only when the source document
- * materialised virtuals; absent on plain `.lean()` reads.
+ * The server `displayName` virtual is the AUTHORITATIVE default, composed in
+ * preference order `name.full → username → truncated publicKey handle` (see
+ * `User.ts`). It is forwarded here for clients that want a ready-made display
+ * string; clients may still compose their own from the raw fields (`name.full`,
+ * `username`, etc.), all of which remain on the response.
+ *
+ * Present only when the source document materialised virtuals; absent on plain
+ * `.lean()` reads — in which case the response carries the composed `name.full`
+ * (see {@link composeName}) and the core display resolver derives the rest.
  */
 function readDisplayName(user: { displayName?: unknown }): string | undefined {
   return typeof user.displayName === 'string' && user.displayName.length > 0

@@ -71,8 +71,12 @@ describe('buildAccountRows', () => {
         // Active row carries the loaded user payload + email + avatar URL.
         const active = rows[1];
         expect(active.user).not.toBeNull();
-        // `getAccountDisplayName` prefers `username` over `displayName`.
-        expect(active.displayName).toBe('alice');
+        // `getAccountDisplayName` prefers the human name / `displayName` over the
+        // raw lowercase `username`. With no structured `name`, it resolves to the
+        // server-computed `displayName` ("Alice"), never collapsing to "alice".
+        // The `@username` handle still surfaces on the secondary line when an
+        // account has no email (see the no-email case below).
+        expect(active.displayName).toBe('Alice');
         expect(active.secondary).toBe('alice@example.com');
         expect(active.avatarUri).toBe('https://cdn.example.com/avatar-1/thumb');
 

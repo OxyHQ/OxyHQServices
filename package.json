@@ -4,6 +4,7 @@
   "description": "OxyHQ SDK Monorepo — core, auth, services, and API packages",
   "private": true,
   "workspaces": [
+    "packages/contracts",
     "packages/core",
     "packages/auth-sdk",
     "packages/services",

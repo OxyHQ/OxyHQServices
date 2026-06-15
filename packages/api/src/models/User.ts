@@ -1,5 +1,6 @@
 import mongoose, { Document, Schema } from "mongoose";
 import { maybeHashEmail, maybeHashPhone } from "../utils/contactHash";
+import { composeDisplayName } from "../utils/displayName";
 
 /**
  * Represents an authentication method linked to a user account.
@@ -611,20 +612,25 @@ UserSchema.virtual('name.full').get(function() {
   return '';
 });
 
-// Virtual for display name - returns username or truncated publicKey
+// Virtual for display name — authoritative server-side default.
+//
+// Composition preference order (see `utils/displayName.ts`, the single source of
+// truth shared with the unit tests):
+//   1. name.full (composed from name.first / name.last; first-only is valid —
+//      there is NO requirement that both parts exist)
+//   2. username
+//   3. truncated publicKey handle
+//   4. 'Anonymous'
+//
+// This is the DERIVED default only. All raw fields (name.first, name.last,
+// name.full, username, publicKey) remain fully intact and exposed on the
+// response — clients can still compose their own display string from raw fields.
 UserSchema.virtual('displayName').get(function() {
-  if (this.username && typeof this.username === 'string' && this.username.trim()) {
-    return this.username;
-  }
-  // Return truncated public key if no username
-  const publicKey = this.publicKey as string | undefined;
-  if (publicKey && typeof publicKey === 'string') {
-    if (publicKey.startsWith('0x')) {
-      return `0x${publicKey.slice(2, 8)}...${publicKey.slice(-6)}`;
-    }
-    return `${publicKey.slice(0, 6)}...${publicKey.slice(-6)}`;
-  }
-  return 'Anonymous';
+  return composeDisplayName({
+    name: this.name as { first?: string; last?: string } | undefined,
+    username: this.username as string | undefined,
+    publicKey: this.publicKey as string | undefined,
+  });
 });
 
 // Instance method to add a location

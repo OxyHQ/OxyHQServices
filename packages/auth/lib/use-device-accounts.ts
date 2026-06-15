@@ -1,6 +1,7 @@
 import { useRef, useState } from "react"
-import { getAccountDisplayName, resolveUserId } from "@oxyhq/core"
-import type { UserResponse } from "@oxyhq/core"
+import { getAccountDisplayName } from "@oxyhq/core"
+import { resolveUserId } from "@oxyhq/contracts"
+import type { UserResponse } from "@oxyhq/contracts"
 import { buildApiUrl, buildAuthUrl } from "@/lib/oxy-api-client"
 import {
     refreshAllResponseSchema,
@@ -45,7 +46,7 @@ const LOGGED_OUT_STATE: DeviceAccountsState = {
 }
 
 /**
- * Map a parsed core `UserResponse` into the auth app's `Account` shape, resolving
+ * Map a parsed `UserResponse` contract into the auth app's `Account` shape, resolving
  * the display name via the canonical `getAccountDisplayName` helper (first-name
  * -only safe: a user with only a first name renders that first name, NOT the
  * lowercase username). `getAccountDisplayName` always returns a non-empty string

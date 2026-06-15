@@ -451,29 +451,10 @@ export type {
     RunColdBootOptions,
 } from './utils/coldBoot';
 
-// ---------------------------------------------------------------------------
-// API response contracts (single source of truth — producer + consumers share)
-// ---------------------------------------------------------------------------
-export {
-    userNameSchema,
-    userResponseSchema,
-    refreshAllAccountSchema,
-    refreshAllResponseSchema,
-    currentUserResponseSchema,
-    deviceSessionAccountSchema,
-    deviceSessionsResponseSchema,
-    resolveUserId,
-    safeParseContract,
-} from './contracts/userResponse';
-export type {
-    UserNameResponse,
-    UserResponse,
-    RefreshAllAccountResponse,
-    RefreshAllResponseContract,
-    CurrentUserResponseContract,
-    DeviceSessionAccountResponse,
-    DeviceSessionsResponseContract,
-} from './contracts/userResponse';
+// API response contracts (request/response Zod schemas + inferred types) live in
+// `@oxyhq/contracts` — the single source of truth shared by the backend and every
+// client SDK. Import them directly from `@oxyhq/contracts`; `@oxyhq/core` does NOT
+// re-export them (no barrel re-exports — clean imports from the owning package).
 
 // ---------------------------------------------------------------------------
 // Constants

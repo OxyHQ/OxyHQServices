@@ -100,6 +100,7 @@
         "@aws-sdk/lib-storage": "3.983.0",
         "@aws-sdk/s3-request-presigner": "^3.857.0",
         "@node-rs/argon2": "^2.0.2",
+        "@oxyhq/contracts": "workspace:*",
         "@socket.io/redis-adapter": "^8.3.0",
         "@types/cheerio": "^0.22.35",
         "@types/compression": "^1.8.1",
@@ -177,6 +178,7 @@
         "@hugeicons/core-free-icons": "^3.1.1",
         "@hugeicons/react": "^1.1.4",
         "@oxyhq/bloom": "^0.8.1",
+        "@oxyhq/contracts": "workspace:*",
         "@oxyhq/core": "workspace:*",
         "@radix-ui/react-alert-dialog": "1.1.4",
         "@radix-ui/react-avatar": "^1.1.11",
@@ -292,10 +294,24 @@
         "web-vitals": "^5.1.0",
       },
     },
+    "packages/contracts": {
+      "name": "@oxyhq/contracts",
+      "version": "0.1.0",
+      "dependencies": {
+        "zod": "^3.25.64",
+      },
+      "devDependencies": {
+        "@biomejs/biome": "^1.9.4",
+        "@types/node": "^20.19.9",
+        "release-it": "^19.0.6",
+        "typescript": "^5.9.2",
+      },
+    },
     "packages/core": {
       "name": "@oxyhq/core",
       "version": "3.2.0",
       "dependencies": {
+        "@oxyhq/contracts": "workspace:*",
         "bip39": "^3.1.0",
         "buffer": "^6.0.3",
         "elliptic": "^6.6.1",
@@ -1392,6 +1408,8 @@
     "@oxyhq/auth": ["@oxyhq/auth@workspace:packages/auth-sdk"],
 
     "@oxyhq/bloom": ["@oxyhq/bloom@0.8.1", "", { "dependencies": { "nanoid": "^5.1.5", "react-remove-scroll-bar": "^2.3.8" }, "peerDependencies": { "expo": "*", "expo-font": "*", "expo-router": ">=3.0.0", "react": ">=18.0.0", "react-dom": ">=18.0.0", "react-native": ">=0.73.0", "react-native-gesture-handler": ">=2.0.0", "react-native-reanimated": ">=3.0.0", "react-native-safe-area-context": ">=5.0.0", "react-native-svg": ">=13.0.0", "sonner": ">=2.0.0", "sonner-native": ">=0.17.0" }, "optionalPeers": ["expo", "expo-font", "expo-router", "react-dom", "react-native-gesture-handler", "react-native-reanimated", "react-native-svg", "sonner", "sonner-native"] }, "sha512-gXs2E0uMmbQBmA7lNsCKZWp+pCK0XLm4X7NiCeyYbmMa2DHvuqRrFpbLmei8/zOJ80diMbPbxulUizG9prQ5QA=="],
+
+    "@oxyhq/contracts": ["@oxyhq/contracts@workspace:packages/contracts"],
 
     "@oxyhq/core": ["@oxyhq/core@workspace:packages/core"],
 
@@ -4772,6 +4790,8 @@
     "@modelcontextprotocol/sdk/raw-body": ["raw-body@3.0.2", "", { "dependencies": { "bytes": "~3.1.2", "http-errors": "~2.0.1", "iconv-lite": "~0.7.0", "unpipe": "~1.0.0" } }, ""],
 
     "@oxyhq/auth/@types/node": ["@types/node@20.19.31", "", { "dependencies": { "undici-types": "~6.21.0" } }, ""],
+
+    "@oxyhq/contracts/@types/node": ["@types/node@20.19.31", "", { "dependencies": { "undici-types": "~6.21.0" } }, ""],
 
     "@oxyhq/core/@types/node": ["@types/node@20.19.31", "", { "dependencies": { "undici-types": "~6.21.0" } }, ""],
 

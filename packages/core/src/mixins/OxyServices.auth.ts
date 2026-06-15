@@ -9,7 +9,7 @@ import type {
   RefreshAllAccount,
   RefreshCookieResponse,
 } from '../models/interfaces';
-import type { UserNameResponse } from '../contracts/userResponse';
+import type { UserNameResponse } from '@oxyhq/contracts';
 import type { SessionLoginResponse } from '../models/session';
 import type { OxyServicesBase } from '../OxyServices.base';
 import { OxyAuthenticationError } from '../OxyServices.errors';

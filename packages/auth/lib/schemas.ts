@@ -3,12 +3,14 @@
  *
  * The user / account / session RESPONSE contracts (`refreshAllResponseSchema`,
  * `currentUserResponseSchema`, `deviceSessionsResponseSchema`) are NOT defined
- * here — they are owned by `@oxyhq/core` as the single source of truth shared
- * between the API (producer) and every consumer. Re-exporting them keeps the
- * existing `@/lib/schemas` import sites working while eliminating the drift that
- * previously broke session restore (a local `name: z.string()` rejected every
- * structured-name account). Only the auth-app-specific schemas (login, signup,
- * lookup, session-status, token, refresh, OAuth state) live locally.
+ * here — they are owned by `@oxyhq/contracts` as the single source of truth
+ * shared between the API (producer) and every consumer. Importing them straight
+ * from the contracts package (not via the client SDK) keeps the wire shape from
+ * drifting (a local `name: z.string()` previously rejected every structured-name
+ * account and broke session restore). Re-exporting them keeps the existing
+ * `@/lib/schemas` import sites working. Only the auth-app-specific schemas
+ * (login, signup, lookup, session-status, token, refresh, OAuth state) live
+ * locally.
  */
 import { z } from "zod"
 import {
@@ -16,9 +18,9 @@ import {
     currentUserResponseSchema,
     deviceSessionsResponseSchema,
     safeParseContract,
-} from "@oxyhq/core"
+} from "@oxyhq/contracts"
 
-// Canonical, core-owned contracts re-exported for local import sites.
+// Canonical, contracts-owned schemas re-exported for local import sites.
 export {
     refreshAllResponseSchema,
     currentUserResponseSchema,
@@ -79,7 +81,7 @@ export const oauthStateSchema = z.object({
 
 /**
  * Safely parse a JSON response with a Zod schema. Returns the parsed data or
- * `null` if validation fails. Delegates to core's `safeParseContract` so there
- * is exactly one parse helper across the ecosystem.
+ * `null` if validation fails. Delegates to the contracts package's
+ * `safeParseContract` so there is exactly one parse helper across the ecosystem.
  */
 export const safeParse = safeParseContract

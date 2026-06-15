@@ -49,7 +49,7 @@
     "@aws-sdk/lib-storage": "3.983.0",
     "@aws-sdk/s3-request-presigner": "^3.857.0",
     "@node-rs/argon2": "^2.0.2",
-    "@oxyhq/core": "workspace:*",
+    "@oxyhq/contracts": "workspace:*",
     "@socket.io/redis-adapter": "^8.3.0",
     "@types/cheerio": "^0.22.35",
     "@types/compression": "^1.8.1",

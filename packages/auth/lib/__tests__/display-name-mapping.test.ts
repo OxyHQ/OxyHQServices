@@ -2,7 +2,7 @@
  * Regression test for the auth app's account display-name resolution.
  *
  * `useDeviceAccounts` parses `POST /auth/refresh-all` with the canonical
- * `refreshAllResponseSchema` (core) and maps each entry's `user` into an
+ * `refreshAllResponseSchema` (contracts) and maps each entry's `user` into an
  * `Account` via `getAccountDisplayName(user)`. This exercises that exact path:
  * parse the wire payload through the schema the hook uses, then resolve the
  * display name the way the hook's `toAccount` mapper does.

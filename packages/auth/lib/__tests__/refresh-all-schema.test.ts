@@ -16,13 +16,13 @@
  * A previous `name: z.string()` (plus required `username` and non-nullable
  * `authuser`) silently rejected every real account and broke session restore.
  *
- * The schema + parse helper now come from `@oxyhq/core` (the single source of
- * truth shared with the API). Importing them through `@/lib/schemas` — which
- * re-exports the core versions — also proves the auth app is wired onto the
+ * The schema + parse helper now come from `@oxyhq/contracts` (the single source
+ * of truth shared with the API). Importing them through `@/lib/schemas` — which
+ * re-exports the contracts versions — also proves the auth app is wired onto the
  * canonical contract, not a local copy that could drift again.
  */
 import { describe, expect, test } from "bun:test"
-import { refreshAllResponseSchema as coreRefreshAllResponseSchema } from "@oxyhq/core"
+import { refreshAllResponseSchema as contractsRefreshAllResponseSchema } from "@oxyhq/contracts"
 import { refreshAllResponseSchema, safeParse } from "@/lib/schemas"
 
 describe("refreshAllResponseSchema", () => {
@@ -103,9 +103,10 @@ describe("refreshAllResponseSchema", () => {
         expect(safeParse(refreshAllResponseSchema, payload)).toBeNull()
     })
 
-    test("the @/lib/schemas re-export IS the @oxyhq/core schema (no local copy)", () => {
+    test("the @/lib/schemas re-export IS the @oxyhq/contracts schema (no local copy)", () => {
         // Identity check: if a local copy ever crept back in, this fails — the
-        // whole point of phase 3 is ONE contract owned by core.
-        expect(refreshAllResponseSchema).toBe(coreRefreshAllResponseSchema)
+        // whole point of the contract-first restructure is ONE contract owned
+        // by @oxyhq/contracts.
+        expect(refreshAllResponseSchema).toBe(contractsRefreshAllResponseSchema)
     })
 })
