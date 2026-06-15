@@ -174,7 +174,15 @@ async function detectAccountsViaRefreshAll(): Promise<DeviceAccountsState | "fal
     // in case of older deployments). The lowest authuser is the "current" slot
     // when no UI hint says otherwise; the active-account hint persisted in
     // localStorage by the SDK is consulted by callers that need it.
-    const sorted = [...parsed.accounts].sort((a, b) => a.authuser - b.authuser)
+    // Sort indexed slots `0..N-1` ascending; the legacy un-suffixed slot
+    // (`authuser: null`) sorts LAST, mirroring the server's own ordering. A
+    // null index must never coerce to 0 (which would wrongly elect the legacy
+    // slot as the current account).
+    const slotRank = (authuser: number | null): number =>
+        authuser ?? Number.POSITIVE_INFINITY
+    const sorted = [...parsed.accounts].sort(
+        (a, b) => slotRank(a.authuser) - slotRank(b.authuser)
+    )
     const current = sorted[0]
     const currentSessionId = current.sessionId
 
@@ -195,7 +203,9 @@ async function detectAccountsViaRefreshAll(): Promise<DeviceAccountsState | "fal
     const accounts: DeviceAccount[] = sorted.map((entry) => ({
         sessionId: entry.sessionId,
         isCurrent: entry.sessionId === currentSessionId,
-        authuser: entry.authuser,
+        // `DeviceAccount.authuser` is `number | undefined`; the legacy slot's
+        // null index maps to undefined ("no slot hint").
+        authuser: entry.authuser ?? undefined,
         account: {
             id: entry.user.id,
             username: entry.user.username,

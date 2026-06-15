@@ -62,14 +62,33 @@ export const refreshResponseSchema = z.object({
 export const refreshAllResponseSchema = z.object({
     accounts: z.array(
         z.object({
-            authuser: z.number().int().nonnegative(),
+            // The server emits `authuser: null` for the legacy un-suffixed
+            // `oxy_rt` cookie slot (see `POST /auth/refresh-all`). Accept null
+            // so a browser holding a legacy cookie is NOT dropped from the
+            // chooser; the consumer treats a missing index as "no slot hint".
+            authuser: z.number().int().nonnegative().nullable(),
             accessToken: z.string(),
             expiresAt: z.string(),
             sessionId: z.string(),
             user: z.object({
                 id: z.string(),
-                username: z.string(),
-                name: z.string().optional(),
+                // The User model makes `username` optional (publicKey-only
+                // accounts have none), and `formatUserResponse` forwards it
+                // verbatim — so it can be absent. `resolveDisplayName` already
+                // falls back to email / name when there is no username.
+                username: z.string().optional(),
+                // `formatUserResponse` returns the structured `name` subdocument
+                // `{ first, last, full }` (a Mongoose `NameSchema`), NOT a plain
+                // string. The previous `z.string()` here rejected EVERY account
+                // that has a name, collapsing the whole parse to null and
+                // suppressing the account chooser on cold boot.
+                name: z
+                    .object({
+                        first: z.string().optional(),
+                        last: z.string().optional(),
+                        full: z.string().optional(),
+                    })
+                    .optional(),
                 avatar: z.string().nullable().optional(),
                 email: z.string().optional(),
                 color: z.string().nullable().optional(),
