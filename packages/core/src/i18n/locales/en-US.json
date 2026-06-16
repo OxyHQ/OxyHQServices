@@ -125,9 +125,9 @@
         "No selling your data"
       ]
     },
-    "karma": {
-      "title": "Karma = Trust & Growth",
-      "body": "Oxy Karma is a points system that reacts to what you do. Helpful, respectful, constructive actions earn it. Harmful or low‑effort stuff chips it away. More karma can unlock benefits; low karma can limit features. It keeps things fair and rewards real contribution."
+    "reputation": {
+      "title": "Reputation = Trust & Growth",
+      "body": "Oxy Trust is a reputation system that reacts to what you do. Helpful, respectful, constructive actions earn it. Harmful or low‑effort stuff chips it away. More reputation can unlock benefits; low reputation can limit features. It keeps things fair and rewards real contribution."
     },
     "avatar": {
       "title": "Make It Yours",
@@ -137,7 +137,7 @@
     },
     "ready": {
       "title": "You're Ready",
-      "body": "Explore. Contribute. Earn karma. Stay in control."
+      "body": "Explore. Contribute. Earn reputation. Stay in control."
     },
     "actions": {
       "back": "Back",
@@ -160,7 +160,7 @@
     "noBio": "This user has no bio yet.",
     "joinedOn": "Joined {{date}}",
     "bornOn": "Born {{date}}",
-    "karma": "Karma",
+    "reputation": "Reputation",
     "followers": "Followers",
     "following": "Following",
     "more": "+ {{count}} more"
@@ -354,69 +354,69 @@
       "subtitle": "Add another account to switch between them quickly"
     }
   },
-  "karma": {
+  "reputation": {
     "faq": {
-      "title": "Karma FAQ",
-      "subtitle": "Frequently asked questions about karma",
+      "title": "Reputation FAQ",
+      "subtitle": "Frequently asked questions about reputation",
       "search": "Search FAQ...",
       "noResults": "No FAQ items found matching \"{{query}}\"",
       "items": {
         "what": {
-          "q": "What is karma?",
-          "a": "Karma is a recognition of your positive actions in the Oxy Ecosystem. It cannot be sent or received directly."
+          "q": "What is reputation?",
+          "a": "Reputation is a recognition of your positive actions in the Oxy Ecosystem. It cannot be sent or received directly."
         },
         "earn": {
-          "q": "How do I earn karma?",
+          "q": "How do I earn reputation?",
           "a": "By helping others, reporting bugs, contributing content, and participating in community events."
         },
         "lose": {
-          "q": "Can I lose karma?",
-          "a": "Karma may be reduced for negative actions or breaking community rules."
+          "q": "Can I lose reputation?",
+          "a": "Reputation may be reduced for negative actions or breaking community rules."
         },
         "use": {
-          "q": "What can I do with karma?",
-          "a": "Unlock rewards, badges, and special features as you earn more karma."
+          "q": "What can I do with reputation?",
+          "a": "Unlock rewards, badges, and special features as you earn more reputation."
         },
         "transfer": {
-          "q": "Can I transfer karma to others?",
-          "a": "No, karma cannot be sent or received. It is only earned by your actions."
+          "q": "Can I transfer reputation to others?",
+          "a": "No, reputation cannot be sent or received. It is only earned by your actions."
         },
         "support": {
           "q": "How do I get support?",
-          "a": "Contact Oxy support via the app or website for any karma-related questions."
+          "a": "Contact Oxy support via the app or website for any reputation-related questions."
         }
       }
     },
     "rules": {
-      "title": "Karma Rules",
-      "subtitle": "How to earn karma points",
+      "title": "Reputation Rules",
+      "subtitle": "How to earn reputation points",
       "empty": "No rules found."
     },
     "leaderboard": {
-      "title": "Karma Leaderboard",
+      "title": "Reputation Leaderboard",
       "subtitle": "Top contributors in the community",
       "empty": "No leaderboard data."
     },
     "rewards": {
-      "title": "Karma Rewards",
+      "title": "Reputation Rewards",
       "subtitle": "Unlock special features and recognition",
-      "intro": "Unlock special features and recognition by earning karma!",
+      "intro": "Unlock special features and recognition by earning reputation!",
       "earlyAccess": {
         "title": "🎉 Early Access",
-        "desc": "Get early access to new features with 100+ karma."
+        "desc": "Get early access to new features with 100+ reputation."
       },
       "badge": {
         "title": "🏅 Community Badge",
-        "desc": "Earn a special badge for 500+ karma."
+        "desc": "Earn a special badge for 500+ reputation."
       },
       "featured": {
         "title": "🌟 Featured Member",
-        "desc": "Be featured in the community for 1000+ karma."
+        "desc": "Be featured in the community for 1000+ reputation."
       },
       "moreComing": "More rewards coming soon!"
     },
     "center": {
-      "balance": "Karma Balance",
+      "balance": "Reputation Balance",
       "actions": {
         "leaderboard": "Leaderboard",
         "rules": "Rules",
@@ -424,17 +424,17 @@
         "rewards": "Rewards",
         "faq": "FAQ"
       },
-      "info": "Karma can only be earned by positive actions in the Oxy Ecosystem. It cannot be sent or received directly.",
-      "history": "Karma History",
-      "noHistory": "No karma history yet.",
+      "info": "Reputation can only be earned by positive actions in the Oxy Ecosystem. It cannot be sent or received directly.",
+      "history": "Reputation History",
+      "noHistory": "No reputation history yet.",
       "noDescription": "No description"
     },
     "about": {
-      "title": "About Karma",
-      "subtitle": "Learn about the karma system",
-      "intro": "Karma is a recognition of your positive actions in the Oxy Ecosystem. It cannot be sent or received directly, only earned by contributing to the community.",
+      "title": "About Reputation",
+      "subtitle": "Learn about the reputation system (Oxy Trust)",
+      "intro": "Reputation is a recognition of your positive actions in the Oxy Ecosystem. It cannot be sent or received directly, only earned by contributing to the community.",
       "how": {
-        "title": "How to Earn Karma",
+        "title": "How to Earn Reputation",
         "help": "Helping other users",
         "report": "Reporting bugs",
         "contribute": "Contributing content",
@@ -442,31 +442,31 @@
         "other": "Other positive actions"
       },
       "why": {
-        "title": "Why Karma?",
-        "text": "Karma unlocks special features and recognition in the Oxy Ecosystem. The more you contribute, the more you earn!"
+        "title": "Why Reputation?",
+        "text": "Reputation unlocks special features and recognition in the Oxy Ecosystem. The more you contribute, the more you earn!"
       }
     },
     "achievements": {
       "unlocked": "Unlocked Achievements",
       "locked": "Locked Achievements",
       "firstStep": "First Step",
-      "firstStepDesc": "Earned your first karma point",
+      "firstStepDesc": "Earned your first reputation point",
       "novice": "Novice",
-      "noviceDesc": "Reached 10 karma points",
+      "noviceDesc": "Reached 10 reputation points",
       "contributor": "Contributor",
-      "contributorDesc": "Reached 50 karma points",
+      "contributorDesc": "Reached 50 reputation points",
       "risingStar": "Rising Star",
-      "risingStarDesc": "Reached 100 karma points",
+      "risingStarDesc": "Reached 100 reputation points",
       "earlyAdopter": "Early Adopter",
       "earlyAdopterDesc": "Been part of the community from the start",
       "communityHero": "Community Hero",
-      "communityHeroDesc": "Reached 500 karma points",
+      "communityHeroDesc": "Reached 500 reputation points",
       "legend": "Legend",
-      "legendDesc": "Reached 1000 karma points",
+      "legendDesc": "Reached 1000 reputation points",
       "phoenix": "Phoenix",
-      "phoenixDesc": "Reached 2500 karma points",
+      "phoenixDesc": "Reached 2500 reputation points",
       "unstoppable": "Unstoppable",
-      "unstoppableDesc": "Reached 5000 karma points",
+      "unstoppableDesc": "Reached 5000 reputation points",
       "bugHunter": "Bug Hunter",
       "bugHunterDesc": "Reported helpful bugs",
       "helper": "Helper",

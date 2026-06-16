@@ -32,7 +32,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
     // Use useOxy() hook for OxyContext values
     const { oxyServices, user: currentUser } = useOxy();
     const [profile, setProfile] = useState<User | null>(null);
-    const [karmaTotal, setKarmaTotal] = useState<number | null>(null);
+    const [reputationTotal, setReputationTotal] = useState<number | null>(null);
     const [postsCount, setPostsCount] = useState<number | null>(null);
     const [commentsCount, setCommentsCount] = useState<number | null>(null);
     const [isLoading, setIsLoading] = useState(true);
@@ -77,7 +77,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
         setIsLoading(true);
         setError(null);
 
-        // Load user profile, karma total, and stats
+        // Load user profile, reputation total, and stats
         Promise.all([
             oxyServices.getUserById(userId).catch((err: unknown) => {
                 // If this is the current user and the API call fails, use current user data as fallback
@@ -88,18 +88,16 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                 }
                 throw err;
             }),
-            oxyServices.getUserKarmaTotal ?
-                oxyServices.getUserKarmaTotal(userId).catch(() => {
-                    return { total: undefined };
-                }) :
-                Promise.resolve({ total: undefined }),
+            oxyServices.getReputationBalance(userId)
+                .then((balance): { total: number | undefined } => ({ total: balance.total }))
+                .catch((): { total: number | undefined } => ({ total: undefined })),
             oxyServices.getUserStats ?
                 oxyServices.getUserStats(userId).catch(() => {
                     return { postCount: 0, commentCount: 0 };
                 }) :
                 Promise.resolve({ postCount: 0, commentCount: 0 })
         ])
-            .then(([profileRes, karmaRes, statsRes]) => {
+            .then(([profileRes, reputationRes, statsRes]) => {
                 if (!profileRes) {
                     setError('Profile data is not available');
                     setIsLoading(false);
@@ -107,7 +105,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                 }
 
                 setProfile(profileRes);
-                setKarmaTotal(typeof karmaRes.total === 'number' ? karmaRes.total : null);
+                setReputationTotal(typeof reputationRes.total === 'number' ? reputationRes.total : null);
 
                 // Extract links from profile data
                 if (profileRes.linksMetadata && Array.isArray(profileRes.linksMetadata)) {
@@ -326,24 +324,24 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                     {/* All Stats in one row */}
                     <View style={styles.statsRow}>
                         <View style={styles.statItem}>
-                            <Text style={styles.karmaAmount} className="text-primary">{karmaTotal !== null && karmaTotal !== undefined ? karmaTotal : '--'}</Text>
-                            <Text style={styles.karmaLabel} className="text-muted-foreground">{t('profile.karma') || 'Karma'}</Text>
+                            <Text style={styles.statAmount} className="text-primary">{reputationTotal !== null && reputationTotal !== undefined ? reputationTotal : '--'}</Text>
+                            <Text style={styles.statLabel} className="text-muted-foreground">{t('profile.reputation') || 'Reputation'}</Text>
                         </View>
                         <View style={styles.statItem}>
                             {isLoadingCounts ? (
                                 <ActivityIndicator size="small" color={bloomTheme.colors.text} />
                             ) : (
-                                <Text style={styles.karmaAmount} className="text-foreground">{followerCount !== null ? followerCount : '--'}</Text>
+                                <Text style={styles.statAmount} className="text-foreground">{followerCount !== null ? followerCount : '--'}</Text>
                             )}
-                            <Text style={styles.karmaLabel} className="text-muted-foreground">{t('profile.followers') || 'Followers'}</Text>
+                            <Text style={styles.statLabel} className="text-muted-foreground">{t('profile.followers') || 'Followers'}</Text>
                         </View>
                         <View style={styles.statItem}>
                             {isLoadingCounts ? (
                                 <ActivityIndicator size="small" color={bloomTheme.colors.text} />
                             ) : (
-                                <Text style={styles.karmaAmount} className="text-foreground">{followingCount !== null ? followingCount : '--'}</Text>
+                                <Text style={styles.statAmount} className="text-foreground">{followingCount !== null ? followingCount : '--'}</Text>
                             )}
-                            <Text style={styles.karmaLabel} className="text-muted-foreground">{t('profile.following') || 'Following'}</Text>
+                            <Text style={styles.statLabel} className="text-muted-foreground">{t('profile.following') || 'Following'}</Text>
                         </View>
                     </View>
                 </View>
@@ -401,8 +399,8 @@ const createStyles = () => StyleSheet.create({
     },
     statsRow: { width: '100%', flex: 1, flexDirection: 'row', alignItems: 'center', marginTop: 6, marginBottom: 2, justifyContent: 'space-between' },
     statItem: { flex: 1, alignItems: 'center', minWidth: 50, marginBottom: 12 },
-    karmaLabel: { fontSize: 14, marginBottom: 2, textAlign: 'center' },
-    karmaAmount: { fontSize: 24, fontWeight: 'bold', textAlign: 'center', letterSpacing: 0.2 },
+    statLabel: { fontSize: 14, marginBottom: 2, textAlign: 'center' },
+    statAmount: { fontSize: 24, fontWeight: 'bold', textAlign: 'center', letterSpacing: 0.2 },
     // Error handling styles
     errorHeader: {
         flexDirection: 'row',

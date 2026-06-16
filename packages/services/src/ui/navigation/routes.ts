@@ -28,12 +28,12 @@ export type RouteName =
     | 'SavesCollections'
     | 'EditProfileField' // Dedicated screen for editing a single profile field
     | 'LearnMoreUsernames' // Informational screen about usernames
-    | 'KarmaCenter'
-    | 'KarmaLeaderboard'
-    | 'KarmaRewards'
-    | 'KarmaRules'
-    | 'AboutKarma'
-    | 'KarmaFAQ'
+    | 'TrustCenter'
+    | 'TrustLeaderboard'
+    | 'TrustRewards'
+    | 'TrustRules'
+    | 'AboutTrust'
+    | 'TrustFAQ'
     | 'FollowersList'  // List of user's followers
     | 'FollowingList' // List of users being followed
     | 'CreateManagedAccount' // Create a new managed sub-account
@@ -67,13 +67,13 @@ const screenLoaders: Record<RouteName, () => ComponentType<BaseScreenProps>> = {
     EditProfileField: () => require('../screens/EditProfileFieldScreen').default,
     // Informational screens
     LearnMoreUsernames: () => require('../screens/LearnMoreUsernamesScreen').default,
-    // Karma screens
-    KarmaCenter: () => require('../screens/karma/KarmaCenterScreen').default,
-    KarmaLeaderboard: () => require('../screens/karma/KarmaLeaderboardScreen').default,
-    KarmaRewards: () => require('../screens/karma/KarmaRewardsScreen').default,
-    KarmaRules: () => require('../screens/karma/KarmaRulesScreen').default,
-    AboutKarma: () => require('../screens/karma/KarmaAboutScreen').default,
-    KarmaFAQ: () => require('../screens/karma/KarmaFAQScreen').default,
+    // Oxy Trust screens
+    TrustCenter: () => require('../screens/trust/TrustCenterScreen').default,
+    TrustLeaderboard: () => require('../screens/trust/TrustLeaderboardScreen').default,
+    TrustRewards: () => require('../screens/trust/TrustRewardsScreen').default,
+    TrustRules: () => require('../screens/trust/TrustRulesScreen').default,
+    AboutTrust: () => require('../screens/trust/TrustAboutScreen').default,
+    TrustFAQ: () => require('../screens/trust/TrustFAQScreen').default,
     // User list screens (followers/following)
     FollowersList: () => require('../screens/FollowersListScreen').default,
     FollowingList: () => require('../screens/FollowingListScreen').default,

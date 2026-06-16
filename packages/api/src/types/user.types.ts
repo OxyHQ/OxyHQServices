@@ -53,7 +53,6 @@ export type ProfileUpdateInput = Partial<
 export interface UserStatistics {
   followers: number;
   following: number;
-  karma: number;
 }
 
 // Pagination parameters

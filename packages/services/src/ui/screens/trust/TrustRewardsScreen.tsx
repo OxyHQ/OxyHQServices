@@ -24,10 +24,10 @@ interface Achievement {
     rarity: 'common' | 'rare' | 'epic' | 'legendary';
 }
 
-const KarmaRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
+const TrustRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
     const { t } = useI18n();
     const { user, oxyServices, isAuthenticated } = useOxy();
-    const [karmaTotal, setKarmaTotal] = useState<number>(0);
+    const [reputationTotal, setReputationTotal] = useState<number>(0);
     const [isLoading, setIsLoading] = useState(true);
 
     const bloomTheme = useTheme();
@@ -44,12 +44,12 @@ const KarmaRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
             return;
         }
         setIsLoading(true);
-        oxyServices.getUserKarmaTotal(user.id)
-            .then((data: any) => {
-                setKarmaTotal(data.total || 0);
+        oxyServices.getReputationBalance(user.id)
+            .then((balance) => {
+                setReputationTotal(balance.total || 0);
             })
             .catch(() => {
-                setKarmaTotal(0);
+                setReputationTotal(0);
             })
             .finally(() => setIsLoading(false));
     }, [user, isAuthenticated, oxyServices]);
@@ -57,98 +57,98 @@ const KarmaRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
     const achievements: Achievement[] = useMemo(() => [
         {
             id: 'first-step',
-            name: t('karma.achievements.firstStep') || 'First Step',
-            description: t('karma.achievements.firstStepDesc') || 'Earned your first karma point',
+            name: t('trust.achievements.firstStep') || 'First Step',
+            description: t('trust.achievements.firstStepDesc') || 'Earned your first reputation point',
             category: 'milestone',
             icon: 'footsteps',
             iconColor: '#8E8E93',
-            unlocked: karmaTotal >= 1,
+            unlocked: reputationTotal >= 1,
             rarity: 'common',
         },
         {
             id: 'novice',
-            name: t('karma.achievements.novice') || 'Novice',
-            description: t('karma.achievements.noviceDesc') || 'Reached 10 karma points',
+            name: t('trust.achievements.novice') || 'Novice',
+            description: t('trust.achievements.noviceDesc') || 'Reached 10 reputation points',
             category: 'milestone',
             icon: 'leaf',
             iconColor: '#34C759',
-            unlocked: karmaTotal >= 10,
+            unlocked: reputationTotal >= 10,
             rarity: 'common',
         },
         {
             id: 'contributor',
-            name: t('karma.achievements.contributor') || 'Contributor',
-            description: t('karma.achievements.contributorDesc') || 'Reached 50 karma points',
+            name: t('trust.achievements.contributor') || 'Contributor',
+            description: t('trust.achievements.contributorDesc') || 'Reached 50 reputation points',
             category: 'contribution',
             icon: 'account-group',
             iconColor: '#007AFF',
-            unlocked: karmaTotal >= 50,
+            unlocked: reputationTotal >= 50,
             rarity: 'common',
         },
         {
             id: 'rising-star',
-            name: t('karma.achievements.risingStar') || 'Rising Star',
-            description: t('karma.achievements.risingStarDesc') || 'Reached 100 karma points',
+            name: t('trust.achievements.risingStar') || 'Rising Star',
+            description: t('trust.achievements.risingStarDesc') || 'Reached 100 reputation points',
             category: 'milestone',
             icon: 'star',
             iconColor: '#FF9500',
-            unlocked: karmaTotal >= 100,
+            unlocked: reputationTotal >= 100,
             rarity: 'rare',
         },
         {
             id: 'early-adopter',
-            name: t('karma.achievements.earlyAdopter') || 'Early Adopter',
-            description: t('karma.achievements.earlyAdopterDesc') || 'Been part of the community from the start',
+            name: t('trust.achievements.earlyAdopter') || 'Early Adopter',
+            description: t('trust.achievements.earlyAdopterDesc') || 'Been part of the community from the start',
             category: 'special',
             icon: 'rocket',
             iconColor: '#AF52DE',
-            unlocked: karmaTotal >= 200,
+            unlocked: reputationTotal >= 200,
             rarity: 'rare',
         },
         {
             id: 'community-hero',
-            name: t('karma.achievements.communityHero') || 'Community Hero',
-            description: t('karma.achievements.communityHeroDesc') || 'Reached 500 karma points',
+            name: t('trust.achievements.communityHero') || 'Community Hero',
+            description: t('trust.achievements.communityHeroDesc') || 'Reached 500 reputation points',
             category: 'contribution',
             icon: 'shield',
             iconColor: '#FF2D55',
-            unlocked: karmaTotal >= 500,
+            unlocked: reputationTotal >= 500,
             rarity: 'epic',
         },
         {
             id: 'legend',
-            name: t('karma.achievements.legend') || 'Legend',
-            description: t('karma.achievements.legendDesc') || 'Reached 1000 karma points',
+            name: t('trust.achievements.legend') || 'Legend',
+            description: t('trust.achievements.legendDesc') || 'Reached 1000 reputation points',
             category: 'milestone',
             icon: 'trophy',
             iconColor: '#FFD700',
-            unlocked: karmaTotal >= 1000,
+            unlocked: reputationTotal >= 1000,
             rarity: 'legendary',
         },
         {
             id: 'phoenix',
-            name: t('karma.achievements.phoenix') || 'Phoenix',
-            description: t('karma.achievements.phoenixDesc') || 'Reached 2500 karma points',
+            name: t('trust.achievements.phoenix') || 'Phoenix',
+            description: t('trust.achievements.phoenixDesc') || 'Reached 2500 reputation points',
             category: 'milestone',
             icon: 'flame',
             iconColor: '#FF3B30',
-            unlocked: karmaTotal >= 2500,
+            unlocked: reputationTotal >= 2500,
             rarity: 'legendary',
         },
         {
             id: 'unstoppable',
-            name: t('karma.achievements.unstoppable') || 'Unstoppable',
-            description: t('karma.achievements.unstoppableDesc') || 'Reached 5000 karma points',
+            name: t('trust.achievements.unstoppable') || 'Unstoppable',
+            description: t('trust.achievements.unstoppableDesc') || 'Reached 5000 reputation points',
             category: 'milestone',
             icon: 'infinite',
             iconColor: '#5E5CE6',
-            unlocked: karmaTotal >= 5000,
+            unlocked: reputationTotal >= 5000,
             rarity: 'legendary',
         },
         {
             id: 'bug-hunter',
-            name: t('karma.achievements.bugHunter') || 'Bug Hunter',
-            description: t('karma.achievements.bugHunterDesc') || 'Reported helpful bugs',
+            name: t('trust.achievements.bugHunter') || 'Bug Hunter',
+            description: t('trust.achievements.bugHunterDesc') || 'Reported helpful bugs',
             category: 'contribution',
             icon: 'bug',
             iconColor: '#FF9500',
@@ -157,8 +157,8 @@ const KarmaRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
         },
         {
             id: 'helper',
-            name: t('karma.achievements.helper') || 'Helper',
-            description: t('karma.achievements.helperDesc') || 'Helped 10 users',
+            name: t('trust.achievements.helper') || 'Helper',
+            description: t('trust.achievements.helperDesc') || 'Helped 10 users',
             category: 'contribution',
             icon: 'hand-left',
             iconColor: '#34C759',
@@ -167,15 +167,15 @@ const KarmaRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
         },
         {
             id: 'streak-master',
-            name: t('karma.achievements.streakMaster') || 'Streak Master',
-            description: t('karma.achievements.streakMasterDesc') || '7 day activity streak',
+            name: t('trust.achievements.streakMaster') || 'Streak Master',
+            description: t('trust.achievements.streakMasterDesc') || '7 day activity streak',
             category: 'streak',
             icon: 'flash',
             iconColor: '#FFD700',
             unlocked: false,
             rarity: 'epic',
         },
-    ], [t, karmaTotal, colors]);
+    ], [t, reputationTotal, colors]);
 
     const unlockedAchievements = achievements.filter(a => a.unlocked);
     const lockedAchievements = achievements.filter(a => !a.unlocked);
@@ -333,8 +333,8 @@ const KarmaRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
         return (
             <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
                 <Header
-                    title={t('karma.rewards.title') || 'Karma Rewards'}
-                    subtitle={t('karma.rewards.subtitle') || 'Unlock special features and recognition'}
+                    title={t('trust.rewards.title') || 'Trust Rewards'}
+                    subtitle={t('trust.rewards.subtitle') || 'Unlock special features and recognition'}
                     onBack={goBack}
                     elevation="subtle"
                 />
@@ -350,8 +350,8 @@ const KarmaRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
     return (
         <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
             <Header
-                title={t('karma.rewards.title') || 'Karma Rewards'}
-                subtitle={t('karma.rewards.subtitle') || 'Unlock special features and recognition'}
+                title={t('trust.rewards.title') || 'Trust Rewards'}
+                subtitle={t('trust.rewards.subtitle') || 'Unlock special features and recognition'}
                 onBack={goBack}
                 elevation="subtle"
             />
@@ -363,11 +363,11 @@ const KarmaRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
                 <View style={[styles.statsCard, { backgroundColor: colors.card }]}>
                     <View style={styles.statsHeader}>
                         <View>
-                            <Text style={[styles.currentKarma, { color: themeStyles.primaryColor }]}>
-                                {karmaTotal}
+                            <Text style={[styles.currentReputation, { color: themeStyles.primaryColor }]}>
+                                {reputationTotal}
                             </Text>
-                            <Text style={[styles.karmaLabel, { color: bloomTheme.colors.textTertiary }]}>
-                                {t('karma.center.balance') || 'Karma Points'}
+                            <Text style={[styles.reputationLabel, { color: bloomTheme.colors.textTertiary }]}>
+                                {t('trust.center.balance') || 'Reputation Points'}
                             </Text>
                         </View>
                         <View style={styles.achievementStats}>
@@ -375,7 +375,7 @@ const KarmaRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
                                 {unlockedAchievements.length}
                             </Text>
                             <Text style={[styles.achievementCountLabel, { color: bloomTheme.colors.textTertiary }]}>
-                                {t('karma.achievements.unlocked') || 'Achievements'}
+                                {t('trust.achievements.unlocked') || 'Achievements'}
                             </Text>
                         </View>
                     </View>
@@ -401,7 +401,7 @@ const KarmaRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
                 {unlockedAchievements.length > 0 && (
                     <>
                         <Text style={[styles.sectionTitle, { color: bloomTheme.colors.text }]}>
-                            {t('karma.achievements.unlocked') || 'Unlocked Achievements'}
+                            {t('trust.achievements.unlocked') || 'Unlocked Achievements'}
                         </Text>
                         <View style={styles.achievementsGrid}>
                             {unlockedAchievements.map(achievement => renderAchievement(achievement))}
@@ -413,7 +413,7 @@ const KarmaRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
                 {lockedAchievements.length > 0 && (
                     <>
                         <Text style={[styles.sectionTitle, { color: bloomTheme.colors.text }]}>
-                            {t('karma.achievements.locked') || 'Locked Achievements'}
+                            {t('trust.achievements.locked') || 'Locked Achievements'}
                         </Text>
                         <View style={styles.achievementsGrid}>
                             {lockedAchievements.map(achievement => renderAchievement(achievement))}
@@ -452,7 +452,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         marginBottom: 16,
     },
-    currentKarma: {
+    currentReputation: {
         fontSize: 36,
         fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
         marginBottom: 4,
@@ -468,7 +468,7 @@ const styles = StyleSheet.create({
     achievementCountLabel: {
         fontSize: 14,
     },
-    karmaLabel: {
+    reputationLabel: {
         fontSize: 14,
     },
     progressBarContainer: {
@@ -624,4 +624,4 @@ const styles = StyleSheet.create({
     },
 });
 
-export default KarmaRewardsScreen;
+export default TrustRewardsScreen;

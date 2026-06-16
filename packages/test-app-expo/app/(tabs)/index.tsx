@@ -323,62 +323,62 @@ export default function HomeScreen() {
               />
             </Section>
 
-            {/* Karma System */}
-            <Section title="Karma System">
+            {/* Oxy Trust */}
+            <Section title="Oxy Trust">
               <GroupedSection
                 items={[
                   {
-                    id: 'karma-center',
+                    id: 'trust-center',
                     icon: 'star',
                     iconColor: colors.iconPayments,
-                    title: 'Karma Center',
-                    subtitle: 'Main karma hub',
-                    onPress: () => handleOpenScreen('KarmaCenter'),
+                    title: 'Trust Center',
+                    subtitle: 'Main reputation hub',
+                    onPress: () => handleOpenScreen('TrustCenter'),
                     showChevron: true,
                   },
                   {
-                    id: 'karma-leaderboard',
+                    id: 'trust-leaderboard',
                     icon: 'trophy',
                     iconColor: colors.iconPayments,
                     title: 'Leaderboard',
-                    subtitle: 'Karma rankings',
-                    onPress: () => handleOpenScreen('KarmaLeaderboard'),
+                    subtitle: 'Reputation rankings',
+                    onPress: () => handleOpenScreen('TrustLeaderboard'),
                     showChevron: true,
                   },
                   {
-                    id: 'karma-rewards',
+                    id: 'trust-rewards',
                     icon: 'gift-outline',
                     iconColor: colors.iconStorage,
                     title: 'Rewards',
-                    subtitle: 'Karma rewards',
-                    onPress: () => handleOpenScreen('KarmaRewards'),
+                    subtitle: 'Reputation rewards',
+                    onPress: () => handleOpenScreen('TrustRewards'),
                     showChevron: true,
                   },
                   {
-                    id: 'karma-rules',
+                    id: 'trust-rules',
                     icon: 'file-document',
                     iconColor: colors.iconSecurity,
                     title: 'Rules',
-                    subtitle: 'Karma rules',
-                    onPress: () => handleOpenScreen('KarmaRules'),
+                    subtitle: 'Reputation rules',
+                    onPress: () => handleOpenScreen('TrustRules'),
                     showChevron: true,
                   },
                   {
-                    id: 'about-karma',
+                    id: 'about-trust',
                     icon: 'information',
                     iconColor: colors.iconPersonalInfo,
                     title: 'About',
-                    subtitle: 'About karma',
-                    onPress: () => handleOpenScreen('AboutKarma'),
+                    subtitle: 'About Oxy Trust',
+                    onPress: () => handleOpenScreen('AboutTrust'),
                     showChevron: true,
                   },
                   {
-                    id: 'karma-faq',
+                    id: 'trust-faq',
                     icon: 'help-circle',
                     iconColor: colors.iconPersonalInfo,
                     title: 'FAQ',
-                    subtitle: 'Karma FAQ',
-                    onPress: () => handleOpenScreen('KarmaFAQ'),
+                    subtitle: 'Trust FAQ',
+                    onPress: () => handleOpenScreen('TrustFAQ'),
                     showChevron: true,
                   },
                 ]}

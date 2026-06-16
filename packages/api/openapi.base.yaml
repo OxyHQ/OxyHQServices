@@ -71,8 +71,8 @@ tags:
     description: Per-user credit ledger and grants used by AI / paid features.
   - name: Wallet
     description: User wallet — balance, top-up, transfers.
-  - name: Karma
-    description: Karma scores, contributions, leaderboards.
+  - name: Reputation
+    description: Oxy Trust — reputation transaction ledger, balances, trust tiers, influence, disputes.
   - name: Federation
     description: >
       ActivityPub / WebFinger inbox-outbox endpoints and FedCM identity

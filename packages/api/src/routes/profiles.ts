@@ -396,7 +396,6 @@ router.get(
       const stats = {
         followers: followerMap.get(id) || 0,
         following: followingMap.get(id) || 0,
-        karma: 0,
       };
       return userService.formatUserResponse(profile, stats);
     });

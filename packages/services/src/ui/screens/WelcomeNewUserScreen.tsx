@@ -115,9 +115,9 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
                 t('welcomeNew.principles.bullets.3') || 'No selling your data',
             ]
         },
-        { key: 'karma', title: t('welcomeNew.karma.title') || 'Karma = Trust & Growth', body: t('welcomeNew.karma.body') || 'Oxy Karma is a points system that reacts to what you do. Helpful, respectful, constructive actions earn it. Harmful or low‑effort stuff chips it away. More karma can unlock benefits; low karma can limit features. It keeps things fair and rewards real contribution.' },
+        { key: 'trust', title: t('welcomeNew.trust.title') || 'Oxy Trust = Trust & Growth', body: t('welcomeNew.trust.body') || 'Oxy Trust is a reputation system that reacts to what you do. Helpful, respectful, constructive actions earn reputation. Harmful or low‑effort stuff chips it away. More reputation raises your trust tier and can unlock benefits; low reputation can limit features. It keeps things fair and rewards real contribution.' },
         { key: 'avatar', title: t('welcomeNew.avatar.title') || 'Make It Yours', body: t('welcomeNew.avatar.body') || 'Add an avatar so people recognize you. It will show anywhere you show up here. Skip if you want — you can add it later.', showAvatar: true },
-        { key: 'ready', title: t('welcomeNew.ready.title') || "You're Ready", body: t('welcomeNew.ready.body') || 'Explore. Contribute. Earn karma. Stay in control.' }
+        { key: 'ready', title: t('welcomeNew.ready.title') || "You're Ready", body: t('welcomeNew.ready.body') || 'Explore. Contribute. Earn reputation. Stay in control.' }
     ];
     const totalSteps = steps.length;
     const avatarStepIndex = steps.findIndex(s => s.showAvatar);

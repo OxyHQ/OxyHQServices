@@ -5,40 +5,40 @@ import Header from '../../components/Header';
 import { useI18n } from '../../hooks/useI18n';
 import { useTheme } from '@oxyhq/bloom/theme';
 
-const KarmaAboutScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
+const TrustAboutScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
     const { t } = useI18n();
     const bloomTheme = useTheme();
-    // Override primaryColor for Karma screens (purple instead of blue)
+    // Override primaryColor for Oxy Trust screens (purple instead of blue)
     const primaryColor = '#d169e5';
 
     return (
         <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
             <Header
-                title={t('karma.about.title') || 'About Karma'}
-                subtitle={t('karma.about.subtitle') || 'Learn about the karma system'}
-                
+                title={t('trust.about.title') || 'About Oxy Trust'}
+                subtitle={t('trust.about.subtitle') || 'Learn about the reputation system'}
+
                 onBack={goBack}
                 elevation="subtle"
             />
             <ScrollView contentContainerStyle={styles.contentContainer}>
                 <Text style={[styles.paragraph, { color: bloomTheme.colors.text }]}>
-                    {t('karma.about.intro') || 'Karma is a recognition of your positive actions in the Oxy Ecosystem. It cannot be sent or received directly, only earned by contributing to the community.'}
+                    {t('trust.about.intro') || 'Oxy Trust is a recognition of your positive actions in the Oxy Ecosystem. Reputation cannot be sent or received directly, only earned by contributing to the community.'}
                 </Text>
                 <Text style={[styles.section, { color: primaryColor }]}>
-                    {t('karma.about.how.title') || 'How to Earn Karma'}
+                    {t('trust.about.how.title') || 'How to Earn Reputation'}
                 </Text>
                 <Text style={[styles.paragraph, { color: bloomTheme.colors.text }]}>
-                    • {t('karma.about.how.help') || 'Helping other users'}{'\n'}
-                    • {t('karma.about.how.report') || 'Reporting bugs'}{'\n'}
-                    • {t('karma.about.how.contribute') || 'Contributing content'}{'\n'}
-                    • {t('karma.about.how.participate') || 'Participating in events'}{'\n'}
-                    • {t('karma.about.how.other') || 'Other positive actions'}
+                    • {t('trust.about.how.help') || 'Helping other users'}{'\n'}
+                    • {t('trust.about.how.report') || 'Reporting bugs'}{'\n'}
+                    • {t('trust.about.how.contribute') || 'Contributing content'}{'\n'}
+                    • {t('trust.about.how.participate') || 'Participating in events'}{'\n'}
+                    • {t('trust.about.how.other') || 'Other positive actions'}
                 </Text>
                 <Text style={[styles.section, { color: primaryColor }]}>
-                    {t('karma.about.why.title') || 'Why Karma?'}
+                    {t('trust.about.why.title') || 'Why Oxy Trust?'}
                 </Text>
                 <Text style={[styles.paragraph, { color: bloomTheme.colors.text }]}>
-                    {t('karma.about.why.text') || 'Karma unlocks special features and recognition in the Oxy Ecosystem. The more you contribute, the more you earn!'}
+                    {t('trust.about.why.text') || 'Your reputation and trust tier unlock special features and recognition in the Oxy Ecosystem. The more you contribute, the more you earn!'}
                 </Text>
             </ScrollView>
         </View>
@@ -63,4 +63,4 @@ const styles = StyleSheet.create({
     paragraph: { fontSize: 16, marginBottom: 12 },
 });
 
-export default KarmaAboutScreen;
+export default TrustAboutScreen;

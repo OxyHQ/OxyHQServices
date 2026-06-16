@@ -35,17 +35,6 @@ export const TRANSACTION = {
   DEFAULT_OFFSET: 0,
 } as const;
 
-/**
- * Karma-specific constants
- */
-export const KARMA = {
-  DEFAULT_HISTORY_LIMIT: 50,
-  DEFAULT_LEADERBOARD_LIMIT: 10,
-} as const;
-
-
-
-
 
 
 

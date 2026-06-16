@@ -83,7 +83,7 @@ import { composeOxyServices } from './mixins';
  * - **Privacy**: Blocked and restricted users
  * - **Language**: Language detection and metadata
  * - **Payment**: Payment processing
- * - **Karma**: Karma system
+ * - **Reputation**: Reputation system (Oxy Trust)
  * - **Assets**: File upload and asset management
  * - **Applications**: Application, membership, and credential management
  * - **Workspaces**: Workspace and membership management

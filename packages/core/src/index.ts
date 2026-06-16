@@ -112,6 +112,33 @@ export type {
 } from './mixins/OxyServices.workspaces';
 
 // ---------------------------------------------------------------------------
+// Reputation (Oxy Trust: ledger, balances, disputes, rules, influence)
+// ---------------------------------------------------------------------------
+export type {
+    ReputationCategory,
+    TrustTier,
+    ReputationTransactionStatus,
+    ReputationTargetEntityType,
+    ReputationDisputeStatus,
+    ReputationInfluenceContext,
+    ReputationTransaction,
+    ReputationBalanceBreakdown,
+    ReputationInfluence,
+    ReputationReliability,
+    ReputationBalance,
+    ReputationDispute,
+    ReputationRule,
+    ReputationLeaderboardEntry,
+    ReputationInfluenceResult,
+    ReverseReputationTransactionResult,
+    AwardReputationInput,
+    CreateReputationDisputeInput,
+    ResolveReputationDisputeInput,
+    UpsertReputationRuleInput,
+    ReverseReputationTransactionInput,
+} from './mixins/OxyServices.reputation';
+
+// ---------------------------------------------------------------------------
 // Auth helpers (token refresh, error normalisation, retry policies)
 // ---------------------------------------------------------------------------
 export {
@@ -190,10 +217,6 @@ export type {
     TransactionResponse,
     PaginationInfo,
     SearchProfilesResponse,
-    KarmaRule,
-    KarmaHistory,
-    KarmaLeaderboardEntry,
-    KarmaAwardRequest,
     ApiError,
     PaymentMethod,
     PaymentRequest,

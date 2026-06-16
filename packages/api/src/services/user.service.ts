@@ -455,7 +455,7 @@ export class UserService {
   }
 
   /**
-   * Get user statistics (followers, following, karma)
+   * Get user statistics (followers, following)
    */
   async getUserStats(userId: string): Promise<UserStatistics> {
     const [followersCount, followingCount] = await Promise.all([
@@ -469,13 +469,9 @@ export class UserService {
       }),
     ]);
 
-    // Karma count requires posts collection integration (not implemented)
-    const karmaCount = 0;
-
     return {
       followers: followersCount,
       following: followingCount,
-      karma: karmaCount,
     };
   }
 

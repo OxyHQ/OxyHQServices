@@ -676,13 +676,78 @@ export class HttpService {
   }
 
   /**
+   * Delimiter that separates the logical `method:url[:data]` portion of a
+   * cache key from its identity suffix. Always APPENDED, never used to parse
+   * a key apart, so the `method:url` prefix stays intact for
+   * `clearCacheByPrefix` sweeps and `clearCacheEntry` base-key matching.
+   * The `clearCacheEntry` callsites all pass fixed, dataless logical keys
+   * (`GET:/users/<id>`, `GET:/session/user/<sessionId>`,
+   * `GET:/fedcm/me/authorized-apps`), so this readable suffix can never be
+   * ambiguous with a serialized request body.
+   */
+  private static readonly CACHE_IDENTITY_DELIM = ' id=';
+
+  /**
+   * Derive a stable, non-sensitive identity discriminator for cache scoping.
+   *
+   * The GET-response cache MUST be partitioned by caller identity: endpoints
+   * with optional auth (e.g. `GET /profiles/recommendations`) return different
+   * content for an anonymous vs an authenticated caller, and per-user content
+   * for different authenticated users. Keying solely on `method:url:data`
+   * (the previous behavior) let an anonymous response be served to an
+   * authenticated caller — surfacing as "Who to follow" recommending accounts
+   * the user already follows after a cold-boot session restore.
+   *
+   * We use the access token's decoded user id (`userId || id`) rather than the
+   * raw JWT so the token never lands in a cache key (no token leakage through
+   * any cache-key logging, no key bloat). The acting-as id is folded in because
+   * managed-account responses differ per acting identity — and `X-Acting-As`
+   * already changes the server response for the same bearer token. Falls back
+   * to `'anon'` when there is no token, and to a short FNV-1a hash of the token
+   * only if it is present but cannot be decoded (degraded but still partitioned,
+   * never colliding anon with authed).
+   */
+  private computeIdentityTag(): string {
+    const accessToken = this.tokenStore.getAccessToken();
+    let principal = 'anon';
+    if (accessToken) {
+      try {
+        const decoded = jwtDecode<JwtPayload>(accessToken);
+        principal = decoded.userId || decoded.id || `t${fnv1a32(accessToken)}`;
+      } catch {
+        // Undecodable token — still partition it away from anon and from
+        // other tokens via a hash. Never silently fall back to 'anon'.
+        principal = `t${fnv1a32(accessToken)}`;
+      }
+    }
+    return this._actingAsUserId ? `${principal}~as${this._actingAsUserId}` : principal;
+  }
+
+  /**
    * Generate cache key efficiently
    * Uses a content-addressed hash for large payloads so two requests with
    * the same shape but different values never collide on the same key
    * (which would silently serve stale data — e.g. paginated search results,
    * large object updates).
+   *
+   * The key is identity-scoped: the logical `method:url[:data]` portion is
+   * suffixed with ` id=<identityTag>` so two callers with different
+   * identities (anon vs authed, or two different users) never share an entry.
+   * The identity tag is placed at the END so the key still STARTS with
+   * `method:url`, preserving the prefix-based invalidation in
+   * `clearCacheByPrefix` (e.g. `GET:/session/user/`) and the base-key matching
+   * in `clearCacheEntry`.
    */
   private generateCacheKey(method: string, url: string, data?: unknown): string {
+    return `${this.generateBaseCacheKey(method, url, data)}${HttpService.CACHE_IDENTITY_DELIM}${this.computeIdentityTag()}`;
+  }
+
+  /**
+   * Build the identity-agnostic portion of a cache key (`method:url[:data]`).
+   * Kept separate so identity scoping is applied in exactly one place
+   * (`generateCacheKey`) and cannot drift between the cache and dedupe paths.
+   */
+  private generateBaseCacheKey(method: string, url: string, data?: unknown): string {
     if (!data || (typeof data === 'object' && Object.keys(data).length === 0)) {
       return `${method}:${url}`;
     }
@@ -943,6 +1008,15 @@ export class HttpService {
   clearTokens(): void {
     this.tokenStore.clearTokens();
     this.tokenStore.clearCsrfToken();
+    // Drop the response cache on logout. The cache is identity-scoped, so a
+    // different user could never read these entries, but a logged-out client
+    // must not keep the previous session's personalized data resident in
+    // memory (privacy + correct logout semantics). We do NOT clear on
+    // `setTokens` because a silent token refresh re-issues a token for the
+    // SAME user — the identity tag is unchanged and the warm cache is still
+    // valid; clearing there would defeat caching as refreshes fire near
+    // every token expiry.
+    this.cache.clear();
     this.notifyTokenChange();
   }
 
@@ -1001,8 +1075,25 @@ export class HttpService {
     this.cache.clear();
   }
 
+  /**
+   * Delete a cache entry by its LOGICAL key (`method:url[:data]`).
+   *
+   * Because the response cache is identity-scoped — stored keys carry an
+   * ` id=<identityTag>` suffix — a caller passing the logical key
+   * `GET:/users/<id>` must invalidate that resource for EVERY identity that
+   * cached it (e.g. `updateProfile` busting a user representation that may be
+   * cached under both the owner's id and a viewer's id). We therefore delete
+   * the exact key (for any pre-existing un-suffixed entries) AND every
+   * identity-scoped variant `<key> id=*`.
+   */
   clearCacheEntry(key: string): void {
     this.cache.delete(key);
+    const identityVariantPrefix = `${key}${HttpService.CACHE_IDENTITY_DELIM}`;
+    for (const existing of this.cache.keys()) {
+      if (existing.startsWith(identityVariantPrefix)) {
+        this.cache.delete(existing);
+      }
+    }
   }
 
   /**

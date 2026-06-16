@@ -107,7 +107,7 @@
     "noBio": "Este usuario aún no tiene biografía.",
     "joinedOn": "Se unió el {{date}}",
     "bornOn": "Nació el {{date}}",
-    "karma": "Karma",
+    "reputation": "Reputación",
     "followers": "Seguidores",
     "following": "Siguiendo",
     "more": "+ {{count}} más"
@@ -613,69 +613,69 @@
       "submitSuccess": "¡Comentario enviado correctamente!"
     }
   },
-  "karma": {
+  "reputation": {
     "faq": {
-      "title": "Preguntas frecuentes sobre karma",
-      "subtitle": "Preguntas frecuentes sobre el sistema de karma",
+      "title": "Preguntas frecuentes sobre reputación",
+      "subtitle": "Preguntas frecuentes sobre el sistema de reputación",
       "search": "Buscar en las FAQ...",
       "noResults": "No se encontraron preguntas que coincidan con \"{{query}}\"",
       "items": {
         "what": {
-          "q": "¿Qué es el karma?",
-          "a": "El karma es un reconocimiento de tus acciones positivas en el ecosistema de Oxy. No se puede enviar ni recibir directamente."
+          "q": "¿Qué es la reputación?",
+          "a": "La reputación es un reconocimiento de tus acciones positivas en el ecosistema de Oxy. No se puede enviar ni recibir directamente."
         },
         "earn": {
-          "q": "¿Cómo gano karma?",
+          "q": "¿Cómo gano reputación?",
           "a": "Ayudando a otros, reportando errores, contribuyendo contenido y participando en eventos de la comunidad."
         },
         "lose": {
-          "q": "¿Puedo perder karma?",
-          "a": "El karma puede reducirse por acciones negativas o por incumplir las reglas de la comunidad."
+          "q": "¿Puedo perder reputación?",
+          "a": "La reputación puede reducirse por acciones negativas o por incumplir las reglas de la comunidad."
         },
         "use": {
-          "q": "¿Qué puedo hacer con el karma?",
-          "a": "Desbloquea recompensas, insignias y funciones especiales a medida que ganas más karma."
+          "q": "¿Qué puedo hacer con la reputación?",
+          "a": "Desbloquea recompensas, insignias y funciones especiales a medida que ganas más reputación."
         },
         "transfer": {
-          "q": "¿Puedo transferir karma a otros?",
-          "a": "No, el karma no se puede enviar ni recibir. Solo se gana con tus acciones."
+          "q": "¿Puedo transferir reputación a otros?",
+          "a": "No, la reputación no se puede enviar ni recibir. Solo se gana con tus acciones."
         },
         "support": {
           "q": "¿Cómo obtengo soporte?",
-          "a": "Contacta con el soporte de Oxy a través de la app o el sitio web para cualquier pregunta relacionada con el karma."
+          "a": "Contacta con el soporte de Oxy a través de la app o el sitio web para cualquier pregunta relacionada con la reputación."
         }
       }
     },
     "rules": {
-      "title": "Reglas de karma",
-      "subtitle": "Cómo ganar puntos de karma",
+      "title": "Reglas de reputación",
+      "subtitle": "Cómo ganar puntos de reputación",
       "empty": "No se encontraron reglas."
     },
     "leaderboard": {
-      "title": "Clasificación de karma",
+      "title": "Clasificación de reputación",
       "subtitle": "Mayores contribuidores de la comunidad",
       "empty": "No hay datos de clasificación."
     },
     "rewards": {
-      "title": "Recompensas de karma",
+      "title": "Recompensas de reputación",
       "subtitle": "Desbloquea funciones especiales y reconocimiento",
-      "intro": "¡Desbloquea funciones especiales y reconocimiento ganando karma!",
+      "intro": "¡Desbloquea funciones especiales y reconocimiento ganando reputación!",
       "earlyAccess": {
         "title": "🎉 Acceso anticipado",
-        "desc": "Obtén acceso anticipado a nuevas funciones con 100+ de karma."
+        "desc": "Obtén acceso anticipado a nuevas funciones con 100+ de reputación."
       },
       "badge": {
         "title": "🏅 Insignia de la comunidad",
-        "desc": "Gana una insignia especial con 500+ de karma."
+        "desc": "Gana una insignia especial con 500+ de reputación."
       },
       "featured": {
         "title": "🌟 Miembro destacado",
-        "desc": "Destácate en la comunidad con 1000+ de karma."
+        "desc": "Destácate en la comunidad con 1000+ de reputación."
       },
       "moreComing": "¡Más recompensas próximamente!"
     },
     "center": {
-      "balance": "Saldo de karma",
+      "balance": "Saldo de reputación",
       "actions": {
         "leaderboard": "Clasificación",
         "rules": "Reglas",
@@ -683,17 +683,17 @@
         "rewards": "Recompensas",
         "faq": "FAQ"
       },
-      "info": "El karma solo se puede ganar con acciones positivas en el ecosistema de Oxy. No se puede enviar ni recibir directamente.",
-      "history": "Historial de karma",
-      "noHistory": "Aún no hay historial de karma.",
+      "info": "La reputación solo se puede ganar con acciones positivas en el ecosistema de Oxy. No se puede enviar ni recibir directamente.",
+      "history": "Historial de reputación",
+      "noHistory": "Aún no hay historial de reputación.",
       "noDescription": "Sin descripción"
     },
     "about": {
-      "title": "Acerca del karma",
-      "subtitle": "Aprende sobre el sistema de karma",
-      "intro": "El karma es un reconocimiento de tus acciones positivas en el ecosistema de Oxy. No se puede enviar ni recibir directamente, solo se gana contribuyendo a la comunidad.",
+      "title": "Acerca de la reputación",
+      "subtitle": "Aprende sobre el sistema de reputación (Oxy Trust)",
+      "intro": "La reputación es un reconocimiento de tus acciones positivas en el ecosistema de Oxy. No se puede enviar ni recibir directamente, solo se gana contribuyendo a la comunidad.",
       "how": {
-        "title": "Cómo ganar karma",
+        "title": "Cómo ganar reputación",
         "help": "Ayudando a otros usuarios",
         "report": "Reportando errores",
         "contribute": "Contribuyendo contenido",
@@ -701,31 +701,31 @@
         "other": "Otras acciones positivas"
       },
       "why": {
-        "title": "¿Por qué el karma?",
-        "text": "El karma desbloquea funciones especiales y reconocimiento en el ecosistema de Oxy. ¡Cuanto más contribuyas, más ganarás!"
+        "title": "¿Por qué la reputación?",
+        "text": "La reputación desbloquea funciones especiales y reconocimiento en el ecosistema de Oxy. ¡Cuanto más contribuyas, más ganarás!"
       }
     },
     "achievements": {
       "unlocked": "Logros desbloqueados",
       "locked": "Logros bloqueados",
       "firstStep": "Primer paso",
-      "firstStepDesc": "Ganaste tu primer punto de karma",
+      "firstStepDesc": "Ganaste tu primer punto de reputación",
       "novice": "Novato",
-      "noviceDesc": "Alcanzaste 10 puntos de karma",
+      "noviceDesc": "Alcanzaste 10 puntos de reputación",
       "contributor": "Contribuidor",
-      "contributorDesc": "Alcanzaste 50 puntos de karma",
+      "contributorDesc": "Alcanzaste 50 puntos de reputación",
       "risingStar": "Estrella en ascenso",
-      "risingStarDesc": "Alcanzaste 100 puntos de karma",
+      "risingStarDesc": "Alcanzaste 100 puntos de reputación",
       "earlyAdopter": "Pionero",
       "earlyAdopterDesc": "Parte de la comunidad desde el inicio",
       "communityHero": "Héroe de la comunidad",
-      "communityHeroDesc": "Alcanzaste 500 puntos de karma",
+      "communityHeroDesc": "Alcanzaste 500 puntos de reputación",
       "legend": "Leyenda",
-      "legendDesc": "Alcanzaste 1000 puntos de karma",
+      "legendDesc": "Alcanzaste 1000 puntos de reputación",
       "phoenix": "Fénix",
-      "phoenixDesc": "Alcanzaste 2500 puntos de karma",
+      "phoenixDesc": "Alcanzaste 2500 puntos de reputación",
       "unstoppable": "Imparable",
-      "unstoppableDesc": "Alcanzaste 5000 puntos de karma",
+      "unstoppableDesc": "Alcanzaste 5000 puntos de reputación",
       "bugHunter": "Cazador de errores",
       "bugHunterDesc": "Reportaste errores útiles",
       "helper": "Ayudante",
@@ -842,9 +842,9 @@
         "No vendemos tus datos"
       ]
     },
-    "karma": {
-      "title": "Karma = Confianza y crecimiento",
-      "body": "Oxy Karma es un sistema de puntos que reacciona a lo que haces. Las acciones útiles, respetuosas y constructivas lo aumentan. Las acciones dañinas o de poco esfuerzo lo reducen. Más karma puede desbloquear beneficios; poco karma puede limitar funciones. Mantiene la justicia y recompensa la contribución real."
+    "reputation": {
+      "title": "Reputación = Confianza y crecimiento",
+      "body": "Oxy Trust es un sistema de reputación que reacciona a lo que haces. Las acciones útiles, respetuosas y constructivas la aumentan. Las acciones dañinas o de poco esfuerzo la reducen. Más reputación puede desbloquear beneficios; poca reputación puede limitar funciones. Mantiene la justicia y recompensa la contribución real."
     },
     "avatar": {
       "title": "Hazlo tuyo",
@@ -854,7 +854,7 @@
     },
     "ready": {
       "title": "¡Todo listo!",
-      "body": "Explora. Contribuye. Gana karma. Mantén el control."
+      "body": "Explora. Contribuye. Gana reputación. Mantén el control."
     },
     "actions": {
       "back": "Atrás",

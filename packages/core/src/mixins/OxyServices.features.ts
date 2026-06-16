@@ -74,7 +74,6 @@ export interface UserStats {
     commentCount: number;
     followerCount: number;
     followingCount: number;
-    karmaScore?: number;
 }
 
 export interface HistoryItem {

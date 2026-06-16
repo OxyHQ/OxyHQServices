@@ -1449,6 +1449,173 @@
         }
       }
     },
+    "/auth/refresh": {
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "security": [],
+        "summary": "Rotate the httpOnly refresh cookie and mint a fresh access token",
+        "description": "Cold-boot session persistence. The refresh token lives ONLY in a first-party httpOnly + Secure cookie (`oxy_rt`) scoped to this path — it is never readable from JavaScript (XSS-proof) and is never accepted from the body, query, or path. On each call the presented token is rotated (single-use): a brand-new token is issued in the same rotation family with a fresh 30-day sliding expiry, and a new short-lived access token is returned in the body.\nReuse-detection: presenting an already-consumed or revoked token is treated as a theft signal — the entire rotation family is revoked and the underlying session is deactivated, forcing a fresh sign-in. All failure modes collapse to a single generic 401 (the specific reason is only logged) to avoid leaking which step failed.\nNo `Authorization` header is required: the httpOnly cookie IS the credential.\n",
+        "responses": {
+          "200": {
+            "description": "Access token minted; a rotated `oxy_rt` cookie is set.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "accessToken": {
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, expired, revoked, or reused refresh token."
+          },
+          "429": {
+            "description": "Too many refresh attempts from this IP."
+          }
+        }
+      }
+    },
+    "/auth/refresh-all": {
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "security": [],
+        "summary": "Rotate every device-local account in a single round-trip",
+        "description": "Rebuilds the Google-style multi-account view for a device. The browser presents every `oxy_rt*` cookie it has (legacy un-suffixed + every indexed `oxy_rt_${authuser}`); the server rotates each in parallel and returns one entry per VALID account. Per-slot reuse-detection still applies: a lone used cookie revokes ONLY that slot's family and is simply omitted from the response — siblings are unaffected. Slot-level errors are logged (warn) but never fail the endpoint as a whole; the worst case is a `200 { accounts: [] }`.\n",
+        "responses": {
+          "200": {
+            "description": "Zero or more rotated accounts, sorted by authuser asc.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "accounts": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "authuser": {
+                            "type": "integer",
+                            "nullable": true
+                          },
+                          "accessToken": {
+                            "type": "string"
+                          },
+                          "expiresAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "sessionId": {
+                            "type": "string"
+                          },
+                          "user": {
+                            "$ref": "#/components/schemas/User"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin not allowlisted (BAD_ORIGIN)."
+          },
+          "429": {
+            "description": "Too many requests from this IP."
+          }
+        }
+      }
+    },
+    "/auth/session": {
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Establish the first-party refresh cookie for the caller's session",
+        "description": "Called by an app (or its same-site session bridge) right after a successful FedCM / interactive sign-in to obtain its first-party httpOnly refresh cookie (`oxy_rt`). REQUIRES the user's bearer access token: the session the cookie is bound to is derived ONLY from that already-validated token — never from the URL, body, or query. On success a fresh `oxy_rt` cookie is set (scoped to `/auth`) and a new short-lived access token is returned in the body, mirroring `POST /auth/refresh`.\n",
+        "responses": {
+          "200": {
+            "description": "Refresh cookie established; a fresh access token is minted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "accessToken": {
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bearer token was sent in the URL query string (header-only endpoint)."
+          },
+          "401": {
+            "description": "Missing, invalid, or expired bearer access token."
+          },
+          "429": {
+            "description": "Too many requests from this IP."
+          }
+        }
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "security": [],
+        "summary": "Revoke the refresh family and clear the first-party cookie",
+        "description": "Signs the caller out of the first-party session. Reads the httpOnly `oxy_rt` cookie (the credential being revoked) and, if present, revokes the entire rotation family server-side and deactivates the underlying session so reuse-detection state stays clean. ALWAYS clears the cookie and returns 200 — it is idempotent and best-effort, so a missing or garbage cookie still succeeds. No `Authorization` header is required: a logged-out client may no longer hold a valid access token, and the cookie itself is the thing being revoked.\n",
+        "responses": {
+          "200": {
+            "description": "Logged out; the `oxy_rt` cookie is cleared.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests from this IP."
+          }
+        }
+      }
+    },
     "/auth/check-username/{username}": {
       "get": {
         "tags": [
@@ -1602,8 +1769,7 @@
               "schema": {
                 "type": "object",
                 "required": [
-                  "sessionToken",
-                  "appId"
+                  "sessionToken"
                 ],
                 "properties": {
                   "sessionToken": {
@@ -1611,10 +1777,15 @@
                     "description": "Random opaque token the client generates and keeps secret.",
                     "example": "at_random_4e9c2a1b8e9d3f4a1c2b3d4"
                   },
-                  "appId": {
+                  "clientId": {
                     "type": "string",
-                    "description": "App identifier requesting the session.",
-                    "example": "accounts.oxy.so"
+                    "description": "OAuth client_id (ApplicationCredential public key) of the requesting application. Provide this OR `applicationId`.\n",
+                    "example": "oxy_dk_1a2b3c4d"
+                  },
+                  "applicationId": {
+                    "type": "string",
+                    "description": "Application _id of the requesting application. Provide this OR `clientId`.\n",
+                    "example": "64f7c2a1b8e9d3f4a1c2b3d4"
                   },
                   "expiresAt": {
                     "oneOf": [
@@ -1665,7 +1836,10 @@
             }
           },
           "400": {
-            "description": "Missing field or token already in use."
+            "description": "Missing/invalid application reference or token already in use."
+          },
+          "403": {
+            "description": "Application is not available (suspended/deleted/pending review)."
           }
         }
       }
@@ -1711,8 +1885,52 @@
                     "sessionToken": {
                       "type": "string"
                     },
-                    "appId": {
-                      "type": "string"
+                    "application": {
+                      "nullable": true,
+                      "description": "Sanitized public metadata of the registered Application bound to this session, for the consent UI. Null only if the app was hard-deleted after the session was created.\n",
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "description": {
+                          "type": "string"
+                        },
+                        "icon": {
+                          "type": "string"
+                        },
+                        "websiteUrl": {
+                          "type": "string"
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "first_party",
+                            "third_party",
+                            "internal",
+                            "system"
+                          ]
+                        },
+                        "isOfficial": {
+                          "type": "boolean"
+                        },
+                        "isInternal": {
+                          "type": "boolean"
+                        },
+                        "scopes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "developerName": {
+                          "type": "string",
+                          "description": "Best-effort owner display name (non-official apps only)."
+                        }
+                      }
                     },
                     "expiresAt": {
                       "type": "string",
@@ -1738,7 +1956,16 @@
                       "status": "pending",
                       "authorized": false,
                       "sessionToken": "at_random_4e9c2a1b8e9d3f4a1c2b3d4",
-                      "appId": "accounts.oxy.so",
+                      "application": {
+                        "id": "64f7c2a1b8e9d3f4a1c2b3d4",
+                        "name": "Oxy Accounts",
+                        "type": "first_party",
+                        "isOfficial": true,
+                        "isInternal": false,
+                        "scopes": [
+                          "user:read"
+                        ]
+                      },
                       "expiresAt": "2025-05-25T12:39:56.000Z",
                       "sessionId": null,
                       "publicKey": null,
@@ -1750,7 +1977,19 @@
                       "status": "authorized",
                       "authorized": true,
                       "sessionToken": "at_random_4e9c2a1b8e9d3f4a1c2b3d4",
-                      "appId": "accounts.oxy.so",
+                      "application": {
+                        "id": "64f7c2a1b8e9d3f4a1c2b3d4",
+                        "name": "Acme Widgets",
+                        "type": "third_party",
+                        "isOfficial": false,
+                        "isInternal": false,
+                        "scopes": [
+                          "files:read",
+                          "user:read"
+                        ],
+                        "websiteUrl": "https://acme.example",
+                        "developerName": "Ada Lovelace"
+                      },
                       "expiresAt": "2025-05-25T12:39:56.000Z",
                       "sessionId": "sess_64f7c2a1b8e9d3f4a1c2b3d4",
                       "publicKey": "02a1b2c3d4e5f6...",
@@ -1842,13 +2081,85 @@
         }
       }
     },
+    "/auth/session/claim": {
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "security": [],
+        "summary": "Exchange a sessionToken for the first access token (device flow)",
+        "description": "Final step of the QR-code / \"Open Oxy Auth\" device sign-in flow. After another authenticated device has approved this session via `POST /auth/session/authorize/{sessionToken}`, the originating client — which alone knows the secret `sessionToken` — calls this endpoint to atomically claim the resulting access token, refresh token, and session ID.\nNo `Authorization` header is required: the 128-bit `sessionToken` (held only by the originating client, never echoed back to observers) IS the credential, exactly as in RFC 8628 §3.4. The exchange is single-use: a successful claim transitions the AuthSession status from `authorized` -> `consumed`, so a replayed sessionToken is rejected. Time-bound by the AuthSession TTL (default 5 minutes). Status-bound: only `authorized` rows are claimable.\nThis endpoint replaces the previous SDK fallback of calling `GET /session/token/{sessionId}` after the device-flow socket update — that path requires bearer auth and the originating client has no bearer token yet, so the call was always 401.\n",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "sessionToken"
+                ],
+                "properties": {
+                  "sessionToken": {
+                    "type": "string",
+                    "description": "The same 128-bit sessionToken issued by `POST /auth/session/create`."
+                  },
+                  "deviceFingerprint": {
+                    "type": "string",
+                    "description": "Optional fingerprint of the originating client device."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "First access token issued.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "accessToken": {
+                      "type": "string"
+                    },
+                    "refreshToken": {
+                      "type": "string"
+                    },
+                    "sessionId": {
+                      "type": "string"
+                    },
+                    "deviceId": {
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "user": {
+                      "$ref": "#/components/schemas/User"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed."
+          },
+          "401": {
+            "description": "SessionToken is unknown, expired, cancelled, not yet authorized, or already consumed."
+          }
+        }
+      }
+    },
     "/auth/oauth/authorize": {
       "post": {
         "tags": [
           "Authentication"
         ],
         "summary": "Issue an OAuth2 authorization code (after user consent)",
-        "description": "Called by the Oxy auth UI after the user clicks \"Allow\" on a third-party app's consent screen. Requires the authenticated user's Bearer access token. Returns a short-lived single-use code that the client app exchanges for tokens via `POST /auth/oauth/token`.\nThe `redirectUri` MUST exactly match one of the DeveloperApp's registered `redirectUris` — otherwise the request is rejected.\n",
+        "description": "Called by the Oxy auth UI after the user clicks \"Allow\" on a third-party app's consent screen. Requires the authenticated user's Bearer access token. Returns a short-lived single-use code that the client app exchanges for tokens via `POST /auth/oauth/token`.\nThe `redirectUri` MUST exactly match one of the Application's registered `redirectUris` — otherwise the request is rejected.\n",
         "security": [
           {
             "bearerAuth": []
@@ -1867,7 +2178,7 @@
                 "properties": {
                   "clientId": {
                     "type": "string",
-                    "description": "DeveloperApp apiKey"
+                    "description": "ApplicationCredential publicKey (OAuth client_id)"
                   },
                   "redirectUri": {
                     "type": "string",
@@ -1965,13 +2276,95 @@
         }
       }
     },
+    "/auth/oauth/client/{clientId}": {
+      "get": {
+        "tags": [
+          "Authentication"
+        ],
+        "security": [],
+        "summary": "Public lookup of an application's consent-UI metadata",
+        "description": "Resolves an OAuth `client_id` (= ApplicationCredential public key) to the sanitized public metadata of its registered Application so the auth web consent screen can render the app's name, icon, official badge, and requested scopes. No bearer token is required. Secrets, webhook config, owner identity, and capabilities are never returned. Returns a generic 404 for unknown, revoked, expired, or inactive clients (no enumeration).\n",
+        "parameters": [
+          {
+            "name": "clientId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sanitized application metadata.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "application": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "description": {
+                          "type": "string"
+                        },
+                        "icon": {
+                          "type": "string"
+                        },
+                        "websiteUrl": {
+                          "type": "string"
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "first_party",
+                            "third_party",
+                            "internal",
+                            "system"
+                          ]
+                        },
+                        "isOfficial": {
+                          "type": "boolean"
+                        },
+                        "isInternal": {
+                          "type": "boolean"
+                        },
+                        "scopes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "developerName": {
+                          "type": "string",
+                          "description": "Best-effort owner display name (non-official apps only)."
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Application not found."
+          }
+        }
+      }
+    },
     "/auth/service-token": {
       "post": {
         "tags": [
           "Authentication"
         ],
         "summary": "Exchange credentials for a service token",
-        "description": "Internal service-to-service authentication endpoint. Exchange DeveloperApp credentials (apiKey + apiSecret) for a short-lived service JWT (1 hour). Only available to apps with isInternal flag set.\n",
+        "description": "Internal service-to-service authentication endpoint. Exchange ApplicationCredential credentials (apiKey = publicKey, apiSecret = plaintext secret) for a short-lived service JWT (1 hour). Requires a usable credential of type `service` on an active application: either `active`, or `deprecated` but still within its rotation grace window (a credential rotated within the last 7 days keeps minting tokens until its grace `expiresAt`). `revoked` and grace-expired credentials are rejected. The minted JWT carries `appId` (Application `_id`) and `credentialId` (the minting ApplicationCredential `_id`).\n",
         "requestBody": {
           "required": true,
           "content": {
@@ -1985,12 +2378,12 @@
                 "properties": {
                   "apiKey": {
                     "type": "string",
-                    "description": "DeveloperApp API key",
+                    "description": "ApplicationCredential publicKey",
                     "example": "oxy_dk_abc123"
                   },
                   "apiSecret": {
                     "type": "string",
-                    "description": "DeveloperApp API secret"
+                    "description": "ApplicationCredential plaintext secret"
                   }
                 }
               }
@@ -2044,7 +2437,7 @@
             }
           },
           "403": {
-            "description": "App is not an internal service",
+            "description": "Credential is not a service credential",
             "content": {
               "application/json": {
                 "schema": {
@@ -2443,6 +2836,50 @@
         }
       }
     },
+    "/fedcm/grants/{userId}": {
+      "get": {
+        "tags": [
+          "Federation"
+        ],
+        "security": [],
+        "summary": "List RP origins a user has granted via FedCM",
+        "description": "Returns the relying-party origins the user has previously authorized through FedCM, intersected with the currently-approved client list. The IdP accounts endpoint (auth.oxy.so) calls this server-to-server to populate the FedCM `approved_clients` array, which lets Chrome treat the account as a returning account for those RPs (skips the disclosure UI and enables silent mediation). Carries no token material or PII.\n",
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The user's id (24-char hex ObjectId)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Granted origins (possibly empty).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "origins": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing or malformed userId."
+          }
+        }
+      }
+    },
     "/fedcm/clients/approved/{origin}": {
       "delete": {
         "tags": [
@@ -2477,6 +2914,100 @@
           },
           "404": {
             "description": "Origin not on the list."
+          }
+        }
+      }
+    },
+    "/fedcm/me/authorized-apps": {
+      "get": {
+        "tags": [
+          "Federation"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "List the authenticated user's authorized RP apps",
+        "description": "Returns the intersection of the user's FedCM grants with the currently approved RP client catalog. Powers the \"Connected apps\" management UI.\n",
+        "responses": {
+          "200": {
+            "description": "Authorized apps (possibly empty).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "apps": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "origin": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "firstGrantedAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "lastUsedAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required."
+          }
+        }
+      }
+    },
+    "/fedcm/me/authorized-apps/{origin}": {
+      "delete": {
+        "tags": [
+          "Federation"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Revoke the authenticated user's authorization for an RP origin",
+        "parameters": [
+          {
+            "name": "origin",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "URL-encoded RP origin to revoke."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authorization revoked."
+          },
+          "400": {
+            "description": "Origin missing or malformed."
+          },
+          "401": {
+            "description": "Authentication required."
+          },
+          "404": {
+            "description": "No grant exists for this user+origin."
           }
         }
       }
@@ -3683,6 +4214,203 @@
         }
       }
     },
+    "/sso/code": {
+      "post": {
+        "tags": [
+          "Federation"
+        ],
+        "security": [],
+        "summary": "Mint a single-use SSO code (internal, server-to-server)",
+        "description": "Called ONLY by the auth.oxy.so worker after it has minted a real Oxy session via the existing FedCM pipeline. Gated by the internal `X-Oxy-Internal` shared secret (mismatch/absence returns 404 to hide the route). Wraps the supplied session in an opaque, origin-bound, 30s single-use code that the RP later redeems at `/sso/exchange`.\n",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Oxy-Internal",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Shared secret equal to SSO_INTERNAL_SECRET."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "session",
+                  "clientOrigin"
+                ],
+                "properties": {
+                  "clientOrigin": {
+                    "type": "string",
+                    "description": "Approved RP origin the code is bound to."
+                  },
+                  "session": {
+                    "type": "object",
+                    "required": [
+                      "sessionId",
+                      "accessToken",
+                      "user"
+                    ],
+                    "properties": {
+                      "sessionId": {
+                        "type": "string"
+                      },
+                      "accessToken": {
+                        "type": "string"
+                      },
+                      "expiresAt": {
+                        "type": "string",
+                        "format": "date-time"
+                      },
+                      "authuser": {
+                        "type": "integer"
+                      },
+                      "user": {
+                        "type": "object",
+                        "required": [
+                          "id"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "username": {
+                            "type": "string"
+                          },
+                          "email": {
+                            "type": "string"
+                          },
+                          "avatar": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Code issued.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "expiresInSeconds": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid session payload or unapproved clientOrigin."
+          },
+          "404": {
+            "description": "Internal secret missing or invalid."
+          }
+        }
+      }
+    },
+    "/sso/exchange": {
+      "post": {
+        "tags": [
+          "Federation"
+        ],
+        "security": [],
+        "summary": "Redeem an SSO code for a session (RP browser, cross-origin)",
+        "description": "The RP calls this with the opaque code it received in the redirect fragment. The code is burned single-use (atomic GETDEL); the requesting Origin must match the approved origin the code was bound to. Returns the wrapped session. No cookies are involved (Access-Control-Allow- Credentials: false); the access token is in the body.\n",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "code"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Session issued.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "accessToken": {
+                      "type": "string"
+                    },
+                    "sessionId": {
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "authuser": {
+                      "type": "integer"
+                    },
+                    "user": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "username": {
+                          "type": "string"
+                        },
+                        "email": {
+                          "type": "string"
+                        },
+                        "avatar": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing code."
+          },
+          "403": {
+            "description": "Requesting Origin does not match the code's bound origin."
+          },
+          "410": {
+            "description": "Code is invalid, expired, or already used."
+          }
+        }
+      }
+    },
     "/storage/usage": {
       "get": {
         "tags": [
@@ -3712,6 +4440,207 @@
                       "type": "number",
                       "description": "Percentage used (0-1).",
                       "example": 0.1
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token."
+          }
+        }
+      }
+    },
+    "/users/me/app-data/{namespace}/{key}": {
+      "get": {
+        "tags": [
+          "UserAppData"
+        ],
+        "summary": "Read a single per-user JSON value",
+        "description": "Returns the value stored under `(namespace, key)` for the authenticated user. The response body is always `{ value }`. If no value has ever been stored, `value` is `null` (the endpoint does not 404 on missing entries — a missing entry is semantically a `null` value).\n",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "namespace",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9_-]{1,64}$"
+            }
+          },
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9_-]{1,64}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current value (or null when not stored).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "value": {
+                      "description": "Arbitrary JSON value previously stored, or null."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token."
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "UserAppData"
+        ],
+        "summary": "Upsert a single per-user JSON value",
+        "description": "Stores (or replaces) the value under `(namespace, key)` for the authenticated user. Body must be `{ value: <any JSON-serializable value> }`. Serialized JSON is capped at 64 KB.\n",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "namespace",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9_-]{1,64}$"
+            }
+          },
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9_-]{1,64}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "value"
+                ],
+                "properties": {
+                  "value": {
+                    "description": "Arbitrary JSON value to persist."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The stored value, echoed back.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "value": {
+                      "description": "The value that is now stored."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed (bad namespace/key, oversized value)."
+          },
+          "401": {
+            "description": "Missing or invalid bearer token."
+          },
+          "429": {
+            "description": "Per-user write rate limit exceeded."
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "UserAppData"
+        ],
+        "summary": "Delete a single per-user JSON value",
+        "description": "Removes the value under `(namespace, key)` for the authenticated user. Idempotent — succeeds with 204 whether or not the entry existed.\n",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "namespace",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9_-]{1,64}$"
+            }
+          },
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9_-]{1,64}$"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted (or was already absent)."
+          },
+          "401": {
+            "description": "Missing or invalid bearer token."
+          },
+          "429": {
+            "description": "Per-user write rate limit exceeded."
+          }
+        }
+      }
+    },
+    "/users/me/app-data/{namespace}": {
+      "get": {
+        "tags": [
+          "UserAppData"
+        ],
+        "summary": "List every value in a namespace for the current user",
+        "description": "Returns `{ entries }` where `entries` is a `key -> value` map of everything stored under `namespace` for the authenticated user. The response is bounded by the per-user write rate limit upstream and by the 64 KB cap per individual value; consumers should still expect to paginate large namespaces themselves.\n",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "namespace",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9_-]{1,64}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Map of every key in the namespace to its value.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "entries": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "description": "Stored JSON value."
+                      }
                     }
                   }
                 }
@@ -4129,22 +5058,12 @@
         "tags": [
           "Profiles"
         ],
-        "summary": "Get recommended user profiles based on mutual connections",
-        "description": "No long-form description. Add a JSDoc block (or `@openapi` block) above this route in `src/routes/profiles.ts` to fill in summary, description, request/response examples.",
+        "summary": "Get recommended user profiles.",
+        "description": "Optional auth: when a valid session token is present the response is\npersonalized via mutual-connection overlap (people followed by the people\nyou follow), topped up with a random sample. When NO user is present\n(logged-out / public callers) the personalized aggregate is skipped and\nthe endpoint returns popular public profiles ranked by follower count.\nPrivate accounts are always excluded; `excludeTypes` filters out\nfederated/agent/automated users on either path.\n\n  (federated, agent, automated)",
         "parameters": [],
         "responses": {
           "200": {
             "description": "Success"
-          },
-          "401": {
-            "description": "Authentication required",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
           },
           "5XX": {
             "description": "Server error",
@@ -4160,768 +5079,7 @@
         "security": [
           {
             "bearerAuth": []
-          }
-        ]
-      }
-    },
-    "/developer/usage": {
-      "get": {
-        "tags": [
-          "Developer"
-        ],
-        "summary": "Get aggregated usage statistics across every developer app the user owns",
-        "description": "for the requested time window (`24h`, `7d`, `30d`, `90d`; defaults to 7d).\nReturns totals for requests, tokens, credits, plus a daily breakdown and a\ntop-10 endpoint breakdown.",
-        "parameters": [
-          {
-            "name": "period",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "enum": [
-                "24h",
-                "7d",
-                "30d",
-                "90d"
-              ]
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success"
           },
-          "400": {
-            "description": "Validation failed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "5XX": {
-            "description": "Server error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {}
-        ]
-      }
-    },
-    "/developer/stats": {
-      "get": {
-        "tags": [
-          "Developer"
-        ],
-        "summary": "Developer dashboard overview: app counts, key counts, and last-30-days",
-        "description": "usage totals for the authenticated developer.",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "Success"
-          },
-          "5XX": {
-            "description": "Server error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {}
-        ]
-      }
-    },
-    "/developer/apps": {
-      "get": {
-        "tags": [
-          "Developer"
-        ],
-        "summary": "List the developer's apps (up to 100). Soft-deleted apps are excluded.",
-        "description": "Each entry includes the app's name, description, redirect URLs, icon, and\nactive status — but never the API secret or webhook secret.",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "Success"
-          },
-          "5XX": {
-            "description": "Server error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {}
-        ]
-      },
-      "post": {
-        "tags": [
-          "Developer"
-        ],
-        "summary": "Create a new developer app and return its credentials (apiKey, apiSecret,",
-        "description": "webhookSecret) — the only time the secrets are returned in plaintext.\nMaximum 10 apps per developer.",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "Success"
-          },
-          "5XX": {
-            "description": "Server error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {}
-        ]
-      }
-    },
-    "/developer/apps/{id}": {
-      "get": {
-        "tags": [
-          "Developer"
-        ],
-        "summary": "Get a single developer app by ID. Returns 404 if the app does not exist",
-        "description": "or is owned by another developer.",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success"
-          },
-          "400": {
-            "description": "Validation failed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Resource not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "5XX": {
-            "description": "Server error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {}
-        ]
-      },
-      "patch": {
-        "tags": [
-          "Developer"
-        ],
-        "summary": "Partially update a developer app. Supplying a new `webhookUrl` also",
-        "description": "rotates the `webhookSecret`. `isActive: false` suspends the app so its\nkeys stop authenticating.",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success"
-          },
-          "400": {
-            "description": "Validation failed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Resource not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "5XX": {
-            "description": "Server error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {}
-        ]
-      },
-      "delete": {
-        "tags": [
-          "Developer"
-        ],
-        "summary": "Permanently delete a developer app. Cascade-deletes every API key and",
-        "description": "usage record tied to the app. Irreversible.",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success"
-          },
-          "400": {
-            "description": "Validation failed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Resource not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "5XX": {
-            "description": "Server error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {}
-        ]
-      }
-    },
-    "/developer/apps/{id}/regenerate-secret": {
-      "post": {
-        "tags": [
-          "Developer"
-        ],
-        "summary": "Rotate the app's API secret. Returns the new secret in plaintext one",
-        "description": "time — store it immediately, the server cannot reveal it again.",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success"
-          },
-          "400": {
-            "description": "Validation failed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Resource not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "5XX": {
-            "description": "Server error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {}
-        ]
-      }
-    },
-    "/developer/apps/{appId}/usage": {
-      "get": {
-        "tags": [
-          "Developer"
-        ],
-        "summary": "Per-app usage statistics over the requested time window (`24h`, `7d`,",
-        "description": "`30d`, `90d`; defaults to `7d`). Same shape as `/developer/usage` but\nfiltered to a single app.",
-        "parameters": [
-          {
-            "name": "appId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          {
-            "name": "period",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "enum": [
-                "24h",
-                "7d",
-                "30d",
-                "90d"
-              ]
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success"
-          },
-          "400": {
-            "description": "Validation failed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Resource not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "5XX": {
-            "description": "Server error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {}
-        ]
-      }
-    },
-    "/developer/apps/{appId}/keys": {
-      "get": {
-        "tags": [
-          "Developer"
-        ],
-        "summary": "List API keys for the given app (up to 100). Returns key metadata but",
-        "description": "never the key hash — only the prefix is exposed.",
-        "parameters": [
-          {
-            "name": "appId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success"
-          },
-          "400": {
-            "description": "Validation failed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Resource not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "5XX": {
-            "description": "Server error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {}
-        ]
-      },
-      "post": {
-        "tags": [
-          "Developer"
-        ],
-        "summary": "Create a new API key for the given app. The plaintext key is returned",
-        "description": "once and only once — keep it secret. The server stores only its SHA-256\nhash and a 16-char prefix.",
-        "parameters": [
-          {
-            "name": "appId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success"
-          },
-          "400": {
-            "description": "Validation failed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Resource not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "5XX": {
-            "description": "Server error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {}
-        ]
-      }
-    },
-    "/developer/apps/{appId}/keys/{keyId}": {
-      "patch": {
-        "tags": [
-          "Developer"
-        ],
-        "summary": "Update an API key's name, scopes, or active flag. Cannot rotate the key",
-        "description": "material — delete and recreate for that.",
-        "parameters": [
-          {
-            "name": "appId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          {
-            "name": "keyId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success"
-          },
-          "400": {
-            "description": "Validation failed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Resource not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "5XX": {
-            "description": "Server error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {}
-        ]
-      },
-      "delete": {
-        "tags": [
-          "Developer"
-        ],
-        "summary": "Delete an API key. Cascade-deletes all usage records for the key.",
-        "description": "Irreversible.",
-        "parameters": [
-          {
-            "name": "appId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          {
-            "name": "keyId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success"
-          },
-          "400": {
-            "description": "Validation failed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Resource not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "5XX": {
-            "description": "Server error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {}
-        ]
-      }
-    },
-    "/developer/apps/{appId}/keys/{keyId}/usage": {
-      "get": {
-        "tags": [
-          "Developer"
-        ],
-        "summary": "Per-key usage statistics over the requested time window.",
-        "description": "No long-form description. Add a JSDoc block (or `@openapi` block) above this route in `src/routes/developer.ts` to fill in summary, description, request/response examples.",
-        "parameters": [
-          {
-            "name": "appId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          {
-            "name": "keyId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          {
-            "name": "period",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "enum": [
-                "24h",
-                "7d",
-                "30d",
-                "90d"
-              ]
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success"
-          },
-          "400": {
-            "description": "Validation failed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Resource not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "5XX": {
-            "description": "Server error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        },
-        "security": [
           {}
         ]
       }
@@ -5459,6 +5617,136 @@
         "security": [
           {
             "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/assets/service/cache": {
+      "post": {
+        "tags": [
+          "Files"
+        ],
+        "summary": "Stream-upload a remote/federated media file into the reserved cache",
+        "description": "namespace. The raw bytes are sent as the request body (NOT multipart)\n      so large video streams straight to S3 without buffering in RAM.\n      Content-Type must be image/*, video/*, or audio/*.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient privileges",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "serviceTokenAuth": []
+          }
+        ]
+      }
+    },
+    "/assets/service/cache/{id}": {
+      "delete": {
+        "tags": [
+          "Files"
+        ],
+        "summary": "Evict a cached media asset by id. Rejects (403) anything that is not",
+        "description": "in the reserved cache namespace, so a service token can never delete\n      user-owned media.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "400": {
+            "description": "Validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient privileges",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "serviceTokenAuth": []
           }
         ]
       }
@@ -7066,8 +7354,8 @@
         "tags": [
           "Users"
         ],
-        "summary": "Find or create a non-local user (federated, agent, or automated).",
-        "description": "Called by Oxy ecosystem services when they encounter an external user\nthat needs an Oxy identity. Requires a valid service token whose\nDeveloperApp has been granted the `federation:write` scope.\n\nHardening (C4):\n - Scope check: rejects service tokens that lack `federation:write`.\n - Actor URI binding: `actorUri.hostname` must match the asserted\n   `domain` (so a malicious service can't claim to vouch for a user on\n   a host they don't actually own).\n - Username squatting: for `agent` / `automated`, refuse to upsert when\n   a `local` (or other-type) user already owns the username.\n - Type immutability: never let `type` change on an existing user — a\n   federated user cannot be silently upgraded to an `agent`, etc.",
+        "summary": "PUT /users/resolve",
+        "description": "No long-form description. Add a JSDoc block (or `@openapi` block) above this route in `src/routes/users.ts` to fill in summary, description, request/response examples.",
         "parameters": [],
         "responses": {
           "200": {
@@ -7111,17 +7399,46 @@
         ]
       }
     },
-    "/karma/leaderboard": {
+    "/reputation/leaderboard": {
       "get": {
         "tags": [
-          "Karma"
+          "Reputation"
         ],
-        "summary": "GET /karma/leaderboard",
-        "description": "No long-form description. Add a JSDoc block (or `@openapi` block) above this route in `src/routes/karma.routes.ts` to fill in summary, description, request/response examples.",
-        "parameters": [],
+        "summary": "GET /reputation/leaderboard",
+        "description": "No long-form description. Add a JSDoc block (or `@openapi` block) above this route in `src/routes/reputation.routes.ts` to fill in summary, description, request/response examples.",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Success"
+          },
+          "400": {
+            "description": "Validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "5XX": {
             "description": "Server error",
@@ -7139,13 +7456,13 @@
         ]
       }
     },
-    "/karma/rules": {
+    "/reputation/rules": {
       "get": {
         "tags": [
-          "Karma"
+          "Reputation"
         ],
-        "summary": "GET /karma/rules",
-        "description": "No long-form description. Add a JSDoc block (or `@openapi` block) above this route in `src/routes/karma.routes.ts` to fill in summary, description, request/response examples.",
+        "summary": "GET /reputation/rules",
+        "description": "No long-form description. Add a JSDoc block (or `@openapi` block) above this route in `src/routes/reputation.routes.ts` to fill in summary, description, request/response examples.",
         "parameters": [],
         "responses": {
           "200": {
@@ -7168,10 +7485,10 @@
       },
       "post": {
         "tags": [
-          "Karma"
+          "Reputation"
         ],
-        "summary": "POST /karma/rules",
-        "description": "No long-form description. Add a JSDoc block (or `@openapi` block) above this route in `src/routes/karma.routes.ts` to fill in summary, description, request/response examples.",
+        "summary": "POST /reputation/rules",
+        "description": "No long-form description. Add a JSDoc block (or `@openapi` block) above this route in `src/routes/reputation.routes.ts` to fill in summary, description, request/response examples.",
         "parameters": [],
         "responses": {
           "200": {
@@ -7179,6 +7496,16 @@
           },
           "400": {
             "description": "Validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
             "content": {
               "application/json": {
                 "schema": {
@@ -7199,7 +7526,9 @@
           }
         },
         "security": [
-          {}
+          {
+            "bearerAuth": []
+          }
         ],
         "requestBody": {
           "required": true,
@@ -7208,33 +7537,45 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "action": {
+                  "actionType": {
                     "type": "string",
                     "minLength": 1
                   },
                   "points": {
                     "type": "number"
                   },
+                  "category": {
+                    "type": "string",
+                    "enum": [
+                      "content",
+                      "social",
+                      "trust",
+                      "moderation",
+                      "physical",
+                      "penalty",
+                      "other"
+                    ]
+                  },
                   "description": {
-                    "type": "string"
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500
                   },
                   "cooldownInMinutes": {
-                    "type": "number",
+                    "type": "integer",
                     "minimum": 0,
                     "default": 0
                   },
                   "isEnabled": {
                     "type": "boolean",
                     "default": true
-                  },
-                  "category": {
-                    "type": "string",
-                    "default": "other"
                   }
                 },
                 "required": [
-                  "action",
-                  "points"
+                  "actionType",
+                  "points",
+                  "category",
+                  "description"
                 ]
               }
             }
@@ -7242,13 +7583,13 @@
         }
       }
     },
-    "/karma/{userId}/total": {
+    "/reputation/{userId}/balance": {
       "get": {
         "tags": [
-          "Karma"
+          "Reputation"
         ],
-        "summary": "GET /karma/{userId}/total",
-        "description": "No long-form description. Add a JSDoc block (or `@openapi` block) above this route in `src/routes/karma.routes.ts` to fill in summary, description, request/response examples.",
+        "summary": "GET /reputation/{userId}/balance",
+        "description": "No long-form description. Add a JSDoc block (or `@openapi` block) above this route in `src/routes/reputation.routes.ts` to fill in summary, description, request/response examples.",
         "parameters": [
           {
             "name": "userId",
@@ -7300,13 +7641,615 @@
         ]
       }
     },
-    "/karma/{userId}/history": {
+    "/reputation/award": {
+      "post": {
+        "tags": [
+          "Reputation"
+        ],
+        "summary": "Awarding is restricted to service tokens (the canonical path — a source app",
+        "description": "reports an action) and platform staff. Regular users may NOT award reputation\n(no self-award). When called with a service token the `applicationId` /\n`credentialId` are resolved from `req.serviceApp` and any client-supplied\nvalues for those fields are ignored.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "400": {
+            "description": "Validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "userId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "actionType": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "applicationId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "credentialId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "sourceActionId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "sourceActionType": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "targetEntityId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "targetEntityType": {
+                    "type": "string",
+                    "enum": [
+                      "post",
+                      "comment",
+                      "report",
+                      "purchase",
+                      "event",
+                      "check_in",
+                      "manual_review",
+                      "user",
+                      "other"
+                    ]
+                  },
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 500
+                  },
+                  "metadata": {
+                    "type": "object",
+                    "additionalProperties": {}
+                  }
+                },
+                "required": [
+                  "userId",
+                  "actionType"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/reputation/{userId}/transactions": {
       "get": {
         "tags": [
-          "Karma"
+          "Reputation"
         ],
-        "summary": "GET /karma/{userId}/history",
-        "description": "No long-form description. Add a JSDoc block (or `@openapi` block) above this route in `src/routes/karma.routes.ts` to fill in summary, description, request/response examples.",
+        "summary": "GET /reputation/{userId}/transactions",
+        "description": "No long-form description. Add a JSDoc block (or `@openapi` block) above this route in `src/routes/reputation.routes.ts` to fill in summary, description, request/response examples.",
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "400": {
+            "description": "Validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
+    "/reputation/{userId}/influence": {
+      "get": {
+        "tags": [
+          "Reputation"
+        ],
+        "summary": "GET /reputation/{userId}/influence",
+        "description": "No long-form description. Add a JSDoc block (or `@openapi` block) above this route in `src/routes/reputation.routes.ts` to fill in summary, description, request/response examples.",
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "context",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "default",
+                "report",
+                "moderation",
+                "ranking"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "400": {
+            "description": "Validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
+    "/reputation/{userId}/disputes": {
+      "get": {
+        "tags": [
+          "Reputation"
+        ],
+        "summary": "GET /reputation/{userId}/disputes",
+        "description": "No long-form description. Add a JSDoc block (or `@openapi` block) above this route in `src/routes/reputation.routes.ts` to fill in summary, description, request/response examples.",
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "400": {
+            "description": "Validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
+    "/reputation/disputes": {
+      "post": {
+        "tags": [
+          "Reputation"
+        ],
+        "summary": "POST /reputation/disputes",
+        "description": "No long-form description. Add a JSDoc block (or `@openapi` block) above this route in `src/routes/reputation.routes.ts` to fill in summary, description, request/response examples.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "400": {
+            "description": "Validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "transactionId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1000
+                  },
+                  "evidence": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "maxItems": 20
+                  }
+                },
+                "required": [
+                  "transactionId",
+                  "reason"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Reputation"
+        ],
+        "summary": "GET /reputation/disputes",
+        "description": "No long-form description. Add a JSDoc block (or `@openapi` block) above this route in `src/routes/reputation.routes.ts` to fill in summary, description, request/response examples.",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "400": {
+            "description": "Validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
+    "/reputation/transactions/{id}/reverse": {
+      "post": {
+        "tags": [
+          "Reputation"
+        ],
+        "summary": "POST /reputation/transactions/{id}/reverse",
+        "description": "No long-form description. Add a JSDoc block (or `@openapi` block) above this route in `src/routes/reputation.routes.ts` to fill in summary, description, request/response examples.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "400": {
+            "description": "Validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 500
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/reputation/transactions/{id}/void": {
+      "post": {
+        "tags": [
+          "Reputation"
+        ],
+        "summary": "POST /reputation/transactions/{id}/void",
+        "description": "No long-form description. Add a JSDoc block (or `@openapi` block) above this route in `src/routes/reputation.routes.ts` to fill in summary, description, request/response examples.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "400": {
+            "description": "Validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "5XX": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 500
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/reputation/{userId}/recalculate": {
+      "post": {
+        "tags": [
+          "Reputation"
+        ],
+        "summary": "POST /reputation/{userId}/recalculate",
+        "description": "No long-form description. Add a JSDoc block (or `@openapi` block) above this route in `src/routes/reputation.routes.ts` to fill in summary, description, request/response examples.",
         "parameters": [
           {
             "name": "userId",
@@ -7358,20 +8301,40 @@
         ]
       }
     },
-    "/karma/award": {
+    "/reputation/disputes/{id}/resolve": {
       "post": {
         "tags": [
-          "Karma"
+          "Reputation"
         ],
-        "summary": "POST /karma/award",
-        "description": "No long-form description. Add a JSDoc block (or `@openapi` block) above this route in `src/routes/karma.routes.ts` to fill in summary, description, request/response examples.",
-        "parameters": [],
+        "summary": "POST /reputation/disputes/{id}/resolve",
+        "description": "No long-form description. Add a JSDoc block (or `@openapi` block) above this route in `src/routes/reputation.routes.ts` to fill in summary, description, request/response examples.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Success"
           },
           "400": {
             "description": "Validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
             "content": {
               "application/json": {
                 "schema": {
@@ -7401,98 +8364,16 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "userId": {
+                  "status": {
                     "type": "string",
-                    "minLength": 1
-                  },
-                  "action": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "description": {
-                    "type": "string"
-                  },
-                  "targetContentId": {
-                    "type": "string"
+                    "enum": [
+                      "accepted",
+                      "rejected"
+                    ]
                   }
                 },
                 "required": [
-                  "userId",
-                  "action"
-                ]
-              }
-            }
-          }
-        }
-      }
-    },
-    "/karma/deduct": {
-      "post": {
-        "tags": [
-          "Karma"
-        ],
-        "summary": "POST /karma/deduct",
-        "description": "No long-form description. Add a JSDoc block (or `@openapi` block) above this route in `src/routes/karma.routes.ts` to fill in summary, description, request/response examples.",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "Success"
-          },
-          "400": {
-            "description": "Validation failed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "5XX": {
-            "description": "Server error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {}
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "userId": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "action": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "points": {
-                    "type": "number",
-                    "minimum": 0,
-                    "exclusiveMinimum": true
-                  },
-                  "description": {
-                    "type": "string"
-                  },
-                  "targetContentId": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "userId",
-                  "action",
-                  "points"
+                  "status"
                 ]
               }
             }
@@ -7716,25 +8597,73 @@
                   "to": {
                     "type": "array",
                     "items": {
-                      "type": "string",
-                      "minLength": 1
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "maxLength": 255
+                        },
+                        "address": {
+                          "type": "string",
+                          "minLength": 3,
+                          "maxLength": 320,
+                          "format": "email"
+                        }
+                      },
+                      "required": [
+                        "address"
+                      ]
                     },
-                    "minItems": 1
+                    "minItems": 1,
+                    "maxItems": 100
                   },
                   "cc": {
                     "type": "array",
                     "items": {
-                      "type": "string"
-                    }
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "maxLength": 255
+                        },
+                        "address": {
+                          "type": "string",
+                          "minLength": 3,
+                          "maxLength": 320,
+                          "format": "email"
+                        }
+                      },
+                      "required": [
+                        "address"
+                      ]
+                    },
+                    "maxItems": 100
                   },
                   "bcc": {
                     "type": "array",
                     "items": {
-                      "type": "string"
-                    }
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "maxLength": 255
+                        },
+                        "address": {
+                          "type": "string",
+                          "minLength": 3,
+                          "maxLength": 320,
+                          "format": "email"
+                        }
+                      },
+                      "required": [
+                        "address"
+                      ]
+                    },
+                    "maxItems": 100
                   },
                   "subject": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 998
                   },
                   "text": {
                     "type": "string"
@@ -7753,7 +8682,25 @@
                   },
                   "attachments": {
                     "type": "array",
-                    "items": {}
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "fileId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "contentId": {
+                          "type": "string"
+                        },
+                        "isInline": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "fileId"
+                      ]
+                    },
+                    "maxItems": 20
                   },
                   "scheduledAt": {
                     "type": "string"
@@ -9106,23 +10053,72 @@
                   "to": {
                     "type": "array",
                     "items": {
-                      "type": "string"
-                    }
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "maxLength": 255
+                        },
+                        "address": {
+                          "type": "string",
+                          "minLength": 3,
+                          "maxLength": 320,
+                          "format": "email"
+                        }
+                      },
+                      "required": [
+                        "address"
+                      ]
+                    },
+                    "maxItems": 100
                   },
                   "cc": {
                     "type": "array",
                     "items": {
-                      "type": "string"
-                    }
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "maxLength": 255
+                        },
+                        "address": {
+                          "type": "string",
+                          "minLength": 3,
+                          "maxLength": 320,
+                          "format": "email"
+                        }
+                      },
+                      "required": [
+                        "address"
+                      ]
+                    },
+                    "maxItems": 100
                   },
                   "bcc": {
                     "type": "array",
                     "items": {
-                      "type": "string"
-                    }
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "maxLength": 255
+                        },
+                        "address": {
+                          "type": "string",
+                          "minLength": 3,
+                          "maxLength": 320,
+                          "format": "email"
+                        }
+                      },
+                      "required": [
+                        "address"
+                      ]
+                    },
+                    "maxItems": 100
                   },
                   "subject": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 998
                   },
                   "text": {
                     "type": "string"
@@ -9188,91 +10184,6 @@
         "responses": {
           "200": {
             "description": "Success"
-          },
-          "5XX": {
-            "description": "Server error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {}
-        ]
-      }
-    },
-    "/email/attachments": {
-      "post": {
-        "tags": [
-          "Email"
-        ],
-        "summary": "POST /email/attachments",
-        "description": "No long-form description. Add a JSDoc block (or `@openapi` block) above this route in `src/routes/email.ts` to fill in summary, description, request/response examples.",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "Success"
-          },
-          "5XX": {
-            "description": "Server error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {}
-        ]
-      }
-    },
-    "/email/attachments/{s3Key}(*)": {
-      "get": {
-        "tags": [
-          "Email"
-        ],
-        "summary": "GET /email/attachments/{s3Key}(*)",
-        "description": "No long-form description. Add a JSDoc block (or `@openapi` block) above this route in `src/routes/email.ts` to fill in summary, description, request/response examples.",
-        "parameters": [
-          {
-            "name": "s3Key",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success"
-          },
-          "400": {
-            "description": "Validation failed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Resource not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
           },
           "5XX": {
             "description": "Server error",
@@ -10621,8 +11532,8 @@
         "tags": [
           "Authentication"
         ],
-        "summary": "Cancel an auth session",
-        "description": "No long-form description. Add a JSDoc block (or `@openapi` block) above this route in `src/routes/auth.ts` to fill in summary, description, request/response examples.",
+        "summary": "Cancel an auth session. The `sessionToken` is a 128-bit secret held only by",
+        "description": "the originating client, so possessing it IS the ownership proof — no\nadditional identifier is required.",
         "parameters": [
           {
             "name": "sessionToken",
@@ -13037,8 +13948,8 @@
       "description": "User wallet — balance, top-up, transfers."
     },
     {
-      "name": "Karma",
-      "description": "Karma scores, contributions, leaderboards."
+      "name": "Reputation",
+      "description": "Oxy Trust — reputation transaction ledger, balances, trust tiers, influence, disputes."
     },
     {
       "name": "Federation",

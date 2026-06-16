@@ -102,7 +102,6 @@ export interface User {
    */
   name?: UserNameResponse;
   bio?: string;
-  karma?: number;
   location?: string;
   website?: string;
   createdAt?: string;
@@ -262,30 +261,6 @@ export interface PaginationInfo {
 export interface SearchProfilesResponse {
   data: User[];
   pagination: PaginationInfo;
-}
-
-export interface KarmaRule {
-  id: string;
-  description: string;
-  // Add other karma rule fields as needed
-}
-
-export interface KarmaHistory {
-  id: string;
-  userId: string;
-  points: number;
-  // Add other karma history fields as needed
-}
-
-export interface KarmaLeaderboardEntry {
-  userId: string;
-  total: number;
-}
-
-export interface KarmaAwardRequest {
-  userId: string;
-  points: number;
-  reason?: string;
 }
 
 export interface ApiError {

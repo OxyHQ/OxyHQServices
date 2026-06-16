@@ -13,15 +13,15 @@ import { Colors } from '../../constants/theme';
 const FAQ_KEYS = ['what', 'earn', 'lose', 'use', 'transfer', 'support'] as const;
 
 /**
- * KarmaFAQScreen - Optimized for performance
- * 
+ * TrustFAQScreen - Optimized for performance
+ *
  * Performance optimizations implemented:
  * - useMemo for theme calculations (only recalculates when theme changes)
  * - useMemo for filtered FAQs (only recalculates when search changes)
  * - useCallback for event handlers to prevent unnecessary re-renders
  * - React.memo wrapper to prevent re-renders when props haven't changed
  */
-const KarmaFAQScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
+const TrustFAQScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
     const { t } = useI18n();
     const [expanded, setExpanded] = useState<string | null>(null);
     const [search, setSearch] = useState('');
@@ -35,8 +35,8 @@ const KarmaFAQScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
     // Memoize filtered FAQs to prevent filtering on every render
     const faqs = useMemo(() => FAQ_KEYS.map(key => ({
         id: key,
-        q: t(`karma.faq.items.${key}.q`) || '',
-        a: t(`karma.faq.items.${key}.a`) || '',
+        q: t(`trust.faq.items.${key}.q`) || '',
+        a: t(`trust.faq.items.${key}.a`) || '',
     })), [t]);
 
     const filteredFaqs = useMemo(() => {
@@ -57,8 +57,8 @@ const KarmaFAQScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
     return (
         <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
             <Header
-                title={t('karma.faq.title') || 'Karma FAQ'}
-                subtitle={t('karma.faq.subtitle') || 'Frequently asked questions about karma'}
+                title={t('trust.faq.title') || 'Trust FAQ'}
+                subtitle={t('trust.faq.subtitle') || 'Frequently asked questions about Oxy Trust'}
                 subtitleVariant="muted"
 
                 onBack={goBack}
@@ -72,7 +72,7 @@ const KarmaFAQScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
                     <Ionicons name="search" size={22} color={colors.icon} />
                     <TextInput
                         style={[styles.searchInput, { color: bloomTheme.colors.text }]}
-                        placeholder={t('karma.faq.search') || 'Search FAQ...'}
+                        placeholder={t('trust.faq.search') || 'Search FAQ...'}
                         placeholderTextColor={bloomTheme.colors.textTertiary}
                         value={search}
                         onChangeText={setSearch}
@@ -81,7 +81,7 @@ const KarmaFAQScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
                 </View>
                 {filteredFaqs.length === 0 ? (
                     <Text style={[styles.noResults, { color: colors.secondaryText }]}>
-                        {t('karma.faq.noResults', { query: search }) || `No FAQ items found matching "${search}"`}
+                        {t('trust.faq.noResults', { query: search }) || `No FAQ items found matching "${search}"`}
                     </Text>
                 ) : (
                     <View style={styles.groupedSectionContainer}>
@@ -167,4 +167,4 @@ const styles = StyleSheet.create({
     },
 });
 
-export default React.memo(KarmaFAQScreen);
+export default React.memo(TrustFAQScreen);
