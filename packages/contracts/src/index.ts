@@ -33,3 +33,16 @@ export type {
     DeviceSessionAccountResponse,
     DeviceSessionsResponseContract,
 } from './userResponse';
+
+export {
+    // Schemas
+    applicationTypeSchema,
+    publicApplicationSchema,
+    sessionStatusSchema,
+} from './sessionStatus';
+
+export type {
+    ApplicationTypeContract,
+    PublicApplicationResponse,
+    SessionStatusResponse,
+} from './sessionStatus';

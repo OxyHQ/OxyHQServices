@@ -154,6 +154,7 @@ jest.mock('../socialAuth', () => ({
 
 import authRouter from '../auth';
 import { errorHandler } from '../../middleware/errorHandler';
+import { sessionStatusSchema, safeParseContract } from '@oxyhq/contracts';
 
 interface PublicApplicationBody {
   id: string;
@@ -456,6 +457,10 @@ describe('GET /auth/session/status/:sessionToken — embedded application (#214)
     expect(mockUserFindById).not.toHaveBeenCalled();
     // `appId` must NEVER appear in the response.
     expect(res.body.data).not.toHaveProperty('appId');
+    // The producer output MUST conform to the shared @oxyhq/contracts shape.
+    // This is the PENDING device-session shape (sessionId/publicKey/userId all
+    // null) that previously broke the auth app's drifted local schema.
+    expect(safeParseContract(sessionStatusSchema, res.body.data)).not.toBeNull();
   });
 
   it('(f2) embeds developerName + websiteUrl for a third-party app', async () => {
@@ -486,6 +491,8 @@ describe('GET /auth/session/status/:sessionToken — embedded application (#214)
     });
     expect(app.scopes).toEqual(['files:read', 'user:read']);
     expect(res.body.data).not.toHaveProperty('appId');
+    // AUTHORIZED shape (string sessionId/publicKey/userId) MUST conform too.
+    expect(safeParseContract(sessionStatusSchema, res.body.data)).not.toBeNull();
   });
 
   it('(f3) returns application:null when the bound app was later hard-deleted (never appId)', async () => {
@@ -508,6 +515,8 @@ describe('GET /auth/session/status/:sessionToken — embedded application (#214)
     // `application` is present in the payload, defensively null.
     expect(res.body.data).toHaveProperty('application', null);
     expect(res.body.data).not.toHaveProperty('appId');
+    // `application: null` (unresolved app) MUST conform to the contract.
+    expect(safeParseContract(sessionStatusSchema, res.body.data)).not.toBeNull();
   });
 });
 

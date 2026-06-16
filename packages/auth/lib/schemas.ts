@@ -2,22 +2,31 @@
  * Zod schemas for validating API responses in the auth app.
  *
  * The user / account / session RESPONSE contracts (`refreshAllResponseSchema`,
- * `currentUserResponseSchema`, `deviceSessionsResponseSchema`) are NOT defined
+ * `currentUserResponseSchema`, `deviceSessionsResponseSchema`) plus the
+ * device-flow `publicApplicationSchema` / `sessionStatusSchema` are NOT defined
  * here — they are owned by `@oxyhq/contracts` as the single source of truth
  * shared between the API (producer) and every consumer. Importing them straight
  * from the contracts package (not via the client SDK) keeps the wire shape from
  * drifting (a local `name: z.string()` previously rejected every structured-name
- * account and broke session restore). Re-exporting them keeps the existing
- * `@/lib/schemas` import sites working. Only the auth-app-specific schemas
- * (login, signup, lookup, session-status, token, refresh, OAuth state) live
- * locally.
+ * account and broke session restore; a local `sessionId: z.string().optional()`
+ * rejected the producer's PENDING `null` and broke device-flow consent).
+ * Re-exporting them keeps the existing `@/lib/schemas` import sites working. Only
+ * the auth-app-specific schemas (login, signup, lookup, token, refresh, OAuth
+ * state) live locally.
  */
 import { z } from "zod"
 import {
     refreshAllResponseSchema,
     currentUserResponseSchema,
     deviceSessionsResponseSchema,
+    publicApplicationSchema,
+    sessionStatusSchema,
     safeParseContract,
+} from "@oxyhq/contracts"
+import type {
+    PublicApplicationResponse,
+    SessionStatusResponse,
+    ApplicationTypeContract,
 } from "@oxyhq/contracts"
 
 // Canonical, contracts-owned schemas re-exported for local import sites.
@@ -25,6 +34,13 @@ export {
     refreshAllResponseSchema,
     currentUserResponseSchema,
     deviceSessionsResponseSchema,
+    publicApplicationSchema,
+    sessionStatusSchema,
+}
+export type {
+    PublicApplicationResponse,
+    SessionStatusResponse,
+    ApplicationTypeContract,
 }
 
 export const loginResponseSchema = z.object({
@@ -48,51 +64,6 @@ export const lookupResponseSchema = z.object({
     color: z.string().nullable(),
     avatar: z.string().nullable(),
     displayName: z.string(),
-})
-
-/**
- * The display-safe public identity of a requesting application, as returned by
- * the API inside `/auth/session/status/:sessionToken` (device flow) and
- * `/auth/oauth/client/:clientId` (OAuth code flow). Mirrors the
- * `PublicApplication` interface owned by `@oxyhq/core` — kept LOCAL here because,
- * per this file's doctrine, session-status is an auth-app-specific contract
- * (login/signup/lookup/session-status all live locally; only the shared
- * user/account/session response contracts come from `@oxyhq/contracts`).
- */
-export const publicApplicationSchema = z.object({
-    id: z.string(),
-    name: z.string(),
-    description: z.string().optional(),
-    icon: z.string().optional(),
-    websiteUrl: z.string().optional(),
-    type: z.enum(["first_party", "third_party", "internal", "system"]),
-    isOfficial: z.boolean(),
-    isInternal: z.boolean(),
-    scopes: z.array(z.string()),
-    developerName: z.string().optional(),
-})
-
-/**
- * `GET /auth/session/status/:sessionToken` payload (the inner object of the
- * API's `{ data: ... }` envelope). `application` is the resolved identity of the
- * requesting application (a real registered `Application`), or `null` when no
- * application could be resolved.
- */
-export const sessionStatusSchema = z.object({
-    status: z.string(),
-    authorized: z.boolean().optional(),
-    sessionToken: z.string().optional(),
-    application: publicApplicationSchema.nullable().optional(),
-    expiresAt: z.string().optional(),
-    // `sessionId` is the AUTHORIZED session id. The producer emits
-    // `authorizedSessionId || null`, so a PENDING status (not yet authorized)
-    // carries `sessionId: null`. `.optional()` alone permits undefined/missing
-    // but REJECTS `null` — which collapsed the parse to null and broke the
-    // device-flow consent for every pending session. Mirror `publicKey`/`userId`
-    // below, which the producer emits as `null` in the same payload.
-    sessionId: z.string().nullable().optional(),
-    publicKey: z.string().nullable().optional(),
-    userId: z.string().nullable().optional(),
 })
 
 export const tokenResponseSchema = z.object({
