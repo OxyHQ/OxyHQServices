@@ -84,7 +84,13 @@ export const sessionStatusSchema = z.object({
     sessionToken: z.string().optional(),
     application: publicApplicationSchema.nullable().optional(),
     expiresAt: z.string().optional(),
-    sessionId: z.string().optional(),
+    // `sessionId` is the AUTHORIZED session id. The producer emits
+    // `authorizedSessionId || null`, so a PENDING status (not yet authorized)
+    // carries `sessionId: null`. `.optional()` alone permits undefined/missing
+    // but REJECTS `null` — which collapsed the parse to null and broke the
+    // device-flow consent for every pending session. Mirror `publicKey`/`userId`
+    // below, which the producer emits as `null` in the same payload.
+    sessionId: z.string().nullable().optional(),
     publicKey: z.string().nullable().optional(),
     userId: z.string().nullable().optional(),
 })

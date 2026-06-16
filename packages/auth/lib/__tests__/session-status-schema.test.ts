@@ -80,6 +80,80 @@ describe("sessionStatusSchema", () => {
         expect(parsed?.application).toBeUndefined()
     })
 
+    test("parses the REAL pending device-flow payload (sessionId/userId/publicKey all null)", () => {
+        // The exact production response for a PENDING device session. Before the
+        // fix, `sessionId: z.string().optional()` REJECTED `null` (optional
+        // permits undefined/missing but NOT null), collapsing the parse to null
+        // → `application` resolved to null → the consent page rendered the
+        // "Unable to identify the requesting application." error for EVERY app
+        // while its session was pending (sessionId is null until authorized).
+        // This locks out that regression: the payload must parse AND the
+        // resolved application name must survive.
+        const payload = {
+            status: "pending",
+            authorized: false,
+            sessionToken: "sess_inbox_pending",
+            application: {
+                id: "6a2f851751b784a86fd0e8f6",
+                name: "Oxy Inbox",
+                type: "first_party",
+                isOfficial: true,
+                isInternal: false,
+                scopes: ["user:read"],
+                description: "Email for the Oxy ecosystem",
+                websiteUrl: "https://inbox.oxy.so",
+            },
+            expiresAt: new Date().toISOString(),
+            sessionId: null,
+            publicKey: null,
+            userId: null,
+        }
+
+        const parsed = safeParse(sessionStatusSchema, payload)
+        expect(parsed).not.toBeNull()
+        // The resolved application identity drives the consent UI — without it
+        // the page shows the unresolved-application error.
+        expect(parsed?.application?.name).toBe("Oxy Inbox")
+        expect(parsed?.application?.id).toBe("6a2f851751b784a86fd0e8f6")
+        // The producer emits these as `null` for a pending session; the schema
+        // must accept null (not just undefined) for all three.
+        expect(parsed?.sessionId).toBeNull()
+        expect(parsed?.publicKey).toBeNull()
+        expect(parsed?.userId).toBeNull()
+        expect(parsed?.status).toBe("pending")
+    })
+
+    test("parses the authorized device-flow payload (sessionId/userId become strings)", () => {
+        // Once the user authorizes, the producer fills in the previously-null
+        // fields with strings. Both the pending (null) and authorized (string)
+        // states must parse so the consent → authorized transition never breaks.
+        const payload = {
+            status: "authorized",
+            authorized: true,
+            sessionToken: "sess_inbox_authorized",
+            application: {
+                id: "6a2f851751b784a86fd0e8f6",
+                name: "Oxy Inbox",
+                type: "first_party",
+                isOfficial: true,
+                isInternal: false,
+                scopes: ["user:read"],
+            },
+            expiresAt: new Date().toISOString(),
+            sessionId: "sess_authorized_id",
+            publicKey: "0xfeedface",
+            userId: "user_123",
+        }
+
+        const parsed = safeParse(sessionStatusSchema, payload)
+        expect(parsed).not.toBeNull()
+        expect(parsed?.application?.name).toBe("Oxy Inbox")
+        expect(parsed?.sessionId).toBe("sess_authorized_id")
+        expect(parsed?.userId).toBe("user_123")
+        expect(parsed?.publicKey).toBe("0xfeedface")
+        expect(parsed?.status).toBe("authorized")
+    })
+
     test("rejects an application with an invalid type enum value", () => {
         const payload = {
             status: "pending",
