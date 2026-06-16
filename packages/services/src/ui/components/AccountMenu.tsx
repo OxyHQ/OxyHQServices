@@ -94,7 +94,6 @@ const AccountMenu: React.FC<AccountMenuProps> = ({
     const signOutAllDialog = useDialogControl();
 
     const containerRef = useRef<View | null>(null);
-    const firstActionRef = useRef<View | null>(null);
 
     const rows = useMemo<AccountRow[]>(
         () => buildAccountRows({ accounts: deviceAccounts }),
@@ -216,8 +215,13 @@ const AccountMenu: React.FC<AccountMenuProps> = ({
         ];
 
     const content = (
-        <View
+        <Pressable
             ref={containerRef}
+            // Swallow taps inside the panel so they never reach the overlay's
+            // outside-tap-to-close handler. (Replaces the former wrapper
+            // Pressable; on web the panel is a direct, absolutely-positioned
+            // child of the overlay so the anchor resolves against the viewport.)
+            onPress={() => undefined}
             style={panelStyles}
             accessibilityRole="menu"
             accessibilityLabel={t('accountMenu.label') || 'Account menu'}
@@ -255,7 +259,6 @@ const AccountMenu: React.FC<AccountMenuProps> = ({
 
             {/* 2) Manage account */}
             <TouchableOpacity
-                ref={firstActionRef as React.RefObject<View>}
                 accessibilityRole="menuitem"
                 accessibilityLabel={t('accountMenu.manage') || 'Manage your Oxy Account'}
                 style={[styles.primaryButton, { borderColor: bloomTheme.colors.border }]}
@@ -393,7 +396,7 @@ const AccountMenu: React.FC<AccountMenuProps> = ({
                     </TouchableOpacity>
                 ) : null}
             </View>
-        </View>
+        </Pressable>
     );
 
     return (
@@ -409,10 +412,17 @@ const AccountMenu: React.FC<AccountMenuProps> = ({
                 onPress={onClose}
                 style={overlayStyles}
             >
-                {/* Stop propagation: tapping the panel must not close it. */}
-                <Pressable onPress={() => undefined} style={styles.panelTouchable}>
-                    {content}
-                </Pressable>
+                {/*
+                 * Web: the panel is `position: absolute` and is rendered as a
+                 * DIRECT child of the full-viewport overlay, so its anchor edges
+                 * (top/bottom/left/right) resolve against the viewport — not a
+                 * shrink-wrapped intermediate wrapper (which previously pushed
+                 * the popover off-screen). The panel swallows its own taps.
+                 *
+                 * Native: the overlay is `justify-content: flex-end`, so the
+                 * (statically positioned) panel docks to the bottom as a sheet.
+                 */}
+                {content}
             </Pressable>
 
             <Dialog
@@ -449,14 +459,16 @@ const styles = StyleSheet.create({
     webOverlay: {
         flex: 1,
         backgroundColor: 'transparent',
+        // Explicit positioning context: the absolutely-positioned panel is a
+        // direct child and resolves its anchor edges (top/bottom/left/right)
+        // against this full-viewport overlay — matching the trigger-rect math
+        // callers compute from `window.innerWidth` / `window.innerHeight`.
+        position: 'relative',
     },
     nativeOverlay: {
         flex: 1,
         backgroundColor: 'rgba(0,0,0,0.32)',
         justifyContent: 'flex-end',
-    },
-    panelTouchable: {
-        // Pressable wrapper that owns no styling — just absorbs taps.
     },
     panelBase: {
         borderRadius: 24,

@@ -103,7 +103,9 @@
       "createAccount": "Criar conta",
       "signIn": "Iniciar sessão",
       "verify": "Verificar",
-      "resetPassword": "Repor palavra-passe"
+      "resetPassword": "Repor palavra-passe",
+      "signedOut": "Sessão terminada",
+      "close": "Fechar"
     },
     "links": {
       "recoverAccount": "Recuperar a sua conta",
@@ -115,7 +117,10 @@
       "password": "Palavra-passe",
       "confirmPassword": "Confirmar palavra-passe"
     },
-    "revoke": "Revoke"
+    "revoke": "Revoke",
+    "errors": {
+      "signOutAllFailed": "Ocorreu um problema ao terminar sessão em todas as contas. Tente novamente."
+    }
   },
   "notifications": {
     "title": "Notifications",
@@ -198,5 +203,14 @@
       "revoked": "Revoked access for {{name}}",
       "revokeFailed": "Failed to revoke access"
     }
+  },
+  "accountMenu": {
+    "label": "Menu da conta",
+    "manage": "Gerir a sua conta Oxy",
+    "addAnother": "Adicionar outra conta",
+    "signOutAll": "Terminar sessão em todas as contas",
+    "open": "Menu da conta",
+    "openHint": "Abre o menu da conta",
+    "openWithUser": "Menu da conta de {{name}}"
   }
 }

@@ -103,7 +103,9 @@
       "createAccount": "Crea account",
       "signIn": "Accedi",
       "verify": "Verifica",
-      "resetPassword": "Reimposta password"
+      "resetPassword": "Reimposta password",
+      "signedOut": "Disconnesso",
+      "close": "Chiudi"
     },
     "links": {
       "recoverAccount": "Recupera il tuo account",
@@ -115,7 +117,10 @@
       "password": "Password",
       "confirmPassword": "Conferma password"
     },
-    "revoke": "Revoke"
+    "revoke": "Revoke",
+    "errors": {
+      "signOutAllFailed": "Si è verificato un problema durante la disconnessione da tutti gli account. Riprova."
+    }
   },
   "notifications": {
     "title": "Notifications",
@@ -198,5 +203,14 @@
       "revoked": "Revoked access for {{name}}",
       "revokeFailed": "Failed to revoke access"
     }
+  },
+  "accountMenu": {
+    "label": "Menu account",
+    "manage": "Gestisci il tuo account Oxy",
+    "addAnother": "Aggiungi un altro account",
+    "signOutAll": "Esci da tutti gli account",
+    "open": "Menu account",
+    "openHint": "Apre il menu dell'account",
+    "openWithUser": "Menu dell'account di {{name}}"
   }
 }

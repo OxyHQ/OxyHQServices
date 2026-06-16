@@ -103,7 +103,9 @@
       "createAccount": "创建账户",
       "signIn": "登录",
       "verify": "验证",
-      "resetPassword": "重置密码"
+      "resetPassword": "重置密码",
+      "signedOut": "已退出",
+      "close": "关闭"
     },
     "links": {
       "recoverAccount": "恢复您的账户",
@@ -115,7 +117,10 @@
       "password": "密码",
       "confirmPassword": "确认密码"
     },
-    "revoke": "Revoke"
+    "revoke": "Revoke",
+    "errors": {
+      "signOutAllFailed": "退出所有账户时出现问题。请重试。"
+    }
   },
   "notifications": {
     "title": "Notifications",
@@ -198,5 +203,14 @@
       "revoked": "Revoked access for {{name}}",
       "revokeFailed": "Failed to revoke access"
     }
+  },
+  "accountMenu": {
+    "label": "账户菜单",
+    "manage": "管理您的 Oxy 账户",
+    "addAnother": "添加其他账户",
+    "signOutAll": "退出所有账户",
+    "open": "账户菜单",
+    "openHint": "打开账户菜单",
+    "openWithUser": "{{name}} 的账户菜单"
   }
 }

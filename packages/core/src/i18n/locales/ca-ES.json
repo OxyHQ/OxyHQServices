@@ -103,7 +103,9 @@
       "createAccount": "Crear compte",
       "signIn": "Iniciar sessió",
       "verify": "Verificar",
-      "resetPassword": "Restablir contrasenya"
+      "resetPassword": "Restablir contrasenya",
+      "signedOut": "Sessió tancada",
+      "close": "Tanca"
     },
     "links": {
       "recoverAccount": "Recuperar el teu compte",
@@ -115,7 +117,10 @@
       "password": "Contrasenya",
       "confirmPassword": "Confirmar contrasenya"
     },
-    "revoke": "Revoke"
+    "revoke": "Revoke",
+    "errors": {
+      "signOutAllFailed": "Hi ha hagut un problema en tancar la sessió de tots els comptes. Torna-ho a provar."
+    }
   },
   "notifications": {
     "title": "Notifications",
@@ -198,5 +203,14 @@
       "revoked": "Revoked access for {{name}}",
       "revokeFailed": "Failed to revoke access"
     }
+  },
+  "accountMenu": {
+    "label": "Menú del compte",
+    "manage": "Gestiona el teu compte d'Oxy",
+    "addAnother": "Afegeix un altre compte",
+    "signOutAll": "Tanca la sessió de tots els comptes",
+    "open": "Menú del compte",
+    "openHint": "Obre el menú del compte",
+    "openWithUser": "Menú del compte de {{name}}"
   }
 }

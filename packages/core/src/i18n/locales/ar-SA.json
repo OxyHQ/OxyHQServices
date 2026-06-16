@@ -103,7 +103,9 @@
       "createAccount": "إنشاء حساب",
       "signIn": "تسجيل الدخول",
       "verify": "التحقق",
-      "resetPassword": "إعادة تعيين كلمة المرور"
+      "resetPassword": "إعادة تعيين كلمة المرور",
+      "signedOut": "تم تسجيل الخروج",
+      "close": "إغلاق"
     },
     "links": {
       "recoverAccount": "استعادة حسابك",
@@ -115,7 +117,10 @@
       "password": "كلمة المرور",
       "confirmPassword": "تأكيد كلمة المرور"
     },
-    "revoke": "Revoke"
+    "revoke": "Revoke",
+    "errors": {
+      "signOutAllFailed": "حدثت مشكلة أثناء تسجيل الخروج من جميع الحسابات. يرجى المحاولة مرة أخرى."
+    }
   },
   "notifications": {
     "title": "Notifications",
@@ -198,5 +203,14 @@
       "revoked": "Revoked access for {{name}}",
       "revokeFailed": "Failed to revoke access"
     }
+  },
+  "accountMenu": {
+    "label": "قائمة الحساب",
+    "manage": "إدارة حساب Oxy الخاص بك",
+    "addAnother": "إضافة حساب آخر",
+    "signOutAll": "تسجيل الخروج من جميع الحسابات",
+    "open": "قائمة الحساب",
+    "openHint": "يفتح قائمة الحساب",
+    "openWithUser": "قائمة حساب {{name}}"
   }
 }

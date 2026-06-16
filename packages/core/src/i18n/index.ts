@@ -47,7 +47,13 @@ export function translate(locale: string | undefined, key: string, vars?: Record
   const lang = locale && DICTS[locale] ? locale : FALLBACK;
   const dict = DICTS[lang] || DICTS[FALLBACK];
   let val = getNested(dict, key);
-  if (typeof val !== 'string') return key; // fallback to key if missing
+  // Per-key fallback to the English dictionary when a key is missing from the
+  // resolved (non-English) locale. Without this, a key present in en-US but not
+  // yet translated in e.g. es-ES would render the raw dotted key to users.
+  if (typeof val !== 'string' && lang !== FALLBACK) {
+    val = getNested(DICTS[FALLBACK], key);
+  }
+  if (typeof val !== 'string') return key; // last resort: echo the key when truly absent everywhere
   if (vars) {
     Object.keys(vars).forEach(k => {
       const token = `{{${k}}}`;

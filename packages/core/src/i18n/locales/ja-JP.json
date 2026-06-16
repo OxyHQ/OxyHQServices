@@ -103,7 +103,9 @@
       "createAccount": "アカウントを作成",
       "signIn": "サインイン",
       "verify": "確認",
-      "resetPassword": "パスワードをリセット"
+      "resetPassword": "パスワードをリセット",
+      "signedOut": "ログアウトしました",
+      "close": "閉じる"
     },
     "links": {
       "recoverAccount": "アカウントを回復",
@@ -115,7 +117,10 @@
       "password": "パスワード",
       "confirmPassword": "パスワードを確認"
     },
-    "revoke": "Revoke"
+    "revoke": "Revoke",
+    "errors": {
+      "signOutAllFailed": "すべてのアカウントからのログアウト中に問題が発生しました。もう一度お試しください。"
+    }
   },
   "notifications": {
     "title": "Notifications",
@@ -198,5 +203,14 @@
       "revoked": "Revoked access for {{name}}",
       "revokeFailed": "Failed to revoke access"
     }
+  },
+  "accountMenu": {
+    "label": "アカウントメニュー",
+    "manage": "Oxy アカウントを管理",
+    "addAnother": "別のアカウントを追加",
+    "signOutAll": "すべてのアカウントからログアウト",
+    "open": "アカウントメニュー",
+    "openHint": "アカウントメニューを開きます",
+    "openWithUser": "{{name}} のアカウントメニュー"
   }
 }

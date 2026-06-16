@@ -103,7 +103,9 @@
       "createAccount": "Konto erstellen",
       "signIn": "Anmelden",
       "verify": "Überprüfen",
-      "resetPassword": "Passwort zurücksetzen"
+      "resetPassword": "Passwort zurücksetzen",
+      "signedOut": "Abgemeldet",
+      "close": "Schließen"
     },
     "links": {
       "recoverAccount": "Ihr Konto wiederherstellen",
@@ -115,7 +117,10 @@
       "password": "Passwort",
       "confirmPassword": "Passwort bestätigen"
     },
-    "revoke": "Revoke"
+    "revoke": "Revoke",
+    "errors": {
+      "signOutAllFailed": "Beim Abmelden von allen Konten ist ein Problem aufgetreten. Bitte versuchen Sie es erneut."
+    }
   },
   "notifications": {
     "title": "Notifications",
@@ -198,5 +203,14 @@
       "revoked": "Revoked access for {{name}}",
       "revokeFailed": "Failed to revoke access"
     }
+  },
+  "accountMenu": {
+    "label": "Kontomenü",
+    "manage": "Ihr Oxy-Konto verwalten",
+    "addAnother": "Weiteres Konto hinzufügen",
+    "signOutAll": "Von allen Konten abmelden",
+    "open": "Kontomenü",
+    "openHint": "Öffnet das Kontomenü",
+    "openWithUser": "Kontomenü für {{name}}"
   }
 }

@@ -1038,7 +1038,8 @@
   },
   "common": {
     "errors": {
-      "signOutFailed": "There was a problem signing you out. Please try again."
+      "signOutFailed": "There was a problem signing you out. Please try again.",
+      "signOutAllFailed": "There was a problem signing out of all accounts. Please try again."
     },
     "confirms": {
       "signOut": "Are you sure you want to sign out?",
@@ -1057,7 +1058,9 @@
       "signIn": "Sign In",
       "signOut": "Sign Out",
       "verify": "Verify",
-      "resetPassword": "Reset Password"
+      "resetPassword": "Reset Password",
+      "signedOut": "Signed out",
+      "close": "Close"
     },
     "cancel": "Cancel",
     "revoke": "Revoke",
@@ -1495,5 +1498,14 @@
       "revoked": "Revoked access for {{name}}",
       "revokeFailed": "Failed to revoke access"
     }
+  },
+  "accountMenu": {
+    "label": "Account menu",
+    "manage": "Manage your Oxy Account",
+    "addAnother": "Add another account",
+    "signOutAll": "Sign out of all accounts",
+    "open": "Account menu",
+    "openHint": "Opens the account menu",
+    "openWithUser": "Account menu for {{name}}"
   }
 }

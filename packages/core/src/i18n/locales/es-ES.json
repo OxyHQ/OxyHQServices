@@ -281,7 +281,9 @@
       "signIn": "Entrar",
       "signOut": "Cerrar sesión",
       "verify": "Verificar",
-      "resetPassword": "Restablecer contraseña"
+      "resetPassword": "Restablecer contraseña",
+      "signedOut": "Sesión cerrada",
+      "close": "Cerrar"
     },
     "cancel": "Cancelar",
     "revoke": "Revocar",
@@ -302,7 +304,8 @@
       "confirmPassword": "Confirmar contraseña"
     },
     "errors": {
-      "signOutFailed": "Hubo un problema al cerrar sesión. Inténtalo de nuevo."
+      "signOutFailed": "Hubo un problema al cerrar sesión. Inténtalo de nuevo.",
+      "signOutAllFailed": "Hubo un problema al cerrar sesión en todas las cuentas. Inténtalo de nuevo."
     },
     "confirms": {
       "signOut": "¿Seguro que quieres cerrar sesión?",
@@ -1495,5 +1498,14 @@
       "revoked": "Acceso revocado para {{name}}",
       "revokeFailed": "No se ha podido revocar el acceso"
     }
+  },
+  "accountMenu": {
+    "label": "Menú de cuenta",
+    "manage": "Gestiona tu cuenta de Oxy",
+    "addAnother": "Añadir otra cuenta",
+    "signOutAll": "Cerrar sesión en todas las cuentas",
+    "open": "Menú de cuenta",
+    "openHint": "Abre el menú de cuenta",
+    "openWithUser": "Menú de cuenta de {{name}}"
   }
 }

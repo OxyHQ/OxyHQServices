@@ -103,7 +103,9 @@
       "createAccount": "계정 만들기",
       "signIn": "로그인",
       "verify": "확인",
-      "resetPassword": "비밀번호 재설정"
+      "resetPassword": "비밀번호 재설정",
+      "signedOut": "로그아웃됨",
+      "close": "닫기"
     },
     "links": {
       "recoverAccount": "계정 복구",
@@ -115,7 +117,10 @@
       "password": "비밀번호",
       "confirmPassword": "비밀번호 확인"
     },
-    "revoke": "Revoke"
+    "revoke": "Revoke",
+    "errors": {
+      "signOutAllFailed": "모든 계정에서 로그아웃하는 중 문제가 발생했습니다. 다시 시도해 주세요."
+    }
   },
   "notifications": {
     "title": "Notifications",
@@ -198,5 +203,14 @@
       "revoked": "Revoked access for {{name}}",
       "revokeFailed": "Failed to revoke access"
     }
+  },
+  "accountMenu": {
+    "label": "계정 메뉴",
+    "manage": "Oxy 계정 관리",
+    "addAnother": "다른 계정 추가",
+    "signOutAll": "모든 계정에서 로그아웃",
+    "open": "계정 메뉴",
+    "openHint": "계정 메뉴를 엽니다",
+    "openWithUser": "{{name}}의 계정 메뉴"
   }
 }
