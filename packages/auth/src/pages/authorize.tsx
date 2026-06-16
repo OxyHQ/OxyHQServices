@@ -16,6 +16,7 @@ import {
 import { AccountChooser } from "@/components/account-chooser";
 import { AppIdentityCard } from "@/components/app-identity-card";
 import { useDeviceAccounts } from "@/lib/use-device-accounts";
+import { sessionStatusSchema, safeParse } from "@/lib/schemas";
 import type { DeviceAccount } from "@/lib/types";
 import {
   getAvatarUrl,
@@ -204,18 +205,39 @@ export function AuthorizePage() {
               return;
             }
             const statusResult = await statusResponse.json();
-            // The Oxy API wraps in {data: ...}
-            const sessionInfo = statusResult.data || statusResult;
+            // The Oxy API wraps the payload in `{ data: ... }`. Validate the
+            // inner object against the real `/auth/session/status` contract. A
+            // malformed body parses to null; we then fall through to the
+            // unresolved-application path below (no crash, no invented app name).
+            const sessionInfo = safeParse(
+              sessionStatusSchema,
+              statusResult.data ?? statusResult
+            );
 
-            // Device flow: the status response carries the resolved public
-            // application directly. OAuth code flow: prefer the client-resolved
-            // application. Either way there is NO free-string app-name fallback.
+            // Device flow: the validated status response carries the resolved
+            // public application directly. OAuth code flow: prefer the
+            // client-resolved application — the OAuth path always takes
+            // precedence. An unresolved request surfaces as an error, never a
+            // generic app name.
             const deviceApplication: PublicApplication | null =
-              sessionInfo.application &&
-              typeof sessionInfo.application.id === "string"
-                ? (sessionInfo.application as PublicApplication)
-                : null;
+              sessionInfo?.application ?? null;
             const application = oauthApplication ?? deviceApplication;
+
+            // A null parse (malformed status) is treated as an unresolved /
+            // failed request: surface the resolved app if the OAuth path found
+            // one, otherwise the explicit unresolved-application error.
+            if (!sessionInfo) {
+              setData({
+                sessionId,
+                user,
+                sessionStatus: null,
+                application,
+                expiresAt: null,
+                error: application ? null : UNRESOLVED_APP_ERROR,
+                redirected: false,
+              });
+              return;
+            }
 
             if (sessionInfo.status !== "pending") {
               const err =
@@ -237,11 +259,11 @@ export function AuthorizePage() {
             }
 
             setData({
-              sessionId: sessionId || sessionInfo.sessionId,
+              sessionId: sessionId || sessionInfo.sessionId || null,
               user,
               sessionStatus: sessionInfo.status,
               application,
-              expiresAt: sessionInfo.expiresAt,
+              expiresAt: sessionInfo.expiresAt ?? null,
               error: application ? null : UNRESOLVED_APP_ERROR,
               redirected: false,
             });

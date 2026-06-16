@@ -50,11 +50,43 @@ export const lookupResponseSchema = z.object({
     displayName: z.string(),
 })
 
+/**
+ * The display-safe public identity of a requesting application, as returned by
+ * the API inside `/auth/session/status/:sessionToken` (device flow) and
+ * `/auth/oauth/client/:clientId` (OAuth code flow). Mirrors the
+ * `PublicApplication` interface owned by `@oxyhq/core` — kept LOCAL here because,
+ * per this file's doctrine, session-status is an auth-app-specific contract
+ * (login/signup/lookup/session-status all live locally; only the shared
+ * user/account/session response contracts come from `@oxyhq/contracts`).
+ */
+export const publicApplicationSchema = z.object({
+    id: z.string(),
+    name: z.string(),
+    description: z.string().optional(),
+    icon: z.string().optional(),
+    websiteUrl: z.string().optional(),
+    type: z.enum(["first_party", "third_party", "internal", "system"]),
+    isOfficial: z.boolean(),
+    isInternal: z.boolean(),
+    scopes: z.array(z.string()),
+    developerName: z.string().optional(),
+})
+
+/**
+ * `GET /auth/session/status/:sessionToken` payload (the inner object of the
+ * API's `{ data: ... }` envelope). `application` is the resolved identity of the
+ * requesting application (a real registered `Application`), or `null` when no
+ * application could be resolved.
+ */
 export const sessionStatusSchema = z.object({
     status: z.string(),
-    sessionId: z.string().optional(),
-    appId: z.string().optional(),
+    authorized: z.boolean().optional(),
+    sessionToken: z.string().optional(),
+    application: publicApplicationSchema.nullable().optional(),
     expiresAt: z.string().optional(),
+    sessionId: z.string().optional(),
+    publicKey: z.string().nullable().optional(),
+    userId: z.string().nullable().optional(),
 })
 
 export const tokenResponseSchema = z.object({
