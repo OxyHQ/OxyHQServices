@@ -20,14 +20,38 @@ import { useOxy } from '../context/OxyContext';
 import { useI18n } from '../hooks/useI18n';
 import { logger as loggerUtil } from '@oxyhq/core';
 import { buildAccountRows, type AccountRow } from './accountMenuRows';
+import { useDeviceAccounts } from '../hooks/useDeviceAccounts';
+
+/**
+ * Web-only anchor for the popover panel. Each field anchors the panel against
+ * one viewport edge, so the popover can be placed against ANY corner: a
+ * top-right avatar chip opens downward/right-aligned (`{ top, right }`), while a
+ * bottom-left account button opens upward/left-aligned (`{ bottom, left }`).
+ *
+ * Callers MUST supply at most one vertical edge (`top` XOR `bottom`) and at most
+ * one horizontal edge (`left` XOR `right`). The panel has a fixed width and
+ * `maxHeight`, so a single vertical + single horizontal edge fully positions it.
+ * Supplying both opposite edges (e.g. `top` AND `bottom`) would stretch the
+ * panel on RN-Web and is unsupported.
+ */
+export interface AccountMenuAnchor {
+    /** Distance from the viewport top, when anchoring the panel's TOP edge. */
+    top?: number;
+    /** Distance from the viewport bottom, when anchoring the panel's BOTTOM edge (opens upward). */
+    bottom?: number;
+    /** Distance from the viewport left, when anchoring the panel's LEFT edge. */
+    left?: number;
+    /** Distance from the viewport right, when anchoring the panel's RIGHT edge. */
+    right?: number;
+}
 
 export interface AccountMenuProps {
     open: boolean;
     onClose: () => void;
     onNavigateManage: () => void;
     onAddAccount: () => void;
-    /** Optional anchor coords (web only). Native ignores this and uses bottom-sheet style. */
-    anchor?: { top: number; right: number } | null;
+    /** Optional anchor (web only). Native ignores this and uses bottom-sheet style. */
+    anchor?: AccountMenuAnchor | null;
 }
 
 const isWeb = Platform.OS === 'web';
@@ -48,16 +72,19 @@ const AccountMenu: React.FC<AccountMenuProps> = ({
     anchor,
 }) => {
     const {
-        user,
-        sessions,
         activeSessionId,
         switchSession,
         logout,
         logoutAll,
-        oxyServices,
     } = useOxy();
-    const { t, locale } = useI18n();
+    const { t } = useI18n();
     const bloomTheme = useTheme();
+
+    // Source EVERY account's real name/email/avatar/color from the unified
+    // device-account hook (shared apex `refresh-all` path on `*.oxy.so`, local
+    // `useOxy()` fallback on cross-domain web / native). This replaces the old
+    // behaviour where only the active session's user was hydrated.
+    const { accounts: deviceAccounts } = useDeviceAccounts();
 
     const [busySessionId, setBusySessionId] = useState<string | null>(null);
     const [signingOut, setSigningOut] = useState(false);
@@ -69,22 +96,24 @@ const AccountMenu: React.FC<AccountMenuProps> = ({
     const containerRef = useRef<View | null>(null);
     const firstActionRef = useRef<View | null>(null);
 
-    const rows = useMemo<AccountRow[]>(() => buildAccountRows({
-        sessions,
-        activeSessionId,
-        user,
-        locale,
-        getAvatarUrl: (avatarId) => oxyServices.getFileDownloadUrl(avatarId, 'thumb'),
-    }), [sessions, activeSessionId, user, locale, oxyServices]);
+    const rows = useMemo<AccountRow[]>(
+        () => buildAccountRows({ accounts: deviceAccounts }),
+        [deviceAccounts],
+    );
 
     const activeRow = useMemo<AccountRow | null>(() => {
         return rows.find((r) => r.isActive) ?? null;
     }, [rows]);
 
-    const inactiveRows = useMemo<AccountRow[]>(() => {
-        return rows.filter((r) => !r.isActive);
-    }, [rows]);
-
+    // Switch to a non-active account. We route ALL rows through
+    // `useOxy().switchSession(sessionId)` — the SDK's canonical switch path. On
+    // WEB it already performs the same silent activation the auth chooser uses:
+    // when the target `ClientSession` carries an `authuser` slot, it rotates that
+    // slot via `oxyServices.refreshTokenViaCookie({ authuser })` and plants the
+    // fresh access token before validating (see `useSessionManagement.switchSession`).
+    // On NATIVE it validates the session id directly. There is no separate
+    // "activate by authuser" SDK entry point, so reusing `switchSession`
+    // (rather than inventing a parallel mechanism) keeps a single source of truth.
     const handleSwitch = useCallback(async (sessionId: string) => {
         if (sessionId === activeSessionId || busySessionId) {
             return;
@@ -161,13 +190,23 @@ const AccountMenu: React.FC<AccountMenuProps> = ({
         ? styles.webOverlay
         : styles.nativeOverlay;
 
+    // Apply ONLY the edges the anchor supplies (so the panel never sets
+    // conflicting opposite edges). When no anchor is provided, fall back to the
+    // historical top-right placement used by `AccountMenuButton`.
+    const anchorStyle: ViewStyle = anchor
+        ? {
+            ...(anchor.top !== undefined ? { top: anchor.top } : null),
+            ...(anchor.bottom !== undefined ? { bottom: anchor.bottom } : null),
+            ...(anchor.left !== undefined ? { left: anchor.left } : null),
+            ...(anchor.right !== undefined ? { right: anchor.right } : null),
+        }
+        : { top: 64, right: 16 };
+
     const panelStyles: ViewStyle[] = isWeb
         ? [
             styles.panelBase,
             styles.panelWeb,
-            anchor
-                ? { top: anchor.top, right: anchor.right }
-                : { top: 64, right: 16 },
+            anchorStyle,
             { backgroundColor: bloomTheme.colors.background, borderColor: bloomTheme.colors.border },
         ]
         : [

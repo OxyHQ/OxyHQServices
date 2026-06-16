@@ -6,7 +6,7 @@
  * pill, Create folder) are hidden until the user is authenticated.
  */
 
-import React, { useMemo, useCallback } from 'react';
+import React, { useMemo, useCallback, useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -16,12 +16,11 @@ import {
   Platform,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useOxy, OxySignInButton, showSignInModal } from '@oxyhq/services';
+import { useOxy, OxySignInButton, showSignInModal, AccountMenu, type AccountMenuAnchor } from '@oxyhq/services';
 import { useRouter, usePathname } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import { Badge } from '@oxyhq/bloom/badge';
-import { Dialog, useDialogControl } from '@oxyhq/bloom';
 import {
   Home01Icon,
   FavouriteIcon,
@@ -51,7 +50,6 @@ import { useLabels } from '@/hooks/queries/useLabels';
 import { Avatar } from '@/components/Avatar';
 import type { Mailbox } from '@/services/emailApi';
 import { LogoIcon } from '@/assets/logo';
-import { AccountSwitcher } from '@/components/AccountSwitcher';
 
 const MAILBOX_ICONS_FALLBACK: Record<string, keyof typeof MaterialCommunityIcons.glyphMap> = {
   Inbox: 'inbox',
@@ -169,18 +167,61 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
   const { user, isAuthenticated } = useOxy();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const accountSwitcherControl = useDialogControl();
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [accountMenuAnchor, setAccountMenuAnchor] = useState<AccountMenuAnchor | null>(null);
 
-  const handleOpenMenu = useCallback(() => {
-    accountSwitcherControl.open();
-  }, [accountSwitcherControl]);
+  // Trigger refs for the two footer account buttons (expanded row + collapsed
+  // avatar). On web we measure the pressed trigger so the popover anchors to
+  // the bottom-left button and opens upward; native ignores the anchor.
+  const expandedAccountBtnRef = useRef<React.ComponentRef<typeof TouchableOpacity>>(null);
+  const collapsedAccountBtnRef = useRef<React.ComponentRef<typeof TouchableOpacity>>(null);
+
+  const measureAndOpen = useCallback(
+    (ref: React.RefObject<React.ComponentRef<typeof TouchableOpacity> | null>) => {
+      if (Platform.OS !== 'web') {
+        setAccountMenuAnchor(null);
+        setAccountMenuOpen(true);
+        return;
+      }
+      const node = ref.current;
+      if (!node || typeof node.measure !== 'function' || typeof window === 'undefined') {
+        setAccountMenuAnchor(null);
+        setAccountMenuOpen(true);
+        return;
+      }
+      // RN-Web exposes measure() on host views; use the native API.
+      node.measure((_x, _y, _w, _h, pageX, pageY) => {
+        if (typeof pageX !== 'number' || typeof pageY !== 'number') {
+          setAccountMenuAnchor(null);
+        } else {
+          // Panel is 360 wide; keep an 8px gutter on both sides (368 = 360 + 8).
+          const left = Math.min(Math.max(8, pageX), Math.max(8, window.innerWidth - 368));
+          // Anchor the panel's BOTTOM edge 8px above the button's top → opens upward.
+          const bottom = Math.max(8, window.innerHeight - pageY + 8);
+          setAccountMenuAnchor({ left, bottom });
+        }
+        setAccountMenuOpen(true);
+      });
+    },
+    [],
+  );
+
+  const handleCloseMenu = useCallback(() => {
+    setAccountMenuOpen(false);
+  }, []);
 
   const handleAddAccount = useCallback(() => {
-    accountSwitcherControl.close();
+    setAccountMenuOpen(false);
     // Open the sign-in modal to authenticate a new account.
-    // OxyContext picks up the new session; useAccountSwitcher persists it.
+    // OxyContext picks up the new session and AccountMenu reflects it.
     showSignInModal();
-  }, [accountSwitcherControl]);
+  }, []);
+
+  const handleNavigateManage = useCallback(() => {
+    setAccountMenuOpen(false);
+    router.push('/settings');
+    onClose?.();
+  }, [router, onClose]);
 
   const pathname = usePathname();
   const moreExpanded = useEmailStore((s) => s.moreExpanded);
@@ -279,7 +320,9 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
     onClose?.();
   }, [router, onClose]);
 
-  const emailAddress = user?.username ? `${user.username}@oxy.so` : '';
+  // Real email from the active session's user. Never synthesize `username@oxy.so`.
+  // When the user has no email on record, fall back to the `@username` handle.
+  const emailAddress = user?.email || (user?.username ? `@${user.username}` : '');
   const displayName = user?.name?.first
     ? `${user.name.first}${user.name.last ? ` ${user.name.last}` : ''}`
     : user?.username || 'Account';
@@ -578,8 +621,9 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
             ]}
           >
             <TouchableOpacity
+              ref={expandedAccountBtnRef}
               style={styles.accountButton}
-              onPress={handleOpenMenu}
+              onPress={() => measureAndOpen(expandedAccountBtnRef)}
               activeOpacity={0.7}
               accessibilityLabel={`Switch account, signed in as ${displayName}`}
               accessibilityRole="button"
@@ -622,8 +666,9 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
           ]}
         >
           <TouchableOpacity
+            ref={collapsedAccountBtnRef}
             style={styles.collapsedAccountButton}
-            onPress={handleOpenMenu}
+            onPress={() => measureAndOpen(collapsedAccountBtnRef)}
             activeOpacity={0.7}
             accessibilityLabel={`Switch account, signed in as ${displayName}`}
             accessibilityRole="button"
@@ -633,19 +678,17 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
         </View>
       )}
 
-      {/* Account switcher dialog (only mounted when signed-in) */}
+      {/* Shared account switcher (only mounted when signed-in). Sources its rows
+          from the SDK's useDeviceAccounts — real shared sessions with real
+          names/emails/avatars. Sign out / Sign out all are handled internally. */}
       {isAuthenticated && (
-        <Dialog control={accountSwitcherControl} label="Account Switcher">
-          <AccountSwitcher
-            onClose={() => accountSwitcherControl.close()}
-            onSettings={() => {
-              accountSwitcherControl.close();
-              router.push('/settings');
-              onClose?.();
-            }}
-            onAddAccount={handleAddAccount}
-          />
-        </Dialog>
+        <AccountMenu
+          open={accountMenuOpen}
+          onClose={handleCloseMenu}
+          onNavigateManage={handleNavigateManage}
+          onAddAccount={handleAddAccount}
+          anchor={accountMenuAnchor}
+        />
       )}
     </View>
   );

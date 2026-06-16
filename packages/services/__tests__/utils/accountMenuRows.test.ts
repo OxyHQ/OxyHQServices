@@ -4,136 +4,158 @@
  *
  * `AccountMenu` is the unified surface that replaced the separate
  * `AccountSwitcher`/`AccountOverview`/`AccountCenter`/`AccountSettings`
- * screens. A regression here would either:
- *   - hide an account that should be switchable, or
- *   - show stale name/email for an inactive session that shouldn't render
- *     user data (we only hydrate one `user` at a time in `OxyContext`).
+ * screens. Phase 1 of the unified account switcher hydrates EVERY row (not just
+ * the active one) with real name/email/avatar/color via `useDeviceAccounts()`.
+ *
+ * `buildAccountRows` is now a thin, pure projection of the already-hydrated
+ * `DeviceAccount[]` the hook produces. A regression here would either:
+ *   - drop an account that should be switchable, or
+ *   - show a stale/fake secondary line (e.g. a synthesized `username@oxy.so`
+ *     instead of the real email or the `@handle` fallback).
  */
 
-import type { ClientSession, User } from '@oxyhq/core';
+import type { DeviceAccount, DeviceAccountUser } from '../../src/ui/hooks/useDeviceAccounts';
 import { buildAccountRows } from '../../src/ui/components/accountMenuRows';
 
-const mockGetAvatarUrl = (avatarId: string) => `https://cdn.example.com/${avatarId}/thumb`;
-
-const session = (sessionId: string, overrides: Partial<ClientSession> = {}): ClientSession => ({
-    sessionId,
-    deviceId: `dev-${sessionId}`,
-    expiresAt: '2099-01-01T00:00:00.000Z',
-    lastActive: '2026-01-01T00:00:00.000Z',
-    ...overrides,
-});
-
-const fullUser = (overrides: Partial<User> = {}): User => ({
-    id: 'user-1',
-    username: 'alice',
-    email: 'alice@example.com',
-    avatar: 'avatar-1',
-    displayName: 'Alice',
-    ...overrides,
-} as User);
+const deviceAccount = (
+    overrides: Partial<DeviceAccount> & Pick<DeviceAccount, 'sessionId'>,
+): DeviceAccount => {
+    const user: DeviceAccountUser = overrides.user ?? { id: 'u', username: 'u' };
+    return {
+        authuser: undefined,
+        isCurrent: false,
+        displayName: 'Unnamed',
+        email: null,
+        avatarUrl: undefined,
+        color: null,
+        user,
+        ...overrides,
+    };
+};
 
 describe('buildAccountRows', () => {
-    it('returns an empty list for zero sessions', () => {
-        const rows = buildAccountRows({
-            sessions: [],
-            activeSessionId: null,
-            user: null,
-            locale: 'en',
-            getAvatarUrl: mockGetAvatarUrl,
-        });
-        expect(rows).toEqual([]);
+    it('returns an empty list for zero accounts', () => {
+        expect(buildAccountRows({ accounts: [] })).toEqual([]);
     });
 
-    it('returns an empty list when sessions is null', () => {
+    it('hydrates EVERY row (active and inactive) with real name/email/avatar', () => {
         const rows = buildAccountRows({
-            sessions: null,
-            activeSessionId: 'sess-1',
-            user: fullUser(),
-            locale: 'en',
-            getAvatarUrl: mockGetAvatarUrl,
+            accounts: [
+                deviceAccount({
+                    sessionId: 'sess-1',
+                    authuser: 0,
+                    isCurrent: false,
+                    displayName: 'Alice',
+                    email: 'alice@example.com',
+                    avatarUrl: 'https://cdn.example.com/avatar-1/thumb',
+                    color: 'blue',
+                    user: { id: 'user-1', username: 'alice', email: 'alice@example.com' },
+                }),
+                deviceAccount({
+                    sessionId: 'sess-2',
+                    authuser: 1,
+                    isCurrent: true,
+                    displayName: 'Bob Builder',
+                    email: 'bob@example.com',
+                    avatarUrl: 'https://cdn.example.com/avatar-2/thumb',
+                    color: 'oxy',
+                    user: { id: 'user-2', username: 'bob', email: 'bob@example.com' },
+                }),
+            ],
         });
-        expect(rows).toEqual([]);
-    });
 
-    it('hydrates only the active row with the loaded user, leaves others as placeholders', () => {
-        const rows = buildAccountRows({
-            sessions: [session('sess-1'), session('sess-2'), session('sess-3')],
-            activeSessionId: 'sess-2',
-            user: fullUser(),
-            locale: 'en',
-            getAvatarUrl: mockGetAvatarUrl,
-        });
+        expect(rows).toHaveLength(2);
+        expect(rows.map((r) => r.sessionId)).toEqual(['sess-1', 'sess-2']);
+        expect(rows.map((r) => r.isActive)).toEqual([false, true]);
 
-        expect(rows).toHaveLength(3);
-        expect(rows.map((r) => r.sessionId)).toEqual(['sess-1', 'sess-2', 'sess-3']);
-        expect(rows.map((r) => r.isActive)).toEqual([false, true, false]);
+        // The INACTIVE row now carries full identity — the bug this phase fixes.
+        const inactive = rows[0];
+        expect(inactive.displayName).toBe('Alice');
+        expect(inactive.secondary).toBe('alice@example.com');
+        expect(inactive.avatarUri).toBe('https://cdn.example.com/avatar-1/thumb');
+        expect(inactive.authuser).toBe(0);
+        expect(inactive.user).not.toBeNull();
 
-        // Active row carries the loaded user payload + email + avatar URL.
         const active = rows[1];
-        expect(active.user).not.toBeNull();
-        // `getAccountDisplayName` prefers the human name / `displayName` over the
-        // raw lowercase `username`. With no structured `name`, it resolves to the
-        // server-computed `displayName` ("Alice"), never collapsing to "alice".
-        // The `@username` handle still surfaces on the secondary line when an
-        // account has no email (see the no-email case below).
-        expect(active.displayName).toBe('Alice');
-        expect(active.secondary).toBe('alice@example.com');
-        expect(active.avatarUri).toBe('https://cdn.example.com/avatar-1/thumb');
-
-        // Inactive rows have no user payload and no avatar URL.
-        for (const inactive of [rows[0], rows[2]]) {
-            expect(inactive.user).toBeNull();
-            expect(inactive.avatarUri).toBeUndefined();
-        }
+        expect(active.displayName).toBe('Bob Builder');
+        expect(active.secondary).toBe('bob@example.com');
+        expect(active.avatarUri).toBe('https://cdn.example.com/avatar-2/thumb');
+        expect(active.authuser).toBe(1);
     });
 
-    it('falls back to handle when the active user has no email', () => {
+    it('uses the @handle fallback (NOT a synthesized email) when an account has no email', () => {
         const rows = buildAccountRows({
-            sessions: [session('sess-1')],
-            activeSessionId: 'sess-1',
-            user: fullUser({ email: undefined, username: 'bob' }),
-            locale: 'en',
-            getAvatarUrl: mockGetAvatarUrl,
+            accounts: [
+                deviceAccount({
+                    sessionId: 'sess-1',
+                    isCurrent: true,
+                    displayName: 'carol',
+                    // `useDeviceAccounts` resolves a missing email to the
+                    // `@handle` line — NEVER a fake `carol@oxy.so`.
+                    email: '@carol',
+                    user: { id: 'user-3', username: 'carol' },
+                }),
+            ],
         });
 
-        const active = rows[0];
-        expect(active.isActive).toBe(true);
-        // No email → secondary derives from username handle "@bob".
-        expect(active.secondary).toBe('@bob');
+        expect(rows[0].secondary).toBe('@carol');
+        // Critically: it is the real handle, not a synthesized `@oxy.so` address.
+        expect(rows[0].secondary).not.toMatch(/@oxy\.so$/);
     });
 
-    it('produces no avatar URL when the active user has no avatar', () => {
+    it('yields a null secondary when an account has neither email nor handle', () => {
         const rows = buildAccountRows({
-            sessions: [session('sess-1')],
-            activeSessionId: 'sess-1',
-            user: fullUser({ avatar: undefined }),
-            locale: 'en',
-            getAvatarUrl: mockGetAvatarUrl,
+            accounts: [
+                deviceAccount({
+                    sessionId: 'sess-1',
+                    isCurrent: true,
+                    displayName: 'Unnamed',
+                    email: null,
+                    user: { id: 'user-4', username: '' },
+                }),
+            ],
+        });
+
+        // A genuinely email-less, handle-less account renders a blank secondary
+        // line — NOT a fabricated address.
+        expect(rows[0].secondary).toBeNull();
+    });
+
+    it('produces no avatar URL when the account has no avatar', () => {
+        const rows = buildAccountRows({
+            accounts: [
+                deviceAccount({
+                    sessionId: 'sess-1',
+                    isCurrent: true,
+                    displayName: 'Dan',
+                    email: 'dan@example.com',
+                    avatarUrl: undefined,
+                    user: { id: 'user-5', username: 'dan', email: 'dan@example.com' },
+                }),
+            ],
         });
 
         expect(rows[0].avatarUri).toBeUndefined();
     });
 
-    it('marks no row as active when activeSessionId does not match any session', () => {
+    it('marks no row active when none is current', () => {
         const rows = buildAccountRows({
-            sessions: [session('sess-1'), session('sess-2')],
-            activeSessionId: 'sess-missing',
-            user: fullUser(),
-            locale: 'en',
-            getAvatarUrl: mockGetAvatarUrl,
+            accounts: [
+                deviceAccount({ sessionId: 'sess-1', isCurrent: false }),
+                deviceAccount({ sessionId: 'sess-2', isCurrent: false }),
+            ],
         });
 
         expect(rows.every((r) => !r.isActive)).toBe(true);
-        expect(rows.every((r) => r.user === null)).toBe(true);
     });
 
-    it('preserves session order from the input array', () => {
+    it('preserves account order from the input array', () => {
         const rows = buildAccountRows({
-            sessions: [session('c'), session('a'), session('b')],
-            activeSessionId: 'a',
-            user: fullUser(),
-            locale: 'en',
-            getAvatarUrl: mockGetAvatarUrl,
+            accounts: [
+                deviceAccount({ sessionId: 'c' }),
+                deviceAccount({ sessionId: 'a' }),
+                deviceAccount({ sessionId: 'b' }),
+            ],
         });
         expect(rows.map((r) => r.sessionId)).toEqual(['c', 'a', 'b']);
     });

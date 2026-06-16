@@ -201,9 +201,18 @@ export { default as ActingAsBanner } from './ui/components/ActingAsBanner';
 
 // Unified account menu (popover on web, bottom-sheet style modal on native)
 export { default as AccountMenu } from './ui/components/AccountMenu';
-export type { AccountMenuProps } from './ui/components/AccountMenu';
+export type { AccountMenuProps, AccountMenuAnchor } from './ui/components/AccountMenu';
 export { default as AccountMenuButton } from './ui/components/AccountMenuButton';
 export type { AccountMenuButtonProps } from './ui/components/AccountMenuButton';
+
+// Unified device-account hook (hydrates every signed-in account on the device
+// with real name/email/avatar/color for the account switcher).
+export { useDeviceAccounts } from './ui/hooks/useDeviceAccounts';
+export type {
+    DeviceAccount,
+    DeviceAccountUser,
+    UseDeviceAccountsResult,
+} from './ui/hooks/useDeviceAccounts';
 
 // Unified "Manage your Oxy Account" screen
 export { default as ManageAccountScreen } from './ui/screens/ManageAccountScreen';

@@ -1,60 +1,48 @@
-import type { User, ClientSession } from '@oxyhq/core';
-import { getAccountDisplayName, getAccountFallbackHandle } from '@oxyhq/core';
+import type { DeviceAccount, DeviceAccountUser } from '../hooks/useDeviceAccounts';
 
 export interface AccountRow {
     sessionId: string;
+    /** Device-local refresh-cookie slot index (web silent-switch). */
+    authuser?: number;
     isActive: boolean;
     displayName: string;
     secondary: string | null;
     avatarUri?: string;
-    user: User | null;
+    user: DeviceAccountUser | null;
 }
 
 export interface BuildAccountRowsInput {
-    sessions: ClientSession[] | null | undefined;
-    activeSessionId: string | null | undefined;
-    user: User | null | undefined;
-    locale: string;
-    getAvatarUrl: (avatarId: string) => string;
+    /**
+     * Per-device account entries from {@link useDeviceAccounts}. Each entry
+     * already carries real per-account `displayName` / `email` / `avatarUrl` /
+     * `color`, so EVERY row (not just the active one) renders full identity.
+     */
+    accounts: DeviceAccount[];
 }
 
 /**
  * Pure builder for `AccountMenu` rows. Extracted so the multi-account display
  * logic can be unit-tested without rendering React Native.
  *
- * Each `sessions[i]` becomes one row. Only the row matching `activeSessionId`
- * carries the loaded `user` payload — the others are placeholders shown by
- * fallback handle. This mirrors how `OxyContext` only hydrates one user at a
- * time.
+ * Maps each {@link DeviceAccount} (sourced from `useDeviceAccounts()`, which
+ * hydrates EVERY account with real name/email/avatar/color from the shared
+ * apex `refresh-all` path or the local fallback) into an `AccountRow`.
+ *
+ * `secondary` is the account's real email when present; otherwise it falls
+ * back to the `@handle` line. A missing email is NEVER synthesized into a fake
+ * `username@oxy.so` — the device-account layer already resolved `email` to the
+ * real value or the `@handle` fallback.
  */
 export function buildAccountRows({
-    sessions,
-    activeSessionId,
-    user,
-    locale,
-    getAvatarUrl,
+    accounts,
 }: BuildAccountRowsInput): AccountRow[] {
-    return (sessions ?? []).map((session: ClientSession) => {
-        const isActive = session.sessionId === activeSessionId;
-        const candidate: Partial<User> | null = isActive ? user ?? null : null;
-        const displayName = getAccountDisplayName(
-            candidate ?? { username: undefined },
-            locale,
-        );
-        const handle = getAccountFallbackHandle(candidate ?? { username: undefined });
-        const secondary = (candidate?.email)
-            ?? (handle && candidate?.username ? `@${handle}` : handle)
-            ?? null;
-        const avatarUri = candidate?.avatar
-            ? getAvatarUrl(candidate.avatar)
-            : undefined;
-        return {
-            sessionId: session.sessionId,
-            isActive,
-            displayName,
-            secondary,
-            avatarUri,
-            user: isActive ? user ?? null : null,
-        };
-    });
+    return accounts.map((account: DeviceAccount): AccountRow => ({
+        sessionId: account.sessionId,
+        authuser: account.authuser,
+        isActive: account.isCurrent,
+        displayName: account.displayName,
+        secondary: account.email,
+        avatarUri: account.avatarUrl,
+        user: account.user,
+    }));
 }

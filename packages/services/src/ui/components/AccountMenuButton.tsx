@@ -3,7 +3,7 @@ import { useCallback, useRef, useState } from 'react';
 import { TouchableOpacity, StyleSheet, Platform, type LayoutChangeEvent } from 'react-native';
 import { getAccountDisplayName } from '@oxyhq/core';
 import Avatar from './Avatar';
-import AccountMenu from './AccountMenu';
+import AccountMenu, { type AccountMenuAnchor } from './AccountMenu';
 import { useOxy } from '../context/OxyContext';
 import { useI18n } from '../hooks/useI18n';
 
@@ -33,7 +33,7 @@ const AccountMenuButton: React.FC<AccountMenuButtonProps> = ({
     const { user, oxyServices, isAuthenticated } = useOxy();
     const { t, locale } = useI18n();
     const [open, setOpen] = useState(false);
-    const [anchor, setAnchor] = useState<{ top: number; right: number } | null>(null);
+    const [anchor, setAnchor] = useState<AccountMenuAnchor | null>(null);
     const triggerRef = useRef<React.ComponentRef<typeof TouchableOpacity>>(null);
 
     const measureAnchor = useCallback(() => {
