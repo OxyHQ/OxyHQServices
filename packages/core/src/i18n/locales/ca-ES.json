@@ -211,6 +211,8 @@
     "signOutAll": "Tanca la sessió de tots els comptes",
     "open": "Menú del compte",
     "openHint": "Obre el menú del compte",
-    "openWithUser": "Menú del compte de {{name}}"
+    "openWithUser": "Menú del compte de {{name}}",
+    "switching": "Canviant de compte…",
+    "signOutAccount": "Tanca la sessió de {{name}}"
   }
 }

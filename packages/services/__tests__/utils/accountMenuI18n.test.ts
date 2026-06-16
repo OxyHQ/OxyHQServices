@@ -24,6 +24,8 @@ const ACCOUNT_MENU_KEYS = [
     'accountMenu.open',
     'accountMenu.openHint',
     'accountMenu.openWithUser',
+    'accountMenu.switching',
+    'accountMenu.signOutAccount',
     'accountSwitcher.toasts.switchSuccess',
     'accountSwitcher.toasts.switchFailed',
     'accountSwitcher.toasts.signOutAllSuccess',

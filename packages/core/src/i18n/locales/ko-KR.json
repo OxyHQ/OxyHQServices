@@ -211,6 +211,8 @@
     "signOutAll": "모든 계정에서 로그아웃",
     "open": "계정 메뉴",
     "openHint": "계정 메뉴를 엽니다",
-    "openWithUser": "{{name}}의 계정 메뉴"
+    "openWithUser": "{{name}}의 계정 메뉴",
+    "switching": "계정 전환 중…",
+    "signOutAccount": "{{name}} 로그아웃"
   }
 }

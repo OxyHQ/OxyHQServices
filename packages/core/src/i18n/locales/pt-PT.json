@@ -211,6 +211,8 @@
     "signOutAll": "Terminar sessão em todas as contas",
     "open": "Menu da conta",
     "openHint": "Abre o menu da conta",
-    "openWithUser": "Menu da conta de {{name}}"
+    "openWithUser": "Menu da conta de {{name}}",
+    "switching": "A mudar de conta…",
+    "signOutAccount": "Terminar sessão de {{name}}"
   }
 }

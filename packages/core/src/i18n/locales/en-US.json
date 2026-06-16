@@ -1506,6 +1506,8 @@
     "signOutAll": "Sign out of all accounts",
     "open": "Account menu",
     "openHint": "Opens the account menu",
-    "openWithUser": "Account menu for {{name}}"
+    "openWithUser": "Account menu for {{name}}",
+    "switching": "Switching account…",
+    "signOutAccount": "Sign out {{name}}"
   }
 }

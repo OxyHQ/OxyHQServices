@@ -211,6 +211,8 @@
     "signOutAll": "Von allen Konten abmelden",
     "open": "Kontomenü",
     "openHint": "Öffnet das Kontomenü",
-    "openWithUser": "Kontomenü für {{name}}"
+    "openWithUser": "Kontomenü für {{name}}",
+    "switching": "Konto wird gewechselt…",
+    "signOutAccount": "{{name}} abmelden"
   }
 }

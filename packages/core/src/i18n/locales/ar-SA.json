@@ -211,6 +211,8 @@
     "signOutAll": "تسجيل الخروج من جميع الحسابات",
     "open": "قائمة الحساب",
     "openHint": "يفتح قائمة الحساب",
-    "openWithUser": "قائمة حساب {{name}}"
+    "openWithUser": "قائمة حساب {{name}}",
+    "switching": "جارٍ تبديل الحساب…",
+    "signOutAccount": "تسجيل خروج {{name}}"
   }
 }

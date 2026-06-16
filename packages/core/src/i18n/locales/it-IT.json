@@ -211,6 +211,8 @@
     "signOutAll": "Esci da tutti gli account",
     "open": "Menu account",
     "openHint": "Apre il menu dell'account",
-    "openWithUser": "Menu dell'account di {{name}}"
+    "openWithUser": "Menu dell'account di {{name}}",
+    "switching": "Cambio account in corso…",
+    "signOutAccount": "Esci da {{name}}"
   }
 }

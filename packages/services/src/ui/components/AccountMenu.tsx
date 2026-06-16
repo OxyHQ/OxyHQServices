@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { toast, useDialogControl, Dialog } from '@oxyhq/bloom';
+import { Divider } from '@oxyhq/bloom/divider';
 import { useTheme } from '@oxyhq/bloom/theme';
 import Avatar from './Avatar';
 import { useOxy } from '../context/OxyContext';
@@ -56,13 +57,18 @@ export interface AccountMenuProps {
 
 const isWeb = Platform.OS === 'web';
 
+/** Fixed popover width on web. Callers that compute an anchor (e.g. inbox's
+ * MailboxDrawer) key their gutter math off this — keep them consistent. */
+const PANEL_WIDTH = 360;
+
 /**
- * Reusable account menu modeled after the Google account chooser. Opens from
- * the avatar entry point (`AccountMenuButton`) or any other trigger.
+ * Unified, canonical account switcher for the Oxy ecosystem. Gmail-style: the
+ * accounts list sits at the top (current account first, with a checkmark), then
+ * "Add another account", "Manage account", and the sign-out actions.
  *
- * Reads everything it needs from `useOxy()` — never receive a session via
- * props. Renders as a popover anchored to the trigger on web, and as a
- * full-width bottom-sheet style modal on native.
+ * Reads everything it needs from `useOxy()` / `useDeviceAccounts()` — never
+ * receives a session via props. Renders as a popover anchored to the trigger on
+ * web, and as a full-width bottom-sheet style modal on native.
  */
 const AccountMenu: React.FC<AccountMenuProps> = ({
     open,
@@ -76,17 +82,21 @@ const AccountMenu: React.FC<AccountMenuProps> = ({
         switchSession,
         logout,
         logoutAll,
+        removeSession,
     } = useOxy();
     const { t } = useI18n();
     const bloomTheme = useTheme();
+    const colors = bloomTheme.colors;
 
     // Source EVERY account's real name/email/avatar/color from the unified
     // device-account hook (shared apex `refresh-all` path on `*.oxy.so`, local
-    // `useOxy()` fallback on cross-domain web / native). This replaces the old
-    // behaviour where only the active session's user was hydrated.
+    // `useOxy()` fallback on cross-domain web / native). This also synthesises a
+    // live-user row when the probe is empty, so the signed-in user is always
+    // represented (no "Not signed in" false negative).
     const { accounts: deviceAccounts } = useDeviceAccounts();
 
     const [busySessionId, setBusySessionId] = useState<string | null>(null);
+    const [removingSessionId, setRemovingSessionId] = useState<string | null>(null);
     const [signingOut, setSigningOut] = useState(false);
     const [signingOutAll, setSigningOutAll] = useState(false);
 
@@ -95,14 +105,16 @@ const AccountMenu: React.FC<AccountMenuProps> = ({
 
     const containerRef = useRef<View | null>(null);
 
-    const rows = useMemo<AccountRow[]>(
-        () => buildAccountRows({ accounts: deviceAccounts }),
-        [deviceAccounts],
-    );
+    // Current account first, then the rest in their existing order — matching
+    // the Gmail-style chooser the inbox design ports from.
+    const rows = useMemo<AccountRow[]>(() => {
+        const built = buildAccountRows({ accounts: deviceAccounts });
+        const current = built.filter((row) => row.isActive);
+        const others = built.filter((row) => !row.isActive);
+        return [...current, ...others];
+    }, [deviceAccounts]);
 
-    const activeRow = useMemo<AccountRow | null>(() => {
-        return rows.find((r) => r.isActive) ?? null;
-    }, [rows]);
+    const isSwitching = busySessionId !== null;
 
     // Switch to a non-active account. We route ALL rows through
     // `useOxy().switchSession(sessionId)` — the SDK's canonical switch path. On
@@ -131,6 +143,27 @@ const AccountMenu: React.FC<AccountMenuProps> = ({
             setBusySessionId(null);
         }
     }, [activeSessionId, busySessionId, switchSession, t, onClose]);
+
+    // Sign out a SPECIFIC inactive account from its per-row icon. `removeSession`
+    // is the SDK's canonical per-session sign-out: it targets the given session
+    // id (cookie-cleared logout via `authuser` slot on web, bearer logout
+    // otherwise) and removes ONLY that account without switching/clearing the
+    // active session. The menu stays open so the user can keep managing accounts.
+    const handleRemove = useCallback(async (sessionId: string) => {
+        if (sessionId === activeSessionId || removingSessionId) {
+            return;
+        }
+        setRemovingSessionId(sessionId);
+        try {
+            await removeSession(sessionId);
+            toast.success(t('common.actions.signedOut') || 'Signed out');
+        } catch (error) {
+            loggerUtil.warn('Remove account failed', { component: 'AccountMenu' }, error as unknown);
+            toast.error(t('common.errors.signOutFailed') || 'Failed to sign out');
+        } finally {
+            setRemovingSessionId(null);
+        }
+    }, [activeSessionId, removingSessionId, removeSession, t]);
 
     const performSignOut = useCallback(async () => {
         if (signingOut) {
@@ -206,196 +239,197 @@ const AccountMenu: React.FC<AccountMenuProps> = ({
             styles.panelBase,
             styles.panelWeb,
             anchorStyle,
-            { backgroundColor: bloomTheme.colors.background, borderColor: bloomTheme.colors.border },
+            { backgroundColor: colors.background, borderColor: colors.border },
         ]
         : [
             styles.panelBase,
             styles.panelNative,
-            { backgroundColor: bloomTheme.colors.background },
+            { backgroundColor: colors.background },
         ];
+
+    const actionDisabled = isSwitching || signingOut || signingOutAll;
 
     const content = (
         <Pressable
             ref={containerRef}
             // Swallow taps inside the panel so they never reach the overlay's
-            // outside-tap-to-close handler. (Replaces the former wrapper
-            // Pressable; on web the panel is a direct, absolutely-positioned
-            // child of the overlay so the anchor resolves against the viewport.)
+            // outside-tap-to-close handler. (On web the panel is a direct,
+            // absolutely-positioned child of the overlay so the anchor resolves
+            // against the viewport.)
             onPress={() => undefined}
             style={panelStyles}
             accessibilityRole="menu"
             accessibilityLabel={t('accountMenu.label') || 'Account menu'}
         >
-            {/* 1) Header */}
-            {activeRow ? (
-                <View style={styles.header}>
-                    <Avatar
-                        uri={activeRow.avatarUri}
-                        name={activeRow.displayName}
-                        size={64}
-                    />
-                    <Text
-                        style={[styles.headerName, { color: bloomTheme.colors.text }]}
-                        numberOfLines={1}
-                    >
-                        {activeRow.displayName}
-                    </Text>
-                    {activeRow.secondary ? (
-                        <Text
-                            style={[styles.headerSecondary, { color: bloomTheme.colors.textSecondary }]}
-                            numberOfLines={1}
-                        >
-                            {activeRow.secondary}
-                        </Text>
-                    ) : null}
-                </View>
-            ) : (
-                <View style={styles.header}>
-                    <Text style={[styles.headerName, { color: bloomTheme.colors.text }]}>
-                        {t('common.status.notSignedIn') || 'Not signed in'}
-                    </Text>
-                </View>
-            )}
-
-            {/* 2) Manage account */}
-            <TouchableOpacity
-                accessibilityRole="menuitem"
-                accessibilityLabel={t('accountMenu.manage') || 'Manage your Oxy Account'}
-                style={[styles.primaryButton, { borderColor: bloomTheme.colors.border }]}
-                onPress={() => {
-                    onClose();
-                    onNavigateManage();
-                }}
+            <ScrollView
+                style={styles.scroll}
+                contentContainerStyle={styles.scrollContent}
+                showsVerticalScrollIndicator={false}
             >
-                <Text style={[styles.primaryButtonText, { color: bloomTheme.colors.primary }]}>
-                    {t('accountMenu.manage') || 'Manage your Oxy Account'}
-                </Text>
-            </TouchableOpacity>
-
-            {/* 3) Account list */}
-            {rows.length > 0 ? (
-                <ScrollView
-                    style={styles.list}
-                    contentContainerStyle={styles.listContent}
-                    showsVerticalScrollIndicator={false}
-                >
-                    {rows.map((row) => {
-                        const isBusy = busySessionId === row.sessionId;
-                        return (
-                            <TouchableOpacity
-                                key={`account-${row.sessionId}`}
-                                accessibilityRole="menuitem"
-                                accessibilityLabel={row.displayName}
-                                accessibilityState={{ selected: row.isActive }}
-                                onPress={() => handleSwitch(row.sessionId)}
-                                disabled={row.isActive || isBusy}
-                                style={[
-                                    styles.row,
-                                    row.isActive && {
-                                        backgroundColor: bloomTheme.colors.primarySubtle,
-                                    },
-                                ]}
-                            >
-                                <Avatar
-                                    uri={row.avatarUri}
-                                    name={row.displayName}
-                                    size={36}
-                                />
-                                <View style={styles.rowInfo}>
+                {/* 1) Accounts list — current first (checkmark), then others. */}
+                {rows.map((row) => {
+                    const isBusy = busySessionId === row.sessionId;
+                    const isRemoving = removingSessionId === row.sessionId;
+                    return (
+                        <TouchableOpacity
+                            key={`account-${row.sessionId}`}
+                            accessibilityRole="menuitem"
+                            accessibilityLabel={row.displayName}
+                            accessibilityState={{ selected: row.isActive }}
+                            onPress={() => handleSwitch(row.sessionId)}
+                            disabled={row.isActive || isBusy || isSwitching}
+                            activeOpacity={0.6}
+                            style={[
+                                styles.accountRow,
+                                row.isActive && { backgroundColor: colors.primarySubtle },
+                                isSwitching && !row.isActive && styles.rowDisabled,
+                            ]}
+                        >
+                            <Avatar
+                                uri={row.avatarUri}
+                                name={row.displayName}
+                                size={row.isActive ? 40 : 32}
+                            />
+                            <View style={styles.accountInfo}>
+                                <Text
+                                    style={[
+                                        styles.accountName,
+                                        { color: colors.text },
+                                        row.isActive && styles.accountNameActive,
+                                    ]}
+                                    numberOfLines={1}
+                                >
+                                    {row.displayName}
+                                </Text>
+                                {row.secondary ? (
                                     <Text
-                                        style={[styles.rowName, { color: bloomTheme.colors.text }]}
+                                        style={[styles.accountEmail, { color: colors.textSecondary }]}
                                         numberOfLines={1}
                                     >
-                                        {row.displayName}
+                                        {row.secondary}
                                     </Text>
-                                    {row.secondary ? (
-                                        <Text
-                                            style={[styles.rowSecondary, { color: bloomTheme.colors.textSecondary }]}
-                                            numberOfLines={1}
-                                        >
-                                            {row.secondary}
-                                        </Text>
-                                    ) : null}
-                                </View>
-                                {isBusy ? (
-                                    <ActivityIndicator color={bloomTheme.colors.primary} size="small" />
-                                ) : row.isActive ? (
-                                    <Ionicons
-                                        name="checkmark-circle"
-                                        size={20}
-                                        color={bloomTheme.colors.primary}
-                                    />
                                 ) : null}
-                            </TouchableOpacity>
-                        );
-                    })}
-                </ScrollView>
-            ) : null}
+                            </View>
+                            {isBusy ? (
+                                <ActivityIndicator color={colors.primary} size="small" />
+                            ) : row.isActive ? (
+                                <Ionicons name="checkmark" size={20} color={colors.primary} />
+                            ) : isRemoving ? (
+                                <ActivityIndicator color={colors.textSecondary} size="small" />
+                            ) : (
+                                <TouchableOpacity
+                                    accessibilityRole="button"
+                                    accessibilityLabel={
+                                        t('accountMenu.signOutAccount', { name: row.displayName })
+                                        || `Sign out ${row.displayName}`
+                                    }
+                                    onPress={() => handleRemove(row.sessionId)}
+                                    disabled={isSwitching || removingSessionId !== null}
+                                    activeOpacity={0.6}
+                                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                                    style={styles.rowSignOutButton}
+                                >
+                                    <Ionicons
+                                        name="log-out-outline"
+                                        size={18}
+                                        color={colors.textSecondary}
+                                    />
+                                </TouchableOpacity>
+                            )}
+                        </TouchableOpacity>
+                    );
+                })}
 
-            {/* 4) Add another account */}
-            <TouchableOpacity
-                accessibilityRole="menuitem"
-                accessibilityLabel={t('accountMenu.addAnother') || 'Add another account'}
-                onPress={() => {
-                    onClose();
-                    onAddAccount();
-                }}
-                style={[styles.row, styles.actionRow]}
-            >
-                <View
-                    style={[
-                        styles.actionIcon,
-                        { backgroundColor: bloomTheme.colors.primarySubtle },
-                    ]}
+                {/* 2) Switching indicator. */}
+                {isSwitching ? (
+                    <View style={styles.switchingRow}>
+                        <ActivityIndicator color={colors.textSecondary} size="small" />
+                        <Text style={[styles.switchingText, { color: colors.textSecondary }]}>
+                            {t('accountMenu.switching') || 'Switching account…'}
+                        </Text>
+                    </View>
+                ) : null}
+
+                <Divider color={colors.border} spacing={4} />
+
+                {/* 3) Add another account. */}
+                <TouchableOpacity
+                    accessibilityRole="menuitem"
+                    accessibilityLabel={t('accountMenu.addAnother') || 'Add another account'}
+                    onPress={() => {
+                        onClose();
+                        onAddAccount();
+                    }}
+                    disabled={actionDisabled}
+                    activeOpacity={0.6}
+                    style={[styles.actionRow, actionDisabled && styles.rowDisabled]}
                 >
-                    <Ionicons
-                        name="person-add-outline"
-                        size={18}
-                        color={bloomTheme.colors.primary}
-                    />
-                </View>
-                <View style={styles.rowInfo}>
-                    <Text style={[styles.rowName, { color: bloomTheme.colors.text }]}>
+                    <Ionicons name="person-add-outline" size={20} color={colors.icon} />
+                    <Text style={[styles.actionText, { color: colors.text }]}>
                         {t('accountMenu.addAnother') || 'Add another account'}
                     </Text>
-                </View>
-            </TouchableOpacity>
+                </TouchableOpacity>
 
-            {/* 5) Sign out + sign out of all */}
-            <View style={[styles.footer, { borderTopColor: bloomTheme.colors.border }]}>
+                <Divider color={colors.border} spacing={4} />
+
+                {/* 4) Manage account / Settings. */}
+                <TouchableOpacity
+                    accessibilityRole="menuitem"
+                    accessibilityLabel={t('accountMenu.manage') || 'Manage your Oxy Account'}
+                    onPress={() => {
+                        onClose();
+                        onNavigateManage();
+                    }}
+                    disabled={actionDisabled}
+                    activeOpacity={0.6}
+                    style={[styles.actionRow, actionDisabled && styles.rowDisabled]}
+                >
+                    <Ionicons name="settings-outline" size={18} color={colors.icon} />
+                    <Text style={[styles.actionText, { color: colors.text }]}>
+                        {t('accountMenu.manage') || 'Manage your Oxy Account'}
+                    </Text>
+                </TouchableOpacity>
+
+                {/* 5) Sign out (current). */}
                 <TouchableOpacity
                     accessibilityRole="menuitem"
                     accessibilityLabel={t('common.actions.signOut') || 'Sign out'}
                     onPress={() => signOutDialog.open()}
-                    disabled={signingOut || signingOutAll}
-                    style={styles.footerButton}
+                    disabled={actionDisabled}
+                    activeOpacity={0.6}
+                    style={[styles.actionRow, actionDisabled && styles.rowDisabled]}
                 >
                     {signingOut ? (
-                        <ActivityIndicator color={bloomTheme.colors.error} size="small" />
+                        <ActivityIndicator color={colors.error} size="small" />
                     ) : (
-                        <Text style={[styles.footerButtonText, { color: bloomTheme.colors.error }]}>
-                            {t('common.actions.signOut') || 'Sign out'}
-                        </Text>
+                        <Ionicons name="log-out-outline" size={18} color={colors.error} />
                     )}
+                    <Text style={[styles.actionText, { color: colors.error }]}>
+                        {t('common.actions.signOut') || 'Sign out'}
+                    </Text>
                 </TouchableOpacity>
+
+                {/* 6) Sign out of all accounts (only when >1 account). */}
                 {rows.length > 1 ? (
                     <TouchableOpacity
                         accessibilityRole="menuitem"
                         accessibilityLabel={t('accountMenu.signOutAll') || 'Sign out of all accounts'}
                         onPress={() => signOutAllDialog.open()}
-                        disabled={signingOut || signingOutAll}
-                        style={styles.footerButton}
+                        disabled={actionDisabled}
+                        activeOpacity={0.6}
+                        style={[styles.actionRow, actionDisabled && styles.rowDisabled]}
                     >
                         {signingOutAll ? (
-                            <ActivityIndicator color={bloomTheme.colors.error} size="small" />
+                            <ActivityIndicator color={colors.error} size="small" />
                         ) : (
-                            <Text style={[styles.footerButtonText, { color: bloomTheme.colors.error }]}>
-                                {t('accountMenu.signOutAll') || 'Sign out of all accounts'}
-                            </Text>
+                            <Ionicons name="log-out-outline" size={18} color={colors.error} />
                         )}
+                        <Text style={[styles.actionText, { color: colors.error }]}>
+                            {t('accountMenu.signOutAll') || 'Sign out of all accounts'}
+                        </Text>
                     </TouchableOpacity>
                 ) : null}
-            </View>
+            </ScrollView>
         </Pressable>
     );
 
@@ -413,11 +447,9 @@ const AccountMenu: React.FC<AccountMenuProps> = ({
                 style={overlayStyles}
             >
                 {/*
-                 * Web: the panel is `position: absolute` and is rendered as a
-                 * DIRECT child of the full-viewport overlay, so its anchor edges
-                 * (top/bottom/left/right) resolve against the viewport — not a
-                 * shrink-wrapped intermediate wrapper (which previously pushed
-                 * the popover off-screen). The panel swallows its own taps.
+                 * Web: the panel is `position: absolute` and rendered as a DIRECT
+                 * child of the full-viewport overlay, so its anchor edges resolve
+                 * against the viewport. The panel swallows its own taps.
                  *
                  * Native: the overlay is `justify-content: flex-end`, so the
                  * (statically positioned) panel docks to the bottom as a sheet.
@@ -471,8 +503,7 @@ const styles = StyleSheet.create({
         justifyContent: 'flex-end',
     },
     panelBase: {
-        borderRadius: 24,
-        paddingVertical: 12,
+        borderRadius: 12,
         shadowColor: '#000',
         shadowOpacity: 0.18,
         shadowRadius: 24,
@@ -482,103 +513,79 @@ const styles = StyleSheet.create({
     },
     panelWeb: {
         position: 'absolute',
-        width: 360,
+        width: PANEL_WIDTH,
         maxHeight: '85%',
         borderWidth: 1,
     },
     panelNative: {
         marginHorizontal: 0,
-        borderTopLeftRadius: 28,
-        borderTopRightRadius: 28,
+        borderTopLeftRadius: 20,
+        borderTopRightRadius: 20,
         borderBottomLeftRadius: 0,
         borderBottomRightRadius: 0,
-        paddingTop: 20,
-        paddingBottom: 24,
+        paddingBottom: 12,
         maxHeight: '85%',
     },
-    header: {
-        alignItems: 'center',
-        paddingHorizontal: 20,
-        paddingVertical: 16,
+    scroll: {
+        flexGrow: 0,
     },
-    headerName: {
-        fontSize: 18,
-        fontWeight: '600',
-        marginTop: 12,
-        textAlign: 'center',
+    scrollContent: {
+        paddingVertical: 4,
     },
-    headerSecondary: {
-        fontSize: 14,
-        marginTop: 4,
-        textAlign: 'center',
-    },
-    primaryButton: {
-        marginHorizontal: 20,
-        marginBottom: 12,
-        paddingVertical: 12,
-        paddingHorizontal: 16,
-        borderRadius: 999,
-        borderWidth: 1,
-        alignItems: 'center',
-    },
-    primaryButtonText: {
-        fontSize: 14,
-        fontWeight: '600',
-    },
-    list: {
-        maxHeight: 280,
-    },
-    listContent: {
-        paddingHorizontal: 12,
-        paddingBottom: 4,
-    },
-    row: {
+    accountRow: {
         flexDirection: 'row',
         alignItems: 'center',
+        paddingHorizontal: 14,
         paddingVertical: 10,
-        paddingHorizontal: 12,
-        borderRadius: 16,
-        marginVertical: 2,
+        gap: 10,
     },
-    actionRow: {
-        marginHorizontal: 12,
-        marginTop: 4,
+    rowDisabled: {
+        opacity: 0.4,
     },
-    actionIcon: {
-        width: 36,
-        height: 36,
-        borderRadius: 18,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    rowInfo: {
+    accountInfo: {
         flex: 1,
-        marginLeft: 12,
+        minWidth: 0,
     },
-    rowName: {
-        fontSize: 15,
+    accountName: {
+        fontSize: 13,
         fontWeight: '500',
     },
-    rowSecondary: {
-        fontSize: 13,
-        marginTop: 2,
-    },
-    footer: {
-        marginTop: 12,
-        paddingTop: 8,
-        paddingHorizontal: 12,
-        borderTopWidth: StyleSheet.hairlineWidth,
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        justifyContent: 'space-around',
-    },
-    footerButton: {
-        paddingVertical: 10,
-        paddingHorizontal: 12,
-    },
-    footerButtonText: {
-        fontSize: 14,
+    accountNameActive: {
         fontWeight: '600',
+    },
+    accountEmail: {
+        fontSize: 11,
+        marginTop: 1,
+    },
+    rowSignOutButton: {
+        width: 28,
+        height: 28,
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: 14,
+        opacity: 0.6,
+    },
+    switchingRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 8,
+        gap: 8,
+    },
+    switchingText: {
+        fontSize: 12,
+        fontWeight: '500',
+    },
+    actionRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 14,
+        paddingVertical: 12,
+        gap: 10,
+    },
+    actionText: {
+        fontSize: 13,
+        fontWeight: '500',
     },
 });
 

@@ -75,6 +75,64 @@ export interface UseDeviceAccountsResult {
 }
 
 /**
+ * Resolve which entries are the current account, robustly.
+ *
+ * Primary signal: `entry.sessionId === activeSessionId`. On the web shared-apex
+ * path, `refreshAllSessions()` returns SERVER-side session ids that may not
+ * equal the locally-stored `activeSessionId` (a different storage namespace /
+ * server perspective), so a pure `sessionId` match can flag NO row as current —
+ * the bug that surfaced as "Not signed in" even while authenticated.
+ *
+ * Fallbacks, applied only when the `sessionId` match found nothing AND the user
+ * is authenticated:
+ *  1. Match the live `user.id` against each entry's per-account user id.
+ *  2. If still nothing and there is exactly one account, mark that one current.
+ *
+ * At most ONE entry is ever marked current.
+ *
+ * Pure & side-effect free so it is unit-testable without rendering React.
+ */
+export function markCurrentAccount(
+    accounts: DeviceAccount[],
+    activeSessionId: string | null | undefined,
+    liveUserId: string | null | undefined,
+    isAuthenticated: boolean,
+): DeviceAccount[] {
+    const bySession = accounts.map((account): DeviceAccount => ({
+        ...account,
+        isCurrent: Boolean(activeSessionId) && account.sessionId === activeSessionId,
+    }));
+
+    if (bySession.some((account) => account.isCurrent) || !isAuthenticated) {
+        return bySession;
+    }
+
+    // No row matched by session id: fall back to the live user's id, marking at
+    // most the FIRST matching entry current (never more than one).
+    if (liveUserId) {
+        let matched = false;
+        const byUser = bySession.map((account): DeviceAccount => {
+            if (!matched && account.user.id === liveUserId) {
+                matched = true;
+                return { ...account, isCurrent: true };
+            }
+            return account;
+        });
+        if (matched) {
+            return byUser;
+        }
+    }
+
+    // Authenticated, nothing matched, but there is exactly one account → it must
+    // be the current one (single-account shared-apex / cross-domain case).
+    if (bySession.length === 1) {
+        return [{ ...bySession[0], isCurrent: true }];
+    }
+
+    return bySession;
+}
+
+/**
  * Resolve every account signed in on this device for the unified account
  * switcher, with real per-account name / email / avatar / color.
  *
@@ -164,9 +222,37 @@ export function useDeviceAccounts(): UseDeviceAccountsResult {
         const resolveAvatarUrl = (avatar: string | null | undefined): string | undefined =>
             avatar ? oxyServices.getFileDownloadUrl(avatar, 'thumb') : undefined;
 
+        // Build a single current-account row from the live `useOxy().user`. Used
+        // as a last-resort fallback when neither the shared-apex probe nor the
+        // local session store yielded a row but the user IS authenticated (e.g.
+        // a cross-domain host where the apex probe returned empty before the
+        // local session store hydrated). The signed-in user must ALWAYS be
+        // represented. Email is the REAL email or the `@handle` line — never a
+        // synthesized `username@oxy.so`.
+        const liveUserRow = (): DeviceAccount[] => {
+            if (!isAuthenticated || !user || !activeSessionId) {
+                return [];
+            }
+            const displayName = getAccountDisplayName(user, locale);
+            const handle = getAccountFallbackHandle(user);
+            const secondaryHandle = handle ? `@${handle}` : null;
+            return [{
+                sessionId: activeSessionId,
+                authuser: undefined,
+                isCurrent: true,
+                displayName,
+                email: user.email ?? secondaryHandle,
+                avatarUrl: resolveAvatarUrl(user.avatar),
+                color: user.color ?? null,
+                user,
+            }];
+        };
+
+        let built: DeviceAccount[];
+
         if (fromSharedApex) {
             // Shared apex path: every entry carries a real per-account user.
-            return sharedAccounts.map((entry): DeviceAccount => {
+            built = sharedAccounts.map((entry): DeviceAccount => {
                 // `entry.user` is non-null on the modern refresh-all path (the
                 // core mixin skips entries without a valid user). The
                 // SDK-legacy fallback (`user: null`) only occurs on a 404 server
@@ -182,7 +268,9 @@ export function useDeviceAccounts(): UseDeviceAccountsResult {
                 return {
                     sessionId: entry.sessionId,
                     authuser: entry.authuser,
-                    isCurrent: entry.sessionId === activeSessionId,
+                    // Provisional; finalised by `markCurrentAccount` below so the
+                    // shared-apex path is robust to server/local session-id skew.
+                    isCurrent: false,
                     displayName,
                     // Real email, or null (NEVER synthesized). The UI uses the
                     // `@handle` line only when email is genuinely absent.
@@ -192,40 +280,59 @@ export function useDeviceAccounts(): UseDeviceAccountsResult {
                     user: accountUser,
                 };
             });
+        } else {
+            // Local fallback path: build from the SDK's multi-session store. The
+            // active session row gets the full loaded `user`; inactive fallback
+            // rows carry only what the `ClientSession` exposes (no synthesized
+            // identity — they show the active user's data only when active).
+            built = (sessions ?? []).map((session: ClientSession): DeviceAccount => {
+                const isCurrent = session.sessionId === activeSessionId;
+                const accountUser: DeviceAccountUser = isCurrent && user
+                    ? user
+                    : { id: session.userId ?? '', username: '' };
+                const displayName = getAccountDisplayName(accountUser, locale);
+                const handle = getAccountFallbackHandle(accountUser);
+                const email = isCurrent && user?.email ? user.email : null;
+                const secondaryHandle = handle ? `@${handle}` : null;
+                const avatar = isCurrent && user ? user.avatar : undefined;
+                const color = isCurrent && user?.color ? user.color : null;
+                return {
+                    sessionId: session.sessionId,
+                    authuser: session.authuser,
+                    isCurrent,
+                    displayName,
+                    email: email ?? secondaryHandle,
+                    avatarUrl: resolveAvatarUrl(avatar),
+                    color,
+                    user: accountUser,
+                };
+            });
         }
 
-        // Local fallback path: build from the SDK's multi-session store. The
-        // active session row gets the full loaded `user`; inactive fallback
-        // rows carry only what the `ClientSession` exposes (no synthesized
-        // identity — they show the active user's data only when active).
-        return (sessions ?? []).map((session: ClientSession): DeviceAccount => {
-            const isCurrent = session.sessionId === activeSessionId;
-            const accountUser: DeviceAccountUser = isCurrent && user
-                ? user
-                : { id: session.userId ?? '', username: '' };
-            const displayName = getAccountDisplayName(accountUser, locale);
-            const handle = getAccountFallbackHandle(accountUser);
-            const email = isCurrent && user?.email ? user.email : null;
-            const secondaryHandle = handle ? `@${handle}` : null;
-            const avatar = isCurrent && user ? user.avatar : undefined;
-            const color = isCurrent && user?.color ? user.color : null;
-            return {
-                sessionId: session.sessionId,
-                authuser: session.authuser,
-                isCurrent,
-                displayName,
-                email: email ?? secondaryHandle,
-                avatarUrl: resolveAvatarUrl(avatar),
-                color,
-                user: accountUser,
-            };
-        });
+        // Robust current-account detection: tolerate server/local session-id
+        // skew on the shared-apex path by falling back to the live user's id and
+        // the single-account heuristic.
+        const flagged = markCurrentAccount(
+            built,
+            activeSessionId,
+            user?.id ?? null,
+            isAuthenticated,
+        );
+
+        // The signed-in user must ALWAYS be represented. If detection produced
+        // an empty list yet the user is authenticated, synthesize a single
+        // current row from the live `useOxy().user`.
+        if (flagged.length === 0) {
+            return liveUserRow();
+        }
+        return flagged;
     }, [
         fromSharedApex,
         sharedAccounts,
         sessions,
         activeSessionId,
         user,
+        isAuthenticated,
         locale,
         oxyServices,
     ]);

@@ -211,6 +211,8 @@
     "signOutAll": "すべてのアカウントからログアウト",
     "open": "アカウントメニュー",
     "openHint": "アカウントメニューを開きます",
-    "openWithUser": "{{name}} のアカウントメニュー"
+    "openWithUser": "{{name}} のアカウントメニュー",
+    "switching": "アカウントを切り替えています…",
+    "signOutAccount": "{{name}} をログアウト"
   }
 }

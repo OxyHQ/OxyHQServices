@@ -211,6 +211,8 @@
     "signOutAll": "退出所有账户",
     "open": "账户菜单",
     "openHint": "打开账户菜单",
-    "openWithUser": "{{name}} 的账户菜单"
+    "openWithUser": "{{name}} 的账户菜单",
+    "switching": "正在切换账户…",
+    "signOutAccount": "退出 {{name}}"
   }
 }
