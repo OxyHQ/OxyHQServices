@@ -685,7 +685,7 @@ export class HttpService {
    * `GET:/fedcm/me/authorized-apps`), so this readable suffix can never be
    * ambiguous with a serialized request body.
    */
-  private static readonly CACHE_IDENTITY_DELIM = ' id=';
+  private static readonly CACHE_IDENTITY_DELIM = ' id=';
 
   /**
    * Derive a stable, non-sensitive identity discriminator for cache scoping.
@@ -731,7 +731,7 @@ export class HttpService {
    * large object updates).
    *
    * The key is identity-scoped: the logical `method:url[:data]` portion is
-   * suffixed with ` id=<identityTag>` so two callers with different
+   * suffixed with ` id=<identityTag>` so two callers with different
    * identities (anon vs authed, or two different users) never share an entry.
    * The identity tag is placed at the END so the key still STARTS with
    * `method:url`, preserving the prefix-based invalidation in
