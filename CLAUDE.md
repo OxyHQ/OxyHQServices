@@ -111,7 +111,7 @@ bun install                      # Install all workspace deps
 - `@oxyhq/api`, `@oxyhq/core`, `@oxyhq/services`, `@oxyhq/auth` (auth-sdk), `@oxyhq/contracts` use **Jest** (ts-jest). Their `test` script invokes `jest`.
 - `packages/auth` (the standalone Vite IdP app) uses **Bun's native `bun test`** — configured via `packages/auth/bunfig.toml` (`[test] preload`), NOT jest. Its `test` script is `bun test server/__tests__ lib/__tests__ components/__tests__`.
 - THE RULE: always run each package's OWN `bun run test` script, which dispatches to the correct runner. At the monorepo root, `bun run test` delegates through turbo and is safe. NEVER blanket-invoke `bun test` across the monorepo — it runs Bun's native runner over the Jest packages, producing ~32 false failures in core and ~81 in api (`jest.resetModules`, `jest.advanceTimersByTimeAsync`, and other Jest APIs are unavailable under Bun's runner). Do NOT assume all packages are Jest — the auth app (`packages/auth`) is bun-test.
-- Per-package baselines (when run under the correct runner): core 333, api 489, auth-sdk 86, services 178.
+- Per-package baselines (when run under the correct runner): core 355 (+22 reputation), api 526 (+37 reputation), auth-sdk 86, services 178, auth IdP 10 (+1 authorize application contract).
 
 ## Architecture
 
@@ -218,6 +218,7 @@ Build-vs-source distinction: production/Docker consumes the built `dist/` (the D
 - `packages/core/src/mixins/OxyServices.contacts.ts` — `contacts.discoverContacts(hashedEmails, hashedPhones)` privacy-first contact discovery
 - `packages/core/src/mixins/OxyServices.workspaces.ts` — `workspaces` mixin (CRUD + members + transfer); `Workspace`/`WorkspaceMember` types
 - `packages/core/src/mixins/OxyServices.applications.ts` — `getApplications(workspaceId?)` + `getPublicApplication(clientId)`; `PublicApplication` type
+- `packages/core/src/mixins/OxyServices.reputation.ts` — `reputation` mixin (14 methods, fully typed); 20 exported types (see "Oxy Trust" section)
 - `packages/auth-sdk/src/index.ts` — all public auth exports
 - `packages/auth-sdk/src/WebOxyProvider.tsx` — web auth context provider
 - `packages/services/src/index.ts` — RN-specific exports only; includes `LogoIcon`, `LogoText`
@@ -264,6 +265,59 @@ Build-vs-source distinction: production/Docker consumes the built `dist/` (the D
 **SDK:** `@oxyhq/core` `workspaces` mixin — `OxyServices.workspaces.ts` with CRUD + members + transfer. `Workspace`/`WorkspaceMember` types exported. `getApplications(workspaceId?)` accepts workspace scope.
 
 **Production "Oxy" team workspace:** `_id 6a2f9d8989b795cfdfac350f`, slug `oxy`, owned by user `oxy` (`_id 69b2d3df5d12f58c9800d651`, username `oxy`, email `hello@oxy.so` — DISTINCT from human `nateus`/`nate@oxy.so`). All 12 official Applications assigned to it. Migration `scripts/migrate-workspaces.ts` ran (idempotent).
+
+## Oxy Trust — Reputation System (#217 + #219, 2026-06-16)
+
+**Full hard replacement of the karma system. NO back-compat. Karma collections (`karmas`, `karmarules`) NOT auto-dropped — manual drop after migration verification.**
+
+### API models (`packages/api/src/models/`)
+- `ReputationTransaction` (collection `reputationtransactions`): ledger; `status` active|reversed|voided; `category` content|social|trust|moderation|physical|penalty|other; `sourceActionId` for idempotency.
+- `ReputationBalance` (collection `reputationbalances`): cached per-user; `total`, `positive`, `negative`, `breakdown`, `reliability`, `trustTier`, `influence`; recalculated on demand.
+- `ReputationDispute` (collection `reputationdisputes`): dispute lifecycle for contested transactions.
+- `ReputationRule` (collection `reputationrules`): configurable award rules (replaces `KarmaRule`).
+- **Deleted:** `Karma.ts`, `KarmaRule.ts`, `karma.controller.ts`, `karma.routes.ts`, `karma.schemas.ts`, the `KARMA` const, `UserStatistics.karma` field.
+
+### Service (`packages/api/src/services/reputation.service.ts`)
+Single source of truth. Key methods:
+- `award(input)` — rule-driven, respects cooldown, idempotent on `(applicationId, sourceActionId)` via sparse partial-unique index.
+- `reverseTransaction(id)` — marks original `reversed` + inserts compensating `-points active` txn → nets to zero. Never deletes.
+- `voidTransaction(id)` — excludes from balance without compensating txn.
+- `recalculateBalance(userId)` — aggregates `active`-only txns → total/positive/negative/breakdown + reliability + trustTier + influence.
+- `getBalance(userId)`, `getInfluence(userId, context)`, `createDispute`, `resolveDispute`.
+
+### Routes (`/reputation`, CSRF parity with old `/karma`)
+- `GET /leaderboard`, `GET /rules`, `POST /rules` (staff)
+- `GET /:userId/balance`, `POST /award` (service-token OR staff; regular users 403; service-token resolves `applicationId`/`credentialId` from `req.serviceApp`)
+- `GET /:userId/transactions`, `GET /:userId/influence?context=default|report|moderation|ranking`
+- `POST /transactions/:id/reverse` (staff), `POST /transactions/:id/void` (staff)
+- `POST /:userId/recalculate` (staff)
+- `POST /disputes`, `GET /disputes` (staff queue), `GET /:userId/disputes`, `POST /disputes/:id/resolve` (staff)
+
+### Constants (`packages/api/src/utils/reputation.constants.ts`)
+- Trust tiers (top-down): `restricted` (total<0 OR abuseScore>=0.5) → `verified` (User.verified) → `high_trust` (total>=500) → `trusted` (total>=100) → `new`.
+- Influence clamped [0.1, 3.0]; base=clamp(0.1+total/500); moderation factor map: `{restricted:0, new:0.5, trusted:1.0, high_trust:1.25, verified:1.5}`; restricted floors ALL weights to 0.1.
+- Reliability source keys: `report_confirmed`/`report_rejected`; abuseScore smoothing window=5.
+
+### Rate-limit prefixes (reputation)
+`rl:reputation:read:`, `rl:reputation:award:`, `rl:reputation:admin:`, `rl:reputation:dispute:`
+
+### Migration
+`scripts/migrate-karma-to-reputation.ts` — idempotent, supports `DRY_RUN`, re-runnable. Copies `Karma.history`→transactions, `KarmaRule`→`ReputationRule`, recalculates balances. Does NOT auto-drop `karmas`/`karmarules`. **REQUIRED post-deploy step: run as a one-shot ECS task. Balances read 0 for all users until this runs.**
+
+### SDK (`@oxyhq/core` — `reputation` mixin, bumped 3.2.0→3.3.0 in package.json)
+- 14 methods on `oxy.reputation.*`: `getBalance`, `getTransactions`, `getInfluence`, `award`, `reverseTransaction`, `voidTransaction`, `recalculateBalance`, `getRules`, `upsertRule`, `createDispute`, `resolveDispute`, `getDisputes`, `getUserDisputes`, `getLeaderboard`.
+- 20 exported types: unions `ReputationCategory`, `TrustTier`, `ReputationTransactionStatus`, `ReputationTargetEntityType`, `ReputationDisputeStatus`, `ReputationInfluenceContext`; entities `ReputationTransaction`, `ReputationBalance`, `ReputationBalanceBreakdown`, `ReputationInfluence`, `ReputationReliability`, `ReputationDispute`, `ReputationRule`, `ReputationLeaderboardEntry`, `ReputationInfluenceResult`, `ReverseReputationTransactionResult`; inputs `AwardReputationInput`, `CreateReputationDisputeInput`, `ResolveReputationDisputeInput`, `UpsertReputationRuleInput`, `ReverseReputationTransactionInput`.
+- Writes sweep `clearCacheByPrefix('GET:/reputation/')`.
+- **Deleted:** karma mixin + `KarmaRule`/`KarmaHistory`/`KarmaLeaderboardEntry`/`KarmaAwardRequest` types + `User.karma` field + `UserStats.karmaScore`.
+- **SEMVER CAVEAT:** removing the karma public surface is BREAKING → at PUBLISH TIME this MUST be bumped to `@oxyhq/core 4.0.0` (and peer ranges in `@oxyhq/auth`/`@oxyhq/services` updated). Currently not yet published. `package.json` says `3.3.0` as a working-tree label only.
+
+### Services (`@oxyhq/services`) — Trust screens
+- 4 screens renamed Karma*→Trust* + About/FAQ under `src/ui/screens/trust/`.
+- **BREAKING `RouteName` change:** removed `KarmaCenter|KarmaLeaderboard|KarmaRewards|KarmaRules|AboutKarma|KarmaFAQ`; added `TrustCenter|TrustLeaderboard|TrustRewards|TrustRules|AboutTrust|TrustFAQ`. Consumers calling `showBottomSheet('Karma...')` MUST migrate. `test-app-expo` already migrated.
+
+## #214 — Auth App: Authorize Screen Application Identity (2026-06-16)
+
+`packages/auth` authorize screen now resolves and displays the REAL registered `Application` identity (name, logo, redirectUri) via `sessionStatusSchema` in `packages/auth/lib/schemas.ts`. The free-form `appId` string field was replaced with a typed `application` contract wired from the API through `authorize.tsx` via `safeParse`. 10 new auth-web tests cover the authorize contract parsing.
 
 ## FedCM Approved Clients — Application Registry (2026-06-15)
 
@@ -346,6 +400,7 @@ All limiters use `rate-limit-redis` with a shared ioredis client. The factory `r
 - `rl:social-auth:`
 - `rl:email:inbound:`, `rl:email:proxy:`
 - `rl:userdata:write:`
+- `rl:reputation:read:`, `rl:reputation:award:`, `rl:reputation:admin:`, `rl:reputation:dispute:`
 
 **General limiter threshold** (commit `641cea67`): raised 150 → **1000 / 15min**. The 150 ceiling was below a single authenticated user's normal traffic (feed scroll + socket fallback polling + profile loads + FedCM exchanges). Per-endpoint limiters (`authRateLimiter` 300, `userRateLimiter` 200, `checkLimiter` 10/min, etc.) remain the relevant defense-in-depth. **Do NOT lower the general limiter below 1000 without measuring real production traffic.**
 
@@ -496,9 +551,9 @@ Activated inside `FileManagementScreen` when `isImageOnlyPicker` is true. Apple 
 
 | Package | Version | Notes |
 |---------|---------|-------|
-| `@oxyhq/core` | **3.2.0** | 3.2.0: additive — `PublicApplication` + `getPublicApplication(clientId)`; `OxyConfig.clientId`; `AuthManager.getAccessToken()` falls back to `_lastKnownAccessToken` (fixes 401 for standalone API clients after cookie-restore); `workspaces` mixin + `Workspace`/`WorkspaceMember` types; `getApplications(workspaceId?)`; `Application.workspaceId`; `ApplicationMember._id`/`source`; invite inputs `{ usernameOrEmail, role }`. 3.2.1 PENDING: `consumeSsoReturn` hard-redirect on non-`ok` outcomes fixes 404 on signed-out SSO return. 3.1.0: credential rotation grace (`rotatedFromCredentialId`, `RotateApplicationCredentialResult`, `ServiceApp.credentialId`). 3.0.0 BREAKING: removed `developer` mixin; added `applications` mixin. 2.4.1: FedCM silent hang fix. 2.3.0: SSO helpers single source of truth. |
+| `@oxyhq/core` | **3.3.0 (unpublished — PENDING 4.0.0)** | 3.3.0 (working tree, not yet published): `reputation` mixin (14 methods) + 20 types; karma mixin + `KarmaRule`/`KarmaHistory`/`KarmaAwardRequest` types removed — BREAKING → must publish as **4.0.0**; peer ranges in `@oxyhq/auth`/`@oxyhq/services` need updating at publish time. 3.2.0: additive — `PublicApplication` + `getPublicApplication(clientId)`; `OxyConfig.clientId`; `AuthManager.getAccessToken()` falls back to `_lastKnownAccessToken`; `workspaces` mixin; `getApplications(workspaceId?)`; invite inputs `{ usernameOrEmail, role }`. 3.2.1 PENDING: `consumeSsoReturn` hard-redirect fix. 3.1.0: credential rotation grace. 3.0.0 BREAKING: removed `developer` mixin; added `applications` mixin. 2.4.1: FedCM silent hang fix. 2.3.0: SSO helpers single source of truth. |
 | `@oxyhq/auth` | **4.1.0** | 4.1.0: `WebOxyProvider` optional `clientId` prop; peer `@oxyhq/core ^3.2.0`. 4.0.0: major bump (peer `^3.0.0`). 3.4.0: consumes core SSO helpers; deleted local `ssoBounce.ts`. 3.3.0: `/sso/establish` + per-apex cookie; central issuer fix. 3.2.0: consumes `runColdBoot` + `autoDetect`. |
-| `@oxyhq/services` | **10.0.0** | BREAKING: `appName` removed from `OxyProvider`; `clientId` required for cross-app device sign-in; peer `@oxyhq/core ^3.2.0`. 9.0.1: `silentGuardKey.ts` RN-safe (no `window.location` on RN). 8.6.1: `COLD_BOOT_OVERALL_DEADLINE = 20000`. 8.5.0: `isAuthResolved` on `useAuth()`/`useOxy()`. 8.4.0: core SSO helpers. 8.0.0 BREAKING: `@tanstack/*` → peerDeps; `RouteName` ManageAccount. 8.0.1: `expo-crypto` shim fixed. |
+| `@oxyhq/services` | **10.0.0 (working tree has Trust screen changes, unpublished)** | Trust screens: Karma*→Trust* rename; BREAKING `RouteName`: removed `KarmaCenter|KarmaLeaderboard|KarmaRewards|KarmaRules|AboutKarma|KarmaFAQ`; added `TrustCenter|TrustLeaderboard|TrustRewards|TrustRules|AboutTrust|TrustFAQ`. 10.0.0 published: `appName` removed from `OxyProvider`; `clientId` required; peer `@oxyhq/core ^3.2.0`. 9.0.1: `silentGuardKey.ts` RN-safe. 8.6.1: `COLD_BOOT_OVERALL_DEADLINE`. 8.5.0: `isAuthResolved`. 8.4.0: core SSO helpers. 8.0.0 BREAKING: `@tanstack/*` → peerDeps; `RouteName` ManageAccount. |
 | `@oxyhq/bloom` | **0.7.7** | 0.7.7: fixed web `applyColorPresetVars` writing raw HSL triples without `hsl()` → runtime transparent/unstyled on Vite+Tailwind v4+shadcn (auth, console). Fix: `toWebColorValue()` wraps triples in `hsl()` on web write paths. Consumer follow-up: remove any `hsl(var(--x))` usages in web CSS/components — with 0.7.7 the token is already a full color; double-wrapping is invalid. 0.7.6: NW5 platform-split fix. 0.7.0: 10 new components: `popover`, `command`, `combobox`, `alert-dialog` (web-forked overlays), `slider`, `field`, `input-group`, `label`, `kbd`, `item`. Bloom web = RN-via-react-native-web — DOM apps need RNW Vite alias. 0.6.14: prior RN-0.85 line. |
 
 **CRITICAL — SSO helpers live ONLY in `@oxyhq/core` (2026-06-14):** `consumeSsoReturn`, `buildSsoBounceUrl`, `isCentralIdPOrigin`, `guardActive`, `ssoNavigate`, `ssoStateKey`/`ssoGuardKey`/`ssoDestKey`/`ssoNoSessionKey`, `SSO_CALLBACK_PATH`, `SSO_GUARD_TTL_MS`, `registrableApex`, `MULTIPART_TLDS`, `CENTRAL_IDP_APEX` — all defined once in `@oxyhq/core`, imported by auth-sdk, services, AND the CF Worker. Do NOT add local copies in any consumer. The auth IdP worker (`packages/auth/server/index.ts`) imports `registrableApex`, `CENTRAL_IDP_APEX`, and `SSO_CALLBACK_PATH` directly from `@oxyhq/core` (tree-shakes to ~0.6 KB in the CF Worker bundle). The api added an in-process TTL (60s) `approvedClientsCache` over `FedCMClient` lookups (mirrors `userCache`/`sessionCache`), invalidated on add/remove — removes redundant per-flow Mongo reads on SSO/CORS hot paths.
