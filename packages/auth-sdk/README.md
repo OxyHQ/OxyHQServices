@@ -97,7 +97,7 @@ v1.x required passing 8+ props manually. In v2.0 all state is derived from conte
 
 - Use W3C-spec `mode` values `'active'` / `'passive'`. The legacy `'button'` / `'widget'` values throw `TypeError` in current Chrome.
 - **Silent SSO guard lives in consumers, NOT `@oxyhq/core`**: a core module-level singleton was tried and reverted because it re-evaluates in the Metro web bundle and the guard did not hold. `useWebSSO` owns a module-level `silentSSOAttempted` Set + `ssoSignature(origin|baseURL)` for cross-mount deduplication, plus a per-instance `hasCheckedRef` fast-path. Do NOT move this guard into a core module-level singleton.
-- `WebOxyProvider` keeps its own `fedcmSilentSignInAttempted` guard (keyed `origin+baseURL`) because its silent path also runs `oxyServices.silentSignIn()` (iframe/popup fallback).
+- `WebOxyProvider` keeps its own `fedcmSilentSignInAttempted` guard (keyed `origin+baseURL`) because its silent path also runs `oxyServices.silentSignIn()` before redirect-based sign-in.
 - Token exchange requires a server-minted nonce (`POST /fedcm/nonce`) — local UUID nonces are rejected.
 
 ## Offline-First Persistence

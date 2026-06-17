@@ -475,7 +475,7 @@ function AuthScreen() {
 
 ### Password Authentication (Web Gateway)
 
-For web-only or legacy flows, Oxy also supports password sign-in (email/username + password). Use the auth gateway (`/login`, `/signup`, `/recover`) for browser-based flows, or call the API directly:
+For web gateway flows, Oxy also supports password sign-in (email/username + password). Use the auth gateway (`/login`, `/signup`, `/recover`) for browser-based flows, or call the API directly:
 
 ```typescript
 import { oxyClient } from '@oxyhq/core';
@@ -747,7 +747,7 @@ Typed returns are defined in `ui/hooks/queries/paymentTypes.ts` (`Subscription`,
 
 ## Sign-In Token Planting
 
-`@oxyhq/core` `OxyServices.verifyChallenge()` plants `setTokens(accessToken, refreshToken ?? '')` internally before returning. `useAuthOperations.performSignIn` no longer needs to hand-plant the token or fall back to `getTokenBySession` — just await `verifyChallenge` and proceed.
+`@oxyhq/core` `OxyServices.verifyChallenge()` plants `setTokens(accessToken, refreshToken ?? '')` internally before returning. `useAuthOperations.performSignIn` no longer needs to hand-plant the token or call a session-token fallback — just await `verifyChallenge` and proceed.
 
 ## Silent SSO Run-Once Guard
 

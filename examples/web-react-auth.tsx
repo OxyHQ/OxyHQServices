@@ -235,13 +235,6 @@ function AdvancedAuthExample() {
     }
   };
 
-  const handlePopupOnly = async () => {
-    const session = await crossDomainAuth.signInWithPopup({
-      popupDimensions: { width: 600, height: 800 },
-    });
-    console.log('Signed in with popup:', session.user);
-  };
-
   const handleRedirectOnly = () => {
     crossDomainAuth.signInWithRedirect({
       redirectUri: window.location.href,

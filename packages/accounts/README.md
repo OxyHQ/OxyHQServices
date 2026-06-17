@@ -26,7 +26,7 @@ bun run typecheck    # tsc --noEmit
 
 Identity **creation** is native-only. Web is for managing an existing account (sign-in only).
 
-- Web sign-in screen: `app/(auth)/sign-in.tsx` — uses `signInWithFedCM()` + `handlePopupSession()`.
+- Web sign-in screen: `app/(auth)/sign-in.tsx` — uses `signInWithFedCM()` + `handleWebSession()`.
 - Web blocks identity creation via `.web.tsx` layout redirects: `app/(auth)/create-identity/_layout.web.tsx`, `import-identity/_layout.web.tsx`, `welcome.web.tsx`, `index.web.tsx` — all redirect to `/(auth)/sign-in`.
 - `useOnboardingStatus.needsAuth` is platform-agnostic — do NOT add a `Platform.OS === 'web'` clamp (causes redirect deadlock).
 

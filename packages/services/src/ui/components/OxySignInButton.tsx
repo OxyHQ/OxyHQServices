@@ -100,7 +100,7 @@ export const OxySignInButton: React.FC<OxySignInButtonProps> = ({
     }, []);
 
     // Handle button press
-    // - Web: legacy full-screen Modal (dialog UX fits desktop / browser)
+    // - Web: full-screen modal (dialog UX fits desktop / browser)
     // - Native: bottom sheet (sheet UX fits iOS/Android)
     const handlePress = useCallback(() => {
         if (onPress) {

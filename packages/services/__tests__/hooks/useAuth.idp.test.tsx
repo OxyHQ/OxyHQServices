@@ -3,7 +3,7 @@
  *
  * Tests for `useAuth.signIn` behavior on the identity-provider host.
  *
- * On the IdP host, the popup branch is intentionally skipped (it would
+ * On the IdP host, the external redirect branch is intentionally skipped (it would
  * authenticate against itself). The hook must instead either:
  *   - Sign in directly with the stored identity, OR
  *   - Open the OxyAuth bottom sheet when no identity exists.
@@ -21,13 +21,12 @@ interface MockOxyState {
   isTokenReady: boolean;
   error: string | null;
   signIn: jest.Mock;
-  handlePopupSession: jest.Mock;
   logout: jest.Mock;
   logoutAll: jest.Mock;
   refreshSessions: jest.Mock;
   oxyServices: {
     config?: { authWebUrl?: string };
-    signInWithPopup?: jest.Mock;
+    signInWithRedirect?: jest.Mock;
     openBlankPopup?: jest.Mock;
   };
   hasIdentity: jest.Mock;
@@ -43,13 +42,12 @@ const defaultMockState = (): MockOxyState => ({
   isTokenReady: false,
   error: null,
   signIn: jest.fn(async (key: string) => ({ id: 'u1', username: 'user', publicKey: key })),
-  handlePopupSession: jest.fn(async () => undefined),
   logout: jest.fn(async () => undefined),
   logoutAll: jest.fn(async () => undefined),
   refreshSessions: jest.fn(async () => undefined),
   oxyServices: {
     config: { authWebUrl: 'https://auth.oxy.so' },
-    signInWithPopup: jest.fn(),
+    signInWithRedirect: jest.fn(),
     openBlankPopup: jest.fn(() => null),
   },
   hasIdentity: jest.fn(async () => false),
@@ -76,7 +74,7 @@ describe('useAuth.signIn — IdP hostname guard', () => {
     expect(window.location.hostname).toBe('auth.oxy.so');
   });
 
-  it('skips popup and calls signIn() with the stored identity', async () => {
+  it('skips redirect and calls signIn() with the stored identity', async () => {
     mockState.hasIdentity = jest.fn(async () => true);
     mockState.getPublicKey = jest.fn(async () => 'stored-pubkey');
 
@@ -86,7 +84,7 @@ describe('useAuth.signIn — IdP hostname guard', () => {
       await result.current.signIn();
     });
 
-    expect(mockState.oxyServices.signInWithPopup).not.toHaveBeenCalled();
+    expect(mockState.oxyServices.signInWithRedirect).not.toHaveBeenCalled();
     expect(mockState.signIn).toHaveBeenCalledWith('stored-pubkey');
   });
 
@@ -107,10 +105,10 @@ describe('useAuth.signIn — IdP hostname guard', () => {
 
     expect(mockState.showBottomSheet).toHaveBeenCalledWith('OxyAuth');
     expect((caught as Error).message).toMatch(/complete sign-in/);
-    expect(mockState.oxyServices.signInWithPopup).not.toHaveBeenCalled();
+    expect(mockState.oxyServices.signInWithRedirect).not.toHaveBeenCalled();
   });
 
-  it('does not invoke popup even when explicit publicKey is omitted', async () => {
+  it('does not invoke redirect even when explicit publicKey is omitted', async () => {
     mockState.hasIdentity = jest.fn(async () => true);
     mockState.getPublicKey = jest.fn(async () => 'stored-pubkey');
 
@@ -120,6 +118,6 @@ describe('useAuth.signIn — IdP hostname guard', () => {
       await result.current.signIn();
     });
 
-    expect(mockState.oxyServices.signInWithPopup).not.toHaveBeenCalled();
+    expect(mockState.oxyServices.signInWithRedirect).not.toHaveBeenCalled();
   });
 });

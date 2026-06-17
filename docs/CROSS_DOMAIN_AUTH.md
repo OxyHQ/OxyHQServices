@@ -392,10 +392,9 @@ const auth = createCrossDomainAuth(oxyServices);
 Sign in with automatic method selection.
 
 **Options:**
-- `method?: 'auto' | 'fedcm' | 'popup' | 'redirect'` - Preferred method
+- `method?: 'auto' | 'fedcm' | 'redirect'` - Preferred method
 - `isSignup?: boolean` - Open signup instead of login
 - `redirectUri?: string` - Custom redirect URI (for redirect method)
-- `popupDimensions?: { width?, height? }` - Popup size
 - `onMethodSelected?: (method) => void` - Callback when method chosen
 
 **Returns:** Session or null (null for redirect method)
@@ -404,13 +403,9 @@ Sign in with automatic method selection.
 
 Sign in using FedCM (browser-native).
 
-#### `signInWithPopup(options?): Promise<SessionLoginResponse>`
-
-Sign in using popup window.
-
 #### `signInWithRedirect(options?): void`
 
-Sign in using full-page redirect. Doesn't return (navigates away).
+Sign in using full-page tokenless redirect. Doesn't return (navigates away).
 
 #### `handleRedirectCallback(): SessionLoginResponse | null`
 
@@ -550,7 +545,7 @@ await KeyManager.migrateToSharedIdentity();
 
 - **Do** call `auth.initialize()` on every app startup
 - **Do** use `method: 'auto'` for automatic fallback
-- **Do** handle all three methods (FedCM/Popup/Redirect)
+- **Do** handle both web methods (FedCM/Redirect)
 - **Do** store sessions in shared storage on native
 - **Do** migrate existing users to shared identity
 - **Do** test on real devices (iOS Keychain Sharing)
@@ -558,7 +553,6 @@ await KeyManager.migrateToSharedIdentity();
 
 ### ❌ Don'ts
 
-- **Don't** call popup auth from async callbacks
 - **Don't** forget to handle redirect callbacks
 - **Don't** mix local and shared storage
 - **Don't** skip iOS Keychain Sharing capability

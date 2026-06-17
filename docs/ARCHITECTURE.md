@@ -276,15 +276,11 @@ function LoginButton() {
 2. No popup or redirect needed
 3. Seamless UX with existing Oxy session
 
-### 4. Popup / Redirect (OAuth-style)
+### 4. Redirect Fallback
 
-Fallback for browsers without FedCM:
+Tokenless fallback for browsers without FedCM:
 
 ```typescript
-// Popup (opens auth.oxy.so in popup window)
-const session = await crossDomainAuth.signInWithPopup();
-
-// Redirect (full page redirect to auth.oxy.so)
 crossDomainAuth.signInWithRedirect();
 // On return:
 const session = crossDomainAuth.handleRedirectCallback();

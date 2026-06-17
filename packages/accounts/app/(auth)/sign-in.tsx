@@ -36,7 +36,7 @@ import { CREATE_ACCOUNT_HELP_URL } from '@/constants/auth';
 export default function SignInScreen() {
   const colors = useColors();
   const { t } = useTranslation();
-  const { oxyServices, handlePopupSession, isAuthenticated } = useOxy();
+  const { oxyServices, handleWebSession, isAuthenticated } = useOxy();
   const [isSigningIn, setIsSigningIn] = useState(false);
 
   const fedCMSupported = Platform.OS === 'web' && oxyServices.isFedCMSupported();
@@ -47,10 +47,10 @@ export default function SignInScreen() {
     try {
       const session = await oxyServices.signInWithFedCM();
       if (session) {
-        // `handlePopupSession` updates auth state and persists the session.
+        // `handleWebSession` updates auth state and persists the session.
         // Once `isAuthenticated` flips, the `(tabs)` guard takes over and the
         // root layout routes the user into the app shell — no manual nav here.
-        await handlePopupSession(session);
+        await handleWebSession(session);
       }
     } catch (error) {
       logger.error(
@@ -62,7 +62,7 @@ export default function SignInScreen() {
     } finally {
       setIsSigningIn(false);
     }
-  }, [isSigningIn, oxyServices, handlePopupSession, t]);
+  }, [isSigningIn, oxyServices, handleWebSession, t]);
 
   const handleCreateAccount = useCallback(() => {
     Linking.openURL(CREATE_ACCOUNT_HELP_URL).catch((error) => {

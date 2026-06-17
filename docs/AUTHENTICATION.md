@@ -272,9 +272,8 @@ function NavBar() {
     isLoading,        // True during init
     isReady,          // True when auth resolved
     error,            // Error string or null
-    signIn,           // Auto-selects best method (FedCM > Popup > Redirect)
+    signIn,           // Auto-selects best method (FedCM > Redirect)
     signInWithFedCM,  // Force FedCM
-    signInWithPopup,  // Force popup
     signInWithRedirect, // Force redirect
     signOut,
     isFedCMSupported, // () => boolean
@@ -299,9 +298,8 @@ function NavBar() {
 | Method | How it works | Browser support |
 |--------|-------------|-----------------|
 | **FedCM** | Browser-native identity UI, no popups/redirects | Chrome 108+, Edge 108+ |
-| **Popup** | Opens auth.oxy.so in a popup window | All browsers |
-| **Redirect** | Full-page redirect to auth.oxy.so and back | All browsers |
-| **Auto** (default) | Tries FedCM first, falls back to Popup, then Redirect | All browsers |
+| **Redirect** | Full-page tokenless redirect to auth.oxy.so and back | All browsers |
+| **Auto** (default) | Tries FedCM first, falls back to Redirect | All browsers |
 
 ### Next.js App Router
 
@@ -631,25 +629,16 @@ Browser-native identity federation. No popups or redirects needed.
 ```typescript
 // Automatic (recommended)
 const { signIn } = useAuth(); // from @oxyhq/auth
-await signIn(); // Tries FedCM first, falls back to popup/redirect
+await signIn(); // Tries FedCM first, falls back to tokenless redirect
 
 // Force FedCM
 const { signInWithFedCM } = useAuth();
 await signInWithFedCM();
 ```
 
-### 4. Popup - Web Fallback
+### 4. Redirect - Web Universal Fallback
 
-Opens auth.oxy.so in a popup window for authentication.
-
-```typescript
-const { signInWithPopup } = useAuth();
-await signInWithPopup();
-```
-
-### 5. Redirect - Web Universal Fallback
-
-Full-page redirect to auth.oxy.so and back.
+Full-page tokenless redirect to auth.oxy.so and back.
 
 ```typescript
 const { signInWithRedirect } = useAuth();
@@ -684,11 +673,9 @@ await oxy.verifyChallenge(pubKey, challenge, sig, ts); // Verify + create sessio
 
 // Cross-domain auth (web)
 await oxy.signInWithFedCM();              // FedCM browser-native
-await oxy.signInWithPopup();              // Popup to auth.oxy.so
 oxy.signInWithRedirect();                 // Redirect to auth.oxy.so
 
 // Session management
-await oxy.getTokenBySession(sessionId);   // Get/refresh token
 await oxy.getUserBySession(sessionId);    // Get user from session
 await oxy.validateSession(sessionId);     // Validate session
 await oxy.logoutSession(sessionId);       // Logout specific session

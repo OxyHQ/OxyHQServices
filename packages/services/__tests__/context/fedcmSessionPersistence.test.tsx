@@ -1,13 +1,13 @@
 /**
  * @jest-environment-options {"url": "https://accounts.oxy.so/"}
  *
- * Regression: a successful FedCM (or popup) sign-in MUST persist its session
+ * Regression: a successful web sign-in MUST persist its session
  * into the multi-session store (`oxy_session_session_ids` + the active-session
  * key) so the session survives a page reload and cross-app SSO can see it.
  *
  * The accounts web app previously signed users in fine but, on reload, had no
  * session to restore — `oxy_session_session_ids` was empty. Root cause:
- * `handlePopupSession` / `handleWebSSOSession` guarded its storage write on the
+ * `handleWebSession` / `handleWebSSOSession` guarded its storage write on the
  * `storage` React state, which is `null` for a brief window after mount while
  * `createPlatformStorage()` resolves. A sign-in firing inside that window (e.g.
  * an interactive sign-in tapped the instant the screen mounts) silently skipped
@@ -45,12 +45,12 @@ const FEDCM_SESSION: SessionLoginResponse = {
   accessToken: 'header.payload.sig',
 } as SessionLoginResponse;
 
-let capturedHandlePopupSession: ((s: SessionLoginResponse) => Promise<void>) | null = null;
+let capturedHandleWebSession: ((s: SessionLoginResponse) => Promise<void>) | null = null;
 let capturedStorageReady = false;
 
 function Capture() {
-  const { handlePopupSession, isStorageReady } = useOxy();
-  capturedHandlePopupSession = handlePopupSession;
+  const { handleWebSession, isStorageReady } = useOxy();
+  capturedHandleWebSession = handleWebSession;
   capturedStorageReady = isStorageReady;
   return null;
 }
@@ -66,7 +66,7 @@ function baseStub() {
     clearTokens: jest.fn(),
     clearCache: jest.fn(),
     // Disable FedCM so the provider's auto silent-SSO does not fire; these tests
-    // drive the persistence path explicitly via handlePopupSession.
+    // drive the persistence path explicitly via handleWebSession.
     isFedCMSupported: () => false,
     getCurrentUser: jest.fn(async () => ({ id: 'user_123', username: 'tester' })),
     getTokenBySession: jest.fn(async () => 'header.payload.sig'),
@@ -90,20 +90,20 @@ function renderProvider(oxyServices: unknown) {
   );
 }
 
-describe('FedCM/popup session persistence', () => {
+describe('web session persistence', () => {
   beforeEach(() => {
     window.localStorage.clear();
-    capturedHandlePopupSession = null;
+    capturedHandleWebSession = null;
     capturedStorageReady = false;
   });
 
   it('CASE A: persists the session id + active id when storage is ready', async () => {
     renderProvider(baseStub());
-    await waitFor(() => expect(capturedHandlePopupSession).not.toBeNull());
+    await waitFor(() => expect(capturedHandleWebSession).not.toBeNull());
     await waitFor(() => expect(capturedStorageReady).toBe(true));
 
     await act(async () => {
-      await capturedHandlePopupSession!(FEDCM_SESSION);
+      await capturedHandleWebSession!(FEDCM_SESSION);
     });
 
     expect(window.localStorage.getItem(SESSION_IDS_KEY)).toBe(JSON.stringify(['sess_fedcm_1']));
@@ -112,10 +112,10 @@ describe('FedCM/popup session persistence', () => {
 
   it('CASE B: persists even when sign-in fires BEFORE storage state populates', async () => {
     renderProvider(baseStub());
-    await waitFor(() => expect(capturedHandlePopupSession).not.toBeNull());
+    await waitFor(() => expect(capturedHandleWebSession).not.toBeNull());
     // Intentionally do NOT wait for storage to be ready — race storage init.
     await act(async () => {
-      await capturedHandlePopupSession!(FEDCM_SESSION);
+      await capturedHandleWebSession!(FEDCM_SESSION);
     });
 
     expect(window.localStorage.getItem(SESSION_IDS_KEY)).toBe(JSON.stringify(['sess_fedcm_1']));
@@ -138,7 +138,7 @@ describe('FedCM/popup session persistence', () => {
     }) as never;
 
     renderProvider(stub);
-    await waitFor(() => expect(capturedHandlePopupSession).not.toBeNull());
+    await waitFor(() => expect(capturedHandleWebSession).not.toBeNull());
     await waitFor(() => expect(capturedStorageReady).toBe(true));
 
     // Restore validates the stale id, fails, and clears the store to [].
@@ -149,7 +149,7 @@ describe('FedCM/popup session persistence', () => {
 
     // A fresh FedCM sign-in must repopulate the store.
     await act(async () => {
-      await capturedHandlePopupSession!(FEDCM_SESSION);
+      await capturedHandleWebSession!(FEDCM_SESSION);
     });
 
     expect(window.localStorage.getItem(SESSION_IDS_KEY)).toBe(JSON.stringify(['sess_fedcm_1']));
@@ -184,13 +184,13 @@ describe('FedCM/popup session persistence', () => {
       </QueryClientProvider>,
     );
 
-    await waitFor(() => expect(capturedHandlePopupSession).not.toBeNull());
+    await waitFor(() => expect(capturedHandleWebSession).not.toBeNull());
     await waitFor(() => expect(capturedStorageReady).toBe(true));
 
     // The handler itself may reject because onAuthStateChange throws in the tail;
     // that is fine — the durable write already happened earlier in the function.
     await act(async () => {
-      await capturedHandlePopupSession!(FEDCM_SESSION).catch(() => undefined);
+      await capturedHandleWebSession!(FEDCM_SESSION).catch(() => undefined);
     });
 
     expect(window.localStorage.getItem(SESSION_IDS_KEY)).toBe(JSON.stringify(['sess_fedcm_1']));

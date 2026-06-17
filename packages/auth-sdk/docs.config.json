@@ -6,24 +6,15 @@
   "category": "sdk",
   "versioned": true,
   "versions": [
-    "2.0.4",
-    "2.0.3",
-    "2.0.2",
-    "2.0.1",
-    "2.0.0",
-    "1.2.0",
-    "1.1.4",
-    "1.1.3",
-    "1.1.2",
-    "1.1.1",
-    "1.1.0",
-    "1.0.0"
+    "main"
   ],
-  "latestVersion": "2.0.4",
+  "latestVersion": "main",
   "deprecatedVersions": [],
-  "defaultVersion": "2.0.4",
+  "defaultVersion": "main",
   "docsPath": "docs/",
-  "typedoc": { "entry": "src/index.ts" },
+  "typedoc": {
+    "entry": "src/index.ts"
+  },
   "description": "Web auth SDK: React hooks, FedCM, WebOxyProvider, session management.",
-  "versionsNote": "Version 2.0.0 was published from a local commit not preserved in git history. See npm for the changelog."
+  "versionsNote": "Current docs are generated from the main branch for @oxyhq/auth 4.1.0; legacy auth SDK docs are intentionally not published."
 }

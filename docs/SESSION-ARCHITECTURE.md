@@ -77,8 +77,8 @@ IdP returns a code; the app exchanges it for tokens. FedCM (Chrome) gives the sa
   that app's `client_id` (per-app isolation — compromising one app can't touch
   others). No redirect on reload. These apps ALREADY have backends.
 - **Tier 3 — frontend-only vanity apps**: OIDC public client + **FedCM** (Chrome:
-  silent renewal, no redirect, no third-party cookie) with a silent-redirect/popup
-  fallback (Safari/Firefox). Access token in MEMORY (never localStorage). Per-app =
+  silent renewal, no redirect, no third-party cookie) with an authorization-code
+  redirect for browsers without FedCM. Access token in MEMORY (never localStorage). Per-app =
   a `client_id` + the SDK; ZERO per-app infra. Standard SPA model (Auth0/Firebase/
   Clerk) and exactly what Google does for frontend RPs post-3p-cookie.
 
@@ -143,7 +143,7 @@ bridge forwards to `api.oxy.so`.
 
 - Chrome: FedCM via the `auth.oxy.so` IdP + the Google-style account chooser
   (already built).
-- Safari / Firefox: popup fallback against `auth.oxy.so` (already built).
+- Safari / Firefox: top-level authorization-code redirect to `auth.oxy.so`.
 - Passkeys (WebAuthn) as the auth factor — future, optional, like Meta Account.
 
 ## Rollout (incremental, each step security-reviewed)
@@ -155,15 +155,15 @@ bridge forwards to `api.oxy.so`.
 3. **mention** — mount the bridge on `api.mention.earth`; point the SDK at it.
 4. **homiio**, **alia** — same.
 5. **Cleanup & hardening** (runs LAST, AFTER the new flow is verified end-to-end)
-   — remove every legacy / dead / duplicated auth+session path the new
-   architecture supersedes. Production-grade, clean, well-structured.
+   — remove every dead or duplicated auth+session path the new architecture
+   supersedes. Production-grade, clean, well-structured.
    **Verify-then-remove**: grep all consumers + `test-build` gate before deleting
    anything — never a blind delete that could log users out. Known targets:
    - localStorage/sessionStorage token writes: `core/AuthManager.ts` default
      `LocalStorageAdapter`; `core/mixins/OxyServices.redirect.ts` `storeTokens()`
      / `restoreSession()`.
-   - The redirect-auth flow (`signInWithRedirect`) if no live consumer remains
-     (superseded by FedCM + popup).
+   - Any auth entry point with no live consumer after the OIDC/FedCM flow is
+     verified end-to-end.
    - Duplicated session/refresh logic across core/services/auth; stale FedCM
      scaffolding; the earlier `/simplify` quality items.
 

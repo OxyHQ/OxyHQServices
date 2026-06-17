@@ -141,42 +141,14 @@ function App() {
 
 ## Authentication Methods
 
-OxyServices supports three authentication methods that work across all platforms:
+`OxyProvider` owns sign-in and cold boot across native and web surfaces. Apps
+pass their registered `clientId`; the SDK handles device sign-in, FedCM, silent
+restore, and cross-apex SSO without app-local callback routes.
 
-### 1. FedCM (Federated Credential Management)
-
-Browser-native authentication. Best UX - no popups or redirects.
-
-```typescript
-// Automatic (tries FedCM first, falls back to popup/redirect)
-const session = await auth.signIn();
-
-// Explicit FedCM
-const session = await auth.signInWithFedCM();
-```
-
-**Supported Browsers:**
-- Chrome 108+
-- Safari 16.4+
-- Edge 108+
-
-### 2. Popup Authentication
-
-OAuth2-style popup window.
-
-```typescript
-const session = await auth.signInWithPopup();
-```
-
-### 3. Redirect Authentication
-
-Full page redirect to auth.oxy.so.
-
-```typescript
-auth.signInWithRedirect();
-
-// On return, handle callback
-const session = auth.handleRedirectCallback();
+```tsx
+<OxyProvider clientId="oxy_dk_...">
+  <App />
+</OxyProvider>
 ```
 
 ## Silent Sign-In (SSO)
