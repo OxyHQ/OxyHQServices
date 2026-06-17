@@ -11,10 +11,10 @@
  *   - `user.name` is the structured `{ first, last, full }` subdocument that
  *     `formatUserResponse` returns (NOT a plain string).
  *   - `user.username` is OPTIONAL (publicKey-only accounts have none).
- *   - `authuser` is `null` for the legacy un-suffixed `oxy_rt` cookie slot.
+ *   - `authuser` is the numeric refresh-cookie slot.
  *
- * A previous `name: z.string()` (plus required `username` and non-nullable
- * `authuser`) silently rejected every real account and broke session restore.
+ * A previous `name: z.string()` plus required `username` silently rejected
+ * every real account and broke session restore.
  *
  * The schema + parse helper now come from `@oxyhq/contracts` (the single source
  * of truth shared with the API). Importing them through `@/lib/schemas` — which
@@ -71,22 +71,21 @@ describe("refreshAllResponseSchema", () => {
         expect(parsed?.accounts[0].user.username).toBeUndefined()
     })
 
-    test("accepts authuser: null for the legacy un-suffixed cookie slot", () => {
-        const payload = {
-            accounts: [
-                {
+	test("rejects authuser: null because refresh-cookie slots are numeric-only", () => {
+		const payload = {
+			accounts: [
+				{
                     authuser: null,
                     accessToken: "at",
                     expiresAt: new Date().toISOString(),
                     sessionId: "s3",
                     user: { id: "u3", username: "bob" },
                 },
-            ],
-        }
-        const parsed = safeParse(refreshAllResponseSchema, payload)
-        expect(parsed).not.toBeNull()
-        expect(parsed?.accounts[0].authuser).toBeNull()
-    })
+			],
+		}
+		const parsed = safeParse(refreshAllResponseSchema, payload)
+		expect(parsed).toBeNull()
+	})
 
     test("rejects a name sent as a plain string (the old wrong contract)", () => {
         const payload = {

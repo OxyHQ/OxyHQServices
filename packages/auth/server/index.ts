@@ -226,6 +226,9 @@ async function verifyHS256JWT(
 
   const signatureBytes = base64urlBytes(signatureB64);
   if (!signatureBytes) return null;
+  // Reject alternate base64url spellings of the same signature bytes. Without
+  // this, mutating unused trailing bits can leave the decoded HMAC unchanged.
+  if (base64url(signatureBytes) !== signatureB64) return null;
 
   const key = await crypto.subtle.importKey(
     'raw',
@@ -1732,7 +1735,7 @@ app.get('/sso', async (c) => {
  *
  * The browser arrives here via the 303 from the central `/sso` bounce. The ONLY
  * credential it carries is the signed, short-lived, audience+host-bound
- * establish-token (`?et=`). No session/token is ever exposed to JS.
+ * establish-token (`?et=`). No session id or access token is ever exposed to JS.
  *
  * Query (all REQUIRED):
  *   et         — the signed establish-token (HS256, FEDCM_TOKEN_SECRET)

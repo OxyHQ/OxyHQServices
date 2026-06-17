@@ -30,13 +30,10 @@ export interface AuthManagerAccount {
    * Projected user shape from the wire (username/avatar/color/email).
    *
    * `null` when a refresh-via-cookie planted a fresh access token for a slot
-   * that the AuthManager has no prior in-memory user metadata for — e.g. the
-   * legacy `/auth/refresh` 404 fallback path inside `refreshAllSessions`, or
-   * a `switchAuthuser` against a slot that wasn't present in the previous
-   * `restoreFromCookies` snapshot. Callers (or the AuthManager itself) are
-   * expected to hydrate the user shape via `getCurrentUser()` after the token
-   * is planted; the chooser UI must render the public-key fallback handle
-   * until the hydration completes.
+   * that the AuthManager has no prior in-memory user metadata for. Callers (or
+   * the AuthManager itself) are expected to hydrate the user shape via
+   * `getCurrentUser()` after the token is planted; the chooser UI must render
+   * the public-key fallback handle until the hydration completes.
    */
   user: RefreshAllAccountUser | null;
   /** Currently-valid access token for this slot (in-memory only). */
@@ -80,8 +77,7 @@ export interface RestoreFromCookiesOptions {
 /**
  * Outcome of `AuthManager.switchAuthuser()`.
  *
- * Mirrors the wire `RefreshCookieResponse` but with `authuser` narrowed to
- * `number` (the SDK boundary normalises the legacy `null` slot to `0`).
+ * Mirrors the wire `RefreshCookieResponse`.
  */
 export interface SwitchAuthuserResult {
   accessToken: string;

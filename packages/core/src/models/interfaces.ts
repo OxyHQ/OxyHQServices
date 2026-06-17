@@ -174,8 +174,6 @@ export interface UserPreferences {
 
 export interface LoginResponse {
   accessToken?: string;
-  refreshToken?: string;
-  token?: string; // For backwards compatibility
   user: User;
   message?: string;
 }
@@ -661,15 +659,7 @@ export interface RefreshAllAccountUser {
 
 /**
  * One rotated account entry returned by `POST /auth/refresh-all`. `authuser` is
- * the device-local slot index (0..N-1) the cookie was bound to. The legacy
- * un-suffixed `oxy_rt` cookie yields `authuser: null` server-side, but the SDK
- * normalises that to `0` before exposing it (the chooser always operates on
- * numeric indices).
- *
- * `user` is `null` only on the SDK-side synthesised legacy fallback (when the
- * server is too old to support `/auth/refresh-all` and we wrap a
- * `/auth/refresh` response — that endpoint does not project a user shape).
- * On the modern path every accepted entry carries a non-null user.
+ * the device-local slot index (0..N-1) the cookie was bound to.
  */
 export interface RefreshAllAccount {
   authuser: number;
@@ -689,13 +679,12 @@ export interface RefreshAllResponse {
 }
 
 /**
- * Wire shape of `POST /auth/refresh` (single-account refresh, optionally
- * targeting a specific `?authuser=N` slot). The server includes `authuser` in
- * the response when an indexed slot was rotated; the legacy slot yields
- * `authuser: null`.
+ * Wire shape of `POST /auth/refresh` (single-slot refresh, optionally targeting
+ * a specific `?authuser=N` slot). The server always includes the numeric slot in
+ * the response.
  */
 export interface RefreshCookieResponse {
   accessToken: string;
   expiresAt: string;
-  authuser: number | null;
+  authuser: number;
 }

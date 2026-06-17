@@ -78,7 +78,7 @@ describe('userResponseSchema', () => {
 });
 
 describe('refreshAllResponseSchema', () => {
-    it('accepts an entry whose authuser is null (legacy oxy_rt slot)', () => {
+    it('rejects an entry whose authuser is null', () => {
         const parsed = safeParseContract(refreshAllResponseSchema, {
             accounts: [
                 {
@@ -94,8 +94,7 @@ describe('refreshAllResponseSchema', () => {
                 },
             ],
         });
-        expect(parsed).not.toBeNull();
-        expect(parsed?.accounts[0].authuser).toBeNull();
+        expect(parsed).toBeNull();
     });
 
     it('accepts an empty accounts array (no signed-in accounts on device)', () => {

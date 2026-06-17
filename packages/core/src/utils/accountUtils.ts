@@ -204,10 +204,10 @@ export const mergeAccountsFromRefreshAll = (
 
     const merged: QuickAccount[] = fresh.map((entry) => {
         const previous = storedByAuthuser.get(entry.authuser);
-        // `entry.user` is null on the SDK legacy-fallback path; preserve any
-        // previously cached identity for that slot rather than overwriting
-        // it with blanks, and let the AuthManager's getCurrentUser() hydration
-        // refresh it on the next snapshot.
+        // Preserve any previously cached identity for a slot that arrives
+        // without a user shape rather than overwriting it with blanks, and let
+        // AuthManager's getCurrentUser() hydration refresh it on the next
+        // snapshot.
         const wireUser = entry.user;
         const username = wireUser?.username ?? previous?.username ?? '';
         const displayName = getAccountDisplayName({

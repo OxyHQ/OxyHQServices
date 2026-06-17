@@ -8,7 +8,7 @@
 import { OxyServicesBase } from '../OxyServices.base';
 import { OxyServicesAuthMixin } from './OxyServices.auth';
 import { OxyServicesFedCMMixin } from './OxyServices.fedcm';
-import { OxyServicesPopupAuthMixin } from './OxyServices.popup';
+import { OxyServicesSilentAuthMixin } from './OxyServices.silent';
 import { OxyServicesRedirectAuthMixin } from './OxyServices.redirect';
 import { OxyServicesSsoMixin } from './OxyServices.sso';
 import { OxyServicesUserMixin } from './OxyServices.user';
@@ -42,7 +42,7 @@ import { OxyServicesAppDataMixin } from './OxyServices.appData';
 type AllMixinInstances =
   & InstanceType<ReturnType<typeof OxyServicesAuthMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesFedCMMixin<typeof OxyServicesBase>>>
-  & InstanceType<ReturnType<typeof OxyServicesPopupAuthMixin<typeof OxyServicesBase>>>
+  & InstanceType<ReturnType<typeof OxyServicesSilentAuthMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesRedirectAuthMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesSsoMixin<typeof OxyServicesBase>>>
   & InstanceType<ReturnType<typeof OxyServicesUserMixin<typeof OxyServicesBase>>>
@@ -84,7 +84,7 @@ type MixinFunction = (Base: new (...args: unknown[]) => OxyServicesBase) => new 
  *
  * Order matters for dependencies:
  * 1. Base auth mixin first (required by all others)
- * 2. Cross-domain auth mixins (FedCM, Popup, Redirect)
+ * 2. Cross-domain auth mixins (FedCM, silent iframe, Redirect)
  * 3. User mixin (requires auth)
  * 4. Feature mixins (can depend on user)
  * 5. Utility mixin last (augments all)
@@ -97,14 +97,13 @@ const MIXIN_PIPELINE: MixinFunction[] = [
 
     // Cross-domain authentication (web-only)
     // - FedCM: Modern browser-native identity federation (Google-style)
-    // - Popup: OAuth2-style popup authentication
+    // - Silent: iframe-based restore for first-party IdP hosts
     // - Redirect: Traditional redirect-based authentication
     OxyServicesFedCMMixin,
-    OxyServicesPopupAuthMixin,
+    OxyServicesSilentAuthMixin,
     OxyServicesRedirectAuthMixin,
 
-    // Central cross-domain SSO (opaque-code exchange). After Popup so it can
-    // reuse the popup mixin's secure-random `generateState()`.
+    // Central cross-domain SSO (opaque-code exchange).
     OxyServicesSsoMixin,
 
     // User management (requires auth)
@@ -155,4 +154,3 @@ export function composeOxyServices(): ComposedOxyServicesConstructor {
 
 // Export the pipeline for testing/debugging
 export { MIXIN_PIPELINE };
-

@@ -8,7 +8,7 @@ import { buildAuthUrl, buildApiUrl, getApiBaseUrl, getAvatarUrl } from "@/lib/ox
 import { setFedCMLoginStatus, registerFedCMSession, buildPostLoginRedirect, completeFedCMLogin } from "@/lib/auth-utils"
 import { setBasePreset } from "@/lib/bloom-css"
 import { useLayoutContext } from "@/lib/layout-context"
-import { loginResponseSchema, refreshResponseSchema, safeParse } from "@/lib/schemas"
+import { loginResponseSchema, safeParse } from "@/lib/schemas"
 import type { DeviceAccount } from "@/lib/types"
 import { useDeviceAccounts } from "@/lib/use-device-accounts"
 import { getOrCreateDeviceFingerprint } from "@/lib/device-fingerprint"
@@ -27,8 +27,10 @@ type LoginFormProps = React.ComponentProps<"div"> & {
     sessionToken?: string
     redirectUri?: string
     state?: string
-    responseType?: string
     clientId?: string
+    codeChallenge?: string
+    codeChallengeMethod?: string
+    scope?: string
     /**
      * Username to pre-fill and re-authenticate. Set via `?login_hint=` when a
      * caller (e.g. the OAuth consent page's re-auth fallback) routes a specific
@@ -54,12 +56,13 @@ export function LoginForm({
     sessionToken,
     redirectUri,
     state,
-    responseType,
     clientId,
+    codeChallenge,
+    codeChallengeMethod,
+    scope,
     loginHint,
     ...props
 }: LoginFormProps) {
-    const isOAuthFlow = responseType === "token" && redirectUri
     const navigate = useNavigate()
     const oxy = useMemo(() => new OxyServices({ baseURL: getApiBaseUrl() }), [])
     const { setLogoSlot } = useLayoutContext()
@@ -92,7 +95,7 @@ export function LoginForm({
     const [useBackupCode, setUseBackupCode] = useState(false)
     const [backupCode, setBackupCode] = useState("")
     const [securityAlert, setSecurityAlert] = useState<string | null>(null)
-    const [pendingRedirect, setPendingRedirect] = useState<{ sessionId: string; accessToken?: string; expiresAt?: string } | null>(null)
+    const [pendingRedirect, setPendingRedirect] = useState<{ sessionId: string; authuser?: number } | null>(null)
 
     const passwordRef = useRef<HTMLInputElement>(null)
     const identifierRef = useRef<HTMLInputElement>(null)
@@ -219,10 +222,7 @@ export function LoginForm({
         await runLookup(username)
     }
 
-    async function redirectAfterLogin(sessionId: string, accessToken?: string, expiresAt?: string) {
-        sessionStorage.setItem("oxy_session_id", sessionId)
-        if (accessToken) sessionStorage.setItem("oxy_access_token", accessToken)
-
+    async function redirectAfterLogin(sessionId: string, authuser?: number) {
         // FedCM login_url completion: when there's no OAuth/cross-app request
         // context (no token, no redirect_uri), this login was almost certainly
         // initiated by the browser's FedCM flow opening our `login_url` dialog
@@ -239,7 +239,7 @@ export function LoginForm({
             if (completeFedCMLogin()) {
                 return
             }
-            // Not a FedCM/popup context (e.g. a plain direct visit to /login):
+            // Not a FedCM browser-mediated context (e.g. a plain direct visit to /login):
             // the cookie is set; fall through to the normal redirect below.
         } else {
             // OAuth / cross-app login: keep the browser's FedCM login status in
@@ -249,28 +249,26 @@ export function LoginForm({
             setFedCMLoginStatus(sessionId)
         }
 
-        if (isOAuthFlow && redirectUri) {
-            const callbackUrl = new URL(redirectUri)
-            callbackUrl.searchParams.set("session_id", sessionId)
-            callbackUrl.searchParams.set("access_token", accessToken || "")
-            callbackUrl.searchParams.set("expires_at", expiresAt || "")
-            if (state) callbackUrl.searchParams.set("state", state)
-            callbackUrl.searchParams.set("redirect_uri", clientId || window.location.origin)
-            window.location.href = callbackUrl.toString()
-            return
-        }
-
-        navigate(buildPostLoginRedirect({ sessionToken, redirectUri, state }))
+        navigate(buildPostLoginRedirect({
+            sessionToken,
+            redirectUri,
+            state,
+            clientId,
+            codeChallenge,
+            codeChallengeMethod,
+            scope,
+            authuser,
+        }))
     }
 
-    function completeLogin(sessionId: string, accessToken?: string, expiresAt?: string, alert?: string) {
+    function completeLogin(sessionId: string, authuser?: number, alert?: string) {
         if (alert) {
             setSecurityAlert(alert)
-            setPendingRedirect({ sessionId, accessToken, expiresAt })
+            setPendingRedirect({ sessionId, authuser })
             goToStep("security-alert", "forward")
             return
         }
-        void redirectAfterLogin(sessionId, accessToken, expiresAt)
+        void redirectAfterLogin(sessionId, authuser)
     }
 
     async function handlePasswordSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -331,7 +329,7 @@ export function LoginForm({
                 return
             }
 
-            completeLogin(parsed.sessionId, parsed.accessToken, parsed.expiresAt, payload.securityAlert)
+            completeLogin(parsed.sessionId, parsed.authuser, payload.securityAlert)
         } catch (err) {
             setLocalError(err instanceof Error ? err.message : "Unable to sign in")
             setIsSubmitting(false)
@@ -372,7 +370,7 @@ export function LoginForm({
                 return
             }
 
-            completeLogin(parsed.sessionId, parsed.accessToken, parsed.expiresAt, payload.securityAlert)
+            completeLogin(parsed.sessionId, parsed.authuser, payload.securityAlert)
         } catch (err) {
             setLocalError(err instanceof Error ? err.message : "Unable to verify")
             setIsSubmitting(false)
@@ -380,37 +378,15 @@ export function LoginForm({
     }
 
     /**
-     * Continue with the currently-active account. The chooser's session probe
-     * already minted a fresh access token (via the durable refresh cookie) and
-     * planted it in `sessionStorage`, so we reuse it directly and funnel into
-     * the SAME post-login redirect the password flow uses — no re-auth needed.
-     * If the planted token is somehow absent, re-mint it with the bearer the
-     * probe stored (`/token/:sessionId` is bearer-protected — cookies alone 401).
+     * Continue with an account already present in the refresh-cookie account
+     * list. The chooser carries only its non-secret `authuser` slot forward so
+     * `/authorize` can target the same account without storing a bearer.
      */
-    async function continueWithCurrentAccount(sessionId: string): Promise<void> {
-        setPendingSessionId(sessionId)
+    async function continueWithCurrentAccount(entry: DeviceAccount): Promise<void> {
+        setPendingSessionId(entry.sessionId)
         setIsSubmitting(true)
         try {
-            const planted = sessionStorage.getItem("oxy_access_token")
-            if (planted) {
-                await redirectAfterLogin(sessionId, planted)
-                return
-            }
-
-            const res = await fetch(buildAuthUrl(`/token/${sessionId}`), {
-                credentials: "include",
-            })
-            const data = await res.json().catch(() => ({}))
-
-            if (!res.ok || !data.accessToken) {
-                setShowLoginForm(true)
-                setPendingSessionId(null)
-                toast.error("Session expired", { description: "Please sign in again" })
-                setIsSubmitting(false)
-                return
-            }
-
-            await redirectAfterLogin(sessionId, data.accessToken, data.expiresAt)
+            await redirectAfterLogin(entry.sessionId, entry.authuser)
         } catch (err) {
             setLocalError(err instanceof Error ? err.message : "Unable to continue")
             setPendingSessionId(null)
@@ -419,18 +395,10 @@ export function LoginForm({
     }
 
     /**
-     * Activate a sibling signed-in account WITHOUT a password. Every account in
-     * the chooser already holds a durable per-slot refresh cookie
-     * (`oxy_rt_${authuser}`) that the device shares across `*.oxy.so`. A
-     * `POST /auth/refresh?authuser=N` reads ONLY that slot's httpOnly cookie,
-     * rotates it server-side, and mints a fresh access token bound to that
-     * account's session — no credentials in the request body. We plant the
-     * minted token + sessionId (the same keys the active row plants) and funnel
-     * into the SAME post-login redirect the password flow uses.
-     *
-     * Falls back to explicit re-auth ONLY when the slot cannot be activated:
-     *   - the entry has no `authuser` slot index (legacy single-cookie path), or
-     *   - the slot's cookie has expired / been revoked (refresh returns non-2xx).
+     * Activate a sibling signed-in account WITHOUT a password. The only value
+     * carried to `/authorize` is `authuser`, a device-local cookie slot index.
+     * If a row has no indexed slot, it cannot be targeted cleanly and we ask for
+     * explicit re-authentication.
      */
     async function activateSiblingAccount(entry: DeviceAccount): Promise<void> {
         if (typeof entry.authuser !== "number") {
@@ -440,22 +408,7 @@ export function LoginForm({
         setPendingSessionId(entry.sessionId)
         setIsSubmitting(true)
         try {
-            const refreshUrl = `${buildAuthUrl("/refresh")}?authuser=${encodeURIComponent(String(entry.authuser))}`
-            const response = await fetch(refreshUrl, {
-                method: "POST",
-                headers: { "content-type": "application/json" },
-                credentials: "include",
-            })
-            if (!response.ok) {
-                routeToReauth(entry)
-                return
-            }
-            const payload = safeParse(refreshResponseSchema, await response.json().catch(() => null))
-            if (!payload?.accessToken) {
-                routeToReauth(entry)
-                return
-            }
-            await redirectAfterLogin(entry.sessionId, payload.accessToken, payload.expiresAt)
+            await redirectAfterLogin(entry.sessionId, entry.authuser)
         } catch (err) {
             setLocalError(err instanceof Error ? err.message : "Unable to continue")
             setPendingSessionId(null)
@@ -482,14 +435,13 @@ export function LoginForm({
 
     /**
      * A chooser row was selected. Google-style: EVERY signed-in account (active
-     * OR a sibling slot) activates its existing session and continues without a
-     * password — the active account reuses its planted token, siblings mint a
-     * fresh one from their per-slot refresh cookie. The password form is reached
-     * only via "Use a different account" or when a slot can't be activated.
+     * OR a sibling slot) continues without a password. The password form is
+     * reached only via "Use a different account" or when a slot can't be
+     * targeted cleanly.
      */
     async function handleSelectAccount(entry: DeviceAccount): Promise<void> {
         if (entry.isCurrent) {
-            await continueWithCurrentAccount(entry.sessionId)
+            await continueWithCurrentAccount(entry)
             return
         }
         await activateSiblingAccount(entry)
@@ -502,7 +454,7 @@ export function LoginForm({
 
     function handleSecurityAlertDismiss() {
         if (pendingRedirect) {
-            void redirectAfterLogin(pendingRedirect.sessionId, pendingRedirect.accessToken, pendingRedirect.expiresAt)
+            void redirectAfterLogin(pendingRedirect.sessionId, pendingRedirect.authuser)
         }
     }
 
@@ -531,7 +483,15 @@ export function LoginForm({
         <AuthFormLayout
             className={className}
             footer={step === "identifier" ? (
-                <SocialLoginButtons sessionToken={sessionToken} redirectUri={redirectUri} state={state} />
+                <SocialLoginButtons
+                    sessionToken={sessionToken}
+                    redirectUri={redirectUri}
+                    state={state}
+                    clientId={clientId}
+                    codeChallenge={codeChallenge}
+                    codeChallengeMethod={codeChallengeMethod}
+                    scope={scope}
+                />
             ) : undefined}
             {...props}
         >

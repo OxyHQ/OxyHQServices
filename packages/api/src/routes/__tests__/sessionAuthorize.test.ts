@@ -9,8 +9,7 @@
  * `authMiddleware`. These tests:
  *  - call without any Authorization header → expect 401, AuthSession
  *    must not be modified;
- *  - call with x-session-id but NO bearer token → still 401 (legacy
- *    header path was removed);
+ *  - call with x-session-id but NO bearer token → still 401;
  *  - call with a valid bearer token → AuthSession is authorised by the
  *    bearer principal (NOT by anything read from x-session-id).
  */

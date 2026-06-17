@@ -19,21 +19,19 @@ export type Account = {
 /**
  * An account signed in on this device, paired with the session it belongs to.
  *
- * `isCurrent` marks the account whose session cookie is currently active at the
- * IdP (the one `/users/me` resolves to). Only the current account can be
- * continued without re-authenticating; selecting any other account funnels into
- * the sign-in form pre-filled with its username (Google-style re-auth prompt).
+ * `isCurrent` marks the account elected as the chooser's active row from the
+ * refresh-all response. Every row carries a freshly minted in-memory bearer for
+ * the consent action; tokens are never written to Web Storage.
  *
  * `authuser` is the device-local cookie slot index (0..N-1) returned by
- * `POST /auth/refresh-all`. The chooser passes it through to the next step
- * (e.g. `?authuser=N` on OAuth redirects, or `refreshTokenViaCookie({ authuser })`
- * to mint a fresh bearer for the chosen account). Optional because the
- * legacy fallback path (single-account `/auth/refresh`) doesn't expose it —
- * in that case the chooser shows the bearer-resolved current account only.
+ * `POST /auth/refresh-all`. The chooser can use it to re-mint a short-lived
+ * bearer when the row's token has expired before the user submits consent.
  */
 export type DeviceAccount = {
     sessionId: string
     account: Account
     isCurrent: boolean
+    accessToken: string
+    expiresAt?: string
     authuser?: number
 }

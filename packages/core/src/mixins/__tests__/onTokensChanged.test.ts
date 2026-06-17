@@ -29,7 +29,7 @@ describe('OxyServices.onTokensChanged', () => {
     const listener = jest.fn();
     oxy.onTokensChanged(listener);
 
-    oxy.setTokens('access_1', 'refresh_1');
+    oxy.setTokens('access_1');
 
     expect(listener).toHaveBeenCalledTimes(1);
     expect(listener).toHaveBeenCalledWith('access_1');

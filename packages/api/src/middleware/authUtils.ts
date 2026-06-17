@@ -30,7 +30,7 @@ export interface AuthenticatedRequest extends Request {
 }
 
 /**
- * Extract token from request (header or query param)
+ * Extract bearer token from the Authorization header.
  */
 export function extractTokenFromRequest(req: Request): string | undefined {
   const authHeader = req.headers.authorization;
@@ -38,11 +38,7 @@ export function extractTokenFromRequest(req: Request): string | undefined {
   if (authHeader && authHeader.startsWith('Bearer ')) {
     return authHeader.substring(7);
   }
-  
-  if (req.query.token && typeof req.query.token === 'string') {
-    return req.query.token;
-  }
-  
+
   return undefined;
 }
 
@@ -109,9 +105,9 @@ export async function validateSessionToken(token: string): Promise<NormalizedUse
 export async function authenticateRequestNonBlocking(
   req: Request,
   requireAuth: boolean = false
-): Promise<{ user: NormalizedUser | null; source: 'header' | 'query' | null }> {
+): Promise<{ user: NormalizedUser | null; source: 'header' | null }> {
   const token = extractTokenFromRequest(req);
-  const source = req.headers.authorization ? 'header' : (req.query.token ? 'query' : null);
+  const source = req.headers.authorization ? 'header' : null;
   
   if (!token) {
     return { user: null, source };
@@ -130,4 +126,3 @@ export async function authenticateRequestNonBlocking(
   const user = await validateSessionToken(token);
   return { user, source };
 }
-

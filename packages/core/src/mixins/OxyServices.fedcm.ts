@@ -175,7 +175,7 @@ let fedCMActiveController: AbortController | null = null;
  * - Firefox: Not yet supported (fallback required)
  *
  * Key Features:
- * - No redirects or popups required
+ * - No redirects or secondary windows required
  * - Browser-native UI prompts
  * - Privacy-preserving (IdP can't track users)
  * - Automatic SSO across domains
@@ -245,7 +245,7 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
    *
    * This provides a Google-style authentication experience:
    * - Browser shows native "Sign in with Oxy" prompt
-   * - No redirect or popup required
+   * - No redirect or secondary window required
    * - User approves → credential exchange happens in browser
    * - All apps automatically get SSO after first sign-in
    *
@@ -259,8 +259,8 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
    *   const session = await oxyServices.signInWithFedCM();
    *   console.log('Signed in:', session.user);
    * } catch (error) {
-   *   // Fallback to popup or redirect auth
-   *   await oxyServices.signInWithPopup();
+   *   // Fallback to redirect auth
+   *   oxyServices.signInWithRedirect();
    * }
    * ```
    */
@@ -340,11 +340,10 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
     // Exchange FedCM ID token for Oxy session
     const session = await this.exchangeIdTokenForSession(credential.token);
 
-    // Store access token in HttpService. `accessToken`/`refreshToken` are
-    // declared optional on SessionLoginResponse; default the refresh token to
-    // an empty string when the exchange did not return one.
+    // Store the access token in HttpService. Refresh stays in the httpOnly
+    // cookie slot set by the API.
     if (session?.accessToken) {
-      this.httpService.setTokens(session.accessToken, session.refreshToken ?? '');
+      this.httpService.setTokens(session.accessToken);
     }
 
     // Store the user ID as loginHint for future FedCM requests — only now, after
@@ -513,11 +512,10 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
       return null;
     }
 
-    // Set the access token. `accessToken`/`refreshToken` are declared optional
-    // on SessionLoginResponse; default the refresh token to an empty string when
-    // the exchange did not return one.
+    // Store the access token. Refresh stays in the httpOnly cookie slot set by
+    // the API.
     if (session.accessToken) {
-      this.httpService.setTokens(session.accessToken, session.refreshToken ?? '');
+      this.httpService.setTokens(session.accessToken);
       debug.log('Silent SSO: Access token set');
     } else {
       debug.warn('Silent SSO: No accessToken in session response');

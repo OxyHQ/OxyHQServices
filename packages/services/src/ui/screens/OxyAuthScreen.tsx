@@ -142,13 +142,12 @@ const OxyAuthScreen: React.FC<BaseScreenProps> = ({
   // `claimSessionByToken` — the device-flow equivalent of OAuth's
   // code-for-token exchange (RFC 8628 §3.4).
   //
-  // Without that exchange the SDK has no bearer token, so the subsequent
-  // `switchSession` -> `getTokenBySession` call (`GET /session/token/:id`) 401s
-  // against the C1-hardened API — the session is authorized server-side but the
-  // app never becomes authenticated and the sheet sits "Waiting for
-  // authorization..." forever. Once `claimSessionByToken` plants the tokens in
-  // the HttpService, the rest of the session wiring flows through the normal
-  // `switchSession` path. This mirrors `SignInModal`'s web flow exactly.
+  // Without that exchange the SDK has no bearer token — the session is
+  // authorized server-side but the app never becomes authenticated and the
+  // sheet sits "Waiting for authorization..." forever. Once
+  // `claimSessionByToken` plants the tokens in the HttpService, the rest of the
+  // session wiring flows through the normal `switchSession` path. This mirrors
+  // `SignInModal`'s web flow exactly.
   const handleAuthSuccess = useCallback(async (sessionId: string, sessionToken: string) => {
     if (isProcessingRef.current) return;
     isProcessingRef.current = true;

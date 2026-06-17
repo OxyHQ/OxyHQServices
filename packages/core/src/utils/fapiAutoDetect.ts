@@ -8,7 +8,7 @@
  * Clerk-style multi-domain SSO depends on the IdP being reachable on a
  * subdomain of the RP's own apex (e.g. `auth.mention.earth` CNAMEd to the
  * central Oxy IdP). That way every FedCM endpoint, the session cookie,
- * and any popup/redirect target are same-site with the RP — the only way
+ * and any redirect target are same-site with the RP — the only way
  * to get first-party cookies in Safari ITP and Firefox Total Cookie
  * Protection.
  *

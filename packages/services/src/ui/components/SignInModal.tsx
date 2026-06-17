@@ -3,7 +3,7 @@
  *
  * A semi-transparent full-screen modal that displays:
  * - QR code for scanning with Oxy Accounts app
- * - Button to open Oxy Auth popup
+ * - Button to open the Oxy Auth approval page
  *
  * Animates with fade-in effect.
  */
@@ -143,12 +143,11 @@ const SignInModal: React.FC = () => {
     // this is the device-flow equivalent of OAuth's code-for-token
     // exchange (RFC 8628 §3.4).
     //
-    // Without that exchange the SDK has no bearer token and every
-    // subsequent call (including `switchSession` -> `getTokenBySession`)
-    // would 401 against the C1-hardened API. Once `claimSessionByToken`
-    // plants the tokens in the HttpService, the rest of the session
-    // wiring (state, persistence, language preference) flows through
-    // the normal `switchSession` path.
+    // Without that exchange the SDK has no bearer token and the app never
+    // becomes authenticated even though the session is authorized server-side.
+    // Once `claimSessionByToken` plants the tokens in the HttpService, the rest
+    // of the session wiring (state, persistence, language preference) flows
+    // through the normal `switchSession` path.
     const handleAuthSuccess = useCallback(async (sessionId: string, sessionToken: string) => {
         if (isProcessingRef.current) return;
         isProcessingRef.current = true;
@@ -327,8 +326,8 @@ const SignInModal: React.FC = () => {
         return `oxyauth://${authSession.sessionToken}`;
     };
 
-    // Open Oxy Auth popup
-    const handleOpenAuthPopup = useCallback(async () => {
+    // Open Oxy Auth approval page for this device-flow session.
+    const handleOpenAuthApproval = useCallback(async () => {
         if (!authSession) return;
 
         const baseURL = oxyServices.getBaseURL();
@@ -354,7 +353,7 @@ const SignInModal: React.FC = () => {
         webUrl.searchParams.set('token', authSession.sessionToken);
 
         if (Platform.OS === 'web') {
-            // Open popup window on web
+            // Open a separate approval window on web for the device-flow token.
             const width = 500;
             const height = 650;
             const screenWidth = window.screen?.width ?? width;
@@ -364,8 +363,8 @@ const SignInModal: React.FC = () => {
 
             window.open(
                 webUrl.toString(),
-                'oxy-auth-popup',
-                `width=${width},height=${height},left=${left},top=${top},popup=1`
+                'oxy-auth-approval',
+                `width=${width},height=${height},left=${left},top=${top}`
             );
         } else {
             // Open in browser on native
@@ -449,9 +448,9 @@ const SignInModal: React.FC = () => {
                                 <View style={[styles.divider, { backgroundColor: 'rgba(255,255,255,0.3)' }]} />
                             </View>
 
-                            {/* Open Auth Popup Button */}
+                            {/* Open approval window */}
                             <Button
-                                onPress={handleOpenAuthPopup}
+                                onPress={handleOpenAuthApproval}
                                 icon={<OxyLogo variant="icon" size={20} fillColor={theme.colors.card} />}
                             >
                                 Open Oxy Auth

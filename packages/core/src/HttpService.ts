@@ -35,6 +35,9 @@ interface JwtPayload {
   [key: string]: any;
 }
 
+export type AuthRefreshReason = 'preflight' | 'response-401';
+export type AuthRefreshHandler = (reason: AuthRefreshReason) => Promise<string | null>;
+
 /**
  * Structural type that captures the multipart-write surface every supported
  * FormData implementation exposes (browser, React Native, Node `form-data`
@@ -110,26 +113,19 @@ interface RequestConfig extends RequestOptions {
  */
 class TokenStore {
   private accessToken: string | null = null;
-  private refreshToken: string | null = null;
   private csrfToken: string | null = null;
   private csrfTokenFetchPromise: Promise<string | null> | null = null;
 
-  setTokens(accessToken: string, refreshToken = ''): void {
+  setTokens(accessToken: string): void {
     this.accessToken = accessToken;
-    this.refreshToken = refreshToken;
   }
 
   getAccessToken(): string | null {
     return this.accessToken;
   }
 
-  getRefreshToken(): string | null {
-    return this.refreshToken;
-  }
-
   clearTokens(): void {
     this.accessToken = null;
-    this.refreshToken = null;
   }
 
   hasAccessToken(): boolean {
@@ -174,14 +170,13 @@ export class HttpService {
   private config: OxyConfig;
   private tokenRefreshPromise: Promise<string | null> | null = null;
   private tokenRefreshCooldownUntil: number = 0;
-  private _onTokenRefreshed: ((accessToken: string) => void) | null = null;
+  private authRefreshHandler: AuthRefreshHandler | null = null;
 
   /**
    * Fan-out listeners notified on EVERY access-token change on this instance:
-   * explicit `setTokens`, `clearTokens`, a successful silent refresh, and the
-   * internal 401-driven clear. Unlike the single-slot `_onTokenRefreshed`
-   * (owned by AuthManager for the refresh path only), this is a Set so multiple
-   * independent observers can mirror token state without clobbering each other.
+   * explicit `setTokens`, `clearTokens`, an AuthManager-owned refresh, and the
+   * internal 401-driven clear. This is a Set so multiple independent observers
+   * can mirror token state without clobbering each other.
    *
    * Each listener receives the resulting access token, or `null` when cleared.
    */
@@ -421,22 +416,13 @@ export class HttpService {
 
         // Handle response
         if (!response.ok) {
-          // On 401, attempt token refresh and retry once before giving up
+          // On 401, delegate refresh to AuthManager and retry once before
+          // giving up. HttpService deliberately does not know any session
+          // routes; the AuthManager is the single session authority.
           if (response.status === 401 && !config._isAuthRetry) {
-            const currentToken = this.tokenStore.getAccessToken();
-            if (currentToken) {
-              try {
-                const decoded = jwtDecode<JwtPayload>(currentToken);
-                if (decoded.sessionId) {
-                  const refreshResult = await this._refreshTokenFromSession(decoded.sessionId);
-                  if (refreshResult) {
-                    // Retry the request with the new token
-                    return this.request<T>({ ...config, _isAuthRetry: true, retry: false });
-                  }
-                }
-              } catch {
-                // Token decode failed, fall through to clear
-              }
+            const refreshed = await this.refreshAccessToken('response-401');
+            if (refreshed) {
+              return this.request<T>({ ...config, _isAuthRetry: true, retry: false });
             }
             // Refresh failed or no token — clear tokens and stale CSRF
             this.tokenStore.clearTokens();
@@ -464,7 +450,7 @@ export class HttpService {
           if (contentType && contentType.includes('application/json')) {
             try {
               const errorData = await response.json() as { message?: string; error?: string } | null;
-              // Check both 'message' and 'error' fields for backwards compatibility
+              // Accept either structured error field from API responses.
               if (errorData?.message) {
                 errorMessage = errorData.message;
               } else if (errorData?.error) {
@@ -878,24 +864,9 @@ export class HttpService {
       const currentTime = Math.floor(Date.now() / 1000);
 
       // If token expires in less than 60 seconds, refresh it
-      if (decoded.exp && decoded.exp - currentTime < 60 && decoded.sessionId) {
-        // Skip if we recently failed a refresh (15s cooldown to prevent storms)
-        if (Date.now() < this.tokenRefreshCooldownUntil) {
-          return `Bearer ${accessToken}`;
-        }
-        // Deduplicate concurrent refresh attempts. The promise is shared
-        // across all concurrent callers and cleared only after it settles,
-        // so every awaiter receives the same result.
-        if (!this.tokenRefreshPromise) {
-          this.tokenRefreshPromise = this._refreshTokenFromSession(decoded.sessionId)
-            .then((result) => {
-              if (!result) this.tokenRefreshCooldownUntil = Date.now() + 15000;
-              return result;
-            })
-            .finally(() => { this.tokenRefreshPromise = null; });
-        }
-        const result = await this.tokenRefreshPromise;
-        if (result) return result;
+      if (decoded.exp && decoded.exp - currentTime < 60) {
+        const refreshed = await this.refreshAccessToken('preflight');
+        if (refreshed) return `Bearer ${refreshed}`;
         // Refresh failed — don't use the expired token (would cause 401 loop)
         return null;
       }
@@ -907,28 +878,40 @@ export class HttpService {
     }
   }
 
-  private async _refreshTokenFromSession(sessionId: string): Promise<string | null> {
-    try {
-      const refreshUrl = `${this.baseURL}/session/token/${sessionId}`;
-      const response = await fetch(refreshUrl, {
-        method: 'GET',
-        headers: { 'Accept': 'application/json' },
-        signal: AbortSignal.timeout(5000),
-        credentials: 'include',
-      });
-
-      if (response.ok) {
-        const { accessToken: newToken } = await response.json();
-        this.tokenStore.setTokens(newToken);
-        this._onTokenRefreshed?.(newToken);
-        this.notifyTokenChange();
-        this.logger.debug('Token refreshed');
-        return `Bearer ${newToken}`;
-      }
-    } catch (refreshError) {
-      this.logger.warn('Token refresh failed, using current token');
+  private async refreshAccessToken(reason: AuthRefreshReason): Promise<string | null> {
+    if (!this.authRefreshHandler) {
+      return null;
     }
-    return null;
+
+    if (Date.now() < this.tokenRefreshCooldownUntil) {
+      return null;
+    }
+
+    if (!this.tokenRefreshPromise) {
+      this.tokenRefreshPromise = this.authRefreshHandler(reason)
+        .then((newToken) => {
+          if (!newToken) {
+            this.tokenRefreshCooldownUntil = Date.now() + 15000;
+            return null;
+          }
+          if (this.tokenStore.getAccessToken() !== newToken) {
+            this.tokenStore.setTokens(newToken);
+            this.notifyTokenChange();
+          }
+          this.logger.debug('Token refreshed via AuthManager');
+          return newToken;
+        })
+        .catch((error) => {
+          this.logger.warn('Token refresh failed:', error);
+          this.tokenRefreshCooldownUntil = Date.now() + 15000;
+          return null;
+        })
+        .finally(() => {
+          this.tokenRefreshPromise = null;
+        });
+    }
+
+    return this.tokenRefreshPromise;
   }
 
   /**
@@ -996,13 +979,13 @@ export class HttpService {
   }
 
   // Token management
-  setTokens(accessToken: string, refreshToken = ''): void {
-    this.tokenStore.setTokens(accessToken, refreshToken);
+  setTokens(accessToken: string): void {
+    this.tokenStore.setTokens(accessToken);
     this.notifyTokenChange();
   }
 
-  set onTokenRefreshed(callback: ((accessToken: string) => void) | null) {
-    this._onTokenRefreshed = callback;
+  setAuthRefreshHandler(handler: AuthRefreshHandler | null): void {
+    this.authRefreshHandler = handler;
   }
 
   clearTokens(): void {
@@ -1136,4 +1119,3 @@ export class HttpService {
     this.tokenStore.clearCsrfToken();
   }
 }
-

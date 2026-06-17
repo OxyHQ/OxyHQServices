@@ -62,13 +62,8 @@ export interface ServiceApp {
   appId: string;
   appName: string;
   scopes: string[];
-  /**
-   * The credentialId of the specific service credential that minted this token.
-   * Carried by newer service-token JWTs alongside `appId`; absent on tokens
-   * issued before credential-level audit linking. Use for per-credential audit
-   * trails and rotation alignment (GitHub #215).
-   */
-  credentialId?: string;
+  /** The credentialId of the specific service credential that minted this token. */
+  credentialId: string;
 }
 
 /**
@@ -409,19 +404,12 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
         };
 
         try {
-          // Extract token from Authorization header or query params.
+          // Extract token from Authorization header.
           // Node/Express normalizes `Authorization` to a string; we guard
           // against the (legal but unusual) string[] case anyway.
           const rawAuthHeader = req.headers.authorization;
           const authHeader = Array.isArray(rawAuthHeader) ? rawAuthHeader[0] : rawAuthHeader;
-          let token = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : null;
-
-          // Fallback to query params (useful for WebSocket upgrades)
-          if (!token) {
-            const q = req.query || {};
-            if (typeof q.token === 'string' && q.token) token = q.token;
-            else if (typeof q.access_token === 'string' && q.access_token) token = q.access_token;
-          }
+          const token = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : null;
 
           if (debug) {
             logger.debug(`[oxy.auth] ${req.method} ${req.path} | token: ${!!token}`, {
@@ -573,13 +561,14 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
 
             // Validate required service token fields
             const appId = decoded.appId;
-            if (!appId) {
+            const credentialId = decoded.credentialId;
+            if (!appId || typeof credentialId !== 'string' || credentialId.length === 0) {
               if (optional) {
                 req.userId = null;
                 req.user = null;
                 return next();
               }
-              const error = { error: 'INVALID_SERVICE_TOKEN', message: 'Invalid service token: missing appId', code: 'INVALID_SERVICE_TOKEN', status: 401 };
+              const error = { error: 'INVALID_SERVICE_TOKEN', message: 'Invalid service token: missing required claims', code: 'INVALID_SERVICE_TOKEN', status: 401 };
               if (onError) return onError(error);
               return res.status(401).json(error);
             }
@@ -625,10 +614,8 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
             req.serviceApp = {
               appId,
               appName: decoded.appName || 'unknown',
+              credentialId,
               scopes: Array.isArray(decoded.scopes) ? decoded.scopes : [],
-              ...(typeof decoded.credentialId === 'string' && decoded.credentialId.length > 0
-                ? { credentialId: decoded.credentialId }
-                : {}),
             };
 
             if (debug) {
@@ -1133,7 +1120,7 @@ interface OxyAuthInstance {
     [key: string]: unknown;
   } | null>;
   getAccessToken(): string | null;
-  setTokens(accessToken: string, refreshToken?: string): void;
+  setTokens(accessToken: string): void;
   clearTokens(): void;
   getCurrentUser(): Promise<User | null>;
   handleError(error: unknown): Error;

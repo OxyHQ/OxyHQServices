@@ -11,14 +11,9 @@
  *      (independent of the sessionId), stores ONLY its SHA-256 hash bound to a
  *      session + user + rotation `family`, and returns the raw token. The raw
  *      token is dropped into an httpOnly + Secure cookie scoped to `/auth` — it
- *      is never readable from JavaScript (XSS-proof). Scoping to `/auth` (rather
- *      than just `/auth/refresh`) lets the browser also replay the cookie to
- *      `/auth/session` and `/auth/logout`, the other first-party session routes.
- *      This is backward-compatible: a cookie previously stored with
- *      `Path=/auth/refresh` keeps being sent to `/auth/refresh` (the only place
- *      the old client posts), while newly issued/rotated cookies use `Path=/auth`
- *      and reach all of `/auth/session`, `/auth/refresh`, and `/auth/logout`.
- *      No existing user is logged out by broadening the path.
+ *      is never readable from JavaScript (XSS-proof). Scoping to `/auth` lets
+ *      the browser replay the indexed cookie to `/auth/session`,
+ *      `/auth/refresh`, and `/auth/logout`.
  *   2. On cold boot the browser replays the cookie to `POST /auth/refresh`.
  *      `rotateRefreshToken(...)` consumes the presented token (atomic
  *      `{ usedAt: null } -> set`) and issues a NEW token in the SAME family
@@ -49,15 +44,8 @@ import { sha256Hex, base64UrlEncode } from './oauthCode.service';
 export const REFRESH_TOKEN_BYTES = 32;
 /** Sliding lifetime of a refresh token / its cookie (30 days). */
 export const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
-/** Name of the first-party httpOnly refresh-token cookie (legacy / single-account). */
+/** Prefix of first-party httpOnly refresh-token cookies. */
 export const REFRESH_COOKIE_NAME = 'oxy_rt';
-/**
- * Alias for the legacy single-account cookie name. Kept as a separate export so
- * call sites that specifically want the "no authuser suffix" cookie are
- * self-documenting (and so a future rename of REFRESH_COOKIE_NAME does not
- * silently change what the multi-account helpers parse out of the header).
- */
-export const REFRESH_COOKIE_NAME_LEGACY = 'oxy_rt';
 /**
  * Indexed multi-account cookie names: `oxy_rt_${authuser}` where `authuser` is
  * a non-negative integer device-local index (Google-style multi-account).
@@ -73,25 +61,11 @@ export const REFRESH_COOKIE_NAME_RE = /^oxy_rt_(\d+)$/;
 export const MAX_DEVICE_ACCOUNTS = 10;
 /**
  * Path the cookie is scoped to. Scoped to the `/auth` mount so the browser sends
- * `oxy_rt` to all of the first-party session routes — `/auth/session` (establish
- * the cookie right after login), `/auth/refresh` (rotate it), and `/auth/logout`
+ * `oxy_rt_${authuser}` to all of the first-party session routes — `/auth/session`
+ * (establish the cookie right after login), `/auth/refresh` (rotate it), and `/auth/logout`
  * (revoke it) — while still keeping it off every other route.
- *
- * Backward-compatible: a cookie previously issued with `Path=/auth/refresh` keeps
- * being sent to `/auth/refresh` (the only route the old client posts to), so no
- * existing user is logged out by broadening the path; newly issued/rotated
- * cookies use `Path=/auth` and additionally reach `/auth/session` + `/auth/logout`.
  */
 export const REFRESH_COOKIE_PATH = '/auth';
-/**
- * The OLD path the cookie used before Phase 1 widened it to `/auth`. We never
- * issue at this path any more, but a mid-migration browser can still hold a
- * stale `oxy_rt` cookie scoped here. We emit an explicit deletion for this path
- * on every set/clear so the browser drops the legacy duplicate — see
- * `appendLegacyRefreshCookieDeletion`. NOTE: this is intentionally a hardcoded
- * literal, NOT `REFRESH_COOKIE_PATH` (which is now `/auth`).
- */
-export const LEGACY_REFRESH_COOKIE_PATH = '/auth/refresh';
 
 export interface IssueRefreshTokenOptions {
   sessionId: string;
@@ -268,53 +242,6 @@ export async function rotateRefreshToken(rawToken: string): Promise<RotateOutcom
   };
 }
 
-/**
- * Parse EVERY `oxy_rt` value out of a raw `Cookie` request header.
- *
- * WHY this exists: Phase 1 widened the `oxy_rt` cookie Path from `/auth/refresh`
- * to `/auth`. A mid-migration browser can therefore hold TWO `oxy_rt` cookies at
- * once — a legacy one at `Path=/auth/refresh` and a new one at `Path=/auth` —
- * and send BOTH to `/auth/refresh`. `cookie-parser` collapses duplicates and
- * exposes only the FIRST value via `req.cookies.oxy_rt`, which (per RFC 6265,
- * longer-path-first) is the legacy one — even when it is the stale/used token.
- * Reading just that one value silently logs the real user out. This helper
- * returns ALL presented values so the caller can pick the valid sibling.
- *
- * Parsing is deliberately tolerant: we split on `;`, split each part on the
- * FIRST `=` only (cookie values may legitimately contain `=`), trim the name,
- * and keep the RAW (non-URL-decoded) value. Our tokens are URL-safe base64url
- * (`[A-Za-z0-9_-]`), so decode/encode is identity and the raw value matches what
- * we hashed at issue time. Empty values are skipped; duplicates are de-duped
- * preserving first-seen order.
- */
-export function parseRefreshTokenCandidates(cookieHeader: string | undefined): string[] {
-  if (!cookieHeader) {
-    return [];
-  }
-
-  const seen = new Set<string>();
-  const candidates: string[] = [];
-
-  for (const part of cookieHeader.split(';')) {
-    const eqIndex = part.indexOf('=');
-    if (eqIndex === -1) {
-      continue;
-    }
-    const name = part.slice(0, eqIndex).trim();
-    if (name !== REFRESH_COOKIE_NAME) {
-      continue;
-    }
-    const value = part.slice(eqIndex + 1).trim();
-    if (value.length === 0 || seen.has(value)) {
-      continue;
-    }
-    seen.add(value);
-    candidates.push(value);
-  }
-
-  return candidates;
-}
-
 export type CandidateClassification =
   | { kind: 'valid'; rawToken: string }
   | { kind: 'used'; family: string; sessionId: string }
@@ -325,10 +252,10 @@ export type CandidateClassification =
  * any of them (purely a lookup — no `usedAt` mutation, no rotation).
  *
  * SECURITY RATIONALE (load-bearing — do not weaken): a browser only ever sends
- * its OWN httpOnly cookies, so multiple candidates can ONLY be the legitimate
- * user's own migration duplicates (legacy `Path=/auth/refresh` + new
- * `Path=/auth`). Picking the VALID sibling and ignoring a USED sibling is
- * therefore safe — it is the same user's two cookies, one already rotated.
+ * its OWN httpOnly cookies, so multiple candidates for one indexed slot can
+ * only be that device's own duplicate values. Picking the VALID sibling and
+ * ignoring a USED sibling is safe — it is the same user's slot, one already
+ * rotated.
  *
  * A genuine theft replay is a LONE used token with NO valid sibling among the
  * candidates: that still classifies as `'used'`, so the caller fires
@@ -403,32 +330,23 @@ export function refreshCookieName(authuser: number): string {
 }
 
 /**
- * Key used by the multi-account parser to differentiate the legacy
- * un-suffixed cookie from indexed ones. A literal numeric type would
- * conflict with an `authuser` index of the same value, so we use the
- * string sentinel `'legacy'` for the un-suffixed bucket.
+ * Key used by the multi-account parser. Only indexed slots are valid.
  */
-export type RefreshCookieIndex = number | 'legacy';
+export type RefreshCookieIndex = number;
 
 /**
- * Parse EVERY refresh-token cookie out of a raw `Cookie` header, grouped by
- * device-local `authuser` index (or `'legacy'` for the un-suffixed cookie).
+ * Parse EVERY indexed refresh-token cookie out of a raw `Cookie` header, grouped
+ * by device-local `authuser` index.
  *
- * Same parsing approach as `parseRefreshTokenCandidates` — we split on `;`,
- * split each part on the FIRST `=` only (cookie values may contain `=`), trim
- * the name, and keep the RAW (non-URL-decoded) value because our tokens are
- * URL-safe base64url. The Cookie header can carry MULTIPLE values for the same
- * name during the legacy/multi-path migration, so each bucket is an array. We
- * deliberately IGNORE:
- *   - Any cookie name that doesn't match `oxy_rt` exactly or `^oxy_rt_(\d+)$`
+ * We split on `;`, split each part on the FIRST `=` only (cookie values may
+ * contain `=`), trim the name, and keep the RAW (non-URL-decoded) value because
+ * our tokens are URL-safe base64url. The Cookie header can carry MULTIPLE values for the same
+ * name, so each bucket is an array. We deliberately IGNORE:
+ *   - Any cookie name that doesn't match `^oxy_rt_(\d+)$`
  *     (so `oxy_rt_foo`, `oxy_rt_-1`, `oxy_rt_garbage` never enter the result).
  *   - Indexed cookies whose authuser is `>= MAX_DEVICE_ACCOUNTS` (defence
  *     against an attacker stuffing `oxy_rt_999` into a cookie header).
  *   - Empty values.
- *
- * The existing `parseRefreshTokenCandidates` / `classifyRefreshCandidates`
- * helpers are intentionally NOT replaced — they remain the back-compat path
- * for the legacy `/auth/refresh` flow that consumes only `oxy_rt`.
  */
 export function parseAllRefreshCookies(
   cookieHeader: string | undefined
@@ -452,15 +370,11 @@ export function parseAllRefreshCookies(
     }
 
     let key: RefreshCookieIndex | null = null;
-    if (name === REFRESH_COOKIE_NAME_LEGACY) {
-      key = 'legacy';
-    } else {
-      const match = REFRESH_COOKIE_NAME_RE.exec(name);
-      if (match) {
-        const parsed = Number(match[1]);
-        if (Number.isInteger(parsed) && parsed >= 0 && parsed < MAX_DEVICE_ACCOUNTS) {
-          key = parsed;
-        }
+    const match = REFRESH_COOKIE_NAME_RE.exec(name);
+    if (match) {
+      const parsed = Number(match[1]);
+      if (Number.isInteger(parsed) && parsed >= 0 && parsed < MAX_DEVICE_ACCOUNTS) {
+        key = parsed;
       }
     }
 
@@ -492,9 +406,8 @@ export function parseAllRefreshCookies(
 /**
  * Resolve a single `authuser` bucket of candidates to either the valid raw
  * token to rotate, or a theft signal. Wraps `classifyRefreshCandidates` so the
- * caller does not have to know about the legacy/migration parsing details —
- * the contract is the SAME as the single-bucket case the legacy `/auth/refresh`
- * route already exercises: valid wins; otherwise a lone used/revoked candidate
+ * caller does not have to know the raw-token lookup details: valid wins;
+ * otherwise a lone used/revoked candidate
  * fires reuse-detection.
  */
 export async function selectActiveCandidate(
@@ -504,7 +417,7 @@ export async function selectActiveCandidate(
 }
 
 /**
- * Build the cookie attributes for `oxy_rt`.
+ * Build the cookie attributes for indexed refresh-token cookies.
  *
  * - `httpOnly: true` — unreadable from JavaScript, so an XSS payload cannot
  *   exfiltrate the refresh token.
@@ -531,39 +444,10 @@ export function buildRefreshCookieOptions(): RefreshCookieOptions {
 }
 
 /**
- * Append a deletion for the LEGACY `Path=/auth/refresh` cookie as a SECOND
- * `Set-Cookie` header so a mid-migration browser drops its stale duplicate.
- *
- * We must use `res.append` (not a second `res.cookie`) because Express keys
- * outgoing cookies by name and a second `res.cookie(oxy_rt, ...)` would
- * OVERWRITE the real `Path=/auth` cookie instead of adding a sibling header.
- * The deletion mirrors `buildRefreshCookieOptions()` exactly for domain/secure
- * (a mismatched domain/secure on a clear is silently ignored by the browser);
- * the Path is the OLD `/auth/refresh` so it targets the legacy cookie only and
- * leaves the real `/auth` cookie untouched. `Secure;` is emitted only in
- * production, matching the real cookie in local http dev.
- */
-function appendLegacyRefreshCookieDeletion(res: Response): void {
-  const { domain } = buildRefreshCookieOptions();
-  const securePart = isProduction() ? 'Secure; ' : '';
-  const legacyDelete =
-    `${REFRESH_COOKIE_NAME}=; Domain=${domain}; Path=${LEGACY_REFRESH_COOKIE_PATH}; ` +
-    `Max-Age=0; HttpOnly; ${securePart}SameSite=Lax`;
-  res.append('Set-Cookie', legacyDelete);
-}
-
-/**
  * Set a refresh-token cookie on the response.
  *
- * - With `opts.authuser` UNSET (default): legacy single-account behaviour —
- *   write the un-suffixed `oxy_rt` cookie at `Path=/auth` and append the
- *   `Path=/auth/refresh` deletion. Old clients that only know `oxy_rt`
- *   continue to work unchanged.
- * - With `opts.authuser` SET (Google-style multi-account): write the indexed
- *   `oxy_rt_${authuser}` cookie at `Path=/auth` with the SAME flags (HttpOnly,
- *   Secure, SameSite=Lax, Domain, Max-Age). We do NOT touch the legacy cookie
- *   in this branch — every account is append-only and the legacy cookie is a
- *   distinct, independent compat slot for older clients.
+ * Writes the indexed `oxy_rt_${authuser}` cookie at `Path=/auth` with HttpOnly,
+ * Secure, SameSite=Lax, Domain, and Max-Age.
  *
  * `authuser` is validated by `refreshCookieName`, which throws `RangeError`
  * for anything outside `[0, MAX_DEVICE_ACCOUNTS)`.
@@ -571,39 +455,24 @@ function appendLegacyRefreshCookieDeletion(res: Response): void {
 export function setRefreshCookie(
   res: Response,
   token: string,
-  opts: { authuser?: number } = {}
+  opts: { authuser: number }
 ): void {
-  if (typeof opts.authuser === 'number') {
-    const name = refreshCookieName(opts.authuser);
-    res.cookie(name, token, buildRefreshCookieOptions());
-    return;
-  }
-
-  res.cookie(REFRESH_COOKIE_NAME_LEGACY, token, buildRefreshCookieOptions());
-  appendLegacyRefreshCookieDeletion(res);
+  const name = refreshCookieName(opts.authuser);
+  res.cookie(name, token, buildRefreshCookieOptions());
 }
 
 /**
  * Clear ONE refresh-token cookie.
  *
- * - With `opts.authuser` UNSET (default): clear the legacy `oxy_rt` cookie on
- *   BOTH paths (the real `Path=/auth` plus the appended `Path=/auth/refresh`
- *   deletion for mid-migration browsers).
- * - With `opts.authuser` SET: clear only `oxy_rt_${authuser}` at `Path=/auth`.
- *   Sibling indexed cookies (other signed-in accounts) are untouched.
+ * Clears only `oxy_rt_${authuser}` at `Path=/auth`. Sibling indexed cookies
+ * (other signed-in accounts) are untouched.
  */
 export function clearRefreshCookie(
   res: Response,
-  opts: { authuser?: number } = {}
+  opts: { authuser: number }
 ): void {
-  if (typeof opts.authuser === 'number') {
-    const name = refreshCookieName(opts.authuser);
-    res.cookie(name, '', { ...buildRefreshCookieOptions(), maxAge: 0 });
-    return;
-  }
-
-  res.cookie(REFRESH_COOKIE_NAME_LEGACY, '', { ...buildRefreshCookieOptions(), maxAge: 0 });
-  appendLegacyRefreshCookieDeletion(res);
+  const name = refreshCookieName(opts.authuser);
+  res.cookie(name, '', { ...buildRefreshCookieOptions(), maxAge: 0 });
 }
 
 /**
@@ -612,8 +481,7 @@ export function clearRefreshCookie(
  * Used by the broad `/auth/logout` path (no `?authuser=` specified) so that a
  * device with multiple signed-in accounts ends up with zero accounts. Each
  * presented cookie name gets its own explicit `Max-Age=0` Set-Cookie header so
- * the browser reliably drops it. The legacy `Path=/auth/refresh` deletion is
- * also appended whenever `oxy_rt` was among the presented names.
+ * the browser reliably drops it.
  *
  * No-op when no recognised refresh cookies were presented; the caller is still
  * expected to return a 200 (logout is idempotent).
@@ -630,25 +498,18 @@ export function clearAllRefreshCookies(
   const opts = { ...buildRefreshCookieOptions(), maxAge: 0 };
 
   for (const key of buckets.keys()) {
-    if (key === 'legacy') {
-      res.cookie(REFRESH_COOKIE_NAME_LEGACY, '', opts);
-      appendLegacyRefreshCookieDeletion(res);
-      continue;
-    }
     res.cookie(refreshCookieName(key), '', opts);
   }
 }
 
 /**
  * Result of minting + setting a refresh cookie. `authuser` is the integer
- * device-local slot we wrote into (multi-account path), or `null` when the
- * caller is on the legacy single-account path and the un-suffixed `oxy_rt`
- * cookie was written.
+ * device-local slot we wrote into.
  */
 export interface IssueAndSetRefreshCookieResult {
   accessToken: string;
   expiresAt: Date;
-  authuser: number | null;
+  authuser: number;
 }
 
 /**
@@ -664,9 +525,6 @@ export interface IssueAndSetRefreshCookieResult {
  *   and reused — same shape as Google's 10-account cap.
  * - `userIdToAuthuser`: optional pre-computed `userId -> authuser` map (lets
  *   tests skip the DB roundtrip).
- *
- * Omitting BOTH `authuser` and `cookieHeader` falls back to the legacy
- * single-account flow: write `oxy_rt`, return `{ authuser: null }`.
  */
 export interface IssueAndSetRefreshCookieOptions {
   authuser?: number;
@@ -690,9 +548,6 @@ async function buildUserIdToAuthuserMap(
 
   const buckets = parseAllRefreshCookies(cookieHeader);
   for (const [key, rawList] of buckets.entries()) {
-    if (key === 'legacy') {
-      continue;
-    }
     if (rawList.length === 0) {
       continue;
     }
@@ -733,7 +588,7 @@ async function pickLruAuthuser(
   let orphan: { authuser: number; family: string; sessionId: string } | null = null;
 
   for (const [key, rawList] of buckets.entries()) {
-    if (key === 'legacy' || rawList.length === 0) {
+    if (rawList.length === 0) {
       continue;
     }
 
@@ -780,9 +635,7 @@ async function pickLruAuthuser(
  *
  * Resolution rules (in order):
  *   1. `opts.authuser` provided -> write that exact indexed slot.
- *   2. No `opts.cookieHeader` -> legacy single-account path: write `oxy_rt`,
- *      return `{ authuser: null }`. Old clients keep working.
- *   3. `opts.cookieHeader` provided -> multi-account path:
+ *   2. `opts.cookieHeader` provided or omitted -> indexed multi-account path:
  *        - If this `userId` already owns a slot -> revoke its existing family
  *          (so the old token can't be replayed) and reuse the SAME index.
  *        - Else, take the lowest free integer in `[0, MAX_DEVICE_ACCOUNTS)`.
@@ -790,7 +643,7 @@ async function pickLruAuthuser(
  *          reusing its index.
  *
  * On success returns the freshly-minted access token for the bound session
- * plus the resolved `authuser` slot (or `null` for the legacy path).
+ * plus the resolved `authuser` slot.
  */
 export async function issueAndSetRefreshCookie(
   res: Response,
@@ -813,22 +666,7 @@ export async function issueAndSetRefreshCookie(
     };
   }
 
-  // No cookieHeader -> legacy compat path.
-  if (typeof opts.cookieHeader !== 'string' || opts.cookieHeader.length === 0) {
-    const { token } = await issueRefreshToken({ sessionId, userId });
-    setRefreshCookie(res, token);
-    const accessTokenResult = await sessionService.getAccessToken(sessionId);
-    if (!accessTokenResult) {
-      throw new Error('Failed to mint access token for newly-bound session');
-    }
-    return {
-      accessToken: accessTokenResult.accessToken,
-      expiresAt: accessTokenResult.expiresAt,
-      authuser: null,
-    };
-  }
-
-  const cookieHeader = opts.cookieHeader;
+  const cookieHeader = typeof opts.cookieHeader === 'string' ? opts.cookieHeader : '';
   const userIdStr = typeof userId === 'string' ? userId : userId.toString();
   const userIdToAuthuser = opts.userIdToAuthuser ?? (await buildUserIdToAuthuserMap(cookieHeader));
 

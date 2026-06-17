@@ -39,13 +39,18 @@ function buildAccessToken(claims: Record<string, unknown>): string {
   return `${header}.${payload}.signature`;
 }
 
+interface MockHttpService {
+  setTokens: jest.Mock;
+  setAuthRefreshHandler: jest.Mock;
+}
+
 interface MockServices {
   refreshAllSessions: jest.Mock<Promise<RefreshAllResponse>, []>;
   refreshTokenViaCookie: jest.Mock<Promise<RefreshCookieResponse | null>, [{ authuser?: number }]>;
   logoutSessionByAuthuser: jest.Mock<Promise<void>, [number]>;
   logoutAllSessionsViaCookie: jest.Mock<Promise<void>, []>;
   getCurrentUser: jest.Mock<Promise<User>, []>;
-  httpService: { setTokens: jest.Mock; onTokenRefreshed: ((t: string) => void) | undefined };
+  httpService: MockHttpService;
 }
 
 function makeMockServices(): MockServices {
@@ -61,7 +66,7 @@ function makeMockServices(): MockServices {
       avatar: 'avatar-1',
       color: 'teal',
     } as User)),
-    httpService: { setTokens: jest.fn(), onTokenRefreshed: undefined },
+    httpService: { setTokens: jest.fn(), setAuthRefreshHandler: jest.fn() },
   };
 }
 
@@ -71,7 +76,6 @@ function makeManager(services: MockServices, options: { crossTabSync?: boolean }
     storage,
     autoRefresh: false,
     crossTabSync: options.crossTabSync ?? false,
-    cookieOnly: true,
   });
 }
 

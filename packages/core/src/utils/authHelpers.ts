@@ -27,30 +27,39 @@ export class AuthenticationFailedError extends Error {
 
 /**
  * Ensures a valid token exists before making authenticated API calls.
- * If no valid token exists and an active session ID is available,
- * attempts to refresh the token using the session.
+ * If no valid token exists, callers may provide a session synchronizer that
+ * uses the platform-appropriate new flow (cookie restore, device claim, or
+ * native secure restore). This helper never exchanges a session id for a token.
  *
  * @throws {SessionSyncRequiredError} If the session needs to be synced (offline session)
  */
 export async function ensureValidToken(
   oxyServices: OxyServices,
-  activeSessionId: string | null | undefined
+  _activeSessionId: string | null | undefined,
+  syncSession?: () => Promise<unknown>
 ): Promise<void> {
-  if (oxyServices.hasValidToken() || !activeSessionId) {
+  if (oxyServices.hasValidToken()) {
     return;
   }
 
-  try {
-    await oxyServices.getTokenBySession(activeSessionId);
-  } catch (tokenError) {
-    const errorMessage = tokenError instanceof Error ? tokenError.message : String(tokenError);
+  if (syncSession) {
+    try {
+      await syncSession();
+      if (oxyServices.hasValidToken()) {
+        return;
+      }
+    } catch (syncError) {
+      const errorMessage = syncError instanceof Error ? syncError.message : String(syncError);
 
-    if (errorMessage.includes('AUTH_REQUIRED_OFFLINE_SESSION') || errorMessage.includes('offline')) {
-      throw new SessionSyncRequiredError();
+      if (errorMessage.includes('AUTH_REQUIRED_OFFLINE_SESSION') || errorMessage.includes('offline')) {
+        throw new SessionSyncRequiredError();
+      }
+
+      throw syncError;
     }
-
-    throw tokenError;
   }
+
+  throw new SessionSyncRequiredError('No active access token is available. Sync the session before calling authenticated APIs.');
 }
 
 /**
@@ -98,10 +107,9 @@ export async function withAuthErrorHandling<T>(
       throw error;
     }
 
-    if (options?.syncSession && options?.activeSessionId && options?.oxyServices) {
+    if (options?.syncSession && options?.oxyServices) {
       try {
         await options.syncSession();
-        await options.oxyServices.getTokenBySession(options.activeSessionId);
         return await apiCall();
       } catch {
         throw new AuthenticationFailedError();
@@ -130,7 +138,7 @@ export async function authenticatedApiCall<T>(
   apiCall: () => Promise<T>,
   syncSession?: () => Promise<unknown>
 ): Promise<T> {
-  await ensureValidToken(oxyServices, activeSessionId);
+  await ensureValidToken(oxyServices, activeSessionId, syncSession);
 
   return withAuthErrorHandling(apiCall, {
     syncSession,

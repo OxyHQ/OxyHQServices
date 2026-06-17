@@ -60,7 +60,7 @@ import { OxyServicesBase, type OxyConfig } from './OxyServices.base';
 import { OxyAuthenticationError, OxyAuthenticationTimeoutError } from './OxyServices.errors';
 import type { SessionLoginResponse } from './models/session';
 import type { FedCMAuthOptions, FedCMConfig } from './mixins/OxyServices.fedcm';
-import type { PopupAuthOptions } from './mixins/OxyServices.popup';
+import type { SilentAuthOptions } from './mixins/OxyServices.silent';
 import type { RedirectAuthOptions } from './mixins/OxyServices.redirect';
 
 // Import mixin composition helper
@@ -137,16 +137,14 @@ export interface OxyServices extends InstanceType<ReturnType<typeof composeOxySe
   revokeFedCMCredential(): Promise<void>;
   getFedCMConfig(): FedCMConfig;
 
-  // Popup authentication
-  signInWithPopup(options?: PopupAuthOptions): Promise<SessionLoginResponse>;
-  signUpWithPopup(options?: PopupAuthOptions): Promise<SessionLoginResponse>;
-  /**
-   * Open a blank popup SYNCHRONOUSLY (call from a raw user-gesture handler
-   * BEFORE any `await`). Returns `null` if the popup was blocked. Pass the
-   * handle into `signInWithPopup({ popup })` to navigate it to auth.oxy.so
-   * after the async portion of the sign-in flow runs.
-   */
-  openBlankPopup(width?: number, height?: number): Window | null;
+  // Silent iframe SSO
+  resolveAuthUrl(): string;
+  silentSignIn(options?: SilentAuthOptions): Promise<SessionLoginResponse | null>;
+  waitForIframeAuth(
+    iframe: HTMLIFrameElement,
+    timeout: number,
+    expectedOrigin: string,
+  ): Promise<SessionLoginResponse | null>;
 
   // Redirect authentication
   signInWithRedirect(options?: RedirectAuthOptions): void;

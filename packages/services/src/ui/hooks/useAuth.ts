@@ -20,7 +20,7 @@
  * Cross-domain SSO:
  * - Web: Automatic via FedCM (Chrome 108+, Safari 16.4+)
  * - Native: Automatic via shared Keychain/Account Manager
- * - Manual sign-in: signIn() opens popup (web) or auth sheet (native)
+ * - Manual sign-in: signIn() redirects to the IdP (web) or opens the auth sheet (native)
  */
 
 import { useCallback, useState } from 'react';
@@ -60,16 +60,12 @@ export interface AuthState {
 export interface AuthActions {
   /**
    * Sign in
-   * - Web: Opens popup to auth.oxy.so (no public key needed)
+   * - Web: Redirects to auth.oxy.so (no public key needed)
    * - Native: Uses cryptographic identity from keychain
    *
    * @param publicKey - Native: identity public key. Ignored on web.
-   * @param preOpenedPopup - Web only: a popup the caller already opened
-   *   SYNCHRONOUSLY on the raw click via `oxyServices.openBlankPopup()`. This
-   *   keeps Chrome's user-activation alive across any prior `await` and is
-   *   the only reliable way to avoid the popup blocker on cross-domain flows.
    */
-  signIn: (publicKey?: string, preOpenedPopup?: Window | null) => Promise<User>;
+  signIn: (publicKey?: string) => Promise<User>;
 
   /**
    * Sign out current session
@@ -114,7 +110,6 @@ export function useAuth(): UseAuthReturn {
     isAuthResolved,
     error,
     signIn: oxySignIn,
-    handlePopupSession,
     logout,
     logoutAll,
     refreshSessions,
@@ -125,7 +120,7 @@ export function useAuth(): UseAuthReturn {
     openAvatarPicker,
   } = useOxy();
 
-  const signIn = useCallback(async (publicKey?: string, preOpenedPopup?: Window | null): Promise<User> => {
+  const signIn = useCallback(async (publicKey?: string): Promise<User> => {
     // Check if we're on the identity provider itself
     // Only the IdP has local login forms - other apps are client apps
     const authWebUrl = oxyServices.config?.authWebUrl;
@@ -136,44 +131,13 @@ export function useAuth(): UseAuthReturn {
     const isIdentityProvider = isWebBrowser() &&
       window.location.hostname === idpHostname;
 
-    // Web (not on IdP): Use popup-based authentication
-    // We go straight to popup to preserve the "user gesture" (click event)
-    // FedCM silent SSO already runs on page load via useWebSSO
-    // If user is clicking "Sign In", they need interactive auth NOW
+    // Web (not on IdP): use the tokenless redirect SSO flow. FedCM / silent SSO
+    // already run on page load; an explicit click needs interactive auth.
     if (isWebBrowser() && !publicKey && !isIdentityProvider) {
-      // Open the popup SYNCHRONOUSLY before any `await` runs so Chrome's
-      // transient user-activation is preserved across the async chain
-      // (React state updates + the `await` into `signInWithPopup`). If the
-      // caller already pre-opened one (e.g. they did so to be extra safe
-      // ahead of their own awaits), reuse it.
-      const popup: Window | null = preOpenedPopup
-        ?? oxyServices.openBlankPopup?.()
-        ?? null;
-      try {
-        const popupSession = await oxyServices.signInWithPopup?.({
-          popup,
-        });
-        if (popupSession?.user) {
-          // The popup auth flow fetches full user data, so the session user
-          // contains full User fields even though the base type is MinimalUserData.
-          // Cast to the expected shape for handlePopupSession.
-          const sessionWithUser = {
-            ...popupSession,
-            user: popupSession.user as unknown as User,
-          };
-          await handlePopupSession(sessionWithUser);
-          return sessionWithUser.user;
-        }
-        throw new Error('Sign-in failed. Please try again.');
-      } catch (popupError) {
-        if (popup && !popup.closed) {
-          popup.close();
-        }
-        if (popupError instanceof Error && popupError.message.includes('blocked')) {
-          throw new Error('Popup blocked. Please allow popups for this site.');
-        }
-        throw popupError;
-      }
+      oxyServices.signInWithRedirect?.({
+        redirectUri: window.location.href,
+      });
+      return new Promise<User>(() => undefined);
     }
 
     // Native: Use cryptographic identity
@@ -212,7 +176,7 @@ export function useAuth(): UseAuthReturn {
     }
 
     throw new Error('No authentication method available');
-  }, [oxySignIn, hasIdentity, getPublicKey, showBottomSheet, oxyServices, handlePopupSession]);
+  }, [oxySignIn, hasIdentity, getPublicKey, showBottomSheet, oxyServices]);
 
   const signOut = useCallback(async (): Promise<void> => {
     await logout();
@@ -247,4 +211,3 @@ export function useAuth(): UseAuthReturn {
     openAvatarPicker,
   };
 }
-

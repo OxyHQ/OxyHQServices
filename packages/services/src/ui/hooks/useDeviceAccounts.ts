@@ -253,10 +253,9 @@ export function useDeviceAccounts(): UseDeviceAccountsResult {
         if (fromSharedApex) {
             // Shared apex path: every entry carries a real per-account user.
             built = sharedAccounts.map((entry): DeviceAccount => {
-                // `entry.user` is non-null on the modern refresh-all path (the
-                // core mixin skips entries without a valid user). The
-                // SDK-legacy fallback (`user: null`) only occurs on a 404 server
-                // — handled below by falling through to a fallback handle.
+                // `entry.user` is non-null on the refresh-all path; the core
+                // mixin skips entries without a valid user. The fallback below
+                // keeps rendering defensive if a server response is incomplete.
                 const accountUser: DeviceAccountUser = entry.user ?? {
                     id: '',
                     username: '',

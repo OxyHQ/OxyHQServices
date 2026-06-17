@@ -215,10 +215,9 @@ export function validateRequiredEnvVars(): void {
     );
   }
 
-  // REFRESH_COOKIE_DOMAIN is interpolated into a hand-built Set-Cookie header
-  // (appendLegacyRefreshCookieDeletion in refreshToken.service.ts), so a
-  // malformed value could inject cookie attributes. Fail fast on anything
-  // that is not a bare hostname.
+  // REFRESH_COOKIE_DOMAIN becomes a cookie Domain attribute, so a malformed
+  // value could alter cookie scope. Fail fast on anything that is not a bare
+  // hostname.
   const refreshCookieDomain = process.env.REFRESH_COOKIE_DOMAIN;
   if (refreshCookieDomain && !isValidHostname(refreshCookieDomain)) {
     missing.push(

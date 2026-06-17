@@ -46,7 +46,7 @@ export type {
 export { CrossDomainAuth, createCrossDomainAuth } from './CrossDomainAuth';
 export type { CrossDomainAuthOptions } from './CrossDomainAuth';
 export type { FedCMAuthOptions, FedCMConfig, AuthorizedApp } from './mixins/OxyServices.fedcm';
-export type { PopupAuthOptions } from './mixins/OxyServices.popup';
+export type { SilentAuthOptions } from './mixins/OxyServices.silent';
 export type { RedirectAuthOptions } from './mixins/OxyServices.redirect';
 export { ServiceCredentialMismatchError } from './mixins/OxyServices.auth';
 export type { ServiceTokenResponse } from './mixins/OxyServices.auth';

@@ -2,7 +2,7 @@
  * @oxyhq/auth — Web Authentication Provider
  *
  * Clean implementation with ZERO React Native dependencies.
- * Provides FedCM, popup, and redirect authentication methods.
+ * Provides FedCM and redirect authentication methods.
  * Uses centralized AuthManager for token and session management.
  */
 
@@ -61,10 +61,8 @@ export interface WebAuthState {
   clientId: string | null;
   activeSessionId: string | null;
   /**
-   * Legacy multi-session shape kept for API compatibility with downstream
-   * consumers. Derived from `accounts` — every `AuthManagerAccount` is
-   * projected into a `ClientSession` with `authuser` populated. New
-   * consumers should prefer `accounts` directly.
+   * Device-session list derived from `accounts`. Every `AuthManagerAccount`
+   * is projected into a `ClientSession` with `authuser` populated.
    */
   sessions: ClientSession[];
   /**
@@ -80,20 +78,10 @@ export interface WebAuthState {
 
 export interface WebAuthActions {
   /**
-   * Sign in via the preferred method (auto / fedcm / popup / redirect).
-   *
-   * @param preOpenedPopup - A popup the caller opened SYNCHRONOUSLY on the
-   *   raw click via `oxyServices.openBlankPopup()` (or
-   *   `crossDomainAuth.openBlankPopup()`). Required to defeat Chrome's
-   *   popup blocker when any prior `await` (FedCM / silent SSO) has consumed
-   *   the transient user activation.
+   * Sign in via the preferred method (auto / fedcm / redirect).
    */
-  signIn: (preOpenedPopup?: Window | null) => Promise<void>;
+  signIn: () => Promise<void>;
   signInWithFedCM: () => Promise<void>;
-  /**
-   * @param preOpenedPopup - See `signIn`. Required for cross-domain reliability.
-   */
-  signInWithPopup: (preOpenedPopup?: Window | null) => Promise<void>;
   signInWithRedirect: () => void;
   signOut: () => Promise<void>;
   isFedCMSupported: () => boolean;
@@ -234,7 +222,7 @@ export interface WebOxyProviderProps {
    * The FAPI (Federated Auth API / IdP) origin. When omitted, the provider
    * auto-detects `https://auth.<rp-domain>` from `window.location.hostname`
    * so an RP only needs to CNAME `auth.<rp-domain>` → the central IdP and
-   * everything else (FedCM config URL, popup target, redirect URL) follows.
+   * everything else (FedCM config URL, redirect URL) follows.
    * Pass explicitly to override (e.g. point at a staging IdP).
    */
   authWebUrl?: string;
@@ -249,7 +237,7 @@ export interface WebOxyProviderProps {
   clientId?: string;
   onAuthStateChange?: (user: User | null) => void;
   onError?: (error: Error) => void;
-  preferredAuthMethod?: 'auto' | 'fedcm' | 'popup' | 'redirect';
+  preferredAuthMethod?: 'auto' | 'fedcm' | 'redirect';
   skipAutoCheck?: boolean;
 }
 
@@ -257,7 +245,7 @@ export interface WebOxyProviderProps {
  * Web-only Oxy Provider
  *
  * Provides authentication context for pure web applications (React, Next.js, Vite).
- * Supports FedCM, popup, and redirect authentication methods.
+ * Supports FedCM and redirect authentication methods.
  *
  * @example
  * ```tsx
@@ -302,14 +290,12 @@ export function WebOxyProvider({
     })
   );
   const [crossDomainAuth] = useState(() => new CrossDomainAuth(oxyServices));
-  // Web is cookie-only by design: refresh tokens live in httpOnly
+  // Web uses the cookie session model: refresh tokens live in httpOnly
   // `oxy_rt_${authuser}` cookies and access tokens live in-memory inside
-  // the AuthManager registry. The legacy localStorage path
-  // (`oxy_access_token` / `oxy_refresh_token` / `oxy_session`) is OFF on
-  // the web — we never persist token material to JS-accessible storage.
+  // the AuthManager registry. Token material is never persisted to
+  // JS-accessible storage.
   const [authManager] = useState(() => createAuthManager(oxyServices, {
     autoRefresh: true,
-    cookieOnly: true,
   }));
   const [queryClient] = useState(() => createQueryClient());
 
@@ -343,9 +329,7 @@ export function WebOxyProvider({
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
 
   // Multi-account state — populated by the AuthManager cookie path
-  // (`restoreFromCookies` / `switchAuthuser` / `signOutAuthuser`). `sessions`
-  // is derived from `accounts` for backwards compatibility with the
-  // pre-multi-account API.
+  // (`restoreFromCookies` / `switchAuthuser` / `signOutAuthuser`).
   const [accounts, setAccounts] = useState<AuthManagerAccount[]>([]);
   const [activeAuthuser, setActiveAuthuserState] = useState<number | null>(null);
 
@@ -359,10 +343,9 @@ export function WebOxyProvider({
     setActiveAuthuserState(authManager.getActiveAuthuser());
   }, [authManager]);
 
-  // Derive the legacy `sessions: ClientSession[]` shape from `accounts` so
-  // existing consumers reading `useAuth().sessions` keep working. Each
-  // `AuthManagerAccount` becomes one `ClientSession` with `authuser`
-  // populated. The active slot is flagged `isCurrent: true`.
+  // Derive the session list from `accounts`. Each `AuthManagerAccount`
+  // becomes one `ClientSession` with `authuser` populated. The active slot
+  // is flagged `isCurrent: true`.
   const sessions = useMemo<ClientSession[]>(() => {
     const now = new Date().toISOString();
     return accounts.map((account) => ({
@@ -378,12 +361,12 @@ export function WebOxyProvider({
 
   const isAuthenticated = !!user;
 
-  // Mutex: prevents concurrent sign-in attempts (FedCM + popup + redirect)
+  // Mutex: prevents concurrent sign-in attempts (FedCM + redirect)
   const signingInRef = useRef(false);
 
   const handleAuthSuccess = useCallback(async (
     session: SessionLoginResponse,
-    method: 'fedcm' | 'popup' | 'redirect' | 'credentials' = 'credentials'
+    method: 'fedcm' | 'redirect' | 'credentials' = 'credentials'
   ) => {
     await authManager.handleAuthSuccess(session, method);
 
@@ -553,17 +536,16 @@ export function WebOxyProvider({
       // web-only.
       //
       // Order (web):
-      //   0. redirect       — existing popup `?access_token=` query callback.
-      //   1. sso-return     — parse `window.location.hash`; on `ok` exchange the
+      //   0. sso-return     — parse `window.location.hash`; on `ok` exchange the
       //                       opaque code via `oxyServices.exchangeSsoCode` and
       //                       commit; on `none`/`error` set the no-rebounce flag.
-      //   2. fedcm-silent   — silent FedCM against the CENTRAL `auth.oxy.so`
+      //   1. fedcm-silent   — silent FedCM against the CENTRAL `auth.oxy.so`
       //                       (Chrome enhancement). Fires once per page load.
-      //   3. cookie-restore — `authManager.initialize()` refresh-cookie restore;
+      //   2. cookie-restore — `authManager.initialize()` refresh-cookie restore;
       //                       first-party only on `*.oxy.so`, empty cross-domain.
       //                       Bounded by COOKIE_RESTORE_TIMEOUT (FIX D) so a
       //                       cross-domain stall cannot hang cold boot.
-      //   4. sso-bounce     — TERMINAL top-level navigation to `auth.oxy.so/sso`.
+      //   3. sso-bounce     — TERMINAL top-level navigation to `auth.oxy.so/sso`.
       //
       // NOTE: the services `OxyContext` has an additional `stored-session`
       // bearer-restore step (native's ONLY restore path; in services it now also
@@ -578,40 +560,13 @@ export function WebOxyProvider({
       // (each commit branch flips loading immediately; there is no
       // deferred-until-chain-completes gate to decouple).
       //
-      // CRITICAL: the `redirect` and `cookie-restore` steps MUST hydrate a REAL
-      // user before claiming a session. A placeholder user (empty id) is never
-      // exposed (R4).
+      // CRITICAL: `cookie-restore` MUST hydrate a REAL user before claiming a
+      // session. A placeholder user (empty id) is never exposed (R4).
       const ssoKey = silentSignInKey(oxyServices);
 
       const steps: ReadonlyArray<ColdBootStep<ColdBootSession>> = [
         {
-          // 0) Redirect callback: a popup/redirect sign-in just landed back on
-          // this page with `access_token`/`session_id` query params.
-          id: 'redirect',
-          enabled: () => isWebBrowser(),
-          run: async () => {
-            const callbackSession = crossDomainAuth.handleRedirectCallback();
-            if (!callbackSession) return { kind: 'skip' };
-            // The callback session's user is a placeholder (empty id). Hydrate
-            // the real user via the freshly-planted bearer token before
-            // committing — a failed hydration must not surface a placeholder.
-            try {
-              const currentUser = await oxyServices.getCurrentUser();
-              if (!currentUser) return { kind: 'skip' };
-              return {
-                kind: 'session',
-                session: {
-                  method: 'redirect',
-                  session: { ...callbackSession, user: currentUser },
-                },
-              };
-            } catch {
-              return { kind: 'skip' };
-            }
-          },
-        },
-        {
-          // 1) SSO return: we are back from a top-level bounce to the central
+          // 0) SSO return: we are back from a top-level bounce to the central
           // IdP. Parse the fragment, validate state, exchange the opaque code.
           id: 'sso-return',
           enabled: () => isWebBrowser(),
@@ -622,12 +577,11 @@ export function WebOxyProvider({
           },
         },
         {
-          // 2) FedCM silent reauthn (Chrome) against the CENTRAL IdP
+          // 1) FedCM silent reauthn (Chrome) against the CENTRAL IdP
           // (`auth.oxy.so`). Fires `navigator.credentials.get` with
           // `mediation: 'silent'`, which must happen AT MOST ONCE per page
           // load — gate on the module-level run-once guard. This is the
-          // FedCM-only silent path (the legacy per-apex `silentSignIn()` iframe
-          // fallback is removed; cross-domain restore on non-FedCM browsers is
+          // FedCM-only silent path. Cross-domain restore on non-FedCM browsers is
           // owned by the `sso-bounce` step). Only runs where FedCM is supported.
           id: 'fedcm-silent',
           enabled: () =>
@@ -645,7 +599,7 @@ export function WebOxyProvider({
           },
         },
         {
-          // 3) Refresh-cookie restore. On `*.oxy.so` the httpOnly `oxy_rt_${n}`
+          // 2) Refresh-cookie restore. On `*.oxy.so` the httpOnly `oxy_rt_${n}`
           // cookies ride along and resurrect every device-local slot. On a
           // cross-domain RP (mention.earth, …) the cookie never reaches
           // `api.<apex>`, so `POST /auth/refresh-all` returns no accounts and
@@ -678,8 +632,7 @@ export function WebOxyProvider({
               };
             } catch {
               // Bearer call failed even though AuthManager said it restored —
-              // treat as a stale session and fall through. Use the cookie-path
-              // sign-out so we don't touch legacy localStorage keys.
+              // treat as a stale session and clear the cookie-backed slots.
               await authManager.signOutAllViaCookies();
               syncAccountsFromManager();
               return { kind: 'skip' };
@@ -853,45 +806,22 @@ export function WebOxyProvider({
     onAuthStateChange?.(user);
   }, [user, onAuthStateChange]);
 
-  const signIn = useCallback(async (preOpenedPopup?: Window | null) => {
+  const signIn = useCallback(async () => {
     if (signingInRef.current) {
-      // Already signing in — the popup the caller just opened is now orphaned.
-      // Close it to avoid leaving a blank window on screen.
-      if (preOpenedPopup && !preOpenedPopup.closed) {
-        preOpenedPopup.close();
-      }
       return;
-    }
-
-    // Open the popup SYNCHRONOUSLY in the user-gesture event handler BEFORE
-    // any `await` runs. `signIn` is async and the auto-method path awaits
-    // FedCM first — without this, the transient user-activation is consumed
-    // by FedCM's `navigator.credentials.get` and Chrome blocks the popup. If
-    // the caller already pre-opened one (e.g. their own click handler did so
-    // for safety), reuse it. Method-specific entry points (`fedcm`,
-    // `redirect`) don't need a popup, so we skip the open in those cases.
-    let popup: Window | null = preOpenedPopup ?? null;
-    if (
-      !popup &&
-      typeof window !== 'undefined' &&
-      preferredAuthMethod !== 'fedcm' &&
-      preferredAuthMethod !== 'redirect'
-    ) {
-      popup = oxyServices.openBlankPopup();
     }
 
     signingInRef.current = true;
     setError(null);
     setIsLoading(true);
 
-    let selectedMethod: 'fedcm' | 'popup' | 'redirect' = 'popup';
+    let selectedMethod: 'fedcm' | 'redirect' = 'redirect';
 
     try {
       const session = await crossDomainAuth.signIn({
         method: preferredAuthMethod,
-        popup,
         onMethodSelected: (method) => {
-          selectedMethod = method as 'fedcm' | 'popup' | 'redirect';
+          selectedMethod = method;
         },
       });
 
@@ -901,14 +831,11 @@ export function WebOxyProvider({
         setIsLoading(false);
       }
     } catch (err) {
-      if (popup && !popup.closed) {
-        popup.close();
-      }
       handleAuthError(err);
     } finally {
       signingInRef.current = false;
     }
-  }, [oxyServices, crossDomainAuth, preferredAuthMethod, handleAuthSuccess, handleAuthError]);
+  }, [crossDomainAuth, preferredAuthMethod, handleAuthSuccess, handleAuthError]);
 
   const signInWithFedCM = useCallback(async () => {
     if (signingInRef.current) return;
@@ -924,41 +851,6 @@ export function WebOxyProvider({
       signingInRef.current = false;
     }
   }, [crossDomainAuth, handleAuthSuccess, handleAuthError]);
-
-  const signInWithPopup = useCallback(async (preOpenedPopup?: Window | null) => {
-    if (signingInRef.current) {
-      if (preOpenedPopup && !preOpenedPopup.closed) {
-        preOpenedPopup.close();
-      }
-      return;
-    }
-
-    // Open the popup SYNCHRONOUSLY before any `await` (see `signIn` for the
-    // rationale). The mixin's own `window.open` runs AFTER React state
-    // updates and the await chain, which in some browsers is already enough
-    // to lose the transient user-activation.
-    let popup: Window | null = preOpenedPopup ?? null;
-    if (!popup && typeof window !== 'undefined') {
-      popup = oxyServices.openBlankPopup();
-    }
-
-    signingInRef.current = true;
-    setError(null);
-    setIsLoading(true);
-    try {
-      const session = await crossDomainAuth.signInWithPopup({
-        popup,
-      });
-      await handleAuthSuccess(session, 'popup');
-    } catch (err) {
-      if (popup && !popup.closed) {
-        popup.close();
-      }
-      handleAuthError(err);
-    } finally {
-      signingInRef.current = false;
-    }
-  }, [oxyServices, crossDomainAuth, handleAuthSuccess, handleAuthError]);
 
   const signInWithRedirect = useCallback(() => {
     setError(null);
@@ -1089,7 +981,6 @@ export function WebOxyProvider({
     authManager,
     signIn,
     signInWithFedCM,
-    signInWithPopup,
     signInWithRedirect,
     signOut,
     isFedCMSupported,
@@ -1102,7 +993,7 @@ export function WebOxyProvider({
     user, isAuthenticated, isLoading, error, clientId, activeSessionId, sessions,
     accounts, activeAuthuser,
     oxyServices, crossDomainAuth, authManager,
-    signIn, signInWithFedCM, signInWithPopup, signInWithRedirect,
+    signIn, signInWithFedCM, signInWithRedirect,
     signOut, isFedCMSupported, switchSession,
     switchAccount, signOutAccount, signOutAll, clearSessionState,
   ]);
@@ -1169,7 +1060,6 @@ export function useAuth() {
     activeAuthuser: ctx.activeAuthuser,
     signIn: ctx.signIn,
     signInWithFedCM: ctx.signInWithFedCM,
-    signInWithPopup: ctx.signInWithPopup,
     signInWithRedirect: ctx.signInWithRedirect,
     signOut: ctx.signOut,
     isFedCMSupported: ctx.isFedCMSupported,

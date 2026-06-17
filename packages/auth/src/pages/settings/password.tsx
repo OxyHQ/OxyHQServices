@@ -1,6 +1,7 @@
 import { useState, useRef } from "react"
 import { toast } from "sonner"
 import { buildApiUrl } from "@/lib/oxy-api-client"
+import { mintAccessTokenFromRefreshCookie } from "@/lib/session-auth"
 import { Button } from "@/components/ui/button"
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { PasswordInput } from "@/components/password-input"
@@ -32,9 +33,14 @@ export function ChangePasswordPage() {
         }
 
         try {
-            const accessToken = sessionStorage.getItem("oxy_access_token")
+            const auth = await mintAccessTokenFromRefreshCookie()
+            if (!auth) {
+                setLocalError("Session expired. Please sign in again.")
+                setIsSubmitting(false)
+                return
+            }
             const headers: Record<string, string> = { "content-type": "application/json" }
-            if (accessToken) headers["Authorization"] = `Bearer ${accessToken}`
+            headers["Authorization"] = `Bearer ${auth.accessToken}`
 
             const response = await fetch(buildApiUrl("/auth/change-password"), {
                 method: "POST",

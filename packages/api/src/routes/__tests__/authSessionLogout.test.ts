@@ -9,14 +9,14 @@
  *
  * `/auth/session`:
  *  - bearer-authenticated (authMiddleware sets req.user + next): mints + sets an
- *    `oxy_rt` cookie (Path=/auth) for the session derived ONLY from the caller's
- *    own bearer token, and returns { accessToken, expiresAt }.
+ *    `oxy_rt_0` cookie (Path=/auth) for the session derived ONLY from the
+ *    caller's own bearer token, and returns { accessToken, expiresAt, authuser }.
  *  - invalid/missing bearer (authMiddleware responds 401): 401, no cookie minted.
  *
  * `/auth/logout`:
- *  - with a known `oxy_rt` cookie: 200 { success: true }, family revoked
+ *  - with a known indexed refresh cookie: 200 { success: true }, family revoked
  *    (updateMany), session deactivated, cookie cleared (Max-Age=0, Path=/auth).
- *  - with NO cookie: still 200 { success: true }, cookie-clear emitted, no
+ *  - with NO cookie: still 200 { success: true }, no cookie-clear emitted, no
  *    updateMany / no deactivateSession.
  *  - with an UNKNOWN cookie (findOne -> null): 200 { success: true }, cookie
  *    cleared, no updateMany.
@@ -39,9 +39,8 @@ interface StoredToken {
 }
 
 // ---- A tokenHash-keyed store so RefreshToken.findOne({ tokenHash }) resolves
-// the matching staged row regardless of call ORDER or call COUNT. Logout now
-// revokes EVERY presented candidate's family (a mid-migration browser can send a
-// legacy + a new oxy_rt cookie), so we stage one row per token. ----
+// the matching staged row regardless of call ORDER or call COUNT. Logout revokes
+// every presented indexed candidate's family, so we stage one row per token. ----
 const tokenStore = new Map<string, StoredToken>();
 
 /** Stage a stored row, keyed by its tokenHash, for findOne lookups. */
@@ -227,11 +226,7 @@ jest.mock('../socialAuth', () => ({
 import cookieParser from 'cookie-parser';
 import authRouter from '../auth';
 import { errorHandler } from '../../middleware/errorHandler';
-import {
-  REFRESH_COOKIE_NAME,
-  REFRESH_COOKIE_PATH,
-  LEGACY_REFRESH_COOKIE_PATH,
-} from '../../services/refreshToken.service';
+import { REFRESH_COOKIE_PATH } from '../../services/refreshToken.service';
 // sha256Hex is the REAL implementation (the oauthCode mock spreads `...actual`),
 // matching exactly what the refresh service uses to hash presented tokens.
 import { sha256Hex } from '../../services/oauthCode.service';
@@ -336,18 +331,20 @@ beforeEach(() => {
   authBehavior = 'pass';
 });
 
-/** Find a Max-Age=0 oxy_rt clear Set-Cookie scoped to the given path. */
-function findClearForPath(setCookie: string[], path: string): string | undefined {
+const REFRESH_COOKIE_SLOT_0 = 'oxy_rt_0';
+
+/** Find a Max-Age=0 indexed refresh-cookie clear Set-Cookie scoped to the given path. */
+function findClearForNameAndPath(setCookie: string[], name: string, path: string): string | undefined {
   return setCookie.find(
     (c) =>
-      c.startsWith(`${REFRESH_COOKIE_NAME}=`) &&
+      c.startsWith(`${name}=`) &&
       c.includes(`Path=${path}`) &&
       /Max-Age=0/i.test(c)
   );
 }
 
 describe('POST /auth/session', () => {
-  it('mints + sets the oxy_rt cookie for the bearer-authenticated session', async () => {
+  it('mints + sets the oxy_rt_0 cookie for the bearer-authenticated session', async () => {
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
     // The route reads the bearer token then decodes it to derive the sessionId.
     mockExtractToken.mockReturnValueOnce('bearer-access-jwt');
@@ -368,6 +365,7 @@ describe('POST /auth/session', () => {
     expect(res.body).toEqual({
       accessToken: 'access-jwt',
       expiresAt: expiresAt.toISOString(),
+      authuser: 0,
     });
     // Access token minted for the session derived from the caller's own token.
     expect(mockGetAccessToken).toHaveBeenCalledWith('sess-123');
@@ -377,12 +375,12 @@ describe('POST /auth/session', () => {
       expect.objectContaining({ sessionId: 'sess-123', userId: TEST_USER_ID })
     );
 
-    // The oxy_rt cookie is set with Path=/auth.
-    const cookie = res.setCookie.find((c) => c.startsWith(`${REFRESH_COOKIE_NAME}=`));
+    // The oxy_rt_0 cookie is set with Path=/auth.
+    const cookie = res.setCookie.find((c) => c.startsWith(`${REFRESH_COOKIE_SLOT_0}=`));
     expect(cookie).toBeDefined();
     expect(cookie).toContain('Path=/auth');
     // Value is a real token, not empty (i.e. not a clear).
-    const value = (cookie as string).split(';')[0].slice(`${REFRESH_COOKIE_NAME}=`.length);
+    const value = (cookie as string).split(';')[0].slice(`${REFRESH_COOKIE_SLOT_0}=`.length);
     expect(value.length).toBeGreaterThan(0);
   });
 
@@ -404,7 +402,7 @@ describe('POST /auth/session', () => {
     // The handler never ran: no cookie minted, no access token issued.
     expect(mockCreate).not.toHaveBeenCalled();
     expect(mockGetAccessToken).not.toHaveBeenCalled();
-    const cookie = res.setCookie.find((c) => c.startsWith(`${REFRESH_COOKIE_NAME}=`));
+    const cookie = res.setCookie.find((c) => c.startsWith(`${REFRESH_COOKIE_SLOT_0}=`));
     expect(cookie).toBeUndefined();
   });
 
@@ -432,7 +430,7 @@ describe('POST /auth/session', () => {
     // No cookie minted, no access token issued — the handler never ran.
     expect(mockCreate).not.toHaveBeenCalled();
     expect(mockGetAccessToken).not.toHaveBeenCalled();
-    const cookie = res.setCookie.find((c) => c.startsWith(`${REFRESH_COOKIE_NAME}=`));
+    const cookie = res.setCookie.find((c) => c.startsWith(`${REFRESH_COOKIE_SLOT_0}=`));
     expect(cookie).toBeUndefined();
   });
 });
@@ -450,7 +448,7 @@ describe('POST /auth/logout', () => {
       'POST',
       '/auth/logout',
       {},
-      { cookieHeader: `${REFRESH_COOKIE_NAME}=${presented}`, origin: 'https://oxy.so' }
+      { cookieHeader: `${REFRESH_COOKIE_SLOT_0}=${presented}`, origin: 'https://oxy.so' }
     );
 
     expect(res.status).toBe(200);
@@ -464,20 +462,15 @@ describe('POST /auth/logout', () => {
     // The underlying session is deactivated.
     expect(mockDeactivateSession).toHaveBeenCalledWith('sess-123');
 
-    // The cookie is cleared on BOTH paths (Max-Age=0).
-    expect(findClearForPath(res.setCookie, REFRESH_COOKIE_PATH)).toBeDefined();
-    expect(findClearForPath(res.setCookie, LEGACY_REFRESH_COOKIE_PATH)).toBeDefined();
+    expect(findClearForNameAndPath(res.setCookie, REFRESH_COOKIE_SLOT_0, REFRESH_COOKIE_PATH)).toBeDefined();
   });
 
-  it('revokes BOTH families and clears both paths for duplicate cookies (legacy + new)', async () => {
-    // A mid-migration browser sends a legacy `/auth/refresh` cookie AND a new
-    // `/auth` cookie — both belong to THIS signing-out user, so logout revokes
-    // every presented candidate's family.
-    const legacy = 'legacy-raw-token';
+  it('revokes both families and clears the indexed slot for duplicate indexed cookies', async () => {
+    const stale = 'stale-raw-token';
     const current = 'current-raw-token';
-    const legacyRow = buildStoredToken(legacy, { _id: 'rt-legacy', family: 'fam-legacy', sessionId: 'sess-legacy' });
+    const staleRow = buildStoredToken(stale, { _id: 'rt-stale', family: 'fam-stale', sessionId: 'sess-stale' });
     const currentRow = buildStoredToken(current, { _id: 'rt-current', family: 'fam-current', sessionId: 'sess-current' });
-    stageToken(legacyRow);
+    stageToken(staleRow);
     stageToken(currentRow);
     mockUpdateMany.mockResolvedValue({ modifiedCount: 1 });
     mockDeactivateSession.mockResolvedValue(true);
@@ -487,7 +480,7 @@ describe('POST /auth/logout', () => {
       'POST',
       '/auth/logout',
       {},
-      { cookieHeader: `${REFRESH_COOKIE_NAME}=${legacy}; ${REFRESH_COOKIE_NAME}=${current}` }
+      { cookieHeader: `${REFRESH_COOKIE_SLOT_0}=${stale}; ${REFRESH_COOKIE_SLOT_0}=${current}` }
     );
 
     expect(res.status).toBe(200);
@@ -495,7 +488,7 @@ describe('POST /auth/logout', () => {
 
     // BOTH families are revoked server-side.
     expect(mockUpdateMany).toHaveBeenCalledWith(
-      { family: 'fam-legacy', revokedAt: null },
+      { family: 'fam-stale', revokedAt: null },
       { $set: { revokedAt: expect.any(Date) } }
     );
     expect(mockUpdateMany).toHaveBeenCalledWith(
@@ -503,15 +496,13 @@ describe('POST /auth/logout', () => {
       { $set: { revokedAt: expect.any(Date) } }
     );
     // Both underlying sessions are deactivated.
-    expect(mockDeactivateSession).toHaveBeenCalledWith('sess-legacy');
+    expect(mockDeactivateSession).toHaveBeenCalledWith('sess-stale');
     expect(mockDeactivateSession).toHaveBeenCalledWith('sess-current');
 
-    // The cookie is cleared on BOTH paths (Max-Age=0).
-    expect(findClearForPath(res.setCookie, REFRESH_COOKIE_PATH)).toBeDefined();
-    expect(findClearForPath(res.setCookie, LEGACY_REFRESH_COOKIE_PATH)).toBeDefined();
+    expect(findClearForNameAndPath(res.setCookie, REFRESH_COOKIE_SLOT_0, REFRESH_COOKIE_PATH)).toBeDefined();
   });
 
-  it('still succeeds and clears the cookie when no cookie is present', async () => {
+  it('still succeeds when no cookie is present', async () => {
     const res = await requestJson(server, 'POST', '/auth/logout', {});
 
     expect(res.status).toBe(200);
@@ -520,13 +511,10 @@ describe('POST /auth/logout', () => {
     expect(mockFindOne).not.toHaveBeenCalled();
     expect(mockUpdateMany).not.toHaveBeenCalled();
     expect(mockDeactivateSession).not.toHaveBeenCalled();
-    // The cookie-clear Set-Cookie is still emitted.
-    const cleared = res.setCookie.find((c) => c.startsWith(`${REFRESH_COOKIE_NAME}=`));
-    expect(cleared).toBeDefined();
-    expect(cleared).toMatch(/Max-Age=0/i);
+    expect(res.setCookie).toHaveLength(0);
   });
 
-  it('succeeds and clears the cookie for an unknown cookie without revoking anything', async () => {
+  it('succeeds and clears an unknown indexed cookie without revoking anything', async () => {
     // Stored row not found -> nothing to revoke, but logout still clears.
     mockFindOne.mockResolvedValueOnce(null);
 
@@ -535,14 +523,14 @@ describe('POST /auth/logout', () => {
       'POST',
       '/auth/logout',
       {},
-      { cookieHeader: `${REFRESH_COOKIE_NAME}=ghost-token` }
+      { cookieHeader: `${REFRESH_COOKIE_SLOT_0}=ghost-token` }
     );
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ success: true });
     expect(mockUpdateMany).not.toHaveBeenCalled();
     expect(mockDeactivateSession).not.toHaveBeenCalled();
-    const cleared = res.setCookie.find((c) => c.startsWith(`${REFRESH_COOKIE_NAME}=`));
+    const cleared = res.setCookie.find((c) => c.startsWith(`${REFRESH_COOKIE_SLOT_0}=`));
     expect(cleared).toBeDefined();
     expect(cleared).toMatch(/Max-Age=0/i);
   });
@@ -590,13 +578,9 @@ describe('POST /auth/logout — Google-style multi-account', () => {
     expect(clearedOne).toBeUndefined();
   });
 
-  it('with NO ?authuser= revokes EVERY presented family (indexed + legacy) and clears every slot', async () => {
-    const tokLegacy = 'tok-legacy';
+  it('with NO ?authuser= revokes EVERY presented indexed family and clears every slot', async () => {
     const tok0 = 'tok-zero';
     const tok1 = 'tok-one';
-    stageToken(buildStoredToken(tokLegacy, {
-      _id: 'rt-legacy', sessionId: 'sess-legacy', family: 'fam-legacy',
-    }));
     stageToken(buildStoredToken(tok0, {
       _id: 'rt-0', sessionId: 'sess-0', family: 'fam-0',
     }));
@@ -611,16 +595,12 @@ describe('POST /auth/logout — Google-style multi-account', () => {
       'POST',
       '/auth/logout',
       {},
-      { cookieHeader: `${REFRESH_COOKIE_NAME}=${tokLegacy}; oxy_rt_0=${tok0}; oxy_rt_1=${tok1}` }
+      { cookieHeader: `oxy_rt_0=${tok0}; oxy_rt_1=${tok1}` }
     );
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ success: true });
-    // All three families revoked.
-    expect(mockUpdateMany).toHaveBeenCalledWith(
-      { family: 'fam-legacy', revokedAt: null },
-      { $set: { revokedAt: expect.any(Date) } }
-    );
+    // Both families revoked.
     expect(mockUpdateMany).toHaveBeenCalledWith(
       { family: 'fam-0', revokedAt: null },
       { $set: { revokedAt: expect.any(Date) } }
@@ -629,11 +609,10 @@ describe('POST /auth/logout — Google-style multi-account', () => {
       { family: 'fam-1', revokedAt: null },
       { $set: { revokedAt: expect.any(Date) } }
     );
-    expect(mockDeactivateSession).toHaveBeenCalledWith('sess-legacy');
     expect(mockDeactivateSession).toHaveBeenCalledWith('sess-0');
     expect(mockDeactivateSession).toHaveBeenCalledWith('sess-1');
 
-    // Every indexed slot cleared + legacy cleared on both paths.
+    // Every indexed slot cleared.
     const clearedZero = res.setCookie.find(
       (c) => c.startsWith('oxy_rt_0=') && /Max-Age=0/i.test(c)
     );
@@ -642,8 +621,6 @@ describe('POST /auth/logout — Google-style multi-account', () => {
     );
     expect(clearedZero).toBeDefined();
     expect(clearedOne).toBeDefined();
-    expect(findClearForPath(res.setCookie, REFRESH_COOKIE_PATH)).toBeDefined();
-    expect(findClearForPath(res.setCookie, LEGACY_REFRESH_COOKIE_PATH)).toBeDefined();
   });
 
   it('with ?authuser=2 but no oxy_rt_2 cookie -> no-op revoke, still clears that slot', async () => {
@@ -703,7 +680,7 @@ describe('Origin guard on the cookie-credentialed auth endpoints (MED-1)', () =>
     expect(res.body).toEqual(BAD_ORIGIN_BODY);
     expect(mockCreate).not.toHaveBeenCalled();
     expect(mockGetAccessToken).not.toHaveBeenCalled();
-    const cookie = res.setCookie.find((c) => c.startsWith(`${REFRESH_COOKIE_NAME}=`));
+    const cookie = res.setCookie.find((c) => c.startsWith(`${REFRESH_COOKIE_SLOT_0}=`));
     expect(cookie).toBeUndefined();
   });
 
@@ -716,7 +693,7 @@ describe('Origin guard on the cookie-credentialed auth endpoints (MED-1)', () =>
       'POST',
       '/auth/logout',
       {},
-      { cookieHeader: `${REFRESH_COOKIE_NAME}=${presented}`, origin: 'https://attacker.example' }
+      { cookieHeader: `${REFRESH_COOKIE_SLOT_0}=${presented}`, origin: 'https://attacker.example' }
     );
 
     expect(res.status).toBe(403);
@@ -734,7 +711,7 @@ describe('Origin guard on the cookie-credentialed auth endpoints (MED-1)', () =>
       'POST',
       '/auth/refresh',
       {},
-      { cookieHeader: `${REFRESH_COOKIE_NAME}=${presented}`, origin: 'https://oxy.so.evil.com' }
+      { cookieHeader: `${REFRESH_COOKIE_SLOT_0}=${presented}`, origin: 'https://oxy.so.evil.com' }
     );
 
     expect(res.status).toBe(403);

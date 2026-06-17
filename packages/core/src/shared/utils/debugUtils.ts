@@ -57,7 +57,7 @@ export const debugError = (prefix: string, ...args: unknown[]): void => {
 
 /**
  * Create a namespaced debug logger
- * @param namespace - Logger namespace (e.g., 'FedCM', 'PopupAuth')
+ * @param namespace - Logger namespace (e.g., 'FedCM', 'SilentAuth')
  * @returns Object with log, warn, error methods
  *
  * @example

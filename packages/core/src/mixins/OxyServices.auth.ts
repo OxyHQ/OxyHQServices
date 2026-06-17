@@ -34,8 +34,8 @@ export interface RefreshAllOptions {
    * or unreachable endpoint with no useful answer coming back. As one step of
    * the ordered cold-boot sequence, a stalled refresh is dead latency in front
    * of the steps that actually hold the answer. A bounded abort lets cold boot
-   * fall through quickly. Omit (or pass `0`/negative) to wait indefinitely
-   * (the legacy behaviour). The abort is treated identically to a 401 — the
+   * fall through quickly. Omit (or pass `0`/negative) to wait indefinitely.
+   * The abort is treated identically to a 401 — the
    * "not signed in on this device" path — never an error.
    */
   timeout?: number;
@@ -445,14 +445,10 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
         // Plant the freshly-minted tokens, mirroring `claimSessionByToken`.
         // `/auth/verify` returns the first access token (and refresh token) in
         // its body, so installing it here means callers get an authenticated
-        // client without a second round-trip — and, critically, without
-        // falling back to the bearer-protected `GET /session/token/:sessionId`
-        // (C1 hardening), which 401s for a brand-new identity that has no
-        // bearer yet. `accessToken`/`refreshToken` are optional on
-        // SessionLoginResponse; only plant when an access token is present and
-        // default the refresh token to an empty string.
+        // client without a second round-trip. Refresh stays in the httpOnly
+        // cookie slot set by the API.
         if (res?.accessToken) {
-          this.setTokens(res.accessToken, res.refreshToken ?? '');
+          this.setTokens(res.accessToken);
         }
 
         return res;
@@ -534,31 +530,6 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
     }
 
     /**
-     * Get access token by session ID
-     *
-     * SECURITY: this endpoint requires the caller to already hold a
-     * bearer token whose user owns the referenced session (C1 hardening
-     * in the API). For the device-flow / QR sign-in case where the
-     * client has no bearer token yet, use `claimSessionByToken` instead.
-     */
-    async getTokenBySession(sessionId: string): Promise<{ accessToken: string; expiresAt: string }> {
-      try {
-        const res = await this.makeRequest<{ accessToken: string; expiresAt: string }>(
-          'GET',
-          `/session/token/${sessionId}`,
-          undefined,
-          { cache: false, retry: false }
-        );
-
-        this.setTokens(res.accessToken);
-
-        return res;
-      } catch (error) {
-        throw this.handleError(error);
-      }
-    }
-
-    /**
      * Exchange a device-flow sessionToken for the first access token.
      *
      * The originating client holds a 128-bit `sessionToken` that nobody
@@ -584,7 +555,6 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
       options: { deviceFingerprint?: string } = {}
     ): Promise<{
       accessToken: string;
-      refreshToken: string;
       sessionId: string;
       deviceId: string;
       expiresAt: string;
@@ -593,7 +563,6 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
       try {
         const res = await this.makeRequest<{
           accessToken: string;
-          refreshToken: string;
           sessionId: string;
           deviceId: string;
           expiresAt: string;
@@ -608,7 +577,7 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
           { cache: false, retry: false }
         );
 
-        this.setTokens(res.accessToken, res.refreshToken);
+        this.setTokens(res.accessToken);
 
         return res;
       } catch (error) {
@@ -621,19 +590,14 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
      * (Google-style multi-account rebuild).
      *
      * Calls `POST {sessionBaseUrl}/auth/refresh-all` with `credentials: 'include'`
-     * and NO bearer. The browser attaches every `oxy_rt*` cookie it has; the
-     * server rotates each in parallel and returns one entry per VALID account.
+     * and NO bearer. The browser attaches every indexed `oxy_rt_${authuser}`
+     * cookie it has; the server rotates each in parallel and returns one entry
+     * per VALID account.
      *
      * Failure handling:
      * - 401 → no signed-in accounts on this device → returns `{ accounts: [] }`
      *   (NOT an error; this is the cold-boot "not signed in" path).
-     * - 404 → server is older than the multi-account endpoint. We fall back to
-     *   `POST /auth/refresh` (single-slot) and wrap its response in the
-     *   refresh-all shape so callers can treat the two paths uniformly. The
-     *   fallback entry has `authuser: 0` (the legacy slot maps to slot 0 by
-     *   convention) and a minimal `user` shape — consumers needing the full
-     *   user must fetch it separately. Always exactly one account in this
-     *   shape.
+     * - 404 → endpoint not deployed → returns `{ accounts: [] }`.
      * - Any other non-2xx → throws via `handleError`.
      *
      * The refresh cookie itself never enters JS — only the rotated access
@@ -682,22 +646,7 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
       }
 
       if (response.status === 404) {
-        // Legacy single-account refresh fallback. Wrap the response so the
-        // caller can treat both paths identically.
-        const legacy = await this._refreshCookieRaw();
-        if (!legacy) {
-          return { accounts: [] };
-        }
-        const fallbackAccount: RefreshAllAccount = {
-          authuser: 0,
-          accessToken: legacy.accessToken,
-          expiresAt: legacy.expiresAt,
-          sessionId: this._decodeSessionIdFromAccessToken(legacy.accessToken) ?? '',
-          // Legacy /auth/refresh does NOT project the user shape; the caller
-          // (AuthManager) is expected to hydrate via /users/me after planting.
-          user: null,
-        };
-        return { accounts: [fallbackAccount] };
+        return { accounts: [] };
       }
 
       if (!response.ok) {
@@ -715,7 +664,7 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
           continue;
         }
         const e = entry as {
-          authuser?: number | null;
+          authuser?: number;
           accessToken?: string;
           expiresAt?: string;
           sessionId?: string;
@@ -728,11 +677,11 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
         if (!userId || !e.user.username) {
           continue;
         }
-        // Normalise the legacy un-suffixed cookie (`authuser: null` on the
-        // wire) to slot 0. The SDK surface always operates on numeric indices.
-        const authuser = typeof e.authuser === 'number' ? e.authuser : 0;
+        if (typeof e.authuser !== 'number') {
+          continue;
+        }
         accounts.push({
-          authuser,
+          authuser: e.authuser,
           accessToken: e.accessToken,
           expiresAt: e.expiresAt,
           sessionId: e.sessionId,
@@ -755,9 +704,8 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
      *
      * When `authuser` is provided, the server rotates ONLY that slot
      * (`oxy_rt_${authuser}`) — sibling accounts on the same device stay
-     * untouched. When omitted, the server picks the lowest indexed slot
-     * present (legacy fallback applies). The refresh cookie itself never
-     * enters JS.
+     * untouched. When omitted, the server picks the lowest indexed slot present.
+     * The refresh cookie itself never enters JS.
      *
      * Returns `null` on 401 (no cookie / expired / reused) so the caller can
      * fall through cleanly to the unauthenticated path.
@@ -815,9 +763,7 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
 
     /**
      * Internal: raw `POST /auth/refresh[?authuser=N]` call returning the
-     * minted access token. Returns `null` on 401 / non-2xx. Used as both the
-     * implementation of `refreshTokenViaCookie` and the legacy fallback for
-     * `refreshAllSessions` against older servers.
+     * minted access token. Returns `null` on 401 / non-2xx.
      *
      * @internal
      */
@@ -851,11 +797,13 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
         return null;
       }
       const expiresAt = typeof payload.expiresAt === 'string' ? payload.expiresAt : '';
-      const respAuthuser = typeof payload.authuser === 'number' ? payload.authuser : null;
+      if (typeof payload.authuser !== 'number') {
+        return null;
+      }
       return {
         accessToken: payload.accessToken,
         expiresAt,
-        authuser: respAuthuser,
+        authuser: payload.authuser,
       };
     }
 

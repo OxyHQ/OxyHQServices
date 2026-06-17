@@ -54,7 +54,7 @@ export interface OxyProviderProps {
     storageKeyPrefix?: string;
     /**
      * The app's Oxy OAuth client id / ApplicationCredential publicKey.
-     * Required for the cross-app device sign-in flow: the QR / popup
+     * Required for the cross-app device sign-in flow: the QR / approval-window
      * sign-in registers a device-flow session via `POST /auth/session/create`,
      * which now identifies the requesting app by this real registered
      * client id. The central Oxy auth experience resolves and renders the
@@ -67,5 +67,4 @@ export interface OxyProviderProps {
     authRedirectUri?: string;
     queryClient?: QueryClient;
 }
-
 

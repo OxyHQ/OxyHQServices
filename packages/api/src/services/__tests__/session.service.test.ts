@@ -100,7 +100,7 @@ jest.mock('../../utils/sessionUtils', () => ({
 jest.mock('../../utils/deviceUtils', () => ({
   // Echo an explicitly-provided deviceId (the stableDeviceKey path feeds the
   // derived id in as `providedDeviceId`). Falls back to the fixed default when
-  // no id is provided, so the legacy real-device-login tests are unchanged.
+  // no id is provided.
   extractDeviceInfo: jest
     .fn()
     .mockImplementation((_req: unknown, providedDeviceId?: string) => ({

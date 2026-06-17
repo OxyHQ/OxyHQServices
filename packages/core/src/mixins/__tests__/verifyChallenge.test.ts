@@ -2,13 +2,11 @@
  * `verifyChallenge` token-planting regression tests.
  *
  * `OxyServices.verifyChallenge()` returns a `SessionLoginResponse` carrying the
- * first `accessToken`/`refreshToken` minted by `POST /auth/verify`. It must
- * PLANT those tokens internally — mirroring its sibling `claimSessionByToken` —
+ * first `accessToken` minted by `POST /auth/verify`. It must
+ * plant that token internally — mirroring its sibling `claimSessionByToken` —
  * so callers (e.g. @oxyhq/services' `useAuthOperations.performSignIn`) end up
- * with an authenticated client WITHOUT falling back to the bearer-protected
- * `GET /session/token/:sessionId`. That fallback 401s for a brand-new identity
- * that has no bearer yet and previously broke the entire new-identity
- * onboarding flow.
+ * with an authenticated client. Session IDs are not public token-minting
+ * credentials, so the initial bearer must come from the verify response body.
  *
  * These tests stub `makeRequest` so the planting logic is exercised end-to-end
  * against a real OxyServices instance, with token state observed via the public
@@ -22,7 +20,6 @@ interface VerifyResponse {
   deviceId: string;
   expiresAt: string;
   accessToken?: string;
-  refreshToken?: string;
   user: { id: string; username: string };
 }
 
@@ -35,7 +32,7 @@ describe('OxyServices.verifyChallenge token planting', () => {
     jest.restoreAllMocks();
   });
 
-  it('plants the access + refresh token from the /auth/verify response body', async () => {
+  it('plants the access token from the /auth/verify response body', async () => {
     const oxy = makeOxy();
     expect(oxy.hasValidToken()).toBe(false);
 
@@ -46,7 +43,6 @@ describe('OxyServices.verifyChallenge token planting', () => {
           deviceId: 'dev_1',
           expiresAt: new Date(Date.now() + 60_000).toISOString(),
           accessToken: 'access_verify',
-          refreshToken: 'refresh_verify',
           user: { id: 'user_1', username: 'tester' },
         } as never;
       }
@@ -55,15 +51,15 @@ describe('OxyServices.verifyChallenge token planting', () => {
 
     const session = await oxy.verifyChallenge('pubkey', 'challenge', 'sig', 123, 'Device', 'fp');
 
-    // Response still carries the tokens for callers that want them.
+    // Response still carries the access token for callers that want it.
     expect(session.accessToken).toBe('access_verify');
-    // ...and they are now planted on the client so subsequent requests are
+    // ...and it is now planted on the client so subsequent requests are
     // authenticated without a second round-trip.
     expect(oxy.hasValidToken()).toBe(true);
     expect(oxy.getAccessToken()).toBe('access_verify');
   });
 
-  it('defaults the refresh token to an empty string when the response omits it', async () => {
+  it('plants the access token when no refresh token is present', async () => {
     const oxy = makeOxy();
 
     jest.spyOn(oxy, 'makeRequest').mockImplementation(async (_method, url) => {
@@ -110,14 +106,13 @@ describe('OxyServices.verifyChallenge token planting', () => {
     expect(oxy.hasValidToken()).toBe(false);
   });
 
-  it('matches claimSessionByToken: both plant tokens via the same path', async () => {
+  it('matches claimSessionByToken: both plant access tokens via the same path', async () => {
     const oxy = makeOxy();
 
     jest.spyOn(oxy, 'makeRequest').mockImplementation(async (_method, url) => {
       if (url === '/auth/session/claim') {
         return {
           accessToken: 'access_claim',
-          refreshToken: 'refresh_claim',
           sessionId: 'sess_claim',
           deviceId: 'dev_claim',
           expiresAt: new Date(Date.now() + 60_000).toISOString(),

@@ -2,6 +2,7 @@ import { useState, useEffect } from "react"
 import { toast } from "sonner"
 import { KeyRound, Loader2, Trash2 } from "lucide-react"
 import { buildApiUrl } from "@/lib/oxy-api-client"
+import { mintAccessTokenFromRefreshCookie } from "@/lib/session-auth"
 import { Button } from "@/components/ui/button"
 import { AuthFormHeader } from "@/components/auth-form-layout"
 
@@ -35,15 +36,16 @@ export function LinkedAccountsPage() {
     }, [])
 
     async function loadMethods() {
-        const accessToken = sessionStorage.getItem("oxy_access_token")
-
         try {
-            const headers: Record<string, string> = {}
-            if (accessToken) headers["Authorization"] = `Bearer ${accessToken}`
+            const auth = await mintAccessTokenFromRefreshCookie()
+            if (!auth) {
+                setMethods([])
+                return
+            }
 
             const res = await fetch(buildApiUrl("/auth/methods"), {
                 credentials: "include",
-                headers,
+                headers: { Authorization: `Bearer ${auth.accessToken}` },
             })
             if (!res.ok) return
             const data = await res.json()
@@ -56,16 +58,20 @@ export function LinkedAccountsPage() {
     }
 
     async function unlinkMethod(type: string) {
-        const accessToken = sessionStorage.getItem("oxy_access_token")
-
         setUnlinkingType(type)
         try {
-            const headers: Record<string, string> = { "content-type": "application/json" }
-            if (accessToken) headers["Authorization"] = `Bearer ${accessToken}`
+            const auth = await mintAccessTokenFromRefreshCookie()
+            if (!auth) {
+                toast.error("Session expired")
+                return
+            }
 
             const res = await fetch(buildApiUrl(`/auth/link/${type}`), {
                 method: "DELETE",
-                headers,
+                headers: {
+                    "content-type": "application/json",
+                    Authorization: `Bearer ${auth.accessToken}`,
+                },
                 credentials: "include",
             })
             if (res.ok) {

@@ -19,7 +19,7 @@ const setAccessTokenForTest = (oxy: OxyServices): void => {
   // `withAuthRetry` loop polls. Reaching in via the public httpService and
   // calling setTokens with a dummy avoids us needing to expose new test
   // hooks just for this.
-  oxy.httpService.setTokens('test-token', '');
+  oxy.httpService.setTokens('test-token');
 };
 
 describe('OxyServices.appData', () => {

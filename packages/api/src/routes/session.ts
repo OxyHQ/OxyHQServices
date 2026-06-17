@@ -54,42 +54,6 @@ router.get('/user/:sessionId', authMiddleware, validate({ params: sessionIdParam
 
 /**
  * @openapi
- * /session/token/{sessionId}:
- *   get:
- *     tags:
- *       - Sessions
- *     summary: Issue a fresh access token from a session ID
- *     description: >
- *       Exchange a long-lived session ID for a short-lived access token
- *       (typically 15 minutes). Requires a valid access token whose user
- *       owns the referenced session — callers cannot mint tokens for
- *       sessions belonging to other users.
- *     parameters:
- *       - name: sessionId
- *         in: path
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: New access token.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 accessToken:
- *                   type: string
- *                 expiresIn:
- *                   type: integer
- *                   example: 900
- *       404:
- *         description: Session not found or expired.
- */
-router.get('/token/:sessionId', authMiddleware, validate({ params: sessionIdParams }), SessionController.getTokenBySession);
-
-/**
- * @openapi
  * /session/sessions/{sessionId}:
  *   get:
  *     tags:

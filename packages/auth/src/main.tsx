@@ -12,7 +12,6 @@ import { LoginPage } from "@/src/pages/login"
 import { SignUpPage } from "@/src/pages/signup"
 import { AuthorizePage } from "@/src/pages/authorize"
 import { RecoverPage } from "@/src/pages/recover"
-import { AuthCallbackPage } from "@/src/pages/auth-callback"
 import { SocialCallbackPage } from "@/src/pages/social-callback"
 import { SettingsLayout } from "@/src/pages/settings/layout"
 import { ChangePasswordPage } from "@/src/pages/settings/password"
@@ -65,7 +64,6 @@ function App() {
                             </Route>
 
                             {/* Callback routes (no layout) */}
-                            <Route path="/auth/callback" element={<AuthCallbackPage />} />
                             <Route path="/auth/social/callback" element={<SocialCallbackPage />} />
 
                             <Route path="/" element={<ExternalRedirect url="https://oxy.so" />} />

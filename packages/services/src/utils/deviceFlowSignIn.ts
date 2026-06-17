@@ -10,16 +10,18 @@
  * token via `claimSessionByToken` — the device-flow equivalent of OAuth's
  * code-for-token exchange (RFC 8628 §3.4).
  *
- * Skipping the claim leaves the SDK with NO bearer token, so the subsequent
- * `switchSession` -> `getTokenBySession` (`GET /session/token/:id`) call 401s
- * against the C1-hardened API: the session is authorized server-side but the
- * app never becomes authenticated and the UI sits "Waiting for
- * authorization..." forever. The web `SignInModal` already claimed first; the
- * native `OxyAuthScreen` did not. Consolidating the claim→switch sequence here
- * keeps both paths identical and unit-testable, and prevents future drift.
+ * Skipping the claim leaves the SDK with NO bearer token: the session is
+ * authorized server-side but the app never becomes authenticated and the UI
+ * sits "Waiting for authorization..." forever. Consolidating the claim→switch
+ * sequence here keeps native and web identical and unit-testable.
  */
 
-import type { User } from '@oxyhq/core';
+import { KeyManager, type User } from '@oxyhq/core';
+
+interface DeviceFlowClaimResult {
+  accessToken?: string;
+  sessionId?: string;
+}
 
 /**
  * The minimal `OxyServices` surface this orchestration needs. Kept as a
@@ -33,7 +35,7 @@ export interface DeviceFlowClient {
    * token, planting them on the client. Single-use; replay is rejected by the
    * API. No bearer required — the high-entropy `sessionToken` IS the credential.
    */
-  claimSessionByToken: (sessionToken: string) => Promise<unknown>;
+  claimSessionByToken: (sessionToken: string) => Promise<DeviceFlowClaimResult | undefined>;
 }
 
 export interface CompleteDeviceFlowSignInOptions {
@@ -67,9 +69,13 @@ export async function completeDeviceFlowSignIn({
   sessionToken,
   switchSession,
 }: CompleteDeviceFlowSignInOptions): Promise<User> {
-  // 1) Plant the bearer + refresh tokens. Without this the bearer-protected
-  //    `getTokenBySession` inside `switchSession` 401s (the native regression).
-  await oxyServices.claimSessionByToken(sessionToken);
+  // 1) Plant the bearer + refresh tokens. The claim response is also persisted
+  //    to native shared secure storage so a later cold boot has a bearer before
+  //    it validates stored sessions. On web this is a no-op.
+  const claimed = await oxyServices.claimSessionByToken(sessionToken);
+  if (claimed?.accessToken) {
+    await KeyManager.storeSharedSession(claimed.sessionId || sessionId, claimed.accessToken);
+  }
 
   // 2) Bearer is now planted — hydrate the session through the normal path.
   return switchSession(sessionId);

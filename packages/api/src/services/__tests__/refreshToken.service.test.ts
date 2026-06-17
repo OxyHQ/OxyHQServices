@@ -3,14 +3,10 @@
  *
  * Covers the Google-style multi-account primitives added in the §6b handoff:
  *   - `refreshCookieName(authuser)` name + range validation.
- *   - `parseAllRefreshCookies(header)` legacy + indexed bucket grouping,
+ *   - `parseAllRefreshCookies(header)` indexed bucket grouping,
  *     including the rejection of malformed suffixes and out-of-range indices.
  *   - `selectActiveCandidate(rawList)` — valid wins, lone used fires
  *     reuse-detection, none-found stays none.
- *
- * The single-bucket legacy helpers (`parseRefreshTokenCandidates`,
- * `classifyRefreshCandidates`) remain covered by the existing /auth/refresh
- * route tests — we deliberately don't re-test them here.
  */
 
 import * as crypto from 'crypto';
@@ -129,12 +125,11 @@ describe('parseAllRefreshCookies', () => {
     expect(parseAllRefreshCookies('').size).toBe(0);
   });
 
-  it('groups mixed legacy + indexed cookies correctly', () => {
+  it('groups indexed cookies and ignores unsuffixed oxy_rt', () => {
     const header =
       'oxy_rt=LEGACY; oxy_rt_0=ZERO; oxy_rt_5=FIVE; theme=dark';
     const result = parseAllRefreshCookies(header);
-    expect(result.size).toBe(3);
-    expect(result.get('legacy')).toEqual(['LEGACY']);
+    expect(result.size).toBe(2);
     expect(result.get(0)).toEqual(['ZERO']);
     expect(result.get(5)).toEqual(['FIVE']);
   });
@@ -159,7 +154,7 @@ describe('parseAllRefreshCookies', () => {
       'oxy_rt_0=A; oxy_rt_0=B; oxy_rt_0=A; oxy_rt=L1; oxy_rt=L1';
     const result = parseAllRefreshCookies(header);
     expect(result.get(0)).toEqual(['A', 'B']);
-    expect(result.get('legacy')).toEqual(['L1']);
+    expect(result.has(1)).toBe(false);
   });
 
   it('skips empty values inside any bucket', () => {
@@ -231,7 +226,7 @@ describe('parseAllRefreshCookies — non-trivial header shapes', () => {
   it('strips surrounding whitespace around names', () => {
     const result = parseAllRefreshCookies(' oxy_rt_0 = X ;  oxy_rt = Y ');
     expect(result.get(0)).toEqual(['X']);
-    expect(result.get('legacy')).toEqual(['Y']);
+    expect(result.size).toBe(1);
   });
 
   it('keeps random-byte values intact (sha256Hex would otherwise mismatch)', () => {

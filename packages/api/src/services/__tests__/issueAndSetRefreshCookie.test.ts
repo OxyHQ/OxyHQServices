@@ -159,14 +159,14 @@ beforeEach(() => {
 });
 
 describe('issueAndSetRefreshCookie — slot allocation', () => {
-  it('writes legacy oxy_rt when no cookieHeader is provided', async () => {
+  it('writes oxy_rt_0 when no cookieHeader is provided', async () => {
     const { res, calls } = makeResponseStub();
     const result = await issueAndSetRefreshCookie(res, 'sess-new', 'u-new');
 
-    expect(result.authuser).toBeNull();
+    expect(result.authuser).toBe(0);
     expect(result.accessToken).toBe('minted-access');
     expect(calls).toHaveLength(1);
-    expect(calls[0].name).toBe('oxy_rt');
+    expect(calls[0].name).toBe('oxy_rt_0');
   });
 
   it('writes oxy_rt_0 for the first multi-account login on a clean device', async () => {
@@ -175,10 +175,8 @@ describe('issueAndSetRefreshCookie — slot allocation', () => {
       cookieHeader: '',
     });
 
-    // Empty cookieHeader falls through to legacy path (length === 0 guard).
-    // Re-test with a "non-refresh" cookie to force the multi-account path.
-    expect(result.authuser).toBeNull();
-    expect(calls[0].name).toBe('oxy_rt');
+    expect(result.authuser).toBe(0);
+    expect(calls[0].name).toBe('oxy_rt_0');
 
     const { res: res2, calls: calls2 } = makeResponseStub();
     const result2 = await issueAndSetRefreshCookie(res2, 'sess-new', 'u-new', {

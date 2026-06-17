@@ -8,9 +8,8 @@
  *   in successfully, the API authorizes the session and notifies the client via
  *   the auth-session socket — but the screen then called `switchSession`
  *   DIRECTLY without first claiming the bearer with the secret `sessionToken`.
- *   `switchSession` -> `getTokenBySession` (`GET /session/token/:id`) requires a
- *   bearer the client did not yet hold, so it 401'd: the session was authorized
- *   server-side but the app never became authenticated ("nothing happens").
+ *   The session was authorized server-side but the app never became
+ *   authenticated ("nothing happens").
  *
  *   The web `SignInModal` already claimed first; the native screen did not.
  *   `completeDeviceFlowSignIn` consolidates the claim->switch sequence so both

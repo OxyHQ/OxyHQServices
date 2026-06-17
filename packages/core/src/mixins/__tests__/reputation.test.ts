@@ -20,7 +20,7 @@ import type {
 } from '../OxyServices.reputation';
 
 const setAccessTokenForTest = (oxy: OxyServices): void => {
-  oxy.httpService.setTokens('test-token', '');
+  oxy.httpService.setTokens('test-token');
 };
 
 const balanceFixture: ReputationBalance = {

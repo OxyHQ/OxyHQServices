@@ -9,29 +9,11 @@ import { invalidateSessionQueries } from './queries/queryKeys';
 
 const debug = createDebugLogger('SessionSocket');
 
-/** localStorage key used by AuthManager for persisting access tokens. */
-const LS_ACCESS_TOKEN_KEY = 'oxy_access_token';
-
 /** Delay before retrying socket connection after an auth failure (ms). */
 const AUTH_RETRY_DELAY_MS = 2000;
 
 /** Maximum number of consecutive auth-failure retries. */
 const MAX_AUTH_RETRIES = 3;
-
-/**
- * Read the access token from localStorage directly.
- * Used as a fallback when the in-memory token is empty (e.g., during a
- * cross-tab token refresh race).
- */
-function readTokenFromStorage(): string | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    return window.localStorage.getItem(LS_ACCESS_TOKEN_KEY);
-  } catch (err) {
-    console.warn('[oxy.session-socket] localStorage read failed:', err);
-    return null;
-  }
-}
 
 /**
  * Minimal subset of the socket.io-client Socket API used by this hook.
@@ -50,14 +32,6 @@ interface MinimalSocket {
     event: string,
     handler: (...args: Args) => void
   ): void;
-}
-
-/**
- * Socket extended with a private property used to track the cross-tab
- * storage event listener so cleanup can remove it.
- */
-interface SocketWithStorageHandler extends MinimalSocket {
-  __oxyStorageHandler?: (event: StorageEvent) => void;
 }
 
 type SocketIOFactory = (uri: string, opts?: Record<string, unknown>) => MinimalSocket;
@@ -103,7 +77,7 @@ export function useSessionSocket(options?: UseSessionSocketOptions) {
     return active?.deviceId ?? null;
   }, [sessions, activeSessionId]);
 
-  const socketRef = useRef<SocketWithStorageHandler | null>(null);
+  const socketRef = useRef<MinimalSocket | null>(null);
 
   // Store callbacks and values in refs to avoid reconnecting when they change
   const clearSessionStateRef = useRef(clearSessionState);
@@ -143,23 +117,24 @@ export function useSessionSocket(options?: UseSessionSocketOptions) {
     let authRetryCount = 0;
     let authRetryTimer: ReturnType<typeof setTimeout> | null = null;
 
-    /**
-     * Resolve the best available access token.
-     * Prefers the in-memory token from OxyServices; falls back to
-     * localStorage which may have been updated by another tab.
-     */
-    const resolveToken = (): string | null => {
-      return oxyServices.getAccessToken() || readTokenFromStorage();
-    };
+    const resolveToken = (): string | null => oxyServices.getAccessToken();
+
+    const unsubscribeTokenChange = oxyServices.onTokensChanged((token) => {
+      if (token && socketRef.current?.disconnected) {
+        debug.log('Token update detected; reconnecting socket');
+        authRetryCount = 0;
+        socketRef.current.connect();
+      }
+    });
 
     getSocketIO().then((ioFn) => {
       if (cancelled || !ioFn) return;
 
       // Connect with auth token; use callback so reconnections get a fresh token.
       // If no token is available at all, we skip the initial connect and let
-      // the storage listener or retry logic connect when a token appears.
+      // token-change notifications or retry logic connect when a token appears.
       const token = resolveToken();
-      const socket: SocketWithStorageHandler = ioFn(baseURL, {
+      const socket = ioFn(baseURL, {
         transports: ['websocket'],
         autoConnect: !!token, // don't auto-connect when there is no token
         auth: (cb: (data: { token: string }) => void) => {
@@ -327,36 +302,16 @@ export function useSessionSocket(options?: UseSessionSocketOptions) {
       socket.on('disconnect', handleDisconnect);
       socket.on('session_update', handleSessionUpdate);
 
-      // Listen for cross-tab token updates via the Storage event.
-      // When another tab writes a fresh access token to localStorage,
-      // reconnect this tab's socket if it was disconnected.
-      const handleStorageEvent = (e: StorageEvent) => {
-        if (e.key === LS_ACCESS_TOKEN_KEY && e.newValue && socketRef.current?.disconnected) {
-          debug.log('Cross-tab token update detected; reconnecting socket');
-          authRetryCount = 0; // reset retries since we got a fresh token
-          socketRef.current.connect();
-        }
-      };
-
-      if (typeof window !== 'undefined') {
-        window.addEventListener('storage', handleStorageEvent);
-        // Store the handler so cleanup can remove it
-        socket.__oxyStorageHandler = handleStorageEvent;
-      }
     });
 
     return () => {
       cancelled = true;
+      unsubscribeTokenChange();
       if (authRetryTimer) {
         clearTimeout(authRetryTimer);
       }
       const currentSocket = socketRef.current;
       if (currentSocket) {
-        // Remove cross-tab storage listener
-        const storageHandler = currentSocket.__oxyStorageHandler;
-        if (typeof window !== 'undefined' && storageHandler) {
-          window.removeEventListener('storage', storageHandler);
-        }
         currentSocket.disconnect();
         socketRef.current = null;
       }

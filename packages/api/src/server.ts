@@ -460,7 +460,7 @@ app.use("/profiles", csrfProtection, profilesRouter);
 // the routing topology unambiguous.
 app.use("/users/me/app-data", userRateLimiter, csrfProtection, userDataRouter);
 app.use("/users", userRateLimiter, csrfProtection, usersRouter); // Per-user rate limiting for authenticated routes
-app.use("/session", userRateLimiter, csrfProtection, sessionRouter); // SDK uses /session/token/:id
+app.use("/session", userRateLimiter, csrfProtection, sessionRouter);
 app.use("/privacy", userRateLimiter, csrfProtection, privacyRoutes);
 app.use("/analytics", userRateLimiter, authMiddleware, analyticsRoutes);
 app.use('/payments', userRateLimiter, csrfProtection, paymentRoutes);

@@ -31,7 +31,7 @@ const debug = createDebugLogger('SSO');
 
 /**
  * Wire shape of `POST /sso/exchange`. `expiresAt` and `authuser` are optional
- * (the central store may omit them for legacy single-slot sessions).
+ * because the central SSO store may omit them.
  */
 interface SsoExchangeWireResponse {
   accessToken: string;
@@ -51,8 +51,7 @@ interface SsoExchangeWireResponse {
  *
  * Exposed as a module-level helper (in addition to the instance method below)
  * so consumers that do not yet hold an `OxyServices` instance can still mint a
- * bounce state. Reuses the same `crypto.randomUUID`-based generator the popup
- * mixin uses for its CSRF state, with a `getRandomValues` fallback.
+ * bounce state. Uses `crypto.randomUUID` with a `getRandomValues` fallback.
  */
 export function generateSsoState(): string {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -75,8 +74,8 @@ export function OxyServicesSsoMixin<T extends typeof OxyServicesBase>(Base: T) {
     /**
      * Generate cryptographically secure state for the SSO bounce (CSRF
      * protection). Delegates to the module-level {@link generateSsoState}
-     * helper, which uses the same `crypto.randomUUID`-based generator the popup
-     * mixin's `generateState()` uses — one shared secure-random implementation.
+     * helper, which uses `crypto.randomUUID` when available and falls back to
+     * `crypto.getRandomValues`.
      */
     public generateSsoState(): string {
       return generateSsoState();
@@ -154,7 +153,7 @@ export function OxyServicesSsoMixin<T extends typeof OxyServicesBase>(Base: T) {
       // Plant the access token exactly like exchangeIdTokenForSession does.
       // The SSO exchange does not return a refresh token (the central store
       // holds the refresh credential), so default it to an empty string.
-      this.httpService.setTokens(payload.accessToken, '');
+      this.httpService.setTokens(payload.accessToken);
 
       debug.log('SSO exchange complete:', { hasSession: !!payload.sessionId });
 

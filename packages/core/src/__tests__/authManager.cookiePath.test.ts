@@ -1,9 +1,8 @@
 /**
  * AuthManager multi-account cookie-path regression tests.
  *
- * Locks in the four new methods that route through the httpOnly
- * `oxy_rt_${authuser}` refresh cookies instead of the legacy bearer
- * `/session/token/:id` endpoint:
+ * Locks in the four methods that route through the httpOnly
+ * `oxy_rt_${authuser}` refresh cookies:
  *
  *   - `restoreFromCookies()` — cold-boot restore of every device-local slot
  *     via `POST /auth/refresh-all`. Picks active slot by persisted
@@ -44,12 +43,17 @@ class InMemoryStorage implements StorageAdapter {
   raw(): Map<string, string> { return this.store; }
 }
 
+interface MockHttpService {
+  setTokens: jest.Mock;
+  setAuthRefreshHandler: jest.Mock;
+}
+
 interface MockServices {
   refreshAllSessions: jest.Mock<Promise<RefreshAllResponse>, []>;
   refreshTokenViaCookie: jest.Mock;
   logoutSessionByAuthuser: jest.Mock<Promise<void>, [number]>;
   logoutAllSessionsViaCookie: jest.Mock<Promise<void>, []>;
-  httpService: { setTokens: jest.Mock; onTokenRefreshed: ((t: string) => void) | undefined };
+  httpService: MockHttpService;
 }
 
 function makeMockServices(): MockServices {
@@ -58,7 +62,7 @@ function makeMockServices(): MockServices {
     refreshTokenViaCookie: jest.fn(),
     logoutSessionByAuthuser: jest.fn(async () => undefined),
     logoutAllSessionsViaCookie: jest.fn(async () => undefined),
-    httpService: { setTokens: jest.fn(), onTokenRefreshed: undefined },
+    httpService: { setTokens: jest.fn(), setAuthRefreshHandler: jest.fn() },
   };
 }
 
@@ -68,7 +72,6 @@ function makeManager(services: MockServices, storage: InMemoryStorage): AuthMana
     storage,
     autoRefresh: false,
     crossTabSync: false,
-    cookieOnly: true,
   });
 }
 
@@ -305,7 +308,7 @@ describe('AuthManager.signOutAllViaCookies', () => {
   });
 });
 
-describe('AuthManager.initialize (cookieOnly)', () => {
+describe('AuthManager.initialize', () => {
   it('returns the active user from restoreFromCookies and never touches localStorage tokens', async () => {
     const services = makeMockServices();
     services.refreshAllSessions.mockResolvedValueOnce(TWO_ACCOUNTS);
@@ -321,24 +324,23 @@ describe('AuthManager.initialize (cookieOnly)', () => {
     expect(storage.has('oxy_user')).toBe(false);
   });
 
-  it('returns null when no cookies AND cookieOnly mode (no legacy fallback)', async () => {
+  it('returns null when no cookies are restored', async () => {
     const services = makeMockServices();
     // Default `{ accounts: [] }`.
     const storage = new InMemoryStorage();
-    // Even if legacy token were present in storage, cookieOnly must skip it.
-    storage.setItem('oxy_access_token', 'stale-legacy-token');
-    storage.setItem('oxy_user', JSON.stringify({ id: 'legacy', username: 'legacy' }));
+    storage.setItem('oxy_access_token', 'stale-storage-token');
+    storage.setItem('oxy_user', JSON.stringify({ id: 'stale', username: 'stale' }));
     const manager = makeManager(services, storage);
 
     const user = await manager.initialize();
 
     expect(user).toBeNull();
-    // The legacy access token was NOT planted.
+    // Stale storage token material is ignored.
     expect(services.httpService.setTokens).not.toHaveBeenCalled();
   });
 });
 
-describe('AuthManager.getAccessToken (cookieOnly in-memory fallback)', () => {
+describe('AuthManager.getAccessToken', () => {
   it('returns the in-memory token after a cold-boot cookie restore even though storage holds no token', async () => {
     // Regression: the cookie restore path plants the active token ONLY in memory
     // (`_lastKnownAccessToken` + httpService) and intentionally NEVER writes
@@ -352,7 +354,7 @@ describe('AuthManager.getAccessToken (cookieOnly in-memory fallback)', () => {
 
     await manager.restoreFromCookies();
 
-    // Storage was never touched for the access token (cookieOnly contract holds).
+    // Storage was never touched for the access token.
     expect(storage.has('oxy_access_token')).toBe(false);
 
     // getAccessToken still resolves the active slot's token from memory.
@@ -369,7 +371,7 @@ describe('AuthManager.getAccessToken (cookieOnly in-memory fallback)', () => {
     expect(token).toBeNull();
   });
 
-  it('prefers the storage token over the in-memory token when both are present', async () => {
+  it('ignores a retired storage token when an in-memory cookie-restored token is present', async () => {
     const services = makeMockServices();
     services.refreshAllSessions.mockResolvedValueOnce(TWO_ACCOUNTS);
     const storage = new InMemoryStorage();
@@ -378,11 +380,11 @@ describe('AuthManager.getAccessToken (cookieOnly in-memory fallback)', () => {
     // After restore the in-memory token is TOKEN_SLOT_0.
     await manager.restoreFromCookies();
 
-    // Simulate a path that DID write storage (legacy/bearer flow). Storage wins.
+    // Simulate stale token material from a retired storage path. Memory wins.
     const STORAGE_TOKEN = buildAccessToken({ sessionId: 'sess-storage', userId: 'user-storage', exp: 9999999999 });
     storage.setItem('oxy_access_token', STORAGE_TOKEN);
 
     const token = await manager.getAccessToken();
-    expect(token).toBe(STORAGE_TOKEN);
+    expect(token).toBe(TOKEN_SLOT_0);
   });
 });

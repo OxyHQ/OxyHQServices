@@ -55,8 +55,8 @@ interface FedCMIdentityProviderStatic {
  * Signal completion of a FedCM "login_url" sign-in.
  *
  * When the browser's FedCM flow finds no signed-in account, it opens the IdP's
- * `login_url` (here `/login`, per `public/fedcm.json`) in a dialog/popup so the
- * user can authenticate. That popup carries NO OAuth params. After a successful
+ * `login_url` (here `/login`, per `public/fedcm.json`) in a browser dialog so the
+ * user can authenticate. That dialog carries NO OAuth params. After a successful
  * login + `setFedCMLoginStatus()` (which sets the IdP session cookie and the
  * `Set-Login: logged-in` signal), the page MUST call `IdentityProvider.close()`
  * to dismiss the dialog. Chrome then re-runs the accounts flow — which now
@@ -64,7 +64,7 @@ interface FedCMIdentityProviderStatic {
  * relying party.
  *
  * Without this call the page would instead navigate to `/authorize` with no
- * request context and render "No authorization request" inside the FedCM popup.
+ * request context and render "No authorization request" inside the FedCM dialog.
  *
  * @returns `true` if this was a FedCM login_url context and completion was
  * signalled (caller must NOT navigate); `false` if it was an ordinary login
@@ -84,20 +84,7 @@ export function completeFedCMLogin(): boolean {
             identityProvider.close()
             return true
         } catch {
-            // Fall through to the popup-close fallback below.
-        }
-    }
-
-    // Fallback: if FedCM opened us as a plain popup but `IdentityProvider` is
-    // unavailable (older browser / non-FedCM popup), just close the window so
-    // the user isn't stranded on the "No authorization request" screen. The
-    // parent flow re-checks its session on the browser's FedCM retry.
-    if (!!window.opener && window.opener !== window) {
-        try {
-            window.close()
-            return true
-        } catch {
-            // Could not close — let the caller fall back to its normal redirect.
+            return false
         }
     }
 
@@ -108,6 +95,11 @@ type PostLoginRedirectParams = {
     sessionToken?: string
     redirectUri?: string
     state?: string
+    clientId?: string
+    codeChallenge?: string
+    codeChallengeMethod?: string
+    scope?: string
+    authuser?: number
 }
 
 /**
@@ -119,12 +111,22 @@ export function buildPostLoginRedirect({
     sessionToken,
     redirectUri,
     state,
+    clientId,
+    codeChallenge,
+    codeChallengeMethod,
+    scope,
+    authuser,
 }: PostLoginRedirectParams): string {
     const nextUrl = new URL("/authorize", window.location.origin)
     if (sessionToken) nextUrl.searchParams.set("token", sessionToken)
     if (redirectUri) nextUrl.searchParams.set("redirect_uri", redirectUri)
     if (state) nextUrl.searchParams.set("state", state)
-    if (!sessionToken && !redirectUri) {
+    if (clientId) nextUrl.searchParams.set("client_id", clientId)
+    if (codeChallenge) nextUrl.searchParams.set("code_challenge", codeChallenge)
+    if (codeChallengeMethod) nextUrl.searchParams.set("code_challenge_method", codeChallengeMethod)
+    if (scope) nextUrl.searchParams.set("scope", scope)
+    if (typeof authuser === "number") nextUrl.searchParams.set("authuser", String(authuser))
+    if (!sessionToken && !redirectUri && !clientId) {
         nextUrl.searchParams.set(
             "error",
             "No authorization request found. Return to the app and try again."

@@ -2,6 +2,7 @@ import { useState, useEffect } from "react"
 import { toast } from "sonner"
 import { Monitor, LogOut, Loader2 } from "lucide-react"
 import { buildApiUrl } from "@/lib/oxy-api-client"
+import { mintAccessTokenFromRefreshCookie } from "@/lib/session-auth"
 import { Button } from "@/components/ui/button"
 import { AuthFormHeader } from "@/components/auth-form-layout"
 
@@ -25,17 +26,16 @@ export function SessionsPage() {
     }, [])
 
     async function loadSessions() {
-        const sessionId = sessionStorage.getItem("oxy_session_id")
-        const accessToken = sessionStorage.getItem("oxy_access_token")
-        if (!sessionId) return
-
         try {
-            const headers: Record<string, string> = {}
-            if (accessToken) headers["Authorization"] = `Bearer ${accessToken}`
+            const auth = await mintAccessTokenFromRefreshCookie()
+            if (!auth) {
+                setSessions([])
+                return
+            }
 
-            const res = await fetch(buildApiUrl(`/session/sessions/${sessionId}`), {
+            const res = await fetch(buildApiUrl(`/session/sessions/${auth.sessionId}`), {
                 credentials: "include",
-                headers,
+                headers: { Authorization: `Bearer ${auth.accessToken}` },
             })
             if (!res.ok) return
             const data = await res.json()
@@ -48,18 +48,20 @@ export function SessionsPage() {
     }
 
     async function revokeSession(targetSessionId: string) {
-        const sessionId = sessionStorage.getItem("oxy_session_id")
-        const accessToken = sessionStorage.getItem("oxy_access_token")
-        if (!sessionId) return
-
         setRevokingId(targetSessionId)
         try {
-            const headers: Record<string, string> = { "content-type": "application/json" }
-            if (accessToken) headers["Authorization"] = `Bearer ${accessToken}`
+            const auth = await mintAccessTokenFromRefreshCookie()
+            if (!auth) {
+                toast.error("Session expired")
+                return
+            }
 
-            const res = await fetch(buildApiUrl(`/session/logout/${sessionId}/${targetSessionId}`), {
+            const res = await fetch(buildApiUrl(`/session/logout/${auth.sessionId}/${targetSessionId}`), {
                 method: "POST",
-                headers,
+                headers: {
+                    "content-type": "application/json",
+                    Authorization: `Bearer ${auth.accessToken}`,
+                },
                 credentials: "include",
             })
             if (res.ok) {
@@ -74,18 +76,20 @@ export function SessionsPage() {
     }
 
     async function revokeAllSessions() {
-        const sessionId = sessionStorage.getItem("oxy_session_id")
-        const accessToken = sessionStorage.getItem("oxy_access_token")
-        if (!sessionId) return
-
         setRevokingId("all")
         try {
-            const headers: Record<string, string> = { "content-type": "application/json" }
-            if (accessToken) headers["Authorization"] = `Bearer ${accessToken}`
+            const auth = await mintAccessTokenFromRefreshCookie()
+            if (!auth) {
+                toast.error("Session expired")
+                return
+            }
 
-            const res = await fetch(buildApiUrl(`/session/logout-all/${sessionId}`), {
+            const res = await fetch(buildApiUrl(`/session/logout-all/${auth.sessionId}`), {
                 method: "POST",
-                headers,
+                headers: {
+                    "content-type": "application/json",
+                    Authorization: `Bearer ${auth.accessToken}`,
+                },
                 credentials: "include",
             })
             if (res.ok) {

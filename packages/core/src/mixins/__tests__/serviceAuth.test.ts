@@ -48,6 +48,7 @@ const signServiceToken = (claims: ServiceTokenClaims, secret: string): string =>
     type: 'service',
     aud: 'oxy-api',
     iss: 'oxy-auth',
+    credentialId: 'cred-1',
     ...claims,
   };
   const headerB64 = b64url(JSON.stringify(header));
@@ -180,6 +181,7 @@ describe('C3: service-token acting-as enforcement', () => {
     expect(req.serviceApp).toEqual({
       appId: 'app-1',
       appName: 'trusted-service',
+      credentialId: 'cred-1',
       scopes: ['user:read'],
     });
   });
@@ -202,7 +204,7 @@ describe('C3: service-token acting-as enforcement', () => {
     expect(verifySpy).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledTimes(1);
     expect(req.userId).toBeNull();
-    expect(req.serviceApp).toMatchObject({ appId: 'app-1' });
+    expect(req.serviceApp).toMatchObject({ appId: 'app-1', credentialId: 'cred-1' });
   });
 
   it('caches positive grants per (appId, userId) — avoids hammering verify endpoint', async () => {
@@ -620,7 +622,7 @@ describe('H4: aud / iss / type claim verification', () => {
     await mw(req as unknown as never, res as unknown as never, next as unknown as never);
 
     expect(next).toHaveBeenCalledTimes(1);
-    expect(req.serviceApp).toMatchObject({ appId: 'a' });
+    expect(req.serviceApp).toMatchObject({ appId: 'a', credentialId: 'cred-1' });
   });
 
   it('honors expectedAudience and expectedIssuer overrides', async () => {
@@ -660,7 +662,7 @@ describe('requireScope() middleware', () => {
       // Simulate a fully-authenticated service request — auth() has already
       // attached `serviceApp`. requireScope() only reads from that field.
     });
-    req.serviceApp = { appId: 'a', appName: 'svc', scopes: ['files:write'] };
+    req.serviceApp = { appId: 'a', appName: 'svc', credentialId: 'cred-1', scopes: ['files:write'] };
     const res = makeRes();
     const next = jest.fn();
 
@@ -672,7 +674,7 @@ describe('requireScope() middleware', () => {
 
   it('allows requests where the delegation grant carries the required scope', () => {
     const req = makeReq();
-    req.serviceApp = { appId: 'a', appName: 'svc', scopes: [] };
+    req.serviceApp = { appId: 'a', appName: 'svc', credentialId: 'cred-1', scopes: [] };
     req.serviceActingAs = { userId: 'u-1', scopes: ['user:read'] };
     const res = makeRes();
     const next = jest.fn();
@@ -684,7 +686,7 @@ describe('requireScope() middleware', () => {
 
   it('rejects requests missing the required scope with 403', () => {
     const req = makeReq();
-    req.serviceApp = { appId: 'a', appName: 'svc', scopes: ['user:read'] };
+    req.serviceApp = { appId: 'a', appName: 'svc', credentialId: 'cred-1', scopes: ['user:read'] };
     const res = makeRes();
     const next = jest.fn();
 

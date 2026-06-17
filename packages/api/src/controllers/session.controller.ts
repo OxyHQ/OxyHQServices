@@ -24,7 +24,7 @@ import {
   issueAndSetRefreshCookie,
   revokeFamilyBySession,
   revokeAllUserFamilies,
-  clearRefreshCookie,
+  clearAllRefreshCookies,
 } from '../services/refreshToken.service';
 import type { AuthRequest } from '../middleware/auth';
 
@@ -1022,49 +1022,6 @@ export class SessionController {
     }
   }
 
-  // Get access token by session ID. Requires bearer auth and verifies the
-  // authenticated user owns the requested session — without this an
-  // attacker with any stolen sessionId could mint fresh access tokens for
-  // arbitrary accounts (C1).
-  static async getTokenBySession(req: AuthRequest, res: Response) {
-    try {
-      const { sessionId } = req.params;
-      const authenticatedUserId = getAuthenticatedUserId(req);
-
-      if (!sessionId) {
-        return res.status(400).json({ message: 'Session ID is required' });
-      }
-      if (!authenticatedUserId) {
-        return res.status(401).json({ message: 'Authentication required' });
-      }
-
-      // Verify ownership BEFORE handing out a fresh token. Use the cached
-      // session lookup (no user populate needed for this check).
-      const ownerCheck = await sessionService.validateSessionById(sessionId, false);
-      if (!ownerCheck?.session) {
-        return res.status(404).json({ message: 'Session not found' });
-      }
-      if (ownerCheck.session.userId?.toString() !== authenticatedUserId) {
-        return res.status(404).json({ message: 'Session not found' });
-      }
-
-      // Use session service which handles auto-refresh
-      const result = await sessionService.getAccessToken(sessionId);
-
-      if (!result) {
-        return res.status(404).json({ message: 'Session not found' });
-      }
-
-      res.json({
-        accessToken: result.accessToken,
-        expiresAt: result.expiresAt.toISOString()
-      });
-    } catch (error) {
-      logger.error('Get token by session error:', error);
-      res.status(500).json({ message: 'Internal server error' });
-    }
-  }
-
   // Get all sessions for a user. Requires bearer auth and verifies the
   // authenticated user owns the referenced session — otherwise an attacker
   // with a stolen sessionId could enumerate every active session for the
@@ -1161,11 +1118,12 @@ export class SessionController {
         }
       }
 
-      // Revoke any refresh-token family bound to this session and clear the
-      // first-party refresh cookie. Cleanup must never fail the logout itself.
+      // Revoke any refresh-token family bound to this session and clear every
+      // indexed refresh cookie presented by this device. Cleanup must never fail
+      // the logout itself.
       try {
         await revokeFamilyBySession(sessionIdToLogout);
-        clearRefreshCookie(res);
+        clearAllRefreshCookies(res, req.headers.cookie);
       } catch (error) {
         logger.error('Failed to revoke refresh family during logout', error instanceof Error ? error : new Error(String(error)), {
           component: 'SessionController',
@@ -1221,11 +1179,12 @@ export class SessionController {
         });
       }
 
-      // Revoke every refresh-token family for this user and clear the cookie.
+      // Revoke every refresh-token family for this user and clear every indexed
+      // refresh cookie presented by this device.
       // Cleanup must never fail the logout itself.
       try {
         await revokeAllUserFamilies(userId);
-        clearRefreshCookie(res);
+        clearAllRefreshCookies(res, req.headers.cookie);
       } catch (error) {
         logger.error('Failed to revoke refresh families during logout-all', error instanceof Error ? error : new Error(String(error)), {
           component: 'SessionController',

@@ -4,7 +4,7 @@
  *
  * On a fresh page load / app launch the SDK may have several ways to recover an
  * existing session (silent FedCM, a persisted refresh token, a cross-domain
- * claim, an explicit popup flow, …). They must be attempted in a *deterministic
+ * claim, a redirect SSO return, ...). They must be attempted in a deterministic
  * order*, and the FIRST one that yields a session wins — every later step is
  * skipped. This module encodes exactly that contract and nothing else.
  *
@@ -112,7 +112,7 @@ export interface RunColdBootOptions<S> {
    * Per-step timeouts inside `run()` remain the first line of defense and
    * should keep every step well under this budget on a healthy load; this only
    * trips when one of them regresses (the production FedCM-silent hang). When
-   * omitted there is NO overall deadline (unchanged legacy behaviour).
+   * omitted there is no overall deadline.
    */
   readonly overallDeadlineMs?: number;
   /**
@@ -178,8 +178,8 @@ export async function runColdBoot<S>(
 
       let result: ColdBootStepResult<S> | typeof DEADLINE_EXPIRED;
       try {
-        // Without a deadline: legacy behaviour — await the step directly.
-        // With a deadline: race the step against the shared deadline. The
+        // Without a deadline, await the step directly. With a deadline, race
+        // the step against the shared deadline. The
         // step's `run()` still STARTS synchronously up to its first `await`
         // (so a terminal step's synchronous navigation side effect always
         // executes), but a non-settling step can no longer block the loop —

@@ -24,8 +24,7 @@
  *    virtuals are only present when a query uses `.lean({ virtuals: true })` (or
  *    a hydrated doc), `name.full` and `displayName` MUST be treated as OPTIONAL.
  *  - The `/auth/refresh-all` handler in `packages/api/src/routes/auth.ts`, whose
- *    per-slot `authuser` is `number | null` (null = legacy un-suffixed `oxy_rt`
- *    cookie slot).
+ *    per-slot `authuser` is the numeric `oxy_rt_${authuser}` cookie slot.
  *
  * Platform-agnostic — zod only, no react/react-native/expo. ESM-safe (no
  * `require()`).
@@ -103,14 +102,12 @@ export function resolveUserId(user: UserResponse): string | undefined {
 /**
  * One rotated account entry from `POST /auth/refresh-all`.
  *
- * `authuser` is the device-local slot index (`0..N-1`). The server emits
- * `authuser: null` for the legacy un-suffixed `oxy_rt` cookie slot — accept null
- * so a browser holding only a legacy cookie is NOT dropped from the account
- * chooser. `user` is the canonical {@link userResponseSchema} shape (the handler
- * projects a whitelist and runs it through `formatUserResponse`).
+ * `authuser` is the device-local slot index (`0..N-1`). `user` is the canonical
+ * {@link userResponseSchema} shape (the handler projects a whitelist and runs it
+ * through `formatUserResponse`).
  */
 export const refreshAllAccountSchema = z.object({
-    authuser: z.number().int().nonnegative().nullable(),
+    authuser: z.number().int().nonnegative(),
     accessToken: z.string(),
     expiresAt: z.string(),
     sessionId: z.string(),
@@ -122,9 +119,7 @@ export type RefreshAllAccountResponse = z.infer<typeof refreshAllAccountSchema>;
 /**
  * Wire shape of `POST /auth/refresh-all`: every valid device-local account,
  * sorted by `authuser` ascending. An empty `accounts` array means "no signed-in
- * accounts on this device" — the IdP must show the sign-in form. A 404 means the
- * endpoint is not deployed and the caller falls back to single-account
- * `/auth/refresh`.
+ * accounts on this device" — the IdP must show the sign-in form.
  */
 export const refreshAllResponseSchema = z.object({
     accounts: z.array(refreshAllAccountSchema),

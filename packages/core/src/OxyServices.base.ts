@@ -164,8 +164,8 @@ export class OxyServicesBase {
   /**
    * Set authentication tokens
    */
-  public setTokens(accessToken: string, refreshToken = ''): void {
-    this.httpService.setTokens(accessToken, refreshToken);
+  public setTokens(accessToken: string): void {
+    this.httpService.setTokens(accessToken);
   }
 
   /**
@@ -430,4 +430,3 @@ export class OxyServicesBase {
     }
   }
 }
-

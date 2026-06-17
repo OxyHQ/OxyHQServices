@@ -38,9 +38,8 @@ export interface SimpleAuthRequest extends Request {
  * Tokens in URLs leak into proxy/ALB access logs, browser history, and
  * Referer headers. Session-establishment endpoints (e.g. POST /auth/session)
  * must accept the bearer token ONLY via the Authorization header, so this
- * guard runs BEFORE authMiddleware (which otherwise also accepts query
- * tokens for legacy media-streaming flows) and fails loudly with a 400
- * instead of silently processing the leaked credential.
+ * guard fails loudly with a 400 instead of silently processing the leaked
+ * credential.
  */
 export const rejectQueryToken = (req: Request, res: Response, next: NextFunction) => {
   if (req.query.token !== undefined || req.query.access_token !== undefined) {
@@ -66,17 +65,7 @@ export const rejectQueryToken = (req: Request, res: Response, next: NextFunction
  */
 export const authMiddleware = async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    // Support Authorization via header or query parameter (?token= or ?access_token=)
-    let authHeader = req.headers.authorization;
-    let tokenFromQuery: string | undefined;
-    const q = req.query as Record<string, any>;
-    if (!authHeader) {
-      if (typeof q.token === 'string' && q.token) tokenFromQuery = q.token;
-      else if (typeof q.access_token === 'string' && q.access_token) tokenFromQuery = q.access_token;
-      if (tokenFromQuery) {
-        authHeader = `Bearer ${tokenFromQuery}`;
-      }
-    }
+    const authHeader = req.headers.authorization;
     
     if (!authHeader?.startsWith('Bearer ')) {
       return res.status(401).json({
@@ -219,11 +208,8 @@ export interface ServiceTokenPayload {
   type: 'service';
   appId: string;
   appName: string;
-  /**
-   * The specific ApplicationCredential `_id` that minted this token. Optional
-   * for backwards-compat with tokens issued before this claim existed.
-   */
-  credentialId?: string;
+  /** The specific ApplicationCredential `_id` that minted this token. */
+  credentialId: string;
   scopes: string[];
   iat?: number;
   exp?: number;
@@ -291,7 +277,12 @@ export const serviceAuthMiddleware = (req: ServiceAuthRequest, res: Response, ne
       });
     }
 
-    if (typeof decoded.appId !== 'string' || typeof decoded.appName !== 'string') {
+    if (
+      typeof decoded.appId !== 'string' ||
+      typeof decoded.appName !== 'string' ||
+      typeof decoded.credentialId !== 'string' ||
+      decoded.credentialId.length === 0
+    ) {
       return res.status(403).json({
         error: 'Forbidden',
         message: 'Service token is missing required claims',
@@ -306,7 +297,7 @@ export const serviceAuthMiddleware = (req: ServiceAuthRequest, res: Response, ne
       type: 'service',
       appId: decoded.appId,
       appName: decoded.appName,
-      credentialId: typeof decoded.credentialId === 'string' ? decoded.credentialId : undefined,
+      credentialId: decoded.credentialId,
       scopes,
       iat: decoded.iat,
       exp: decoded.exp,

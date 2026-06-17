@@ -184,12 +184,9 @@ export const useAuthOperations = ({
         // Verify and create session. `verifyChallenge` plants the first
         // access token (and refresh token) from the `/auth/verify` response
         // body internally — mirroring `claimSessionByToken` — so the client is
-        // authenticated as soon as this resolves. We deliberately do NOT fall
-        // back to the bearer-protected `GET /session/token/:sessionId` (C1
-        // hardening): for a brand-new identity with no bearer yet that route
-        // 401s, which previously broke the entire new-identity onboarding
-        // flow. A token-less verify response simply leaves the client without
-        // a bearer here rather than triggering that 401.
+        // authenticated as soon as this resolves. Session IDs are not public
+        // token-minting credentials; a token-less verify response simply leaves
+        // the client without a bearer here.
         sessionResponse = await oxyServices.verifyChallenge(
           publicKey,
           challenge,
@@ -302,11 +299,8 @@ export const useAuthOperations = ({
 
       try {
         const sessionToLogout = targetSessionId || activeSessionId;
-        // Web multi-account: when the target session carries an `authuser`
-        // slot index it is backed by an httpOnly `oxy_rt_${n}` cookie. Use
-        // the cookie-cleared logout endpoint so the server can `Set-Cookie`
-        // an immediate expiry alongside revoking the family. Native and
-        // legacy sessions (no `authuser` plumbed yet) fall through to the
+        // Web multi-account sessions carry an `authuser` slot index backed by
+        // an httpOnly `oxy_rt_${n}` cookie. Native sessions fall through to the
         // bearer-protected endpoint.
         const targetSession = sessionsRef.current.find((s) => s.sessionId === sessionToLogout);
         const targetAuthuser = targetSession?.authuser;
@@ -378,8 +372,8 @@ export const useAuthOperations = ({
       //   - Web: "Sign out of all accounts" = sign out every device-local
       //     account on THIS device. The cookie endpoint is the only path
       //     that can `Set-Cookie` an immediate expiry on every
-      //     `oxy_rt_${n}` slot (plus legacy `oxy_rt`) AND revoke every
-      //     presented family server-side. The bearer-protected
+      //     `oxy_rt_${n}` slots AND revoke every presented family server-side.
+      //     The bearer-protected
       //     `logoutAllSessions(activeSessionId)` would only revoke the
       //     active user's sessions across devices and leave sibling
       //     accounts' cookies sitting on this device — wrong UX for the

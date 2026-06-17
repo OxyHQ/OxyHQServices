@@ -8,7 +8,6 @@
  */
 
 import type { OxyServices } from './OxyServices';
-import type { HttpService } from './HttpService';
 import type { SessionLoginResponse, MinimalUserData } from './models/session';
 import type {
   RefreshAllAccount,
@@ -23,7 +22,6 @@ import type {
   RestoreFromCookiesOptions,
   SwitchAuthuserResult,
 } from './AuthManagerTypes';
-import { retryAsync } from './utils/asyncUtils';
 import { jwtDecode } from 'jwt-decode';
 
 /**
@@ -49,7 +47,7 @@ export type AuthStateChangeCallback = (user: MinimalUserData | null) => void;
 /**
  * Auth method types.
  */
-export type AuthMethod = 'fedcm' | 'popup' | 'redirect' | 'credentials' | 'identity';
+export type AuthMethod = 'fedcm' | 'redirect' | 'credentials' | 'identity';
 
 /**
  * Auth manager configuration.
@@ -63,30 +61,14 @@ export interface AuthManagerConfig {
   refreshBuffer?: number;
   /** Enable cross-tab coordination via BroadcastChannel (default: true in browsers) */
   crossTabSync?: boolean;
-  /**
-   * "Cookie-only" mode for web apps that rely exclusively on the
-   * `oxy_rt_${authuser}` httpOnly refresh cookies and refuse to fall back
-   * to the legacy localStorage token/refresh-token path.
-   *
-   * - `false` (default): `initialize()` tries `restoreFromCookies()` first;
-   *   if no accounts are restored it falls back to the legacy localStorage
-   *   path (`oxy_access_token` / `oxy_session`).
-   * - `true`: `initialize()` ONLY uses `restoreFromCookies()`. No token /
-   *   refresh-token / session JSON is read from or written to localStorage.
-   *   This is the secure default for apps that ship the cookie path end-to-
-   *   end and want to guarantee no tokens leak to JS-accessible storage.
-   */
-  cookieOnly?: boolean;
 }
 
 /**
  * Messages sent between tabs via BroadcastChannel for token refresh coordination.
  *
- * Legacy bearer-path messages (`refresh_starting`, `tokens_refreshed`,
- * `signed_out`) coexist with the multi-account cookie-path messages
- * (`accounts_restored`, `authuser_switched`, `authuser_signed_out`,
- * `all_signed_out`). The handler ignores unknown types defensively so a
- * mismatched-version sibling tab can't crash this one.
+ * Multi-account cookie-path messages keep same-origin tabs aligned while the
+ * httpOnly refresh cookies remain the authority. The handler ignores unknown
+ * types defensively so a mismatched-version sibling tab can't crash this one.
  *
  * Every outgoing message also carries the sender tab's `tabId` and `nonce`
  * (see `_broadcastNonce` / `_tabId` on AuthManager). The receiver records the
@@ -96,15 +78,12 @@ export interface AuthManagerConfig {
  */
 interface CrossTabMessage {
   type:
-    | 'refresh_starting'
-    | 'tokens_refreshed'
-    | 'signed_out'
     | 'accounts_restored'
     | 'authuser_switched'
     | 'authuser_signed_out'
     | 'all_signed_out';
   sessionId?: string;
-  /** Slot index for `authuser_*` events; absent on legacy bearer events. */
+  /** Slot index for `authuser_*` events. */
   authuser?: number;
   timestamp: number;
   /** Sender-tab identifier (random hex, generated at AuthManager construction). */
@@ -113,16 +92,7 @@ interface CrossTabMessage {
   nonce: string;
 }
 
-/**
- * Storage keys used by AuthManager.
- */
 const STORAGE_KEYS = {
-  ACCESS_TOKEN: 'oxy_access_token',
-  REFRESH_TOKEN: 'oxy_refresh_token',
-  SESSION: 'oxy_session',
-  USER: 'oxy_user',
-  AUTH_METHOD: 'oxy_auth_method',
-  FEDCM_LOGIN_HINT: 'oxy_fedcm_login_hint',
   /**
    * Persisted active `authuser` slot index for the cookie path. Stores ONLY
    * the integer slot index (e.g. `"0"`, `"1"`), never a token or session
@@ -214,11 +184,11 @@ export class AuthManager {
   private storage: StorageAdapter;
   private listeners: Set<AuthStateChangeCallback> = new Set();
   private currentUser: MinimalUserData | null = null;
+  private currentAuthMethod: AuthMethod | null = null;
   private refreshTimer: ReturnType<typeof setTimeout> | null = null;
   private refreshPromise: Promise<boolean> | null = null;
-  private config: Required<Omit<AuthManagerConfig, 'crossTabSync' | 'cookieOnly'>> & {
+  private config: Required<Omit<AuthManagerConfig, 'crossTabSync'>> & {
     crossTabSync: boolean;
-    cookieOnly: boolean;
   };
 
   /** Tracks the access token this instance last knew about, for cross-tab adoption. */
@@ -226,9 +196,6 @@ export class AuthManager {
 
   /** BroadcastChannel for coordinating token refreshes across browser tabs. */
   private _broadcastChannel: BroadcastChannel | null = null;
-
-  /** Set to true when another tab broadcasts a successful refresh, so this tab can skip its own. */
-  private _otherTabRefreshed = false;
 
   /**
    * Identifier for this AuthManager instance (≈ "this tab"). Random hex
@@ -305,15 +272,13 @@ export class AuthManager {
       autoRefresh: config.autoRefresh ?? true,
       refreshBuffer: config.refreshBuffer ?? 5 * 60 * 1000, // 5 minutes
       crossTabSync,
-      cookieOnly: config.cookieOnly ?? false,
     };
     this.storage = this.config.storage;
 
-    // Persist tokens to storage when HttpService refreshes them automatically
-    this.oxyServices.httpService.onTokenRefreshed = (accessToken: string) => {
-      this._lastKnownAccessToken = accessToken;
-      this.storage.setItem(STORAGE_KEYS.ACCESS_TOKEN, accessToken);
-    };
+    this.oxyServices.httpService.setAuthRefreshHandler(async () => {
+      const refreshed = await this.refreshToken();
+      return refreshed ? this._lastKnownAccessToken : null;
+    });
 
     // Setup cross-tab coordination in browser environments
     if (this.config.crossTabSync) {
@@ -347,46 +312,6 @@ export class AuthManager {
     if (!this._acceptBroadcast(message)) return;
 
     switch (message.type) {
-      case 'tokens_refreshed': {
-        // Another tab successfully refreshed. Signal to cancel our pending refresh.
-        this._otherTabRefreshed = true;
-
-        // Adopt the new tokens from shared storage
-        const newToken = await this.storage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
-        if (newToken && newToken !== this._lastKnownAccessToken) {
-          this._lastKnownAccessToken = newToken;
-          this.oxyServices.httpService.setTokens(newToken);
-
-          // Re-read session for updated expiry and schedule next refresh
-          const sessionJson = await this.storage.getItem(STORAGE_KEYS.SESSION);
-          if (sessionJson) {
-            try {
-              const session = JSON.parse(sessionJson);
-              if (session.expiresAt && this.config.autoRefresh) {
-                this.setupTokenRefresh(session.expiresAt);
-              }
-            } catch {
-              // Ignore parse errors
-            }
-          }
-        }
-        break;
-      }
-
-      case 'signed_out': {
-        // Another tab signed out. Clear our local state to stay consistent.
-        if (this.refreshTimer) {
-          clearTimeout(this.refreshTimer);
-          this.refreshTimer = null;
-        }
-        this.refreshPromise = null;
-        this._lastKnownAccessToken = null;
-        this.oxyServices.httpService.setTokens('');
-        this.currentUser = null;
-        this.notifyListeners();
-        break;
-      }
-
       case 'accounts_restored':
       case 'authuser_switched':
       case 'authuser_signed_out': {
@@ -409,7 +334,7 @@ export class AuthManager {
       }
 
       case 'all_signed_out': {
-        // Mirror `signed_out` but also wipe the cookie-path registry.
+        // Wipe the cookie-path registry after another tab signed every slot out.
         if (this.refreshTimer) {
           clearTimeout(this.refreshTimer);
           this.refreshTimer = null;
@@ -420,11 +345,11 @@ export class AuthManager {
         this._lastKnownAccessToken = null;
         this.oxyServices.httpService.setTokens('');
         this.currentUser = null;
+        this.currentAuthMethod = null;
         this.notifyListeners();
         break;
       }
 
-      // 'refresh_starting' is informational; we don't need to act on it currently
     }
   }
 
@@ -564,37 +489,43 @@ export class AuthManager {
     session: SessionLoginResponse,
     method: AuthMethod = 'credentials'
   ): Promise<void> {
-    // Store tokens
+    // Access tokens are memory-only. Fresh login responses plant the token on
+    // the HTTP client and the AuthManager registry, but never write it to JS
+    // storage. Durable web refresh lives in the httpOnly cookie set by the API.
     if (session.accessToken) {
       this._lastKnownAccessToken = session.accessToken;
-      await this.storage.setItem(STORAGE_KEYS.ACCESS_TOKEN, session.accessToken);
       this.oxyServices.httpService.setTokens(session.accessToken);
     }
 
-    // Store refresh token if available
-    if (session.refreshToken) {
-      await this.storage.setItem(STORAGE_KEYS.REFRESH_TOKEN, session.refreshToken);
-    }
-
-    // Store session info
-    await this.storage.setItem(STORAGE_KEYS.SESSION, JSON.stringify({
-      sessionId: session.sessionId,
-      deviceId: session.deviceId,
-      expiresAt: session.expiresAt,
-    }));
-
-    // Store user only if it has valid required fields (not an empty placeholder)
     if (session.user && typeof (session.user as any).id === 'string' && (session.user as any).id.length > 0) {
-      await this.storage.setItem(STORAGE_KEYS.USER, JSON.stringify(session.user));
       this.currentUser = session.user;
     }
 
-    // Store auth method
-    await this.storage.setItem(STORAGE_KEYS.AUTH_METHOD, method);
+    this.currentAuthMethod = method;
+
+    const decodedAuthuser = session.accessToken
+      ? AuthManager.decodeAuthuserFromAccessToken(session.accessToken)
+      : null;
+    const authuser = decodedAuthuser ?? 0;
+    if (session.accessToken && session.sessionId) {
+      this.accounts.set(authuser, {
+        authuser,
+        sessionId: session.sessionId,
+        user: {
+          id: session.user.id,
+          username: session.user.username,
+          avatar: session.user.avatar ?? null,
+        },
+        accessToken: session.accessToken,
+        expiresAt: session.expiresAt,
+      });
+      this.activeAuthuser = authuser;
+      await this.writeActiveAuthuser(authuser);
+    }
 
     // Setup auto-refresh if enabled
     if (this.config.autoRefresh && session.expiresAt) {
-      this.setupTokenRefresh(session.expiresAt);
+      this.setupCookieRefresh(session.expiresAt, authuser);
     }
 
     // Notify listeners
@@ -602,30 +533,10 @@ export class AuthManager {
   }
 
   /**
-   * Setup automatic token refresh.
-   */
-  private setupTokenRefresh(expiresAt: string): void {
-    if (this.refreshTimer) {
-      clearTimeout(this.refreshTimer);
-    }
-
-    const expiresAtMs = new Date(expiresAt).getTime();
-    const now = Date.now();
-    const refreshAt = expiresAtMs - this.config.refreshBuffer;
-    const delay = Math.max(0, refreshAt - now);
-
-    if (delay > 0) {
-      this.refreshTimer = setTimeout(() => {
-        this.refreshToken().catch(() => {
-          // Refresh failed, user will need to re-auth
-        });
-      }, delay);
-    }
-  }
-
-  /**
    * Refresh the access token. Deduplicates concurrent calls so only one
-   * refresh request is in-flight at a time.
+   * refresh request is in-flight at a time. The only refresh authority is the
+   * active httpOnly refresh-cookie slot; this method never reads access tokens
+   * from storage.
    */
   async refreshToken(): Promise<boolean> {
     // If a refresh is already in-flight, return the same promise
@@ -642,131 +553,21 @@ export class AuthManager {
   }
 
   private async _doRefreshToken(): Promise<boolean> {
-    // Reset the cross-tab flag before starting
-    this._otherTabRefreshed = false;
-
-    // Get session info to find sessionId for token refresh
-    const sessionJson = await this.storage.getItem(STORAGE_KEYS.SESSION);
-    if (!sessionJson) {
-      return false;
-    }
-
-    let sessionId: string;
     try {
-      const session = JSON.parse(sessionJson);
-      sessionId = session.sessionId;
-      if (!sessionId) return false;
-    } catch (err) {
-      console.error('AuthManager: Failed to parse session from storage.', err);
-      return false;
-    }
-
-    // Record the token we know about before attempting refresh
-    const tokenBeforeRefresh = this._lastKnownAccessToken;
-
-    // Broadcast that we're starting a refresh (informational for other tabs)
-    this._broadcast({ type: 'refresh_starting', sessionId, timestamp: Date.now() });
-
-    try {
-      await retryAsync(
-        async () => {
-          // Before each attempt, check if another tab already refreshed
-          if (this._otherTabRefreshed) {
-            const adoptedToken = await this.storage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
-            if (adoptedToken && adoptedToken !== tokenBeforeRefresh) {
-              // Another tab succeeded. Adopt its tokens and short-circuit.
-              this._lastKnownAccessToken = adoptedToken;
-              this.oxyServices.httpService.setTokens(adoptedToken);
-              return;
-            }
-          }
-
-          const httpService = this.oxyServices.httpService as HttpService;
-          // Use session-based token endpoint which handles auto-refresh server-side
-          const response = await httpService.request<{ accessToken: string; expiresAt: string }>({
-            method: 'GET',
-            url: `/session/token/${sessionId}`,
-            cache: false,
-            retry: false,
-          });
-
-          if (!response.accessToken) {
-            throw new Error('No access token in refresh response');
-          }
-
-          // Update access token in storage and HTTP client
-          this._lastKnownAccessToken = response.accessToken;
-          await this.storage.setItem(STORAGE_KEYS.ACCESS_TOKEN, response.accessToken);
-          this.oxyServices.httpService.setTokens(response.accessToken);
-
-          // Update session expiry and schedule next refresh
-          if (response.expiresAt) {
-            try {
-              const session = JSON.parse(sessionJson);
-              session.expiresAt = response.expiresAt;
-              await this.storage.setItem(STORAGE_KEYS.SESSION, JSON.stringify(session));
-            } catch (err) {
-              // Ignore parse errors for session update, but log for debugging.
-              console.error('AuthManager: Failed to re-save session after token refresh.', err);
-            }
-
-            if (this.config.autoRefresh) {
-              this.setupTokenRefresh(response.expiresAt);
-            }
-          }
-
-          // Broadcast success so other tabs can adopt these tokens
-          this._broadcast({ type: 'tokens_refreshed', sessionId, timestamp: Date.now() });
-        },
-        2,    // 2 retries = 3 total attempts
-        1000, // 1s base delay with exponential backoff + jitter
-        (error: any) => {
-          // Don't retry on 4xx client errors (invalid/revoked token)
-          const status = error?.status ?? error?.response?.status;
-          if (status && status >= 400 && status < 500) return false;
-          return true;
-        }
-      );
-      return true;
-    } catch {
-      // All retry attempts exhausted. Before clearing the session, check if
-      // another tab managed to refresh successfully while we were retrying.
-      // Since all tabs share the same storage (localStorage), a successful
-      // refresh from another tab will have written a different access token.
-      const currentStoredToken = await this.storage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
-      if (currentStoredToken && currentStoredToken !== tokenBeforeRefresh) {
-        // Another tab refreshed successfully. Adopt its tokens instead of logging out.
-        this._lastKnownAccessToken = currentStoredToken;
-        this.oxyServices.httpService.setTokens(currentStoredToken);
-
-        // Restore user from storage in case it was updated
-        const userJson = await this.storage.getItem(STORAGE_KEYS.USER);
-        if (userJson) {
-          try {
-            this.currentUser = JSON.parse(userJson);
-          } catch {
-            // Ignore parse errors
-          }
-        }
-
-        // Re-read session expiry and schedule next refresh
-        const updatedSessionJson = await this.storage.getItem(STORAGE_KEYS.SESSION);
-        if (updatedSessionJson) {
-          try {
-            const session = JSON.parse(updatedSessionJson);
-            if (session.expiresAt && this.config.autoRefresh) {
-              this.setupTokenRefresh(session.expiresAt);
-            }
-          } catch {
-            // Ignore parse errors
-          }
-        }
+      if (this.activeAuthuser !== null) {
+        await this.switchAuthuser(this.activeAuthuser);
         return true;
       }
 
-      // No other tab rescued us -- truly clear the session
+      const restored = await this.restoreFromCookies();
+      return restored.accounts.length > 0;
+    } catch {
       await this.clearSession();
       this.currentUser = null;
+      this.accounts.clear();
+      this.activeAuthuser = null;
+      this._lastKnownAccessToken = null;
+      this.oxyServices.httpService.setTokens('');
       this.notifyListeners();
       return false;
     }
@@ -783,16 +584,10 @@ export class AuthManager {
     }
     this.refreshPromise = null;
 
-    // Invalidate current session on the server (best-effort)
-    try {
-      const sessionJson = await this.storage.getItem(STORAGE_KEYS.SESSION);
-      if (sessionJson) {
-        const session = JSON.parse(sessionJson);
-        if (session.sessionId && typeof (this.oxyServices as any).logoutSession === 'function') {
-          await (this.oxyServices as any).logoutSession(session.sessionId);
-        }
-      }
-    } catch {
+      // Invalidate current cookie-backed sessions on the server (best-effort)
+      try {
+        await this.signOutAllViaCookies();
+      } catch {
       // Best-effort: don't block local signout on network failure
     }
 
@@ -813,24 +608,18 @@ export class AuthManager {
     // Clear storage
     await this.clearSession();
 
-    // Notify other tabs so they also sign out
-    this._broadcast({ type: 'signed_out', timestamp: Date.now() });
-
     // Update state and notify
     this.currentUser = null;
     this.notifyListeners();
   }
 
   /**
-   * Clear session data from storage.
+   * Clear local cookie-path state. The only persisted AuthManager value is the
+   * active numeric slot; tokens and user objects are intentionally memory-only.
    */
   private async clearSession(): Promise<void> {
-    await this.storage.removeItem(STORAGE_KEYS.ACCESS_TOKEN);
-    await this.storage.removeItem(STORAGE_KEYS.REFRESH_TOKEN);
-    await this.storage.removeItem(STORAGE_KEYS.SESSION);
-    await this.storage.removeItem(STORAGE_KEYS.USER);
-    await this.storage.removeItem(STORAGE_KEYS.AUTH_METHOD);
-    await this.storage.removeItem(STORAGE_KEYS.FEDCM_LOGIN_HINT);
+    await this.clearActiveAuthuser();
+    this.currentAuthMethod = null;
   }
 
   /**
@@ -848,17 +637,11 @@ export class AuthManager {
   }
 
   /**
-   * Get a valid access token, refreshing automatically if expired or expiring soon.
+   * Get a valid access token, refreshing automatically if expired or expiring
+   * soon. The token is read from memory only.
    */
   async getAccessToken(): Promise<string | null> {
-    // In cookieOnly / cookie-restore flows the active access token lives only in
-    // memory (`_lastKnownAccessToken` + httpService) and is intentionally never
-    // written to JS storage — the cookieOnly contract forbids persisting tokens
-    // in JS-accessible storage. Fall back to the in-memory token when storage has
-    // none, otherwise getAccessToken returns null after every cold-boot/reload and
-    // standalone API clients (e.g. the Console axios client) send no Authorization
-    // header → 401 on every authed endpoint while `isAuthenticated` is still true.
-    const token = (await this.storage.getItem(STORAGE_KEYS.ACCESS_TOKEN)) ?? this._lastKnownAccessToken;
+    const token = this._lastKnownAccessToken;
     if (!token) return null;
 
     try {
@@ -869,9 +652,7 @@ export class AuthManager {
         if (decoded.exp - now < buffer) {
           const refreshed = await this.refreshToken();
           if (refreshed) {
-            // refreshToken() updates both storage and `_lastKnownAccessToken`;
-            // prefer storage but fall back to memory for the cookieOnly path.
-            return (await this.storage.getItem(STORAGE_KEYS.ACCESS_TOKEN)) ?? this._lastKnownAccessToken;
+            return this._lastKnownAccessToken;
           }
         }
       }
@@ -886,100 +667,41 @@ export class AuthManager {
    * Get the auth method used for current session.
    */
   async getAuthMethod(): Promise<AuthMethod | null> {
-    const method = await this.storage.getItem(STORAGE_KEYS.AUTH_METHOD);
-    return method as AuthMethod | null;
+    return this.currentAuthMethod;
   }
 
   /**
    * Initialize auth state on app startup.
    *
-   * Order of operations:
-   *   1. Try the cookie path via `restoreFromCookies()`. This is the
-   *      preferred path because the httpOnly refresh cookies are
-   *      cross-tab, persist across hard reloads, and don't expose any
-   *      refresh-token material to JS.
-   *   2. If the cookie path yielded zero accounts AND `cookieOnly` is
-   *      `false`, fall back to the legacy localStorage path
-   *      (`oxy_access_token` / `oxy_session`) for backwards compatibility
-   *      with apps that haven't migrated to the cookie endpoint yet.
-   *   3. If `cookieOnly` is `true`, skip the legacy fallback entirely.
-   *      This guarantees no tokens or refresh tokens are ever read from
-   *      or written to JS-accessible storage.
+   * Only the cookie path is authoritative. `restoreFromCookies()` refreshes
+   * the httpOnly `oxy_rt_${authuser}` slots through `/auth/refresh-all`,
+   * plants the active access token in memory, and returns the active user.
+   * No access token, refresh token, or session JSON is read from localStorage.
    *
-   * Returns the active user on success, or `null` when neither path
-   * restored a session.
+   * Returns the active user on success, or `null` when no cookie-backed
+   * account was restored.
    */
   async initialize(options: RestoreFromCookiesOptions = {}): Promise<MinimalUserData | null> {
-    // 1. Cookie path (preferred). Forward the optional cold-boot fail-fast
-    // timeout so a cross-domain stall cannot hang provider init.
     const cookieResult = await this.restoreFromCookies(options);
     if (cookieResult.accounts.length > 0) {
       return this.currentUser;
     }
 
-    // 2. Legacy localStorage path (opt-out via `cookieOnly`).
-    if (this.config.cookieOnly) {
-      return null;
-    }
-
-    try {
-      // Try to restore user from storage
-      const userJson = await this.storage.getItem(STORAGE_KEYS.USER);
-      if (userJson) {
-        this.currentUser = JSON.parse(userJson);
-      }
-
-      // Restore token to HTTP client
-      const token = await this.storage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
-      if (token) {
-        this._lastKnownAccessToken = token;
-        this.oxyServices.httpService.setTokens(token);
-      }
-
-      // Check session expiry
-      const sessionJson = await this.storage.getItem(STORAGE_KEYS.SESSION);
-      if (sessionJson) {
-        const session = JSON.parse(sessionJson);
-        if (session.expiresAt) {
-          const expiresAt = new Date(session.expiresAt).getTime();
-          if (expiresAt <= Date.now()) {
-            // Session expired, try refresh
-            const refreshed = await this.refreshToken();
-            if (!refreshed) {
-              await this.clearSession();
-              this.currentUser = null;
-            }
-          } else if (this.config.autoRefresh) {
-            // Setup refresh timer
-            this.setupTokenRefresh(session.expiresAt);
-          }
-        }
-      }
-
-      return this.currentUser;
-    } catch {
-      // Failed to restore, start fresh
-      await this.clearSession();
-      this.currentUser = null;
-      return null;
-    }
+    return null;
   }
 
   // -------------------------------------------------------------------------
   // Multi-account cookie path (Google-style multi-sign-in).
   // -------------------------------------------------------------------------
-  // The cookie path is web-only and orthogonal to the legacy bearer path
-  // above: it never touches the `oxy_access_token` / `oxy_refresh_token` /
+  // The cookie path is web-only. It never touches the retired
+  // `oxy_access_token` / `oxy_refresh_token` /
   // `oxy_session` localStorage keys, because the refresh token lives in the
   // httpOnly `oxy_rt_${authuser}` cookies and access tokens live in
   // `this.accounts` (in-memory only). The only localStorage key the cookie
   // path writes is `STORAGE_KEYS.ACTIVE_AUTHUSER` — a small integer that is
   // explicitly NOT a secret.
   //
-  // Apps that want to opt out of the legacy localStorage path entirely
-  // (recommended for new web apps) pass `cookieOnly: true` to the
-  // AuthManager config; in that mode `initialize()` ONLY uses the cookie
-  // path.
+  // `initialize()` only uses the cookie path.
   // -------------------------------------------------------------------------
 
   /**
@@ -1028,9 +750,8 @@ export class AuthManager {
 
   /**
    * Build a `MinimalUserData` from a `RefreshAllAccount`. Returns `null` when
-   * the wire entry has no user shape (legacy `/auth/refresh` fallback) — the
-   * AuthManager's caller is expected to hydrate via `/users/me` in that
-   * case.
+   * the wire entry has no user shape; the AuthManager's caller is expected to
+   * hydrate via `/users/me` in that case.
    */
   private static toMinimalUser(account: RefreshAllAccount): MinimalUserData | null {
     if (!account.user) return null;
@@ -1043,8 +764,8 @@ export class AuthManager {
 
   /**
    * Hydrate the user shape for a slot whose AuthManagerAccount currently has
-   * `user: null` (legacy refresh fallback, or a switch onto a previously
-   * unknown slot). Calls `/users/me` with the slot's freshly-planted access
+   * `user: null` (for example, a switch onto a previously unknown slot). Calls
+   * `/users/me` with the slot's freshly-planted access
    * token already on the HTTP client; merges the result back into the
    * registry entry. Network failures are non-fatal — the slot remains with
    * `user: null` and the UI is expected to render the public-key fallback
@@ -1122,9 +843,7 @@ export class AuthManager {
    * Calls `oxyServices.refreshAllSessions()` (`POST /auth/refresh-all` with
    * `credentials: 'include'`). The server rotates every presented
    * `oxy_rt_${authuser}` cookie in parallel and returns one entry per
-   * VALID slot. The SDK transparently falls back to the legacy single-slot
-   * `/auth/refresh` against older servers (handled inside
-   * `refreshAllSessions`).
+   * valid slot.
    *
    * Plants the active account's access token on the shared HTTP client;
    * sibling slots' tokens stay in the in-memory registry so a later
@@ -1211,10 +930,10 @@ export class AuthManager {
         this.setupCookieRefresh(activeAccount.expiresAt, active);
       }
 
-      // The legacy /auth/refresh fallback yields user=null for the active
-      // slot. Schedule a /users/me hydration so the chooser isn't stuck on
-      // the public-key handle. Hydration is fire-and-forget — the snapshot
-      // is already considered "restored" once the access token is planted.
+      // If the active slot has no user shape, schedule a /users/me hydration so
+      // the chooser isn't stuck on the public-key handle. Hydration is
+      // fire-and-forget — the snapshot is already considered "restored" once
+      // the access token is planted.
       if (activeAccount.user === null) {
         slotsNeedingHydration.push(activeAccount.authuser);
       }
@@ -1376,6 +1095,7 @@ export class AuthManager {
         this._lastKnownAccessToken = null;
         this.oxyServices.httpService.setTokens('');
         this.currentUser = null;
+        this.currentAuthMethod = null;
         await this.clearActiveAuthuser();
       }
     }
@@ -1389,10 +1109,9 @@ export class AuthManager {
    *
    * Calls `oxyServices.logoutAllSessionsViaCookie()`: server-side revokes
    * every presented family and `Set-Cookie`s an immediate expiry for every
-   * recognised `oxy_rt_${n}` slot AND the legacy `oxy_rt` cookie. The
-   * in-memory registry is wiped, the active slot is cleared, and the
-   * persisted `oxy_active_authuser` is removed so the next cold boot
-   * starts fresh.
+   * recognised `oxy_rt_${n}` slot. The in-memory registry is wiped, the active
+   * slot is cleared, and the persisted `oxy_active_authuser` is removed so the
+   * next cold boot starts fresh.
    */
   async signOutAllViaCookies(): Promise<void> {
     try {
@@ -1406,6 +1125,7 @@ export class AuthManager {
     this._lastKnownAccessToken = null;
     this.oxyServices.httpService.setTokens('');
     this.currentUser = null;
+    this.currentAuthMethod = null;
     this._lastRestoreAt.clear();
     await this.clearActiveAuthuser();
 
@@ -1420,9 +1140,8 @@ export class AuthManager {
   }
 
   /**
-   * Schedule an auto-refresh for the cookie path on the active slot. Reuses
-   * the same single `refreshTimer` as the legacy path (the AuthManager has
-   * exactly ONE active slot at a time, so one timer suffices).
+   * Schedule an auto-refresh for the cookie path on the active slot. The
+   * AuthManager has exactly one active slot at a time, so one timer suffices.
    */
   private setupCookieRefresh(expiresAt: string, authuser: number): void {
     if (this.refreshTimer) {
@@ -1457,6 +1176,17 @@ export class AuthManager {
       const decoded = jwtDecode<{ sessionId?: string }>(token);
       return typeof decoded.sessionId === 'string' && decoded.sessionId.length > 0
         ? decoded.sessionId
+        : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private static decodeAuthuserFromAccessToken(token: string): number | null {
+    try {
+      const decoded = jwtDecode<{ authuser?: number }>(token);
+      return typeof decoded.authuser === 'number' && Number.isFinite(decoded.authuser) && decoded.authuser >= 0
+        ? decoded.authuser
         : null;
     } catch {
       return null;

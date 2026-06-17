@@ -2,12 +2,9 @@ import { useRef, useState } from "react"
 import { getAccountDisplayName } from "@oxyhq/core"
 import { resolveUserId } from "@oxyhq/contracts"
 import type { UserResponse } from "@oxyhq/contracts"
-import { buildApiUrl, buildAuthUrl } from "@/lib/oxy-api-client"
+import { buildApiUrl } from "@/lib/oxy-api-client"
 import {
     refreshAllResponseSchema,
-    refreshResponseSchema,
-    currentUserResponseSchema,
-    deviceSessionsResponseSchema,
     safeParse,
 } from "@/lib/schemas"
 import type { Account, DeviceAccount } from "@/lib/types"
@@ -17,16 +14,16 @@ type DeviceAccountsState = {
     isLoading: boolean
     /** The account whose persistent IdP session is active (resolved via refresh). */
     currentAccount: Account | null
-    /** The current account's session id (used to mint its token on "Continue"). */
+    /** The chooser's active account session id. */
     currentSessionId: string | null
+    /** Fresh in-memory bearer for the active account. */
+    currentAccessToken: string | null
     /**
      * Every account signed in on this device (1..N), current one first. Empty
      * when logged out. The current account always carries `isCurrent: true`.
      *
-     * When the modern `POST /auth/refresh-all` path succeeded, each entry's
-     * `authuser` field is populated so downstream chooser handlers can pass
-     * it to `?authuser=N` on OAuth redirects or `refreshTokenViaCookie`
-     * calls. On the legacy fallback path `authuser` is omitted.
+     * Each entry is returned by `POST /auth/refresh-all` and carries a fresh
+     * in-memory bearer. Tokens are not persisted in Web Storage.
      */
     accounts: DeviceAccount[]
 }
@@ -35,6 +32,7 @@ const INITIAL_STATE: DeviceAccountsState = {
     isLoading: true,
     currentAccount: null,
     currentSessionId: null,
+    currentAccessToken: null,
     accounts: [],
 }
 
@@ -42,6 +40,7 @@ const LOGGED_OUT_STATE: DeviceAccountsState = {
     isLoading: false,
     currentAccount: null,
     currentSessionId: null,
+    currentAccessToken: null,
     accounts: [],
 }
 
@@ -67,52 +66,11 @@ function toAccount(user: UserResponse): Account | null {
 }
 
 /**
- * Decode a JWT payload WITHOUT verifying its signature, returning the `sessionId`
- * claim. Reading a claim for client-side routing is safe: the server re-verifies
- * the token's signature on every protected request, so a forged claim here would
- * simply fail the subsequent `/users/me` / `/session/*` calls. The Oxy access
- * token embeds `{ userId, sessionId, deviceId }`.
- */
-function readSessionIdFromToken(accessToken: string): string | null {
-    try {
-        const segments = accessToken.split(".")
-        if (segments.length !== 3) return null
-        const payloadSegment = segments[1].replace(/-/g, "+").replace(/_/g, "/")
-        const padded = payloadSegment.padEnd(
-            payloadSegment.length + ((4 - (payloadSegment.length % 4)) % 4),
-            "="
-        )
-        const json = JSON.parse(atob(padded)) as { sessionId?: unknown }
-        return typeof json.sessionId === "string" && json.sessionId.length > 0
-            ? json.sessionId
-            : null
-    } catch {
-        return null
-    }
-}
-
-/**
  * Detect the accounts available on this device for the Google-style chooser.
  *
- * Modern path (preferred):
- *   1. `POST /auth/refresh-all` with `credentials: "include"` and NO bearer.
- *      Server rotates every device-local `oxy_rt_${authuser}` cookie in
- *      parallel and returns one entry per VALID account (with `authuser`,
- *      `sessionId`, `accessToken`, and a minimal `user` projection
- *      containing `color` so we can theme the chooser without a follow-up
- *      `/users/me`). The active session's access token + sessionId are
- *      planted into `sessionStorage` so the chooser's continue / consent
- *      handlers can reuse them.
- *
- * Legacy fallback path (only when the server returns 404 — the modern
- * endpoint isn't deployed yet):
- *   1. `POST /auth/refresh` rotates the single `oxy_rt` cookie.
- *   2. `GET /users/me` resolves the current account.
- *   3. `GET /session/device/sessions/:sessionId` enriches with siblings.
- *
- * Both paths run AT MOST ONCE per page load (guarded by the ref in
- * `useDeviceAccounts`) because `/auth/refresh` and `/auth/refresh-all` are
- * single-use and rotate the cookies on each call.
+ * `POST /auth/refresh-all` rotates every device-local `oxy_rt_${authuser}`
+ * cookie in parallel and returns one valid account per slot. The hook keeps the
+ * returned bearers in memory for the current page only.
  */
 export function useDeviceAccounts(): DeviceAccountsState {
     const [state, setState] = useState<DeviceAccountsState>(INITIAL_STATE)
@@ -127,23 +85,14 @@ export function useDeviceAccounts(): DeviceAccountsState {
 }
 
 async function detectAccounts(): Promise<DeviceAccountsState> {
-    // 1. Modern multi-account path — single round-trip for every signed-in slot.
-    const modern = await detectAccountsViaRefreshAll()
-    if (modern !== "fallback") {
-        return modern
-    }
-    // 2. Legacy single-account fallback (server doesn't expose /auth/refresh-all).
-    return detectAccountsLegacy()
+    return detectAccountsViaRefreshAll()
 }
 
 /**
- * Try `POST /auth/refresh-all`. Returns:
- *   - `DeviceAccountsState` when the modern endpoint resolved (success OR
- *     authoritative "no accounts"). The caller uses the result as-is.
- *   - `"fallback"` when the endpoint is unavailable (404) — the caller must
- *     fall through to the legacy path.
+ * Try `POST /auth/refresh-all`. A non-2xx response is authoritative "no signed
+ * in accounts" in the clean session model.
  */
-async function detectAccountsViaRefreshAll(): Promise<DeviceAccountsState | "fallback"> {
+async function detectAccountsViaRefreshAll(): Promise<DeviceAccountsState> {
     let response: Response
     try {
         response = await fetch(buildApiUrl("/auth/refresh-all"), {
@@ -157,13 +106,7 @@ async function detectAccountsViaRefreshAll(): Promise<DeviceAccountsState | "fal
         return LOGGED_OUT_STATE
     }
 
-    if (response.status === 404) {
-        // Server hasn't shipped /auth/refresh-all yet → try legacy.
-        return "fallback"
-    }
-
     if (!response.ok) {
-        // 401 / 5xx / etc. → authoritative "no signed-in session".
         return LOGGED_OUT_STATE
     }
 
@@ -183,22 +126,12 @@ async function detectAccountsViaRefreshAll(): Promise<DeviceAccountsState | "fal
     // in case of older deployments). The lowest authuser is the "current" slot
     // when no UI hint says otherwise; the active-account hint persisted in
     // localStorage by the SDK is consulted by callers that need it.
-    // Sort indexed slots `0..N-1` ascending; the legacy un-suffixed slot
-    // (`authuser: null`) sorts LAST, mirroring the server's own ordering. A
-    // null index must never coerce to 0 (which would wrongly elect the legacy
-    // slot as the current account).
-    const slotRank = (authuser: number | null): number =>
-        authuser ?? Number.POSITIVE_INFINITY
+    const slotRank = (authuser: number): number => authuser
     const sorted = [...parsed.accounts].sort(
         (a, b) => slotRank(a.authuser) - slotRank(b.authuser)
     )
     const current = sorted[0]
     const currentSessionId = current.sessionId
-
-    // Plant the active slot's credentials so the chooser's continue / consent
-    // handlers (which read these keys) work without a second round-trip.
-    sessionStorage.setItem("oxy_access_token", current.accessToken)
-    sessionStorage.setItem("oxy_session_id", currentSessionId)
 
     const currentAccount = toAccount(current.user)
     if (!currentAccount) {
@@ -214,9 +147,9 @@ async function detectAccountsViaRefreshAll(): Promise<DeviceAccountsState | "fal
         accounts.push({
             sessionId: entry.sessionId,
             isCurrent: entry.sessionId === currentSessionId,
-            // `DeviceAccount.authuser` is `number | undefined`; the legacy slot's
-            // null index maps to undefined ("no slot hint").
-            authuser: entry.authuser ?? undefined,
+            accessToken: entry.accessToken,
+            expiresAt: entry.expiresAt,
+            authuser: entry.authuser,
             account,
         })
     }
@@ -225,100 +158,7 @@ async function detectAccountsViaRefreshAll(): Promise<DeviceAccountsState | "fal
         isLoading: false,
         currentAccount,
         currentSessionId,
-        accounts,
-    }
-}
-
-/**
- * Legacy single-account fallback. Only invoked when the modern
- * `/auth/refresh-all` endpoint is missing (404) on the server. Mirrors the
- * pre-multi-account behaviour: refresh the single `oxy_rt` cookie, decode the
- * session id, then `/users/me` + `/session/device/sessions/:sessionId`.
- */
-async function detectAccountsLegacy(): Promise<DeviceAccountsState> {
-    // 1. Bootstrap an access token from the durable refresh cookie.
-    let accessToken: string
-    try {
-        const refreshRes = await fetch(buildApiUrl("/auth/refresh"), {
-            method: "POST",
-            credentials: "include",
-        })
-        if (!refreshRes.ok) return LOGGED_OUT_STATE
-        const refreshed = safeParse(
-            refreshResponseSchema,
-            await refreshRes.json()
-        )
-        if (!refreshed?.accessToken) return LOGGED_OUT_STATE
-        accessToken = refreshed.accessToken
-    } catch {
-        return LOGGED_OUT_STATE
-    }
-
-    const currentSessionId = readSessionIdFromToken(accessToken)
-    if (!currentSessionId) return LOGGED_OUT_STATE
-    sessionStorage.setItem("oxy_access_token", accessToken)
-    sessionStorage.setItem("oxy_session_id", currentSessionId)
-
-    const authHeaders = { Authorization: `Bearer ${accessToken}` }
-
-    let currentAccount: Account | null = null
-    try {
-        const meRes = await fetch(buildApiUrl("/users/me"), {
-            credentials: "include",
-            headers: authHeaders,
-        })
-        if (meRes.ok) {
-            const parsed = safeParse(
-                currentUserResponseSchema,
-                await meRes.json()
-            )
-            if (parsed) {
-                currentAccount = toAccount(parsed.data)
-            }
-        }
-    } catch {
-        // Fall through — handled by the guard below.
-    }
-
-    if (!currentAccount) return LOGGED_OUT_STATE
-
-    const accounts: DeviceAccount[] = [
-        { sessionId: currentSessionId, account: currentAccount, isCurrent: true },
-    ]
-
-    try {
-        const devRes = await fetch(
-            buildAuthUrl(`/device/sessions/${currentSessionId}`),
-            { credentials: "include", headers: authHeaders }
-        )
-        if (devRes.ok) {
-            const list = safeParse(
-                deviceSessionsResponseSchema,
-                await devRes.json()
-            )
-            if (list) {
-                for (const entry of list) {
-                    if (entry.sessionId === currentSessionId) continue
-                    if (!entry.user) continue
-                    const account = toAccount(entry.user)
-                    if (!account) continue
-                    if (account.id === currentAccount.id) continue
-                    accounts.push({
-                        sessionId: entry.sessionId,
-                        isCurrent: false,
-                        account,
-                    })
-                }
-            }
-        }
-    } catch {
-        // Best-effort device-session enrichment — keep the current account.
-    }
-
-    return {
-        isLoading: false,
-        currentAccount,
-        currentSessionId,
+        currentAccessToken: current.accessToken,
         accounts,
     }
 }

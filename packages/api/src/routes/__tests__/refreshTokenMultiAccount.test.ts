@@ -1,15 +1,14 @@
 /**
  * POST /auth/refresh — Google-style multi-account (`?authuser=N`) tests.
  *
- * Complements the legacy single-cookie tests in `refreshToken.test.ts` by
- * exercising the indexed-slot resolution rules:
+ * Exercises the indexed-slot resolution rules:
  *   - `?authuser=N` rotates ONLY the matching `oxy_rt_N` cookie; siblings are
  *     untouched (no extra Set-Cookie for them).
  *   - `?authuser=N` with no matching cookie -> 401, never 200.
  *   - `?authuser=foo` (malformed) -> 400.
  *   - No param, mixed `oxy_rt_0` + `oxy_rt_1` present -> rotates the lowest
  *     indexed slot (oxy_rt_0).
- *   - No param, only legacy `oxy_rt` -> rotates legacy (compat).
+ *   - No param, only unsuffixed `oxy_rt` -> 401 (not a valid clean slot).
  *
  * The setup mirrors `refreshToken.test.ts`: real refresh-service rotation
  * logic, mocked RefreshToken MODEL + session.service.
@@ -406,34 +405,16 @@ describe('POST /auth/refresh — multi-account (?authuser=)', () => {
     expect(hasSetCookieForName(res.setCookie, 'oxy_rt_1')).toBe(false);
   });
 
-  it('without a param + only legacy oxy_rt -> rotates legacy (back-compat)', async () => {
+  it('without a param + only unsuffixed oxy_rt -> 401', async () => {
     const tok = 'legacy-tok';
     stageToken(buildStoredToken(tok, { family: 'fam-legacy', sessionId: 'sess-legacy' }));
-    mockFindOneAndUpdate.mockResolvedValueOnce({
-      _id: 'rt-legacy',
-      family: 'fam-legacy',
-      sessionId: 'sess-legacy',
-      userId: { toString: () => 'u-legacy' },
-      usedAt: new Date(),
-    });
-    mockCreate.mockResolvedValueOnce({});
-    mockGetAccessToken.mockResolvedValueOnce({
-      accessToken: 'a-legacy',
-      expiresAt: new Date(Date.now() + 15 * 60 * 1000),
-    });
 
     const res = await requestJson(server, 'POST', '/auth/refresh', {}, `oxy_rt=${tok}`);
 
-    expect(res.status).toBe(200);
-    expect(res.body.accessToken).toBe('a-legacy');
-    // No `authuser` field in the response (legacy path).
-    expect(res.body.authuser).toBeUndefined();
-
-    // A new oxy_rt cookie was re-emitted.
-    const newLegacy = res.setCookie.find(
-      (h) => h.startsWith('oxy_rt=') && !/Max-Age=0/i.test(h)
-    );
-    expect(newLegacy).toBeDefined();
+    expect(res.status).toBe(401);
+    expect(mockFindOneAndUpdate).not.toHaveBeenCalled();
+    expect(mockGetAccessToken).not.toHaveBeenCalled();
+    expect(res.setCookie).toHaveLength(0);
   });
 
   it('rotates one slot but leaves the OTHER slot intact (no spurious Set-Cookie for the sibling)', async () => {

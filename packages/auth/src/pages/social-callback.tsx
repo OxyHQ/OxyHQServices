@@ -9,6 +9,10 @@ type OAuthState = {
     sessionToken?: string
     redirectUri?: string
     state?: string
+    clientId?: string
+    codeChallenge?: string
+    codeChallengeMethod?: string
+    scope?: string
 }
 
 function parseOAuthState(raw: string | null): OAuthState | null {
@@ -21,6 +25,10 @@ function parseOAuthState(raw: string | null): OAuthState | null {
             sessionToken: typeof parsed.sessionToken === "string" ? parsed.sessionToken : undefined,
             redirectUri: typeof parsed.redirectUri === "string" ? parsed.redirectUri : undefined,
             state: typeof parsed.state === "string" ? parsed.state : undefined,
+            clientId: typeof parsed.clientId === "string" ? parsed.clientId : undefined,
+            codeChallenge: typeof parsed.codeChallenge === "string" ? parsed.codeChallenge : undefined,
+            codeChallengeMethod: typeof parsed.codeChallengeMethod === "string" ? parsed.codeChallengeMethod : undefined,
+            scope: typeof parsed.scope === "string" ? parsed.scope : undefined,
         }
     } catch {
         return null
@@ -85,6 +93,11 @@ export function SocialCallbackPage() {
                     sessionToken: oauthState.sessionToken,
                     redirectUri: oauthState.redirectUri,
                     state: oauthState.state,
+                    clientId: oauthState.clientId,
+                    codeChallenge: oauthState.codeChallenge,
+                    codeChallengeMethod: oauthState.codeChallengeMethod,
+                    scope: oauthState.scope,
+                    authuser: typeof payload.authuser === "number" ? payload.authuser : undefined,
                 }))
             } catch (err) {
                 if (controller.signal.aborted) return
@@ -101,6 +114,10 @@ export function SocialCallbackPage() {
             if (oauthState?.sessionToken) loginUrl.searchParams.set("token", oauthState.sessionToken)
             if (oauthState?.redirectUri) loginUrl.searchParams.set("redirect_uri", oauthState.redirectUri)
             if (oauthState?.state) loginUrl.searchParams.set("state", oauthState.state)
+            if (oauthState?.clientId) loginUrl.searchParams.set("client_id", oauthState.clientId)
+            if (oauthState?.codeChallenge) loginUrl.searchParams.set("code_challenge", oauthState.codeChallenge)
+            if (oauthState?.codeChallengeMethod) loginUrl.searchParams.set("code_challenge_method", oauthState.codeChallengeMethod)
+            if (oauthState?.scope) loginUrl.searchParams.set("scope", oauthState.scope)
 
             navigate(`${loginUrl.pathname}${loginUrl.search}`)
         }

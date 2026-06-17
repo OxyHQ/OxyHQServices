@@ -6,12 +6,12 @@
  * `session.service` are mocked — so the rotation atomics, reuse-detection,
  * family-revocation, and cookie wiring are all under test.
  *
- * The refresh token lives ONLY in the httpOnly `oxy_rt` cookie. These tests use
+ * The refresh token lives ONLY in an indexed httpOnly `oxy_rt_0` cookie. These tests use
  * a cookie-aware request helper that parses `set-cookie` from responses and
  * replays the `Cookie` header, exactly like a browser would.
  *
  * Cases:
- *  1. valid cookie            -> 200 + accessToken, AND a NEW oxy_rt cookie whose
+ *  1. valid cookie            -> 200 + accessToken, AND a NEW oxy_rt_0 cookie whose
  *                                value differs from the presented one (rotation);
  *                                getAccessToken called with the bound sessionId.
  *  2. reused/old token        -> 401, family revoked (updateMany) + session
@@ -43,7 +43,7 @@ interface StoredToken {
 // required now that /auth/refresh classifies candidates (one findOne per
 // candidate) BEFORE rotating the chosen token (another findOne) — a single
 // `mockResolvedValueOnce` would be exhausted by the classification pass. We can
-// stage MULTIPLE rows (e.g. a used legacy + a valid new) keyed by their hash. ----
+// stage MULTIPLE rows (e.g. a used stale token + a valid current token) keyed by their hash. ----
 const tokenStore = new Map<string, StoredToken>();
 
 /** Stage a stored row, keyed by its tokenHash, for findOne lookups. */
@@ -206,11 +206,8 @@ import cookieParser from 'cookie-parser';
 import authRouter from '../auth';
 import { errorHandler } from '../../middleware/errorHandler';
 import {
-  REFRESH_COOKIE_NAME,
   REFRESH_COOKIE_PATH,
-  LEGACY_REFRESH_COOKIE_PATH,
   clearRefreshCookie,
-  parseRefreshTokenCandidates,
 } from '../../services/refreshToken.service';
 // sha256Hex is the REAL implementation (the oauthCode mock spreads `...actual`),
 // matching exactly what the refresh service uses to hash presented tokens.
@@ -279,15 +276,16 @@ async function requestJson(
   });
 }
 
+const REFRESH_COOKIE_SLOT_0 = 'oxy_rt_0';
+
 /**
- * Extract the value of the real (non-empty) `oxy_rt` cookie from a `set-cookie`
- * array. Skips the legacy-delete header (`oxy_rt=;`), which also starts with the
- * cookie name but carries an empty value.
+ * Extract the value of the real (non-empty) indexed refresh cookie from a
+ * `set-cookie` array.
  */
 function extractRefreshCookieValue(setCookie: string[]): string | undefined {
   for (const header of setCookie) {
-    if (!header.startsWith(`${REFRESH_COOKIE_NAME}=`)) continue;
-    const value = header.split(';')[0].slice(`${REFRESH_COOKIE_NAME}=`.length);
+    if (!header.startsWith(`${REFRESH_COOKIE_SLOT_0}=`)) continue;
+    const value = header.split(';')[0].slice(`${REFRESH_COOKIE_SLOT_0}=`.length);
     if (value.length > 0) {
       return value;
     }
@@ -314,16 +312,6 @@ beforeEach(() => {
   jest.clearAllMocks();
   tokenStore.clear();
 });
-
-/** Find the legacy-delete Set-Cookie header (Path=/auth/refresh, Max-Age=0). */
-function findLegacyDeleteCookie(setCookie: string[]): string | undefined {
-  return setCookie.find(
-    (c) =>
-      c.startsWith(`${REFRESH_COOKIE_NAME}=;`) &&
-      c.includes(`Path=${LEGACY_REFRESH_COOKIE_PATH}`) &&
-      /Max-Age=0/i.test(c)
-  );
-}
 
 function buildStoredToken(rawToken: string, overrides: Partial<StoredToken> = {}): StoredToken {
   return {
@@ -358,25 +346,24 @@ describe('POST /auth/refresh', () => {
       'POST',
       '/auth/refresh',
       {},
-      `${REFRESH_COOKIE_NAME}=${presented}`
+      `${REFRESH_COOKIE_SLOT_0}=${presented}`
     );
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
       accessToken: 'access-jwt',
       expiresAt: expiresAt.toISOString(),
+      authuser: 0,
     });
     // Access token minted for the session bound to the refresh token.
     expect(mockGetAccessToken).toHaveBeenCalledWith('sess-123');
 
-    // A brand-new oxy_rt cookie is set, and its value differs from the one we
+    // A brand-new oxy_rt_0 cookie is set, and its value differs from the one we
     // presented (proving rotation, not a static cookie).
     const rotated = extractRefreshCookieValue(res.setCookie);
     expect(rotated).toBeDefined();
     expect(rotated).not.toBe(presented);
     expect(rotated).not.toBe('');
-    // The legacy `/auth/refresh` duplicate is deleted alongside the new cookie.
-    expect(findLegacyDeleteCookie(res.setCookie)).toBeDefined();
     // No family revocation on the happy path.
     expect(mockUpdateMany).not.toHaveBeenCalled();
     expect(mockDeactivateSession).not.toHaveBeenCalled();
@@ -396,7 +383,7 @@ describe('POST /auth/refresh', () => {
       'POST',
       '/auth/refresh',
       {},
-      `${REFRESH_COOKIE_NAME}=${presented}`
+      `${REFRESH_COOKIE_SLOT_0}=${presented}`
     );
 
     expect(res.status).toBe(401);
@@ -414,7 +401,7 @@ describe('POST /auth/refresh', () => {
     expect(mockFindOneAndUpdate).not.toHaveBeenCalled();
 
     // The cookie is cleared (Max-Age=0).
-    const cleared = res.setCookie.find((c) => c.startsWith(`${REFRESH_COOKIE_NAME}=`));
+    const cleared = res.setCookie.find((c) => c.startsWith(`${REFRESH_COOKIE_SLOT_0}=`));
     expect(cleared).toBeDefined();
     expect(cleared).toMatch(/Max-Age=0/i);
   });
@@ -435,7 +422,7 @@ describe('POST /auth/refresh', () => {
       'POST',
       '/auth/refresh',
       {},
-      `${REFRESH_COOKIE_NAME}=ghost-token`
+      `${REFRESH_COOKIE_SLOT_0}=ghost-token`
     );
 
     expect(res.status).toBe(401);
@@ -444,18 +431,15 @@ describe('POST /auth/refresh', () => {
     expect(mockGetAccessToken).not.toHaveBeenCalled();
   });
 
-  it('rotates the VALID sibling and ignores a USED legacy duplicate (stale FIRST)', async () => {
-    // Mid-migration browser holds TWO oxy_rt cookies. Per RFC 6265 the longer-path
-    // legacy cookie (here the USED one) is sent FIRST — the exact ordering that
-    // used to log the real user out. We must rotate the VALID new sibling.
-    const usedLegacy = 'used-legacy-token';
-    const validNew = 'valid-new-token';
-    const usedRow = buildStoredToken(usedLegacy, {
+  it('rotates the VALID sibling and ignores a USED duplicate in the same slot (stale FIRST)', async () => {
+    const usedStale = 'used-stale-token';
+    const validCurrent = 'valid-current-token';
+    const usedRow = buildStoredToken(usedStale, {
       _id: 'rt-used',
       family: 'fam-used',
       usedAt: new Date(Date.now() - 1000),
     });
-    const validRow = buildStoredToken(validNew, { _id: 'rt-valid', family: 'fam-valid' });
+    const validRow = buildStoredToken(validCurrent, { _id: 'rt-valid', family: 'fam-valid' });
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
 
     stageToken(usedRow);
@@ -470,21 +454,19 @@ describe('POST /auth/refresh', () => {
       'POST',
       '/auth/refresh',
       {},
-      `${REFRESH_COOKIE_NAME}=${usedLegacy}; ${REFRESH_COOKIE_NAME}=${validNew}`
+      `${REFRESH_COOKIE_SLOT_0}=${usedStale}; ${REFRESH_COOKIE_SLOT_0}=${validCurrent}`
     );
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ accessToken: 'access-jwt', expiresAt: expiresAt.toISOString() });
+    expect(res.body).toEqual({ accessToken: 'access-jwt', expiresAt: expiresAt.toISOString(), authuser: 0 });
     // Access token minted off the VALID sibling's session.
     expect(mockGetAccessToken).toHaveBeenCalledWith('sess-123');
 
     // Rotated to a brand-new value, distinct from BOTH presented cookies.
     const rotated = extractRefreshCookieValue(res.setCookie);
     expect(rotated).toBeDefined();
-    expect(rotated).not.toBe(usedLegacy);
-    expect(rotated).not.toBe(validNew);
-    // Legacy duplicate deleted.
-    expect(findLegacyDeleteCookie(res.setCookie)).toBeDefined();
+    expect(rotated).not.toBe(usedStale);
+    expect(rotated).not.toBe(validCurrent);
 
     // CRITICAL: the USED sibling's family was NOT revoked — no reuse-detection.
     expect(mockUpdateMany).not.toHaveBeenCalled();
@@ -492,10 +474,10 @@ describe('POST /auth/refresh', () => {
   });
 
   it('rotates the VALID sibling when it is presented FIRST (valid FIRST)', async () => {
-    const validNew = 'valid-new-token';
-    const usedLegacy = 'used-legacy-token';
-    const validRow = buildStoredToken(validNew, { _id: 'rt-valid', family: 'fam-valid' });
-    const usedRow = buildStoredToken(usedLegacy, {
+    const validCurrent = 'valid-current-token';
+    const usedStale = 'used-stale-token';
+    const validRow = buildStoredToken(validCurrent, { _id: 'rt-valid', family: 'fam-valid' });
+    const usedRow = buildStoredToken(usedStale, {
       _id: 'rt-used',
       family: 'fam-used',
       usedAt: new Date(Date.now() - 1000),
@@ -513,17 +495,16 @@ describe('POST /auth/refresh', () => {
       'POST',
       '/auth/refresh',
       {},
-      `${REFRESH_COOKIE_NAME}=${validNew}; ${REFRESH_COOKIE_NAME}=${usedLegacy}`
+      `${REFRESH_COOKIE_SLOT_0}=${validCurrent}; ${REFRESH_COOKIE_SLOT_0}=${usedStale}`
     );
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ accessToken: 'access-jwt', expiresAt: expiresAt.toISOString() });
+    expect(res.body).toEqual({ accessToken: 'access-jwt', expiresAt: expiresAt.toISOString(), authuser: 0 });
 
     const rotated = extractRefreshCookieValue(res.setCookie);
     expect(rotated).toBeDefined();
-    expect(rotated).not.toBe(usedLegacy);
-    expect(rotated).not.toBe(validNew);
-    expect(findLegacyDeleteCookie(res.setCookie)).toBeDefined();
+    expect(rotated).not.toBe(usedStale);
+    expect(rotated).not.toBe(validCurrent);
 
     // Still no reuse-detection — the used sibling is the same user's stale cookie.
     expect(mockUpdateMany).not.toHaveBeenCalled();
@@ -545,7 +526,7 @@ describe('POST /auth/refresh', () => {
       'POST',
       '/auth/refresh',
       {},
-      `${REFRESH_COOKIE_NAME}=${used}`
+      `${REFRESH_COOKIE_SLOT_0}=${used}`
     );
 
     expect(res.status).toBe(401);
@@ -576,50 +557,14 @@ describe('POST /auth/refresh', () => {
       'POST',
       '/auth/refresh',
       {},
-      `${REFRESH_COOKIE_NAME}=${presented}`
+      `${REFRESH_COOKIE_SLOT_0}=${presented}`
     );
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ accessToken: 'access-jwt', expiresAt: expiresAt.toISOString() });
+    expect(res.body).toEqual({ accessToken: 'access-jwt', expiresAt: expiresAt.toISOString(), authuser: 0 });
     expect(mockGetAccessToken).toHaveBeenCalledWith('sess-123');
     expect(mockUpdateMany).not.toHaveBeenCalled();
     expect(mockDeactivateSession).not.toHaveBeenCalled();
-  });
-});
-
-describe('parseRefreshTokenCandidates', () => {
-  it('returns both oxy_rt values in header order (stale FIRST)', () => {
-    const header = `${REFRESH_COOKIE_NAME}=AAA; ${REFRESH_COOKIE_NAME}=BBB`;
-    expect(parseRefreshTokenCandidates(header)).toEqual(['AAA', 'BBB']);
-  });
-
-  it('returns both oxy_rt values in header order (valid FIRST)', () => {
-    const header = `${REFRESH_COOKIE_NAME}=BBB; ${REFRESH_COOKIE_NAME}=AAA`;
-    expect(parseRefreshTokenCandidates(header)).toEqual(['BBB', 'AAA']);
-  });
-
-  it('returns a single value for one cookie', () => {
-    expect(parseRefreshTokenCandidates(`${REFRESH_COOKIE_NAME}=ONLY`)).toEqual(['ONLY']);
-  });
-
-  it('returns an empty array for an undefined or empty header', () => {
-    expect(parseRefreshTokenCandidates(undefined)).toEqual([]);
-    expect(parseRefreshTokenCandidates('')).toEqual([]);
-  });
-
-  it('ignores other cookie names and surrounding whitespace', () => {
-    const header = `theme=dark; ${REFRESH_COOKIE_NAME}=TOKEN ; other=oxy_rt_lookalike`;
-    expect(parseRefreshTokenCandidates(header)).toEqual(['TOKEN']);
-  });
-
-  it('de-dupes identical values, preserving first-seen order', () => {
-    const header = `${REFRESH_COOKIE_NAME}=DUP; ${REFRESH_COOKIE_NAME}=DUP; ${REFRESH_COOKIE_NAME}=NEW`;
-    expect(parseRefreshTokenCandidates(header)).toEqual(['DUP', 'NEW']);
-  });
-
-  it('skips empty oxy_rt values', () => {
-    const header = `${REFRESH_COOKIE_NAME}=; ${REFRESH_COOKIE_NAME}=REAL`;
-    expect(parseRefreshTokenCandidates(header)).toEqual(['REAL']);
   });
 });
 
@@ -665,10 +610,9 @@ describe('POST /auth/refresh — rate limiting', () => {
 });
 
 describe('clearRefreshCookie', () => {
-  it('emits a Set-Cookie clearing oxy_rt on BOTH paths with Max-Age=0', () => {
+  it('emits a Set-Cookie clearing one indexed slot with Max-Age=0', () => {
     const cookies: string[] = [];
-    // Minimal Response stub capturing res.cookie -> Set-Cookie serialization AND
-    // res.append('Set-Cookie', ...) for the appended legacy-delete header.
+    // Minimal Response stub capturing res.cookie -> Set-Cookie serialization.
     const res = {
       cookie(name: string, value: string, options: { maxAge?: number; path?: string; domain?: string }) {
         const parts = [`${name}=${value}`];
@@ -678,34 +622,17 @@ describe('clearRefreshCookie', () => {
         cookies.push(parts.join('; '));
         return this;
       },
-      append(_field: string, value: string | string[]) {
-        if (Array.isArray(value)) {
-          cookies.push(...value);
-        } else {
-          cookies.push(value);
-        }
-        return this;
-      },
     } as unknown as Response;
 
-    clearRefreshCookie(res);
+    clearRefreshCookie(res, { authuser: 0 });
 
     // The real cookie clear targets Path=/auth with Max-Age=0.
     const primaryClear = cookies.find(
       (c) =>
-        c.startsWith(`${REFRESH_COOKIE_NAME}=`) &&
+        c.startsWith(`${REFRESH_COOKIE_SLOT_0}=`) &&
         c.includes(`Path=${REFRESH_COOKIE_PATH}`) &&
         /Max-Age=0/.test(c)
     );
     expect(primaryClear).toBeDefined();
-
-    // The legacy `/auth/refresh` duplicate is ALSO cleared (appended header).
-    const legacyClear = cookies.find(
-      (c) =>
-        c.startsWith(`${REFRESH_COOKIE_NAME}=`) &&
-        c.includes(`Path=${LEGACY_REFRESH_COOKIE_PATH}`) &&
-        /Max-Age=0/.test(c)
-    );
-    expect(legacyClear).toBeDefined();
   });
 });

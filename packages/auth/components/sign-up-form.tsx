@@ -19,6 +19,10 @@ type SignUpFormProps = React.ComponentProps<"div"> & {
     sessionToken?: string
     redirectUri?: string
     state?: string
+    clientId?: string
+    codeChallenge?: string
+    codeChallengeMethod?: string
+    scope?: string
 }
 
 type AvailabilityStatus = "idle" | "checking" | "available" | "taken"
@@ -75,6 +79,10 @@ export function SignUpForm({
     sessionToken,
     redirectUri,
     state,
+    clientId,
+    codeChallenge,
+    codeChallengeMethod,
+    scope,
     ...props
 }: SignUpFormProps) {
     const navigate = useNavigate()
@@ -165,7 +173,16 @@ export function SignUpForm({
                 setFedCMLoginStatus(payload.sessionId)
             }
 
-            navigate(buildPostLoginRedirect({ sessionToken, redirectUri, state }))
+            navigate(buildPostLoginRedirect({
+                sessionToken,
+                redirectUri,
+                state,
+                clientId,
+                codeChallenge,
+                codeChallengeMethod,
+                scope,
+                authuser: typeof payload.authuser === "number" ? payload.authuser : undefined,
+            }))
         } catch (err) {
             const msg = err instanceof Error ? err.message : "Unable to sign up"
             setLocalError(msg)
@@ -178,7 +195,15 @@ export function SignUpForm({
     return (
         <AuthFormLayout
             className={className}
-            footer={<SocialLoginButtons sessionToken={sessionToken} redirectUri={redirectUri} state={state} />}
+            footer={<SocialLoginButtons
+                sessionToken={sessionToken}
+                redirectUri={redirectUri}
+                state={state}
+                clientId={clientId}
+                codeChallenge={codeChallenge}
+                codeChallengeMethod={codeChallengeMethod}
+                scope={scope}
+            />}
             {...props}
         >
             <form onSubmit={handleSubmit}>

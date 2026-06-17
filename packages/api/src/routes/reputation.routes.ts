@@ -15,7 +15,6 @@ import { ForbiddenError, UnauthorizedError } from '../utils/error';
 import { resolveUserIdToObjectId, validatePagination } from '../utils/validation';
 import { logger } from '../utils/logger';
 import reputationService, { type InfluenceContext } from '../services/reputation.service';
-import { ApplicationCredential } from '../models/ApplicationCredential';
 import {
   DEFAULT_TRANSACTION_LIMIT,
   MAX_TRANSACTION_LIMIT,
@@ -290,17 +289,9 @@ router.post(
 
     if (serviceApp) {
       // Canonical service path — source app identity is the token's, not the
-      // client body's. Resolve the credential from the token when present.
+      // client body's.
       applicationId = serviceApp.appId;
       credentialId = serviceApp.credentialId;
-      if (!credentialId) {
-        const cred = await ApplicationCredential.findOne({
-          applicationId: serviceApp.appId,
-          type: 'service',
-          status: 'active',
-        }).select('_id');
-        credentialId = cred?._id.toString();
-      }
     } else if (user?.isStaff === true) {
       createdByUserId = user._id?.toString();
     } else {

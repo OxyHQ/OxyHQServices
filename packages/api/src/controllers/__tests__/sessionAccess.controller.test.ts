@@ -1,27 +1,22 @@
 /**
  * Session controller authorization tests
  *
- * Regression coverage for C1 / H3: `/session/user/:sessionId`,
- * `/session/token/:sessionId`, and `/session/sessions/:sessionId` must
- * require a valid bearer token AND verify that the authenticated user
- * owns the referenced session. Pre-fix, all three were unauthenticated
- * and let an attacker pivot any captured sessionId into a fresh access
- * token, the owner's profile, or an enumeration of their other sessions.
+ * Regression coverage for C1 / H3: `/session/user/:sessionId` and
+ * `/session/sessions/:sessionId` must require a valid bearer token AND verify
+ * that the authenticated user owns the referenced session. Fresh access tokens
+ * now come only from first-party refresh-cookie flows and explicit auth claims.
  *
  * Strategy: mock `session.service.validateSessionById` and
- * `session.service.getAccessToken` so we can drive the controller through
  * every ownership-mismatch branch without spinning up Mongo.
  */
 
 const mockValidateSessionById = jest.fn();
-const mockGetAccessToken = jest.fn();
 const mockGetUserActiveSessions = jest.fn();
 
 jest.mock('../../services/session.service', () => ({
   __esModule: true,
   default: {
     validateSessionById: mockValidateSessionById,
-    getAccessToken: mockGetAccessToken,
     getUserActiveSessions: mockGetUserActiveSessions,
   },
 }));
@@ -185,39 +180,6 @@ describe('SessionController.getUserBySession (C1)', () => {
     await SessionController.getUserBySession(req, res);
 
     expect(res.json).toHaveBeenCalledWith({ id: SESSION_OWNER_ID, username: 'me' });
-  });
-});
-
-describe('SessionController.getTokenBySession (C1)', () => {
-  it('refuses to mint a token for a session owned by a different user', async () => {
-    mockValidateSessionById.mockResolvedValueOnce({
-      session: { userId: SESSION_OWNER_ID, sessionId: TARGET_SESSION_ID },
-    });
-    const req = authRequestAs(ATTACKER_USER_ID);
-    const res = createMockRes();
-
-    await SessionController.getTokenBySession(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(404);
-    expect(mockGetAccessToken).not.toHaveBeenCalled();
-  });
-
-  it('returns a fresh token when the authenticated user owns the session', async () => {
-    mockValidateSessionById.mockResolvedValueOnce({
-      session: { userId: SESSION_OWNER_ID, sessionId: TARGET_SESSION_ID },
-    });
-    const expiresAt = new Date(Date.now() + 60_000);
-    mockGetAccessToken.mockResolvedValueOnce({ accessToken: 'new-token', expiresAt });
-    const req = authRequestAs(SESSION_OWNER_ID);
-    const res = createMockRes();
-
-    await SessionController.getTokenBySession(req, res);
-
-    expect(mockGetAccessToken).toHaveBeenCalledWith(TARGET_SESSION_ID);
-    expect(res.json).toHaveBeenCalledWith({
-      accessToken: 'new-token',
-      expiresAt: expiresAt.toISOString(),
-    });
   });
 });
 

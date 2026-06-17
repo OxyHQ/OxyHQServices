@@ -199,7 +199,6 @@ export const useSessionManagement = ({
 
   const activateSession = useCallback(
     async (sessionId: string, user: User): Promise<void> => {
-      await oxyServices.getTokenBySession(sessionId);
       setTokenReady?.(true);
       setActiveSessionId(sessionId);
       loginSuccess(user);
@@ -207,14 +206,7 @@ export const useSessionManagement = ({
       await applyLanguagePreference(user);
       onAuthStateChange?.(user);
     },
-    [
-      applyLanguagePreference,
-      loginSuccess,
-      onAuthStateChange,
-      oxyServices,
-      saveActiveSessionId,
-      setTokenReady,
-    ],
+    [applyLanguagePreference, loginSuccess, onAuthStateChange, saveActiveSessionId, setTokenReady],
   );
 
   const removalTimerIdsRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
@@ -271,10 +263,10 @@ export const useSessionManagement = ({
         // `refreshAllSessions` it carries its `authuser` slot index. We
         // proactively plant that slot's access token via the httpOnly
         // refresh cookie BEFORE validating, so the bearer-protected
-        // validate/getCurrentUser calls don't need a token that was never
-        // in memory (cold reload / different browser tab). The native path
-        // has no per-session cookies and continues to rely on
-        // `validateSession` + `getTokenBySession` directly.
+        // validate/getCurrentUser calls have the correct in-memory token
+        // after a cold reload or account switch in another tab. The native
+        // path arrives here only after a bearer has been planted by
+        // `claimSessionByToken` or secure shared-session restore.
         if (isWebBrowser()) {
           const targetSession = sessionsRef.current.find((s) => s.sessionId === sessionId);
           const targetAuthuser = targetSession?.authuser;
@@ -448,5 +440,4 @@ export const useSessionManagement = ({
     isRefreshInFlight,
   };
 };
-
 

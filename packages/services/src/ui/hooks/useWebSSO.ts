@@ -8,7 +8,7 @@
  * without relying on third-party cookies.
  *
  * For browsers without FedCM support, users will need to click a sign-in button
- * which triggers a popup-based authentication flow.
+ * which triggers redirect authentication.
  *
  * This is called automatically by OxyContext on web platforms.
  *

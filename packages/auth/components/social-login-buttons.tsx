@@ -5,6 +5,10 @@ type SocialLoginButtonsProps = {
     sessionToken?: string
     redirectUri?: string
     state?: string
+    clientId?: string
+    codeChallenge?: string
+    codeChallengeMethod?: string
+    scope?: string
 }
 
 type Provider = {
@@ -58,7 +62,15 @@ function GitHubIcon() {
 
 function buildOAuthState(
     provider: string,
-    params: { sessionToken?: string; redirectUri?: string; state?: string }
+    params: {
+        sessionToken?: string
+        redirectUri?: string
+        state?: string
+        clientId?: string
+        codeChallenge?: string
+        codeChallengeMethod?: string
+        scope?: string
+    }
 ): string {
     return btoa(
         JSON.stringify({
@@ -66,6 +78,10 @@ function buildOAuthState(
             sessionToken: params.sessionToken || "",
             redirectUri: params.redirectUri || "",
             state: params.state || "",
+            clientId: params.clientId || "",
+            codeChallenge: params.codeChallenge || "",
+            codeChallengeMethod: params.codeChallengeMethod || "",
+            scope: params.scope || "",
         })
     )
 }
@@ -74,6 +90,10 @@ export function SocialLoginButtons({
     sessionToken,
     redirectUri,
     state,
+    clientId,
+    codeChallenge,
+    codeChallengeMethod,
+    scope,
 }: SocialLoginButtonsProps) {
     const providers = useMemo(() => {
         const list: Provider[] = []
@@ -169,6 +189,10 @@ export function SocialLoginButtons({
                         sessionToken,
                         redirectUri,
                         state,
+                        clientId,
+                        codeChallenge,
+                        codeChallengeMethod,
+                        scope,
                     })
                     const href = callbackUri
                         ? provider.buildUrl({

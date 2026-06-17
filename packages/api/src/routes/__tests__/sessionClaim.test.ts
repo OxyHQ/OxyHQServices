@@ -1,12 +1,7 @@
 /**
  * POST /auth/session/claim tests (device-flow token exchange)
  *
- * This route replaces the previous SDK fallback of `GET /session/token/:sessionId`
- * after the device-flow socket update — that path requires bearer auth (C1
- * hardening) and the originating client has no bearer token yet, so the call
- * was always 401.
- *
- * The new route accepts the 128-bit `sessionToken` (held only by the
+ * This route accepts the 128-bit `sessionToken` (held only by the
  * originating client, never echoed back to observers) as the credential,
  * exactly as in RFC 8628 §3.4. Tests cover:
  *  - missing sessionToken              -> 400 (validation)

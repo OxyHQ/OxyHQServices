@@ -10,8 +10,8 @@ import {
   AuthFormLayout,
   AuthFormHeader,
   LoadingSpinner,
-  isPopupWindow,
-  tryClosePopup,
+  isChildWindow,
+  tryCloseChildWindow,
 } from "@/components/auth-form-layout";
 import { AccountChooser } from "@/components/account-chooser";
 import { AppIdentityCard } from "@/components/app-identity-card";
@@ -40,6 +40,7 @@ type UserInfo = {
 type AuthorizeData = {
   user: UserInfo | null;
   sessionId: string | null;
+  accessToken: string | null;
   sessionStatus: string | null;
   application: PublicApplication | null;
   expiresAt: string | null;
@@ -101,6 +102,12 @@ function safeRedirectUrl(value?: string | null): string | null {
   }
 }
 
+function parseAuthuser(value: string | null): number | null {
+  if (!value || !/^\d+$/.test(value)) return null;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
+}
+
 export function AuthorizePage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -117,12 +124,14 @@ export function AuthorizePage() {
   const codeChallenge = searchParams.get("code_challenge");
   const codeChallengeMethod = searchParams.get("code_challenge_method");
   const scope = searchParams.get("scope");
+  const requestedAuthuser = parseAuthuser(searchParams.get("authuser"));
   const statusParam = searchParams.get("status");
   const urlError = searchParams.get("error");
 
   const [data, setData] = useState<AuthorizeData>({
     user: null,
     sessionId: null,
+    accessToken: null,
     sessionStatus: statusParam,
     application: null,
     expiresAt: null,
@@ -140,6 +149,7 @@ export function AuthorizePage() {
   const {
     accounts: deviceAccounts,
     currentSessionId: chooserSessionId,
+    isLoading: deviceAccountsLoading,
   } = useDeviceAccounts();
   const [chooserDismissed, setChooserDismissed] = useState(false);
   // The sessionId currently being switched-to via the cookie-mint path. Shown
@@ -153,32 +163,8 @@ export function AuthorizePage() {
   useEffect(() => {
     async function loadData() {
       try {
-        // Check for stored credentials from login
-        const storedSessionId = sessionStorage.getItem("oxy_session_id");
-        const storedToken = sessionStorage.getItem("oxy_access_token");
-
-        let sessionId: string | null = storedSessionId;
+        let sessionId: string | null = null;
         let user: UserInfo | null = null;
-
-        // Try to get user info using stored token or cookies
-        const authHeaders: Record<string, string> = {};
-        if (storedToken) authHeaders["Authorization"] = `Bearer ${storedToken}`;
-
-        try {
-          const meResponse = await fetch(buildApiUrl("/users/me"), {
-            credentials: "include",
-            headers: authHeaders,
-          });
-          if (meResponse.ok) {
-            const meData = await meResponse.json();
-            if (meData.user) {
-              user = meData.user;
-              if (meData.sessionId) sessionId = meData.sessionId;
-            }
-          }
-        } catch {
-          // No existing session — handled by the page-level redirect below.
-        }
 
         // OAuth code flow: resolve the requesting application from its
         // `client_id`. This runs whenever a client_id is present (with or
@@ -199,6 +185,7 @@ export function AuthorizePage() {
               setData((prev) => ({
                 ...prev,
                 sessionId,
+                accessToken: null,
                 user,
                 error: "Unable to load authorization request.",
               }));
@@ -229,6 +216,7 @@ export function AuthorizePage() {
             if (!sessionInfo) {
               setData({
                 sessionId,
+                accessToken: null,
                 user,
                 sessionStatus: null,
                 application,
@@ -248,6 +236,7 @@ export function AuthorizePage() {
                     : "This authorization request is no longer active.";
               setData({
                 sessionId,
+                accessToken: null,
                 user,
                 sessionStatus: sessionInfo.status,
                 application,
@@ -260,6 +249,7 @@ export function AuthorizePage() {
 
             setData({
               sessionId: sessionId || sessionInfo.sessionId || null,
+              accessToken: null,
               user,
               sessionStatus: sessionInfo.status,
               application,
@@ -271,6 +261,7 @@ export function AuthorizePage() {
           } catch (err) {
             setData({
               sessionId,
+              accessToken: null,
               user,
               sessionStatus: null,
               application: oauthApplication,
@@ -295,6 +286,7 @@ export function AuthorizePage() {
 
         setData({
           sessionId,
+          accessToken: null,
           user,
           sessionStatus: statusParam,
           application: oauthApplication,
@@ -311,15 +303,15 @@ export function AuthorizePage() {
     loadData();
   }, [token, redirectUri, state, statusParam, urlError, clientId]);
 
-  // Auto-close popup when authorization is complete
+  // Auto-close a child approval window when authorization is complete.
   useEffect(() => {
     const effectiveStatus = data.sessionStatus;
     if (
       (effectiveStatus === "approved" || effectiveStatus === "denied") &&
-      isPopupWindow()
+      isChildWindow()
     ) {
       // Small delay so any pending redirects / postMessages can fire
-      const timer = setTimeout(() => tryClosePopup(), 800);
+      const timer = setTimeout(() => tryCloseChildWindow(), 800);
       return () => clearTimeout(timer);
     }
   }, [data.sessionStatus]);
@@ -333,7 +325,6 @@ export function AuthorizePage() {
         token: token || undefined,
         redirect_uri: redirectUri || undefined,
         state: state || undefined,
-        response_type: searchParams.get("response_type") || undefined,
         client_id: clientId || undefined,
         code_challenge: codeChallenge || undefined,
         code_challenge_method: codeChallengeMethod || undefined,
@@ -343,103 +334,79 @@ export function AuthorizePage() {
     );
   }
 
+  function applyChosenAccount(entry: DeviceAccount): void {
+    setData((prev) => ({
+      ...prev,
+      sessionId: entry.sessionId,
+      accessToken: entry.accessToken,
+      expiresAt: entry.expiresAt ?? prev.expiresAt,
+      user: {
+        id: entry.account.id,
+        username: entry.account.username,
+        email: entry.account.email,
+        avatar: entry.account.avatar,
+        displayName: entry.account.displayName,
+      },
+    }));
+    setChooserDismissed(true);
+  }
+
   async function handleChooseAccount(entry: DeviceAccount): Promise<void> {
-    // Google/Meta/Apple multi-account UX: selecting ANY signed-in account
-    // (active OR a sibling slot) should reveal the consent screen WITHOUT
-    // asking for the password again. The durable per-slot refresh cookie
-    // (`oxy_rt_${authuser}`) lets us silently mint a fresh access token via
-    // `POST /auth/refresh?authuser=N`. Only when that mint fails (the slot's
-    // cookie has expired or been revoked server-side) do we fall back to
-    // `/login` with a hint to make the user re-authenticate explicitly.
-    //
-    // The active account already has a token planted by `useDeviceAccounts`,
-    // so it can short-circuit straight to the consent reveal.
-    if (entry.isCurrent) {
-      const planted = sessionStorage.getItem("oxy_access_token");
-      if (!planted) {
-        gotoLoginWithHint(entry.account.username || entry.account.email);
-        return;
-      }
-      sessionStorage.setItem("oxy_session_id", entry.sessionId);
-      setData((prev) => ({ ...prev, sessionId: entry.sessionId }));
-      setChooserDismissed(true);
-      return;
-    }
-
-    // Sibling slot: pre-mint silently via the per-slot refresh cookie.
-    // Without a known `authuser` slot index we cannot target a specific
-    // cookie — fall back to explicit re-auth.
-    if (typeof entry.authuser !== "number") {
-      gotoLoginWithHint(entry.account.username || entry.account.email);
-      return;
-    }
-
     setChooserPendingSessionId(entry.sessionId);
     try {
-      const refreshUrl = `${buildAuthUrl("/refresh")}?authuser=${encodeURIComponent(
-        String(entry.authuser)
-      )}`;
-      const response = await fetch(refreshUrl, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        credentials: "include",
-      });
-      if (!response.ok) {
-        // 401 = slot cookie expired/revoked; any other non-2xx = transient
-        // server error. Both route to explicit re-auth so the user is never
-        // stuck on a spinning chooser row.
-        gotoLoginWithHint(entry.account.username || entry.account.email);
-        return;
-      }
-      const payload = (await response.json().catch(() => null)) as
-        | { accessToken?: string; expiresAt?: string }
-        | null;
-      if (!payload?.accessToken) {
-        gotoLoginWithHint(entry.account.username || entry.account.email);
-        return;
-      }
-      // Plant the freshly-minted access token + sibling sessionId so the
-      // consent reveal (and the downstream `/token` / `/authorize` exchange)
-      // sees the SAME credentials the active row would have provided.
-      sessionStorage.setItem("oxy_access_token", payload.accessToken);
-      sessionStorage.setItem("oxy_session_id", entry.sessionId);
-      setData((prev) => ({
-        ...prev,
-        sessionId: entry.sessionId,
-        user: {
-          id: entry.account.id,
-          username: entry.account.username,
-          email: entry.account.email,
-          avatar: entry.account.avatar,
-          displayName: entry.account.displayName,
-        },
-      }));
-      setChooserDismissed(true);
+      applyChosenAccount(entry);
     } catch {
-      // Network failure: explicit re-auth, never silent retry.
       gotoLoginWithHint(entry.account.username || entry.account.email);
     } finally {
       setChooserPendingSessionId(null);
     }
   }
 
+  useEffect(() => {
+    if (
+      deviceAccountsLoading ||
+      chooserDismissed ||
+      requestedAuthuser === null ||
+      data.error ||
+      (data.sessionStatus && data.sessionStatus !== "pending")
+    ) {
+      return;
+    }
+
+    const target = deviceAccounts.find(
+      (entry) => entry.authuser === requestedAuthuser
+    );
+    if (target) {
+      applyChosenAccount(target);
+    }
+  }, [
+    deviceAccounts,
+    deviceAccountsLoading,
+    chooserDismissed,
+    requestedAuthuser,
+    data.error,
+    data.sessionStatus,
+  ]);
+
   async function handleDecision(decision: "approve" | "deny") {
-    if (!token) return;
+    if (!token && !clientId) return;
     setSubmitting(true);
 
     const safeRedirect = safeRedirectUrl(redirectUri);
 
     if (decision === "deny") {
       // Cancel the auth session
-      try {
-        await fetch(buildAuthUrl(`/session/cancel/${token}`), {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({}),
-        });
-      } catch {
-        // Ignore cancellation errors
+      if (token) {
+        try {
+          await fetch(buildAuthUrl(`/session/cancel/${token}`), {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({}),
+          });
+        } catch {
+          // Ignore cancellation errors
+        }
       }
       if (safeRedirect) {
         const url = new URL(safeRedirect);
@@ -461,14 +428,14 @@ export function AuthorizePage() {
     // Approve. Two distinct redirect paths:
     //   - OAuth2 authorization code flow (when `client_id` is in the URL):
     //     mint a short-lived code and redirect with `?code=<code>&state=...`.
-    //   - Legacy cross-app QR-code handoff (no `client_id`): authorize the
+    //   - Device-flow handoff (no `client_id`): authorize the
     //     pending AuthSession via the Bearer-auth endpoint and notify the
     //     polling client via socket.io. No tokens ever appear in the URL.
     try {
       const sessionId = data.sessionId;
-      const storedToken = sessionStorage.getItem("oxy_access_token");
+      const accessToken = data.accessToken;
 
-      if (!storedToken) {
+      if (!accessToken) {
         setData((prev) => ({
           ...prev,
           error: "Sign in required to authorize this request.",
@@ -495,7 +462,7 @@ export function AuthorizePage() {
           credentials: "include",
           headers: {
             "content-type": "application/json",
-            Authorization: `Bearer ${storedToken}`,
+            Authorization: `Bearer ${accessToken}`,
           },
           body: JSON.stringify(body),
         });
@@ -506,6 +473,10 @@ export function AuthorizePage() {
               token: token || undefined,
               redirect_uri: redirectUri || undefined,
               state: state || undefined,
+              client_id: clientId || undefined,
+              code_challenge: codeChallenge || undefined,
+              code_challenge_method: codeChallengeMethod || undefined,
+              scope: scope || undefined,
               error: "Session expired. Please sign in again.",
             })
           );
@@ -532,7 +503,7 @@ export function AuthorizePage() {
         return;
       }
 
-      // ---- Legacy cross-app handoff (token + AuthSession) ----
+      // ---- Device-flow handoff (token + AuthSession) ----
       if (!token) {
         setData((prev) => ({
           ...prev,
@@ -558,7 +529,7 @@ export function AuthorizePage() {
           credentials: "include",
           headers: {
             "content-type": "application/json",
-            Authorization: `Bearer ${storedToken}`,
+            Authorization: `Bearer ${accessToken}`,
           },
           body: JSON.stringify({}),
         }
@@ -570,6 +541,10 @@ export function AuthorizePage() {
             token: token || undefined,
             redirect_uri: redirectUri || undefined,
             state: state || undefined,
+            client_id: clientId || undefined,
+            code_challenge: codeChallenge || undefined,
+            code_challenge_method: codeChallengeMethod || undefined,
+            scope: scope || undefined,
             error: "Session expired. Please sign in again.",
           })
         );
@@ -604,7 +579,7 @@ export function AuthorizePage() {
     }
   }
 
-  if (loading) {
+  if (loading || deviceAccountsLoading) {
     return <LoadingSpinner />;
   }
 
@@ -622,7 +597,7 @@ export function AuthorizePage() {
     );
   }
 
-  if (!data.sessionId && !data.user) {
+  if (!data.sessionId && !data.user && deviceAccounts.length === 0) {
     // No session - redirect to login
     return (
       <Navigate
@@ -630,6 +605,10 @@ export function AuthorizePage() {
           token: token || undefined,
           redirect_uri: redirectUri || undefined,
           state: state || undefined,
+          client_id: clientId || undefined,
+          code_challenge: codeChallenge || undefined,
+          code_challenge_method: codeChallengeMethod || undefined,
+          scope: scope || undefined,
         })}
         replace
       />
@@ -657,13 +636,17 @@ export function AuthorizePage() {
     token: token || undefined,
     redirect_uri: redirectUri || undefined,
     state: state || undefined,
+    client_id: clientId || undefined,
+    code_challenge: codeChallenge || undefined,
+    code_challenge_method: codeChallengeMethod || undefined,
+    scope: scope || undefined,
   });
 
   // Additive front screen: when the consent request is still actionable and at
   // least one account is signed in on this device, show the Google-style
-  // chooser first. Selecting the active account plants its token and dismisses
-  // the chooser to reveal the consent UI below; other accounts re-route to
-  // /login. The chooser never intercepts a completed (approved/denied) state.
+  // chooser first. Selecting an account keeps its bearer in memory and reveals
+  // the consent UI below. The chooser never intercepts a completed
+  // (approved/denied) state.
   if (showActions && !chooserDismissed && chooserSessionId && deviceAccounts.length > 0) {
     return (
       <AccountChooser
@@ -688,7 +671,7 @@ export function AuthorizePage() {
               ? "Authorization complete"
               : "Authorization denied"}
             description={
-              isPopupWindow()
+              isChildWindow()
                 ? "This window will close automatically."
                 : effectiveStatus === "approved"
                   ? "You can close this window."

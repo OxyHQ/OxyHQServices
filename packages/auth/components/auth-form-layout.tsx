@@ -83,9 +83,9 @@ export function LoadingSpinner({ className }: { className?: string }) {
 }
 
 /**
- * Detect whether the current window is a popup (opened by another window).
+ * Detect whether the current window was opened by another window.
  */
-export function isPopupWindow(): boolean {
+export function isChildWindow(): boolean {
     try {
         return !!window.opener && window.opener !== window
     } catch {
@@ -94,10 +94,10 @@ export function isPopupWindow(): boolean {
 }
 
 /**
- * Attempt to close the popup window. Returns true if close was attempted.
+ * Attempt to close the current child window. Returns true if close was attempted.
  */
-export function tryClosePopup(): boolean {
-    if (isPopupWindow()) {
+export function tryCloseChildWindow(): boolean {
+    if (isChildWindow()) {
         window.close()
         return true
     }

@@ -133,18 +133,18 @@ describe('formatUserResponse → @oxyhq/contracts userResponseSchema (producer c
 });
 
 describe('synthetic /auth/refresh-all response → refreshAllResponseSchema', () => {
-  it('parses a multi-account response including a legacy authuser: null slot', () => {
-    const indexedUser = formatUserResponse(
+  it('parses a multi-account response with numeric authuser slots', () => {
+    const firstUser = formatUserResponse(
       leanDoc('507f1f77bcf86cd799439021', {
-        username: 'indexed',
+        username: 'first',
         color: 'green',
-        name: { first: 'Indexed', last: 'User' },
+        name: { first: 'First', last: 'User' },
       })
     );
-    const legacyUser = formatUserResponse(
+    const secondUser = formatUserResponse(
       leanDoc('507f1f77bcf86cd799439022', {
-        username: 'legacy',
-        name: { first: 'Legacy' },
+        username: 'second',
+        name: { first: 'Second' },
       })
     );
 
@@ -152,19 +152,17 @@ describe('synthetic /auth/refresh-all response → refreshAllResponseSchema', ()
       accounts: [
         {
           authuser: 0,
-          accessToken: 'access-indexed',
+          accessToken: 'access-first',
           expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
-          sessionId: 'sess-indexed',
-          user: indexedUser,
+          sessionId: 'sess-first',
+          user: firstUser,
         },
         {
-          // Legacy un-suffixed `oxy_rt` cookie slot — authuser MUST be null and
-          // the account MUST NOT be dropped from the chooser.
-          authuser: null,
-          accessToken: 'access-legacy',
+          authuser: 1,
+          accessToken: 'access-second',
           expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
-          sessionId: 'sess-legacy',
-          user: legacyUser,
+          sessionId: 'sess-second',
+          user: secondUser,
         },
       ],
     };
@@ -173,9 +171,9 @@ describe('synthetic /auth/refresh-all response → refreshAllResponseSchema', ()
     expect(parsed).not.toBeNull();
     expect(parsed?.accounts).toHaveLength(2);
     expect(parsed?.accounts[0].authuser).toBe(0);
-    expect(parsed?.accounts[0].user.name?.full).toBe('Indexed User');
-    expect(parsed?.accounts[1].authuser).toBeNull();
-    expect(parsed?.accounts[1].user.name?.full).toBe('Legacy');
+    expect(parsed?.accounts[0].user.name?.full).toBe('First User');
+    expect(parsed?.accounts[1].authuser).toBe(1);
+    expect(parsed?.accounts[1].user.name?.full).toBe('Second');
   });
 
   it('parses an empty accounts array (no signed-in accounts on device)', () => {

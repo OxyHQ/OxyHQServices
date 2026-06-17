@@ -149,8 +149,7 @@ export function useSessionSocket({
       // appear in the switch. Anything unknown falls through to `default`,
       // which is intentionally a no-op for session lifecycle — it only logs
       // in dev. This guards against future server-side event additions
-      // (e.g. `session_created`) accidentally triggering sign-out via a
-      // "legacy fallback" branch.
+      // accidentally triggering sign-out.
       switch (data.type) {
         case 'session_removed': {
           if (data.sessionId && onSessionRemovedRef.current) {
@@ -199,9 +198,9 @@ export function useSessionSocket({
         case 'session_created':
         case 'session_update': {
           // Lifecycle event for the current user. Just resync the sessions
-          // list — never sign out. Historically this branch had a legacy
-          // fallback that compared `data.sessionId === currentActiveSessionId`
-          // and signed the user out if true, which was catastrophic: a
+          // list — never sign out. A prior implementation compared
+          // `data.sessionId === currentActiveSessionId` and signed the user
+          // out if true, which was catastrophic: a
           // `session_created` event fired immediately after a successful
           // sign-in carries the user's NEW (now-active) session id, which
           // matched and triggered an instant remote sign-out toast on every
