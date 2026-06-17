@@ -229,7 +229,7 @@ export function AdvancedSection() {
           </View>
         )}
         <Text style={[styles.footnote, { color: colors.secondaryText }]}>
-          Use the legacy authoring flow to create new filters — the redesigned multi-condition builder is shipping soon.
+          Use the current authoring flow to create new filters — the redesigned multi-condition builder is shipping soon.
         </Text>
       </View>
 

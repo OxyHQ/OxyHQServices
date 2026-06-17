@@ -16,5 +16,5 @@
     "entry": "src/index.ts"
   },
   "description": "Expo / React Native SDK: components, screens, bottom-sheet navigation.",
-  "versionsNote": "Current docs are generated from the main branch for @oxyhq/services 10.2.0; legacy popup-token docs are intentionally not published."
+  "versionsNote": "Current docs are generated from the main branch for @oxyhq/services 10.2.0; only the active services docs are published."
 }

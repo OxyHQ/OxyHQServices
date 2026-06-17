@@ -16,5 +16,5 @@
     "entry": "src/index.ts"
   },
   "description": "Web auth SDK: React hooks, FedCM, WebOxyProvider, session management.",
-  "versionsNote": "Current docs are generated from the main branch for @oxyhq/auth 4.1.0; legacy auth SDK docs are intentionally not published."
+  "versionsNote": "Current docs are generated from the main branch for @oxyhq/auth 4.1.0; only the active auth SDK docs are published."
 }
