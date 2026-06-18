@@ -93,6 +93,7 @@ const ZOOM_CHIP_FADE_DURATION_MS = 200;
 const CANVAS_BG = '#000000';
 const RING_COLOR = '#ffffff';
 const RING_WIDTH = 2;
+const REMOTE_HTTP_URI_PATTERN = /^https?:\/\//i;
 
 /**
  * Clamp the translation so the image edges never leave the viewport at any
@@ -152,6 +153,64 @@ async function loadImageManipulator(): Promise<ImageManipulatorModule> {
             `expo-image-manipulator is required for avatar cropping but is not installed: ${message}`,
         );
     }
+}
+
+interface PreparedManipulatorImage {
+    uri: string;
+    cleanup?: () => void;
+}
+
+function isCanvasLoadFailure(err: unknown): boolean {
+    return (
+        Platform.OS === 'web' &&
+        typeof HTMLCanvasElement !== 'undefined' &&
+        err instanceof HTMLCanvasElement
+    );
+}
+
+function normalizeCropError(err: unknown): Error {
+    if (err instanceof Error) return err;
+    if (isCanvasLoadFailure(err)) {
+        return new Error('Image could not be loaded for cropping');
+    }
+    if (typeof err === 'string' && err.trim()) {
+        return new Error(err.trim());
+    }
+    return new Error('Failed to crop image');
+}
+
+async function prepareImageForManipulator(uri: string): Promise<PreparedManipulatorImage> {
+    if (Platform.OS !== 'web' || !REMOTE_HTTP_URI_PATTERN.test(uri)) {
+        return { uri };
+    }
+
+    let response: Response;
+    try {
+        response = await fetch(uri);
+    } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        throw new Error(`Image could not be loaded for cropping: ${message}`);
+    }
+
+    if (!response.ok) {
+        throw new Error(`Image could not be loaded for cropping (${response.status})`);
+    }
+
+    const blob = await response.blob();
+    if (blob.size <= 0) {
+        throw new Error('Image could not be loaded for cropping');
+    }
+
+    const contentType = response.headers.get('content-type') || blob.type;
+    if (contentType && !contentType.toLowerCase().startsWith('image/')) {
+        throw new Error('Selected file is not an image');
+    }
+
+    const objectUrl = URL.createObjectURL(blob);
+    return {
+        uri: objectUrl,
+        cleanup: () => URL.revokeObjectURL(objectUrl),
+    };
 }
 
 /**
@@ -622,6 +681,7 @@ const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
         }
 
         setIsProcessing(true);
+        let preparedImageCleanup: (() => void) | undefined;
         try {
             const { manipulateAsync, SaveFormat } = await loadImageManipulator();
 
@@ -665,8 +725,10 @@ const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
                 },
             );
 
+            const preparedImage = await prepareImageForManipulator(imageUri);
+            preparedImageCleanup = preparedImage.cleanup;
             const result = await manipulateAsync(
-                imageUri,
+                preparedImage.uri,
                 [
                     {
                         crop: {
@@ -701,13 +763,14 @@ const AvatarCropScreen: React.FC<AvatarCropScreenProps> = ({
             // success toast (uploads typically toast their own outcome).
             onClose?.();
         } catch (err) {
-            logger.error('handleConfirm failed', err, { component: LOG_COMPONENT });
-            const message = err instanceof Error ? err.message : undefined;
+            const normalizedError = normalizeCropError(err);
+            logger.error('handleConfirm failed', normalizedError, { component: LOG_COMPONENT });
             void hapticNotification('error');
             toast.error(
-                message || t('editProfile.toasts.cropFailed') || 'Failed to crop image',
+                normalizedError.message || t('editProfile.toasts.cropFailed') || 'Failed to crop image',
             );
         } finally {
+            preparedImageCleanup?.();
             setIsProcessing(false);
         }
     }, [baseFit, imageUri, naturalSize, onClose, onConfirm, t]);
