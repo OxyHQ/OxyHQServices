@@ -26,6 +26,7 @@ import { AddressInfo } from 'net';
 
 const CACHE_FILE_ID = '64c0000000000000000000ff';
 const USER_FILE_ID = '64c0000000000000000000aa';
+const FEDERATED_OWNER_ID = '64d0000000000000000000bb';
 
 // A body larger than the global 1 MiB JSON/urlencoded parser limit. If C1's
 // guard failed to bypass those parsers, the stream would be truncated/rejected.
@@ -36,10 +37,12 @@ const mockAuthMiddleware = jest.fn();
 const mockOptionalAuthMiddleware = jest.fn();
 
 const mockUploadCachedMediaStream = jest.fn();
+const mockUploadFederatedMediaStream = jest.fn();
 const mockDeleteCachedMedia = jest.fn();
 const mockUploadFileDirect = jest.fn();
 const mockGetDeletionSummary = jest.fn();
 const mockDeleteFile = jest.fn();
+const mockUserFindOne = jest.fn();
 
 jest.mock('../../middleware/auth', () => ({
   authMiddleware: (...args: unknown[]) => mockAuthMiddleware(...args),
@@ -68,9 +71,14 @@ jest.mock('../../utils/logger', () => ({
   logger: { warn: jest.fn(), error: jest.fn(), info: jest.fn(), debug: jest.fn() },
 }));
 
+jest.mock('../../utils/validation', () => ({
+  isValidObjectId: (id: string) => /^[a-fA-F0-9]{24}$/.test(id),
+}));
+
 jest.mock('../../services/assetServiceSingleton', () => ({
   assetService: {
     uploadCachedMediaStream: (...args: unknown[]) => mockUploadCachedMediaStream(...args),
+    uploadFederatedMediaStream: (...args: unknown[]) => mockUploadFederatedMediaStream(...args),
     deleteCachedMedia: (...args: unknown[]) => mockDeleteCachedMedia(...args),
     uploadFileDirect: (...args: unknown[]) => mockUploadFileDirect(...args),
     getDeletionSummary: (...args: unknown[]) => mockGetDeletionSummary(...args),
@@ -79,12 +87,19 @@ jest.mock('../../services/assetServiceSingleton', () => ({
   s3Service: {},
 }));
 
+jest.mock('../../models/User', () => ({
+  __esModule: true,
+  default: {
+    findOne: (...args: unknown[]) => mockUserFindOne(...args),
+  },
+}));
+
 import assetsRouter from '../assets';
 import { errorHandler } from '../../middleware/errorHandler';
 
 interface JsonResponse {
   status: number;
-  body: { data?: { file?: { id?: string }; message?: string }; error?: string; message?: string };
+  body: { data?: { file?: { id?: string; sha256?: string }; message?: string }; error?: string; message?: string };
 }
 
 async function requestRaw(
@@ -125,10 +140,17 @@ let server: http.Server;
 // prefix strip runs after parsing in production, hence both forms are matched.
 const CACHE_UPLOAD_PATH = '/assets/service/cache';
 const CACHE_UPLOAD_PATH_API_PREFIXED = '/api/assets/service/cache';
+const FEDERATION_UPLOAD_PATH = '/assets/service/federation';
+const FEDERATION_UPLOAD_PATH_API_PREFIXED = '/api/assets/service/federation';
 function isCacheUploadRequest(req: express.Request): boolean {
   return (
     req.method === 'POST' &&
-    (req.path === CACHE_UPLOAD_PATH || req.path === CACHE_UPLOAD_PATH_API_PREFIXED)
+    (
+      req.path === CACHE_UPLOAD_PATH ||
+      req.path === CACHE_UPLOAD_PATH_API_PREFIXED ||
+      req.path === FEDERATION_UPLOAD_PATH ||
+      req.path === FEDERATION_UPLOAD_PATH_API_PREFIXED
+    )
   );
 }
 
@@ -160,11 +182,16 @@ beforeEach(() => {
         type: 'service',
         appId: 'mention-app',
         appName: 'mention',
-        scopes: [],
+        scopes: ['files:write'],
       };
       next();
     }
   );
+  mockUserFindOne.mockReturnValue({
+    select: () => ({
+      lean: () => Promise.resolve({ _id: FEDERATED_OWNER_ID, type: 'federated' }),
+    }),
+  });
 
   // Default user principal for session-only routes.
   mockAuthMiddleware.mockImplementation(
@@ -250,6 +277,91 @@ describe('POST /assets/service/cache', () => {
     expect(mockUploadCachedMediaStream).toHaveBeenCalledTimes(1);
     // Full payload reached the service — no truncation by the 1 MiB parser.
     expect(bytesReceived).toBe(LARGE_BODY_BYTES);
+  });
+});
+
+describe('POST /assets/service/federation', () => {
+  it('streams durable federated media owned by an existing federated user', async () => {
+    mockUploadFederatedMediaStream.mockResolvedValueOnce({
+      _id: USER_FILE_ID,
+      sha256: 'a'.repeat(64),
+      size: 4,
+      mime: 'image/jpeg',
+      visibility: 'public',
+    });
+
+    const res = await requestRaw(
+      server,
+      'POST',
+      '/assets/service/federation',
+      {
+        'content-type': 'image/jpeg',
+        'content-length': '4',
+        'x-owner-user-id': FEDERATED_OWNER_ID,
+        'x-original-name': 'photo.jpg',
+        'x-media-metadata': JSON.stringify({ remoteHost: 'example.social' }),
+      },
+      Buffer.from('JPEG')
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body.data?.file?.id).toBe(USER_FILE_ID);
+    expect(mockUserFindOne).toHaveBeenCalledWith({ _id: FEDERATED_OWNER_ID, type: 'federated' });
+    expect(mockUploadFederatedMediaStream).toHaveBeenCalledTimes(1);
+    expect(mockUploadFederatedMediaStream.mock.calls[0][1]).toBe('image/jpeg');
+    expect(mockUploadFederatedMediaStream.mock.calls[0][2]).toBe('photo.jpg');
+    expect(mockUploadFederatedMediaStream.mock.calls[0][4]).toBe(FEDERATED_OWNER_ID);
+    expect(mockUploadFederatedMediaStream.mock.calls[0][5]).toEqual(
+      expect.objectContaining({
+        remoteHost: 'example.social',
+        serviceAppId: 'mention-app',
+        serviceAppName: 'mention',
+      })
+    );
+  });
+
+  it('requires the files:write service scope', async () => {
+    mockServiceAuthMiddleware.mockImplementationOnce(
+      (req: { serviceApp?: unknown }, _res: unknown, next: () => void) => {
+        req.serviceApp = {
+          type: 'service',
+          appId: 'mention-app',
+          appName: 'mention',
+          scopes: [],
+        };
+        next();
+      }
+    );
+
+    const res = await requestRaw(
+      server,
+      'POST',
+      '/assets/service/federation',
+      { 'content-type': 'image/png', 'content-length': '4', 'x-owner-user-id': FEDERATED_OWNER_ID },
+      Buffer.from('PNG!')
+    );
+
+    expect(res.status).toBe(403);
+    expect(mockUploadFederatedMediaStream).not.toHaveBeenCalled();
+  });
+
+  it('rejects owners that are not existing federated users', async () => {
+    mockUserFindOne.mockReturnValueOnce({
+      select: () => ({
+        lean: () => Promise.resolve(null),
+      }),
+    });
+
+    const res = await requestRaw(
+      server,
+      'POST',
+      '/assets/service/federation',
+      { 'content-type': 'image/png', 'content-length': '4', 'x-owner-user-id': FEDERATED_OWNER_ID },
+      Buffer.from('PNG!')
+    );
+
+    expect(res.status).toBe(403);
+    expect(mockUploadFederatedMediaStream).not.toHaveBeenCalled();
   });
 });
 

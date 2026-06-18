@@ -90,23 +90,29 @@ app.use(compression());
 // Cookie parser middleware (before CSRF and body parsing)
 app.use(cookieParser());
 
-// The federation media-cache upload route reads the raw request as a stream and
-// pipes it straight to S3. The global JSON/urlencoded body parsers (and their
-// 1 MiB limit) must NOT touch it. The `/api/` prefix-strip middleware runs
-// AFTER body parsing, so at parse time the path may still carry the prefix —
-// guard against BOTH the stripped and prefixed form.
+// The service-token federation media upload routes read the raw request as a
+// stream and pipe it straight to S3. The global JSON/urlencoded body parsers
+// (and their 1 MiB limit) must NOT touch them. The `/api/` prefix-strip
+// middleware runs AFTER body parsing, so at parse time the path may still carry
+// the prefix — guard against BOTH the stripped and prefixed forms.
 const CACHE_UPLOAD_PATH = '/assets/service/cache';
 const CACHE_UPLOAD_PATH_API_PREFIXED = '/api/assets/service/cache';
+const FEDERATION_UPLOAD_PATH = '/assets/service/federation';
+const FEDERATION_UPLOAD_PATH_API_PREFIXED = '/api/assets/service/federation';
 
 /**
- * True only for the media-cache stream-upload request (POST to the cache path,
- * in either its stripped or `/api`-prefixed form). Uses `req.path` so a
- * querystring never breaks the match.
+ * True only for the service-token media stream-upload requests. Uses `req.path`
+ * so a querystring never breaks the match.
  */
 function isCacheUploadRequest(req: express.Request): boolean {
   return (
     req.method === 'POST' &&
-    (req.path === CACHE_UPLOAD_PATH || req.path === CACHE_UPLOAD_PATH_API_PREFIXED)
+    (
+      req.path === CACHE_UPLOAD_PATH ||
+      req.path === CACHE_UPLOAD_PATH_API_PREFIXED ||
+      req.path === FEDERATION_UPLOAD_PATH ||
+      req.path === FEDERATION_UPLOAD_PATH_API_PREFIXED
+    )
   );
 }
 

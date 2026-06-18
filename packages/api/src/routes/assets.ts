@@ -20,6 +20,8 @@ import {
 } from '../schemas/assets.schemas';
 import { generateMissingFilePlaceholder, TRANSPARENT_PNG_PLACEHOLDER } from '../utils/placeholders';
 import { FEDERATION_CACHE_MAX_BYTES, isAllowedCacheMime } from '../constants/federationCache';
+import User from '../models/User';
+import { isValidObjectId } from '../utils/validation';
 
 interface AuthenticatedRequest extends express.Request {
   user?: {
@@ -485,6 +487,19 @@ const CACHE_RATE_WINDOW_MS = 60 * 1000;
 const CACHE_UPLOAD_MAX_PER_MINUTE = 30;
 const CACHE_DELETE_MAX_PER_MINUTE = 240;
 
+function requireServiceScope(req: ServiceAuthRequest, scope: string): void {
+  const scopes = req.serviceApp?.scopes ?? [];
+  if (!scopes.includes(scope)) {
+    throw new ForbiddenError(`Missing required scope: ${scope}`);
+  }
+}
+
+function getSingleHeader(req: express.Request, name: string): string | undefined {
+  const value = req.headers[name.toLowerCase()];
+  if (Array.isArray(value)) return value[0];
+  return typeof value === 'string' ? value : undefined;
+}
+
 /**
  * Per-app rate limit for cache uploads. Keyed on the service `appId` (falling
  * back to IP) so one misbehaving service can't exhaust the budget for others.
@@ -575,6 +590,102 @@ router.post(
     } catch (error) {
       if (error instanceof Error && error.name === 'CacheMediaTooLargeError') {
         throw new ApiError(413, 'Cached media exceeds the maximum allowed size', 'PAYLOAD_TOO_LARGE');
+      }
+      throw error;
+    }
+  })
+);
+
+/**
+ * @route POST /api/assets/service/federation
+ * @desc Stream-upload durable federated media into a normal public file owned by
+ *       the resolved federated Oxy user. Unlike `/service/cache`, files created
+ *       here are not in the eviction namespace and can safely be referenced from
+ *       persisted Mention posts.
+ * @access Service token only (requires files:write)
+ */
+router.post(
+  '/service/federation',
+  serviceAuthMiddleware,
+  cacheUploadLimiter,
+  asyncHandler(async (req: ServiceAuthRequest, res: express.Response) => {
+    requireServiceScope(req, 'files:write');
+
+    const ownerUserId = getSingleHeader(req, 'x-owner-user-id')?.trim();
+    if (!ownerUserId || !isValidObjectId(ownerUserId)) {
+      throw new BadRequestError('x-owner-user-id must be a valid federated user id');
+    }
+
+    const owner = await User.findOne({ _id: ownerUserId, type: 'federated' })
+      .select('_id type')
+      .lean();
+    if (!owner) {
+      throw new ForbiddenError('Federated media owner must be an existing federated user');
+    }
+
+    const mime = (req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
+    if (!mime) {
+      throw new BadRequestError('Content-Type header is required');
+    }
+    if (!isAllowedCacheMime(mime)) {
+      throw new ApiError(415, 'Unsupported media type for federation upload', 'UNSUPPORTED_MEDIA_TYPE');
+    }
+
+    const declaredLength = Number(req.headers['content-length']);
+    if (Number.isFinite(declaredLength) && declaredLength > FEDERATION_CACHE_MAX_BYTES) {
+      throw new ApiError(413, 'Federated media exceeds the maximum allowed size', 'PAYLOAD_TOO_LARGE');
+    }
+
+    const originalNameHeader = getSingleHeader(req, 'x-original-name');
+    const originalName = originalNameHeader && originalNameHeader.trim().length > 0
+      ? originalNameHeader.trim().slice(0, 255)
+      : 'federation-media';
+
+    const metadataHeader = getSingleHeader(req, 'x-media-metadata');
+    let metadata: Record<string, unknown> | undefined;
+    if (metadataHeader) {
+      try {
+        metadata = JSON.parse(metadataHeader) as Record<string, unknown>;
+      } catch {
+        throw new BadRequestError('x-media-metadata must be valid JSON');
+      }
+    }
+
+    try {
+      const file = await assetService.uploadFederatedMediaStream(
+        req,
+        mime,
+        originalName,
+        FEDERATION_CACHE_MAX_BYTES,
+        ownerUserId,
+        {
+          ...(metadata || {}),
+          serviceAppId: req.serviceApp?.appId,
+          serviceAppName: req.serviceApp?.appName,
+        }
+      );
+
+      logger.info('Federation media persisted', {
+        appId: req.serviceApp?.appId,
+        appName: req.serviceApp?.appName,
+        ownerUserId,
+        fileId: file._id,
+        mime,
+        size: file.size,
+      });
+
+      sendSuccess(res, {
+        file: {
+          id: file._id.toString(),
+          sha256: file.sha256,
+          size: file.size,
+          mime: file.mime,
+          visibility: file.visibility,
+        },
+      });
+    } catch (error) {
+      if (error instanceof Error && error.name === 'CacheMediaTooLargeError') {
+        throw new ApiError(413, 'Federated media exceeds the maximum allowed size', 'PAYLOAD_TOO_LARGE');
       }
       throw error;
     }

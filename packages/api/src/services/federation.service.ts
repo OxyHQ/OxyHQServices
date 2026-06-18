@@ -426,6 +426,7 @@ class FederationService {
     avatarUrl: string,
     existingAvatarFileId?: string,
     conditional?: { etag?: string; lastModified?: string },
+    ownerUserId = FEDERATION_SYSTEM_USER,
   ): Promise<{ fileId: string | null; etag?: string; lastModified?: string; notModified: boolean }> {
     try {
       const requestHeaders: Record<string, string> = { 'User-Agent': USER_AGENT };
@@ -487,15 +488,6 @@ class FederationService {
 
       const assetService = getAssetService();
 
-      // Delete old avatar file if it exists (skip if it looks like a URL, not a file ID)
-      if (existingAvatarFileId && !existingAvatarFileId.startsWith('http')) {
-        try {
-          await assetService.deleteFile(existingAvatarFileId, true);
-        } catch {
-          // Old file may already be gone — not critical
-        }
-      }
-
       // Determine extension from sanitized content type
       const extMap: Record<string, string> = {
         'image/png': 'png',
@@ -507,14 +499,35 @@ class FederationService {
       const filename = `federated-avatar-${crypto.randomBytes(8).toString('hex')}.${ext}`;
 
       const file = await assetService.uploadFileDirect(
-        FEDERATION_SYSTEM_USER,
+        ownerUserId,
         buffer,
         mime,
         filename,
         'public',
+        {
+          source: 'federation',
+          role: 'avatar',
+          remoteUrl: avatarUrl,
+        },
       );
 
-      return { fileId: file._id.toString(), etag, lastModified, notModified: false };
+      const fileId = file._id.toString();
+
+      // Delete the replaced avatar only after the new durable file is present.
+      // If dedupe returned the same file, keep it.
+      if (
+        existingAvatarFileId &&
+        !existingAvatarFileId.startsWith('http') &&
+        existingAvatarFileId !== fileId
+      ) {
+        try {
+          await assetService.deleteFile(existingAvatarFileId, true);
+        } catch {
+          // Old file may already be gone — not critical
+        }
+      }
+
+      return { fileId, etag, lastModified, notModified: false };
     } catch (err) {
       logger.warn(`Failed to download/store federated avatar: ${err}`);
       return { fileId: null, notModified: false };
@@ -575,18 +588,6 @@ class FederationService {
     const profile = await this.fetchActorProfile(actorUri);
     if (!profile) return null;
 
-    // Download avatar to Oxy Cloud (no existing file to replace on first fetch,
-    // and no stored validators yet so the request is unconditional).
-    let avatarFileId: string | undefined;
-    let avatarETag: string | undefined;
-    let avatarLastModified: string | undefined;
-    if (profile.avatarUrl) {
-      const stored = await this.downloadAndStoreAvatar(profile.avatarUrl);
-      if (stored.fileId) avatarFileId = stored.fileId;
-      avatarETag = stored.etag;
-      avatarLastModified = stored.lastModified;
-    }
-
     const setFields: Record<string, unknown> = {
       type: 'federated',
       username: profile.username.toLowerCase(),
@@ -595,12 +596,6 @@ class FederationService {
       'federation.domain': profile.domain,
     };
 
-    if (avatarFileId) {
-      setFields.avatar = avatarFileId;
-      setFields['federation.lastAvatarFetchedAt'] = new Date();
-      if (avatarETag) setFields['federation.avatarETag'] = avatarETag;
-      if (avatarLastModified) setFields['federation.avatarLastModified'] = avatarLastModified;
-    }
     if (profile.bio) {
       setFields.bio = profile.bio;
       setFields.description = profile.bio;
@@ -615,6 +610,32 @@ class FederationService {
 
     if (user) {
       logger.info(`Resolved fediverse user: ${profile.username} (${profile.actorUri})`);
+    }
+
+    if (user && profile.avatarUrl) {
+      const userId = user._id.toString();
+      const stored = await this.downloadAndStoreAvatar(
+        profile.avatarUrl,
+        undefined,
+        undefined,
+        userId,
+      );
+      if (stored.fileId) {
+        const avatarFields: Record<string, unknown> = {
+          avatar: stored.fileId,
+          'federation.lastAvatarFetchedAt': new Date(),
+        };
+        if (stored.etag) avatarFields['federation.avatarETag'] = stored.etag;
+        if (stored.lastModified) avatarFields['federation.avatarLastModified'] = stored.lastModified;
+
+        await User.updateOne({ _id: user._id }, { $set: avatarFields });
+        user.avatar = stored.fileId;
+        if (!user.federation) user.federation = {};
+        user.federation.lastAvatarFetchedAt = avatarFields['federation.lastAvatarFetchedAt'] as Date;
+        if (stored.etag) user.federation.avatarETag = stored.etag;
+        if (stored.lastModified) user.federation.avatarLastModified = stored.lastModified;
+        userCache.invalidate(userId);
+      }
     }
 
     return user;
@@ -751,7 +772,7 @@ class FederationService {
       const stored = await this.downloadAndStoreAvatar(remoteAvatarUrl, storedAvatar, {
         etag: user.federation?.avatarETag,
         lastModified: user.federation?.avatarLastModified,
-      });
+      }, userId);
 
       const setFields: Record<string, unknown> = {
         'federation.lastAvatarFetchedAt': new Date(),
@@ -839,7 +860,7 @@ class FederationService {
         const stored = await this.downloadAndStoreAvatar(profile.avatarUrl, existingAvatar, {
           etag: existing.federation?.avatarETag,
           lastModified: existing.federation?.avatarLastModified,
-        });
+        }, userId);
         if (stored.notModified) {
           setFields['federation.lastAvatarFetchedAt'] = new Date();
         } else if (stored.fileId) {

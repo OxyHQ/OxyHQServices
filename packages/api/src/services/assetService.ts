@@ -32,11 +32,90 @@ type AbortableReadable = Readable & {
   removeListener(event: 'aborted', listener: () => void): AbortableReadable;
 };
 
+interface StreamedMediaOptions {
+  ownerUserId: string;
+  purpose: IFile['purpose'];
+  visibility: FileVisibility;
+  metadata: Record<string, any>;
+  tempPrefix: string;
+  logLabel: string;
+}
+
 export class AssetService {
   private variantService: VariantService;
 
   constructor(private s3Service: S3Service) {
     this.variantService = new VariantService(s3Service);
+  }
+
+  private isDuplicateKeyError(error: unknown): boolean {
+    const err = error as { code?: number; message?: string } | null;
+    return err?.code === 11000 || Boolean(err?.message?.includes('E11000'));
+  }
+
+  private async findActiveFileBySha(sha256: string): Promise<IFile | null> {
+    return File.findOne({ sha256, status: { $ne: 'deleted' } });
+  }
+
+  private async prepareExistingDirectUploadFile(
+    file: IFile,
+    userId: string,
+    visibility?: FileVisibility,
+    metadata?: Record<string, any>
+  ): Promise<IFile> {
+    const wasCacheFile = file.purpose === FEDERATION_MEDIA_CACHE_PURPOSE;
+    if (!wasCacheFile) {
+      return file;
+    }
+
+    file.ownerUserId = userId;
+    file.purpose = 'user';
+    if (visibility) {
+      file.visibility = visibility;
+    }
+    file.metadata = {
+      ...(file.metadata || {}),
+      ...(metadata || {}),
+      promotedFromFederationCache: true,
+    };
+
+    await file.save();
+    fileCache.invalidate(file._id.toString());
+    fileCache.set(file._id.toString(), file);
+    return file;
+  }
+
+  private async prepareExistingStreamedMediaFile(file: IFile, options: StreamedMediaOptions): Promise<IFile> {
+    if (options.purpose === FEDERATION_MEDIA_CACHE_PURPOSE) {
+      return file;
+    }
+
+    let changed = false;
+    const wasCacheFile = file.purpose === FEDERATION_MEDIA_CACHE_PURPOSE;
+    if (wasCacheFile) {
+      file.ownerUserId = options.ownerUserId;
+      file.purpose = options.purpose;
+      changed = true;
+    }
+    if (file.visibility !== options.visibility) {
+      file.visibility = options.visibility;
+      changed = true;
+    }
+    file.metadata = {
+      ...(file.metadata || {}),
+      ...options.metadata,
+      ...(wasCacheFile ? { promotedFromFederationCache: true } : {}),
+    };
+    changed = true;
+
+    if (!changed) {
+      return file;
+    }
+
+    await file.save();
+    fileCache.invalidate(file._id.toString());
+    fileCache.set(file._id.toString(), file);
+    return file;
   }
 
   async ensureVariant(fileId: string, variantType: string, file?: IFile): Promise<IFileVariant> {
@@ -185,19 +264,22 @@ export class AssetService {
       const size = fileBuffer.length;
 
       // Check if file already exists by SHA256
-      const existingFile = await File.findOne({ 
-        sha256, 
-        status: { $ne: 'deleted' } 
-      });
+      const existingFile = await this.findActiveFileBySha(sha256);
 
       if (existingFile) {
+        const preparedFile = await this.prepareExistingDirectUploadFile(
+          existingFile,
+          userId,
+          visibility,
+          metadata,
+        );
         logger.info('File already exists, returning existing', { 
           sha256, 
-          fileId: existingFile._id 
+          fileId: preparedFile._id
         });
         
         // File already exists, return existing file
-        return existingFile;
+        return preparedFile;
       }
 
       // Create new file record
@@ -219,7 +301,27 @@ export class AssetService {
         variants: []
       });
 
-      await file.save();
+      try {
+        await file.save();
+      } catch (error) {
+        if (this.isDuplicateKeyError(error)) {
+          const racedFile = await this.findActiveFileBySha(sha256);
+          if (racedFile) {
+            const preparedFile = await this.prepareExistingDirectUploadFile(
+              racedFile,
+              userId,
+              visibility,
+              metadata,
+            );
+            logger.info('File already exists after concurrent upload, returning existing', {
+              sha256,
+              fileId: preparedFile._id,
+            });
+            return preparedFile;
+          }
+        }
+        throw error;
+      }
 
       // Upload to S3
       await this.s3Service.uploadBuffer(storageKey, fileBuffer, {
@@ -269,6 +371,50 @@ export class AssetService {
     originalName: string,
     maxBytes: number
   ): Promise<IFile> {
+    return this.uploadStreamedMedia(source, mimeType, originalName, maxBytes, {
+      ownerUserId: FEDERATION_CACHE_OWNER_ID,
+      purpose: FEDERATION_MEDIA_CACHE_PURPOSE,
+      visibility: 'public',
+      metadata: {},
+      tempPrefix: 'cache/incoming',
+      logLabel: 'Cached media',
+    });
+  }
+
+  /**
+   * Stream a federated media file into normal, durable public asset storage owned
+   * by the resolved federated Oxy user. This is intentionally NOT tagged as
+   * federation-media-cache, so the cache eviction job can never delete post media
+   * referenced by persisted Mention posts.
+   */
+  async uploadFederatedMediaStream(
+    source: AbortableReadable,
+    mimeType: string,
+    originalName: string,
+    maxBytes: number,
+    ownerUserId: string,
+    metadata?: Record<string, any>
+  ): Promise<IFile> {
+    return this.uploadStreamedMedia(source, mimeType, originalName, maxBytes, {
+      ownerUserId,
+      purpose: 'user',
+      visibility: 'public',
+      metadata: {
+        source: 'federation',
+        ...(metadata || {}),
+      },
+      tempPrefix: 'federation/incoming',
+      logLabel: 'Federated media',
+    });
+  }
+
+  private async uploadStreamedMedia(
+    source: AbortableReadable,
+    mimeType: string,
+    originalName: string,
+    maxBytes: number,
+    options: StreamedMediaOptions
+  ): Promise<IFile> {
     const hash = crypto.createHash('sha256');
     let size = 0;
 
@@ -296,7 +442,7 @@ export class AssetService {
 
     // Stream first into a temporary key — the content-addressed key is only
     // known once the full SHA-256 is computed.
-    const tempKey = `cache/incoming/${crypto.randomUUID()}`;
+    const tempKey = `${options.tempPrefix}/${crypto.randomUUID()}`;
 
     // Wire client/timeout abort: cancel the S3 upload and drop the temp object
     // if the request is torn down before the upload finishes. `completed`
@@ -346,14 +492,15 @@ export class AssetService {
 
     // Dedup: if this exact content already exists (cache or otherwise), reuse
     // it and drop the temp object.
-    const existingFile = await File.findOne({ sha256, status: { $ne: 'deleted' } });
+    const existingFile = await this.findActiveFileBySha(sha256);
     if (existingFile) {
-      await deleteTempKey('Failed to clean up deduplicated cache upload');
-      logger.info('Cached media already exists, returning existing', {
+      await deleteTempKey(`Failed to clean up deduplicated ${options.logLabel.toLowerCase()} upload`);
+      const preparedFile = await this.prepareExistingStreamedMediaFile(existingFile, options);
+      logger.info(`${options.logLabel} already exists, returning existing`, {
         sha256,
-        fileId: existingFile._id,
+        fileId: preparedFile._id,
       });
-      return existingFile;
+      return preparedFile;
     }
 
     // Promote the temp object to its content-addressed key (server-side copy,
@@ -375,20 +522,35 @@ export class AssetService {
       size,
       mime: mimeType,
       ext,
-      ownerUserId: FEDERATION_CACHE_OWNER_ID,
-      purpose: FEDERATION_MEDIA_CACHE_PURPOSE,
+      ownerUserId: options.ownerUserId,
+      purpose: options.purpose,
       status: 'active',
       storageKey,
       originalName,
-      visibility: 'public',
-      metadata: {},
+      visibility: options.visibility,
+      metadata: options.metadata,
       links: [],
       variants: [],
     });
 
-    await file.save();
+    try {
+      await file.save();
+    } catch (error) {
+      if (this.isDuplicateKeyError(error)) {
+        const racedFile = await this.findActiveFileBySha(sha256);
+        if (racedFile) {
+          const preparedFile = await this.prepareExistingStreamedMediaFile(racedFile, options);
+          logger.info(`${options.logLabel} already exists after concurrent upload, returning existing`, {
+            sha256,
+            fileId: preparedFile._id,
+          });
+          return preparedFile;
+        }
+      }
+      throw error;
+    }
 
-    logger.info('Cached media uploaded via stream', {
+    logger.info(`${options.logLabel} uploaded via stream`, {
       fileId: file._id,
       sha256,
       size,

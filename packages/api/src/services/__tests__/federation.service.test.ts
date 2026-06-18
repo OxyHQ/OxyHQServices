@@ -189,10 +189,15 @@ describe('FederationService.resolveAndUpsert (fast + eventually-fresh)', () => {
     await flushMicrotasks();
 
     expect(actorSpy).toHaveBeenCalledWith(fx.actorUri);
-    expect(avatarSpy).toHaveBeenCalledWith(NEW_AVATAR_URL, 'stored-file-id', {
-      etag: undefined,
-      lastModified: undefined,
-    });
+    expect(avatarSpy).toHaveBeenCalledWith(
+      NEW_AVATAR_URL,
+      'stored-file-id',
+      {
+        etag: undefined,
+        lastModified: undefined,
+      },
+      fx.userId,
+    );
 
     const updateArgs = mockUserUpdateOne.mock.calls[0];
     expect(updateArgs[0]).toEqual({ _id: cached._id });
@@ -250,7 +255,12 @@ describe('FederationService.resolveAndUpsert (fast + eventually-fresh)', () => {
 
     expect(webfingerSpy).toHaveBeenCalledWith(fx.handle);
     expect(actorSpy).toHaveBeenCalledWith(fx.actorUri);
-    expect(avatarSpy).toHaveBeenCalledWith(NEW_AVATAR_URL);
+    expect(avatarSpy).toHaveBeenCalledWith(NEW_AVATAR_URL, undefined, undefined, fx.userId);
+    expect(mockUserUpdateOne).toHaveBeenCalledWith(
+      { _id: created._id },
+      { $set: expect.objectContaining({ avatar: 'new-file-id' }) },
+    );
+    expect(mockCacheInvalidate).toHaveBeenCalledWith(fx.userId);
     expect(result).toBe(created);
   });
 
