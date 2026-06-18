@@ -356,10 +356,8 @@ export class HttpService {
           headers['X-Native-App'] = 'true';
         }
 
-        // Debug logging for CSRF issues — routed through the SimpleLogger so
-        // it only fires when consumers opt in via `enableLogging`. Previously
-        // this was a bare console.log that leaked noise into every host app's
-        // stdout in development.
+        // Debug logging for CSRF issues, routed through SimpleLogger so it only
+        // fires when consumers opt in via `enableLogging`.
         if (isStateChangingMethod) {
           this.logger.debug('CSRF Debug:', {
             url,
@@ -756,7 +754,9 @@ export class HttpService {
    * Build full URL with query params
    */
   private buildURL(url: string, params?: Record<string, unknown>): string {
-    const base = url.startsWith('http') ? url : `${this.baseURL}${url}`;
+    const base = /^https?:\/\//i.test(url)
+      ? url
+      : `${this.baseURL.replace(/\/+$/, '')}/${url.replace(/^\/+/, '')}`;
     
     if (!params || Object.keys(params).length === 0) {
       return base;

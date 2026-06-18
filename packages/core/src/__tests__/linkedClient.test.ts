@@ -4,6 +4,13 @@ function createServices(): OxyServices {
   return new OxyServices({ baseURL: 'https://api.oxy.so' });
 }
 
+function jsonResponse(data: unknown): Response {
+  return new Response(JSON.stringify({ data }), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
 describe('OxyServices.createLinkedClient', () => {
   it('mirrors token changes from the session owner', () => {
     const oxy = createServices();
@@ -88,5 +95,25 @@ describe('OxyServices.createLinkedClient', () => {
     oxy.setTokens('after_dispose');
 
     expect(linked.client.getAccessToken()).toBeNull();
+  });
+
+  it('joins linked base URLs with relative paths that omit the leading slash', async () => {
+    const originalFetch = globalThis.fetch;
+    const fetchMock = jest.fn(async () => jsonResponse({ ok: true }));
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+
+    try {
+      const oxy = createServices();
+      const linked = oxy.createLinkedClient({ baseURL: 'https://api.mention.earth' });
+
+      await linked.client.get('profile/settings/me');
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(String(fetchMock.mock.calls[0]?.[0])).toBe('https://api.mention.earth/profile/settings/me');
+
+      linked.dispose();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });
