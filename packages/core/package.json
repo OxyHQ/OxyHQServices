@@ -1,10 +1,17 @@
 {
   "name": "@oxyhq/core",
-  "version": "3.4.3",
+  "version": "3.4.4",
   "description": "OxyHQ SDK Foundation — API client, authentication, cryptographic identity, and shared utilities",
   "main": "dist/cjs/index.js",
   "module": "dist/esm/index.js",
   "types": "dist/types/index.d.ts",
+  "typesVersions": {
+    "*": {
+      "server": [
+        "dist/types/server/index.d.ts"
+      ]
+    }
+  },
   "source": "src/index.ts",
   "sideEffects": false,
   "publishConfig": {
