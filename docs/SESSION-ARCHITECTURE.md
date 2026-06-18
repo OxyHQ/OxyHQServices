@@ -24,6 +24,11 @@ The production path is centralized in the SDK:
   token is available. Use `isAuthResolved` plus token readiness for user-private
   endpoints; do not issue `/managed-accounts`, privacy, follow-status, library,
   or profile-settings requests while the SDK is still restoring the session.
+- Token invalidation is a session event. If `HttpService` clears the access
+  token after a 401, `@oxyhq/services` must clear local auth state and managed
+  accounts before any more private queries run. Consumers must not keep fetching
+  private app APIs while `oxyServices.getAccessToken()` is null, even if stale UI
+  state still has a user object from the previous render.
 
 FedCM / passkeys = how you authenticate ONCE. Persistence (staying signed in
 across reloads) = each app's own first-party session. This is what Google and

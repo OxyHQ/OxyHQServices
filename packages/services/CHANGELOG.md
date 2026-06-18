@@ -1,5 +1,11 @@
 # Changelog
 
+## [10.2.3] - 2026-06-18
+
+### Fixed
+- `OxyProvider` now treats provider-token invalidation as a local sign-out when a user is currently authenticated. If `HttpService` clears the access token after a 401, the provider clears session state and managed accounts instead of leaving stale `isAuthenticated` state active.
+- `refreshManagedAccounts` now requires an authenticated, token-ready session and handles a managed-accounts 401 by clearing local auth state. This stops cascades of private endpoint 401s after a stale token is rejected.
+
 ## [8.7.0] - 2026-06-14
 
 ### Added
