@@ -284,6 +284,10 @@ export const useSessionManagement = ({
             oxyServices.httpService.setTokens(refreshed.accessToken);
             writeActiveAuthuser(targetAuthuser);
           }
+
+          if (!oxyServices.getAccessToken()) {
+            throw new Error('Session is invalid or expired');
+          }
         }
 
         const validation = await oxyServices.validateSession(sessionId, { useHeaderValidation: true });
@@ -440,4 +444,3 @@ export const useSessionManagement = ({
     isRefreshInFlight,
   };
 };
-

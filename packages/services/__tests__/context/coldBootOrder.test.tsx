@@ -70,6 +70,7 @@ interface StubConfig {
   silentFedCM?: SessionLoginResponse | null;
   refreshAllResult?: () => Promise<{ accounts: unknown[] }>;
   currentUserId?: string;
+  initialAccessToken?: string | null;
   // The cold-boot silent guard is module-level and keyed on `origin|baseURL`.
   // Each test uses a UNIQUE baseURL so its silent step is not pre-disabled by a
   // prior test's attempt in the same module scope.
@@ -88,7 +89,7 @@ function buildStub(cfg: StubConfig) {
       httpService: { setTokens: setTokensSpy },
       getBaseURL: () => baseURL,
       getSessionBaseUrl: () => baseURL,
-      getAccessToken: () => null,
+      getAccessToken: jest.fn(() => cfg.initialAccessToken ?? null),
       onTokensChanged: () => () => undefined,
       setTokens: jest.fn(),
       clearTokens: jest.fn(),
@@ -168,6 +169,7 @@ describe('Cold-boot order (web cross-domain, central SSO)', () => {
       fedcmSupported: true,
       silentFedCM: fedcmSession,
       currentUserId: FEDCM_USER_ID,
+      initialAccessToken: 'stored.access.token',
       baseURL: 'https://api.mention.earth/case-stored-wins',
     });
 
@@ -182,6 +184,30 @@ describe('Cold-boot order (web cross-domain, central SSO)', () => {
     // short-circuited (FIX A) and gated off (FIX B) — none of them ran.
     expect(stub.silentSignInWithFedCM).not.toHaveBeenCalled();
     expect(stub.silentSignIn).not.toHaveBeenCalled();
+    expect(refreshAllSessions).not.toHaveBeenCalled();
+    expect(assignSpy).not.toHaveBeenCalled();
+  });
+
+  it('web stored-session without bearer or authuser skips, then FedCM silent can recover a real token', async () => {
+    const STORED_SESSION_ID = 'sess_stored_without_token';
+    window.localStorage.setItem('oxy_session_session_ids', JSON.stringify([STORED_SESSION_ID]));
+    window.localStorage.setItem('oxy_session_active_session_id', STORED_SESSION_ID);
+
+    const { stub, refreshAllSessions, baseURL } = buildStub({
+      fedcmSupported: true,
+      silentFedCM: fedcmSession,
+      currentUserId: FEDCM_USER_ID,
+      initialAccessToken: null,
+      baseURL: 'https://api.mention.earth/case-stored-no-token',
+    });
+
+    renderProvider(stub, baseURL);
+
+    await waitFor(() => expect(captured.isAuthenticated).toBe(true));
+    expect(captured.userId).toBe(FEDCM_USER_ID);
+
+    expect(stub.validateSession).not.toHaveBeenCalled();
+    expect(stub.silentSignInWithFedCM).toHaveBeenCalledTimes(1);
     expect(refreshAllSessions).not.toHaveBeenCalled();
     expect(assignSpy).not.toHaveBeenCalled();
   });

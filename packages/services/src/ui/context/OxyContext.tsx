@@ -884,6 +884,11 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     const storedSessionIdsJson = await storage.getItem(storageKeys.sessionIds);
     const storedSessionIdsFromStorage: string[] = storedSessionIdsJson ? JSON.parse(storedSessionIdsJson) : [];
     let storedActiveSessionId = await storage.getItem(storageKeys.activeSessionId);
+    const storedActiveAuthuser = isWebBrowser() ? readActiveAuthuser() : null;
+
+    if (isWebBrowser() && !oxyServices.getAccessToken() && (storedActiveSessionId === null || storedActiveAuthuser === null)) {
+      return false;
+    }
 
     const nativeSharedSession = !isWebBrowser()
       ? await KeyManager.getSharedSession().catch(() => null)
@@ -923,14 +928,18 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
           return Promise.race([validationPromise, timeoutPromise]).then((validation) => {
             if (validation?.valid && validation.user) {
               const now = new Date();
-              return {
+              const clientSession: ClientSession = {
                 sessionId,
                 deviceId: '',
                 expiresAt: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString(),
                 lastActive: now.toISOString(),
                 userId: validation.user.id?.toString() ?? '',
                 isCurrent: sessionId === storedActiveSessionId,
-              } as ClientSession;
+              };
+              if (isWebBrowser() && sessionId === storedActiveSessionId && storedActiveAuthuser !== null) {
+                clientSession.authuser = storedActiveAuthuser;
+              }
+              return clientSession;
             }
             return null;
           });
