@@ -71,22 +71,13 @@ export function verifyCsrfToken(req: Request, res: Response, next: NextFunction)
     return next();
   }
 
-  // Skip CSRF for service tokens — bearer-only, not vulnerable to CSRF
-  // (CSRF protects against ambient cookies; service tokens are explicit Bearer headers)
+  // Skip CSRF for Bearer-authenticated requests. CSRF protects ambient cookie
+  // auth; Authorization is an explicit header that browsers do not attach
+  // cross-site on behalf of an attacker. Auth middleware still validates the
+  // token and rejects invalid or expired user/service tokens.
   const authHeader = req.headers.authorization;
   if (authHeader?.startsWith('Bearer ')) {
-    try {
-      const token = authHeader.split(' ')[1];
-      const parts = token.split('.');
-      if (parts.length === 3 && parts[1]) {
-        const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString());
-        if (payload.type === 'service') {
-          return next();
-        }
-      }
-    } catch {
-      // Not a valid JWT — fall through to normal CSRF verification
-    }
+    return next();
   }
 
   // Get token from header
