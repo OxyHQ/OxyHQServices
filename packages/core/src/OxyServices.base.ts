@@ -6,12 +6,17 @@
 import { jwtDecode } from 'jwt-decode';
 import type { OxyConfig as OxyConfigBase, ApiError, User } from './models/interfaces';
 import { handleHttpError } from './utils/errorUtils';
-import { HttpService, type RequestOptions } from './HttpService';
+import { HttpService, type AuthRefreshReason, type RequestOptions } from './HttpService';
 import { OxyAuthenticationError, OxyAuthenticationTimeoutError } from './OxyServices.errors';
 import { resolveCentralAuthUrl } from './utils/authWebUrl';
 
 export interface OxyConfig extends OxyConfigBase {
   cloudURL?: string;
+}
+
+export interface LinkedHttpClient {
+  client: HttpService;
+  dispose(): void;
 }
 
 interface JwtPayload {
@@ -114,6 +119,57 @@ export class OxyServicesBase {
    */
   public getClient(): HttpService {
     return this.httpService;
+  }
+
+  /**
+   * Create an app/backend HTTP client linked to this Oxy session.
+   *
+   * Use this when an app has its own API origin (for example
+   * `https://api.syra.fm`) but authentication is owned by the canonical
+   * OxyServices instance mounted in OxyProvider. The returned client has its own
+   * base URL, cache and request queue, but its bearer token is kept in lockstep
+   * with this session and its 401 refresh path delegates back to this session.
+   */
+  public createLinkedClient(config: OxyConfig): LinkedHttpClient {
+    const client = new HttpService(config);
+
+    const syncToken = (accessToken: string | null): void => {
+      const currentAccessToken = client.getAccessToken();
+      if (accessToken) {
+        if (currentAccessToken !== accessToken) {
+          client.setTokens(accessToken);
+        }
+        return;
+      }
+
+      if (currentAccessToken) {
+        client.clearTokens();
+      }
+    };
+
+    syncToken(this.getAccessToken());
+    const unsubscribe = this.onTokensChanged(syncToken);
+    client.setAuthRefreshHandler(async (reason: AuthRefreshReason) => {
+      const refreshed = await this.httpService.refreshAccessToken(reason);
+      if (!refreshed) {
+        if (reason === 'response-401') {
+          this.clearTokens();
+        }
+        return null;
+      }
+
+      syncToken(refreshed);
+      return refreshed;
+    });
+
+    return {
+      client,
+      dispose: () => {
+        unsubscribe();
+        client.setAuthRefreshHandler(null);
+        client.clearTokens();
+      },
+    };
   }
 
   /**

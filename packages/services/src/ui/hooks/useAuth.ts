@@ -41,6 +41,22 @@ export interface AuthState {
   /** Whether the auth token is ready for API calls */
   isReady: boolean;
 
+  /** Whether the current OxyServices instance currently holds an access token */
+  hasAccessToken: boolean;
+
+  /**
+   * True only when auth cold-boot is resolved, the user is authenticated, and a
+   * bearer token is available for private backend requests.
+   */
+  canUsePrivateApi: boolean;
+
+  /**
+   * True while the SDK is still resolving auth or an authenticated session is
+   * waiting for its bearer token. Use this to hold private API screens in a
+   * loading state instead of firing unauthenticated requests.
+   */
+  isPrivateApiPending: boolean;
+
   /**
    * Whether the initial auth determination has concluded.
    *
@@ -107,6 +123,9 @@ export function useAuth(): UseAuthReturn {
     isAuthenticated,
     isLoading,
     isTokenReady,
+    hasAccessToken,
+    canUsePrivateApi,
+    isPrivateApiPending,
     isAuthResolved,
     error,
     signIn: oxySignIn,
@@ -196,6 +215,9 @@ export function useAuth(): UseAuthReturn {
     isAuthenticated,
     isLoading: isLoading || !isAuthResolved,
     isReady: isTokenReady,
+    hasAccessToken,
+    canUsePrivateApi,
+    isPrivateApiPending,
     isAuthResolved,
     error,
 

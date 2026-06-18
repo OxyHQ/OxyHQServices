@@ -18,8 +18,7 @@ import { useShallow } from 'zustand/react/shallow';
  *    them in selectors would cause unnecessary selector recalculations).
  */
 export const useFollow = (userId?: string | string[]) => {
-  const { oxyServices, isAuthenticated, isAuthResolved, isTokenReady } = useOxy();
-  const canUsePrivateApi = isAuthResolved && isTokenReady && isAuthenticated;
+  const { oxyServices, canUsePrivateApi } = useOxy();
   const userIds = useMemo(() => (Array.isArray(userId) ? userId : userId ? [userId] : []), [userId]);
   const isSingleUser = typeof userId === 'string';
 

@@ -56,7 +56,7 @@
  *
  * See method JSDoc for more details and options.
  */
-import { OxyServicesBase, type OxyConfig } from './OxyServices.base';
+import { OxyServicesBase, type LinkedHttpClient, type OxyConfig } from './OxyServices.base';
 import { OxyAuthenticationError, OxyAuthenticationTimeoutError } from './OxyServices.errors';
 import type { SessionLoginResponse } from './models/session';
 import type { FedCMAuthOptions, FedCMConfig } from './mixins/OxyServices.fedcm';
@@ -130,6 +130,8 @@ export class OxyServices extends OxyServicesComposed {
 // Explicit declarations are added for cross-domain auth methods that downstream
 // packages (auth-sdk, services) need without casting to `any`.
 export interface OxyServices extends InstanceType<ReturnType<typeof composeOxyServices>> {
+  createLinkedClient(config: OxyConfig): LinkedHttpClient;
+
   // FedCM authentication
   isFedCMSupported(): boolean;
   signInWithFedCM(options?: FedCMAuthOptions): Promise<SessionLoginResponse>;

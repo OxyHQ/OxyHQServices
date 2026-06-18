@@ -25,6 +25,7 @@ import './crypto/polyfill';
 // ---------------------------------------------------------------------------
 export { OxyServices, OxyAuthenticationError, OxyAuthenticationTimeoutError } from './OxyServices';
 export { OXY_CLOUD_URL, oxyClient } from './OxyServices';
+export type { LinkedHttpClient } from './OxyServices.base';
 
 // ---------------------------------------------------------------------------
 // Authentication

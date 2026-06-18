@@ -878,7 +878,7 @@ export class HttpService {
     }
   }
 
-  private async refreshAccessToken(reason: AuthRefreshReason): Promise<string | null> {
+  async refreshAccessToken(reason: AuthRefreshReason): Promise<string | null> {
     if (!this.authRefreshHandler) {
       return null;
     }

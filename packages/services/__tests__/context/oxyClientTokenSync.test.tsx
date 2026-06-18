@@ -204,6 +204,9 @@ describe('OxyProvider mirrors the session token onto the exported oxyClient sing
     await waitFor(() => {
       expect(requireContext(sink).isAuthenticated).toBe(true);
     });
+    expect(requireContext(sink).hasAccessToken).toBe(true);
+    expect(requireContext(sink).canUsePrivateApi).toBe(true);
+    expect(requireContext(sink).isPrivateApiPending).toBe(false);
 
     act(() => {
       providerInstance.clearTokens();
@@ -213,6 +216,8 @@ describe('OxyProvider mirrors the session token onto the exported oxyClient sing
       expect(requireContext(sink).isAuthenticated).toBe(false);
     });
     expect(requireContext(sink).user).toBeNull();
+    expect(requireContext(sink).hasAccessToken).toBe(false);
+    expect(requireContext(sink).canUsePrivateApi).toBe(false);
     expect(requireContext(sink).isTokenReady).toBe(true);
   });
 

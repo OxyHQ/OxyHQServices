@@ -60,6 +60,9 @@ export interface OxyContextState {
   isAuthenticated: boolean;
   isLoading: boolean;
   isTokenReady: boolean;
+  hasAccessToken: boolean;
+  canUsePrivateApi: boolean;
+  isPrivateApiPending: boolean;
   /**
    * Whether the initial auth determination has concluded.
    *
@@ -416,6 +419,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   );
 
   const [tokenReady, setTokenReady] = useState(true);
+  const [hasAccessToken, setHasAccessToken] = useState(() => Boolean(oxyServices.getAccessToken()));
   // Whether the FIRST cold-boot auth restore has concluded. Starts `false`
   // (auth undetermined) and flips to `true` exactly once — monotonic, never
   // reverts. It now flips the MOMENT a session commits (the common reload case
@@ -673,6 +677,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
   useEffect(() => {
     const handleTokenChange = (accessToken: string | null) => {
+      setHasAccessToken(Boolean(accessToken));
       if (accessToken) {
         setTokenReady(true);
         return;
@@ -1743,6 +1748,9 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     return account;
   }, [oxyServices, refreshManagedAccounts]);
 
+  const canUsePrivateApi = authResolved && isAuthenticated && tokenReady && hasAccessToken;
+  const isPrivateApiPending = !authResolved || (isAuthenticated && (!tokenReady || !hasAccessToken));
+
   const contextValue: OxyContextState = useMemo(() => ({
     user,
     sessions,
@@ -1750,6 +1758,9 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     isAuthenticated,
     isLoading,
     isTokenReady: tokenReady,
+    hasAccessToken,
+    canUsePrivateApi,
+    isPrivateApiPending,
     isAuthResolved: authResolved,
     isStorageReady: storage !== null,
     error,
@@ -1793,6 +1804,9 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     currentNativeLanguageName,
     error,
     getDeviceSessions,
+    hasAccessToken,
+    canUsePrivateApi,
+    isPrivateApiPending,
     getPublicKey,
     hasIdentity,
     isAuthenticated,
@@ -1809,6 +1823,9 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     storage,
     switchSessionForContext,
     tokenReady,
+    hasAccessToken,
+    canUsePrivateApi,
+    isPrivateApiPending,
     authResolved,
     updateDeviceName,
     clearAllAccountData,
@@ -1857,6 +1874,9 @@ const LOADING_STATE: OxyContextState = {
   isAuthenticated: false,
   isLoading: true,
   isTokenReady: false,
+  hasAccessToken: false,
+  canUsePrivateApi: false,
+  isPrivateApiPending: true,
   isAuthResolved: false,
   isStorageReady: false,
   error: null,

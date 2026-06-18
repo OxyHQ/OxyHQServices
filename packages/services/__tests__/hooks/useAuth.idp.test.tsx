@@ -19,6 +19,10 @@ interface MockOxyState {
   isAuthenticated: boolean;
   isLoading: boolean;
   isTokenReady: boolean;
+  hasAccessToken: boolean;
+  canUsePrivateApi: boolean;
+  isPrivateApiPending: boolean;
+  isAuthResolved: boolean;
   error: string | null;
   signIn: jest.Mock;
   logout: jest.Mock;
@@ -40,6 +44,10 @@ const defaultMockState = (): MockOxyState => ({
   isAuthenticated: false,
   isLoading: false,
   isTokenReady: false,
+  hasAccessToken: false,
+  canUsePrivateApi: false,
+  isPrivateApiPending: true,
+  isAuthResolved: false,
   error: null,
   signIn: jest.fn(async (key: string) => ({ id: 'u1', username: 'user', publicKey: key })),
   logout: jest.fn(async () => undefined),

@@ -12,6 +12,9 @@ interface MockOxyState {
   isAuthenticated: boolean;
   isLoading: boolean;
   isTokenReady: boolean;
+  hasAccessToken: boolean;
+  canUsePrivateApi: boolean;
+  isPrivateApiPending: boolean;
   isAuthResolved: boolean;
   error: string | null;
   signIn: jest.Mock;
@@ -33,6 +36,9 @@ const defaultMockState = (): MockOxyState => ({
   isAuthenticated: false,
   isLoading: false,
   isTokenReady: false,
+  hasAccessToken: false,
+  canUsePrivateApi: false,
+  isPrivateApiPending: true,
   isAuthResolved: false,
   error: null,
   signIn: jest.fn(async (key: string) => ({ id: 'u1', username: 'native-user', publicKey: key })),
@@ -68,6 +74,9 @@ describe('useAuth — state passthrough', () => {
     mockState.isAuthenticated = true;
     mockState.isLoading = false;
     mockState.isTokenReady = true;
+    mockState.hasAccessToken = true;
+    mockState.canUsePrivateApi = true;
+    mockState.isPrivateApiPending = false;
     mockState.isAuthResolved = true;
 
     const { result } = renderHook(() => useAuth());
@@ -76,6 +85,9 @@ describe('useAuth — state passthrough', () => {
     expect(result.current.isAuthenticated).toBe(true);
     expect(result.current.isLoading).toBe(false);
     expect(result.current.isReady).toBe(true);
+    expect(result.current.hasAccessToken).toBe(true);
+    expect(result.current.canUsePrivateApi).toBe(true);
+    expect(result.current.isPrivateApiPending).toBe(false);
     expect(result.current.isAuthResolved).toBe(true);
     expect(result.current.error).toBeNull();
   });
