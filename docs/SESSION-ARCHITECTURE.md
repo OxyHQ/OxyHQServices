@@ -33,6 +33,13 @@ The production path is centralized in the SDK:
   tokens. CSRF protection is for ambient cookie credentials; SDK bearer requests
   are explicit authorization and must not depend on duplicated `/csrf-token`
   endpoints in every app backend. Cookie-only writes still fetch and send CSRF.
+- Backend APIs must use `@oxyhq/core/server` for request identity. Mount
+  `createOxyRateLimit(oxy)` once near the top of the Express app to resolve the
+  optional session and rate-limit by the real user. Private routers should use
+  `requireOxyAuth`; standalone routers can use `createOxyAuthMiddleware(oxy)`
+  to resolve and require auth in one step. Apps must not keep local
+  `AuthRequest`, `requireAuth`, `getAuthenticatedUserId`, or token-decoding
+  copies.
 - SDK user objects expose a stable `id` even when the API payload contains only
   Mongo-style `_id`. Ownership checks, profile comparisons, live-room controls,
   and account switching must compare the normalized SDK `user.id` instead of

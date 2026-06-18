@@ -2,7 +2,7 @@
 
 OxyHQ SDK Foundation. Platform-agnostic core library that works in Node.js, browser, and React Native environments. No React dependency.
 
-**Current published version: 3.4.11**
+**Current published version: 3.4.13**
 
 ## Installation
 
@@ -22,14 +22,16 @@ bun add @oxyhq/core
 - **Device management**
 - **Linked clients** for app backends that need the active Oxy bearer token
 - **User identity normalization** so SDK user payloads always expose `id`
+- **Server middleware** for Express request identity and per-user rate limiting
 
 ## Exports
 
-The package exposes a single public entry point:
+The package exposes two public entry points:
 
 - `@oxyhq/core` — main entry (API client, auth, crypto, models, shared utilities, i18n, platform, device)
+- `@oxyhq/core/server` — Express-only helpers (`createOxyRateLimit`, `createOxyAuthMiddleware`, `requireOxyAuth`, `getOxyUserId`, `getRequiredOxyUserId`, and request types)
 
-All public symbols (including `KeyManager`, `SignatureService`, `RecoveryPhraseService`, and the shared color / theme / error / network / debug helpers) are re-exported from the package root. There are no subpath entry points.
+All client/runtime symbols (including `KeyManager`, `SignatureService`, `RecoveryPhraseService`, and the shared color / theme / error / network / debug helpers) are re-exported from the package root. Server-only Express helpers live under `@oxyhq/core/server` so React Native and browser bundles never import Express.
 
 ## Usage
 
@@ -62,6 +64,35 @@ await mentionApi.post('/posts', { content: 'Hello from Oxy' });
 Linked clients send the current Oxy bearer token for authenticated requests.
 State-changing bearer requests do not fetch app-local CSRF tokens; cookie-only
 writes still use CSRF.
+
+## Backend Auth Middleware
+
+Backends should use the SDK server helpers instead of local auth request types
+or `requireAuth` copies.
+
+```ts
+import { OxyServices } from '@oxyhq/core';
+import {
+  createOxyRateLimit,
+  requireOxyAuth,
+  getRequiredOxyUserId,
+  type OxyAuthRequest,
+} from '@oxyhq/core/server';
+
+const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
+
+app.use(createOxyRateLimit(oxy, { store: redisStore }));
+router.use(requireOxyAuth);
+
+router.get('/me', (req: OxyAuthRequest, res) => {
+  const userId = getRequiredOxyUserId(req);
+  res.json({ userId });
+});
+```
+
+For routers that are not mounted after `createOxyRateLimit`, use
+`createOxyAuthMiddleware(oxy)` to resolve the bearer session and require a user
+in one middleware.
 
 ## User Identity Normalization
 

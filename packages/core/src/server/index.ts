@@ -15,5 +15,22 @@
  * ```
  */
 
+export {
+  createOptionalOxyAuth,
+  createOxyAuthMiddleware,
+  getOxyUserId,
+  getRequiredOxyUserId,
+  isOxyAuthenticated,
+  requireOxyAuth,
+} from './auth';
+export type {
+  OxyActingAsContext,
+  OxyAuthenticatedRequest,
+  OxyAuthMiddlewareOptions,
+  OxyAuthRequest,
+  OxyRequestUser,
+  OxyServiceActingAsContext,
+  OxyServiceAppContext,
+} from './auth';
 export { createOxyRateLimit } from './rateLimit';
 export type { OxyRateLimitOptions } from './rateLimit';
