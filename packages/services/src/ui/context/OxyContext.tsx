@@ -251,6 +251,35 @@ const COOKIE_RESTORE_TIMEOUT = 3000;
  */
 const COLD_BOOT_OVERALL_DEADLINE = 20000;
 
+function getHttpStatus(error: unknown): number | undefined {
+  if (!error || typeof error !== 'object') {
+    return undefined;
+  }
+
+  if ('status' in error) {
+    const status = (error as { status?: unknown }).status;
+    if (typeof status === 'number') {
+      return status;
+    }
+  }
+
+  if ('response' in error) {
+    const response = (error as { response?: unknown }).response;
+    if (response && typeof response === 'object' && 'status' in response) {
+      const status = (response as { status?: unknown }).status;
+      if (typeof status === 'number') {
+        return status;
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function isUnauthorizedStatus(error: unknown): boolean {
+  return getHttpStatus(error) === 401;
+}
+
 /**
  * Whether `idpOrigin` is a same-site, first-party host of the current page —
  * i.e. it shares the page's registrable apex (last two labels), so a "no
@@ -273,7 +302,10 @@ function isSameSiteIdP(idpOrigin: string): boolean {
   let idpHostname: string;
   try {
     idpHostname = new URL(idpOrigin).hostname;
-  } catch {
+  } catch (parseError) {
+    if (__DEV__) {
+      loggerUtil.debug('Invalid IdP origin while checking same-site session status', { component: 'OxyContext' }, parseError as unknown);
+    }
     return false;
   }
   const pageHostname = window.location.hostname;
@@ -393,6 +425,10 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   // `isAuthResolved` on the context type for the consumer contract.
   const [authResolved, setAuthResolved] = useState(false);
   const authResolvedRef = useRef(false);
+  const userRef = useRef<User | null>(user);
+  const isAuthenticatedRef = useRef(isAuthenticated);
+  userRef.current = user;
+  isAuthenticatedRef.current = isAuthenticated;
   const [initialized, setInitialized] = useState(false);
   const [ssoCallbackIntercepting, setSsoCallbackIntercepting] = useState(false);
   const setAuthState = useAuthStore.setState;
@@ -633,6 +669,42 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   updateSessionsRef.current = updateSessions;
   const clearSessionStateRef = useRef(clearSessionState);
   clearSessionStateRef.current = clearSessionState;
+  const clearingInvalidTokenRef = useRef(false);
+
+  useEffect(() => {
+    const handleTokenChange = (accessToken: string | null) => {
+      if (accessToken) {
+        setTokenReady(true);
+        return;
+      }
+
+      if (userRef.current || isAuthenticatedRef.current) {
+        setTokenReady(false);
+        if (clearingInvalidTokenRef.current) {
+          return;
+        }
+        clearingInvalidTokenRef.current = true;
+        clearSessionStateRef.current()
+          .catch((clearError) => {
+            logger('Failed to clear invalidated auth session', clearError);
+          })
+          .finally(() => {
+            clearingInvalidTokenRef.current = false;
+            if (authResolvedRef.current) {
+              setTokenReady(true);
+            }
+          });
+        return;
+      }
+
+      if (authResolvedRef.current) {
+        setTokenReady(true);
+      }
+    };
+
+    handleTokenChange(oxyServices.getAccessToken());
+    return oxyServices.onTokensChanged(handleTokenChange);
+  }, [logger, oxyServices]);
 
   // Durable, navigation-safe session persistence.
   //
@@ -649,12 +721,16 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     await readyStorage.setItem(storageKeys.activeSessionId, sessionId);
     const existingIds = await readyStorage.getItem(storageKeys.sessionIds);
     let sessionIds: string[] = [];
-    try { sessionIds = existingIds ? JSON.parse(existingIds) : []; } catch { /* corrupted storage */ }
+    try {
+      sessionIds = existingIds ? JSON.parse(existingIds) : [];
+    } catch (parseError) {
+      logger('Failed to parse persisted session ids; replacing corrupted storage value', parseError);
+    }
     if (!sessionIds.includes(sessionId)) {
       sessionIds.push(sessionId);
       await readyStorage.setItem(storageKeys.sessionIds, JSON.stringify(sessionIds));
     }
-  }, [getReadyStorage, storageKeys.activeSessionId, storageKeys.sessionIds]);
+  }, [getReadyStorage, logger, storageKeys.activeSessionId, storageKeys.sessionIds]);
 
   // Refs so the cold-boot restore can plant session state without widening its
   // dependency array (mirrors the existing ref pattern above).
@@ -1397,7 +1473,10 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     let fullUser: User;
     try {
       fullUser = await oxyServices.getCurrentUser();
-    } catch {
+    } catch (profileError) {
+      if (__DEV__) {
+        loggerUtil.debug('Failed to fetch full user after web session; using session user fallback', { component: 'OxyContext', method: 'handleWebSSOSession' }, profileError as unknown);
+      }
       // If the profile fetch fails, fall back to the minimal data from the session
       // so the user is still logged in (the store accepts User, but the shapes overlap at runtime).
       fullUser = session.user as unknown as User;
@@ -1615,16 +1694,25 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
   // Load managed accounts when authenticated
   const refreshManagedAccounts = useCallback(async (): Promise<void> => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated || !tokenReady || !oxyServices.getAccessToken()) {
+      setManagedAccounts([]);
+      return;
+    }
+
     try {
       const accounts = await oxyServices.getManagedAccounts();
       setManagedAccounts(accounts);
     } catch (err) {
+      if (isUnauthorizedStatus(err)) {
+        setManagedAccounts([]);
+        await clearSessionStateRef.current();
+        return;
+      }
       if (__DEV__) {
         loggerUtil.debug('Failed to load managed accounts', { component: 'OxyContext' }, err as unknown);
       }
     }
-  }, [isAuthenticated, oxyServices]);
+  }, [isAuthenticated, oxyServices, tokenReady]);
 
   useEffect(() => {
     if (isAuthenticated && initialized && tokenReady) {
@@ -1638,9 +1726,13 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     // Persist to storage
     if (storage) {
       if (userId) {
-        storage.setItem(`${storageKeyPrefix}_acting_as`, userId).catch(() => {});
+        storage.setItem(`${storageKeyPrefix}_acting_as`, userId).catch((persistError) => {
+          loggerUtil.debug('Failed to persist acting-as account', { component: 'OxyContext' }, persistError as unknown);
+        });
       } else {
-        storage.removeItem(`${storageKeyPrefix}_acting_as`).catch(() => {});
+        storage.removeItem(`${storageKeyPrefix}_acting_as`).catch((persistError) => {
+          loggerUtil.debug('Failed to clear acting-as account', { component: 'OxyContext' }, persistError as unknown);
+        });
       }
     }
   }, [oxyServices, storage, storageKeyPrefix]);

@@ -25,7 +25,7 @@
 
 import { render, waitFor, act, type RenderResult } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { oxyClient } from '@oxyhq/core';
+import { oxyClient, type User } from '@oxyhq/core';
 
 // Neutralize the mount-time network/socket effects so the provider settles
 // deterministically without a backend. Neither touches the token-sync path.
@@ -46,6 +46,7 @@ jest.mock('../../src/ui/hooks/useSessionSocket', () => ({
 }));
 
 import { OxyProvider, useOxy, type OxyContextState } from '../../src/ui/context/OxyContext';
+import { useAuthStore } from '../../src/ui/stores/authStore';
 
 const SIGNED_OUT_TOKEN_VALUE = oxyClient.getAccessToken();
 
@@ -90,6 +91,7 @@ describe('OxyProvider mirrors the session token onto the exported oxyClient sing
     // Leave the shared singleton in its original (signed-out) state for any
     // sibling suite that imports it.
     oxyClient.clearTokens();
+    useAuthStore.getState().logout();
   });
 
   it('starts signed out with no token on the singleton', () => {
@@ -185,5 +187,58 @@ describe('OxyProvider mirrors the session token onto the exported oxyClient sing
     });
 
     expect(oxyClient.getAccessToken()).toBe('access-live');
+  });
+
+  it('clears provider auth state when the provider instance token is invalidated', async () => {
+    const sink = makeCapture();
+    renderProvider(sink);
+    await waitFor(() => expect(sink.current).not.toBeNull());
+    const providerInstance = requireContext(sink).oxyServices;
+    const authenticatedUser = { id: 'user_invalidated', username: 'stale-user' } as User;
+
+    act(() => {
+      providerInstance.setTokens('access-before-invalidated');
+      useAuthStore.getState().loginSuccess(authenticatedUser);
+    });
+
+    await waitFor(() => {
+      expect(requireContext(sink).isAuthenticated).toBe(true);
+    });
+
+    act(() => {
+      providerInstance.clearTokens();
+    });
+
+    await waitFor(() => {
+      expect(requireContext(sink).isAuthenticated).toBe(false);
+    });
+    expect(requireContext(sink).user).toBeNull();
+    expect(requireContext(sink).isTokenReady).toBe(true);
+  });
+
+  it('clears provider auth state when managed accounts returns 401', async () => {
+    const sink = makeCapture();
+    renderProvider(sink);
+    await waitFor(() => expect(sink.current).not.toBeNull());
+    const providerInstance = requireContext(sink).oxyServices;
+    const unauthorizedError = Object.assign(new Error('Unauthorized'), { status: 401 });
+    const getManagedAccountsSpy = jest
+      .spyOn(providerInstance, 'getManagedAccounts')
+      .mockRejectedValue(unauthorizedError);
+    const authenticatedUser = { id: 'user_managed_401', username: 'stale-user' } as User;
+
+    act(() => {
+      providerInstance.setTokens('access-before-managed-401');
+      useAuthStore.getState().loginSuccess(authenticatedUser);
+    });
+
+    await waitFor(() => {
+      expect(getManagedAccountsSpy).toHaveBeenCalledTimes(1);
+    });
+    await waitFor(() => {
+      expect(requireContext(sink).isAuthenticated).toBe(false);
+    });
+    expect(requireContext(sink).managedAccounts).toEqual([]);
+    expect(providerInstance.getAccessToken()).toBeNull();
   });
 });
