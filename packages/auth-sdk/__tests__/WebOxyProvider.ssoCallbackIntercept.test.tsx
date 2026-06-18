@@ -10,10 +10,12 @@
  *
  * The eager once-on-mount effect runs the SAME `runSsoReturn` kernel the instant
  * we land on the callback path — BEFORE the init effect's cold boot — so it
- * strips the `#oxy_sso` fragment, restores the real pre-bounce destination
- * (off the callback path), dispatches a synthetic `popstate` for URL-driven
- * routers, and on a `none` outcome sets the per-origin loop-breaker flags. No
- * terminal bounce fires while we are resolving a return on the callback path.
+ * strips the `#oxy_sso` fragment, consumes the real pre-bounce destination, and
+ * on a `none` outcome sets the per-origin loop-breaker flags. Non-ok outcomes
+ * leave the internal callback route with a hard navigation in the browser; jsdom
+ * does not perform that navigation, so this test asserts the synchronous
+ * side-effects instead. No terminal bounce fires while we are resolving a return
+ * on the callback path.
  *
  * This mirrors `WebOxyProvider.coldBoot.test.tsx`: `@oxyhq/core` is mocked so the
  * REAL cold-boot + SSO helpers run against stubbed service/auth surfaces. jsdom
@@ -175,7 +177,7 @@ describe('WebOxyProvider eager SSO callback interception', () => {
     window.removeEventListener('popstate', popStateSpy);
   });
 
-  it('none: eagerly restores dest off the callback path, strips fragment, sets loop-breakers, dispatches popstate, no bounce', async () => {
+  it('none: eagerly consumes callback, strips fragment, sets loop-breakers, no bounce', async () => {
     resetStubs('https://api.intercept-none');
     window.sessionStorage.setItem(ssoStateKey(ORIGIN), 's');
     window.sessionStorage.setItem(ssoDestKey(ORIGIN), `${ORIGIN}${DEST_PATH}`);
@@ -183,8 +185,7 @@ describe('WebOxyProvider eager SSO callback interception', () => {
     let latest: ProbeState = { isAuthenticated: false, userId: null, isLoading: true };
     renderProvider(stubs.baseURL, (s) => { latest = s; });
 
-    // The eager interception restores the real destination off the callback path.
-    await waitFor(() => expect(window.location.pathname).toBe(DEST_PATH));
+    await waitFor(() => expect(window.sessionStorage.getItem(ssoNoSessionKey(ORIGIN))).toBe('1'));
 
     // No `window.location.assign` bounce fired (observed via generateSsoState).
     expect(bounced()).toBe(false);
@@ -195,10 +196,11 @@ describe('WebOxyProvider eager SSO callback interception', () => {
     // `none` sets BOTH per-origin loop breakers.
     expect(window.sessionStorage.getItem(ssoNoSessionKey(ORIGIN))).toBe('1');
     expect(window.sessionStorage.getItem(ssoAttemptedKey(ORIGIN))).toBe('1');
-    // No exchange, no session committed, popstate dispatched for router re-sync.
+    // No exchange, no session committed. Popstate is only for ok soft restores;
+    // non-ok outcomes leave through hard navigation in real browsers.
     expect(stubs.exchangeSsoCode).not.toHaveBeenCalled();
     expect(latest.isAuthenticated).toBe(false);
-    expect(popStateSpy).toHaveBeenCalled();
+    expect(popStateSpy).not.toHaveBeenCalled();
 
     // Settle trailing microtasks; still no bounce.
     await new Promise((r) => setTimeout(r, 0));

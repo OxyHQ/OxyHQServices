@@ -37,13 +37,13 @@ Each platform has a clear import path. Packages do not re-export from one anothe
 ### Prerequisites
 
 - Node.js 18+
-- npm 9+
+- Bun 1.3+
 
 ### Install and Build
 
 ```bash
-npm install
-npm run build:all
+bun install
+bun run build:all
 ```
 
 Build order: `core` -> `auth` -> `services` -> remaining packages.

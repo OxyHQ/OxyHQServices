@@ -76,12 +76,12 @@ The SDK ships a centralized bottom-sheet router with 29+ pre-built screens. Open
 ```tsx
 import { showBottomSheet } from '@oxyhq/services';
 
-<Pressable onPress={() => showBottomSheet('AccountSwitcher')}>
+<Pressable onPress={() => showBottomSheet('ManageAccount')}>
   <Avatar uri={user?.avatarUrl} />
 </Pressable>
 ```
 
-Built-in routes include `AccountCenter`, `AccountSettings`, `AccountSwitcher`, `Profile`, `PrivacySettings`, `FileManagement`, `SessionManagement`, `PaymentGateway`, `KarmaCenter`, `OxyAuth`, `EditProfileField`, `AvatarCrop`, `WelcomeNewUser`, and more. See [Bottom Sheets](./bottom-sheets) for the full list and customisation patterns.
+Built-in routes include `ManageAccount`, `Profile`, `PrivacySettings`, `FileManagement`, `SessionManagement`, `PaymentGateway`, `TrustCenter`, `OxyAuth`, `EditProfileField`, `AvatarCrop`, `WelcomeNewUser`, and more. See [Bottom Sheets](./bottom-sheets) for the full list and customisation patterns.
 
 ### Screens lazy-load
 
@@ -105,7 +105,7 @@ import { Avatar, showBottomSheet, useOxy } from '@oxyhq/services';
 function Header() {
   const { user } = useOxy();
   return (
-    <Pressable onPress={() => showBottomSheet('AccountSwitcher')}>
+    <Pressable onPress={() => showBottomSheet('ManageAccount')}>
       <Avatar uri={user?.avatarUrl} size={32} />
     </Pressable>
   );

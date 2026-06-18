@@ -32,7 +32,7 @@ Platform-agnostic package. Use everywhere.
 
 **Install:**
 ```bash
-npm install @oxyhq/core
+bun add @oxyhq/core
 ```
 
 **Example:**
@@ -61,7 +61,7 @@ Web authentication package. For React web apps (Vite, Next.js, CRA) without Expo
 
 **Install:**
 ```bash
-npm install @oxyhq/auth @oxyhq/core
+bun add @oxyhq/auth @oxyhq/core
 ```
 
 **Example:**
@@ -103,12 +103,12 @@ Expo and React Native UI package. For mobile and Expo web apps.
 
 **Install:**
 ```bash
-npm install @oxyhq/services @oxyhq/core
+bun add @oxyhq/services @oxyhq/core
 ```
 
 **Peer dependencies (Expo):**
 ```bash
-npm install react-native-reanimated react-native-gesture-handler \
+bun add react-native-reanimated react-native-gesture-handler \
   react-native-safe-area-context react-native-svg \
   expo expo-font expo-image expo-linear-gradient \
   @react-navigation/native @tanstack/react-query
@@ -136,8 +136,8 @@ export default function App() {
 
 **Install:**
 ```bash
-npm install @oxyhq/services @oxyhq/core
-npm install react-native-reanimated react-native-gesture-handler \
+bun add @oxyhq/services @oxyhq/core
+bun add react-native-reanimated react-native-gesture-handler \
   react-native-safe-area-context react-native-svg
 ```
 
@@ -168,7 +168,7 @@ Works on iOS, Android, and Expo web.
 
 **Install:**
 ```bash
-npm install @oxyhq/auth @oxyhq/core
+bun add @oxyhq/auth @oxyhq/core
 ```
 
 **Usage:**
@@ -192,7 +192,7 @@ No bundler configuration required. No react-native-web dependency.
 
 **Install:**
 ```bash
-npm install @oxyhq/auth @oxyhq/core
+bun add @oxyhq/auth @oxyhq/core
 ```
 
 **Usage:**
@@ -231,7 +231,7 @@ No bundler configuration required.
 
 **Install:**
 ```bash
-npm install @oxyhq/core
+bun add @oxyhq/core
 ```
 
 **Usage:**

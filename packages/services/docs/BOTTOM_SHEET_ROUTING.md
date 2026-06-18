@@ -173,11 +173,9 @@ closeBottomSheet();
 The following routes are available:
 
 - `OxyAuth` - Sign in with Oxy (QR code / deep link to Accounts app)
-- `AccountOverview` - Account overview screen
-- `AccountSettings` - Account settings screen
-- `AccountCenter` - Account center screen
-- `AccountSwitcher` - Switch between accounts
+- `ManageAccount` - Unified account hub, account switcher, sessions, and account settings
 - `AccountVerification` - Account verification screen
+- `CreateManagedAccount` - Create a managed sub-account
 - `SessionManagement` - Manage active sessions
 - `PaymentGateway` - Payment gateway screen
 - `Profile` - User profile screen
@@ -228,8 +226,8 @@ function AccountScreen() {
   return (
     <View>
       <Button
-        onPress={() => showBottomSheet('AccountSettings')}
-        title="Settings"
+        onPress={() => showBottomSheet('ManageAccount')}
+        title="Account"
       />
       <Button
         onPress={() => showBottomSheet('Profile')}
@@ -282,7 +280,7 @@ const MyScreen: React.FC<BaseScreenProps> = ({ navigate, goBack }) => {
   return (
     <View>
       <Text>Welcome, {user?.username}</Text>
-      <Button onPress={() => navigate('AccountSettings')} title="Settings" />
+      <Button onPress={() => navigate('ManageAccount')} title="Account" />
       <Button onPress={goBack} title="Back" />
     </View>
   );
@@ -337,7 +335,7 @@ const MyScreen: React.FC<BaseScreenProps> = ({ goBack }) => {
   - Does NOT add to history
   - Uses `navigate(sameScreen, { initialStep: newStep })`
   
-- **Screen Navigation**: Moving to a different screen (e.g., SignIn → AccountSettings)
+- **Screen Navigation**: Moving to a different screen (e.g., SignIn → ManageAccount)
   - Adds current screen to history
   - Uses `navigate(differentScreen, props)`
 

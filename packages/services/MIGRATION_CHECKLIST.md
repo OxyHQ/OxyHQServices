@@ -16,7 +16,7 @@ Use this checklist when migrating apps to use the new Inter font from @oxyhq/ser
 
 ### 1. Update Dependencies
 - [ ] Update `@oxyhq/services` to latest version
-- [ ] Run `npm install` or `yarn install`
+- [ ] Run `bun install`
 
 ### 2. Update Font References
 

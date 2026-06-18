@@ -5,7 +5,7 @@ Quick reference guide for common Oxy operations.
 ## Installation
 
 ```bash
-npm install @oxyhq/services
+bun add @oxyhq/services
 ```
 
 ## React Native Setup

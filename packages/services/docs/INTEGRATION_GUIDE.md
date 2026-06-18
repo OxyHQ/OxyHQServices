@@ -17,7 +17,7 @@ Complete integration guide for different platforms and frameworks.
 ### Installation
 
 ```bash
-npm install @oxyhq/services react-native-reanimated react-native-gesture-handler
+bun add @oxyhq/services react-native-reanimated react-native-gesture-handler
 ```
 
 ### Setup
@@ -93,7 +93,7 @@ export function ProfileScreen() {
 ### Installation
 
 ```bash
-npx expo install @oxyhq/services expo expo-font expo-image expo-linear-gradient
+bunx expo install @oxyhq/services expo expo-font expo-image expo-linear-gradient
 ```
 
 ### Setup
@@ -154,7 +154,7 @@ function AvatarUpload() {
 ### Installation
 
 ```bash
-npm install @oxyhq/services
+bun add @oxyhq/services
 ```
 
 ### Setup
@@ -243,7 +243,7 @@ export async function GET(request: Request) {
 ### Installation
 
 ```bash
-npm install @oxyhq/services
+bun add @oxyhq/services
 ```
 
 ### Setup
@@ -296,7 +296,7 @@ function FileUpload() {
 ### Installation
 
 ```bash
-npm install @oxyhq/services express
+bun add @oxyhq/services express
 ```
 
 ### Basic Setup
@@ -372,7 +372,7 @@ Since OxyProvider is React-based, use the core API directly in Vue:
 ### Installation
 
 ```bash
-npm install @oxyhq/services
+bun add @oxyhq/services
 ```
 
 ### Setup with Composition API
@@ -473,7 +473,7 @@ Follow the [React Native](#react-native) setup above.
 Works out of the box! Just install and use:
 
 ```bash
-npx expo install @oxyhq/services
+bunx expo install @oxyhq/services
 ```
 
 ### Native Modules

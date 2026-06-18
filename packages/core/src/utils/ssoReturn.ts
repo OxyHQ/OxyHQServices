@@ -29,6 +29,7 @@ import {
   ssoDestKey,
   ssoNoSessionKey,
   ssoAttemptedKey,
+  ssoCallbackBootstrapKey,
 } from './ssoBounce';
 
 /**
@@ -257,6 +258,8 @@ export async function consumeSsoReturn(
   }
 
   const origin = location.origin;
+  const callbackBootstrapKey = ssoCallbackBootstrapKey(origin);
+  const wasCallbackBootstrapped = storage.getItem(callbackBootstrapKey) === '1';
   const expectedState = storage.getItem(ssoStateKey(origin));
   const stateOk = !!ret.state && !!expectedState && ret.state === expectedState;
 
@@ -286,7 +289,8 @@ export async function consumeSsoReturn(
   // (so it can be fed to either `history.replaceState` or a `hardRedirect`),
   // or `null` when the page is not on the callback path (nothing to leave).
   const consumeCallbackTarget = (): string | null => {
-    if (location.pathname !== SSO_CALLBACK_PATH) {
+    storage.removeItem(callbackBootstrapKey);
+    if (location.pathname !== SSO_CALLBACK_PATH && !wasCallbackBootstrapped) {
       // Not on the callback path — still drop the dest key (consumed) but there
       // is nothing to navigate away from.
       storage.removeItem(ssoDestKey(origin));

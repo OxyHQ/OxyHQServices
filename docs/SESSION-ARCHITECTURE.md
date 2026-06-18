@@ -8,6 +8,23 @@ Meta ("Meta Account", Apr 2026) actually work in 2026.
 
 > **Central IdP for SIGN-IN. Each app keeps its OWN first-party session on its OWN domain.**
 
+## Current SDK Contract
+
+The production path is centralized in the SDK:
+
+- `@oxyhq/core` owns the shared SSO helpers, including callback bootstrap,
+  bounce URLs, callback consumption, and guard keys.
+- `@oxyhq/auth` (`WebOxyProvider`) and `@oxyhq/services` (`OxyProvider`) consume
+  those helpers directly. Apps do not create per-app `/__oxy/sso-callback`
+  routes or local helper copies.
+- Expo web apps that provide root HTML should inject
+  `getSsoCallbackBootstrapScript()` in `<head>` so `/__oxy/sso-callback`
+  preserves the SSO hash before React or Expo Router can rewrite the URL.
+- Private API calls must wait until auth cold boot is resolved and an access
+  token is available. Use `isAuthResolved` plus token readiness for user-private
+  endpoints; do not issue `/managed-accounts`, privacy, follow-status, library,
+  or profile-settings requests while the SDK is still restoring the session.
+
 FedCM / passkeys = how you authenticate ONCE. Persistence (staying signed in
 across reloads) = each app's own first-party session. This is what Google and
 Meta do, and it is confirmed by the FedCM spec: after FedCM returns an identity

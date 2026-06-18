@@ -67,6 +67,7 @@ const GUARD_KEY_PREFIX = 'oxy_sso_guard:';
 const DEST_KEY_PREFIX = 'oxy_sso_dest:';
 const NO_SESSION_KEY_PREFIX = 'oxy_sso_no_session:';
 const ATTEMPTED_KEY_PREFIX = 'oxy_sso_attempted:';
+const CALLBACK_BOOTSTRAP_KEY_PREFIX = 'oxy_sso_callback_bootstrap:';
 
 /** Per-origin CSRF state key (matched on return to defeat fragment forgery). */
 export function ssoStateKey(origin: string): string {
@@ -103,6 +104,38 @@ export function ssoNoSessionKey(origin: string): string {
  */
 export function ssoAttemptedKey(origin: string): string {
   return `${ATTEMPTED_KEY_PREFIX}${origin}`;
+}
+
+/**
+ * Per-origin marker written by the pre-hydration callback bootstrap.
+ *
+ * Static Expo exports render unknown paths as `+not-found`; on
+ * `/__oxy/sso-callback` that can fail hydration before the React provider has a
+ * chance to run `consumeSsoReturn`. The bootstrap runs in the HTML head, moves
+ * the URL to a hydratable route while preserving the SSO fragment, and writes
+ * this marker so `consumeSsoReturn` still restores the original destination as
+ * if the page were physically on the callback path.
+ */
+export function ssoCallbackBootstrapKey(origin: string): string {
+  return `${CALLBACK_BOOTSTRAP_KEY_PREFIX}${origin}`;
+}
+
+/**
+ * Inline script for Expo/static web apps.
+ *
+ * Must run before the app bundle hydrates. It is intentionally tiny and
+ * dependency-free: if the browser lands on the internal callback route with an
+ * Oxy SSO fragment, it marks the handoff and rewrites the path to `/` while
+ * preserving `#oxy_sso=...`. The normal SDK cold-boot `sso-return` step then
+ * consumes the fragment from a route that can hydrate. If the internal route is
+ * reached without a valid SSO fragment, it leaves the route via a hard root
+ * navigation because there is no session material to preserve.
+ */
+export function getSsoCallbackBootstrapScript(): string {
+  const callbackPath = JSON.stringify(SSO_CALLBACK_PATH);
+  const bootstrapPrefix = JSON.stringify(CALLBACK_BOOTSTRAP_KEY_PREFIX);
+
+  return `(function(){var p=${callbackPath};if(window.location.pathname!==p)return;var h=window.location.hash||"";if(!/(?:^#|&)oxy_sso=(?:ok|none|error)(?:&|$)/.test(h)){window.location.replace("/");return;}try{window.sessionStorage.setItem(${bootstrapPrefix}+window.location.origin,"1");}catch(e){window.__oxySsoCallbackBootstrapError=e instanceof Error?e.message:String(e);}try{window.history.replaceState(null,"","/"+h);}catch(e){window.__oxySsoCallbackBootstrapError=e instanceof Error?e.message:String(e);window.location.replace("/"+h);}})();`;
 }
 
 /**

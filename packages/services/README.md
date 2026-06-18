@@ -55,7 +55,7 @@ See [PLATFORM_GUIDE.md](./PLATFORM_GUIDE.md) for the complete architecture guide
 ## Installation
 
 ```bash
-npm install @oxyhq/services @oxyhq/core
+bun add @oxyhq/services @oxyhq/core
 ```
 
 ### Peer Dependencies
@@ -349,13 +349,9 @@ const payment = await oxyClient.createPayment(paymentData);      // Create payme
 const paymentInfo = await oxyClient.getPayment('payment123');    // Get payment info
 const userPayments = await oxyClient.getUserPayments();          // Get user payments
 
-// Karma System
-const karma = await oxyClient.getUserKarma('user123');           // Get user karma
-await oxyClient.giveKarma('user123', 10, 'helpful comment');     // Give karma
-const karmaTotal = await oxyClient.getUserKarmaTotal('user123'); // Get karma total
-const karmaHistory = await oxyClient.getUserKarmaHistory('user123'); // Get karma history
-const leaderboard = await oxyClient.getKarmaLeaderboard();       // Get leaderboard
-const rules = await oxyClient.getKarmaRules();                   // Get karma rules
+// Trust
+showBottomSheet('TrustCenter');                                  // Trust center
+showBottomSheet('TrustLeaderboard');                             // Trust leaderboard
 
 // Location Services
 await oxyClient.updateLocation(40.7128, -74.0060);              // Update location
@@ -568,8 +564,8 @@ function MyComponent() {
 
 **Available Screens:**
 - `OxyAuth` (Sign in with Oxy - for third-party apps)
-- `AccountOverview`, `AccountSettings`, `AccountCenter`
-- `Profile`, `SessionManagement`, `PaymentGateway`
+- `ManageAccount`, `CreateManagedAccount`
+- `Profile`, `SessionManagement`, `PaymentGateway`, `TrustCenter`
 - And many more...
 
 **Documentation:**
@@ -764,7 +760,7 @@ The cross-page-load deduplication guard lives in the consumer hooks, NOT in `@ox
 For React Native/Expo projects:
 
 ```bash
-npm install jwt-decode invariant
+bun add jwt-decode invariant
 ```
 
 **Note**: `react-native-url-polyfill` is already included as a dependency in this package.

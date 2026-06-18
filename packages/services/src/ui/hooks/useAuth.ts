@@ -194,7 +194,7 @@ export function useAuth(): UseAuthReturn {
     // State
     user,
     isAuthenticated,
-    isLoading,
+    isLoading: isLoading || !isAuthResolved,
     isReady: isTokenReady,
     isAuthResolved,
     error,

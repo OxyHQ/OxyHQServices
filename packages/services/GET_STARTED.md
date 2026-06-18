@@ -9,13 +9,13 @@ Zero-config authentication for Expo and React Native apps. Cross-domain SSO is a
 ## Installation
 
 ```bash
-npm install @oxyhq/services @oxyhq/core
+bun add @oxyhq/services @oxyhq/core
 ```
 
 ### Peer Dependencies
 
 ```bash
-npm install react-native-reanimated react-native-gesture-handler \
+bun add react-native-reanimated react-native-gesture-handler \
   react-native-safe-area-context react-native-svg \
   expo expo-font expo-image expo-linear-gradient \
   @react-navigation/native @tanstack/react-query
@@ -116,15 +116,15 @@ import 'react-native-url-polyfill/auto';
 // app/_layout.tsx
 import 'react-native-url-polyfill/auto';
 import { OxyProvider } from '@oxyhq/services';
-import * as Linking from 'expo-linking';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'https://api.oxy.so';
+const OXY_CLIENT_ID = process.env.EXPO_PUBLIC_OXY_CLIENT_ID;
 
 export default function RootLayout() {
   return (
     <OxyProvider
       baseURL={API_URL}
-      authRedirectUri={Linking.createURL('/')}
+      clientId={OXY_CLIENT_ID}
     >
       <YourApp />
     </OxyProvider>
@@ -140,10 +140,8 @@ import { useOxy } from '@oxyhq/services';
 const { showBottomSheet } = useOxy();
 
 // Account
-showBottomSheet('AccountCenter');      // Main account hub
-showBottomSheet('AccountSwitcher');    // Switch accounts
+showBottomSheet('ManageAccount');      // Account hub and account switcher
 showBottomSheet('SessionManagement');  // Manage devices
-showBottomSheet('AccountSettings');    // Edit profile
 
 // Auth
 showBottomSheet('OxyAuth');            // QR code auth
@@ -151,7 +149,7 @@ showBottomSheet('OxyAuth');            // QR code auth
 // Features
 showBottomSheet('FileManagement');     // Files
 showBottomSheet('LanguageSelector');   // Language
-showBottomSheet('KarmaCenter');        // Karma
+showBottomSheet('TrustCenter');        // Trust
 
 // Payments
 showBottomSheet({ screen: 'PaymentGateway', props: { amount: 10 } });
@@ -166,7 +164,7 @@ For web apps without Expo/React Native, use the `@oxyhq/auth` package with `@oxy
 ### Installation
 
 ```bash
-npm install @oxyhq/auth @oxyhq/core
+bun add @oxyhq/auth @oxyhq/core
 ```
 
 ### Next.js Example
@@ -235,7 +233,7 @@ For server-side usage, install `@oxyhq/core` only.
 ### Installation
 
 ```bash
-npm install @oxyhq/core
+bun add @oxyhq/core
 ```
 
 ### Quick Start
@@ -311,10 +309,6 @@ await oxyClient.getUserFollowing(userId);
 await oxyClient.followUser(userId);
 await oxyClient.unfollowUser(userId);
 
-// Karma
-await oxyClient.getKarma();
-await oxyClient.getKarmaLeaderboard();
-
 // Wallet
 await oxyClient.getWallet();
 await oxyClient.transferFunds(request);
@@ -324,6 +318,8 @@ await oxyClient.listFiles();
 await oxyClient.uploadFile(file);
 await oxyClient.deleteFile(fileId);
 ```
+
+Trust surfaces are exposed as `Trust*` bottom-sheet routes in `@oxyhq/services`.
 
 ---
 

@@ -108,12 +108,12 @@ const FollowButtonInner = memo(function FollowButtonInner({
 });
 
 const FollowButton: React.FC<FollowButtonProps> = (props) => {
-  const { oxyServices, isAuthenticated, user: currentUser } = useOxy();
+  const { oxyServices, isAuthenticated, isAuthResolved, isTokenReady, user: currentUser } = useOxy();
 
   const currentUserId = currentUser?.id ? String(currentUser.id).trim() : '';
   const targetUserId = props.userId ? String(props.userId).trim() : '';
 
-  if (!isAuthenticated || !targetUserId || (currentUserId && currentUserId === targetUserId)) {
+  if (!isAuthResolved || !isTokenReady || !isAuthenticated || !targetUserId || (currentUserId && currentUserId === targetUserId)) {
     return null;
   }
 

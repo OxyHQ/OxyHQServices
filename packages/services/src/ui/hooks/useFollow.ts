@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useEffect } from 'react';
 import { useFollowStore } from '../stores/followStore';
 import { useOxy } from '../context/OxyContext';
-import type { OxyServices } from '@oxyhq/core';
+import { logger as loggerUtil, type OxyServices } from '@oxyhq/core';
 import { useShallow } from 'zustand/react/shallow';
 
 /**
@@ -18,7 +18,8 @@ import { useShallow } from 'zustand/react/shallow';
  *    them in selectors would cause unnecessary selector recalculations).
  */
 export const useFollow = (userId?: string | string[]) => {
-  const { oxyServices } = useOxy();
+  const { oxyServices, isAuthenticated, isAuthResolved, isTokenReady } = useOxy();
+  const canUsePrivateApi = isAuthResolved && isTokenReady && isAuthenticated;
   const userIds = useMemo(() => (Array.isArray(userId) ? userId : userId ? [userId] : []), [userId]);
   const isSingleUser = typeof userId === 'string';
 
@@ -75,9 +76,10 @@ export const useFollow = (userId?: string | string[]) => {
   // Store actions are accessed via getState() to avoid subscribing to them.
   const toggleFollow = useCallback(async () => {
     if (!isSingleUser || !userId) throw new Error('toggleFollow is only available for single user mode');
+    if (!canUsePrivateApi) throw new Error('Authentication is required to follow users');
     const currentlyFollowing = useFollowStore.getState().followingUsers[userId] ?? false;
     await useFollowStore.getState().toggleFollowUser(userId, oxyServices, currentlyFollowing);
-  }, [isSingleUser, userId, oxyServices]);
+  }, [isSingleUser, userId, canUsePrivateApi, oxyServices]);
 
   const setFollowStatus = useCallback((following: boolean) => {
     if (!isSingleUser || !userId) throw new Error('setFollowStatus is only available for single user mode');
@@ -86,8 +88,9 @@ export const useFollow = (userId?: string | string[]) => {
 
   const fetchStatus = useCallback(async () => {
     if (!isSingleUser || !userId) throw new Error('fetchStatus is only available for single user mode');
+    if (!canUsePrivateApi) return;
     await useFollowStore.getState().fetchFollowStatus(userId, oxyServices);
-  }, [isSingleUser, userId, oxyServices]);
+  }, [isSingleUser, userId, canUsePrivateApi, oxyServices]);
 
   const clearError = useCallback(() => {
     if (!isSingleUser || !userId) throw new Error('clearError is only available for single user mode');
@@ -114,28 +117,33 @@ export const useFollow = (userId?: string | string[]) => {
     if (!isSingleUser || !userId) return;
 
     if ((followerCount === null || followingCount === null) && !isLoadingCounts) {
-      fetchUserCounts().catch((err: unknown) => console.warn('useFollow: fetchUserCounts failed', err));
+      fetchUserCounts().catch((error: unknown) => {
+        loggerUtil.warn('useFollow: fetchUserCounts failed', { component: 'useFollow' }, error);
+      });
     }
   }, [isSingleUser, userId, followerCount, followingCount, isLoadingCounts, fetchUserCounts]);
 
   // Multi-user callbacks
   const toggleFollowForUser = useCallback(async (targetUserId: string) => {
+    if (!canUsePrivateApi) throw new Error('Authentication is required to follow users');
     const currentState = useFollowStore.getState().followingUsers[targetUserId] ?? false;
     await useFollowStore.getState().toggleFollowUser(targetUserId, oxyServices, currentState);
-  }, [oxyServices]);
+  }, [canUsePrivateApi, oxyServices]);
 
   const setFollowStatusForUser = useCallback((targetUserId: string, following: boolean) => {
     useFollowStore.getState().setFollowingStatus(targetUserId, following);
   }, []);
 
   const fetchStatusForUser = useCallback(async (targetUserId: string) => {
+    if (!canUsePrivateApi) return;
     await useFollowStore.getState().fetchFollowStatus(targetUserId, oxyServices);
-  }, [oxyServices]);
+  }, [canUsePrivateApi, oxyServices]);
 
   const fetchAllStatuses = useCallback(async () => {
+    if (!canUsePrivateApi) return;
     const store = useFollowStore.getState();
     await Promise.all(userIds.map(uid => store.fetchFollowStatus(uid, oxyServices)));
-  }, [userIds, oxyServices]);
+  }, [canUsePrivateApi, userIds, oxyServices]);
 
   const clearErrorForUser = useCallback((targetUserId: string) => {
     useFollowStore.getState().clearFollowError(targetUserId);

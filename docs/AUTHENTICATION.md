@@ -23,13 +23,13 @@ Complete guide for integrating Oxy authentication in any platform: Expo/React Na
 
 ```bash
 # Expo / React Native
-npm install @oxyhq/services @oxyhq/core
+bun add @oxyhq/services @oxyhq/core
 
 # Web (Next.js / Vite / React)
-npm install @oxyhq/auth @oxyhq/core react
+bun add @oxyhq/auth @oxyhq/core react
 
 # Node.js backend only
-npm install @oxyhq/core
+bun add @oxyhq/core
 ```
 
 ### 30-second integration
@@ -47,7 +47,8 @@ export default function App() {
 }
 
 function Home() {
-  const { user, isAuthenticated, signIn, signOut } = useAuth();
+  const { user, isAuthenticated, isLoading, signIn, signOut } = useAuth();
+  if (isLoading) return <Loading />;
   if (!isAuthenticated) return <Button onPress={signIn} title="Sign In" />;
   return <Text>Hello {user?.username}</Text>;
 }
@@ -66,7 +67,8 @@ export default function App() {
 }
 
 function Home() {
-  const { user, isAuthenticated, signIn, signOut } = useAuth();
+  const { user, isAuthenticated, isLoading, signIn, signOut } = useAuth();
+  if (isLoading) return <Loading />;
   if (!isAuthenticated) return <button onClick={signIn}>Sign In</button>;
   return <p>Hello {user?.username}</p>;
 }

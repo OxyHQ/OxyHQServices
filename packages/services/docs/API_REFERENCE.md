@@ -10,7 +10,7 @@ Complete reference documentation for all OxyServices methods and features.
 - [File & Asset Management](#file--asset-management)
 - [Notifications](#notifications)
 - [Privacy & Security](#privacy--security)
-- [Karma System](#karma-system)
+- [Trust Screens](#trust-screens)
 - [Payments](#payments)
 - [Location Services](#location-services)
 - [Analytics](#analytics)
@@ -593,64 +593,14 @@ const isRestricted = await oxyServices.isUserRestricted('user123');
 
 ---
 
-## Karma System
+## Trust Screens
 
-### `getUserKarma(userId)`
-
-Get user karma information.
+Trust is exposed through SDK screens rather than core API helpers.
 
 ```typescript
-const karma = await oxyServices.getUserKarma('user123');
+showBottomSheet('TrustCenter');
+showBottomSheet('TrustLeaderboard');
 ```
-
-**Parameters:**
-- `userId` (string): User ID
-
-**Returns:** `Promise<any>`
-
----
-
-### `giveKarma(userId, amount, reason?)`
-
-Give karma to a user.
-
-```typescript
-await oxyServices.giveKarma('user123', 10, 'Helpful answer');
-```
-
-**Parameters:**
-- `userId` (string): User ID
-- `amount` (number): Karma amount
-- `reason` (string, optional): Reason for giving karma
-
-**Returns:** `Promise<any>`
-
----
-
-### `getUserKarmaTotal(userId)`
-
-Get total karma for a user.
-
-```typescript
-const total = await oxyServices.getUserKarmaTotal('user123');
-```
-
-**Parameters:**
-- `userId` (string): User ID
-
-**Returns:** `Promise<any>`
-
----
-
-### `getKarmaLeaderboard()`
-
-Get karma leaderboard.
-
-```typescript
-const leaderboard = await oxyServices.getKarmaLeaderboard();
-```
-
-**Returns:** `Promise<any>`
 
 ---
 
@@ -938,4 +888,3 @@ All methods are fully typed. Import types for better TypeScript support:
 ```typescript
 import type { User, Notification, BlockedUser, RestrictedUser } from '@oxyhq/services';
 ```
-

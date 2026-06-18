@@ -17,7 +17,7 @@
   ],
   "scripts": {
     "build:all": "turbo run build",
-    "build:workspaces": "npm run build --workspaces --if-present",
+    "build:workspaces": "bun run build --filter '*'",
     "start": "cd packages/api && node dist/server.js",
     "dev": "turbo run dev",
     "test": "turbo run test",
@@ -70,12 +70,12 @@
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "@radix-ui/react-slot": "1.2.3",
-    "@oxyhq/bloom": "^0.8.1"
+    "@oxyhq/bloom": "^0.8.5"
   },
   "dependencies": {
     "@expo/metro-runtime": "~56.0.11",
     "@fontsource-variable/phudu": "^5.2.10",
-    "@oxyhq/bloom": "^0.8.1",
+    "@oxyhq/bloom": "^0.8.5",
     "expo-contacts": "~56.0.9",
     "expo-splash-screen": "~56.0.10",
     "is-arrayish": "^0.3.2",

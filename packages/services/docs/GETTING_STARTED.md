@@ -21,7 +21,7 @@ Welcome to Oxy! This guide will help you integrate Oxy into your application in 
 ### Install the Package
 
 ```bash
-npm install @oxyhq/services
+bun add @oxyhq/services
 ```
 
 ### Install Peer Dependencies
@@ -29,7 +29,7 @@ npm install @oxyhq/services
 For React Native/Expo projects, install the required peer dependencies:
 
 ```bash
-npm install react-native-reanimated react-native-gesture-handler \
+bun add react-native-reanimated react-native-gesture-handler \
   react-native-safe-area-context react-native-svg \
   @react-native-async-storage/async-storage
 ```
@@ -37,7 +37,7 @@ npm install react-native-reanimated react-native-gesture-handler \
 For Expo projects, also install:
 
 ```bash
-npx expo install expo expo-font expo-image expo-linear-gradient
+bunx expo install expo expo-font expo-image expo-linear-gradient
 ```
 
 ## Oxy Infrastructure
@@ -196,7 +196,7 @@ Oxy ships with two entry points. Pick the one that matches your environment so t
 
 1. **Install dependencies**:
 ```bash
-npm install @oxyhq/services react-native-reanimated react-native-gesture-handler
+bun add @oxyhq/services react-native-reanimated react-native-gesture-handler
 ```
 
 2. **Add polyfill** (first line of `index.js`):
@@ -216,7 +216,7 @@ module.exports = {
 
 1. **Install dependencies**:
 ```bash
-npx expo install @oxyhq/services expo expo-font expo-image expo-linear-gradient
+bunx expo install @oxyhq/services expo expo-font expo-image expo-linear-gradient
 ```
 
 2. **Add polyfill** (first line of `App.js`):
@@ -397,4 +397,3 @@ Now that you have Oxy integrated, explore these features:
 - 📖 [Full Documentation](./README.md)
 - 💬 [GitHub Issues](https://github.com/OxyHQ/OxyHQServices/issues)
 - 🌐 [Website](https://oxy.so)
-

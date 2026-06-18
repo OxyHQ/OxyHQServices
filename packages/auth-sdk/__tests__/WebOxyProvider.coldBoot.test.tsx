@@ -4,22 +4,21 @@
  * Cold-boot orchestration for `WebOxyProvider` — TRUE central cross-domain SSO.
  *
  * The provider drives session recovery through `runColdBoot` (from
- * `@oxyhq/core`) with five ordered steps that mirror the services `OxyContext`
- * (consistency mandate). The services `stored-session` bearer-restore step is
- * omitted on web — it is native's only restore path and was a guaranteed no-op
- * here (web is cookie-only), so it was dropped:
+ * `@oxyhq/core`) with four ordered steps that mirror the web-only subset of
+ * services `OxyContext` (consistency mandate). The legacy access-token redirect
+ * callback is intentionally not a session source anymore; redirect auth returns
+ * through the opaque-code SSO fragment consumed by `sso-return`.
  *
- *   0. redirect       — popup `?access_token=` query callback.
- *   1. sso-return     — parse `location.hash`; on `ok` exchange the opaque code
+ *   0. sso-return     — parse `location.hash`; on `ok` exchange the opaque code
  *                       and commit; on `none`/`error`/mismatch set NO_SESSION.
- *   2. fedcm-silent   — silent FedCM against the CENTRAL `auth.oxy.so` (Chrome).
- *   3. cookie-restore — refresh-cookie restore (first-party only on *.oxy.so).
- *   4. sso-bounce     — TERMINAL top-level navigation to `auth.oxy.so/sso`.
+ *   1. fedcm-silent   — silent FedCM against the CENTRAL `auth.oxy.so` (Chrome).
+ *   2. cookie-restore — refresh-cookie restore (first-party only on *.oxy.so).
+ *   3. sso-bounce     — TERMINAL top-level navigation to `auth.oxy.so/sso`.
  *
  * These tests pin the contract:
  *   1. The first step that yields a real session wins; later steps never run.
- *   2. `redirect` / `cookie-restore` MUST hydrate a real user (non-empty id)
- *      before committing — a placeholder user is never exposed (R4).
+ *   2. `cookie-restore` MUST hydrate a real user (non-empty id) before
+ *      committing — a placeholder user is never exposed (R4).
  *   3. `sso-return` `ok` exchanges the code and commits; `none` and
  *      state-mismatch set the NO_SESSION flag and skip.
  *   4. `sso-bounce` fires exactly ONCE for a logged-out visitor (loop proof),
@@ -221,7 +220,7 @@ describe('WebOxyProvider cold boot (central SSO)', () => {
     setLocation(`${ORIGIN}/`);
   });
 
-  it('0) redirect step wins and short-circuits later steps', async () => {
+  it('0) legacy redirect callback data is not committed by cold boot', async () => {
     resetStubs('https://api.test-0');
     stubs.handleRedirectCallback.mockReturnValue(makeSession({ id: '', username: '' }));
     stubs.getCurrentUser.mockResolvedValue(realUser);
@@ -229,16 +228,15 @@ describe('WebOxyProvider cold boot (central SSO)', () => {
     let latest: ProbeState = { isAuthenticated: false, userId: null, isLoading: true };
     renderProvider(stubs.baseURL, (s) => { latest = s; });
 
-    await waitFor(() => expect(latest.isAuthenticated).toBe(true));
-    expect(latest.userId).toBe('u1');
-    // Later steps must never run once redirect wins.
+    await waitFor(() => expect(bounced()).toBe(true));
+    expect(latest.isAuthenticated).toBe(false);
+    expect(latest.userId).toBeNull();
+    expect(stubs.handleRedirectCallback).not.toHaveBeenCalled();
     expect(stubs.exchangeSsoCode).not.toHaveBeenCalled();
     expect(stubs.silentSignInWithFedCM).not.toHaveBeenCalled();
-    expect(stubs.managerInitialize).not.toHaveBeenCalled();
-    expect(bounced()).toBe(false);
   });
 
-  it('1) redirect returns skip (NOT a placeholder session) when hydration fails — R4', async () => {
+  it('1) legacy redirect placeholder data is never exposed when hydration fails — R4', async () => {
     resetStubs('https://api.test-1');
     stubs.handleRedirectCallback.mockReturnValue(makeSession({ id: '', username: '' }));
     stubs.getCurrentUser.mockRejectedValue(new Error('bearer rejected'));

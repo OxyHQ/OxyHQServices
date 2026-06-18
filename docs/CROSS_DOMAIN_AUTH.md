@@ -6,6 +6,14 @@ Zero-config cross-domain SSO across all Oxy apps (homiio.com, mention.earth, ali
 
 Sign in once at `auth.oxy.so` and be automatically authenticated across all Oxy domains. Works like Google's SSO across YouTube, Gmail, and Maps.
 
+The callback and cold-boot behavior lives in the shared SDK:
+
+- `@oxyhq/core` owns all SSO helpers.
+- `OxyProvider` and `WebOxyProvider` handle `/__oxy/sso-callback` universally.
+- Apps must not implement local callback routes or helper copies.
+- Auth-dependent UI and private fetches should render only after the provider's
+  cold boot is resolved (`isAuthResolved` / `isLoading === false`).
+
 ### How It Works
 
 - **Web**: Uses FedCM (Federated Credential Management) - browser-native identity API
@@ -60,7 +68,11 @@ function App() {
 }
 
 function MyComponent() {
-  const { user, isAuthenticated, signIn, signOut } = useAuth();
+  const { user, isAuthenticated, isLoading, signIn, signOut } = useAuth();
+
+  if (isLoading) {
+    return <Loading />;
+  }
 
   if (!isAuthenticated) {
     return <Button onPress={() => signIn()} title="Sign In" />;

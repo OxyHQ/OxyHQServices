@@ -4,6 +4,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -287,6 +288,12 @@ function isSameSiteIdP(idpOrigin: string): boolean {
   return idpHostname === pageApex || idpHostname.endsWith(`.${pageApex}`);
 }
 
+function isOnSsoCallbackPath(): boolean {
+  return isWebBrowser() && window.location.pathname === SSO_CALLBACK_PATH;
+}
+
+const useBrowserLayoutEffect = typeof document !== 'undefined' ? useLayoutEffect : useEffect;
+
 let cachedUseFollowHook: UseFollowHook | null = null;
 
 const loadUseFollowHook = (): UseFollowHook => {
@@ -387,6 +394,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   const [authResolved, setAuthResolved] = useState(false);
   const authResolvedRef = useRef(false);
   const [initialized, setInitialized] = useState(false);
+  const [ssoCallbackIntercepting, setSsoCallbackIntercepting] = useState(false);
   const setAuthState = useAuthStore.setState;
 
   // Keep the shared `oxyClient` singleton's token store in lockstep with the
@@ -1293,13 +1301,12 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   // +not-found screen before the storage-gated cold-boot `sso-return` step gets
   // a chance to strip the fragment and restore the real destination.
   //
-  // This effect fires the SAME `runSsoReturn` kernel the instant we mount ON the
-  // callback path, BEFORE the cold boot (which awaits storage init). It restores
-  // the pre-bounce destination (and, on `ok`, commits the exchanged session via
-  // `handleWebSSOSession`) immediately, so the router re-syncs off the callback
-  // path and never lingers on it. Because the SDK owns this interception
-  // entirely, NO app needs a `/__oxy/sso-callback` route — it works identically
-  // across every consumer with zero per-app code.
+  // This effect fires the SAME `runSsoReturn` kernel the instant we hydrate ON
+  // the callback path, BEFORE the cold boot (which awaits storage init). The
+  // first render intentionally matches the app/router's static HTML; the
+  // browser layout effect then hides the internal route and consumes the
+  // callback before the first visible paint. That keeps SSR/SSG hydration stable
+  // while still ensuring no app needs a `/__oxy/sso-callback` route.
   //
   // It is purely ADDITIVE. The later cold-boot `sso-return` step stays as
   // defense-in-depth for the non-callback-path case; `consumeSsoReturn` strips
@@ -1315,13 +1322,13 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   // already wired when this fires at eager-mount time. If for any reason it were
   // not yet set, the later cold-boot `sso-return` step would commit it — but the
   // ref IS set during render, so the eager `ok` commit works.
-  useEffect(() => {
-    if (!isWebBrowser()) {
+  useBrowserLayoutEffect(() => {
+    if (!isOnSsoCallbackPath()) {
+      setSsoCallbackIntercepting(false);
       return;
     }
-    if (window.location.pathname !== SSO_CALLBACK_PATH) {
-      return;
-    }
+    let mounted = true;
+    setSsoCallbackIntercepting(true);
     runSsoReturnRef.current().catch((error) => {
       if (__DEV__) {
         loggerUtil.debug(
@@ -1330,7 +1337,15 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
           error,
         );
       }
+    }).finally(() => {
+      if (mounted) {
+        setSsoCallbackIntercepting(false);
+      }
     });
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   // Web SSO: automatically check for cross-domain session on web platforms.
@@ -1718,7 +1733,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
   return (
     <OxyContext.Provider value={contextValue}>
-      {children}
+      {ssoCallbackIntercepting ? null : children}
     </OxyContext.Provider>
   );
 };

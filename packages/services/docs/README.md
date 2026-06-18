@@ -21,7 +21,7 @@ Welcome to the Oxy developer documentation! This guide will help you integrate O
 
 1. **Install the package:**
 ```bash
-npm install @oxyhq/services
+bun add @oxyhq/services
 ```
 
 2. **Wrap your app:**

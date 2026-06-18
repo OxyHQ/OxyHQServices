@@ -19,7 +19,7 @@ The bottom-sheet router is the navigation backbone of `@oxyhq/services`. Every s
 ```tsx
 import { showBottomSheet, closeBottomSheet } from '@oxyhq/services';
 
-showBottomSheet('AccountSwitcher');
+showBottomSheet('ManageAccount');
 
 // Pass props that the screen reads from its `BaseScreenProps`:
 showBottomSheet('EditProfileField', { field: 'username', initialValue: user?.username });
@@ -37,10 +37,7 @@ The full `RouteName` union, sourced from `ui/navigation/routes.ts`:
 |-------|---------|
 | `OxyAuth` | Sign in with Oxy (QR code / deep link to the Accounts app) |
 | `WelcomeNewUser` | First-time-user welcome flow |
-| `AccountOverview` | High-level account summary |
-| `AccountSettings` | Account-level settings (handle, email, language) |
-| `AccountCenter` | Shortcuts to common account actions |
-| `AccountSwitcher` | Multi-account picker |
+| `ManageAccount` | Unified account hub, account switcher, sessions, and account settings |
 | `AccountVerification` | Identity verification flow |
 | `CreateManagedAccount` | Create a managed sub-account |
 | `Profile` | View/edit profile fields |
@@ -58,7 +55,7 @@ The full `RouteName` union, sourced from `ui/navigation/routes.ts`:
 | `UserLinks` | External links on the profile |
 | `HistoryView`, `SavesCollections` | Activity history + saved items |
 | `FollowersList`, `FollowingList` | Social graph lists |
-| `KarmaCenter`, `KarmaLeaderboard`, `KarmaRewards`, `KarmaRules`, `AboutKarma`, `KarmaFAQ` | Karma module |
+| `TrustCenter`, `TrustLeaderboard`, `TrustRewards`, `TrustRules`, `AboutTrust`, `TrustFAQ` | Trust module |
 
 ## Scrollable vs. fixed sheets
 

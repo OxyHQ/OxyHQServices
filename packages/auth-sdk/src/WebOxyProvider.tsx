@@ -11,6 +11,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -215,6 +216,12 @@ function clearSsoBounceStateWeb(): void {
   }
 }
 
+function isOnSsoCallbackPath(): boolean {
+  return isWebBrowser() && window.location.pathname === SSO_CALLBACK_PATH;
+}
+
+const useBrowserLayoutEffect = typeof document !== 'undefined' ? useLayoutEffect : useEffect;
+
 export interface WebOxyProviderProps {
   children: ReactNode;
   baseURL: string;
@@ -327,6 +334,7 @@ export function WebOxyProvider({
   const [isLoading, setIsLoading] = useState(!skipAutoCheck);
   const [error, setError] = useState<string | null>(null);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [ssoCallbackIntercepting, setSsoCallbackIntercepting] = useState(false);
 
   // Multi-account state — populated by the AuthManager cookie path
   // (`restoreFromCookies` / `switchAuthuser` / `signOutAuthuser`).
@@ -772,21 +780,25 @@ export function WebOxyProvider({
   // and restores the real destination.
   //
   // This effect runs the SAME `runSsoReturn` kernel the instant we mount ON the
-  // callback path, BEFORE the init effect's cold boot. It restores the pre-bounce
-  // destination (and, on `ok`, commits the exchanged session via
-  // `handleAuthSuccess` — exactly as the bfcache handler does) immediately, so
-  // the router re-syncs off the callback path and never lingers on it. Because
-  // the SDK owns this interception, NO app needs a `/__oxy/sso-callback` route.
+  // callback path, BEFORE the init effect's cold boot. The first render
+  // intentionally matches the app/router's static HTML; the browser layout
+  // effect then hides the internal route and consumes the callback before the
+  // first visible paint. That keeps SSR/SSG hydration stable while still making
+  // the SDK own `/__oxy/sso-callback` for every consumer.
   //
   // Purely ADDITIVE: the cold-boot `sso-return` step stays as defense-in-depth.
   // `consumeSsoReturn` strips the fragment first, so once this eager pass has run
   // the cold-boot step is a harmless idempotent no-op. The path guard scopes this
   // strictly to the callback path. Routed through `runSsoReturnRef` and
   // `handleAuthSuccessRef` so deps stay `[]` and it registers exactly once.
-  useEffect(() => {
-    if (!isWebBrowser()) return;
-    if (window.location.pathname !== SSO_CALLBACK_PATH) return;
+  useBrowserLayoutEffect(() => {
+    if (!isOnSsoCallbackPath()) {
+      setSsoCallbackIntercepting(false);
+      return;
+    }
 
+    let mounted = true;
+    setSsoCallbackIntercepting(true);
     runSsoReturnRef.current()
       .then(async (session) => {
         if (session) {
@@ -799,7 +811,16 @@ export function WebOxyProvider({
           { component: 'WebOxyProvider', method: 'eagerSsoCallbackIntercept' },
           err,
         );
+      })
+      .finally(() => {
+        if (mounted) {
+          setSsoCallbackIntercepting(false);
+        }
       });
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -1016,7 +1037,7 @@ export function WebOxyProvider({
   return (
     <QueryClientProvider client={queryClient}>
       <WebOxyContext.Provider value={contextValue}>
-        {children}
+        {ssoCallbackIntercepting ? null : children}
       </WebOxyContext.Provider>
     </QueryClientProvider>
   );

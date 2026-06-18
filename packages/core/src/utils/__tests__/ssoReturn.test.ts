@@ -7,7 +7,42 @@
  * `null` for anything that is not an oxy_sso fragment.
  */
 
-import { parseSsoReturnFragment } from '../ssoReturn';
+import type { SessionLoginResponse } from '../../models/session';
+import { consumeSsoReturn, parseSsoReturnFragment } from '../ssoReturn';
+import {
+  getSsoCallbackBootstrapScript,
+  ssoAttemptedKey,
+  ssoCallbackBootstrapKey,
+  ssoDestKey,
+  ssoNoSessionKey,
+  ssoStateKey,
+} from '../ssoBounce';
+
+class MemorySsoStorage implements Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> {
+  private readonly values = new Map<string, string>();
+
+  getItem(key: string): string | null {
+    return this.values.get(key) ?? null;
+  }
+
+  setItem(key: string, value: string): void {
+    this.values.set(key, value);
+  }
+
+  removeItem(key: string): void {
+    this.values.delete(key);
+  }
+}
+
+const ORIGIN = 'https://app.mention.earth';
+
+const exchangedSession: SessionLoginResponse = {
+  sessionId: 'sess_sso',
+  deviceId: 'device_sso',
+  accessToken: 'access_sso',
+  expiresAt: '2030-01-01T00:00:00.000Z',
+  user: { id: 'user_sso', username: 'sso-user' },
+};
 
 describe('parseSsoReturnFragment', () => {
   describe('ok', () => {
@@ -116,5 +151,101 @@ describe('parseSsoReturnFragment', () => {
         expect(['ok', 'none', 'error']).toContain(result?.kind);
       }
     });
+  });
+});
+
+describe('consumeSsoReturn pre-hydration callback bootstrap', () => {
+  it('continues an ok callback after the HTML bootstrap moved the URL to a hydratable route', async () => {
+    const storage = new MemorySsoStorage();
+    const replaceStateCalls: string[] = [];
+    const dispatchPopState = jest.fn();
+    const hardRedirect = jest.fn();
+    const exchangeSsoCode = jest.fn(async (): Promise<SessionLoginResponse> => exchangedSession);
+
+    storage.setItem(ssoStateKey(ORIGIN), 'state-ok');
+    storage.setItem(ssoDestKey(ORIGIN), `${ORIGIN}/explore?tab=home#top`);
+    storage.setItem(ssoCallbackBootstrapKey(ORIGIN), '1');
+
+    const session = await consumeSsoReturn(
+      { exchangeSsoCode },
+      {
+        isWeb: () => true,
+        storage,
+        location: {
+          hash: '#oxy_sso=ok&code=opaque-code&state=state-ok',
+          origin: ORIGIN,
+          pathname: '/',
+          search: '',
+        },
+        history: {
+          replaceState: (_data: unknown, _unused: string, url?: string | URL | null): void => {
+            replaceStateCalls.push(String(url ?? ''));
+          },
+        },
+        dispatchPopState,
+        hardRedirect,
+      },
+    );
+
+    expect(session).toBe(exchangedSession);
+    expect(exchangeSsoCode).toHaveBeenCalledWith('opaque-code');
+    expect(replaceStateCalls).toEqual(['/', '/explore?tab=home#top']);
+    expect(dispatchPopState).toHaveBeenCalledTimes(1);
+    expect(hardRedirect).not.toHaveBeenCalled();
+    expect(storage.getItem(ssoCallbackBootstrapKey(ORIGIN))).toBeNull();
+    expect(storage.getItem(ssoDestKey(ORIGIN))).toBeNull();
+    expect(storage.getItem(ssoNoSessionKey(ORIGIN))).toBeNull();
+  });
+
+  it('leaves a bootstrapped none callback with loop breakers set and no exchange', async () => {
+    const storage = new MemorySsoStorage();
+    const replaceStateCalls: string[] = [];
+    const dispatchPopState = jest.fn();
+    const hardRedirect = jest.fn();
+    const exchangeSsoCode = jest.fn(async (): Promise<SessionLoginResponse> => exchangedSession);
+
+    storage.setItem(ssoStateKey(ORIGIN), 'state-none');
+    storage.setItem(ssoDestKey(ORIGIN), `${ORIGIN}/library`);
+    storage.setItem(ssoCallbackBootstrapKey(ORIGIN), '1');
+
+    const session = await consumeSsoReturn(
+      { exchangeSsoCode },
+      {
+        isWeb: () => true,
+        storage,
+        location: {
+          hash: '#oxy_sso=none&state=state-none',
+          origin: ORIGIN,
+          pathname: '/',
+          search: '',
+        },
+        history: {
+          replaceState: (_data: unknown, _unused: string, url?: string | URL | null): void => {
+            replaceStateCalls.push(String(url ?? ''));
+          },
+        },
+        dispatchPopState,
+        hardRedirect,
+      },
+    );
+
+    expect(session).toBeNull();
+    expect(exchangeSsoCode).not.toHaveBeenCalled();
+    expect(replaceStateCalls).toEqual(['/']);
+    expect(dispatchPopState).not.toHaveBeenCalled();
+    expect(hardRedirect).toHaveBeenCalledWith(`${ORIGIN}/library`);
+    expect(storage.getItem(ssoCallbackBootstrapKey(ORIGIN))).toBeNull();
+    expect(storage.getItem(ssoDestKey(ORIGIN))).toBeNull();
+    expect(storage.getItem(ssoNoSessionKey(ORIGIN))).toBe('1');
+    expect(storage.getItem(ssoAttemptedKey(ORIGIN))).toBe('1');
+  });
+
+  it('exposes a pre-hydration script that preserves the SSO fragment', () => {
+    const script = getSsoCallbackBootstrapScript();
+
+    expect(script).toContain('/__oxy/sso-callback');
+    expect(script).toContain('oxy_sso=');
+    expect(script).toContain('window.history.replaceState');
+    expect(script).toContain('window.location.hash');
   });
 });
