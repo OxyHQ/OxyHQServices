@@ -88,7 +88,6 @@ function buildStub() {
     exchangeSsoCode: jest.fn(async () => null),
     generateSsoState: jest.fn(() => 'should-never-be-called'),
     validateSession: validateSessionSpy,
-    getTokenBySession: jest.fn(async () => 'native.token'),
     getUserBySession: jest.fn(async (): Promise<User> => ({ id: STORED_USER_ID, username: 'nativeuser' } as User)),
     getCurrentUser: jest.fn(async (): Promise<User> => ({ id: STORED_USER_ID, username: 'nativeuser' } as User)),
     getSessionsBySessionId: jest.fn(async () => []),

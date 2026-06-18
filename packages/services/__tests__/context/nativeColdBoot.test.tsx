@@ -92,9 +92,6 @@ function buildStub() {
     exchangeSsoCode: exchangeSsoCodeSpy,
     generateSsoState: generateSsoStateSpy,
     validateSession: validateSessionSpy,
-    // `switchSession` in session-management calls `getTokenBySession` +
-    // `validateSession` again; provide them.
-    getTokenBySession: jest.fn(async () => 'native.token'),
     getUserBySession: jest.fn(async (): Promise<User> => ({ id: STORED_USER_ID, username: 'nativeuser' } as User)),
     getCurrentUser: jest.fn(async (): Promise<User> => ({ id: STORED_USER_ID, username: 'nativeuser' } as User)),
     getSessionsBySessionId: jest.fn(async () => []),

@@ -62,7 +62,6 @@ function buildHangingStub() {
     refreshAllSessions: jest.fn(async () => ({ accounts: [] as unknown[] })),
     generateSsoState: jest.fn(() => 'state-token-hang'),
     exchangeSsoCode: jest.fn(async () => null),
-    getTokenBySession: jest.fn(async () => 'unused.token'),
     getCurrentUser: jest.fn(async (): Promise<User> => ({ id: USER_ID, username: 't' } as User)),
     validateSession: jest.fn(async () => ({ valid: true, user: { id: USER_ID, username: 't' } })),
     getDeviceSessions: jest.fn(async () => []),

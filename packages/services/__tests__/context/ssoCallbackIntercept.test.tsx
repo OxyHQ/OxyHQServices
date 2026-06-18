@@ -87,7 +87,6 @@ function buildStub(cfg: StubConfig) {
       refreshAllSessions: jest.fn(async () => ({ accounts: [] as unknown[] })),
       generateSsoState: jest.fn(() => 'fresh-state'),
       exchangeSsoCode,
-      getTokenBySession: jest.fn(async () => 'unused.token'),
       getCurrentUser: jest.fn(
         async (): Promise<User> => ({ id: EXCHANGED_USER_ID, username: 'ssouser' } as User),
       ),
@@ -137,15 +136,17 @@ describe('Eager SSO callback interception (services OxyContext)', () => {
     assignSpy.mockRestore();
   });
 
-  it('none: eagerly restores dest, strips fragment, sets loop-breakers, dispatches popstate, never bounces', async () => {
+  it('none: eagerly consumes callback, strips fragment, sets loop-breakers, never bounces', async () => {
     const { stub, exchangeSsoCode } = buildStub({ baseURL: 'https://api.mention.earth/intercept-none' });
     window.sessionStorage.setItem(ssoStateKey(ORIGIN), 's');
     window.sessionStorage.setItem(ssoDestKey(ORIGIN), `${ORIGIN}${DEST_PATH}`);
 
     renderProvider(stub, 'https://api.mention.earth/intercept-none');
 
-    // The eager interception restores the real destination off the callback path.
-    await waitFor(() => expect(window.location.pathname).toBe(DEST_PATH));
+    // The eager interception consumes the SSO return immediately. Non-ok
+    // callback-path navigation is a hard redirect owned by the core kernel and
+    // covered in core tests; JSDOM does not perform that navigation.
+    await waitFor(() => expect(window.sessionStorage.getItem(ssoNoSessionKey(ORIGIN))).toBe('1'));
 
     // Fragment stripped; CSRF state + dest consumed.
     expect(window.location.hash).toBe('');
@@ -156,10 +157,11 @@ describe('Eager SSO callback interception (services OxyContext)', () => {
     expect(window.sessionStorage.getItem(ssoNoSessionKey(ORIGIN))).toBe('1');
     expect(window.sessionStorage.getItem(ssoAttemptedKey(ORIGIN))).toBe('1');
 
-    // No exchange (none), no terminal bounce, popstate dispatched for re-sync.
+    // No exchange (none), no terminal bounce. Popstate is only for ok soft
+    // restores; non-ok outcomes leave the callback path via hard redirect.
     expect(exchangeSsoCode).not.toHaveBeenCalled();
     expect(assignSpy).not.toHaveBeenCalled();
-    expect(popStateSpy).toHaveBeenCalled();
+    expect(popStateSpy).not.toHaveBeenCalled();
 
     // Settle any trailing microtasks (cold boot is a no-op once stripped).
     await new Promise((r) => setTimeout(r, 0));

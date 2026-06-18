@@ -80,7 +80,6 @@ function buildStub(cfg: StubConfig) {
       refreshAllSessions: jest.fn(async () => ({ accounts: [] as unknown[] })),
       generateSsoState: jest.fn(() => 'fresh-state'),
       exchangeSsoCode,
-      getTokenBySession: jest.fn(async () => 'unused.token'),
       getCurrentUser: jest.fn(
         async (): Promise<User> => ({ id: EXCHANGED_USER_ID, username: 'ssouser' } as User),
       ),

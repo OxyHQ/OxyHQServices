@@ -3,11 +3,10 @@
  *
  * Cold-boot session restore via the secure refresh cookies (multi-account).
  *
- * THE BUG THIS GUARDS: on a hard reload the web client had no access token in
- * memory, so the bearer-protected cold-boot token fetch (`getTokenBySession` →
- * `/session/token/:id`) 401'd, the stored session was cleared, and the user was
- * bounced to sign-in. FedCM silent re-auth cannot cover this (Chrome
- * auto-reauthn cooldown).
+ * THE BUG THIS GUARDS: on a hard reload the web client has no access token in
+ * memory. Cold boot must restore from secure httpOnly refresh cookies instead
+ * of depending on any legacy bearer-token fetch tied to a stored session id.
+ * FedCM silent re-auth cannot cover this (Chrome auto-reauthn cooldown).
  *
  * THE FIX: on boot the provider calls `oxyServices.refreshAllSessions()`
  * (`POST /auth/refresh-all` with `credentials: 'include'` and no Authorization
@@ -18,8 +17,7 @@
  * without FedCM.
  *
  * CASE accounts: a mocked 200 with one account signs the user in and persists
- *                the session id; `getTokenBySession` is NOT used and no FedCM
- *                call is needed.
+ *                the session id; no FedCM call is needed.
  * CASE empty:    a mocked 200 `{accounts:[]}` leaves the user logged out
  *                without throwing and without planting a token.
  * CASE network:  a `fetch` rejection falls through unauthenticated.
@@ -74,7 +72,6 @@ interface StubOverrides {
 }
 
 const setTokensSpy = jest.fn();
-const getTokenBySessionSpy = jest.fn(async () => 'should.not.be.called');
 const isFedCMSupportedSpy = jest.fn(() => false);
 
 function baseStub(overrides: StubOverrides = {}) {
@@ -105,7 +102,6 @@ function baseStub(overrides: StubOverrides = {}) {
     getCurrentUser:
       overrides.getCurrentUser ??
       jest.fn(async (): Promise<User> => ({ id: COOKIE_USER_ID, username: 'tester' } as User)),
-    getTokenBySession: getTokenBySessionSpy,
     validateSession: jest.fn(async () => ({
       valid: true,
       user: { id: COOKIE_USER_ID, username: 'tester' },
@@ -134,7 +130,6 @@ describe('Cold-boot restore via secure refresh cookies (multi-account)', () => {
     window.sessionStorage.clear();
     captured = { isAuthenticated: false, userId: undefined, isTokenReady: false };
     setTokensSpy.mockClear();
-    getTokenBySessionSpy.mockClear();
     isFedCMSupportedSpy.mockClear();
     // `accounts.oxy.so` is a first-party RP, NOT the central IdP, so a fully
     // logged-out cold boot ends in the terminal `sso-bounce`. Spy the
@@ -179,10 +174,6 @@ describe('Cold-boot restore via secure refresh cookies (multi-account)', () => {
 
     // The refresh-all SDK method was called exactly once.
     expect(stub.refreshAllSessions).toHaveBeenCalledTimes(1);
-
-    // Cold boot did NOT depend on the bearer-protected token fetch — the user
-    // was signed in from the cookies alone, no FedCM silent re-auth needed.
-    expect(getTokenBySessionSpy).not.toHaveBeenCalled();
 
     // The cookie step won → the terminal central-SSO bounce never fired.
     expect(ssoNavigateSpy).not.toHaveBeenCalled();

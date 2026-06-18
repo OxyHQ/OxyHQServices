@@ -108,8 +108,8 @@ describe('OxyProvider mirrors the session token onto the exported oxyClient sing
     // be vacuous.)
     expect(providerInstance).not.toBe(oxyClient);
 
-    // Simulate what the real auth flows do — verifyChallenge / getTokenBySession
-    // both ultimately call setTokens on the provider's instance.
+    // Simulate what real auth flows do: they plant tokens on the provider's
+    // instance through `setTokens`.
     act(() => {
       providerInstance.setTokens('access-from-signin', 'refresh-from-signin');
     });

@@ -54,7 +54,6 @@ interface FakeServices {
   requestChallenge: jest.Mock;
   verifyChallenge: jest.Mock;
   setTokens: jest.Mock;
-  getTokenBySession: jest.Mock;
   getUserBySession: jest.Mock;
   logoutSession: jest.Mock;
   logoutAllSessions: jest.Mock;
@@ -68,10 +67,8 @@ const makeOxyServices = (overrides: Partial<FakeServices> = {}): FakeServices =>
   // The real `/auth/verify` always returns the first access token in its
   // body, and `OxyServices.verifyChallenge` now PLANTS that token internally
   // (mirroring `claimSessionByToken`). The sign-in flow therefore relies on
-  // `verifyChallenge` to authenticate the client and must NOT re-fetch the
-  // token from the bearer-protected `GET /session/token/:sessionId` (which
-  // 401s before a token exists). The mock returns the token to mirror the
-  // real response shape, but the consumer no longer reads it directly.
+  // `verifyChallenge` to authenticate the client. The mock returns the token to
+  // mirror the real response shape, but the consumer no longer reads it directly.
   verifyChallenge: jest.fn(async (): Promise<SessionLoginResponse> => ({
     sessionId: 'new-session',
     deviceId: 'device-1',
@@ -81,7 +78,6 @@ const makeOxyServices = (overrides: Partial<FakeServices> = {}): FakeServices =>
     user: { id: 'user-1', username: 'alice' },
   })),
   setTokens: jest.fn(),
-  getTokenBySession: jest.fn(async () => ({ accessToken: 'tok' })),
   getUserBySession: jest.fn(async (): Promise<User> => ({
     id: 'user-1',
     username: 'alice',
@@ -186,11 +182,7 @@ describe('useAuthOperations.signIn — online flow', () => {
     // in @oxyhq/core's auth mixin tests), so the consumer no longer touches
     // `setTokens` directly...
     expect(helpers.oxyServices.setTokens).not.toHaveBeenCalled();
-    // ...and critically must NEVER call the bearer-protected
-    // `GET /session/token/:sessionId`, which 401s for a brand-new identity
-    // that has no bearer yet. Regression guard for the
-    // AUTH_REQUIRED_OFFLINE_SESSION onboarding break.
-    expect(helpers.oxyServices.getTokenBySession).not.toHaveBeenCalled();
+    // ...and critically must not depend on any legacy session-id token fetch.
     expect(helpers.oxyServices.getUserBySession).toHaveBeenCalledWith('new-session');
     expect(helpers.setActiveSessionId).toHaveBeenCalledWith('new-session');
     expect(helpers.saveActiveSessionId).toHaveBeenCalledWith('new-session');
@@ -201,7 +193,7 @@ describe('useAuthOperations.signIn — online flow', () => {
     expect(helpers.setAuthState).toHaveBeenLastCalledWith({ isLoading: false });
   });
 
-  it('does not call getTokenBySession even when the verify response omits an access token', async () => {
+  it('continues sign-in when the verify response omits an access token', async () => {
     (sessionHelpers.fetchSessionsWithFallback as jest.Mock).mockResolvedValueOnce([
       { sessionId: 'new-session', deviceId: 'device-1', userId: 'user-1', isCurrent: true },
     ]);
@@ -209,9 +201,8 @@ describe('useAuthOperations.signIn — online flow', () => {
     const helpers = setup({
       oxyServices: {
         // A token-less new identity (onboarding): verify returns no access
-        // token. The consumer must still proceed to fetch the user WITHOUT
-        // hitting the bearer-protected session-token endpoint — that endpoint
-        // 401s pre-bearer and previously broke onboarding.
+        // token. The consumer must still proceed to fetch the user without
+        // depending on legacy session-id token exchange.
         verifyChallenge: jest.fn(async (): Promise<SessionLoginResponse> => ({
           sessionId: 'new-session',
           deviceId: 'device-1',
@@ -227,7 +218,6 @@ describe('useAuthOperations.signIn — online flow', () => {
     });
 
     expect(helpers.oxyServices.setTokens).not.toHaveBeenCalled();
-    expect(helpers.oxyServices.getTokenBySession).not.toHaveBeenCalled();
     expect(helpers.oxyServices.getUserBySession).toHaveBeenCalledWith('new-session');
     expect(signedInUser?.id).toBe('user-1');
   });
@@ -298,7 +288,6 @@ describe('useAuthOperations.signIn — offline flow', () => {
 
     // Online endpoints must NOT be hit when offline
     expect(helpers.oxyServices.verifyChallenge).not.toHaveBeenCalled();
-    expect(helpers.oxyServices.getTokenBySession).not.toHaveBeenCalled();
     expect(helpers.oxyServices.getUserBySession).not.toHaveBeenCalled();
 
     expect(signedInUser?.id).toBe('offline-pubkey');

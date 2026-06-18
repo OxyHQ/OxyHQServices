@@ -52,7 +52,6 @@ function buildStub(baseURL: string) {
     refreshAllSessions: jest.fn(async () => ({ accounts: [] as unknown[] })),
     generateSsoState: jest.fn(() => 'fresh-state'),
     exchangeSsoCode: jest.fn(async () => null),
-    getTokenBySession: jest.fn(async () => 'unused.token'),
     getCurrentUser: jest.fn(async (): Promise<User> => ({ id: 'u', username: 't' } as User)),
     validateSession: jest.fn(async () => ({ valid: true, user: { id: 'u' } })),
     setActingAs: jest.fn(),

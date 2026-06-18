@@ -69,7 +69,6 @@ function baseStub() {
     // drive the persistence path explicitly via handleWebSession.
     isFedCMSupported: () => false,
     getCurrentUser: jest.fn(async () => ({ id: 'user_123', username: 'tester' })),
-    getTokenBySession: jest.fn(async () => 'header.payload.sig'),
     validateSession: jest.fn(async () => ({
       valid: true,
       user: { id: 'user_123', username: 'tester' },
