@@ -1,8 +1,17 @@
 import { create } from 'zustand';
+import { createDebugLogger, normalizeUserIdentity } from '@oxyhq/core';
 import type { User } from '@oxyhq/core';
-import { createDebugLogger } from '@oxyhq/core';
 
 const debug = createDebugLogger('AuthStore');
+
+type LegacyUserIdentity = Partial<Omit<User, 'id' | 'publicKey' | 'username'>> & {
+  id?: string;
+  _id: string;
+  publicKey: string;
+  username: string;
+};
+
+type AuthStoreUserInput = User | LegacyUserIdentity;
 
 export interface AuthState {
   user: User | null;
@@ -11,11 +20,11 @@ export interface AuthState {
   error: string | null;
   lastUserFetch: number | null; // Timestamp of last user fetch for caching
   
-  loginSuccess: (user: User) => void;
+  loginSuccess: (user: AuthStoreUserInput) => void;
   loginFailure: (error: string) => void;
   logout: () => void;
   fetchUser: (oxyServices: { getCurrentUser: () => Promise<User> }, forceRefresh?: boolean) => Promise<void>;
-  setUser: (user: User) => void; // Direct user setter for caching
+  setUser: (user: AuthStoreUserInput) => void; // Direct user setter for caching
 }
 
 export const useAuthStore = create<AuthState>((set: (state: Partial<AuthState>) => void, get: () => AuthState) => ({
@@ -24,20 +33,20 @@ export const useAuthStore = create<AuthState>((set: (state: Partial<AuthState>) 
   isLoading: false,
   error: null,
   lastUserFetch: null,
-  
-  loginSuccess: (user: User) => set({ 
-    isLoading: false, 
-    isAuthenticated: true, 
-    user, 
+
+  loginSuccess: (user: AuthStoreUserInput) => set({
+    isLoading: false,
+    isAuthenticated: true,
+    user: normalizeUserIdentity(user),
     lastUserFetch: Date.now(),
   }),
   loginFailure: (error: string) => set({ isLoading: false, error }),
-  logout: () => set({ 
-    user: null, 
-    isAuthenticated: false, 
+  logout: () => set({
+    user: null,
+    isAuthenticated: false,
     lastUserFetch: null,
   }),
-  setUser: (user: User) => set({ user, lastUserFetch: Date.now() }),
+  setUser: (user: AuthStoreUserInput) => set({ user: normalizeUserIdentity(user), lastUserFetch: Date.now() }),
   fetchUser: async (oxyServices, forceRefresh = false) => {
     const state = get();
     const now = Date.now();
@@ -52,7 +61,7 @@ export const useAuthStore = create<AuthState>((set: (state: Partial<AuthState>) 
 
     set({ isLoading: true, error: null });
     try {
-      const user = await oxyServices.getCurrentUser();
+      const user = normalizeUserIdentity(await oxyServices.getCurrentUser());
       set({ user, isLoading: false, isAuthenticated: true, lastUserFetch: now });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to fetch user';
@@ -60,4 +69,4 @@ export const useAuthStore = create<AuthState>((set: (state: Partial<AuthState>) 
       set({ error: errorMessage, isLoading: false });
     }
   },
-})); 
+}));

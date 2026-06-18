@@ -2,6 +2,7 @@ import type { OxyServicesBase } from '../OxyServices.base';
 import { OxyAuthenticationError } from '../OxyServices.errors';
 import type { SessionLoginResponse } from '../models/session';
 import { createDebugLogger } from '../shared/utils/debugUtils';
+import { normalizeUserIdentity } from '../utils/userIdentity';
 
 const debug = createDebugLogger('FedCM');
 
@@ -254,13 +255,13 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
    * @throws {OxyAuthenticationError} If FedCM not supported or user cancels
    *
    * @example
-   * ```typescript
-   * try {
-   *   const session = await oxyServices.signInWithFedCM();
-   *   console.log('Signed in:', session.user);
-   * } catch (error) {
-   *   // Fallback to redirect auth
-   *   oxyServices.signInWithRedirect();
+ * ```typescript
+ * try {
+ *   const session = await oxyServices.signInWithFedCM();
+ *   const user = session.user;
+ * } catch (error) {
+ *   // Fallback to redirect auth
+ *   oxyServices.signInWithRedirect();
    * }
    * ```
    */
@@ -776,7 +777,10 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
         hasUser: !!response?.user,
       });
 
-      return response;
+      return {
+        ...response,
+        user: normalizeUserIdentity(response.user),
+      };
     } catch (error) {
       debug.error('Token exchange failed:', error instanceof Error ? error.message : String(error));
       throw error;

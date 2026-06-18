@@ -24,6 +24,19 @@ The production path is centralized in the SDK:
   token is available. Use `isAuthResolved` plus token readiness for user-private
   endpoints; do not issue `/managed-accounts`, privacy, follow-status, library,
   or profile-settings requests while the SDK is still restoring the session.
+- App APIs must use SDK-owned linked clients, not per-app auth helpers. Create
+  them from the active `OxyServices` instance with the app backend `baseURL`; the
+  linked client attaches the current Oxy bearer token and follows the same
+  token-invalidation rules as the root client. Apps must not copy auth headers,
+  user payloads, CSRF fetchers, or session middleware into local API wrappers.
+- Bearer-authenticated state-changing requests do not fetch app-local CSRF
+  tokens. CSRF protection is for ambient cookie credentials; SDK bearer requests
+  are explicit authorization and must not depend on duplicated `/csrf-token`
+  endpoints in every app backend. Cookie-only writes still fetch and send CSRF.
+- SDK user objects expose a stable `id` even when the API payload contains only
+  Mongo-style `_id`. Ownership checks, profile comparisons, live-room controls,
+  and account switching must compare the normalized SDK `user.id` instead of
+  reading backend-specific identifier fields directly.
 - Token invalidation is a session event. If `HttpService` clears the access
   token after a 401, `@oxyhq/services` must clear local auth state and managed
   accounts before any more private queries run. Consumers must not keep fetching

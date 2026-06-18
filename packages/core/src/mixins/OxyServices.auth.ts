@@ -15,6 +15,7 @@ import type { OxyServicesBase } from '../OxyServices.base';
 import { OxyAuthenticationError } from '../OxyServices.errors';
 import { loadNodeCrypto } from '../utils/platformCrypto';
 import { logger } from '../utils/loggerUtils';
+import { normalizeUserIdentity, normalizeUserIdentityOrNull } from '../utils/userIdentity';
 
 export interface ChallengeResponse {
   challenge: string;
@@ -451,7 +452,10 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
           this.setTokens(res.accessToken);
         }
 
-        return res;
+        return {
+          ...res,
+          user: normalizeUserIdentity(res.user),
+        };
       } catch (error) {
         throw this.handleError(error);
       }
@@ -478,12 +482,13 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
      */
     async getUserByPublicKey(publicKey: string): Promise<User> {
       try {
-        return await this.makeRequest<User>(
+        const user = await this.makeRequest<User>(
           'GET',
           `/auth/user/${encodeURIComponent(publicKey)}`,
           undefined,
           { cache: true, cacheTTL: 2 * 60 * 1000 }
         );
+        return normalizeUserIdentity(user);
       } catch (error) {
         throw this.handleError(error);
       }
@@ -494,10 +499,11 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
      */
     async getUserBySession(sessionId: string): Promise<User> {
       try {
-        return await this.makeRequest<User>('GET', `/session/user/${sessionId}`, undefined, {
+        const user = await this.makeRequest<User>('GET', `/session/user/${sessionId}`, undefined, {
           cache: true,
           cacheTTL: 2 * 60 * 1000,
         });
+        return normalizeUserIdentity(user);
       } catch (error) {
         throw this.handleError(error);
       }
@@ -514,7 +520,7 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
         
         const uniqueSessionIds = Array.from(new Set(sessionIds)).sort();
         
-        return await this.makeRequest<Array<{ sessionId: string; user: User | null }>>(
+        const users = await this.makeRequest<Array<{ sessionId: string; user: User | null }>>(
           'POST',
           '/session/users/batch',
           { sessionIds: uniqueSessionIds },
@@ -524,6 +530,10 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
             deduplicate: true,
           }
         );
+        return users.map((entry) => ({
+          ...entry,
+          user: normalizeUserIdentityOrNull(entry.user),
+        }));
       } catch (error) {
         throw this.handleError(error);
       }
@@ -909,7 +919,18 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
         const urlParams: Record<string, string> = {};
         if (options.deviceFingerprint) urlParams.deviceFingerprint = options.deviceFingerprint;
         if (options.useHeaderValidation) urlParams.useHeaderValidation = 'true';
-        return await this.makeRequest('GET', `/session/validate/${sessionId}`, urlParams, { cache: false });
+        const validation = await this.makeRequest<{
+          valid: boolean;
+          expiresAt: string;
+          lastActivity: string;
+          user: User;
+          sessionId?: string;
+          source?: string;
+        }>('GET', `/session/validate/${sessionId}`, urlParams, { cache: false });
+        return {
+          ...validation,
+          user: normalizeUserIdentity(validation.user),
+        };
       } catch (error) {
         // Session is invalid — clear any cached user data for this session (#196)
         this.clearCacheEntry(`GET:/session/user/${sessionId}`);
@@ -950,13 +971,17 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
       deviceFingerprint?: any
     ): Promise<SessionLoginResponse> {
       try {
-        return await this.makeRequest<SessionLoginResponse>('POST', '/auth/signup', {
+        const session = await this.makeRequest<SessionLoginResponse>('POST', '/auth/signup', {
           username,
           email,
           password,
           deviceName,
           deviceFingerprint,
         }, { cache: false });
+        return {
+          ...session,
+          user: normalizeUserIdentity(session.user),
+        };
       } catch (error) {
         throw this.handleError(error);
       }
@@ -972,12 +997,16 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
       deviceFingerprint?: any
     ): Promise<SessionLoginResponse> {
       try {
-        return await this.makeRequest<SessionLoginResponse>('POST', '/auth/login', {
+        const session = await this.makeRequest<SessionLoginResponse>('POST', '/auth/login', {
           identifier,
           password,
           deviceName,
           deviceFingerprint,
         }, { cache: false });
+        return {
+          ...session,
+          user: normalizeUserIdentity(session.user),
+        };
       } catch (error) {
         throw this.handleError(error);
       }

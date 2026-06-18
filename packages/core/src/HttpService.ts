@@ -32,7 +32,7 @@ interface JwtPayload {
   userId?: string;
   id?: string;
   sessionId?: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export type AuthRefreshReason = 'preflight' | 'response-401';
@@ -314,9 +314,11 @@ export class HttpService {
         // Get auth token (with auto-refresh)
         const authHeader = await this.getAuthHeader();
 
-        // Get CSRF token for state-changing requests
+        // CSRF protects cookie-authenticated browser writes. Bearer-authenticated
+        // SDK clients are not vulnerable to ambient-cookie CSRF, and linked app
+        // APIs should not need to implement a duplicate `/csrf-token` route.
         const isStateChangingMethod = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);
-        const csrfToken = isStateChangingMethod ? await this.fetchCsrfToken() : null;
+        const csrfToken = isStateChangingMethod && !authHeader ? await this.fetchCsrfToken() : null;
 
         // Determine if data is FormData using robust detection
         const isFormData = this.isFormData(data);

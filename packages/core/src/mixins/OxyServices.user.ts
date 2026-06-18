@@ -14,6 +14,7 @@ import type { OxyServicesBase } from '../OxyServices.base';
 import { buildSearchParams, buildPaginationParams, type PaginationParams } from '../utils/apiUtils';
 import { KeyManager } from '../crypto/keyManager';
 import { SignatureService } from '../crypto/signatureService';
+import { normalizeUserIdentity, normalizeUserIdentityOrNull } from '../utils/userIdentity';
 
 export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) {
   return class extends Base {
@@ -25,10 +26,11 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
      */
     async getProfileByUsername(username: string): Promise<User> {
       try {
-        return await this.makeRequest<User>('GET', `/profiles/username/${username}`, undefined, {
+        const user = await this.makeRequest<User>('GET', `/profiles/username/${username}`, undefined, {
           cache: true,
           cacheTTL: 5 * 60 * 1000, // 5 minutes cache for profiles
         });
+        return normalizeUserIdentity(user);
       } catch (error) {
         throw this.handleError(error);
       }
@@ -109,7 +111,7 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
           cache: true,
           cacheTTL: 24 * 60 * 60 * 1000, // 24h cache — matches server-side staleness window
         });
-        return result ?? null;
+        return normalizeUserIdentityOrNull(result);
       } catch {
         return null;
       }
@@ -130,7 +132,7 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
       bio?: string;
       ownerId?: string;
     }): Promise<User> {
-      return this.makeRequest<User>('PUT', '/users/resolve', data);
+      return normalizeUserIdentity(await this.makeRequest<User>('PUT', '/users/resolve', data));
     }
 
     /**
@@ -175,10 +177,11 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
     async getSimilarProfiles(userId: string, limit?: number): Promise<User[]> {
       const params: Record<string, string> = {};
       if (limit) params.limit = String(limit);
-      return await this.makeRequest<User[]>('GET', `/profiles/${userId}/similar`, params, {
+      const users = await this.makeRequest<User[]>('GET', `/profiles/${userId}/similar`, params, {
         cache: true,
         cacheTTL: 5 * 60 * 1000, // 5 min cache
       });
+      return users.map((user) => normalizeUserIdentity(user));
     }
 
     /**
@@ -186,10 +189,11 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
      */
     async getUserById(userId: string): Promise<User> {
       try {
-        return await this.makeRequest<User>('GET', `/users/${userId}`, undefined, {
+        const user = await this.makeRequest<User>('GET', `/users/${userId}`, undefined, {
           cache: true,
           cacheTTL: 5 * 60 * 1000, // 5 minutes cache
         });
+        return normalizeUserIdentity(user);
       } catch (error) {
         throw this.handleError(error);
       }
@@ -200,10 +204,11 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
      */
     async getCurrentUser(): Promise<User> {
       return this.withAuthRetry(async () => {
-        return await this.makeRequest<User>('GET', '/users/me', undefined, {
+        const user = await this.makeRequest<User>('GET', '/users/me', undefined, {
           cache: true,
           cacheTTL: 1 * 60 * 1000, // 1 minute cache for current user
         });
+        return normalizeUserIdentity(user);
       }, 'getCurrentUser');
     }
 
@@ -222,7 +227,9 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
      */
     async updateProfile(updates: Partial<User>): Promise<User> {
       try {
-        const result = await this.makeRequest<User>('PUT', '/users/me', updates, { cache: false });
+        const result = normalizeUserIdentity(
+          await this.makeRequest<User>('PUT', '/users/me', updates, { cache: false }),
+        );
 
         // Bust every cached representation of the current user. We use a
         // prefix sweep rather than an enumeration because the SDK never
@@ -236,12 +243,18 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
 
         return result;
       } catch (error) {
-        const errorAny = error as any;
         const errorMessage = error instanceof Error ? error.message : String(error);
-        const status = errorAny?.status || errorAny?.response?.status;
-        
+        const errorRecord = error && typeof error === 'object'
+          ? error as { status?: unknown; response?: { status?: unknown } }
+          : null;
+        const status = typeof errorRecord?.status === 'number'
+          ? errorRecord.status
+          : typeof errorRecord?.response?.status === 'number'
+            ? errorRecord.response.status
+            : undefined;
+
         // Check if it's an authentication error (401)
-        const isAuthError = status === 401 || 
+        const isAuthError = status === 401 ||
           errorMessage.includes('Authentication required') ||
           errorMessage.includes('Invalid or missing authorization header');
 
@@ -531,4 +544,3 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
     }
   };
 }
-

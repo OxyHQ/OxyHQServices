@@ -2,7 +2,7 @@
 
 OxyHQ SDK Foundation. Platform-agnostic core library that works in Node.js, browser, and React Native environments. No React dependency.
 
-**Current published version: 1.11.22**
+**Current published version: 3.4.11**
 
 ## Installation
 
@@ -20,6 +20,8 @@ bun add @oxyhq/core
 - **Shared utilities** — color, theme, error, network, debug helpers
 - **Platform detection utilities**
 - **Device management**
+- **Linked clients** for app backends that need the active Oxy bearer token
+- **User identity normalization** so SDK user payloads always expose `id`
 
 ## Exports
 
@@ -41,6 +43,32 @@ const user = await oxyClient.getUserById('123');
 // Crypto
 const keyManager = new KeyManager();
 ```
+
+## Linked App API Clients
+
+Apps that call their own backend should derive API clients from the active SDK
+instance instead of re-implementing auth headers, session restore, CSRF fetches,
+or user forwarding.
+
+```ts
+import { OxyServices } from '@oxyhq/core';
+
+const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
+const mentionApi = oxy.createLinkedClient({ baseURL: 'https://api.mention.earth' });
+
+await mentionApi.post('/posts', { content: 'Hello from Oxy' });
+```
+
+Linked clients send the current Oxy bearer token for authenticated requests.
+State-changing bearer requests do not fetch app-local CSRF tokens; cookie-only
+writes still use CSRF.
+
+## User Identity Normalization
+
+`@oxyhq/core` normalizes user payloads returned by auth and user APIs so `id` is
+always present when `_id` is the only identifier provided by the backend.
+Consumers should compare `user.id` for ownership and permissions instead of
+using backend-specific fields.
 
 ## Build
 
