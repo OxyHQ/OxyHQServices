@@ -1,11 +1,86 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { authenticatedApiCall } from '@oxyhq/core';
 import type { PrivacySettings, User } from '@oxyhq/core';
+import type { UserProfileUpdate } from '@oxyhq/contracts';
 import { queryKeys, invalidateAccountQueries, invalidateUserQueries, invalidateSessionQueries } from '../queries/queryKeys';
 import { useWebOxy } from '../../WebOxyProvider';
 import { toast } from 'sonner';
 import { refreshAvatarInStore } from '../../utils/avatarUtils';
 import { useAuthStore } from '../../stores/authStore';
+
+function applyOptimisticProfileUpdates(user: User, updates: UserProfileUpdate): User {
+  const next: User = { ...user };
+
+  if (updates.name !== undefined) {
+    next.name = { ...user.name, ...updates.name };
+  }
+  if (updates.username !== undefined) {
+    next.username = updates.username;
+  }
+  if (updates.email !== undefined) {
+    next.email = updates.email;
+  }
+  if (updates.avatar !== undefined) {
+    next.avatar = updates.avatar;
+  }
+  if (updates.color !== undefined) {
+    next.color = updates.color;
+  }
+  if (updates.bio !== undefined) {
+    next.bio = updates.bio;
+  }
+  if (updates.location !== undefined) {
+    next.location = updates.location;
+  }
+  if (updates.links !== undefined) {
+    next.links = updates.links;
+  }
+  if (updates.linksMetadata !== undefined) {
+    next.linksMetadata = updates.linksMetadata;
+  }
+  if (updates.accountExpiresAfterInactivityDays !== undefined) {
+    next.accountExpiresAfterInactivityDays = updates.accountExpiresAfterInactivityDays;
+  }
+
+  return next;
+}
+
+function rollbackOptimisticProfileUpdates(current: User, updates: UserProfileUpdate, previous: User): User {
+  const next: User = { ...current };
+
+  if (updates.name !== undefined) {
+    next.name = previous.name;
+  }
+  if (updates.username !== undefined) {
+    next.username = previous.username;
+  }
+  if (updates.email !== undefined) {
+    next.email = previous.email;
+  }
+  if (updates.avatar !== undefined) {
+    next.avatar = previous.avatar;
+  }
+  if (updates.color !== undefined) {
+    next.color = previous.color;
+  }
+  if (updates.bio !== undefined) {
+    next.bio = previous.bio;
+  }
+  if (updates.location !== undefined) {
+    next.location = previous.location;
+  }
+  if (updates.links !== undefined) {
+    next.links = previous.links;
+  }
+  if (updates.linksMetadata !== undefined) {
+    next.linksMetadata = previous.linksMetadata;
+  }
+  if (updates.accountExpiresAfterInactivityDays !== undefined) {
+    next.accountExpiresAfterInactivityDays = previous.accountExpiresAfterInactivityDays;
+  }
+
+  return next;
+}
 
 /**
  * Update user profile with optimistic updates and offline queue support
@@ -15,7 +90,7 @@ export const useUpdateProfile = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (updates: Partial<User>) => {
+    mutationFn: async (updates: UserProfileUpdate) => {
       return authenticatedApiCall<User>(
         oxyServices,
         activeSessionId,
@@ -32,17 +107,12 @@ export const useUpdateProfile = () => {
 
       // Optimistically update
       if (previousUser) {
-        queryClient.setQueryData<User>(queryKeys.accounts.current(), {
-          ...previousUser,
-          ...updates,
-        });
+        const optimisticUser = applyOptimisticProfileUpdates(previousUser, updates);
+        queryClient.setQueryData<User>(queryKeys.accounts.current(), optimisticUser);
 
         // Also update profile query if sessionId is available
         if (activeSessionId) {
-          queryClient.setQueryData<User>(queryKeys.users.profile(activeSessionId), {
-            ...previousUser,
-            ...updates,
-          });
+          queryClient.setQueryData<User>(queryKeys.users.profile(activeSessionId), optimisticUser);
         }
       }
 
@@ -52,26 +122,20 @@ export const useUpdateProfile = () => {
     onError: (error, updates, context) => {
       if (context?.previousUser && updates) {
         const previousUser = context.previousUser;
-        const changedKeys = Object.keys(updates) as Array<keyof User>;
-        const partialRollback = changedKeys.reduce<Partial<User>>((acc, key) => {
-          (acc as Record<string, unknown>)[key as string] = previousUser[key];
-          return acc;
-        }, {});
-
         const current = queryClient.getQueryData<User>(queryKeys.accounts.current());
         if (current) {
-          queryClient.setQueryData<User>(queryKeys.accounts.current(), {
-            ...current,
-            ...partialRollback,
-          });
+          queryClient.setQueryData<User>(
+            queryKeys.accounts.current(),
+            rollbackOptimisticProfileUpdates(current, updates, previousUser),
+          );
         }
         if (activeSessionId) {
           const currentProfile = queryClient.getQueryData<User>(queryKeys.users.profile(activeSessionId));
           if (currentProfile) {
-            queryClient.setQueryData<User>(queryKeys.users.profile(activeSessionId), {
-              ...currentProfile,
-              ...partialRollback,
-            });
+            queryClient.setQueryData<User>(
+              queryKeys.users.profile(activeSessionId),
+              rollbackOptimisticProfileUpdates(currentProfile, updates, previousUser),
+            );
           }
         }
       }
@@ -515,4 +579,3 @@ export const useUploadFile = () => {
     },
   });
 };
-
