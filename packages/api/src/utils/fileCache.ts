@@ -115,6 +115,7 @@ class FileCache {
     this.cleanupTimer = setInterval(() => {
       this.cleanup();
     }, this.config.cleanupInterval);
+    this.cleanupTimer.unref?.();
   }
 
   clear(): void {
@@ -138,4 +139,3 @@ class FileCache {
 
 const fileCache = new FileCache();
 export default fileCache;
-

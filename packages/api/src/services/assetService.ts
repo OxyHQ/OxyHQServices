@@ -57,6 +57,60 @@ export class AssetService {
     return File.findOne({ sha256, status: { $ne: 'deleted' } });
   }
 
+  private async restoreMissingDirectUploadContent(
+    file: IFile,
+    fileBuffer: Buffer,
+    mimeType: string,
+    logLabel: string,
+  ): Promise<boolean> {
+    if (await this.s3Service.fileExists(file.storageKey)) {
+      return false;
+    }
+
+    logger.warn('Active file metadata points to a missing storage object; restoring from direct upload bytes', {
+      fileId: file._id.toString(),
+      sha256: file.sha256,
+      storageKey: file.storageKey,
+      logLabel,
+    });
+
+    await this.s3Service.uploadBuffer(file.storageKey, fileBuffer, {
+      contentType: file.mime || mimeType,
+    });
+
+    if (file.size !== fileBuffer.length) {
+      file.size = fileBuffer.length;
+      await file.save();
+    }
+
+    fileCache.invalidate(file._id.toString());
+    fileCache.set(file._id.toString(), file);
+    return true;
+  }
+
+  private async restoreMissingStreamedMediaContent(
+    file: IFile,
+    tempKey: string,
+    logLabel: string,
+  ): Promise<boolean> {
+    if (await this.s3Service.fileExists(file.storageKey)) {
+      return false;
+    }
+
+    logger.warn('Active file metadata points to a missing storage object; restoring from streamed upload bytes', {
+      fileId: file._id.toString(),
+      sha256: file.sha256,
+      storageKey: file.storageKey,
+      tempKey,
+      logLabel,
+    });
+
+    await this.s3Service.copyFile(tempKey, file.storageKey);
+    fileCache.invalidate(file._id.toString());
+    fileCache.set(file._id.toString(), file);
+    return true;
+  }
+
   private async prepareExistingDirectUploadFile(
     file: IFile,
     userId: string,
@@ -193,14 +247,22 @@ export class AssetService {
       });
 
       if (existingFile) {
+        const storageKey = existingFile.storageKey || this.generateStorageKey(expectedSha256, expectedMime);
+        if (!(await this.s3Service.fileExists(storageKey))) {
+          logger.warn('Existing asset record has no storage object; returning upload URL for the existing key', {
+            fileId: existingFile._id.toString(),
+            sha256: expectedSha256,
+            storageKey,
+          });
+        }
+
         logger.info('File already exists, returning existing', { 
           sha256: expectedSha256, 
           fileId: existingFile._id 
         });
         
         // File already exists, return existing info
-        // We still need to provide an upload URL in case the client wants to verify
-        const storageKey = this.generateStorageKey(expectedSha256, expectedMime);
+        // We still need to provide an upload URL in case the client wants to verify or repair storage.
         // Do not include metadata in the presigned URL signature; clients aren't required to send it
         const uploadUrl = await this.s3Service.getPresignedUploadUrl(storageKey, {
           contentType: expectedMime,
@@ -276,12 +338,21 @@ export class AssetService {
       const existingFile = await this.findActiveFileBySha(sha256);
 
       if (existingFile) {
+        const restored = await this.restoreMissingDirectUploadContent(
+          existingFile,
+          fileBuffer,
+          mimeType,
+          'direct upload',
+        );
         const preparedFile = await this.prepareExistingDirectUploadFile(
           existingFile,
           userId,
           visibility,
           metadata,
         );
+        if (restored) {
+          this.queueVariantGeneration(preparedFile);
+        }
         logger.info('File already exists, returning existing', { 
           sha256, 
           fileId: preparedFile._id
@@ -316,12 +387,21 @@ export class AssetService {
         if (this.isDuplicateKeyError(error)) {
           const racedFile = await this.findActiveFileBySha(sha256);
           if (racedFile) {
+            const restored = await this.restoreMissingDirectUploadContent(
+              racedFile,
+              fileBuffer,
+              mimeType,
+              'direct upload duplicate race',
+            );
             const preparedFile = await this.prepareExistingDirectUploadFile(
               racedFile,
               userId,
               visibility,
               metadata,
             );
+            if (restored) {
+              this.queueVariantGeneration(preparedFile);
+            }
             logger.info('File already exists after concurrent upload, returning existing', {
               sha256,
               fileId: preparedFile._id,
@@ -503,8 +583,20 @@ export class AssetService {
     // it and drop the temp object.
     const existingFile = await this.findActiveFileBySha(sha256);
     if (existingFile) {
-      await deleteTempKey(`Failed to clean up deduplicated ${options.logLabel.toLowerCase()} upload`);
+      let restored = false;
+      try {
+        restored = await this.restoreMissingStreamedMediaContent(
+          existingFile,
+          tempKey,
+          options.logLabel,
+        );
+      } finally {
+        await deleteTempKey(`Failed to clean up deduplicated ${options.logLabel.toLowerCase()} upload`);
+      }
       const preparedFile = await this.prepareExistingStreamedMediaFile(existingFile, options);
+      if (restored) {
+        this.queueVariantGeneration(preparedFile);
+      }
       logger.info(`${options.logLabel} already exists, returning existing`, {
         sha256,
         fileId: preparedFile._id,
@@ -890,6 +982,15 @@ export class AssetService {
       if (variant) {
         const ensured = await this.ensureVariant(fileObj._id.toString(), variant, fileObj);
         storageKey = ensured.key;
+      }
+
+      if (!(await this.s3Service.fileExists(storageKey))) {
+        logger.warn('File metadata points to a missing storage object; refusing to sign download URL', {
+          fileId,
+          variant,
+          storageKey,
+        });
+        throw new Error('File content not found');
       }
 
       const url = await this.s3Service.getPresignedDownloadUrl(storageKey, expiresIn);

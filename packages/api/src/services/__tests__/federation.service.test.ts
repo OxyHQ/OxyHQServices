@@ -21,6 +21,13 @@ const mockUserFindById = jest.fn();
 const mockUserUpdateOne = jest.fn();
 const mockUserFindOneAndUpdate = jest.fn();
 const mockCacheInvalidate = jest.fn();
+const mockAssetFileContentExists = jest.fn();
+const mockAssetUploadFileDirect = jest.fn();
+const mockAssetDeleteFile = jest.fn();
+
+process.env.AWS_ACCESS_KEY_ID ||= 'test-access-key';
+process.env.AWS_SECRET_ACCESS_KEY ||= 'test-secret-key';
+process.env.AWS_S3_BUCKET ||= 'test-bucket';
 
 // federation.service registers a Mongoose model (FederationKeyPair) at import
 // time. Stub mongoose so that registration is a no-op and `mongoose.models`
@@ -59,11 +66,24 @@ jest.mock('../../utils/logger', () => ({
   logger: { warn: jest.fn(), error: jest.fn(), info: jest.fn(), debug: jest.fn() },
 }));
 
-// AssetService / S3 are only reached through downloadAndStoreAvatar, which we
-// spy on directly, so a no-op stub keeps the import graph happy.
+// AssetService / S3 are reached when federated avatar storage is verified or
+// repaired. Keep the mock stateful so tests can exercise both usable and
+// missing local storage without touching AWS.
 jest.mock('../assetService', () => ({
   __esModule: true,
-  AssetService: class {},
+  AssetService: class {
+    fileContentExists(...args: unknown[]) {
+      return mockAssetFileContentExists(...args);
+    }
+
+    uploadFileDirect(...args: unknown[]) {
+      return mockAssetUploadFileDirect(...args);
+    }
+
+    deleteFile(...args: unknown[]) {
+      return mockAssetDeleteFile(...args);
+    }
+  },
 }));
 jest.mock('../s3Service', () => ({
   __esModule: true,
@@ -123,6 +143,18 @@ function cachedUser(fx: Fixture, ageMs: number, overrides: Partial<CachedUser> =
 const FRESH_AGE_MS = 60 * 1000; // 1 minute — well under the 24h stale window
 const STALE_AGE_MS = 48 * 60 * 60 * 1000; // 48h — older than STALE_MS (24h)
 
+function mockUploadedFile(fileId: string) {
+  return {
+    _id: { toString: () => fileId },
+  };
+}
+
+function resetAssetMocks(): void {
+  mockAssetFileContentExists.mockResolvedValue(true);
+  mockAssetUploadFileDirect.mockResolvedValue(mockUploadedFile('uploaded-file-id'));
+  mockAssetDeleteFile.mockResolvedValue(undefined);
+}
+
 /** Let any scheduled fire-and-forget background refresh settle. */
 async function flushMicrotasks(): Promise<void> {
   await new Promise((resolve) => setImmediate(resolve));
@@ -136,6 +168,7 @@ describe('FederationService.resolveAndUpsert (fast + eventually-fresh)', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    resetAssetMocks();
     webfingerSpy = jest.spyOn(federationService, 'resolveWebFingerResource');
     actorSpy = jest.spyOn(federationService, 'fetchActorProfile');
     avatarSpy = jest.spyOn(federationService, 'downloadAndStoreAvatar')
@@ -161,6 +194,7 @@ describe('FederationService.resolveAndUpsert (fast + eventually-fresh)', () => {
     await flushMicrotasks();
 
     expect(result).toBe(cached);
+    expect(mockAssetFileContentExists).toHaveBeenCalledWith('stored-file-id');
     expect(webfingerSpy).not.toHaveBeenCalled();
     expect(actorSpy).not.toHaveBeenCalled();
     expect(avatarSpy).not.toHaveBeenCalled();
@@ -207,6 +241,41 @@ describe('FederationService.resolveAndUpsert (fast + eventually-fresh)', () => {
       description: 'fresh bio',
       avatar: 'new-file-id',
     });
+    expect(mockCacheInvalidate).toHaveBeenCalledWith(fx.userId);
+  });
+
+  it('returns a fresh cached user but refreshes in the background when its stored avatar object is missing', async () => {
+    const fx = nextFixture();
+    mockAssetFileContentExists.mockResolvedValue(false);
+    webfingerSpy.mockResolvedValue({ actorUri: fx.actorUri, subjectAcct: fx.handle });
+    actorSpy.mockResolvedValue({
+      actorUri: fx.actorUri,
+      domain: DOMAIN,
+      username: fx.handle,
+      displayName: 'Alice Repaired',
+      avatarUrl: NEW_AVATAR_URL,
+      bio: 'repaired bio',
+    });
+
+    const cached = cachedUser(fx, FRESH_AGE_MS);
+    mockFindOneReturning(cached);
+
+    const result = await federationService.resolveAndUpsert(fx.handle);
+    expect(result).toBe(cached);
+
+    await flushMicrotasks();
+
+    expect(mockAssetFileContentExists).toHaveBeenCalledWith('stored-file-id');
+    expect(actorSpy).toHaveBeenCalledWith(fx.actorUri, fx.handle);
+    expect(avatarSpy).toHaveBeenCalledWith(
+      NEW_AVATAR_URL,
+      'stored-file-id',
+      {
+        etag: undefined,
+        lastModified: undefined,
+      },
+      fx.userId,
+    );
     expect(mockCacheInvalidate).toHaveBeenCalledWith(fx.userId);
   });
 
@@ -386,6 +455,7 @@ describe('FederationService.scheduleAvatarRefresh (off request path)', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    resetAssetMocks();
     mockUserUpdateOne.mockResolvedValue({ acknowledged: true });
   });
 
@@ -465,6 +535,89 @@ describe('FederationService.scheduleAvatarRefresh (off request path)', () => {
     expect(updateArgs[0]).toEqual({ _id: userId });
     expect(Object.keys(updateSet)).toContain('federation.lastAvatarFetchedAt');
     expect(Object.keys(updateSet)).not.toContain('avatar');
+    expect(mockCacheInvalidate).toHaveBeenCalledWith(userId);
+
+    fetchSpy.mockRestore();
+  });
+
+  it('on 304 Not Modified with a missing local object: retries without validators and repairs the avatar file', async () => {
+    avatarUserCounter += 1;
+    const userId = `repair-user-${avatarUserCounter}`;
+    const avatarUrl = 'https://cdn.example/avatar-repair.png';
+    mockAssetFileContentExists.mockResolvedValue(false);
+    mockAssetUploadFileDirect.mockResolvedValue(mockUploadedFile('repaired-file-id'));
+
+    const fetchSpy = jest.spyOn(global, 'fetch')
+      .mockImplementationOnce(((
+        _url: string,
+        init?: { headers?: Record<string, string> },
+      ) => {
+        expect(init?.headers?.['If-None-Match']).toBe('"etag-v1"');
+        expect(init?.headers?.['If-Modified-Since']).toBe('Wed, 21 Oct 2025 07:28:00 GMT');
+        return Promise.resolve({
+          status: 304,
+          ok: false,
+          headers: { get: () => null },
+          arrayBuffer: () => Promise.resolve(new ArrayBuffer(0)),
+        });
+      }) as unknown as typeof fetch)
+      .mockImplementationOnce(((
+        _url: string,
+        init?: { headers?: Record<string, string> },
+      ) => {
+        expect(init?.headers?.['If-None-Match']).toBeUndefined();
+        expect(init?.headers?.['If-Modified-Since']).toBeUndefined();
+        return Promise.resolve({
+          status: 200,
+          ok: true,
+          headers: {
+            get: (name: string) => {
+              if (name.toLowerCase() === 'content-type') return 'image/png';
+              if (name.toLowerCase() === 'etag') return '"etag-v2"';
+              if (name.toLowerCase() === 'last-modified') return 'Thu, 22 Oct 2025 07:28:00 GMT';
+              return null;
+            },
+          },
+          arrayBuffer: () => Promise.resolve(Buffer.from('png-bytes').buffer),
+        });
+      }) as unknown as typeof fetch);
+
+    mockFindByIdReturning({
+      _id: { toString: () => userId },
+      avatar: 'stored-file-id',
+      federation: {
+        lastAvatarFetchedAt: new Date(Date.now() - 10 * 60 * 1000),
+        avatarETag: '"etag-v1"',
+        avatarLastModified: 'Wed, 21 Oct 2025 07:28:00 GMT',
+      },
+    });
+
+    federationService.scheduleAvatarRefresh(userId, avatarUrl, 'stored-file-id', { force: true });
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(mockAssetFileContentExists).toHaveBeenCalledWith('stored-file-id');
+    expect(mockAssetUploadFileDirect).toHaveBeenCalledWith(
+      userId,
+      expect.any(Buffer),
+      'image/png',
+      expect.stringMatching(/^federated-avatar-[a-f0-9]+\.png$/),
+      'public',
+      {
+        source: 'federation',
+        role: 'avatar',
+        remoteUrl: avatarUrl,
+      },
+    );
+
+    const updateArgs = mockUserUpdateOne.mock.calls[0];
+    expect(updateArgs[0]).toEqual({ _id: userId });
+    expect(updateArgs[1].$set).toMatchObject({
+      avatar: 'repaired-file-id',
+      'federation.avatarETag': '"etag-v2"',
+      'federation.avatarLastModified': 'Thu, 22 Oct 2025 07:28:00 GMT',
+    });
     expect(mockCacheInvalidate).toHaveBeenCalledWith(userId);
 
     fetchSpy.mockRestore();

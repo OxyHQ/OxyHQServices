@@ -50,10 +50,20 @@ const CACHE_MAX_BYTES = 256 * 1024 * 1024;
 interface FakeS3 {
   uploadStream: jest.Mock<Promise<FileInfo>, [string, Readable, UploadOptions?]>;
   deleteFile: jest.Mock<Promise<void>, [string]>;
+  fileExists: jest.Mock<Promise<boolean>, [string]>;
+  copyFile: jest.Mock<Promise<void>, [string, string]>;
 }
 
-function buildAssetService(fake: FakeS3): { service: AssetService; fake: FakeS3 } {
-  // AssetService only calls uploadStream/deleteFile on this path; satisfy the
+type FakeS3Input = Pick<FakeS3, 'uploadStream' | 'deleteFile'> & Partial<Pick<FakeS3, 'fileExists' | 'copyFile'>>;
+
+function buildAssetService(input: FakeS3Input): { service: AssetService; fake: FakeS3 } {
+  const fake: FakeS3 = {
+    fileExists: jest.fn((): Promise<boolean> => Promise.resolve(true)),
+    copyFile: jest.fn((): Promise<void> => Promise.resolve()),
+    ...input,
+  };
+
+  // AssetService only calls this method subset on this path; satisfy the
   // S3Service contract via a typed cast of the method subset (never `any`).
   const service = new AssetService(fake as unknown as S3Service);
   return { service, fake };
@@ -179,5 +189,57 @@ describe('uploadCachedMediaStream — abort cleanup', () => {
     // abort-driven one.
     expect(abortObserved).toBe(false);
     expect(deleteFile).toHaveBeenCalledTimes(1);
+
+    source.destroy();
+  });
+
+  it('restores a deduped cached-media object when the existing file record is missing storage', async () => {
+    let resolveUpload: ((info: FileInfo) => void) | undefined;
+    let capturedTempKey: string | undefined;
+
+    const uploadStream = jest.fn(
+      (key: string, _body: Readable): Promise<FileInfo> => {
+        capturedTempKey = key;
+        return new Promise<FileInfo>((resolve) => { resolveUpload = resolve; });
+      }
+    );
+    const deleteFile = jest.fn((): Promise<void> => Promise.resolve());
+    const fileExists = jest.fn((): Promise<boolean> => Promise.resolve(false));
+    const copyFile = jest.fn((): Promise<void> => Promise.resolve());
+    const { service } = buildAssetService({ uploadStream, deleteFile, fileExists, copyFile });
+
+    const existingFile = {
+      _id: { toString: () => '64c000000000000000000def' },
+      sha256: 'known-sha',
+      storageKey: 'content/2026/06/kn/known-sha.png',
+      size: 4,
+    };
+    mockFileFindOne.mockResolvedValueOnce(existingFile);
+
+    const source = new Readable({
+      read() {
+        this.push(Buffer.from('PNG!'));
+        this.push(null);
+      },
+    });
+
+    const promise = service.uploadCachedMediaStream(
+      source,
+      'image/png',
+      'federation-cache-media',
+      CACHE_MAX_BYTES
+    );
+
+    await new Promise((resolve) => setImmediate(resolve));
+    resolveUpload?.({ key: capturedTempKey || 'cache/incoming/x', size: 4, contentType: 'image/png' } as FileInfo);
+
+    await expect(promise).resolves.toBe(existingFile);
+
+    expect(fileExists).toHaveBeenCalledWith(existingFile.storageKey);
+    expect(copyFile).toHaveBeenCalledWith(capturedTempKey, existingFile.storageKey);
+    expect(deleteFile).toHaveBeenCalledTimes(1);
+    expect(deleteFile).toHaveBeenCalledWith(capturedTempKey);
+
+    source.destroy();
   });
 });
