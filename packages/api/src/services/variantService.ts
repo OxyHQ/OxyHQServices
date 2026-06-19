@@ -182,6 +182,24 @@ export class VariantService {
 
   constructor(private s3Service: S3Service) {}
 
+  private async getUsableReadyVariant(file: IFile, variantType: string): Promise<IFileVariant | undefined> {
+    const existing = file.variants.find(v => v.type === variantType && v.readyAt);
+    if (!existing) {
+      return undefined;
+    }
+
+    if (await this.s3Service.fileExists(existing.key)) {
+      return existing;
+    }
+
+    logger.warn('Ready variant metadata points to a missing storage object; regenerating', {
+      fileId: file._id,
+      variantType,
+      key: existing.key,
+    });
+    return undefined;
+  }
+
   /**
    * Validate and sanitize path/URL for FFmpeg/FFprobe to prevent command injection
    * While spawn() with argument arrays is safer than exec(), we still validate inputs
@@ -1069,7 +1087,7 @@ export class VariantService {
    * Ensure a specific video poster variant exists, generate via FFmpeg if missing.
    */
   async ensureVideoPoster(file: IFile): Promise<IFileVariant> {
-    const existing = file.variants.find(v => v.type === 'poster' && v.readyAt);
+    const existing = await this.getUsableReadyVariant(file, 'poster');
     if (existing) {
       return existing;
     }
@@ -1123,7 +1141,7 @@ export class VariantService {
    * Ensure a specific image variant exists, generate via Sharp if missing.
    */
   async ensureImageVariant(file: IFile, variantType: string): Promise<IFileVariant> {
-    const existing = file.variants.find(v => v.type === variantType && v.readyAt);
+    const existing = await this.getUsableReadyVariant(file, variantType);
     if (existing) {
       return existing;
     }

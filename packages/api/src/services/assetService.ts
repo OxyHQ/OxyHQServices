@@ -126,7 +126,16 @@ export class AssetService {
 
     const existing = fileObj.variants.find(v => v.type === variantType && v.readyAt);
     if (existing) {
-      return existing;
+      if (await this.s3Service.fileExists(existing.key)) {
+        return existing;
+      }
+
+      logger.warn('Ready variant metadata points to a missing storage object; regenerating', {
+        fileId: fileObj._id.toString(),
+        variantType,
+        key: existing.key,
+      });
+      fileObj.variants = fileObj.variants.filter(v => !(v.type === variantType && v.key === existing.key));
     }
 
     if (fileObj.mime.startsWith('image/')) {
