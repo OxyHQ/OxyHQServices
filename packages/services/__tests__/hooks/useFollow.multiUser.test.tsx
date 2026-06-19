@@ -86,4 +86,35 @@ describe('useFollow multi-user mode — no infinite render loop', () => {
       throw new Error('expected multi-user shape with followData');
     }
   });
+
+  it('derives allFollowing reactively from per-user store status', () => {
+    const { result, rerender } = renderHook(
+      ({ ids }: { ids: string[] }) => useFollow(ids),
+      { initialProps: { ids: ['u1', 'u2'] } },
+    );
+
+    // No member is followed yet → aggregate is false.
+    expect('allFollowing' in result.current && result.current.allFollowing).toBe(false);
+
+    // Following only one member keeps the aggregate false.
+    act(() => {
+      useFollowStore.getState().setFollowingStatus('u1', true);
+    });
+    rerender({ ids: ['u1', 'u2'] });
+    expect('allFollowing' in result.current && result.current.allFollowing).toBe(false);
+
+    // Following every member flips the aggregate to true.
+    act(() => {
+      useFollowStore.getState().setFollowingStatus('u2', true);
+    });
+    rerender({ ids: ['u1', 'u2'] });
+    expect('allFollowing' in result.current && result.current.allFollowing).toBe(true);
+
+    // Unfollowing one member reverts the aggregate to false.
+    act(() => {
+      useFollowStore.getState().setFollowingStatus('u1', false);
+    });
+    rerender({ ids: ['u1', 'u2'] });
+    expect('allFollowing' in result.current && result.current.allFollowing).toBe(false);
+  });
 });

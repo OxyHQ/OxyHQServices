@@ -137,7 +137,6 @@ const FollowButtonInner = memo(function FollowButtonInner({
 
 const FollowButtonMultiInner = memo(function FollowButtonMultiInner({
   userIds,
-  initiallyAllFollowing = false,
   size = 'medium',
   followAllLabel = DEFAULT_FOLLOW_ALL_LABEL,
   followedAllLabel = DEFAULT_FOLLOWED_ALL_LABEL,
@@ -154,10 +153,27 @@ const FollowButtonMultiInner = memo(function FollowButtonMultiInner({
   const followAllUsers = 'followAllUsers' in follow ? follow.followAllUsers : undefined;
   const isAnyLoading = 'isAnyLoading' in follow ? follow.isAnyLoading : false;
 
-  const [allFollowing, setAllFollowing] = useState(initiallyAllFollowing);
+  // `allFollowing` is store-derived (LIVE aggregate of each target's follow
+  // status) — it reacts in real time as individual members are followed or
+  // unfollowed elsewhere. Only `isSubmitting` is transient local state for the
+  // in-flight bulk call.
+  const allFollowing = 'allFollowing' in follow ? follow.allFollowing : false;
+  const fetchAllStatuses = 'fetchAllStatuses' in follow ? follow.fetchAllStatuses : undefined;
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const isLoading = isSubmitting || isAnyLoading;
+
+  // Populate the store with each member's follow status once on mount and again
+  // only when the SET of target users changes. `fetchAllStatuses` is referentially
+  // stable (its useFollow useCallback deps are [canUsePrivateApi, userIds,
+  // oxyServices]; `userIds` inside useFollow is memoized, and the outer wrapper
+  // memoizes `multiUserIds`), so depending on it plus the stable joined-string
+  // key cannot self-retrigger — `allFollowing`/loading are intentionally NOT in
+  // the deps.
+  const userIdsKey = useMemo(() => userIds.join(','), [userIds]);
+  useEffect(() => {
+    fetchAllStatuses?.();
+  }, [userIdsKey, fetchAllStatuses]);
 
   const handlePress = useCallback(async (event?: { preventDefault?: () => void; stopPropagation?: () => void }) => {
     if (preventParentActions && event?.preventDefault) {
@@ -175,8 +191,9 @@ const FollowButtonMultiInner = memo(function FollowButtonMultiInner({
       const anyFollowed = result.followedCount > 0
         || result.results.some((entry) => entry.success || entry.alreadyFollowing);
 
+      // `followManyUsers` marks each user followed in the store, so `allFollowing`
+      // flips to true reactively — no local flag to set here.
       if (allAlreadyFollowing || anyFollowed) {
-        setAllFollowing(true);
         onFollowChange?.(true);
       }
       onBulkFollow?.(result);
