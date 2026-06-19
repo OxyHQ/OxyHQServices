@@ -16,6 +16,21 @@ export interface AuthMethod {
   };
 }
 
+export type AuthMethodType = AuthMethod['type'];
+
+/**
+ * Canonical constructor for an {@link AuthMethod} entry.
+ *
+ * Every entry point that links an auth method (register, signup, social
+ * sign-in, identity/password/social linking) stamps `linkedAt = new Date()`
+ * and the provider `metadata` by hand. Centralising that here keeps the shape
+ * identical across all of them and makes the linked-at semantics a single
+ * source of truth.
+ */
+export function buildAuthMethod(type: AuthMethodType, metadata?: AuthMethod['metadata']): AuthMethod {
+  return { type, linkedAt: new Date(), metadata };
+}
+
 export interface IUser extends Document {
   username?: string;
   email?: string;
@@ -296,19 +311,22 @@ const UserSchema: Schema = new Schema(
       backupCodes: { type: [String], select: false, default: [] }, // Hashed backup codes
       verifiedAt: { type: Date },
     },
-    authMethods: [{
-      type: {
-        type: String,
-        enum: ['identity', 'password', 'google', 'apple', 'github'],
-        required: true,
-      },
-      linkedAt: { type: Date, default: Date.now },
-      metadata: {
-        publicKey: { type: String },
-        email: { type: String },
-        providerId: { type: String },
-      },
-    }],
+    authMethods: {
+      type: [{
+        type: {
+          type: String,
+          enum: ['identity', 'password', 'google', 'apple', 'github'],
+          required: true,
+        },
+        linkedAt: { type: Date, default: Date.now },
+        metadata: {
+          publicKey: { type: String },
+          email: { type: String },
+          providerId: { type: String },
+        },
+      }],
+      default: [],
+    },
     verified: {
       type: Boolean,
       default: false,

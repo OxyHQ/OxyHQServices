@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
-import { User } from '../models/User';
+import { User, buildAuthMethod } from '../models/User';
 import Session from '../models/Session';
 import AuthChallenge from '../models/AuthChallenge';
 import RecoveryCode from '../models/RecoveryCode';
@@ -242,13 +242,7 @@ export class SessionController {
         publicKey,
         email: normalizedEmail,
         username: normalizedUsername,
-        authMethods: [
-          {
-            type: 'identity',
-            linkedAt: new Date(),
-            metadata: { publicKey },
-          },
-        ],
+        authMethods: [buildAuthMethod('identity', { publicKey })],
       });
 
       await user.save();
@@ -364,13 +358,7 @@ export class SessionController {
         password: passwordHash,
         // Record the origin auth method so password accounts carry the same
         // provenance metadata as identity/social accounts.
-        authMethods: [
-          {
-            type: 'password',
-            linkedAt: new Date(),
-            metadata: { email: normalizedEmail },
-          },
-        ],
+        authMethods: [buildAuthMethod('password', { email: normalizedEmail })],
       });
 
       if (name && typeof name === 'object') {

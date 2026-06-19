@@ -10,8 +10,7 @@
  */
 
 import { Router } from 'express';
-import { User } from '../models/User';
-import type { AuthMethod } from '../models/User';
+import { User, buildAuthMethod } from '../models/User';
 import { rateLimit } from '../middleware/rateLimiter';
 import { asyncHandler } from '../utils/asyncHandler';
 import { BadRequestError, UnauthorizedError } from '../utils/error';
@@ -73,11 +72,7 @@ async function handleSocialSignIn(
       if (!user.authMethods) {
         user.authMethods = [];
       }
-      user.authMethods.push({
-        type: provider,
-        linkedAt: new Date(),
-        metadata: { providerId, email },
-      } as AuthMethod);
+      user.authMethods.push(buildAuthMethod(provider, { providerId, email }));
       if (avatar && !user.avatar) {
         user.avatar = avatar;
       }
@@ -110,13 +105,7 @@ async function handleSocialSignIn(
         username: desiredUsername,
         avatar,
         name: name ? { first: name.split(' ')[0], last: name.split(' ').slice(1).join(' ') || undefined } : undefined,
-        authMethods: [
-          {
-            type: provider,
-            linkedAt: new Date(),
-            metadata: { providerId, email },
-          },
-        ],
+        authMethods: [buildAuthMethod(provider, { providerId, email })],
       });
       await user.save();
     }

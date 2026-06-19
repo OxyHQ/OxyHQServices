@@ -11,8 +11,8 @@
 
 import { Router, Response } from 'express';
 import { hashPassword, validatePasswordStrength } from '../utils/password.js';
-import { User } from '../models/User.js';
-import type { AuthMethod } from '../models/User.js';
+import { User, buildAuthMethod } from '../models/User.js';
+import type { AuthMethodType } from '../models/User.js';
 import { authMiddleware, AuthRequest } from '../middleware/auth.js';
 import SignatureService from '../services/signature.service.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
@@ -153,11 +153,7 @@ router.post('/link', validate({ body: linkAuthMethodSchema }), asyncHandler(asyn
       }
       const existingMethod = user.authMethods.find(m => m.type === 'identity');
       if (!existingMethod) {
-        user.authMethods.push({
-          type: 'identity',
-          linkedAt: new Date(),
-          metadata: { publicKey: safePublicKey },
-        });
+        user.authMethods.push(buildAuthMethod('identity', { publicKey: safePublicKey }));
       }
 
       await user.save();
@@ -200,11 +196,7 @@ router.post('/link', validate({ body: linkAuthMethodSchema }), asyncHandler(asyn
       }
       const existingMethod = user.authMethods.find(m => m.type === 'password');
       if (!existingMethod) {
-        user.authMethods.push({
-          type: 'password',
-          linkedAt: new Date(),
-          metadata: { email: safeEmail },
-        });
+        user.authMethods.push(buildAuthMethod('password', { email: safeEmail }));
       }
 
       await user.save();
@@ -244,14 +236,10 @@ router.post('/link', validate({ body: linkAuthMethodSchema }), asyncHandler(asyn
         m => m.type === safeType && m.metadata?.providerId === safeProviderId
       );
       if (!existingMethod) {
-        user.authMethods.push({
-          type: safeType as AuthMethod['type'],
-          linkedAt: new Date(),
-          metadata: {
-            providerId: safeProviderId,
-            email: typeof email === 'string' ? email.trim() : undefined,
-          },
-        });
+        user.authMethods.push(buildAuthMethod(safeType as AuthMethodType, {
+          providerId: safeProviderId,
+          email: typeof email === 'string' ? email.trim() : undefined,
+        }));
       }
 
       await user.save();
