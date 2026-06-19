@@ -54,6 +54,11 @@ export interface IUser extends Document {
     avatarETag?: string;
     /** Last-Modified returned by the remote avatar host, replayed as `If-Modified-Since`. */
     avatarLastModified?: string;
+    /** Last time the remote actor profile was successfully resolved. */
+    lastResolvedAt?: Date;
+    /** Set when the remote actor stops resolving and should leave discovery surfaces. */
+    unavailableAt?: Date;
+    unavailableReason?: string;
   };
   automation?: {
     ownerId?: string;   // User ID of the human owner/creator
@@ -474,6 +479,9 @@ const UserSchema: Schema = new Schema(
       lastAvatarFetchedAt: { type: Date },
       avatarETag: { type: String },
       avatarLastModified: { type: String },
+      lastResolvedAt: { type: Date, index: { sparse: true } },
+      unavailableAt: { type: Date, index: { sparse: true } },
+      unavailableReason: { type: String },
     },
     automation: {
       ownerId: { type: String, index: { sparse: true } },

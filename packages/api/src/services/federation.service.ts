@@ -674,6 +674,7 @@ class FederationService {
       'name.first': profile.displayName,
       'federation.actorUri': profile.actorUri,
       'federation.domain': profile.domain,
+      'federation.lastResolvedAt': new Date(),
     };
 
     if (profile.bio) {
@@ -683,7 +684,13 @@ class FederationService {
 
     const user = await User.findOneAndUpdate(
       { 'federation.actorUri': profile.actorUri },
-      { $set: setFields },
+      {
+        $set: setFields,
+        $unset: {
+          'federation.unavailableAt': '',
+          'federation.unavailableReason': '',
+        },
+      },
       { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true },
     )
       .select('-password -refreshToken');
@@ -925,6 +932,7 @@ class FederationService {
       if (profile.displayName) {
         setFields['name.first'] = profile.displayName;
       }
+      setFields['federation.lastResolvedAt'] = new Date();
       if (profile.bio) {
         setFields.bio = profile.bio;
         setFields.description = profile.bio;
@@ -961,7 +969,16 @@ class FederationService {
         return;
       }
 
-      await User.updateOne({ _id: existing._id }, { $set: setFields });
+      await User.updateOne(
+        { _id: existing._id },
+        {
+          $set: setFields,
+          $unset: {
+            'federation.unavailableAt': '',
+            'federation.unavailableReason': '',
+          },
+        },
+      );
 
       // CRITICAL: every path that mutates user state must invalidate the cache,
       // otherwise getUserBySession serves stale in-memory data and silently

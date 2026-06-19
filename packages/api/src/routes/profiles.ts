@@ -61,6 +61,27 @@ const MAX_USERNAME_LENGTH = 30;
 // filter on the public recommendations path, so post-lookup filtering can't
 // shrink the page below the requested limit.
 const PUBLIC_FILTER_HEADROOM = 20;
+const FEDERATED_RECOMMENDATION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+function federatedRecommendationEligibilityMatch(
+  minResolvedAt: Date,
+  prefix = '',
+): Record<string, unknown> {
+  const field = (name: string) => `${prefix}${name}`;
+
+  return {
+    $or: [
+      { [field('type')]: { $ne: 'federated' } },
+      {
+        [field('type')]: 'federated',
+        [field('federation.actorUri')]: { $type: 'string', $ne: '' },
+        [field('federation.domain')]: { $type: 'string', $ne: '' },
+        [field('federation.lastResolvedAt')]: { $gte: minResolvedAt },
+        [field('federation.unavailableAt')]: { $exists: false },
+      },
+    ],
+  };
+}
 
 /**
  * Shared aggregation stages that look up follower and following counts
@@ -608,6 +629,7 @@ router.get(
       ? Math.min(parseInt(limit, 10), PAGINATION.MAX_LIMIT)
       : PAGINATION.DEFAULT_LIMIT;
     const parsedOffset = offset ? parseInt(offset, 10) : 0;
+    const minFederatedResolvedAt = new Date(Date.now() - FEDERATED_RECOMMENDATION_MAX_AGE_MS);
 
     logger.debug('GET /profiles/recommendations', {
       currentUserId: currentUserId ?? null,
@@ -621,6 +643,7 @@ router.get(
     // excludeTypes (federated/agent/automated).
     const baseUserMatch: Record<string, unknown> = {
       'privacySettings.isPrivateAccount': { $ne: true },
+      ...federatedRecommendationEligibilityMatch(minFederatedResolvedAt),
     };
     if (excludeTypes.length > 0) {
       baseUserMatch.type = { $nin: excludeTypes };
@@ -654,6 +677,7 @@ router.get(
           $match: {
             'user.privacySettings.isPrivateAccount': { $ne: true },
             ...(excludeTypes.length > 0 ? { 'user.type': { $nin: excludeTypes } } : {}),
+            ...federatedRecommendationEligibilityMatch(minFederatedResolvedAt, 'user.'),
           },
         },
         { $limit: parsedLimit },
@@ -743,6 +767,7 @@ router.get(
           $match: {
             'user.privacySettings.isPrivateAccount': { $ne: true },
             ...(excludeTypes.length > 0 ? { 'user.type': { $nin: excludeTypes } } : {}),
+            ...federatedRecommendationEligibilityMatch(minFederatedResolvedAt, 'user.'),
           },
         },
         ...followCountLookupStages,

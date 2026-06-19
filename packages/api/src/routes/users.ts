@@ -1045,6 +1045,7 @@ router.put(
     // Build the upsert filter and $set payload — never touch auth fields
     let filter: Record<string, unknown>;
     const setFields: Record<string, unknown> = { username };
+    const unsetFields: Record<string, ''> = {};
 
     if (type === 'federated') {
       if (!actorUri || typeof actorUri !== 'string') {
@@ -1081,6 +1082,9 @@ router.put(
       setFields.username = normalisedUsername;
       setFields['federation.actorUri'] = actorUri;
       setFields['federation.domain'] = normalisedDomain;
+      setFields['federation.lastResolvedAt'] = new Date();
+      unsetFields['federation.unavailableAt'] = '';
+      unsetFields['federation.unavailableReason'] = '';
     } else {
       // For agent / automated, refuse to clobber a username already taken
       // by a local user — that would be account takeover via the
@@ -1136,9 +1140,18 @@ router.put(
       setFields.avatar = avatar;
     }
 
+    const update: {
+      $set: Record<string, unknown>;
+      $setOnInsert: Record<string, unknown>;
+      $unset?: Record<string, ''>;
+    } = { $set: setFields, $setOnInsert: setOnInsert };
+    if (Object.keys(unsetFields).length > 0) {
+      update.$unset = unsetFields;
+    }
+
     const user = await User.findOneAndUpdate(
       filter,
-      { $set: setFields, $setOnInsert: setOnInsert },
+      update,
       { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true }
     )
       .select('-password -refreshToken')

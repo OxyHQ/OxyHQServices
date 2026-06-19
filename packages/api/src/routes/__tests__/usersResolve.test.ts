@@ -245,6 +245,22 @@ describe('PUT /users/resolve (C4)', () => {
 
     expect(res.status).toBe(200);
     expect(mockUserFindOneAndUpdate).toHaveBeenCalledTimes(1);
+    expect(mockUserFindOneAndUpdate).toHaveBeenCalledWith(
+      { 'federation.actorUri': 'https://mastodon.social/users/alice' },
+      expect.objectContaining({
+        $set: expect.objectContaining({
+          username: 'alice@mastodon.social',
+          'federation.actorUri': 'https://mastodon.social/users/alice',
+          'federation.domain': 'mastodon.social',
+          'federation.lastResolvedAt': expect.any(Date),
+        }),
+        $unset: expect.objectContaining({
+          'federation.unavailableAt': '',
+          'federation.unavailableReason': '',
+        }),
+      }),
+      expect.anything(),
+    );
   });
 
   it('allows actorUri on the www host while keeping the canonical federated username', async () => {
@@ -272,6 +288,11 @@ describe('PUT /users/resolve (C4)', () => {
           username: 'mosseri@threads.net',
           'federation.actorUri': 'https://www.threads.net/ap/users/mosseri/',
           'federation.domain': 'threads.net',
+          'federation.lastResolvedAt': expect.any(Date),
+        }),
+        $unset: expect.objectContaining({
+          'federation.unavailableAt': '',
+          'federation.unavailableReason': '',
         }),
       }),
       expect.anything(),

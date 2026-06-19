@@ -325,6 +325,19 @@ describe('FederationService.resolveAndUpsert (fast + eventually-fresh)', () => {
     expect(webfingerSpy).toHaveBeenCalledWith(fx.handle);
     expect(actorSpy).toHaveBeenCalledWith(fx.actorUri, fx.handle);
     expect(avatarSpy).toHaveBeenCalledWith(NEW_AVATAR_URL, undefined, undefined, fx.userId);
+    expect(mockUserFindOneAndUpdate).toHaveBeenCalledWith(
+      { 'federation.actorUri': fx.actorUri },
+      expect.objectContaining({
+        $set: expect.objectContaining({
+          'federation.lastResolvedAt': expect.any(Date),
+        }),
+        $unset: expect.objectContaining({
+          'federation.unavailableAt': '',
+          'federation.unavailableReason': '',
+        }),
+      }),
+      expect.anything(),
+    );
     expect(mockUserUpdateOne).toHaveBeenCalledWith(
       { _id: created._id },
       { $set: expect.objectContaining({ avatar: 'new-file-id' }) },
@@ -364,14 +377,19 @@ describe('FederationService.resolveAndUpsert (fast + eventually-fresh)', () => {
     });
     expect(mockUserFindOneAndUpdate).toHaveBeenCalledWith(
       { 'federation.actorUri': actorUri },
-      {
+      expect.objectContaining({
         $set: expect.objectContaining({
           type: 'federated',
           username: handle,
           'federation.actorUri': actorUri,
           'federation.domain': 'threads.net',
+          'federation.lastResolvedAt': expect.any(Date),
         }),
-      },
+        $unset: expect.objectContaining({
+          'federation.unavailableAt': '',
+          'federation.unavailableReason': '',
+        }),
+      }),
       expect.anything(),
     );
     expect(result).toBe(created);
@@ -409,14 +427,19 @@ describe('FederationService.resolveAndUpsert (fast + eventually-fresh)', () => {
     });
     expect(mockUserFindOneAndUpdate).toHaveBeenCalledWith(
       { 'federation.actorUri': actorUri },
-      {
+      expect.objectContaining({
         $set: expect.objectContaining({
           type: 'federated',
           username: canonicalHandle,
           'federation.actorUri': actorUri,
           'federation.domain': 'threads.net',
+          'federation.lastResolvedAt': expect.any(Date),
         }),
-      },
+        $unset: expect.objectContaining({
+          'federation.unavailableAt': '',
+          'federation.unavailableReason': '',
+        }),
+      }),
       expect.anything(),
     );
     expect(result).toBe(created);

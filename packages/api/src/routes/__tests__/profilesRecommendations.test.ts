@@ -128,6 +128,24 @@ function extractNinIds(pipeline: unknown): Types.ObjectId[] {
   return matchStage?.$match?._id?.$nin ?? [];
 }
 
+function expectFederatedEligibilityMatch(pipeline: unknown, prefix = ''): void {
+  const stages = pipeline as Array<{ $match?: Record<string, unknown> }>;
+  const matchStage = stages.find((stage) => {
+    const clauses = stage.$match?.$or as Array<Record<string, unknown>> | undefined;
+    return clauses?.some((clause) => clause[`${prefix}type`] === 'federated');
+  });
+  const federatedClause = (matchStage?.$match?.$or as Array<Record<string, unknown>> | undefined)
+    ?.find((clause) => clause[`${prefix}type`] === 'federated');
+
+  expect(federatedClause).toEqual(expect.objectContaining({
+    [`${prefix}type`]: 'federated',
+    [`${prefix}federation.actorUri`]: { $type: 'string', $ne: '' },
+    [`${prefix}federation.domain`]: { $type: 'string', $ne: '' },
+    [`${prefix}federation.lastResolvedAt`]: { $gte: expect.any(Date) },
+    [`${prefix}federation.unavailableAt`]: { $exists: false },
+  }));
+}
+
 const userA = new Types.ObjectId(); // the caller (self)
 const userB = new Types.ObjectId(); // followed by A
 const userC = new Types.ObjectId(); // followed by A
@@ -220,5 +238,17 @@ describe('GET /profiles/recommendations exclusion set', () => {
     expect(returnedIds).toContain(userD.toString());
     // The personalized following-set query is never issued without a caller.
     expect(mockFollowFind).not.toHaveBeenCalled();
+  });
+
+  it('requires recently resolved federated users in recommendation pipelines', async () => {
+    currentUserId = undefined;
+    mockFollowAggregate.mockResolvedValue([]);
+    mockUserAggregate.mockResolvedValue([]);
+
+    const res = await requestJson(server, '/profiles/recommendations?limit=10');
+
+    expect(res.status).toBe(200);
+    expectFederatedEligibilityMatch(mockFollowAggregate.mock.calls[0][0], 'user.');
+    expectFederatedEligibilityMatch(mockUserAggregate.mock.calls[0][0]);
   });
 });
