@@ -1,6 +1,8 @@
 // Type-only definition for the useFollow hook to allow context exposure without runtime import cycles.
 // Expand this as needed to better reflect the real return type.
 
+import type { BulkFollowResult } from '@oxyhq/core';
+
 export type SingleFollowResult = {
   isFollowing: boolean;
   isLoading: boolean;
@@ -23,6 +25,7 @@ export type MultiFollowResult = {
   setFollowStatusForUser: (userId: string, following: boolean) => void;
   fetchStatusForUser: (userId: string) => Promise<void>;
   fetchAllStatuses: () => Promise<void>;
+  followAllUsers: () => Promise<BulkFollowResult>;
   clearErrorForUser: (userId: string) => void;
   isAnyLoading: boolean;
   hasAnyError: boolean;

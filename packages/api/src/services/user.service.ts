@@ -35,6 +35,46 @@ interface UserWithCount {
   };
 }
 
+/**
+ * Per-target outcome of a bulk follow operation.
+ * - `success: true, alreadyFollowing: false`  → newly followed
+ * - `success: true, alreadyFollowing: true`   → already followed (no-op / raced)
+ * - `success: false, alreadyFollowing: false` → invalid id, non-existent user, or self
+ */
+export interface BulkFollowEntry {
+  userId: string;
+  success: boolean;
+  alreadyFollowing: boolean;
+}
+
+/**
+ * Result contract for `bulkFollow`. `followedCount` counts ONLY follows that
+ * were newly created by this call (excludes already-following and raced
+ * duplicate inserts).
+ */
+export interface BulkFollowResult {
+  results: BulkFollowEntry[];
+  followedCount: number;
+}
+
+/**
+ * Shape of a Mongoose bulk-write / insertMany error. `insertMany` with
+ * `{ ordered: false }` surfaces per-document failures under `writeErrors`,
+ * each carrying the failing document `index` and the underlying driver
+ * `err.code` (11000 for a duplicate key). A single-document failure may
+ * instead expose `code` directly on the error.
+ */
+interface BulkWriteLikeError {
+  writeErrors?: Array<{ err?: { code?: number }; index?: number; code?: number }>;
+  code?: number;
+}
+
+function isBulkWriteLikeError(error: unknown): error is BulkWriteLikeError {
+  if (typeof error !== 'object' || error === null) return false;
+  const candidate = error as { writeErrors?: unknown; code?: unknown };
+  return Array.isArray(candidate.writeErrors) || typeof candidate.code === 'number';
+}
+
 export class UserService {
   /**
    * Get user by ID with proper serialization
@@ -439,6 +479,196 @@ export class UserService {
         followers: targetCounts?.followers ?? 0,
         following: currentCounts?.following ?? 0,
       },
+    };
+  }
+
+  /**
+   * Follow many users in a single batched operation.
+   *
+   * Follow-only and idempotent: users already followed stay followed and are
+   * never toggled/unfollowed. One bad id never fails the whole batch — every
+   * deduped candidate (including structurally-invalid ids) gets an entry in the
+   * returned `results` array.
+   *
+   * Efficiency: at most one batched query for existing follows, one for user
+   * existence, one bulk insert, and two count-increment updates — regardless of
+   * how many targets are supplied. Does NOT loop over `toggleFollow`.
+   *
+   * @param currentUserId The follower (authenticated user) id.
+   * @param targetUserIds Candidate user ids to follow (may contain duplicates,
+   *   the caller's own id, or invalid ids).
+   * @returns Per-target results and the count of NEWLY created follows.
+   */
+  async bulkFollow(
+    currentUserId: string,
+    targetUserIds: string[]
+  ): Promise<BulkFollowResult> {
+    // Dedupe while preserving first-seen order, and drop the caller's own id
+    // (cannot self-follow). The deduped list drives the results array.
+    const seen = new Set<string>();
+    const dedupedIds: string[] = [];
+    for (const rawId of targetUserIds) {
+      if (typeof rawId !== 'string') continue;
+      const id = rawId.trim();
+      if (!id || id === currentUserId || seen.has(id)) continue;
+      seen.add(id);
+      dedupedIds.push(id);
+    }
+
+    // Partition into structurally-valid candidates (safe to query) and invalid
+    // ids. Invalid ids must never enter the `$in` queries.
+    const candidateIds = dedupedIds.filter((id) => Types.ObjectId.isValid(id));
+
+    // No queryable candidates — return graceful failures for every deduped id.
+    if (candidateIds.length === 0) {
+      return {
+        results: dedupedIds.map((userId) => ({
+          userId,
+          success: false,
+          alreadyFollowing: false,
+        })),
+        followedCount: 0,
+      };
+    }
+
+    // ONE batched query for follows that already exist.
+    const existingFollows = await Follow.find({
+      followerUserId: currentUserId,
+      followType: FollowType.USER,
+      followedId: { $in: candidateIds },
+    })
+      .select('followedId')
+      .lean();
+
+    const alreadyFollowedIds = new Set<string>(
+      existingFollows
+        .map((follow) => follow.followedId)
+        .filter((id): id is Types.ObjectId | string => id != null)
+        .map((id) => id.toString())
+    );
+
+    // ONE batched query to verify which candidates correspond to real users.
+    const existingUsers = await User.find({
+      _id: { $in: candidateIds },
+    })
+      .select('_id')
+      .lean();
+
+    const existingUserIds = new Set<string>(
+      existingUsers.map((user) => user._id.toString())
+    );
+
+    // Candidates that exist and are not yet followed are the insert set. Keep
+    // them ordered so write-error indexes map back to the right id.
+    const toInsertIds = candidateIds.filter(
+      (id) => existingUserIds.has(id) && !alreadyFollowedIds.has(id)
+    );
+
+    // Track ids that lost a concurrency race (E11000) so we treat them as
+    // already-following rather than newly created.
+    const racedDuplicateIds = new Set<string>();
+    let newlyFollowedIds: string[] = [];
+
+    if (toInsertIds.length > 0) {
+      const docs = toInsertIds.map((id) => ({
+        followerUserId: currentUserId,
+        followType: FollowType.USER,
+        followedId: id,
+      }));
+
+      try {
+        await Follow.insertMany(docs, { ordered: false });
+        newlyFollowedIds = toInsertIds;
+      } catch (error: unknown) {
+        if (!isBulkWriteLikeError(error)) {
+          // Unexpected, non-duplicate failure — surface it.
+          logger.error(
+            'Bulk follow insert failed',
+            error instanceof Error ? error : new Error(String(error)),
+            { currentUserId, attempted: toInsertIds.length }
+          );
+          throw error;
+        }
+
+        const writeErrors = error.writeErrors ?? [];
+        const duplicateIndexes = new Set<number>();
+        let sawNonDuplicate = false;
+
+        if (writeErrors.length > 0) {
+          for (const writeError of writeErrors) {
+            const code = writeError.err?.code ?? writeError.code;
+            if (code === 11000) {
+              if (typeof writeError.index === 'number') {
+                duplicateIndexes.add(writeError.index);
+              }
+            } else {
+              sawNonDuplicate = true;
+            }
+          }
+        } else if (error.code === 11000) {
+          // Single-document duplicate failure (no per-doc writeErrors array).
+          // With `ordered:false` and multiple docs this is unusual, but handle
+          // it: every attempted id collided.
+          for (let i = 0; i < toInsertIds.length; i += 1) {
+            duplicateIndexes.add(i);
+          }
+        } else {
+          sawNonDuplicate = true;
+        }
+
+        // Any failure that is NOT a duplicate key is unexpected — do not
+        // silently swallow it.
+        if (sawNonDuplicate) {
+          logger.error(
+            'Bulk follow insert failed with non-duplicate write error',
+            error instanceof Error ? error : new Error(String(error)),
+            { currentUserId, attempted: toInsertIds.length }
+          );
+          throw error;
+        }
+
+        // Newly inserted = attempted minus those that collided (raced).
+        toInsertIds.forEach((id, index) => {
+          if (duplicateIndexes.has(index)) {
+            racedDuplicateIds.add(id);
+          } else {
+            newlyFollowedIds.push(id);
+          }
+        });
+      }
+    }
+
+    // Increment counts based ONLY on newly created follows.
+    if (newlyFollowedIds.length > 0) {
+      await Promise.all([
+        User.updateMany(
+          { _id: { $in: newlyFollowedIds } },
+          { $inc: { '_count.followers': 1 } }
+        ),
+        User.findByIdAndUpdate(currentUserId, {
+          $inc: { '_count.following': newlyFollowedIds.length },
+        }),
+      ]);
+    }
+
+    const newlyFollowedSet = new Set<string>(newlyFollowedIds);
+
+    // Build a result entry for EVERY deduped candidate id (including invalid
+    // ones that never reached the queries).
+    const results: BulkFollowEntry[] = dedupedIds.map((userId) => {
+      if (newlyFollowedSet.has(userId)) {
+        return { userId, success: true, alreadyFollowing: false };
+      }
+      if (alreadyFollowedIds.has(userId) || racedDuplicateIds.has(userId)) {
+        return { userId, success: true, alreadyFollowing: true };
+      }
+      // Invalid id, non-existent user, or genuinely failed.
+      return { userId, success: false, alreadyFollowing: false };
+    });
+
+    return {
+      results,
+      followedCount: newlyFollowedIds.length,
     };
   }
 

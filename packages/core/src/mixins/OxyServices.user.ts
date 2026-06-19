@@ -17,6 +17,24 @@ import { KeyManager } from '../crypto/keyManager';
 import { SignatureService } from '../crypto/signatureService';
 import { normalizeUserIdentity, normalizeUserIdentityOrNull } from '../utils/userIdentity';
 
+/** Per-user outcome returned by `POST /users/follow/bulk`. */
+export interface BulkFollowEntry {
+  /** The user ID that was processed. */
+  userId: string;
+  /** Whether the follow was applied (or already in place) without error. */
+  success: boolean;
+  /** Whether the caller was already following this user before the request. */
+  alreadyFollowing: boolean;
+}
+
+/** Response shape of `POST /users/follow/bulk`. */
+export interface BulkFollowResult {
+  /** Per-user outcomes, in request order. */
+  results: BulkFollowEntry[];
+  /** Number of users newly followed by this request. */
+  followedCount: number;
+}
+
 export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) {
   return class extends Base {
     constructor(...args: any[]) {
@@ -399,6 +417,25 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
     async followUser(userId: string): Promise<{ success: boolean; message: string }> {
       try {
         return await this.makeRequest('POST', `/users/${userId}/follow`, undefined, { cache: false });
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
+    /**
+     * Follow multiple users in a single request.
+     *
+     * POSTs `/users/follow/bulk` with `{ userIds }` (server caps the batch at
+     * 200). Returns the per-user outcomes and the count of users newly
+     * followed. An empty `userIds` array resolves immediately with an empty
+     * result and performs no network call.
+     */
+    async followUsers(userIds: string[]): Promise<BulkFollowResult> {
+      if (userIds.length === 0) {
+        return { results: [], followedCount: 0 };
+      }
+      try {
+        return await this.makeRequest<BulkFollowResult>('POST', '/users/follow/bulk', { userIds }, { cache: false });
       } catch (error) {
         throw this.handleError(error);
       }

@@ -61,6 +61,10 @@ export type {
     ContactDiscoveryMatch,
     ContactDiscoveryResponse,
 } from './mixins/OxyServices.contacts';
+export type {
+    BulkFollowEntry,
+    BulkFollowResult,
+} from './mixins/OxyServices.user';
 export { OxyAppDataIdentifierError } from './mixins/OxyServices.appData';
 
 // ---------------------------------------------------------------------------

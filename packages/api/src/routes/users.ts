@@ -49,6 +49,9 @@ interface PaginationQuery {
   offset?: string;
 }
 
+// Maximum number of users that can be followed in a single bulk request.
+const MAX_BULK_FOLLOW = 200;
+
 import { PAGINATION } from '../utils/constants';
 import { federationService } from '../services/federation.service';
 
@@ -360,10 +363,63 @@ router.put(
 );
 
 /**
+ * POST /users/follow/bulk
+ *
+ * Follow many users in a single request. Follow-only and idempotent — users
+ * already followed stay followed and are never unfollowed. One bad/invalid id
+ * never fails the whole batch; every supplied id gets a per-target result.
+ *
+ * Registered BEFORE the `/:userId` param routes so Express never treats
+ * `follow` as a `:userId` value.
+ *
+ * @body {string[]} userIds - Target user ids to follow (max MAX_BULK_FOLLOW).
+ * @returns {object} `{ message, results, followedCount }` where `results` is a
+ *   per-target list of `{ userId, success, alreadyFollowing }` and
+ *   `followedCount` counts only NEWLY created follows.
+ */
+router.post(
+  '/follow/bulk',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const currentUserId = req.user?.id;
+
+    if (!currentUserId) {
+      throw new UnauthorizedError('Authentication required');
+    }
+
+    const { userIds } = req.body;
+
+    if (!Array.isArray(userIds)) {
+      throw new BadRequestError('userIds must be an array');
+    }
+    if (userIds.length === 0) {
+      throw new BadRequestError('userIds must not be empty');
+    }
+    if (userIds.length > MAX_BULK_FOLLOW) {
+      throw new BadRequestError(`Cannot follow more than ${MAX_BULK_FOLLOW} users at once`);
+    }
+
+    const result = await userService.bulkFollow(currentUserId, userIds);
+
+    logger.info('Users bulk followed', {
+      currentUserId,
+      requested: userIds.length,
+      followedCount: result.followedCount,
+    });
+
+    sendSuccess(res, {
+      message: 'Bulk follow processed',
+      results: result.results,
+      followedCount: result.followedCount,
+    });
+  })
+);
+
+/**
  * GET /users/:userId
- * 
+ *
  * Get user profile by ID
- * 
+ *
  * @param {string} userId - User ID
  * @returns {User} User profile with statistics
  */
