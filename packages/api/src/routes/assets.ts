@@ -1095,6 +1095,28 @@ router.get('/:id/stream', mediaHeadersMiddleware, validate({ params: assetIdPara
     }
   }
 
+  if (!(await s3Service.fileExists(storageKey))) {
+    logger.warn('Asset metadata points to a missing storage object', {
+      fileId,
+      variant: variantType,
+      storageKey,
+    });
+    if (fallback === 'placeholder') {
+      const buf = Buffer.from(TRANSPARENT_PNG_PLACEHOLDER, 'base64');
+      res.setHeader('Content-Type', 'image/png');
+      res.setHeader('Content-Length', String(buf.length));
+      res.setHeader('Cache-Control', 'no-store');
+      return res.status(200).end(buf);
+    }
+    if (fallback === 'icon' || fallback === 'placeholderVisible') {
+      const svg = generateMissingFilePlaceholder(fileId);
+      res.setHeader('Content-Type', 'image/svg+xml');
+      res.setHeader('Cache-Control', 'no-store');
+      return res.status(200).end(svg);
+    }
+    throw new NotFoundError('File not found');
+  }
+
   // Redirect to presigned S3 URL — browser fetches image directly from S3/Spaces
   // with no auth required. This avoids ERR_BLOCKED_BY_ORB from expired tokens
   // because the presigned URL IS the authorization (valid 1 hour).

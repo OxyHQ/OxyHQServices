@@ -867,6 +867,12 @@ export class AssetService {
     return this.s3Service.downloadBuffer(file.storageKey);
   }
 
+  async fileContentExists(fileId: string, file?: IFile): Promise<boolean> {
+    const fileObj = file || await this.getFile(fileId);
+    if (!fileObj || fileObj.status === 'deleted') return false;
+    return this.s3Service.fileExists(fileObj.storageKey);
+  }
+
   async getFileUrl(
     fileId: string,
     variant?: string,

@@ -355,6 +355,21 @@ function getAssetService(): AssetService {
 // ============================================================
 
 class FederationService {
+  private async storedAvatarExists(fileId: unknown): Promise<boolean> {
+    if (typeof fileId !== 'string' || !fileId || fileId.startsWith('http')) {
+      return false;
+    }
+
+    try {
+      return await getAssetService().fileContentExists(fileId);
+    } catch (err) {
+      logger.warn(
+        `Failed checking stored federated avatar ${fileId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return false;
+    }
+  }
+
   /**
    * Resolve a WebFinger acct to an ActivityPub actor URI.
    * @param acct - e.g. "alice@mastodon.social" or "@alice@mastodon.social"
@@ -488,14 +503,30 @@ class FederationService {
         signal: AbortSignal.timeout(15_000),
       });
 
-      // 304: the host confirms our stored copy is still current. Skip re-upload,
-      // keep the existing validators, and tell the caller it was unchanged.
+      // 304: the host confirms the remote bytes are unchanged. This only means
+      // our local copy is usable if the referenced asset still exists in S3.
+      // If the DB record points to a missing object, retry without validators
+      // so the remote sends the body and we can repair the stored file id.
       if (res.status === 304) {
+        if (await this.storedAvatarExists(existingAvatarFileId)) {
+          return {
+            fileId: null,
+            etag: conditional?.etag,
+            lastModified: conditional?.lastModified,
+            notModified: true,
+          };
+        }
+
+        logger.warn(`Remote avatar returned 304 but stored file is missing for ${avatarUrl}; retrying full download`);
+        if (conditional?.etag || conditional?.lastModified) {
+          return this.downloadAndStoreAvatar(avatarUrl, existingAvatarFileId, undefined, ownerUserId);
+        }
+
         return {
           fileId: null,
           etag: conditional?.etag,
           lastModified: conditional?.lastModified,
-          notModified: true,
+          notModified: false,
         };
       }
 
@@ -619,8 +650,11 @@ class FederationService {
         || Date.now() - new Date(existing.updatedAt).getTime() >= STALE_MS;
       const avatarNeedsDownload = typeof existing.avatar === 'string'
         && existing.avatar.startsWith('http');
+      const avatarFileMissing = !isStale && !avatarNeedsDownload
+        ? !(await this.storedAvatarExists(existing.avatar))
+        : false;
 
-      if (isStale || avatarNeedsDownload) {
+      if (isStale || avatarNeedsDownload || avatarFileMissing) {
         this.scheduleBackgroundRefresh(existing, cleaned);
       }
 
