@@ -187,7 +187,7 @@ export function LoginForm({
             const result = await oxy.lookupUsername(username)
             setLookupResult({
                 username: result.username,
-                displayName: result.displayName,
+                displayName: result.name.displayName,
                 avatar: result.avatar,
                 color: result.color,
             })

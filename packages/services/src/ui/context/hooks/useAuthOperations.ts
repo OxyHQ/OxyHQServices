@@ -11,11 +11,6 @@ import { SignatureService } from '@oxyhq/core';
 import { isWebBrowser } from '../../hooks/useWebSSO';
 import { clearActiveAuthuser, clearSsoBounceState } from '../../utils/activeAuthuser';
 
-/** Type guard for error objects with optional code and status properties */
-function isErrorWithCodeOrStatus(error: unknown): error is { code?: string; status?: number; message?: string } {
-  return typeof error === 'object' && error !== null;
-}
-
 export interface UseAuthOperationsOptions {
   oxyServices: OxyServices;
   storage: StorageInterface | null;
@@ -55,7 +50,6 @@ const LOGOUT_ALL_ERROR_CODE = 'LOGOUT_ALL_ERROR';
  */
 export const useAuthOperations = ({
   oxyServices,
-  storage,
   sessions,
   activeSessionId,
   setActiveSessionId,
@@ -77,7 +71,7 @@ export const useAuthOperations = ({
   sessionsRef.current = sessions;
 
   /**
-   * Internal function to perform challenge-response sign in (works offline)
+   * Internal function to perform challenge-response sign in.
    */
   const performSignIn = useCallback(
     async (publicKey: string): Promise<User> => {
@@ -86,36 +80,8 @@ export const useAuthOperations = ({
       const deviceInfo = await DeviceManager.getDeviceInfo();
       const deviceName = deviceInfo.deviceName || DeviceManager.getDefaultDeviceName();
 
-      let challenge: string;
-      let isOffline = false;
-
-      // Try to request challenge from server (online)
-      try {
-        const challengeResponse = await oxyServices.requestChallenge(publicKey);
-        challenge = challengeResponse.challenge;
-      } catch (error) {
-        // Network error - generate challenge locally for offline sign-in
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        const isNetworkError = 
-          errorMessage.includes('Network') ||
-          errorMessage.includes('network') ||
-          errorMessage.includes('Failed to fetch') ||
-          errorMessage.includes('fetch failed') ||
-          (isErrorWithCodeOrStatus(error) && error.code === 'NETWORK_ERROR') ||
-          (isErrorWithCodeOrStatus(error) && error.status === 0);
-
-        if (isNetworkError) {
-          if (__DEV__ && logger) {
-            logger('Network unavailable, performing offline sign-in');
-          }
-          // Generate challenge locally
-          challenge = await SignatureService.generateChallenge();
-          isOffline = true;
-        } else {
-          // Re-throw non-network errors
-          throw error;
-        }
-      }
+      const challengeResponse = await oxyServices.requestChallenge(publicKey);
+      const challenge = challengeResponse.challenge;
 
       // Note: Biometric authentication check should be handled by the app layer
       // (e.g., accounts app) before calling signIn. The biometric preference is stored
@@ -127,122 +93,64 @@ export const useAuthOperations = ({
       let fullUser: User;
       let sessionResponse: SessionLoginResponse;
 
-      if (isOffline) {
-        // Offline sign-in: create local session and minimal user object
+      // `verifyChallenge` plants the first access token internally, mirroring
+      // `claimSessionByToken`, so the client is authenticated as soon as this
+      // resolves.
+      sessionResponse = await oxyServices.verifyChallenge(
+        publicKey,
+        challenge,
+        signature,
+        timestamp,
+        deviceName,
+        deviceFingerprint,
+      );
+
+      // Get full user data
+      fullUser = await oxyServices.getUserBySession(sessionResponse.sessionId);
+
+      // Fetch device sessions
+      let allDeviceSessions: ClientSession[] = [];
+      try {
+        allDeviceSessions = await fetchSessionsWithFallback(oxyServices, sessionResponse.sessionId, {
+          fallbackDeviceId: sessionResponse.deviceId,
+          fallbackUserId: fullUser.id,
+          logger,
+        });
+      } catch (error) {
         if (__DEV__ && logger) {
-          logger('Creating offline session');
+          logger('Failed to fetch device sessions after login', error);
         }
-
-        // Generate a local session ID using cryptographically secure randomness
-        const Crypto = await import('expo-crypto');
-        const localSessionId = `offline_${Crypto.randomUUID()}`;
-        const localDeviceId = `device_${Crypto.randomUUID()}`;
-        const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(); // 7 days
-
-        // Create minimal user object with publicKey as id
-        fullUser = {
-          id: publicKey, // Use publicKey as id (per migration document)
-          publicKey,
-          username: '',
-          privacySettings: {},
-        } as User;
-
-        sessionResponse = {
-          sessionId: localSessionId,
-          deviceId: localDeviceId,
-          expiresAt,
-          user: {
-            id: publicKey,
-            username: '',
-          },
-        };
-
-        // Store offline session locally
-        const offlineSession: ClientSession = {
-          sessionId: localSessionId,
-          deviceId: localDeviceId,
-          expiresAt,
-          lastActive: new Date().toISOString(),
-          userId: publicKey,
-          isCurrent: true,
-        };
-
-        setActiveSessionId(localSessionId);
-        await saveActiveSessionId(localSessionId);
-        updateSessions([offlineSession], { merge: true });
-
-        // Mark session as offline for later sync
-        if (storage) {
-          await storage.setItem(`oxy_session_${localSessionId}_offline`, 'true');
-        }
-
-        if (__DEV__ && logger) {
-          logger('Offline sign-in successful');
-        }
-      } else {
-        // Online sign-in: use normal flow.
-        // Verify and create session. `verifyChallenge` plants the first
-        // access token (and refresh token) from the `/auth/verify` response
-        // body internally — mirroring `claimSessionByToken` — so the client is
-        // authenticated as soon as this resolves. Session IDs are not public
-        // token-minting credentials; a token-less verify response simply leaves
-        // the client without a bearer here.
-        sessionResponse = await oxyServices.verifyChallenge(
-          publicKey,
-          challenge,
-          signature,
-          timestamp,
-          deviceName,
-          deviceFingerprint,
-        );
-
-        // Get full user data
-        fullUser = await oxyServices.getUserBySession(sessionResponse.sessionId);
-
-        // Fetch device sessions
-        let allDeviceSessions: ClientSession[] = [];
-        try {
-          allDeviceSessions = await fetchSessionsWithFallback(oxyServices, sessionResponse.sessionId, {
-            fallbackDeviceId: sessionResponse.deviceId,
-            fallbackUserId: fullUser.id,
-            logger,
-          });
-        } catch (error) {
-          if (__DEV__ && logger) {
-            logger('Failed to fetch device sessions after login', error);
-          }
-        }
-
-        // Check for existing session for same user and switch to it to avoid duplicates
-        const existingSession = allDeviceSessions.find(
-          (session) =>
-            session.userId?.toString() === fullUser.id?.toString() &&
-            session.sessionId !== sessionResponse.sessionId,
-        );
-
-        if (existingSession) {
-          // Switch to existing session instead of creating duplicate
-          try {
-            await oxyServices.logoutSession(sessionResponse.sessionId, sessionResponse.sessionId);
-          } catch (logoutError) {
-            // Non-critical - continue to switch session even if logout fails
-            if (__DEV__ && logger) {
-              logger('Failed to logout duplicate session, continuing with switch', logoutError);
-            }
-          }
-          await switchSession(existingSession.sessionId);
-          updateSessions(
-            allDeviceSessions.filter((session) => session.sessionId !== sessionResponse.sessionId),
-            { merge: false },
-          );
-          onAuthStateChange?.(fullUser);
-          return fullUser;
-        }
-
-        setActiveSessionId(sessionResponse.sessionId);
-        await saveActiveSessionId(sessionResponse.sessionId);
-        updateSessions(allDeviceSessions, { merge: true });
       }
+
+      // Check for existing session for same user and switch to it to avoid duplicates
+      const existingSession = allDeviceSessions.find(
+        (session) =>
+          session.userId?.toString() === fullUser.id?.toString() &&
+          session.sessionId !== sessionResponse.sessionId,
+      );
+
+      if (existingSession) {
+        // Switch to existing session instead of creating duplicate
+        try {
+          await oxyServices.logoutSession(sessionResponse.sessionId, sessionResponse.sessionId);
+        } catch (logoutError) {
+          // Non-critical - continue to switch session even if logout fails
+          if (__DEV__ && logger) {
+            logger('Failed to logout duplicate session, continuing with switch', logoutError);
+          }
+        }
+        await switchSession(existingSession.sessionId);
+        updateSessions(
+          allDeviceSessions.filter((session) => session.sessionId !== sessionResponse.sessionId),
+          { merge: false },
+        );
+        onAuthStateChange?.(fullUser);
+        return fullUser;
+      }
+
+      setActiveSessionId(sessionResponse.sessionId);
+      await saveActiveSessionId(sessionResponse.sessionId);
+      updateSessions(allDeviceSessions, { merge: true });
 
       await applyLanguagePreference(fullUser);
       loginSuccess(fullUser);
@@ -260,7 +168,6 @@ export const useAuthOperations = ({
       setActiveSessionId,
       switchSession,
       updateSessions,
-      storage,
     ],
   );
 

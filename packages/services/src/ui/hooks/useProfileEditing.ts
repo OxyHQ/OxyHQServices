@@ -1,30 +1,44 @@
 import { useCallback } from 'react';
-import { useI18n } from './useI18n';
 import { useUpdateProfile } from './mutations/useAccountMutations';
 import { useAuthStore } from '../stores/authStore';
+import type { UserProfileUpdate } from '@oxyhq/contracts';
+
+interface ProfileLocation {
+    id: string;
+    name: string;
+    label?: string;
+    coordinates?: { lat: number; lon: number };
+}
+
+interface ProfileLinkMetadata {
+    url: string;
+    title?: string;
+    description?: string;
+    image?: string;
+    id: string;
+}
 
 export interface ProfileUpdateData {
-    displayName?: string;
+    firstName?: string;
     lastName?: string;
     username?: string;
     email?: string;
     bio?: string;
     location?: string;
-    locations?: Array<{
-        id: string;
-        name: string;
-        label?: string;
-        coordinates?: { lat: number; lon: number };
-    }>;
+    locations?: ProfileLocation[];
     links?: string[];
-    linksMetadata?: Array<{
-        url: string;
-        title?: string;
-        description?: string;
-        image?: string;
-        id: string;
-    }>;
+    linksMetadata?: ProfileLinkMetadata[];
     avatar?: string;
+}
+
+type ProfileFieldValue = string | ProfileLocation[] | ProfileLinkMetadata[];
+
+function isProfileLocationArray(value: ProfileFieldValue): value is ProfileLocation[] {
+    return Array.isArray(value) && value.every((item) => typeof item === 'object' && item !== null && 'name' in item);
+}
+
+function isProfileLinkMetadataArray(value: ProfileFieldValue): value is ProfileLinkMetadata[] {
+    return Array.isArray(value) && value.every((item) => typeof item === 'object' && item !== null && 'url' in item);
 }
 
 /**
@@ -32,7 +46,6 @@ export interface ProfileUpdateData {
  * Provides functions to update profile fields and handle saving
  */
 export const useProfileEditing = () => {
-    const { t } = useI18n();
     const updateProfileMutation = useUpdateProfile();
 
     /**
@@ -40,7 +53,7 @@ export const useProfileEditing = () => {
      */
     const saveProfile = useCallback(async (updates: ProfileUpdateData) => {
         // Prepare update object
-        const updateData: Record<string, any> = {};
+        const updateData: UserProfileUpdate = {};
 
         if (updates.username !== undefined) {
             updateData.username = updates.username;
@@ -70,11 +83,11 @@ export const useProfileEditing = () => {
         }
 
         // Handle name field
-        if (updates.displayName !== undefined || updates.lastName !== undefined) {
+        if (updates.firstName !== undefined || updates.lastName !== undefined) {
             const currentUser = useAuthStore.getState().user;
             const currentName = currentUser?.name;
             updateData.name = {
-                first: updates.displayName ?? (typeof currentName === 'object' ? currentName?.first : '') ?? '',
+                first: updates.firstName ?? (typeof currentName === 'object' ? currentName?.first : '') ?? '',
                 last: updates.lastName ?? (typeof currentName === 'object' ? currentName?.last : '') ?? '',
             };
         }
@@ -86,33 +99,39 @@ export const useProfileEditing = () => {
             // Error toast is handled by the mutation
             return false;
         }
-    }, [updateProfileMutation, t]);
+    }, [updateProfileMutation]);
 
     /**
      * Update a single profile field
      */
-    const updateField = useCallback(async (field: string, value: any) => {
+    const updateField = useCallback(async (field: string, value: ProfileFieldValue) => {
         const updates: ProfileUpdateData = {};
         
         switch (field) {
-            case 'displayName':
-                updates.displayName = value;
+            case 'firstName':
+                if (typeof value !== 'string') return false;
+                updates.firstName = value;
                 break;
             case 'username':
+                if (typeof value !== 'string') return false;
                 updates.username = value;
                 break;
             case 'email':
+                if (typeof value !== 'string') return false;
                 updates.email = value;
                 break;
             case 'bio':
+                if (typeof value !== 'string') return false;
                 updates.bio = value;
                 break;
             case 'location':
+                if (!isProfileLocationArray(value)) return false;
                 updates.locations = value;
                 break;
             case 'links':
+                if (!isProfileLinkMetadataArray(value)) return false;
                 updates.linksMetadata = value;
-                updates.links = value.map((link: any) => link.url || link);
+                updates.links = value.map((link) => link.url);
                 break;
             default:
                 return false;
@@ -127,11 +146,5 @@ export const useProfileEditing = () => {
         isSaving: updateProfileMutation.isPending,
     };
 };
-
-
-
-
-
-
 
 

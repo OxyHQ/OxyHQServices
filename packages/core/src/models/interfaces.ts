@@ -87,32 +87,31 @@ export interface User {
   id: string;
   publicKey: string;
   username: string;
-  /** Canonical display name resolved by the API. */
-  displayName: string;
   email?: string;
   // Avatar file id (asset id)
-  avatar?: string;
+  avatar?: string | null;
   // Named color preset (e.g. 'teal', 'blue', 'purple')
-  color?: string;
+  color?: string | null;
   // Privacy and security settings
   privacySettings?: PrivacySettings;
   /**
-   * Structured human name. The canonical wire shape ({@link UserNameResponse}):
-   * `{ first?, last?, full? }` where `full` is a Mongoose virtual (present only
-   * when the query materialised virtuals). The single source of truth lives in
-   * `@oxyhq/contracts` — do NOT re-declare a bare `string` here.
+   * Structured human name. `name.displayName` is the canonical display string
+   * resolved by the API; consumers render it directly instead of recomposing
+   * names from `first` / `last` / `full` / `username`.
    */
-  name?: UserNameResponse;
+  name: UserNameResponse;
   bio?: string;
   location?: string;
   website?: string;
   createdAt?: string;
   updatedAt?: string;
-  links?: Array<{
+  links?: string[];
+  linksMetadata?: Array<{
+    url: string;
     title?: string;
     description?: string;
     image?: string;
-    link: string;
+    id?: string;
   }>;
   // Social counts
   _count?: {
@@ -653,7 +652,7 @@ export interface RefreshAllAccountUser {
    * string. The server projects `name` verbatim from the user document. The
    * single source of truth is `@oxyhq/contracts`.
    */
-  name?: UserNameResponse;
+  name: UserNameResponse;
   avatar?: string | null;
   email?: string;
   color?: string | null;

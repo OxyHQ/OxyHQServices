@@ -32,7 +32,7 @@ import { useUserSubscription } from '../hooks/queries/usePaymentQueries';
 import { useDeviceSessions } from '../hooks/queries/useServicesQueries';
 import { useColorScheme } from '../hooks/useColorScheme';
 import { Colors } from '../constants/theme';
-import { normalizeColorScheme, normalizeTheme } from '../utils/themeUtils';
+import { normalizeColorScheme, normalizeTheme } from '@oxyhq/core';
 import { screenContentStyle } from '../constants/spacing';
 
 interface DeviceSessionRow {

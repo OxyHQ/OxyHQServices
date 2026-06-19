@@ -4,9 +4,6 @@ import type { RouteName } from '../navigation/routes';
 import type { User } from '@oxyhq/core';
 import type { ClientSession } from '@oxyhq/core';
 
-// Re-export RouteName from routes for convenience
-export type { RouteName };
-
 export interface StepController {
     canGoBack: () => boolean;
     goBack: () => void;
@@ -67,4 +64,3 @@ export interface OxyProviderProps {
     authRedirectUri?: string;
     queryClient?: QueryClient;
 }
-

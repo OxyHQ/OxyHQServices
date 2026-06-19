@@ -30,8 +30,14 @@ export interface QuickAccount {
 
 /** Minimal user shape accepted by display-name helpers. Avoids importing the full User type. */
 export interface DisplayNameUserShape {
-    name?: string | { first?: string; last?: string; full?: string; [key: string]: unknown };
-    /** Canonical display name resolved by the API. */
+    name?: string | {
+        displayName?: string;
+        first?: string;
+        last?: string;
+        full?: string;
+        [key: string]: unknown;
+    };
+    /** Pre-normalized account-row display name, not the API User DTO field. */
     displayName?: string;
     username?: string;
     publicKey?: string;
@@ -51,12 +57,13 @@ export const formatPublicKeyHandle = (publicKey: string): string => {
  * Resolve a friendly display name for a user.
  *
  * Order of preference:
- *  1. `displayName` from the API contract.
+ *  1. `name.displayName` from the API user contract.
  *  2. `name.full`, or composed `name.first name.last` for local unsaved shapes.
- *  3. `name` when stored as a plain string.
- *  4. `username`
- *  5. `Account 0x12345678…` (derived from publicKey, when present)
- *  6. Translated fallback (e.g. "Unnamed")
+ *  3. `name` when passed as a plain string by local non-DTO call sites.
+ *  4. pre-normalized account-row `displayName`.
+ *  5. `username`
+ *  6. `Account 0x12345678…` (derived from publicKey, when present)
+ *  7. Translated fallback (e.g. "Unnamed")
  *
  * The translation key `common.unnamed` is used for the final fallback. If the
  * caller does not pass a locale, the default English translation is used.
@@ -69,9 +76,10 @@ export const getAccountDisplayName = (
 
     const { name, displayName, username, publicKey } = user;
 
-    if (typeof displayName === 'string' && displayName.trim()) return displayName.trim();
-
     if (name && typeof name === 'object') {
+        if (typeof name.displayName === 'string' && name.displayName.trim()) {
+            return name.displayName.trim();
+        }
         if (typeof name.full === 'string' && name.full.trim()) return name.full.trim();
         const first = typeof name.first === 'string' ? name.first.trim() : '';
         const last = typeof name.last === 'string' ? name.last.trim() : '';
@@ -80,6 +88,8 @@ export const getAccountDisplayName = (
     } else if (typeof name === 'string' && name.trim()) {
         return name.trim();
     }
+
+    if (typeof displayName === 'string' && displayName.trim()) return displayName.trim();
 
     if (typeof username === 'string' && username.trim()) return username.trim();
 
@@ -136,12 +146,12 @@ export const buildAccountsArray = (
 export const createQuickAccount = (
     sessionId: string,
     userData: {
-        name?: string | { full?: string; first?: string; last?: string };
+        name?: string | { displayName?: string; full?: string; first?: string; last?: string };
         username?: string;
         publicKey?: string;
         id?: string;
         _id?: { toString(): string } | string;
-        avatar?: string;
+        avatar?: string | null;
     },
     existingAccount?: QuickAccount,
     getFileDownloadUrl?: (fileId: string, variant: string) => string
@@ -151,10 +161,11 @@ export const createQuickAccount = (
 
     // Preserve existing avatarUrl if avatar hasn't changed (prevents image reload)
     let avatarUrl: string | undefined;
-    if (existingAccount && existingAccount.avatar === userData.avatar && existingAccount.avatarUrl) {
+    const avatar = userData.avatar ?? undefined;
+    if (existingAccount && existingAccount.avatar === avatar && existingAccount.avatarUrl) {
         avatarUrl = existingAccount.avatarUrl;
-    } else if (userData.avatar && getFileDownloadUrl) {
-        avatarUrl = getFileDownloadUrl(userData.avatar, 'thumb');
+    } else if (avatar && getFileDownloadUrl) {
+        avatarUrl = getFileDownloadUrl(avatar, 'thumb');
     }
 
     return {
@@ -162,7 +173,7 @@ export const createQuickAccount = (
         userId,
         username: userData.username || '',
         displayName,
-        avatar: userData.avatar,
+        avatar,
         avatarUrl,
     };
 };

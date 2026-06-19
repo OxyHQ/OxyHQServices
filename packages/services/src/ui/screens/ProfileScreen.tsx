@@ -9,7 +9,7 @@ import { useFollow } from '../hooks/useFollow';
 import { Ionicons } from '@expo/vector-icons';
 import { useI18n } from '../hooks/useI18n';
 import { useOxy } from '../context/OxyContext';
-import { logger } from '@oxyhq/core';
+import { getAccountDisplayName, logger } from '@oxyhq/core';
 import type { User } from '@oxyhq/core';
 import { extractErrorMessage } from '../utils/errorHandlers';
 
@@ -54,7 +54,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
 
     const bloomTheme = useTheme();
     const styles = createStyles();
-    const { t } = useI18n();
+    const { t, locale } = useI18n();
 
     // Check if current user is viewing their own profile
     // Normalize IDs by trimming whitespace to handle format mismatches
@@ -214,7 +214,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                     <View style={styles.avatarWrapper} className="border-background bg-background">
                         <Avatar
                             uri={profile?.avatar ? oxyServices.getFileDownloadUrl(profile.avatar, 'thumb') : undefined}
-                            name={profile?.username || username}
+                            name={profile ? getAccountDisplayName(profile, locale) : username}
                             size={96}
 
                         />
@@ -246,7 +246,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                 {/* Profile Info */}
                 <View style={styles.header}>
                     <Text style={styles.displayName} className="text-foreground">
-                        {(profile && 'displayName' in profile && typeof profile.displayName === 'string' ? profile.displayName : null) || profile?.username || username || profile?.id || ''}
+                        {profile ? getAccountDisplayName(profile, locale) : username || ''}
                     </Text>
                     {profile?.username && (
                         <Text style={styles.subText} className="text-muted-foreground">@{profile.username}</Text>

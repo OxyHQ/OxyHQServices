@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
 import { useThemeColors } from '../styles/theme';
-import { normalizeTheme } from '../utils/themeUtils';
+import { normalizeTheme } from '@oxyhq/core';
 import { Button } from '@oxyhq/bloom/button';
 import { Ionicons } from '@expo/vector-icons';
 import { useI18n } from '../hooks/useI18n';

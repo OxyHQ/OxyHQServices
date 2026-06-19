@@ -9,10 +9,10 @@
  * (e.g. drops `name.full`, or emits a shape the auth-app switcher can't parse),
  * these tests fail — exactly the class of bug that motivated the contract.
  *
- * The load-bearing assertion is that `name.full` is ALWAYS composed (first-only
- * included) even when the source document was loaded WITHOUT Mongoose virtuals
- * (a `.lean()` query), because the `/auth/refresh-all` handler reads users via
- * `.lean()` and the absent `name.full` virtual was the original switcher bug.
+ * The load-bearing assertion is that `name.full` and `name.displayName` are
+ * ALWAYS composed (first-only included) even when the source document was
+ * loaded WITHOUT Mongoose virtuals (a `.lean()` query), because the
+ * `/auth/refresh-all` handler reads users via `.lean()`.
  */
 
 import { formatUserResponse } from '../userTransform';
@@ -60,10 +60,13 @@ describe('formatUserResponse → @oxyhq/contracts userResponseSchema (producer c
     expect(formatted).not.toBeNull();
     // name.full is composed even though the lean source carried no `full` virtual.
     expect(formatted?.name?.full).toBe('Jane Doe');
+    expect(formatted?.name?.displayName).toBe('Jane Doe');
+    expect('displayName' in formatted!).toBe(false);
 
     const parsed = safeParseContract(userResponseSchema, formatted);
     expect(parsed).not.toBeNull();
     expect(parsed?.name?.full).toBe('Jane Doe');
+    expect(parsed?.name?.displayName).toBe('Jane Doe');
     expect(parsed && resolveUserId(parsed)).toBe('507f1f77bcf86cd799439011');
   });
 
@@ -78,6 +81,7 @@ describe('formatUserResponse → @oxyhq/contracts userResponseSchema (producer c
     expect(formatted?.name?.first).toBe('Cher');
     expect(formatted?.name?.last).toBeUndefined();
     expect(formatted?.name?.full).toBe('Cher');
+    expect(formatted?.name?.displayName).toBe('Cher');
 
     const parsed = safeParseContract(userResponseSchema, formatted);
     expect(parsed).not.toBeNull();
@@ -93,10 +97,11 @@ describe('formatUserResponse → @oxyhq/contracts userResponseSchema (producer c
     );
 
     expect(formatted?.name?.full).toBe('Ada Lovelace');
+    expect(formatted?.name?.displayName).toBe('Ada Lovelace');
     expect(safeParseContract(userResponseSchema, formatted)).not.toBeNull();
   });
 
-  it('omits name entirely for a publicKey-only user with no username and no name', () => {
+  it('emits name.displayName for a publicKey-only user with no username and no human name', () => {
     const formatted = formatUserResponse(
       leanDoc('507f1f77bcf86cd799439014', {
         publicKey: '0x1234567890abcdef',
@@ -105,7 +110,7 @@ describe('formatUserResponse → @oxyhq/contracts userResponseSchema (producer c
 
     expect(formatted).not.toBeNull();
     expect(formatted?.username).toBeUndefined();
-    expect(formatted?.name).toBeUndefined();
+    expect(formatted?.name).toEqual({ displayName: '0x123456...abcdef' });
 
     // Still a valid contract object — id is the only guaranteed field.
     const parsed = safeParseContract(userResponseSchema, formatted);
@@ -113,7 +118,7 @@ describe('formatUserResponse → @oxyhq/contracts userResponseSchema (producer c
     expect(parsed && resolveUserId(parsed)).toBe('507f1f77bcf86cd799439014');
   });
 
-  it('omits name when first and last are both empty strings (no empty full)', () => {
+  it('omits empty full when first and last are both empty strings but still emits name.displayName', () => {
     const formatted = formatUserResponse(
       leanDoc('507f1f77bcf86cd799439015', {
         username: 'blanknames',
@@ -121,7 +126,7 @@ describe('formatUserResponse → @oxyhq/contracts userResponseSchema (producer c
       })
     );
 
-    expect(formatted?.name).toBeUndefined();
+    expect(formatted?.name).toEqual({ displayName: 'blanknames' });
     expect(safeParseContract(userResponseSchema, formatted)).not.toBeNull();
   });
 
@@ -172,8 +177,10 @@ describe('synthetic /auth/refresh-all response → refreshAllResponseSchema', ()
     expect(parsed?.accounts).toHaveLength(2);
     expect(parsed?.accounts[0].authuser).toBe(0);
     expect(parsed?.accounts[0].user.name?.full).toBe('First User');
+    expect(parsed?.accounts[0].user.name?.displayName).toBe('First User');
     expect(parsed?.accounts[1].authuser).toBe(1);
     expect(parsed?.accounts[1].user.name?.full).toBe('Second');
+    expect(parsed?.accounts[1].user.name?.displayName).toBe('Second');
   });
 
   it('parses an empty accounts array (no signed-in accounts on device)', () => {

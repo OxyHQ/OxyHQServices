@@ -7,6 +7,7 @@
 
 import { Types } from 'mongoose';
 import { IUser } from '../models/User';
+import type { UserProfileUpdate, UserResponse } from '@oxyhq/contracts';
 
 // Reuse name structure from IUser
 export type UserName = IUser['name'];
@@ -28,26 +29,10 @@ export type UserProfile = Pick<
   | 'updatedAt'
 >;
 
+export type PublicUserProfile = UserResponse;
+
 // Fields allowed for profile updates
-export type ProfileUpdateInput = Partial<
-  Pick<
-    IUser,
-    | 'name'
-    | 'email'
-    | 'username'
-    | 'avatar'
-    | 'color'
-    | 'bio'
-    | 'description'
-    | 'links'
-    | 'linksMetadata'
-    | 'locations'
-    | 'language'
-    | 'accountExpiresAfterInactivityDays'
-    | 'notificationPreferences'
-    | 'userPreferences'
-  >
->;
+export type ProfileUpdateInput = UserProfileUpdate;
 
 // User statistics
 export interface UserStatistics {
@@ -78,4 +63,3 @@ export interface FollowActionResult {
     following: number;
   };
 }
-

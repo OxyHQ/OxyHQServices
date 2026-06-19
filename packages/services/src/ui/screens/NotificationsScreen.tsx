@@ -14,7 +14,7 @@ import { useUpdateNotificationPreferences } from '../hooks/mutations/useAccountM
 import { useSettingToggles } from '../hooks/useSettingToggle';
 import { useColorScheme } from '../hooks/useColorScheme';
 import { Colors } from '../constants/theme';
-import { normalizeColorScheme, normalizeTheme } from '../utils/themeUtils';
+import { normalizeColorScheme, normalizeTheme } from '@oxyhq/core';
 
 interface NotificationToggleValues {
     pushEnabled: boolean;

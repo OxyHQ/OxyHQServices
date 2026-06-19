@@ -684,7 +684,7 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
           continue;
         }
         const userId = e.user.id ?? e.user._id;
-        if (!userId || !e.user.username) {
+        if (!userId || !e.user.username || !e.user.name?.displayName) {
           continue;
         }
         if (typeof e.authuser !== 'number') {

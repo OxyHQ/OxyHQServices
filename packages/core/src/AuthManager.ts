@@ -497,7 +497,7 @@ export class AuthManager {
       this.oxyServices.httpService.setTokens(session.accessToken);
     }
 
-    if (session.user && typeof (session.user as any).id === 'string' && (session.user as any).id.length > 0) {
+    if (session.user && typeof session.user.id === 'string' && session.user.id.length > 0) {
       this.currentUser = session.user;
     }
 
@@ -514,6 +514,7 @@ export class AuthManager {
         user: {
           id: session.user.id,
           username: session.user.username,
+          name: session.user.name,
           avatar: session.user.avatar ?? null,
         },
         accessToken: session.accessToken,
@@ -758,6 +759,7 @@ export class AuthManager {
     return {
       id: account.user.id,
       username: account.user.username,
+      name: account.user.name,
       avatar: account.user.avatar ?? undefined,
     };
   }
@@ -806,6 +808,7 @@ export class AuthManager {
       this.currentUser = {
         id: hydrated.id,
         username: hydrated.username,
+        name: hydrated.name,
         avatar: hydrated.avatar ?? undefined,
       };
       this.notifyListeners();
@@ -1022,6 +1025,7 @@ export class AuthManager {
       ? {
           id: updated.user.id,
           username: updated.user.username,
+          name: updated.user.name,
           avatar: updated.user.avatar ?? undefined,
         }
       : null;
@@ -1083,6 +1087,7 @@ export class AuthManager {
           ? {
               id: next.user.id,
               username: next.user.username,
+              name: next.user.name,
               avatar: next.user.avatar ?? undefined,
             }
           : null;

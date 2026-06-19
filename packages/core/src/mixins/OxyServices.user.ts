@@ -10,6 +10,7 @@ import type {
   PaginationInfo,
   PrivacySettings,
 } from '../models/interfaces';
+import type { UserNameResponse, UserProfileUpdate } from '@oxyhq/contracts';
 import type { OxyServicesBase } from '../OxyServices.base';
 import { buildSearchParams, buildPaginationParams, type PaginationParams } from '../utils/apiUtils';
 import { KeyManager } from '../crypto/keyManager';
@@ -38,7 +39,7 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
 
     /**
      * Lightweight username lookup for login flows.
-     * Returns minimal public info: exists, color, avatar, displayName.
+     * Returns minimal public info: exists, color, avatar, name.displayName.
      * Faster than getProfileByUsername — no stats, no formatting.
      */
     async lookupUsername(username: string): Promise<{
@@ -46,7 +47,7 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
       username: string;
       color: string | null;
       avatar: string | null;
-      displayName: string;
+      name: UserNameResponse;
     }> {
       return await this.makeRequest('GET', `/auth/lookup/${encodeURIComponent(username)}`, undefined, {
         cache: true,
@@ -150,7 +151,7 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
     }): Promise<Array<{
       id: string;
       username: string;
-      name?: { first?: string; last?: string; full?: string };
+      name: UserNameResponse;
       description?: string;
       isFederated?: boolean;
       isAgent?: boolean;
@@ -225,7 +226,7 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
      *
      * TanStack Query handles offline queuing automatically.
      */
-    async updateProfile(updates: Partial<User>): Promise<User> {
+    async updateProfile(updates: UserProfileUpdate): Promise<User> {
       try {
         const result = normalizeUserIdentity(
           await this.makeRequest<User>('PUT', '/users/me', updates, { cache: false }),

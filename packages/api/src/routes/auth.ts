@@ -69,7 +69,7 @@ import {
 } from '../schemas/auth.schemas';
 import { serializePublicApplication } from '../utils/serializeApplication';
 import { isValidObjectId } from '../utils/validation';
-import { composeDisplayName } from '../utils/displayName';
+import { formatUserNameResponse } from '../utils/displayName';
 
 const router = express.Router();
 const USERNAME_REGEX = /^[a-zA-Z0-9]{3,30}$/;
@@ -1243,7 +1243,7 @@ router.get('/lookup/:username', checkLimiter, validate({ params: checkUsernamePa
     username: user.username,
     color: user.color || null,
     avatar: user.avatar || null,
-    displayName: composeDisplayName({
+    name: formatUserNameResponse({
       name: user.name as { first?: string; last?: string } | undefined,
       username: user.username,
     }),

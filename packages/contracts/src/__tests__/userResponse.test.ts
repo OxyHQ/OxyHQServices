@@ -19,20 +19,26 @@ describe('userResponseSchema', () => {
         const parsed = safeParseContract(userResponseSchema, {
             id: '507f1f77bcf86cd799439011',
             username: 'nateus',
-            name: { first: 'Nate', last: 'Isern', full: 'Nate Isern' },
+            name: {
+                first: 'Nate',
+                last: 'Isern',
+                full: 'Nate Isern',
+                displayName: 'Nate Isern',
+            },
             avatar: 'file_123',
             email: 'nate@oxy.so',
             color: 'blue',
         });
         expect(parsed).not.toBeNull();
         expect(parsed?.name?.first).toBe('Nate');
+        expect(parsed?.name?.displayName).toBe('Nate Isern');
     });
 
     it('accepts an account with no username (publicKey-only identity)', () => {
         const parsed = safeParseContract(userResponseSchema, {
             id: '507f1f77bcf86cd799439011',
             publicKey: '0xabc',
-            name: { first: 'Nate' },
+            name: { first: 'Nate', displayName: 'Nate' },
         });
         expect(parsed).not.toBeNull();
         expect(parsed?.username).toBeUndefined();
@@ -43,6 +49,7 @@ describe('userResponseSchema', () => {
             id: 'x',
             avatar: null,
             color: null,
+            name: { displayName: 'x' },
         });
         expect(parsed).not.toBeNull();
         expect(parsed?.avatar).toBeNull();
@@ -53,13 +60,18 @@ describe('userResponseSchema', () => {
         const parsed = safeParseContract(userResponseSchema, {
             _id: 'raw_id_42',
             username: 'nateus',
+            name: { displayName: 'nateus' },
         });
         expect(parsed).not.toBeNull();
         expect(parsed && resolveUserId(parsed)).toBe('raw_id_42');
     });
 
     it('prefers id over _id in resolveUserId', () => {
-        const parsed = userResponseSchema.parse({ id: 'fmt_id', _id: 'raw_id' });
+        const parsed = userResponseSchema.parse({
+            id: 'fmt_id',
+            _id: 'raw_id',
+            name: { displayName: 'User' },
+        });
         expect(resolveUserId(parsed)).toBe('fmt_id');
     });
 
@@ -71,6 +83,7 @@ describe('userResponseSchema', () => {
             bio: 'hi',
             locations: [],
             links: [],
+            name: { displayName: 'x' },
         });
         expect(parsed.verified).toBe(true);
         expect((parsed as Record<string, unknown>).bio).toBe('hi');
@@ -89,7 +102,7 @@ describe('refreshAllResponseSchema', () => {
                     user: {
                         id: 'u1',
                         username: 'nateus',
-                        name: { first: 'Nate', last: 'Isern' },
+                        name: { first: 'Nate', last: 'Isern', displayName: 'Nate Isern' },
                     },
                 },
             ],
@@ -111,14 +124,14 @@ describe('refreshAllResponseSchema', () => {
                     accessToken: 'a',
                     expiresAt: 't',
                     sessionId: 's0',
-                    user: { id: 'u0', username: 'a', name: { first: 'First' } },
+                    user: { id: 'u0', username: 'a', name: { first: 'First', displayName: 'First' } },
                 },
                 {
                     authuser: 1,
                     accessToken: 'b',
                     expiresAt: 't',
                     sessionId: 's1',
-                    user: { id: 'u1', username: 'b', name: { first: 'Sec', last: 'Ond' } },
+                    user: { id: 'u1', username: 'b', name: { first: 'Sec', last: 'Ond', displayName: 'Sec Ond' } },
                 },
             ],
         });
@@ -127,7 +140,12 @@ describe('refreshAllResponseSchema', () => {
 
     it('rejects an entry missing the required accessToken', () => {
         const parsed = safeParseContract(refreshAllResponseSchema, {
-            accounts: [{ authuser: 0, expiresAt: 't', sessionId: 's', user: { id: 'u' } }],
+            accounts: [{
+                authuser: 0,
+                expiresAt: 't',
+                sessionId: 's',
+                user: { id: 'u', name: { displayName: 'User' } },
+            }],
         });
         expect(parsed).toBeNull();
     });
@@ -139,17 +157,21 @@ describe('currentUserResponseSchema', () => {
             data: {
                 _id: 'raw_id',
                 username: 'nateus',
-                displayName: 'nateus',
-                name: { first: 'Nate', last: 'Isern', full: 'Nate Isern' },
+                name: {
+                    first: 'Nate',
+                    last: 'Isern',
+                    full: 'Nate Isern',
+                    displayName: 'Nate Isern',
+                },
             },
         });
         expect(parsed).not.toBeNull();
-        expect(parsed?.data.displayName).toBe('nateus');
+        expect(parsed?.data.name?.displayName).toBe('Nate Isern');
     });
 
-    it('accepts the envelope when virtuals (name.full / displayName) are absent', () => {
+    it('accepts the envelope when name.full is absent but name.displayName is present', () => {
         const parsed = safeParseContract(currentUserResponseSchema, {
-            data: { _id: 'raw_id', name: { first: 'Nate' } },
+            data: { _id: 'raw_id', name: { first: 'Nate', displayName: 'Nate' } },
         });
         expect(parsed).not.toBeNull();
         expect(parsed?.data.name?.full).toBeUndefined();
@@ -162,7 +184,7 @@ describe('deviceSessionsResponseSchema', () => {
             {
                 sessionId: 's1',
                 isCurrent: true,
-                user: { id: 'u1', username: 'nateus', name: { first: 'Nate' } },
+                user: { id: 'u1', username: 'nateus', name: { first: 'Nate', displayName: 'Nate' } },
             },
         ]);
         expect(parsed).not.toBeNull();

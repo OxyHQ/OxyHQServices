@@ -6,7 +6,7 @@ import Header from '../../components/Header';
 import { Ionicons } from '@expo/vector-icons';
 import { useI18n } from '../../hooks/useI18n';
 import { useTheme } from '@oxyhq/bloom/theme';
-import { normalizeColorScheme } from '../../utils/themeUtils';
+import { normalizeColorScheme } from '@oxyhq/core';
 import { useColorScheme } from '../../hooks/useColorScheme';
 import { Colors } from '../../constants/theme';
 import { useOxy } from '../../context/OxyContext';

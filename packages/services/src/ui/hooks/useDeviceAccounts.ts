@@ -252,19 +252,16 @@ export function useDeviceAccounts(): UseDeviceAccountsResult {
 
         if (fromSharedApex) {
             // Shared apex path: every entry carries a real per-account user.
-            built = sharedAccounts.map((entry): DeviceAccount => {
-                // `entry.user` is non-null on the refresh-all path; the core
-                // mixin skips entries without a valid user. The fallback below
-                // keeps rendering defensive if a server response is incomplete.
-                const accountUser: DeviceAccountUser = entry.user ?? {
-                    id: '',
-                    username: '',
-                };
+            built = sharedAccounts.flatMap((entry): DeviceAccount[] => {
+                if (!entry.user) {
+                    return [];
+                }
+                const accountUser: DeviceAccountUser = entry.user;
                 const displayName = getAccountDisplayName(accountUser, locale);
                 const handle = getAccountFallbackHandle(accountUser);
-                const email = entry.user?.email ?? null;
+                const email = entry.user.email ?? null;
                 const secondaryHandle = handle ? `@${handle}` : null;
-                return {
+                return [{
                     sessionId: entry.sessionId,
                     authuser: entry.authuser,
                     // Provisional; finalised by `markCurrentAccount` below so the
@@ -274,37 +271,36 @@ export function useDeviceAccounts(): UseDeviceAccountsResult {
                     // Real email, or null (NEVER synthesized). The UI uses the
                     // `@handle` line only when email is genuinely absent.
                     email: email ?? secondaryHandle,
-                    avatarUrl: resolveAvatarUrl(entry.user?.avatar),
-                    color: entry.user?.color ?? null,
+                    avatarUrl: resolveAvatarUrl(entry.user.avatar),
+                    color: entry.user.color ?? null,
                     user: accountUser,
-                };
+                }];
             });
         } else {
             // Local fallback path: build from the SDK's multi-session store. The
             // active session row gets the full loaded `user`; inactive fallback
             // rows carry only what the `ClientSession` exposes (no synthesized
             // identity — they show the active user's data only when active).
-            built = (sessions ?? []).map((session: ClientSession): DeviceAccount => {
+            built = (sessions ?? []).flatMap((session: ClientSession): DeviceAccount[] => {
                 const isCurrent = session.sessionId === activeSessionId;
-                const accountUser: DeviceAccountUser = isCurrent && user
-                    ? user
-                    : { id: session.userId ?? '', username: '' };
+                if (!isCurrent || !user) {
+                    return [];
+                }
+                const accountUser: DeviceAccountUser = user;
                 const displayName = getAccountDisplayName(accountUser, locale);
                 const handle = getAccountFallbackHandle(accountUser);
-                const email = isCurrent && user?.email ? user.email : null;
+                const email = user.email ?? null;
                 const secondaryHandle = handle ? `@${handle}` : null;
-                const avatar = isCurrent && user ? user.avatar : undefined;
-                const color = isCurrent && user?.color ? user.color : null;
-                return {
+                return [{
                     sessionId: session.sessionId,
                     authuser: session.authuser,
                     isCurrent,
                     displayName,
                     email: email ?? secondaryHandle,
-                    avatarUrl: resolveAvatarUrl(avatar),
-                    color,
+                    avatarUrl: resolveAvatarUrl(user.avatar),
+                    color: user.color ?? null,
                     user: accountUser,
-                };
+                }];
             });
         }
 

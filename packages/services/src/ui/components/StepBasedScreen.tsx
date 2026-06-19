@@ -13,20 +13,31 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useTheme } from '@oxyhq/bloom/theme';
 import type { ThemeColors } from '@oxyhq/bloom/theme';
+import type { OxyServices } from '@oxyhq/core';
 import { createAuthStyles } from '../styles/authStyles';
 import type { BaseScreenProps, StepController } from '../types/navigation';
-import type { RouteName } from '../types/navigation';
+import type { RouteName } from '../navigation/routes';
 import { screenContentStyle } from '../constants/spacing';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-/** Style map type used throughout step-based screens */
-// biome-ignore lint/suspicious/noExplicitAny: styles object contains mixed ViewStyle/TextStyle with platform-specific properties
-type StepStyles = Record<string, any>;
+type StepStyles = Record<string, unknown> & {
+    stepContainer: ViewStyle;
+    progressContainer: ViewStyle;
+    progressDot: ViewStyle;
+};
+type StepComponentProps = BaseScreenProps & Record<string, unknown>;
+
+function isVoidCallback(value: unknown): value is () => void {
+    return typeof value === 'function';
+}
+
+function isAuthenticatedCallback(value: unknown): value is (payload?: unknown) => void {
+    return typeof value === 'function';
+}
 
 export interface StepConfig {
     id: string;
-    // biome-ignore lint/suspicious/noExplicitAny: step components accept varying props that cannot be statically typed
-    component: React.ComponentType<any>;
+    component: React.ComponentType<StepComponentProps>;
     props?: Record<string, unknown>;
     canProceed?: (stepData?: unknown) => boolean;
     onEnter?: () => void;
@@ -42,8 +53,7 @@ export interface StepBasedScreenProps extends Omit<BaseScreenProps, 'navigate'> 
     onComplete?: (stepData: unknown[]) => void;
     stepData?: unknown[];
     navigate: (screen: RouteName, props?: Record<string, unknown>) => void;
-    // biome-ignore lint/suspicious/noExplicitAny: OxyServices type cannot be fully resolved due to mixin composition pattern
-    oxyServices: any;
+    oxyServices: OxyServices;
     getNavigationProps?: () => Record<string, unknown>;
 }
 
@@ -153,7 +163,7 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
         secondaryText: colors.textSecondary,
     }), [colors]);
     const insets = useSafeAreaInsets();
-    const styles = useMemo(() => ({
+    const styles = useMemo<StepStyles>(() => ({
         ...createAuthStyles(authColors, themeString),
         // Additional styles for step components
         modernHeader: {
@@ -222,7 +232,7 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
         },
         progressContainer: {
             flexDirection: 'row' as const,
-            width: '100%',
+            width: '100%' as const,
             justifyContent: 'center' as const,
             marginTop: 24, // Space for bottom sheet handle (~20px) + small buffer
             marginBottom: 0, // BottomSheet handles all bottom spacing
@@ -410,15 +420,26 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
         [currentStep, updateStepData]
     );
 
-    const stepProps = useMemo(() => ({
+    const normalizedTheme = typeof theme === 'string' ? theme : undefined;
+    const normalizedGoBack = isVoidCallback(goBack) ? goBack : undefined;
+    const normalizedOnAuthenticated = isAuthenticatedCallback(onAuthenticated) ? onAuthenticated : undefined;
+
+    const baseStepProps = useMemo<BaseScreenProps>(() => ({
+        theme: normalizedTheme,
+        navigate,
+        goBack: normalizedGoBack,
+        onAuthenticated: normalizedOnAuthenticated,
+    }), [normalizedTheme, navigate, normalizedGoBack, normalizedOnAuthenticated]);
+
+    const stepProps = useMemo<StepComponentProps>(() => ({
         ...currentStepConfig?.props,
+        // Step data - spread before base props so navigation/auth props remain stable.
+        ...(state.stepData[currentStep] as Record<string, unknown> | undefined),
+
         // Common props
+        ...baseStepProps,
         colors,
         styles,
-        theme,
-        navigate,
-        goBack,
-        onAuthenticated,
         oxyServices,
 
         // Step navigation
@@ -428,20 +449,14 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
         currentStep: currentStep,
         totalSteps: steps.length,
 
-        // Step data - spread the step data properties directly as props
-        ...(state.stepData[currentStep] as Record<string, unknown> | undefined),
-
         // Step data management
         updateStepData: updateCurrentStepData,
         allStepData: state.stepData,
     }), [
         currentStepConfig?.props,
+        baseStepProps,
         colors,
         styles,
-        theme,
-        navigate,
-        goBack,
-        onAuthenticated,
         oxyServices,
         nextStep,
         prevStep,

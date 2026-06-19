@@ -20,9 +20,10 @@ import {
 import { userService } from '../services/user.service';
 import { federationService, isFediverseHandle } from '../services/federation.service';
 import Follow, { FollowType } from '../models/Follow';
-import User from '../models/User';
+import User, { type IUser } from '../models/User';
 import { validate } from '../middleware/validate';
 import { usernameParams, profileSearchQuerySchema } from '../schemas/profiles.schemas';
+import { formatUserNameResponse, type NameParts } from '../utils/displayName';
 
 interface AuthRequest extends Request {
   user?: {
@@ -33,6 +34,20 @@ interface AuthRequest extends Request {
 interface PaginationQuery {
   limit?: string;
   offset?: string;
+}
+
+type SearchProfileDocument = IUser & {
+  _id: Types.ObjectId;
+};
+
+interface ProfileSearchAggregateResult {
+  profiles?: SearchProfileDocument[];
+  totalCount?: Array<{ count: number }>;
+}
+
+interface FollowCountAggregateResult {
+  _id: string | Types.ObjectId;
+  count: number;
 }
 
 const router = Router();
@@ -102,7 +117,8 @@ const followCountLookupStages = [
 interface RecommendationRow {
   _id: Types.ObjectId;
   username?: string;
-  name?: { first?: string; last?: string } | string | null;
+  publicKey?: string;
+  name?: NameParts | string | null;
   avatar?: string | null;
   description?: string | null;
   type?: string;
@@ -117,6 +133,7 @@ const profileProjectionStage = {
   $project: {
     _id: 1,
     username: '$user.username',
+    publicKey: '$user.publicKey',
     name: '$user.name',
     avatar: '$user.avatar',
     description: '$user.description',
@@ -134,6 +151,7 @@ const userProfileProjectionStage = {
   $project: {
     _id: 1,
     username: 1,
+    publicKey: 1,
     name: 1,
     avatar: 1,
     description: 1,
@@ -150,7 +168,11 @@ function formatProfileResult(u: RecommendationRow) {
   return {
     id: u._id,
     username: u.username,
-    name: u.name,
+    name: formatUserNameResponse({
+      name: typeof u.name === 'object' ? u.name : undefined,
+      username: u.username,
+      publicKey: u.publicKey,
+    }),
     avatar: u.avatar,
     description: u.description,
     mutualCount: u.mutualCount || 0,
@@ -292,10 +314,10 @@ router.get(
     }
 
     // Get user statistics
-    const stats = await userService.getUserStats((user as any)._id.toString());
+    const stats = await userService.getUserStats(user._id.toString());
 
     // Format response with stats
-    const response = userService.formatUserResponse(user as any, stats);
+    const response = userService.formatUserResponse(user, stats);
 
     logger.debug('GET /profiles/username/:username', { username });
     sendSuccess(res, response);
@@ -345,7 +367,7 @@ router.get(
     // Run local DB search and (if query is a fediverse handle) remote resolution in parallel
     const isFediverse = isFediverseHandle(sanitizedQuery);
     const [dbResult, federatedUser] = await Promise.all([
-      User.aggregate([
+      User.aggregate<ProfileSearchAggregateResult>([
         { $match: searchFilter },
         {
           $facet: {
@@ -357,41 +379,41 @@ router.get(
             totalCount: [{ $count: 'count' }],
           },
         },
-      ]).then((r) => r[0]),
+      ]).then((r) => r[0] ?? { profiles: [], totalCount: [] }),
       isFediverse
         ? federationService.resolveAndUpsert(sanitizedQuery).catch(() => null)
         : Promise.resolve(null),
     ]);
 
-    const profiles = dbResult.profiles || [];
-    const total = dbResult.totalCount[0]?.count || 0;
+    const profiles = dbResult.profiles ?? [];
+    const total = dbResult.totalCount?.[0]?.count ?? 0;
 
     // If federation resolved a user not already in DB results, prepend it
     if (federatedUser) {
       const fedId = federatedUser._id?.toString();
-      const alreadyIncluded = profiles.some((p: any) => p._id?.toString() === fedId);
+      const alreadyIncluded = profiles.some((profile) => profile._id.toString() === fedId);
       if (!alreadyIncluded) {
-        profiles.unshift(federatedUser);
+        profiles.unshift(federatedUser as SearchProfileDocument);
       }
     }
 
     // Batch-fetch follower/following stats for all profiles at once (avoids N+1)
-    const profileIds = profiles.map((p: any) => p._id);
+    const profileIds = profiles.map((profile) => profile._id);
     const [followerCounts, followingCounts] = await Promise.all([
-      Follow.aggregate([
-        { $match: { followedId: { $in: profileIds.map((id: any) => id.toString()) }, followType: FollowType.USER } },
+      Follow.aggregate<FollowCountAggregateResult>([
+        { $match: { followedId: { $in: profileIds.map((id) => id.toString()) }, followType: FollowType.USER } },
         { $group: { _id: '$followedId', count: { $sum: 1 } } },
       ]),
-      Follow.aggregate([
-        { $match: { followerUserId: { $in: profileIds.map((id: any) => id.toString()) }, followType: FollowType.USER } },
+      Follow.aggregate<FollowCountAggregateResult>([
+        { $match: { followerUserId: { $in: profileIds.map((id) => id.toString()) }, followType: FollowType.USER } },
         { $group: { _id: '$followerUserId', count: { $sum: 1 } } },
       ]),
     ]);
 
-    const followerMap = new Map(followerCounts.map((r: any) => [r._id.toString(), r.count]));
-    const followingMap = new Map(followingCounts.map((r: any) => [r._id.toString(), r.count]));
+    const followerMap = new Map(followerCounts.map((result) => [result._id.toString(), result.count]));
+    const followingMap = new Map(followingCounts.map((result) => [result._id.toString(), result.count]));
 
-    const enrichedProfiles = profiles.map((profile: any) => {
+    const enrichedProfiles = profiles.map((profile) => {
       const id = profile._id.toString();
       const stats = {
         followers: followerMap.get(id) || 0,

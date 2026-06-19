@@ -16,13 +16,14 @@ import { Request } from 'express';
 import {
   PaginationParams,
   PaginatedResponse,
+  PublicUserProfile,
   ProfileUpdateInput,
   UserProfile,
   UserStatistics,
   FollowActionResult,
 } from '../types/user.types';
 import Subscription from '../models/Subscription';
-import { composeDisplayName } from '../utils/displayName';
+import { formatUserNameResponse, type NameParts } from '../utils/displayName';
 
 // Constants
 import { PAGINATION } from '../utils/constants';
@@ -240,7 +241,7 @@ export class UserService {
   async getUserFollowers(
     userId: string,
     params: PaginationParams = {}
-  ): Promise<PaginatedResponse<UserProfile>> {
+  ): Promise<PaginatedResponse<PublicUserProfile>> {
     const limit = Math.min(
       params.limit || PAGINATION.DEFAULT_LIMIT,
       PAGINATION.MAX_LIMIT
@@ -281,9 +282,10 @@ export class UserService {
     const followersMap = new Map(
       followers.map((user) => [user._id.toString(), user])
     );
-    const orderedFollowers: UserProfile[] = followerIds
+    const orderedFollowers = followerIds
       .map((id) => followersMap.get(id))
-      .filter((user): user is UserProfile => user !== undefined);
+      .filter((user): user is UserProfile => user !== undefined)
+      .map((user) => this.formatUserResponse(user));
 
     return {
       data: orderedFollowers,
@@ -300,7 +302,7 @@ export class UserService {
   async getUserFollowing(
     userId: string,
     params: PaginationParams = {}
-  ): Promise<PaginatedResponse<UserProfile>> {
+  ): Promise<PaginatedResponse<PublicUserProfile>> {
     const limit = Math.min(
       params.limit || PAGINATION.DEFAULT_LIMIT,
       PAGINATION.MAX_LIMIT
@@ -341,9 +343,10 @@ export class UserService {
     const followingMap = new Map(
       following.map((user) => [user._id.toString(), user])
     );
-    const orderedFollowing: UserProfile[] = followingIds
+    const orderedFollowing = followingIds
       .map((id) => followingMap.get(id))
-      .filter((user): user is UserProfile => user !== undefined);
+      .filter((user): user is UserProfile => user !== undefined)
+      .map((user) => this.formatUserResponse(user));
 
     return {
       data: orderedFollowing,
@@ -479,7 +482,7 @@ export class UserService {
   /**
    * Format user response with stats
    */
-  formatUserResponse(user: IUser | UserProfile, stats?: UserStatistics): Record<string, unknown> {
+  formatUserResponse(user: IUser | UserProfile, stats?: UserStatistics): PublicUserProfile {
     // Handle both IUser (Mongoose document) and UserData (plain object)
     // Use publicKey as id - publicKey is the primary identifier, fallback to _id
     const userAsIUser = user as IUser;
@@ -489,12 +492,11 @@ export class UserService {
     }
     const userAny = user as unknown as Record<string, unknown>;
 
-    const response: Record<string, unknown> = {
+    const response: PublicUserProfile = {
       id: userId,
       username: user.username,
-      name: user.name,
-      displayName: composeDisplayName({
-        name: user.name as { first?: string; last?: string } | undefined,
+      name: formatUserNameResponse({
+        name: user.name as NameParts | undefined,
         username: user.username,
         publicKey: userAsIUser.publicKey,
       }),
@@ -519,16 +521,6 @@ export class UserService {
 
     if (stats) {
       response._count = stats;
-    }
-
-    // Ensure name.full exists
-    if (response.name && typeof response.name === 'object' && response.name !== null) {
-      const name = response.name as { first?: string; last?: string; full?: string };
-      const first = name.first ?? '';
-      const last = name.last ?? '';
-      if (!name.full) {
-        name.full = [first, last].filter(Boolean).join(' ').trim();
-      }
     }
 
     return response;

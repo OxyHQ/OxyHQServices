@@ -7,6 +7,7 @@ import type {
   User,
   UserPreferences,
 } from '@oxyhq/core';
+import type { UserProfileUpdate } from '@oxyhq/contracts';
 import {
   queryKeys,
   invalidateAccountQueries,
@@ -29,7 +30,7 @@ export const useUpdateProfile = () => {
 
   return useMutation({
     mutationKey: [...mutationKeys.account.updateProfile],
-    mutationFn: async (updates: Partial<User>) => {
+    mutationFn: async (updates: UserProfileUpdate) => {
       return authenticatedApiCall<User>(
         oxyServices,
         activeSessionId,
@@ -46,17 +47,18 @@ export const useUpdateProfile = () => {
 
       // Optimistically update
       if (previousUser) {
-        queryClient.setQueryData<User>(queryKeys.accounts.current(), {
+        const optimisticUser: User = {
           ...previousUser,
           ...updates,
-        });
+          name: updates.name
+            ? { ...previousUser.name, ...updates.name }
+            : previousUser.name,
+        };
+        queryClient.setQueryData<User>(queryKeys.accounts.current(), optimisticUser);
 
         // Also update profile query if sessionId is available
         if (activeSessionId) {
-          queryClient.setQueryData<User>(queryKeys.users.profile(activeSessionId), {
-            ...previousUser,
-            ...updates,
-          });
+          queryClient.setQueryData<User>(queryKeys.users.profile(activeSessionId), optimisticUser);
         }
       }
 
@@ -684,4 +686,3 @@ export const useUploadFile = () => {
     },
   });
 };
-

@@ -18,11 +18,12 @@
  *  - `packages/api/src/utils/userTransform.ts` `formatUserResponse` — the
  *    canonical serialization used by `/auth/refresh-all`, device sessions, etc.
  *    Emits `id` (NOT `_id`), forwards `username` verbatim (may be absent), and
- *    emits `name` as the structured `{ first, last, full }` subdocument.
+ *    emits `name` as the structured `{ first, last, full, displayName }`
+ *    subdocument.
  *  - `packages/api/src/models/User.ts` — `NameSchema` (`first`/`last` default
- *    `''`; `full` is a Mongoose VIRTUAL) and the `displayName` virtual. Because
- *    virtuals are only present when a query uses `.lean({ virtuals: true })` (or
- *    a hydrated doc), `name.full` and `displayName` MUST be treated as OPTIONAL.
+ *    `''`; `full` and `displayName` are Mongoose VIRTUALS. Formatted API
+ *    responses compose both fields, while raw-document responses may omit the
+ *    virtuals if the query did not materialise them.
  *  - The `/auth/refresh-all` handler in `packages/api/src/routes/auth.ts`, whose
  *    per-slot `authuser` is the numeric `oxy_rt_${authuser}` cookie slot.
  *
@@ -36,7 +37,9 @@ import { z } from 'zod';
  * Structured human name subdocument. Mirrors `User.name` (`NameSchema`).
  *
  * - `first` / `last` default to `''` in Mongo, so they are optional on the wire.
- * - `full` is a Mongoose virtual — ABSENT unless the query materialised virtuals.
+ * - `full` is a Mongoose virtual — absent unless the query materialised
+ *   virtuals or the serializer composed it.
+ * - `displayName` is the required canonical app-facing display string.
  *
  * `.passthrough()` is intentional: it tolerates additive name fields without a
  * coordinated contract bump, while the three known keys stay strongly typed.
@@ -46,6 +49,7 @@ export const userNameSchema = z
         first: z.string().optional(),
         last: z.string().optional(),
         full: z.string().optional(),
+        displayName: z.string(),
     })
     .passthrough();
 
@@ -54,13 +58,11 @@ export type UserNameResponse = z.infer<typeof userNameSchema>;
 /**
  * The canonical user object emitted by `formatUserResponse`.
  *
- * Only `id` is guaranteed present (it is the early-return guard in
- * `formatUserResponse`). Every other field is forwarded verbatim from the user
- * document and may be absent depending on the query's `.select(...)`/`.lean()`
- * projection — so all are optional/nullable to match reality. Both `id` and
- * `_id` are accepted because RAW-document responses (e.g. `GET /users/me`,
- * which does NOT pass through `formatUserResponse`) carry `_id` instead of `id`;
- * resolve the identifier with {@link resolveUserId}.
+ * `id` and `name.displayName` are guaranteed on formatted user DTOs. The rest
+ * is forwarded from the user document and may be absent depending on the query's
+ * `.select(...)`/`.lean()` projection. Both `id` and `_id` are accepted because
+ * some raw-document responses carry `_id` instead of `id`; resolve the
+ * identifier with {@link resolveUserId}.
  *
  * `.passthrough()` keeps the large tail of profile fields
  * (`privacySettings`, `locations`, `links`, `linksMetadata`, `bio`,
@@ -81,15 +83,51 @@ export const userResponseSchema = z
         avatar: z.string().nullable().optional(),
         /** Named Bloom color preset (e.g. `"blue"`) or null. */
         color: z.string().nullable().optional(),
-        name: userNameSchema.optional(),
-        /** Server `displayName` virtual (`username || truncatedKey`). Optional. */
-        displayName: z.string().optional(),
+        name: userNameSchema,
         verified: z.boolean().optional(),
         language: z.string().optional(),
     })
     .passthrough();
 
 export type UserResponse = z.infer<typeof userResponseSchema>;
+
+export const userProfileUpdateSchema = z
+    .object({
+        name: z
+            .object({
+                first: z.string().optional(),
+                last: z.string().optional(),
+            })
+            .optional(),
+        username: z.string().optional(),
+        email: z.string().optional(),
+        avatar: z.string().optional(),
+        color: z.string().nullable().optional(),
+        bio: z.string().optional(),
+        description: z.string().optional(),
+        location: z.string().optional(),
+        locations: z.array(z.unknown()).optional(),
+        links: z.array(z.string()).optional(),
+        linksMetadata: z
+            .array(
+                z.object({
+                    url: z.string(),
+                    title: z.string().optional(),
+                    description: z.string().optional(),
+                    image: z.string().optional(),
+                    id: z.string().optional(),
+                }),
+            )
+            .optional(),
+        language: z.string().optional(),
+        accountExpiresAfterInactivityDays: z.number().nullable().optional(),
+        notificationPreferences: z.record(z.unknown()).optional(),
+        userPreferences: z.record(z.unknown()).optional(),
+        privacySettings: z.record(z.unknown()).optional(),
+    })
+    .passthrough();
+
+export type UserProfileUpdate = z.infer<typeof userProfileUpdateSchema>;
 
 /**
  * Resolve the canonical user id from a {@link UserResponse}, accepting either
@@ -129,10 +167,9 @@ export type RefreshAllResponseContract = z.infer<typeof refreshAllResponseSchema
 
 /**
  * Wire shape of `GET /users/me` — the API success envelope (`{ data: <user> }`)
- * wrapping the RAW Mongo user document. It does NOT pass through
- * `formatUserResponse`, so the id field is `_id` (resolve via
- * {@link resolveUserId}) and virtuals (`name.full`, `displayName`) may be
- * present when the query materialised them.
+ * wrapping the current-user DTO. Some older producers use `_id` instead of
+ * `id`; resolve via {@link resolveUserId}. The display name still lives under
+ * `name.displayName`.
  */
 export const currentUserResponseSchema = z.object({
     data: userResponseSchema,

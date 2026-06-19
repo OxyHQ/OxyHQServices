@@ -70,6 +70,7 @@ export interface IUser extends Document {
     first?: string;
     last?: string;
     full?: string; // virtual
+    displayName?: string; // virtual
   };
   verified?: boolean;
   /**
@@ -612,7 +613,7 @@ UserSchema.virtual('name.full').get(function() {
   return '';
 });
 
-// Virtual for display name — authoritative server-side default.
+// Virtual for structured display name — authoritative server-side default.
 //
 // Composition preference order (see `utils/displayName.ts`, the single source of
 // truth shared with the unit tests):
@@ -622,10 +623,10 @@ UserSchema.virtual('name.full').get(function() {
 //   3. truncated publicKey handle
 //   4. 'Anonymous'
 //
-// This is the DERIVED default only. All raw fields (name.first, name.last,
-// name.full, username, publicKey) remain fully intact and exposed on the
-// response — clients can still compose their own display string from raw fields.
-UserSchema.virtual('displayName').get(function() {
+// This is the DERIVED default only. All raw fields (`name.first`, `name.last`,
+// `name.full`, `username`, `publicKey`) remain intact. Public DTO serializers
+// expose it as `name.displayName`; clients should render that field directly.
+UserSchema.virtual('name.displayName').get(function() {
   return composeDisplayName({
     name: this.name as { first?: string; last?: string } | undefined,
     username: this.username as string | undefined,
@@ -673,7 +674,7 @@ UserSchema.methods.addLocation = function(locationData: {
 // Instance method to remove a location by ID
 UserSchema.methods.removeLocation = function(locationId: string) {
   if (this.locations) {
-    this.locations = this.locations.filter((loc: any) => loc.id !== locationId);
+    this.locations = this.locations.filter((loc: NonNullable<IUser['locations']>[number]) => loc.id !== locationId);
     return this.save();
   }
   return Promise.resolve(this);
@@ -698,7 +699,7 @@ UserSchema.methods.findLocationsNear = function(lat: number, lon: number, maxDis
 // Instance method to update location coordinates
 UserSchema.methods.updateLocationCoordinates = function(locationId: string, lat: number, lon: number) {
   if (this.locations) {
-    const location = this.locations.find((loc: any) => loc.id === locationId);
+    const location = this.locations.find((loc: NonNullable<IUser['locations']>[number]) => loc.id === locationId);
     if (location) {
       location.coordinates = { lat, lon };
       location.updatedAt = new Date();

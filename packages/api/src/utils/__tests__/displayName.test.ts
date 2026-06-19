@@ -1,6 +1,6 @@
 /**
- * Unit tests for the authoritative `displayName` composition (the logic backing
- * the `User.displayName` Mongoose virtual — see `models/User.ts`).
+ * Unit tests for the authoritative `name.displayName` composition (the logic
+ * backing the `User.name.displayName` Mongoose virtual — see `models/User.ts`).
  *
  * The composition was previously `username || truncatedPublicKey`, which IGNORED
  * the structured `name` subdocument and made the server's display default
@@ -16,10 +16,11 @@
 import {
   composeDisplayName,
   composeFullName,
+  formatUserNameResponse,
   truncatePublicKeyHandle,
 } from '../displayName';
 
-describe('composeDisplayName (authoritative User.displayName default)', () => {
+describe('composeDisplayName (authoritative User.name.displayName default)', () => {
   it('composes the full name when first AND last are present', () => {
     expect(
       composeDisplayName({
@@ -117,6 +118,31 @@ describe('composeFullName', () => {
   it('returns an empty string for a missing name', () => {
     expect(composeFullName(undefined)).toBe('');
     expect(composeFullName(null)).toBe('');
+  });
+});
+
+describe('formatUserNameResponse', () => {
+  it('emits full and displayName for structured names', () => {
+    expect(
+      formatUserNameResponse({
+        name: { first: 'Jane', last: 'Doe' },
+        username: 'janedoe',
+      })
+    ).toEqual({
+      first: 'Jane',
+      last: 'Doe',
+      full: 'Jane Doe',
+      displayName: 'Jane Doe',
+    });
+  });
+
+  it('emits displayName from username when structured names are empty', () => {
+    expect(
+      formatUserNameResponse({
+        name: { first: '', last: '' },
+        username: 'janedoe',
+      })
+    ).toEqual({ displayName: 'janedoe' });
   });
 });
 

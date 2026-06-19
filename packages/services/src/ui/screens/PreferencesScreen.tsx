@@ -13,7 +13,7 @@ import { useCurrentUser } from '../hooks/queries/useAccountQueries';
 import { useUpdateUserPreferences } from '../hooks/mutations/useAccountMutations';
 import { useColorScheme } from '../hooks/useColorScheme';
 import { Colors } from '../constants/theme';
-import { normalizeColorScheme, normalizeTheme } from '../utils/themeUtils';
+import { normalizeColorScheme, normalizeTheme } from '@oxyhq/core';
 
 type ThemePreference = 'light' | 'dark' | 'system';
 

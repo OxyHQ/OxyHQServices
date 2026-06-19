@@ -1,7 +1,8 @@
 /**
  * Authoritative server-side display-name composition.
  *
- * Single source of truth for the `User.displayName` virtual (see `models/User.ts`).
+ * Single source of truth for the `User.name.displayName` virtual (see
+ * `models/User.ts`).
  * Extracted as a pure function so the composition rules are unit-testable in
  * isolation — the API jest setup mocks Mongoose entirely, so the model's
  * virtual getter never actually runs under test; the rules are verified here
@@ -12,15 +13,24 @@
  * `name.full` / `username` directly.
  */
 
-interface NameParts {
+export interface NameParts {
   first?: string | null;
   last?: string | null;
+  full?: string | null;
+  displayName?: string | null;
 }
 
-interface DisplayNameSource {
+export interface DisplayNameSource {
   name?: NameParts | null;
   username?: string | null;
   publicKey?: string | null;
+}
+
+export interface NameResponse extends Record<string, unknown> {
+  first?: string;
+  last?: string;
+  full?: string;
+  displayName: string;
 }
 
 /**
@@ -55,7 +65,7 @@ export function truncatePublicKeyHandle(publicKey: string | null | undefined): s
 }
 
 /**
- * Compose the authoritative default display name in preference order:
+ * Compose the authoritative default `name.displayName` in preference order:
  *
  *   1. `name.full` (composed from `name.first` / `name.last`; first-only valid)
  *   2. `username`
@@ -63,7 +73,14 @@ export function truncatePublicKeyHandle(publicKey: string | null | undefined): s
  *   4. `'Anonymous'`
  */
 export function composeDisplayName(source: DisplayNameSource): string {
-  const full = composeFullName(source.name);
+  const explicitDisplayName =
+    typeof source.name?.displayName === 'string' ? source.name.displayName.trim() : '';
+  if (explicitDisplayName) {
+    return explicitDisplayName;
+  }
+
+  const explicitFull = typeof source.name?.full === 'string' ? source.name.full.trim() : '';
+  const full = explicitFull || composeFullName(source.name);
   if (full) {
     return full;
   }
@@ -78,4 +95,43 @@ export function composeDisplayName(source: DisplayNameSource): string {
   }
 
   return 'Anonymous';
+}
+
+/**
+ * Build the canonical structured name emitted by user DTO serializers.
+ *
+ * `name.displayName` is the app-facing display string. It is always present on
+ * formatted user responses, while `first`, `last`, and `full` preserve the raw
+ * structured human-name fields when they exist.
+ */
+export function formatUserNameResponse(source: DisplayNameSource): NameResponse {
+  const rawName = source.name;
+  const first = typeof rawName?.first === 'string' ? rawName.first.trim() : '';
+  const last = typeof rawName?.last === 'string' ? rawName.last.trim() : '';
+  const explicitFull = typeof rawName?.full === 'string' ? rawName.full.trim() : '';
+  const full = explicitFull || composeFullName({ first, last });
+
+  const name: NameResponse = {
+    displayName: composeDisplayName({
+      ...source,
+      name: {
+        first,
+        last,
+        full,
+        displayName: rawName?.displayName,
+      },
+    }),
+  };
+
+  if (first) {
+    name.first = first;
+  }
+  if (last) {
+    name.last = last;
+  }
+  if (full) {
+    name.full = full;
+  }
+
+  return name;
 }

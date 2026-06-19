@@ -5,11 +5,10 @@ import {
 } from '../accountUtils';
 
 describe('getAccountDisplayName', () => {
-    it('prefers the API displayName when present', () => {
+    it('prefers the API name.displayName when present', () => {
         expect(
             getAccountDisplayName({
-                name: { first: 'Nate' },
-                displayName: 'Nate Isern',
+                name: { first: 'Nate', displayName: 'Nate Isern' },
                 username: 'nateus',
             }),
         ).toBe('Nate Isern');
@@ -51,7 +50,7 @@ describe('getAccountDisplayName', () => {
         ).toBe('Nathaniel Isern');
     });
 
-    it('uses displayName when there is no structured name', () => {
+    it('uses pre-normalized account-row displayName when there is no structured name', () => {
         expect(
             getAccountDisplayName({
                 displayName: 'Cool Display',

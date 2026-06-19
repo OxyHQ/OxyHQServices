@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { useOxy } from '../context/OxyContext';
+import { getAccountDisplayName } from '@oxyhq/core';
 
 /**
  * ActingAsBanner - Shows a subtle banner when the user is acting as a managed account.
@@ -33,10 +34,7 @@ const ActingAsBanner: React.FC = () => {
     return null;
   }
 
-  const displayName =
-    typeof activeAccount.name === 'object'
-      ? activeAccount.name.full || activeAccount.name.first || activeAccount.username
-      : activeAccount.name || activeAccount.username;
+  const displayName = getAccountDisplayName(activeAccount);
 
   const handlePress = () => {
     showBottomSheet?.('ManageAccount');

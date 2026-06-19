@@ -4,15 +4,6 @@ import type { User } from '@oxyhq/core';
 
 const debug = createDebugLogger('AuthStore');
 
-type LegacyUserIdentity = Partial<Omit<User, 'id' | 'publicKey' | 'username'>> & {
-  id?: string;
-  _id: string;
-  publicKey: string;
-  username: string;
-};
-
-type AuthStoreUserInput = User | LegacyUserIdentity;
-
 export interface AuthState {
   user: User | null;
   isAuthenticated: boolean;
@@ -20,11 +11,11 @@ export interface AuthState {
   error: string | null;
   lastUserFetch: number | null; // Timestamp of last user fetch for caching
   
-  loginSuccess: (user: AuthStoreUserInput) => void;
+  loginSuccess: (user: User) => void;
   loginFailure: (error: string) => void;
   logout: () => void;
   fetchUser: (oxyServices: { getCurrentUser: () => Promise<User> }, forceRefresh?: boolean) => Promise<void>;
-  setUser: (user: AuthStoreUserInput) => void; // Direct user setter for caching
+  setUser: (user: User) => void; // Direct user setter for caching
 }
 
 export const useAuthStore = create<AuthState>((set: (state: Partial<AuthState>) => void, get: () => AuthState) => ({
@@ -34,7 +25,7 @@ export const useAuthStore = create<AuthState>((set: (state: Partial<AuthState>) 
   error: null,
   lastUserFetch: null,
 
-  loginSuccess: (user: AuthStoreUserInput) => set({
+  loginSuccess: (user: User) => set({
     isLoading: false,
     isAuthenticated: true,
     user: normalizeUserIdentity(user),
@@ -46,7 +37,7 @@ export const useAuthStore = create<AuthState>((set: (state: Partial<AuthState>) 
     isAuthenticated: false,
     lastUserFetch: null,
   }),
-  setUser: (user: AuthStoreUserInput) => set({ user: normalizeUserIdentity(user), lastUserFetch: Date.now() }),
+  setUser: (user: User) => set({ user: normalizeUserIdentity(user), lastUserFetch: Date.now() }),
   fetchUser: async (oxyServices, forceRefresh = false) => {
     const state = get();
     const now = Date.now();

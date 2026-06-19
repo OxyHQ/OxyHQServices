@@ -13,7 +13,7 @@ import { useI18n } from '../hooks/useI18n';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { useColorScheme } from '../hooks/useColorScheme';
 import { Colors } from '../constants/theme';
-import { normalizeColorScheme } from '../utils/themeUtils';
+import { normalizeColorScheme } from '@oxyhq/core';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 
 const HelpSupportScreen: React.FC<BaseScreenProps> = ({

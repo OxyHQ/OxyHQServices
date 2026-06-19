@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
 import { useThemeColors } from '../styles/theme';
-import { normalizeTheme } from '../utils/themeUtils';
+import { normalizeTheme } from '@oxyhq/core';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { toast } from '@oxyhq/bloom';

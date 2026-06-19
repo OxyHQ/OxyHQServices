@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
 import { useTheme } from '@oxyhq/bloom/theme';
-import { normalizeTheme } from '../utils/themeUtils';
+import { normalizeTheme } from '@oxyhq/core';
 import { Ionicons } from '@expo/vector-icons';
 import { toast } from '@oxyhq/bloom';
 import Header from '../components/Header';

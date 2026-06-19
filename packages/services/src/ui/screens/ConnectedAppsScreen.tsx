@@ -15,7 +15,7 @@ import { useAuthorizedApps } from '../hooks/queries/useAccountQueries';
 import { useRevokeAuthorizedApp } from '../hooks/mutations/useAccountMutations';
 import { useColorScheme } from '../hooks/useColorScheme';
 import { Colors } from '../constants/theme';
-import { normalizeColorScheme, normalizeTheme } from '../utils/themeUtils';
+import { normalizeColorScheme, normalizeTheme } from '@oxyhq/core';
 
 /**
  * Format an ISO-8601 timestamp as a human-readable relative time. Mirrors the

@@ -17,7 +17,7 @@ import { useI18n } from '../hooks/useI18n';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { useColorScheme } from '../hooks/useColorScheme';
 import { Colors } from '../constants/theme';
-import { normalizeColorScheme } from '../utils/themeUtils';
+import { normalizeColorScheme } from '@oxyhq/core';
 import { useOxy } from '../context/OxyContext';
 
 interface SavedItem {
@@ -25,7 +25,6 @@ interface SavedItem {
     title: string;
     type: 'post' | 'collection';
     savedAt: Date;
-    url?: string;
 }
 
 interface Collection {
@@ -67,14 +66,13 @@ const SavesCollectionsScreen: React.FC<BaseScreenProps> = ({
                         oxyServices.getSavedItems(user.id),
                         oxyServices.getCollections(user.id),
                     ]);
-                    setSavedItems(saved.map((item: any) => ({
+                    setSavedItems(saved.map((item) => ({
                         id: item.id,
                         title: item.title,
                         type: item.itemType === 'post' ? 'post' : 'collection',
                         savedAt: new Date(item.createdAt),
-                        url: item.url,
                     })));
-                    setCollections(cols.map((col: any) => ({
+                    setCollections(cols.map((col) => ({
                         id: col.id,
                         name: col.name,
                         description: col.description,
@@ -220,4 +218,3 @@ const styles = StyleSheet.create({
 });
 
 export default React.memo(SavesCollectionsScreen);
-

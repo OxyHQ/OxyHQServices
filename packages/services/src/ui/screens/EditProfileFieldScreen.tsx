@@ -14,7 +14,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import type { BaseScreenProps } from '../types/navigation';
 import { useTheme } from '@oxyhq/bloom/theme';
-import { normalizeTheme } from '../utils/themeUtils';
+import { normalizeTheme } from '@oxyhq/core';
 import Header from '../components/Header';
 import { useI18n } from '../hooks/useI18n';
 import { useOxy } from '../context/OxyContext';
@@ -59,6 +59,17 @@ interface EditProfileFieldScreenProps extends BaseScreenProps {
     fieldType?: ProfileFieldType;
 }
 
+type EditableListItem = {
+    id: string;
+    name?: string;
+    label?: string;
+    url?: string;
+    title?: string;
+    description?: string;
+    image?: string;
+    coordinates?: { lat: number; lon: number };
+};
+
 /**
  * EditProfileFieldScreen - A dedicated screen for editing profile fields
  *
@@ -84,7 +95,7 @@ const EditProfileFieldScreen: React.FC<EditProfileFieldScreenProps> = ({
     const [fieldErrors, setFieldErrors] = useState<Record<string, string | undefined>>({});
 
     // State for list fields (locations, links)
-    const [listItems, setListItems] = useState<Array<{ id: string; [key: string]: unknown }>>([]);
+    const [listItems, setListItems] = useState<EditableListItem[]>([]);
     const [newItemValue, setNewItemValue] = useState('');
 
     // Get field configuration based on fieldType
@@ -96,7 +107,7 @@ const EditProfileFieldScreen: React.FC<EditProfileFieldScreenProps> = ({
                     subtitle: t('editProfile.items.displayName.subtitle') || 'This is how your name will appear to others',
                     fields: [
                         {
-                            key: 'displayName',
+                            key: 'firstName',
                             label: t('editProfile.items.displayName.firstName') || 'First Name',
                             placeholder: t('editProfile.items.displayName.firstNamePlaceholder') || 'Enter first name',
                         },
@@ -255,30 +266,29 @@ const EditProfileFieldScreen: React.FC<EditProfileFieldScreenProps> = ({
 
         if (fieldConfig.isList) {
             if (fieldType === 'locations') {
-                const locations = Array.isArray(userData.locations) ? userData.locations as Array<Record<string, unknown>> : [];
+                const locations = Array.isArray(userData.locations) ? userData.locations : [];
                 setListItems(locations.map((loc, i) => ({
                     id: String(loc.id || `location-${i}`),
                     name: String(loc.name || ''),
                     ...loc,
                 })));
             } else if (fieldType === 'links') {
-                const linksMetadata = Array.isArray(userData.linksMetadata) ? userData.linksMetadata as Array<Record<string, unknown>> : [];
+                const linksMetadata = Array.isArray(userData.linksMetadata) ? userData.linksMetadata : [];
                 const links = Array.isArray(userData.links) ? userData.links : [];
                 // Use linksMetadata if available, otherwise convert links array
                 if (linksMetadata.length > 0) {
                     setListItems(linksMetadata.map((link, i) => ({
-                        id: String(link.id || `link-${i}`),
-                        url: String(link.url || link.link || ''),
-                        title: String(link.title || ''),
                         ...link,
+                        id: String(link.id || `link-${i}`),
+                        url: String(link.url || ''),
+                        title: String(link.title || ''),
                     })));
                 } else {
                     setListItems(links.map((item, i) => {
-                        const url = typeof item === 'string' ? item : (item.link || '');
                         return {
                             id: `link-${i}`,
-                            url,
-                            title: url.replace(/^https?:\/\//, '').replace(/\/$/, ''),
+                            url: item,
+                            title: item.replace(/^https?:\/\//, '').replace(/\/$/, ''),
                         };
                     }));
                 }
@@ -286,8 +296,8 @@ const EditProfileFieldScreen: React.FC<EditProfileFieldScreenProps> = ({
         } else {
             const initialValues: Record<string, string> = {};
             fieldConfig.fields.forEach(field => {
-                if (field.key === 'displayName') {
-                    initialValues[field.key] = String(userData.displayName || userData.name?.first || '');
+                if (field.key === 'firstName') {
+                    initialValues[field.key] = String(userData.name?.first || '');
                 } else if (field.key === 'lastName') {
                     initialValues[field.key] = String(userData.lastName || userData.name?.last || '');
                 } else if (field.key === 'birthday') {
@@ -390,7 +400,7 @@ const EditProfileFieldScreen: React.FC<EditProfileFieldScreenProps> = ({
             let success = false;
             if (fieldType === 'displayName') {
                 success = await saveProfile({
-                    displayName: fieldValues.displayName,
+                    firstName: fieldValues.firstName,
                     lastName: fieldValues.lastName,
                 });
             } else {
@@ -496,7 +506,7 @@ const EditProfileFieldScreen: React.FC<EditProfileFieldScreenProps> = ({
                         <Text style={[styles.listTitle, { color: bloomTheme.colors.text }]}>
                             {listTitle} ({listItems.length})
                         </Text>
-                        {listItems.map((item: any) => (
+                        {listItems.map((item) => (
                             <View
                                 key={item.id}
                                 style={[

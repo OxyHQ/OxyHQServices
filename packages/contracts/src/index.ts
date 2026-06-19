@@ -14,6 +14,7 @@ export {
     // Schemas
     userNameSchema,
     userResponseSchema,
+    userProfileUpdateSchema,
     refreshAllAccountSchema,
     refreshAllResponseSchema,
     currentUserResponseSchema,
@@ -27,6 +28,7 @@ export {
 export type {
     UserNameResponse,
     UserResponse,
+    UserProfileUpdate,
     RefreshAllAccountResponse,
     RefreshAllResponseContract,
     CurrentUserResponseContract,

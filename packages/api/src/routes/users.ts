@@ -225,7 +225,7 @@ router.get(
     }
 
     logger.debug('GET /users/me', { userId: req.user.id });
-    sendSuccess(res, user);
+    sendSuccess(res, userService.formatUserResponse(user));
   })
 );
 
@@ -334,7 +334,7 @@ router.put(
         updatedFields: Object.keys(req.body),
       });
 
-      sendSuccess(res, updatedUser);
+      sendSuccess(res, userService.formatUserResponse(updatedUser));
     } catch (error) {
       // Handle known errors from service layer
       if (error instanceof Error) {
@@ -745,9 +745,9 @@ router.get(
     if (format === 'csv') {
       // Convert to CSV format (simplified - you'd want a proper CSV library)
       const fields = Object.keys(safeUserData);
+      const valuesByField = Object.entries(safeUserData);
       const headers = fields.join(',');
-      const values = fields.map(field => {
-        const value = (safeUserData as any)[field];
+      const values = valuesByField.map(([, value]) => {
         if (typeof value === 'object') {
           return JSON.stringify(value);
         }

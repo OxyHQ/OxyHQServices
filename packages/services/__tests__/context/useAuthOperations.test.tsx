@@ -271,8 +271,8 @@ describe('useAuthOperations.signIn — online flow', () => {
   });
 });
 
-describe('useAuthOperations.signIn — offline flow', () => {
-  it('falls back to a local session when the network is unavailable', async () => {
+describe('useAuthOperations.signIn — requestChallenge failures', () => {
+  it('does not create a local session when the network is unavailable', async () => {
     const helpers = setup({
       oxyServices: {
         requestChallenge: jest.fn(async () => {
@@ -281,26 +281,20 @@ describe('useAuthOperations.signIn — offline flow', () => {
       },
     });
 
-    let signedInUser: User | undefined;
-    await act(async () => {
-      signedInUser = await helpers.result.current.signIn('offline-pubkey');
-    });
+    await expect(
+      act(async () => {
+        await helpers.result.current.signIn('offline-pubkey');
+      }),
+    ).rejects.toThrow('Network request failed');
 
-    // Online endpoints must NOT be hit when offline
     expect(helpers.oxyServices.verifyChallenge).not.toHaveBeenCalled();
     expect(helpers.oxyServices.getUserBySession).not.toHaveBeenCalled();
-
-    expect(signedInUser?.id).toBe('offline-pubkey');
-    expect(signedInUser?.publicKey).toBe('offline-pubkey');
-
-    expect(helpers.setActiveSessionId).toHaveBeenCalledWith(
-      expect.stringMatching(/^offline_/),
-    );
-    expect(helpers.loginSuccess).toHaveBeenCalled();
-    expect(helpers.onAuthStateChange).toHaveBeenCalled();
+    expect(helpers.setActiveSessionId).not.toHaveBeenCalled();
+    expect(helpers.loginSuccess).not.toHaveBeenCalled();
+    expect(helpers.onAuthStateChange).not.toHaveBeenCalled();
   });
 
-  it('re-throws non-network errors from requestChallenge without going offline', async () => {
+  it('re-throws non-network errors from requestChallenge', async () => {
     const helpers = setup({
       oxyServices: {
         requestChallenge: jest.fn(async () => {

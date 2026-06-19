@@ -1,5 +1,6 @@
 import { authenticatedApiCall } from '@oxyhq/core';
 import type { OxyServices, User } from '@oxyhq/core';
+import type { UserProfileUpdate } from '@oxyhq/contracts';
 import { useAccountStore } from '../stores/accountStore';
 import { useAuthStore } from '../stores/authStore';
 import type { QueryClient } from '@tanstack/react-query';
@@ -37,7 +38,7 @@ export function refreshAvatarInStore(
  * @returns Promise that resolves with updated user data
  */
 export async function updateProfileWithAvatar(
-  updates: Partial<User>,
+  updates: UserProfileUpdate,
   oxyServices: OxyServices,
   activeSessionId: string | null,
   queryClient: QueryClient,
@@ -60,7 +61,7 @@ export async function updateProfileWithAvatar(
   useAuthStore.getState().setUser(data);
 
   // If avatar was updated, refresh accountStore with cache-busted URL
-  if (updates.avatar && activeSessionId) {
+  if (typeof updates.avatar === 'string' && activeSessionId) {
     refreshAvatarInStore(activeSessionId, updates.avatar, oxyServices);
   }
 

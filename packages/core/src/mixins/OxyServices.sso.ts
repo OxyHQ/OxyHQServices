@@ -25,6 +25,7 @@
 
 import type { OxyServicesBase } from '../OxyServices.base';
 import type { SessionLoginResponse, MinimalUserData } from '../models/session';
+import type { UserNameResponse } from '@oxyhq/contracts';
 import { createDebugLogger } from '../shared/utils/debugUtils';
 
 const debug = createDebugLogger('SSO');
@@ -40,6 +41,7 @@ interface SsoExchangeWireResponse {
     id?: string;
     _id?: string;
     username?: string;
+    name?: UserNameResponse;
     avatar?: string;
   };
   expiresAt?: string;
@@ -140,13 +142,14 @@ export function OxyServicesSsoMixin<T extends typeof OxyServicesBase>(Base: T) {
       }
 
       const userId = payload.user?.id ?? payload.user?._id;
-      if (!userId || typeof payload.user?.username !== 'string') {
+      if (!userId || typeof payload.user?.username !== 'string' || typeof payload.user.name?.displayName !== 'string') {
         throw this.handleError(new Error('SSO exchange returned an invalid user'));
       }
 
       const user: MinimalUserData = {
         id: userId,
         username: payload.user.username,
+        name: payload.user.name,
         avatar: payload.user.avatar,
       };
 

@@ -1,3 +1,5 @@
+import type { UserNameResponse } from '@oxyhq/contracts';
+
 export interface ClientSession {
   sessionId: string;
   deviceId: string;
@@ -23,6 +25,7 @@ export interface StorageKeys {
 export interface MinimalUserData {
   id: string;
   username: string;
+  name: UserNameResponse;
   avatar?: string; // file id
 }
 
