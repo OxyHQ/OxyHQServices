@@ -1095,7 +1095,30 @@ router.get('/:id/stream', mediaHeadersMiddleware, validate({ params: assetIdPara
     }
   }
 
-  if (!(await s3Service.fileExists(storageKey))) {
+  let storageExists = await s3Service.fileExists(storageKey);
+  if (!storageExists && storageKey === file.storageKey) {
+    const repaired = await assetService.repairMissingFederationFileContent(file);
+    if (repaired) {
+      storageExists = true;
+      if (variantType) {
+        try {
+          const ensured = await assetService.ensureVariant(fileId, variantType, file);
+          storageKey = ensured.key;
+          storageExists = await s3Service.fileExists(storageKey);
+        } catch (e: any) {
+          logger.warn('Variant ensure failed after repairing original, falling back to original', {
+            fileId,
+            variantType,
+            error: e?.message,
+          });
+          storageKey = file.storageKey;
+          storageExists = await s3Service.fileExists(storageKey);
+        }
+      }
+    }
+  }
+
+  if (!storageExists) {
     logger.warn('Asset metadata points to a missing storage object', {
       fileId,
       variant: variantType,
@@ -1202,7 +1225,21 @@ router.get('/:id/download', validate({ params: assetIdParams }), optionalAuthMid
   const variantType = typeof variant === 'string' ? variant : undefined;
   const expiry = typeof expiresIn === 'string' ? parseInt(expiresIn) : 3600;
 
-  const url = await assetService.getFileUrl(fileId, variantType, expiry, file);
+  if (!(await assetService.fileContentExists(fileId, file))) {
+    await assetService.repairMissingFederationFileContent(file);
+  }
+
+  let url: string;
+  try {
+    url = await assetService.getFileUrl(fileId, variantType, expiry, file);
+  } catch (error) {
+    logger.warn('Failed to generate file download URL', {
+      fileId,
+      variant: variantType,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw new NotFoundError('File not found');
+  }
   res.setHeader('Cache-Control', 'private, max-age=60');
   return res.redirect(url);
 }));

@@ -1,4 +1,6 @@
 import crypto from 'crypto';
+import { lookup } from 'dns/promises';
+import net from 'net';
 import { Readable, Transform } from 'stream';
 import mongoose from 'mongoose';
 import { File, IFile, IFileLink, IFileVariant, FileVisibility } from '../models/File';
@@ -6,6 +8,7 @@ import { S3Service } from './s3Service';
 import {
   FEDERATION_CACHE_OWNER_ID,
   FEDERATION_MEDIA_CACHE_PURPOSE,
+  isAllowedCacheMime,
 } from '../constants/federationCache';
 import { VariantService } from './variantService';
 import { logger } from '../utils/logger';
@@ -41,6 +44,11 @@ interface StreamedMediaOptions {
   logLabel: string;
 }
 
+const FEDERATION_AVATAR_OWNER_ID = '__federation__';
+const FEDERATION_REPAIR_MAX_BYTES = 10 * 1024 * 1024;
+const FEDERATION_REPAIR_MAX_REDIRECTS = 3;
+const FEDERATION_REPAIR_USER_AGENT = 'OxyHQ/1.0 (Federation Asset Repair)';
+
 export class AssetService {
   private variantService: VariantService;
 
@@ -55,6 +63,158 @@ export class AssetService {
 
   private async findActiveFileBySha(sha256: string): Promise<IFile | null> {
     return File.findOne({ sha256, status: { $ne: 'deleted' } });
+  }
+
+  private isPrivateIpAddress(address: string): boolean {
+    const ipVersion = net.isIP(address);
+    if (ipVersion === 4) {
+      const parts = address.split('.').map(Number);
+      const [a, b] = parts;
+      return (
+        a === 0 ||
+        a === 10 ||
+        a === 127 ||
+        (a === 100 && b >= 64 && b <= 127) ||
+        (a === 169 && b === 254) ||
+        (a === 172 && b >= 16 && b <= 31) ||
+        (a === 192 && b === 168) ||
+        (a === 198 && (b === 18 || b === 19)) ||
+        a >= 224
+      );
+    }
+
+    if (ipVersion === 6) {
+      const normalized = address.toLowerCase();
+      return (
+        normalized === '::1' ||
+        normalized.startsWith('fc') ||
+        normalized.startsWith('fd') ||
+        normalized.startsWith('fe80:')
+      );
+    }
+
+    return false;
+  }
+
+  private async validateFederationRepairUrl(url: URL): Promise<boolean> {
+    if (url.protocol !== 'https:') {
+      return false;
+    }
+
+    const hostname = url.hostname.toLowerCase();
+    if (
+      hostname === 'localhost' ||
+      hostname.endsWith('.localhost') ||
+      hostname.endsWith('.local') ||
+      this.isPrivateIpAddress(hostname)
+    ) {
+      return false;
+    }
+
+    try {
+      const addresses = await lookup(hostname, { all: true, verbatim: false });
+      return addresses.length > 0 && addresses.every(({ address }) => !this.isPrivateIpAddress(address));
+    } catch (error) {
+      logger.warn('Failed to resolve federation repair URL host', {
+        host: hostname,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return false;
+    }
+  }
+
+  private getFederationRepairRemoteUrl(file: IFile): string | null {
+    const metadata = file.metadata || {};
+    const remoteUrl = metadata.remoteUrl;
+    if (typeof remoteUrl !== 'string' || remoteUrl.length === 0) {
+      return null;
+    }
+
+    const ownerUserId = file.ownerUserId?.toString();
+    const isFederationAvatar = ownerUserId === FEDERATION_AVATAR_OWNER_ID
+      && metadata.source === 'federation'
+      && metadata.role === 'avatar';
+    const isFederationCache = ownerUserId === FEDERATION_CACHE_OWNER_ID
+      && file.purpose === FEDERATION_MEDIA_CACHE_PURPOSE;
+    const isFederationMedia = metadata.source === 'federation'
+      && file.visibility === 'public';
+
+    return isFederationAvatar || isFederationCache || isFederationMedia ? remoteUrl : null;
+  }
+
+  private async fetchFederationRepairImage(remoteUrl: string): Promise<{ buffer: Buffer; mime: string } | null> {
+    let currentUrl: URL;
+    try {
+      currentUrl = new URL(remoteUrl);
+    } catch {
+      return null;
+    }
+
+    for (let redirects = 0; redirects <= FEDERATION_REPAIR_MAX_REDIRECTS; redirects += 1) {
+      if (!(await this.validateFederationRepairUrl(currentUrl))) {
+        logger.warn('Blocked unsafe federation repair URL', { url: currentUrl.toString() });
+        return null;
+      }
+
+      const response = await fetch(currentUrl, {
+        redirect: 'manual',
+        signal: AbortSignal.timeout(15_000),
+        headers: {
+          Accept: 'image/avif,image/webp,image/png,image/jpeg,image/gif,image/*;q=0.8',
+          'User-Agent': FEDERATION_REPAIR_USER_AGENT,
+        },
+      });
+
+      if (response.status >= 300 && response.status < 400) {
+        const location = response.headers.get('location');
+        if (!location) {
+          return null;
+        }
+        currentUrl = new URL(location, currentUrl);
+        continue;
+      }
+
+      if (!response.ok) {
+        logger.warn('Federation repair download failed', {
+          url: currentUrl.toString(),
+          status: response.status,
+        });
+        return null;
+      }
+
+      const rawContentType = response.headers.get('content-type') || '';
+      const mime = rawContentType.split(';')[0].trim().toLowerCase();
+      if (!mime.startsWith('image/') || !isAllowedCacheMime(mime)) {
+        logger.warn('Federation repair rejected non-image content', {
+          url: currentUrl.toString(),
+          contentType: rawContentType,
+        });
+        return null;
+      }
+
+      const declaredLength = Number(response.headers.get('content-length'));
+      if (Number.isFinite(declaredLength) && declaredLength > FEDERATION_REPAIR_MAX_BYTES) {
+        logger.warn('Federation repair image is too large', {
+          url: currentUrl.toString(),
+          declaredLength,
+        });
+        return null;
+      }
+
+      const buffer = Buffer.from(await response.arrayBuffer());
+      if (buffer.length === 0 || buffer.length > FEDERATION_REPAIR_MAX_BYTES) {
+        logger.warn('Federation repair image has invalid size', {
+          url: currentUrl.toString(),
+          size: buffer.length,
+        });
+        return null;
+      }
+
+      return { buffer, mime };
+    }
+
+    logger.warn('Federation repair exceeded redirect limit', { url: remoteUrl });
+    return null;
   }
 
   private async restoreMissingDirectUploadContent(
@@ -963,6 +1123,60 @@ export class AssetService {
     const fileObj = file || await this.getFile(fileId);
     if (!fileObj || fileObj.status === 'deleted') return false;
     return this.s3Service.fileExists(fileObj.storageKey);
+  }
+
+  async repairMissingFederationFileContent(file: IFile): Promise<boolean> {
+    if (!file || file.status === 'deleted') {
+      return false;
+    }
+    if (await this.s3Service.fileExists(file.storageKey)) {
+      return true;
+    }
+
+    const remoteUrl = this.getFederationRepairRemoteUrl(file);
+    if (!remoteUrl) {
+      return false;
+    }
+
+    try {
+      const repaired = await this.fetchFederationRepairImage(remoteUrl);
+      if (!repaired) {
+        return false;
+      }
+
+      await this.s3Service.uploadBuffer(file.storageKey, repaired.buffer, {
+        contentType: repaired.mime,
+      });
+
+      const setFields: Partial<IFile> = {
+        size: repaired.buffer.length,
+        mime: repaired.mime,
+        ext: this.getExtensionFromMime(repaired.mime),
+      };
+      await File.updateOne({ _id: file._id }, { $set: setFields });
+
+      file.size = setFields.size as number;
+      file.mime = setFields.mime as string;
+      file.ext = setFields.ext as string;
+      fileCache.invalidate(file._id.toString());
+      fileCache.set(file._id.toString(), file);
+      this.queueVariantGeneration(file);
+
+      logger.info('Repaired missing federation asset storage from remote URL', {
+        fileId: file._id.toString(),
+        storageKey: file.storageKey,
+        mime: repaired.mime,
+        size: repaired.buffer.length,
+      });
+      return true;
+    } catch (error) {
+      logger.warn('Failed to repair missing federation asset storage', {
+        fileId: file._id.toString(),
+        storageKey: file.storageKey,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return false;
+    }
   }
 
   async getFileUrl(
