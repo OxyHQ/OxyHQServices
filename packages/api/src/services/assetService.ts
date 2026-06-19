@@ -61,8 +61,60 @@ export class AssetService {
     return err?.code === 11000 || Boolean(err?.message?.includes('E11000'));
   }
 
-  private async findActiveFileBySha(sha256: string): Promise<IFile | null> {
-    return File.findOne({ sha256, status: { $ne: 'deleted' } });
+  private async findFileBySha(sha256: string): Promise<IFile | null> {
+    return File.findOne({ sha256 });
+  }
+
+  private async reviveDeletedDirectUploadFile(
+    file: IFile,
+    userId: string,
+    size: number,
+    mimeType: string,
+    originalName: string,
+    visibility?: FileVisibility,
+    metadata?: Record<string, any>
+  ): Promise<IFile> {
+    file.status = 'active';
+    file.ownerUserId = userId;
+    file.purpose = 'user';
+    file.size = size;
+    file.mime = mimeType;
+    file.ext = this.getExtensionFromMime(mimeType);
+    file.originalName = originalName;
+    file.visibility = visibility || 'private';
+    file.metadata = metadata || {};
+    file.links = [];
+    file.variants = [];
+
+    await file.save();
+    fileCache.invalidate(file._id.toString());
+    fileCache.set(file._id.toString(), file);
+    return file;
+  }
+
+  private async reviveDeletedStreamedMediaFile(
+    file: IFile,
+    size: number,
+    mimeType: string,
+    originalName: string,
+    options: StreamedMediaOptions
+  ): Promise<IFile> {
+    file.status = 'active';
+    file.ownerUserId = options.ownerUserId;
+    file.purpose = options.purpose;
+    file.size = size;
+    file.mime = mimeType;
+    file.ext = this.getExtensionFromMime(mimeType);
+    file.originalName = originalName;
+    file.visibility = options.visibility;
+    file.metadata = options.metadata;
+    file.links = [];
+    file.variants = [];
+
+    await file.save();
+    fileCache.invalidate(file._id.toString());
+    fileCache.set(file._id.toString(), file);
+    return file;
   }
 
   private isPrivateIpAddress(address: string): boolean {
@@ -250,7 +302,7 @@ export class AssetService {
 
   private async restoreMissingStreamedMediaContent(
     file: IFile,
-    tempKey: string,
+    sourceKey: string,
     logLabel: string,
   ): Promise<boolean> {
     if (await this.s3Service.fileExists(file.storageKey)) {
@@ -261,11 +313,11 @@ export class AssetService {
       fileId: file._id.toString(),
       sha256: file.sha256,
       storageKey: file.storageKey,
-      tempKey,
+      sourceKey,
       logLabel,
     });
 
-    await this.s3Service.copyFile(tempKey, file.storageKey);
+    await this.s3Service.copyFile(sourceKey, file.storageKey);
     fileCache.invalidate(file._id.toString());
     fileCache.set(file._id.toString(), file);
     return true;
@@ -401,13 +453,24 @@ export class AssetService {
   ): Promise<AssetInitResponse> {
     try {
       // Check if file already exists by SHA256
-      const existingFile = await File.findOne({ 
-        sha256: expectedSha256, 
-        status: { $ne: 'deleted' } 
-      });
+      const existingFile = await this.findFileBySha(expectedSha256);
 
       if (existingFile) {
         const storageKey = existingFile.storageKey || this.generateStorageKey(expectedSha256, expectedMime);
+        if (existingFile.status === 'deleted') {
+          existingFile.status = 'active';
+          existingFile.ownerUserId = userId;
+          existingFile.purpose = 'user';
+          existingFile.size = expectedSize;
+          existingFile.mime = expectedMime;
+          existingFile.ext = this.getExtensionFromMime(expectedMime);
+          existingFile.visibility = 'private';
+          existingFile.links = [];
+          existingFile.variants = [];
+          await existingFile.save();
+          fileCache.invalidate(existingFile._id.toString());
+          fileCache.set(existingFile._id.toString(), existingFile);
+        }
         if (!(await this.s3Service.fileExists(storageKey))) {
           logger.warn('Existing asset record has no storage object; returning upload URL for the existing key', {
             fileId: existingFile._id.toString(),
@@ -495,7 +558,7 @@ export class AssetService {
       const size = fileBuffer.length;
 
       // Check if file already exists by SHA256
-      const existingFile = await this.findActiveFileBySha(sha256);
+      const existingFile = await this.findFileBySha(sha256);
 
       if (existingFile) {
         const restored = await this.restoreMissingDirectUploadContent(
@@ -504,13 +567,24 @@ export class AssetService {
           mimeType,
           'direct upload',
         );
-        const preparedFile = await this.prepareExistingDirectUploadFile(
-          existingFile,
-          userId,
-          visibility,
-          metadata,
-        );
-        if (restored) {
+        const wasDeleted = existingFile.status === 'deleted';
+        const preparedFile = wasDeleted
+          ? await this.reviveDeletedDirectUploadFile(
+            existingFile,
+            userId,
+            size,
+            mimeType,
+            originalName,
+            visibility,
+            metadata,
+          )
+          : await this.prepareExistingDirectUploadFile(
+            existingFile,
+            userId,
+            visibility,
+            metadata,
+          );
+        if (restored || wasDeleted) {
           this.queueVariantGeneration(preparedFile);
         }
         logger.info('File already exists, returning existing', { 
@@ -545,7 +619,7 @@ export class AssetService {
         await file.save();
       } catch (error) {
         if (this.isDuplicateKeyError(error)) {
-          const racedFile = await this.findActiveFileBySha(sha256);
+          const racedFile = await this.findFileBySha(sha256);
           if (racedFile) {
             const restored = await this.restoreMissingDirectUploadContent(
               racedFile,
@@ -553,13 +627,24 @@ export class AssetService {
               mimeType,
               'direct upload duplicate race',
             );
-            const preparedFile = await this.prepareExistingDirectUploadFile(
-              racedFile,
-              userId,
-              visibility,
-              metadata,
-            );
-            if (restored) {
+            const wasDeleted = racedFile.status === 'deleted';
+            const preparedFile = wasDeleted
+              ? await this.reviveDeletedDirectUploadFile(
+                racedFile,
+                userId,
+                size,
+                mimeType,
+                originalName,
+                visibility,
+                metadata,
+              )
+              : await this.prepareExistingDirectUploadFile(
+                racedFile,
+                userId,
+                visibility,
+                metadata,
+              );
+            if (restored || wasDeleted) {
               this.queueVariantGeneration(preparedFile);
             }
             logger.info('File already exists after concurrent upload, returning existing', {
@@ -741,7 +826,7 @@ export class AssetService {
 
     // Dedup: if this exact content already exists (cache or otherwise), reuse
     // it and drop the temp object.
-    const existingFile = await this.findActiveFileBySha(sha256);
+    const existingFile = await this.findFileBySha(sha256);
     if (existingFile) {
       let restored = false;
       try {
@@ -753,8 +838,17 @@ export class AssetService {
       } finally {
         await deleteTempKey(`Failed to clean up deduplicated ${options.logLabel.toLowerCase()} upload`);
       }
-      const preparedFile = await this.prepareExistingStreamedMediaFile(existingFile, options);
-      if (restored) {
+      const wasDeleted = existingFile.status === 'deleted';
+      const preparedFile = wasDeleted
+        ? await this.reviveDeletedStreamedMediaFile(
+          existingFile,
+          size,
+          mimeType,
+          originalName,
+          options,
+        )
+        : await this.prepareExistingStreamedMediaFile(existingFile, options);
+      if (restored || wasDeleted) {
         this.queueVariantGeneration(preparedFile);
       }
       logger.info(`${options.logLabel} already exists, returning existing`, {
@@ -798,9 +892,40 @@ export class AssetService {
       await file.save();
     } catch (error) {
       if (this.isDuplicateKeyError(error)) {
-        const racedFile = await this.findActiveFileBySha(sha256);
+        const racedFile = await this.findFileBySha(sha256);
         if (racedFile) {
-          const preparedFile = await this.prepareExistingStreamedMediaFile(racedFile, options);
+          let restored = false;
+          try {
+            restored = await this.restoreMissingStreamedMediaContent(
+              racedFile,
+              storageKey,
+              `${options.logLabel} duplicate race`,
+            );
+          } finally {
+            if (racedFile.storageKey !== storageKey) {
+              try {
+                await this.s3Service.deleteFile(storageKey);
+              } catch (cleanupError) {
+                logger.warn(`Failed to clean up duplicate ${options.logLabel.toLowerCase()} storage object`, {
+                  storageKey,
+                  error: cleanupError,
+                });
+              }
+            }
+          }
+          const wasDeleted = racedFile.status === 'deleted';
+          const preparedFile = wasDeleted
+            ? await this.reviveDeletedStreamedMediaFile(
+              racedFile,
+              size,
+              mimeType,
+              originalName,
+              options,
+            )
+            : await this.prepareExistingStreamedMediaFile(racedFile, options);
+          if (restored || wasDeleted) {
+            this.queueVariantGeneration(preparedFile);
+          }
           logger.info(`${options.logLabel} already exists after concurrent upload, returning existing`, {
             sha256,
             fileId: preparedFile._id,

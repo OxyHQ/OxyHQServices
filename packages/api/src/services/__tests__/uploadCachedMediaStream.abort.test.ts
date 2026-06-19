@@ -32,10 +32,17 @@ jest.mock('../../models/File', () => ({
   FileVisibility: {},
 }));
 
-// VariantService pulls in sharp/ffmpeg at import; it is never invoked on the
-// abort path, so stub the module to keep this unit test focused and fast.
+// VariantService pulls in sharp/ffmpeg at import; stub it so these storage
+// tests stay focused on AssetService's dedupe/repair contract.
+const mockGenerateVariants = jest.fn();
 jest.mock('../variantService', () => ({
-  VariantService: class { constructor(_s3: unknown) { /* no-op */ } },
+  VariantService: class {
+    constructor(_s3: unknown) { /* no-op */ }
+
+    generateVariants(...args: unknown[]) {
+      return mockGenerateVariants(...args);
+    }
+  },
 }));
 
 // mediaPrivacyService imports the User model (more Schema side effects the
@@ -49,15 +56,22 @@ const CACHE_MAX_BYTES = 256 * 1024 * 1024;
 /** The S3Service surface uploadCachedMediaStream touches on the abort path. */
 interface FakeS3 {
   uploadStream: jest.Mock<Promise<FileInfo>, [string, Readable, UploadOptions?]>;
+  uploadBuffer: jest.Mock<Promise<FileInfo>, [string, Buffer, UploadOptions?]>;
   deleteFile: jest.Mock<Promise<void>, [string]>;
   fileExists: jest.Mock<Promise<boolean>, [string]>;
   copyFile: jest.Mock<Promise<void>, [string, string]>;
 }
 
-type FakeS3Input = Pick<FakeS3, 'uploadStream' | 'deleteFile'> & Partial<Pick<FakeS3, 'fileExists' | 'copyFile'>>;
+type FakeS3Input = Partial<Pick<FakeS3, 'uploadStream' | 'uploadBuffer' | 'fileExists' | 'copyFile'>> & Pick<FakeS3, 'deleteFile'>;
 
 function buildAssetService(input: FakeS3Input): { service: AssetService; fake: FakeS3 } {
   const fake: FakeS3 = {
+    uploadStream: jest.fn((): Promise<FileInfo> => Promise.resolve({ key: 'unused', size: 0, contentType: 'application/octet-stream' } as FileInfo)),
+    uploadBuffer: jest.fn((key: string, buffer: Buffer, options?: UploadOptions): Promise<FileInfo> => Promise.resolve({
+      key,
+      size: buffer.length,
+      contentType: options?.contentType || 'application/octet-stream',
+    } as FileInfo)),
     fileExists: jest.fn((): Promise<boolean> => Promise.resolve(true)),
     copyFile: jest.fn((): Promise<void> => Promise.resolve()),
     ...input,
@@ -72,6 +86,8 @@ function buildAssetService(input: FakeS3Input): { service: AssetService; fake: F
 describe('uploadCachedMediaStream — abort cleanup', () => {
   beforeEach(() => {
     mockFileFindOne.mockReset();
+    mockGenerateVariants.mockReset();
+    mockGenerateVariants.mockResolvedValue(undefined);
   });
 
   it('aborts the S3 upload and deletes the temp object when the source aborts', async () => {
@@ -239,6 +255,125 @@ describe('uploadCachedMediaStream — abort cleanup', () => {
     expect(copyFile).toHaveBeenCalledWith(capturedTempKey, existingFile.storageKey);
     expect(deleteFile).toHaveBeenCalledTimes(1);
     expect(deleteFile).toHaveBeenCalledWith(capturedTempKey);
+
+    source.destroy();
+  });
+
+  it('revives a deleted direct-upload record and restores its missing storage', async () => {
+    const deleteFile = jest.fn((): Promise<void> => Promise.resolve());
+    const fileExists = jest.fn((): Promise<boolean> => Promise.resolve(false));
+    const uploadBuffer = jest.fn((key: string, buffer: Buffer, options?: UploadOptions): Promise<FileInfo> => Promise.resolve({
+      key,
+      size: buffer.length,
+      contentType: options?.contentType || 'application/octet-stream',
+    } as FileInfo));
+    const { service } = buildAssetService({ deleteFile, fileExists, uploadBuffer });
+
+    const existingFile = {
+      _id: { toString: () => '64c000000000000000000fed' },
+      sha256: 'deduped-sha',
+      storageKey: 'content/2026/06/de/deduped-sha.jpg',
+      status: 'deleted',
+      ownerUserId: '__federation__',
+      purpose: 'user',
+      size: 4,
+      mime: 'image/jpeg',
+      ext: '.jpg',
+      originalName: 'old-avatar.jpg',
+      visibility: 'public',
+      metadata: { old: true },
+      links: [{ app: 'old', entityType: 'profile', entityId: 'old', createdBy: 'old', createdAt: new Date() }],
+      variants: [{ type: 'thumb', key: 'variants/old/thumb.webp', readyAt: new Date() }],
+      save: jest.fn((): Promise<void> => Promise.resolve()),
+    };
+    mockFileFindOne.mockResolvedValueOnce(existingFile);
+
+    const result = await service.uploadFileDirect(
+      'fresh-owner',
+      Buffer.from('JPEG'),
+      'image/jpeg',
+      'fresh-avatar.jpg',
+      'public',
+      { source: 'federation-avatar' }
+    );
+
+    expect(result).toBe(existingFile);
+    expect(fileExists).toHaveBeenCalledWith(existingFile.storageKey);
+    expect(uploadBuffer).toHaveBeenCalledWith(existingFile.storageKey, Buffer.from('JPEG'), { contentType: 'image/jpeg' });
+    expect(existingFile.status).toBe('active');
+    expect(existingFile.ownerUserId).toBe('fresh-owner');
+    expect(existingFile.originalName).toBe('fresh-avatar.jpg');
+    expect(existingFile.metadata).toEqual({ source: 'federation-avatar' });
+    expect(existingFile.links).toEqual([]);
+    expect(existingFile.variants).toEqual([]);
+    expect(existingFile.save).toHaveBeenCalledTimes(1);
+    expect(mockGenerateVariants).toHaveBeenCalledWith(existingFile._id.toString());
+  });
+
+  it('revives a deleted cached-media record after deduplicating streamed media', async () => {
+    let resolveUpload: ((info: FileInfo) => void) | undefined;
+    let capturedTempKey: string | undefined;
+
+    const uploadStream = jest.fn(
+      (key: string, _body: Readable): Promise<FileInfo> => {
+        capturedTempKey = key;
+        return new Promise<FileInfo>((resolve) => { resolveUpload = resolve; });
+      }
+    );
+    const deleteFile = jest.fn((): Promise<void> => Promise.resolve());
+    const fileExists = jest.fn((): Promise<boolean> => Promise.resolve(false));
+    const copyFile = jest.fn((): Promise<void> => Promise.resolve());
+    const { service } = buildAssetService({ uploadStream, deleteFile, fileExists, copyFile });
+
+    const existingFile = {
+      _id: { toString: () => '64c000000000000000000cab' },
+      sha256: 'deleted-cache-sha',
+      storageKey: 'content/2026/06/de/deleted-cache-sha.png',
+      status: 'deleted',
+      ownerUserId: '__federation__',
+      purpose: 'federation-media-cache',
+      size: 4,
+      mime: 'image/png',
+      ext: '.png',
+      originalName: 'old-cache.png',
+      visibility: 'public',
+      metadata: { old: true },
+      links: [{ app: 'mention', entityType: 'post', entityId: 'old', createdBy: 'old', createdAt: new Date() }],
+      variants: [{ type: 'thumb', key: 'variants/old/thumb.webp', readyAt: new Date() }],
+      save: jest.fn((): Promise<void> => Promise.resolve()),
+    };
+    mockFileFindOne.mockResolvedValueOnce(existingFile);
+
+    const source = new Readable({
+      read() {
+        this.push(Buffer.from('PNG!'));
+        this.push(null);
+      },
+    });
+
+    const promise = service.uploadCachedMediaStream(
+      source,
+      'image/png',
+      'federation-cache-media',
+      CACHE_MAX_BYTES
+    );
+
+    await new Promise((resolve) => setImmediate(resolve));
+    resolveUpload?.({ key: capturedTempKey || 'cache/incoming/x', size: 4, contentType: 'image/png' } as FileInfo);
+
+    await expect(promise).resolves.toBe(existingFile);
+
+    expect(fileExists).toHaveBeenCalledWith(existingFile.storageKey);
+    expect(copyFile).toHaveBeenCalledWith(capturedTempKey, existingFile.storageKey);
+    expect(deleteFile).toHaveBeenCalledWith(capturedTempKey);
+    expect(existingFile.status).toBe('active');
+    expect(existingFile.ownerUserId).toBe('__federation_media_cache__');
+    expect(existingFile.purpose).toBe('federation-media-cache');
+    expect(existingFile.metadata).toEqual({});
+    expect(existingFile.links).toEqual([]);
+    expect(existingFile.variants).toEqual([]);
+    expect(existingFile.save).toHaveBeenCalledTimes(1);
+    expect(mockGenerateVariants).toHaveBeenCalledWith(existingFile._id.toString());
 
     source.destroy();
   });
