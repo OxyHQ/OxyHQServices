@@ -139,6 +139,11 @@ interface KeyPairDoc {
   privateKeyPem: string;
 }
 
+interface WebFingerResolution {
+  actorUri: string;
+  subjectAcct?: string;
+}
+
 const _keyPairCache = new Map<string, KeyPairDoc>();
 
 /**
@@ -354,7 +359,7 @@ class FederationService {
    * Resolve a WebFinger acct to an ActivityPub actor URI.
    * @param acct - e.g. "alice@mastodon.social" or "@alice@mastodon.social"
    */
-  async resolveWebFinger(acct: string): Promise<string | null> {
+  async resolveWebFingerResource(acct: string): Promise<WebFingerResolution | null> {
     const normalizedAcct = normalizeFediverseHandle(acct);
     if (!normalizedAcct) return null;
 
@@ -372,17 +377,36 @@ class FederationService {
       if (!res.ok) return null;
 
       const data = (await res.json()) as {
+        subject?: string;
         links?: Array<{ rel?: string; type?: string; href?: string }>;
       };
 
       const link = data.links?.find(
         (l) => l.rel === 'self' && l.type && AP_ACCEPT_TYPES.includes(l.type),
       );
-      return link?.href || null;
+      if (!link?.href) return null;
+
+      const subjectAcct = typeof data.subject === 'string'
+        ? normalizeFediverseHandle(data.subject) || undefined
+        : undefined;
+
+      return {
+        actorUri: link.href,
+        subjectAcct,
+      };
     } catch (err) {
       logger.warn(`WebFinger resolution failed for ${acct}: ${err}`);
       return null;
     }
+  }
+
+  /**
+   * Resolve a WebFinger acct to an ActivityPub actor URI.
+   * @param acct - e.g. "alice@mastodon.social" or "@alice@mastodon.social"
+   */
+  async resolveWebFinger(acct: string): Promise<string | null> {
+    const resolution = await this.resolveWebFingerResource(acct);
+    return resolution?.actorUri || null;
   }
 
   /**
@@ -410,7 +434,7 @@ class FederationService {
         ? normalizeFediverseHandle(actor.webfinger)
         : null;
       const hintedAcct = acctHint ? normalizeFediverseHandle(acctHint) : null;
-      const acct = hintedAcct || actorWebfinger || `${username.toLowerCase()}@${actorHost}`;
+      const acct = actorWebfinger || hintedAcct || `${username.toLowerCase()}@${actorHost}`;
       const domain = domainFromHandle(acct) || actorHost;
 
       return {
@@ -604,10 +628,10 @@ class FederationService {
     }
 
     // No cached row — first-time blocking fetch (the only allowed blocking case).
-    const actorUri = await this.resolveWebFinger(cleaned);
-    if (!actorUri) return null;
+    const webfinger = await this.resolveWebFingerResource(cleaned);
+    if (!webfinger) return null;
 
-    const profile = await this.fetchActorProfile(actorUri, cleaned);
+    const profile = await this.fetchActorProfile(webfinger.actorUri, webfinger.subjectAcct || cleaned);
     if (!profile) return null;
 
     const setFields: Record<string, unknown> = {

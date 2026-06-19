@@ -136,7 +136,7 @@ describe('FederationService.resolveAndUpsert (fast + eventually-fresh)', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    webfingerSpy = jest.spyOn(federationService, 'resolveWebFinger');
+    webfingerSpy = jest.spyOn(federationService, 'resolveWebFingerResource');
     actorSpy = jest.spyOn(federationService, 'fetchActorProfile');
     avatarSpy = jest.spyOn(federationService, 'downloadAndStoreAvatar')
       .mockResolvedValue({ fileId: 'new-file-id', notModified: false });
@@ -151,7 +151,7 @@ describe('FederationService.resolveAndUpsert (fast + eventually-fresh)', () => {
 
   it('returns a fresh cached user immediately without any remote I/O', async () => {
     const fx = nextFixture();
-    webfingerSpy.mockResolvedValue(fx.actorUri);
+    webfingerSpy.mockResolvedValue({ actorUri: fx.actorUri, subjectAcct: fx.handle });
     actorSpy.mockResolvedValue(null);
 
     const cached = cachedUser(fx, FRESH_AGE_MS);
@@ -170,7 +170,7 @@ describe('FederationService.resolveAndUpsert (fast + eventually-fresh)', () => {
 
   it('returns the stale user immediately and runs a background refresh that updates avatar/name/bio + invalidates cache', async () => {
     const fx = nextFixture();
-    webfingerSpy.mockResolvedValue(fx.actorUri);
+    webfingerSpy.mockResolvedValue({ actorUri: fx.actorUri, subjectAcct: fx.handle });
     actorSpy.mockResolvedValue({
       actorUri: fx.actorUri,
       domain: DOMAIN,
@@ -212,7 +212,7 @@ describe('FederationService.resolveAndUpsert (fast + eventually-fresh)', () => {
 
   it('throttles repeated background refreshes for the same actor (storm guard)', async () => {
     const fx = nextFixture();
-    webfingerSpy.mockResolvedValue(fx.actorUri);
+    webfingerSpy.mockResolvedValue({ actorUri: fx.actorUri, subjectAcct: fx.handle });
     actorSpy.mockResolvedValue({
       actorUri: fx.actorUri,
       domain: DOMAIN,
@@ -236,7 +236,7 @@ describe('FederationService.resolveAndUpsert (fast + eventually-fresh)', () => {
 
   it('does the first-time blocking fetch when no cached user exists', async () => {
     const fx = nextFixture();
-    webfingerSpy.mockResolvedValue(fx.actorUri);
+    webfingerSpy.mockResolvedValue({ actorUri: fx.actorUri, subjectAcct: fx.handle });
     actorSpy.mockResolvedValue({
       actorUri: fx.actorUri,
       domain: DOMAIN,
@@ -269,7 +269,7 @@ describe('FederationService.resolveAndUpsert (fast + eventually-fresh)', () => {
     const actorUri = 'https://www.threads.net/ap/users/mosseri/';
     const userId = 'threads-user-1';
 
-    webfingerSpy.mockResolvedValue(actorUri);
+    webfingerSpy.mockResolvedValue({ actorUri, subjectAcct: handle });
     actorSpy.mockResolvedValue({
       actorUri,
       domain: 'threads.net',
@@ -308,9 +308,54 @@ describe('FederationService.resolveAndUpsert (fast + eventually-fresh)', () => {
     expect(result).toBe(created);
   });
 
+  it('uses the WebFinger subject when the requested handle is a www alias', async () => {
+    const requestedHandle = 'mosseri@www.threads.net';
+    const canonicalHandle = 'mosseri@threads.net';
+    const actorUri = 'https://www.threads.net/ap/users/mosseri/';
+    const userId = 'threads-user-alias';
+
+    webfingerSpy.mockResolvedValue({ actorUri, subjectAcct: canonicalHandle });
+    actorSpy.mockResolvedValue({
+      actorUri,
+      domain: 'threads.net',
+      username: canonicalHandle,
+      displayName: 'Adam Mosseri',
+      avatarUrl: undefined,
+      bio: 'Threads profile',
+    });
+
+    mockFindOneReturning(null);
+    const created = { _id: { toString: () => userId }, username: canonicalHandle, type: 'federated' };
+    const select = jest.fn().mockResolvedValue(created);
+    mockUserFindOneAndUpdate.mockReturnValueOnce({ select });
+
+    const result = await federationService.resolveAndUpsert(`@${requestedHandle}`);
+
+    expect(webfingerSpy).toHaveBeenCalledWith(requestedHandle);
+    expect(actorSpy).toHaveBeenCalledWith(actorUri, canonicalHandle);
+    expect(mockUserFindOne).toHaveBeenCalledWith({
+      type: 'federated',
+      'federation.domain': 'www.threads.net',
+      username: requestedHandle,
+    });
+    expect(mockUserFindOneAndUpdate).toHaveBeenCalledWith(
+      { 'federation.actorUri': actorUri },
+      {
+        $set: expect.objectContaining({
+          type: 'federated',
+          username: canonicalHandle,
+          'federation.actorUri': actorUri,
+          'federation.domain': 'threads.net',
+        }),
+      },
+      expect.anything(),
+    );
+    expect(result).toBe(created);
+  });
+
   it('never throws out of resolveAndUpsert when the background refresh rejects', async () => {
     const fx = nextFixture();
-    webfingerSpy.mockResolvedValue(fx.actorUri);
+    webfingerSpy.mockResolvedValue({ actorUri: fx.actorUri, subjectAcct: fx.handle });
     actorSpy.mockRejectedValue(new Error('remote down'));
 
     const cached = cachedUser(fx, STALE_AGE_MS);
