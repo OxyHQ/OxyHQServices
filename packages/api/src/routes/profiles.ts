@@ -62,6 +62,7 @@ const MAX_USERNAME_LENGTH = 30;
 // shrink the page below the requested limit.
 const PUBLIC_FILTER_HEADROOM = 20;
 const FEDERATED_RECOMMENDATION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+const NON_EMPTY_STRING: Record<string, unknown> = { $type: 'string', $ne: '' };
 
 function federatedRecommendationEligibilityMatch(
   minResolvedAt: Date,
@@ -74,8 +75,8 @@ function federatedRecommendationEligibilityMatch(
       { [field('type')]: { $ne: 'federated' } },
       {
         [field('type')]: 'federated',
-        [field('federation.actorUri')]: { $type: 'string', $ne: '' },
-        [field('federation.domain')]: { $type: 'string', $ne: '' },
+        [field('federation.actorUri')]: NON_EMPTY_STRING,
+        [field('federation.domain')]: NON_EMPTY_STRING,
         [field('federation.lastResolvedAt')]: { $gte: minResolvedAt },
         [field('federation.unavailableAt')]: { $exists: false },
       },
@@ -109,17 +110,36 @@ function federatedRecommendationEligibilityMatch(
  */
 function profileQualityMatch(prefix = ''): Record<string, unknown> {
   const field = (name: string) => `${prefix}${name}`;
-  const nonEmptyString = { $type: 'string', $ne: '' };
 
   return {
-    [field('username')]: nonEmptyString,
+    [field('username')]: NON_EMPTY_STRING,
     $or: [
-      { [field('avatar')]: nonEmptyString },
-      { [field('name.first')]: nonEmptyString },
-      { [field('name.last')]: nonEmptyString },
-      { [field('bio')]: nonEmptyString },
-      { [field('description')]: nonEmptyString },
+      { [field('avatar')]: NON_EMPTY_STRING },
+      { [field('name.first')]: NON_EMPTY_STRING },
+      { [field('name.last')]: NON_EMPTY_STRING },
+      { [field('bio')]: NON_EMPTY_STRING },
+      { [field('description')]: NON_EMPTY_STRING },
       { [field('verified')]: true },
+    ],
+  };
+}
+
+/**
+ * Combined eligibility gate for the recommendation/discovery surface: a user
+ * must be a fresh, available federated actor (or non-federated) AND clear the
+ * minimum profile-quality bar. Both `federatedRecommendationEligibilityMatch`
+ * and `profileQualityMatch` contribute their own top-level `$or`, so they are
+ * combined under a single `$and` — spreading them into one object would
+ * silently drop the first `$or`.
+ *
+ * @param prefix path prefix for pipelines that nest the user under `user.`
+ *   (e.g. follower-ranked rows looked up from the Follow collection).
+ */
+function eligibleUserMatch(minResolvedAt: Date, prefix = ''): { $and: Record<string, unknown>[] } {
+  return {
+    $and: [
+      federatedRecommendationEligibilityMatch(minResolvedAt, prefix),
+      profileQualityMatch(prefix),
     ],
   };
 }
@@ -684,17 +704,9 @@ router.get(
     // excludeTypes (federated/agent/automated), keep federated actors fresh, and
     // require a minimum profile-quality bar so the discovery surface is never
     // padded with empty shell/QA accounts.
-    //
-    // Both `federatedRecommendationEligibilityMatch` and `profileQualityMatch`
-    // contribute their own top-level `$or`, so they are combined under a single
-    // `$and` — spreading them into one object would silently drop the first
-    // `$or`.
     const baseUserMatch: Record<string, unknown> = {
       'privacySettings.isPrivateAccount': { $ne: true },
-      $and: [
-        federatedRecommendationEligibilityMatch(minFederatedResolvedAt),
-        profileQualityMatch(),
-      ],
+      ...eligibleUserMatch(minFederatedResolvedAt),
     };
     if (excludeTypes.length > 0) {
       baseUserMatch.type = { $nin: excludeTypes };
@@ -728,12 +740,7 @@ router.get(
           $match: {
             'user.privacySettings.isPrivateAccount': { $ne: true },
             ...(excludeTypes.length > 0 ? { 'user.type': { $nin: excludeTypes } } : {}),
-            // Both helpers contribute a `$or`; combine under `$and` so neither
-            // is clobbered by object spread.
-            $and: [
-              federatedRecommendationEligibilityMatch(minFederatedResolvedAt, 'user.'),
-              profileQualityMatch('user.'),
-            ],
+            ...eligibleUserMatch(minFederatedResolvedAt, 'user.'),
           },
         },
         { $limit: parsedLimit },
@@ -824,12 +831,8 @@ router.get(
             'user.privacySettings.isPrivateAccount': { $ne: true },
             ...(excludeTypes.length > 0 ? { 'user.type': { $nin: excludeTypes } } : {}),
             // Hold every personalized recommendation to the same profile-quality
-            // bar as the random fill. Both helpers contribute a `$or`, so they
-            // are combined under `$and`.
-            $and: [
-              federatedRecommendationEligibilityMatch(minFederatedResolvedAt, 'user.'),
-              profileQualityMatch('user.'),
-            ],
+            // bar as the random fill.
+            ...eligibleUserMatch(minFederatedResolvedAt, 'user.'),
           },
         },
         ...followCountLookupStages,
