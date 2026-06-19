@@ -64,6 +64,8 @@ export type {
 export type {
     BulkFollowEntry,
     BulkFollowResult,
+    BulkUnfollowEntry,
+    BulkUnfollowResult,
 } from './mixins/OxyServices.user';
 export { OxyAppDataIdentifierError } from './mixins/OxyServices.appData';
 

@@ -416,6 +416,60 @@ router.post(
 );
 
 /**
+ * POST /users/unfollow/bulk
+ *
+ * Unfollow many users in a single request. Unfollow-only and idempotent — ids
+ * that are not currently followed are left untouched and reported as already in
+ * the desired (not-following) state. One bad/invalid id never fails the whole
+ * batch; every supplied id gets a per-target result.
+ *
+ * Registered BEFORE the `/:userId` param routes so Express never treats
+ * `unfollow` as a `:userId` value.
+ *
+ * @body {string[]} userIds - Target user ids to unfollow (max MAX_BULK_FOLLOW).
+ * @returns {object} `{ message, results, unfollowedCount }` where `results` is a
+ *   per-target list of `{ userId, success, wasFollowing }` and `unfollowedCount`
+ *   counts only follows that were actually removed.
+ */
+router.post(
+  '/unfollow/bulk',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const currentUserId = req.user?.id;
+
+    if (!currentUserId) {
+      throw new UnauthorizedError('Authentication required');
+    }
+
+    const { userIds } = req.body;
+
+    if (!Array.isArray(userIds)) {
+      throw new BadRequestError('userIds must be an array');
+    }
+    if (userIds.length === 0) {
+      throw new BadRequestError('userIds must not be empty');
+    }
+    if (userIds.length > MAX_BULK_FOLLOW) {
+      throw new BadRequestError(`Cannot unfollow more than ${MAX_BULK_FOLLOW} users at once`);
+    }
+
+    const result = await userService.bulkUnfollow(currentUserId, userIds);
+
+    logger.info('Users bulk unfollowed', {
+      currentUserId,
+      requested: userIds.length,
+      unfollowedCount: result.unfollowedCount,
+    });
+
+    sendSuccess(res, {
+      message: 'Bulk unfollow processed',
+      results: result.results,
+      unfollowedCount: result.unfollowedCount,
+    });
+  })
+);
+
+/**
  * GET /users/:userId
  *
  * Get user profile by ID

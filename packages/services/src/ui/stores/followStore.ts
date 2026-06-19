@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { OxyServices, BulkFollowResult } from '@oxyhq/core';
+import type { OxyServices, BulkFollowResult, BulkUnfollowResult } from '@oxyhq/core';
 
 interface FollowState {
   followingUsers: Record<string, boolean>;
@@ -18,6 +18,8 @@ interface FollowState {
   toggleFollowUser: (userId: string, oxyServices: OxyServices, isCurrentlyFollowing: boolean) => Promise<void>;
   // Bulk follow — follows MANY users in one network call; never unfollows.
   followManyUsers: (userIds: string[], oxyServices: OxyServices) => Promise<BulkFollowResult>;
+  // Bulk unfollow — unfollows MANY users in one network call; idempotent, never follows.
+  unfollowManyUsers: (userIds: string[], oxyServices: OxyServices) => Promise<BulkUnfollowResult>;
   // New methods for follower counts
   setFollowerCount: (userId: string, count: number) => void;
   setFollowingCount: (userId: string, count: number) => void;
@@ -150,6 +152,50 @@ export const useFollowStore = create<FollowState>((set: any, get: any) => ({
         for (const entry of result.results) {
           if (entry.success || entry.alreadyFollowing) {
             followingUsers[entry.userId] = true;
+            errors[entry.userId] = null;
+          } else {
+            errors[entry.userId] = 'Failed to update follow status';
+          }
+        }
+        return { followingUsers, loadingUsers, errors };
+      });
+      return result;
+    } catch (error: unknown) {
+      const message = (error instanceof Error ? error.message : null) || 'Failed to update follow status';
+      set((state: FollowState) => {
+        const loadingUsers = { ...state.loadingUsers };
+        const errors = { ...state.errors };
+        for (const uid of userIds) {
+          loadingUsers[uid] = false;
+          errors[uid] = message;
+        }
+        return { loadingUsers, errors };
+      });
+      throw error;
+    }
+  },
+  unfollowManyUsers: async (userIds: string[], oxyServices: OxyServices): Promise<BulkUnfollowResult> => {
+    set((state: FollowState) => {
+      const loadingUsers = { ...state.loadingUsers };
+      const errors = { ...state.errors };
+      for (const uid of userIds) {
+        loadingUsers[uid] = true;
+        errors[uid] = null;
+      }
+      return { loadingUsers, errors };
+    });
+    try {
+      const result = await oxyServices.unfollowUsers(userIds);
+      set((state: FollowState) => {
+        const followingUsers = { ...state.followingUsers };
+        const loadingUsers = { ...state.loadingUsers };
+        const errors = { ...state.errors };
+        for (const uid of userIds) {
+          loadingUsers[uid] = false;
+        }
+        for (const entry of result.results) {
+          if (entry.success) {
+            followingUsers[entry.userId] = false;
             errors[entry.userId] = null;
           } else {
             errors[entry.userId] = 'Failed to update follow status';

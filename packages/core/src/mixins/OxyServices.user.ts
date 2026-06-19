@@ -35,6 +35,24 @@ export interface BulkFollowResult {
   followedCount: number;
 }
 
+/** Per-user outcome returned by `POST /users/unfollow/bulk`. */
+export interface BulkUnfollowEntry {
+  /** The user ID that was processed. */
+  userId: string;
+  /** Whether the unfollow was applied (or already absent) without error. */
+  success: boolean;
+  /** Whether the caller was following this user before the request. */
+  wasFollowing: boolean;
+}
+
+/** Response shape of `POST /users/unfollow/bulk`. */
+export interface BulkUnfollowResult {
+  /** Per-user outcomes, in request order. */
+  results: BulkUnfollowEntry[];
+  /** Number of users newly unfollowed by this request. */
+  unfollowedCount: number;
+}
+
 export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) {
   return class extends Base {
     constructor(...args: any[]) {
@@ -412,11 +430,20 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
 
 
     /**
-     * Follow a user
+     * Follow a user.
+     *
+     * Invalidates the cached `GET /users/<id>/follow-status` response after
+     * the write. `getFollowStatus` caches for ~1 minute (identity-scoped);
+     * without busting that entry, a `FollowButton` that remounts within the
+     * TTL window re-reads the STALE pre-write status and reverts the optimistic
+     * UI (the "follow resets after navigating away and back" bug).
+     * `clearCacheEntry` deletes every identity-scoped variant of the key.
      */
     async followUser(userId: string): Promise<{ success: boolean; message: string }> {
       try {
-        return await this.makeRequest('POST', `/users/${userId}/follow`, undefined, { cache: false });
+        const result = await this.makeRequest<{ success: boolean; message: string }>('POST', `/users/${userId}/follow`, undefined, { cache: false });
+        this.clearCacheEntry(`GET:/users/${userId}/follow-status`);
+        return result;
       } catch (error) {
         throw this.handleError(error);
       }
@@ -435,7 +462,36 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
         return { results: [], followedCount: 0 };
       }
       try {
-        return await this.makeRequest<BulkFollowResult>('POST', '/users/follow/bulk', { userIds }, { cache: false });
+        const result = await this.makeRequest<BulkFollowResult>('POST', '/users/follow/bulk', { userIds }, { cache: false });
+        // Bust each affected user's cached follow-status (see `followUser`).
+        for (const id of userIds) {
+          this.clearCacheEntry(`GET:/users/${id}/follow-status`);
+        }
+        return result;
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
+    /**
+     * Unfollow multiple users in a single request.
+     *
+     * POSTs `/users/unfollow/bulk` with `{ userIds }` (server caps the batch at
+     * 200). Returns the per-user outcomes and the count of users newly
+     * unfollowed. An empty `userIds` array resolves immediately with an empty
+     * result and performs no network call.
+     */
+    async unfollowUsers(userIds: string[]): Promise<BulkUnfollowResult> {
+      if (userIds.length === 0) {
+        return { results: [], unfollowedCount: 0 };
+      }
+      try {
+        const result = await this.makeRequest<BulkUnfollowResult>('POST', '/users/unfollow/bulk', { userIds }, { cache: false });
+        // Bust each affected user's cached follow-status (see `followUser`).
+        for (const id of userIds) {
+          this.clearCacheEntry(`GET:/users/${id}/follow-status`);
+        }
+        return result;
       } catch (error) {
         throw this.handleError(error);
       }
@@ -446,7 +502,10 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
      */
     async unfollowUser(userId: string): Promise<{ success: boolean; message: string }> {
       try {
-        return await this.makeRequest('DELETE', `/users/${userId}/follow`, undefined, { cache: false });
+        const result = await this.makeRequest<{ success: boolean; message: string }>('DELETE', `/users/${userId}/follow`, undefined, { cache: false });
+        // Bust the cached follow-status so a remount reads fresh truth (see `followUser`).
+        this.clearCacheEntry(`GET:/users/${userId}/follow-status`);
+        return result;
       } catch (error) {
         throw this.handleError(error);
       }

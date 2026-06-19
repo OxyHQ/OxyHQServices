@@ -58,6 +58,29 @@ export interface BulkFollowResult {
 }
 
 /**
+ * Per-target outcome of a bulk unfollow operation.
+ * - `success: true, wasFollowing: true`   → was followed and has been removed
+ * - `success: true, wasFollowing: false`  → valid id that wasn't followed
+ *   (desired end state already holds — not following)
+ * - `success: false, wasFollowing: false` → invalid id (cannot assert end state)
+ */
+export interface BulkUnfollowEntry {
+  userId: string;
+  success: boolean;
+  wasFollowing: boolean;
+}
+
+/**
+ * Result contract for `bulkUnfollow`. `unfollowedCount` counts ONLY follows that
+ * were actually removed by this call (excludes ids that were not being
+ * followed and structurally-invalid ids).
+ */
+export interface BulkUnfollowResult {
+  results: BulkUnfollowEntry[];
+  unfollowedCount: number;
+}
+
+/**
  * Shape of a Mongoose bulk-write / insertMany error. `insertMany` with
  * `{ ordered: false }` surfaces per-document failures under `writeErrors`,
  * each carrying the failing document `index` and the underlying driver
@@ -669,6 +692,118 @@ export class UserService {
     return {
       results,
       followedCount: newlyFollowedIds.length,
+    };
+  }
+
+  /**
+   * Unfollow many users in a single batched operation.
+   *
+   * Unfollow-only and idempotent: ids that are not currently followed are left
+   * untouched and reported as already in the desired (not-following) state. One
+   * bad id never fails the whole batch — every deduped candidate (including
+   * structurally-invalid ids) gets an entry in the returned `results` array.
+   *
+   * Efficiency: at most one batched query for existing follows, one bulk delete,
+   * and two count-decrement updates — regardless of how many targets are
+   * supplied. Does NOT loop over `toggleFollow`.
+   *
+   * @param currentUserId The follower (authenticated user) id.
+   * @param targetUserIds Candidate user ids to unfollow (may contain duplicates,
+   *   the caller's own id, or invalid ids).
+   * @returns Per-target results and the count of follows actually removed.
+   */
+  async bulkUnfollow(
+    currentUserId: string,
+    targetUserIds: string[]
+  ): Promise<BulkUnfollowResult> {
+    // Dedupe while preserving first-seen order, and drop the caller's own id
+    // (cannot self-unfollow). The deduped list drives the results array.
+    const seen = new Set<string>();
+    const dedupedIds: string[] = [];
+    for (const rawId of targetUserIds) {
+      if (typeof rawId !== 'string') continue;
+      const id = rawId.trim();
+      if (!id || id === currentUserId || seen.has(id)) continue;
+      seen.add(id);
+      dedupedIds.push(id);
+    }
+
+    // Partition into structurally-valid candidates (safe to query) and invalid
+    // ids. Invalid ids must never enter the `$in` queries.
+    const candidateIds = dedupedIds.filter((id) => Types.ObjectId.isValid(id));
+
+    // No queryable candidates — return graceful failures for every deduped id.
+    if (candidateIds.length === 0) {
+      return {
+        results: dedupedIds.map((userId) => ({
+          userId,
+          success: false,
+          wasFollowing: false,
+        })),
+        unfollowedCount: 0,
+      };
+    }
+
+    // ONE batched query for follows that already exist.
+    const existingFollows = await Follow.find({
+      followerUserId: currentUserId,
+      followType: FollowType.USER,
+      followedId: { $in: candidateIds },
+    })
+      .select('followedId')
+      .lean();
+
+    const existingFollowedIds = new Set<string>(
+      existingFollows
+        .map((follow) => follow.followedId)
+        .filter((id): id is Types.ObjectId | string => id != null)
+        .map((id) => id.toString())
+    );
+
+    // Candidates that are currently followed are the removal set. Keep them
+    // ordered (filter candidateIds) so result ordering stays stable.
+    const toRemoveIds = candidateIds.filter((id) => existingFollowedIds.has(id));
+
+    if (toRemoveIds.length > 0) {
+      await Follow.deleteMany({
+        followerUserId: currentUserId,
+        followType: FollowType.USER,
+        followedId: { $in: toRemoveIds },
+      });
+
+      // Decrement counts based ONLY on follows actually removed — the exact
+      // symmetric inverse of bulkFollow's increment.
+      await Promise.all([
+        User.updateMany(
+          { _id: { $in: toRemoveIds } },
+          { $inc: { '_count.followers': -1 } }
+        ),
+        User.findByIdAndUpdate(currentUserId, {
+          $inc: { '_count.following': -toRemoveIds.length },
+        }),
+      ]);
+    }
+
+    const removedSet = new Set<string>(toRemoveIds);
+    const candidateSet = new Set<string>(candidateIds);
+
+    // Build a result entry for EVERY deduped candidate id (including invalid
+    // ones that never reached the queries).
+    const results: BulkUnfollowEntry[] = dedupedIds.map((userId) => {
+      if (removedSet.has(userId)) {
+        return { userId, success: true, wasFollowing: true };
+      }
+      if (candidateSet.has(userId)) {
+        // Valid id, wasn't followed — desired (not-following) state already holds.
+        return { userId, success: true, wasFollowing: false };
+      }
+      // Invalid id — cannot assert it is now not-followed.
+      return { userId, success: false, wasFollowing: false };
+    });
+
+    return {
+      results,
+      unfollowedCount: toRemoveIds.length,
     };
   }
 

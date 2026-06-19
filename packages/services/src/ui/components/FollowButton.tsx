@@ -12,7 +12,7 @@ import { useOxy } from '../context/OxyContext';
 import { toast } from '@oxyhq/bloom';
 import { useFollow, useFollowForButton } from '../hooks/useFollow';
 import { useTheme } from '@oxyhq/bloom/theme';
-import type { OxyServices, BulkFollowResult } from '@oxyhq/core';
+import type { OxyServices, BulkFollowResult, BulkUnfollowResult } from '@oxyhq/core';
 
 const DEFAULT_FOLLOW_ALL_LABEL = 'Follow all';
 const DEFAULT_FOLLOWED_ALL_LABEL = 'Following';
@@ -43,6 +43,7 @@ export interface MultiFollowButtonProps extends FollowButtonBaseProps {
   followAllLabel?: string;
   followedAllLabel?: string;
   onBulkFollow?: (result: BulkFollowResult) => void;
+  onBulkUnfollow?: (result: BulkUnfollowResult) => void;
   userId?: never;
 }
 
@@ -142,6 +143,7 @@ const FollowButtonMultiInner = memo(function FollowButtonMultiInner({
   followedAllLabel = DEFAULT_FOLLOWED_ALL_LABEL,
   onFollowChange,
   onBulkFollow,
+  onBulkUnfollow,
   style,
   textStyle,
   disabled = false,
@@ -151,6 +153,7 @@ const FollowButtonMultiInner = memo(function FollowButtonMultiInner({
   const { colors } = useTheme();
   const follow = useFollow(userIds);
   const followAllUsers = 'followAllUsers' in follow ? follow.followAllUsers : undefined;
+  const unfollowAllUsers = 'unfollowAllUsers' in follow ? follow.unfollowAllUsers : undefined;
   const isAnyLoading = 'isAnyLoading' in follow ? follow.isAnyLoading : false;
 
   // `allFollowing` is store-derived (LIVE aggregate of each target's follow
@@ -180,8 +183,27 @@ const FollowButtonMultiInner = memo(function FollowButtonMultiInner({
       event.preventDefault();
       event.stopPropagation?.();
     }
-    if (disabled || isLoading || allFollowing || !followAllUsers) return;
+    if (disabled || isLoading) return;
 
+    if (allFollowing) {
+      if (!unfollowAllUsers) return;
+      setIsSubmitting(true);
+      try {
+        const result = await unfollowAllUsers();
+        // `unfollowManyUsers` flips each user to not-following in the store, so
+        // `allFollowing` becomes false reactively — no local flag.
+        onFollowChange?.(false);
+        onBulkUnfollow?.(result);
+      } catch (err: unknown) {
+        const error = err instanceof Error ? err : new Error(String(err));
+        toast.error(error.message || 'Failed to update follow status');
+      } finally {
+        setIsSubmitting(false);
+      }
+      return;
+    }
+
+    if (!followAllUsers) return;
     setIsSubmitting(true);
     try {
       const result = await followAllUsers();
@@ -203,7 +225,7 @@ const FollowButtonMultiInner = memo(function FollowButtonMultiInner({
     } finally {
       setIsSubmitting(false);
     }
-  }, [disabled, isLoading, allFollowing, followAllUsers, onFollowChange, onBulkFollow, preventParentActions]);
+  }, [disabled, isLoading, allFollowing, followAllUsers, unfollowAllUsers, onFollowChange, onBulkFollow, onBulkUnfollow, preventParentActions]);
 
   const baseButtonStyle = getBaseButtonStyle(size, style);
   const baseTextStyle = getBaseTextStyle(size, textStyle);
@@ -216,7 +238,7 @@ const FollowButtonMultiInner = memo(function FollowButtonMultiInner({
       }
       style={baseButtonStyle}
       onPress={handlePress}
-      disabled={disabled || isLoading || allFollowing}
+      disabled={disabled || isLoading}
       activeOpacity={0.8}
     >
       {showLoadingState && isLoading ? (

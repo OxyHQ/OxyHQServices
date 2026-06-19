@@ -22,6 +22,10 @@ const oxyServicesStub = {
     followedCount: ids.length,
     results: ids.map((id) => ({ userId: id, success: true, alreadyFollowing: false })),
   })),
+  unfollowUsers: jest.fn(async (ids: string[]) => ({
+    unfollowedCount: ids.length,
+    results: ids.map((id) => ({ userId: id, success: true, wasFollowing: true })),
+  })),
   getCurrentUserId: jest.fn(() => 'me'),
 };
 
@@ -115,6 +119,41 @@ describe('useFollow multi-user mode — no infinite render loop', () => {
       useFollowStore.getState().setFollowingStatus('u1', false);
     });
     rerender({ ids: ['u1', 'u2'] });
+    expect('allFollowing' in result.current && result.current.allFollowing).toBe(false);
+  });
+
+  it('unfollowAllUsers unfollows every member in one call and flips allFollowing to false', async () => {
+    const { result, rerender } = renderHook(
+      ({ ids }: { ids: string[] }) => useFollow(ids),
+      { initialProps: { ids: ['u1', 'u2'] } },
+    );
+
+    // Authenticate so the bulk unfollow is permitted.
+    act(() => {
+      ctx = { ...ctx, canUsePrivateApi: true };
+    });
+    rerender({ ids: ['u1', 'u2'] });
+
+    // Seed both members as followed → aggregate is true.
+    act(() => {
+      useFollowStore.getState().setFollowingStatus('u1', true);
+      useFollowStore.getState().setFollowingStatus('u2', true);
+    });
+    rerender({ ids: ['u1', 'u2'] });
+    expect('allFollowing' in result.current && result.current.allFollowing).toBe(true);
+
+    // Multi mode exposes a callable unfollowAllUsers.
+    expect('unfollowAllUsers' in result.current).toBe(true);
+    expect(typeof (result.current as { unfollowAllUsers: unknown }).unfollowAllUsers).toBe('function');
+
+    await act(async () => {
+      if ('unfollowAllUsers' in result.current) {
+        await result.current.unfollowAllUsers();
+      }
+    });
+    rerender({ ids: ['u1', 'u2'] });
+
+    expect(oxyServicesStub.unfollowUsers).toHaveBeenCalledWith(['u1', 'u2']);
     expect('allFollowing' in result.current && result.current.allFollowing).toBe(false);
   });
 });

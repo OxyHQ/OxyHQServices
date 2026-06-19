@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useEffect } from 'react';
 import { useFollowStore } from '../stores/followStore';
 import { useOxy } from '../context/OxyContext';
-import { logger as loggerUtil, type OxyServices, type BulkFollowResult } from '@oxyhq/core';
+import { logger as loggerUtil, type OxyServices, type BulkFollowResult, type BulkUnfollowResult } from '@oxyhq/core';
 import { useShallow } from 'zustand/react/shallow';
 
 /**
@@ -167,6 +167,12 @@ export const useFollow = (userId?: string | string[]) => {
     return useFollowStore.getState().followManyUsers(userIds, oxyServices);
   }, [canUsePrivateApi, userIds, oxyServices]);
 
+  // Bulk unfollow — unfollows ALL users in ONE network call (idempotent; never follows).
+  const unfollowAllUsers = useCallback(async (): Promise<BulkUnfollowResult> => {
+    if (!canUsePrivateApi) throw new Error('Authentication is required to unfollow users');
+    return useFollowStore.getState().unfollowManyUsers(userIds, oxyServices);
+  }, [canUsePrivateApi, userIds, oxyServices]);
+
   const clearErrorForUser = useCallback((targetUserId: string) => {
     useFollowStore.getState().clearFollowError(targetUserId);
   }, []);
@@ -201,6 +207,7 @@ export const useFollow = (userId?: string | string[]) => {
     fetchStatusForUser,
     fetchAllStatuses,
     followAllUsers,
+    unfollowAllUsers,
     clearErrorForUser,
     isAnyLoading: multiUserLoadingState.isAnyLoading,
     hasAnyError: multiUserLoadingState.hasAnyError,
