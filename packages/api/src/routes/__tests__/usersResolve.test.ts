@@ -166,6 +166,10 @@ describe('PUT /users/resolve (C4)', () => {
   });
 
   it('rejects when actorUri hostname does not match the asserted domain', async () => {
+    const fetchSpy = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('{}', { status: 404 }),
+    );
+
     const res = await requestJson(server, 'PUT', '/users/resolve', {
       type: 'federated',
       username: 'mallory@mastodon.social',
@@ -176,7 +180,13 @@ describe('PUT /users/resolve (C4)', () => {
 
     expect(res.status).toBe(400);
     expect(res.body.message).toMatch(/actorUri hostname/i);
+    expect(fetchSpy).toHaveBeenCalledWith(
+      'https://mastodon.social/.well-known/webfinger?resource=acct%3Amallory%40mastodon.social',
+      expect.anything(),
+    );
     expect(mockUserFindOneAndUpdate).not.toHaveBeenCalled();
+
+    fetchSpy.mockRestore();
   });
 
   it('rejects agent username that collides with an existing local user', async () => {
@@ -235,6 +245,87 @@ describe('PUT /users/resolve (C4)', () => {
 
     expect(res.status).toBe(200);
     expect(mockUserFindOneAndUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it('allows actorUri on the www host while keeping the canonical federated username', async () => {
+    const leanResult = jest.fn().mockResolvedValue(null);
+    const selectResult = jest.fn().mockReturnValue({ lean: leanResult });
+    mockUserFindOne.mockReturnValueOnce({ select: selectResult });
+
+    const newUserDoc = { _id: 'threads-user', username: 'mosseri@threads.net', type: 'federated' };
+    const updateLean = jest.fn().mockResolvedValue(newUserDoc);
+    const updateSelect = jest.fn().mockReturnValue({ lean: updateLean });
+    mockUserFindOneAndUpdate.mockReturnValueOnce({ select: updateSelect });
+
+    const res = await requestJson(server, 'PUT', '/users/resolve', {
+      type: 'federated',
+      username: 'mosseri@threads.net',
+      actorUri: 'https://www.threads.net/ap/users/mosseri/',
+      domain: 'threads.net',
+    });
+
+    expect(res.status).toBe(200);
+    expect(mockUserFindOneAndUpdate).toHaveBeenCalledWith(
+      { 'federation.actorUri': 'https://www.threads.net/ap/users/mosseri/' },
+      expect.objectContaining({
+        $set: expect.objectContaining({
+          username: 'mosseri@threads.net',
+          'federation.actorUri': 'https://www.threads.net/ap/users/mosseri/',
+          'federation.domain': 'threads.net',
+        }),
+      }),
+      expect.anything(),
+    );
+  });
+
+  it('allows non-www actor hosts only when WebFinger loops back to the actor URI', async () => {
+    const actorUri = 'https://ap.example.com/users/alice';
+    const fetchSpy = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({
+        subject: 'acct:alice@example.com',
+        links: [
+          { rel: 'self', type: 'application/activity+json', href: actorUri },
+        ],
+      }), {
+        status: 200,
+        headers: { 'content-type': 'application/jrd+json' },
+      }),
+    );
+
+    const leanResult = jest.fn().mockResolvedValue(null);
+    const selectResult = jest.fn().mockReturnValue({ lean: leanResult });
+    mockUserFindOne.mockReturnValueOnce({ select: selectResult });
+
+    const newUserDoc = { _id: 'ap-user', username: 'alice@example.com', type: 'federated' };
+    const updateLean = jest.fn().mockResolvedValue(newUserDoc);
+    const updateSelect = jest.fn().mockReturnValue({ lean: updateLean });
+    mockUserFindOneAndUpdate.mockReturnValueOnce({ select: updateSelect });
+
+    const res = await requestJson(server, 'PUT', '/users/resolve', {
+      type: 'federated',
+      username: 'alice@example.com',
+      actorUri,
+      domain: 'example.com',
+    });
+
+    expect(res.status).toBe(200);
+    expect(fetchSpy).toHaveBeenCalledWith(
+      'https://example.com/.well-known/webfinger?resource=acct%3Aalice%40example.com',
+      expect.anything(),
+    );
+    expect(mockUserFindOneAndUpdate).toHaveBeenCalledWith(
+      { 'federation.actorUri': actorUri },
+      expect.objectContaining({
+        $set: expect.objectContaining({
+          username: 'alice@example.com',
+          'federation.actorUri': actorUri,
+          'federation.domain': 'example.com',
+        }),
+      }),
+      expect.anything(),
+    );
+
+    fetchSpy.mockRestore();
   });
 
   it('refresh: schedules an off-request-path avatar download with force=true and returns immediately', async () => {

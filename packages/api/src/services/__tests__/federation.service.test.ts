@@ -188,7 +188,7 @@ describe('FederationService.resolveAndUpsert (fast + eventually-fresh)', () => {
 
     await flushMicrotasks();
 
-    expect(actorSpy).toHaveBeenCalledWith(fx.actorUri);
+    expect(actorSpy).toHaveBeenCalledWith(fx.actorUri, fx.handle);
     expect(avatarSpy).toHaveBeenCalledWith(
       NEW_AVATAR_URL,
       'stored-file-id',
@@ -254,13 +254,57 @@ describe('FederationService.resolveAndUpsert (fast + eventually-fresh)', () => {
     const result = await federationService.resolveAndUpsert(fx.handle);
 
     expect(webfingerSpy).toHaveBeenCalledWith(fx.handle);
-    expect(actorSpy).toHaveBeenCalledWith(fx.actorUri);
+    expect(actorSpy).toHaveBeenCalledWith(fx.actorUri, fx.handle);
     expect(avatarSpy).toHaveBeenCalledWith(NEW_AVATAR_URL, undefined, undefined, fx.userId);
     expect(mockUserUpdateOne).toHaveBeenCalledWith(
       { _id: created._id },
       { $set: expect.objectContaining({ avatar: 'new-file-id' }) },
     );
     expect(mockCacheInvalidate).toHaveBeenCalledWith(fx.userId);
+    expect(result).toBe(created);
+  });
+
+  it('keeps the canonical WebFinger handle when the actor is served from www', async () => {
+    const handle = 'mosseri@threads.net';
+    const actorUri = 'https://www.threads.net/ap/users/mosseri/';
+    const userId = 'threads-user-1';
+
+    webfingerSpy.mockResolvedValue(actorUri);
+    actorSpy.mockResolvedValue({
+      actorUri,
+      domain: 'threads.net',
+      username: handle,
+      displayName: 'Adam Mosseri',
+      avatarUrl: undefined,
+      bio: 'Threads profile',
+    });
+
+    mockFindOneReturning(null);
+    const created = { _id: { toString: () => userId }, username: handle, type: 'federated' };
+    const select = jest.fn().mockResolvedValue(created);
+    mockUserFindOneAndUpdate.mockReturnValueOnce({ select });
+
+    const result = await federationService.resolveAndUpsert('@mosseri@threads.net');
+
+    expect(webfingerSpy).toHaveBeenCalledWith(handle);
+    expect(actorSpy).toHaveBeenCalledWith(actorUri, handle);
+    expect(mockUserFindOne).toHaveBeenCalledWith({
+      type: 'federated',
+      'federation.domain': 'threads.net',
+      username: handle,
+    });
+    expect(mockUserFindOneAndUpdate).toHaveBeenCalledWith(
+      { 'federation.actorUri': actorUri },
+      {
+        $set: expect.objectContaining({
+          type: 'federated',
+          username: handle,
+          'federation.actorUri': actorUri,
+          'federation.domain': 'threads.net',
+        }),
+      },
+      expect.anything(),
+    );
     expect(result).toBe(created);
   });
 

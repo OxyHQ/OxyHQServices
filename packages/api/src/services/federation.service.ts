@@ -67,6 +67,24 @@ const FEDIVERSE_HANDLE_REGEX = /^@?[\w.-]+@[\w.-]+\.\w+$/;
 // System user ID for federated avatar ownership
 const FEDERATION_SYSTEM_USER = '__federation__';
 
+function normalizeFediverseHandle(handle: string): string | null {
+  const cleaned = handle.trim().replace(/^acct:/i, '').replace(/^@/, '');
+  const atIndex = cleaned.indexOf('@');
+  if (atIndex <= 0 || atIndex === cleaned.length - 1) return null;
+
+  const localPart = cleaned.substring(0, atIndex).toLowerCase();
+  const domain = cleaned.substring(atIndex + 1).toLowerCase();
+  if (!localPart || !domain) return null;
+
+  return `${localPart}@${domain}`;
+}
+
+function domainFromHandle(handle: string): string | null {
+  const atIndex = handle.indexOf('@');
+  if (atIndex === -1 || atIndex === handle.length - 1) return null;
+  return handle.substring(atIndex + 1).toLowerCase();
+}
+
 /**
  * Actor URIs (or, when no actorUri is known yet, lowercased handles) currently
  * mid-refresh. Prevents two concurrent background refreshes of the same actor.
@@ -337,13 +355,12 @@ class FederationService {
    * @param acct - e.g. "alice@mastodon.social" or "@alice@mastodon.social"
    */
   async resolveWebFinger(acct: string): Promise<string | null> {
-    const cleaned = acct.replace(/^@/, '');
-    const atIndex = cleaned.indexOf('@');
-    if (atIndex === -1) return null;
+    const normalizedAcct = normalizeFediverseHandle(acct);
+    if (!normalizedAcct) return null;
 
-    const rawDomain = cleaned.substring(atIndex + 1);
-    const domain = rawDomain.replace(/^www\./i, '');
-    const normalizedAcct = `${cleaned.substring(0, atIndex)}@${domain}`;
+    const domain = domainFromHandle(normalizedAcct);
+    if (!domain) return null;
+
     const resource = `acct:${normalizedAcct}`;
     const url = `https://${domain}/.well-known/webfinger?resource=${encodeURIComponent(resource)}`;
 
@@ -372,7 +389,7 @@ class FederationService {
    * Fetch an ActivityPub actor by URI and extract user-profile fields.
    * Uses HTTP Signature for servers that enforce authorized fetch.
    */
-  async fetchActorProfile(actorUri: string): Promise<{
+  async fetchActorProfile(actorUri: string, acctHint?: string): Promise<{
     actorUri: string;
     domain: string;
     username: string;
@@ -387,9 +404,14 @@ class FederationService {
       const actor = (await res.json()) as Record<string, unknown>;
       if (!actor.id || !actor.inbox) return null;
 
-      const domain = new URL(actor.id as string).hostname;
+      const actorHost = new URL(actor.id as string).hostname.toLowerCase();
       const username = (actor.preferredUsername as string) || (actor.name as string) || 'unknown';
-      const acct = `${username}@${domain}`;
+      const actorWebfinger = typeof actor.webfinger === 'string'
+        ? normalizeFediverseHandle(actor.webfinger)
+        : null;
+      const hintedAcct = acctHint ? normalizeFediverseHandle(acctHint) : null;
+      const acct = hintedAcct || actorWebfinger || `${username.toLowerCase()}@${actorHost}`;
+      const domain = domainFromHandle(acct) || actorHost;
 
       return {
         actorUri: actor.id as string,
@@ -548,11 +570,11 @@ class FederationService {
    *    upsert as type=federated → return.
    */
   async resolveAndUpsert(handle: string): Promise<IUser | null> {
-    const cleaned = handle.replace(/^@/, '');
-    const atIndex = cleaned.indexOf('@');
-    if (atIndex === -1) return null;
+    const cleaned = normalizeFediverseHandle(handle);
+    if (!cleaned) return null;
 
-    const domain = cleaned.substring(atIndex + 1);
+    const domain = domainFromHandle(cleaned);
+    if (!domain) return null;
 
     // Check cache: existing federated user.
     // Fediverse usernames are case-insensitive; we store them lowercased.
@@ -585,12 +607,12 @@ class FederationService {
     const actorUri = await this.resolveWebFinger(cleaned);
     if (!actorUri) return null;
 
-    const profile = await this.fetchActorProfile(actorUri);
+    const profile = await this.fetchActorProfile(actorUri, cleaned);
     if (!profile) return null;
 
     const setFields: Record<string, unknown> = {
       type: 'federated',
-      username: profile.username.toLowerCase(),
+      username: profile.username,
       'name.first': profile.displayName,
       'federation.actorUri': profile.actorUri,
       'federation.domain': profile.domain,
@@ -834,7 +856,7 @@ class FederationService {
         return;
       }
 
-      const profile = await this.fetchActorProfile(actorUri);
+      const profile = await this.fetchActorProfile(actorUri, handle);
       if (!profile) {
         logger.warn(`Background refresh: actor profile fetch returned null for ${actorUri}`);
         return;

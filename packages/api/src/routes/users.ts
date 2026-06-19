@@ -948,6 +948,71 @@ interface ResolveUserBody {
   forceAvatarRefresh?: unknown;
 }
 
+function normalizeFederatedResolveDomain(domain: string): string {
+  return domain.trim().toLowerCase();
+}
+
+function normalizeFederatedResolveUsername(username: string): string | null {
+  const cleaned = username.trim().replace(/^acct:/i, '').replace(/^@/, '');
+  const atIndex = cleaned.indexOf('@');
+  if (atIndex <= 0 || atIndex === cleaned.length - 1) return null;
+
+  const localPart = cleaned.substring(0, atIndex).toLowerCase();
+  const domain = normalizeFederatedResolveDomain(cleaned.substring(atIndex + 1));
+  if (!localPart || !domain) return null;
+
+  return `${localPart}@${domain}`;
+}
+
+function actorHostnameMatchesFederatedDomain(actorHostname: string, domain: string): boolean {
+  const normalizedActorHostname = normalizeFederatedResolveDomain(actorHostname);
+  return normalizedActorHostname === domain || normalizedActorHostname === `www.${domain}`;
+}
+
+async function verifyFederatedWebFingerBinding(username: string, actorUri: string): Promise<boolean> {
+  const atIndex = username.indexOf('@');
+  if (atIndex === -1 || atIndex === username.length - 1) return false;
+
+  const domain = username.substring(atIndex + 1);
+  const resource = `acct:${username}`;
+  const url = `https://${domain}/.well-known/webfinger?resource=${encodeURIComponent(resource)}`;
+
+  try {
+    const response = await fetch(url, {
+      headers: { Accept: 'application/jrd+json, application/json' },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!response.ok) return false;
+
+    const data = await response.json() as {
+      subject?: unknown;
+      links?: Array<{ rel?: unknown; type?: unknown; href?: unknown }>;
+    };
+    const normalizedSubject = typeof data.subject === 'string'
+      ? normalizeFederatedResolveUsername(data.subject.replace(/^acct:/, ''))
+      : null;
+    if (normalizedSubject !== username) return false;
+
+    const selfLink = data.links?.find((link) => (
+      link.rel === 'self'
+      && typeof link.href === 'string'
+      && (
+        link.type === 'application/activity+json'
+        || link.type === 'application/ld+json; profile="https://www.w3.org/ns/activitystreams"'
+      )
+    ));
+
+    return selfLink?.href === actorUri;
+  } catch (error) {
+    logger.warn('Failed to verify federated WebFinger binding', {
+      username,
+      actorUri,
+      reason: error instanceof Error ? error.message : String(error),
+    });
+    return false;
+  }
+}
+
 router.put(
   '/resolve',
   serviceAuthMiddleware,
@@ -997,11 +1062,23 @@ router.put(
       } catch {
         throw new BadRequestError('actorUri must be a valid URL');
       }
-      const normalisedDomain = domain.toLowerCase();
-      if (actorHostname !== normalisedDomain) {
+      const normalisedDomain = normalizeFederatedResolveDomain(domain);
+      const normalisedUsername = normalizeFederatedResolveUsername(username);
+      if (!normalisedUsername) {
+        throw new BadRequestError('username must be a valid federated handle');
+      }
+      const usernameDomain = normalisedUsername.substring(normalisedUsername.indexOf('@') + 1);
+      if (usernameDomain !== normalisedDomain) {
+        throw new BadRequestError('username domain does not match domain');
+      }
+      if (
+        !actorHostnameMatchesFederatedDomain(actorHostname, normalisedDomain)
+        && !(await verifyFederatedWebFingerBinding(normalisedUsername, actorUri))
+      ) {
         throw new BadRequestError('actorUri hostname does not match domain');
       }
       filter = { 'federation.actorUri': actorUri };
+      setFields.username = normalisedUsername;
       setFields['federation.actorUri'] = actorUri;
       setFields['federation.domain'] = normalisedDomain;
     } else {
