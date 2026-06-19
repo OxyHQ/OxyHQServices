@@ -42,21 +42,38 @@ export const useFollow = (userId?: string | string[]) => {
     useCallback((s) => (isSingleUser && userId ? s.loadingCounts[userId] ?? false : false), [isSingleUser, userId])
   );
 
-  // For multi-user mode, use shallow comparison to avoid re-renders when unrelated users change
-  const followData = useFollowStore(
+  // For multi-user mode, subscribe to a FLAT snapshot of the per-user fields.
+  // `useShallow` only compares one level deep, so the selector must NOT return a
+  // nested object — a freshly allocated `{ isFollowing, isLoading, error }` per
+  // user would never shallow-compare equal, making `useSyncExternalStore`
+  // resubscribe every render and loop until React throws "Maximum update depth
+  // exceeded". Keeping the snapshot flat lets the shallow compare cache it; the
+  // nested `followData` shape is then assembled in a `useMemo` below.
+  const followFlat = useFollowStore(
     useShallow((s) => {
-      if (isSingleUser) return {};
-      const data: Record<string, { isFollowing: boolean; isLoading: boolean; error: string | null }> = {};
+      if (isSingleUser) return {} as Record<string, boolean | string | null>;
+      const flat: Record<string, boolean | string | null> = {};
       for (const uid of userIds) {
-        data[uid] = {
-          isFollowing: s.followingUsers[uid] ?? false,
-          isLoading: s.loadingUsers[uid] ?? false,
-          error: s.errors[uid] ?? null,
-        };
+        flat[`${uid}:isFollowing`] = s.followingUsers[uid] ?? false;
+        flat[`${uid}:isLoading`] = s.loadingUsers[uid] ?? false;
+        flat[`${uid}:error`] = s.errors[uid] ?? null;
       }
-      return data;
+      return flat;
     })
   );
+
+  const followData = useMemo(() => {
+    const data: Record<string, { isFollowing: boolean; isLoading: boolean; error: string | null }> = {};
+    if (isSingleUser) return data;
+    for (const uid of userIds) {
+      data[uid] = {
+        isFollowing: Boolean(followFlat[`${uid}:isFollowing`]),
+        isLoading: Boolean(followFlat[`${uid}:isLoading`]),
+        error: (followFlat[`${uid}:error`] as string | null) ?? null,
+      };
+    }
+    return data;
+  }, [isSingleUser, userIds, followFlat]);
 
   // Multi-user aggregate selectors
   const multiUserLoadingState = useFollowStore(
