@@ -128,14 +128,41 @@ function extractNinIds(pipeline: unknown): Types.ObjectId[] {
   return matchStage?.$match?._id?.$nin ?? [];
 }
 
+type OrClauses = Array<Record<string, unknown>>;
+type MatchStage = {
+  $match?: {
+    $or?: OrClauses;
+    $and?: Array<{ $or?: OrClauses }>;
+    [key: string]: unknown;
+  };
+};
+
+/**
+ * Collect every `$or` clause group reachable from a pipeline's `$match` stages,
+ * whether the `$or` sits at the top level of the match or nested inside an
+ * `$and` (the federated-eligibility and profile-quality helpers are combined
+ * under `$and`, so each contributes its own `$or`).
+ */
+function collectOrGroups(pipeline: unknown): OrClauses[] {
+  const stages = pipeline as MatchStage[];
+  const groups: OrClauses[] = [];
+  for (const stage of stages) {
+    const match = stage.$match;
+    if (!match) continue;
+    if (Array.isArray(match.$or)) groups.push(match.$or);
+    if (Array.isArray(match.$and)) {
+      for (const clause of match.$and) {
+        if (Array.isArray(clause.$or)) groups.push(clause.$or);
+      }
+    }
+  }
+  return groups;
+}
+
 function expectFederatedEligibilityMatch(pipeline: unknown, prefix = ''): void {
-  const stages = pipeline as Array<{ $match?: Record<string, unknown> }>;
-  const matchStage = stages.find((stage) => {
-    const clauses = stage.$match?.$or as Array<Record<string, unknown>> | undefined;
-    return clauses?.some((clause) => clause[`${prefix}type`] === 'federated');
-  });
-  const federatedClause = (matchStage?.$match?.$or as Array<Record<string, unknown>> | undefined)
-    ?.find((clause) => clause[`${prefix}type`] === 'federated');
+  const federatedClause = collectOrGroups(pipeline)
+    .flat()
+    .find((clause) => clause[`${prefix}type`] === 'federated');
 
   expect(federatedClause).toEqual(expect.objectContaining({
     [`${prefix}type`]: 'federated',
@@ -144,6 +171,48 @@ function expectFederatedEligibilityMatch(pipeline: unknown, prefix = ''): void {
     [`${prefix}federation.lastResolvedAt`]: { $gte: expect.any(Date) },
     [`${prefix}federation.unavailableAt`]: { $exists: false },
   }));
+}
+
+/**
+ * Assert the profile-quality bar is present in a recommendation pipeline: a
+ * required non-empty `username` plus an `$or` of at least one curated-profile
+ * signal (avatar / structured name / bio / description / verified).
+ */
+function expectProfileQualityMatch(pipeline: unknown, prefix = ''): void {
+  const stages = pipeline as MatchStage[];
+  const nonEmptyString = { $type: 'string', $ne: '' };
+
+  // The `username` gate lives inside the profile-quality clause, which is itself
+  // an `$and` member alongside the federated-eligibility clause. Find whichever
+  // object carries it, top-level or nested under `$and`.
+  const usernameValue = (() => {
+    for (const stage of stages) {
+      const match = stage.$match;
+      if (!match) continue;
+      if (match[`${prefix}username`] !== undefined) return match[`${prefix}username`];
+      if (Array.isArray(match.$and)) {
+        for (const clause of match.$and as Array<Record<string, unknown>>) {
+          if (clause[`${prefix}username`] !== undefined) return clause[`${prefix}username`];
+        }
+      }
+    }
+    return undefined;
+  })();
+  expect(usernameValue).toEqual(nonEmptyString);
+
+  const qualityOr = collectOrGroups(pipeline).find((group) =>
+    group.some((clause) => clause[`${prefix}avatar`] !== undefined)
+  );
+  expect(qualityOr).toEqual(
+    expect.arrayContaining([
+      { [`${prefix}avatar`]: nonEmptyString },
+      { [`${prefix}name.first`]: nonEmptyString },
+      { [`${prefix}name.last`]: nonEmptyString },
+      { [`${prefix}bio`]: nonEmptyString },
+      { [`${prefix}description`]: nonEmptyString },
+      { [`${prefix}verified`]: true },
+    ])
+  );
 }
 
 const userA = new Types.ObjectId(); // the caller (self)
@@ -250,5 +319,39 @@ describe('GET /profiles/recommendations exclusion set', () => {
     expect(res.status).toBe(200);
     expectFederatedEligibilityMatch(mockFollowAggregate.mock.calls[0][0], 'user.');
     expectFederatedEligibilityMatch(mockUserAggregate.mock.calls[0][0]);
+  });
+
+  it('enforces the minimum profile-quality bar on the public and random-fill pipelines', async () => {
+    currentUserId = undefined;
+    // Empty follower-ranked window so the route also issues the random-fill
+    // User.aggregate, letting us assert the quality bar on both pipelines.
+    mockFollowAggregate.mockResolvedValue([]);
+    mockUserAggregate.mockResolvedValue([]);
+
+    const res = await requestJson(server, '/profiles/recommendations?limit=10');
+
+    expect(res.status).toBe(200);
+    // Follower-ranked public pipeline (user under `user.`).
+    expectProfileQualityMatch(mockFollowAggregate.mock.calls[0][0], 'user.');
+    // Random-fill pipeline scanning the users collection directly.
+    expectProfileQualityMatch(mockUserAggregate.mock.calls[0][0]);
+  });
+
+  it('applies the profile-quality bar to the personalized fill for an authenticated caller', async () => {
+    currentUserId = userA.toHexString();
+
+    const lean = jest.fn().mockResolvedValue([{ followedId: userB }]);
+    const select = jest.fn().mockReturnValue({ lean });
+    mockFollowFind.mockReturnValue({ select });
+
+    // No mutual-overlap results → forces the random User.aggregate fill, which
+    // must carry the quality bar.
+    mockFollowAggregate.mockResolvedValue([]);
+    mockUserAggregate.mockResolvedValue([]);
+
+    const res = await requestJson(server, '/profiles/recommendations?limit=10');
+
+    expect(res.status).toBe(200);
+    expectProfileQualityMatch(mockUserAggregate.mock.calls[0][0]);
   });
 });

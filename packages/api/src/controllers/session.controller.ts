@@ -235,11 +235,20 @@ export class SessionController {
         }
       }
 
-      // Create new user (identity is the publicKey)
+      // Create new user (identity is the publicKey). Record the origin auth
+      // method so the account's provenance is captured consistently with the
+      // social-auth path, instead of leaving `authMethods` empty.
       const user = new User({
         publicKey,
         email: normalizedEmail,
         username: normalizedUsername,
+        authMethods: [
+          {
+            type: 'identity',
+            linkedAt: new Date(),
+            metadata: { publicKey },
+          },
+        ],
       });
 
       await user.save();
@@ -353,6 +362,15 @@ export class SessionController {
         email: normalizedEmail,
         username: normalizedUsername,
         password: passwordHash,
+        // Record the origin auth method so password accounts carry the same
+        // provenance metadata as identity/social accounts.
+        authMethods: [
+          {
+            type: 'password',
+            linkedAt: new Date(),
+            metadata: { email: normalizedEmail },
+          },
+        ],
       });
 
       if (name && typeof name === 'object') {
