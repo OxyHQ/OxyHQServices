@@ -81,7 +81,7 @@
     "mailparser": "^3.9.3",
     "mongoose": "^8.10.0",
     "multer": "^2.0.0",
-    "nodemailer": "^8.0.11",
+    "nodemailer": "^9.0.1",
     "otplib": "^12.0.1",
     "pino": "^10.3.1",
     "rate-limit-redis": "^4.3.1",

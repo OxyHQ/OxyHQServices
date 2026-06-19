@@ -37,6 +37,10 @@ interface QueuedMessage extends OutboundMessage {
 
 const REDIS_QUEUE_KEY = 'smtp:retry:queue';
 const REDIS_SCHEDULE_KEY = 'smtp:retry:schedule';
+const SECURE_MAIL_CONTENT_OPTIONS = {
+  disableFileAccess: true,
+  disableUrlAccess: true,
+} satisfies Pick<SMTPTransport.Options, 'disableFileAccess' | 'disableUrlAccess'>;
 
 class SmtpOutboundService {
   private _transporter: Transporter | null = null;
@@ -53,7 +57,7 @@ class SmtpOutboundService {
   private createTransporter(): Transporter {
     if (!SMTP_OUTBOUND_CONFIG.relayHost) {
       throw new Error(
-        'SMTP_RELAY_HOST is required for outbound email. nodemailer v8 removed the legacy ' +
+        'SMTP_RELAY_HOST is required for outbound email. Nodemailer removed the legacy ' +
           '`{ direct: true }` MX-resolution path; configure a relay (e.g. AWS SES, SMTP server) ' +
           'via SMTP_RELAY_HOST/SMTP_RELAY_PORT/SMTP_RELAY_USER/SMTP_RELAY_PASS.'
       );
@@ -70,6 +74,7 @@ class SmtpOutboundService {
               pass: SMTP_OUTBOUND_CONFIG.relayPass,
             }
           : undefined,
+      ...SECURE_MAIL_CONTENT_OPTIONS,
     };
 
     if (DKIM_CONFIG.privateKey) {
@@ -102,6 +107,7 @@ class SmtpOutboundService {
       headers: message.requestReadReceipt
         ? { 'Disposition-Notification-To': `${message.from.name || ''} <${message.from.address}>`.trim() }
         : undefined,
+      ...SECURE_MAIL_CONTENT_OPTIONS,
     };
 
     try {
@@ -156,6 +162,7 @@ class SmtpOutboundService {
       inReplyTo: message.inReplyTo,
       references: message.references?.join(' '),
       attachments: nmAttachments,
+      ...SECURE_MAIL_CONTENT_OPTIONS,
     };
 
     await this.transporter.sendMail(mailOptions);
@@ -237,6 +244,7 @@ class SmtpOutboundService {
         to: params.to,
       },
       raw: rawMessage,
+      ...SECURE_MAIL_CONTENT_OPTIONS,
     });
 
     logger.info('MDN sent', {
@@ -363,6 +371,7 @@ class SmtpOutboundService {
         inReplyTo: msg.inReplyTo,
         references: msg.references?.join(' '),
         attachments: nmAttachments,
+        ...SECURE_MAIL_CONTENT_OPTIONS,
       });
 
       const size = Buffer.byteLength((msg.text || '') + (msg.html || ''), 'utf8');
