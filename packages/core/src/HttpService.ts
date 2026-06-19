@@ -869,7 +869,10 @@ export class HttpService {
       if (decoded.exp && decoded.exp - currentTime < 60) {
         const refreshed = await this.refreshAccessToken('preflight');
         if (refreshed) return `Bearer ${refreshed}`;
-        // Refresh failed — don't use the expired token (would cause 401 loop)
+        if (decoded.exp > currentTime) {
+          return `Bearer ${accessToken}`;
+        }
+        // Refresh failed — don't use an expired token (would cause 401 loop)
         return null;
       }
 

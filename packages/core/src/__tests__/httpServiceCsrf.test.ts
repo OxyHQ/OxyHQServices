@@ -63,6 +63,74 @@ describe('HttpService CSRF behavior', () => {
     expect(headers['X-CSRF-Token']).toBeUndefined();
   });
 
+  it('keeps a valid near-expiry bearer token when preflight refresh cannot refresh', async () => {
+    const calls: FetchCall[] = [];
+    globalThis.fetch = async (input, init) => {
+      const url = String(input);
+      calls.push({ url, init });
+      return jsonResponse({ ok: true });
+    };
+
+    const http = new HttpService({ baseURL: 'https://api.mention.earth', enableRetry: false });
+    const accessToken = createJwt({
+      userId: 'user_1',
+      exp: Math.floor(Date.now() / 1000) + 30,
+    });
+    let refreshAttempts = 0;
+    http.setTokens(accessToken);
+    http.setAuthRefreshHandler(async () => {
+      refreshAttempts += 1;
+      return null;
+    });
+
+    await http.post('/posts', { text: 'hello' });
+
+    expect(refreshAttempts).toBe(1);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].url).toBe('https://api.mention.earth/posts');
+    const headers = readHeaders(calls[0].init);
+    expect(headers.Authorization).toBe(`Bearer ${accessToken}`);
+    expect(headers['X-CSRF-Token']).toBeUndefined();
+  });
+
+  it('does not use an expired bearer token when preflight refresh cannot refresh', async () => {
+    const calls: FetchCall[] = [];
+    globalThis.fetch = async (input, init) => {
+      const url = String(input);
+      calls.push({ url, init });
+      if (url.endsWith('/csrf-token')) {
+        return new Response(JSON.stringify({ csrfToken: 'csrf_1' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      return jsonResponse({ ok: true });
+    };
+
+    const http = new HttpService({ baseURL: 'https://api.mention.earth', enableRetry: false });
+    const accessToken = createJwt({
+      userId: 'user_1',
+      exp: Math.floor(Date.now() / 1000) - 10,
+    });
+    let refreshAttempts = 0;
+    http.setTokens(accessToken);
+    http.setAuthRefreshHandler(async () => {
+      refreshAttempts += 1;
+      return null;
+    });
+
+    await http.post('/posts', { text: 'hello' });
+
+    expect(refreshAttempts).toBe(1);
+    expect(calls.map((call) => call.url)).toEqual([
+      'https://api.mention.earth/csrf-token',
+      'https://api.mention.earth/posts',
+    ]);
+    const headers = readHeaders(calls[1].init);
+    expect(headers.Authorization).toBeUndefined();
+    expect(headers['X-CSRF-Token']).toBe('csrf_1');
+  });
+
   it('still fetches csrf-token for cookie-authenticated writes without bearer', async () => {
     const calls: FetchCall[] = [];
     globalThis.fetch = async (input, init) => {
