@@ -1,4 +1,4 @@
-# CLAUDE.md
+# AGENTS.md
 
 ## AWS Deployment
 
@@ -136,7 +136,7 @@ packages/
 @oxyhq/core           dep: @oxyhq/contracts
 @oxyhq/auth           peer: @oxyhq/core, react; dep: @oxyhq/contracts
 @oxyhq/services       dep: @oxyhq/core
-@oxyhq/api            dep: @oxyhq/contracts (NOT @oxyhq/core — dropped that dep)
+@oxyhq/api            dep: @oxyhq/contracts + @oxyhq/core/server for auth middleware
 accounts              dep: @oxyhq/core + @oxyhq/services
 test-app              dep: @oxyhq/services
 test-app-vite         dep: @oxyhq/core + @oxyhq/auth
@@ -148,7 +148,7 @@ test-app-vite         dep: @oxyhq/core + @oxyhq/auth
 - **@oxyhq/core** must never import `react`, `react-native`, or `expo-*`. Dynamic imports (`await import(...)`) for optional RN modules are allowed.
 - **@oxyhq/auth** must never import `react-native` or `expo-*`. Dynamic import of `@react-native-async-storage/async-storage` is the only exception.
 - **@oxyhq/services** does NOT re-export from `@oxyhq/core`. Consumers import core types directly from `@oxyhq/core`.
-- **@oxyhq/api** must NOT depend on `@oxyhq/core` for schemas — import contract schemas directly from `@oxyhq/contracts`. Do NOT route contracts through `@oxyhq/core` re-exports.
+- **@oxyhq/api** imports schemas directly from `@oxyhq/contracts`. Server auth helpers come from `@oxyhq/core/server` only; do NOT route contracts through `@oxyhq/core` re-exports.
 
 ## ESM/CJS Compatibility (critical)
 
@@ -175,6 +175,26 @@ import { KeyManager } from '@oxyhq/core';
 ```
 
 When splitting imports: use `import type` for type-only imports, regular `import` for values.
+
+## Auth / Session Contract
+
+Frontend RP apps use the SDK as the only session authority:
+- Web uses `WebOxyProvider` from `@oxyhq/auth` with a registered `clientId`.
+- Expo/RN uses `OxyProvider` from `@oxyhq/services` with a registered `clientId`.
+- SDK cold boot owns callback consumption, FedCM/silent restore, stored-session restore, and SSO bounce. Apps do not implement local session restore.
+- No per-app `/__oxy/sso-callback` routes. Apps that serve root HTML inject `getSsoCallbackBootstrapScript()` from `@oxyhq/core`; the provider consumes the result.
+- No copied SSO helpers in consumers. `consumeSsoReturn`, `buildSsoBounceUrl`, `isCentralIdPOrigin`, `guardActive`, callback bootstrap keys, and SSO storage keys live once in `@oxyhq/core`.
+- Private app calls wait for SDK readiness: `useAuth().canUsePrivateApi` / `useAuth().isPrivateApiPending` or equivalent `useOxy()` state.
+- App backend clients use `oxyServices.createLinkedClient({ baseURL })`. Do not add app-local token providers, Axios/fetch auth interceptors, manual `Authorization` header plumbing, refresh-cookie retries, or local invalidation.
+
+Backend APIs use `@oxyhq/core/server` for request identity:
+- Mount `createOxyRateLimit(oxy)` near the top of the Express app when Oxy-aware rate limiting is needed.
+- Use `createOptionalOxyAuth(oxy)` for optional identity, `createOxyAuthMiddleware(oxy)` / `requireOxyAuth` for private routes, and `getRequiredOxyUserId(req)` for required user identity.
+- Use `authSocket` for Socket.IO/WebSocket auth.
+- Do not define local `AuthRequest`, `requireAuth`, `getUserId`, `getAuthenticatedUserId`, bearer parsers, or token-decoding auth middleware in apps. Missing shared behavior belongs in `@oxyhq/core/server`.
+- Bearer-authenticated writes do not fetch app-local CSRF tokens. CSRF remains for ambient cookie credentials and cookie-only writes.
+
+`packages/auth` / `auth.oxy.so` is the IdP exception: it must not use `WebOxyProvider` or RP cold boot. It uses `useDeviceAccounts()` plus `POST api.oxy.so/auth/refresh-all` with `credentials: include`.
 
 ## Coding Standards
 
@@ -218,6 +238,9 @@ Build-vs-source distinction: production/Docker consumes the built `dist/` (the D
 - `packages/core/src/mixins/OxyServices.contacts.ts` — `contacts.discoverContacts(hashedEmails, hashedPhones)` privacy-first contact discovery
 - `packages/core/src/mixins/OxyServices.workspaces.ts` — `workspaces` mixin (CRUD + members + transfer); `Workspace`/`WorkspaceMember` types
 - `packages/core/src/mixins/OxyServices.applications.ts` — `getApplications(workspaceId?)` + `getPublicApplication(clientId)`; `PublicApplication` type
+- `packages/core/src/server/index.ts` — public `@oxyhq/core/server` exports
+- `packages/core/src/server/auth.ts` — `createOptionalOxyAuth`, `createOxyAuthMiddleware`, `requireOxyAuth`, `getRequiredOxyUserId`
+- `packages/core/src/server/rateLimit.ts` — `createOxyRateLimit`
 - `packages/core/src/mixins/OxyServices.reputation.ts` — `reputation` mixin (14 methods, fully typed); 20 exported types (see "Oxy Trust" section)
 - `packages/auth-sdk/src/index.ts` — all public auth exports
 - `packages/auth-sdk/src/WebOxyProvider.tsx` — web auth context provider
@@ -524,7 +547,7 @@ Activated inside `FileManagementScreen` when `isImageOnlyPicker` is true. Apple 
 - **Multi-domain FAPI + cross-domain SSO — durable "Option A" architecture (2026-06-13)**: any RP CNAMEs `auth.<rp-domain>` → `oxy-auth.pages.dev`; the IdP responds with an issuer matching the RP's apex — `fedcm_session` cookie is first-party in Safari/Firefox. `resolveConfig()` in `packages/auth/server/index.ts:110` derives `fedcmIssuer` from `c.req.url` per-request; `/fedcm.json` is a dynamic handler (NOT a static asset). Live on `auth.oxy.so`, `auth.mention.earth`, `auth.alia.onl`, `auth.homiio.com`. Cold-boot restore order on web (services 8.4.x): 1. redirect-callback → 2. FedCM silent (Chrome) → 3. first-party `/auth/silent` iframe at `auth.<rp-apex>` (Safari/Firefox) → 4. cookie restore → 5. stored-session bearer → 6. `/sso` top-level bounce (terminal fallback). Step 3 runs BEFORE step 6 so reloads never flash. Native: step 5 only. Primitive: `runColdBoot` in `packages/core/src/utils/coldBoot.ts` (pure ordered short-circuit, no module-level state). `autoDetectAuthWebUrl` in `packages/core/src/utils/fapiAutoDetect.ts` (MOVED from auth-sdk) — bails on localhost/IP/IPv6/single-label/multi-part-TLD. SSO bounce logic (`consumeSsoReturn`, `buildSsoBounceUrl`, etc.) centralised in `@oxyhq/core` 2.3.0 — both `WebOxyProvider` (`@oxyhq/auth`) and `OxyContext` (`@oxyhq/services`) deleted their local `ssoBounce.ts` and import from core.
 - **`/sso` flow (cross-apex):** `auth.oxy.so GET /sso?prompt=none&client_id=<rp-origin>&return_to=<rp>/__oxy/sso-callback&state=<s>` reads the central `fedcm_session` cookie → for a cross-apex RP does a SECOND top-level hop to `auth.<rp-apex>/sso/establish?et=<signed-establish-token>` (HS256, FEDCM_TOKEN_SECRET, short TTL, bound to purpose+host+aud). `/sso/establish` is first-party to the RP apex: verifies et → re-validates session + approved client → PLANTS host-only `fedcm_session` cookie on `auth.<rp-apex>` (survives Safari ITP / Firefox TCP) → mints opaque single-use code → bounces to `<rp>/__oxy/sso-callback#oxy_sso=ok&code=<code>&state=<s>`. RP redeems at `api.oxy.so POST /sso/exchange` (CORS, origin-bound, atomic GETDEL burn in Valkey). Subsequent reloads use the `/auth/silent` iframe at `auth.<rp-apex>` — no bounce.
 - **New API SSO endpoints (oxy-api):** `POST /sso/code` (X-Oxy-Internal gated; 404 if `SSO_INTERNAL_SECRET` unset); `POST /sso/exchange` (CORS, origin-bound, atomic GETDEL). `oxy-api` ECS task-def MUST inject `SSO_INTERNAL_SECRET`, `DEVICE_ID_SALT`, and `REDIS_URL` (from `/oxy/_shared/REDIS_URL`) — all three required or SSO fails closed / crash-loop.
-- **CRITICAL FIX — assertion issuer must always be central (commits 41a8feba + db91b6dd, 2026-06-13):** `mintSessionForClient` in `packages/auth/server/index.ts` MUST always build the ID-token assertion with `iss = https://auth.oxy.so`, regardless of which `auth.<apex>` served the request. Background: `resolveConfig()` sets `fedcmIssuer` per-request from `c.req.url`; on `auth.mention.earth` this becomes `https://auth.mention.earth`. The API's `POST /fedcm/exchange` validates issuer against the CENTRAL issuer only → rejected with `FedCM: Invalid issuer expected "https://auth.oxy.so" got "https://auth.mention.earth"` → `mintSessionForClient` returned null → `/sso/establish` returned `#oxy_sso=error` AND `/auth/silent` posted a null session → cross-domain sessions never survived a reload even though the cookie was correctly planted. Fix: `const CENTRAL_FEDCM_ISSUER = \`https://auth.${CENTRAL_IDP_APEX}\`` used unconditionally in `mintSessionForClient`; the per-apex issuer is STILL correct in `/.well-known/web-identity` and `/fedcm.json` (those drive the browser-native FedCM UI). NEVER re-introduce a per-apex issuer for any API-bound assertion mint. New IdP endpoints live on all 4 auth hosts. No `api.<apex>` cookie bridge — cross-domain restore comes from `auth.<apex>` only. All consumers (Mention, Homiio, Alia) are on `@oxyhq/services ^8.4.0` + `@oxyhq/core ^2.3.0` as of 2026-06-14.
+- **CRITICAL FIX — assertion issuer must always be central (commits 41a8feba + db91b6dd, 2026-06-13):** `mintSessionForClient` in `packages/auth/server/index.ts` MUST always build the ID-token assertion with `iss = https://auth.oxy.so`, regardless of which `auth.<apex>` served the request. Background: `resolveConfig()` sets `fedcmIssuer` per-request from `c.req.url`; on `auth.mention.earth` this becomes `https://auth.mention.earth`. The API's `POST /fedcm/exchange` validates issuer against the CENTRAL issuer only → rejected with `FedCM: Invalid issuer expected "https://auth.oxy.so" got "https://auth.mention.earth"` → `mintSessionForClient` returned null → `/sso/establish` returned `#oxy_sso=error` AND `/auth/silent` posted a null session → cross-domain sessions never survived a reload even though the cookie was correctly planted. Fix: `const CENTRAL_FEDCM_ISSUER = \`https://auth.${CENTRAL_IDP_APEX}\`` used unconditionally in `mintSessionForClient`; the per-apex issuer is STILL correct in `/.well-known/web-identity` and `/fedcm.json` (those drive the browser-native FedCM UI). NEVER re-introduce a per-apex issuer for any API-bound assertion mint. New IdP endpoints live on all 4 auth hosts. No `api.<apex>` cookie bridge — cross-domain restore comes from `auth.<apex>` only. Current consumer package targets are listed in Published Package Versions below.
 - **FEDCM_ISSUER env var override gotcha (CRITICAL)**: `resolveConfig()` accepts `FEDCM_ISSUER` as an explicit override (for local dev and tests where `c.req.url` is `http://localhost:<port>`). If this env var is set in **Cloudflare Pages production** for `oxy-auth`, it pins every host to the same issuer and breaks multi-domain FAPI silently — the well-known and fedcm.json will return the pinned hostname regardless of which `auth.<rp>` the browser hit. **Rule**: NEVER set `FEDCM_ISSUER` on the `oxy-auth` Pages project. If you see all custom-domain hosts reporting the same `provider_urls`, check the Pages prod env vars first.
 - **Silent SSO run-once guard — LIVES IN CONSUMERS, NOT core**: A module-level `silentSignInWithFedCM()` singleton in `@oxyhq/core` was tried and reverted — it re-evaluates in the Metro web bundle (same hazard the accounts `metro.config.js` `resolveRequest` block mitigates), so the guard did not hold across page navigations. The guard now lives in each consumer:
   - `useWebSSO` in **both** `@oxyhq/services` and `@oxyhq/auth` owns a module-level `silentSSOAttempted` Set + `ssoSignature(origin|baseURL)` key for cross-mount deduplication, plus a per-instance `hasCheckedRef` fast-path to skip redundant renders within the same mount.
@@ -553,14 +576,14 @@ Activated inside `FileManagementScreen` when `isImageOnlyPicker` is true. Apple 
 
 | Package | Version | Notes |
 |---------|---------|-------|
-| `@oxyhq/core` | **3.4.7** | 3.4.7: `OxyServices.createLinkedClient({ baseURL })` for app backend clients that share the session owner's token/refresh/invalidation path without app-local auth code. 3.4.5: published `getSsoCallbackBootstrapScript()` + `ssoCallbackBootstrapKey()` for Expo/static web apps; pre-hydration `/__oxy/sso-callback` moves to `/` while preserving `#oxy_sso=...` so providers can consume the SSO result after hydration. 3.4.1: identity-scoped HttpService GET response cache. 3.3.0: `reputation` mixin; karma mixin/types removed. 3.2.0: `clientId`, workspaces, application scoping. **GOTCHA: 3.3.0 and 3.4.0 are broken for external consumers** (`workspace:*` dep on unpublished contracts). Pin to ≥3.4.7 for current apps. |
+| `@oxyhq/core` | **3.4.13** | Current target. Includes `@oxyhq/core/server` (`createOxyAuthMiddleware`, `createOptionalOxyAuth`, `createOxyRateLimit`, `requireOxyAuth`, `getRequiredOxyUserId`) plus linked backend clients. 3.4.7: `OxyServices.createLinkedClient({ baseURL })`. 3.4.5: `getSsoCallbackBootstrapScript()` + `ssoCallbackBootstrapKey()`. 3.4.1: identity-scoped HttpService GET response cache. 3.3.0: `reputation` mixin; karma mixin/types removed. 3.2.0: `clientId`, workspaces, application scoping. **GOTCHA: 3.3.0 and 3.4.0 are broken for external consumers** (`workspace:*` dep on unpublished contracts). Pin to ≥3.4.13 for current apps. |
 | `@oxyhq/auth` | **4.1.1** | 4.1.1: `WebOxyProvider` intercepts `/__oxy/sso-callback` before child apps render and peers on `@oxyhq/core ^3.4.5`. 4.1.0: optional `clientId` prop. 4.0.0: major bump (peer `^3.0.0`). 3.4.0: consumes core SSO helpers; deleted local `ssoBounce.ts`. 3.3.0: `/sso/establish` + per-apex cookie; central issuer fix. 3.2.0: consumes `runColdBoot` + `autoDetect`. |
-| `@oxyhq/services` | **10.2.5** | 10.2.5 current consumer target; `useAuth()` / `useOxy()` expose `hasAccessToken`, `canUsePrivateApi`, and `isPrivateApiPending`, and SDK follow-status/actions use the same guard. 10.2.3: `OxyProvider` clears local auth state when the provider token is invalidated or managed-accounts returns 401, preventing repeated private-request 401 cascades. 10.2.2: `OxyProvider` intercepts `/__oxy/sso-callback`, `useAuth().isLoading` stays true until auth is resolved. 10.2.x includes Trust screen names (`TrustCenter|TrustLeaderboard|TrustRewards|TrustRules|AboutTrust|TrustFAQ`); consumers must not call removed `Karma*` routes. 10.1.0: native device-flow sign-in fix. 10.0.0 BREAKING: `appName` prop removed; cross-app device sign-in requires `clientId`; peer `@oxyhq/core ^3.4.7`. 8.5.0: `isAuthResolved`. 8.0.0: `@tanstack/*` peerDeps; `ManageAccount` route. |
+| `@oxyhq/services` | **10.2.10** | Current target. `OxyProvider` owns RP cold boot, `clientId`, callback interception, private API readiness, and invalidated-token sign-out. `useAuth()` / `useOxy()` expose `hasAccessToken`, `canUsePrivateApi`, and `isPrivateApiPending`; SDK follow-status/actions use the same guard. 10.2.x includes Trust screen names (`TrustCenter|TrustLeaderboard|TrustRewards|TrustRules|AboutTrust|TrustFAQ`); consumers must not call removed `Karma*` routes. 10.1.0: native device-flow sign-in fix. 10.0.0 BREAKING: `appName` prop removed; cross-app device sign-in requires `clientId`; peer `@oxyhq/core ^3.4.13`. 8.5.0: `isAuthResolved`. 8.0.0: `@tanstack/*` peerDeps; `ManageAccount` route. |
 | `@oxyhq/bloom` | **0.8.5** | Current consumer target. Retains 0.7.x web CSS-var fix (`toWebColorValue()`) and NW5 platform split; web consumers use `var(--x)`, not `hsl(var(--x))`, for Bloom base tokens. |
 
-**CRITICAL — SSO helpers live ONLY in `@oxyhq/core` (2026-06-18):** `consumeSsoReturn`, `buildSsoBounceUrl`, `isCentralIdPOrigin`, `guardActive`, `ssoNavigate`, `ssoStateKey`/`ssoGuardKey`/`ssoDestKey`/`ssoNoSessionKey`, `ssoCallbackBootstrapKey`, `getSsoCallbackBootstrapScript`, `SSO_CALLBACK_PATH`, `SSO_GUARD_TTL_MS`, `registrableApex`, `MULTIPART_TLDS`, `CENTRAL_IDP_APEX` — all defined once in `@oxyhq/core`, imported by auth-sdk, services, Expo root HTML, and the CF Worker. Do NOT add local copies in any consumer.
+**CRITICAL — SSO helpers live ONLY in `@oxyhq/core` (2026-06-19):** `consumeSsoReturn`, `buildSsoBounceUrl`, `isCentralIdPOrigin`, `guardActive`, `ssoNavigate`, `ssoStateKey`/`ssoGuardKey`/`ssoDestKey`/`ssoNoSessionKey`, `ssoCallbackBootstrapKey`, `getSsoCallbackBootstrapScript`, `SSO_CALLBACK_PATH`, `SSO_GUARD_TTL_MS`, `registrableApex`, `MULTIPART_TLDS`, `CENTRAL_IDP_APEX` — all defined once in `@oxyhq/core`, imported by auth-sdk, services, Expo root HTML, and the CF Worker. Do NOT add local copies in any consumer.
 
-**Consumer apps on latest (2026-06-18):** Mention and Syra consume `@oxyhq/core 3.4.7` + `@oxyhq/services 10.2.5` for linked backend clients and SDK-owned private API gating. All active RP apps should target `@oxyhq/core >=3.4.7`, `@oxyhq/auth 4.1.1` where used, `@oxyhq/services >=10.2.5` where used, and `@oxyhq/bloom 0.8.5` where used. Expo web apps that can receive `/__oxy/sso-callback` inject `getSsoCallbackBootstrapScript()` in `app/+html.tsx`.
+**Consumer apps on latest (2026-06-19):** All active RP apps should target `@oxyhq/core >=3.4.13`, `@oxyhq/auth 4.1.1` where used, `@oxyhq/services >=10.2.10` where used, and `@oxyhq/bloom 0.8.5` where used. Expo web apps that can receive `/__oxy/sso-callback` inject `getSsoCallbackBootstrapScript()` in `app/+html.tsx`; app backend clients use `oxyServices.createLinkedClient({ baseURL })`.
 
 ### Breaking changes in `@oxyhq/services` 8.x
 

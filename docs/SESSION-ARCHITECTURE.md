@@ -1,213 +1,115 @@
 # Oxy Session Architecture (2026)
 
-Single source of truth for how every Oxy app keeps a user signed in.
-Researched against how Google (FedCM, mandatory for GIS since Aug 2025) and
-Meta ("Meta Account", Apr 2026) actually work in 2026.
+Single source of truth for how Oxy apps sign in, restore sessions, call app
+backends, and resolve user identity.
 
 ## Principle
 
-> **Central IdP for SIGN-IN. Each app keeps its OWN first-party session on its OWN domain.**
+The central IdP is `auth.oxy.so`. Relying-party apps consume it through the Oxy
+SDK. Apps do not implement their own SSO callback routes, local session
+restore, token plumbing, or auth middleware copies.
 
-## Current SDK Contract
+## Current Package Contract
 
-The production path is centralized in the SDK:
+Current package targets:
 
-- `@oxyhq/core` owns the shared SSO helpers, including callback bootstrap,
-  bounce URLs, callback consumption, and guard keys.
-- `@oxyhq/auth` (`WebOxyProvider`) and `@oxyhq/services` (`OxyProvider`) consume
-  those helpers directly. Apps do not create per-app `/__oxy/sso-callback`
-  routes or local helper copies.
-- Expo web apps that provide root HTML should inject
-  `getSsoCallbackBootstrapScript()` in `<head>` so `/__oxy/sso-callback`
-  preserves the SSO hash before React or Expo Router can rewrite the URL.
-- Private API calls must wait until auth cold boot is resolved and an access
-  token is available. Use `isAuthResolved` plus token readiness for user-private
-  endpoints; do not issue `/managed-accounts`, privacy, follow-status, library,
-  or profile-settings requests while the SDK is still restoring the session.
-- App APIs must use SDK-owned linked clients, not per-app auth helpers. Create
-  them from the active `OxyServices` instance with the app backend `baseURL`; the
-  linked client attaches the current Oxy bearer token and follows the same
-  token-invalidation rules as the root client. Apps must not copy auth headers,
-  user payloads, CSRF fetchers, or session middleware into local API wrappers.
-- Bearer-authenticated state-changing requests do not fetch app-local CSRF
-  tokens. CSRF protection is for ambient cookie credentials; SDK bearer requests
-  are explicit authorization and must not depend on duplicated `/csrf-token`
-  endpoints in every app backend. Cookie-only writes still fetch and send CSRF.
-- Backend APIs must use `@oxyhq/core/server` for request identity. Mount
-  `createOxyRateLimit(oxy)` once near the top of the Express app to resolve the
-  optional session and rate-limit by the real user. Private routers should use
-  `requireOxyAuth`; standalone routers can use `createOxyAuthMiddleware(oxy)`
-  to resolve and require auth in one step. Apps must not keep local
-  `AuthRequest`, `requireAuth`, `getAuthenticatedUserId`, or token-decoding
-  copies.
-- SDK user objects expose a stable `id` even when the API payload contains only
-  Mongo-style `_id`. Ownership checks, profile comparisons, live-room controls,
-  and account switching must compare the normalized SDK `user.id` instead of
-  reading backend-specific identifier fields directly.
-- Token invalidation is a session event. If `HttpService` clears the access
-  token after a 401, `@oxyhq/services` must clear local auth state and managed
-  accounts before any more private queries run. Consumers must not keep fetching
-  private app APIs while `oxyServices.getAccessToken()` is null, even if stale UI
-  state still has a user object from the previous render.
+| Package | Version | Contract |
+|---------|---------|----------|
+| `@oxyhq/core` | `3.4.13` | Platform-agnostic client, SSO helpers, linked clients, and server auth middleware. |
+| `@oxyhq/auth` | `4.1.1` | Web `WebOxyProvider` for RP apps; uses core cold boot and callback handling. |
+| `@oxyhq/services` | `10.2.10` | Expo/RN `OxyProvider`, `useAuth()` / `useOxy()`, private API readiness, native session handling. |
+| `@oxyhq/bloom` | `0.8.5` | Current UI package target for Oxy consumers. |
 
-FedCM / passkeys = how you authenticate ONCE. Persistence (staying signed in
-across reloads) = each app's own first-party session. This is what Google and
-Meta do, and it is confirmed by the FedCM spec: after FedCM returns an identity
-token, "the RP validates it and starts its own session"; on later visits the RP
-checks ITS OWN session, not FedCM. Safari does not implement FedCM, so FedCM can
-never be the persistence mechanism — the app's own session is the universal base.
+## Frontend RP Contract
 
-Consequences:
-- No cross-domain cookies. No third-party cookies. No proxy-as-a-hack. No
-  per-app subdomain hacks.
-- The cross-domain problem disappears because no app depends on another
-  domain's cookie.
+Relying-party frontends use the SDK only:
 
-## Credential storage (NON-NEGOTIABLE, security)
+- Web apps use `WebOxyProvider` from `@oxyhq/auth` with a registered `clientId`.
+- Expo/RN apps use `OxyProvider` from `@oxyhq/services` with a registered
+  `clientId`.
+- SDK cold boot owns session restore. On web it runs the ordered restore chain
+  around callback consumption, FedCM/silent auth, cookie restore, stored bearer,
+  and terminal SSO bounce. Native uses the native-safe stored session path.
+- Apps must not add app-local `/__oxy/sso-callback` routes. The SDK intercepts
+  the path and consumes the SSO result universally.
+- Apps that serve root HTML and can receive `/__oxy/sso-callback` should inject
+  `getSsoCallbackBootstrapScript()` from `@oxyhq/core` before React or Expo
+  Router can rewrite the URL.
+- Apps must not copy SSO helpers such as `consumeSsoReturn`,
+  `buildSsoBounceUrl`, `isCentralIdPOrigin`, `guardActive`, SSO storage keys, or
+  callback bootstrap logic. These live once in `@oxyhq/core`.
+- Private frontend work must be gated by SDK state. Use
+  `useAuth().canUsePrivateApi` / `useAuth().isPrivateApiPending` or the
+  equivalent `useOxy()` state before calling private app APIs such as managed
+  accounts, privacy, follow status, library, preferences, or profile settings.
+- Apps must not keep fetching private APIs after the SDK access token is null,
+  even if stale UI state still has a user object.
 
-| Token | Web | Native (Expo/RN) |
-|-------|-----|------------------|
-| Refresh / session (long-lived) | **httpOnly first-party cookie** | **SecureStore** (Keychain/Keystore) |
-| Access token (~15 min) | **memory only** (JS variable) | memory |
+## Linked App Backend Clients
 
-- NEVER store any token in `localStorage` / `sessionStorage` (XSS-readable).
-- Cookie flags: `HttpOnly; Secure; SameSite=Lax; Path=/auth; Max-Age=2592000`,
-  `Domain` = the APP's own registrable domain (`oxy.so`, `mention.earth`,
-  `homiio.com`, `alia.onl`...). Single-use, rotated on every refresh, with
-  reuse-detection that revokes the whole token family + session.
+RP apps that call their own backend must use SDK-linked clients:
 
-## Components
+- Create app backend clients with `oxyServices.createLinkedClient({ baseURL })`
+  from the active `OxyServices` instance.
+- The linked client attaches the current Oxy bearer token, follows the owner
+  client's refresh path, and invalidates the owner session when a linked 401
+  cannot recover.
+- Do not add Axios/fetch auth interceptors, app-local token providers, manual
+  `Authorization` header plumbing, refresh-cookie retries, or local
+  `clearTokens()` invalidators in consumer apps.
+- Do not copy user payloads or auth state into local API wrappers. Ownership
+  and profile comparisons use the SDK-normalized `user.id`.
 
-1. **Central session store** — `api.oxy.so`. Owns the `RefreshToken` model +
-   rotation + reuse-detection (already built). The ONE source of truth for
-   refresh-token validity. No per-app token stores.
-2. **Session bridge** — a thin, standard, same-site middleware each non-`oxy.so`
-   app backend mounts (`api.mention.earth`, `api.homiio.com`, `api.alia.onl`).
-   It sets/reads the first-party cookie on the app's own domain and FORWARDS the
-   user's own refresh credential to `api.oxy.so` to rotate. It does NOT mint
-   service tokens and holds no secret of its own — it just moves the user's own
-   credential between the app domain and the central store.
-3. **SDK** — `@oxyhq/core` + `@oxyhq/services` + `@oxyhq/auth`. A uniform session
-   layer with a configurable `sessionBaseUrl` per app. Refresh goes to the app's
-   OWN backend; access token kept in memory; native uses SecureStore.
+## Backend Auth Contract
 
-## Scaling to many apps — the professional model is OIDC (not a shared worker)
+Backend APIs use `@oxyhq/core/server` for Oxy identity:
 
-> An earlier draft proposed a shared Cloudflare Worker forwarding ONE central cookie
-> to every vanity domain. **That is SUPERSEDED — it's a clever shortcut, not how the
-> pros do it.** The professional, standard, Google/Meta/Auth0/Okta-grade model is
-> **OIDC**: the central IdP (`auth.oxy.so`) + each app as a Relying Party (RP). Oxy
-> already has the OAuth/OIDC bones (`/authorize`, `/fedcm`, `oauthCode.service.ts`,
-> the `DeveloperApp` client registry, the account chooser) — LEAN INTO THEM.
+- Mount `createOxyRateLimit(oxy)` once near the top of the Express app when the
+  API needs Oxy-aware rate limiting. It resolves the optional session and
+  rate-limits by the real user when present.
+- Use `createOptionalOxyAuth(oxy)` where a route can behave differently for
+  anonymous and signed-in callers.
+- Use `createOxyAuthMiddleware(oxy)` or `requireOxyAuth` for private routes.
+- Use `getRequiredOxyUserId(req)` for required user identity instead of reading
+  backend-specific fields directly.
+- Use `authSocket` for Socket.IO/WebSocket authentication.
+- Do not define local `AuthRequest`, `requireAuth`, `getUserId`,
+  `getAuthenticatedUserId`, token-decoding, or bearer parsing helpers in apps.
+  If a helper is missing, add it to `@oxyhq/core/server` and consume it from
+  there.
 
-**Sign-in (uniform, every app):** the app sends the user to `auth.oxy.so/authorize`
-(OIDC authorization code + PKCE). Because that's a TOP-LEVEL navigation to the IdP, the
-IdP's session cookie is FIRST-PARTY there → the **account chooser shows the user's
-active sessions** (Google-style — built into the flow, every app gets it for free). The
-IdP returns a code; the app exchanges it for tokens. FedCM (Chrome) gives the same
-"pick an existing account" UX with no redirect.
+## CSRF Contract
 
-**Persistence — each app keeps its OWN first-party session, tiered by what it has:**
-- **Tier 1 — `*.oxy.so` apps** (accounts, inbox, console, allo…): same-site with
-  `api.oxy.so` → use its first-party cookie directly (the Phase-1 foundation, already
-  built). No redirect on reload.
-- **Tier 2 — vanity-domain apps WITH a backend** (mention.earth, homiio.com,
-  alia.onl): **BFF (Backend-For-Frontend) — the professional standard, what every
-  Google property does.** The app's OWN backend is the OIDC confidential client: it
-  does the code+PKCE exchange, holds the refresh token SERVER-SIDE, and sets a
-  first-party httpOnly session cookie on the app's OWN domain. Tokens are scoped to
-  that app's `client_id` (per-app isolation — compromising one app can't touch
-  others). No redirect on reload. These apps ALREADY have backends.
-- **Tier 3 — frontend-only vanity apps**: OIDC public client + **FedCM** (Chrome:
-  silent renewal, no redirect, no third-party cookie) with an authorization-code
-  redirect for browsers without FedCM. Access token in MEMORY (never localStorage). Per-app =
-  a `client_id` + the SDK; ZERO per-app infra. Standard SPA model (Auth0/Firebase/
-  Clerk) and exactly what Google does for frontend RPs post-3p-cookie.
+Bearer-authenticated writes do not fetch or depend on app-local CSRF tokens.
 
-**Why OIDC beats the shared-worker idea:** it's the industry standard (auditable,
-library-supported, what Google/Meta/Okta use); gives PER-APP token scoping (better
-isolation than passing one central cookie around); builds the account chooser into the
-flow uniformly; and avoids the shared-`oxy.so`-cookie CSRF surface (MED-1, §4) by giving
-each app its own cookie on its own domain. Scale = register a `client_id` + use the
-SDK; the IdP is the ONE shared piece (already exists). No per-app worker, no per-app
-bridge code.
+- SDK bearer requests are explicit authorization and should not call duplicated
+  `/csrf-token` endpoints in every app backend.
+- CSRF remains relevant for ambient cookie credentials and cookie-only writes.
+  Those flows must continue to fetch and send CSRF according to the owning
+  backend's cookie contract.
 
-**The SDK hides all tiers** behind one API (`useOxy()` / `restoreSession()`): same-site
-cookie (tier 1), BFF cookie (tier 2), or FedCM/silent-renewal (tier 3) — chosen
-automatically. App devs never hand-roll auth.
+## IdP Exception
 
-> NOTE: the Phase-1 `*.oxy.so` foundation (the three `/auth/*` endpoints + single
-> `oxy_rt` cookie) stays as tier 1. Tiers 2–3 are the NEXT design work and should reuse
-> Oxy's existing OAuth/OIDC + FedCM rather than the deprecated worker idea.
+`packages/auth` / `auth.oxy.so` is the IdP, not an RP:
 
-### Session bridge — forwarding contract (Phase 1 reference)
+- Do not wrap the auth app in `WebOxyProvider`.
+- Do not run RP cold boot or the RP SSO bounce chain inside the auth app.
+- The auth app uses its first-party IdP session path:
+  `useDeviceAccounts()` reads shared refresh cookies through
+  `POST api.oxy.so/auth/refresh-all` with `credentials: include`.
+- This exception applies only to the IdP. Mention, Allo, Homiio, Alia, TNP,
+  Syra, accounts, console, inbox, and other RP apps follow the SDK RP contract.
 
-The central session store on `api.oxy.so` exposes exactly three endpoints. A
-same-site session bridge (or, for `*.oxy.so`, the app directly) talks to these:
+## Development Contract
 
-| Endpoint | Credential / auth | Behaviour |
-|----------|-------------------|-----------|
-| `POST /auth/session` | **REQUIRES** the user's bearer access token (`Authorization: Bearer <jwt>`) | Mints/sets `oxy_rt` for THAT token's session and returns `{ accessToken, expiresAt }`. The bound sessionId is derived **only** from the bearer token — it NEVER accepts a sessionId param/body/query (that was a reverted HIGH vuln). Called right after FedCM/login to establish the first-party cookie. |
-| `POST /auth/refresh` | The httpOnly `oxy_rt` cookie ONLY (no bearer) | Rotates the token (single-use) and reuse-detects (replay revokes the whole family + deactivates the session). Returns `{ accessToken, expiresAt }`. |
-| `POST /auth/logout` | The httpOnly `oxy_rt` cookie (no bearer required) | Revokes the refresh family server-side + clears the cookie. Idempotent and best-effort: a missing/garbage cookie still returns `200 { success: true }`. |
+During local cross-package work, consumers should use linked SDK clients and the
+current published package targets above. If a bug is in a shared package, fix and
+build the source package first, then update/verify the consumer. Do not patch the
+consumer with local auth/session workarounds.
 
-**`oxy_rt` cookie attributes:** `HttpOnly; Secure; SameSite=Lax; Path=/auth;
-Max-Age=2592000` (30 days), `Domain` = the app's own registrable domain
-(`oxy.so`, `mention.earth`, `homiio.com`, `alia.onl`, …). Single-use, rotated on
-every `/auth/refresh`, with reuse-detection that revokes the whole token family +
-session. Scoped to `/auth` so the browser sends it to all three routes above.
+## Obsolete Text
 
-**The bridge rule:** the bridge forwards the user's OWN credential — it mints no
-service token and stores no secret of its own. On the app domain the bridge holds
-the first-party cookie; to rotate it forwards to `api.oxy.so`'s `/auth/refresh`
-(or establishes the cookie via `/auth/session` using the user's bearer right after
-sign-in). It only moves the user's own credential between the app domain and the
-central store.
-
-> External-app bridges are NOT wired yet. Phase 1 is `*.oxy.so` only (the cookie
-> is already first-party there). Do not touch mention/homiio/alia until the
-> foundation is verified on `*.oxy.so`.
-
-## Uniform endpoint contract (`{sessionBase}` = the app's own backend)
-
-- `POST {sessionBase}/auth/session` — establish after sign-in. Input: a
-  validated Oxy session reference (sessionId / FedCM assertion). Sets the
-  httpOnly cookie on the app's domain. Returns `{ accessToken, expiresAt }`.
-- `POST {sessionBase}/auth/refresh` — reads the cookie, rotates it (reuse-
-  detection revokes the family on replay), returns `{ accessToken, expiresAt }`.
-- `POST {sessionBase}/auth/logout` — revoke server-side + clear the cookie.
-
-For `*.oxy.so` apps, `sessionBase = https://api.oxy.so` (direct — the cookie is
-already first-party). For other apps, `sessionBase` = the app's own API, whose
-bridge forwards to `api.oxy.so`.
-
-## Sign-in
-
-- Chrome: FedCM via the `auth.oxy.so` IdP + the Google-style account chooser
-  (already built).
-- Safari / Firefox: top-level authorization-code redirect to `auth.oxy.so`.
-- Passkeys (WebAuthn) as the auth factor — future, optional, like Meta Account.
-
-## Rollout (incremental, each step security-reviewed)
-
-1. **Foundation** — central endpoints (`/auth/session`, `/auth/refresh`,
-   `/auth/logout`) on `api.oxy.so`; SDK `sessionBaseUrl` config + memory access
-   token. Additive, reversible.
-2. **Verify** on accounts / inbox / allo (`*.oxy.so`, already same-site).
-3. **mention** — mount the bridge on `api.mention.earth`; point the SDK at it.
-4. **homiio**, **alia** — same.
-5. **Cleanup & hardening** (runs LAST, AFTER the new flow is verified end-to-end)
-   — remove every dead or duplicated auth+session path the new architecture
-   supersedes. Production-grade, clean, well-structured.
-   **Verify-then-remove**: grep all consumers + `test-build` gate before deleting
-   anything — never a blind delete that could log users out. Known targets:
-   - localStorage/sessionStorage token writes: `core/AuthManager.ts` default
-     `LocalStorageAdapter`; `core/mixins/OxyServices.redirect.ts` `storeTokens()`
-     / `restoreSession()`.
-   - Any auth entry point with no live consumer after the OIDC/FedCM flow is
-     verified end-to-end.
-   - Duplicated session/refresh logic across core/services/auth; stale FedCM
-     scaffolding; the earlier `/simplify` quality items.
-
-Do NOT touch mention/homiio/alia until the foundation is verified on `*.oxy.so`.
-Phase 5 runs LAST so we never ship clean-but-broken auth.
+Older notes that said to leave Mention, Homiio, or Alia untouched until a
+`*.oxy.so` foundation was verified are obsolete. The current contract applies to
+all active RP apps. Work should still be sequenced safely: fix shared SDK/server
+helpers upstream, then verify downstream consumers.
