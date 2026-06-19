@@ -1,7 +1,17 @@
 import { OxyServices } from '../OxyServices';
 
+interface FetchCall {
+  url: string;
+  init: RequestInit | undefined;
+}
+
 function createServices(): OxyServices {
   return new OxyServices({ baseURL: 'https://api.oxy.so' });
+}
+
+function createJwt(payload: Record<string, unknown>): string {
+  const encode = (value: unknown): string => Buffer.from(JSON.stringify(value)).toString('base64url');
+  return `${encode({ alg: 'HS256', typ: 'JWT' })}.${encode(payload)}.signature`;
 }
 
 function jsonResponse(data: unknown): Response {
@@ -11,7 +21,28 @@ function jsonResponse(data: unknown): Response {
   });
 }
 
+function readHeaders(init: RequestInit | undefined): Record<string, string> {
+  const headers = init?.headers;
+  if (!headers) {
+    return {};
+  }
+  if (headers instanceof Headers) {
+    return Object.fromEntries(headers.entries());
+  }
+  if (Array.isArray(headers)) {
+    return Object.fromEntries(headers);
+  }
+  return headers as Record<string, string>;
+}
+
 describe('OxyServices.createLinkedClient', () => {
+  const originalFetch = globalThis.fetch;
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    jest.restoreAllMocks();
+  });
+
   it('mirrors token changes from the session owner', () => {
     const oxy = createServices();
     const linked = oxy.createLinkedClient({ baseURL: 'https://api.syra.fm' });
@@ -56,7 +87,7 @@ describe('OxyServices.createLinkedClient', () => {
     linked.dispose();
   });
 
-  it('clears the session owner when a linked response 401 cannot refresh', async () => {
+  it('keeps the session owner intact when a linked response 401 cannot refresh', async () => {
     const oxy = createServices();
     oxy.setTokens('stale_access');
     const linked = oxy.createLinkedClient({ baseURL: 'https://api.syra.fm' });
@@ -64,8 +95,72 @@ describe('OxyServices.createLinkedClient', () => {
     const refreshed = await linked.client.refreshAccessToken('response-401');
 
     expect(refreshed).toBeNull();
-    expect(oxy.getAccessToken()).toBeNull();
+    expect(oxy.getAccessToken()).toBe('stale_access');
+    expect(linked.client.getAccessToken()).toBe('stale_access');
+
+    linked.dispose();
+  });
+
+  it('resynchronizes from the session owner after a linked app 401 clears the local token', async () => {
+    const calls: FetchCall[] = [];
+    let queueWriteAttempts = 0;
+    globalThis.fetch = async (input, init) => {
+      const url = String(input);
+      calls.push({ url, init });
+
+      if (url.endsWith('/csrf-token')) {
+        return new Response(JSON.stringify({ csrfToken: 'csrf_1' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+
+      if (url.endsWith('/api/queue/current')) {
+        queueWriteAttempts += 1;
+        if (queueWriteAttempts === 1) {
+          return new Response(JSON.stringify({ error: 'MISSING_TOKEN' }), {
+            status: 401,
+            statusText: 'Unauthorized',
+            headers: { 'content-type': 'application/json' },
+          });
+        }
+      }
+
+      return jsonResponse({ ok: true });
+    };
+
+    const oxy = createServices();
+    const accessToken = createJwt({
+      userId: 'user_1',
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    });
+    oxy.setTokens(accessToken);
+    oxy.getClient().setAuthRefreshHandler(async () => null);
+    const linked = oxy.createLinkedClient({ baseURL: 'https://api.syra.fm' });
+
+    await expect(linked.client.put('/api/queue/current', { trackId: 'track_1' }, { retry: false })).rejects.toMatchObject({
+      message: 'MISSING_TOKEN',
+      status: 401,
+    });
+
+    expect(oxy.getAccessToken()).toBe(accessToken);
     expect(linked.client.getAccessToken()).toBeNull();
+
+    await linked.client.put('/api/queue/current', { trackId: 'track_2' });
+
+    expect(calls.map((call) => call.url)).toEqual([
+      'https://api.syra.fm/api/queue/current',
+      'https://api.syra.fm/api/queue/current',
+    ]);
+    expect(linked.client.getAccessToken()).toBe(accessToken);
+
+    const firstHeaders = readHeaders(calls[0]?.init);
+    expect(firstHeaders.Authorization).toBe(`Bearer ${accessToken}`);
+    expect(firstHeaders['X-CSRF-Token']).toBeUndefined();
+
+    const secondHeaders = readHeaders(calls[1]?.init);
+    expect(secondHeaders.Authorization).toBe(`Bearer ${accessToken}`);
+    expect(secondHeaders['X-CSRF-Token']).toBeUndefined();
 
     linked.dispose();
   });
@@ -98,22 +193,17 @@ describe('OxyServices.createLinkedClient', () => {
   });
 
   it('joins linked base URLs with relative paths that omit the leading slash', async () => {
-    const originalFetch = globalThis.fetch;
     const fetchMock = jest.fn(async () => jsonResponse({ ok: true }));
     globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
 
-    try {
-      const oxy = createServices();
-      const linked = oxy.createLinkedClient({ baseURL: 'https://api.mention.earth' });
+    const oxy = createServices();
+    const linked = oxy.createLinkedClient({ baseURL: 'https://api.mention.earth' });
 
-      await linked.client.get('profile/settings/me');
+    await linked.client.get('profile/settings/me');
 
-      expect(fetchMock).toHaveBeenCalledTimes(1);
-      expect(String(fetchMock.mock.calls[0]?.[0])).toBe('https://api.mention.earth/profile/settings/me');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe('https://api.mention.earth/profile/settings/me');
 
-      linked.dispose();
-    } finally {
-      globalThis.fetch = originalFetch;
-    }
+    linked.dispose();
   });
 });

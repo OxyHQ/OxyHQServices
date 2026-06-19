@@ -37,6 +37,7 @@ interface JwtPayload {
 
 export type AuthRefreshReason = 'preflight' | 'response-401';
 export type AuthRefreshHandler = (reason: AuthRefreshReason) => Promise<string | null>;
+export type AccessTokenProvider = () => string | null;
 
 /**
  * Structural type that captures the multipart-write surface every supported
@@ -171,6 +172,7 @@ export class HttpService {
   private tokenRefreshPromise: Promise<string | null> | null = null;
   private tokenRefreshCooldownUntil: number = 0;
   private authRefreshHandler: AuthRefreshHandler | null = null;
+  private accessTokenProvider: AccessTokenProvider | null = null;
 
   /**
    * Fan-out listeners notified on EVERY access-token change on this instance:
@@ -214,6 +216,29 @@ export class HttpService {
       config.maxConcurrentRequests || 10,
       config.requestQueueSize || 100
     );
+  }
+
+  private syncAccessTokenFromProvider(): string | null {
+    if (!this.accessTokenProvider) {
+      return this.tokenStore.getAccessToken();
+    }
+
+    const providedToken = this.accessTokenProvider();
+    const currentToken = this.tokenStore.getAccessToken();
+
+    if (providedToken) {
+      if (providedToken !== currentToken) {
+        this.tokenStore.setTokens(providedToken);
+        this.notifyTokenChange();
+      }
+      return providedToken;
+    }
+
+    if (currentToken) {
+      this.clearTokens();
+    }
+
+    return null;
   }
 
   /**
@@ -856,7 +881,7 @@ export class HttpService {
    * Get auth header with automatic token refresh
    */
   private async getAuthHeader(): Promise<string | null> {
-    const accessToken = this.tokenStore.getAccessToken();
+    const accessToken = this.syncAccessTokenFromProvider();
     if (!accessToken) {
       return null;
     }
@@ -991,6 +1016,10 @@ export class HttpService {
 
   setAuthRefreshHandler(handler: AuthRefreshHandler | null): void {
     this.authRefreshHandler = handler;
+  }
+
+  setAccessTokenProvider(provider: AccessTokenProvider | null): void {
+    this.accessTokenProvider = provider;
   }
 
   clearTokens(): void {

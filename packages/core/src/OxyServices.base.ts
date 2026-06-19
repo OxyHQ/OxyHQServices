@@ -149,12 +149,10 @@ export class OxyServicesBase {
 
     syncToken(this.getAccessToken());
     const unsubscribe = this.onTokensChanged(syncToken);
+    client.setAccessTokenProvider(() => this.getAccessToken());
     client.setAuthRefreshHandler(async (reason: AuthRefreshReason) => {
       const refreshed = await this.httpService.refreshAccessToken(reason);
       if (!refreshed) {
-        if (reason === 'response-401') {
-          this.clearTokens();
-        }
         return null;
       }
 
@@ -167,6 +165,7 @@ export class OxyServicesBase {
       dispose: () => {
         unsubscribe();
         client.setAuthRefreshHandler(null);
+        client.setAccessTokenProvider(null);
         client.clearTokens();
       },
     };
