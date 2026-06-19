@@ -22,6 +22,7 @@ import {
   FollowActionResult,
 } from '../types/user.types';
 import Subscription from '../models/Subscription';
+import { composeDisplayName } from '../utils/displayName';
 
 // Constants
 import { PAGINATION } from '../utils/constants';
@@ -492,6 +493,11 @@ export class UserService {
       id: userId,
       username: user.username,
       name: user.name,
+      displayName: composeDisplayName({
+        name: user.name as { first?: string; last?: string } | undefined,
+        username: user.username,
+        publicKey: userAsIUser.publicKey,
+      }),
       avatar: user.avatar,
       verified: userAny.verified as boolean | undefined,
       bio: userAny.bio as string | undefined,
@@ -532,4 +538,3 @@ export class UserService {
 // Export singleton instance
 export const userService = new UserService();
 export default userService;
-

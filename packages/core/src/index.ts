@@ -62,7 +62,20 @@ export type {
     ContactDiscoveryResponse,
 } from './mixins/OxyServices.contacts';
 export { OxyAppDataIdentifierError } from './mixins/OxyServices.appData';
-export { getNormalizedUserId, normalizeUserIdentity, normalizeUserIdentityOrNull } from './utils/userIdentity';
+
+// ---------------------------------------------------------------------------
+// User identity and handles
+// ---------------------------------------------------------------------------
+export {
+    getNormalizedUserId,
+    normalizeUserIdentity,
+    normalizeUserIdentityOrNull,
+} from './utils/userIdentity';
+export {
+    getCanonicalUserHandle,
+    getNormalizedUserHandle,
+} from './utils/userHandle';
+export type { CanonicalUserHandleInput, UserHandleInput } from './utils/userHandle';
 
 // ---------------------------------------------------------------------------
 // Applications (multi-user apps: membership, roles, credentials)

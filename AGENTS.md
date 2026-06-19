@@ -176,6 +176,12 @@ import { KeyManager } from '@oxyhq/core';
 
 When splitting imports: use `import type` for type-only imports, regular `import` for values.
 
+## User Identity Contract
+
+- Oxy API owns canonical `displayName` for user/profile DTOs. Compose it server-side with `packages/api/src/utils/displayName.ts` / `composeDisplayName` and include it in serializers such as `userService.formatUserResponse`.
+- `@oxyhq/core` public `User.displayName` is required. Consumers render `displayName` directly; they must not recompute names from `name.first`, `name.last`, `name.full`, or `username` in app components.
+- Profile handle normalization belongs in `@oxyhq/core` (`packages/core/src/utils/userHandle.ts`). Consumers must use `getNormalizedUserHandle` for local/federated routes instead of local route helpers or manual domain concatenation.
+
 ## Auth / Session Contract
 
 Frontend RP apps use the SDK as the only session authority:
@@ -234,7 +240,7 @@ Build-vs-source distinction: production/Docker consumes the built `dist/` (the D
 - `packages/contracts/src/index.ts` — all public contract exports (schemas, helpers, types)
 - `packages/core/src/index.ts` — all public core exports
 - `packages/core/src/utils/avatarUtils.ts` — shared avatar visibility logic (platform-agnostic)
-- `packages/core/src/utils/accountUtils.ts` — shared account helpers (`buildAccountsArray`, `createQuickAccount`, `getAccountDisplayName`, `getAccountFallbackHandle`, `formatPublicKeyHandle` — canonical display, falls back to `Account 0x12345678…`)
+- `packages/core/src/utils/accountUtils.ts` — shared account/device helpers (`buildAccountsArray`, `createQuickAccount`, `getAccountDisplayName`, `getAccountFallbackHandle`, `formatPublicKeyHandle`) for non-DTO local account surfaces only; app/user DTO display names come from API `displayName`.
 - `packages/core/src/mixins/OxyServices.contacts.ts` — `contacts.discoverContacts(hashedEmails, hashedPhones)` privacy-first contact discovery
 - `packages/core/src/mixins/OxyServices.workspaces.ts` — `workspaces` mixin (CRUD + members + transfer); `Workspace`/`WorkspaceMember` types
 - `packages/core/src/mixins/OxyServices.applications.ts` — `getApplications(workspaceId?)` + `getPublicApplication(clientId)`; `PublicApplication` type
@@ -248,7 +254,7 @@ Build-vs-source distinction: production/Docker consumes the built `dist/` (the D
 - `packages/services/src/ui/context/OxyContext.tsx` — React Native auth context
 - `packages/services/src/ui/components/OxyProvider.tsx` — RN provider component
 
-**NOTE:** `getAccountDisplayName` and display helpers live in `packages/core/src/utils/accountUtils.ts` — NOT `displayUtils.ts` (that file does not exist).
+**NOTE:** `accountUtils.ts` is not a frontend display-name fallback for API user/profile DTOs. API serializers own `displayName`; consumers render it directly.
 
 ## Application Model (#213 + #216) — replaces DeveloperApp (2026-06-14)
 
@@ -391,13 +397,13 @@ const result = await oxy.makeServiceRequest('POST', '/some/endpoint', data, user
 app.use('/internal', oxy.serviceAuth());
 ```
 
-## API: User.displayName Virtual (authoritative name composition)
+## API: User Display Name Contract
 
-`packages/api/src/models/User.ts` `displayName` virtual composes the human name via `packages/api/src/utils/displayName.ts` (`composeDisplayName`). Precedence: `name.full` (composed from `[first, last].filter(Boolean).join(' ')`, first-only is valid) → `username` → truncated publicKey handle → `'Anonymous'`. Previously returned `username || truncatedPublicKey`, silently ignoring the structured name — that was the root cause behind the account switcher showing handles instead of names.
+`packages/api/src/utils/displayName.ts` (`composeDisplayName`) is the authoritative server-side name composition point. API serializers must emit a required `displayName` on user/profile DTOs; clients must treat that value as ready to render.
 
-`formatUserResponse` in `packages/api/src/utils/userTransform.ts` emits the composed `displayName` + `name.full`. Raw fields (`name.first`, `name.last`, `name.full`, `username`, `publicKey`) remain fully exposed.
+`formatUserResponse` / equivalent serializers emit the composed `displayName`. Raw fields (`name.first`, `name.last`, `name.full`, `username`, `publicKey`) may remain exposed for editing/details, but they are not a frontend display-name resolver.
 
-**Canonical client-side resolver:** `getAccountDisplayName` in `packages/core/src/utils/accountUtils.ts` — order: `name.full` → composed first/last → `displayName` → `username` → `Account 0x…` handle → `'Unnamed'`. Do NOT reimplement name resolution locally in any app.
+`@oxyhq/core` public `User.displayName` is required. App components render `displayName` directly. If a displayed name is missing or wrong, fix the API serializer or SDK type; do not add app-local helpers, aliases, or `displayName || username` chains.
 
 ## API: userCache Invalidation Rule
 
@@ -576,14 +582,14 @@ Activated inside `FileManagementScreen` when `isImageOnlyPicker` is true. Apple 
 
 | Package | Version | Notes |
 |---------|---------|-------|
-| `@oxyhq/core` | **3.4.13** | Current target. Includes `@oxyhq/core/server` (`createOxyAuthMiddleware`, `createOptionalOxyAuth`, `createOxyRateLimit`, `requireOxyAuth`, `getRequiredOxyUserId`) plus linked backend clients. 3.4.7: `OxyServices.createLinkedClient({ baseURL })`. 3.4.5: `getSsoCallbackBootstrapScript()` + `ssoCallbackBootstrapKey()`. 3.4.1: identity-scoped HttpService GET response cache. 3.3.0: `reputation` mixin; karma mixin/types removed. 3.2.0: `clientId`, workspaces, application scoping. **GOTCHA: 3.3.0 and 3.4.0 are broken for external consumers** (`workspace:*` dep on unpublished contracts). Pin to ≥3.4.13 for current apps. |
+| `@oxyhq/core` | **3.4.16** | Current target. Includes `@oxyhq/core/server` (`createOxyAuthMiddleware`, `createOptionalOxyAuth`, `createOxyRateLimit`, `requireOxyAuth`, `getRequiredOxyUserId`) plus linked backend clients. 3.4.7: `OxyServices.createLinkedClient({ baseURL })`. 3.4.5: `getSsoCallbackBootstrapScript()` + `ssoCallbackBootstrapKey()`. 3.4.1: identity-scoped HttpService GET response cache. 3.3.0: `reputation` mixin; karma mixin/types removed. 3.2.0: `clientId`, workspaces, application scoping. **GOTCHA: 3.3.0 and 3.4.0 are broken for external consumers** (`workspace:*` dep on unpublished contracts). Pin to ≥3.4.16 for current apps. |
 | `@oxyhq/auth` | **4.1.1** | 4.1.1: `WebOxyProvider` intercepts `/__oxy/sso-callback` before child apps render and peers on `@oxyhq/core ^3.4.5`. 4.1.0: optional `clientId` prop. 4.0.0: major bump (peer `^3.0.0`). 3.4.0: consumes core SSO helpers; deleted local `ssoBounce.ts`. 3.3.0: `/sso/establish` + per-apex cookie; central issuer fix. 3.2.0: consumes `runColdBoot` + `autoDetect`. |
-| `@oxyhq/services` | **10.2.10** | Current target. `OxyProvider` owns RP cold boot, `clientId`, callback interception, private API readiness, and invalidated-token sign-out. `useAuth()` / `useOxy()` expose `hasAccessToken`, `canUsePrivateApi`, and `isPrivateApiPending`; SDK follow-status/actions use the same guard. 10.2.x includes Trust screen names (`TrustCenter|TrustLeaderboard|TrustRewards|TrustRules|AboutTrust|TrustFAQ`); consumers must not call removed `Karma*` routes. 10.1.0: native device-flow sign-in fix. 10.0.0 BREAKING: `appName` prop removed; cross-app device sign-in requires `clientId`; peer `@oxyhq/core ^3.4.13`. 8.5.0: `isAuthResolved`. 8.0.0: `@tanstack/*` peerDeps; `ManageAccount` route. |
+| `@oxyhq/services` | **10.2.10** | Current target. `OxyProvider` owns RP cold boot, `clientId`, callback interception, private API readiness, and invalidated-token sign-out. `useAuth()` / `useOxy()` expose `hasAccessToken`, `canUsePrivateApi`, and `isPrivateApiPending`; SDK follow-status/actions use the same guard. 10.2.x includes Trust screen names (`TrustCenter|TrustLeaderboard|TrustRewards|TrustRules|AboutTrust|TrustFAQ`); consumers must not call removed `Karma*` routes. 10.1.0: native device-flow sign-in fix. 10.0.0 BREAKING: `appName` prop removed; cross-app device sign-in requires `clientId`; peer `@oxyhq/core ^3.4.16`. 8.5.0: `isAuthResolved`. 8.0.0: `@tanstack/*` peerDeps; `ManageAccount` route. |
 | `@oxyhq/bloom` | **0.8.5** | Current consumer target. Retains 0.7.x web CSS-var fix (`toWebColorValue()`) and NW5 platform split; web consumers use `var(--x)`, not `hsl(var(--x))`, for Bloom base tokens. |
 
 **CRITICAL — SSO helpers live ONLY in `@oxyhq/core` (2026-06-19):** `consumeSsoReturn`, `buildSsoBounceUrl`, `isCentralIdPOrigin`, `guardActive`, `ssoNavigate`, `ssoStateKey`/`ssoGuardKey`/`ssoDestKey`/`ssoNoSessionKey`, `ssoCallbackBootstrapKey`, `getSsoCallbackBootstrapScript`, `SSO_CALLBACK_PATH`, `SSO_GUARD_TTL_MS`, `registrableApex`, `MULTIPART_TLDS`, `CENTRAL_IDP_APEX` — all defined once in `@oxyhq/core`, imported by auth-sdk, services, Expo root HTML, and the CF Worker. Do NOT add local copies in any consumer.
 
-**Consumer apps on latest (2026-06-19):** All active RP apps should target `@oxyhq/core >=3.4.13`, `@oxyhq/auth 4.1.1` where used, `@oxyhq/services >=10.2.10` where used, and `@oxyhq/bloom 0.8.5` where used. Expo web apps that can receive `/__oxy/sso-callback` inject `getSsoCallbackBootstrapScript()` in `app/+html.tsx`; app backend clients use `oxyServices.createLinkedClient({ baseURL })`.
+**Consumer apps on latest (2026-06-19):** All active RP apps should target `@oxyhq/core >=3.4.16`, `@oxyhq/auth 4.1.1` where used, `@oxyhq/services >=10.2.10` where used, and `@oxyhq/bloom 0.8.5` where used. Expo web apps that can receive `/__oxy/sso-callback` inject `getSsoCallbackBootstrapScript()` in `app/+html.tsx`; app backend clients use `oxyServices.createLinkedClient({ baseURL })`.
 
 ### Breaking changes in `@oxyhq/services` 8.x
 

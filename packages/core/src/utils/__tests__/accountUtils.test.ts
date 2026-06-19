@@ -4,16 +4,17 @@ import {
     formatPublicKeyHandle,
 } from '../accountUtils';
 
-/**
- * Regression coverage for the auth-app display-name drift (Phase 1 of the
- * contract-centralisation refactor).
- *
- * The auth app previously required BOTH `name.first` AND `name.last` to compose
- * a display name, falling back to the lowercase `username` for first-name-only
- * accounts. The canonical resolver in core MUST be first-name-only safe: a user
- * with only a first name resolves to that first name, never to the username.
- */
 describe('getAccountDisplayName', () => {
+    it('prefers the API displayName when present', () => {
+        expect(
+            getAccountDisplayName({
+                name: { first: 'Nate' },
+                displayName: 'Nate Isern',
+                username: 'nateus',
+            }),
+        ).toBe('Nate Isern');
+    });
+
     it('returns first name for first-name-only accounts (NOT the username)', () => {
         const result = getAccountDisplayName({
             name: { first: 'Nate' },
@@ -48,19 +49,6 @@ describe('getAccountDisplayName', () => {
                 username: 'nateus',
             }),
         ).toBe('Nathaniel Isern');
-    });
-
-    it('uses the structured name over a server displayName virtual', () => {
-        // Server `displayName` virtual = `username || truncatedKey`; it ignores
-        // the structured name. A real name must win so a first-only account is
-        // never collapsed to its username.
-        expect(
-            getAccountDisplayName({
-                name: { first: 'Nate' },
-                displayName: 'nateus',
-                username: 'nateus',
-            }),
-        ).toBe('Nate');
     });
 
     it('uses displayName when there is no structured name', () => {

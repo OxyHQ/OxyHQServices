@@ -1,5 +1,6 @@
 import { OxyServices } from '../OxyServices';
 import { getNormalizedUserId, normalizeUserIdentity } from '../utils/userIdentity';
+import { getCanonicalUserHandle, getNormalizedUserHandle } from '../utils/userHandle';
 
 interface FetchCall {
   url: string;
@@ -69,5 +70,74 @@ describe('user identity normalization', () => {
 
     expect(validation.user.id).toBe('user_1');
     expect(validation.user.username).toBe('nate');
+  });
+});
+
+describe('getNormalizedUserHandle', () => {
+  it('normalizes local usernames without route prefixes', () => {
+    expect(getNormalizedUserHandle({ username: ' nate ' })).toBe('nate');
+    expect(getNormalizedUserHandle({ username: '@nate' })).toBe('nate');
+  });
+
+  it('falls back to handle when username is missing', () => {
+    expect(getNormalizedUserHandle({ handle: '@nate' })).toBe('nate');
+  });
+
+  it('builds federated handles from username and instance', () => {
+    expect(getNormalizedUserHandle({
+      username: 'joannastern',
+      isFederated: true,
+      instance: 'threads.net',
+    })).toBe('joannastern@threads.net');
+  });
+
+  it('does not append an instance twice', () => {
+    expect(getNormalizedUserHandle({
+      username: '@joannastern@threads.net',
+      type: 'federated',
+      instance: 'threads.net',
+    })).toBe('joannastern@threads.net');
+  });
+
+  it('uses federation domain as the federated instance source', () => {
+    expect(getNormalizedUserHandle({
+      username: 'alice',
+      isFederated: true,
+      federation: { domain: '@example.social' },
+    })).toBe('alice@example.social');
+  });
+
+  it('does not use instance for local users', () => {
+    expect(getNormalizedUserHandle({
+      username: 'alice',
+      instance: 'example.social',
+    })).toBe('alice');
+  });
+
+  it('keeps case while normalizing whitespace', () => {
+    expect(getNormalizedUserHandle({
+      username: ' Alice ',
+      isFederated: true,
+      instance: ' Example.Social ',
+    })).toBe('Alice@Example.Social');
+  });
+
+  it('does not turn an invalid instance into a federated suffix', () => {
+    expect(getNormalizedUserHandle({
+      username: 'alice',
+      isFederated: true,
+      instance: 'example.social/users/alice',
+    })).toBe('alice');
+  });
+
+  it('rejects empty and route-like values', () => {
+    expect(getNormalizedUserHandle({ username: '' })).toBeNull();
+    expect(getNormalizedUserHandle({ username: 'alice/about' })).toBeNull();
+    expect(getNormalizedUserHandle({ username: 'alice?tab=posts' })).toBeNull();
+    expect(getNormalizedUserHandle({ username: 'alice#posts' })).toBeNull();
+  });
+
+  it('keeps the compatibility alias wired to the normalized implementation', () => {
+    expect(getCanonicalUserHandle({ username: '@nate' })).toBe('nate');
   });
 });

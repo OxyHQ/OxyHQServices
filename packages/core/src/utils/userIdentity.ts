@@ -27,6 +27,10 @@ function stringifyIdentity(value: unknown): string | null {
   return null;
 }
 
+/**
+ * Returns the stable SDK user id from API payloads that may use either `id` or
+ * Mongo-style `_id`.
+ */
 export function getNormalizedUserId(user: UserIdentityInput | null | undefined): string | null {
   if (!user) {
     return null;
@@ -35,6 +39,11 @@ export function getNormalizedUserId(user: UserIdentityInput | null | undefined):
   return stringifyIdentity(user.id) ?? stringifyIdentity(user._id);
 }
 
+/**
+ * Normalizes a user payload to always expose `id`. Throws when the payload does
+ * not contain a usable id, because SDK callers should never receive anonymous
+ * user objects from authenticated identity endpoints.
+ */
 export function normalizeUserIdentity<T extends UserIdentityInput>(user: T): T & { id: string } {
   const id = getNormalizedUserId(user);
   if (!id) {

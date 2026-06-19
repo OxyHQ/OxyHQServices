@@ -31,13 +31,7 @@ export interface QuickAccount {
 /** Minimal user shape accepted by display-name helpers. Avoids importing the full User type. */
 export interface DisplayNameUserShape {
     name?: string | { first?: string; last?: string; full?: string; [key: string]: unknown };
-    /**
-     * Pre-resolved display name as emitted by the server's `displayName` virtual
-     * (raw `/users/me` responses). NOTE: the server virtual resolves to
-     * `username || truncatedPublicKey || 'Anonymous'` — it does NOT compose the
-     * structured `name`. It is therefore preferred only AFTER a real structured
-     * name, so a first-name-only account never collapses to its username/key.
-     */
+    /** Canonical display name resolved by the API. */
     displayName?: string;
     username?: string;
     publicKey?: string;
@@ -57,13 +51,9 @@ export const formatPublicKeyHandle = (publicKey: string): string => {
  * Resolve a friendly display name for a user.
  *
  * Order of preference:
- *  1. `name.full`, or composed `name.first name.last` (FIRST-NAME-ONLY SAFE —
- *     a user with only a first name resolves to that first name, never to the
- *     lowercase username; this is the exact drift bug the auth app hit).
- *  2. `name` (when stored as a plain string)
- *  3. `displayName` (server `displayName` virtual — `username || truncatedKey`).
- *     Placed AFTER the structured name on purpose: the server virtual ignores
- *     `name`, so preferring it first would re-introduce the first-only bug.
+ *  1. `displayName` from the API contract.
+ *  2. `name.full`, or composed `name.first name.last` for local unsaved shapes.
+ *  3. `name` when stored as a plain string.
  *  4. `username`
  *  5. `Account 0x12345678…` (derived from publicKey, when present)
  *  6. Translated fallback (e.g. "Unnamed")
@@ -79,6 +69,8 @@ export const getAccountDisplayName = (
 
     const { name, displayName, username, publicKey } = user;
 
+    if (typeof displayName === 'string' && displayName.trim()) return displayName.trim();
+
     if (name && typeof name === 'object') {
         if (typeof name.full === 'string' && name.full.trim()) return name.full.trim();
         const first = typeof name.first === 'string' ? name.first.trim() : '';
@@ -88,8 +80,6 @@ export const getAccountDisplayName = (
     } else if (typeof name === 'string' && name.trim()) {
         return name.trim();
     }
-
-    if (typeof displayName === 'string' && displayName.trim()) return displayName.trim();
 
     if (typeof username === 'string' && username.trim()) return username.trim();
 

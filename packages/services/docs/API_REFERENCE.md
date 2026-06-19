@@ -168,7 +168,7 @@ const { data, pagination } = await oxyServices.searchProfiles('john', {
 });
 
 data.forEach(profile => {
-  console.log(profile.username, profile._count?.followers);
+  console.log(profile.displayName, profile.username, profile._count?.followers);
 });
 ```
 

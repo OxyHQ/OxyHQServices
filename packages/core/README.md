@@ -2,7 +2,7 @@
 
 OxyHQ SDK Foundation. Platform-agnostic core library that works in Node.js, browser, and React Native environments. No React dependency.
 
-**Current published version: 3.4.13**
+**Current published version: 3.4.16**
 
 ## Installation
 
@@ -21,7 +21,7 @@ bun add @oxyhq/core
 - **Platform detection utilities**
 - **Device management**
 - **Linked clients** for app backends that need the active Oxy bearer token
-- **User identity normalization** so SDK user payloads always expose `id`
+- **User identity contracts and handle normalization** so SDK user payloads expose required `id`/`displayName` fields and apps build local/federated profile handles consistently
 - **Server middleware** for Express request identity and per-user rate limiting
 
 ## Exports
@@ -44,6 +44,34 @@ const user = await oxyClient.getUserById('123');
 
 // Crypto
 const keyManager = new KeyManager();
+```
+
+## User Identity And Handles
+
+SDK user payloads may arrive with either `id` or Mongo-style `_id`; normalize
+them before exposing state to apps:
+
+```ts
+import { getNormalizedUserId, normalizeUserIdentity } from '@oxyhq/core';
+
+const id = getNormalizedUserId(user);
+const normalizedUser = normalizeUserIdentity(user);
+```
+
+`User.displayName` is a required API contract. The API composes it server-side
+from the structured name when present, otherwise from the username/server
+fallback. UI consumers should render `displayName` directly instead of rebuilding
+names from `name.first`, `name.last`, `name.full`, or `username`.
+
+For profile display/routing, use `getNormalizedUserHandle()`. It strips a
+leading `@`, preserves an existing `user@instance` handle, and appends
+`instance`/`federation.domain` only for federated users:
+
+```ts
+import { getNormalizedUserHandle } from '@oxyhq/core';
+
+getNormalizedUserHandle({ username: 'alice' }); // "alice"
+getNormalizedUserHandle({ username: 'alice', isFederated: true, instance: 'example.social' }); // "alice@example.social"
 ```
 
 ## Linked App API Clients

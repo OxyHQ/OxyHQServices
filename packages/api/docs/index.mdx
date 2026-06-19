@@ -163,6 +163,10 @@ Each SDK is generated against the same OpenAPI document you see at [`/developers
 | Contacts | `/contacts/discover` |
 | Federation | `/fedcm/exchange`, `/fedcm/clients/approved` |
 | Developer | `/developer/apps`, `/developer/apps/{id}/keys`, `/developer/usage` |
+
+User/profile responses include a canonical `displayName` field composed by the
+API. Clients should display that field directly instead of rebuilding names from
+structured name parts.
 | Billing | `/billing/checkout/subscription`, `/billing/portal`, `/billing/webhook` |
 
 ## Examples

@@ -14,11 +14,12 @@ The platform-agnostic foundation of the Oxy SDK. **Zero React, zero React Native
 
 `@oxyhq/core` is the universal client and crypto layer for the Oxy platform. Every higher-level SDK (`@oxyhq/auth` for React web, `@oxyhq/services` for Expo/RN) builds on top of it. Use it directly when you need API access from a Node server, an Edge runtime, a service worker, or anywhere React is not in play.
 
-The package ships a single public entry point:
+The package ships two public entry points:
 
 - `@oxyhq/core` — `OxyServices` client + mixins, models, error types, platform helpers, `KeyManager` / `SignatureService` / `RecoveryPhraseService`, and the shared color/theme/error utilities used across the Oxy ecosystem
+- `@oxyhq/core/server` — Express-only helpers for request identity and rate limiting
 
-All symbols below are reachable from the package root — there are no subpath entry points.
+All client/runtime symbols below are reachable from the package root. Server-only Express helpers live under `@oxyhq/core/server` so browser and React Native bundles never import Express.
 
 ## Install
 
@@ -78,6 +79,31 @@ if (!(await km.hasIdentity())) {
 ```
 
 `KeyManager` throws `IdentityAlreadyExistsError` if you call `createIdentity` over an existing key — pass `{ overwrite: true }` to replace. See [KeyManager Safety](#keymanager-safety) below.
+
+### User ids and profile handles
+
+Oxy API payloads may expose either `id` or Mongo-style `_id`. Use the identity helpers before storing user payloads in app state:
+
+```ts
+import { getNormalizedUserId, normalizeUserIdentity } from '@oxyhq/core';
+
+const userId = getNormalizedUserId(user);
+const normalized = normalizeUserIdentity(user);
+```
+
+For display and profile routing, use `getNormalizedUserHandle()` instead of rebuilding handles in each app. It removes a leading `@`, keeps an existing `user@instance` handle intact, and appends `instance` / `federation.domain` only for federated users:
+
+```ts
+import { getNormalizedUserHandle } from '@oxyhq/core';
+
+getNormalizedUserHandle({ username: 'alice' });
+getNormalizedUserHandle({ username: 'alice', isFederated: true, instance: 'example.social' });
+```
+
+`User.displayName` is required on SDK user/profile payloads. Oxy API composes it
+server-side from the structured name when present, otherwise from the username
+or server fallback. Apps should render `displayName` directly and should not
+rebuild names from `name.first`, `name.last`, `name.full`, or `username`.
 
 ### Service tokens
 

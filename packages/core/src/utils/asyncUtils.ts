@@ -2,7 +2,6 @@
  * Async utilities for common asynchronous patterns and error handling
  */
 
-import { TTLCache, registerCacheForCleanup } from './cache';
 import { logger } from './loggerUtils';
 
 /**
@@ -278,4 +277,4 @@ export async function retryOnError<T>(
     const errorCode = error?.code || error?.status || error?.message;
     return retryableErrors.includes(errorCode);
   });
-} 
+}

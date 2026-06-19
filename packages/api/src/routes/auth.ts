@@ -69,6 +69,7 @@ import {
 } from '../schemas/auth.schemas';
 import { serializePublicApplication } from '../utils/serializeApplication';
 import { isValidObjectId } from '../utils/validation';
+import { composeDisplayName } from '../utils/displayName';
 
 const router = express.Router();
 const USERNAME_REGEX = /^[a-zA-Z0-9]{3,30}$/;
@@ -1237,16 +1238,15 @@ router.get('/lookup/:username', checkLimiter, validate({ params: checkUsernamePa
     throw new NotFoundError('User not found');
   }
 
-  const displayName = user.name?.first
-    ? `${user.name.first}${user.name.last ? ` ${user.name.last}` : ''}`
-    : user.username;
-
   sendSuccess(res, {
     exists: true,
     username: user.username,
     color: user.color || null,
     avatar: user.avatar || null,
-    displayName,
+    displayName: composeDisplayName({
+      name: user.name as { first?: string; last?: string } | undefined,
+      username: user.username,
+    }),
   });
 }));
 

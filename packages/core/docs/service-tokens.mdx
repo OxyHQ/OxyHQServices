@@ -18,20 +18,24 @@ Service tokens **are not for third-party apps.** Third parties use the developer
 
 ## Registration
 
-Internal apps are registered directly in MongoDB with `isInternal: true` — there is no public API for it. The fields you need:
+Internal service credentials are represented by `ApplicationCredential` records
+on the owning Oxy application. Create them through the Oxy API/admin tooling so
+the secret is hashed with the same code path as production credentials. Do not
+insert credential documents by hand.
 
 ```ts
-// packages/api/src/models/DeveloperApp.ts
+// ApplicationCredential
 {
-  name: 'Mention',
-  apiKey: 'oxy_dk_abc…',         // public id
-  apiSecret: 'hash_of_secret',    // bcrypt-hashed
-  isInternal: true,
-  scopes: ['users:read', 'inbox:write', …],
+  applicationId: '...',
+  type: 'service',
+  publicKey: 'oxy_dk_abc…',
+  secretHash: 'sha256_hash_of_secret',
+  scopes: ['user:read', 'federation:write', …],
 }
 ```
 
-After insert, hand the cleartext `apiSecret` to the service owner — it's never recoverable from the database.
+The cleartext secret is shown only at creation time. Store it in the service's
+secret manager; it is never recoverable from the database.
 
 ## Exchanging credentials for a token
 

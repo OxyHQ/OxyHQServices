@@ -87,6 +87,8 @@ export interface User {
   id: string;
   publicKey: string;
   username: string;
+  /** Canonical display name resolved by the API. */
+  displayName: string;
   email?: string;
   // Avatar file id (asset id)
   avatar?: string;
