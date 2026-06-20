@@ -1,5 +1,6 @@
-import { File, IFile, IFileVariant } from '../models/File';
+import { File, IFile, IFileVariant, FileVisibility } from '../models/File';
 import { S3Service } from './s3Service';
+import { storageKeyForVisibility } from '../config/cdn';
 import { logger } from '../utils/logger';
 import sharp from 'sharp';
 import path from 'path';
@@ -311,7 +312,7 @@ export class VariantService {
 
       const variants: IFileVariant[] = [];
       for (const config of this.imageVariants) {
-        const variantKey = this.generateVariantKey(file.sha256, config.type, config.format || 'webp');
+        const variantKey = this.generateVariantKey(file.sha256, config.type, config.format || 'webp', file.visibility);
 
         const width = config.width || meta.width || 1280;
         const height = config.height; // let sharp maintain aspect by only setting width unless both provided
@@ -374,6 +375,7 @@ export class VariantService {
         file.storageKey, // Use S3 storage key directly - no temp files
         file.sha256,
         posterTime,
+        file.visibility,
         metadata // Pass metadata to preserve exact aspect ratio
       );
       variants.push(posterVariant);
@@ -395,7 +397,8 @@ export class VariantService {
         const variant = await this.generateVideoVariant(
           videoUrl, // Use S3 presigned URL directly - no temp files
           file.sha256,
-          config
+          config,
+          file.visibility
         );
         if (variant) {
           variants.push(variant);
@@ -406,7 +409,8 @@ export class VariantService {
       const hlsVariants = await this.generateHLSStream(
         videoUrl, // Use S3 presigned URL directly - no temp files
         file.sha256,
-        metadata
+        metadata,
+        file.visibility
       );
       variants.push(...hlsVariants);
 
@@ -455,9 +459,10 @@ export class VariantService {
     videoStorageKey: string,
     sha256: string,
     timeSeconds: number,
+    visibility: FileVisibility,
     metadata?: { width?: number; height?: number }
   ): Promise<IFileVariant> {
-    const posterKey = this.generateVariantKey(sha256, 'poster', 'jpg');
+    const posterKey = this.generateVariantKey(sha256, 'poster', 'jpg', visibility);
 
     // Get S3 presigned URL for the video (FFmpeg supports HTTP input)
     const videoUrl = await this.s3Service.getPresignedDownloadUrl(videoStorageKey, 3600);
@@ -658,9 +663,10 @@ export class VariantService {
   private async generateVideoVariant(
     videoUrl: string,
     sha256: string,
-    config: VideoVariantConfig
+    config: VideoVariantConfig,
+    visibility: FileVisibility
   ): Promise<IFileVariant | null> {
-    const variantKey = this.generateVariantKey(sha256, config.type, 'mp4');
+    const variantKey = this.generateVariantKey(sha256, config.type, 'mp4', visibility);
 
     return new Promise((resolve) => {
       const args = [
@@ -775,7 +781,8 @@ export class VariantService {
   private async generateHLSStream(
     videoUrl: string,
     sha256: string,
-    metadata: { width?: number; height?: number; duration?: number }
+    metadata: { width?: number; height?: number; duration?: number },
+    visibility: FileVisibility
   ): Promise<IFileVariant[]> {
     // Use /tmp for HLS segments (ephemeral, OS cleans up automatically)
     // FFmpeg needs to write multiple segment files for HLS
@@ -872,7 +879,7 @@ export class VariantService {
           try {
             // Upload HLS playlist and segments
             const playlistBuffer = fs.readFileSync(outputPath);
-            const playlistKey = this.generateVariantKey(sha256, `hls_${config.type}`, 'm3u8');
+            const playlistKey = this.generateVariantKey(sha256, `hls_${config.type}`, 'm3u8', visibility);
             await this.s3Service.uploadBuffer(playlistKey, playlistBuffer, {
               contentType: 'application/vnd.apple.mpegurl'
             });
@@ -882,7 +889,7 @@ export class VariantService {
             for (const segment of segments) {
               const segmentPath = path.join(hlsDir, segment);
               const segmentBuffer = fs.readFileSync(segmentPath);
-              const segmentKey = this.generateVariantKey(sha256, `hls_${config.type}_${segment}`, 'ts');
+              const segmentKey = this.generateVariantKey(sha256, `hls_${config.type}_${segment}`, 'ts', visibility);
               await this.s3Service.uploadBuffer(segmentKey, segmentBuffer, {
                 contentType: 'video/mp2t'
               });
@@ -924,7 +931,7 @@ export class VariantService {
             if (processedCount === totalVariants) {
               // Generate master playlist
               const masterPlaylist = this.generateMasterPlaylist(hlsVariants);
-              const masterKey = this.generateVariantKey(sha256, 'hls_master', 'm3u8');
+              const masterKey = this.generateVariantKey(sha256, 'hls_master', 'm3u8', visibility);
               await this.s3Service.uploadBuffer(masterKey, Buffer.from(masterPlaylist), {
                 contentType: 'application/vnd.apple.mpegurl'
               });
@@ -1012,7 +1019,7 @@ export class VariantService {
     try {
       logger.info('Generating PDF variants (placeholder)', { fileId: file._id });
 
-      const thumbnailKey = this.generateVariantKey(file.sha256, 'thumb', 'jpg');
+      const thumbnailKey = this.generateVariantKey(file.sha256, 'thumb', 'jpg', file.visibility);
       
       // Placeholder variant
       const variants: IFileVariant[] = [{
@@ -1040,12 +1047,21 @@ export class VariantService {
   /**
    * Generate variant storage key
    */
-  private generateVariantKey(sha256: string, variantType: string, format: string): string {
+  private generateVariantKey(
+    sha256: string,
+    variantType: string,
+    format: string,
+    visibility: FileVisibility
+  ): string {
     const year = new Date().getFullYear();
     const month = String(new Date().getMonth() + 1).padStart(2, '0');
     const prefix = sha256.substring(0, 2);
-    
-    return `variants/${year}/${month}/${prefix}/${sha256}/${variantType}.${format}`;
+
+    // Variants inherit their parent file's visibility: public variants land
+    // under the CDN-reachable `public/` prefix, private/unlisted variants stay
+    // private to S3 (served only through the access-gated origin stream route).
+    const baseKey = `variants/${year}/${month}/${prefix}/${sha256}/${variantType}.${format}`;
+    return storageKeyForVisibility(baseKey, visibility);
   }
 
   /**
@@ -1104,6 +1120,7 @@ export class VariantService {
         file.storageKey, // Use S3 storage key directly - no temp files
         file.sha256,
         posterTime,
+        file.visibility,
         metadata // Pass metadata to preserve exact aspect ratio
       );
 
@@ -1161,7 +1178,7 @@ export class VariantService {
   if (format === 'png') pipeline = pipeline.png();
 
     const out = await pipeline.toBuffer();
-    const key = this.generateVariantKey(file.sha256, variantType, format);
+    const key = this.generateVariantKey(file.sha256, variantType, format, file.visibility);
     await this.s3Service.uploadBuffer(key, out, {
       contentType: format === 'jpeg' ? 'image/jpeg' : `image/${format}`,
     });

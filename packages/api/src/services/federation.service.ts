@@ -434,6 +434,42 @@ export async function getInstanceActor(domain: string = AP_DOMAIN): Promise<Reco
 }
 
 /**
+ * Resolve a local user's avatar to a publicly-fetchable absolute URL for the
+ * federated actor document's `icon`.
+ *
+ * - Already-absolute URLs (e.g. a remote avatar mirrored verbatim) pass through.
+ * - A stored Oxy file id resolves to the public CDN URL of its `thumb` variant
+ *   via the asset service, so remote servers fetch from `cloud.oxy.so` — never a
+ *   raw S3 URL and never the previous broken `/files/<id>/variant/thumb` scheme.
+ * - Anything that cannot be resolved publicly (missing/private avatar) is
+ *   omitted rather than advertising an unreachable URL.
+ */
+async function resolveActorAvatarUrl(avatar: unknown): Promise<string | undefined> {
+  if (typeof avatar !== 'string' || avatar.length === 0) {
+    return undefined;
+  }
+  if (avatar.startsWith('http')) {
+    return avatar;
+  }
+
+  try {
+    const assetService = getAssetService();
+    const file = await assetService.getFile(avatar);
+    if (!file) {
+      return undefined;
+    }
+    const cdnUrl = await assetService.getPublicCdnUrl(file, 'thumb');
+    return cdnUrl ?? undefined;
+  } catch (error) {
+    logger.warn('Failed to resolve federated actor avatar URL', {
+      avatar,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return undefined;
+  }
+}
+
+/**
  * Returns a per-user actor JSON-LD document, self-consistent on `domain`
  * (defaults to Oxy's own federation domain {@link AP_DOMAIN}).
  *
@@ -453,11 +489,7 @@ export async function getUserActor(user: IUser, domain: string = AP_DOMAIN): Pro
     publicKey: typeof user.publicKey === 'string' ? user.publicKey : undefined,
   });
 
-  const avatar = user.avatar
-    ? (typeof user.avatar === 'string' && user.avatar.startsWith('http')
-      ? user.avatar
-      : `https://cloud.oxy.so/files/${user.avatar}/variant/thumb`)
-    : undefined;
+  const avatar = await resolveActorAvatarUrl(user.avatar);
 
   return buildActor({
     domain,

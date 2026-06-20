@@ -11,6 +11,14 @@ import {
   isAllowedCacheMime,
 } from '../constants/federationCache';
 import { VariantService } from './variantService';
+import {
+  buildCdnUrl,
+  cdnUrlForStorageKey,
+  applyPublicPrefix,
+  stripPublicPrefix,
+  isPublicKey,
+  storageKeyForVisibility,
+} from '../config/cdn';
 import { logger } from '../utils/logger';
 import path from 'path';
 import {
@@ -598,8 +606,9 @@ export class AssetService {
 
       // Create new file record
       const ext = this.getExtensionFromMime(mimeType);
-      const storageKey = this.generateStorageKey(sha256, mimeType);
-      
+      const resolvedVisibility: FileVisibility = visibility || 'private';
+      const storageKey = this.generateStorageKey(sha256, mimeType, resolvedVisibility);
+
       const file = new File({
         sha256,
         size,
@@ -609,7 +618,7 @@ export class AssetService {
         status: 'active',
         storageKey,
         originalName,
-        visibility: visibility || 'private',
+        visibility: resolvedVisibility,
         metadata: metadata || {},
         links: [],
         variants: []
@@ -859,9 +868,11 @@ export class AssetService {
     }
 
     // Promote the temp object to its content-addressed key (server-side copy,
-    // no RAM), then drop the temp object.
+    // no RAM), then drop the temp object. Federation/cache media is always
+    // `public`, so its content-addressed key lands under the CDN-reachable
+    // `public/` prefix (decided centrally by `generateStorageKey`).
     const ext = this.getExtensionFromMime(mimeType);
-    const storageKey = this.generateStorageKey(sha256, mimeType);
+    const storageKey = this.generateStorageKey(sha256, mimeType, options.visibility);
     await this.s3Service.copyFile(tempKey, storageKey);
     await deleteTempKey('Failed to delete temp key after cache promotion');
 
@@ -1021,15 +1032,23 @@ export class AssetService {
       if (request.visibility) {
         file.visibility = request.visibility;
       }
-      
+
       await file.save();
       fileCache.invalidate(file._id.toString());
       fileCache.set(file._id.toString(), file);
 
+      // Align the object's S3 prefix with its (now-known) visibility so public
+      // uploads are immediately CDN-reachable. `initUpload` generated a private
+      // key before visibility was known, so a public asset's bytes start under
+      // the non-public prefix; relocate them under `public/` here.
+      await this.relocateAllForVisibility(file);
+
+      // Variant generation reads `file.storageKey` (now relocated) and writes
+      // variant keys under the prefix matching `file.visibility`.
       this.queueVariantGeneration(file);
 
-      logger.info('Asset upload completed', { 
-        fileId: file._id, 
+      logger.info('Asset upload completed', {
+        fileId: file._id,
         originalName: request.originalName,
         visibility: file.visibility
       });
@@ -1078,8 +1097,9 @@ export class AssetService {
       };
 
       file.links.push(newLink);
-      
+
       // Auto-set visibility based on entity type
+      const previousVisibility = file.visibility;
       if (linkRequest.visibility) {
         file.visibility = linkRequest.visibility;
       } else {
@@ -1089,19 +1109,26 @@ export class AssetService {
           linkRequest.entityType
         );
       }
-      
+
       if (file.status === 'trash' && file.links.length > 0) {
         file.status = 'active';
       }
-      
+
       await file.save();
       fileCache.invalidate(fileId);
       fileCache.set(fileId, file);
 
-      logger.info('File linked successfully', { 
-        fileId, 
-        linkRequest, 
-        totalLinks: file.links.length 
+      // Linking an asset to a public entity (e.g. an avatar) flips its
+      // visibility to `public`; relocate its bytes under the CDN-reachable
+      // `public/` prefix so the new public asset serves from the CDN.
+      if (file.visibility !== previousVisibility) {
+        await this.relocateAllForVisibility(file);
+      }
+
+      logger.info('File linked successfully', {
+        fileId,
+        linkRequest,
+        totalLinks: file.links.length
       });
 
       return file;
@@ -1304,40 +1331,153 @@ export class AssetService {
     }
   }
 
+  /**
+   * Compute the visibility-aligned target for an S3 key: under the `public/`
+   * prefix for public visibility, without it otherwise.
+   */
+  private targetKeyForVisibility(key: string, visibility: FileVisibility): string {
+    return visibility === 'public' ? applyPublicPrefix(key) : stripPublicPrefix(key);
+  }
+
+  /**
+   * Relocate a single S3 object so its key prefix matches `visibility`. Returns
+   * the (possibly unchanged) key. Idempotent and best-effort: a missing source
+   * object is logged and the original key is returned unchanged.
+   */
+  private async relocateObjectForVisibility(key: string, visibility: FileVisibility): Promise<string> {
+    const targetKey = this.targetKeyForVisibility(key, visibility);
+    if (targetKey === key) {
+      return key;
+    }
+
+    if (!(await this.s3Service.fileExists(key))) {
+      logger.warn('Cannot relocate object for visibility change; source missing', {
+        sourceKey: key,
+        targetKey,
+        visibility,
+      });
+      return key;
+    }
+
+    await this.s3Service.copyFile(key, targetKey);
+    try {
+      await this.s3Service.deleteFile(key);
+    } catch (cleanupError) {
+      logger.warn('Failed to delete source object after visibility relocation', {
+        sourceKey: key,
+        targetKey,
+        error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+      });
+    }
+    return targetKey;
+  }
+
+  /**
+   * Relocate the original object and every variant so all keys match the file's
+   * current visibility, persisting the rewritten keys. Used when visibility
+   * actually flips (`public` ↔ `private`/`unlisted`) so existing CDN-served
+   * objects stop being reachable when made private, and become reachable when
+   * made public.
+   */
+  private async relocateAllForVisibility(file: IFile): Promise<void> {
+    const newOriginalKey = await this.relocateObjectForVisibility(file.storageKey, file.visibility);
+    let changed = newOriginalKey !== file.storageKey;
+    file.storageKey = newOriginalKey;
+
+    for (const variant of file.variants) {
+      const newVariantKey = await this.relocateObjectForVisibility(variant.key, file.visibility);
+      if (newVariantKey !== variant.key) {
+        variant.key = newVariantKey;
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      await file.save();
+      fileCache.invalidate(file._id.toString());
+      fileCache.set(file._id.toString(), file);
+      logger.info('Relocated asset objects to match visibility', {
+        fileId: file._id.toString(),
+        visibility: file.visibility,
+        storageKey: file.storageKey,
+        variantCount: file.variants.length,
+      });
+    }
+  }
+
+  /**
+   * Resolve the public CDN URL for a file (or one of its variants), or `null`
+   * when the asset is NOT servable via the public CDN.
+   *
+   * Returns a `cloud.oxy.so` URL only when BOTH hold:
+   *   1. the file's visibility is `public`, AND
+   *   2. the servable object physically lives under the CDN-reachable `public/`
+   *      prefix in S3.
+   *
+   * Private/unlisted assets always return `null` so they can never leak through
+   * the public CDN. A public asset whose bytes are not yet under `public/`
+   * (legacy objects awaiting the S3 backfill) also returns `null`, so the caller
+   * falls back to streaming through our own origin — never to a raw S3 URL.
+   *
+   * No client URL produced here is ever an `amazonaws.com` URL.
+   */
+  async getPublicCdnUrl(file: IFile, variant?: string): Promise<string | null> {
+    if (file.visibility !== 'public') {
+      return null;
+    }
+
+    let storageKey = file.storageKey;
+    if (variant) {
+      const ensured = await this.ensureVariant(file._id.toString(), variant, file);
+      storageKey = ensured.key;
+    }
+
+    // The variant/original key already encodes visibility (public objects are
+    // written under `public/`). When it is, verify the object is present and
+    // serve it via the CDN.
+    if (isPublicKey(storageKey)) {
+      if (await this.s3Service.fileExists(storageKey)) {
+        return cdnUrlForStorageKey(storageKey);
+      }
+      return null;
+    }
+
+    // Legacy public object stored at a non-public key. It becomes CDN-reachable
+    // only once copied under the `public/` prefix (one-shot S3 backfill). Probe
+    // for the backfilled object; serve via CDN if present, otherwise signal the
+    // caller to stream through our origin.
+    const publicKey = applyPublicPrefix(storageKey);
+    if (await this.s3Service.fileExists(publicKey)) {
+      return buildCdnUrl(stripPublicPrefix(publicKey));
+    }
+
+    return null;
+  }
+
+  /**
+   * Resolve the client-facing URL for an asset (or one of its variants).
+   *
+   * Returns a public CDN (`cloud.oxy.so`) URL when the asset is public AND its
+   * bytes are CDN-reachable. Returns `null` when the asset must instead be
+   * served through our own origin — private/unlisted assets, or a public object
+   * not yet copied under the `public/` prefix. Callers MUST treat `null` as
+   * "stream through `/assets/:id/stream`" and never as an error condition.
+   *
+   * This method NEVER returns a raw S3 (`amazonaws.com`) URL — public goes to
+   * the CDN, everything else goes through our origin.
+   */
   async getFileUrl(
     fileId: string,
     variant?: string,
-    expiresIn: number = 3600,
+    _expiresIn: number = 3600,
     file?: IFile
-  ): Promise<string> {
-    try {
-      const fileObj = file || await this.getFile(fileId);
-      if (!fileObj) {
-        throw new Error('File not found');
-      }
-
-      let storageKey = fileObj.storageKey;
-
-      if (variant) {
-        const ensured = await this.ensureVariant(fileObj._id.toString(), variant, fileObj);
-        storageKey = ensured.key;
-      }
-
-      if (!(await this.s3Service.fileExists(storageKey))) {
-        logger.warn('File metadata points to a missing storage object; refusing to sign download URL', {
-          fileId,
-          variant,
-          storageKey,
-        });
-        throw new Error('File content not found');
-      }
-
-      const url = await this.s3Service.getPresignedDownloadUrl(storageKey, expiresIn);
-      return url;
-    } catch (error) {
-      logger.error('Error getting file URL:', error);
-      throw error;
+  ): Promise<string | null> {
+    const fileObj = file || await this.getFile(fileId);
+    if (!fileObj) {
+      return null;
     }
+
+    return this.getPublicCdnUrl(fileObj, variant);
   }
 
   /**
@@ -1496,6 +1636,11 @@ export class AssetService {
       fileCache.invalidate(fileId);
       fileCache.set(fileId, file);
 
+      // Relocate the object + variants so their S3 prefix matches the new
+      // visibility: a now-private asset's bytes leave the CDN-reachable
+      // `public/` prefix; a now-public asset's bytes move under it.
+      await this.relocateAllForVisibility(file);
+
       // Notify linked apps about visibility change
       try {
         await this.notifyLinks(file, 'visibility_changed', { visibility });
@@ -1520,16 +1665,27 @@ export class AssetService {
   }
 
   /**
-   * Generate storage key using SHA256 for content addressing
+   * Generate storage key using SHA256 for content addressing.
+   *
+   * Public assets are placed under the CDN-reachable `public/` prefix so they
+   * can be served via CloudFront (`cloud.oxy.so`); private/unlisted assets stay
+   * private to S3 and are only reachable through the access-gated origin stream
+   * route. The public-vs-private placement decision lives in one place
+   * (`storageKeyForVisibility` in `config/cdn.ts`).
+   *
+   * `visibility` defaults to `private` for the two-phase upload flow
+   * (`initUpload`), where the storage key (and its presigned PUT URL) must be
+   * generated before the client declares visibility at `completeUpload`.
    */
-  private generateStorageKey(sha256: string, mime: string): string {
+  private generateStorageKey(sha256: string, mime: string, visibility: FileVisibility = 'private'): string {
     const ext = this.getExtensionFromMime(mime);
     const year = new Date().getFullYear();
     const month = String(new Date().getMonth() + 1).padStart(2, '0');
-    
+
     // Content-addressed path: content/{year}/{month}/{first2chars}/{sha256}.{ext}
     const prefix = sha256.substring(0, 2);
-    return `content/${year}/${month}/${prefix}/${sha256}${ext}`;
+    const baseKey = `content/${year}/${month}/${prefix}/${sha256}${ext}`;
+    return storageKeyForVisibility(baseKey, visibility);
   }
 
   /**

@@ -262,43 +262,51 @@ export class S3Service {
   }
 
   /**
-   * Get an object stream with metadata for streaming to clients
+   * Get an object (or a byte range of it) as a stream, for proxying bytes
+   * through our own origin. When `range` is provided it is passed through as the
+   * S3 `Range` header and the response reports `ContentRange`/`AcceptRanges` so
+   * the route can answer HTTP 206 Partial Content (required for video seeking).
    */
-  async getObjectStream(key: string): Promise<{
-    body: NodeJS.ReadableStream,
-    contentType?: string,
-    contentLength?: number,
-    lastModified?: Date,
-    metadata?: Record<string, string>
+  async getObjectStreamRange(
+    key: string,
+    range?: string
+  ): Promise<{
+    body: NodeJS.ReadableStream;
+    contentType?: string;
+    contentLength?: number;
+    contentRange?: string;
+    acceptRanges?: string;
+    lastModified?: Date;
+    etag?: string;
+    statusCode: number;
   }> {
     const command = new GetObjectCommand({
       Bucket: this.bucketName,
       Key: key,
+      Range: range,
     });
-    const response: any = await this.s3Client.send(command);
+    const response = await this.s3Client.send(command);
     if (!response.Body) {
       throw new Error('File not found or empty');
     }
 
-    // AWS SDK v3 returns a Body with transformToWebStream in browsers; in Node it is a Readable
-    const body: NodeJS.ReadableStream = typeof response.Body.pipe === 'function'
-      ? response.Body
-      : (response.Body.transformToWebStream && (response.Body as any).transformToWebStream()) as any;
-
-    const length = response.ContentLength != null ? Number(response.ContentLength) : undefined;
-    const metadata: Record<string, string> = {};
-    if (response.Metadata) {
-      for (const [k, v] of Object.entries(response.Metadata)) {
-        if (v != null) metadata[k] = String(v);
-      }
-    }
+    const responseBody = response.Body as unknown as {
+      pipe?: unknown;
+      transformToWebStream?: () => NodeJS.ReadableStream;
+    };
+    const body: NodeJS.ReadableStream = typeof responseBody.pipe === 'function'
+      ? (response.Body as unknown as NodeJS.ReadableStream)
+      : (responseBody.transformToWebStream as () => NodeJS.ReadableStream)();
 
     return {
       body,
       contentType: response.ContentType,
-      contentLength: length,
+      contentLength: response.ContentLength != null ? Number(response.ContentLength) : undefined,
+      contentRange: response.ContentRange,
+      acceptRanges: response.AcceptRanges,
       lastModified: response.LastModified,
-      metadata,
+      etag: response.ETag,
+      statusCode: response.ContentRange ? 206 : 200,
     };
   }
 

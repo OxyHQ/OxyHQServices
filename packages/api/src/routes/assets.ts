@@ -19,6 +19,7 @@ import {
   batchAccessSchema,
 } from '../schemas/assets.schemas';
 import { generateMissingFilePlaceholder, TRANSPARENT_PNG_PLACEHOLDER } from '../utils/placeholders';
+import { buildCdnUrl, stripPublicPrefix, isPublicKey } from '../config/cdn';
 import { FEDERATION_CACHE_MAX_BYTES, isAllowedCacheMime } from '../constants/federationCache';
 import User from '../models/User';
 import { isValidObjectId } from '../utils/validation';
@@ -32,6 +33,26 @@ interface AuthenticatedRequest extends express.Request {
 
 const router = express.Router();
 const upload = multer(); // memory storage
+
+/**
+ * Build an absolute, our-origin streaming URL for an asset on the host that
+ * served this request (e.g. `https://api.oxy.so/assets/<id>/stream`). Used for
+ * any asset NOT served by the public CDN (private/unlisted, or a public object
+ * not yet under the `public/` prefix) so clients always hit our own domain —
+ * never a raw `amazonaws.com` URL.
+ */
+function buildOriginStreamUrl(
+  req: express.Request,
+  fileId: string,
+  variant?: string
+): string {
+  const host = req.get('host') ?? '';
+  const url = new URL(`${req.protocol}://${host}${req.baseUrl}/${encodeURIComponent(fileId)}/stream`);
+  if (variant) {
+    url.searchParams.set('variant', variant);
+  }
+  return url.toString();
+}
 
 // Auth applied per-route: authMiddleware for private routes,
 // optionalAuthMiddleware for public stream/download endpoints.
@@ -951,12 +972,16 @@ router.get('/:id/url', authMiddleware, validate({ params: assetIdParams, query: 
     throw new NotFoundError('File not found');
   }
 
-  const url = await assetService.getFileUrl(fileId, variantType, expiry, file);
+  // Public + CDN-reachable → CDN URL; otherwise serve through our own origin
+  // (never a raw S3 URL).
+  const cdnUrl = await assetService.getFileUrl(fileId, variantType, expiry, file);
+  const url = cdnUrl ?? buildOriginStreamUrl(req, fileId, variantType);
 
-  logger.debug('File URL generated', { 
-    userId: user._id, 
+  logger.debug('File URL generated', {
+    userId: user._id,
     fileId,
-    variant: variantType
+    variant: variantType,
+    via: cdnUrl ? 'cdn' : 'origin',
   });
 
   sendSuccess(res, {
@@ -1140,37 +1165,47 @@ router.get('/:id/stream', mediaHeadersMiddleware, validate({ params: assetIdPara
     throw new NotFoundError('File not found');
   }
 
-  // Redirect to presigned S3 URL — browser fetches image directly from S3/Spaces
-  // with no auth required. This avoids ERR_BLOCKED_BY_ORB from expired tokens
-  // because the presigned URL IS the authorization (valid 1 hour).
-  try {
-    const url = await s3Service.getPresignedDownloadUrl(storageKey, 3600);
-    const cacheControl = file.visibility === 'public'
-      ? 'public, max-age=3600'
-      : 'private, max-age=3600';
-    res.setHeader('Cache-Control', cacheControl);
-    return res.redirect(url);
-  } catch (e) {
-    logger.warn('Failed to generate presigned URL, falling back to stream', { fileId, error: e });
+  // Public + CDN-reachable object → redirect to the public CDN (our own domain,
+  // `cloud.oxy.so`). No raw S3 URL is ever handed to the client.
+  if (file.visibility === 'public' && isPublicKey(storageKey)) {
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    return res.redirect(buildCdnUrl(stripPublicPrefix(storageKey)));
   }
 
-  // Fallback: stream through our server if presigned URL generation fails
+  // Otherwise stream the bytes THROUGH our origin (access was already checked
+  // above): private/unlisted assets, and public objects not yet under the
+  // `public/` prefix. Never a 302 to an `amazonaws.com` URL. Range requests are
+  // honoured so video seeking works.
+  const rangeHeader = typeof req.headers.range === 'string' ? req.headers.range : undefined;
   try {
-    const streamInfo = await s3Service.getObjectStream(storageKey);
+    const streamInfo = await s3Service.getObjectStreamRange(storageKey, rangeHeader);
 
     if (streamInfo.contentType) {
       res.setHeader('Content-Type', streamInfo.contentType);
     }
-    if (streamInfo.contentLength) {
+    if (streamInfo.contentLength != null) {
       res.setHeader('Content-Length', String(streamInfo.contentLength));
     }
+    if (streamInfo.contentRange) {
+      res.setHeader('Content-Range', streamInfo.contentRange);
+    }
+    res.setHeader('Accept-Ranges', streamInfo.acceptRanges ?? 'bytes');
     if (streamInfo.lastModified) {
       res.setHeader('Last-Modified', new Date(streamInfo.lastModified).toUTCString());
     }
-    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    if (streamInfo.etag) {
+      res.setHeader('ETag', streamInfo.etag);
+    }
+    res.setHeader(
+      'Cache-Control',
+      file.visibility === 'public'
+        ? 'public, max-age=3600'
+        : 'private, max-age=3600'
+    );
+    res.status(streamInfo.statusCode);
 
-    streamInfo.body.on('error', (err: any) => {
-      logger.error('Stream error', { err });
+    streamInfo.body.on('error', (err: Error) => {
+      logger.error('Stream error', { fileId, error: err.message });
       if (!res.headersSent) {
         res.status(500).end('Stream error');
       } else {
@@ -1179,8 +1214,9 @@ router.get('/:id/stream', mediaHeadersMiddleware, validate({ params: assetIdPara
     });
 
     streamInfo.body.pipe(res);
-  } catch (streamError: any) {
-    if (streamError.name === 'NoSuchKey' || streamError.name === 'NotFound') {
+  } catch (streamError) {
+    const errName = streamError instanceof Error ? streamError.name : '';
+    if (errName === 'NoSuchKey' || errName === 'NotFound') {
       if (fallback === 'placeholder') {
         const buf = Buffer.from(TRANSPARENT_PNG_PLACEHOLDER, 'base64');
         res.setHeader('Content-Type', 'image/png');
@@ -1229,17 +1265,10 @@ router.get('/:id/download', validate({ params: assetIdParams }), optionalAuthMid
     await assetService.repairMissingFederationFileContent(file);
   }
 
-  let url: string;
-  try {
-    url = await assetService.getFileUrl(fileId, variantType, expiry, file);
-  } catch (error) {
-    logger.warn('Failed to generate file download URL', {
-      fileId,
-      variant: variantType,
-      error: error instanceof Error ? error.message : String(error),
-    });
-    throw new NotFoundError('File not found');
-  }
+  // Public + CDN-reachable → CDN URL; otherwise redirect to our own origin
+  // stream endpoint (which proxies the bytes). Never a raw S3 URL.
+  const cdnUrl = await assetService.getFileUrl(fileId, variantType, expiry, file);
+  const url = cdnUrl ?? buildOriginStreamUrl(req, fileId, variantType);
   res.setHeader('Cache-Control', 'private, max-age=60');
   return res.redirect(url);
 }));
@@ -1398,7 +1427,10 @@ router.post('/batch-access', authMiddleware, asyncHandler(async (req: Authentica
     const canAccess = await assetService.canUserAccessFile(file, user?._id, context);
     
     if (canAccess) {
-      const url = await assetService.getFileUrl(file._id.toString(), undefined, 3600, file);
+      // Public + CDN-reachable → CDN URL; otherwise our own origin stream URL.
+      // Never a raw S3 URL.
+      const cdnUrl = await assetService.getFileUrl(file._id.toString(), undefined, 3600, file);
+      const url = cdnUrl ?? buildOriginStreamUrl(req, file._id.toString());
       results[file._id.toString()] = {
         allowed: true,
         url,

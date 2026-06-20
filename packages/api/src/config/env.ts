@@ -41,6 +41,12 @@ export interface RequiredEnvVars {
   AWS_S3_BUCKET: string;
   AWS_ENDPOINT_URL?: string; // Optional for S3-compatible services
 
+  // Public media CDN. All public asset URLs handed to clients are built from
+  // this origin (CloudFront `cloud.oxy.so` over the media bucket's `public/`
+  // prefix) so no raw `*.amazonaws.com` S3 URL ever reaches a client. Optional:
+  // falls back to the documented default in `config/cdn.ts` when unset.
+  ASSET_CDN_URL?: string;
+
   // Server
   PORT?: string;
   NODE_ENV?: string;
@@ -134,6 +140,21 @@ export function validateRequiredEnvVars(): void {
 
   if (process.env.AWS_S3_BUCKET && process.env.AWS_S3_BUCKET.includes('/')) {
     warnings.push('AWS_S3_BUCKET should be just the bucket name, not a full path');
+  }
+
+  // ASSET_CDN_URL must be an absolute http(s) URL when set, since every public
+  // asset URL is built by interpolating it. A malformed value would emit broken
+  // media URLs to every client. Fail fast rather than silently shipping them.
+  const assetCdnUrl = process.env.ASSET_CDN_URL;
+  if (assetCdnUrl && assetCdnUrl.length > 0) {
+    try {
+      const parsed = new URL(assetCdnUrl);
+      if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+        missing.push('ASSET_CDN_URL (invalid: must be an absolute http(s) URL like "https://cloud.oxy.so")');
+      }
+    } catch {
+      missing.push('ASSET_CDN_URL (invalid: must be an absolute http(s) URL like "https://cloud.oxy.so")');
+    }
   }
 
   // Reject default/placeholder JWT secrets in production
@@ -309,6 +330,7 @@ export function getSanitizedConfig(): Record<string, string> {
     AWS_REGION: process.env.AWS_REGION || ENV_DEFAULTS.AWS_REGION,
     AWS_S3_BUCKET: process.env.AWS_S3_BUCKET || '',
     AWS_ENDPOINT_URL: process.env.AWS_ENDPOINT_URL || 'default',
+    ASSET_CDN_URL: process.env.ASSET_CDN_URL || 'https://cloud.oxy.so',
     MONGODB_URI: process.env.MONGODB_URI ? maskConnectionString(process.env.MONGODB_URI) : '',
   };
 }
