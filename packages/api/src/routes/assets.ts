@@ -19,7 +19,7 @@ import {
   batchAccessSchema,
 } from '../schemas/assets.schemas';
 import { generateMissingFilePlaceholder, TRANSPARENT_PNG_PLACEHOLDER } from '../utils/placeholders';
-import { buildCdnUrl, stripPublicPrefix, isPublicKey } from '../config/cdn';
+import { buildCdnUrl, stripPublicPrefix, isPublicKey, CDN_REDIRECT_MAX_AGE_SECONDS } from '../config/cdn';
 import { FEDERATION_CACHE_MAX_BYTES, isAllowedCacheMime } from '../constants/federationCache';
 import User from '../models/User';
 import { isValidObjectId } from '../utils/validation';
@@ -33,14 +33,6 @@ interface AuthenticatedRequest extends express.Request {
 
 const router = express.Router();
 const upload = multer(); // memory storage
-
-/**
- * Cache lifetime (seconds) for a public-asset CDN redirect from `GET
- * /:id/stream`. The redirect TARGET is content-addressed and stable, so it is
- * safe to let clients/edge caches reuse the 302 rather than re-running the S3
- * existence probe on every request.
- */
-const CDN_REDIRECT_MAX_AGE_SECONDS = 3600;
 
 /**
  * Build an absolute, our-origin streaming URL for an asset on the host that

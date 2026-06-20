@@ -1,0 +1,187 @@
+/**
+ * `GET /cdn/:id` public CDN-origin resolver behavior.
+ *
+ * This is the origin endpoint behind the `cloud.oxy.so/<id>` CloudFront
+ * behavior (CloudFront `OriginPath = /cdn`). It serves ONLY public, CDN-backed
+ * assets and must never expose private bytes or 500:
+ *
+ *   1. A PUBLIC, CDN-backed file 302-redirects to its `cloud.oxy.so` URL with a
+ *      cacheable `Cache-Control`, variant-aware (`?variant=thumb` resolves the
+ *      thumb URL, not the original).
+ *   2. A PRIVATE file resolves to 404 — `getPublicCdnUrl` returns null and no
+ *      bytes are ever streamed here.
+ *   3. A missing/unknown id resolves to 404.
+ *   4. A public file with no CDN-reachable copy (probe returns null) → 404.
+ *   5. A throwing CDN probe degrades to 404, never 500.
+ *
+ * The asset service singleton, validate middleware, and logger are stubbed at
+ * the module boundary so the router runs over real `node:http` round-trips with
+ * no S3 or DB. Mirrors the `assetsStreamCdn.test.ts` harness idiom.
+ */
+
+import express from 'express';
+import http from 'http';
+import { AddressInfo } from 'net';
+
+const PUBLIC_FILE_ID = '64c0000000000000000000b1';
+const PRIVATE_FILE_ID = '64c0000000000000000000b2';
+const NO_COPY_FILE_ID = '64c0000000000000000000b3';
+const PROBE_THROWS_FILE_ID = '64c0000000000000000000b4';
+
+const ORIGINAL_CDN_URL =
+  'https://cloud.oxy.so/content/2026/03/bb/bb7a29b85077cd58d945959b017bc954.png';
+const THUMB_CDN_URL =
+  'https://cloud.oxy.so/variants/2026/03/bb/bb7a29b85077cd58d945959b017bc954/thumb.webp';
+
+const mockGetFile = jest.fn();
+const mockGetPublicCdnUrl = jest.fn();
+
+jest.mock('../../services/assetServiceSingleton', () => ({
+  assetService: {
+    getFile: (...args: unknown[]) => mockGetFile(...args),
+    getPublicCdnUrl: (...args: unknown[]) => mockGetPublicCdnUrl(...args),
+  },
+  s3Service: {},
+}));
+
+jest.mock('../../utils/logger', () => ({
+  logger: { warn: jest.fn(), error: jest.fn(), info: jest.fn(), debug: jest.fn() },
+}));
+
+import cdnRouter from '../cdn';
+import { errorHandler } from '../../middleware/errorHandler';
+
+interface RawResponse {
+  status: number;
+  location?: string;
+  cacheControl?: string;
+  body: string;
+}
+
+/** Issue a request WITHOUT following redirects so we can assert the 302 itself. */
+async function requestNoFollow(server: http.Server, path: string): Promise<RawResponse> {
+  const address = server.address() as AddressInfo;
+  return new Promise((resolve, reject) => {
+    const req = http.request(
+      { method: 'GET', host: '127.0.0.1', port: address.port, path },
+      (res) => {
+        let raw = '';
+        res.on('data', (chunk) => { raw += chunk; });
+        res.on('end', () => {
+          resolve({
+            status: res.statusCode ?? 0,
+            location: res.headers.location,
+            cacheControl: res.headers['cache-control'],
+            body: raw,
+          });
+        });
+      }
+    );
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+let server: http.Server;
+
+beforeAll((done) => {
+  const app = express();
+  app.use('/cdn', cdnRouter);
+  app.use(errorHandler);
+  server = app.listen(0, '127.0.0.1', done);
+});
+
+afterAll((done) => {
+  server.close(done);
+});
+
+beforeEach(() => {
+  jest.clearAllMocks();
+});
+
+describe('GET /cdn/:id — public CDN origin resolver', () => {
+  it('302s a public CDN-backed file to its cloud.oxy.so URL with Cache-Control', async () => {
+    mockGetFile.mockResolvedValue({
+      _id: PUBLIC_FILE_ID,
+      visibility: 'public',
+      storageKey: 'public/content/2026/03/bb/bb7a29b85077cd58d945959b017bc954.png',
+    });
+    mockGetPublicCdnUrl.mockResolvedValue(ORIGINAL_CDN_URL);
+
+    const res = await requestNoFollow(server, `/cdn/${PUBLIC_FILE_ID}`);
+
+    expect(res.status).toBe(302);
+    expect(res.location).toBe(ORIGINAL_CDN_URL);
+    expect(res.cacheControl).toContain('public, max-age=');
+    // Original requested → probe called with no variant.
+    expect(mockGetPublicCdnUrl).toHaveBeenCalledWith(expect.any(Object), undefined);
+  });
+
+  it('is variant-aware: ?variant=thumb resolves the thumb CDN URL', async () => {
+    mockGetFile.mockResolvedValue({
+      _id: PUBLIC_FILE_ID,
+      visibility: 'public',
+      storageKey: 'public/content/2026/03/bb/bb7a29b85077cd58d945959b017bc954.png',
+    });
+    mockGetPublicCdnUrl.mockResolvedValue(THUMB_CDN_URL);
+
+    const res = await requestNoFollow(server, `/cdn/${PUBLIC_FILE_ID}?variant=thumb`);
+
+    expect(res.status).toBe(302);
+    expect(res.location).toBe(THUMB_CDN_URL);
+    expect(mockGetPublicCdnUrl).toHaveBeenCalledWith(expect.any(Object), 'thumb');
+  });
+
+  it('404s a private file (never streams private bytes, never redirects)', async () => {
+    mockGetFile.mockResolvedValue({
+      _id: PRIVATE_FILE_ID,
+      visibility: 'private',
+      storageKey: 'content/2026/06/cc/secret.png',
+    });
+    // Service contract: private assets resolve to null.
+    mockGetPublicCdnUrl.mockResolvedValue(null);
+
+    const res = await requestNoFollow(server, `/cdn/${PRIVATE_FILE_ID}`);
+
+    expect(res.status).toBe(404);
+    expect(res.location).toBeUndefined();
+  });
+
+  it('404s a missing/unknown id (no probe consulted)', async () => {
+    mockGetFile.mockResolvedValue(null);
+
+    const res = await requestNoFollow(server, `/cdn/${NO_COPY_FILE_ID}`);
+
+    expect(res.status).toBe(404);
+    expect(res.location).toBeUndefined();
+    expect(mockGetPublicCdnUrl).not.toHaveBeenCalled();
+  });
+
+  it('404s a public file with no CDN-reachable copy (probe returns null)', async () => {
+    mockGetFile.mockResolvedValue({
+      _id: NO_COPY_FILE_ID,
+      visibility: 'public',
+      storageKey: 'content/2026/03/dd/legacy.png',
+    });
+    mockGetPublicCdnUrl.mockResolvedValue(null);
+
+    const res = await requestNoFollow(server, `/cdn/${NO_COPY_FILE_ID}`);
+
+    expect(res.status).toBe(404);
+    expect(res.location).toBeUndefined();
+  });
+
+  it('404s (never 500s) when the CDN probe throws', async () => {
+    mockGetFile.mockResolvedValue({
+      _id: PROBE_THROWS_FILE_ID,
+      visibility: 'public',
+      storageKey: 'public/content/2026/03/ee/x.png',
+    });
+    mockGetPublicCdnUrl.mockRejectedValue(new Error('S3 head failed'));
+
+    const res = await requestNoFollow(server, `/cdn/${PROBE_THROWS_FILE_ID}`);
+
+    expect(res.status).toBe(404);
+    expect(res.location).toBeUndefined();
+  });
+});

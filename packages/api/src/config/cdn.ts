@@ -43,6 +43,14 @@ export const DEFAULT_ASSET_CDN_URL = 'https://cloud.oxy.so';
 export const PUBLIC_KEY_PREFIX = 'public/';
 
 /**
+ * Cache lifetime (seconds) for a public-asset CDN redirect (the `302` emitted by
+ * `GET /assets/:id/stream` and `GET /cdn/:id`). The redirect TARGET is
+ * content-addressed and stable, so clients/edge caches may safely reuse the 302
+ * rather than re-running the S3 existence probe on every request.
+ */
+export const CDN_REDIRECT_MAX_AGE_SECONDS = 3600;
+
+/**
  * Resolve the configured CDN base URL with no trailing slash.
  *
  * Read at call time (not module-load) so tests and one-shot scripts that set

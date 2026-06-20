@@ -19,6 +19,7 @@ import linkMetadataRoutes from './routes/linkMetadata';
 import locationSearchRoutes from './routes/locationSearch';
 import authRoutes from './routes/auth';
 import assetRoutes from './routes/assets';
+import cdnRoutes from './routes/cdn';
 import storageRoutes from './routes/storage';
 import applicationRoutes from './routes/applications';
 import workspaceRoutes from './routes/workspaces';
@@ -458,6 +459,9 @@ app.get('/csrf-token', getCsrfToken);
 app.use("/auth", authRateLimiter, authRoutes);
 app.use("/auth", userRateLimiter, csrfProtection, authLinkingRoutes); // Auth linking (requires auth)
 app.use("/assets", assetRoutes);
+// Public CDN origin for cloud.oxy.so/<id> (CloudFront OriginPath = /cdn). No
+// auth, no CSRF — serves ONLY public CDN-backed assets via 302; 404 otherwise.
+app.use("/cdn", cdnRoutes);
 app.use("/storage", userRateLimiter, csrfProtection, storageRoutes);
 app.use("/search", searchRoutes);
 app.use("/profiles", csrfProtection, profilesRouter);
