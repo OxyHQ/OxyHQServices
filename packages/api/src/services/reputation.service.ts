@@ -31,6 +31,8 @@ import { User } from '../models/User';
 import {
   REPORT_CONFIRMED_ACTION,
   REPORT_REJECTED_ACTION,
+  ENDORSEMENT_RECEIVED_ACTION,
+  ENDORSEMENT_RECEIVED_POINTS,
   type ReputationCategory,
   type ReputationTargetEntityType,
 } from '../utils/reputation.constants';
@@ -481,6 +483,22 @@ class ReputationService {
       }
     );
 
+    // Denormalize the ranking weight + tier onto the user so the recommendation
+    // scorer can join the reputation signal cheaply at query time (a sort/floor
+    // on User fields instead of a per-user lookup into reputationbalances). Kept
+    // in the same recompute path/session as the balance write so the two never
+    // diverge.
+    await User.updateOne(
+      { _id: subjectId },
+      {
+        $set: {
+          reputationRankWeight: influence.rankingFeedbackWeight,
+          reputationTier: trustTier,
+        },
+      },
+      session ? { session } : {}
+    );
+
     return balance;
   }
 
@@ -671,6 +689,23 @@ class ReputationService {
   /** Enabled rules (for client display). */
   async listEnabledRules(): Promise<IReputationRule[]> {
     return ReputationRule.find({ isEnabled: true }).sort({ category: 1, actionType: 1 });
+  }
+
+  /**
+   * Idempotently seed the platform-default reputation rules that the code awards
+   * directly (not migrated from legacy karma). Currently the cross-app
+   * `endorsement_received` rule. Safe to call repeatedly — it upserts by
+   * `actionType` and performs no write when the rule is already up to date.
+   */
+  async seedDefaultRules(): Promise<void> {
+    await this.upsertRule({
+      actionType: ENDORSEMENT_RECEIVED_ACTION,
+      points: ENDORSEMENT_RECEIVED_POINTS,
+      category: 'social',
+      description: 'Endorsed by another user in a connected app',
+      cooldownInMinutes: 0,
+      isEnabled: true,
+    });
   }
 
   /** Create or update a rule keyed by `actionType`. */

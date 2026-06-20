@@ -8,8 +8,11 @@
 import { Router, Request, Response } from 'express';
 import { Types } from 'mongoose';
 import { authMiddleware } from '../middleware/auth';
-import { optionalAuthMiddleware, getUserId } from '../middleware/optionalAuth';
-import { AuthenticatedRequest } from '../middleware/authUtils';
+import {
+  optionalUserOrServiceAuth,
+  resolveViewerId,
+  type OptionalUserOrServiceRequest,
+} from '../middleware/optionalAuth';
 import { logger } from '../utils/logger';
 import { asyncHandler, sendSuccess, sendPaginated } from '../utils/asyncHandler';
 import {
@@ -25,6 +28,27 @@ import { validate } from '../middleware/validate';
 import { usernameParams, profileSearchQuerySchema } from '../schemas/profiles.schemas';
 import { formatUserNameResponse, type NameParts } from '../utils/displayName';
 import { eligibleUserMatch, FEDERATED_RECOMMENDATION_MAX_AGE_MS } from '../utils/profileQuery';
+import { AppUserSignal } from '../models/AppUserSignal';
+import { getRedisClient } from '../config/redis';
+import {
+  resolveWeightProfile,
+  normalizeRepWeight,
+  MUTUAL_COUNT_WINDOW,
+  MAX_FOLLOWING_FOR_MUTUALS,
+  MAX_APP_SIGNAL_CANDIDATES,
+  REC_CACHE_TTL_SECONDS,
+  REP_WEIGHT_NORM_MIN,
+  REP_WEIGHT_NORM_MAX,
+  ENDORSEMENT_SCORE_SATURATION,
+  MUTUAL_COUNT_SATURATION,
+  type RecommendationSignal,
+} from '../utils/recommendationWeights';
+import { INFLUENCE_MIN } from '../utils/reputation.constants';
+import {
+  recommendationRequestSchema,
+  type RecommendationRequest,
+  type RecommendationBoost,
+} from '@oxyhq/contracts';
 
 interface AuthRequest extends Request {
   user?: {
@@ -125,9 +149,15 @@ interface RecommendationRow {
   type?: string;
   federation?: { domain?: string } | null;
   automation?: unknown;
+  verified?: boolean;
+  reputationTier?: string;
   mutualCount?: number;
   followersCount?: number;
   followingCount?: number;
+  /** Final composite score (scored v2 path only). */
+  score?: number;
+  /** Names of the signals that contributed to the score (scored v2 path only). */
+  matchedSignals?: string[];
 }
 
 const profileProjectionStage = {
@@ -141,6 +171,8 @@ const profileProjectionStage = {
     type: '$user.type',
     federation: '$user.federation',
     automation: '$user.automation',
+    verified: '$user.verified',
+    reputationTier: '$user.reputationTier',
     mutualCount: 1,
     followersCount: { $size: '$followersArr' },
     followingCount: { $size: '$followingArr' },
@@ -159,6 +191,8 @@ const userProfileProjectionStage = {
     type: 1,
     federation: 1,
     automation: 1,
+    verified: 1,
+    reputationTier: 1,
     mutualCount: { $literal: 0 },
     followersCount: { $size: '$followersArr' },
     followingCount: { $size: '$followingArr' },
@@ -176,7 +210,11 @@ function formatProfileResult(u: RecommendationRow) {
     }),
     avatar: u.avatar,
     description: u.description,
+    verified: u.verified === true,
+    trustTier: u.reputationTier,
     mutualCount: u.mutualCount || 0,
+    ...(typeof u.score === 'number' ? { score: u.score } : {}),
+    ...(u.matchedSignals ? { matchedSignals: u.matchedSignals } : {}),
     isFederated: u.type === 'federated',
     isAgent: u.type === 'agent',
     isAutomated: u.type === 'automated',
@@ -580,17 +618,573 @@ router.get(
 );
 
 /**
+ * Normalized options for {@link buildRecommendations}, shared by the GET
+ * (query-string) and POST (JSON body) entry points so both surfaces produce the
+ * identical result for the identical inputs.
+ */
+interface RecommendationOptions {
+  limit: number;
+  offset: number;
+  excludeTypes: string[];
+  excludeIds: string[];
+  clientId?: string;
+  boosts?: RecommendationBoost[];
+  signalWeights?: Partial<Record<RecommendationSignal, number>>;
+}
+
+/** True when the reputation-weighted scored pipeline (v2) is enabled. */
+function isScoringV2Enabled(): boolean {
+  return process.env.REC_SCORING_V2 === 'true';
+}
+
+/** Coerce a Follow.followedId (ObjectId | string) to an ObjectId, or null. */
+function followedIdToObjectId(value: unknown): Types.ObjectId | null {
+  if (value instanceof Types.ObjectId) return value;
+  if (typeof value === 'string' && Types.ObjectId.isValid(value)) {
+    return new Types.ObjectId(value);
+  }
+  return null;
+}
+
+/** Coerce a list of id strings to ObjectIds, dropping any malformed entry. */
+function toObjectIds(ids: readonly string[]): Types.ObjectId[] {
+  const out: Types.ObjectId[] = [];
+  for (const id of ids) {
+    if (Types.ObjectId.isValid(id)) out.push(new Types.ObjectId(id));
+  }
+  return out;
+}
+
+/**
+ * LEGACY recommendation builder — the exact behavior shipped before the scored
+ * pipeline: mutual-connection overlap + random fill for an authenticated
+ * viewer, follower-count ranking + random fill for a public caller. Preserved
+ * verbatim so `REC_SCORING_V2` off is byte-for-byte the prior contract.
+ */
+async function buildRecommendationsLegacy(
+  viewerId: string | undefined,
+  opts: RecommendationOptions
+): Promise<ReturnType<typeof formatProfileResult>[]> {
+  const { limit: parsedLimit, offset: parsedOffset, excludeTypes } = opts;
+  const minFederatedResolvedAt = new Date(Date.now() - FEDERATED_RECOMMENDATION_MAX_AGE_MS);
+
+  const baseUserMatch: Record<string, unknown> = {
+    'privacySettings.isPrivateAccount': { $ne: true },
+    ...eligibleUserMatch(minFederatedResolvedAt),
+  };
+  if (excludeTypes.length > 0) {
+    baseUserMatch.type = { $nin: excludeTypes };
+  }
+
+  // ---- Public / logged-out path: popular profiles by follower count ----
+  if (!viewerId) {
+    const followerRanked = await Follow.aggregate<RecommendationRow>([
+      { $match: { followType: FollowType.USER } },
+      { $group: { _id: '$followedId', followersCount: { $sum: 1 } } },
+      { $sort: { followersCount: -1, _id: 1 } },
+      { $skip: parsedOffset },
+      { $limit: parsedLimit + PUBLIC_FILTER_HEADROOM },
+      {
+        $lookup: {
+          from: 'users',
+          localField: '_id',
+          foreignField: '_id',
+          as: 'user',
+        },
+      },
+      { $unwind: '$user' },
+      {
+        $match: {
+          'user.privacySettings.isPrivateAccount': { $ne: true },
+          ...(excludeTypes.length > 0 ? { 'user.type': { $nin: excludeTypes } } : {}),
+          ...eligibleUserMatch(minFederatedResolvedAt, 'user.'),
+        },
+      },
+      { $limit: parsedLimit },
+      ...followCountLookupStages,
+      profileProjectionStage,
+    ]);
+
+    let publicProfiles: RecommendationRow[] = followerRanked;
+
+    if (publicProfiles.length < parsedLimit && parsedOffset === 0) {
+      const alreadyIncludedIds = publicProfiles.map((u) => u._id);
+      const fillLimit = parsedLimit - publicProfiles.length;
+
+      const randomUsers = await User.aggregate<RecommendationRow>([
+        { $match: { _id: { $nin: alreadyIncludedIds }, ...baseUserMatch } },
+        { $sample: { size: fillLimit } },
+        ...followCountLookupStages,
+        userProfileProjectionStage,
+      ]);
+
+      publicProfiles = publicProfiles.concat(randomUsers);
+    }
+
+    return publicProfiles.map(formatProfileResult);
+  }
+
+  // ---- Personalized path: mutual-connection overlap + random fill ----
+  let excludeIds: Types.ObjectId[] = [new Types.ObjectId(viewerId)];
+
+  const following = await Follow.find({
+    followerUserId: viewerId,
+    followType: FollowType.USER,
+  }).select('followedId').lean();
+
+  const followingIds = following
+    .map((f) => followedIdToObjectId(f.followedId))
+    .filter((id): id is Types.ObjectId => id !== null);
+
+  // Caller-supplied excludeIds also drop out of the legacy surface.
+  excludeIds = excludeIds.concat(followingIds, toObjectIds(opts.excludeIds));
+
+  let recommendations: RecommendationRow[] = [];
+
+  if (followingIds.length > 0) {
+    recommendations = await Follow.aggregate<RecommendationRow>([
+      {
+        $match: {
+          followerUserId: { $in: followingIds },
+          followType: FollowType.USER,
+          followedId: { $nin: excludeIds },
+        },
+      },
+      {
+        $group: {
+          _id: '$followedId',
+          mutualCount: { $sum: 1 },
+        },
+      },
+      { $sort: { mutualCount: -1 } },
+      { $skip: parsedOffset },
+      { $limit: parsedLimit },
+      {
+        $lookup: {
+          from: 'users',
+          localField: '_id',
+          foreignField: '_id',
+          as: 'user',
+        },
+      },
+      { $unwind: '$user' },
+      {
+        $match: {
+          'user.privacySettings.isPrivateAccount': { $ne: true },
+          ...(excludeTypes.length > 0 ? { 'user.type': { $nin: excludeTypes } } : {}),
+          ...eligibleUserMatch(minFederatedResolvedAt, 'user.'),
+        },
+      },
+      ...followCountLookupStages,
+      profileProjectionStage,
+    ]);
+  }
+
+  if (recommendations.length < parsedLimit) {
+    const alreadyRecommendedIds = recommendations.map((u) => u._id);
+    const fillLimit = parsedLimit - recommendations.length;
+
+    const randomUsers = await User.aggregate<RecommendationRow>([
+      {
+        $match: {
+          _id: { $nin: excludeIds.concat(alreadyRecommendedIds) },
+          ...baseUserMatch,
+        },
+      },
+      { $sample: { size: fillLimit } },
+      ...followCountLookupStages,
+      userProfileProjectionStage,
+    ]);
+
+    recommendations = recommendations.concat(randomUsers);
+  }
+
+  return recommendations.map(formatProfileResult);
+}
+
+/**
+ * SCORED recommendation builder (v2). A single aggregation over the candidate
+ * union (mutual-overlap window ∪ app-signal candidates ∪ boost members) minus
+ * the viewer/following/excludeIds, ranked by a weighted composite of:
+ *   graph (mutual overlap), completeness, verified, curation (endorsement
+ *   roll-up), interest, appBoost (caller boost map), and repCandidate
+ *   (denormalized reputation rank weight). `restricted` users are floored out.
+ */
+async function buildRecommendationsScored(
+  viewerId: string | undefined,
+  opts: RecommendationOptions
+): Promise<ReturnType<typeof formatProfileResult>[]> {
+  const { limit: parsedLimit, offset: parsedOffset, excludeTypes } = opts;
+  const minFederatedResolvedAt = new Date(Date.now() - FEDERATED_RECOMMENDATION_MAX_AGE_MS);
+  const weights = resolveWeightProfile(opts.clientId, opts.signalWeights);
+
+  // ---- Pre-queries -------------------------------------------------------
+  // 1. The viewer's following set (for graph signal + exclusion).
+  const followingIds: Types.ObjectId[] = [];
+  if (viewerId) {
+    const following = await Follow.find({
+      followerUserId: viewerId,
+      followType: FollowType.USER,
+    })
+      .select('followedId')
+      .limit(MAX_FOLLOWING_FOR_MUTUALS)
+      .lean();
+    for (const f of following) {
+      const id = followedIdToObjectId(f.followedId);
+      if (id) followingIds.push(id);
+    }
+  }
+
+  // 2. Mutual-overlap map (people followed by the people the viewer follows),
+  //    bounded to the top window so the in-memory map stays small.
+  const mutualMap = new Map<string, number>();
+  if (followingIds.length > 0) {
+    const mutualRows = await Follow.aggregate<{ _id: Types.ObjectId; mutualCount: number }>([
+      {
+        $match: {
+          followerUserId: { $in: followingIds },
+          followType: FollowType.USER,
+        },
+      },
+      { $group: { _id: '$followedId', mutualCount: { $sum: 1 } } },
+      { $sort: { mutualCount: -1 } },
+      { $limit: MUTUAL_COUNT_WINDOW },
+    ]);
+    for (const row of mutualRows) {
+      const id = followedIdToObjectId(row._id);
+      if (id) mutualMap.set(id.toHexString(), row.mutualCount);
+    }
+  }
+
+  // 3. App-signal candidates for the selected app (top endorsement/interest).
+  const appSignalMap = new Map<string, { endorsementScore: number; interestScore: number }>();
+  if (opts.clientId && Types.ObjectId.isValid(opts.clientId)) {
+    const signalRows = await AppUserSignal.find({
+      applicationId: new Types.ObjectId(opts.clientId),
+    })
+      .select('userId endorsementScore interestScore')
+      .sort({ endorsementScore: -1 })
+      .limit(MAX_APP_SIGNAL_CANDIDATES)
+      .lean();
+    for (const row of signalRows) {
+      appSignalMap.set(row.userId.toHexString(), {
+        endorsementScore: typeof row.endorsementScore === 'number' ? row.endorsementScore : 0,
+        interestScore: typeof row.interestScore === 'number' ? row.interestScore : 0,
+      });
+    }
+  }
+
+  // 4. Boost map (member id → summed boost weight). Boost members join the
+  //    candidate union but still pass the eligibility/privacy gate.
+  const boostMap = new Map<string, number>();
+  for (const boost of opts.boosts ?? []) {
+    for (const userId of boost.userIds) {
+      if (!Types.ObjectId.isValid(userId)) continue;
+      const key = new Types.ObjectId(userId).toHexString();
+      boostMap.set(key, (boostMap.get(key) ?? 0) + boost.weight);
+    }
+  }
+
+  // ---- Candidate union minus excludeIds ∪ following ∪ self ----------------
+  const excluded = new Set<string>(opts.excludeIds
+    .filter((id) => Types.ObjectId.isValid(id))
+    .map((id) => new Types.ObjectId(id).toHexString()));
+  if (viewerId && Types.ObjectId.isValid(viewerId)) {
+    excluded.add(new Types.ObjectId(viewerId).toHexString());
+  }
+  for (const id of followingIds) {
+    excluded.add(id.toHexString());
+  }
+
+  const candidateKeys = new Set<string>();
+  for (const key of mutualMap.keys()) candidateKeys.add(key);
+  for (const key of appSignalMap.keys()) candidateKeys.add(key);
+  for (const key of boostMap.keys()) candidateKeys.add(key);
+  for (const key of excluded) candidateKeys.delete(key);
+
+  const candidateIds = Array.from(candidateKeys).map((key) => new Types.ObjectId(key));
+
+  // When the candidate union is empty (e.g. anonymous caller, no app signals, no
+  // boosts), fall back to a random eligible sample so the surface is never blank.
+  // The fill respects the same scoring projection so the response shape is
+  // uniform.
+  const randomFillNeeded = candidateIds.length === 0;
+
+  // ---- Single scoring aggregation over the candidate users ----------------
+  const repNormDenominator = REP_WEIGHT_NORM_MAX - REP_WEIGHT_NORM_MIN;
+
+  const scoreAddFields = {
+    $addFields: {
+      mutualCount: { $literal: 0 },
+      // completeness = (has avatar + has structured name + has bio/description) / 3
+      completenessScore: {
+        $divide: [
+          {
+            $add: [
+              { $cond: [{ $gt: [{ $strLenCP: { $ifNull: ['$avatar', ''] } }, 0] }, 1, 0] },
+              {
+                $cond: [
+                  {
+                    $or: [
+                      { $gt: [{ $strLenCP: { $ifNull: ['$name.first', ''] } }, 0] },
+                      { $gt: [{ $strLenCP: { $ifNull: ['$name.last', ''] } }, 0] },
+                    ],
+                  },
+                  1,
+                  0,
+                ],
+              },
+              {
+                $cond: [
+                  {
+                    $or: [
+                      { $gt: [{ $strLenCP: { $ifNull: ['$bio', ''] } }, 0] },
+                      { $gt: [{ $strLenCP: { $ifNull: ['$description', ''] } }, 0] },
+                    ],
+                  },
+                  1,
+                  0,
+                ],
+              },
+            ],
+          },
+          3,
+        ],
+      },
+      verifiedScore: { $cond: [{ $eq: ['$verified', true] }, 1, 0] },
+      // repCandScore = normalize(reputationRankWeight) into [0, 1].
+      repCandScore: {
+        $max: [
+          0,
+          {
+            $min: [
+              1,
+              {
+                $divide: [
+                  {
+                    $subtract: [
+                      { $ifNull: ['$reputationRankWeight', INFLUENCE_MIN] },
+                      REP_WEIGHT_NORM_MIN,
+                    ],
+                  },
+                  repNormDenominator,
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    },
+  };
+
+  const eligibilityMatch: Record<string, unknown> = {
+    'privacySettings.isPrivateAccount': { $ne: true },
+    reputationTier: { $ne: 'restricted' },
+    ...eligibleUserMatch(minFederatedResolvedAt),
+  };
+  if (excludeTypes.length > 0) {
+    eligibilityMatch.type = { $nin: excludeTypes };
+  }
+
+  const matchStage = randomFillNeeded
+    ? { $match: eligibilityMatch }
+    : { $match: { _id: { $in: candidateIds }, ...eligibilityMatch } };
+
+  const selectionStages = randomFillNeeded
+    ? [{ $sample: { size: parsedLimit } }]
+    : [];
+
+  const rows = await User.aggregate<
+    RecommendationRow & {
+      reputationRankWeight?: number;
+      completenessScore: number;
+      verifiedScore: number;
+      repCandScore: number;
+    }
+  >([
+    matchStage,
+    ...selectionStages,
+    scoreAddFields,
+    // Project the raw profile fields plus the in-aggregation score components.
+    // Follower/following counts are intentionally NOT computed here — they are
+    // looked up for the final page only (see below), so the scoring pass never
+    // pays the per-candidate follower-count lookup for candidates that won't be
+    // returned.
+    {
+      $project: {
+        _id: 1,
+        username: 1,
+        publicKey: 1,
+        name: 1,
+        avatar: 1,
+        description: 1,
+        type: 1,
+        federation: 1,
+        automation: 1,
+        verified: 1,
+        reputationTier: 1,
+        reputationRankWeight: 1,
+        completenessScore: 1,
+        verifiedScore: 1,
+        repCandScore: 1,
+      },
+    },
+  ]);
+
+  // ---- Compose composite score in app code (per-candidate signals live in
+  //      the in-memory maps; aggregation-only signals come from the projection).
+  const scored = rows.map((row) => {
+    const key = row._id.toHexString();
+    const mutual = mutualMap.get(key) ?? 0;
+    const appSignal = appSignalMap.get(key);
+    const endorsement = appSignal?.endorsementScore ?? 0;
+    const interest = appSignal?.interestScore ?? 0;
+    const boost = boostMap.get(key) ?? 0;
+
+    const graphScore = Math.min(mutual / MUTUAL_COUNT_SATURATION, 1);
+    const curationScore = Math.max(
+      0,
+      Math.min(endorsement / ENDORSEMENT_SCORE_SATURATION, 1)
+    );
+    const completeness = typeof row.completenessScore === 'number' ? row.completenessScore : 0;
+    const verifiedScore = typeof row.verifiedScore === 'number' ? row.verifiedScore : 0;
+    const repCand = typeof row.repCandScore === 'number'
+      ? row.repCandScore
+      : normalizeRepWeight(
+          typeof row.reputationRankWeight === 'number' ? row.reputationRankWeight : INFLUENCE_MIN
+        );
+
+    const terms: Array<[RecommendationSignal, number]> = [
+      ['graph', graphScore],
+      ['completeness', completeness],
+      ['verified', verifiedScore],
+      ['curation', curationScore],
+      ['interest', interest],
+      ['appBoost', boost],
+      ['repCandidate', repCand],
+    ];
+
+    let score = 0;
+    const matchedSignals: string[] = [];
+    for (const [signal, value] of terms) {
+      const contribution = weights[signal] * value;
+      score += contribution;
+      if (contribution > 0) matchedSignals.push(signal);
+    }
+
+    return { row: { ...row, mutualCount: mutual, score, matchedSignals } };
+  });
+
+  // Sort by score desc, stable by _id; page with skip/limit.
+  scored.sort((a, b) => {
+    if (b.row.score !== a.row.score) return b.row.score - a.row.score;
+    return a.row._id.toHexString().localeCompare(b.row._id.toHexString());
+  });
+
+  const pageRows = scored
+    .slice(parsedOffset, parsedOffset + parsedLimit)
+    .map((s) => s.row);
+
+  // Follower/following counts are looked up for the PAGE ONLY — a single
+  // aggregation over the (≤ limit) returned ids — so the scoring pass never pays
+  // the per-candidate count lookup for candidates that fall off the page.
+  const pageIds = pageRows.map((row) => row._id);
+  const countMap = new Map<string, { followers: number; following: number }>();
+  if (pageIds.length > 0) {
+    const counted = await User.aggregate<RecommendationRow>([
+      { $match: { _id: { $in: pageIds } } },
+      ...followCountLookupStages,
+      {
+        $project: {
+          _id: 1,
+          followersCount: { $size: '$followersArr' },
+          followingCount: { $size: '$followingArr' },
+        },
+      },
+    ]);
+    for (const row of counted) {
+      countMap.set(row._id.toHexString(), {
+        followers: row.followersCount ?? 0,
+        following: row.followingCount ?? 0,
+      });
+    }
+  }
+
+  return pageRows.map((row) => {
+    const counts = countMap.get(row._id.toHexString());
+    return formatProfileResult({
+      ...row,
+      followersCount: counts?.followers ?? 0,
+      followingCount: counts?.following ?? 0,
+    });
+  });
+}
+
+/**
+ * Single shared entry point for both the GET and POST recommendation surfaces.
+ * Dispatches to the scored (v2) builder when `REC_SCORING_V2=true`, else the
+ * legacy builder. Wraps the result in a per-viewer Redis cache (TTL bounded by
+ * `REC_CACHE_TTL_SECONDS`) keyed including the viewer id so an anonymous and an
+ * authenticated response are never shared. Cache is a best-effort optimization —
+ * a null Redis client (REDIS_URL unset) transparently falls back to no cache.
+ */
+async function buildRecommendations(
+  viewerId: string | undefined,
+  opts: RecommendationOptions
+): Promise<ReturnType<typeof formatProfileResult>[]> {
+  const redis = getRedisClient();
+  const cacheKey = redis
+    ? `rec:v${isScoringV2Enabled() ? '2' : '1'}:${viewerId ?? 'anon'}:${JSON.stringify({
+        limit: opts.limit,
+        offset: opts.offset,
+        excludeTypes: opts.excludeTypes,
+        excludeIds: opts.excludeIds,
+        clientId: opts.clientId ?? null,
+        boosts: opts.boosts ?? null,
+        signalWeights: opts.signalWeights ?? null,
+      })}`
+    : null;
+
+  if (redis && cacheKey) {
+    try {
+      const cached = await redis.get(cacheKey);
+      if (cached) {
+        return JSON.parse(cached) as ReturnType<typeof formatProfileResult>[];
+      }
+    } catch (error) {
+      logger.warn('recommendations: cache read failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  const result = isScoringV2Enabled()
+    ? await buildRecommendationsScored(viewerId, opts)
+    : await buildRecommendationsLegacy(viewerId, opts);
+
+  if (redis && cacheKey) {
+    try {
+      await redis.set(cacheKey, JSON.stringify(result), 'EX', REC_CACHE_TTL_SECONDS);
+    } catch (error) {
+      logger.warn('recommendations: cache write failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  return result;
+}
+
+/**
  * GET /profiles/recommendations
  *
- * Get recommended user profiles.
+ * Get recommended user profiles. Back-compat surface: maps the query string to
+ * the shared {@link buildRecommendations}. With `REC_SCORING_V2` off this is
+ * byte-for-byte the prior behavior; on, it runs the reputation-weighted scorer.
  *
  * Optional auth: when a valid session token is present the response is
- * personalized via mutual-connection overlap (people followed by the people
- * you follow), topped up with a random sample. When NO user is present
- * (logged-out / public callers) the personalized aggregate is skipped and
- * the endpoint returns popular public profiles ranked by follower count.
- * Private accounts are always excluded; `excludeTypes` filters out
- * federated/agent/automated users on either path.
+ * personalized; when absent it returns popular public profiles. Private accounts
+ * are always excluded; `excludeTypes` filters federated/agent/automated users.
  *
  * @query {number} limit - Number of results (max 100, default 10)
  * @query {number} offset - Pagination offset (default 0)
@@ -600,11 +1194,11 @@ router.get(
  */
 router.get(
   '/recommendations',
-  optionalAuthMiddleware,
+  optionalUserOrServiceAuth,
   validatePagination,
-  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+  asyncHandler(async (req: OptionalUserOrServiceRequest, res: Response) => {
     const { limit, offset, excludeTypes: excludeTypesRaw } = req.query as PaginationQuery & { excludeTypes?: string };
-    const currentUserId = getUserId(req);
+    const currentUserId = resolveViewerId(req);
 
     const excludeTypes = excludeTypesRaw
       ? excludeTypesRaw.split(',').filter(t => VALID_EXCLUDE_TYPES.has(t.trim())).map(t => t.trim())
@@ -614,183 +1208,66 @@ router.get(
       ? Math.min(parseInt(limit, 10), PAGINATION.MAX_LIMIT)
       : PAGINATION.DEFAULT_LIMIT;
     const parsedOffset = offset ? parseInt(offset, 10) : 0;
-    const minFederatedResolvedAt = new Date(Date.now() - FEDERATED_RECOMMENDATION_MAX_AGE_MS);
 
     logger.debug('GET /profiles/recommendations', {
       currentUserId: currentUserId ?? null,
       authenticated: !!currentUserId,
       limit: parsedLimit,
       offset: parsedOffset,
+      scoringV2: isScoringV2Enabled(),
     });
 
-    // Base filter applied to every random-fill query that scans the users
-    // collection: never surface private accounts, honour the caller's
-    // excludeTypes (federated/agent/automated), keep federated actors fresh, and
-    // require a minimum profile-quality bar so the discovery surface is never
-    // padded with empty shell/QA accounts.
-    const baseUserMatch: Record<string, unknown> = {
-      'privacySettings.isPrivateAccount': { $ne: true },
-      ...eligibleUserMatch(minFederatedResolvedAt),
-    };
-    if (excludeTypes.length > 0) {
-      baseUserMatch.type = { $nin: excludeTypes };
-    }
-
-    // ---- Public / logged-out path: popular profiles by follower count ----
-    //
-    // Rank candidates from the Follow collection (grouped by followedId, the
-    // same proven aggregation the personalized path uses) so we never scan the
-    // whole users collection with a per-user lookup. The `followType` match is
-    // index-backed by the unique compound index. We over-fetch a window before
-    // the private/excludeTypes filter, then re-limit, so the post-lookup filter
-    // can't starve the result below `limit`.
-    if (!currentUserId) {
-      const followerRanked = await Follow.aggregate<RecommendationRow>([
-        { $match: { followType: FollowType.USER } },
-        { $group: { _id: '$followedId', followersCount: { $sum: 1 } } },
-        { $sort: { followersCount: -1, _id: 1 } },
-        { $skip: parsedOffset },
-        { $limit: parsedLimit + PUBLIC_FILTER_HEADROOM },
-        {
-          $lookup: {
-            from: 'users',
-            localField: '_id',
-            foreignField: '_id',
-            as: 'user',
-          },
-        },
-        { $unwind: '$user' },
-        {
-          $match: {
-            'user.privacySettings.isPrivateAccount': { $ne: true },
-            ...(excludeTypes.length > 0 ? { 'user.type': { $nin: excludeTypes } } : {}),
-            ...eligibleUserMatch(minFederatedResolvedAt, 'user.'),
-          },
-        },
-        { $limit: parsedLimit },
-        ...followCountLookupStages,
-        profileProjectionStage,
-      ]);
-
-      let publicProfiles: RecommendationRow[] = followerRanked;
-
-      // Fallback for a near-empty social graph (e.g. fresh install): if no one
-      // has followers yet, surface a random sample of public profiles so the
-      // discovery surface is never blank.
-      if (publicProfiles.length < parsedLimit && parsedOffset === 0) {
-        const alreadyIncludedIds = publicProfiles.map((u) => u._id);
-        const fillLimit = parsedLimit - publicProfiles.length;
-
-        const randomUsers = await User.aggregate<RecommendationRow>([
-          { $match: { _id: { $nin: alreadyIncludedIds }, ...baseUserMatch } },
-          { $sample: { size: fillLimit } },
-          ...followCountLookupStages,
-          userProfileProjectionStage,
-        ]);
-
-        publicProfiles = publicProfiles.concat(randomUsers);
-      }
-
-      const formattedPublic = publicProfiles.map(formatProfileResult);
-
-      logger.debug('GET /profiles/recommendations (public)', {
-        recommendationsCount: formattedPublic.length,
-      });
-
-      return sendSuccess(res, formattedPublic);
-    }
-
-    // ---- Personalized path: mutual-connection overlap + random fill ----
-    let excludeIds: Types.ObjectId[] = [];
-    let followingIds: Types.ObjectId[] = [];
-
-    excludeIds.push(new Types.ObjectId(currentUserId));
-
-    const following = await Follow.find({
-      followerUserId: currentUserId,
-      followType: FollowType.USER,
-    }).select('followedId').lean();
-
-    followingIds = following
-      .map((f) =>
-        f.followedId instanceof Types.ObjectId
-          ? f.followedId
-          : new Types.ObjectId(f.followedId)
-      )
-      .filter((id): id is Types.ObjectId => id instanceof Types.ObjectId);
-
-    excludeIds = excludeIds.concat(followingIds);
-
-    let recommendations: RecommendationRow[] = [];
-
-    if (followingIds.length > 0) {
-      recommendations = await Follow.aggregate<RecommendationRow>([
-        {
-          $match: {
-            followerUserId: { $in: followingIds },
-            followType: FollowType.USER,
-            followedId: { $nin: excludeIds },
-          },
-        },
-        {
-          $group: {
-            _id: '$followedId',
-            mutualCount: { $sum: 1 },
-          },
-        },
-        { $sort: { mutualCount: -1 } },
-        { $skip: parsedOffset },
-        { $limit: parsedLimit },
-        {
-          $lookup: {
-            from: 'users',
-            localField: '_id',
-            foreignField: '_id',
-            as: 'user',
-          },
-        },
-        { $unwind: '$user' },
-        {
-          $match: {
-            'user.privacySettings.isPrivateAccount': { $ne: true },
-            ...(excludeTypes.length > 0 ? { 'user.type': { $nin: excludeTypes } } : {}),
-            // Hold every personalized recommendation to the same profile-quality
-            // bar as the random fill.
-            ...eligibleUserMatch(minFederatedResolvedAt, 'user.'),
-          },
-        },
-        ...followCountLookupStages,
-        profileProjectionStage,
-      ]);
-    }
-
-    if (recommendations.length < parsedLimit) {
-      const alreadyRecommendedIds = recommendations.map((u) => u._id);
-      const fillLimit = parsedLimit - recommendations.length;
-
-      const randomUsers = await User.aggregate<RecommendationRow>([
-        {
-          $match: {
-            _id: { $nin: excludeIds.concat(alreadyRecommendedIds) },
-            ...baseUserMatch,
-          },
-        },
-        { $sample: { size: fillLimit } },
-        ...followCountLookupStages,
-        userProfileProjectionStage,
-      ]);
-
-      recommendations = recommendations.concat(randomUsers);
-    }
-
-    const formattedRecommendations = recommendations.map(formatProfileResult);
-
-    logger.debug('GET /profiles/recommendations', {
-      currentUserId,
-      recommendationsCount: formattedRecommendations.length,
+    const recommendations = await buildRecommendations(currentUserId, {
+      limit: parsedLimit,
+      offset: parsedOffset,
+      excludeTypes,
+      excludeIds: [],
     });
 
-    sendSuccess(res, formattedRecommendations);
+    sendSuccess(res, recommendations);
+  })
+);
+
+/**
+ * POST /profiles/recommendations
+ *
+ * Rich recommendation surface accepting a JSON body: per-app weight profile
+ * (`clientId`), explicit `excludeIds`, editorial `boosts`, and per-request
+ * `signalWeights`. Optional auth (same personalization rules as GET). Validates
+ * the body against `recommendationRequestSchema`. Shares the exact builder/cache
+ * with GET, so identical inputs yield identical output.
+ */
+router.post(
+  '/recommendations',
+  optionalUserOrServiceAuth,
+  validate({ body: recommendationRequestSchema }),
+  asyncHandler(async (req: OptionalUserOrServiceRequest, res: Response) => {
+    const currentUserId = resolveViewerId(req);
+    const body = req.body as RecommendationRequest;
+
+    const parsedLimit = body.limit ?? PAGINATION.DEFAULT_LIMIT;
+    const parsedOffset = body.offset ?? 0;
+
+    logger.debug('POST /profiles/recommendations', {
+      currentUserId: currentUserId ?? null,
+      authenticated: !!currentUserId,
+      limit: parsedLimit,
+      offset: parsedOffset,
+      clientId: body.clientId ?? null,
+      scoringV2: isScoringV2Enabled(),
+    });
+
+    const recommendations = await buildRecommendations(currentUserId, {
+      limit: parsedLimit,
+      offset: parsedOffset,
+      excludeTypes: body.excludeTypes ?? [],
+      excludeIds: body.excludeIds ?? [],
+      clientId: body.clientId,
+      boosts: body.boosts,
+      signalWeights: body.signalWeights,
+    });
+
+    sendSuccess(res, recommendations);
   })
 );
 

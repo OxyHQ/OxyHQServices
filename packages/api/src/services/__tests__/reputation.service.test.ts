@@ -203,6 +203,19 @@ function makeModel(store: ReturnType<typeof makeStore>) {
       }
       return doc;
     },
+    async updateOne(
+      query: Record<string, unknown>,
+      update: Record<string, unknown>
+    ) {
+      const doc = store.docs.find((d) => matchesQuery(d, query));
+      if (!doc) {
+        return { matchedCount: 0, modifiedCount: 0, upsertedCount: 0 };
+      }
+      const set = (update.$set as Record<string, unknown>) ?? {};
+      Object.assign(doc, set);
+      doc.updatedAt = new Date();
+      return { matchedCount: 1, modifiedCount: 1, upsertedCount: 0 };
+    },
     async countDocuments(query: Record<string, unknown> = {}) {
       return store.docs.filter((d) => matchesQuery(d, query)).length;
     },

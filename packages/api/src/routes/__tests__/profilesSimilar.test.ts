@@ -45,8 +45,8 @@ jest.mock('../../middleware/auth', () => ({
 // Heavy / DB-touching imports pulled in by the profiles router are stubbed so
 // importing the router doesn't crash. None are used by /:userId/similar.
 jest.mock('../../middleware/optionalAuth', () => ({
-  optionalAuthMiddleware: (_req: unknown, _res: unknown, next: () => void) => next(),
-  getUserId: (req: { user?: { _id?: string } }): string | undefined => req.user?._id,
+  optionalUserOrServiceAuth: (_req: unknown, _res: unknown, next: () => void) => next(),
+  resolveViewerId: (req: { user?: { _id?: string } }): string | undefined => req.user?._id,
 }));
 jest.mock('../../services/user.service', () => ({
   userService: {

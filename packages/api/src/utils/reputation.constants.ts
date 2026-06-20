@@ -206,6 +206,21 @@ export const ABUSE_SMOOTHING = 5;
 export const ABUSE_PENALTY_WEIGHT = 2;
 
 // =============================================================================
+// CROSS-APP SIGNAL RULES
+// =============================================================================
+
+/**
+ * Canonical action key awarded to the MEMBER of an endorsement edge when a
+ * consuming app reports that an owner endorsed them (`POST /app-signals/ingest`,
+ * op `add`). The giver is NOT awarded — only the endorsed member gains
+ * reputation. Idempotent on (applicationId, sourceActionId = edge id).
+ */
+export const ENDORSEMENT_RECEIVED_ACTION = 'endorsement_received';
+
+/** Points awarded to the member of an endorsement edge (social category). */
+export const ENDORSEMENT_RECEIVED_POINTS = 2;
+
+// =============================================================================
 // PAGINATION
 // =============================================================================
 

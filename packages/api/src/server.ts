@@ -29,6 +29,7 @@ import fedcmRoutes from './routes/fedcm';
 import ssoRoutes, { ssoExchangeCors } from './routes/sso';
 import authLinkingRoutes from './routes/authLinking';
 import fedcmService from './services/fedcm.service';
+import reputationService from './services/reputation.service';
 import emailRoutes from './routes/email';
 import emailProxyRoutes from './routes/emailProxy';
 import emailInboundRoutes from './routes/emailInbound';
@@ -41,6 +42,7 @@ import topicsRoutes from './routes/topics.routes';
 import managedAccountsRouter from './routes/managedAccounts';
 import contactsRouter from './routes/contacts';
 import userDataRouter from './routes/userData';
+import appSignalsRouter from './routes/appSignals';
 import { startSmtpInbound, stopSmtpInbound } from './services/smtp.inbound';
 import { smtpOutbound } from './services/smtp.outbound';
 import { startBackgroundJobs, stopBackgroundJobs } from './queue/backgroundJobs';
@@ -493,6 +495,10 @@ app.use('/platform-stats', platformStatsRoutes);
 app.use('/topics', topicsRoutes);
 app.use('/managed-accounts', userRateLimiter, csrfProtection, authMiddleware, managedAccountsRouter);
 app.use('/contacts', userRateLimiter, csrfProtection, contactsRouter);
+// Service-token-only cross-app signal ingest (endorsements + interests). No
+// csrfProtection — Bearer-authenticated service writes are exempt (no ambient
+// cookie credentials), per the bearer-write CSRF rule.
+app.use('/app-signals', appSignalsRouter);
 
 // ActivityPub endpoints — serves actor profiles and public keys for federation.
 import { getInstanceActor, getUserActor } from './services/federation.service';
@@ -645,6 +651,10 @@ if (require.main === module) {
     .then(async () => {
       // Seed FedCM approved clients (idempotent - only inserts if not exists)
       await fedcmService.seedApprovedClients();
+
+      // Seed platform-default reputation rules (idempotent) — currently the
+      // cross-app `endorsement_received` rule awarded by /app-signals/ingest.
+      await reputationService.seedDefaultRules();
 
       // Start SMTP inbound server if enabled
       if (getEnvBoolean('SMTP_ENABLED', false)) {

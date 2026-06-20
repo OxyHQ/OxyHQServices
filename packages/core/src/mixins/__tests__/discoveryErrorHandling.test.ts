@@ -23,6 +23,19 @@ function jsonResponse(data: unknown): Response {
   });
 }
 
+/**
+ * Build a non-verified JWT whose payload decodes to the given claims.
+ * `jwtDecode` only base64url-decodes the middle segment (no signature check).
+ * Used to put the SDK in an authenticated state so a state-changing POST
+ * carries a bearer header and skips the CSRF-token pre-fetch.
+ */
+function makeJwt(payload: Record<string, unknown>): string {
+  const b64url = (obj: Record<string, unknown>): string =>
+    Buffer.from(JSON.stringify(obj)).toString('base64url');
+  const fullPayload = { exp: Math.floor(Date.now() / 1000) + 3600, ...payload };
+  return `${b64url({ alg: 'none', typ: 'JWT' })}.${b64url(fullPayload)}.sig`;
+}
+
 /** A JSON error `Response` with the given HTTP status. */
 function errorResponse(status: number, message: string): Response {
   return new Response(JSON.stringify({ message }), {
@@ -116,6 +129,137 @@ describe('discovery error handling', () => {
       expect(context).toMatchObject({
         method: 'getProfileRecommendations',
         status: 500,
+      });
+    });
+  });
+
+  /**
+   * GET-vs-POST routing for the recommendation contract (Wave 2).
+   *
+   * The simple/back-compat case (no options, or only `excludeTypes`/`limit`)
+   * keeps using the cached `GET /profiles/recommendations`. The scored (v2)
+   * fields (`clientId`/`offset`/`excludeIds`/`boosts`/`signalWeights`) switch to
+   * `POST /profiles/recommendations` with the validated request body.
+   */
+  describe('getProfileRecommendations routing (GET vs POST)', () => {
+    // Authenticate so the state-changing POST carries a bearer header and the
+    // SDK skips the CSRF-token pre-fetch (which would otherwise consume a mock).
+    // A bearer token does not affect GET routing or the request body, so the
+    // GET-path assertions below are unaffected.
+    beforeEach(() => {
+      oxy.httpService.setTokens(makeJwt({ userId: 'me' }));
+    });
+
+    /** The `(url, init)` pair of the single recorded fetch call. */
+    function lastCall(): { url: string; init: RequestInit | undefined } {
+      const [input, init] = fetchMock.mock.calls[fetchMock.mock.calls.length - 1];
+      return { url: String(input), init };
+    }
+
+    it('uses GET (no body) when called with no options', async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse([{ id: 'r1' }]));
+      await oxy.getProfileRecommendations();
+      const { url, init } = lastCall();
+      expect(init?.method).toBe('GET');
+      expect(init?.body).toBeUndefined();
+      expect(url).toContain('/profiles/recommendations');
+      expect(url).not.toContain('excludeTypes');
+    });
+
+    it('uses GET with excludeTypes as a comma-joined query param (legacy shape)', async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse([{ id: 'r1' }]));
+      await oxy.getProfileRecommendations({ excludeTypes: ['federated', 'agent'] });
+      const { url, init } = lastCall();
+      expect(init?.method).toBe('GET');
+      expect(init?.body).toBeUndefined();
+      // Comma is URL-encoded as %2C in the query string.
+      expect(decodeURIComponent(url)).toContain('excludeTypes=federated,agent');
+    });
+
+    it('uses GET with limit as a query param', async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse([{ id: 'r1' }]));
+      await oxy.getProfileRecommendations({ limit: 5 });
+      const { url, init } = lastCall();
+      expect(init?.method).toBe('GET');
+      expect(url).toContain('limit=5');
+    });
+
+    it('uses POST with the validated body when clientId is present', async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse([{ id: 'r1' }]));
+      await oxy.getProfileRecommendations({ clientId: 'app-123', limit: 10 });
+      const { url, init } = lastCall();
+      expect(init?.method).toBe('POST');
+      expect(url).toContain('/profiles/recommendations');
+      expect(url).not.toContain('?');
+      expect(JSON.parse(String(init?.body))).toMatchObject({ clientId: 'app-123', limit: 10 });
+    });
+
+    it('uses POST when boosts are present', async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse([{ id: 'r1' }]));
+      await oxy.getProfileRecommendations({
+        boosts: [{ userIds: ['u1', 'u2'], weight: 2, reason: 'editorial' }],
+      });
+      const { init } = lastCall();
+      expect(init?.method).toBe('POST');
+      expect(JSON.parse(String(init?.body)).boosts[0]).toMatchObject({
+        userIds: ['u1', 'u2'],
+        weight: 2,
+      });
+    });
+
+    it('uses POST when excludeIds are present', async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse([{ id: 'r1' }]));
+      await oxy.getProfileRecommendations({ excludeIds: ['x1', 'x2'] });
+      const { init } = lastCall();
+      expect(init?.method).toBe('POST');
+      expect(JSON.parse(String(init?.body)).excludeIds).toEqual(['x1', 'x2']);
+    });
+
+    it('uses POST when signalWeights are present', async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse([{ id: 'r1' }]));
+      await oxy.getProfileRecommendations({ signalWeights: { graph: 3 } });
+      const { init } = lastCall();
+      expect(init?.method).toBe('POST');
+      expect(JSON.parse(String(init?.body)).signalWeights).toEqual({ graph: 3 });
+    });
+
+    it('uses POST when offset is present', async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse([{ id: 'r1' }]));
+      await oxy.getProfileRecommendations({ offset: 20, limit: 10 });
+      const { init } = lastCall();
+      expect(init?.method).toBe('POST');
+      expect(JSON.parse(String(init?.body))).toMatchObject({ offset: 20, limit: 10 });
+    });
+
+    it('validates the POST body against the contract and rejects bad input', async () => {
+      // weight is clamped to [-5, 5] by the schema; 99 must be rejected
+      // client-side BEFORE any network call.
+      await expect(
+        oxy.getProfileRecommendations({ boosts: [{ userIds: ['u1'], weight: 99 }] }),
+      ).rejects.toThrow();
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('returns the scored items (score/matchedSignals) from the POST path', async () => {
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse([
+          {
+            id: 'r1',
+            name: { displayName: 'Rec One' },
+            mutualCount: 3,
+            score: 0.87,
+            matchedSignals: ['graph', 'verified'],
+            _count: { followers: 10, following: 5 },
+          },
+        ]),
+      );
+      const result = await oxy.getProfileRecommendations({ clientId: 'app-1' });
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatchObject({
+        id: 'r1',
+        score: 0.87,
+        matchedSignals: ['graph', 'verified'],
+        mutualCount: 3,
       });
     });
   });

@@ -57,3 +57,30 @@ export {
 export type {
     FedcmTokenPayload,
 } from './fedcmToken';
+
+export {
+    // Schemas
+    recommendationExcludeTypeSchema,
+    recommendationBoostSchema,
+    recommendationSignalWeightsSchema,
+    recommendationRequestSchema,
+    recommendationCountSchema,
+    recommendationItemSchema,
+    recommendationResponseSchema,
+    appEndorsementInputSchema,
+    appInterestInputSchema,
+    appUserSignalIngestSchema,
+} from './recommendations';
+
+export type {
+    RecommendationExcludeType,
+    RecommendationBoost,
+    RecommendationSignalWeights,
+    RecommendationRequest,
+    RecommendationCount,
+    RecommendationItem,
+    RecommendationResponse,
+    AppEndorsementInput,
+    AppInterestInput,
+    AppUserSignalIngest,
+} from './recommendations';

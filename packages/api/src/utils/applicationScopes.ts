@@ -24,6 +24,7 @@ export const APPLICATION_SCOPES = [
   'chat:completions',
   'models:read',
   'federation:write',
+  'signals:write',
 ] as const;
 
 export type ApplicationScope = (typeof APPLICATION_SCOPES)[number];

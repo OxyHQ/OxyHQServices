@@ -29,24 +29,49 @@ const mockFollowFind = jest.fn();
 const mockFollowAggregate = jest.fn();
 const mockUserAggregate = jest.fn();
 
-// optionalAuthMiddleware is swappable per-test so we can run authenticated and
-// logged-out paths against the same mounted router. getUserId stays the REAL
-// implementation (it is a pure `req.user?._id` read) so we exercise the route's
-// genuine identity extraction.
+// The dual-auth middleware is swappable per-test so we can run authenticated and
+// logged-out paths against the same mounted router. The mocked
+// `optionalUserOrServiceAuth` only attaches the principal the test selects
+// (req.user for a user token, req.serviceApp for a service token); the route's
+// REAL viewer-resolution logic is mirrored faithfully by the mocked
+// `resolveViewerId` below (kept byte-aligned with the production rule:
+// user → own session; service → X-Oxy-User-Id only with `user:read` + valid id;
+// the dedicated unit test in optionalAuth.test.ts exercises the production fn
+// directly). This keeps THIS route test hermetic (no real auth/session/mongoose
+// module graph loaded).
 let currentUserId: string | undefined;
-jest.mock('../../middleware/optionalAuth', () => ({
-  optionalAuthMiddleware: (
-    req: { user?: { _id: string } },
-    _res: unknown,
-    next: () => void
-  ) => {
-    if (currentUserId) {
-      req.user = { _id: currentUserId };
-    }
-    next();
-  },
-  getUserId: (req: { user?: { _id?: string } }): string | undefined => req.user?._id,
-}));
+let currentServiceApp: { appId: string; scopes: string[] } | undefined;
+jest.mock('../../middleware/optionalAuth', () => {
+  const { Types } = jest.requireActual('mongoose');
+  return {
+    optionalUserOrServiceAuth: (
+      req: { user?: { _id: string }; serviceApp?: { appId: string; scopes: string[] } },
+      _res: unknown,
+      next: () => void
+    ) => {
+      if (currentServiceApp) {
+        req.serviceApp = { type: 'service', appName: 'test', credentialId: 'c', ...currentServiceApp };
+      } else if (currentUserId) {
+        req.user = { _id: currentUserId };
+      }
+      next();
+    },
+    resolveViewerId: (req: {
+      user?: { _id?: string };
+      serviceApp?: { appId: string; scopes: string[] };
+      headers: Record<string, string | string[] | undefined>;
+    }): string | undefined => {
+      if (req.user?._id) return req.user._id;
+      const svc = req.serviceApp;
+      if (!svc) return undefined;
+      if (!svc.scopes.includes('user:read')) return undefined;
+      const raw = req.headers['x-oxy-user-id'];
+      const viewerId = typeof raw === 'string' && raw.length > 0 ? raw : undefined;
+      if (!viewerId || !Types.ObjectId.isValid(viewerId)) return undefined;
+      return viewerId;
+    },
+  };
+});
 
 // Heavy / DB-touching imports pulled in by the profiles router are stubbed so
 // importing the router doesn't crash. None are used by /recommendations.
@@ -98,11 +123,15 @@ interface JsonResponse {
   body: { error?: string; message?: string; data?: ProfileResult[] };
 }
 
-function requestJson(server: http.Server, path: string): Promise<JsonResponse> {
+function requestJson(
+  server: http.Server,
+  path: string,
+  headers: Record<string, string> = {}
+): Promise<JsonResponse> {
   const address = server.address() as AddressInfo;
   return new Promise((resolve, reject) => {
     const req = http.request(
-      { method: 'GET', host: '127.0.0.1', port: address.port, path },
+      { method: 'GET', host: '127.0.0.1', port: address.port, path, headers },
       (res) => {
         let raw = '';
         res.on('data', (chunk) => { raw += chunk; });
@@ -237,6 +266,7 @@ afterAll((done) => {
 beforeEach(() => {
   jest.clearAllMocks();
   currentUserId = undefined;
+  currentServiceApp = undefined;
 });
 
 describe('GET /profiles/recommendations exclusion set', () => {
@@ -353,5 +383,143 @@ describe('GET /profiles/recommendations exclusion set', () => {
 
     expect(res.status).toBe(200);
     expectProfileQualityMatch(mockUserAggregate.mock.calls[0][0]);
+  });
+});
+
+/**
+ * Dual-auth viewer resolution (service token + X-Oxy-User-Id).
+ *
+ * The route now resolves the personalization viewer via the REAL
+ * `resolveViewerId`. A valid service principal bearing `user:read` may name the
+ * viewer through the `X-Oxy-User-Id` header; the route must then run the
+ * PERSONALIZED path (load that viewer's following set via Follow.find) rather
+ * than the anonymous public path. A user-token caller must ignore the header,
+ * and a service lacking the scope / sending no header falls back to anonymous.
+ */
+describe('POST /profiles/recommendations dual-auth viewer resolution', () => {
+  function postJson(
+    server: http.Server,
+    headers: Record<string, string> = {}
+  ): Promise<JsonResponse> {
+    const address = server.address() as AddressInfo;
+    const payload = JSON.stringify({ limit: 10 });
+    return new Promise((resolve, reject) => {
+      const req = http.request(
+        {
+          method: 'POST',
+          host: '127.0.0.1',
+          port: address.port,
+          path: '/profiles/recommendations',
+          headers: { 'content-type': 'application/json', ...headers },
+        },
+        (res) => {
+          let raw = '';
+          res.on('data', (chunk) => { raw += chunk; });
+          res.on('end', () => {
+            try {
+              resolve({ status: res.statusCode ?? 0, body: raw ? JSON.parse(raw) : {} });
+            } catch (err) {
+              reject(err);
+            }
+          });
+        }
+      );
+      req.on('error', reject);
+      req.end(payload);
+    });
+  }
+
+  /** Wire Follow.find so the personalized following-set load resolves to [B]. */
+  function stubFollowingSet(followed: Types.ObjectId[]): void {
+    const lean = jest.fn().mockResolvedValue(followed.map((id) => ({ followedId: id })));
+    const select = jest.fn().mockReturnValue({ lean });
+    mockFollowFind.mockReturnValue({ select });
+  }
+
+  it('service token + valid X-Oxy-User-Id (with user:read) personalizes for that viewer', async () => {
+    currentServiceApp = { appId: 'app1', scopes: ['user:read', 'files:write'] };
+    stubFollowingSet([userB]);
+    mockFollowAggregate.mockResolvedValue([]);
+    mockUserAggregate.mockResolvedValue([]);
+
+    const res = await postJson(server, { 'x-oxy-user-id': userA.toHexString() });
+
+    expect(res.status).toBe(200);
+    // Personalized path ran: the route loaded the VIEWER's following set.
+    expect(mockFollowFind).toHaveBeenCalledTimes(1);
+    expect(mockFollowFind.mock.calls[0][0]).toMatchObject({
+      followerUserId: userA.toHexString(),
+    });
+    // The viewer (A) and the followed user (B) are excluded from the fill.
+    const excludedIds = extractNinIds(mockUserAggregate.mock.calls[0][0]).map((id) => id.toString());
+    expect(excludedIds).toContain(userA.toString());
+    expect(excludedIds).toContain(userB.toString());
+  });
+
+  it('service token WITHOUT user:read ignores X-Oxy-User-Id (anonymous/public)', async () => {
+    currentServiceApp = { appId: 'app1', scopes: ['files:write'] };
+    mockFollowAggregate.mockResolvedValue([]);
+    mockUserAggregate.mockResolvedValue([]);
+
+    const res = await postJson(server, { 'x-oxy-user-id': userA.toHexString() });
+
+    expect(res.status).toBe(200);
+    // No viewer resolved → public path → the following-set query is never issued.
+    expect(mockFollowFind).not.toHaveBeenCalled();
+  });
+
+  it('service token with a MALFORMED X-Oxy-User-Id falls back to anonymous', async () => {
+    currentServiceApp = { appId: 'app1', scopes: ['user:read'] };
+    mockFollowAggregate.mockResolvedValue([]);
+    mockUserAggregate.mockResolvedValue([]);
+
+    const res = await postJson(server, { 'x-oxy-user-id': 'not-an-objectid' });
+
+    expect(res.status).toBe(200);
+    expect(mockFollowFind).not.toHaveBeenCalled();
+  });
+
+  it('service token with NO X-Oxy-User-Id is anonymous (service acting as itself)', async () => {
+    currentServiceApp = { appId: 'app1', scopes: ['user:read'] };
+    mockFollowAggregate.mockResolvedValue([]);
+    mockUserAggregate.mockResolvedValue([]);
+
+    const res = await postJson(server, {});
+
+    expect(res.status).toBe(200);
+    expect(mockFollowFind).not.toHaveBeenCalled();
+  });
+
+  it('USER token IGNORES X-Oxy-User-Id and personalizes for its OWN session user (anti-impersonation)', async () => {
+    // A logged-in user (D) tries to smuggle another user (A) via the header.
+    currentUserId = userD.toHexString();
+    currentServiceApp = undefined;
+    stubFollowingSet([userC]);
+    mockFollowAggregate.mockResolvedValue([]);
+    mockUserAggregate.mockResolvedValue([]);
+
+    const res = await postJson(server, { 'x-oxy-user-id': userA.toHexString() });
+
+    expect(res.status).toBe(200);
+    // The viewer is the SESSION user (D), NOT the header value (A).
+    expect(mockFollowFind).toHaveBeenCalledTimes(1);
+    expect(mockFollowFind.mock.calls[0][0]).toMatchObject({
+      followerUserId: userD.toHexString(),
+    });
+    const excludedIds = extractNinIds(mockUserAggregate.mock.calls[0][0]).map((id) => id.toString());
+    expect(excludedIds).toContain(userD.toString());
+    expect(excludedIds).not.toContain(userA.toString());
+  });
+
+  it('no principal at all (no token) is anonymous/public', async () => {
+    currentServiceApp = undefined;
+    currentUserId = undefined;
+    mockFollowAggregate.mockResolvedValue([]);
+    mockUserAggregate.mockResolvedValue([]);
+
+    const res = await postJson(server, {});
+
+    expect(res.status).toBe(200);
+    expect(mockFollowFind).not.toHaveBeenCalled();
   });
 });

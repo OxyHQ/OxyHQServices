@@ -10,7 +10,13 @@ import type {
   PaginationInfo,
   PrivacySettings,
 } from '../models/interfaces';
-import type { UserNameResponse, UserProfileUpdate } from '@oxyhq/contracts';
+import type {
+  UserNameResponse,
+  UserProfileUpdate,
+  RecommendationRequest,
+  RecommendationItem,
+} from '@oxyhq/contracts';
+import { recommendationRequestSchema } from '@oxyhq/contracts';
 import type { OxyServicesBase } from '../OxyServices.base';
 import { buildSearchParams, buildPaginationParams, type PaginationParams } from '../utils/apiUtils';
 import { KeyManager } from '../crypto/keyManager';
@@ -194,7 +200,7 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
     }
 
     /**
-     * Get profile recommendations, optionally filtering out specific user types.
+     * Get profile recommendations.
      *
      * Public discovery read — works WITHOUT authentication. The SDK attaches the
      * access token automatically when one is available (personalized via
@@ -202,28 +208,69 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
      * the caller is logged out. This deliberately does NOT use `withAuthRetry`,
      * which would throw an authentication timeout for logged-out callers before
      * the request is ever sent.
+     *
+     * Routing (two server endpoints, both validated against the same
+     * `@oxyhq/contracts` recommendation schemas so the wire shape cannot drift):
+     *
+     *  - **GET `/profiles/recommendations`** (cached) is used for the simple,
+     *    back-compatible case: no options at all, or only `excludeTypes` and/or
+     *    `limit`. `excludeTypes` is sent as a comma-joined query param and
+     *    `limit` as a numeric query param — byte-for-byte identical to the legacy
+     *    behavior so every existing caller keeps the same request and cache key.
+     *  - **POST `/profiles/recommendations`** is used whenever any of the scored
+     *    (v2) fields — `boosts`, `excludeIds`, `signalWeights`, `clientId`, or
+     *    `offset` — is present. The full options object is validated with
+     *    `recommendationRequestSchema` and sent as the request body. The POST is
+     *    cached by the HttpService keyed on the serialized body, so repeated
+     *    identical scored requests are deduplicated/cached just like the GET path.
+     *
+     * @param options - {@link RecommendationRequest} from `@oxyhq/contracts`.
+     *   Omitted entirely (or `{ excludeTypes }`) preserves the legacy GET path.
      */
-    async getProfileRecommendations(options?: {
-      excludeTypes?: Array<'federated' | 'agent' | 'automated'>;
-    }): Promise<Array<{
-      id: string;
-      username: string;
-      name: UserNameResponse;
-      description?: string;
-      isFederated?: boolean;
-      isAgent?: boolean;
-      isAutomated?: boolean;
-      instance?: string;
-      federation?: { actorUri?: string; domain?: string; actorId?: string };
-      automation?: { ownerId?: string };
-      _count?: { followers: number; following: number };
-      [key: string]: unknown;
-    }>> {
+    async getProfileRecommendations(
+      options?: RecommendationRequest,
+    ): Promise<RecommendationItem[]> {
+      // The scored (v2) POST path is selected when any field beyond the
+      // legacy GET-supported `excludeTypes`/`limit` pair is present.
+      const usesScoredPath = Boolean(
+        options &&
+          (options.clientId !== undefined ||
+            options.offset !== undefined ||
+            (options.excludeIds?.length ?? 0) > 0 ||
+            (options.boosts?.length ?? 0) > 0 ||
+            options.signalWeights !== undefined),
+      );
+
       try {
-        const params = options?.excludeTypes?.length
-          ? { excludeTypes: options.excludeTypes.join(',') }
-          : undefined;
-        return await this.makeRequest('GET', '/profiles/recommendations', params, { cache: true });
+        if (usesScoredPath && options) {
+          // Validate the full request against the shared contract before
+          // sending. A malformed payload is surfaced to the caller rather than
+          // bounced by the server, and the parsed value strips unknown keys.
+          const body = recommendationRequestSchema.parse(options);
+          return await this.makeRequest<RecommendationItem[]>(
+            'POST',
+            '/profiles/recommendations',
+            body,
+            // Cache keyed on the serialized body (see HttpService.generateCacheKey)
+            // so identical scored requests are served from cache, matching the
+            // GET path's caching semantics.
+            { cache: true },
+          );
+        }
+
+        const params: Record<string, string> = {};
+        if (options?.excludeTypes?.length) {
+          params.excludeTypes = options.excludeTypes.join(',');
+        }
+        if (options?.limit !== undefined) {
+          params.limit = String(options.limit);
+        }
+        return await this.makeRequest<RecommendationItem[]>(
+          'GET',
+          '/profiles/recommendations',
+          Object.keys(params).length > 0 ? params : undefined,
+          { cache: true },
+        );
       } catch (error: unknown) {
         // Recommendations are a discovery read; failures are surfaced to the
         // caller (contract unchanged: rethrow via `handleError`). Add debug
@@ -231,6 +278,7 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
         // — distinguishing an auth/transport problem from a server 5xx.
         logger.debug('getProfileRecommendations: discovery read failed', {
           method: 'getProfileRecommendations',
+          path: usesScoredPath ? 'POST' : 'GET',
           excludeTypes: options?.excludeTypes,
           status: extractErrorStatus(error),
           error: error instanceof Error ? error.message : String(error),

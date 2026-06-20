@@ -1,6 +1,11 @@
 import mongoose, { Document, Schema } from "mongoose";
 import { maybeHashEmail, maybeHashPhone } from "../utils/contactHash";
 import { composeDisplayName } from "../utils/displayName";
+import {
+  TRUST_TIERS,
+  INFLUENCE_MIN,
+  type TrustTier,
+} from "../utils/reputation.constants";
 
 /**
  * Represents an authentication method linked to a user account.
@@ -93,6 +98,21 @@ export interface IUser extends Document {
     displayName?: string; // virtual
   };
   verified?: boolean;
+  /**
+   * Denormalized reputation ranking weight (mirror of
+   * `ReputationBalance.influence.rankingFeedbackWeight`, clamped to
+   * [INFLUENCE_MIN, INFLUENCE_MAX]). Written by
+   * `reputationService.recalculateBalance` so the recommendation scorer can join
+   * a user's reputation signal cheaply at query time without a per-user lookup
+   * into the `reputationbalances` collection. Defaults to the influence floor.
+   */
+  reputationRankWeight?: number;
+  /**
+   * Denormalized reputation trust tier (mirror of `ReputationBalance.trustTier`).
+   * Written by `reputationService.recalculateBalance`. The recommendation scorer
+   * uses it to floor `restricted` users out of the surface without a join.
+   */
+  reputationTier?: TrustTier;
   /**
    * Oxy platform staff flag. Grants access to staff-only operations such as
    * editing an Application's `type`/`isOfficial`/`isInternal`/`capabilities`
@@ -330,6 +350,20 @@ const UserSchema: Schema = new Schema(
     verified: {
       type: Boolean,
       default: false,
+    },
+    // Denormalized reputation signals (mirror of ReputationBalance). Maintained
+    // by reputationService.recalculateBalance — do not set directly. Indexed so
+    // the recommendation scorer can sort/floor on them without a join.
+    reputationRankWeight: {
+      type: Number,
+      default: INFLUENCE_MIN,
+      index: true,
+    },
+    reputationTier: {
+      type: String,
+      enum: TRUST_TIERS,
+      default: 'new',
+      index: true,
     },
     isStaff: {
       type: Boolean,
