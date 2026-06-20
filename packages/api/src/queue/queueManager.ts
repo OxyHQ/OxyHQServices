@@ -4,9 +4,12 @@
  * `closeQueues()` can shut the whole subsystem down cleanly.
  *
  * Design notes:
- *   - Queues and Workers each get their OWN dedicated ioredis connection (see
- *     `connection.ts`) — a worker's blocking connection must not be shared with
- *     a queue's command connection.
+ *   - Queues and Workers are constructed from plain connection OPTIONS (see
+ *     `connection.ts`); BullMQ builds the underlying connections itself. The
+ *     Queue gets one command connection and each Worker gets its OWN dedicated
+ *     blocking connection — a worker's blocking connection must not be shared
+ *     with a queue's command connection. Closing the Queue/Worker closes the
+ *     connection it owns.
  *   - Repeatable jobs are registered via BullMQ v5's `upsertJobScheduler` with a
  *     STABLE scheduler id, so registering on every boot/replica updates the one
  *     schedule rather than creating duplicates.
@@ -19,7 +22,7 @@ import {
   FAILED_JOBS_RETENTION,
   type QueueName,
 } from './constants';
-import { createQueueConnection, closeConnections } from './connection';
+import { getQueueConnectionOptions } from './connection';
 
 /**
  * Queues are background infrastructure. They are enabled only when a
@@ -45,8 +48,8 @@ const queues = new Map<QueueName, Queue<MaintenanceJobData, MaintenanceJobResult
 const workers = new Set<Worker<MaintenanceJobData, MaintenanceJobResult>>();
 
 /**
- * Get (or lazily create) the Queue for a given name. Each queue owns a
- * dedicated connection.
+ * Get (or lazily create) the Queue for a given name. BullMQ builds the queue's
+ * command connection from the supplied options.
  *
  * @throws Error if queues are not enabled — callers must gate on
  *   `isQueueEnabled()`.
@@ -60,7 +63,7 @@ export function getQueue(name: QueueName): Queue<MaintenanceJobData, Maintenance
   if (existing) return existing;
 
   const queue = new Queue<MaintenanceJobData, MaintenanceJobResult>(name, {
-    connection: createQueueConnection(`queue:${name}`),
+    connection: getQueueConnectionOptions(),
     defaultJobOptions: {
       removeOnComplete: COMPLETED_JOBS_RETENTION,
       removeOnFail: FAILED_JOBS_RETENTION,
@@ -76,8 +79,9 @@ export function getQueue(name: QueueName): Queue<MaintenanceJobData, Maintenance
 }
 
 /**
- * Start a worker for a given queue. The worker gets its own blocking
- * connection. The returned worker is tracked for shutdown.
+ * Start a worker for a given queue. BullMQ builds the worker's OWN dedicated
+ * blocking connection from the supplied options. The returned worker is tracked
+ * for shutdown.
  *
  * @throws Error if queues are not enabled — callers must gate on
  *   `isQueueEnabled()`.
@@ -91,7 +95,7 @@ export function startWorker(
   }
 
   const worker = new Worker<MaintenanceJobData, MaintenanceJobResult>(name, processor, {
-    connection: createQueueConnection(`worker:${name}`),
+    connection: getQueueConnectionOptions(),
   });
 
   worker.on('failed', (job, err: Error) =>
@@ -144,9 +148,10 @@ export async function registerRepeatableJob(
 }
 
 /**
- * Gracefully close all workers, queues, and their connections. Safe to call
- * even when nothing was started. Workers are closed before queues so in-flight
- * jobs finish before their queue's connection is torn down.
+ * Gracefully close all workers and queues. Closing each Worker/Queue also closes
+ * the connection BullMQ built for it, so there is nothing else to tear down.
+ * Safe to call even when nothing was started. Workers are closed before queues
+ * so in-flight jobs finish before their queue's connection is torn down.
  */
 export async function closeQueues(): Promise<void> {
   const openWorkers = Array.from(workers);
@@ -176,6 +181,4 @@ export async function closeQueues(): Promise<void> {
       }
     })
   );
-
-  await closeConnections();
 }

@@ -498,7 +498,7 @@
       "peerDependencies": {
         "@expo/vector-icons": "^15.0.3",
         "@oxyhq/bloom": ">=0.5.0",
-        "@oxyhq/core": "^3.4.17",
+        "@oxyhq/core": "^3.6.0",
         "@react-native-community/netinfo": "^11.4.1",
         "@tanstack/query-async-storage-persister": "^5.100",
         "@tanstack/query-sync-storage-persister": "^5.100",
@@ -598,6 +598,7 @@
   "overrides": {
     "@oxyhq/bloom": "^0.8.5",
     "@radix-ui/react-slot": "1.2.3",
+    "ioredis": "5.11.1",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "send": "0.19.1",
@@ -1259,7 +1260,7 @@
 
     "@inquirer/type": ["@inquirer/type@3.0.10", "", { "peerDependencies": { "@types/node": ">=18" } }, ""],
 
-    "@ioredis/commands": ["@ioredis/commands@1.5.1", "", {}, "sha512-JH8ZL/ywcJyR9MmJ5BNqZllXNZQqQbnVZOqpPQqE1vHiFgAw4NHbvE0FOduNU8IX9babitBT46571OnPTT0Zcw=="],
+    "@ioredis/commands": ["@ioredis/commands@1.10.0", "", {}, "sha512-UmeW7z4LfctwoQ5wkhVzgq8tXkreED2xZGpX+Bg+zA+WJFZCT6c062AfCK/Dfk81xZnnwdhJCUMkitihRaoC2Q=="],
 
     "@isaacs/balanced-match": ["@isaacs/balanced-match@4.0.1", "", {}, ""],
 
@@ -2303,7 +2304,7 @@
 
     "clsx": ["clsx@2.1.1", "", {}, ""],
 
-    "cluster-key-slot": ["cluster-key-slot@1.1.2", "", {}, ""],
+    "cluster-key-slot": ["cluster-key-slot@1.1.1", "", {}, "sha512-rwHwUfXL40Chm1r08yrhU3qpUvdVlgkKNeyeGPOxnW8/SyVDvgRaed/Uz54AqWNaTCAThlj6QAs3TZcKI0xDEw=="],
 
     "cmdk": ["cmdk@1.1.1", "", { "dependencies": { "@radix-ui/react-compose-refs": "^1.1.1", "@radix-ui/react-dialog": "^1.1.6", "@radix-ui/react-id": "^1.1.0", "@radix-ui/react-primitive": "^2.0.2" }, "peerDependencies": { "react": "^18 || ^19 || ^19.0.0-rc", "react-dom": "^18 || ^19 || ^19.0.0-rc" } }, ""],
 
@@ -3031,7 +3032,7 @@
 
     "invariant": ["invariant@2.2.4", "", { "dependencies": { "loose-envify": "^1.0.0" } }, ""],
 
-    "ioredis": ["ioredis@5.10.1", "", { "dependencies": { "@ioredis/commands": "1.5.1", "cluster-key-slot": "^1.1.0", "debug": "^4.3.4", "denque": "^2.1.0", "lodash.defaults": "^4.2.0", "lodash.isarguments": "^3.1.0", "redis-errors": "^1.2.0", "redis-parser": "^3.0.0", "standard-as-callback": "^2.1.0" } }, "sha512-HuEDBTI70aYdx1v6U97SbNx9F1+svQKBDo30o0b9fw055LMepzpOOd0Ccg9Q6tbqmBSJaMuY0fB7yw9/vjBYCA=="],
+    "ioredis": ["ioredis@5.11.1", "", { "dependencies": { "@ioredis/commands": "1.10.0", "cluster-key-slot": "1.1.1", "debug": "4.4.3", "denque": "2.1.0", "redis-errors": "1.2.0", "redis-parser": "3.0.0", "standard-as-callback": "2.1.0" } }, "sha512-ehuGcf94bQXhfagULNXrJdfnWO38v070jxSx/qE87Kjzmu2fU7ro5EFAb+OPituLqgfyuQaym5DlrNydW2sJ9A=="],
 
     "ip-address": ["ip-address@10.1.0", "", {}, ""],
 
@@ -3327,15 +3328,11 @@
 
     "lodash.debounce": ["lodash.debounce@4.0.8", "", {}, ""],
 
-    "lodash.defaults": ["lodash.defaults@4.2.0", "", {}, ""],
-
     "lodash.escaperegexp": ["lodash.escaperegexp@4.1.2", "", {}, ""],
 
     "lodash.get": ["lodash.get@4.4.2", "", {}, ""],
 
     "lodash.includes": ["lodash.includes@4.3.0", "", {}, ""],
-
-    "lodash.isarguments": ["lodash.isarguments@3.1.0", "", {}, ""],
 
     "lodash.isboolean": ["lodash.isboolean@3.0.3", "", {}, ""],
 

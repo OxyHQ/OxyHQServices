@@ -1,5 +1,5 @@
 /**
- * Dedicated ioredis connections for BullMQ.
+ * BullMQ connection OPTIONS for queues and workers.
  *
  * BullMQ has hard requirements that the shared cache client in
  * `src/config/redis.ts` does NOT satisfy:
@@ -9,13 +9,23 @@
  *     connection, because the worker blocks on the connection while waiting for
  *     jobs and would otherwise starve the queue's regular commands.
  *
- * We therefore create dedicated connections here rather than reusing
- * `getRedisClient()`. The `rediss://` TLS handling and retry-backoff style are
- * mirrored from the cache client so operational behaviour stays consistent.
+ * We therefore hand BullMQ a plain connection-OPTIONS object (NOT a shared
+ * ioredis instance) and let BullMQ build the underlying connections itself: the
+ * `Queue` gets one command connection and each `Worker` gets its own dedicated
+ * blocking connection. Closing the Queue/Worker closes the connection it owns,
+ * so there is nothing to track or tear down here.
+ *
+ * The options are typed against BullMQ's OWN `ConnectionOptions`/`RedisOptions`
+ * (imported from `'bullmq'`, NOT from `'ioredis'`). Under bun's isolated linker,
+ * BullMQ resolves a different nested copy of ioredis than the app's top-level
+ * one; typing against BullMQ's expected type checks the literal against the copy
+ * BullMQ actually uses and never compares the two distinct ioredis copies.
+ *
+ * The `rediss://` TLS handling and retry-backoff style are mirrored from the
+ * cache client so operational behaviour stays consistent.
  */
 
-import Redis, { type RedisOptions } from 'ioredis';
-import { logger } from '../utils/logger';
+import type { ConnectionOptions, RedisOptions } from 'bullmq';
 
 /**
  * Maximum reconnection attempts before ioredis gives up. Mirrors the cache
@@ -26,25 +36,57 @@ const RECONNECT_BACKOFF_STEP_MS = 200;
 const RECONNECT_BACKOFF_CAP_MS = 5000;
 const KEEP_ALIVE_MS = 10_000;
 
-/**
- * Every connection we create is tracked here so `closeConnections()` can shut
- * them all down gracefully on process exit.
- */
-const connections = new Set<Redis>();
+/** Default Redis port when the URL omits one. */
+const DEFAULT_REDIS_PORT = 6379;
+/** Default Redis logical database when the URL omits one. */
+const DEFAULT_REDIS_DB = 0;
 
 /**
- * Build the BullMQ-compatible ioredis options from `REDIS_URL`.
- *
- * The critical difference from the cache client is `maxRetriesPerRequest: null`.
+ * Parse the logical database index from a Redis URL path (e.g. `/2` → `2`).
+ * Returns the default when the path is empty/`/` or not a valid number.
  */
-function buildOptions(url: string): RedisOptions {
-  return {
+function parseRedisDb(pathname: string): number {
+  const raw = pathname.replace(/^\//, '');
+  if (raw === '') return DEFAULT_REDIS_DB;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isNaN(parsed) ? DEFAULT_REDIS_DB : parsed;
+}
+
+/**
+ * Build the BullMQ connection OPTIONS from `REDIS_URL`.
+ *
+ * Parses `REDIS_URL` into an explicit host/port/username/password/db target
+ * rather than passing the raw URL string, so TLS and DB selection are applied
+ * deterministically. `tls: {}` is set for `rediss://`, otherwise omitted.
+ *
+ * The critical BullMQ difference from the cache client is
+ * `maxRetriesPerRequest: null`.
+ *
+ * @throws Error if `REDIS_URL` is not set — callers must gate on
+ *   `isQueueEnabled()` before requesting connection options.
+ */
+export function getQueueConnectionOptions(): ConnectionOptions {
+  const url = process.env.REDIS_URL;
+  if (!url) {
+    throw new Error('getQueueConnectionOptions called without REDIS_URL set');
+  }
+
+  const parsed = new URL(url);
+  const isTls = parsed.protocol === 'rediss:';
+
+  const options: RedisOptions = {
+    host: parsed.hostname,
+    port: parsed.port ? Number.parseInt(parsed.port, 10) : DEFAULT_REDIS_PORT,
+    db: parseRedisDb(parsed.pathname),
+    username: parsed.username ? decodeURIComponent(parsed.username) : undefined,
+    password: parsed.password ? decodeURIComponent(parsed.password) : undefined,
+    tls: isTls ? {} : undefined,
+
     // BullMQ requirement — must be null, never a finite number.
     maxRetriesPerRequest: null,
     lazyConnect: true,
     enableReadyCheck: true,
     keepAlive: KEEP_ALIVE_MS,
-    tls: url.startsWith('rediss://') ? {} : undefined,
 
     retryStrategy(times: number) {
       if (times > MAX_RECONNECT_ATTEMPTS) return null;
@@ -55,58 +97,6 @@ function buildOptions(url: string): RedisOptions {
       return err.message.includes('READONLY');
     },
   };
-}
 
-/**
- * Create a fresh, tracked ioredis connection for BullMQ.
- *
- * `role` is used only for log context (e.g. `queue` vs `worker`). Connection
- * errors are logged via the `error` handler and never crash the process; the
- * caller decides whether the absence of a working queue is fatal (it is not).
- *
- * @throws Error if `REDIS_URL` is not set — callers must gate on
- *   `isQueueEnabled()` before constructing connections.
- */
-export function createQueueConnection(role: string): Redis {
-  const url = process.env.REDIS_URL;
-  if (!url) {
-    throw new Error('createQueueConnection called without REDIS_URL set');
-  }
-
-  const client = new Redis(url, buildOptions(url));
-
-  client.on('error', (err: Error) =>
-    logger.error('BullMQ Redis error', { role, error: err.message })
-  );
-  client.on('close', () => logger.warn('BullMQ Redis connection closed', { role }));
-  client.on('reconnecting', (ms: number) =>
-    logger.info('BullMQ Redis reconnecting', { role, retryIn: ms })
-  );
-  client.on('ready', () => logger.info('BullMQ Redis ready', { role }));
-
-  connections.add(client);
-  return client;
-}
-
-/**
- * Gracefully close every connection created by `createQueueConnection`.
- * Safe to call when no connections exist. Errors per-connection are logged and
- * do not prevent the remaining connections from closing.
- */
-export async function closeConnections(): Promise<void> {
-  const open = Array.from(connections);
-  connections.clear();
-
-  await Promise.all(
-    open.map(async (client) => {
-      try {
-        await client.quit();
-      } catch (err) {
-        logger.warn('BullMQ Redis quit failed, forcing disconnect', {
-          error: err instanceof Error ? err.message : String(err),
-        });
-        client.disconnect();
-      }
-    })
-  );
+  return options;
 }

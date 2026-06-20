@@ -66,6 +66,7 @@
   "author": "OxyHQ",
   "license": "MIT",
   "overrides": {
+    "ioredis": "5.11.1",
     "send": "0.19.1",
     "react": "19.2.3",
     "react-dom": "19.2.3",
