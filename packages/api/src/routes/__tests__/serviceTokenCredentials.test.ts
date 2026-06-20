@@ -407,4 +407,71 @@ describe('POST /auth/service-token — credential resolution + JWT claims (#215)
 
     expect(res.status).toBe(401);
   });
+
+  it('intersects credential scopes with app scopes — a scope the app lacks is STRIPPED', async () => {
+    // The credential claims federation:write but the app only holds user:read.
+    // The minted token must NOT carry federation:write (privilege-escalation
+    // path closed).
+    mockApplicationCredentialFindOne.mockResolvedValue(
+      stubCredential({ scopes: ['user:read', 'federation:write'] })
+    );
+    mockApplicationFindOne.mockResolvedValue({
+      _id: { toString: () => APP_ID },
+      name: 'Service App',
+      scopes: ['user:read'],
+      save: jest.fn().mockResolvedValue(undefined),
+    });
+
+    const res = await requestJson(server, 'POST', '/auth/service-token', {
+      apiKey: API_KEY,
+      apiSecret: PLAINTEXT_SECRET,
+    });
+
+    expect(res.status).toBe(200);
+    const claims = decodeServiceJwt(res.body.data?.token as string);
+    expect(claims.scopes).toEqual(['user:read']);
+    expect(claims.scopes).not.toContain('federation:write');
+  });
+
+  it('preserves a privileged scope when BOTH the credential and the app hold it (Mention case)', async () => {
+    // Mirrors the live Mention credential once the Mention app is elevated to
+    // carry federation:write at the app level (the documented one-time fix).
+    mockApplicationCredentialFindOne.mockResolvedValue(
+      stubCredential({ scopes: ['user:read', 'files:write', 'federation:write'] })
+    );
+    mockApplicationFindOne.mockResolvedValue({
+      _id: { toString: () => APP_ID },
+      name: 'Mention',
+      scopes: ['user:read', 'files:write', 'federation:write'],
+      save: jest.fn().mockResolvedValue(undefined),
+    });
+
+    const res = await requestJson(server, 'POST', '/auth/service-token', {
+      apiKey: API_KEY,
+      apiSecret: PLAINTEXT_SECRET,
+    });
+
+    expect(res.status).toBe(200);
+    const claims = decodeServiceJwt(res.body.data?.token as string);
+    expect(claims.scopes).toEqual(['user:read', 'files:write', 'federation:write']);
+  });
+
+  it('falls back to the app scopes when the credential requested no scopes', async () => {
+    mockApplicationCredentialFindOne.mockResolvedValue(stubCredential({ scopes: [] }));
+    mockApplicationFindOne.mockResolvedValue({
+      _id: { toString: () => APP_ID },
+      name: 'Service App',
+      scopes: ['user:read', 'files:write'],
+      save: jest.fn().mockResolvedValue(undefined),
+    });
+
+    const res = await requestJson(server, 'POST', '/auth/service-token', {
+      apiKey: API_KEY,
+      apiSecret: PLAINTEXT_SECRET,
+    });
+
+    expect(res.status).toBe(200);
+    const claims = decodeServiceJwt(res.body.data?.token as string);
+    expect(claims.scopes).toEqual(['user:read', 'files:write']);
+  });
 });

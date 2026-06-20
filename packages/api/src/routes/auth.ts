@@ -13,6 +13,7 @@ import { SessionController } from '../controllers/session.controller';
 import { User } from '../models/User';
 import { Application } from '../models/Application';
 import type { IApplication } from '../models/Application';
+import { intersectScopes } from '../utils/applicationScopes';
 import { ApplicationCredential } from '../models/ApplicationCredential';
 import type { IApplicationCredential } from '../models/ApplicationCredential';
 import { isCredentialUsable } from '../utils/credentialUsability';
@@ -2563,9 +2564,17 @@ router.post('/service-token', serviceTokenLimiter, validate({ body: serviceToken
   // `appId` claim is the Application `_id` (UNCHANGED claim name — see contract
   // §5). `credentialId` is the specific ApplicationCredential `_id` that minted
   // this token, so downstream can attribute calls to a credential (e.g. for
-  // post-rotation revocation). Scopes come from the credential, falling back to
-  // the application.
-  const scopes = credential.scopes.length > 0 ? credential.scopes : app.scopes ?? [];
+  // post-rotation revocation).
+  //
+  // SCOPE AUTHORITY: the effective scopes are the credential's requested scopes
+  // INTERSECTED with the application's granted scopes — a credential can never
+  // exceed its app's authority (a privileged scope like federation:write only
+  // survives if BOTH the credential AND the app hold it). A credential that
+  // requested no scopes inherits the app's full granted set (unchanged
+  // behaviour for credentials provisioned without explicit scopes).
+  const appScopes = app.scopes ?? [];
+  const scopes =
+    credential.scopes.length > 0 ? intersectScopes(credential.scopes, appScopes) : appScopes;
   const token = jwt.sign(
     {
       type: 'service',

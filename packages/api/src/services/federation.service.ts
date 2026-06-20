@@ -13,6 +13,7 @@ import { AssetService } from './assetService';
 import { createS3Service } from './s3Service';
 import { logger } from '../utils/logger';
 import userCache from '../utils/userCache';
+import { composeDisplayName } from '../utils/displayName';
 
 /** Decode common HTML entities (&#39; &amp; &lt; &gt; &quot; and numeric). */
 function decodeHtmlEntities(text: string): string {
@@ -33,7 +34,6 @@ const AP_ACCEPT_TYPES = [
 ];
 
 const AP_DOMAIN = process.env.FEDERATION_DOMAIN || 'oxy.so';
-const MENTION_API_DOMAIN = process.env.MENTION_API_DOMAIN || 'api.mention.earth';
 const USER_AGENT = 'OxyHQ/1.0 (ActivityPub)';
 
 /**
@@ -139,12 +139,37 @@ interface KeyPairDoc {
   privateKeyPem: string;
 }
 
+/** The public half of a key pair — safe to return over the wire. */
+export interface PublicKeyDoc {
+  keyId: string;
+  publicKeyPem: string;
+}
+
 interface WebFingerResolution {
   actorUri: string;
   subjectAcct?: string;
 }
 
 const _keyPairCache = new Map<string, KeyPairDoc>();
+
+/**
+ * Compose the canonical `#main-key` keyId for a (username, domain) pair.
+ *
+ * The keyId is the single identity coordinate for a federation key: it embeds
+ * BOTH the actor username and the serving domain, so a key minted for
+ * `bob@mention.earth` (`https://mention.earth/ap/users/bob#main-key`) is
+ * distinct from `bob` on oxy.so. The in-memory cache and the unique `keyId`
+ * index in Mongo therefore enforce "one key pair per (username, domain)"
+ * automatically — no separate compound field is required.
+ */
+function composeUserKeyId(username: string, domain: string): string {
+  return `https://${domain}/ap/users/${username}#main-key`;
+}
+
+/** Compose the instance-actor keyId for a domain. */
+function composeInstanceKeyId(domain: string): string {
+  return `https://${domain}/ap/users/instance#main-key`;
+}
 
 /**
  * Get or create an RSA key pair for the given keyId.
@@ -177,14 +202,86 @@ async function getOrCreateKeyPair(keyId: string): Promise<KeyPairDoc> {
   return result;
 }
 
-/** Get or create the instance-level key pair. */
-async function getInstanceKeyPair(): Promise<KeyPairDoc> {
-  return getOrCreateKeyPair(`https://${AP_DOMAIN}/ap/users/instance#main-key`);
+/**
+ * Get or create the instance-level key pair for a domain.
+ * Defaults to Oxy's own federation domain ({@link AP_DOMAIN}) for backward
+ * compatibility with Oxy's own instance actor and signed fetches.
+ */
+async function getInstanceKeyPair(domain: string = AP_DOMAIN): Promise<KeyPairDoc> {
+  return getOrCreateKeyPair(composeInstanceKeyId(domain));
 }
 
-/** Get or create a per-user key pair. */
-export async function getUserKeyPair(username: string): Promise<KeyPairDoc> {
-  return getOrCreateKeyPair(`https://${AP_DOMAIN}/ap/users/${username}#main-key`);
+/**
+ * Get or create a per-user key pair scoped to a domain.
+ *
+ * The key material is keyed by the full keyId (which embeds the domain), so a
+ * single username maps to a DISTINCT key per domain. Defaults to Oxy's own
+ * federation domain ({@link AP_DOMAIN}) for backward compatibility with Oxy's
+ * own actor endpoints and managed accounts.
+ */
+export async function getUserKeyPair(username: string, domain: string = AP_DOMAIN): Promise<KeyPairDoc> {
+  return getOrCreateKeyPair(composeUserKeyId(username, domain));
+}
+
+/**
+ * Return the PUBLIC half of an existing key pair for a keyId, or null if no key
+ * pair exists for it. Never auto-creates and never exposes the private key —
+ * used by the public-key endpoint and by callers that only need to publish a
+ * `publicKey` block. To create a key on demand, use {@link getUserKeyPair} /
+ * {@link getInstanceKeyPair}.
+ */
+export async function getPublicKeyForKeyId(keyId: string): Promise<PublicKeyDoc | null> {
+  const cached = _keyPairCache.get(keyId);
+  if (cached) {
+    return { keyId: cached.keyId, publicKeyPem: cached.publicKeyPem };
+  }
+
+  const existing = await FederationKeyPair.findOne({ keyId }).lean() as KeyPairDoc | null;
+  if (!existing) return null;
+
+  _keyPairCache.set(keyId, existing);
+  return { keyId: existing.keyId, publicKeyPem: existing.publicKeyPem };
+}
+
+/**
+ * Get or create the public half of a domain-scoped USER key pair.
+ *
+ * Used by the `/federation/public-key/:username` endpoint so Mention can
+ * publish a spec-compliant `publicKey` block whose `id`/`owner` live on its own
+ * domain — WITHOUT ever receiving the private key. Creation is intentional here:
+ * the first publish of an actor mints its key, mirroring how Oxy's own actor
+ * endpoints lazily create keys.
+ */
+export async function getUserPublicKey(username: string, domain: string = AP_DOMAIN): Promise<PublicKeyDoc> {
+  const keyPair = await getUserKeyPair(username, domain);
+  return { keyId: keyPair.keyId, publicKeyPem: keyPair.publicKeyPem };
+}
+
+/**
+ * Sign an HTTP-Signature signing string with the private key identified by
+ * `keyId`. The private key NEVER leaves this process — only the base64
+ * signature is returned. The key pair MUST already exist (callers publish the
+ * public key first via {@link getUserPublicKey} / the actor endpoints); this
+ * does NOT auto-create a key, so a sign request for an unknown keyId returns
+ * null and the route surfaces a 404.
+ *
+ * @returns The base64 RSA-SHA256 signature, or null if no key pair exists.
+ */
+export async function signWithKeyId(keyId: string, signingString: string): Promise<string | null> {
+  const cached = _keyPairCache.get(keyId);
+  let keyPair: KeyPairDoc | null = cached ?? null;
+
+  if (!keyPair) {
+    keyPair = await FederationKeyPair.findOne({ keyId }).lean() as KeyPairDoc | null;
+    if (keyPair) _keyPairCache.set(keyId, keyPair);
+  }
+
+  if (!keyPair) return null;
+
+  const signer = crypto.createSign('sha256');
+  signer.update(signingString);
+  signer.end();
+  return signer.sign(keyPair.privateKeyPem, 'base64');
 }
 
 /**
@@ -241,44 +338,56 @@ async function signedFetch(url: string, accept: string): Promise<Response> {
 }
 
 /**
- * Returns the instance actor JSON-LD document for HTTP Signature key verification.
+ * Inputs to {@link buildActor}. When `username` is null the actor is the
+ * instance (`Application`) actor; otherwise it is a per-user (`Person`) actor.
  */
-export async function getInstanceActor(): Promise<Record<string, unknown>> {
-  const keyPair = await getInstanceKeyPair();
-  const actorUrl = `https://${AP_DOMAIN}/ap/users/instance`;
-
-  return {
-    '@context': [
-      'https://www.w3.org/ns/activitystreams',
-      'https://w3id.org/security/v1',
-    ],
-    id: actorUrl,
-    type: 'Application',
-    preferredUsername: 'instance',
-    name: AP_DOMAIN,
-    summary: '',
-    url: `https://${AP_DOMAIN}`,
-    inbox: `https://${MENTION_API_DOMAIN}/ap/users/instance/inbox`,
-    outbox: `https://${MENTION_API_DOMAIN}/ap/users/instance/outbox`,
-    endpoints: { sharedInbox: `https://${MENTION_API_DOMAIN}/ap/inbox` },
-    publicKey: {
-      id: keyPair.keyId,
-      owner: actorUrl,
-      publicKeyPem: keyPair.publicKeyPem,
-    },
-  };
+interface BuildActorOptions {
+  domain: string;
+  username: string | null;
+  publicKeyPem: string;
+  keyId: string;
+  name: string;
+  summary?: string;
+  avatar?: string;
 }
 
 /**
- * Returns a per-user actor JSON-LD document.
- * Actor profile is on oxy.so, inbox/outbox on Mention.
+ * Single canonical builder for both the instance and per-user ActivityPub
+ * actor documents. Every host-bearing field — `id`, `publicKey.id`,
+ * `publicKey.owner`, `inbox`, `outbox`, `followers`, `following`, `url`, and
+ * `endpoints.sharedInbox` — is derived from ONE `domain` argument so the actor
+ * shape can never drift across a split set of hosts. Reducing the two actor
+ * functions to this one builder is what guarantees a self-consistent actor.
  */
-export async function getUserActor(user: IUser): Promise<Record<string, unknown> | null> {
-  if (!user?.username) return null;
-  const username = user.username.split('@')[0]; // strip @domain if present
-  const keyPair = await getUserKeyPair(username);
-  const actorUrl = `https://${AP_DOMAIN}/ap/users/${username}`;
+function buildActor(opts: BuildActorOptions): Record<string, unknown> {
+  const { domain, username, publicKeyPem, keyId, name, summary, avatar } = opts;
+  const base = `https://${domain}/ap`;
 
+  if (username === null) {
+    const actorUrl = `${base}/users/instance`;
+    return {
+      '@context': [
+        'https://www.w3.org/ns/activitystreams',
+        'https://w3id.org/security/v1',
+      ],
+      id: actorUrl,
+      type: 'Application',
+      preferredUsername: 'instance',
+      name,
+      summary: summary ?? '',
+      url: `https://${domain}`,
+      inbox: `${actorUrl}/inbox`,
+      outbox: `${actorUrl}/outbox`,
+      endpoints: { sharedInbox: `${base}/inbox` },
+      publicKey: {
+        id: keyId,
+        owner: actorUrl,
+        publicKeyPem,
+      },
+    };
+  }
+
+  const actorUrl = `${base}/users/${username}`;
   return {
     '@context': [
       'https://www.w3.org/ns/activitystreams',
@@ -287,27 +396,78 @@ export async function getUserActor(user: IUser): Promise<Record<string, unknown>
     id: actorUrl,
     type: 'Person',
     preferredUsername: username,
-    name: user.name?.first || user.name?.full || username,
-    summary: user.bio || user.description || '',
-    url: `https://${AP_DOMAIN}/@${username}`,
-    inbox: `https://${MENTION_API_DOMAIN}/ap/users/${username}/inbox`,
-    outbox: `https://${MENTION_API_DOMAIN}/ap/users/${username}/outbox`,
-    followers: `https://${MENTION_API_DOMAIN}/ap/users/${username}/followers`,
-    following: `https://${MENTION_API_DOMAIN}/ap/users/${username}/following`,
-    endpoints: { sharedInbox: `https://${MENTION_API_DOMAIN}/ap/inbox` },
-    icon: user.avatar ? {
+    name,
+    summary: summary ?? '',
+    url: `https://${domain}/@${username}`,
+    inbox: `${actorUrl}/inbox`,
+    outbox: `${actorUrl}/outbox`,
+    followers: `${actorUrl}/followers`,
+    following: `${actorUrl}/following`,
+    endpoints: { sharedInbox: `${base}/inbox` },
+    icon: avatar ? {
       type: 'Image',
       mediaType: 'image/png',
-      url: typeof user.avatar === 'string' && user.avatar.startsWith('http')
-        ? user.avatar
-        : `https://cloud.oxy.so/files/${user.avatar}/variant/thumb`,
+      url: avatar,
     } : undefined,
     publicKey: {
-      id: keyPair.keyId,
+      id: keyId,
       owner: actorUrl,
-      publicKeyPem: keyPair.publicKeyPem,
+      publicKeyPem,
     },
   };
+}
+
+/**
+ * Returns the instance actor JSON-LD document for HTTP Signature key
+ * verification. Self-consistent on the given `domain` (defaults to Oxy's own
+ * federation domain {@link AP_DOMAIN}).
+ */
+export async function getInstanceActor(domain: string = AP_DOMAIN): Promise<Record<string, unknown>> {
+  const keyPair = await getInstanceKeyPair(domain);
+  return buildActor({
+    domain,
+    username: null,
+    publicKeyPem: keyPair.publicKeyPem,
+    keyId: keyPair.keyId,
+    name: domain,
+  });
+}
+
+/**
+ * Returns a per-user actor JSON-LD document, self-consistent on `domain`
+ * (defaults to Oxy's own federation domain {@link AP_DOMAIN}).
+ *
+ * The `name` field is the canonical composed display name (identity contract).
+ * `getUserActor` is called with lean User docs (no virtuals), so the display
+ * name is composed here via the shared {@link composeDisplayName} rules rather
+ * than read from the (absent) virtual.
+ */
+export async function getUserActor(user: IUser, domain: string = AP_DOMAIN): Promise<Record<string, unknown> | null> {
+  if (!user?.username) return null;
+  const username = user.username.split('@')[0]; // strip @domain if present
+  const keyPair = await getUserKeyPair(username, domain);
+
+  const displayName = composeDisplayName({
+    name: user.name,
+    username,
+    publicKey: typeof user.publicKey === 'string' ? user.publicKey : undefined,
+  });
+
+  const avatar = user.avatar
+    ? (typeof user.avatar === 'string' && user.avatar.startsWith('http')
+      ? user.avatar
+      : `https://cloud.oxy.so/files/${user.avatar}/variant/thumb`)
+    : undefined;
+
+  return buildActor({
+    domain,
+    username,
+    publicKeyPem: keyPair.publicKeyPem,
+    keyId: keyPair.keyId,
+    name: displayName,
+    summary: user.bio || user.description || '',
+    avatar,
+  });
 }
 
 // ============================================================

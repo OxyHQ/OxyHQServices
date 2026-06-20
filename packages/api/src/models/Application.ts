@@ -1,23 +1,5 @@
 import mongoose, { Schema, Document } from 'mongoose';
-
-/**
- * Allowed OAuth scopes for an Application.
- * - `federation:write` permits internal services to call the user resolution
- *   endpoint (`PUT /users/resolve`) for federation/agent/automation flows.
- *   Must be explicitly granted in the DB by an administrator.
- */
-export const APPLICATION_SCOPES = [
-  'files:read',
-  'files:write',
-  'files:delete',
-  'user:read',
-  'webhooks:receive',
-  'chat:completions',
-  'models:read',
-  'federation:write',
-] as const;
-
-export type ApplicationScope = (typeof APPLICATION_SCOPES)[number];
+import { APPLICATION_SCOPES, type ApplicationScope } from '../utils/applicationScopes';
 
 export const APPLICATION_TYPES = [
   'first_party',

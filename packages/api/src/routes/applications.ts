@@ -1,7 +1,12 @@
 import express from 'express';
 import crypto from 'crypto';
 import mongoose from 'mongoose';
-import { Application, IApplication, APPLICATION_SCOPES } from '../models/Application';
+import { Application, IApplication } from '../models/Application';
+import {
+  APPLICATION_SCOPES,
+  type ApplicationScope,
+  isPrivilegedScope,
+} from '../utils/applicationScopes';
 import { ApplicationMember, IApplicationMember } from '../models/ApplicationMember';
 import {
   ApplicationCredential,
@@ -21,6 +26,7 @@ import {
 } from '../utils/error';
 import { logger } from '../utils/logger';
 import { ensurePersonalWorkspace } from '../utils/workspaceProvisioning';
+import credentialDomainCache from '../utils/credentialDomainCache';
 import { resolveUserByIdentifier } from '../utils/resolveUserIdentifier';
 import {
   permissionsForRole,
@@ -141,6 +147,54 @@ function resolveRedirectUris(input: { redirectUris?: string[] }): string[] | und
     seen.add(uri);
     deduped.push(uri);
   }
+  return deduped;
+}
+
+/**
+ * Enforce the staff-only privileged-scope gate when an actor sets an
+ * application's scopes.
+ *
+ * Privileged scopes ({@link isPrivilegedScope}, e.g. `federation:write`) confer
+ * act-on-behalf authority and are NOT self-grantable. Mirroring how `type` /
+ * `isOfficial` / `isInternal` / `capabilities` are staff-gated on the update
+ * path, a NON-STAFF caller is REJECTED with 403 if the scope set they submit
+ * adds a privileged scope that was not already present on the application.
+ *
+ * `previousScopes` is the application's current persisted scope set (empty on
+ * create). A non-staff caller may keep an already-granted privileged scope (so
+ * routine edits to an app that staff previously elevated do not fail) but may
+ * never INTRODUCE one. Staff are unrestricted.
+ *
+ * Returns the validated scope list to persist (the input, de-duplicated). Throws
+ * {@link ForbiddenError} when a non-staff caller attempts to add a privileged
+ * scope.
+ */
+function authorizeRequestedScopes(
+  req: AuthRequest,
+  requestedScopes: ApplicationScope[],
+  previousScopes: readonly ApplicationScope[]
+): ApplicationScope[] {
+  const deduped = Array.from(new Set(requestedScopes));
+
+  if (isStaffUser(req)) {
+    return deduped;
+  }
+
+  const previouslyGranted = new Set(previousScopes);
+  const newlyAddedPrivileged = deduped.filter(
+    (scope) => isPrivilegedScope(scope) && !previouslyGranted.has(scope)
+  );
+
+  if (newlyAddedPrivileged.length > 0) {
+    logger.warn('Non-staff actor attempted to grant privileged application scope', {
+      userId: requireUserId(req),
+      scopes: newlyAddedPrivileged,
+    });
+    throw new ForbiddenError(
+      `Granting the scope(s) [${newlyAddedPrivileged.join(', ')}] requires Oxy platform staff privileges`
+    );
+  }
+
   return deduped;
 }
 
@@ -601,13 +655,18 @@ router.post(
       workspaceObjectId = personalWorkspace._id;
     }
 
+    // Privileged scopes (e.g. federation:write) are NOT self-grantable: a
+    // non-staff creator may not introduce one. No app exists yet, so the
+    // previously-granted set is empty.
+    const scopes = authorizeRequestedScopes(req, body.scopes ?? [], []);
+
     const application = await Application.create({
       name: body.name,
       description: body.description,
       websiteUrl: body.websiteUrl || undefined,
       icon: body.icon,
       redirectUris: resolveRedirectUris(body) ?? [],
-      scopes: body.scopes ?? [],
+      scopes,
       workspaceId: workspaceObjectId,
       createdByUserId: new mongoose.Types.ObjectId(userId),
     });
@@ -686,7 +745,11 @@ router.patch(
     if (body.description !== undefined) application.description = body.description;
     if (body.websiteUrl !== undefined) application.websiteUrl = body.websiteUrl || undefined;
     if (body.icon !== undefined) application.icon = body.icon;
-    if (body.scopes !== undefined) application.scopes = body.scopes;
+    if (body.scopes !== undefined) {
+      // Privileged scopes (e.g. federation:write) are staff-only. A non-staff
+      // caller may keep an already-granted privileged scope but may not add one.
+      application.scopes = authorizeRequestedScopes(req, body.scopes, application.scopes);
+    }
     if (body.status !== undefined) application.status = body.status;
     if (body.devWebhookUrl !== undefined) {
       application.devWebhookUrl = body.devWebhookUrl || undefined;
@@ -715,6 +778,13 @@ router.patch(
 
     await application.save();
 
+    // The federation-domain allow-list is DERIVED from this app's redirectUris
+    // and status (see credentialDomainCache / routes/federation.ts). A change to
+    // either could otherwise linger up to the cache TTL (60s) before
+    // re-evaluation; invalidate eagerly so revoked redirectUris or a suspended
+    // status stop authorising federation signing immediately.
+    credentialDomainCache.invalidate(application._id.toString());
+
     logger.info('Application updated', {
       userId: requireUserId(req),
       applicationId: application._id.toString(),
@@ -741,6 +811,10 @@ router.delete(
 
     application.status = 'deleted';
     await application.save();
+
+    // A deleted app must immediately stop authorising federation signing — the
+    // derived allow-list only honours `active` apps, so drop the cached entry.
+    credentialDomainCache.invalidate(application._id.toString());
 
     logger.info('Application deleted', {
       userId: requireUserId(req),
@@ -1056,8 +1130,21 @@ router.post(
       name: string;
       type: IApplicationCredential['type'];
       environment: IApplicationCredential['environment'];
-      scopes?: string[];
+      scopes?: ApplicationScope[];
     };
+
+    // A credential may never exceed its owning application's authority. Reject
+    // an explicit request for any scope the app does not hold (rather than
+    // silently dropping it) so the developer learns the credential won't carry
+    // it; they must first have the scope granted on the application.
+    const requestedScopes = body.scopes ?? [];
+    const grantableScopes = new Set(application.scopes);
+    const ungrantable = requestedScopes.filter((scope) => !grantableScopes.has(scope));
+    if (ungrantable.length > 0) {
+      throw new BadRequestError(
+        `Credential scope(s) [${ungrantable.join(', ')}] are not granted to this application`
+      );
+    }
 
     const { publicKey, secret, secretHash } = generateCredentialMaterial();
     const isPublicClient = body.type === 'public';
@@ -1069,7 +1156,7 @@ router.post(
       secretHash: isPublicClient ? undefined : secretHash,
       type: body.type,
       environment: body.environment,
-      scopes: body.scopes ?? [],
+      scopes: requestedScopes,
       status: 'active',
       createdByUserId: new mongoose.Types.ObjectId(requireUserId(req)),
     });

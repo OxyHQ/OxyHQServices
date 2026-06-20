@@ -38,7 +38,7 @@ import crypto from 'crypto';
 import mongoose from 'mongoose';
 import { Application } from '../src/models/Application';
 import { ApplicationCredential } from '../src/models/ApplicationCredential';
-import { APPLICATION_SCOPES } from '../src/models/Application';
+import { APPLICATION_SCOPES } from '../src/utils/applicationScopes';
 import { isCredentialUsable } from '../src/utils/credentialUsability';
 import { User } from '../src/models/User';
 import { logger } from '../src/utils/logger';

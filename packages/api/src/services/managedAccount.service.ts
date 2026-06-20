@@ -107,8 +107,16 @@ export class ManagedAccountService {
 
     await managedAccount.save();
 
-    // Generate ActivityPub keypair in the background (non-blocking)
-    getUserKeyPair(username).catch((err) => {
+    // Generate ActivityPub keypair in the background (non-blocking).
+    //
+    // Managed accounts are local Oxy users (type: 'local'), so their actor is
+    // served from Oxy's own federation domain. There is no per-account
+    // federation domain wired (these accounts are not Mention-domain actors), so
+    // we mint the key on the default Oxy domain (AP_DOMAIN) explicitly — keeping
+    // the key host self-consistent with the actor Oxy serves at
+    // `/ap/users/:username`.
+    const OXY_FEDERATION_DOMAIN = process.env.FEDERATION_DOMAIN || 'oxy.so';
+    getUserKeyPair(username, OXY_FEDERATION_DOMAIN).catch((err) => {
       logger.warn('Failed to generate keypair for managed account', {
         username,
         error: err instanceof Error ? err.message : String(err),

@@ -1,4 +1,5 @@
 import mongoose, { Schema, Document } from 'mongoose';
+import { APPLICATION_SCOPES, type ApplicationScope } from '../utils/applicationScopes';
 
 export const APPLICATION_CREDENTIAL_TYPES = ['public', 'confidential', 'service'] as const;
 
@@ -31,7 +32,13 @@ export interface IApplicationCredential extends Omit<Document, '_id'> {
   secretHash?: string;
   type: ApplicationCredentialType;
   environment: ApplicationCredentialEnvironment;
-  scopes: string[];
+  /**
+   * Scopes this credential may request when minting a service token. Constrained
+   * to the same enum as application scopes; the service-token mint additionally
+   * intersects these with the owning application's granted scopes, so a
+   * credential can never exceed its app's authority.
+   */
+  scopes: ApplicationScope[];
   status: ApplicationCredentialStatus;
   lastUsedAt?: Date;
   expiresAt?: Date;
@@ -81,6 +88,7 @@ const ApplicationCredentialSchema = new Schema<IApplicationCredential>(
     },
     scopes: {
       type: [String],
+      enum: APPLICATION_SCOPES,
       default: [],
     },
     status: {

@@ -39,6 +39,7 @@ import { permissionsForRole } from '../src/utils/applicationRoles';
 import { permissionsForRole as workspacePermissionsForRole } from '../src/utils/workspaceRoles';
 import { generateUniqueWorkspaceSlug } from '../src/utils/workspaceProvisioning';
 import { logger } from '../src/utils/logger';
+import type { ApplicationScope } from '../src/utils/applicationScopes';
 
 // ── Mirror routes/applications.ts credential generation EXACTLY ──────────────
 const CREDENTIAL_PUBLIC_KEY_PREFIX = 'oxy_dk_';
@@ -56,6 +57,16 @@ interface SeedAppSpec {
   websiteUrl?: string;
   type: AppType;
   redirectUris: string[];
+  /**
+   * App-level scopes. Defaults to `['user:read']`. A PRIVILEGED scope (e.g.
+   * `federation:write`) is staff-only and is never self-grantable via the API —
+   * granting it here (in this canonical seed, run by staff) is the supported way
+   * to elevate an official app. The service-token mint intersects a credential's
+   * scopes with the app's scopes, so a credential's `federation:write` only
+   * survives if the app ALSO carries it. Mention's federation feature therefore
+   * requires `federation:write` here.
+   */
+  scopes?: ApplicationScope[];
 }
 
 const SSO_CALLBACK_PATH = '/__oxy/sso-callback';
@@ -104,6 +115,12 @@ const SEED_APPS: SeedAppSpec[] = [
     websiteUrl: 'https://mention.earth',
     type: 'first_party',
     redirectUris: [cb('https://mention.earth')],
+    // Mention federates: its service credential signs HTTP-Signatures and
+    // resolves federated users. The mint intersects credential scopes with these
+    // app scopes, so the app MUST carry federation:write for the credential's
+    // federation:write to survive. files:write is needed for federated-media S3
+    // caching (POST /assets/service/cache).
+    scopes: ['user:read', 'files:write', 'federation:write'],
   },
   {
     name: 'Homiio',
@@ -256,7 +273,7 @@ async function seed(): Promise<void> {
       isInternal: spec.type === 'internal',
       capabilities: [] as string[],
       redirectUris: spec.redirectUris,
-      scopes: ['user:read'] as ('user:read')[],
+      scopes: spec.scopes ?? (['user:read'] as ApplicationScope[]),
       workspaceId: oxyWorkspaceId,
     };
 

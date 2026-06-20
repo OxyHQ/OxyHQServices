@@ -345,16 +345,6 @@ jest.mock('../../models/Application', () => ({
   __esModule: true,
   Application: ApplicationMock,
   default: ApplicationMock,
-  APPLICATION_SCOPES: [
-    'files:read',
-    'files:write',
-    'files:delete',
-    'user:read',
-    'webhooks:receive',
-    'chat:completions',
-    'models:read',
-    'federation:write',
-  ],
 }));
 
 jest.mock('../../models/ApplicationMember', () => ({
@@ -757,6 +747,37 @@ describe('POST /applications — create', () => {
     });
     expect(res.status).toBe(403);
   });
+
+  it('403 when a non-staff creator tries to self-grant a privileged scope (federation:write)', async () => {
+    const res = await requestJson(server, 'POST', '/applications', {
+      workspaceId: WORKSPACE_ID,
+      name: 'Escalation App',
+      redirectUris: ['https://mention.earth/__oxy/sso-callback'],
+      scopes: ['user:read', 'federation:write'],
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it('allows a non-staff creator to grant ordinary (non-privileged) scopes', async () => {
+    const res = await requestJson(server, 'POST', '/applications', {
+      workspaceId: WORKSPACE_ID,
+      name: 'Normal App',
+      scopes: ['user:read', 'files:write'],
+    });
+    expect(res.status).toBe(201);
+    expect(res.body.application?.scopes).toEqual(['user:read', 'files:write']);
+  });
+
+  it('allows a STAFF creator to grant a privileged scope', async () => {
+    actAs(OWNER_ID, true);
+    const res = await requestJson(server, 'POST', '/applications', {
+      workspaceId: WORKSPACE_ID,
+      name: 'Federated App',
+      scopes: ['user:read', 'federation:write'],
+    });
+    expect(res.status).toBe(201);
+    expect(res.body.application?.scopes).toEqual(['user:read', 'federation:write']);
+  });
 });
 
 describe('GET /applications/:appId — lookup by _id', () => {
@@ -1043,6 +1064,36 @@ describe('PATCH /applications/:appId', () => {
     expect(res.body.application?.isInternal).toBe(true);
     expect(res.body.application?.type).toBe('internal');
   });
+
+  it('403 when a non-staff owner tries to ADD a privileged scope via update', async () => {
+    const res = await requestJson(server, 'PATCH', `/applications/${APP_ID}`, {
+      scopes: ['user:read', 'federation:write'],
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it('lets a non-staff owner keep an already-granted privileged scope (no re-grant)', async () => {
+    // Staff previously elevated this app; a routine non-staff edit that re-sends
+    // the existing privileged scope must not be rejected. Mutate the app seeded
+    // by this block's beforeEach rather than re-seeding (which would duplicate
+    // the APP_ID in the in-memory store).
+    apps[0].scopes = ['user:read', 'federation:write'];
+    const res = await requestJson(server, 'PATCH', `/applications/${APP_ID}`, {
+      scopes: ['user:read', 'federation:write'],
+      description: 'routine edit',
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.application?.scopes).toEqual(['user:read', 'federation:write']);
+  });
+
+  it('lets a STAFF owner add a privileged scope via update', async () => {
+    actAs(OWNER_ID, true);
+    const res = await requestJson(server, 'PATCH', `/applications/${APP_ID}`, {
+      scopes: ['user:read', 'federation:write'],
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.application?.scopes).toEqual(['user:read', 'federation:write']);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1071,6 +1122,40 @@ describe('credentials lifecycle', () => {
     const stored = credentials[0];
     expect(stored.secretHash).toBeDefined();
     expect(stored.secretHash).not.toBe(res.body.secret);
+  });
+
+  it('400 when a credential requests a scope the application does not hold', async () => {
+    // Seeded app has scopes []. A credential cannot exceed the app's authority,
+    // so requesting federation:write (or any ungranted scope) is rejected.
+    const res = await requestJson(server, 'POST', `/applications/${APP_ID}/credentials`, {
+      name: 'Over-scoped',
+      type: 'service',
+      environment: 'production',
+      scopes: ['federation:write'],
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('creates a credential whose scopes are a subset of the app scopes', async () => {
+    apps[0].scopes = ['user:read', 'files:write', 'federation:write'];
+    const res = await requestJson(server, 'POST', `/applications/${APP_ID}/credentials`, {
+      name: 'Federation key',
+      type: 'service',
+      environment: 'production',
+      scopes: ['user:read', 'federation:write'],
+    });
+    expect(res.status).toBe(201);
+    expect(res.body.credential?.scopes).toEqual(['user:read', 'federation:write']);
+  });
+
+  it('400 when a credential requests an unknown scope (enum-rejected by schema)', async () => {
+    const res = await requestJson(server, 'POST', `/applications/${APP_ID}/credentials`, {
+      name: 'Bad scope',
+      type: 'service',
+      environment: 'production',
+      scopes: ['totally:made-up'],
+    });
+    expect(res.status).toBe(400);
   });
 
   it('public credentials carry no secret', async () => {

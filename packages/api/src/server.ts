@@ -49,7 +49,7 @@ import { getDbName } from './config/db';
 import jwt from 'jsonwebtoken';
 import { logger } from './utils/logger';
 import { Response } from 'express';
-import { authMiddleware, serviceAuthMiddleware } from './middleware/auth';
+import { authMiddleware } from './middleware/auth';
 import cookieParser from 'cookie-parser';
 import { csrfProtection, getCsrfToken } from './middleware/csrf';
 import { createCorsMiddleware, SOCKET_IO_CORS_CONFIG } from './config/cors';
@@ -495,7 +495,8 @@ app.use('/managed-accounts', userRateLimiter, csrfProtection, authMiddleware, ma
 app.use('/contacts', userRateLimiter, csrfProtection, contactsRouter);
 
 // ActivityPub endpoints — serves actor profiles and public keys for federation.
-import { getInstanceActor, getUserActor, getUserKeyPair } from './services/federation.service';
+import { getInstanceActor, getUserActor } from './services/federation.service';
+import federationRoutes from './routes/federation';
 
 // Federation domain constant — used by nodeinfo, webfinger, and actor endpoints
 const AP_DOMAIN = process.env.FEDERATION_DOMAIN || 'oxy.so';
@@ -604,22 +605,15 @@ app.get('/.well-known/webfinger', async (req: any, res: Response) => {
   }
 });
 
-// Internal API: get key pair for a user (used by Mention backend for signing)
-// Protected: only accessible with a valid service token (internal Oxy services)
-app.get('/federation/keypair/:username', serviceAuthMiddleware, async (req: any, res: Response) => {
-  try {
-    const { username } = req.params;
-    const keyPair = await getUserKeyPair(username);
-    return res.json({
-      keyId: keyPair.keyId,
-      publicKeyPem: keyPair.publicKeyPem,
-      privateKeyPem: keyPair.privateKeyPem,
-    });
-  } catch (err: any) {
-    logger.error('KeyPair endpoint error:', err);
-    return res.status(500).json({ error: 'Internal server error' });
-  }
-});
+// Federation identity & sign-on-behalf endpoints.
+//
+// The private key NEVER leaves Oxy. Relying apps (e.g. Mention) publish their
+// actor's `publicKey` block via `GET /federation/public-key/:username` and
+// obtain HTTP-Signature signatures via `POST /federation/sign`, both gated by a
+// service token with the `federation:write` scope and bound to the credential's
+// own registered domain. The legacy `GET /federation/keypair/:username` route —
+// which returned `privateKeyPem` — has been removed in favour of these.
+app.use('/federation', federationRoutes);
 
 // Swagger API documentation (non-production only)
 if (process.env.NODE_ENV !== 'production') {

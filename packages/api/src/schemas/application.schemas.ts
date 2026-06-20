@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { APPLICATION_ROLES } from '../utils/applicationRoles';
-import { APPLICATION_SCOPES } from '../models/Application';
+import { APPLICATION_SCOPES } from '../utils/applicationScopes';
 import {
   APPLICATION_CREDENTIAL_TYPES,
   APPLICATION_CREDENTIAL_ENVIRONMENTS,
@@ -106,10 +106,17 @@ export const transferOwnershipSchema = z.object({
   userId: z.string().trim().min(1),
 });
 
-/** POST /applications/:appId/credentials — create a credential. */
+/**
+ * POST /applications/:appId/credentials — create a credential.
+ *
+ * `scopes` is constrained to the SAME enum as application scopes (no free-form
+ * strings). The route additionally intersects the requested scopes with the
+ * owning application's granted scopes, so a credential can never exceed its
+ * app's authority.
+ */
 export const createCredentialSchema = z.object({
   name: z.string().trim().min(1).max(100),
   type: z.enum(APPLICATION_CREDENTIAL_TYPES),
   environment: z.enum(APPLICATION_CREDENTIAL_ENVIRONMENTS),
-  scopes: z.array(z.string()).optional(),
+  scopes: z.array(z.enum(APPLICATION_SCOPES)).optional(),
 });
