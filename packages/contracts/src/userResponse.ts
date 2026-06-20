@@ -79,8 +79,16 @@ export const userResponseSchema = z
         publicKey: z.string().optional(),
         username: z.string().optional(),
         email: z.string().optional(),
-        /** Avatar file id (string) or null. */
+        /** Avatar file id (string) or null. The raw stored reference. */
         avatar: z.string().nullable().optional(),
+        /**
+         * Server-resolved, ready-to-render absolute avatar URL (the `thumb`
+         * variant). Public avatars resolve to the Oxy CDN (`cloud.oxy.so`);
+         * `null`/absent when the user has no avatar or it is not publicly
+         * servable. Clients should render this directly and MUST NOT rebuild a
+         * URL from `avatar` (the file id). Additive — `avatar` is unchanged.
+         */
+        avatarUrl: z.string().nullable().optional(),
         /** Named Bloom color preset (e.g. `"blue"`) or null. */
         color: z.string().nullable().optional(),
         name: userNameSchema,

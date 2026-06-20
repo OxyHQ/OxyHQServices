@@ -355,8 +355,10 @@ router.get(
     // Get user statistics
     const stats = await userService.getUserStats(user._id.toString());
 
-    // Format response with stats
-    const response = userService.formatUserResponse(user, stats);
+    // Format response with stats; stamp the resolved CDN avatarUrl.
+    const response = await userService.enrichAvatarUrl(
+      userService.formatUserResponse(user, stats)
+    );
 
     logger.debug('GET /profiles/username/:username', { username });
     sendSuccess(res, response);
@@ -452,14 +454,16 @@ router.get(
     const followerMap = new Map(followerCounts.map((result) => [result._id.toString(), result.count]));
     const followingMap = new Map(followingCounts.map((result) => [result._id.toString(), result.count]));
 
-    const enrichedProfiles = profiles.map((profile) => {
-      const id = profile._id.toString();
-      const stats = {
-        followers: followerMap.get(id) || 0,
-        following: followingMap.get(id) || 0,
-      };
-      return userService.formatUserResponse(profile, stats);
-    });
+    const enrichedProfiles = await userService.enrichAvatarUrls(
+      profiles.map((profile) => {
+        const id = profile._id.toString();
+        const stats = {
+          followers: followerMap.get(id) || 0,
+          following: followingMap.get(id) || 0,
+        };
+        return userService.formatUserResponse(profile, stats);
+      })
+    );
 
     logger.debug('GET /profiles/search', {
       query: sanitizedQuery,
@@ -497,7 +501,9 @@ router.get(
     }
 
     const stats = await userService.getUserStats(user._id.toString());
-    const response = userService.formatUserResponse(user, stats);
+    const response = await userService.enrichAvatarUrl(
+      userService.formatUserResponse(user, stats)
+    );
 
     logger.debug('GET /profiles/resolve', { handle });
     sendSuccess(res, response);

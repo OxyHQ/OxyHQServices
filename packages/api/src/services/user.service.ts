@@ -23,6 +23,7 @@ import {
   FollowActionResult,
 } from '../types/user.types';
 import Subscription from '../models/Subscription';
+import { assetService } from './assetServiceSingleton';
 import { formatUserNameResponse, type NameParts } from '../utils/displayName';
 
 // Constants
@@ -889,6 +890,61 @@ export class UserService {
     }
 
     return response;
+  }
+
+  /**
+   * Stamp the canonical resolved `avatarUrl` onto already-serialized user DTOs.
+   *
+   * `avatarUrl` is the ready-to-render absolute avatar URL (thumb variant):
+   *  - an avatar that is already an absolute `http(s)` URL (e.g. a federated
+   *    user's mirrored remote avatar) is passed through verbatim;
+   *  - an Oxy file id resolves to the public CDN (`cloud.oxy.so`) URL;
+   *  - anything that does not resolve (no avatar, or a private/unservable
+   *    asset) leaves `avatarUrl` absent so callers can omit the field.
+   *
+   * This runs as ONE batched lookup over all DTOs — a single Mongo query and no
+   * S3 round-trips (see {@link AssetService.resolvePublicAvatarUrls}) — so list
+   * endpoints (search, followers, recommendations) never incur an N+1.
+   */
+  async enrichAvatarUrls<T extends PublicUserProfile>(profiles: T[]): Promise<T[]> {
+    if (profiles.length === 0) {
+      return profiles;
+    }
+
+    // File ids needing a CDN lookup (skip absolute-URL avatars — already final).
+    const fileIds = profiles
+      .map((profile) => profile.avatar)
+      .filter(
+        (avatar): avatar is string =>
+          typeof avatar === 'string' && avatar.length > 0 && !/^https?:\/\//i.test(avatar)
+      );
+
+    const cdnUrls = await assetService.resolvePublicAvatarUrls(fileIds);
+
+    for (const profile of profiles) {
+      const avatar = profile.avatar;
+      if (typeof avatar !== 'string' || avatar.length === 0) {
+        continue;
+      }
+      if (/^https?:\/\//i.test(avatar)) {
+        profile.avatarUrl = avatar;
+        continue;
+      }
+      const cdnUrl = cdnUrls.get(avatar);
+      if (cdnUrl) {
+        profile.avatarUrl = cdnUrl;
+      }
+    }
+
+    return profiles;
+  }
+
+  /**
+   * Single-DTO convenience wrapper around {@link enrichAvatarUrls}.
+   */
+  async enrichAvatarUrl<T extends PublicUserProfile>(profile: T): Promise<T> {
+    const [enriched] = await this.enrichAvatarUrls([profile]);
+    return enriched;
   }
 }
 
