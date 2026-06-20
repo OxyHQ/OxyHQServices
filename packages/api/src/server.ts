@@ -43,7 +43,7 @@ import contactsRouter from './routes/contacts';
 import userDataRouter from './routes/userData';
 import { startSmtpInbound, stopSmtpInbound } from './services/smtp.inbound';
 import { smtpOutbound } from './services/smtp.outbound';
-import { startSnoozeCron, stopSnoozeCron } from './cron/snooze.cron';
+import { startBackgroundJobs, stopBackgroundJobs } from './queue/backgroundJobs';
 import { getEnvBoolean, validateRequiredEnvVars, getSanitizedConfig, getEnvNumber } from './config/env';
 import { getDbName } from './config/db';
 import jwt from 'jsonwebtoken';
@@ -349,7 +349,7 @@ async function gracefulShutdown(signal: string) {
     logger.info('HTTP server closed');
   });
 
-  stopSnoozeCron();
+  await stopBackgroundJobs();
   await stopSmtpInbound();
   smtpOutbound.shutdown();
   await closeRedis();
@@ -662,8 +662,9 @@ if (require.main === module) {
         }
       }
 
-      // Start snooze processor
-      startSnoozeCron();
+      // Start background jobs: durable BullMQ scheduling when REDIS_URL is set,
+      // otherwise the in-process cron fallback. Never throws.
+      await startBackgroundJobs();
 
       server.listen(PORT, '0.0.0.0', () => {
         logger.info(`Server running on port ${PORT}`, {
