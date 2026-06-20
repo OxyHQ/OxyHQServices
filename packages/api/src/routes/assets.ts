@@ -35,6 +35,14 @@ const router = express.Router();
 const upload = multer(); // memory storage
 
 /**
+ * Cache lifetime (seconds) for a public-asset CDN redirect from `GET
+ * /:id/stream`. The redirect TARGET is content-addressed and stable, so it is
+ * safe to let clients/edge caches reuse the 302 rather than re-running the S3
+ * existence probe on every request.
+ */
+const CDN_REDIRECT_MAX_AGE_SECONDS = 3600;
+
+/**
  * Build an absolute, our-origin streaming URL for an asset on the host that
  * served this request (e.g. `https://api.oxy.so/assets/<id>/stream`). Used for
  * any asset NOT served by the public CDN (private/unlisted, or a public object
@@ -1167,9 +1175,32 @@ router.get('/:id/stream', mediaHeadersMiddleware, validate({ params: assetIdPara
 
   // Public + CDN-reachable object → redirect to the public CDN (our own domain,
   // `cloud.oxy.so`). No raw S3 URL is ever handed to the client.
-  if (file.visibility === 'public' && isPublicKey(storageKey)) {
-    res.setHeader('Cache-Control', 'public, max-age=3600');
-    return res.redirect(buildCdnUrl(stripPublicPrefix(storageKey)));
+  if (file.visibility === 'public') {
+    // Fast path: the resolved object key is already under the `public/` prefix
+    // (every new upload, and any visibility-relocated object) — no S3 probe.
+    if (isPublicKey(storageKey)) {
+      res.setHeader('Cache-Control', `public, max-age=${CDN_REDIRECT_MAX_AGE_SECONDS}`);
+      return res.redirect(buildCdnUrl(stripPublicPrefix(storageKey)));
+    }
+
+    // Legacy public object whose DB key still points at a non-public key, but
+    // whose bytes were copied under `public/` by the CDN backfill. Reuse the
+    // same variant-aware probe `/assets/:id/url` uses so the CDN serves the
+    // bytes for the REQUESTED variant (thumb/w320/original). Only fall through
+    // to origin streaming when no `public/` copy exists (or the probe errors).
+    try {
+      const cdnUrl = await assetService.getPublicCdnUrl(file, variantType);
+      if (cdnUrl) {
+        res.setHeader('Cache-Control', `public, max-age=${CDN_REDIRECT_MAX_AGE_SECONDS}`);
+        return res.redirect(cdnUrl);
+      }
+    } catch (cdnProbeError) {
+      logger.debug('CDN probe failed for public asset stream; streaming through origin', {
+        fileId,
+        variant: variantType,
+        error: cdnProbeError instanceof Error ? cdnProbeError.message : String(cdnProbeError),
+      });
+    }
   }
 
   // Otherwise stream the bytes THROUGH our origin (access was already checked
