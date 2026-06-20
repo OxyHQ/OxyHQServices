@@ -311,7 +311,7 @@
     },
     "packages/core": {
       "name": "@oxyhq/core",
-      "version": "3.6.0",
+      "version": "3.7.0",
       "dependencies": {
         "@oxyhq/contracts": "^0.1.1",
         "bip39": "^3.1.0",

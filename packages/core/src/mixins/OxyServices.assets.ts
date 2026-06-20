@@ -19,15 +19,49 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
     }
 
     /**
-     * Get file download URL (synchronous - uses stream endpoint for images to avoid ORB blocking)
+     * Build a synchronous file URL from an Oxy asset id.
+     *
+     * This is the single chokepoint every Oxy app uses to turn a stored file id
+     * (avatars, post media, etc.) into a `<img src>`-ready URL, so it resolves to
+     * one of two forms depending on whether the caller needs a signed/private URL:
+     *
+     * - **Public asset (default)** — no access token planted on the client AND no
+     *   `expiresIn` requested → returns the clean CDN form
+     *   `${cloudURL}/<id>[?variant=...]` (e.g. `https://cloud.oxy.so/<id>?variant=thumb`).
+     *   CloudFront resolves the id against the public media origin. No token,
+     *   `fallback`, or origin query params are emitted — these URLs are cacheable
+     *   and shareable.
+     * - **Signed / private asset** — an access token is present on the client OR
+     *   `expiresIn` was passed (the caller explicitly wants an expiring/authorized
+     *   URL) → keeps the authenticated origin form
+     *   `${baseURL}/assets/<id>/stream?...&token=...`. Private assets are NOT on
+     *   the public CDN, so they must go through the API origin that can authorize
+     *   the request.
+     *
+     * `cloudURL` (default `https://cloud.oxy.so`) is configured once on the
+     * `OxyServices` constructor and read via `getCloudURL()`; the API origin is
+     * `getBaseURL()` (e.g. `https://api.oxy.so`).
+     *
+     * For a CDN-signed URL fetched from the API, use {@link getFileDownloadUrlAsync}.
      */
     getFileDownloadUrl(fileId: string, variant?: string, expiresIn?: number): string {
+      const token = this.getClient().getAccessToken();
+
+      // Public case: no auth token and no expiry requested → clean CDN URL.
+      // CloudFront serves the public media origin under `${cloudURL}/<id>`.
+      if (!token && !expiresIn) {
+        const variantQs = variant ? `?variant=${encodeURIComponent(variant)}` : '';
+        return `${this.getCloudURL()}/${encodeURIComponent(fileId)}${variantQs}`;
+      }
+
+      // Signed / private case: route through the authenticated API origin's
+      // stream endpoint so the request can be authorized (private assets are not
+      // exposed on the public CDN).
       const base = this.getBaseURL();
       const params = new URLSearchParams();
       if (variant) params.set('variant', variant);
       if (expiresIn) params.set('expiresIn', String(expiresIn));
       params.set('fallback', 'placeholderVisible');
-      const token = this.getClient().getAccessToken();
       if (token) params.set('token', token);
 
       const qs = params.toString();
