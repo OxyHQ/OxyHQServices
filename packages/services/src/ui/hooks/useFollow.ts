@@ -1,8 +1,10 @@
-import { useCallback, useMemo, useEffect } from 'react';
+import { useCallback, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useFollowStore } from '../stores/followStore';
 import { useOxy } from '../context/OxyContext';
-import { logger as loggerUtil, type OxyServices, type BulkFollowResult, type BulkUnfollowResult } from '@oxyhq/core';
+import { type OxyServices, type BulkFollowResult, type BulkUnfollowResult } from '@oxyhq/core';
 import { useShallow } from 'zustand/react/shallow';
+import { queryKeys } from './queries/queryKeys';
 
 /**
  * useFollow — Hook for follow state management.
@@ -21,6 +23,9 @@ export const useFollow = (userId?: string | string[]) => {
   const { oxyServices, canUsePrivateApi } = useOxy();
   const userIds = useMemo(() => (Array.isArray(userId) ? userId : userId ? [userId] : []), [userId]);
   const isSingleUser = typeof userId === 'string';
+  // Narrowed single-user id for use in closures (callbacks/queryFn) where TS
+  // can't carry the `isSingleUser` boolean back to a `string` narrowing.
+  const singleUserId: string | undefined = typeof userId === 'string' ? userId : undefined;
 
   // Granular Zustand selectors — only re-render when THIS user's data changes
   const isFollowing = useFollowStore(
@@ -128,16 +133,29 @@ export const useFollow = (userId?: string | string[]) => {
     useFollowStore.getState().setFollowingCount(userId, count);
   }, [isSingleUser, userId]);
 
-  // Auto-fetch counts when hook is used for a single user and counts are missing.
-  useEffect(() => {
-    if (!isSingleUser || !userId) return;
-
-    if ((followerCount === null || followingCount === null) && !isLoadingCounts) {
-      fetchUserCounts().catch((error: unknown) => {
-        loggerUtil.warn('useFollow: fetchUserCounts failed', { component: 'useFollow' }, error);
-      });
-    }
-  }, [isSingleUser, userId, followerCount, followingCount, isLoadingCounts, fetchUserCounts]);
+  // Auto-fetch counts for single-user mode via React Query instead of a manual
+  // useEffect. The Zustand store remains the canonical home for count values
+  // (it is also written by toggleFollowUser / updateCountsFromFollowAction), so
+  // components keep reading `followerCount` / `followingCount` through the
+  // granular selectors above — this query only owns the FETCH lifecycle
+  // (dedup, caching, retry/backoff). It stays disabled until the counts are
+  // actually missing, reproducing the old effect's `(followerCount === null ||
+  // followingCount === null)` gate without a render-phase side effect. The
+  // store action does the network call and writes the counts; the query simply
+  // surfaces the resolved pair as its cached data.
+  useQuery({
+    queryKey: singleUserId ? queryKeys.follow.counts(singleUserId) : queryKeys.follow.all,
+    queryFn: async () => {
+      if (!singleUserId) return null;
+      await useFollowStore.getState().fetchUserCounts(singleUserId, oxyServices);
+      const state = useFollowStore.getState();
+      return {
+        followers: state.followerCounts[singleUserId] ?? null,
+        following: state.followingCounts[singleUserId] ?? null,
+      };
+    },
+    enabled: !!singleUserId && followerCount === null && followingCount === null,
+  });
 
   // Multi-user callbacks
   const toggleFollowForUser = useCallback(async (targetUserId: string) => {

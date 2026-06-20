@@ -181,6 +181,31 @@ export function getErrorCodeFromStatus(status: number): string {
 }
 
 /**
+ * Best-effort extraction of an HTTP status code from a thrown value.
+ *
+ * `HttpService` annotates the errors it throws with both `error.status` and
+ * `error.response.status`; an already-normalized {@link ApiError} carries
+ * `error.status`. This reads either, returning `undefined` when the value is
+ * not an object or carries no numeric status (e.g. a thrown string, a network
+ * `TypeError`). Used by discovery/read paths to distinguish a 404 "not found"
+ * from a transport/server failure for observability without re-deriving the
+ * narrowing at every call site.
+ */
+export function extractErrorStatus(error: unknown): number | undefined {
+  if (!error || typeof error !== 'object') {
+    return undefined;
+  }
+  const record = error as { status?: unknown; response?: { status?: unknown } };
+  if (typeof record.status === 'number') {
+    return record.status;
+  }
+  if (typeof record.response?.status === 'number') {
+    return record.response.status;
+  }
+  return undefined;
+}
+
+/**
  * Validate required fields and throw error if missing
  */
 export function validateRequiredFields(data: Record<string, unknown>, fields: string[]): void {

@@ -30,6 +30,7 @@
  */
 
 import * as crypto from 'crypto';
+import type { UserNameResponse } from '@oxyhq/contracts';
 import { getRedisClient } from '../config/redis';
 import { logger } from '../utils/logger';
 
@@ -50,7 +51,13 @@ const KEY_PREFIX = 'sso:code:';
 export interface SsoSessionPayload {
   sessionId: string;
   accessToken: string;
-  user: { id: string; username?: string; email?: string; avatar?: string; name?: string };
+  /**
+   * `user.name` is the structured {@link UserNameResponse} (required
+   * `displayName`), NOT a bare string — this is the canonical contract the SDK's
+   * `userResponseSchema` enforces on redemption. A string name would make
+   * `exchangeSsoCode` throw and every RP show logged-out.
+   */
+  user: { id: string; username?: string; email?: string; avatar?: string; name: UserNameResponse };
   expiresAt?: string;
   /** Optional Google-style multi-account device slot from the FedCM exchange. */
   authuser?: number;

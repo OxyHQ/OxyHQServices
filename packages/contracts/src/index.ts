@@ -48,3 +48,12 @@ export type {
     PublicApplicationResponse,
     SessionStatusResponse,
 } from './sessionStatus';
+
+export {
+    // Schemas
+    fedcmTokenPayloadSchema,
+} from './fedcmToken';
+
+export type {
+    FedcmTokenPayload,
+} from './fedcmToken';

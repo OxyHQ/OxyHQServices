@@ -37,7 +37,7 @@ describe("refreshAllResponseSchema", () => {
                     user: {
                         id: "u1",
                         username: "alice",
-                        name: { first: "Alice", last: "Doe", full: "Alice Doe" },
+                        name: { first: "Alice", last: "Doe", full: "Alice Doe", displayName: "Alice Doe" },
                         avatar: "file123",
                         email: "alice@example.com",
                         color: "blue",
@@ -60,7 +60,9 @@ describe("refreshAllResponseSchema", () => {
                     sessionId: "s2",
                     user: {
                         id: "u2",
-                        name: { first: "", last: "" },
+                        // publicKey-only: no first/last, but `displayName` is
+                        // still required by the canonical contract.
+                        name: { first: "", last: "", displayName: "u2" },
                         color: null,
                     },
                 },

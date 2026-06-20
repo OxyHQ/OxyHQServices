@@ -1,5 +1,4 @@
 import express from 'express';
-import jwt from 'jsonwebtoken';
 import {
   exchangeIdToken,
   getApprovedClients,
@@ -10,38 +9,10 @@ import {
   listMyAuthorizedApps,
   revokeMyAuthorizedApp,
 } from '../controllers/fedcm.controller';
-import type { Request, Response, NextFunction } from 'express';
-import type { TokenDecoded } from '../middleware/authUtils';
 import { rateLimit } from '../middleware/rateLimiter';
-import { authMiddleware } from '../middleware/auth';
+import { authMiddleware, serviceAuthMiddleware } from '../middleware/auth';
 
 const router = express.Router();
-
-/**
- * Middleware that only allows internal service tokens.
- * Verifies the JWT and checks for type: 'service'.
- */
-function serviceTokenOnly(req: Request, res: Response, next: NextFunction) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith('Bearer ')) {
-    return res.status(401).json({ message: 'Service token required' });
-  }
-
-  const token = authHeader.substring(7);
-  const secret = process.env.ACCESS_TOKEN_SECRET;
-  if (!secret) {
-    return res.status(500).json({ message: 'Server configuration error' });
-  }
-  try {
-    const decoded = jwt.verify(token, secret) as TokenDecoded;
-    if (decoded.type !== 'service') {
-      return res.status(403).json({ message: 'This endpoint is only accessible to internal services' });
-    }
-    next();
-  } catch {
-    return res.status(401).json({ message: 'Invalid or expired service token' });
-  }
-}
 
 // Rate-limit nonce minting independently from other FedCM endpoints —
 // nonces are cheap server-side but expensive to enumerate, so cap both
@@ -227,7 +198,7 @@ router.get('/grants/:userId', getUserGrants);
  *       403:
  *         description: Token is not a service token.
  */
-router.post('/clients/approved', serviceTokenOnly, addApprovedClient);
+router.post('/clients/approved', serviceAuthMiddleware, addApprovedClient);
 
 /**
  * @openapi
@@ -255,7 +226,7 @@ router.post('/clients/approved', serviceTokenOnly, addApprovedClient);
  *       404:
  *         description: Origin not on the list.
  */
-router.delete('/clients/approved/:origin', serviceTokenOnly, removeApprovedClient);
+router.delete('/clients/approved/:origin', serviceAuthMiddleware, removeApprovedClient);
 
 /**
  * @openapi

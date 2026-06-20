@@ -283,6 +283,47 @@ describe('FedCM exchangeIdToken (H9)', () => {
     });
   });
 
+  it('returns the user with a structured name.displayName (canonical serializer), never a string name', async () => {
+    // Contract: a session-establishing exchange MUST emit the structured
+    // `UserNameResponse` so the SDK's `userResponseSchema` accepts it. A bare
+    // string `name` makes `exchangeSsoCode` throw and every RP shows logged-out.
+    mockUserFindById.mockReturnValueOnce({
+      select: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue({
+          _id: 'user-123',
+          username: 'alice',
+          name: { first: 'Alice', last: 'Liddell' },
+        }),
+      }),
+    });
+
+    const token = mintToken();
+    const result = await fedcmService.exchangeIdToken(token, createReq(APPROVED_ORIGIN));
+
+    expect('error' in result).toBe(false);
+    if ('error' in result) return;
+    // name is a structured object, not a string.
+    expect(typeof result.user.name).toBe('object');
+    expect(result.user.name).not.toBeNull();
+    const name = result.user.name as { displayName?: unknown; first?: unknown; last?: unknown };
+    expect(typeof name.displayName).toBe('string');
+    expect(name.displayName).toBe('Alice Liddell');
+    expect(name.first).toBe('Alice');
+    expect(name.last).toBe('Liddell');
+  });
+
+  it('falls back to username for displayName when the user has no structured name', async () => {
+    // Default mock user is { _id: 'user-123', username: 'alice' } with no name.
+    const token = mintToken();
+    const result = await fedcmService.exchangeIdToken(token, createReq(APPROVED_ORIGIN));
+
+    expect('error' in result).toBe(false);
+    if ('error' in result) return;
+    const name = result.user.name as { displayName?: unknown };
+    expect(typeof name.displayName).toBe('string');
+    expect(name.displayName).toBe('alice');
+  });
+
   it('records a FedCM grant for the user+origin on a successful exchange', async () => {
     const token = mintToken();
     await fedcmService.exchangeIdToken(token, createReq(APPROVED_ORIGIN));

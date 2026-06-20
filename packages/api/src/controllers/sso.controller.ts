@@ -72,11 +72,27 @@ function parseSessionPayload(value: unknown): SsoSessionPayload | null {
   const userRecord = user as Record<string, unknown>;
   if (typeof userRecord.id !== 'string' || userRecord.id.length === 0) return null;
 
-  const normalisedUser: SsoSessionPayload['user'] = { id: userRecord.id };
+  // `name` MUST be the structured UserNameResponse with a non-empty
+  // `displayName` — the contract the SDK's `userResponseSchema` enforces on
+  // redemption. Fail closed: a string `name`, a missing `name`, or an object
+  // without a usable `displayName` rejects the whole payload so a session code
+  // is never minted without a valid display name (which would log every RP out).
+  const nameRecord = userRecord.name;
+  if (typeof nameRecord !== 'object' || nameRecord === null || Array.isArray(nameRecord)) {
+    return null;
+  }
+  const displayName = (nameRecord as Record<string, unknown>).displayName;
+  if (typeof displayName !== 'string' || displayName.trim().length === 0) {
+    return null;
+  }
+
+  const normalisedUser: SsoSessionPayload['user'] = {
+    id: userRecord.id,
+    name: nameRecord as SsoSessionPayload['user']['name'],
+  };
   if (typeof userRecord.username === 'string') normalisedUser.username = userRecord.username;
   if (typeof userRecord.email === 'string') normalisedUser.email = userRecord.email;
   if (typeof userRecord.avatar === 'string') normalisedUser.avatar = userRecord.avatar;
-  if (typeof userRecord.name === 'string') normalisedUser.name = userRecord.name;
 
   const payload: SsoSessionPayload = {
     sessionId,

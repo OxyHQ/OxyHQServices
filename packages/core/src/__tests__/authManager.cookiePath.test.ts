@@ -85,14 +85,14 @@ const TWO_ACCOUNTS: RefreshAllResponse = {
       accessToken: TOKEN_SLOT_0,
       expiresAt: '2099-01-01T00:00:00.000Z',
       sessionId: 'sess-slot-0',
-      user: { id: 'user-0', username: 'alice', avatar: null, color: '#1abc9c' },
+      user: { id: 'user-0', username: 'alice', name: { displayName: 'Alice' }, avatar: null, color: '#1abc9c' },
     },
     {
       authuser: 1,
       accessToken: TOKEN_SLOT_1,
       expiresAt: '2099-01-01T00:00:00.000Z',
       sessionId: 'sess-slot-1',
-      user: { id: 'user-1', username: 'bob', avatar: null, color: '#3498db' },
+      user: { id: 'user-1', username: 'bob', name: { displayName: 'Bob' }, avatar: null, color: '#3498db' },
     },
   ],
 };

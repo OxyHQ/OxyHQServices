@@ -112,7 +112,7 @@ export async function getUserGrants(req: Request, res: Response) {
     return res.json({ origins });
   } catch (error) {
     logger.error('Get FedCM user grants error:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    return res.status(500).json({ message: 'Internal server error' });
   }
 }
 
@@ -129,7 +129,7 @@ export async function getApprovedClients(req: Request, res: Response) {
     });
   } catch (error) {
     logger.error('Get approved FedCM clients error:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    return res.status(500).json({ message: 'Internal server error' });
   }
 }
 
@@ -178,7 +178,7 @@ export async function addApprovedClient(req: AuthRequest, res: Response) {
     }
 
     logger.error('Add approved FedCM client error:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    return res.status(500).json({ message: 'Internal server error' });
   }
 }
 
@@ -205,7 +205,7 @@ export async function removeApprovedClient(req: Request, res: Response) {
     });
   } catch (error) {
     logger.error('Remove approved FedCM client error:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    return res.status(500).json({ message: 'Internal server error' });
   }
 }
 

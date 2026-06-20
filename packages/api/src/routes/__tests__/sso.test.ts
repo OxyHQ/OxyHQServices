@@ -63,12 +63,23 @@ jest.mock('../../utils/logger', () => ({
 }));
 
 import ssoRouter, { ssoExchangeCors } from '../sso';
+import fedcmService from '../../services/fedcm.service';
+import * as ssoCodeService from '../../services/ssoCode.service';
+
+// Typed handle to the mocked allow-list check so individual tests can force it
+// to throw (driving the controller's 500 catch path).
+const mockIsClientApproved = fedcmService.isClientApproved as jest.MockedFunction<
+  typeof fedcmService.isClientApproved
+>;
 
 const VALID_SESSION = {
   sessionId: 'sess-abc',
   accessToken: 'access-jwt-xyz',
   expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
-  user: { id: '64f7c2a1b8e9d3f4a1c2b3d4', username: 'alice' },
+  // `name` MUST be the structured UserNameResponse with a required displayName —
+  // a bare string name is rejected by `parseSessionPayload` (the contract the
+  // SDK's `userResponseSchema` enforces on redemption).
+  user: { id: '64f7c2a1b8e9d3f4a1c2b3d4', username: 'alice', name: { displayName: 'Alice' } },
 };
 
 interface JsonResponse {
@@ -194,6 +205,120 @@ describe('POST /sso/code', () => {
     expect(res.status).toBe(400);
   });
 
+  it('returns 400 when user.name is a bare string (structured UserNameResponse required)', async () => {
+    // A string name silently drops the displayName the SDK requires → the
+    // session must never be minted. Fail closed at 400.
+    const res = await requestJson(
+      server,
+      'POST',
+      '/sso/code',
+      {
+        session: {
+          sessionId: 'sess-x',
+          accessToken: 'access-x',
+          user: { id: '64f7c2a1b8e9d3f4a1c2b3d4', username: 'alice', name: 'Alice' },
+        },
+        clientOrigin: 'https://mention.earth',
+      },
+      { 'x-oxy-internal': process.env.SSO_INTERNAL_SECRET as string }
+    );
+    expect(res.status).toBe(400);
+    expect(mockRedis.set).not.toHaveBeenCalled();
+  });
+
+  it('returns 400 when user.name is missing entirely', async () => {
+    const res = await requestJson(
+      server,
+      'POST',
+      '/sso/code',
+      {
+        session: {
+          sessionId: 'sess-x',
+          accessToken: 'access-x',
+          user: { id: '64f7c2a1b8e9d3f4a1c2b3d4', username: 'alice' },
+        },
+        clientOrigin: 'https://mention.earth',
+      },
+      { 'x-oxy-internal': process.env.SSO_INTERNAL_SECRET as string }
+    );
+    expect(res.status).toBe(400);
+    expect(mockRedis.set).not.toHaveBeenCalled();
+  });
+
+  it('returns 400 when user.name is an object without a non-empty displayName', async () => {
+    const res = await requestJson(
+      server,
+      'POST',
+      '/sso/code',
+      {
+        session: {
+          sessionId: 'sess-x',
+          accessToken: 'access-x',
+          user: { id: '64f7c2a1b8e9d3f4a1c2b3d4', username: 'alice', name: { first: 'Alice', displayName: '   ' } },
+        },
+        clientOrigin: 'https://mention.earth',
+      },
+      { 'x-oxy-internal': process.env.SSO_INTERNAL_SECRET as string }
+    );
+    expect(res.status).toBe(400);
+    expect(mockRedis.set).not.toHaveBeenCalled();
+  });
+
+  it('returns 400 when clientOrigin is missing', async () => {
+    const res = await requestJson(
+      server,
+      'POST',
+      '/sso/code',
+      { session: VALID_SESSION },
+      { 'x-oxy-internal': process.env.SSO_INTERNAL_SECRET as string }
+    );
+    expect(res.status).toBe(400);
+    expect(mockRedis.set).not.toHaveBeenCalled();
+  });
+
+  it('returns 400 when clientOrigin is not a valid origin', async () => {
+    const res = await requestJson(
+      server,
+      'POST',
+      '/sso/code',
+      { session: VALID_SESSION, clientOrigin: 'not a url at all' },
+      { 'x-oxy-internal': process.env.SSO_INTERNAL_SECRET as string }
+    );
+    expect(res.status).toBe(400);
+    expect(mockRedis.set).not.toHaveBeenCalled();
+  });
+
+  it('returns 404 when SSO_INTERNAL_SECRET is not configured (route fails closed)', async () => {
+    const saved = process.env.SSO_INTERNAL_SECRET;
+    delete process.env.SSO_INTERNAL_SECRET;
+    try {
+      const res = await requestJson(
+        server,
+        'POST',
+        '/sso/code',
+        { session: VALID_SESSION, clientOrigin: 'https://mention.earth' },
+        { 'x-oxy-internal': 'anything-at-all' }
+      );
+      expect(res.status).toBe(404);
+      expect(mockRedis.set).not.toHaveBeenCalled();
+    } finally {
+      process.env.SSO_INTERNAL_SECRET = saved;
+    }
+  });
+
+  it('returns 500 when the approved-clients lookup throws', async () => {
+    mockIsClientApproved.mockRejectedValueOnce(new Error('valkey down'));
+    const res = await requestJson(
+      server,
+      'POST',
+      '/sso/code',
+      { session: VALID_SESSION, clientOrigin: 'https://mention.earth' },
+      { 'x-oxy-internal': process.env.SSO_INTERNAL_SECRET as string }
+    );
+    expect(res.status).toBe(500);
+    expect(mockRedis.set).not.toHaveBeenCalled();
+  });
+
   it('mints a code on the happy path and stores only the hash', async () => {
     const res = await requestJson(
       server,
@@ -229,6 +354,61 @@ describe('POST /sso/exchange', () => {
       sessionId: VALID_SESSION.sessionId,
       expiresAt: VALID_SESSION.expiresAt,
       user: VALID_SESSION.user,
+    });
+  });
+
+  it('preserves the structured user.name (displayName) end-to-end', async () => {
+    const code = await mintCode();
+    const res = await requestJson(
+      server,
+      'POST',
+      '/sso/exchange',
+      { code },
+      { origin: 'https://mention.earth' }
+    );
+    expect(res.status).toBe(200);
+    const user = res.body.user as { name?: unknown };
+    expect(typeof user.name).toBe('object');
+    expect(user.name).toEqual({ displayName: 'Alice' });
+  });
+
+  it('round-trips every optional session field (full user + authuser)', async () => {
+    const fullSession = {
+      sessionId: 'sess-full',
+      accessToken: 'access-full',
+      expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+      authuser: 4,
+      user: {
+        id: '64f7c2a1b8e9d3f4a1c2b3d4',
+        username: 'alice',
+        email: 'alice@oxy.so',
+        avatar: 'https://cdn.example/a.png',
+        name: { first: 'Alice', last: 'Example', full: 'Alice Example', displayName: 'Alice Example' },
+      },
+    };
+    const mint = await requestJson(
+      server,
+      'POST',
+      '/sso/code',
+      { session: fullSession, clientOrigin: 'https://mention.earth' },
+      { 'x-oxy-internal': process.env.SSO_INTERNAL_SECRET as string }
+    );
+    expect(mint.status).toBe(200);
+
+    const res = await requestJson(
+      server,
+      'POST',
+      '/sso/exchange',
+      { code: mint.body.code },
+      { origin: 'https://mention.earth' }
+    );
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      accessToken: fullSession.accessToken,
+      sessionId: fullSession.sessionId,
+      expiresAt: fullSession.expiresAt,
+      authuser: fullSession.authuser,
+      user: fullSession.user,
     });
   });
 
@@ -301,6 +481,24 @@ describe('POST /sso/exchange', () => {
       { origin: 'https://mention.earth' }
     );
     expect(res.status).toBe(400);
+  });
+
+  it('returns 500 when code redemption throws unexpectedly', async () => {
+    const spy = jest
+      .spyOn(ssoCodeService, 'redeemSsoCode')
+      .mockRejectedValueOnce(new Error('valkey exploded'));
+    try {
+      const res = await requestJson(
+        server,
+        'POST',
+        '/sso/exchange',
+        { code: 'some-code' },
+        { origin: 'https://mention.earth' }
+      );
+      expect(res.status).toBe(500);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('echoes approved origin with credentials:false on the OPTIONS preflight', async () => {

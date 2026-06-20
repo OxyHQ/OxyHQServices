@@ -32,6 +32,7 @@ import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import { registrableApex, CENTRAL_IDP_APEX, SSO_CALLBACK_PATH } from '@oxyhq/core';
+import type { UserNameResponse } from '@oxyhq/contracts';
 
 // ---------------------------------------------------------------------------
 // Runtime configuration
@@ -280,8 +281,71 @@ interface ResolvedUser {
   id: string;
   email?: string;
   username?: string;
-  name?: string;
+  /**
+   * The structured, canonical name object the API's `formatUserResponse`
+   * emits — `{ first?, last?, full?, displayName }` with a REQUIRED
+   * `displayName`. This is what every SESSION-user object carries (it flows
+   * verbatim through `/sso/code` and the `/auth/silent` postMessage), so the
+   * shape MUST mirror `@oxyhq/contracts` `UserNameResponse` and NOT collapse to
+   * a plain string. FedCM-native string surfaces (the accounts `name` field and
+   * the id_token `name` claim) derive a display string via `displayNameOf`.
+   */
+  name?: UserNameResponse;
   avatar?: string;
+}
+
+/**
+ * Derive a non-empty display string from a structured {@link UserNameResponse}
+ * for the FedCM-native string surfaces (the accounts endpoint's `account.name`
+ * and the id_token `name` claim — both are W3C/OIDC string fields). Prefers the
+ * canonical `displayName`, then `full`, then composed `first last`. Returns
+ * `undefined` when the name carries nothing renderable, so callers can fall
+ * back to the username.
+ */
+function displayNameOf(name: UserNameResponse | undefined): string | undefined {
+  if (!name) return undefined;
+  if (typeof name.displayName === 'string' && name.displayName.trim()) {
+    return name.displayName.trim();
+  }
+  if (typeof name.full === 'string' && name.full.trim()) return name.full.trim();
+  const first = typeof name.first === 'string' ? name.first.trim() : '';
+  const last = typeof name.last === 'string' ? name.last.trim() : '';
+  const composed = [first, last].filter(Boolean).join(' ').trim();
+  return composed || undefined;
+}
+
+/**
+ * Normalise an arbitrary upstream `name` value (the API's structured object, a
+ * legacy plain string, or nothing) into a valid {@link UserNameResponse} whose
+ * `displayName` is GUARANTEED non-empty. This is the single chokepoint that
+ * enforces the session-user name contract: `@oxyhq/core`'s `exchangeSsoCode`
+ * (≥3.6.0) rejects a session whose `user.name` is not the structured shape with
+ * a required `displayName`, so EVERY session-user this worker builds must pass
+ * through here. The `displayName` is resolved from (in order) the structured
+ * name's own `displayName`/`full`/`first last`, then the username, then the id —
+ * never empty.
+ */
+function structuredName(
+  raw: unknown,
+  username: string | undefined,
+  userId: string
+): UserNameResponse {
+  // The API's `formatUserResponse` emits a structured object. Tolerate a legacy
+  // plain string and a missing value defensively so a producer drift can never
+  // collapse the session contract.
+  let base: UserNameResponse | undefined;
+  if (raw && typeof raw === 'object') {
+    base = raw as UserNameResponse;
+  } else if (typeof raw === 'string' && raw.trim()) {
+    base = { displayName: raw.trim() } as UserNameResponse;
+  }
+
+  const displayName =
+    displayNameOf(base) ||
+    (typeof username === 'string' && username.trim() ? username.trim() : '') ||
+    userId;
+
+  return { ...(base ?? {}), displayName };
 }
 
 /**
@@ -314,14 +378,13 @@ async function fetchUserFromAPI(apiBaseUrl: string, sessionId: string): Promise<
     const userId = user?.id;
     if (!user || typeof userId !== 'string' || !userId) return null;
 
-    const nameObj = user.name as Record<string, string> | undefined;
-    const fullName = nameObj?.full || (nameObj?.first && nameObj?.last ? `${nameObj.first} ${nameObj.last}` : undefined);
+    const username = user.username as string | undefined;
 
     return {
       id: userId,
       email: user.email as string | undefined,
-      username: user.username as string | undefined,
-      name: fullName || (user.username as string | undefined),
+      username,
+      name: structuredName(user.name, username, userId),
       avatar: user.avatar as string | undefined,
     };
   } catch {
@@ -435,7 +498,14 @@ interface SilentRestoreSession {
   sessionId: string;
   accessToken: string;
   expiresAt?: string;
-  user?: { id: string; username?: string; email?: string; avatar?: string; name?: string };
+  /**
+   * The session user posted verbatim to `/sso/code` and the `/auth/silent`
+   * postMessage. `name` MUST be the structured {@link UserNameResponse} with a
+   * required `displayName` — `@oxyhq/core`'s `exchangeSsoCode` (≥3.6.0) throws
+   * "SSO exchange returned an invalid user" if it is a plain string. Build it
+   * via {@link structuredName} so the contract always holds.
+   */
+  user?: { id: string; username?: string; email?: string; avatar?: string; name?: UserNameResponse };
 }
 
 /**
@@ -561,7 +631,11 @@ async function mintSessionForClient(
       nonce: serverNonce,
     };
     if (user.email) idTokenPayload.email = user.email;
-    if (user.name) idTokenPayload.name = user.name;
+    // The OIDC `name` claim is a STRING (FedCM assertion field) — derive the
+    // display string from the structured name. The structured object is carried
+    // separately on the SESSION user below.
+    const idTokenName = displayNameOf(user.name);
+    if (idTokenName) idTokenPayload.name = idTokenName;
     if (user.username) idTokenPayload.preferred_username = user.username;
     const idToken = await createHS256JWT(idTokenPayload, fedcmTokenSecret);
 
@@ -583,17 +657,29 @@ async function mintSessionForClient(
     if (typeof accessToken !== 'string' || typeof sessionId !== 'string') return null;
     if (!accessToken || !sessionId) return null;
 
-    const exchangedUser = exchanged.user as ResolvedUser | undefined;
+    // The API returns its own canonical `formatUserResponse` user (structured
+    // `name.displayName`). Treat it as untrusted wire data: prefer its fields,
+    // fall back to the resolved `user` we already hold, and ALWAYS run the name
+    // through `structuredName` so the session contract holds even if an older
+    // API deployment emits a plain-string `name` (or omits it). This is the
+    // single producer of the SESSION user that flows verbatim to `/sso/code`
+    // and the `/auth/silent` postMessage — `@oxyhq/core`'s `exchangeSsoCode`
+    // (≥3.6.0) rejects a non-structured name with "invalid user".
+    const exchangedUser = (exchanged.user ?? {}) as Record<string, unknown>;
+    const sessionUserId =
+      typeof exchangedUser.id === 'string' && exchangedUser.id ? exchangedUser.id : user.id;
+    const sessionUsername =
+      typeof exchangedUser.username === 'string' ? exchangedUser.username : user.username;
     return {
       sessionId,
       accessToken,
       expiresAt: typeof exchanged.expiresAt === 'string' ? exchanged.expiresAt : undefined,
-      user: exchangedUser ?? {
-        id: user.id,
-        username: user.username,
-        email: user.email,
-        avatar: user.avatar,
-        name: user.name,
+      user: {
+        id: sessionUserId,
+        username: sessionUsername,
+        email: typeof exchangedUser.email === 'string' ? exchangedUser.email : user.email,
+        avatar: typeof exchangedUser.avatar === 'string' ? exchangedUser.avatar : user.avatar,
+        name: structuredName(exchangedUser.name ?? user.name, sessionUsername, sessionUserId),
       },
     };
   } catch {
@@ -1199,7 +1285,9 @@ app.get('/fedcm/accounts', async (c) => {
 
   const account: Record<string, unknown> = {
     id: user.id,
-    name: user.name || user.username || 'Oxy User',
+    // FedCM `account.name` is a STRING (W3C spec) — derive the display string
+    // from the structured name, falling back to the username.
+    name: displayNameOf(user.name) || user.username || 'Oxy User',
     email: accountEmail,
   };
 
@@ -1328,9 +1416,11 @@ app.post('/fedcm/assertion', async (c) => {
     payload.nonce = nonce;
   }
 
-  // Include basic claims
+  // Include basic claims. The OIDC `name` claim is a STRING — derive it from
+  // the structured name object.
   if (user.email) payload.email = user.email;
-  if (user.name) payload.name = user.name;
+  const assertionName = displayNameOf(user.name);
+  if (assertionName) payload.name = assertionName;
   if (user.username) payload.preferred_username = user.username;
 
   const token = await createHS256JWT(payload, fedcmTokenSecret);

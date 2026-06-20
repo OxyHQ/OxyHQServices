@@ -195,4 +195,75 @@ describe('HttpService identity-scoped response cache', () => {
     await http.get('/users/u1', { cache: true });
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
+
+  /**
+   * The soft cache-size guard is observability-only: it must warn (once,
+   * throttled) when the entry count blows past the soft ceiling, but must NEVER
+   * evict a live entry. We synthesize bloat by giving every request a distinct
+   * undecodable token, so each write mints a fresh identity tag → a fresh key.
+   */
+  describe('soft cache-size telemetry guard', () => {
+    /** Number of distinct cached entries needed to cross the 500 soft ceiling. */
+    const ENTRIES_PAST_LIMIT = 520;
+
+    const newLoggingService = (): HttpService =>
+      new HttpService({
+        baseURL: 'http://test.invalid',
+        enableRetry: false,
+        requestTimeout: 1000,
+        enableLogging: true,
+        logLevel: 'warn',
+      });
+
+    let warnSpy: jest.SpyInstance;
+    beforeEach(() => {
+      // SimpleLogger routes `warn` to console.warn; spy there to assert telemetry.
+      warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    });
+    afterEach(() => {
+      warnSpy.mockRestore();
+    });
+
+    it('warns (throttled) once the cache exceeds the soft entry limit and never evicts', async () => {
+      const http = newLoggingService();
+
+      // Each iteration: a fresh undecodable token → fresh identity tag → fresh
+      // key, so the cache grows by one live entry per call.
+      for (let i = 0; i < ENTRIES_PAST_LIMIT; i++) {
+        http.setTokens(`undecodable-token-${i}`);
+        fetchMock.mockResolvedValueOnce(jsonResponse({ i }));
+        await http.get('/profiles/recommendations', { cache: true });
+      }
+
+      // No eviction: every distinct entry is still resident.
+      expect(http.getCacheStats().size).toBe(ENTRIES_PAST_LIMIT);
+
+      // Telemetry fired, and exactly once within the throttle window.
+      const cacheWarnings = warnSpy.mock.calls.filter((args) =>
+        args.some(
+          (a: unknown) =>
+            typeof a === 'string' && a.includes('exceeded soft entry limit'),
+        ),
+      );
+      expect(cacheWarnings.length).toBe(1);
+    });
+
+    it('does not warn while the cache stays under the soft limit', async () => {
+      const http = newLoggingService();
+
+      for (let i = 0; i < 10; i++) {
+        http.setTokens(`undecodable-token-${i}`);
+        fetchMock.mockResolvedValueOnce(jsonResponse({ i }));
+        await http.get('/profiles/recommendations', { cache: true });
+      }
+
+      const cacheWarnings = warnSpy.mock.calls.filter((args) =>
+        args.some(
+          (a: unknown) =>
+            typeof a === 'string' && a.includes('exceeded soft entry limit'),
+        ),
+      );
+      expect(cacheWarnings.length).toBe(0);
+    });
+  });
 });

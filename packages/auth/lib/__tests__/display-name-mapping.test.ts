@@ -29,8 +29,10 @@ describe("auth app account display-name mapping", () => {
                     user: {
                         id: "u1",
                         username: "nateisern",
-                        // First name only — no `last`, no `full`.
-                        name: { first: "Nate" },
+                        // First name only — no `last`, no `full`. `displayName`
+                        // is the canonical required field `formatUserResponse`
+                        // always composes (here from the first name).
+                        name: { first: "Nate", displayName: "Nate" },
                         color: "blue",
                     },
                 },
@@ -59,7 +61,7 @@ describe("auth app account display-name mapping", () => {
                     user: {
                         id: "u2",
                         username: "alice",
-                        name: { first: "Alice", last: "Doe" },
+                        name: { first: "Alice", last: "Doe", displayName: "Alice Doe" },
                     },
                 },
             ],
@@ -70,7 +72,10 @@ describe("auth app account display-name mapping", () => {
         expect(getAccountDisplayName(user)).toBe("Alice Doe")
     })
 
-    test("falls back to username when there is no structured name", () => {
+    test("renders the username when there are no human name parts (displayName composed from the handle)", () => {
+        // A username-only account: `formatUserResponse` still emits the required
+        // `name.displayName`, composed from the username when no first/last/full
+        // exist. The chooser therefore renders the handle, not "Unnamed".
         const payload = {
             accounts: [
                 {
@@ -78,7 +83,7 @@ describe("auth app account display-name mapping", () => {
                     accessToken: "at",
                     expiresAt: new Date().toISOString(),
                     sessionId: "s3",
-                    user: { id: "u3", username: "bob" },
+                    user: { id: "u3", username: "bob", name: { displayName: "bob" } },
                 },
             ],
         }

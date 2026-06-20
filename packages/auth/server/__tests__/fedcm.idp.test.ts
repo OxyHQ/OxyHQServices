@@ -74,7 +74,11 @@ let capturedExchange: CapturedExchange | undefined;
 interface CapturedSsoCode {
   internalSecret?: string;
   clientOrigin?: string;
-  session?: { sessionId?: string; accessToken?: string; user?: { id?: string } };
+  session?: {
+    sessionId?: string;
+    accessToken?: string;
+    user?: { id?: string; name?: { displayName?: string } | string };
+  };
 }
 let capturedSsoCode: CapturedSsoCode | undefined;
 // The opaque single-use code the stubbed `/sso/code` returns. Mutable so a test
@@ -138,7 +142,16 @@ function installApiStub(): void {
           deviceId: 'dev_1',
           expiresAt: new Date(Date.now() + 3600000).toISOString(),
           accessToken: STUB_ACCESS_TOKEN,
-          user: { id: TEST_USER_ID, username: 'tester', email: 'tester@oxy.so', name: 'Test User' },
+          // The API's /fedcm/exchange returns the canonical formatUserResponse
+          // user: `name` is the STRUCTURED object with a required `displayName`,
+          // NOT a plain string. The worker must carry this shape verbatim onto
+          // the SESSION user it posts to /sso/code and /auth/silent.
+          user: {
+            id: TEST_USER_ID,
+            username: 'tester',
+            email: 'tester@oxy.so',
+            name: { first: 'Test', last: 'User', full: 'Test User', displayName: 'Test User' },
+          },
         }),
         { status: 200, headers: { 'content-type': 'application/json' } }
       );
@@ -626,7 +639,11 @@ function extractPostedMessage(html: string): { message: unknown; targetOrigin: s
 
 interface SilentMessage {
   type: string;
-  session: { sessionId: string; accessToken: string; user?: { id: string } } | null;
+  session: {
+    sessionId: string;
+    accessToken: string;
+    user?: { id: string; name?: { displayName?: string } | string };
+  } | null;
   nonce: string | null;
 }
 
@@ -649,6 +666,14 @@ describe('GET /auth/silent (Safari/Firefox first-party restore)', () => {
     expect(msg.session?.sessionId).toBe(STUB_EXCHANGE_SESSION_ID);
     expect(msg.session?.accessToken).toBe(STUB_ACCESS_TOKEN);
     expect(msg.session?.user?.id).toBe(TEST_USER_ID);
+
+    // CRITICAL: the session user's `name` MUST be the STRUCTURED object with a
+    // non-empty `displayName` (NOT a plain string). `@oxyhq/core`'s
+    // `exchangeSsoCode` (≥3.6.0) throws "SSO exchange returned an invalid user"
+    // when `user.name` is a string, which silently logs every RP out on reload.
+    const silentName = msg.session?.user?.name;
+    expect(typeof silentName).toBe('object');
+    expect((silentName as { displayName?: string }).displayName).toBe('Test User');
 
     // Token is delivered ONLY to the validated client origin — never '*'.
     expect(targetOrigin).toBe(RP_ORIGIN);
@@ -958,9 +983,91 @@ describe('GET /sso (central top-level-redirect cross-domain SSO)', () => {
     expect(capturedSsoCode?.session?.accessToken).toBe(STUB_ACCESS_TOKEN);
     expect(capturedSsoCode?.session?.user?.id).toBe(TEST_USER_ID);
 
+    // CRITICAL contract: the session posted to /sso/code carries the STRUCTURED
+    // name with a non-empty `displayName`. A plain-string `name` is rejected by
+    // `@oxyhq/core`'s `exchangeSsoCode` (≥3.6.0) → every RP shows logged-out.
+    const ssoName = capturedSsoCode?.session?.user?.name;
+    expect(typeof ssoName).toBe('object');
+    expect((ssoName as { displayName?: string }).displayName).toBe('Test User');
+
     // The opaque code never reveals the access token, and the token is never in
     // the redirect URL.
     expect(location).not.toContain(STUB_ACCESS_TOKEN);
+  });
+
+  it('still posts a STRUCTURED name.displayName even when the API returns a string name (older-API tolerance)', async () => {
+    // Defence in depth: if an unpatched API deployment still emits a plain
+    // string `name` on /fedcm/exchange, the worker MUST normalise it into the
+    // structured `{ displayName }` shape before posting to /sso/code. Otherwise
+    // `@oxyhq/core`'s exchangeSsoCode rejects the session and the RP logs out.
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const url = typeof input === 'string' ? input : input.toString();
+      const headers = new Headers(init?.headers);
+      if (url.includes('/fedcm/clients/approved')) {
+        return new Response(JSON.stringify({ success: true, clients: [RP_ORIGIN] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      if (url.includes('/session/validate/')) {
+        return new Response(
+          JSON.stringify({
+            valid: true,
+            user: { id: TEST_USER_ID, username: 'tester', email: 'tester@oxy.so', name: { full: 'Test User' } },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } }
+        );
+      }
+      if (url.includes('/fedcm/nonce')) {
+        return new Response(JSON.stringify({ nonce: STUB_SERVER_NONCE }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      if (url.includes('/fedcm/exchange')) {
+        // Legacy API: plain-string `name`.
+        return new Response(
+          JSON.stringify({
+            sessionId: STUB_EXCHANGE_SESSION_ID,
+            expiresAt: new Date(Date.now() + 3600000).toISOString(),
+            accessToken: STUB_ACCESS_TOKEN,
+            user: { id: TEST_USER_ID, username: 'tester', name: 'Legacy String Name' },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } }
+        );
+      }
+      if (url.includes('/sso/code')) {
+        const bodyText = typeof init?.body === 'string' ? init.body : '';
+        try {
+          const json = JSON.parse(bodyText) as { clientOrigin?: string; session?: CapturedSsoCode['session'] };
+          capturedSsoCode = {
+            clientOrigin: json.clientOrigin,
+            session: json.session,
+            internalSecret: headers.get('x-oxy-internal') ?? undefined,
+          };
+        } catch {
+          capturedSsoCode = {};
+        }
+        return new Response(JSON.stringify({ code: STUB_SSO_CODE, expiresInSeconds: 30 }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
+    }) as typeof fetch;
+
+    const res = await app.request(
+      ssoUrl({ client_id: RP_ORIGIN, return_to: VALID_RETURN_TO, state: 'st-name', prompt: 'none' }),
+      { headers: { cookie: SESSION_COOKIE } }
+    );
+    expect(res.status).toBe(303);
+    const { frag } = parseSsoRedirect(res);
+    expect(frag.get('oxy_sso')).toBe('ok');
+
+    // The string `name` was normalised into the structured contract shape.
+    const ssoName = capturedSsoCode?.session?.user?.name;
+    expect(typeof ssoName).toBe('object');
+    expect((ssoName as { displayName?: string }).displayName).toBe('Legacy String Name');
   });
 
   it('303-redirects with oxy_sso=error when the /sso/code mint fails', async () => {

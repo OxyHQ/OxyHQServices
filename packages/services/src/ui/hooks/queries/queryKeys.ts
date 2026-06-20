@@ -80,6 +80,12 @@ export const queryKeys = {
     list: () => [...queryKeys.connectedApps.all, 'list'] as const,
   },
 
+  // Follow / social graph queries
+  follow: {
+    all: ['follow'] as const,
+    counts: (userId: string) => [...queryKeys.follow.all, 'counts', userId] as const,
+  },
+
   // Payment / wallet / subscription queries
   payments: {
     all: ['payments'] as const,

@@ -16,6 +16,8 @@ import { buildSearchParams, buildPaginationParams, type PaginationParams } from 
 import { KeyManager } from '../crypto/keyManager';
 import { SignatureService } from '../crypto/signatureService';
 import { normalizeUserIdentity, normalizeUserIdentityOrNull } from '../utils/userIdentity';
+import { logger } from '../utils/loggerUtils';
+import { extractErrorStatus } from '../utils/errorUtils';
 
 /** Per-user outcome returned by `POST /users/follow/bulk`. */
 export interface BulkFollowEntry {
@@ -149,7 +151,26 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
           cacheTTL: 24 * 60 * 60 * 1000, // 24h cache — matches server-side staleness window
         });
         return normalizeUserIdentityOrNull(result);
-      } catch {
+      } catch (error: unknown) {
+        // Discovery is best-effort: an unresolvable handle is a normal "not
+        // found", not an exceptional condition, so the contract stays `null`.
+        // But a 404 (handle genuinely absent) must be distinguishable from a
+        // network/server failure (WebFinger upstream down, 5xx) for debugging —
+        // both used to be swallowed identically. Log at `debug` with context so
+        // the distinction is observable without turning expected misses into
+        // noise. Return contract is unchanged.
+        const status = extractErrorStatus(error);
+        const isNotFound = status === 404;
+        logger.debug(
+          isNotFound ? 'resolveProfile: handle not found' : 'resolveProfile: discovery failed',
+          {
+            method: 'resolveProfile',
+            handle,
+            status,
+            notFound: isNotFound,
+            error: error instanceof Error ? error.message : String(error),
+          },
+        );
         return null;
       }
     }
@@ -203,7 +224,17 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
           ? { excludeTypes: options.excludeTypes.join(',') }
           : undefined;
         return await this.makeRequest('GET', '/profiles/recommendations', params, { cache: true });
-      } catch (error) {
+      } catch (error: unknown) {
+        // Recommendations are a discovery read; failures are surfaced to the
+        // caller (contract unchanged: rethrow via `handleError`). Add debug
+        // observability first so a recurring upstream failure is diagnosable
+        // — distinguishing an auth/transport problem from a server 5xx.
+        logger.debug('getProfileRecommendations: discovery read failed', {
+          method: 'getProfileRecommendations',
+          excludeTypes: options?.excludeTypes,
+          status: extractErrorStatus(error),
+          error: error instanceof Error ? error.message : String(error),
+        });
         throw this.handleError(error);
       }
     }
@@ -281,14 +312,7 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
         return result;
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
-        const errorRecord = error && typeof error === 'object'
-          ? error as { status?: unknown; response?: { status?: unknown } }
-          : null;
-        const status = typeof errorRecord?.status === 'number'
-          ? errorRecord.status
-          : typeof errorRecord?.response?.status === 'number'
-            ? errorRecord.response.status
-            : undefined;
+        const status = extractErrorStatus(error);
 
         // Check if it's an authentication error (401)
         const isAuthError = status === 401 ||

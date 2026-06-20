@@ -36,7 +36,12 @@ const VALID_BODY = {
   sessionId: 'sess_sso',
   expiresAt: new Date(Date.now() + 60_000).toISOString(),
   authuser: 0,
-  user: { id: 'user_sso', username: 'ssouser', avatar: 'file_1' },
+  user: {
+    id: 'user_sso',
+    username: 'ssouser',
+    name: { displayName: 'SSO User', first: 'SSO', last: 'User', full: 'SSO User' },
+    avatar: 'file_1',
+  },
 };
 
 describe('OxyServices.exchangeSsoCode', () => {
@@ -83,7 +88,12 @@ describe('OxyServices.exchangeSsoCode', () => {
     expect(oxy.getAccessToken()).toBe('access_sso');
     expect(session.sessionId).toBe('sess_sso');
     expect(session.accessToken).toBe('access_sso');
-    expect(session.user).toEqual({ id: 'user_sso', username: 'ssouser', avatar: 'file_1' });
+    expect(session.user).toEqual({
+      id: 'user_sso',
+      username: 'ssouser',
+      name: { displayName: 'SSO User', first: 'SSO', last: 'User', full: 'SSO User' },
+      avatar: 'file_1',
+    });
     expect(session.expiresAt).toBe(VALID_BODY.expiresAt);
   });
 
@@ -92,7 +102,7 @@ describe('OxyServices.exchangeSsoCode', () => {
     mockFetchOnce({
       accessToken: 'access_sso',
       sessionId: 'sess_sso',
-      user: { _id: 'mongo_id', username: 'ssouser' },
+      user: { _id: 'mongo_id', username: 'ssouser', name: { displayName: 'SSO User' } },
     });
 
     const session = await oxy.exchangeSsoCode('opaque-code-123');

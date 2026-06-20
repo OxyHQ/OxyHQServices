@@ -254,6 +254,39 @@ const COOKIE_RESTORE_TIMEOUT = 3000;
  */
 const COLD_BOOT_OVERALL_DEADLINE = 20000;
 
+/**
+ * Per-session timeout (ms) for the parallel stored-session validation in
+ * `restoreStoredSession`. Each `validateSession` call races against this timer
+ * so a single slow/offline session never blocks the whole startup validation
+ * sweep — sessions that don't answer in time resolve to `null` (treated as
+ * unvalidated) and the remaining sessions still settle.
+ */
+const VALIDATION_TIMEOUT = 8000;
+
+/**
+ * Fallback client-session validity window (ms) — 7 days — applied when a
+ * restored account/session does not carry an explicit `expiresAt`. This is only
+ * a local display/bookkeeping hint for the multi-session store; the server
+ * remains the source of truth for actual session expiry. Used in the refresh
+ * cookie restore, stored-session restore, and web-SSO session paths.
+ */
+const DEFAULT_SESSION_VALIDITY_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Minimum interval (ms) between visibility-driven IdP `/auth/session-check`
+ * probes. Debounces the hidden-iframe session check so rapid tab focus/blur
+ * cycles can't spawn a check-iframe storm; at most one probe runs per window.
+ */
+const IDP_SESSION_CHECK_COOLDOWN = 30000;
+
+/**
+ * Hard timeout (ms) for a single visibility-driven IdP `/auth/session-check`
+ * iframe. If the IdP never posts a `oxy-session-check` message back, the iframe
+ * and its listener are torn down after this budget so a non-responsive check
+ * can never leak an iframe or a `message` listener.
+ */
+const IDP_SESSION_CHECK_TIMEOUT = 5000;
+
 function getHttpStatus(error: unknown): number | undefined {
   if (!error || typeof error !== 'object') {
     return undefined;
@@ -849,7 +882,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     const clientSessions: ClientSession[] = snapshot.accounts.map((account) => ({
       sessionId: account.sessionId,
       deviceId: '',
-      expiresAt: account.expiresAt || new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      expiresAt: account.expiresAt || new Date(now.getTime() + DEFAULT_SESSION_VALIDITY_MS).toISOString(),
       lastActive: now.toISOString(),
       userId: account.user?.id,
       isCurrent: account.sessionId === activeAccount.sessionId,
@@ -906,9 +939,8 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     let validSessions: ClientSession[] = [];
 
     if (storedSessionIds.length > 0) {
-      // Validate all sessions in parallel (with 8s timeout per session) to avoid
+      // Validate all sessions in parallel (with a per-session timeout) to avoid
       // sequential blocking that freezes the app on startup
-      const VALIDATION_TIMEOUT = 8000;
       const results = await Promise.allSettled(
         storedSessionIds.map(async (sessionId) => {
           const timeoutPromise = new Promise<null>((resolve) =>
@@ -931,7 +963,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
               const clientSession: ClientSession = {
                 sessionId,
                 deviceId: '',
-                expiresAt: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+                expiresAt: new Date(now.getTime() + DEFAULT_SESSION_VALIDITY_MS).toISOString(),
                 lastActive: now.toISOString(),
                 userId: validation.user.id?.toString() ?? '',
                 isCurrent: sessionId === storedActiveSessionId,
@@ -1456,7 +1488,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     const clientSession = {
       sessionId: session.sessionId,
       deviceId: session.deviceId || '',
-      expiresAt: session.expiresAt || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      expiresAt: session.expiresAt || new Date(Date.now() + DEFAULT_SESSION_VALIDITY_MS).toISOString(),
       lastActive: new Date().toISOString(),
       userId: session.user.id?.toString() ?? '',
       isCurrent: true,
@@ -1550,9 +1582,9 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     const idpOrigin = resolvedAuthWebUrl || 'https://auth.oxy.so';
 
     const checkIdPSession = () => {
-      // Debounce: check at most once per 30 seconds
+      // Debounce: check at most once per cooldown window
       const now = Date.now();
-      if (now - lastIdPCheckRef.current < 30000) return;
+      if (now - lastIdPCheckRef.current < IDP_SESSION_CHECK_COOLDOWN) return;
       lastIdPCheckRef.current = now;
 
       // Clean up any in-flight check before starting a new one
@@ -1591,7 +1623,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
       window.addEventListener('message', handleMessage);
       document.body.appendChild(iframe);
-      setTimeout(cleanup, 5000); // Timeout after 5s
+      setTimeout(cleanup, IDP_SESSION_CHECK_TIMEOUT);
       pendingIdPCleanupRef.current = cleanup;
     };
 

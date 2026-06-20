@@ -9,6 +9,8 @@ import approvedClientsCache from '../utils/approvedClientsCache';
 import sessionService from './session.service';
 import { Request } from 'express';
 import * as crypto from 'crypto';
+import { fedcmTokenPayloadSchema, type FedcmTokenPayload, type UserNameResponse } from '@oxyhq/contracts';
+import { formatUserNameResponse } from '../utils/displayName';
 
 /**
  * Origins that must be approved as FedCM/SSO clients but are NOT represented by
@@ -87,20 +89,19 @@ export interface AuthorizedAppSummary {
   lastUsedAt: string;
 }
 
-interface FedCMTokenPayload {
-  iss: string;
-  sub: string;
-  aud: string;
-  exp: number;
-  iat: number;
-  nonce?: string;
-}
-
 /**
  * Verify and decode FedCM ID token (JWT with HS256)
- * @throws Error if token is invalid or signature doesn't match
+ *
+ * Validates the decoded claims against the shared `fedcmTokenPayloadSchema`
+ * (`@oxyhq/contracts`) so the payload's structural shape is guaranteed before
+ * any claim is read — no unchecked cast. Presence/value checks for individual
+ * claims (`sub`/`aud`/`nonce`/`iss`/`exp`) stay in `exchangeIdToken`, which
+ * maps them to specific error reasons.
+ *
+ * @throws Error if token is invalid, the signature doesn't match, or the
+ *   decoded payload fails schema validation.
  */
-function verifyIdToken(token: string): FedCMTokenPayload {
+function verifyIdToken(token: string): FedcmTokenPayload {
   const parts = token.split('.');
   if (parts.length !== 3) {
     throw new Error('Invalid token format: expected 3 parts');
@@ -133,12 +134,18 @@ function verifyIdToken(token: string): FedCMTokenPayload {
     throw new Error(`Unsupported algorithm: ${header.alg}`);
   }
 
-  // Decode and return payload
-  const payload = JSON.parse(
+  // Decode the payload and validate its structural shape against the shared
+  // contract before returning it — never trust an unchecked cast.
+  const decodedPayload: unknown = JSON.parse(
     Buffer.from(payloadB64.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf-8')
   );
 
-  return payload as FedCMTokenPayload;
+  const parsed = fedcmTokenPayloadSchema.safeParse(decodedPayload);
+  if (!parsed.success) {
+    throw new Error('Invalid token payload shape');
+  }
+
+  return parsed.data;
 }
 
 /**
@@ -522,14 +529,14 @@ class FedCMService {
     deviceId: string;
     expiresAt: string;
     accessToken: string;
-    user: { id: string; username?: string; email?: string; avatar?: string; name?: string };
+    user: { id: string; username?: string; email?: string; avatar?: string; name: UserNameResponse };
     error?: never;
   } | { error: string }> {
     logger.info('FedCM: exchangeIdToken called');
 
     try {
       // Verify and decode the ID token (includes signature verification)
-      let tokenPayload: FedCMTokenPayload;
+      let tokenPayload: FedcmTokenPayload;
       try {
         tokenPayload = verifyIdToken(idToken);
         logger.debug('FedCM: Token verified successfully');
@@ -647,11 +654,25 @@ class FedCMService {
 
       logger.info('FedCM: Session created via token exchange', { clientOrigin });
 
-      const userDoc = user as { _id?: { toString(): string }; id?: string; username?: string; email?: string; avatar?: string; name?: { full?: string } | string };
+      const userDoc = user as {
+        _id?: { toString(): string };
+        id?: string;
+        username?: string;
+        email?: string;
+        avatar?: string;
+        publicKey?: string;
+        name?: { first?: string; last?: string; full?: string; displayName?: string };
+      };
       const idValue = userDoc._id?.toString() ?? userDoc.id ?? '';
-      const nameValue = typeof userDoc.name === 'string'
-        ? userDoc.name
-        : userDoc.name?.full;
+      // Compose the canonical structured name (`UserNameResponse`) via the
+      // single source of truth — the SDK's `userResponseSchema` requires
+      // `name.displayName`, so we MUST emit the structured object, never a
+      // string. Falls back to username/publicKey/'Anonymous' for displayName.
+      const name = formatUserNameResponse({
+        name: userDoc.name,
+        username: userDoc.username,
+        publicKey: userDoc.publicKey,
+      });
       return {
         sessionId: session.sessionId,
         deviceId: session.deviceId,
@@ -662,7 +683,7 @@ class FedCMService {
           username: userDoc.username,
           email: userDoc.email,
           avatar: userDoc.avatar,
-          name: nameValue,
+          name,
         },
       };
     } catch (error) {

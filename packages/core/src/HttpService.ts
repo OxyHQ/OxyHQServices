@@ -19,6 +19,7 @@ import { retryAsync } from './utils/asyncUtils';
 import { handleHttpError } from './utils/errorUtils';
 import { jwtDecode } from 'jwt-decode';
 import { isNative, isReactNative, getPlatformOS } from './utils/platform';
+import { computeIdentityTag, fnv1a32 } from './utils/cacheKey';
 import type { OxyConfig } from './models/interfaces';
 
 /**
@@ -58,33 +59,6 @@ interface FormDataLike {
   has(name: string): boolean;
 }
 
-/**
- * FNV-1a 32-bit non-cryptographic hash.
- *
- * Used by the cache-key generator for large payloads where full JSON
- * inclusion would balloon the cache map keys. Content-addressed: every
- * byte of the input contributes to the digest, so two payloads with the
- * same top-level shape but different field values produce different keys
- * (the previous `keys + length` heuristic collided on these).
- *
- * Trade-offs:
- *  - 32 bits is ample for an in-process cache (collision risk negligible
- *    at our key counts; we also prefix with method + url which further
- *    partitions the keyspace).
- *  - Not cryptographically secure — never use for security decisions.
- *  - Zero dependencies, branch-free hot loop, ~1 GiB/s on V8.
- */
-function fnv1a32(str: string): string {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < str.length; i++) {
-    h ^= str.charCodeAt(i);
-    // h * 16777619 mod 2^32, written as shift-and-add for portability and
-    // to avoid 53-bit JS number truncation in the intermediate multiply.
-    h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
-  }
-  return h.toString(16).padStart(8, '0');
-}
-
 export interface RequestOptions {
   cache?: boolean;
   cacheTTL?: number;
@@ -106,6 +80,69 @@ interface RequestConfig extends RequestOptions {
   /** @internal Used to prevent infinite CSRF retry loops */
   _isCsrfRetry?: boolean;
 }
+
+/**
+ * Default per-request timeout (ms) when neither the call site nor
+ * {@link OxyConfig.requestTimeout} overrides it. Kept tight so a stalled
+ * endpoint surfaces as an `AbortError` quickly rather than blocking the
+ * request queue.
+ */
+const DEFAULT_REQUEST_TIMEOUT_MS = 5000;
+
+/**
+ * Timeout (ms) for the dedicated `GET /csrf-token` fetch. Independent of the
+ * regular request timeout: this is a small, fast, unauthenticated call and
+ * should never inherit a longer per-request budget.
+ */
+const CSRF_FETCH_TIMEOUT_MS = 5000;
+
+/**
+ * Number of attempts for fetching a CSRF token before giving up. The first
+ * failure is usually a cold edge/cookie race; a single retry recovers it
+ * without masking a genuinely broken `/csrf-token` route.
+ */
+const CSRF_FETCH_MAX_ATTEMPTS = 2;
+
+/**
+ * Backoff (ms) between CSRF-token fetch attempts. Short by design — a CSRF
+ * fetch sits in the critical path of a state-changing request, so the retry
+ * must add minimal latency.
+ */
+const CSRF_FETCH_RETRY_DELAY_MS = 500;
+
+/**
+ * Cooldown (ms) applied after a failed access-token refresh before another
+ * refresh is attempted. Prevents a refresh storm (and server hammering) when
+ * the AuthManager's refresh handler is failing — every in-flight request that
+ * hits a 401 would otherwise trigger its own refresh.
+ */
+const TOKEN_REFRESH_COOLDOWN_MS = 15000;
+
+/**
+ * Lead time (seconds) before access-token expiry at which a preflight refresh
+ * is triggered. A token within this window of `exp` is treated as effectively
+ * expired so the request carries a fresh bearer rather than racing the clock.
+ */
+const TOKEN_REFRESH_LEAD_SECONDS = 60;
+
+/**
+ * Soft ceiling on the number of live entries in the identity-scoped GET
+ * response cache. Crossing it does NOT evict anything (the {@link TTLCache}
+ * still expires by TTL and is swept on its cleanup interval) — it emits a
+ * single throttled telemetry warning via the logger so an unbounded-growth
+ * regression (e.g. an endpoint that mints a fresh identity tag per request, or
+ * a cache-key that accidentally folds in volatile data) is observable in the
+ * field instead of silently consuming memory. Tuned well above the working set
+ * a single authenticated user generates in normal use.
+ */
+const CACHE_SOFT_MAX_ENTRIES = 500;
+
+/**
+ * Minimum interval (ms) between successive cache-size telemetry warnings, so a
+ * cache that sits above the soft limit logs at most once per window rather than
+ * on every cached write.
+ */
+const CACHE_SIZE_WARNING_THROTTLE_MS = 60000;
 
 /**
  * Token store for authentication (instance-based)
@@ -173,6 +210,13 @@ export class HttpService {
   private tokenRefreshCooldownUntil: number = 0;
   private authRefreshHandler: AuthRefreshHandler | null = null;
   private accessTokenProvider: AccessTokenProvider | null = null;
+
+  /**
+   * Epoch (ms) before which a cache-size telemetry warning must not be
+   * re-emitted. Throttles the {@link CACHE_SOFT_MAX_ENTRIES} warning to at most
+   * one per {@link CACHE_SIZE_WARNING_THROTTLE_MS} window.
+   */
+  private cacheSizeWarningSilentUntil: number = 0;
 
   /**
    * Fan-out listeners notified on EVERY access-token change on this instance:
@@ -306,7 +350,7 @@ export class HttpService {
       url,
       data,
       params,
-      timeout = this.config.requestTimeout || 5000,
+      timeout = this.config.requestTimeout || DEFAULT_REQUEST_TIMEOUT_MS,
       signal,
       cache = method === 'GET',
       cacheTTL,
@@ -571,9 +615,39 @@ export class HttpService {
     // Cache the result if caching is enabled
     if (cache && cacheKey && result) {
       this.cache.set(cacheKey, result, cacheTTL);
+      this.warnIfCacheOversized();
     }
 
     return result;
+  }
+
+  /**
+   * Soft cache-size guard. Emits a single throttled telemetry warning when the
+   * identity-scoped response cache grows past {@link CACHE_SOFT_MAX_ENTRIES}.
+   *
+   * This intentionally does NOT evict: the {@link TTLCache} already bounds
+   * memory by TTL (and the global cleanup interval sweeps expired entries), so
+   * an LRU here would only risk thrashing a legitimately warm cache. The point
+   * is observability — if entry count climbs and stays high, an identity tag or
+   * cache key is folding in volatile data (a per-request nonce, an undecodable
+   * rotating token) and the cache is no longer doing its job. Surfacing that via
+   * the logger lets a consumer with `enableLogging` catch the regression in the
+   * field instead of debugging silent memory growth.
+   */
+  private warnIfCacheOversized(): void {
+    const size = this.cache.size();
+    if (size <= CACHE_SOFT_MAX_ENTRIES) {
+      return;
+    }
+    const now = Date.now();
+    if (now < this.cacheSizeWarningSilentUntil) {
+      return;
+    }
+    this.cacheSizeWarningSilentUntil = now + CACHE_SIZE_WARNING_THROTTLE_MS;
+    this.logger.warn(
+      'Response cache exceeded soft entry limit — possible identity-tag or cache-key bloat',
+      { size, softLimit: CACHE_SOFT_MAX_ENTRIES },
+    );
   }
 
   /**
@@ -701,37 +775,13 @@ export class HttpService {
   /**
    * Derive a stable, non-sensitive identity discriminator for cache scoping.
    *
-   * The GET-response cache MUST be partitioned by caller identity: endpoints
-   * with optional auth (e.g. `GET /profiles/recommendations`) return different
-   * content for an anonymous vs an authenticated caller, and per-user content
-   * for different authenticated users. Keying solely on `method:url:data`
-   * (the previous behavior) let an anonymous response be served to an
-   * authenticated caller — surfacing as "Who to follow" recommending accounts
-   * the user already follows after a cold-boot session restore.
-   *
-   * We use the access token's decoded user id (`userId || id`) rather than the
-   * raw JWT so the token never lands in a cache key (no token leakage through
-   * any cache-key logging, no key bloat). The acting-as id is folded in because
-   * managed-account responses differ per acting identity — and `X-Acting-As`
-   * already changes the server response for the same bearer token. Falls back
-   * to `'anon'` when there is no token, and to a short FNV-1a hash of the token
-   * only if it is present but cannot be decoded (degraded but still partitioned,
-   * never colliding anon with authed).
+   * Thin instance wrapper over the pure {@link computeIdentityTag} helper —
+   * binds it to this instance's live access token and acting-as id. See that
+   * function's docs for the full resolution contract (anon fallback, decoded
+   * `userId || id`, token-hash fallback for undecodable tokens).
    */
   private computeIdentityTag(): string {
-    const accessToken = this.tokenStore.getAccessToken();
-    let principal = 'anon';
-    if (accessToken) {
-      try {
-        const decoded = jwtDecode<JwtPayload>(accessToken);
-        principal = decoded.userId || decoded.id || `t${fnv1a32(accessToken)}`;
-      } catch {
-        // Undecodable token — still partition it away from anon and from
-        // other tokens via a hash. Never silently fall back to 'anon'.
-        principal = `t${fnv1a32(accessToken)}`;
-      }
-    }
-    return this._actingAsUserId ? `${principal}~as${this._actingAsUserId}` : principal;
+    return computeIdentityTag(this.tokenStore.getAccessToken(), this._actingAsUserId);
   }
 
   /**
@@ -820,14 +870,13 @@ export class HttpService {
     }
 
     const fetchPromise = (async () => {
-      const maxAttempts = 2;
-      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      for (let attempt = 1; attempt <= CSRF_FETCH_MAX_ATTEMPTS; attempt++) {
         try {
           this.logger.debug('Fetching CSRF token from:', `${this.baseURL}/csrf-token`, `(attempt ${attempt})`);
 
           // Use AbortController for timeout (more compatible than AbortSignal.timeout)
           const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 5000);
+          const timeoutId = setTimeout(() => controller.abort(), CSRF_FETCH_TIMEOUT_MS);
 
           const response = await fetch(`${this.baseURL}/csrf-token`, {
             method: 'GET',
@@ -863,9 +912,9 @@ export class HttpService {
           this.logger.debug('CSRF fetch error:', error);
           this.logger.warn('CSRF token fetch error:', error);
         }
-        // Wait before retry (500ms)
-        if (attempt < maxAttempts) {
-          await new Promise(resolve => setTimeout(resolve, 500));
+        // Brief backoff before the next attempt.
+        if (attempt < CSRF_FETCH_MAX_ATTEMPTS) {
+          await new Promise(resolve => setTimeout(resolve, CSRF_FETCH_RETRY_DELAY_MS));
         }
       }
       return null;
@@ -890,8 +939,8 @@ export class HttpService {
       const decoded = jwtDecode<JwtPayload>(accessToken);
       const currentTime = Math.floor(Date.now() / 1000);
 
-      // If token expires in less than 60 seconds, refresh it
-      if (decoded.exp && decoded.exp - currentTime < 60) {
+      // If the token expires within the refresh lead window, refresh it.
+      if (decoded.exp && decoded.exp - currentTime < TOKEN_REFRESH_LEAD_SECONDS) {
         const refreshed = await this.refreshAccessToken('preflight');
         if (refreshed) return `Bearer ${refreshed}`;
         if (decoded.exp > currentTime) {
@@ -921,7 +970,7 @@ export class HttpService {
       this.tokenRefreshPromise = this.authRefreshHandler(reason)
         .then((newToken) => {
           if (!newToken) {
-            this.tokenRefreshCooldownUntil = Date.now() + 15000;
+            this.tokenRefreshCooldownUntil = Date.now() + TOKEN_REFRESH_COOLDOWN_MS;
             return null;
           }
           if (this.tokenStore.getAccessToken() !== newToken) {
@@ -933,7 +982,7 @@ export class HttpService {
         })
         .catch((error) => {
           this.logger.warn('Token refresh failed:', error);
-          this.tokenRefreshCooldownUntil = Date.now() + 15000;
+          this.tokenRefreshCooldownUntil = Date.now() + TOKEN_REFRESH_COOLDOWN_MS;
           return null;
         })
         .finally(() => {

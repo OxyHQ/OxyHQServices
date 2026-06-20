@@ -11,7 +11,21 @@
  * FollowButton drives. This test fails (throws) against the old selector and
  * passes with the flat-snapshot fix.
  */
-import { renderHook, act } from '@testing-library/react';
+import type { ReactNode } from 'react';
+import { createElement } from 'react';
+import { renderHook as rtlRenderHook, act } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+
+// `useFollow` calls `useQuery` (single-user count fetch) which requires a
+// QueryClient in context, so every render must be wrapped — even in multi-user
+// mode, where the query is disabled. A fresh client per render keeps tests
+// isolated. Retries off so a (disabled) query never schedules background work.
+const renderHook: typeof rtlRenderHook = ((render, options) => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const wrapper = ({ children }: { children: ReactNode }) =>
+    createElement(QueryClientProvider, { client }, children);
+  return rtlRenderHook(render, { wrapper, ...options });
+}) as typeof rtlRenderHook;
 
 const oxyServicesStub = {
   getFollowStatus: jest.fn(async () => ({ isFollowing: false })),
