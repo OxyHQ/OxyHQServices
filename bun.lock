@@ -224,7 +224,7 @@
       "name": "@oxyhq/auth",
       "version": "4.1.1",
       "dependencies": {
-        "@oxyhq/contracts": "^0.1.1",
+        "@oxyhq/contracts": "^0.2.0",
         "@tanstack/query-sync-storage-persister": "^5.100",
         "@tanstack/react-query": "^5.100",
         "@tanstack/react-query-persist-client": "^5.100",
@@ -298,7 +298,7 @@
     },
     "packages/contracts": {
       "name": "@oxyhq/contracts",
-      "version": "0.1.1",
+      "version": "0.2.0",
       "dependencies": {
         "zod": "^3.25.64",
       },
@@ -311,9 +311,9 @@
     },
     "packages/core": {
       "name": "@oxyhq/core",
-      "version": "3.7.0",
+      "version": "3.7.1",
       "dependencies": {
-        "@oxyhq/contracts": "^0.1.1",
+        "@oxyhq/contracts": "^0.2.0",
         "bip39": "^3.1.0",
         "buffer": "^6.0.3",
         "elliptic": "^6.6.1",
@@ -444,7 +444,7 @@
       "version": "10.3.3",
       "dependencies": {
         "@lottiefiles/dotlottie-react": "^0.13.5",
-        "@oxyhq/contracts": "^0.1.1",
+        "@oxyhq/contracts": "^0.2.0",
         "@react-native-async-storage/async-storage": "2.2.0",
         "@types/react": "*",
         "copyfiles": "^2.4.1",

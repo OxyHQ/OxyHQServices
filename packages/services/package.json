@@ -107,7 +107,7 @@
   },
   "dependencies": {
     "@lottiefiles/dotlottie-react": "^0.13.5",
-    "@oxyhq/contracts": "^0.1.1",
+    "@oxyhq/contracts": "^0.2.0",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@types/react": "*",
     "copyfiles": "^2.4.1",

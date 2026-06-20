@@ -74,7 +74,7 @@
     }
   },
   "dependencies": {
-    "@oxyhq/contracts": "^0.1.1",
+    "@oxyhq/contracts": "^0.2.0",
     "@tanstack/query-sync-storage-persister": "^5.100",
     "@tanstack/react-query": "^5.100",
     "@tanstack/react-query-persist-client": "^5.100",
