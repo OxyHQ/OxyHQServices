@@ -44,30 +44,16 @@ describe('userResponseSchema', () => {
         expect(parsed?.username).toBeUndefined();
     });
 
-    it('accepts nullable avatar/avatarUrl/color', () => {
+    it('accepts nullable avatar/color', () => {
         const parsed = safeParseContract(userResponseSchema, {
             id: 'x',
             avatar: null,
-            avatarUrl: null,
             color: null,
             name: { displayName: 'x' },
         });
         expect(parsed).not.toBeNull();
         expect(parsed?.avatar).toBeNull();
-        expect(parsed?.avatarUrl).toBeNull();
         expect(parsed?.color).toBeNull();
-    });
-
-    it('accepts a resolved cloud.oxy.so avatarUrl alongside the raw avatar file id', () => {
-        const parsed = safeParseContract(userResponseSchema, {
-            id: 'x',
-            avatar: 'file_123',
-            avatarUrl: 'https://cloud.oxy.so/variants/2026/03/bb/abc/thumb.webp',
-            name: { displayName: 'x' },
-        });
-        expect(parsed).not.toBeNull();
-        expect(parsed?.avatar).toBe('file_123');
-        expect(parsed?.avatarUrl).toBe('https://cloud.oxy.so/variants/2026/03/bb/abc/thumb.webp');
     });
 
     it('accepts the raw-document _id form (GET /users/me) and resolves it', () => {

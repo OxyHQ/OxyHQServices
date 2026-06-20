@@ -228,7 +228,7 @@ router.get(
     }
 
     logger.debug('GET /users/me', { userId: req.user.id });
-    sendSuccess(res, await userService.enrichAvatarUrl(userService.formatUserResponse(user)));
+    sendSuccess(res, userService.formatUserResponse(user));
   })
 );
 
@@ -337,7 +337,7 @@ router.put(
         updatedFields: Object.keys(req.body),
       });
 
-      sendSuccess(res, await userService.enrichAvatarUrl(userService.formatUserResponse(updatedUser)));
+      sendSuccess(res, userService.formatUserResponse(updatedUser));
     } catch (error) {
       // Handle known errors from service layer
       if (error instanceof Error) {
@@ -492,10 +492,8 @@ router.get(
     // Get user statistics
     const stats = await userService.getUserStats(userId);
 
-    // Format response with stats; stamp the resolved CDN avatarUrl.
-    const response = await userService.enrichAvatarUrl(
-      userService.formatUserResponse(user, stats)
-    );
+    // Format response with stats
+    const response = userService.formatUserResponse(user, stats);
 
     logger.debug('GET /users/:userId', { userId });
     sendSuccess(res, response);
