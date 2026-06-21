@@ -171,6 +171,13 @@ const SEED_APPS: SeedAppSpec[] = [
     type: 'first_party',
     redirectUris: [cb('https://pay.oxy.so')],
   },
+  {
+    name: 'Noted',
+    description: 'Official Oxy notes app.',
+    websiteUrl: 'https://noted.oxy.so',
+    type: 'first_party',
+    redirectUris: [cb('https://noted.oxy.so')],
+  },
 ];
 
 interface MappingRow {
