@@ -1,5 +1,5 @@
 import { useMemo } from "react"
-import { Button } from "@/components/ui/button"
+import { Button, type ButtonVariant } from "@oxyhq/bloom/button"
 
 type SocialLoginButtonsProps = {
     sessionToken?: string
@@ -16,7 +16,7 @@ type Provider = {
     name: string
     clientId: string
     icon: React.ReactNode
-    variant: "outline" | "default"
+    variant: ButtonVariant
     className?: string
     buildUrl: (params: { clientId: string; redirectUri: string; state: string }) => string
 }
@@ -108,7 +108,7 @@ export function SocialLoginButtons({
                 name: "Google",
                 clientId: googleClientId,
                 icon: <GoogleIcon />,
-                variant: "outline",
+                variant: "secondary",
                 buildUrl: ({ clientId, redirectUri, state }) => {
                     const params = new URLSearchParams({
                         client_id: clientId,
@@ -128,7 +128,7 @@ export function SocialLoginButtons({
                 name: "Apple",
                 clientId: appleClientId,
                 icon: <AppleIcon />,
-                variant: "outline",
+                variant: "secondary",
                 className: "dark:bg-white dark:text-black dark:hover:bg-white/90",
                 buildUrl: ({ clientId, redirectUri, state }) => {
                     const params = new URLSearchParams({
@@ -150,7 +150,7 @@ export function SocialLoginButtons({
                 name: "GitHub",
                 clientId: githubClientId,
                 icon: <GitHubIcon />,
-                variant: "outline",
+                variant: "secondary",
                 buildUrl: ({ clientId, redirectUri, state }) => {
                     const params = new URLSearchParams({
                         client_id: clientId,
@@ -206,14 +206,12 @@ export function SocialLoginButtons({
                         <Button
                             key={provider.id}
                             variant={provider.variant}
-                            size="lg"
+                            size="large"
                             className={provider.className}
-                            asChild
+                            icon={provider.icon}
+                            onPress={() => { if (href !== "#") window.location.href = href }}
                         >
-                            <a href={href}>
-                                {provider.icon}
-                                Continue with {provider.name}
-                            </a>
+                            Continue with {provider.name}
                         </Button>
                     )
                 })}

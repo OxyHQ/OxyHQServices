@@ -1,7 +1,7 @@
 import { ChevronRight, UserPlus } from "lucide-react"
 import { getAccountDisplayName } from "@oxyhq/core"
 import { cn } from "@/lib/utils"
-import { Button } from "@/components/ui/button"
+import { Button } from "@oxyhq/bloom/button"
 import { Avatar } from "@oxyhq/bloom/avatar"
 import { AuthFormHeader } from "@/components/auth-form-layout"
 import { getAvatarUrl } from "@/lib/oxy-api-client"
@@ -66,47 +66,54 @@ export function AccountChooser({
                     const isPending = pendingSessionId === entry.sessionId
                     const hoverHandlers = hoverPreset.getHandlers(account.color)
                     return (
-                        <Button
+                        // The hover/focus handlers drive the per-account color
+                        // preset; the Bloom Button forwards no DOM hover/focus
+                        // events, so they live on a wrapping element that also
+                        // bubbles keyboard focus (React onFocus/onBlur bubble).
+                        <div
                             key={entry.sessionId}
-                            variant="outline"
-                            size="lg"
-                            className="w-full h-auto p-4 justify-start"
-                            onClick={() => onSelectAccount(entry)}
-                            disabled={isLoading}
-                            aria-busy={isPending}
                             onMouseEnter={hoverHandlers.onMouseEnter}
                             onMouseLeave={hoverHandlers.onMouseLeave}
                             onFocus={hoverHandlers.onFocus}
                             onBlur={hoverHandlers.onBlur}
                         >
-                            <Avatar
-                                source={
-                                    account.avatar
-                                        ? getAvatarUrl(account.avatar)
-                                        : undefined
-                                }
-                                size={40}
-                            />
-                            <div className="flex-1 text-left ml-3 min-w-0">
-                                <div className="font-medium truncate">
-                                    {displayNameFor(account)}
-                                </div>
-                                {account.email && (
-                                    <div className="text-sm text-muted-foreground truncate">
-                                        {account.email}
+                            <Button
+                                variant="secondary"
+                                size="large"
+                                className="w-full h-auto p-4 justify-start"
+                                onPress={() => onSelectAccount(entry)}
+                                disabled={isLoading}
+                                accessibilityLabel={`Continue as ${displayNameFor(account)}`}
+                            >
+                                <Avatar
+                                    source={
+                                        account.avatar
+                                            ? getAvatarUrl(account.avatar)
+                                            : undefined
+                                    }
+                                    size={40}
+                                />
+                                <div className="flex-1 text-left ml-3 min-w-0" aria-busy={isPending}>
+                                    <div className="font-medium truncate">
+                                        {displayNameFor(account)}
                                     </div>
-                                )}
-                            </div>
-                            <ChevronRight className="size-5 text-muted-foreground shrink-0" />
-                        </Button>
+                                    {account.email && (
+                                        <div className="text-sm text-muted-foreground truncate">
+                                            {account.email}
+                                        </div>
+                                    )}
+                                </div>
+                                <ChevronRight className="size-5 text-muted-foreground shrink-0" />
+                            </Button>
+                        </div>
                     )
                 })}
 
                 <Button
-                    variant="outline"
-                    size="lg"
+                    variant="secondary"
+                    size="large"
                     className="w-full h-auto p-4 justify-start"
-                    onClick={onUseAnother}
+                    onPress={onUseAnother}
                     disabled={isLoading}
                 >
                     <div className="size-10 rounded-full bg-muted flex items-center justify-center shrink-0">

@@ -3,7 +3,7 @@ import { toast } from "sonner"
 import { Monitor, LogOut, Loader2 } from "lucide-react"
 import { buildApiUrl } from "@/lib/oxy-api-client"
 import { mintAccessTokenFromRefreshCookie } from "@/lib/session-auth"
-import { Button } from "@/components/ui/button"
+import { Button } from "@oxyhq/bloom/button"
 import { AuthFormHeader } from "@/components/auth-form-layout"
 
 type Session = {
@@ -123,12 +123,13 @@ export function SessionsPage() {
                 <AuthFormHeader title="Active sessions" description="Manage your signed-in devices" />
                 {sessions.length > 1 && (
                     <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={revokeAllSessions}
+                        variant="secondary"
+                        size="small"
+                        onPress={revokeAllSessions}
+                        loading={revokingId === "all"}
                         disabled={revokingId === "all"}
                     >
-                        {revokingId === "all" ? <Loader2 className="size-3 animate-spin" /> : "Sign out all others"}
+                        Sign out all others
                     </Button>
                 )}
             </div>
@@ -159,17 +160,14 @@ export function SessionsPage() {
                             </div>
                             {!session.current && (
                                 <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => revokeSession(session._id)}
+                                    variant="icon"
+                                    size="small"
+                                    onPress={() => revokeSession(session._id)}
+                                    loading={revokingId === session._id}
                                     disabled={revokingId === session._id}
-                                >
-                                    {revokingId === session._id ? (
-                                        <Loader2 className="size-3 animate-spin" />
-                                    ) : (
-                                        <LogOut className="size-3" />
-                                    )}
-                                </Button>
+                                    icon={<LogOut className="size-3" />}
+                                    accessibilityLabel="Sign out this session"
+                                />
                             )}
                         </div>
                     ))}

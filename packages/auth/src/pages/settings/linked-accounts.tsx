@@ -3,7 +3,7 @@ import { toast } from "sonner"
 import { KeyRound, Loader2, Trash2 } from "lucide-react"
 import { buildApiUrl } from "@/lib/oxy-api-client"
 import { mintAccessTokenFromRefreshCookie } from "@/lib/session-auth"
-import { Button } from "@/components/ui/button"
+import { Button } from "@oxyhq/bloom/button"
 import { AuthFormHeader } from "@/components/auth-form-layout"
 
 type AuthMethod = {
@@ -113,17 +113,14 @@ export function LinkedAccountsPage() {
                             </div>
                             {methods.length > 1 && (
                                 <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => unlinkMethod(method.type)}
+                                    variant="icon"
+                                    size="small"
+                                    onPress={() => unlinkMethod(method.type)}
+                                    loading={unlinkingType === method.type}
                                     disabled={unlinkingType === method.type}
-                                >
-                                    {unlinkingType === method.type ? (
-                                        <Loader2 className="size-3 animate-spin" />
-                                    ) : (
-                                        <Trash2 className="size-3" />
-                                    )}
-                                </Button>
+                                    icon={<Trash2 className="size-3" />}
+                                    accessibilityLabel="Unlink this method"
+                                />
                             )}
                         </div>
                     ))}

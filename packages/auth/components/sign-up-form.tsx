@@ -5,7 +5,7 @@ import { Check, X, Loader2 } from "lucide-react"
 
 import { buildAuthUrl, buildApiUrl } from "@/lib/oxy-api-client"
 import { setFedCMLoginStatus, registerFedCMSession, buildPostLoginRedirect, completeFedCMLogin } from "@/lib/auth-utils"
-import { Button } from "@/components/ui/button"
+import { Button } from "@oxyhq/bloom/button"
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { PasswordInput } from "@/components/password-input"
@@ -92,6 +92,12 @@ export function SignUpForm({
     const [password, setPassword] = useState("")
     const [passwordTouched, setPasswordTouched] = useState(false)
 
+    // The email/username inputs are uncontrolled (only their availability check
+    // is wired). Read them from the form element so submission works whether
+    // invoked by the form's onSubmit (Enter) or the Bloom Button's onPress
+    // (click) — the latter carries no form event.
+    const formRef = useRef<HTMLFormElement>(null)
+
     const displayError = localError ?? error
 
     const username = useAvailabilityCheck("/auth/check-username")
@@ -103,13 +109,18 @@ export function SignUpForm({
         queueMicrotask(() => toast.error("Sign up failed", { description: error }))
     }
 
-    async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
-        event.preventDefault()
+    async function handleSubmit(event?: React.FormEvent<HTMLFormElement>) {
+        event?.preventDefault()
         setLocalError(undefined)
         setServerErrors([])
         setIsSubmitting(true)
 
-        const formData = new FormData(event.currentTarget)
+        const form = event?.currentTarget ?? formRef.current
+        if (!form) {
+            setIsSubmitting(false)
+            return
+        }
+        const formData = new FormData(form)
         const emailValue = String(formData.get("email") || "").trim()
         const usernameValue = String(formData.get("username") || "").trim()
 
@@ -206,7 +217,7 @@ export function SignUpForm({
             />}
             {...props}
         >
-            <form onSubmit={handleSubmit}>
+            <form ref={formRef} onSubmit={handleSubmit}>
                 <FieldGroup>
                     <AuthFormHeader
                         title="Create your account"
@@ -258,12 +269,13 @@ export function SignUpForm({
                     </Field>
                     <Field>
                         <Button
-                            type="submit"
-                            size="lg"
+                            size="large"
                             className="w-full"
+                            onPress={() => { void handleSubmit() }}
+                            loading={isSubmitting}
                             disabled={isSubmitting || username.status === "taken" || email.status === "taken"}
                         >
-                            {isSubmitting ? "Creating account..." : "Sign Up"}
+                            Sign Up
                         </Button>
                     </Field>
                 </FieldGroup>

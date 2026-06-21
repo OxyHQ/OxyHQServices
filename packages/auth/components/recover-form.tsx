@@ -1,10 +1,10 @@
 import { useState, useRef } from "react"
-import { useNavigate, Link } from "react-router-dom"
+import { useNavigate } from "react-router-dom"
 import { toast } from "sonner"
 import { CheckCircle2 } from "lucide-react"
 
 import { buildAuthUrl } from "@/lib/oxy-api-client"
-import { Button } from "@/components/ui/button"
+import { Button } from "@oxyhq/bloom/button"
 import {
     Field,
     FieldDescription,
@@ -45,6 +45,11 @@ export function RecoverForm({
     const [password, setPassword] = useState("")
     const [passwordTouched, setPasswordTouched] = useState(false)
 
+    // Read the form (step/identifier/code/password) from a ref so submission
+    // works whether invoked by the form's onSubmit (Enter) or the Bloom
+    // Button's onPress (click) — the latter carries no form event.
+    const formRef = useRef<HTMLFormElement>(null)
+
     const displayError = localError ?? error
 
     // Show error toast from URL param once
@@ -54,12 +59,17 @@ export function RecoverForm({
         queueMicrotask(() => toast.error("Recovery error", { description: error }))
     }
 
-    const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-        event.preventDefault()
+    const handleSubmit = async (event?: React.FormEvent<HTMLFormElement>) => {
+        event?.preventDefault()
         setLocalError(undefined)
         setIsSubmitting(true)
 
-        const formData = new FormData(event.currentTarget)
+        const form = event?.currentTarget ?? formRef.current
+        if (!form) {
+            setIsSubmitting(false)
+            return
+        }
+        const formData = new FormData(form)
         const stepValue = String(formData.get("step") || "request")
         const formIdentifier = String(formData.get("identifier") || "").trim()
         let didRedirect = false
@@ -205,8 +215,8 @@ export function RecoverForm({
                     <FieldDescription className="text-lg">
                         Your password has been updated. You can now sign in with your new password.
                     </FieldDescription>
-                    <Button asChild size="lg" className="w-full">
-                        <Link to="/login">Sign in</Link>
+                    <Button size="large" className="w-full" onPress={() => navigate("/login")}>
+                        Sign in
                     </Button>
                 </div>
             </AuthFormLayout>
@@ -224,7 +234,7 @@ export function RecoverForm({
             className={className}
             {...props}
         >
-            <form onSubmit={handleSubmit}>
+            <form ref={formRef} onSubmit={handleSubmit}>
                 <FieldGroup>
                     <AuthFormHeader
                         title="Recover your account"
@@ -247,8 +257,8 @@ export function RecoverForm({
                                 />
                             </Field>
                             <Field>
-                                <Button type="submit" size="lg" className="w-full" disabled={isSubmitting}>
-                                    {isSubmitting ? "Sending..." : "Send Recovery Code"}
+                                <Button size="large" className="w-full" onPress={() => { void handleSubmit() }} loading={isSubmitting} disabled={isSubmitting}>
+                                    Send Recovery Code
                                 </Button>
                             </Field>
                         </>
@@ -273,8 +283,8 @@ export function RecoverForm({
                                 <FieldDescription>Dev code: {devCode}</FieldDescription>
                             ) : null}
                             <Field>
-                                <Button type="submit" size="lg" className="w-full" disabled={isSubmitting}>
-                                    {isSubmitting ? "Verifying..." : "Verify Code"}
+                                <Button size="large" className="w-full" onPress={() => { void handleSubmit() }} loading={isSubmitting} disabled={isSubmitting}>
+                                    Verify Code
                                 </Button>
                             </Field>
                         </>
@@ -309,8 +319,8 @@ export function RecoverForm({
                                 )}
                             </Field>
                             <Field>
-                                <Button type="submit" size="lg" className="w-full" disabled={isSubmitting}>
-                                    {isSubmitting ? "Resetting..." : "Reset Password"}
+                                <Button size="large" className="w-full" onPress={() => { void handleSubmit() }} loading={isSubmitting} disabled={isSubmitting}>
+                                    Reset Password
                                 </Button>
                             </Field>
                         </>

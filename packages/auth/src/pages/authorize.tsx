@@ -3,7 +3,7 @@ import { useSearchParams, Link, useNavigate, Navigate } from "react-router-dom";
 import { getAccountDisplayName } from "@oxyhq/core";
 import type { PublicApplication } from "@oxyhq/core";
 
-import { Button } from "@/components/ui/button";
+import { Button } from "@oxyhq/bloom/button";
 import { FieldDescription } from "@/components/ui/field";
 import { Avatar } from "@oxyhq/bloom/avatar";
 import {
@@ -590,8 +590,8 @@ export function AuthorizePage() {
           title="No authorization request"
           description="Open the app you want to sign in to and try again. The authorization request starts there."
         />
-        <Button asChild size="lg">
-          <Link to="/login">Go to sign in</Link>
+        <Button size="large" onPress={() => navigate("/login")}>
+          Go to sign in
         </Button>
       </AuthFormLayout>
     );
@@ -746,21 +746,22 @@ export function AuthorizePage() {
               {/* Action buttons — side by side pills, stack on tiny screens */}
               <div className="flex flex-col sm:flex-row gap-3">
                 <Button
-                  variant="outline"
-                  size="lg"
+                  variant="secondary"
+                  size="large"
                   className="flex-1"
                   disabled={submitting}
-                  onClick={() => handleDecision("deny")}
+                  onPress={() => handleDecision("deny")}
                 >
                   Deny
                 </Button>
                 <Button
-                  size="lg"
+                  size="large"
                   className="flex-1"
                   disabled={submitting}
-                  onClick={() => handleDecision("approve")}
+                  loading={submitting}
+                  onPress={() => handleDecision("approve")}
                 >
-                  {submitting ? "Authorizing..." : "Allow"}
+                  Allow
                 </Button>
               </div>
             </>
