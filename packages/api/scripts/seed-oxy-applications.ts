@@ -178,6 +178,13 @@ const SEED_APPS: SeedAppSpec[] = [
     type: 'first_party',
     redirectUris: [cb('https://noted.oxy.so')],
   },
+  {
+    name: 'Marketplace',
+    description: 'Official Oxy marketplace app — buy and sell new and secondhand items.',
+    websiteUrl: 'https://marketplace.oxy.so',
+    type: 'first_party',
+    redirectUris: [cb('https://marketplace.oxy.so')],
+  },
 ];
 
 interface MappingRow {
