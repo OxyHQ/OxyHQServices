@@ -6,7 +6,6 @@
       "name": "@oxyhq/sdk",
       "dependencies": {
         "@expo/metro-runtime": "~56.0.11",
-        "@fontsource-variable/phudu": "^5.2.10",
         "@oxyhq/bloom": "^0.9.1",
         "expo-contacts": "~56.0.9",
         "expo-splash-screen": "~56.0.10",
@@ -1199,8 +1198,6 @@
     "@floating-ui/react-dom": ["@floating-ui/react-dom@2.1.7", "", { "dependencies": { "@floating-ui/dom": "^1.7.5" }, "peerDependencies": { "react": ">=16.8.0", "react-dom": ">=16.8.0" } }, ""],
 
     "@floating-ui/utils": ["@floating-ui/utils@0.2.10", "", {}, ""],
-
-    "@fontsource-variable/phudu": ["@fontsource-variable/phudu@5.2.10", "", {}, "sha512-2bZrnyM3Xk/HBRH+m6LHEp7nimyDJVky/qQZUSh7cY9HXD95zCUFAzaRUcpirX76kK2uQ4ru+VLfyBat2qvuFA=="],
 
     "@gorhom/bottom-sheet": ["@gorhom/bottom-sheet@5.2.8", "", { "dependencies": { "@gorhom/portal": "1.0.14", "invariant": "^2.2.4" }, "peerDependencies": { "@types/react": "*", "@types/react-native": "*", "react": "*", "react-native": "*", "react-native-gesture-handler": ">=2.16.1", "react-native-reanimated": ">=3.16.0 || >=4.0.0-" }, "optionalPeers": ["@types/react-native"] }, ""],
 

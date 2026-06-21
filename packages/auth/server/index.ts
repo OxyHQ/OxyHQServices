@@ -987,11 +987,12 @@ const OXY_LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="80 263 10
  * `/login` React app (`@oxyhq/bloom/color-presets` → `APP_COLOR_PRESETS.oxy`),
  * wrapped in `hsl()` so this self-contained document needs no runtime theming
  * JS. `prefers-color-scheme` maps the preset's light/dark variants the same way
- * the app's `BloomThemeProvider mode="system"` does. Fonts mirror the app: Inter
- * for body text (`--font-sans`) and Phudu for the display heading (`font-display`).
+ * the app's `BloomThemeProvider mode="system"` does. No custom web font is
+ * loaded here (no `@import`/`@font-face`): `--font-sans` matches the default
+ * stack Bloom resolves — Inter preferred, falling back to the system sans —
+ * exactly as the SPA renders once Bloom's default font applies globally.
  */
-const BRAND_BASE_CSS = `@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Phudu:wght@600;700;800&display=swap');
-:root{color-scheme:light dark;--background:hsl(277 55% 96%);--foreground:hsl(0 0% 12%);--card:hsl(277 58% 94%);--card-foreground:hsl(0 0% 12%);--muted-foreground:hsl(277 5% 42%);--primary:hsl(277 66% 56%);--primary-foreground:hsl(0 0% 100%);--border:hsl(277 40% 87%);--ring:hsl(277 66% 56%);--radius:0.875rem;--font-sans:"Inter","Inter Variable",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,system-ui,sans-serif,"Apple Color Emoji","Segoe UI Emoji";--font-display:"Phudu","Phudu Variable",var(--font-sans)}
+const BRAND_BASE_CSS = `:root{color-scheme:light dark;--background:hsl(277 55% 96%);--foreground:hsl(0 0% 12%);--card:hsl(277 58% 94%);--card-foreground:hsl(0 0% 12%);--muted-foreground:hsl(277 5% 42%);--primary:hsl(277 66% 56%);--primary-foreground:hsl(0 0% 100%);--border:hsl(277 40% 87%);--ring:hsl(277 66% 56%);--radius:0.875rem;--font-sans:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
 @media (prefers-color-scheme:dark){:root{--background:hsl(277 50% 5%);--foreground:hsl(0 0% 93%);--card:hsl(277 20% 18%);--card-foreground:hsl(0 0% 93%);--muted-foreground:hsl(0 0% 70%);--border:hsl(277 12% 20%)}}
 *{box-sizing:border-box}
 html,body{height:100%}
@@ -1007,9 +1008,10 @@ body{margin:0;min-height:100svh;display:flex;align-items:center;justify-content:
  * reflected into the page (no XSS sink).
  *
  * The markup mirrors the `/login` React screen (`AuthLayout` +
- * `AuthFormLayout`/`AuthFormHeader`): the real Oxy mark on top, a display
- * heading, body copy, and a primary action styled like login's "Next"/"Sign in"
- * button — so a user can't tell this is a different page than the SPA.
+ * `AuthFormLayout`/`AuthFormHeader`): the real Oxy mark on top, a heading, body
+ * copy, and a primary action styled like login's "Next"/"Sign in" button — so a
+ * user can't tell this is a different page than the SPA. The heading uses the
+ * same `--font-sans` family as the body (no custom display font).
  */
 function renderSsoErrorHtml(reason: string): string {
   // `safeReason` is sanitised to a fixed token alphabet so nothing
@@ -1022,7 +1024,7 @@ ${BRAND_BASE_CSS}
 .mark{display:flex;align-items:center}
 .mark svg{height:3.5rem;width:auto;color:var(--primary)}
 .card{display:flex;flex-direction:column;gap:.5rem}
-h1{font-family:var(--font-display);font-size:3rem;line-height:1.05;font-weight:800;letter-spacing:-0.02em;margin:0}
+h1{font-family:var(--font-sans);font-size:3rem;line-height:1.05;font-weight:800;letter-spacing:-0.02em;margin:0}
 .lead{font-size:1.125rem;color:var(--muted-foreground);margin:.25rem 0 0}
 .reason{display:inline-block;align-self:flex-start;margin-top:.75rem;padding:.25rem .625rem;border-radius:calc(var(--radius) - 4px);background:var(--card);color:var(--muted-foreground);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.8125rem}
 .actions{margin-top:1rem}

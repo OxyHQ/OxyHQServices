@@ -75,7 +75,6 @@
   },
   "dependencies": {
     "@expo/metro-runtime": "~56.0.11",
-    "@fontsource-variable/phudu": "^5.2.10",
     "@oxyhq/bloom": "^0.9.1",
     "expo-contacts": "~56.0.9",
     "expo-splash-screen": "~56.0.10",
