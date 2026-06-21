@@ -179,11 +179,11 @@ const SEED_APPS: SeedAppSpec[] = [
     redirectUris: [cb('https://noted.oxy.so')],
   },
   {
-    name: 'Marketplace',
+    name: 'Mercaria',
     description: 'Official Oxy marketplace app — buy and sell new and secondhand items.',
-    websiteUrl: 'https://marketplace.oxy.so',
+    websiteUrl: 'https://mercaria.co',
     type: 'first_party',
-    redirectUris: [cb('https://marketplace.oxy.so')],
+    redirectUris: [cb('https://mercaria.co')],
   },
 ];
 
