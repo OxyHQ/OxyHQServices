@@ -65,6 +65,30 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: pages deploy packages/auth/dist --project-name=oxy-auth --branch=main
+      # Post-deploy smoke gate: hit the LIVE IdP and assert the critical FedCM
+      # contract on PUBLIC, unauthenticated endpoints only (no secrets). A broken
+      # IdP deploy (blank SPA, missing _worker.js / static-only, crashed /sso
+      # error page, or pinned multi-domain issuer) turns this job RED immediately.
+      # Retries briefly to let the Cloudflare Pages deploy propagate to the edge.
+      - name: Post-deploy IdP smoke gate
+        working-directory: packages/auth
+        env:
+          SMOKE_TARGET: https://auth.oxy.so
+        run: |
+          for attempt in 1 2 3 4 5; do
+            echo "::group::IdP smoke attempt ${attempt}/5"
+            if bun run smoke:idp; then
+              echo "::endgroup::"
+              exit 0
+            fi
+            echo "::endgroup::"
+            if [ "${attempt}" -lt 5 ]; then
+              echo "Smoke gate failed (edge may still be propagating); retrying in 15s..."
+              sleep 15
+            fi
+          done
+          echo "::error::IdP post-deploy smoke gate failed — auth.oxy.so is serving a broken build"
+          exit 1
 
   deploy-accounts:
     needs: detect-changes

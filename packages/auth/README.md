@@ -55,6 +55,30 @@ The `server/` directory serves the FedCM IdP endpoints. Requirements for Chrome 
 
 Changes to the IdP server require a redeploy of auth.oxy.so to take effect in production.
 
+## Deploy Safety (IdP is production-only — there is NO staging)
+
+`auth.oxy.so` is the SSO Identity Provider for the entire Oxy ecosystem and has **no staging environment** — every push to `main` deploys straight to production for all users. A broken IdP build (blank SPA, a static-only deploy that drops the `_worker.js`, a crashed `/sso` error page, or a pinned multi-domain issuer) takes SSO down everywhere.
+
+Two gates protect the deploy (`.github/workflows/deploy-cloudflare.yml`, job `deploy-auth`):
+
+1. **Build-time**: `bun run build:worker` runs and the job fails fast unless `dist/_worker.js` exists, so a static-only build can never ship.
+2. **Post-deploy smoke gate**: after the Cloudflare Pages deploy, `bun run smoke:idp` (`scripts/smoke-idp.ts`) hits the LIVE host on PUBLIC, unauthenticated endpoints only and turns the job RED on any failure. It asserts: `/.well-known/web-identity` is 200 JSON with `provider_urls`; the FedCM config is JSON (not SPA HTML); `/`, `/login`, `/signup` carry the SPA root marker; `/sso` (no params) renders the branded error page instead of crashing; `POST /fedcm/assertion` is answered by the worker as 4xx JSON (proving `_worker.js` is live, not a 405/SPA-HTML static deploy); and each per-apex host (`auth.mention.earth`, `auth.alia.onl`, `auth.homiio.com`, `auth.syra.fm`) reports its OWN issuer in `provider_urls` (the multi-domain FAPI contract).
+
+Run it locally against production any time:
+
+```bash
+cd packages/auth
+bun run smoke:idp                                   # default target https://auth.oxy.so
+SMOKE_TARGET=https://auth.mention.earth bun run smoke:idp
+SMOKE_SKIP_SECONDARY=1 bun run smoke:idp            # primary host only
+```
+
+**Contribution norm for IdP changes:**
+
+- **Batch IdP changes and land them via PR**, not rapid direct-to-`main` cosmetic pushes. Each push is an un-staged production deploy; a flawed intermediate build briefly broke `auth.oxy.so` exactly because cosmetic changes were pushed straight to `main` one at a time.
+- The **post-deploy smoke gate must stay green**. If it goes red, the live IdP is broken — treat it as an incident, not a flaky test.
+- **Always verify the logged-OUT cold-boot path** (`/login` and `/signup` for a fresh, no-cookie visitor). That is the real first-time user path and the one that broke today; a logged-in spot check is not sufficient.
+
 ## Key Patterns
 
 - `AuthFormLayout` + `AuthFormHeader` — shared layout for all auth screens

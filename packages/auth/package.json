@@ -12,6 +12,7 @@
     "build:all": "bun run build && bun run build:server",
     "start": "bun run dist-server/node.js",
     "test": "bun test server/__tests__ lib/__tests__ components/__tests__",
+    "smoke:idp": "bun run scripts/smoke-idp.ts",
     "lint": "eslint"
   },
   "dependencies": {
