@@ -161,6 +161,16 @@ export interface OxyContextProviderProps {
    * for the cross-app device sign-in flow. See {@link OxyContextState.clientId}.
    */
   clientId?: string;
+  /**
+   * When `true`, skips ONLY the terminal `sso-bounce` cold-boot step — the
+   * force-redirect to `auth.<apex>/sso?prompt=none` that fires for a visitor
+   * with no recoverable local session. Every other cold-boot step still runs
+   * (callback consume, FedCM silent, `/auth/silent` iframe, stored-session,
+   * cookie-restore), so a returning signed-in user is still silently
+   * restored; only the bounce for a truly anonymous visitor is suppressed.
+   * Default `false`.
+   */
+  disableAutoSso?: boolean;
   onAuthStateChange?: (user: User | null) => void;
   onError?: (error: ApiError) => void;
 }
@@ -400,6 +410,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   authRedirectUri,
   storageKeyPrefix = 'oxy_session',
   clientId: clientIdProp,
+  disableAutoSso = false,
   onAuthStateChange,
   onError,
 }) => {
@@ -1273,6 +1284,13 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
             // still active (loop + self-heal protection).
             id: 'sso-bounce',
             enabled: () => {
+              // Opt-out: when the consumer disabled auto-SSO, never bounce a
+              // truly-anonymous visitor to the central IdP. All other restore
+              // steps already ran above, so a signed-in user is still
+              // recovered; only this terminal force-bounce is suppressed.
+              if (disableAutoSso) {
+                return false;
+              }
               if (!isWebBrowser() || window.top !== window.self) {
                 return false;
               }
@@ -1367,6 +1385,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     restoreStoredSession,
     runSsoReturn,
     markAuthResolved,
+    disableAutoSso,
   ]);
 
   useEffect(() => {

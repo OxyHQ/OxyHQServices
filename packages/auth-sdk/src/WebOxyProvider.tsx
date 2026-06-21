@@ -246,6 +246,17 @@ export interface WebOxyProviderProps {
   onError?: (error: Error) => void;
   preferredAuthMethod?: 'auto' | 'fedcm' | 'redirect';
   skipAutoCheck?: boolean;
+  /**
+   * When `true`, skips ONLY the terminal `sso-bounce` cold-boot step — the
+   * force-redirect to `auth.<apex>/sso?prompt=none` that fires for a visitor
+   * with no recoverable local session. Every other cold-boot step still runs
+   * (callback consume, FedCM silent, `/auth/silent` iframe, stored-session,
+   * cookie-restore), so a returning signed-in user is still silently
+   * restored; only the bounce for a truly anonymous visitor is suppressed.
+   * This lets an app allow anonymous browsing instead of force-redirecting to
+   * the central IdP. Default `false`.
+   */
+  disableAutoSso?: boolean;
 }
 
 /**
@@ -276,6 +287,7 @@ export function WebOxyProvider({
   onError,
   preferredAuthMethod = 'auto',
   skipAutoCheck = false,
+  disableAutoSso = false,
 }: WebOxyProviderProps) {
   // Normalize the app's OAuth client id to a trimmed non-empty string, or
   // `null` when the consumer did not configure one. Surfaced on the web
@@ -489,6 +501,11 @@ export function WebOxyProvider({
    *     in flight; a stale one self-heals).
    */
   const evaluateSsoBounce = useCallback((): boolean => {
+    // Opt-out: when the consumer disabled auto-SSO, never bounce a
+    // truly-anonymous visitor to the central IdP. All other restore steps
+    // already ran, so a signed-in user is still recovered; only this
+    // terminal force-bounce is suppressed.
+    if (disableAutoSso) return false;
     if (!isWebBrowser() || window.top !== window.self) return false;
     const origin = window.location.origin;
     if (isCentralIdPOrigin(origin)) return false;
@@ -496,7 +513,7 @@ export function WebOxyProvider({
     if (window.sessionStorage.getItem(ssoAttemptedKey(origin)) === '1') return false;
     if (guardActive(window.sessionStorage, origin)) return false;
     return true;
-  }, []);
+  }, [disableAutoSso]);
 
   /**
    * SSO bounce (cold-boot step 5 `run`). TERMINAL: navigates the top-level
@@ -726,7 +743,7 @@ export function WebOxyProvider({
       mounted = false;
       clearTimeout(timeoutId);
     };
-  }, [oxyServices, crossDomainAuth, authManager, skipAutoCheck, handleAuthSuccess, handleAuthError, syncAccountsFromManager, evaluateSsoBounce, runSsoBounce]);
+  }, [oxyServices, crossDomainAuth, authManager, skipAutoCheck, disableAutoSso, handleAuthSuccess, handleAuthError, syncAccountsFromManager, evaluateSsoBounce, runSsoBounce]);
 
   // bfcache restore handler — registered ONCE, OUTSIDE the cold boot.
   //

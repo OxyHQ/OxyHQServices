@@ -63,4 +63,21 @@ export interface OxyProviderProps {
     authWebUrl?: string;
     authRedirectUri?: string;
     queryClient?: QueryClient;
+    /**
+     * When `true`, skips ONLY the terminal SSO bounce in the web cold-boot
+     * chain — the force-redirect to `auth.<apex>/sso?prompt=none` that fires
+     * for a visitor with no recoverable local session. This lets a truly
+     * anonymous user keep browsing instead of being bounced to the central
+     * IdP (e.g. a marketplace that allows anonymous browsing like eBay /
+     * Shop.app).
+     *
+     * Session restore still runs in full: the callback consume, FedCM silent,
+     * first-party `/auth/silent` iframe, stored-session bearer, and
+     * cookie-restore steps all execute — so a returning signed-in user is
+     * still silently restored. Only the force-bounce for a genuinely
+     * anonymous visitor is suppressed.
+     *
+     * Default `false` (current behavior: the bounce fires).
+     */
+    disableAutoSso?: boolean;
 }

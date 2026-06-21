@@ -1,6 +1,6 @@
 {
   "name": "@oxyhq/services",
-  "version": "10.3.3",
+  "version": "10.4.0",
   "description": "OxyHQ Expo/React Native SDK — UI components, screens, and native features",
   "main": "lib/commonjs/index.js",
   "module": "lib/module/index.js",
