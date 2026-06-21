@@ -215,8 +215,8 @@ export function LoginForm({
         }
     }
 
-    async function handleIdentifierSubmit(e?: React.FormEvent<HTMLFormElement>) {
-        e?.preventDefault()
+    async function handleIdentifierSubmit(e: React.FormEvent<HTMLFormElement>) {
+        e.preventDefault()
         const username = identifier.trim()
         if (!username || rateLimitSeconds > 0) return
         await runLookup(username)
@@ -271,15 +271,12 @@ export function LoginForm({
         void redirectAfterLogin(sessionId, authuser)
     }
 
-    async function handlePasswordSubmit(e?: React.FormEvent<HTMLFormElement>) {
-        e?.preventDefault()
+    async function handlePasswordSubmit(e: React.FormEvent<HTMLFormElement>) {
+        e.preventDefault()
         setLocalError(undefined)
         setIsSubmitting(true)
 
-        // Read the password from the ref so this works whether invoked by the
-        // form's onSubmit (Enter) or the Bloom Button's onPress (click) — the
-        // latter has no form event to pull FormData from.
-        const password = passwordRef.current?.value ?? ""
+        const password = String(new FormData(e.currentTarget).get("password") || "")
 
         try {
             // Compute (or read cached) device fingerprint BEFORE the login
@@ -339,8 +336,8 @@ export function LoginForm({
         }
     }
 
-    async function handle2FASubmit(e?: React.FormEvent<HTMLFormElement>) {
-        e?.preventDefault()
+    async function handle2FASubmit(e: React.FormEvent<HTMLFormElement>) {
+        e.preventDefault()
         setLocalError(undefined)
         setIsSubmitting(true)
 
@@ -528,7 +525,7 @@ export function LoginForm({
                             <Link to="/signup">Create account</Link>
                         </FieldDescription>
                         <Field>
-                            <Button size="large" className="w-full" onPress={() => { void handleIdentifierSubmit() }} loading={isSubmitting} disabled={isSubmitting || rateLimitSeconds > 0}>
+                            <Button type="submit" size="lg" className="w-full" loading={isSubmitting} disabled={isSubmitting || rateLimitSeconds > 0}>
                                 Next
                             </Button>
                         </Field>
@@ -555,8 +552,10 @@ export function LoginForm({
                             </Link>
                         </FieldDescription>
                         <div className="flex gap-3">
-                            <Button variant="secondary" size="large" onPress={() => goToStep("identifier", "back")} className="shrink-0" icon={<ArrowLeft className="size-4" />} accessibilityLabel="Go back" />
-                            <Button size="large" className="flex-1 min-w-0" onPress={() => { void handlePasswordSubmit() }} loading={isSubmitting} disabled={isSubmitting || rateLimitSeconds > 0}>
+                            <Button type="button" variant="outline" size="lg" onClick={() => goToStep("identifier", "back")} className="shrink-0" aria-label="Go back">
+                                <ArrowLeft className="size-4" />
+                            </Button>
+                            <Button type="submit" size="lg" className="flex-1 min-w-0" loading={isSubmitting} disabled={isSubmitting || rateLimitSeconds > 0}>
                                 Sign in
                             </Button>
                         </div>
@@ -597,8 +596,10 @@ export function LoginForm({
                             </button>
                         </FieldDescription>
                         <div className="flex gap-3">
-                            <Button variant="secondary" size="large" onPress={() => { setOtpValue(""); setBackupCode(""); setLoginToken(""); goToStep("password", "back") }} className="shrink-0" icon={<ArrowLeft className="size-4" />} accessibilityLabel="Go back" />
-                            <Button size="large" className="flex-1 min-w-0" onPress={() => { void handle2FASubmit() }} loading={isSubmitting} disabled={isSubmitting || rateLimitSeconds > 0}>
+                            <Button type="button" variant="outline" size="lg" onClick={() => { setOtpValue(""); setBackupCode(""); setLoginToken(""); goToStep("password", "back") }} className="shrink-0" aria-label="Go back">
+                                <ArrowLeft className="size-4" />
+                            </Button>
+                            <Button type="submit" size="lg" className="flex-1 min-w-0" loading={isSubmitting} disabled={isSubmitting || rateLimitSeconds > 0}>
                                 Verify
                             </Button>
                         </div>
@@ -618,10 +619,10 @@ export function LoginForm({
                             <p className="text-base text-muted-foreground">{securityAlert}</p>
                         </div>
                         <div className="flex flex-col sm:flex-row gap-3">
-                            <Button variant="secondary" size="large" className="flex-1" onPress={() => { setPendingRedirect(null); goToStep("identifier", "back") }}>
+                            <Button variant="outline" size="lg" className="flex-1" onClick={() => { setPendingRedirect(null); goToStep("identifier", "back") }}>
                                 That wasn&apos;t me
                             </Button>
-                            <Button size="large" className="flex-1" onPress={handleSecurityAlertDismiss}>
+                            <Button size="lg" className="flex-1" onClick={handleSecurityAlertDismiss}>
                                 Yes, it was me
                             </Button>
                         </div>

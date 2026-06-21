@@ -113,14 +113,15 @@ export function LinkedAccountsPage() {
                             </div>
                             {methods.length > 1 && (
                                 <Button
-                                    variant="icon"
-                                    size="small"
-                                    onPress={() => unlinkMethod(method.type)}
+                                    variant="outline"
+                                    size="icon"
+                                    onClick={() => unlinkMethod(method.type)}
                                     loading={unlinkingType === method.type}
                                     disabled={unlinkingType === method.type}
-                                    icon={<Trash2 className="size-3" />}
-                                    accessibilityLabel="Unlink this method"
-                                />
+                                    aria-label="Unlink this method"
+                                >
+                                    <Trash2 className="size-3" />
+                                </Button>
                             )}
                         </div>
                     ))}

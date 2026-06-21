@@ -123,9 +123,9 @@ export function SessionsPage() {
                 <AuthFormHeader title="Active sessions" description="Manage your signed-in devices" />
                 {sessions.length > 1 && (
                     <Button
-                        variant="secondary"
-                        size="small"
-                        onPress={revokeAllSessions}
+                        variant="outline"
+                        size="sm"
+                        onClick={revokeAllSessions}
                         loading={revokingId === "all"}
                         disabled={revokingId === "all"}
                     >
@@ -160,14 +160,15 @@ export function SessionsPage() {
                             </div>
                             {!session.current && (
                                 <Button
-                                    variant="icon"
-                                    size="small"
-                                    onPress={() => revokeSession(session._id)}
+                                    variant="outline"
+                                    size="icon"
+                                    onClick={() => revokeSession(session._id)}
                                     loading={revokingId === session._id}
                                     disabled={revokingId === session._id}
-                                    icon={<LogOut className="size-3" />}
-                                    accessibilityLabel="Sign out this session"
-                                />
+                                    aria-label="Sign out this session"
+                                >
+                                    <LogOut className="size-3" />
+                                </Button>
                             )}
                         </div>
                     ))}

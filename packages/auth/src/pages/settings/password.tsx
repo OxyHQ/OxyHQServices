@@ -17,17 +17,12 @@ export function ChangePasswordPage() {
     const [passwordTouched, setPasswordTouched] = useState(false)
     const formRef = useRef<HTMLFormElement>(null)
 
-    async function handleSubmit(e?: React.FormEvent<HTMLFormElement>) {
-        e?.preventDefault()
+    async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+        e.preventDefault()
         setLocalError(undefined)
         setIsSubmitting(true)
 
-        const form = e?.currentTarget ?? formRef.current
-        if (!form) {
-            setIsSubmitting(false)
-            return
-        }
-        const formData = new FormData(form)
+        const formData = new FormData(e.currentTarget)
         const currentPassword = String(formData.get("currentPassword") || "")
 
         const clientErrors = validatePassword(newPassword)
@@ -101,7 +96,7 @@ export function ChangePasswordPage() {
                         />
                         {passwordTouched && <PasswordRequirements password={newPassword} />}
                     </Field>
-                    <Button size="large" className="w-full" onPress={() => { void handleSubmit() }} loading={isSubmitting} disabled={isSubmitting}>
+                    <Button type="submit" size="lg" className="w-full" loading={isSubmitting} disabled={isSubmitting}>
                         Change password
                     </Button>
                 </FieldGroup>

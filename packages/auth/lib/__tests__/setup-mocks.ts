@@ -13,15 +13,18 @@ mock.module("@oxyhq/bloom/avatar", () => ({
         React.createElement("span", { "data-avatar-source": source ?? "" }),
 }))
 
-// Web-safe surrogate for the Bloom (react-native) Button. Renders a real
-// <button> and maps `onPress` → `onClick` so component tests can exercise the
-// markup/interaction without loading `react-native`. Mirrors the prop surface
-// the auth app consumes (variant/size/loading/disabled/icon/children).
+// Web-safe surrogate for Bloom's Button. The published web build (0.10.0+) is a
+// real HTML <button>, but its module still transitively imports `react-native`
+// (theme + spinner), which bun cannot parse in a node test env — so we mirror
+// the web Button's surface here: a real <button> honouring `type` / `onClick`
+// (+ `onPress` alias), `disabled` / `loading`, `aria-label`, and children.
 mock.module("@oxyhq/bloom/button", () => {
     const Button = ({
         children,
         icon,
         onPress,
+        onClick,
+        type = "button",
         disabled,
         loading,
         accessibilityLabel,
@@ -30,17 +33,25 @@ mock.module("@oxyhq/bloom/button", () => {
         children?: React.ReactNode
         icon?: React.ReactNode
         onPress?: () => void
+        onClick?: (event: React.MouseEvent<HTMLButtonElement>) => void
+        type?: "button" | "submit" | "reset"
         disabled?: boolean
         loading?: boolean
         accessibilityLabel?: string
         testID?: string
-    }) =>
-        React.createElement(
+    }) => {
+        const blocked = disabled || loading
+        return React.createElement(
             "button",
             {
-                type: "button",
-                onClick: disabled || loading ? undefined : onPress,
-                disabled: disabled || loading,
+                type,
+                onClick: blocked
+                    ? undefined
+                    : (event: React.MouseEvent<HTMLButtonElement>) => {
+                          onClick?.(event)
+                          onPress?.()
+                      },
+                disabled: blocked,
                 "aria-label": accessibilityLabel,
                 "aria-busy": loading || undefined,
                 "data-testid": testID,
@@ -48,6 +59,7 @@ mock.module("@oxyhq/bloom/button", () => {
             icon,
             children
         )
+    }
     return {
         Button,
         PrimaryButton: Button,
@@ -56,5 +68,8 @@ mock.module("@oxyhq/bloom/button", () => {
         TextButton: Button,
         IconButton: Button,
         InverseButton: Button,
+        OutlineButton: Button,
+        LinkButton: Button,
+        DestructiveButton: Button,
     }
 })

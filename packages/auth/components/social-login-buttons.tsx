@@ -108,7 +108,7 @@ export function SocialLoginButtons({
                 name: "Google",
                 clientId: googleClientId,
                 icon: <GoogleIcon />,
-                variant: "secondary",
+                variant: "outline",
                 buildUrl: ({ clientId, redirectUri, state }) => {
                     const params = new URLSearchParams({
                         client_id: clientId,
@@ -128,7 +128,7 @@ export function SocialLoginButtons({
                 name: "Apple",
                 clientId: appleClientId,
                 icon: <AppleIcon />,
-                variant: "secondary",
+                variant: "outline",
                 className: "dark:bg-white dark:text-black dark:hover:bg-white/90",
                 buildUrl: ({ clientId, redirectUri, state }) => {
                     const params = new URLSearchParams({
@@ -150,7 +150,7 @@ export function SocialLoginButtons({
                 name: "GitHub",
                 clientId: githubClientId,
                 icon: <GitHubIcon />,
-                variant: "secondary",
+                variant: "outline",
                 buildUrl: ({ clientId, redirectUri, state }) => {
                     const params = new URLSearchParams({
                         client_id: clientId,
@@ -206,12 +206,14 @@ export function SocialLoginButtons({
                         <Button
                             key={provider.id}
                             variant={provider.variant}
-                            size="large"
+                            size="lg"
                             className={provider.className}
-                            icon={provider.icon}
-                            onPress={() => { if (href !== "#") window.location.href = href }}
+                            asChild
                         >
-                            Continue with {provider.name}
+                            <a href={href}>
+                                {provider.icon}
+                                Continue with {provider.name}
+                            </a>
                         </Button>
                     )
                 })}

@@ -78,12 +78,12 @@ export function AccountChooser({
                             onBlur={hoverHandlers.onBlur}
                         >
                             <Button
-                                variant="secondary"
-                                size="large"
+                                variant="outline"
+                                size="lg"
                                 className="w-full h-auto p-4 justify-start"
-                                onPress={() => onSelectAccount(entry)}
+                                onClick={() => onSelectAccount(entry)}
                                 disabled={isLoading}
-                                accessibilityLabel={`Continue as ${displayNameFor(account)}`}
+                                aria-label={`Continue as ${displayNameFor(account)}`}
                             >
                                 <Avatar
                                     source={
@@ -110,10 +110,10 @@ export function AccountChooser({
                 })}
 
                 <Button
-                    variant="secondary"
-                    size="large"
+                    variant="outline"
+                    size="lg"
                     className="w-full h-auto p-4 justify-start"
-                    onPress={onUseAnother}
+                    onClick={onUseAnother}
                     disabled={isLoading}
                 >
                     <div className="size-10 rounded-full bg-muted flex items-center justify-center shrink-0">

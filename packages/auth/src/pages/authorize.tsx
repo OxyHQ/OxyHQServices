@@ -590,8 +590,8 @@ export function AuthorizePage() {
           title="No authorization request"
           description="Open the app you want to sign in to and try again. The authorization request starts there."
         />
-        <Button size="large" onPress={() => navigate("/login")}>
-          Go to sign in
+        <Button asChild size="lg">
+          <Link to="/login">Go to sign in</Link>
         </Button>
       </AuthFormLayout>
     );
@@ -746,20 +746,20 @@ export function AuthorizePage() {
               {/* Action buttons — side by side pills, stack on tiny screens */}
               <div className="flex flex-col sm:flex-row gap-3">
                 <Button
-                  variant="secondary"
-                  size="large"
+                  variant="outline"
+                  size="lg"
                   className="flex-1"
                   disabled={submitting}
-                  onPress={() => handleDecision("deny")}
+                  onClick={() => handleDecision("deny")}
                 >
                   Deny
                 </Button>
                 <Button
-                  size="large"
+                  size="lg"
                   className="flex-1"
                   disabled={submitting}
                   loading={submitting}
-                  onPress={() => handleDecision("approve")}
+                  onClick={() => handleDecision("approve")}
                 >
                   Allow
                 </Button>

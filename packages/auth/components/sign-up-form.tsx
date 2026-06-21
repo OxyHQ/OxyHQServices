@@ -92,12 +92,6 @@ export function SignUpForm({
     const [password, setPassword] = useState("")
     const [passwordTouched, setPasswordTouched] = useState(false)
 
-    // The email/username inputs are uncontrolled (only their availability check
-    // is wired). Read them from the form element so submission works whether
-    // invoked by the form's onSubmit (Enter) or the Bloom Button's onPress
-    // (click) — the latter carries no form event.
-    const formRef = useRef<HTMLFormElement>(null)
-
     const displayError = localError ?? error
 
     const username = useAvailabilityCheck("/auth/check-username")
@@ -109,18 +103,13 @@ export function SignUpForm({
         queueMicrotask(() => toast.error("Sign up failed", { description: error }))
     }
 
-    async function handleSubmit(event?: React.FormEvent<HTMLFormElement>) {
-        event?.preventDefault()
+    async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+        event.preventDefault()
         setLocalError(undefined)
         setServerErrors([])
         setIsSubmitting(true)
 
-        const form = event?.currentTarget ?? formRef.current
-        if (!form) {
-            setIsSubmitting(false)
-            return
-        }
-        const formData = new FormData(form)
+        const formData = new FormData(event.currentTarget)
         const emailValue = String(formData.get("email") || "").trim()
         const usernameValue = String(formData.get("username") || "").trim()
 
@@ -217,7 +206,7 @@ export function SignUpForm({
             />}
             {...props}
         >
-            <form ref={formRef} onSubmit={handleSubmit}>
+            <form onSubmit={handleSubmit}>
                 <FieldGroup>
                     <AuthFormHeader
                         title="Create your account"
@@ -269,9 +258,9 @@ export function SignUpForm({
                     </Field>
                     <Field>
                         <Button
-                            size="large"
+                            type="submit"
+                            size="lg"
                             className="w-full"
-                            onPress={() => { void handleSubmit() }}
                             loading={isSubmitting}
                             disabled={isSubmitting || username.status === "taken" || email.status === "taken"}
                         >
