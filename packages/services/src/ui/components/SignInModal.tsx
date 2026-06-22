@@ -1,64 +1,35 @@
 /**
- * SignInModal - Full screen sign-in modal with QR code
+ * SignInModal - Web-first centered sign-in modal (Continue with Oxy)
  *
- * A semi-transparent full-screen modal that displays:
- * - QR code for scanning with Oxy Accounts app
- * - Button to open the Oxy Auth approval page
+ * A semi-transparent full-screen modal whose primary action is the one-tap
+ * "Continue with Oxy" approval flow. The QR code is demoted to a collapsed
+ * "Sign in on another device" disclosure (you can't scan your own screen).
  *
- * Animates with fade-in effect.
+ * ALL of the auth-session machinery (session-token creation, QR data, socket +
+ * polling, waiting/error/retry state, the open-auth handler, deep-link return,
+ * and cleanup) lives in the shared `useOxyAuthSession` hook, which the native
+ * `OxyAuthScreen` also consumes — neither container re-implements the transport.
+ *
+ * Animates with a fade + scale effect.
  */
 
 import type React from 'react';
-import { useState, useEffect, useCallback, useRef } from 'react';
-import {
-    View,
-    Text,
-    TouchableOpacity,
-    StyleSheet,
-    Modal,
-    Dimensions,
-    Platform,
-    Linking,
-} from 'react-native';
+import { useState, useEffect, useCallback } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, Modal } from 'react-native';
 import Animated, {
     useSharedValue,
     useAnimatedStyle,
     withTiming,
-    runOnJS,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import io, { type Socket } from 'socket.io-client';
-import QRCode from 'react-native-qrcode-svg';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { Button } from '@oxyhq/bloom/button';
 import { Loading } from '@oxyhq/bloom/loading';
+import { Linking } from 'react-native';
 import { useOxy } from '../context/OxyContext';
 import OxyLogo from './OxyLogo';
-import { createDebugLogger } from '@oxyhq/core';
-import { completeDeviceFlowSignIn } from '../../utils/deviceFlowSignIn';
-
-const debug = createDebugLogger('SignInModal');
-
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-
-// Auth session expiration (5 minutes)
-const AUTH_SESSION_EXPIRY_MS = 5 * 60 * 1000;
-
-// Polling interval (fallback if socket fails)
-const POLLING_INTERVAL_MS = 3000;
-
-interface AuthSession {
-    sessionToken: string;
-    expiresAt: number;
-}
-
-interface AuthUpdatePayload {
-    status: 'authorized' | 'cancelled' | 'expired';
-    sessionId?: string;
-    publicKey?: string;
-    userId?: string;
-    username?: string;
-}
+import AnotherDeviceQR from './AnotherDeviceQR';
+import { useOxyAuthSession, OXY_ACCOUNTS_WEB_URL } from '../hooks/useOxyAuthSession';
 
 // Store for modal visibility with subscription support
 let modalVisible = false;
@@ -87,24 +58,12 @@ export const subscribeToSignInModal = (listener: (visible: boolean) => void): ((
 
 const SignInModal: React.FC = () => {
     const [visible, setVisible] = useState(false);
-    const [authSession, setAuthSession] = useState<AuthSession | null>(null);
-    const [isLoading, setIsLoading] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-    const [isWaiting, setIsWaiting] = useState(false);
 
     const insets = useSafeAreaInsets();
     const theme = useTheme();
     const { oxyServices, switchSession, clientId } = useOxy();
 
-    const socketRef = useRef<Socket | null>(null);
-    const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-    const isProcessingRef = useRef(false);
-
-    // Animation values
-    const opacity = useSharedValue(0);
-    const scale = useSharedValue(0.9);
-
-    // Register callback
+    // Register the imperative visibility callback.
     useEffect(() => {
         setModalVisibleCallback = setVisible;
         return () => {
@@ -112,18 +71,54 @@ const SignInModal: React.FC = () => {
         };
     }, []);
 
-    // Animate in/out
-    // biome-ignore lint/correctness/useExhaustiveDependencies: opacity and scale are Reanimated SharedValues (stable refs) that should not be listed as dependencies
+    if (!visible) return null;
+
+    // The hook owns the whole auth-session lifecycle. Mounting it only while the
+    // modal is visible matches the previous behavior (session created on open,
+    // cleaned up on close) — the inner component is unmounted when `visible`
+    // flips false, which runs the hook's unmount cleanup.
+    return (
+        <SignInModalContent
+            theme={theme}
+            insets={insets}
+            oxyServices={oxyServices}
+            switchSession={switchSession}
+            clientId={clientId}
+        />
+    );
+};
+
+interface SignInModalContentProps {
+    theme: ReturnType<typeof useTheme>;
+    insets: ReturnType<typeof useSafeAreaInsets>;
+    oxyServices: ReturnType<typeof useOxy>['oxyServices'];
+    switchSession: ReturnType<typeof useOxy>['switchSession'];
+    clientId: ReturnType<typeof useOxy>['clientId'];
+}
+
+const SignInModalContent: React.FC<SignInModalContentProps> = ({
+    theme,
+    insets,
+    oxyServices,
+    switchSession,
+    clientId,
+}) => {
+    const { qrData, isLoading, error, isWaiting, openAuthApproval, retry } = useOxyAuthSession(
+        oxyServices,
+        clientId,
+        switchSession,
+        { onSignedIn: hideSignInModal },
+    );
+
+    // Entrance animation.
+    const opacity = useSharedValue(0);
+    const scale = useSharedValue(0.96);
+
+    // biome-ignore lint/correctness/useExhaustiveDependencies: opacity/scale are Reanimated SharedValues (stable refs) and must not be listed as deps; this runs once on mount to play the entrance.
     useEffect(() => {
-        if (visible) {
-            opacity.value = withTiming(1, { duration: 250 });
-            scale.value = withTiming(1, { duration: 250 });
-            generateAuthSession();
-        } else {
-            opacity.value = withTiming(0, { duration: 200 });
-            scale.value = withTiming(0.9, { duration: 200 });
-        }
-    }, [visible]);
+        opacity.value = withTiming(1, { duration: 250 });
+        scale.value = withTiming(1, { duration: 250 });
+    }, []);
 
     const backdropStyle = useAnimatedStyle(() => ({
         opacity: opacity.value,
@@ -134,282 +129,42 @@ const SignInModal: React.FC = () => {
         transform: [{ scale: scale.value }],
     }));
 
-    // Handle successful authorization.
-    //
-    // The auth-session socket (or fallback poll) hands us the new
-    // `sessionId`. Before any session-management code can touch it we
-    // MUST first exchange the secret `sessionToken` (held only by this
-    // client) for the first access token via `claimSessionByToken` —
-    // this is the device-flow equivalent of OAuth's code-for-token
-    // exchange (RFC 8628 §3.4).
-    //
-    // Without that exchange the SDK has no bearer token and the app never
-    // becomes authenticated even though the session is authorized server-side.
-    // Once `claimSessionByToken` plants the tokens in the HttpService, the rest
-    // of the session wiring (state, persistence, language preference) flows
-    // through the normal `switchSession` path.
-    const handleAuthSuccess = useCallback(async (sessionId: string, sessionToken: string) => {
-        if (isProcessingRef.current) return;
-        isProcessingRef.current = true;
-
-        try {
-            // Claim the first access token with the secret sessionToken, then
-            // hydrate the session. Shared with the native `OxyAuthScreen` via
-            // `completeDeviceFlowSignIn` so the two paths cannot drift.
-            if (!switchSession) {
-                throw new Error('Session management unavailable');
-            }
-            await completeDeviceFlowSignIn({
-                oxyServices,
-                sessionId,
-                sessionToken,
-                switchSession,
-            });
-
-            hideSignInModal();
-        } catch (err) {
-            debug.error('Error completing auth:', err);
-            setError('Authorization successful but failed to complete sign in. Please try again.');
-            isProcessingRef.current = false;
-        }
-    }, [oxyServices, switchSession]);
-
-    // Cleanup socket and polling
-    const cleanup = useCallback(() => {
-        setIsWaiting(false);
-
-        if (socketRef.current) {
-            socketRef.current.disconnect();
-            socketRef.current = null;
-        }
-
-        if (pollingIntervalRef.current) {
-            clearInterval(pollingIntervalRef.current);
-            pollingIntervalRef.current = null;
-        }
+    const handleClose = useCallback(() => {
+        hideSignInModal();
     }, []);
 
-    // Connect to socket for real-time updates
-    const connectSocket = useCallback((sessionToken: string) => {
-        const baseURL = oxyServices.getBaseURL();
-
-        const socket = io(`${baseURL}/auth-session`, {
-            transports: ['websocket', 'polling'],
-            reconnection: true,
-            reconnectionAttempts: 3,
-            reconnectionDelay: 1000,
-        });
-
-        socketRef.current = socket;
-
-        socket.on('connect', () => {
-            debug.log('Auth socket connected');
-            socket.emit('join', sessionToken);
-        });
-
-        socket.on('auth_update', (payload: AuthUpdatePayload) => {
-            debug.log('Auth update received:', payload);
-
-            if (payload.status === 'authorized' && payload.sessionId) {
-                cleanup();
-                // `sessionToken` was generated by this client and is in scope
-                // via the `sessionToken` arg — pass it through so the claim
-                // call can exchange it for the first access token.
-                handleAuthSuccess(payload.sessionId, sessionToken);
-            } else if (payload.status === 'cancelled') {
-                cleanup();
-                setError('Authorization was denied.');
-            } else if (payload.status === 'expired') {
-                cleanup();
-                setError('Session expired. Please try again.');
-            }
-        });
-
-        socket.on('connect_error', (err) => {
-            debug.log('Socket connection error, falling back to polling:', (err instanceof Error ? err.message : null));
-            socket.disconnect();
-            startPolling(sessionToken);
-        });
-    }, [oxyServices, handleAuthSuccess, cleanup]);
-
-    // Start polling for authorization.
-    //
-    // Idempotent: if a poll interval is already running this is a no-op, so the
-    // `connect_error` path (which also calls this) cannot stack a second
-    // interval on top of the always-on poll started in `generateAuthSession`.
-    const startPolling = useCallback((sessionToken: string) => {
-        if (pollingIntervalRef.current) return;
-
-        pollingIntervalRef.current = setInterval(async () => {
-            if (isProcessingRef.current) return;
-
-            try {
-                const response: {
-                    authorized: boolean;
-                    sessionId?: string;
-                    status?: string;
-                } = await oxyServices.makeRequest('GET', `/auth/session/status/${sessionToken}`, undefined, { cache: false });
-
-                if (response.authorized && response.sessionId) {
-                    cleanup();
-                    // Pass the original sessionToken through; the claim
-                    // exchange needs it to mint the first access token.
-                    handleAuthSuccess(response.sessionId, sessionToken);
-                } else if (response.status === 'cancelled') {
-                    cleanup();
-                    setError('Authorization was denied.');
-                } else if (response.status === 'expired') {
-                    cleanup();
-                    setError('Session expired. Please try again.');
-                }
-            } catch (err) {
-                debug.log('Auth polling error:', err);
-            }
-        }, POLLING_INTERVAL_MS);
-    }, [oxyServices, handleAuthSuccess, cleanup]);
-
-    // Generate a new auth session
-    const generateAuthSession = useCallback(async () => {
-        setIsLoading(true);
-        setError(null);
-        isProcessingRef.current = false;
-
-        // The cross-app device sign-in flow identifies the requesting app by its
-        // real registered OAuth client id (ApplicationCredential publicKey).
-        // Without it the API cannot resolve the consent identity, so we fail
-        // fast with a clear configuration error rather than creating a session
-        // the server would reject.
-        if (!clientId) {
-            setError('This app is not configured for sign-in (missing clientId).');
-            setIsLoading(false);
-            return;
-        }
-
-        try {
-            const sessionToken = generateSessionToken();
-            const expiresAt = Date.now() + AUTH_SESSION_EXPIRY_MS;
-
-            await oxyServices.makeRequest('POST', '/auth/session/create', {
-                sessionToken,
-                expiresAt,
-                clientId,
-            }, { cache: false });
-
-            setAuthSession({ sessionToken, expiresAt });
-            setIsWaiting(true);
-            // Socket is the fast path; the poll is a transport-independent
-            // backstop that guarantees completion even if the socket connects
-            // but silently never delivers auth_update (RN transport /
-            // idle-timeout).
-            connectSocket(sessionToken);
-            startPolling(sessionToken);
-        } catch (err: unknown) {
-            setError((err instanceof Error ? err.message : null) || 'Failed to create auth session');
-        } finally {
-            setIsLoading(false);
-        }
-    }, [oxyServices, connectSocket, startPolling, clientId]);
-
-    // Generate a cryptographically random session token.
-    // 16 random bytes -> 32 hex chars (128 bits of entropy) — unguessable.
-    // crypto.getRandomValues is guaranteed available because importing
-    // @oxyhq/core installs a polyfill via expo-crypto on React Native.
-    const generateSessionToken = (): string => {
-        const bytes = new Uint8Array(16);
-        crypto.getRandomValues(bytes);
-        return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
-    };
-
-    // Build the QR code data
-    const getQRData = (): string => {
-        if (!authSession) return '';
-        return `oxyauth://${authSession.sessionToken}`;
-    };
-
-    // Open Oxy Auth approval page for this device-flow session.
-    const handleOpenAuthApproval = useCallback(async () => {
-        if (!authSession) return;
-
-        const baseURL = oxyServices.getBaseURL();
-        // Resolve auth web URL
-        let authWebUrl = oxyServices.config?.authWebUrl;
-        if (!authWebUrl) {
-            try {
-                const url = new URL(baseURL);
-                if (url.port === '3001') {
-                    url.port = '3002';
-                    authWebUrl = url.origin;
-                } else if (url.hostname.startsWith('api.')) {
-                    url.hostname = `auth.${url.hostname.slice(4)}`;
-                    authWebUrl = url.origin;
-                }
-            } catch {
-                authWebUrl = 'https://auth.oxy.so';
-            }
-        }
-        authWebUrl = authWebUrl || 'https://auth.oxy.so';
-
-        const webUrl = new URL('/authorize', authWebUrl);
-        webUrl.searchParams.set('token', authSession.sessionToken);
-
-        if (Platform.OS === 'web') {
-            // Open a separate approval window on web for the device-flow token.
-            const width = 500;
-            const height = 650;
-            const screenWidth = window.screen?.width ?? width;
-            const screenHeight = window.screen?.height ?? height;
-            const left = (screenWidth - width) / 2;
-            const top = (screenHeight - height) / 2;
-
-            window.open(
-                webUrl.toString(),
-                'oxy-auth-approval',
-                `width=${width},height=${height},left=${left},top=${top}`
-            );
-        } else {
-            // Open in browser on native
-            Linking.openURL(webUrl.toString());
-        }
-    }, [authSession, oxyServices]);
-
-    // Refresh session
-    const handleRefresh = useCallback(() => {
-        cleanup();
-        generateAuthSession();
-    }, [generateAuthSession, cleanup]);
-
-    // Handle close
-    const handleClose = useCallback(() => {
-        cleanup();
-        hideSignInModal();
-    }, [cleanup]);
-
-    // Clean up on unmount
-    useEffect(() => {
-        return () => {
-            cleanup();
-        };
-    }, [cleanup]);
-
-    if (!visible) return null;
+    const handleCreateAccount = useCallback(() => {
+        Linking.openURL(OXY_ACCOUNTS_WEB_URL);
+    }, []);
 
     return (
-        <Modal visible={visible} transparent animationType="none" statusBarTranslucent onRequestClose={handleClose}>
+        <Modal visible transparent animationType="none" statusBarTranslucent onRequestClose={handleClose}>
             <Animated.View style={[styles.backdrop, { backgroundColor: theme.colors.overlay }, backdropStyle]}>
                 <TouchableOpacity style={StyleSheet.absoluteFill} onPress={handleClose} activeOpacity={1} />
 
-                <Animated.View style={[styles.content, contentStyle, { paddingTop: insets.top + 20, paddingBottom: insets.bottom + 20 }]}>
+                <Animated.View
+                    style={[
+                        styles.card,
+                        { backgroundColor: theme.colors.card, paddingTop: insets.top + 24, paddingBottom: insets.bottom + 24 },
+                        contentStyle,
+                    ]}
+                >
                     {/* Close button */}
-                    <TouchableOpacity style={styles.closeButton} onPress={handleClose}>
-                        <Text style={styles.closeButtonText}>×</Text>
+                    <TouchableOpacity
+                        style={[styles.closeButton, { backgroundColor: theme.colors.backgroundSecondary }]}
+                        onPress={handleClose}
+                        accessibilityRole="button"
+                        accessibilityLabel="Close sign in"
+                    >
+                        <Text style={[styles.closeButtonText, { color: theme.colors.textSecondary }]}>×</Text>
                     </TouchableOpacity>
 
-                    {/* Header */}
+                    {/* Branded header */}
                     <View style={styles.header}>
                         <OxyLogo variant="icon" size={56} />
-                        <Text className="text-foreground" style={styles.title}>Sign in with Oxy</Text>
+                        <Text className="text-foreground" style={styles.title}>Sign in to Oxy</Text>
                         <Text className="text-muted-foreground" style={styles.subtitle}>
-                            Scan with Oxy Accounts app or use the button below
+                            Continue with your Oxy identity to sign in securely
                         </Text>
                     </View>
 
@@ -423,50 +178,48 @@ const SignInModal: React.FC = () => {
                     ) : error ? (
                         <View style={styles.errorContainer}>
                             <Text className="text-destructive" style={styles.errorText}>{error}</Text>
-                            <Button onPress={handleRefresh}>Try Again</Button>
+                            <Button variant="primary" onPress={retry} style={styles.primaryButton}>Try Again</Button>
                         </View>
                     ) : (
                         <>
-                            {/* QR Code */}
-                            <View style={[styles.qrContainer, { backgroundColor: 'white' }]}>
-                                {authSession ? (
-                                    <QRCode
-                                        value={getQRData()}
-                                        size={200}
-                                        backgroundColor="white"
-                                        color="black"
-                                    />
-                                ) : (
-                                    <Loading size="large" />
-                                )}
-                            </View>
-
-                            {/* Divider */}
-                            <View style={styles.dividerContainer}>
-                                <View style={[styles.divider, { backgroundColor: 'rgba(255,255,255,0.3)' }]} />
-                                <Text style={[styles.dividerText, { color: 'rgba(255,255,255,0.7)' }]}>or</Text>
-                                <View style={[styles.divider, { backgroundColor: 'rgba(255,255,255,0.3)' }]} />
-                            </View>
-
-                            {/* Open approval window */}
+                            {/* Primary action — Continue with Oxy */}
                             <Button
-                                onPress={handleOpenAuthApproval}
-                                icon={<OxyLogo variant="icon" size={20} fillColor={theme.colors.card} />}
+                                variant="primary"
+                                onPress={openAuthApproval}
+                                icon={<OxyLogo variant="icon" size={20} fillColor={theme.colors.primaryForeground} style={styles.buttonIcon} />}
+                                style={styles.primaryButton}
                             >
-                                Open Oxy Auth
+                                Continue with Oxy
                             </Button>
 
-                            {/* Status */}
+                            {/* Waiting status */}
                             {isWaiting && (
                                 <View style={styles.statusContainer}>
-                                    <Loading size="small" />
-                                    <Text style={styles.statusText}>
+                                    <Loading size="small" style={styles.statusSpinner} />
+                                    <Text style={[styles.statusText, { color: theme.colors.textSecondary }]}>
                                         Waiting for authorization...
                                     </Text>
                                 </View>
                             )}
+
+                            {/* Collapsed "sign in on another device" QR disclosure */}
+                            <View style={styles.qrSection}>
+                                <AnotherDeviceQR qrData={qrData} />
+                            </View>
                         </>
                     )}
+
+                    {/* Footer — create an account */}
+                    <View style={styles.footer}>
+                        <Text style={styles.footerText} className="text-muted-foreground">
+                            Don't have an Oxy account?{' '}
+                        </Text>
+                        <TouchableOpacity onPress={handleCreateAccount} accessibilityRole="link">
+                            <Text style={styles.footerLink} className="text-primary">
+                                Create one
+                            </Text>
+                        </TouchableOpacity>
+                    </View>
                 </Animated.View>
             </Animated.View>
         </Modal>
@@ -479,11 +232,12 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center',
     },
-    content: {
+    card: {
         width: '100%',
         maxWidth: 400,
         alignItems: 'center',
         paddingHorizontal: 24,
+        borderRadius: 24,
     },
     closeButton: {
         position: 'absolute',
@@ -492,58 +246,52 @@ const styles = StyleSheet.create({
         width: 40,
         height: 40,
         borderRadius: 20,
-        backgroundColor: 'rgba(255, 255, 255, 0.1)',
         justifyContent: 'center',
         alignItems: 'center',
         zIndex: 10,
     },
     closeButtonText: {
-        color: 'white',
         fontSize: 28,
         fontWeight: '300',
         lineHeight: 32,
     },
     header: {
         alignItems: 'center',
-        marginBottom: 32,
+        marginBottom: 28,
     },
     title: {
-        fontSize: 28,
+        fontSize: 26,
         fontWeight: 'bold',
         marginTop: 16,
+        textAlign: 'center',
     },
     subtitle: {
         fontSize: 15,
         marginTop: 8,
         textAlign: 'center',
     },
-    qrContainer: {
-        padding: 20,
-        borderRadius: 16,
-    },
-    dividerContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginVertical: 24,
+    primaryButton: {
         width: '100%',
+        borderRadius: 12,
     },
-    divider: {
-        flex: 1,
-        height: 1,
-    },
-    dividerText: {
-        marginHorizontal: 16,
-        fontSize: 14,
+    buttonIcon: {
+        marginRight: 10,
     },
     statusContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginTop: 24,
+        marginTop: 20,
+    },
+    statusSpinner: {
+        flex: undefined,
     },
     statusText: {
         marginLeft: 8,
         fontSize: 14,
-        color: 'rgba(255, 255, 255, 0.7)',
+    },
+    qrSection: {
+        width: '100%',
+        marginTop: 24,
     },
     loadingContainer: {
         alignItems: 'center',
@@ -562,6 +310,19 @@ const styles = StyleSheet.create({
         fontSize: 14,
         textAlign: 'center',
         marginBottom: 16,
+    },
+    footer: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        justifyContent: 'center',
+        marginTop: 28,
+    },
+    footerText: {
+        fontSize: 14,
+    },
+    footerLink: {
+        fontSize: 14,
+        fontWeight: '600',
     },
 });
 
