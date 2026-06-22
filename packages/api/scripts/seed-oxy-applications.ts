@@ -185,6 +185,13 @@ const SEED_APPS: SeedAppSpec[] = [
     type: 'first_party',
     redirectUris: [cb('https://mercaria.co')],
   },
+  {
+    name: 'Moovo',
+    description: 'Official Oxy courier/transport app — send packages, food, and moves.',
+    websiteUrl: 'https://moovo.now',
+    type: 'first_party',
+    redirectUris: [cb('https://moovo.now'), 'https://moovo.now'],
+  },
 ];
 
 interface MappingRow {
