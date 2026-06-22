@@ -190,7 +190,14 @@ const SEED_APPS: SeedAppSpec[] = [
     description: 'Official Oxy courier/transport app — send packages, food, and moves.',
     websiteUrl: 'https://moovo.now',
     type: 'first_party',
-    redirectUris: [cb('https://moovo.now'), 'https://moovo.now'],
+    redirectUris: [
+      cb('https://moovo.now'),
+      'https://moovo.now',
+      cb('https://go.moovo.now'),
+      'https://go.moovo.now',
+      cb('https://hub.moovo.now'),
+      'https://hub.moovo.now',
+    ],
   },
 ];
 
