@@ -25,6 +25,7 @@ const EXACT_ALLOWED_ORIGINS: ReadonlySet<string> = new Set([
   'https://homiio.com',
   'https://alia.onl',
   'https://syra.fm',
+  'https://moovo.now',
 ]);
 
 const ALLOWED_ORIGIN_PATTERNS: readonly RegExp[] = [
@@ -33,6 +34,7 @@ const ALLOWED_ORIGIN_PATTERNS: readonly RegExp[] = [
   /^https:\/\/[a-z0-9-]+\.homiio\.com$/,
   /^https:\/\/[a-z0-9-]+\.alia\.onl$/,
   /^https:\/\/[a-z0-9-]+\.syra\.fm$/,
+  /^https:\/\/[a-z0-9-]+\.moovo\.now$/,
 ];
 
 const DEV_ORIGIN_PATTERN = /^http:\/\/(?:localhost|127\.0\.0\.1)(?::\d{1,5})?$/;

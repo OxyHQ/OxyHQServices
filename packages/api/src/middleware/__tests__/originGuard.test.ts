@@ -59,6 +59,7 @@ describe('isAllowedOrigin', () => {
     'https://mention.earth',
     'https://homiio.com',
     'https://alia.onl',
+    'https://moovo.now',
   ];
 
   const SUBDOMAIN_ALLOWED = [
@@ -68,6 +69,8 @@ describe('isAllowedOrigin', () => {
     'https://api.mention.earth',
     'https://app.homiio.com',
     'https://api.alia.onl',
+    'https://go.moovo.now',
+    'https://hub.moovo.now',
   ];
 
   const REJECTED = [
@@ -81,6 +84,8 @@ describe('isAllowedOrigin', () => {
     'https://a.b.oxy.so',
     'https://oxy.so:8443',
     'https://oxy.so/path',
+    'https://moovo.now.evil.com',
+    'http://moovo.now',
     'null',
     '',
   ];
