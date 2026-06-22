@@ -20,21 +20,25 @@
  *   - Idempotent — safe to re-run. Updates only users whose denorm values diverge
  *     from the authoritative balance.
  *
- * Run:
- *   cd packages/api && bun run scripts/backfill-reputation-denorm.ts
+ * Run (inside the oxy-api image, working dir /app):
+ *   bun run packages/api/src/scripts/backfill-reputation-denorm.ts
+ * Or, against the compiled output:
+ *   node packages/api/dist/scripts/backfill-reputation-denorm.js
  *
- * Optional env:
- *   MONGODB_URI    Mongo connection string (required)
+ * Env:
+ *   MONGODB_URI    Mongo connection string (required, injected by ECS from SSM)
+ *   NODE_ENV       selects the DB name via getDbName() (e.g. oxy-prod)
  *   BATCH_SIZE     Number of balances to scan per batch (default 500)
  *   DRY_RUN=true   Report what would change without writing
  */
 
 import dotenv from 'dotenv';
 import mongoose from 'mongoose';
-import User from '../src/models/User';
-import { ReputationBalance } from '../src/models/ReputationBalance';
-import { INFLUENCE_MIN, type TrustTier } from '../src/utils/reputation.constants';
-import { logger } from '../src/utils/logger';
+import User from '../models/User.js';
+import { ReputationBalance } from '../models/ReputationBalance.js';
+import { INFLUENCE_MIN, type TrustTier } from '../utils/reputation.constants.js';
+import { getDbName } from '../config/db.js';
+import { logger } from '../utils/logger.js';
 
 dotenv.config();
 
@@ -161,8 +165,9 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  await mongoose.connect(uri);
-  logger.info('Connected to MongoDB');
+  const dbName = getDbName();
+  await mongoose.connect(uri, { dbName });
+  logger.info('Connected to MongoDB', { dbName });
 
   try {
     const startedAt = Date.now();

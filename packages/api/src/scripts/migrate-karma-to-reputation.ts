@@ -33,25 +33,32 @@
  *   - DRY_RUN=true reports the plan without writing.
  *
  * Run (inside the oxy-api image, working dir /app):
- *   bun run packages/api/scripts/migrate-karma-to-reputation.ts
+ *   bun run packages/api/src/scripts/migrate-karma-to-reputation.ts
+ * Or, against the compiled output:
+ *   node packages/api/dist/scripts/migrate-karma-to-reputation.js
  *
  * Env:
  *   MONGODB_URI   required (injected by ECS from SSM)
+ *   NODE_ENV      selects the DB name via getDbName() (e.g. oxy-prod)
  *   DRY_RUN=true  plan only, no writes
  */
 
 import mongoose from 'mongoose';
-import { ReputationTransaction } from '../src/models/ReputationTransaction';
-import { ReputationRule } from '../src/models/ReputationRule';
-import reputationService from '../src/services/reputation.service';
+import dotenv from 'dotenv';
+import { ReputationTransaction } from '../models/ReputationTransaction.js';
+import { ReputationRule } from '../models/ReputationRule.js';
+import reputationService from '../services/reputation.service.js';
 import {
   type ReputationCategory,
-} from '../src/utils/reputation.constants';
+} from '../utils/reputation.constants.js';
 import {
   mapLegacyRuleCategory,
   inferTransactionCategory,
-} from '../src/utils/reputationMigrationMapping';
-import { logger } from '../src/utils/logger';
+} from '../utils/reputationMigrationMapping.js';
+import { getDbName } from '../config/db.js';
+import { logger } from '../utils/logger.js';
+
+dotenv.config();
 
 /**
  * Legacy karma documents are read directly from their collections (their
@@ -240,8 +247,9 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  await mongoose.connect(uri);
-  logger.info('Connected to MongoDB');
+  const dbName = getDbName();
+  await mongoose.connect(uri, { dbName });
+  logger.info('Connected to MongoDB', { dbName });
 
   try {
     await migrate();
