@@ -60,6 +60,7 @@ describe('isAllowedOrigin', () => {
     'https://homiio.com',
     'https://alia.onl',
     'https://moovo.now',
+    'https://mercaria.co',
   ];
 
   const SUBDOMAIN_ALLOWED = [
@@ -71,6 +72,8 @@ describe('isAllowedOrigin', () => {
     'https://api.alia.onl',
     'https://go.moovo.now',
     'https://hub.moovo.now',
+    'https://dashboard.mercaria.co',
+    'https://pos.mercaria.co',
   ];
 
   const REJECTED = [
@@ -86,6 +89,8 @@ describe('isAllowedOrigin', () => {
     'https://oxy.so/path',
     'https://moovo.now.evil.com',
     'http://moovo.now',
+    'https://mercaria.co.evil.com',
+    'http://mercaria.co',
     'null',
     '',
   ];
