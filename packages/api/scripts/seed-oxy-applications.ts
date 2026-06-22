@@ -183,7 +183,16 @@ const SEED_APPS: SeedAppSpec[] = [
     description: 'Official Oxy marketplace app — buy and sell new and secondhand items.',
     websiteUrl: 'https://mercaria.co',
     type: 'first_party',
-    redirectUris: [cb('https://mercaria.co')],
+    // Storefront (mercaria.co) + the two first-party admin surfaces that share
+    // this client: the store/merchant dashboard and the point-of-sale app. The
+    // SSO `/sso?client_id=<origin>` flow matches the RP by the origin of an
+    // approved redirect URI, so each subdomain's `/__oxy/sso-callback` must be
+    // listed here or its login bounce 400s.
+    redirectUris: [
+      cb('https://mercaria.co'),
+      cb('https://dashboard.mercaria.co'),
+      cb('https://pos.mercaria.co'),
+    ],
   },
   {
     name: 'Moovo',
