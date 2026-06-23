@@ -72,6 +72,22 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
     constructor(...args: any[]) {
       super(...(args as [any]));
     }
+
+    /**
+     * Service-token request, implemented by the auth mixin earlier in the
+     * composition pipeline (see `mixins/index.ts`). The user mixin is typed
+     * against `OxyServicesBase`, which does not carry the auth mixin's methods,
+     * so this `declare` surfaces the inherited runtime method to TypeScript
+     * without re-implementing it. Used by `getUsersByIds` to authenticate the
+     * server-to-server `/users/by-ids` bulk fetch with a bearer service token.
+     */
+    declare makeServiceRequest: <R = unknown>(
+      method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
+      url: string,
+      data?: unknown,
+      userId?: string,
+    ) => Promise<R>;
+
     /**
      * Get profile by username
      */
@@ -333,6 +349,17 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
      * by `id`); each is run through `normalizeUserIdentity`, matching
      * `getUserById`.
      *
+     * **Service-token auth (required).** `/users/by-ids` is a server-to-server
+     * bulk fetch of PUBLIC user data and is called via `makeServiceRequest`,
+     * which attaches `Authorization: Bearer <serviceToken>`. oxy-api's CSRF
+     * middleware skips bearer-authenticated requests, so the calling client
+     * MUST be service-configured (`configureServiceAuth(apiKey, apiSecret)`)
+     * before invoking this method; otherwise `getServiceToken()` throws because
+     * no credentials are available. (A plain user-session request fails here:
+     * server-to-server there is no cookie jar, so the auto-attached
+     * `X-CSRF-Token` has no matching cookie and oxy-api rejects the POST with
+     * 403 "CSRF token missing".)
+     *
      * Resilience: chunks are independent. A failed chunk is logged and skipped
      * — the method returns every user that resolved successfully rather than
      * discarding the whole call on one chunk's failure. An empty/whitespace-only
@@ -358,7 +385,7 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
       const settled = await Promise.all(
         chunks.map(async (chunk): Promise<User[]> => {
           try {
-            const users = await this.makeRequest<User[]>('POST', '/users/by-ids', { ids: chunk }, { cache: false });
+            const users = await this.makeServiceRequest<User[]>('POST', '/users/by-ids', { ids: chunk });
             return Array.isArray(users) ? users.map((user) => normalizeUserIdentity(user)) : [];
           } catch (error: unknown) {
             logger.warn('getUsersByIds: chunk failed, continuing with remaining chunks', {
