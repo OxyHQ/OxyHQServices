@@ -26,6 +26,12 @@ jest.mock('../../middleware/auth', () => ({
   serviceAuthMiddleware: (...args: unknown[]) => mockServiceAuthMiddleware(...args),
 }));
 
+// `optionalAuth` is imported by the router (for POST /users/by-ids). Mock it so
+// the test does not pull in the real session/auth/mongoose module graph.
+jest.mock('../../middleware/optionalAuth', () => ({
+  optionalUserOrServiceAuth: (_req: unknown, _res: unknown, next: () => void) => next(),
+}));
+
 // Many of the existing user routes import services that need a real DB.
 // We stub all of them to no-op so importing the router doesn't crash.
 jest.mock('../../services/email.service', () => ({

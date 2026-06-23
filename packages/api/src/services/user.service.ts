@@ -36,6 +36,15 @@ interface UserWithCount {
 }
 
 /**
+ * One row of a `$group`-by-id Follow count aggregation: the grouped user id and
+ * its follower/following count for that side of the relationship.
+ */
+interface FollowCountRow {
+  _id: Types.ObjectId;
+  count: number;
+}
+
+/**
  * Per-target outcome of a bulk follow operation.
  * - `success: true, alreadyFollowing: false`  → newly followed
  * - `success: true, alreadyFollowing: true`   → already followed (no-op / raced)
@@ -821,6 +830,87 @@ export class UserService {
     });
 
     return !!follow;
+  }
+
+  /**
+   * Batch-resolve PUBLIC user DTOs for a set of ids.
+   *
+   * Returns the SAME shape as `GET /users/:id` (`formatUserResponse`), including
+   * canonical `name.displayName` and an `_count: { followers, following }` block
+   * for every returned user. Designed for server-to-server fan-out (e.g. Mention
+   * feed hydration) so callers avoid N+1 `GET /users/:id` round-trips.
+   *
+   * Efficiency contract: at most THREE queries total regardless of `ids.length`
+   * — one `User.find({ _id: $in })` and two `Follow` group-by-id aggregations
+   * (followers + following), keyed by the whole id set. No per-user query.
+   *
+   * Resilient to bad input: ids that are not valid ObjectIds (or that match no
+   * user) are silently dropped — the result only contains resolved users. The
+   * caller is responsible for any "missing id" handling. Order is NOT guaranteed
+   * to match the input order.
+   *
+   * @param ids - Candidate user ids (ObjectId strings).
+   * @returns Array of public user DTOs, each with `_count`.
+   */
+  async getUsersByIds(ids: string[]): Promise<PublicUserProfile[]> {
+    const objectIds = ids
+      .filter((id) => Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id));
+
+    if (objectIds.length === 0) {
+      return [];
+    }
+
+    // One batched user fetch. `lean({ virtuals: true })` populates `name.full`
+    // (schema virtual) which `formatUserNameResponse` consumes. The typed lean
+    // generic yields plain `IUser` objects so `formatUserResponse` (which reads
+    // `publicKey`, `type`, `federation`, etc.) sees the full profile shape.
+    const users = await User.find({ _id: { $in: objectIds } })
+      .select('-password -refreshToken')
+      .lean<IUser[]>({ virtuals: true });
+
+    if (users.length === 0) {
+      return [];
+    }
+
+    // Two batched count aggregations keyed by the whole id set (not per-user):
+    // followers (others following the user) and following (the user follows
+    // others). Each is a single grouped query over the `follows` collection.
+    const [followerRows, followingRows] = await Promise.all([
+      Follow.aggregate<FollowCountRow>([
+        {
+          $match: {
+            followedId: { $in: objectIds },
+            followType: FollowType.USER,
+          },
+        },
+        { $group: { _id: '$followedId', count: { $sum: 1 } } },
+      ]),
+      Follow.aggregate<FollowCountRow>([
+        {
+          $match: {
+            followerUserId: { $in: objectIds },
+            followType: FollowType.USER,
+          },
+        },
+        { $group: { _id: '$followerUserId', count: { $sum: 1 } } },
+      ]),
+    ]);
+
+    const followersById = new Map<string, number>(
+      followerRows.map((row) => [String(row._id), row.count])
+    );
+    const followingById = new Map<string, number>(
+      followingRows.map((row) => [String(row._id), row.count])
+    );
+
+    return users.map((user) => {
+      const key = user._id?.toString() ?? '';
+      return this.formatUserResponse(user, {
+        followers: followersById.get(key) ?? 0,
+        following: followingById.get(key) ?? 0,
+      });
+    });
   }
 
   /**

@@ -29,12 +29,14 @@ import userCache from '../utils/userCache';
 import SignatureService from '../services/signature.service';
 import { emailService } from '../services/email.service';
 import { validate } from '../middleware/validate';
+import { optionalUserOrServiceAuth } from '../middleware/optionalAuth';
 import {
   searchUsersBodySchema,
   verifyRequestSchema,
   deleteAccountSchema,
   dataExportQuerySchema,
   updatePrivacyBodySchema,
+  usersByIdsBodySchema,
 } from '../schemas/users.schemas';
 
 // Types
@@ -466,6 +468,41 @@ router.post(
       results: result.results,
       unfollowedCount: result.unfollowedCount,
     });
+  })
+);
+
+/**
+ * POST /users/by-ids
+ *
+ * Batch-resolve PUBLIC user DTOs for up to 100 ids in a single round-trip.
+ * Returns an array of the SAME shape as `GET /users/:id` — canonical
+ * `name.displayName` (server-owned) plus `_count: { followers, following }` for
+ * every resolved user. Built for server-to-server feed/notification hydration so
+ * consumers (Mention) avoid N+1 single-user fetches.
+ *
+ * Registered BEFORE the `/:userId` param routes so Express never treats
+ * `by-ids` as a `:userId` value.
+ *
+ * Auth: optional dual-auth — accepts a service token (the server-to-server case
+ * Mention uses), a user session, or an anonymous caller. The payload is exactly
+ * the already-public `GET /users/:id` profile data, so no scope is required and
+ * no viewer-specific fields are returned. ids that are not valid ObjectIds (or
+ * match no user) are dropped from the result.
+ *
+ * @body {string[]} ids - User ids to resolve (1..100; 400 if empty or > 100).
+ * @returns {PublicUserProfile[]} Resolved public user DTOs (order not guaranteed).
+ */
+router.post(
+  '/by-ids',
+  optionalUserOrServiceAuth,
+  validate({ body: usersByIdsBodySchema }),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { ids } = req.body as { ids: string[] };
+
+    const users = await userService.getUsersByIds(ids);
+
+    logger.debug('POST /users/by-ids', { requested: ids.length, resolved: users.length });
+    sendSuccess(res, users);
   })
 );
 

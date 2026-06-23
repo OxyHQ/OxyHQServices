@@ -25,6 +25,12 @@ import { normalizeUserIdentity, normalizeUserIdentityOrNull } from '../utils/use
 import { logger } from '../utils/loggerUtils';
 import { extractErrorStatus } from '../utils/errorUtils';
 
+/**
+ * Maximum number of ids sent per `POST /users/by-ids` request. Matches the
+ * server-side batch cap; larger inputs are split into multiple chunked calls.
+ */
+const USERS_BY_IDS_CHUNK_SIZE = 100;
+
 /** Per-user outcome returned by `POST /users/follow/bulk`. */
 export interface BulkFollowEntry {
   /** The user ID that was processed. */
@@ -313,6 +319,60 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
       } catch (error) {
         throw this.handleError(error);
       }
+    }
+
+    /**
+     * Fetch many users by id in one round-trip per chunk.
+     *
+     * Built for feed/hydration call sites that would otherwise issue one
+     * `getUserById` request per unique author (the classic M+1). Ids are
+     * deduplicated and validated (empty/blank ids dropped) before being split
+     * into chunks of {@link USERS_BY_IDS_CHUNK_SIZE} and POSTed to
+     * `/users/by-ids` as `{ ids }`. The server returns the matched users as a
+     * flat `User[]` (order is not guaranteed and the caller is expected to map
+     * by `id`); each is run through `normalizeUserIdentity`, matching
+     * `getUserById`.
+     *
+     * Resilience: chunks are independent. A failed chunk is logged and skipped
+     * — the method returns every user that resolved successfully rather than
+     * discarding the whole call on one chunk's failure. An empty/whitespace-only
+     * input resolves immediately with `[]` and performs no network call.
+     *
+     * Not cached at the SDK layer: the response is keyed on a multi-id POST body
+     * (low hit rate) and the backend maintains its own per-id Redis cache.
+     */
+    async getUsersByIds(ids: string[]): Promise<User[]> {
+      const uniqueIds = Array.from(
+        new Set(ids.filter((id): id is string => typeof id === 'string' && id.trim().length > 0)),
+      );
+      if (uniqueIds.length === 0) {
+        return [];
+      }
+
+      const chunks: string[][] = [];
+      for (let i = 0; i < uniqueIds.length; i += USERS_BY_IDS_CHUNK_SIZE) {
+        chunks.push(uniqueIds.slice(i, i + USERS_BY_IDS_CHUNK_SIZE));
+      }
+
+      // Run chunks concurrently; a single chunk failure must not sink the rest.
+      const settled = await Promise.all(
+        chunks.map(async (chunk): Promise<User[]> => {
+          try {
+            const users = await this.makeRequest<User[]>('POST', '/users/by-ids', { ids: chunk }, { cache: false });
+            return Array.isArray(users) ? users.map((user) => normalizeUserIdentity(user)) : [];
+          } catch (error: unknown) {
+            logger.warn('getUsersByIds: chunk failed, continuing with remaining chunks', {
+              method: 'getUsersByIds',
+              chunkSize: chunk.length,
+              status: extractErrorStatus(error),
+              error: error instanceof Error ? error.message : String(error),
+            });
+            return [];
+          }
+        }),
+      );
+
+      return settled.flat();
     }
 
     /**

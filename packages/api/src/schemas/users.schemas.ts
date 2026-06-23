@@ -10,6 +10,17 @@ export const searchUsersBodySchema = z.object({
   query: z.string().trim().min(1),
 });
 
+// Maximum number of ids accepted by POST /users/by-ids in a single request.
+export const MAX_USERS_BY_IDS = 100;
+
+// POST /users/by-ids
+export const usersByIdsBodySchema = z.object({
+  ids: z
+    .array(z.string().trim().min(1))
+    .min(1, 'ids must not be empty')
+    .max(MAX_USERS_BY_IDS, `Cannot request more than ${MAX_USERS_BY_IDS} users at once`),
+});
+
 // POST /users/verify/request
 export const verifyRequestSchema = z.object({
   reason: z.string().trim().min(1),
