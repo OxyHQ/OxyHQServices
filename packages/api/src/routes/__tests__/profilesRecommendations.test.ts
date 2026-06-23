@@ -274,12 +274,13 @@ describe('GET /profiles/recommendations exclusion set', () => {
     currentUserId = userA.toHexString();
 
     // Following set: A follows B and C. The route loads this via
-    // Follow.find(...).select('followedId').lean().
+    // Follow.find(...).select('followedId').limit(...).lean().
     const lean = jest.fn().mockResolvedValue([
       { followedId: userB },
       { followedId: userC },
     ]);
-    const select = jest.fn().mockReturnValue({ lean });
+    const limit = jest.fn().mockReturnValue({ lean });
+    const select = jest.fn().mockReturnValue({ limit, lean });
     mockFollowFind.mockReturnValue({ select });
 
     // No mutual-overlap recommendations, forcing the random User.aggregate fill.
@@ -371,7 +372,8 @@ describe('GET /profiles/recommendations exclusion set', () => {
     currentUserId = userA.toHexString();
 
     const lean = jest.fn().mockResolvedValue([{ followedId: userB }]);
-    const select = jest.fn().mockReturnValue({ lean });
+    const limit = jest.fn().mockReturnValue({ lean });
+    const select = jest.fn().mockReturnValue({ limit, lean });
     mockFollowFind.mockReturnValue({ select });
 
     // No mutual-overlap results → forces the random User.aggregate fill, which
@@ -432,7 +434,8 @@ describe('POST /profiles/recommendations dual-auth viewer resolution', () => {
   /** Wire Follow.find so the personalized following-set load resolves to [B]. */
   function stubFollowingSet(followed: Types.ObjectId[]): void {
     const lean = jest.fn().mockResolvedValue(followed.map((id) => ({ followedId: id })));
-    const select = jest.fn().mockReturnValue({ lean });
+    const limit = jest.fn().mockReturnValue({ lean });
+    const select = jest.fn().mockReturnValue({ limit, lean });
     mockFollowFind.mockReturnValue({ select });
   }
 
@@ -521,5 +524,78 @@ describe('POST /profiles/recommendations dual-auth viewer resolution', () => {
 
     expect(res.status).toBe(200);
     expect(mockFollowFind).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Scored pipeline behavior — proves the (now sole) reputation-weighted scorer
+ * runs end-to-end for a viewer with a non-empty candidate union: it scores the
+ * mutual-overlap candidates, ranks them by composite score, and looks up
+ * follower/following counts for the returned page only. This is the default path
+ * (the REC_SCORING_V2 flag and legacy fallback were removed), so this test
+ * guards that the scorer stays wired for real candidates rather than only the
+ * empty-union popular fallback the exclusion tests exercise.
+ */
+describe('GET /profiles/recommendations scored ranking', () => {
+  it('scores and ranks mutual-overlap candidates, returning them highest-score first', async () => {
+    currentUserId = userA.toHexString();
+
+    // Viewer A follows B. The scored path loads the following set, then the
+    // mutual-overlap aggregation (people followed by B).
+    const lean = jest.fn().mockResolvedValue([{ followedId: userB }]);
+    const limit = jest.fn().mockReturnValue({ lean });
+    const select = jest.fn().mockReturnValue({ limit, lean });
+    mockFollowFind.mockReturnValue({ select });
+
+    // Mutual map: C has more overlap than D, so before any other signal C should
+    // outrank D on the graph term.
+    mockFollowAggregate.mockResolvedValue([
+      { _id: userC, mutualCount: 8 },
+      { _id: userD, mutualCount: 2 },
+    ]);
+
+    // First User.aggregate = the scoring pass over the candidate union {C, D};
+    // second = the page follower/following count lookup. Distinguish them by the
+    // presence of a `$sample`/score projection vs the count projection.
+    mockUserAggregate.mockImplementation((pipeline: unknown) => {
+      const stages = pipeline as Array<Record<string, unknown>>;
+      const isCountPass = stages.some(
+        (s) => s.$project && (s.$project as Record<string, unknown>).followersCount
+      );
+      if (isCountPass) {
+        return Promise.resolve([
+          { _id: userC, followersCount: 30, followingCount: 5 },
+          { _id: userD, followersCount: 10, followingCount: 2 },
+        ]);
+      }
+      // Scoring pass: emit both candidates with neutral aggregation-side scores
+      // so the in-app graph term (mutualCount) drives the ranking.
+      return Promise.resolve([
+        {
+          _id: userC, username: 'c', name: { first: 'C' }, avatar: 'x', verified: false,
+          completenessScore: 1, verifiedScore: 0, repCandScore: 0.5,
+        },
+        {
+          _id: userD, username: 'd', name: { first: 'D' }, avatar: 'x', verified: false,
+          completenessScore: 1, verifiedScore: 0, repCandScore: 0.5,
+        },
+      ]);
+    });
+
+    const res = await requestJson(server, '/profiles/recommendations?limit=10');
+
+    expect(res.status).toBe(200);
+    const returnedIds = (res.body.data ?? []).map((p) => String(p.id));
+    // Both candidates surface, with the higher-mutual-overlap C ranked first.
+    expect(returnedIds).toEqual([userC.toString(), userD.toString()]);
+
+    // The scoring pass matched the candidate UNION (C, D) — not a full-collection
+    // scan — and excluded the viewer (A) and the followed user (B).
+    const scoringMatch = (mockUserAggregate.mock.calls[0][0] as Array<{ $match?: { _id?: { $in?: Types.ObjectId[] } } }>)
+      .find((s) => s.$match && s.$match._id && s.$match._id.$in);
+    const candidateIds = (scoringMatch?.$match?._id?.$in ?? []).map((id) => id.toString());
+    expect(candidateIds.sort()).toEqual([userC.toString(), userD.toString()].sort());
+    expect(candidateIds).not.toContain(userA.toString());
+    expect(candidateIds).not.toContain(userB.toString());
   });
 });
