@@ -244,6 +244,33 @@ function expectProfileQualityMatch(pipeline: unknown, prefix = ''): void {
   );
 }
 
+/**
+ * Assert the account-level sensitivity gate is present in a recommendation
+ * pipeline: a candidate must NOT be flagged `isSensitive` (set by moderation).
+ * Uses `{ $ne: true }` so legacy/federated docs missing the field still pass.
+ * The clause lives alongside the profile-quality and federated-eligibility
+ * clauses inside the eligibility `$and`, so search both the top-level match and
+ * any `$and` members.
+ */
+function expectNonSensitiveMatch(pipeline: unknown, prefix = ''): void {
+  const stages = pipeline as MatchStage[];
+  const field = `${prefix}isSensitive`;
+  const value = (() => {
+    for (const stage of stages) {
+      const match = stage.$match;
+      if (!match) continue;
+      if (match[field] !== undefined) return match[field];
+      if (Array.isArray(match.$and)) {
+        for (const clause of match.$and as Array<Record<string, unknown>>) {
+          if (clause[field] !== undefined) return clause[field];
+        }
+      }
+    }
+    return undefined;
+  })();
+  expect(value).toEqual({ $ne: true });
+}
+
 const userA = new Types.ObjectId(); // the caller (self)
 const userB = new Types.ObjectId(); // followed by A
 const userC = new Types.ObjectId(); // followed by A
@@ -366,6 +393,22 @@ describe('GET /profiles/recommendations exclusion set', () => {
     expectProfileQualityMatch(mockFollowAggregate.mock.calls[0][0], 'user.');
     // Random-fill pipeline scanning the users collection directly.
     expectProfileQualityMatch(mockUserAggregate.mock.calls[0][0]);
+  });
+
+  it('excludes account-level sensitive (NSFW) profiles from the public and random-fill pipelines', async () => {
+    currentUserId = undefined;
+    // Empty follower-ranked window so the route also issues the random-fill
+    // User.aggregate, letting us assert the sensitivity gate on both pipelines.
+    mockFollowAggregate.mockResolvedValue([]);
+    mockUserAggregate.mockResolvedValue([]);
+
+    const res = await requestJson(server, '/profiles/recommendations?limit=10');
+
+    expect(res.status).toBe(200);
+    // Follower-ranked public pipeline (user under `user.`).
+    expectNonSensitiveMatch(mockFollowAggregate.mock.calls[0][0], 'user.');
+    // Random-fill pipeline scanning the users collection directly.
+    expectNonSensitiveMatch(mockUserAggregate.mock.calls[0][0]);
   });
 
   it('applies the profile-quality bar to the personalized fill for an authenticated caller', async () => {
@@ -597,5 +640,10 @@ describe('GET /profiles/recommendations scored ranking', () => {
     expect(candidateIds.sort()).toEqual([userC.toString(), userD.toString()].sort());
     expect(candidateIds).not.toContain(userA.toString());
     expect(candidateIds).not.toContain(userB.toString());
+
+    // The scoring pass also applies the account-level sensitivity gate so a
+    // candidate flagged NSFW by moderation is floored out of the scored surface,
+    // mirroring the restricted/private exclusions.
+    expectNonSensitiveMatch(mockUserAggregate.mock.calls[0][0]);
   });
 });

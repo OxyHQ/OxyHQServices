@@ -73,10 +73,28 @@ export function profileQualityMatch(prefix = ''): Record<string, unknown> {
 }
 
 /**
+ * Excludes accounts flagged as NSFW/adult/sensitive at the ACCOUNT level
+ * (`User.isSensitive`, set by moderation only) from the discovery surface so a
+ * sensitive profile (e.g. an adult-content creator or a porn-bot) is never
+ * suggested as "who to follow". This is the account flag, NOT the viewer's
+ * `privacySettings.sensitiveContent` preference. `{ $ne: true }` (rather than
+ * `false`) so legacy/federated docs missing the field — which default to
+ * not-sensitive — still pass, making the gate a no-op until the flag is
+ * populated.
+ *
+ * @param prefix path prefix for pipelines that nest the user under `user.`
+ *   (e.g. follower-ranked rows looked up from the Follow collection).
+ */
+export function nonSensitiveAccountMatch(prefix = ''): Record<string, unknown> {
+  return { [`${prefix}isSensitive`]: { $ne: true } };
+}
+
+/**
  * Combined eligibility gate for the recommendation/discovery surface: a user
- * must be a fresh, available federated actor (or non-federated) AND clear the
- * minimum profile-quality bar. Both `federatedRecommendationEligibilityMatch`
- * and `profileQualityMatch` contribute their own top-level `$or`, so they are
+ * must be a fresh, available federated actor (or non-federated), clear the
+ * minimum profile-quality bar, AND not be flagged as an account-level
+ * sensitive/NSFW profile. `federatedRecommendationEligibilityMatch` and
+ * `profileQualityMatch` each contribute their own top-level `$or`, so they are
  * combined under a single `$and` — spreading them into one object would
  * silently drop the first `$or`.
  *
@@ -88,6 +106,7 @@ export function eligibleUserMatch(minResolvedAt: Date, prefix = ''): { $and: Rec
     $and: [
       federatedRecommendationEligibilityMatch(minResolvedAt, prefix),
       profileQualityMatch(prefix),
+      nonSensitiveAccountMatch(prefix),
     ],
   };
 }

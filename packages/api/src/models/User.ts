@@ -120,6 +120,17 @@ export interface IUser extends Document {
    * self-service API route. Gated by the `requireStaff` middleware.
    */
   isStaff?: boolean;
+  /**
+   * Account-level sensitivity flag. Marks the WHOLE account as NSFW/adult/
+   * sensitive (e.g. an adult-content creator or a porn-bot caught by
+   * moderation), as distinct from `privacySettings.sensitiveContent`, which is
+   * the VIEWER's preference about seeing sensitive content. Set by moderation /
+   * a platform administrator only — never via any self-service API route. The
+   * recommendation/discovery surface (`eligibleUserMatch`) excludes accounts
+   * with this flag so sensitive profiles are never suggested as "who to follow".
+   * Defaults to `false`, so it is a no-op until populated.
+   */
+  isSensitive?: boolean;
   language?: string;
   privacySettings: {
     isPrivateAccount: boolean;
@@ -368,6 +379,15 @@ const UserSchema: Schema = new Schema(
     isStaff: {
       type: Boolean,
       default: false,
+    },
+    // Account-level NSFW/adult/sensitive flag (moderation-set only — never via a
+    // self-service route). Distinct from privacySettings.sensitiveContent (a
+    // viewer preference). Indexed because the recommendation/discovery surface
+    // filters candidates on it. Defaults to false → no-op until populated.
+    isSensitive: {
+      type: Boolean,
+      default: false,
+      index: true,
     },
     language: {
       type: String,
