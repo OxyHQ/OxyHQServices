@@ -9,7 +9,7 @@
 import React, { useCallback } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { Switch } from '@oxyhq/bloom/switch';
-import * as SegmentedControl from '@oxyhq/bloom/segmented-control';
+import { SegmentedControl, SegmentedControlItem, SegmentedControlItemText } from '@oxyhq/bloom/segmented-control';
 import { Text } from '@oxyhq/bloom/typography';
 import { useTheme } from '@oxyhq/bloom/theme';
 import {
@@ -117,18 +117,18 @@ export function InboxPrefsSection() {
       {/* Density */}
       <View style={styles.subsection}>
         <SectionHeader icon={Envelope_Stroke2_Corner0_Rounded} title="Message density" />
-        <SegmentedControl.Root<MessageDensity>
+        <SegmentedControl<MessageDensity>
           label="Message density"
           type="radio"
           value={prefs.density}
           onChange={handleDensityChange}
         >
           {DENSITY_OPTIONS.map((opt) => (
-            <SegmentedControl.Item key={opt.value} value={opt.value}>
-              <SegmentedControl.ItemText>{opt.label}</SegmentedControl.ItemText>
-            </SegmentedControl.Item>
+            <SegmentedControlItem key={opt.value} value={opt.value}>
+              <SegmentedControlItemText>{opt.label}</SegmentedControlItemText>
+            </SegmentedControlItem>
           ))}
-        </SegmentedControl.Root>
+        </SegmentedControl>
         <Text style={[styles.footnote, { color: colors.secondaryText }]}>
           Choose how tightly to pack message rows in the list.
         </Text>

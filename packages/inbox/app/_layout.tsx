@@ -2,14 +2,14 @@ import { Stack, ThemeProvider } from 'expo-router';
 import Head from 'expo-router/head';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { useEffect, useMemo } from 'react';
+import { useEffect } from 'react';
 import { Platform } from 'react-native';
 import 'react-native-reanimated';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { OxyProvider } from '@oxyhq/services';
 import { toast } from '@oxyhq/bloom';
 import { QueryClientProvider } from '@tanstack/react-query';
-import { BloomThemeProvider, useTheme } from '@oxyhq/bloom/theme';
+import { BloomThemeProvider, useNavigationTheme } from '@oxyhq/bloom/theme';
 import type { ThemeMode } from '@oxyhq/bloom/theme';
 import { Provider as PortalProvider, Outlet as PortalOutlet } from '@oxyhq/bloom/portal';
 
@@ -66,35 +66,6 @@ function ThemedRoot() {
     <BloomThemeProvider mode={themeMode} colorPreset={colorPreset}>
       <RootLayoutContent />
     </BloomThemeProvider>
-  );
-}
-
-/**
- * Build the react-navigation theme from Bloom's resolved colors so we don't
- * have to import DarkTheme/DefaultTheme constants from `@react-navigation/*`
- * (expo-router v56 rejects direct react-navigation imports).
- */
-function useNavigationTheme() {
-  const { mode, colors } = useTheme();
-  return useMemo(
-    () => ({
-      dark: mode === 'dark',
-      colors: {
-        primary: colors.primary,
-        background: colors.background,
-        card: colors.card,
-        text: colors.text,
-        border: colors.border,
-        notification: colors.error,
-      },
-      fonts: {
-        regular: { fontFamily: 'System', fontWeight: '400' as const },
-        medium: { fontFamily: 'System', fontWeight: '500' as const },
-        bold: { fontFamily: 'System', fontWeight: '700' as const },
-        heavy: { fontFamily: 'System', fontWeight: '900' as const },
-      },
-    }),
-    [mode, colors],
   );
 }
 

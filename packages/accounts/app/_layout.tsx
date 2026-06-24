@@ -1,8 +1,8 @@
-import { DefaultTheme, Stack, ThemeProvider } from 'expo-router';
+import { Stack, ThemeProvider } from 'expo-router';
 import Head from 'expo-router/head';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import 'react-native-reanimated';
 import { configureReanimatedLogger, ReanimatedLogLevel } from 'react-native-reanimated';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -18,7 +18,7 @@ configureReanimatedLogger({
 
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { OxyProvider, ActingAsBanner } from '@oxyhq/services';
-import { BloomThemeProvider, useTheme } from '@oxyhq/bloom/theme';
+import { BloomThemeProvider, useNavigationTheme } from '@oxyhq/bloom/theme';
 
 import { ScrollProvider } from '@/contexts/scroll-context';
 import { ThemeModeProvider, useThemeMode } from '@/contexts/theme-mode-context';
@@ -135,31 +135,6 @@ function AppHead() {
       <title>{t('head.title')}</title>
       <meta name="description" content={t('head.description')} />
     </Head>
-  );
-}
-
-/** Build the react-navigation theme from Bloom's resolved colors. */
-function useNavigationTheme() {
-  const { mode, colors } = useTheme();
-  return useMemo(
-    () => ({
-      dark: mode === 'dark',
-      colors: {
-        primary: colors.primary,
-        background: colors.background,
-        card: colors.card,
-        text: colors.text,
-        border: colors.border,
-        notification: colors.error,
-      },
-      // `fonts` is required by the navigation theme type but every screen in
-      // this stack opts out of the native header (`headerShown: false`), so
-      // the values are never rendered. We delegate to React Navigation's
-      // built-in defaults rather than declaring our own — Bloom owns the
-      // app-wide typography via `Text.defaultProps`, not the nav theme.
-      fonts: DefaultTheme.fonts,
-    }),
-    [mode, colors],
   );
 }
 
