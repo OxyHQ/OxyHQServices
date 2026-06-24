@@ -91,11 +91,18 @@ export class TTLCache<T> {
    * Set a value in cache
    * @param key Cache key
    * @param data Data to cache
-   * @param ttl Optional TTL override (uses default if not provided)
+   * @param ttl Optional TTL override (uses default if not provided). An
+   *   explicit `0` or negative value is honored as "already expired" — the
+   *   entry is stored with `expiresAt <= now`, so the next `get`/`has` treats
+   *   it as a miss — rather than silently falling back to the default TTL.
    */
   set(key: string, data: T, ttl?: number): void {
     const now = Date.now();
-    const expiresAt = now + (ttl || this.defaultTTL);
+    // Distinguish "no override provided" (undefined → use default) from an
+    // explicit `0`/negative (do not cache). `ttl || this.defaultTTL` collapsed
+    // both into the default, making `cacheTTL:0` impossible to honor.
+    const effectiveTTL = ttl === undefined ? this.defaultTTL : ttl;
+    const expiresAt = now + effectiveTTL;
     this.cache.set(key, { data, timestamp: now, expiresAt });
   }
 

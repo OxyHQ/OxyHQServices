@@ -63,7 +63,13 @@ export function OxyServicesPrivacyMixin<T extends typeof OxyServicesBase>(Base: 
     }
 
     /**
-     * Block a user
+     * Block a user.
+     *
+     * Invalidates the cached `GET /privacy/blocked` response after the write.
+     * `getBlockedUsers` caches for ~1 minute (identity-scoped); without busting
+     * that entry, a consumer that re-reads the blocked list within the TTL
+     * window would not see the user it just blocked. `clearCacheEntry` deletes
+     * every identity-scoped variant of the key.
      * @param userId - The user ID to block
      * @returns Success message
      */
@@ -72,16 +78,21 @@ export function OxyServicesPrivacyMixin<T extends typeof OxyServicesBase>(Base: 
         if (!userId) {
           throw new Error('User ID is required');
         }
-        return await this.makeRequest<{ message: string }>('POST', `/privacy/blocked/${userId}`, undefined, {
+        const result = await this.makeRequest<{ message: string }>('POST', `/privacy/blocked/${userId}`, undefined, {
           cache: false,
         });
+        this.clearCacheEntry('GET:/privacy/blocked');
+        return result;
       } catch (error) {
         throw this.handleError(error);
       }
     }
 
     /**
-     * Unblock a user
+     * Unblock a user.
+     *
+     * Busts the cached `GET /privacy/blocked` response so a remount reads the
+     * fresh list without the just-unblocked user (see `blockUser`).
      * @param userId - The user ID to unblock
      * @returns Success message
      */
@@ -90,9 +101,11 @@ export function OxyServicesPrivacyMixin<T extends typeof OxyServicesBase>(Base: 
         if (!userId) {
           throw new Error('User ID is required');
         }
-        return await this.makeRequest<{ message: string }>('DELETE', `/privacy/blocked/${userId}`, undefined, {
+        const result = await this.makeRequest<{ message: string }>('DELETE', `/privacy/blocked/${userId}`, undefined, {
           cache: false,
         });
+        this.clearCacheEntry('GET:/privacy/blocked');
+        return result;
       } catch (error) {
         throw this.handleError(error);
       }
@@ -131,7 +144,13 @@ export function OxyServicesPrivacyMixin<T extends typeof OxyServicesBase>(Base: 
     }
 
     /**
-     * Restrict a user (limit their interactions without fully blocking)
+     * Restrict a user (limit their interactions without fully blocking).
+     *
+     * Invalidates the cached `GET /privacy/restricted` response after the write.
+     * `getRestrictedUsers` caches for ~1 minute (identity-scoped); without
+     * busting that entry, a consumer that re-reads the restricted list within
+     * the TTL window would not see the user it just restricted.
+     * `clearCacheEntry` deletes every identity-scoped variant of the key.
      * @param userId - The user ID to restrict
      * @returns Success message
      */
@@ -140,16 +159,21 @@ export function OxyServicesPrivacyMixin<T extends typeof OxyServicesBase>(Base: 
         if (!userId) {
           throw new Error('User ID is required');
         }
-        return await this.makeRequest<{ message: string }>('POST', `/privacy/restricted/${userId}`, undefined, {
+        const result = await this.makeRequest<{ message: string }>('POST', `/privacy/restricted/${userId}`, undefined, {
           cache: false,
         });
+        this.clearCacheEntry('GET:/privacy/restricted');
+        return result;
       } catch (error) {
         throw this.handleError(error);
       }
     }
 
     /**
-     * Unrestrict a user
+     * Unrestrict a user.
+     *
+     * Busts the cached `GET /privacy/restricted` response so a remount reads the
+     * fresh list without the just-unrestricted user (see `restrictUser`).
      * @param userId - The user ID to unrestrict
      * @returns Success message
      */
@@ -158,9 +182,11 @@ export function OxyServicesPrivacyMixin<T extends typeof OxyServicesBase>(Base: 
         if (!userId) {
           throw new Error('User ID is required');
         }
-        return await this.makeRequest<{ message: string }>('DELETE', `/privacy/restricted/${userId}`, undefined, {
+        const result = await this.makeRequest<{ message: string }>('DELETE', `/privacy/restricted/${userId}`, undefined, {
           cache: false,
         });
+        this.clearCacheEntry('GET:/privacy/restricted');
+        return result;
       } catch (error) {
         throw this.handleError(error);
       }

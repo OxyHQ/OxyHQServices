@@ -345,7 +345,10 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
      */
     async assetRestore(fileId: string): Promise<any> {
       try {
-        return await this.makeRequest('POST', `/assets/${fileId}/restore`, undefined, { cache: false });
+        const result = await this.makeRequest('POST', `/assets/${fileId}/restore`, undefined, { cache: false });
+        // The asset metadata (trash state) changed — bust its cached read.
+        this.clearCacheEntry(`GET:/assets/${fileId}`);
+        return result;
       } catch (error) {
         throw this.handleError(error);
       }
@@ -357,7 +360,11 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
     async assetDelete(fileId: string, force: boolean = false): Promise<any> {
       try {
         const params: any = force ? { force: 'true' } : undefined;
-        return await this.makeRequest('DELETE', `/assets/${fileId}`, params, { cache: false });
+        const result = await this.makeRequest('DELETE', `/assets/${fileId}`, params, { cache: false });
+        // Bust the cached metadata and every cached URL variant for the asset.
+        this.clearCacheEntry(`GET:/assets/${fileId}`);
+        this.clearCacheByPrefix(`GET:/assets/${fileId}/url`);
+        return result;
       } catch (error) {
         throw this.handleError(error);
       }
@@ -380,9 +387,15 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
      */
     async assetUpdateVisibility(fileId: string, visibility: 'private' | 'public' | 'unlisted'): Promise<any> {
       try {
-        return await this.makeRequest('PATCH', `/assets/${fileId}/visibility`, {
+        const result = await this.makeRequest('PATCH', `/assets/${fileId}/visibility`, {
           visibility
         }, { cache: false });
+        // Visibility changes both the asset metadata and the resolved URL
+        // (public CDN vs signed). Bust the metadata read and every cached URL
+        // variant (keyed on variant/expiresIn params).
+        this.clearCacheEntry(`GET:/assets/${fileId}`);
+        this.clearCacheByPrefix(`GET:/assets/${fileId}/url`);
+        return result;
       } catch (error) {
         throw this.handleError(error);
       }

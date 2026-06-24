@@ -266,4 +266,72 @@ describe('HttpService identity-scoped response cache', () => {
       expect(cacheWarnings.length).toBe(0);
     });
   });
+
+  /**
+   * `enableCache: false` (or `cacheTTL <= 0`) must fully disable the
+   * per-instance GET response cache: every read hits the network, even when the
+   * per-request `cache: true` flag is set. This is the lever Mention's linked
+   * backend client uses to make React Query the single cache authority and
+   * avoid stale-after-write reads from the SDK's own cache. Default behavior
+   * (config unset) is unchanged — caching stays ON.
+   */
+  describe('per-instance cache disable', () => {
+    it('never serves a cached GET when enableCache is false', async () => {
+      const http = new HttpService({
+        baseURL: 'http://test.invalid',
+        enableRetry: false,
+        requestTimeout: 1000,
+        enableCache: false,
+      });
+      http.setTokens(makeJwt({ userId: 'user-1' }));
+
+      fetchMock.mockResolvedValueOnce(jsonResponse({ v: 1 }));
+      const first = await http.get<{ v: number }>('/some/resource', { cache: true });
+      expect(first.v).toBe(1);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+
+      // A second identical read with cache:true must STILL hit the network,
+      // because the instance cache is disabled. Nothing is ever stored.
+      fetchMock.mockResolvedValueOnce(jsonResponse({ v: 2 }));
+      const second = await http.get<{ v: number }>('/some/resource', { cache: true });
+      expect(second.v).toBe(2);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(http.getCacheStats().size).toBe(0);
+    });
+
+    it('treats cacheTTL <= 0 as a disabled cache', async () => {
+      const http = new HttpService({
+        baseURL: 'http://test.invalid',
+        enableRetry: false,
+        requestTimeout: 1000,
+        cacheTTL: 0,
+      });
+      http.setTokens(makeJwt({ userId: 'user-1' }));
+
+      fetchMock.mockResolvedValueOnce(jsonResponse({ v: 1 }));
+      await http.get('/some/resource', { cache: true });
+      fetchMock.mockResolvedValueOnce(jsonResponse({ v: 2 }));
+      await http.get('/some/resource', { cache: true });
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(http.getCacheStats().size).toBe(0);
+    });
+
+    it('still caches by default (config unset) — no behavior change', async () => {
+      const http = new HttpService({
+        baseURL: 'http://test.invalid',
+        enableRetry: false,
+        requestTimeout: 1000,
+      });
+      http.setTokens(makeJwt({ userId: 'user-1' }));
+
+      fetchMock.mockResolvedValueOnce(jsonResponse({ v: 1 }));
+      const first = await http.get<{ v: number }>('/some/resource', { cache: true });
+      // Second read is a warm cache hit — no second network call.
+      const second = await http.get<{ v: number }>('/some/resource', { cache: true });
+
+      expect(first).toEqual(second);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+  });
 });

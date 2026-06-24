@@ -202,6 +202,15 @@ export class HttpService {
   private baseURL: string;
   private tokenStore: TokenStore;
   private cache: TTLCache<any>;
+  /**
+   * When true, the per-instance GET response cache is OFF: GET responses are
+   * never read from nor written to {@link cache}, so every request hits the
+   * network. Set from `config.enableCache === false` OR `config.cacheTTL <= 0`.
+   * A disabled instance does not register its cache for the global cleanup
+   * interval (nothing ever lands in it). Request deduplication is unaffected —
+   * concurrent identical in-flight requests still collapse into one.
+   */
+  private readonly cacheDisabled: boolean;
   private deduplicator: RequestDeduplicator;
   private requestQueue: RequestQueue;
   private logger: SimpleLogger;
@@ -252,9 +261,19 @@ export class HttpService {
       'HttpService'
     );
 
-    // Initialize performance infrastructure
-    this.cache = new TTLCache<any>(config.cacheTTL || 5 * 60 * 1000);
-    registerCacheForCleanup(this.cache);
+    // Initialize performance infrastructure. The per-instance GET response
+    // cache is disabled when the consumer explicitly opts out
+    // (`enableCache: false`) or asks for a non-positive TTL (`cacheTTL <= 0`).
+    // When disabled, nothing is ever stored, so there is no reason to register
+    // the cache for the global cleanup interval. Default (config unset) keeps
+    // caching ON with the 5-minute TTL — unchanged for existing consumers.
+    this.cacheDisabled =
+      config.enableCache === false ||
+      (typeof config.cacheTTL === 'number' && config.cacheTTL <= 0);
+    this.cache = new TTLCache<any>(config.cacheTTL && config.cacheTTL > 0 ? config.cacheTTL : 5 * 60 * 1000);
+    if (!this.cacheDisabled) {
+      registerCacheForCleanup(this.cache);
+    }
     this.deduplicator = new RequestDeduplicator();
     this.requestQueue = new RequestQueue(
       config.maxConcurrentRequests || 10,
@@ -352,12 +371,17 @@ export class HttpService {
       params,
       timeout = this.config.requestTimeout || DEFAULT_REQUEST_TIMEOUT_MS,
       signal,
-      cache = method === 'GET',
+      cache: cacheRequested = method === 'GET',
       cacheTTL,
       deduplicate = true,
       retry = this.config.enableRetry !== false,
       maxRetries = this.config.maxRetries || 3,
     } = config;
+
+    // A per-instance disabled cache (`enableCache:false` / `cacheTTL<=0`)
+    // overrides any per-request `cache:true`: nothing is read from nor written
+    // to the response cache. Request deduplication below is unaffected.
+    const cache = cacheRequested && !this.cacheDisabled;
 
     // Generate cache key (optimized for large objects)
     const cacheKey = cache ? this.generateCacheKey(method, url, data || params) : null;

@@ -140,6 +140,9 @@ export function OxyServicesWorkspacesMixin<T extends typeof OxyServicesBase>(Bas
           data,
           { cache: false },
         );
+        // Bust the cached workspace list so the new workspace appears on the
+        // next `getWorkspaces()` read within the TTL window.
+        this.clearCacheEntry('GET:/workspaces');
         return res.workspace;
       } catch (error) {
         throw this.handleError(error);
@@ -180,6 +183,9 @@ export function OxyServicesWorkspacesMixin<T extends typeof OxyServicesBase>(Bas
           data,
           { cache: false },
         );
+        // Bust the cached detail and list — both surface workspace fields.
+        this.clearCacheEntry(`GET:/workspaces/${encodeURIComponent(workspaceId)}`);
+        this.clearCacheEntry('GET:/workspaces');
         return res.workspace;
       } catch (error) {
         throw this.handleError(error);
@@ -192,12 +198,17 @@ export function OxyServicesWorkspacesMixin<T extends typeof OxyServicesBase>(Bas
      */
     async deleteWorkspace(workspaceId: string): Promise<WorkspaceSuccessResult> {
       try {
-        return await this.makeRequest<WorkspaceSuccessResult>(
+        const result = await this.makeRequest<WorkspaceSuccessResult>(
           'DELETE',
           `/workspaces/${encodeURIComponent(workspaceId)}`,
           undefined,
           { cache: false },
         );
+        // Bust every cached representation of the deleted workspace.
+        this.clearCacheEntry(`GET:/workspaces/${encodeURIComponent(workspaceId)}`);
+        this.clearCacheEntry(`GET:/workspaces/${encodeURIComponent(workspaceId)}/members`);
+        this.clearCacheEntry('GET:/workspaces');
+        return result;
       } catch (error) {
         throw this.handleError(error);
       }
@@ -239,6 +250,7 @@ export function OxyServicesWorkspacesMixin<T extends typeof OxyServicesBase>(Bas
           data,
           { cache: false },
         );
+        this._invalidateWorkspaceMembership(workspaceId);
         return res.member;
       } catch (error) {
         throw this.handleError(error);
@@ -263,6 +275,7 @@ export function OxyServicesWorkspacesMixin<T extends typeof OxyServicesBase>(Bas
           data,
           { cache: false },
         );
+        this._invalidateWorkspaceMembership(workspaceId);
         return res.member;
       } catch (error) {
         throw this.handleError(error);
@@ -279,12 +292,14 @@ export function OxyServicesWorkspacesMixin<T extends typeof OxyServicesBase>(Bas
       memberId: string,
     ): Promise<WorkspaceSuccessResult> {
       try {
-        return await this.makeRequest<WorkspaceSuccessResult>(
+        const result = await this.makeRequest<WorkspaceSuccessResult>(
           'DELETE',
           `/workspaces/${encodeURIComponent(workspaceId)}/members/${encodeURIComponent(memberId)}`,
           undefined,
           { cache: false },
         );
+        this._invalidateWorkspaceMembership(workspaceId);
+        return result;
       } catch (error) {
         throw this.handleError(error);
       }
@@ -301,15 +316,36 @@ export function OxyServicesWorkspacesMixin<T extends typeof OxyServicesBase>(Bas
       data: TransferWorkspaceOwnershipInput,
     ): Promise<WorkspaceSuccessResult> {
       try {
-        return await this.makeRequest<WorkspaceSuccessResult>(
+        const result = await this.makeRequest<WorkspaceSuccessResult>(
           'POST',
           `/workspaces/${encodeURIComponent(workspaceId)}/transfer-ownership`,
           data,
           { cache: false },
         );
+        // Ownership change alters roles in the member list AND the detail, and
+        // can change which workspaces the caller "owns" in the list view.
+        this._invalidateWorkspaceMembership(workspaceId);
+        this.clearCacheEntry('GET:/workspaces');
+        return result;
       } catch (error) {
         throw this.handleError(error);
       }
+    }
+
+    /**
+     * Bust the cached member list and detail for a workspace after a membership
+     * mutation. The member list (`getWorkspaceMembers`) and the detail
+     * (`getWorkspace`, which can embed member counts) both go stale when the
+     * member set or a member's role changes.
+     *
+     * Internal helper (leading underscore); not part of the supported public
+     * surface. Public rather than `private` because mixins compose into an
+     * exported anonymous class, where TypeScript cannot represent a private
+     * member in the emitted declaration file (TS4094).
+     */
+    _invalidateWorkspaceMembership(workspaceId: string): void {
+      this.clearCacheEntry(`GET:/workspaces/${encodeURIComponent(workspaceId)}/members`);
+      this.clearCacheEntry(`GET:/workspaces/${encodeURIComponent(workspaceId)}`);
     }
   };
 }

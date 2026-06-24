@@ -93,6 +93,16 @@ Linked clients send the current Oxy bearer token for authenticated requests.
 State-changing bearer requests do not fetch app-local CSRF tokens; cookie-only
 writes still use CSRF.
 
+**GET response caching is OFF by default for linked clients** (since 3.9.0). The
+SDK's per-instance GET cache is only safe on the canonical `OxyServices` client,
+where every mutation (`updateProfile`, `followUser`, `blockUser`, …) busts the
+matching cached GET. A linked client targets the consuming app's own backend,
+whose resources and write endpoints the SDK cannot know or invalidate — so a
+cached GET there would serve stale data after the app mutates its own data.
+Caching is left to the consumer's own layer (React Query / stores). Pass
+`oxy.createLinkedClient({ baseURL, enableCache: true })` to opt back in when the
+consumer accepts responsibility for invalidation.
+
 ## Backend Auth Middleware
 
 Backends should use the SDK server helpers instead of local auth request types

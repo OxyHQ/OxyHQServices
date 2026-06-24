@@ -482,16 +482,25 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
     }
 
     /**
-     * Update privacy settings
+     * Update privacy settings.
+     *
+     * Invalidates the cached `GET /privacy/<id>/privacy` response (the exact
+     * key `getPrivacySettings` reads, scoped to the same `id`) after the write.
+     * `getPrivacySettings` caches for ~2 minutes (identity-scoped); without
+     * busting that entry, a follow-up read within the TTL window returns the
+     * pre-update settings. `clearCacheEntry` deletes every identity-scoped
+     * variant of the key.
      * @param settings - Partial privacy settings object
      * @param userId - The user ID (defaults to current user)
      */
     async updatePrivacySettings(settings: Partial<PrivacySettings>, userId?: string): Promise<PrivacySettings> {
       try {
         const id = userId || (await this.getCurrentUser()).id;
-        return await this.makeRequest<PrivacySettings>('PATCH', `/privacy/${id}/privacy`, settings, {
+        const result = await this.makeRequest<PrivacySettings>('PATCH', `/privacy/${id}/privacy`, settings, {
           cache: false,
         });
+        this.clearCacheEntry(`GET:/privacy/${id}/privacy`);
+        return result;
       } catch (error) {
         throw this.handleError(error);
       }

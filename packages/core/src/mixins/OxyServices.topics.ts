@@ -124,9 +124,13 @@ export function OxyServicesTopicsMixin<T extends typeof OxyServicesBase>(Base: T
       }
     ): Promise<TopicData> {
       try {
-        return await this.makeRequest('PATCH', `/topics/${slug}`, data, {
+        const result = await this.makeRequest<TopicData>('PATCH', `/topics/${slug}`, data, {
           cache: false,
         });
+        // Bust the cached topic detail so `getTopicBySlug(slug)` reflects the
+        // updated metadata immediately (it caches at the LONG TTL).
+        this.clearCacheEntry(`GET:/topics/${slug}`);
+        return result;
       } catch (error) {
         throw this.handleError(error);
       }

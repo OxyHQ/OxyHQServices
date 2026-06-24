@@ -29,8 +29,20 @@ export interface OxyConfig {
    */
   clientId?: string;
   // Performance & caching options
+  /**
+   * Enable the per-instance GET response cache. Defaults to `true` (5-minute
+   * TTL). Set to `false` to disable caching entirely for this instance — GET
+   * responses are then never stored and never served from cache, so every read
+   * hits the network. Useful for a linked backend client where another layer
+   * (e.g. React Query) is the single cache authority and the SDK's own cache
+   * would otherwise serve stale data after a write.
+   */
   enableCache?: boolean;
-  cacheTTL?: number; // Cache TTL in milliseconds (default: 5 minutes)
+  /**
+   * Cache TTL in milliseconds (default: 5 minutes). A value `<= 0` disables the
+   * per-instance GET response cache, equivalent to `enableCache: false`.
+   */
+  cacheTTL?: number;
   enableRequestDeduplication?: boolean;
   enableRetry?: boolean;
   maxRetries?: number;

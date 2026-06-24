@@ -347,6 +347,9 @@ export function OxyServicesApplicationsMixin<T extends typeof OxyServicesBase>(B
           data,
           { cache: false },
         );
+        // Bust every cached application list (unscoped + per-workspace) so the
+        // new application appears on the next `getApplications()` read.
+        this._invalidateApplicationLists();
         return res.application;
       } catch (error) {
         throw this.handleError(error);
@@ -387,6 +390,10 @@ export function OxyServicesApplicationsMixin<T extends typeof OxyServicesBase>(B
           data,
           { cache: false },
         );
+        // Bust the cached detail and every list (which embeds application
+        // fields) so neither serves the pre-update snapshot.
+        this.clearCacheEntry(`GET:/applications/${applicationId}`);
+        this._invalidateApplicationLists();
         return res.application;
       } catch (error) {
         throw this.handleError(error);
@@ -399,12 +406,18 @@ export function OxyServicesApplicationsMixin<T extends typeof OxyServicesBase>(B
      */
     async deleteApplication(applicationId: string): Promise<ApplicationSuccessResult> {
       try {
-        return await this.makeRequest<ApplicationSuccessResult>(
+        const result = await this.makeRequest<ApplicationSuccessResult>(
           'DELETE',
           `/applications/${applicationId}`,
           undefined,
           { cache: false },
         );
+        // Bust every cached representation of the deleted application.
+        this.clearCacheEntry(`GET:/applications/${applicationId}`);
+        this.clearCacheEntry(`GET:/applications/${applicationId}/members`);
+        this.clearCacheEntry(`GET:/applications/${applicationId}/credentials`);
+        this._invalidateApplicationLists();
+        return result;
       } catch (error) {
         throw this.handleError(error);
       }
@@ -446,6 +459,7 @@ export function OxyServicesApplicationsMixin<T extends typeof OxyServicesBase>(B
           data,
           { cache: false },
         );
+        this._invalidateApplicationMembership(applicationId);
         return res.member;
       } catch (error) {
         throw this.handleError(error);
@@ -470,6 +484,7 @@ export function OxyServicesApplicationsMixin<T extends typeof OxyServicesBase>(B
           data,
           { cache: false },
         );
+        this._invalidateApplicationMembership(applicationId);
         return res.member;
       } catch (error) {
         throw this.handleError(error);
@@ -486,12 +501,14 @@ export function OxyServicesApplicationsMixin<T extends typeof OxyServicesBase>(B
       memberId: string,
     ): Promise<ApplicationSuccessResult> {
       try {
-        return await this.makeRequest<ApplicationSuccessResult>(
+        const result = await this.makeRequest<ApplicationSuccessResult>(
           'DELETE',
           `/applications/${applicationId}/members/${memberId}`,
           undefined,
           { cache: false },
         );
+        this._invalidateApplicationMembership(applicationId);
+        return result;
       } catch (error) {
         throw this.handleError(error);
       }
@@ -508,12 +525,17 @@ export function OxyServicesApplicationsMixin<T extends typeof OxyServicesBase>(B
       data: TransferApplicationOwnershipInput,
     ): Promise<ApplicationSuccessResult> {
       try {
-        return await this.makeRequest<ApplicationSuccessResult>(
+        const result = await this.makeRequest<ApplicationSuccessResult>(
           'POST',
           `/applications/${applicationId}/transfer-ownership`,
           data,
           { cache: false },
         );
+        // Ownership change alters roles in the member list AND the detail, and
+        // can change which applications the caller "owns" in the list view.
+        this._invalidateApplicationMembership(applicationId);
+        this._invalidateApplicationLists();
+        return result;
       } catch (error) {
         throw this.handleError(error);
       }
@@ -548,12 +570,14 @@ export function OxyServicesApplicationsMixin<T extends typeof OxyServicesBase>(B
       data: CreateApplicationCredentialInput,
     ): Promise<ApplicationCredentialWithSecret> {
       try {
-        return await this.makeRequest<ApplicationCredentialWithSecret>(
+        const result = await this.makeRequest<ApplicationCredentialWithSecret>(
           'POST',
           `/applications/${applicationId}/credentials`,
           data,
           { cache: false },
         );
+        this.clearCacheEntry(`GET:/applications/${applicationId}/credentials`);
+        return result;
       } catch (error) {
         throw this.handleError(error);
       }
@@ -572,12 +596,16 @@ export function OxyServicesApplicationsMixin<T extends typeof OxyServicesBase>(B
       credentialId: string,
     ): Promise<RotateApplicationCredentialResult> {
       try {
-        return await this.makeRequest<RotateApplicationCredentialResult>(
+        const result = await this.makeRequest<RotateApplicationCredentialResult>(
           'POST',
           `/applications/${applicationId}/credentials/${credentialId}/rotate`,
           undefined,
           { cache: false },
         );
+        // Rotation changes credential status/audit fields surfaced by the
+        // credentials list (`rotatedFrom`, grace window, new active credential).
+        this.clearCacheEntry(`GET:/applications/${applicationId}/credentials`);
+        return result;
       } catch (error) {
         throw this.handleError(error);
       }
@@ -594,12 +622,15 @@ export function OxyServicesApplicationsMixin<T extends typeof OxyServicesBase>(B
       credentialId: string,
     ): Promise<ApplicationSuccessResult> {
       try {
-        return await this.makeRequest<ApplicationSuccessResult>(
+        const result = await this.makeRequest<ApplicationSuccessResult>(
           'DELETE',
           `/applications/${applicationId}/credentials/${credentialId}`,
           undefined,
           { cache: false },
         );
+        // Revocation flips the credential's status in the cached list.
+        this.clearCacheEntry(`GET:/applications/${applicationId}/credentials`);
+        return result;
       } catch (error) {
         throw this.handleError(error);
       }
@@ -624,6 +655,40 @@ export function OxyServicesApplicationsMixin<T extends typeof OxyServicesBase>(B
       } catch (error) {
         throw this.handleError(error);
       }
+    }
+
+    /**
+     * Bust every cached application list. `getApplications(workspaceId?)` keys
+     * the unscoped list as `GET:/applications` and each workspace-scoped list as
+     * `GET:/applications?workspaceId=<id>` (the query string is part of the URL
+     * path). A change to list membership (create/delete/ownership transfer)
+     * invalidates all of them, so we clear the unscoped entry plus every
+     * `?workspaceId=` variant via a prefix sweep. The prefix `GET:/applications?`
+     * matches only the query-string list variants, never the `GET:/applications/<id>…`
+     * detail/sub-resource keys.
+     *
+     * Internal helper (leading underscore); not part of the supported public
+     * surface. Public rather than `private` because mixins compose into an
+     * exported anonymous class, where TypeScript cannot represent a private
+     * member in the emitted declaration file (TS4094).
+     */
+    _invalidateApplicationLists(): void {
+      this.clearCacheEntry('GET:/applications');
+      this.clearCacheByPrefix('GET:/applications?');
+    }
+
+    /**
+     * Bust the cached member list and detail for an application after a
+     * membership mutation. The member list (`getApplicationMembers`) and the
+     * detail (`getApplication`, which can embed member counts) both go stale
+     * when the member set or a member's role changes.
+     *
+     * Internal helper (leading underscore); see `_invalidateApplicationLists`
+     * for why this is public rather than `private`.
+     */
+    _invalidateApplicationMembership(applicationId: string): void {
+      this.clearCacheEntry(`GET:/applications/${applicationId}/members`);
+      this.clearCacheEntry(`GET:/applications/${applicationId}`);
     }
   };
 }

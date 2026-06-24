@@ -41,13 +41,17 @@ export function OxyServicesManagedAccountsMixin<T extends typeof OxyServicesBase
      * Create a new managed account (sub-account).
      *
      * The server creates a User document with `isManagedAccount: true` and links
-     * it to the authenticated user as owner.
+     * it to the authenticated user as owner. Invalidates the cached
+     * `GET /managed-accounts` list (~2-minute TTL, identity-scoped) so the next
+     * read includes the newly created account.
      */
     async createManagedAccount(data: CreateManagedAccountInput): Promise<ManagedAccount> {
       try {
-        return await this.makeRequest<ManagedAccount>('POST', '/managed-accounts', data, {
+        const result = await this.makeRequest<ManagedAccount>('POST', '/managed-accounts', data, {
           cache: false,
         });
+        this.clearCacheEntry('GET:/managed-accounts');
+        return result;
       } catch (error) {
         throw this.handleError(error);
       }
@@ -84,12 +88,19 @@ export function OxyServicesManagedAccountsMixin<T extends typeof OxyServicesBase
     /**
      * Update a managed account's profile data.
      * Requires owner or admin role.
+     *
+     * Invalidates both the cached detail (`GET /managed-accounts/<id>`) and the
+     * cached list (`GET /managed-accounts`, which embeds account profile data)
+     * so neither serves the pre-update snapshot within their ~2-minute TTL.
      */
     async updateManagedAccount(accountId: string, data: Partial<CreateManagedAccountInput>): Promise<ManagedAccount> {
       try {
-        return await this.makeRequest<ManagedAccount>('PUT', `/managed-accounts/${accountId}`, data, {
+        const result = await this.makeRequest<ManagedAccount>('PUT', `/managed-accounts/${accountId}`, data, {
           cache: false,
         });
+        this.clearCacheEntry(`GET:/managed-accounts/${accountId}`);
+        this.clearCacheEntry('GET:/managed-accounts');
+        return result;
       } catch (error) {
         throw this.handleError(error);
       }
@@ -98,12 +109,17 @@ export function OxyServicesManagedAccountsMixin<T extends typeof OxyServicesBase
     /**
      * Delete a managed account permanently.
      * Requires owner role.
+     *
+     * Invalidates the cached detail and list responses so the deleted account
+     * is not served from cache.
      */
     async deleteManagedAccount(accountId: string): Promise<void> {
       try {
         await this.makeRequest<void>('DELETE', `/managed-accounts/${accountId}`, undefined, {
           cache: false,
         });
+        this.clearCacheEntry(`GET:/managed-accounts/${accountId}`);
+        this.clearCacheEntry('GET:/managed-accounts');
       } catch (error) {
         throw this.handleError(error);
       }
@@ -112,6 +128,9 @@ export function OxyServicesManagedAccountsMixin<T extends typeof OxyServicesBase
     /**
      * Add a manager to a managed account.
      * Requires owner or admin role on the account.
+     *
+     * Mutates the account's `managers[]`, which is returned by the detail and
+     * list reads — invalidate both so they re-fetch the updated manager set.
      *
      * @param accountId - The managed account to add the manager to
      * @param userId - The user to grant management access
@@ -122,6 +141,8 @@ export function OxyServicesManagedAccountsMixin<T extends typeof OxyServicesBase
         await this.makeRequest<void>('POST', `/managed-accounts/${accountId}/managers`, { userId, role }, {
           cache: false,
         });
+        this.clearCacheEntry(`GET:/managed-accounts/${accountId}`);
+        this.clearCacheEntry('GET:/managed-accounts');
       } catch (error) {
         throw this.handleError(error);
       }
@@ -131,6 +152,9 @@ export function OxyServicesManagedAccountsMixin<T extends typeof OxyServicesBase
      * Remove a manager from a managed account.
      * Requires owner role.
      *
+     * Invalidates the detail and list responses so the updated `managers[]`
+     * is observed on the next read (see `addManager`).
+     *
      * @param accountId - The managed account
      * @param userId - The manager to remove
      */
@@ -139,6 +163,8 @@ export function OxyServicesManagedAccountsMixin<T extends typeof OxyServicesBase
         await this.makeRequest<void>('DELETE', `/managed-accounts/${accountId}/managers/${userId}`, undefined, {
           cache: false,
         });
+        this.clearCacheEntry(`GET:/managed-accounts/${accountId}`);
+        this.clearCacheEntry('GET:/managed-accounts');
       } catch (error) {
         throw this.handleError(error);
       }

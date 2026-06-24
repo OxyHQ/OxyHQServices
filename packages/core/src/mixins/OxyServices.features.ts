@@ -159,10 +159,14 @@ export function OxyServicesFeaturesMixin<T extends typeof OxyServicesBase>(Base:
          */
         async subscribe(planId: string, paymentMethodId?: string): Promise<SubscriptionResult> {
             return this.withAuthRetry(async () => {
-                return await this.makeRequest<SubscriptionResult>('POST', '/subscriptions/subscribe', {
+                const result = await this.makeRequest<SubscriptionResult>('POST', '/subscriptions/subscribe', {
                     planId,
                     paymentMethodId,
                 }, { cache: false });
+                // The current subscription changed — bust its cached read so
+                // `getCurrentSubscription()` reflects the new plan immediately.
+                this.clearCacheEntry('GET:/subscriptions/current');
+                return result;
             }, 'subscribe');
         }
 
@@ -171,10 +175,12 @@ export function OxyServicesFeaturesMixin<T extends typeof OxyServicesBase>(Base:
          */
         async subscribeToFeature(featureId: string, paymentMethodId?: string): Promise<SubscriptionResult> {
             return this.withAuthRetry(async () => {
-                return await this.makeRequest<SubscriptionResult>('POST', '/subscriptions/features/subscribe', {
+                const result = await this.makeRequest<SubscriptionResult>('POST', '/subscriptions/features/subscribe', {
                     featureId,
                     paymentMethodId,
                 }, { cache: false });
+                this.clearCacheEntry('GET:/subscriptions/current');
+                return result;
             }, 'subscribeToFeature');
         }
 
@@ -186,6 +192,7 @@ export function OxyServicesFeaturesMixin<T extends typeof OxyServicesBase>(Base:
                 await this.makeRequest('POST', `/subscriptions/${subscriptionId}/cancel`, undefined, {
                     cache: false,
                 });
+                this.clearCacheEntry('GET:/subscriptions/current');
             }, 'cancelSubscription');
         }
 
@@ -197,6 +204,7 @@ export function OxyServicesFeaturesMixin<T extends typeof OxyServicesBase>(Base:
                 await this.makeRequest('POST', `/subscriptions/${subscriptionId}/reactivate`, undefined, {
                     cache: false,
                 });
+                this.clearCacheEntry('GET:/subscriptions/current');
             }, 'reactivateSubscription');
         }
 
@@ -248,45 +256,65 @@ export function OxyServicesFeaturesMixin<T extends typeof OxyServicesBase>(Base:
         }
 
         /**
-         * Save an item
+         * Save an item.
+         *
+         * Busts the cached own saved-items list (`GET /saves`, ~short TTL) so a
+         * follow-up `getSavedItems()` observes the new item. The `userId`-scoped
+         * variant (`/users/<id>/saves`) is another user's list and is not
+         * affected by the caller's own save.
          */
         async saveItem(itemId: string, itemType: string, collectionId?: string): Promise<SavedItem> {
             return this.withAuthRetry(async () => {
-                return await this.makeRequest<SavedItem>('POST', '/saves', {
+                const result = await this.makeRequest<SavedItem>('POST', '/saves', {
                     itemId,
                     itemType,
                     collectionId,
                 }, { cache: false });
+                this.clearCacheEntry('GET:/saves');
+                return result;
             }, 'saveItem');
         }
 
         /**
-         * Remove an item from saves
+         * Remove an item from saves.
+         *
+         * Busts the cached own saved-items list so the removed item is gone on
+         * the next read (see `saveItem`).
          */
         async removeSavedItem(saveId: string): Promise<void> {
             return this.withAuthRetry(async () => {
                 await this.makeRequest('DELETE', `/saves/${saveId}`, undefined, { cache: false });
+                this.clearCacheEntry('GET:/saves');
             }, 'removeSavedItem');
         }
 
         /**
-         * Create a collection
+         * Create a collection.
+         *
+         * Busts the cached own collections list (`GET /collections`) so the new
+         * collection appears on the next read.
          */
         async createCollection(name: string, description?: string): Promise<Collection> {
             return this.withAuthRetry(async () => {
-                return await this.makeRequest<Collection>('POST', '/collections', {
+                const result = await this.makeRequest<Collection>('POST', '/collections', {
                     name,
                     description,
                 }, { cache: false });
+                this.clearCacheEntry('GET:/collections');
+                return result;
             }, 'createCollection');
         }
 
         /**
-         * Delete a collection
+         * Delete a collection.
+         *
+         * Busts the cached own collections list so the deleted collection is
+         * gone on the next read (see `createCollection`).
          */
         async deleteCollection(collectionId: string): Promise<void> {
             return this.withAuthRetry(async () => {
                 await this.makeRequest('DELETE', `/collections/${collectionId}`, undefined, { cache: false });
+                this.clearCacheEntry('GET:/collections');
             }, 'deleteCollection');
         }
 
@@ -330,20 +358,29 @@ export function OxyServicesFeaturesMixin<T extends typeof OxyServicesBase>(Base:
         }
 
         /**
-         * Clear user history
+         * Clear user history.
+         *
+         * `getUserHistory` caches per (limit, offset) page, so its cache key
+         * carries serialized params (`GET:/history` and `GET:/history:<params>`).
+         * A prefix sweep busts every cached page of the own history at once.
          */
         async clearUserHistory(): Promise<void> {
             return this.withAuthRetry(async () => {
                 await this.makeRequest('DELETE', '/history', undefined, { cache: false });
+                this.clearCacheByPrefix('GET:/history');
             }, 'clearUserHistory');
         }
 
         /**
-         * Delete a history item
+         * Delete a history item.
+         *
+         * Busts every cached page of the own history (see `clearUserHistory`)
+         * so the removed item no longer appears on the next read.
          */
         async deleteHistoryItem(itemId: string): Promise<void> {
             return this.withAuthRetry(async () => {
                 await this.makeRequest('DELETE', `/history/${itemId}`, undefined, { cache: false });
+                this.clearCacheByPrefix('GET:/history');
             }, 'deleteHistoryItem');
         }
 

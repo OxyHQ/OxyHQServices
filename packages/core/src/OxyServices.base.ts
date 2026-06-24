@@ -129,9 +129,23 @@ export class OxyServicesBase {
    * OxyServices instance mounted in OxyProvider. The returned client has its own
    * base URL, cache and request queue, but its bearer token is kept in lockstep
    * with this session and its 401 refresh path delegates back to this session.
+   *
+   * **GET response caching is OFF by default for linked clients.** The SDK's
+   * per-instance GET cache is only safe where the SDK OWNS invalidation: on the
+   * canonical OxyServices client, every mutation (`updateProfile`, `followUser`,
+   * `blockUser`, …) busts the matching cached GET. A linked client targets the
+   * consuming app's OWN backend (`api.mention.earth`, `api.syra.fm`, …), whose
+   * resources and write endpoints the SDK has no knowledge of — so it cannot
+   * invalidate them, and a cached GET there would silently serve stale data
+   * after the app mutates its own data. Caching is therefore unsafe-by-construction
+   * here and is left to the consumer's own layer (React Query / stores), which
+   * owns its invalidation. Pass `createLinkedClient({ baseURL, enableCache: true })`
+   * to explicitly opt back in when the consumer accepts that responsibility.
    */
   public createLinkedClient(config: OxyConfig): LinkedHttpClient {
-    const client = new HttpService(config);
+    // Default the GET cache OFF unless the caller explicitly opts in (see the
+    // method doc): the SDK cannot invalidate the consumer backend's resources.
+    const client = new HttpService({ ...config, enableCache: config.enableCache ?? false });
 
     const syncToken = (accessToken: string | null): void => {
       const currentAccessToken = client.getAccessToken();

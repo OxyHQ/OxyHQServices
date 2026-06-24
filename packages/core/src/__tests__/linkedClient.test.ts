@@ -206,4 +206,65 @@ describe('OxyServices.createLinkedClient', () => {
 
     linked.dispose();
   });
+
+  /**
+   * GET response caching is OFF by default for linked clients: the SDK cannot
+   * invalidate the consumer backend's resources, so a cached GET there would
+   * serve stale data after the app mutates its own data. The consumer's own
+   * layer (React Query / stores) owns caching. An explicit `enableCache: true`
+   * opts back in.
+   */
+  describe('linked client GET cache default', () => {
+    it('does NOT cache GETs by default — every read hits the network', async () => {
+      const fetchMock = jest.fn();
+      globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+
+      const oxy = createServices();
+      const accessToken = createJwt({
+        userId: 'user_1',
+        exp: Math.floor(Date.now() / 1000) + 3600,
+      });
+      oxy.setTokens(accessToken);
+      const linked = oxy.createLinkedClient({ baseURL: 'https://api.mention.earth' });
+
+      // Two identical GETs with cache:true — both MUST hit the network because
+      // the linked client's cache is disabled by default.
+      fetchMock.mockResolvedValueOnce(jsonResponse({ v: 1 }));
+      const first = await linked.client.get<{ v: number }>('/feed/mtn', { cache: true });
+      fetchMock.mockResolvedValueOnce(jsonResponse({ v: 2 }));
+      const second = await linked.client.get<{ v: number }>('/feed/mtn', { cache: true });
+
+      expect(first.v).toBe(1);
+      expect(second.v).toBe(2);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+
+      linked.dispose();
+    });
+
+    it('caches GETs when the caller explicitly opts in with enableCache: true', async () => {
+      const fetchMock = jest.fn();
+      globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+
+      const oxy = createServices();
+      const accessToken = createJwt({
+        userId: 'user_1',
+        exp: Math.floor(Date.now() / 1000) + 3600,
+      });
+      oxy.setTokens(accessToken);
+      const linked = oxy.createLinkedClient({
+        baseURL: 'https://api.mention.earth',
+        enableCache: true,
+      });
+
+      // Second identical GET is a warm cache hit — only one network call.
+      fetchMock.mockResolvedValueOnce(jsonResponse({ v: 1 }));
+      const first = await linked.client.get<{ v: number }>('/feed/mtn', { cache: true });
+      const second = await linked.client.get<{ v: number }>('/feed/mtn', { cache: true });
+
+      expect(first).toEqual(second);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+
+      linked.dispose();
+    });
+  });
 });
