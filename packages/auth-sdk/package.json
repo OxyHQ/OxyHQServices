@@ -1,6 +1,6 @@
 {
   "name": "@oxyhq/auth",
-  "version": "4.2.0",
+  "version": "5.0.0",
   "description": "OxyHQ Web Authentication SDK — headless auth with React hooks for Next.js, Vite, and web apps",
   "main": "dist/cjs/index.js",
   "module": "dist/esm/index.js",
@@ -74,20 +74,23 @@
     }
   },
   "dependencies": {
-    "@oxyhq/contracts": "^0.2.0",
+    "@oxyhq/contracts": "^0.2.0"
+  },
+  "peerDependencies": {
+    "@oxyhq/core": "^3.8.0",
     "@tanstack/query-sync-storage-persister": "^5.100",
     "@tanstack/react-query": "^5.100",
     "@tanstack/react-query-persist-client": "^5.100",
+    "react": ">=18.0.0",
+    "socket.io-client": "^4.8.1",
     "sonner": "^2.0.4",
     "zustand": "^5.0.9"
   },
-  "peerDependencies": {
-    "@oxyhq/core": "^3.4.5",
-    "react": ">=18.0.0",
-    "socket.io-client": "^4.8.1"
-  },
   "peerDependenciesMeta": {
     "socket.io-client": {
+      "optional": true
+    },
+    "sonner": {
       "optional": true
     }
   },

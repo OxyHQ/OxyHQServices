@@ -224,11 +224,6 @@
       "version": "5.0.0",
       "dependencies": {
         "@oxyhq/contracts": "^0.2.0",
-        "@tanstack/query-sync-storage-persister": "^5.100",
-        "@tanstack/react-query": "^5.100",
-        "@tanstack/react-query-persist-client": "^5.100",
-        "sonner": "^2.0.4",
-        "zustand": "^5.0.9",
       },
       "devDependencies": {
         "@biomejs/biome": "^1.9.4",
@@ -238,12 +233,18 @@
         "typescript": "^5.9.2",
       },
       "peerDependencies": {
-        "@oxyhq/core": "^3.4.5",
+        "@oxyhq/core": "^3.8.0",
+        "@tanstack/query-sync-storage-persister": "^5.100",
+        "@tanstack/react-query": "^5.100",
+        "@tanstack/react-query-persist-client": "^5.100",
         "react": ">=18.0.0",
         "socket.io-client": "^4.8.1",
+        "sonner": "^2.0.4",
+        "zustand": "^5.0.9",
       },
       "optionalPeers": [
         "socket.io-client",
+        "sonner",
       ],
     },
     "packages/console": {
@@ -310,7 +311,7 @@
     },
     "packages/core": {
       "name": "@oxyhq/core",
-      "version": "3.8.2",
+      "version": "3.9.0",
       "dependencies": {
         "@oxyhq/contracts": "^0.2.0",
         "bip39": "^3.1.0",
