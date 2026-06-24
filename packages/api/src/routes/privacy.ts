@@ -8,6 +8,7 @@ import { asyncHandler } from '../utils/asyncHandler';
 import { BadRequestError, NotFoundError, ConflictError, UnauthorizedError } from '../utils/error';
 import { resolveUserIdToObjectId } from '../utils/validation';
 import userCache from '../utils/userCache';
+import blockCache from '../utils/blockCache';
 import { z } from "zod";
 import { validate } from '../middleware/validate';
 import { privacyUserIdParams, targetIdParams } from '../schemas/privacy.schemas';
@@ -148,6 +149,17 @@ const createUserActionHandler = <T extends Document>(
     });
     await record.save();
 
+    // The media-access block check (mediaPrivacyService.isUserBlocked) caches
+    // the block relationship in `blockCache` (60s TTL) keyed by (ownerId,
+    // viewerId). A block is symmetric and can be cached under EITHER direction
+    // depending on which side owns the media being viewed, so bust both keys —
+    // otherwise a just-blocked user keeps seeing the blocker's media until the
+    // TTL lapses.
+    if (fieldName === 'blockedId') {
+      blockCache.invalidate(authUser.id, targetId);
+      blockCache.invalidate(targetId, authUser.id);
+    }
+
     res.json({ message: `User ${actionName === 'block' ? 'blocked' : 'restricted'} successfully` });
   });
 };
@@ -172,6 +184,14 @@ const createUserRemoveHandler = <T extends Document>(
 
     if (result.deletedCount === 0) {
       throw new NotFoundError(`${actionName === 'unblock' ? 'Block' : 'Restriction'} not found`);
+    }
+
+    // Symmetric to blockUser: drop both cached directions so the unblocked user
+    // regains access to the formerly-blocking user's media immediately instead
+    // of waiting out the blockCache TTL.
+    if (fieldName === 'blockedId') {
+      blockCache.invalidate(authUser.id, targetId);
+      blockCache.invalidate(targetId, authUser.id);
     }
 
     res.json({ message: `User ${actionName === 'unblock' ? 'unblocked' : 'unrestricted'} successfully` });

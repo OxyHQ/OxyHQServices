@@ -27,6 +27,7 @@ import {
 import { logger } from '../utils/logger';
 import { ensurePersonalWorkspace } from '../utils/workspaceProvisioning';
 import credentialDomainCache from '../utils/credentialDomainCache';
+import approvedClientsCache from '../utils/approvedClientsCache';
 import { resolveUserByIdentifier } from '../utils/resolveUserIdentifier';
 import {
   permissionsForRole,
@@ -680,6 +681,13 @@ router.post(
       joinedAt: new Date(),
     });
 
+    // A newly-created app is `active` and may carry redirectUris, so it can add
+    // origins to the FedCM/SSO approved-clients allow-list. Drop the cached set
+    // so those origins are honoured on the next read instead of after the TTL.
+    if (application.status === 'active' && (application.redirectUris?.length ?? 0) > 0) {
+      approvedClientsCache.invalidate();
+    }
+
     logger.info('Application created', {
       userId,
       applicationId: application._id.toString(),
@@ -785,6 +793,14 @@ router.patch(
     // status stop authorising federation signing immediately.
     credentialDomainCache.invalidate(application._id.toString());
 
+    // The FedCM/SSO approved-clients allow-list is ALSO derived from active
+    // Applications' redirectUris (fedcm.service.fetchApprovedClientOrigins).
+    // Changing this app's redirectUris or status (active ↔ suspended) changes
+    // that allow-list, so drop the cached origin set — otherwise a removed
+    // redirect origin stays approved (or a newly-added one stays unapproved)
+    // for up to the 60s TTL.
+    approvedClientsCache.invalidate();
+
     logger.info('Application updated', {
       userId: requireUserId(req),
       applicationId: application._id.toString(),
@@ -815,6 +831,10 @@ router.delete(
     // A deleted app must immediately stop authorising federation signing — the
     // derived allow-list only honours `active` apps, so drop the cached entry.
     credentialDomainCache.invalidate(application._id.toString());
+
+    // Likewise drop the FedCM/SSO approved-clients origin set: a deleted app's
+    // redirect origins must stop being approved without waiting out the TTL.
+    approvedClientsCache.invalidate();
 
     logger.info('Application deleted', {
       userId: requireUserId(req),
