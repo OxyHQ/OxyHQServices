@@ -1,6 +1,6 @@
 {
   "name": "@oxyhq/core",
-  "version": "3.8.1",
+  "version": "3.8.2",
   "description": "OxyHQ SDK Foundation — API client, authentication, cryptographic identity, and shared utilities",
   "main": "dist/cjs/index.js",
   "module": "dist/esm/index.js",
@@ -124,9 +124,6 @@
       "optional": true
     },
     "express": {
-      "optional": true
-    },
-    "express-rate-limit": {
       "optional": true
     }
   },
