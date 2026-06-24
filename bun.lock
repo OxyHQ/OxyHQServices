@@ -221,7 +221,7 @@
     },
     "packages/auth-sdk": {
       "name": "@oxyhq/auth",
-      "version": "4.2.0",
+      "version": "5.0.0",
       "dependencies": {
         "@oxyhq/contracts": "^0.2.0",
         "@tanstack/query-sync-storage-persister": "^5.100",
@@ -439,32 +439,15 @@
     },
     "packages/services": {
       "name": "@oxyhq/services",
-      "version": "10.5.0",
+      "version": "11.0.0",
       "dependencies": {
-        "@lottiefiles/dotlottie-react": "^0.13.5",
         "@oxyhq/contracts": "^0.2.0",
-        "@react-native-async-storage/async-storage": "2.2.0",
-        "@types/react": "*",
-        "copyfiles": "^2.4.1",
-        "expo-blur": "~56.0.3",
-        "expo-checkbox": "~56.0.1",
-        "expo-crypto": "~56.0.3",
-        "expo-print": "~56.0.3",
-        "expo-secure-store": "~56.0.4",
-        "lottie-react-native": "^7.3.4",
-        "react-native-keyboard-controller": "1.21.6",
-        "react-native-qrcode-svg": "^6.3.0",
-        "react-native-url-polyfill": "^2.0.0",
-        "socket.io-client": "^4.8.1",
-        "sonner": "^2.0.4",
-        "sonner-native": "^0.20.0",
-        "typescript": "^5.9.2",
-        "zustand": "^5.0.9",
       },
       "devDependencies": {
         "@biomejs/biome": "^1.9.4",
         "@commitlint/cli": "^17.6.5",
         "@commitlint/config-conventional": "^17.6.5",
+        "@react-native-async-storage/async-storage": "^2.0.0",
         "@react-native-community/netinfo": "^11.4.1",
         "@react-native/babel-preset": "^0.77.0",
         "@release-it/conventional-changelog": "^10.0.2",
@@ -476,6 +459,8 @@
         "@types/color": "^4.2.0",
         "@types/jest": "^29.5.14",
         "@types/node": "^20.19.9",
+        "@types/react": "*",
+        "copyfiles": "^2.4.1",
         "expo-file-system": "~56.0.7",
         "expo-font": "~56.0.5",
         "expo-image": "~56.0.8",
@@ -487,16 +472,22 @@
         "react-native-builder-bob": "^0.40.16",
         "react-native-css": "^3.0.0",
         "react-native-gesture-handler": "~2.31.2",
+        "react-native-keyboard-controller": "1.21.6",
+        "react-native-qrcode-svg": "^6.3.0",
         "react-native-reanimated": "4.3.1",
         "react-native-safe-area-context": "~5.7.0",
         "react-native-svg": "15.15.4",
         "release-it": "^19.0.6",
+        "socket.io-client": "^4.8.1",
         "ts-jest": "^29.4.0",
+        "typescript": "^5.9.2",
+        "zustand": "^5.0.9",
       },
       "peerDependencies": {
         "@expo/vector-icons": "^15.0.3",
-        "@oxyhq/bloom": ">=0.5.0",
-        "@oxyhq/core": "^3.6.0",
+        "@oxyhq/bloom": ">=0.16.0",
+        "@oxyhq/core": "^3.8.0",
+        "@react-native-async-storage/async-storage": "^2.0.0",
         "@react-native-community/netinfo": "^11.4.1",
         "@tanstack/query-async-storage-persister": "^5.100",
         "@tanstack/query-sync-storage-persister": "^5.100",
@@ -507,18 +498,21 @@
         "expo": ">=56.0.0",
         "expo-document-picker": "~56.0.4",
         "expo-file-system": "~56.0.7",
-        "expo-font": "~56.0.5",
-        "expo-image": "~56.0.8",
+        "expo-font": ">=13.0.0",
+        "expo-image": ">=2.0.0",
         "expo-image-manipulator": "~56.0.3",
         "expo-linear-gradient": "~56.0.4",
-        "nativewind": ">=4.0.0",
+        "nativewind": ">=5.0.0",
         "react": ">=18.0.0",
         "react-native": ">=0.85.0",
         "react-native-gesture-handler": "~2.31.2",
-        "react-native-qrcode-svg": "*",
+        "react-native-keyboard-controller": ">=1.21.0",
+        "react-native-qrcode-svg": "^6.3.0",
         "react-native-reanimated": ">=4.3.0",
         "react-native-safe-area-context": "~5.7.0",
         "react-native-svg": ">=15.15.0",
+        "socket.io-client": "^4.8.0",
+        "zustand": "^5.0.0",
       },
       "optionalPeers": [
         "@expo/vector-icons",
@@ -527,11 +521,10 @@
         "@types/react-native",
         "expo",
         "expo-document-picker",
-        "expo-font",
-        "expo-image",
         "expo-image-manipulator",
         "expo-linear-gradient",
         "nativewind",
+        "react-native-keyboard-controller",
         "react-native-qrcode-svg",
       ],
     },
@@ -3865,8 +3858,6 @@
 
     "react-native-svg": ["react-native-svg@15.15.4", "", { "dependencies": { "css-select": "^5.1.0", "css-tree": "^1.1.3", "warn-once": "0.1.1" }, "peerDependencies": { "react": "*", "react-native": "*" } }, "sha512-boT/vIRgj6zZKBpfTPJJiYWMbZE9duBMOwPK6kCSTgxsS947IFMOq9OgIFkpWZTB7t229H24pDRkh3W9ZK/J1A=="],
 
-    "react-native-url-polyfill": ["react-native-url-polyfill@2.0.0", "", { "dependencies": { "whatwg-url-without-unicode": "8.0.0-3" }, "peerDependencies": { "react-native": "*" } }, ""],
-
     "react-native-web": ["react-native-web@0.21.2", "", { "dependencies": { "@babel/runtime": "^7.18.6", "@react-native/normalize-colors": "^0.74.1", "fbjs": "^3.0.4", "inline-style-prefixer": "^7.0.1", "memoize-one": "^6.0.0", "nullthrows": "^1.1.1", "postcss-value-parser": "^4.2.0", "styleq": "^0.1.3" }, "peerDependencies": { "react": "^18.0.0 || ^19.0.0", "react-dom": "^18.0.0 || ^19.0.0" } }, ""],
 
     "react-native-webview": ["react-native-webview@13.16.1", "", { "dependencies": { "escape-string-regexp": "^4.0.0", "invariant": "2.2.4" }, "peerDependencies": { "react": "*", "react-native": "*" } }, "sha512-If0eHhoEdOYDcHsX+xBFwHMbWBGK1BvGDQDQdVkwtSIXiq1uiqjkpWVP2uQ1as94J0CzvFE9PUNDuhiX0Z6ubw=="],
@@ -4109,7 +4100,7 @@
 
     "sonner": ["sonner@2.0.7", "", { "peerDependencies": { "react": "^18.0.0 || ^19.0.0 || ^19.0.0-rc", "react-dom": "^18.0.0 || ^19.0.0 || ^19.0.0-rc" } }, ""],
 
-    "sonner-native": ["sonner-native@0.20.0", "", { "peerDependencies": { "react": "*", "react-native": "*", "react-native-gesture-handler": ">=2.16.1", "react-native-reanimated": ">=3.10.1", "react-native-safe-area-context": ">=4.10.5", "react-native-screens": ">=3.31.1", "react-native-svg": ">=15.6.0" } }, ""],
+    "sonner-native": ["sonner-native@0.21.2", "", { "peerDependencies": { "react": "*", "react-native": "*", "react-native-gesture-handler": ">=2.16.1", "react-native-reanimated": ">=3.10.1", "react-native-safe-area-context": ">=4.10.5", "react-native-screens": ">=3.31.1", "react-native-svg": ">=15.6.0" } }, ""],
 
     "source-map": ["source-map@0.6.1", "", {}, ""],
 
@@ -4488,8 +4479,6 @@
     "whatwg-url": ["whatwg-url@15.1.0", "", { "dependencies": { "tr46": "^6.0.0", "webidl-conversions": "^8.0.0" } }, ""],
 
     "whatwg-url-minimum": ["whatwg-url-minimum@0.1.2", "", {}, "sha512-XPEm0XFQWNVG292lII1PrRRJl3sItrs7CettZ4ncYxuDVpLyy+NwlGyut2hXI0JswcJUxeCH+CyOJK0ZzAXD6A=="],
-
-    "whatwg-url-without-unicode": ["whatwg-url-without-unicode@8.0.0-3", "", { "dependencies": { "buffer": "^5.4.3", "punycode": "^2.1.1", "webidl-conversions": "^5.0.0" } }, ""],
 
     "which": ["which@2.0.2", "", { "dependencies": { "isexe": "^2.0.0" }, "bin": { "node-which": "bin/node-which" } }, ""],
 
@@ -5883,8 +5872,6 @@
 
     "terser/commander": ["commander@2.20.3", "", {}, ""],
 
-    "test-app/sonner-native": ["sonner-native@0.21.2", "", { "peerDependencies": { "react": "*", "react-native": "*", "react-native-gesture-handler": ">=2.16.1", "react-native-reanimated": ">=3.10.1", "react-native-safe-area-context": ">=4.10.5", "react-native-screens": ">=3.31.1", "react-native-svg": ">=15.6.0" } }, ""],
-
     "test-app/typescript": ["typescript@6.0.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw=="],
 
     "test-exclude/glob": ["glob@7.2.3", "", { "dependencies": { "fs.realpath": "^1.0.0", "inflight": "^1.0.4", "inherits": "2", "minimatch": "^3.1.1", "once": "^1.3.0", "path-is-absolute": "^1.0.0" } }, ""],
@@ -5900,10 +5887,6 @@
     "vitest/vite": ["vite@7.3.1", "", { "dependencies": { "esbuild": "^0.27.0", "fdir": "^6.5.0", "picomatch": "^4.0.3", "postcss": "^8.5.6", "rollup": "^4.43.0", "tinyglobby": "^0.2.15" }, "peerDependencies": { "@types/node": "^20.19.0 || >=22.12.0", "jiti": ">=1.21.0", "less": "^4.0.0", "lightningcss": "^1.21.0", "sass": "^1.70.0", "sass-embedded": "^1.70.0", "stylus": ">=0.54.8", "sugarss": "^5.0.0", "terser": "^5.16.0", "tsx": "^4.8.1", "yaml": "^2.4.2" }, "optionalPeers": ["less", "sass", "sass-embedded", "stylus", "sugarss"], "bin": "bin/vite.js" }, ""],
 
     "vue-eslint-parser/semver": ["semver@7.7.3", "", { "bin": "bin/semver.js" }, ""],
-
-    "whatwg-url-without-unicode/buffer": ["buffer@5.7.1", "", { "dependencies": { "base64-js": "^1.3.1", "ieee754": "^1.1.13" } }, ""],
-
-    "whatwg-url-without-unicode/webidl-conversions": ["webidl-conversions@5.0.0", "", {}, ""],
 
     "which-builtin-type/isarray": ["isarray@2.0.5", "", {}, ""],
 
