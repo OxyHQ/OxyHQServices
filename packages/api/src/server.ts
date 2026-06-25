@@ -492,6 +492,10 @@ app.use('/email/proxy', emailProxyRoutes); // public, no auth — must be before
 app.use('/email/inbound', emailInboundRoutes); // Cloudflare Email Routing webhook — must be before /email
 app.use('/email', userRateLimiter, csrfProtection, emailRoutes);
 app.use('/alia', userRateLimiter, aliaRoutes);
+// Compatibility route for Alia SDK clients that append /v1/chat/completions
+// to their configured API origin. Keep authenticated browser traffic on the
+// Oxy-owned API; aliaRoutes forwards server-side with ALIA_API_KEY.
+app.use('/v1', userRateLimiter, aliaRoutes);
 app.use('/credits', userRateLimiter, csrfProtection, creditsRoutes);
 app.use('/billing', billingRoutes);
 app.use('/models', modelsStatsRoutes);
