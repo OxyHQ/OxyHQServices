@@ -402,15 +402,18 @@ async function fetchUserFromAPI(apiBaseUrl: string, sessionId: string): Promise<
  *
  * Best-effort: any failure yields an empty list (the account is still returned,
  * just without the returning-account optimization). The API endpoint is
- * cookie-less and harmless (it only returns public app origins the user
- * themselves authorized), so no auth token is needed for this server-to-server
- * call.
+ * cookie-less but returns private per-user RP grant metadata, so the IdP must
+ * present the internal shared secret on this server-to-server call.
  */
-async function fetchApprovedClients(apiBaseUrl: string, userId: string): Promise<string[]> {
+async function fetchApprovedClients(config: ResolvedConfig, userId: string): Promise<string[]> {
+  if (!config.ssoInternalSecret) return [];
   try {
-    const url = `${apiBaseUrl}/fedcm/grants/${encodeURIComponent(userId)}`;
+    const url = `${config.apiBaseUrl}/fedcm/grants/${encodeURIComponent(userId)}`;
     const res = await fetch(url, {
-      headers: { 'Accept': 'application/json' },
+      headers: {
+        Accept: 'application/json',
+        'X-Oxy-Internal': config.ssoInternalSecret,
+      },
       signal: AbortSignal.timeout(5000),
     });
     if (!res.ok) return [];
@@ -1279,7 +1282,8 @@ app.get('/fedcm/accounts', async (c) => {
     return c.json({ error: 'invalid_request' }, 400);
   }
 
-  const { apiBaseUrl } = resolveConfig(c);
+  const config = resolveConfig(c);
+  const { apiBaseUrl } = config;
   const sessionId = getCookie(c, COOKIE_NAME);
 
   if (!sessionId) {
@@ -1353,7 +1357,7 @@ app.get('/fedcm/accounts', async (c) => {
   // skips the disclosure UI and lets `mediation: 'silent'` resolve — this is
   // what makes cross-app SSO work for returning users. A brand-new user has an
   // empty list (first visit always needs one chooser interaction, by spec).
-  const approvedClients = await fetchApprovedClients(apiBaseUrl, user.id);
+  const approvedClients = await fetchApprovedClients(config, user.id);
   if (approvedClients.length > 0) {
     account.approved_clients = approvedClients;
   }

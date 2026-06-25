@@ -68,6 +68,7 @@ interface CapturedExchange {
 }
 let capturedNonceOrigin: string | undefined;
 let capturedExchange: CapturedExchange | undefined;
+let capturedGrantsSecret: string | undefined;
 
 // Captures the internal `POST /sso/code` call GET /sso makes so tests can
 // assert the X-Oxy-Internal secret + clientOrigin + session payload shape.
@@ -90,6 +91,7 @@ function installApiStub(): void {
   capturedNonceOrigin = undefined;
   capturedExchange = undefined;
   capturedSsoCode = undefined;
+  capturedGrantsSecret = undefined;
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = typeof input === 'string' ? input : input.toString();
     const headers = new Headers(init?.headers);
@@ -106,6 +108,7 @@ function installApiStub(): void {
     // The accounts endpoint resolves the user's granted RP origins to populate
     // the FedCM `approved_clients` array.
     if (url.includes('/fedcm/grants/')) {
+      capturedGrantsSecret = headers.get('x-oxy-internal') ?? undefined;
       return new Response(
         JSON.stringify({ origins: stubbedGrantedOrigins }),
         { status: 200, headers: { 'content-type': 'application/json' } }
@@ -266,6 +269,7 @@ describe('GET /fedcm/accounts', () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { accounts: Array<{ approved_clients?: string[] }> };
     expect(body.accounts[0].approved_clients).toEqual([RP_ORIGIN, 'https://homiio.com']);
+    expect(capturedGrantsSecret).toBe(process.env.SSO_INTERNAL_SECRET);
   });
 
   it('omits approved_clients for a brand-new user with no grants (first-visit needs the chooser)', async () => {

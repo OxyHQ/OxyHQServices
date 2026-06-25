@@ -1,8 +1,40 @@
+import * as crypto from 'crypto';
 import { Request, Response } from 'express';
 import fedcmService from '../services/fedcm.service';
 import { logger } from '../utils/logger';
 import { AuthRequest } from '../middleware/auth';
 import { issueAndSetRefreshCookie } from '../services/refreshToken.service';
+
+/** Constant-time string equality (length-tolerant; no early-exit leak). */
+function timingSafeStringEqual(a: string, b: string): boolean {
+  const aBuf = Buffer.from(a);
+  const bBuf = Buffer.from(b);
+  if (aBuf.length !== bBuf.length) {
+    crypto.timingSafeEqual(aBuf, aBuf);
+    return false;
+  }
+  return crypto.timingSafeEqual(aBuf, bBuf);
+}
+
+/**
+ * Validate the internal shared-secret header for IdP server-to-server FedCM
+ * grant lookups. Fails closed when SSO_INTERNAL_SECRET is missing so the
+ * per-user grant relationship is never exposed by an accidentally public route.
+ */
+function hasValidInternalSecret(req: Request): boolean {
+  const expected = process.env.SSO_INTERNAL_SECRET;
+  if (typeof expected !== 'string' || expected.length === 0) {
+    logger.error('GET /fedcm/grants/:userId called but SSO_INTERNAL_SECRET is not configured');
+    return false;
+  }
+
+  const provided = req.headers['x-oxy-internal'];
+  if (typeof provided !== 'string' || provided.length === 0) {
+    return false;
+  }
+
+  return timingSafeStringEqual(provided, expected);
+}
 
 /**
  * Mint a single-use server-side nonce for the FedCM handoff. The auth UI
@@ -92,15 +124,17 @@ export async function exchangeIdToken(req: Request, res: Response) {
  * `approved_clients` array, which lets Chrome treat the account as a returning
  * account for those RPs (skips disclosure UI, enables silent mediation).
  *
- * Returns only public app origins the user themselves authorized — the same
- * data surface as the public `GET /fedcm/clients/approved`, filtered to this
- * user — so it carries no token material or PII and is safe to expose to the
- * IdP server-to-server fetch without a bearer token. The result is also
- * intersected with the currently-approved client list, so a removed origin can
- * never leak back.
+ * This is per-user relationship/activity metadata, so it is gated to the IdP
+ * server-to-server caller with the same `X-Oxy-Internal` shared secret used by
+ * `/sso/code`. The result is also intersected with the currently-approved
+ * client list, so a removed origin can never leak back.
  */
 export async function getUserGrants(req: Request, res: Response) {
   try {
+    if (!hasValidInternalSecret(req)) {
+      return res.status(404).json({ message: 'Not found' });
+    }
+
     const { userId } = req.params;
 
     if (!userId || !/^[a-f0-9]{24}$/i.test(userId)) {

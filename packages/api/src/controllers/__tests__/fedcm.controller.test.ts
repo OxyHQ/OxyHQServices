@@ -86,9 +86,11 @@ function createReq(overrides: Partial<Request> = {}): Request {
 }
 
 const VALID_USER_ID = '64f7c2a1b8e9d3f4a1c2b3d4';
+const TEST_INTERNAL_SECRET = 'test-sso-internal-secret-32-chars-long!!';
 
 beforeEach(() => {
   jest.clearAllMocks();
+  process.env.SSO_INTERNAL_SECRET = TEST_INTERNAL_SECRET;
 });
 
 describe('mintNonce', () => {
@@ -177,9 +179,29 @@ describe('exchangeIdToken', () => {
 });
 
 describe('getUserGrants', () => {
+  it('returns 404 when the internal shared secret header is absent', async () => {
+    const res = createRes();
+    await getUserGrants(createReq({ params: { userId: VALID_USER_ID } }), res as unknown as Response);
+    expect(res.statusCode).toBe(404);
+    expect(mockGetUserGrantedOrigins).not.toHaveBeenCalled();
+  });
+
+  it('returns 404 when the internal shared secret is invalid', async () => {
+    const res = createRes();
+    await getUserGrants(
+      createReq({ params: { userId: VALID_USER_ID }, headers: { 'x-oxy-internal': 'wrong-secret' } }),
+      res as unknown as Response
+    );
+    expect(res.statusCode).toBe(404);
+    expect(mockGetUserGrantedOrigins).not.toHaveBeenCalled();
+  });
+
   it('returns 400 for a malformed userId', async () => {
     const res = createRes();
-    await getUserGrants(createReq({ params: { userId: 'not-an-objectid' } }), res as unknown as Response);
+    await getUserGrants(
+      createReq({ params: { userId: 'not-an-objectid' }, headers: { 'x-oxy-internal': TEST_INTERNAL_SECRET } }),
+      res as unknown as Response
+    );
     expect(res.statusCode).toBe(400);
     expect(mockGetUserGrantedOrigins).not.toHaveBeenCalled();
   });
@@ -187,7 +209,10 @@ describe('getUserGrants', () => {
   it('returns the granted origins on success', async () => {
     mockGetUserGrantedOrigins.mockResolvedValueOnce(['https://mention.earth']);
     const res = createRes();
-    await getUserGrants(createReq({ params: { userId: VALID_USER_ID } }), res as unknown as Response);
+    await getUserGrants(
+      createReq({ params: { userId: VALID_USER_ID }, headers: { 'x-oxy-internal': TEST_INTERNAL_SECRET } }),
+      res as unknown as Response
+    );
     expect(res.statusCode).toBe(200);
     expect(res.body).toEqual({ origins: ['https://mention.earth'] });
   });
@@ -195,7 +220,10 @@ describe('getUserGrants', () => {
   it('returns 500 when the service throws', async () => {
     mockGetUserGrantedOrigins.mockRejectedValueOnce(new Error('db down'));
     const res = createRes();
-    await getUserGrants(createReq({ params: { userId: VALID_USER_ID } }), res as unknown as Response);
+    await getUserGrants(
+      createReq({ params: { userId: VALID_USER_ID }, headers: { 'x-oxy-internal': TEST_INTERNAL_SECRET } }),
+      res as unknown as Response
+    );
     expect(res.statusCode).toBe(500);
   });
 });
