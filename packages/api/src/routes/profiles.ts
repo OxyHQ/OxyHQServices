@@ -86,6 +86,10 @@ const MAX_USERNAME_LENGTH = 30;
 // filter on the public recommendations path, so post-lookup filtering can't
 // shrink the page below the requested limit.
 const PUBLIC_FILTER_HEADROOM = 20;
+// Bound attacker-selected co-follower fan-out before materializing IDs or
+// building the follow aggregation's $in clause. This keeps /similar stable for
+// high-follower targets while still sampling enough overlap for useful results.
+const SIMILAR_PROFILE_MAX_TARGET_FOLLOWERS = 5000;
 
 /**
  * Shared aggregation stages that look up follower and following counts
@@ -542,7 +546,11 @@ router.get(
       Follow.find({
         followedId: targetUserId,
         followType: FollowType.USER,
-      }).select('followerUserId').lean(),
+      })
+        .select('followerUserId')
+        .sort({ _id: 1 })
+        .limit(SIMILAR_PROFILE_MAX_TARGET_FOLLOWERS)
+        .lean(),
       Follow.find({
         followerUserId: currentUserId,
         followType: FollowType.USER,
@@ -611,6 +619,7 @@ router.get(
       currentUserId,
       targetUserId,
       similarCount: formattedSimilar.length,
+      sampledTargetFollowers: targetFollowerIds.length,
     });
 
     sendSuccess(res, formattedSimilar);
