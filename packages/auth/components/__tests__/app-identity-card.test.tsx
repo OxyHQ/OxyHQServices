@@ -10,6 +10,8 @@
  *     developer name + website link; NO official trust line.
  *   - requested scopes render human-readable labels from `scope-labels`; an
  *     explicit `requestedScopes` prop OVERRIDES the application's own `scopes`.
+ *   - the broad account-access baseline remains visible even when OAuth scopes
+ *     are requested because issued OAuth sessions are not scope-limited.
  *
  * `Avatar` is stubbed to a web-safe surrogate by `setup-mocks.ts` (it otherwise
  * pulls `react-native`, which bun cannot parse in this node test environment).
@@ -156,6 +158,17 @@ describe("AppIdentityCard", () => {
         const text = container.textContent ?? ""
 
         expect(text).toContain(SCOPE_LABELS["user:read"])
+
+        unmount()
+    })
+
+    test("always discloses broad account access when requested scopes are present", () => {
+        const { container, unmount } = renderCard(thirdPartyApp, ["user:read"])
+        const text = container.textContent ?? ""
+
+        expect(text).toContain(SCOPE_LABELS["user:read"])
+        expect(text).toContain("Sign in with Oxy")
+        expect(text).toContain("Access your account on your behalf")
 
         unmount()
     })

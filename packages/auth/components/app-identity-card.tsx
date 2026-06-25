@@ -6,10 +6,10 @@ import { AuthFormHeader } from "@/components/auth-form-layout";
 import { labelForScope } from "@/lib/scope-labels";
 
 /**
- * Permissions every consent grant carries even when the requesting application
- * declares no explicit OAuth scopes (e.g. the QR-code device flow). These are
- * intentionally generic — the granular `scopes` list, when present, supersedes
- * this baseline in {@link resolveScopeLabels}.
+ * Permissions every consent grant carries. OAuth code exchange currently issues
+ * a normal Oxy user session rather than a token constrained to the requested
+ * OAuth scopes, so the consent screen must always disclose this broad baseline
+ * in addition to any friendly scope labels.
  */
 const BASE_PERMISSION_LABELS: readonly string[] = [
   "Sign in with Oxy",
@@ -30,16 +30,19 @@ function isTrustedApplication(app: PublicApplication): boolean {
 /**
  * Resolve the final, human-readable permission lines to display.
  *
- * - When explicit scopes are provided (the OAuth `scope` URL param for the code
- *   flow, otherwise the application's configured scope list) each scope is
- *   mapped to its friendly label.
- * - When there are none (device/QR flow) we fall back to the base permissions.
+ * Explicit scopes (the OAuth `scope` URL param for the code flow, otherwise the
+ * application's configured scope list) add friendly context, but they do not
+ * narrow the session credentials issued by the backend today. Keep the broad
+ * baseline visible for every grant so consent cannot imply a scope-limited
+ * token.
  */
 function resolveScopeLabels(scopes: readonly string[]): string[] {
-  if (scopes.length === 0) {
-    return [...BASE_PERMISSION_LABELS];
-  }
-  return scopes.map(labelForScope);
+  return [
+    ...BASE_PERMISSION_LABELS,
+    ...scopes.map(labelForScope).filter(
+      (label) => !BASE_PERMISSION_LABELS.includes(label)
+    ),
+  ];
 }
 
 /**
@@ -62,7 +65,8 @@ type AppIdentityCardProps = {
   /**
    * Explicit scopes to display, when known (e.g. the OAuth `scope` URL param,
    * space-separated and split by the caller). When empty, the card falls back
-   * to the application's own configured `scopes`, then to base permissions.
+   * to the application's own configured `scopes`. The broad account-access
+   * baseline is always shown because issued OAuth sessions are not scoped.
    */
   requestedScopes?: readonly string[];
 };
@@ -77,8 +81,9 @@ type AppIdentityCardProps = {
  */
 export function AppIdentityCard({ app, requestedScopes }: AppIdentityCardProps) {
   const trusted = isTrustedApplication(app);
-  // Prefer the explicitly-requested scopes (OAuth flow) over the application's
-  // full configured scope list (device flow / no `scope` param).
+  // Prefer explicitly-requested scopes (OAuth flow) for the friendly scope
+  // details, but always include the broad baseline in resolveScopeLabels because
+  // the issued OAuth session credentials are not scope-limited.
   const effectiveScopes =
     requestedScopes && requestedScopes.length > 0
       ? requestedScopes
