@@ -1,22 +1,26 @@
 import type React from 'react';
-import { useState, useCallback, useMemo } from 'react';
-import {
-    View,
-    Text,
-    TouchableOpacity,
-    StyleSheet,
-    ScrollView,
-} from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import type { BaseScreenProps } from '../types/navigation';
+import { useCallback, useState } from 'react';
+import { View, ScrollView, StyleSheet } from 'react-native';
 import { useTheme } from '@oxyhq/bloom/theme';
+import { Text } from '@oxyhq/bloom/typography';
+import { IconCircle } from '@oxyhq/bloom/icon-circle';
+import {
+    Accordion,
+    AccordionItem,
+    AccordionTrigger,
+    AccordionContent,
+} from '@oxyhq/bloom/accordion';
+import * as Icons from '@oxyhq/bloom/icons';
+import type { Props as IconProps } from '@oxyhq/bloom/icons';
+import type { BaseScreenProps } from '../types/navigation';
+import Header from '../components/Header';
 import { useI18n } from '../hooks/useI18n';
 
 interface InfoSection {
     id: string;
     titleKey: string;
     contentKey: string;
-    icon: string;
+    Icon: React.ComponentType<IconProps>;
 }
 
 const INFO_SECTIONS: InfoSection[] = [
@@ -24,211 +28,124 @@ const INFO_SECTIONS: InfoSection[] = [
         id: 'what',
         titleKey: 'learnMoreUsernames.sections.what.title',
         contentKey: 'learnMoreUsernames.sections.what.content',
-        icon: 'at-outline',
+        Icon: Icons.At_Stroke2_Corner0_Rounded,
     },
     {
         id: 'rules',
         titleKey: 'learnMoreUsernames.sections.rules.title',
         contentKey: 'learnMoreUsernames.sections.rules.content',
-        icon: 'list-outline',
+        Icon: Icons.BulletList_Stroke2_Corner0_Rounded,
     },
     {
         id: 'unique',
         titleKey: 'learnMoreUsernames.sections.unique.title',
         contentKey: 'learnMoreUsernames.sections.unique.content',
-        icon: 'finger-print-outline',
+        Icon: Icons.Key_Stroke2_Corner2_Rounded,
     },
     {
         id: 'change',
         titleKey: 'learnMoreUsernames.sections.change.title',
         contentKey: 'learnMoreUsernames.sections.change.content',
-        icon: 'refresh-outline',
+        Icon: Icons.ArrowRotateClockwise_Stroke2_Corner0_Rounded,
     },
     {
         id: 'tips',
         titleKey: 'learnMoreUsernames.sections.tips.title',
         contentKey: 'learnMoreUsernames.sections.tips.content',
-        icon: 'bulb-outline',
+        Icon: Icons.Sparkle_Stroke2_Corner0_Rounded,
     },
 ];
 
 const LearnMoreUsernamesScreen: React.FC<BaseScreenProps> = ({
-    theme,
+    onClose,
+    goBack,
 }) => {
     const bloomTheme = useTheme();
     const { t } = useI18n();
-    const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set(['what'])); // Start with first section expanded
+    // Start with the first section expanded.
+    const [expandedIds, setExpandedIds] = useState<string[]>(['what']);
 
-    const toggleExpanded = useCallback((id: string) => {
-        setExpandedIds(prev => {
-            const next = new Set(prev);
-            if (next.has(id)) {
-                next.delete(id);
+    const handleAccordionChange = useCallback(
+        (value: string | string[] | undefined) => {
+            if (Array.isArray(value)) {
+                setExpandedIds(value);
+            } else if (value == null) {
+                setExpandedIds([]);
             } else {
-                next.add(id);
+                setExpandedIds([value]);
             }
-            return next;
-        });
-    }, []);
-
-    const styles = useMemo(() => createStyles(), []);
+        },
+        [],
+    );
 
     return (
-        <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
+        <View className="flex-1 bg-bg">
+            <Header
+                title={t('learnMoreUsernames.introTitle')}
+                onBack={goBack || onClose}
+                variant="minimal"
+                elevation="subtle"
+            />
             <ScrollView
-                style={styles.content}
+                className="flex-1 px-screen-margin"
                 showsVerticalScrollIndicator={false}
-                contentContainerStyle={styles.contentContainer}
+                contentContainerClassName="pb-space-32"
             >
-                <View style={styles.introSection}>
-                    <View style={[styles.introIcon, { backgroundColor: `${bloomTheme.colors.primary}15` }]}>
-                        <Ionicons name="at" size={32} color={bloomTheme.colors.primary} />
-                    </View>
-                    <Text style={[styles.introTitle, { color: bloomTheme.colors.text }]}>
-                        {t('learnMoreUsernames.introTitle')}
-                    </Text>
-                    <Text style={[styles.introText, { color: bloomTheme.colors.textSecondary }]}>
+                <View className="items-center py-space-24 gap-space-12">
+                    <IconCircle icon={Icons.At_Stroke2_Corner0_Rounded} />
+                    <Text className="font-sans text-body text-text-secondary text-center">
                         {t('learnMoreUsernames.introText')}
                     </Text>
                 </View>
 
-                {INFO_SECTIONS.map((section, index) => {
-                    const isExpanded = expandedIds.has(section.id);
-                    const sectionTitle = t(section.titleKey);
-                    return (
-                        <View
-                            key={section.id}
-                            style={[
-                                styles.section,
-                                { backgroundColor: bloomTheme.colors.backgroundSecondary, borderColor: bloomTheme.colors.border },
-                                index === 0 && styles.sectionFirst,
-                            ]}
-                        >
-                            <TouchableOpacity
-                                style={styles.sectionHeader}
-                                onPress={() => toggleExpanded(section.id)}
-                                accessibilityRole="button"
-                                accessibilityLabel={sectionTitle}
-                                accessibilityHint={isExpanded ? t('learnMoreUsernames.collapseHint') : t('learnMoreUsernames.expandHint')}
-                                accessibilityState={{ expanded: isExpanded }}
+                <Accordion
+                    type="multiple"
+                    value={expandedIds}
+                    onValueChange={handleAccordionChange}
+                >
+                    {INFO_SECTIONS.map(({ id, titleKey, contentKey, Icon }) => (
+                        <AccordionItem key={id} value={id}>
+                            <AccordionTrigger
+                                icon={
+                                    <View
+                                        className="bg-fill-secondary rounded-radius-12"
+                                        style={styles.iconSquare}
+                                    >
+                                        <Icon
+                                            size="md"
+                                            style={{ color: bloomTheme.colors.primary }}
+                                        />
+                                    </View>
+                                }
                             >
-                                <View style={[styles.sectionIconContainer, { backgroundColor: `${bloomTheme.colors.primary}15` }]}>
-                                    <Ionicons
-                                        name={section.icon}
-                                        size={20}
-                                        color={bloomTheme.colors.primary}
-                                    />
-                                </View>
-                                <Text style={[styles.sectionTitle, { color: bloomTheme.colors.text }]}>
-                                    {sectionTitle}
+                                {t(titleKey)}
+                            </AccordionTrigger>
+                            <AccordionContent>
+                                <Text className="font-sans text-bodyMedium text-text-secondary">
+                                    {t(contentKey)}
                                 </Text>
-                                <Ionicons
-                                    name={isExpanded ? 'chevron-up' : 'chevron-down'}
-                                    size={20}
-                                    color={bloomTheme.colors.textSecondary}
-                                />
-                            </TouchableOpacity>
-                            {isExpanded && (
-                                <View style={[styles.sectionContent, { borderTopColor: bloomTheme.colors.border }]}>
-                                    <Text style={[styles.sectionText, { color: bloomTheme.colors.textSecondary }]}>
-                                        {t(section.contentKey)}
-                                    </Text>
-                                </View>
-                            )}
-                        </View>
-                    );
-                })}
+                            </AccordionContent>
+                        </AccordionItem>
+                    ))}
+                </Accordion>
 
-                <View style={styles.footer}>
-                    <Text style={[styles.footerText, { color: bloomTheme.colors.textSecondary }]}>
-                        {t('learnMoreUsernames.footer')}
-                    </Text>
-                </View>
+                <Text className="font-sans text-caption text-text-tertiary text-center mt-space-16">
+                    {t('learnMoreUsernames.footer')}
+                </Text>
             </ScrollView>
         </View>
     );
 };
 
-const createStyles = () => StyleSheet.create({
-    container: {
-        flex: 1,
-    },
-    content: {
-        flex: 1,
-    },
-    contentContainer: {
-        padding: 16,
-        paddingBottom: 32,
-    },
-    introSection: {
-        alignItems: 'center',
-        paddingVertical: 24,
-        paddingHorizontal: 16,
-    },
-    introIcon: {
-        width: 64,
-        height: 64,
-        borderRadius: 32,
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginBottom: 16,
-    },
-    introTitle: {
-        fontSize: 24,
-        fontWeight: '700',
-        marginBottom: 8,
-        textAlign: 'center',
-    },
-    introText: {
-        fontSize: 16,
-        lineHeight: 24,
-        textAlign: 'center',
-    },
-    section: {
-        borderRadius: 12,
-        borderWidth: 1,
-        marginBottom: 12,
-        overflow: 'hidden',
-    },
-    sectionFirst: {
-        marginTop: 8,
-    },
-    sectionHeader: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        padding: 16,
-    },
-    sectionIconContainer: {
+// Measured layout only (no color): fixed-size square that hosts the leading
+// section icon inside the accordion trigger. Color comes from the
+// `bg-fill-secondary` token class on the View.
+const styles = StyleSheet.create({
+    iconSquare: {
         width: 36,
         height: 36,
-        borderRadius: 18,
         alignItems: 'center',
         justifyContent: 'center',
-        marginRight: 12,
-    },
-    sectionTitle: {
-        flex: 1,
-        fontSize: 16,
-        fontWeight: '600',
-        marginRight: 12,
-    },
-    sectionContent: {
-        padding: 16,
-        paddingTop: 12,
-        borderTopWidth: 1,
-    },
-    sectionText: {
-        fontSize: 14,
-        lineHeight: 22,
-    },
-    footer: {
-        marginTop: 16,
-        paddingHorizontal: 16,
-    },
-    footerText: {
-        fontSize: 14,
-        textAlign: 'center',
-        lineHeight: 20,
     },
 });
 

@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { View, StyleSheet, ScrollView } from 'react-native';
+import { View, ScrollView } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
 import { toast } from '@oxyhq/bloom';
 import Header from '../components/Header';
@@ -9,21 +9,15 @@ import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list'
 import { SettingsIcon } from '../components/SettingsIcon';
 import { useI18n } from '../hooks/useI18n';
 import { useTheme } from '@oxyhq/bloom/theme';
-import { useColorScheme } from '../hooks/useColorScheme';
-import { Colors } from '../constants/theme';
-import { normalizeColorScheme } from '@oxyhq/core';
 import { useOxy } from '../context/OxyContext';
 import { Dialog, useDialogControl } from '@oxyhq/bloom';
 
 interface HistoryItem { id: string; query: string; type: 'search' | 'browse'; timestamp: Date; }
 
-const HistoryViewScreen: React.FC<BaseScreenProps> = ({ onClose, theme, goBack }) => {
+const HistoryViewScreen: React.FC<BaseScreenProps> = ({ onClose, goBack }) => {
     const { user } = useOxy();
     const { t } = useI18n();
     const bloomTheme = useTheme();
-    const colorScheme = useColorScheme();
-    const normalizedColorScheme = normalizeColorScheme(colorScheme);
-    const themeColors = Colors[normalizedColorScheme];
     const [history, setHistory] = useState<HistoryItem[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isDeleting, setIsDeleting] = useState(false);
@@ -93,37 +87,39 @@ const HistoryViewScreen: React.FC<BaseScreenProps> = ({ onClose, theme, goBack }
     };
 
     return (
-        <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
+        <View className="flex-1 bg-bg">
             <Header title={t('history.title') || 'History'} onBack={goBack || onClose} variant="minimal" elevation="subtle" />
-            <ScrollView style={styles.content}>
-                <SettingsListGroup title={t('history.actions') || 'Actions'}>
-                    <SettingsListItem
-                        icon={<SettingsIcon name="clock-outline" color={themeColors.iconStorage} />}
-                        title={t('history.deleteLast15Minutes.title') || 'Delete Last 15 Minutes'}
-                        description={t('history.deleteLast15Minutes.subtitle') || 'Remove recent history entries'}
-                        onPress={() => deleteLast15Dialog.open()}
-                        disabled={isDeleting || history.length === 0}
-                    />
-                    <SettingsListItem
-                        icon={<SettingsIcon name="delete-outline" color={themeColors.iconSharing} />}
-                        title={t('history.clearAll.title') || 'Clear All History'}
-                        description={t('history.clearAll.subtitle') || 'Remove all history entries'}
-                        onPress={() => clearAllDialog.open()}
-                        disabled={isDeleting || history.length === 0}
-                    />
-                </SettingsListGroup>
-                <SettingsListGroup title={t('history.recent') || 'Recent History'}>
-                    {isLoading ? <LoadingState message={t('history.loading') || 'Loading history...'} color={bloomTheme.colors.text} />
-                     : history.length === 0 ? <EmptyState message={t('history.empty') || 'No history yet'} textColor={bloomTheme.colors.text} />
-                     : history.map(item => (
+            <ScrollView className="flex-1">
+                <View className="px-screen-margin pb-space-24">
+                    <SettingsListGroup title={t('history.actions') || 'Actions'}>
                         <SettingsListItem
-                            key={item.id}
-                            icon={<SettingsIcon name={item.type === 'search' ? 'magnify' : 'earth'} color={item.type === 'search' ? themeColors.iconSecurity : themeColors.iconPersonalInfo} />}
-                            title={item.query}
-                            description={formatTime(item.timestamp)}
+                            icon={<SettingsIcon name="clock-outline" color={bloomTheme.colors.warning} />}
+                            title={t('history.deleteLast15Minutes.title') || 'Delete Last 15 Minutes'}
+                            description={t('history.deleteLast15Minutes.subtitle') || 'Remove recent history entries'}
+                            onPress={() => deleteLast15Dialog.open()}
+                            disabled={isDeleting || history.length === 0}
                         />
-                    ))}
-                </SettingsListGroup>
+                        <SettingsListItem
+                            icon={<SettingsIcon name="delete-outline" color={bloomTheme.colors.error} />}
+                            title={t('history.clearAll.title') || 'Clear All History'}
+                            description={t('history.clearAll.subtitle') || 'Remove all history entries'}
+                            onPress={() => clearAllDialog.open()}
+                            disabled={isDeleting || history.length === 0}
+                        />
+                    </SettingsListGroup>
+                    <SettingsListGroup title={t('history.recent') || 'Recent History'}>
+                        {isLoading ? <LoadingState message={t('history.loading') || 'Loading history...'} color={bloomTheme.colors.text} />
+                         : history.length === 0 ? <EmptyState message={t('history.empty') || 'No history yet'} textColor={bloomTheme.colors.text} />
+                         : history.map(item => (
+                            <SettingsListItem
+                                key={item.id}
+                                icon={<SettingsIcon name={item.type === 'search' ? 'magnify' : 'earth'} color={item.type === 'search' ? bloomTheme.colors.info : bloomTheme.colors.primary} />}
+                                title={item.query}
+                                description={formatTime(item.timestamp)}
+                            />
+                        ))}
+                    </SettingsListGroup>
+                </View>
             </ScrollView>
             <Dialog
                 control={deleteLast15Dialog}
@@ -146,7 +142,5 @@ const HistoryViewScreen: React.FC<BaseScreenProps> = ({ onClose, theme, goBack }
         </View>
     );
 };
-
-const styles = StyleSheet.create({ container: { flex: 1 }, content: { flex: 1, padding: 16 } });
 
 export default React.memo(HistoryViewScreen);

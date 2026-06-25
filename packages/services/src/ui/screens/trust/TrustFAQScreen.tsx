@@ -1,38 +1,36 @@
 import React, { useState, useMemo, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, Platform, TextInput, LayoutAnimation } from 'react-native';
+import { View, ScrollView } from 'react-native';
 import type { BaseScreenProps } from '../../types/navigation';
-import { Ionicons } from '@expo/vector-icons';
 import Header from '../../components/Header';
-import { SettingsListItem } from '@oxyhq/bloom/settings-list';
-import { useI18n } from '../../hooks/useI18n';
+import EmptyState from '../../components/EmptyState';
+import { SearchInput } from '@oxyhq/bloom/search-input';
+import {
+    Accordion,
+    AccordionItem,
+    AccordionTrigger,
+    AccordionContent,
+} from '@oxyhq/bloom/accordion';
+import { Text } from '@oxyhq/bloom/typography';
 import { useTheme } from '@oxyhq/bloom/theme';
-import { normalizeColorScheme } from '@oxyhq/core';
-import { useColorScheme } from '../../hooks/useColorScheme';
-import { Colors } from '../../constants/theme';
+import { useI18n } from '../../hooks/useI18n';
 
 const FAQ_KEYS = ['what', 'earn', 'lose', 'use', 'transfer', 'support'] as const;
 
 /**
- * TrustFAQScreen - Optimized for performance
+ * TrustFAQScreen
  *
- * Performance optimizations implemented:
- * - useMemo for theme calculations (only recalculates when theme changes)
- * - useMemo for filtered FAQs (only recalculates when search changes)
- * - useCallback for event handlers to prevent unnecessary re-renders
- * - React.memo wrapper to prevent re-renders when props haven't changed
+ * Frequently asked questions about Oxy Trust, rendered with the shared Bloom
+ * Accordion (single-expand) + SearchInput. Styling is centralized Bloom token
+ * classes; the Bloom Accordion owns its own expand/collapse animation, so no
+ * `LayoutAnimation` is used here.
  */
-const TrustFAQScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
+const TrustFAQScreen: React.FC<BaseScreenProps> = ({ goBack }) => {
     const { t } = useI18n();
-    const [expanded, setExpanded] = useState<string | null>(null);
-    const [search, setSearch] = useState('');
-
-    // Memoize theme-related calculations to prevent unnecessary recalculations
     const bloomTheme = useTheme();
-    const colorScheme = useColorScheme();
-    const normalizedColorScheme = normalizeColorScheme(colorScheme);
-    const colors = Colors[normalizedColorScheme];
 
-    // Memoize filtered FAQs to prevent filtering on every render
+    const [search, setSearch] = useState('');
+    const [expanded, setExpanded] = useState<string | undefined>(undefined);
+
     const faqs = useMemo(() => FAQ_KEYS.map(key => ({
         id: key,
         q: t(`trust.faq.items.${key}.q`) || '',
@@ -48,123 +46,65 @@ const TrustFAQScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
         );
     }, [search, faqs]);
 
-    // Memoize toggle handler to prevent recreation on every render
-    const handleToggle = useCallback((id: string) => {
-        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-        setExpanded(prev => prev === id ? null : id);
-    }, []);
+    const handleAccordionChange = useCallback(
+        (value: string | string[] | undefined) => {
+            setExpanded(Array.isArray(value) ? value[0] : value);
+        },
+        [],
+    );
 
     return (
-        <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
+        <View className="flex-1 bg-bg">
             <Header
                 title={t('trust.faq.title') || 'Trust FAQ'}
                 subtitle={t('trust.faq.subtitle') || 'Frequently asked questions about Oxy Trust'}
                 subtitleVariant="muted"
-
                 onBack={goBack}
                 elevation="subtle"
             />
-            <ScrollView
-                contentContainerStyle={styles.contentContainer}
-                showsVerticalScrollIndicator={false}
-            >
-                <View style={[styles.searchContainer, { backgroundColor: colors.card }]}>
-                    <Ionicons name="search" size={22} color={colors.icon} />
-                    <TextInput
-                        style={[styles.searchInput, { color: bloomTheme.colors.text }]}
-                        placeholder={t('trust.faq.search') || 'Search FAQ...'}
-                        placeholderTextColor={bloomTheme.colors.textTertiary}
-                        value={search}
-                        onChangeText={setSearch}
-                        returnKeyType="search"
-                    />
-                </View>
-                {filteredFaqs.length === 0 ? (
-                    <Text style={[styles.noResults, { color: colors.secondaryText }]}>
-                        {t('trust.faq.noResults', { query: search }) || `No FAQ items found matching "${search}"`}
-                    </Text>
-                ) : (
-                    <View style={styles.groupedSectionContainer}>
-                        {filteredFaqs.map((faq, idx) => {
-                            const isExpanded = expanded === faq.id;
-                            const isLast = idx === filteredFaqs.length - 1;
 
-                            return (
-                                <View key={faq.id} style={[styles.faqItemWrapper, { marginBottom: idx < filteredFaqs.length - 1 ? 4 : 0 }]}>
-                                    <SettingsListItem
-                                        title={faq.q}
-                                        onPress={() => handleToggle(faq.id)}
-                                        showChevron={false}
-                                        rightElement={
-                                            <Ionicons
-                                                name={isExpanded ? 'chevron-up' : 'chevron-down'}
-                                                size={20}
-                                                color={colors.icon}
-                                            />
-                                        }
-                                    />
-                                    {isExpanded && (
-                                        <View style={[styles.answerContainer, { backgroundColor: colors.card }, isLast && styles.lastAnswerContainer]}>
-                                            <Text style={[styles.answer, { color: bloomTheme.colors.text }]}>
-                                                {faq.a}
-                                            </Text>
-                                        </View>
-                                    )}
-                                </View>
-                            );
-                        })}
-                    </View>
+            <View className="px-screen-margin pt-space-20 pb-space-12">
+                <SearchInput
+                    label={t('trust.faq.search') || 'Search FAQ...'}
+                    value={search}
+                    onChangeText={setSearch}
+                    onClearText={() => setSearch('')}
+                    accessibilityLabel="Search Trust FAQ"
+                />
+            </View>
+
+            <ScrollView className="flex-1 px-screen-margin" showsVerticalScrollIndicator={false}>
+                {filteredFaqs.length === 0 ? (
+                    <EmptyState
+                        message={
+                            t('trust.faq.noResults', { query: search }) ||
+                            `No FAQ items found matching "${search}"`
+                        }
+                        textColor={bloomTheme.colors.text}
+                    />
+                ) : (
+                    <Accordion
+                        type="single"
+                        value={expanded}
+                        onValueChange={handleAccordionChange}
+                    >
+                        {filteredFaqs.map(faq => (
+                            <AccordionItem key={faq.id} value={faq.id}>
+                                <AccordionTrigger>
+                                    {faq.q}
+                                </AccordionTrigger>
+                                <AccordionContent>
+                                    <Text className="font-sans text-bodyMedium text-text-secondary">
+                                        {faq.a}
+                                    </Text>
+                                </AccordionContent>
+                            </AccordionItem>
+                        ))}
+                    </Accordion>
                 )}
             </ScrollView>
         </View>
     );
 };
-
-const styles = StyleSheet.create({
-    container: { flex: 1 },
-    contentContainer: {
-        paddingHorizontal: 24,
-        paddingTop: 20,
-        paddingBottom: 40,
-    },
-    searchContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 14,
-        paddingVertical: 10,
-        marginBottom: 12,
-        borderRadius: 999,
-        gap: 10,
-    },
-    searchInput: {
-        flex: 1,
-        fontSize: 16,
-        lineHeight: 20,
-    },
-    groupedSectionContainer: {
-        width: '100%',
-    },
-    faqItemWrapper: {
-        width: '100%',
-    },
-    answerContainer: {
-        paddingHorizontal: 10,
-        paddingTop: 4,
-        paddingBottom: 12,
-    },
-    lastAnswerContainer: {
-        borderBottomLeftRadius: 18,
-        borderBottomRightRadius: 18,
-    },
-    answer: {
-        fontSize: 14,
-        lineHeight: 20,
-    },
-    noResults: {
-        fontSize: 16,
-        marginTop: 32,
-        textAlign: 'center',
-    },
-});
 
 export default React.memo(TrustFAQScreen);

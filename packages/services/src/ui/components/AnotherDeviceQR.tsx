@@ -8,14 +8,18 @@
  * inside a tap-to-expand disclosure so it never competes with the primary CTA.
  *
  * The QR plate stays white intentionally — high contrast is required for
- * reliable scanning regardless of the app theme.
+ * reliable scanning regardless of the app theme. That single plate (and its
+ * fixed dimensions) is the only StyleSheet/hardcoded-color in this component;
+ * everything else is composed from Bloom typography + centralized token classes.
  */
 
 import type React from 'react';
 import { useState, useCallback } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, TouchableOpacity, StyleSheet } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 import { useTheme } from '@oxyhq/bloom/theme';
+import { Text } from '@oxyhq/bloom/typography';
+import * as Icons from '@oxyhq/bloom/icons';
 
 export interface AnotherDeviceQRProps {
   /** The QR payload (`oxyauth://<token>`). Empty string renders nothing. */
@@ -25,12 +29,16 @@ export interface AnotherDeviceQRProps {
 /** Size, in px, of the rendered QR symbol. */
 const QR_SIZE = 200;
 
+/** High-contrast QR colors — intentionally fixed (NOT themed) for scan reliability. */
+const QR_PLATE_BG = '#FFFFFF';
+const QR_FOREGROUND = '#000000';
+
 /**
  * Collapsed disclosure that reveals a high-contrast QR for signing in on a
  * second device with the Oxy Accounts app.
  */
 const AnotherDeviceQR: React.FC<AnotherDeviceQRProps> = ({ qrData }) => {
-  const { colors } = useTheme();
+  const bloomTheme = useTheme();
   const [expanded, setExpanded] = useState(false);
 
   const toggle = useCallback(() => {
@@ -42,29 +50,41 @@ const AnotherDeviceQR: React.FC<AnotherDeviceQRProps> = ({ qrData }) => {
   }
 
   return (
-    <View style={styles.container}>
+    <View className="w-full items-center">
       <TouchableOpacity
-        style={styles.toggle}
+        className="flex-row items-center justify-center gap-space-8 py-space-12 px-space-8"
         onPress={toggle}
         accessibilityRole="button"
         accessibilityState={{ expanded }}
         accessibilityHint="Reveals a QR code to sign in using the Oxy Accounts app on another device"
       >
-        <Text style={styles.toggleText} className="text-muted-foreground">
+        <Icons.QrCode_Stroke2_Corner0_Rounded
+          size="sm"
+          style={{ color: bloomTheme.colors.textSecondary }}
+        />
+        <Text className="font-sansSemibold text-body text-text-secondary">
           Sign in on another device
         </Text>
-        <Text style={styles.chevron} className="text-muted-foreground">
-          {expanded ? '✕' : '›'}
-        </Text>
+        {expanded ? (
+          <Icons.ChevronTop_Stroke2_Corner0_Rounded
+            size="sm"
+            style={{ color: bloomTheme.colors.textSecondary }}
+          />
+        ) : (
+          <Icons.ChevronRight_Stroke2_Corner0_Rounded
+            size="sm"
+            style={{ color: bloomTheme.colors.textSecondary }}
+          />
+        )}
       </TouchableOpacity>
 
       {expanded && (
-        <View style={styles.body}>
+        <View className="items-center mt-space-8 gap-space-12">
           {/* The QR plate is intentionally white for scan reliability. */}
-          <View style={[styles.qrPlate, { backgroundColor: '#FFFFFF' }]}>
-            <QRCode value={qrData} size={QR_SIZE} backgroundColor="#FFFFFF" color="#000000" />
+          <View style={styles.qrPlate}>
+            <QRCode value={qrData} size={QR_SIZE} backgroundColor={QR_PLATE_BG} color={QR_FOREGROUND} />
           </View>
-          <Text style={[styles.hint, { color: colors.textSecondary }]}>
+          <Text className="font-sans text-caption text-text-tertiary text-center">
             Scan with the Oxy Accounts app
           </Text>
         </View>
@@ -73,38 +93,14 @@ const AnotherDeviceQR: React.FC<AnotherDeviceQRProps> = ({ qrData }) => {
   );
 };
 
+// Measured/positioned layout only (no theming): the high-contrast QR plate keeps
+// a fixed white background + padding so the symbol scans reliably regardless of
+// the app theme. This is the single intentional non-token surface in the file.
 const styles = StyleSheet.create({
-  container: {
-    width: '100%',
-    alignItems: 'center',
-  },
-  toggle: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 8,
-  },
-  toggleText: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  chevron: {
-    fontSize: 16,
-    marginLeft: 8,
-  },
-  body: {
-    alignItems: 'center',
-    marginTop: 8,
-  },
   qrPlate: {
     padding: 16,
     borderRadius: 16,
-  },
-  hint: {
-    marginTop: 12,
-    fontSize: 12,
-    textAlign: 'center',
+    backgroundColor: QR_PLATE_BG,
   },
 });
 

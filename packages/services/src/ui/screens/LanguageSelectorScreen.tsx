@@ -1,32 +1,32 @@
 import React, { useState, useMemo, useCallback } from 'react';
-import {
-    View,
-    Text,
-    TouchableOpacity,
-    StyleSheet,
-    ScrollView,
-    Platform,
-} from 'react-native';
+import { View, StyleSheet, ScrollView } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { normalizeTheme } from '@oxyhq/core';
 import { Ionicons } from '@expo/vector-icons';
 import { toast } from '@oxyhq/bloom';
-import Header from '../components/Header';
+import { H1, Text } from '@oxyhq/bloom/typography';
+import { SearchInput } from '@oxyhq/bloom/search-input';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
+import Header from '../components/Header';
 import { useI18n } from '../hooks/useI18n';
 import { SUPPORTED_LANGUAGES } from '@oxyhq/core';
 import { useOxy } from '../context/OxyContext';
 
 interface LanguageSelectorScreenProps extends BaseScreenProps { }
 
+// Size (in dp) of the circular flag chip rendered as each row's leading icon.
+const FLAG_CHIP_SIZE = 40;
+// Selected-row check indicator size (dp).
+const CHECK_ICON_SIZE = 24;
+
 /**
  * LanguageSelectorScreen - Optimized for performance
- * 
+ *
  * Performance optimizations:
- * - useMemo for language items to prevent recreation on every render
+ * - useMemo for the filtered language list to prevent recreation on every render
  * - useCallback for handlers to prevent unnecessary re-renders
- * - Memoized current language section
+ * - Memoized component to prevent unnecessary re-renders
  */
 const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
     goBack,
@@ -39,6 +39,7 @@ const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
     const bloomTheme = useTheme();
     const normalizedTheme = normalizeTheme(theme);
     const [isLoading, setIsLoading] = useState(false);
+    const [query, setQuery] = useState('');
 
     // Memoize the language select handler to prevent recreation on every render
     const handleLanguageSelect = useCallback(async (languageId: string) => {
@@ -91,32 +92,20 @@ const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
         }
     }, [currentLanguage, isLoading, isAuthenticated, user?.id, oxyServices, setLanguage, t, onClose, goBack]);
 
-    // Memoize language items to prevent recreation on every render
-    const languageItems = useMemo(() =>
-        SUPPORTED_LANGUAGES.map(language => {
-            const isSelected = currentLanguage === language.id;
-            return {
-                id: language.id,
-                title: language.name,
-                description: language.nativeName,
-                icon: (
-                    <View style={[styles.languageFlag, { backgroundColor: `${language.color}15` }]}>
-                        <Text style={styles.flagEmoji}>{language.flag}</Text>
-                    </View>
-                ),
-                onPress: () => handleLanguageSelect(language.id),
-                rightElement: isSelected ? (
-                    <Ionicons name="checkmark-circle" size={24} color={bloomTheme.colors.primary} />
-                ) : undefined,
-                showChevron: false,
-            };
-        }),
-        [currentLanguage, handleLanguageSelect, bloomTheme]
-    );
-
+    // Filter the supported languages by the search query (name + native name).
+    const filteredLanguages = useMemo(() => {
+        const normalized = query.trim().toLowerCase();
+        if (!normalized) {
+            return SUPPORTED_LANGUAGES;
+        }
+        return SUPPORTED_LANGUAGES.filter((language) =>
+            language.name.toLowerCase().includes(normalized) ||
+            language.nativeName.toLowerCase().includes(normalized)
+        );
+    }, [query]);
 
     return (
-        <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
+        <View className="flex-1 bg-bg">
             <Header
                 title=""
                 subtitle=""
@@ -127,89 +116,86 @@ const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
             />
 
             <ScrollView
-                style={styles.content}
-                contentContainerStyle={styles.contentContainer}
+                className="flex-1"
+                contentContainerClassName="px-screen-margin pt-space-24 pb-space-24"
                 showsVerticalScrollIndicator={false}
                 removeClippedSubviews={true}
+                keyboardShouldPersistTaps="handled"
             >
                 {/* Big Title */}
-                <View style={styles.titleContainer}>
-                    <Text style={[styles.bigTitle, { color: bloomTheme.colors.text }]}>
+                <View className="mb-space-16">
+                    <H1 className="text-text" style={styles.bigTitle}>
                         {t('language.title')}
-                    </Text>
-                    {t('language.subtitle') && (
-                        <Text style={[styles.bigSubtitle, { color: bloomTheme.colors.textSecondary }]}>
+                    </H1>
+                    {t('language.subtitle') ? (
+                        <Text className="text-text-secondary mt-space-2" style={styles.bigSubtitle}>
                             {t('language.subtitle')}
                         </Text>
-                    )}
+                    ) : null}
+                </View>
+
+                {/* Search / filter */}
+                <View className="mb-space-16">
+                    <SearchInput
+                        value={query}
+                        onChangeText={setQuery}
+                        onClearText={() => setQuery('')}
+                        label={t('language.search') || 'Search languages'}
+                    />
                 </View>
 
                 {/* Available languages - Main section */}
-                <View style={styles.sectionContainer}>
-                    <View style={[styles.materialCard, {
-                        backgroundColor: bloomTheme.colors.card,
-                    }]}>
-                        <SettingsListGroup>
-                            {languageItems.map(item => (
-                                <SettingsListItem
-                                    key={item.id}
-                                    icon={item.icon}
-                                    title={item.title}
-                                    description={item.description}
-                                    onPress={item.onPress}
-                                    rightElement={item.rightElement}
-                                    showChevron={false}
-                                />
-                            ))}
-                        </SettingsListGroup>
-                    </View>
-                </View>
+                <SettingsListGroup>
+                    {filteredLanguages.map((language) => {
+                        const isSelected = currentLanguage === language.id;
+                        return (
+                            <SettingsListItem
+                                key={language.id}
+                                icon={
+                                    <View
+                                        className="bg-fill-secondary items-center justify-center"
+                                        style={styles.languageFlag}
+                                    >
+                                        <Text style={styles.flagEmoji}>{language.flag}</Text>
+                                    </View>
+                                }
+                                title={language.name}
+                                description={language.nativeName}
+                                onPress={() => handleLanguageSelect(language.id)}
+                                rightElement={
+                                    isSelected ? (
+                                        <Ionicons
+                                            name="checkmark-circle"
+                                            size={CHECK_ICON_SIZE}
+                                            color={bloomTheme.colors.primary}
+                                        />
+                                    ) : undefined
+                                }
+                                showChevron={false}
+                            />
+                        );
+                    })}
+                </SettingsListGroup>
             </ScrollView>
         </View>
     );
 };
 
+// StyleSheet retained ONLY for measured layout (sizes / line metrics) — no colors.
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-    },
-    content: {
-        flex: 1,
-    },
-    contentContainer: {
-        padding: 16,
-        paddingTop: 24,
-    },
-    titleContainer: {
-        marginBottom: 32,
-        paddingTop: 0,
-    },
     bigTitle: {
         fontSize: 34,
-        fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
         lineHeight: 40,
-        marginBottom: 8,
         letterSpacing: -0.5,
     },
     bigSubtitle: {
         fontSize: 16,
         lineHeight: 22,
-        opacity: 0.7,
-        marginTop: 4,
-    },
-    sectionContainer: {
-        marginBottom: 8,
-    },
-    materialCard: {
-        borderRadius: 12,
-        overflow: 'hidden',
     },
     languageFlag: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        alignItems: 'center',
-        justifyContent: 'center',
+        width: FLAG_CHIP_SIZE,
+        height: FLAG_CHIP_SIZE,
+        borderRadius: FLAG_CHIP_SIZE / 2,
     },
     flagEmoji: {
         fontSize: 20,

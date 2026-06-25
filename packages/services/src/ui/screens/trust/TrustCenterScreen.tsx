@@ -1,30 +1,24 @@
 import type React from 'react';
 import { useEffect, useMemo, useState } from 'react';
-import {
-    View,
-    Text,
-    TouchableOpacity,
-    StyleSheet,
-    ActivityIndicator,
-    ScrollView,
-    Platform,
-} from 'react-native';
+import { View, ScrollView, StyleSheet } from 'react-native';
 import type { ReputationTransaction, TrustTier } from '@oxyhq/core';
-import type { BaseScreenProps } from '../../types/navigation';
 import { Ionicons } from '@expo/vector-icons';
-import { useI18n } from '../../hooks/useI18n';
+import { Chip } from '@oxyhq/bloom/chip';
 import { useTheme } from '@oxyhq/bloom/theme';
-import { useColorScheme } from '../../hooks/useColorScheme';
-import { Colors } from '../../constants/theme';
-import { normalizeColorScheme } from '@oxyhq/core';
-import { darkenColor } from '../../utils/colorUtils';
+import { H1, Text } from '@oxyhq/bloom/typography';
+import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
+import type { BaseScreenProps } from '../../types/navigation';
+import Header from '../../components/Header';
+import { SettingsIcon } from '../../components/SettingsIcon';
+import LoadingState from '../../components/LoadingState';
+import { useI18n } from '../../hooks/useI18n';
 import { useOxy } from '../../context/OxyContext';
 import { getTrustTierLabel } from './trustTier';
 
 const TrustCenterScreen: React.FC<BaseScreenProps> = ({
-    theme,
-    navigate,
+    onClose,
     goBack,
+    navigate,
 }) => {
     // Use useOxy() hook for OxyContext values
     const { user, oxyServices, isAuthenticated } = useOxy();
@@ -36,19 +30,7 @@ const TrustCenterScreen: React.FC<BaseScreenProps> = ({
     const [error, setError] = useState<string | null>(null);
 
     const bloomTheme = useTheme();
-    const colorScheme = useColorScheme();
-    const normalizedColorScheme = normalizeColorScheme(colorScheme);
-    const themeColors = Colors[normalizedColorScheme];
     const primaryColor = bloomTheme.colors.primary;
-    const dangerColor = bloomTheme.colors.error;
-    const mutedTextColor = bloomTheme.colors.textTertiary;
-
-    // Icon colors from theme
-    const iconLeaderboard = themeColors.iconPayments;
-    const iconRules = themeColors.iconSecurity;
-    const iconAbout = themeColors.iconPayments;
-    const iconRewards = themeColors.iconStorage;
-    const iconFAQ = themeColors.iconPersonalInfo;
 
     useEffect(() => {
         if (!user) return;
@@ -77,231 +59,212 @@ const TrustCenterScreen: React.FC<BaseScreenProps> = ({
         [trustTier, t],
     );
 
+    const title = t('trust.center.title') || 'Trust Center';
+
     if (!isAuthenticated) {
         return (
-            <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
-                <Text style={[styles.message, { color: bloomTheme.colors.text }]}>{t('common.status.notSignedIn') || 'Not signed in'}</Text>
+            <View className="flex-1 bg-bg">
+                <Header title={title} onBack={goBack || onClose} elevation="subtle" />
+                <View style={styles.center}>
+                    <Text className="text-text font-medium text-base">
+                        {t('common.status.notSignedIn') || 'Not signed in'}
+                    </Text>
+                </View>
             </View>
         );
     }
 
     if (isLoading) {
         return (
-            <View style={[styles.container, { justifyContent: 'center', backgroundColor: bloomTheme.colors.background }]}>
-                <ActivityIndicator size="large" color={primaryColor} />
+            <View className="flex-1 bg-bg">
+                <Header title={title} onBack={goBack || onClose} elevation="subtle" />
+                <View style={styles.center}>
+                    <LoadingState color={primaryColor} />
+                </View>
             </View>
         );
     }
 
     return (
-        <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
-            <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContainer}>
-                <View style={styles.walletHeader}>
-                    <Text style={[styles.reputationAmount, { color: primaryColor }]}>{reputationTotal ?? 0}</Text>
-                    <Text style={[styles.reputationLabel, { color: bloomTheme.colors.textTertiary }]}>
+        <View className="flex-1 bg-bg">
+            <Header title={title} onBack={goBack || onClose} elevation="subtle" />
+            <ScrollView
+                className="flex-1"
+                contentContainerClassName="px-screen-margin pb-space-24"
+            >
+                {/* Balance hero card */}
+                <View className="items-center bg-fill-secondary rounded-radius-20 px-space-20 py-space-24 mb-space-16">
+                    <H1 style={{ color: primaryColor }}>{reputationTotal ?? 0}</H1>
+                    <Text className="text-text-tertiary text-base mt-space-2 mb-space-12">
                         {t('trust.center.balance') || 'Reputation Balance'}
                     </Text>
-                    {trustTierLabel && (
-                        <View style={[styles.tierBadge, { borderColor: primaryColor }]}>
-                            <Ionicons name="shield-checkmark-outline" size={14} color={primaryColor} />
-                            <Text style={[styles.tierBadgeText, { color: primaryColor }]}>{trustTierLabel}</Text>
-                        </View>
-                    )}
-                    <View style={styles.actionContainer}>
-                        <View style={styles.actionRow}>
-                            <TouchableOpacity style={styles.actionIconWrapper} onPress={() => navigate?.('TrustLeaderboard')}>
-                                <View style={[styles.actionIcon, { backgroundColor: iconLeaderboard }]}>
-                                    <Ionicons name="trophy-outline" size={28} color={darkenColor(iconLeaderboard)} />
-                                </View>
-                                <Text style={[styles.actionLabel, { color: mutedTextColor }]}>{t('trust.center.actions.leaderboard') || 'Leaderboard'}</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity style={styles.actionIconWrapper} onPress={() => navigate?.('TrustRules')}>
-                                <View style={[styles.actionIcon, { backgroundColor: iconRules }]}>
-                                    <Ionicons name="document-text-outline" size={28} color={darkenColor(iconRules)} />
-                                </View>
-                                <Text style={[styles.actionLabel, { color: mutedTextColor }]}>{t('trust.center.actions.rules') || 'Rules'}</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity style={styles.actionIconWrapper} onPress={() => navigate?.('AboutTrust')}>
-                                <View style={[styles.actionIcon, { backgroundColor: iconAbout }]}>
-                                    <Ionicons name="star-outline" size={28} color={darkenColor(iconAbout)} />
-                                </View>
-                                <Text style={[styles.actionLabel, { color: mutedTextColor }]}>{t('trust.center.actions.about') || 'About'}</Text>
-                            </TouchableOpacity>
-                        </View>
-                        <View style={styles.actionRow}>
-                            <TouchableOpacity style={styles.actionIconWrapper} onPress={() => navigate?.('TrustRewards')}>
-                                <View style={[styles.actionIcon, { backgroundColor: iconRewards }]}>
-                                    <Ionicons name="gift-outline" size={28} color={darkenColor(iconRewards)} />
-                                </View>
-                                <Text style={[styles.actionLabel, { color: mutedTextColor }]}>{t('trust.center.actions.rewards') || 'Rewards'}</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity style={styles.actionIconWrapper} onPress={() => navigate?.('TrustFAQ')}>
-                                <View style={[styles.actionIcon, { backgroundColor: iconFAQ }]}>
-                                    <Ionicons name="help-circle-outline" size={28} color={darkenColor(iconFAQ)} />
-                                </View>
-                                <Text style={[styles.actionLabel, { color: mutedTextColor }]}>{t('trust.center.actions.faq') || 'FAQ'}</Text>
-                            </TouchableOpacity>
-                        </View>
-                    </View>
-                    <Text style={[styles.infoText, { color: mutedTextColor }]}>
-                        {t('trust.center.info') || 'Reputation can only be earned by positive actions in the Oxy Ecosystem. It cannot be sent or received directly.'}
+                    {trustTierLabel ? (
+                        <Chip
+                            variant="soft"
+                            color="primary"
+                            startIcon={
+                                <Ionicons
+                                    name="shield-checkmark-outline"
+                                    size={14}
+                                    color={primaryColor}
+                                />
+                            }
+                        >
+                            {trustTierLabel}
+                        </Chip>
+                    ) : null}
+                    <Text
+                        className="text-text-tertiary text-sm text-center mt-space-16"
+                        style={styles.infoText}
+                    >
+                        {t('trust.center.info') ||
+                            'Reputation can only be earned by positive actions in the Oxy Ecosystem. It cannot be sent or received directly.'}
                     </Text>
                 </View>
-                <Text style={[styles.sectionTitle, { color: bloomTheme.colors.text }]}>
-                    {t('trust.center.history') || 'Reputation History'}
-                </Text>
-                <View style={styles.historyContainer}>
+
+                {/* Trust actions */}
+                <SettingsListGroup
+                    title={t('trust.center.actions.title') || 'Explore'}
+                >
+                    <SettingsListItem
+                        icon={
+                            <SettingsIcon
+                                name="trophy"
+                                color={bloomTheme.colors.warning}
+                            />
+                        }
+                        title={t('trust.center.actions.leaderboard') || 'Leaderboard'}
+                        onPress={() => navigate?.('TrustLeaderboard')}
+                    />
+                    <SettingsListItem
+                        icon={
+                            <SettingsIcon
+                                name="file-document"
+                                color={bloomTheme.colors.info}
+                            />
+                        }
+                        title={t('trust.center.actions.rules') || 'Rules'}
+                        onPress={() => navigate?.('TrustRules')}
+                    />
+                    <SettingsListItem
+                        icon={
+                            <SettingsIcon
+                                name="gift"
+                                color={bloomTheme.colors.success}
+                            />
+                        }
+                        title={t('trust.center.actions.rewards') || 'Rewards'}
+                        onPress={() => navigate?.('TrustRewards')}
+                    />
+                    <SettingsListItem
+                        icon={
+                            <SettingsIcon
+                                name="star"
+                                color={bloomTheme.colors.primary}
+                            />
+                        }
+                        title={t('trust.center.actions.about') || 'About'}
+                        onPress={() => navigate?.('AboutTrust')}
+                    />
+                    <SettingsListItem
+                        icon={
+                            <SettingsIcon
+                                name="help-circle"
+                                color={bloomTheme.colors.secondary}
+                            />
+                        }
+                        title={t('trust.center.actions.faq') || 'FAQ'}
+                        onPress={() => navigate?.('TrustFAQ')}
+                    />
+                </SettingsListGroup>
+
+                {/* Reputation history */}
+                <SettingsListGroup
+                    title={t('trust.center.history') || 'Reputation History'}
+                >
                     {transactions.length === 0 ? (
-                        <Text style={{ color: bloomTheme.colors.text, textAlign: 'center', marginTop: 16 }}>
-                            {t('trust.center.noHistory') || 'No reputation history yet.'}
-                        </Text>
+                        <SettingsListItem
+                            icon={
+                                <SettingsIcon
+                                    name="history"
+                                    color={bloomTheme.colors.textTertiary}
+                                />
+                            }
+                            title={
+                                t('trust.center.noHistory') || 'No reputation history yet.'
+                            }
+                            showChevron={false}
+                            disabled
+                        />
                     ) : (
                         transactions.map((entry) => (
-                            <View key={entry.id} style={[styles.historyItem, { borderColor: bloomTheme.colors.border }]}>
-                                <Text style={[styles.historyPoints, { color: entry.points > 0 ? primaryColor : dangerColor }]}>
-                                    {entry.points > 0 ? '+' : ''}{entry.points}
-                                </Text>
-                                <Text style={[styles.historyDesc, { color: bloomTheme.colors.text }]}>
-                                    {entry.reason || entry.actionType || (t('trust.center.noDescription') || 'No description')}
-                                </Text>
-                                <View style={styles.historyMetaRow}>
-                                    <Text style={[styles.historyCategory, { color: primaryColor }]}>
-                                        {entry.category}
-                                    </Text>
-                                    <Text style={[styles.historyDate, { color: bloomTheme.colors.textTertiary }]}>
-                                        {entry.createdAt ? new Date(entry.createdAt).toLocaleString() : ''}
-                                    </Text>
-                                </View>
-                            </View>
+                            <SettingsListItem
+                                key={entry.id}
+                                icon={
+                                    <SettingsIcon
+                                        name={
+                                            entry.points > 0
+                                                ? 'plus-circle'
+                                                : 'minus-circle'
+                                        }
+                                        color={
+                                            entry.points > 0
+                                                ? bloomTheme.colors.success
+                                                : bloomTheme.colors.error
+                                        }
+                                    />
+                                }
+                                title={
+                                    entry.reason ||
+                                    entry.actionType ||
+                                    (t('trust.center.noDescription') || 'No description')
+                                }
+                                description={
+                                    `${entry.category}${
+                                        entry.createdAt
+                                            ? ` · ${new Date(entry.createdAt).toLocaleString()}`
+                                            : ''
+                                    }`
+                                }
+                                rightElement={
+                                    <Chip
+                                        variant="soft"
+                                        size="small"
+                                        color={entry.points > 0 ? 'success' : 'error'}
+                                    >
+                                        {`${entry.points > 0 ? '+' : ''}${entry.points}`}
+                                    </Chip>
+                                }
+                                showChevron={false}
+                            />
                         ))
                     )}
-                </View>
-                {error && <Text style={{ color: dangerColor, marginTop: 16, textAlign: 'center' }}>{error}</Text>}
+                </SettingsListGroup>
+
+                {error ? (
+                    <Text
+                        className="text-sm text-center mt-space-16"
+                        style={{ color: bloomTheme.colors.error }}
+                    >
+                        {error}
+                    </Text>
+                ) : null}
             </ScrollView>
         </View>
     );
 };
 
+// Layout-only styles: flex centering for the empty/loading branches and the
+// info caption's measured max width. No color, spacing, radius, or typography
+// roles live here — those use Bloom token classes.
 const styles = StyleSheet.create({
-    container: {
+    center: {
         flex: 1,
-    },
-    scrollView: {
-        flex: 1,
-    },
-    scrollContainer: {
-        padding: 0,
-        alignItems: 'center',
-    },
-    walletHeader: {
-        alignItems: 'center',
-        paddingTop: 36,
-        paddingBottom: 24,
-        width: '100%',
-        backgroundColor: 'transparent',
-    },
-    reputationLabel: {
-        fontSize: 16,
-        marginBottom: 12,
-    },
-    reputationAmount: {
-        fontSize: 48,
-        fontWeight: 'bold',
-        marginBottom: 4,
-    },
-    tierBadge: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 6,
-        borderWidth: 1,
-        borderRadius: 999,
-        paddingHorizontal: 12,
-        paddingVertical: 5,
-        marginBottom: 18,
-    },
-    tierBadgeText: {
-        fontSize: 13,
-        fontWeight: '600',
-    },
-    actionContainer: {
-        marginBottom: 18,
-        gap: 8,
-    },
-    actionRow: {
-        flexDirection: 'row',
-        justifyContent: 'center',
-        gap: 2,
-    },
-    actionIconWrapper: {
-        alignItems: 'center',
-        width: 72,
-    },
-    actionIcon: {
-        width: 56,
-        height: 56,
-        borderRadius: 28,
         alignItems: 'center',
         justifyContent: 'center',
-        marginBottom: 6,
-    },
-    actionIconText: {
-        fontSize: 28,
-    },
-    actionLabel: {
-        fontSize: 10,
     },
     infoText: {
-        fontSize: 13,
-        textAlign: 'center',
-        marginTop: 8,
-        marginBottom: 8,
         maxWidth: 320,
-    },
-    sectionTitle: {
-        fontSize: 18,
-        fontWeight: Platform.OS === 'web' ? '600' : undefined,
-        marginTop: 8,
-        alignSelf: 'flex-start',
-        marginLeft: 24,
-    },
-    historyContainer: {
-        borderRadius: 15,
-        overflow: 'hidden',
-        marginBottom: 20,
-        width: '100%',
-        paddingHorizontal: 12,
-    },
-    historyItem: {
-        padding: 14,
-        borderBottomWidth: 1,
-    },
-    historyPoints: {
-        fontSize: 16,
-        fontWeight: '700',
-    },
-    historyDesc: {
-        fontSize: 15,
-        marginTop: 2,
-    },
-    historyMetaRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        marginTop: 2,
-    },
-    historyCategory: {
-        fontSize: 12,
-        fontWeight: '600',
-        textTransform: 'capitalize',
-    },
-    historyDate: {
-        fontSize: 13,
-    },
-
-    message: {
-        fontSize: 16,
-        textAlign: 'center',
-        marginTop: 24,
     },
 });
 

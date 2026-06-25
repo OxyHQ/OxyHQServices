@@ -1,35 +1,37 @@
 import React, { useState, useCallback } from 'react';
 import {
     View,
-    Text,
-    StyleSheet,
     ScrollView,
-    TextInput,
-    TouchableOpacity,
-    ActivityIndicator,
+    StyleSheet,
+    Platform,
+    KeyboardAvoidingView,
 } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
 import { Dialog, toast, useDialogControl } from '@oxyhq/bloom';
-import Header from '../components/Header';
-import { SettingsListGroup } from '@oxyhq/bloom/settings-list';
-import { useI18n } from '../hooks/useI18n';
 import { useTheme } from '@oxyhq/bloom/theme';
+import { H4, Text } from '@oxyhq/bloom/typography';
+import { Button } from '@oxyhq/bloom/button';
+import { TextField, TextFieldInput } from '@oxyhq/bloom/text-field';
+import { IconCircle } from '@oxyhq/bloom/icon-circle';
+import { BenefitList, BenefitRow } from '@oxyhq/bloom/benefit-list';
+import * as Icons from '@oxyhq/bloom/icons';
+import Header from '../components/Header';
+import { useI18n } from '../hooks/useI18n';
 import { useOxy } from '../context/OxyContext';
 
 const AccountVerificationScreen: React.FC<BaseScreenProps> = ({
     onClose,
-    theme,
     goBack,
 }) => {
     // Use useOxy() hook for OxyContext values
-    const { oxyServices, user } = useOxy();
+    const { oxyServices } = useOxy();
     const { t } = useI18n();
+    const bloomTheme = useTheme();
+
     const [reason, setReason] = useState('');
     const [evidence, setEvidence] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [successMessage, setSuccessMessage] = useState('');
-
-    const bloomTheme = useTheme();
 
     // Dialog controls
     const successDialog = useDialogControl();
@@ -74,90 +76,117 @@ const AccountVerificationScreen: React.FC<BaseScreenProps> = ({
         }
     }, [reason, evidence, oxyServices, t, successDialog]);
 
+    const canSubmit = Boolean(reason.trim()) && !isSubmitting;
+
     return (
-        <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
+        <KeyboardAvoidingView
+            className="flex-1 bg-bg"
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
             <Header
                 title={t('accountVerification.title') || 'Account Verification'}
-
                 onBack={goBack || onClose}
                 variant="minimal"
                 elevation="subtle"
             />
 
-            <ScrollView style={styles.content}>
-                <SettingsListGroup>
-                    <Text style={styles.description} className="text-muted-foreground">
+            <ScrollView
+                className="flex-1 px-screen-margin"
+                showsVerticalScrollIndicator={false}
+                contentContainerClassName="pb-space-32"
+                keyboardShouldPersistTaps="handled"
+            >
+                {/* Hero */}
+                <View className="items-center py-space-24 gap-space-12">
+                    <IconCircle icon={Icons.Verified_Stroke2_Corner2_Rounded} />
+                    <H4 className="text-headerBold font-headerBold text-text text-center">
+                        {t('accountVerification.heroTitle') || 'Get a verified badge'}
+                    </H4>
+                    <Text className="font-sans text-body text-text-secondary text-center">
                         {t('accountVerification.description') || 'Request a verified badge for your account. Verified accounts help establish authenticity and credibility.'}
                     </Text>
-                </SettingsListGroup>
+                </View>
 
-                <SettingsListGroup title={t('accountVerification.sections.request') || 'VERIFICATION REQUEST'}>
-                    <View style={styles.inputGroup}>
-                        <Text style={styles.label} className="text-foreground">
-                            {t('accountVerification.reasonLabel') || 'Reason for Verification *'}
-                        </Text>
-                        <TextInput
-                            style={[
-                                styles.textInput,
-                                styles.textArea,
-                            ]}
-                            className="bg-secondary text-foreground border-border"
+                {/* Benefits */}
+                <BenefitList
+                    className="mb-space-24"
+                    accessibilityLabel={t('accountVerification.sections.benefits') || 'What verification gives you'}
+                >
+                    <BenefitRow
+                        icon={<Icons.ShieldCheck_Stroke2_Corner0_Rounded size="sm" style={{ color: bloomTheme.colors.primary }} />}
+                        label={t('accountVerification.benefits.authenticity') || 'Confirms your identity is authentic and trusted'}
+                    />
+                    <BenefitRow
+                        icon={<Icons.Verified_Stroke2_Corner2_Rounded size="sm" style={{ color: bloomTheme.colors.primary }} />}
+                        label={t('accountVerification.benefits.badge') || 'Displays a verified badge across the platform'}
+                    />
+                    <BenefitRow
+                        icon={<Icons.Sparkle_Stroke2_Corner0_Rounded size="sm" style={{ color: bloomTheme.colors.primary }} />}
+                        label={t('accountVerification.benefits.credibility') || 'Builds credibility with people who follow you'}
+                    />
+                </BenefitList>
+
+                {/* Verification request form */}
+                <Text className="text-sectionTitle font-sectionTitle text-text-secondary mb-space-12">
+                    {t('accountVerification.sections.request') || 'VERIFICATION REQUEST'}
+                </Text>
+
+                <View className="gap-space-16 p-space-16 rounded-radius-20 bg-fill">
+                    <TextField>
+                        <TextFieldInput
+                            floatingLabel
+                            label={t('accountVerification.reasonLabel') || 'Reason for Verification *'}
                             value={reason}
                             onChangeText={setReason}
                             placeholder={t('accountVerification.reasonPlaceholder') || 'Explain why you need a verified badge (e.g., public figure, brand, organization)'}
-                            placeholderTextColor={bloomTheme.colors.textSecondary}
                             multiline
                             numberOfLines={4}
                             textAlignVertical="top"
                             editable={!isSubmitting}
+                            style={styles.multiline}
                         />
-                    </View>
+                    </TextField>
 
-                    <View style={styles.inputGroup}>
-                        <Text style={styles.label} className="text-foreground">
-                            {t('accountVerification.evidenceLabel') || 'Evidence (Optional)'}
-                        </Text>
-                        <TextInput
-                            style={[
-                                styles.textInput,
-                                styles.textArea,
-                            ]}
-                            className="bg-secondary text-foreground border-border"
+                    <TextField>
+                        <TextFieldInput
+                            floatingLabel
+                            label={t('accountVerification.evidenceLabel') || 'Evidence (Optional)'}
                             value={evidence}
                             onChangeText={setEvidence}
                             placeholder={t('accountVerification.evidencePlaceholder') || 'Provide any supporting documentation or links (e.g., official website, social media profiles)'}
-                            placeholderTextColor={bloomTheme.colors.textSecondary}
                             multiline
                             numberOfLines={4}
                             textAlignVertical="top"
                             editable={!isSubmitting}
+                            style={styles.multiline}
                         />
-                    </View>
-                </SettingsListGroup>
+                    </TextField>
+                </View>
 
-                <SettingsListGroup>
-                    <TouchableOpacity
-                        style={styles.submitButton}
-                        className={isSubmitting ? 'bg-muted-foreground' : 'bg-primary'}
-                        onPress={handleSubmit}
-                        disabled={isSubmitting || !reason.trim()}
-                    >
-                        {isSubmitting ? (
-                            <ActivityIndicator color={bloomTheme.colors.primaryForeground} />
-                        ) : (
-                            <Text style={[styles.submitButtonText, { color: bloomTheme.colors.primaryForeground }]}>
-                                {t('accountVerification.submit') || 'Submit Request'}
-                            </Text>
-                        )}
-                    </TouchableOpacity>
-                </SettingsListGroup>
+                <Button
+                    variant="primary"
+                    size="large"
+                    fullWidth
+                    className="mt-space-24"
+                    onPress={handleSubmit}
+                    disabled={!canSubmit}
+                    loading={isSubmitting}
+                    accessibilityLabel={t('accountVerification.submit') || 'Submit Request'}
+                >
+                    {t('accountVerification.submit') || 'Submit Request'}
+                </Button>
 
-                <SettingsListGroup>
-                    <Text style={styles.note} className="text-muted-foreground">
+                <View className="flex-row items-start gap-space-8 mt-space-24">
+                    <Icons.CircleInfo_Stroke2_Corner0_Rounded
+                        size="sm"
+                        style={{ color: bloomTheme.colors.textTertiary }}
+                    />
+                    <Text className="flex-1 font-sans text-caption text-text-tertiary">
                         {t('accountVerification.note') || 'Note: Verification requests are reviewed manually and may take several days. We will notify you once your request has been reviewed.'}
                     </Text>
-                </SettingsListGroup>
+                </View>
             </ScrollView>
+
             <Dialog
                 control={successDialog}
                 title={t('accountVerification.successTitle') || 'Request Submitted'}
@@ -169,57 +198,16 @@ const AccountVerificationScreen: React.FC<BaseScreenProps> = ({
                     },
                 ]}
             />
-        </View>
+        </KeyboardAvoidingView>
     );
 };
 
+// Measured layout only (no color): give the multiline inputs a comfortable
+// minimum height so the floating-label textarea has room. Colors/typography
+// come from the Bloom TextFieldInput chrome + token classes.
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-    },
-    content: {
-        flex: 1,
-        padding: 16,
-    },
-    description: {
-        fontSize: 16,
-        lineHeight: 24,
-        marginBottom: 8,
-    },
-    inputGroup: {
-        marginBottom: 24,
-    },
-    label: {
-        fontSize: 16,
-        fontWeight: '500',
-        marginBottom: 8,
-    },
-    textInput: {
-        borderWidth: 1,
-        borderRadius: 8,
-        padding: 12,
-        fontSize: 16,
-        minHeight: 44,
-    },
-    textArea: {
-        minHeight: 100,
-        paddingTop: 12,
-    },
-    submitButton: {
-        borderRadius: 8,
-        padding: 16,
-        alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: 50,
-    },
-    submitButtonText: {
-        fontSize: 16,
-        fontWeight: '600',
-    },
-    note: {
-        fontSize: 14,
-        lineHeight: 20,
-        fontStyle: 'italic',
+    multiline: {
+        minHeight: 96,
     },
 });
 
