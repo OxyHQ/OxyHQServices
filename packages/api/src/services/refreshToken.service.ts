@@ -672,7 +672,9 @@ export async function issueAndSetRefreshCookie(
 
   // Same user already has a slot -> reuse it after revoking the old family
   // (a fresh sign-in for the same account must invalidate the prior token so
-  // a replay can't ride the same slot).
+  // a replay can't ride the same slot). FedCM/service sign-ins may intentionally
+  // reuse the same stable sessionId; in that case revoke the old token family
+  // without deactivating the still-current session.
   const existing = userIdToAuthuser.get(userIdStr);
   if (typeof existing === 'number') {
     const buckets = parseAllRefreshCookies(cookieHeader);
@@ -681,7 +683,8 @@ export async function issueAndSetRefreshCookie(
       const tokenHash = sha256Hex(raw);
       const row = await RefreshToken.findOne({ tokenHash });
       if (row) {
-        await revokeFamily(row.family, row.sessionId);
+        const sessionToDeactivate = row.sessionId === sessionId ? undefined : row.sessionId;
+        await revokeFamily(row.family, sessionToDeactivate);
         break;
       }
     }
