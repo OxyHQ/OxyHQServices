@@ -1,5 +1,6 @@
 import type { AccountStorageUsageResponse, AssetUploadInput, AssetUrlResponse, AssetVariant, RNFileDescriptor } from '../models/interfaces';
 import type { OxyServicesBase } from '../OxyServices.base';
+import { isReactNative } from '../utils/platform';
 
 interface FileDownloadUrlOptions {
   /** Omit bearer access tokens from generated URLs, even when authenticated. */
@@ -222,10 +223,33 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
         } else if (typeof Blob !== 'undefined' && file instanceof Blob) {
           formData.append('file', file, fileName);
         } else if ('uri' in file && typeof (file as RNFileDescriptor).uri === 'string') {
-          // React Native file descriptor — RN's FormData handles {uri, type, name} natively.
-          // It reads the file from disk during the multipart request — no in-JS Blob
-          // conversion (which would fail on Hermes for ArrayBuffer-backed Blobs).
-          formData.append('file', file as unknown as Blob, fileName);
+          const descriptor = file as RNFileDescriptor;
+
+          if (isReactNative()) {
+            // React Native file descriptor — RN's FormData handles {uri, type, name} natively.
+            // It reads the file from disk during the multipart request — no in-JS Blob
+            // conversion (which would fail on Hermes for ArrayBuffer-backed Blobs).
+            formData.append('file', descriptor as unknown as Blob, fileName);
+          } else {
+            // Web (browser/Node): the browser's FormData cannot read bytes from a plain
+            // { uri } object — it would serialize "[object Object]" and the server would
+            // store a 0-byte asset. Materialize the uri into a real Blob first. `fetch`
+            // resolves blob:, data:, and http(s): uris on web, so all picker outputs work.
+            const res = await fetch(descriptor.uri);
+            if (!res.ok) {
+              throw new Error(`Failed to read file from uri (status ${res.status})`);
+            }
+            const fetched = await res.blob();
+            // Preserve the descriptor's declared MIME type when the fetched blob has none.
+            const blob =
+              fetched.type === '' && descriptor.type
+                ? new Blob([fetched], { type: descriptor.type })
+                : fetched;
+            if (blob.size === 0) {
+              throw new Error('Cannot upload an empty file');
+            }
+            formData.append('file', blob, fileName);
+          }
         } else {
           throw new Error('Unsupported file input: expected File, Blob, or { uri, type?, name?, size? } descriptor');
         }
