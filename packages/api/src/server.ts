@@ -58,6 +58,7 @@ import { csrfProtection, getCsrfToken } from './middleware/csrf';
 import { createCorsMiddleware, SOCKET_IO_CORS_CONFIG } from './config/cors';
 import { createAdapter } from '@socket.io/redis-adapter';
 import { getRedisClient, closeRedis } from './config/redis';
+import { initializeIO } from './utils/socket';
 import performanceMiddleware, { getMemoryStats, getConnectionPoolStats } from './middleware/performance';
 import { performanceMonitor } from './utils/performanceMonitor';
 import { waitForMongoConnection } from './utils/dbConnection';
@@ -170,6 +171,7 @@ const server = http.createServer(app);
 const io = new SocketIOServer(server, {
   cors: SOCKET_IO_CORS_CONFIG,
 });
+initializeIO(io);
 
 // Attach Redis adapter for multi-instance broadcast (if Redis available)
 const redis = getRedisClient();
