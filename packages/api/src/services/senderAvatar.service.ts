@@ -5,6 +5,7 @@ import User from '../models/User';
 import { extractUsername } from '../config/email.config';
 
 const CACHE_TTL_DAYS = 7;
+const BIMI_DNS_TIMEOUT_MS = 1500;
 
 /** Build a base64-encoded proxy path for an external URL. */
 function proxyPath(url: string): string {
@@ -19,9 +20,20 @@ function proxyPath(url: string): string {
  * BIMI record format: "v=BIMI1; l=https://example.com/logo.svg; a=..."
  * Published at: default._bimi.<domain>
  */
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timeout: NodeJS.Timeout | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeout = setTimeout(() => reject(new Error('BIMI DNS lookup timed out')), timeoutMs);
+  });
+
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timeout) clearTimeout(timeout);
+  });
+}
+
 async function lookupBimi(domain: string): Promise<string | null> {
   try {
-    const records = await dns.resolveTxt(`default._bimi.${domain}`);
+    const records = await withTimeout(dns.resolveTxt(`default._bimi.${domain}`), BIMI_DNS_TIMEOUT_MS);
     for (const parts of records) {
       const record = parts.join('');
       if (!record.toLowerCase().startsWith('v=bimi1')) continue;
