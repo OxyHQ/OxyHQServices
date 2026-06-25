@@ -1,4 +1,6 @@
 import { Router, Request, Response } from 'express';
+import { authMiddleware } from '../middleware/auth';
+import { requireStaff } from '../middleware/requireStaff';
 import { User } from '../models/User';
 import Session from '../models/Session';
 import { Message } from '../models/Message';
@@ -14,7 +16,10 @@ const router = Router();
 // Shared cache for both REST and SSE
 let cachedStats: any = null;
 let cacheTime = 0;
+let inFlightStatsRefresh: Promise<any> | null = null;
+let activeStatsStreams = 0;
 const CACHE_TTL = 2_000; // 2s cache for real-time feel
+const MAX_ACTIVE_STATS_STREAMS = 25;
 
 async function fetchStats() {
   const now = Date.now();
@@ -22,6 +27,18 @@ async function fetchStats() {
     return cachedStats;
   }
 
+  if (inFlightStatsRefresh) {
+    return inFlightStatsRefresh;
+  }
+
+  inFlightStatsRefresh = refreshStats(now).finally(() => {
+    inFlightStatsRefresh = null;
+  });
+
+  return inFlightStatsRefresh;
+}
+
+async function refreshStats(now: number) {
   const [
     totalUsers,
     activeSessions,
@@ -77,6 +94,8 @@ async function fetchStats() {
   return stats;
 }
 
+router.use(authMiddleware, requireStaff);
+
 // REST endpoint (fallback)
 router.get('/', async (_req: Request, res: Response) => {
   try {
@@ -90,6 +109,15 @@ router.get('/', async (_req: Request, res: Response) => {
 
 // SSE endpoint — true real-time push
 router.get('/stream', (req: Request, res: Response) => {
+  if (activeStatsStreams >= MAX_ACTIVE_STATS_STREAMS) {
+    res.status(429).json({ error: 'Too many active platform stats streams' });
+    return;
+  }
+
+  activeStatsStreams += 1;
+  let closed = false;
+  let sendInProgress = false;
+
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
@@ -99,11 +127,20 @@ router.get('/stream', (req: Request, res: Response) => {
 
   // Send initial data immediately
   const sendStats = async () => {
+    if (closed || sendInProgress) {
+      return;
+    }
+
+    sendInProgress = true;
     try {
       const stats = await fetchStats();
-      res.write(`data: ${JSON.stringify(stats)}\n\n`);
+      if (!closed) {
+        res.write(`data: ${JSON.stringify(stats)}\n\n`);
+      }
     } catch (error) {
       logger.error('SSE stats error:', error);
+    } finally {
+      sendInProgress = false;
     }
   };
 
@@ -117,6 +154,12 @@ router.get('/stream', (req: Request, res: Response) => {
   }, 15_000);
 
   req.on('close', () => {
+    if (closed) {
+      return;
+    }
+
+    closed = true;
+    activeStatsStreams = Math.max(0, activeStatsStreams - 1);
     clearInterval(interval);
     clearInterval(keepAlive);
   });

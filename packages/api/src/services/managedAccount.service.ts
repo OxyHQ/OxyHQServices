@@ -167,12 +167,15 @@ export class ManagedAccountService {
 
   /**
    * Get details for a specific managed account.
+   * Requester must be one of the account's managers.
    */
   async getManagedAccountDetails(
-    accountId: string
+    accountId: string,
+    requesterId: string
   ): Promise<ManagedAccountResponse | null> {
     const managedAccount = await ManagedAccount.findOne({
       accountId: new mongoose.Types.ObjectId(accountId),
+      'managers.userId': new mongoose.Types.ObjectId(requesterId),
     }).lean();
 
     if (!managedAccount) return null;

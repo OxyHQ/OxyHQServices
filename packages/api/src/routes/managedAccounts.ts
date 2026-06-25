@@ -86,10 +86,15 @@ router.get('/', async (req: AuthenticatedRequest, res: express.Response) => {
 
 // ============================================
 // GET /verify — Lightweight verification for the acting-as middleware
-// Query params: accountId, userId
+// Query params: accountId, userId (userId must match the authenticated user)
 // ============================================
 router.get('/verify', async (req: AuthenticatedRequest, res: express.Response) => {
   try {
+    const authenticatedUserId = getUserId(req);
+    if (!authenticatedUserId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
     const { accountId, userId } = req.query;
 
     if (
@@ -105,7 +110,11 @@ router.get('/verify', async (req: AuthenticatedRequest, res: express.Response) =
       return res.status(400).json({ error: 'Invalid accountId or userId format' });
     }
 
-    const role = await managedAccountService.verifyActingAs(userId, accountId);
+    if (userId !== authenticatedUserId) {
+      return res.status(403).json({ error: 'Forbidden: cannot verify another user' });
+    }
+
+    const role = await managedAccountService.verifyActingAs(authenticatedUserId, accountId);
 
     if (!role) {
       return res.json({ authorized: false, role: null });
@@ -133,7 +142,7 @@ router.get('/:accountId', async (req: AuthenticatedRequest, res: express.Respons
       return res.status(400).json({ error: 'Invalid accountId format' });
     }
 
-    const result = await managedAccountService.getManagedAccountDetails(accountId);
+    const result = await managedAccountService.getManagedAccountDetails(accountId, userId);
     if (!result) {
       return res.status(404).json({ error: 'Managed account not found' });
     }

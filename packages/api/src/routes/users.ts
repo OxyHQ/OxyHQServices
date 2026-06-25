@@ -54,6 +54,14 @@ interface PaginationQuery {
 // Maximum number of users that can be followed in a single bulk request.
 const MAX_BULK_FOLLOW = 200;
 
+const getUserIdsFromRequestBody = (body: unknown): unknown => {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return undefined;
+  }
+
+  return (body as { userIds?: unknown }).userIds;
+};
+
 import { PAGINATION } from '../utils/constants';
 import { federationService } from '../services/federation.service';
 
@@ -389,7 +397,7 @@ router.post(
       throw new UnauthorizedError('Authentication required');
     }
 
-    const { userIds } = req.body;
+    const userIds = getUserIdsFromRequestBody(req.body);
 
     if (!Array.isArray(userIds)) {
       throw new BadRequestError('userIds must be an array');
@@ -443,7 +451,7 @@ router.post(
       throw new UnauthorizedError('Authentication required');
     }
 
-    const { userIds } = req.body;
+    const userIds = getUserIdsFromRequestBody(req.body);
 
     if (!Array.isArray(userIds)) {
       throw new BadRequestError('userIds must be an array');

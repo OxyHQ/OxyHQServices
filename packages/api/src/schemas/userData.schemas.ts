@@ -18,6 +18,12 @@ import { APP_DATA_IDENTIFIER_PATTERN } from '../models/UserAppData';
 /** Hard cap on the serialized JSON size of a single stored value (64 KB). */
 export const APP_DATA_MAX_VALUE_BYTES = 64 * 1024;
 
+/** Maximum number of app-data keys a user may store in one namespace. */
+export const APP_DATA_MAX_NAMESPACE_KEYS = 128;
+
+/** Maximum number of app-data keys a user may store across all namespaces. */
+export const APP_DATA_MAX_USER_KEYS = 1024;
+
 const identifierSchema = z
   .string()
   .trim()

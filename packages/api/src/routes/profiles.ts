@@ -253,6 +253,21 @@ const validatePagination = (req: Request, res: Response, next: () => void): void
   next();
 };
 
+const parseExcludeTypesQuery = (excludeTypesRaw: unknown): string[] => {
+  if (excludeTypesRaw === undefined) {
+    return [];
+  }
+
+  if (typeof excludeTypesRaw !== 'string') {
+    throw new BadRequestError('Invalid excludeTypes parameter. Must be a comma-separated string');
+  }
+
+  return excludeTypesRaw
+    .split(',')
+    .map((type) => type.trim())
+    .filter((type) => VALID_EXCLUDE_TYPES.has(type));
+};
+
 /**
  * @openapi
  * /profiles/username/{username}:
@@ -1127,9 +1142,7 @@ router.get(
     const { limit, offset, excludeTypes: excludeTypesRaw } = req.query as PaginationQuery & { excludeTypes?: string };
     const currentUserId = resolveViewerId(req);
 
-    const excludeTypes = excludeTypesRaw
-      ? excludeTypesRaw.split(',').filter(t => VALID_EXCLUDE_TYPES.has(t.trim())).map(t => t.trim())
-      : [];
+    const excludeTypes = parseExcludeTypesQuery(excludeTypesRaw);
 
     const parsedLimit = limit
       ? Math.min(parseInt(limit, 10), PAGINATION.MAX_LIMIT)

@@ -1,12 +1,20 @@
-import { Request, Response } from "express";
+import type { Request, Response } from "express";
+import type { AuthRequest } from "../middleware/auth";
 import Analytics from "../models/Analytics";
 import User from "../models/User";
 import { getDateRange } from "./utils/dateUtils";
 import { logger } from '../utils/logger';
 
+const getAuthenticatedAnalyticsUserId = (req: Request) => (req as AuthRequest).user?._id;
+
 export const getAnalytics = async (req: Request, res: Response) => {
   try {
-    const { userID, period = "weekly" } = req.query;
+    const userID = getAuthenticatedAnalyticsUserId(req);
+    if (!userID) {
+      return res.status(401).json({ message: "Authentication required" });
+    }
+
+    const { period = "weekly" } = req.query;
     const { startDate, endDate } = getDateRange(period as string);
 
     const analytics = await Analytics.find({
@@ -33,7 +41,12 @@ export const getAnalytics = async (req: Request, res: Response) => {
 
 export const updateAnalytics = async (req: Request, res: Response) => {
   try {
-    const { userID, type, data } = req.body;
+    const userID = getAuthenticatedAnalyticsUserId(req);
+    if (!userID) {
+      return res.status(401).json({ message: "Authentication required" });
+    }
+
+    const { type, data } = req.body;
     const date = new Date();
     
     // Update or create analytics record for each period
@@ -66,7 +79,12 @@ export const updateAnalytics = async (req: Request, res: Response) => {
 
 export const getContentViewers = async (req: Request, res: Response) => {
   try {
-    const { userID, period = "weekly" } = req.query;
+    const userID = getAuthenticatedAnalyticsUserId(req);
+    if (!userID) {
+      return res.status(401).json({ message: "Authentication required" });
+    }
+
+    const { period = "weekly" } = req.query;
     const { startDate, endDate } = getDateRange(period as string);
     
     const viewers = await Analytics.aggregate([
@@ -98,7 +116,12 @@ export const getContentViewers = async (req: Request, res: Response) => {
 
 export const getFollowerDetails = async (req: Request, res: Response) => {
   try {
-    const { userID, period = "weekly" } = req.query;
+    const userID = getAuthenticatedAnalyticsUserId(req);
+    if (!userID) {
+      return res.status(401).json({ message: "Authentication required" });
+    }
+
+    const { period = "weekly" } = req.query;
     const { startDate } = getDateRange(period as string);
 
     const followerStats = await User.aggregate([
