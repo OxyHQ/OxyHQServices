@@ -107,6 +107,10 @@ function isBulkWriteLikeError(error: unknown): error is BulkWriteLikeError {
   return Array.isArray(candidate.writeErrors) || typeof candidate.code === 'number';
 }
 
+function normalizeProfileColor(value: unknown): unknown {
+  return typeof value === 'string' ? value.trim().toLowerCase() : value;
+}
+
 export class UserService {
   /**
    * Get user by ID with proper serialization
@@ -170,8 +174,11 @@ export class UserService {
         continue;
       }
 
-      // Validate premium-exclusive colors
-      if (key === 'color' && value === 'oxy') {
+      const normalizedValue = key === 'color' ? normalizeProfileColor(value) : value;
+
+      // Validate premium-exclusive colors against the same normalized value
+      // that the User schema will persist (trim + lowercase).
+      if (key === 'color' && normalizedValue === 'oxy') {
         const user = await User.findById(userId).select('username').lean();
         const isOxyUser = user?.username?.toLowerCase() === 'oxy';
         if (!isOxyUser) {
@@ -197,7 +204,7 @@ export class UserService {
       }
       
       // Assign other fields
-      (filteredUpdates as Record<string, unknown>)[key] = value;
+      (filteredUpdates as Record<string, unknown>)[key] = normalizedValue;
     }
 
     // Validate uniqueness constraints
