@@ -35,7 +35,6 @@ export function RecoverForm({
     devCode,
     ...props
 }: RecoverFormProps) {
-    const recoveryStorageKey = "oxy_recovery_token"
     const navigate = useNavigate()
     const currentStep = step === "verify" || step === "reset" || step === "success" ? step : "request"
     const [localError, setLocalError] = useState<string | undefined>()
@@ -121,13 +120,6 @@ export function RecoverForm({
                     return
                 }
 
-                if (!payload?.recoveryToken) {
-                    setLocalError("Unable to continue recovery")
-                    return
-                }
-
-                sessionStorage.setItem(recoveryStorageKey, payload.recoveryToken)
-
                 const nextUrl = new URL("/recover", window.location.origin)
                 nextUrl.searchParams.set("step", "reset")
                 if (formIdentifier) {
@@ -148,21 +140,13 @@ export function RecoverForm({
                     return
                 }
 
-                const recoveryToken = sessionStorage.getItem(recoveryStorageKey)
-                if (!recoveryToken) {
-                    setLocalError(
-                        "Recovery session expired. Please request a new code."
-                    )
-                    return
-                }
-
                 const response = await fetch(buildAuthUrl("/recover/reset"), {
                     method: "POST",
                     headers: {
                         "content-type": "application/json",
                     },
                     credentials: "include",
-                    body: JSON.stringify({ recoveryToken, password }),
+                    body: JSON.stringify({ password }),
                 })
 
                 const payload = await response.json().catch(() => ({}))
@@ -174,8 +158,6 @@ export function RecoverForm({
                     setLocalError(message)
                     return
                 }
-
-                sessionStorage.removeItem(recoveryStorageKey)
 
                 const nextUrl = new URL("/recover", window.location.origin)
                 nextUrl.searchParams.set("step", "success")

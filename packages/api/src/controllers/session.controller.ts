@@ -62,6 +62,33 @@ const RECOVERY_CODE_LENGTH = 10;
 const RECOVERY_CODE_TTL_MS = 10 * 60 * 1000;
 const RECOVERY_TOKEN_TTL_MS = 15 * 60 * 1000;
 const MAX_RECOVERY_ATTEMPTS = 3;
+const RECOVERY_COOKIE_NAME = 'oxy_recovery_token';
+const RECOVERY_COOKIE_PATH = '/auth/recover';
+
+function recoveryCookieOptions(maxAge: number) {
+  return {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax' as const,
+    domain: process.env.REFRESH_COOKIE_DOMAIN || 'oxy.so',
+    path: RECOVERY_COOKIE_PATH,
+    maxAge,
+  };
+}
+
+function setRecoveryCookie(res: Response, recoveryToken: string): void {
+  res.cookie(RECOVERY_COOKIE_NAME, recoveryToken, recoveryCookieOptions(RECOVERY_TOKEN_TTL_MS));
+}
+
+function clearRecoveryCookie(res: Response): void {
+  res.clearCookie(RECOVERY_COOKIE_NAME, recoveryCookieOptions(0));
+}
+
+function getRecoveryTokenFromRequest(req: Request): string | undefined {
+  const cookies = (req as Request & { cookies?: Record<string, unknown> }).cookies;
+  const token = cookies?.[RECOVERY_COOKIE_NAME];
+  return typeof token === 'string' && token.length > 0 ? token : undefined;
+}
 
 // More robust email validation regex (RFC 5322 compliant)
 // Validates: local-part@domain with proper character restrictions
@@ -903,8 +930,10 @@ export class SessionController {
         { expiresIn: Math.floor(RECOVERY_TOKEN_TTL_MS / 1000) }
       );
 
+      setRecoveryCookie(res, recoveryToken);
+
       return res.json({
-        recoveryToken,
+        success: true,
         expiresAt: new Date(Date.now() + RECOVERY_TOKEN_TTL_MS).toISOString(),
       });
     } catch (error) {
@@ -918,10 +947,11 @@ export class SessionController {
    */
   static async resetPassword(req: Request, res: Response) {
     try {
-      const { recoveryToken, password } = req.body;
+      const { password } = req.body;
+      const recoveryToken = getRecoveryTokenFromRequest(req);
 
       if (!recoveryToken || !password) {
-        return res.status(400).json({ message: 'Recovery token and password are required' });
+        return res.status(400).json({ message: 'Recovery session and password are required' });
       }
 
       // Validate password strength
@@ -961,6 +991,7 @@ export class SessionController {
 
       recovery.used = true;
       await recovery.save();
+      clearRecoveryCookie(res);
 
       try {
         await securityActivityService.logAccountRecovery(

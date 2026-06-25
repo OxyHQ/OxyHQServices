@@ -34,7 +34,7 @@ Set `REDIS_URL` in the environment. If unset, everything falls back to in-memory
 
 ```bash
 # Production (ElastiCache, in-VPC, TLS)
-REDIS_URL=rediss://oxy-valkey.xxxxx.use1.cache.amazonaws.com:6379
+REDIS_URL=rediss://<private-valkey-endpoint>:6379
 
 # Local development (optional)
 # REDIS_URL=redis://localhost:6379
@@ -44,7 +44,7 @@ REDIS_URL=rediss://oxy-valkey.xxxxx.use1.cache.amazonaws.com:6379
 - `redis://` = plaintext (local only)
 - Omit = in-memory fallback
 
-In production the value is stored in SSM (`/oxy/_shared/REDIS_URL`) and injected into ECS tasks via the task definition `secrets` mapping.
+In production the value is stored in SSM (the shared Redis URL parameter) and injected into ECS tasks via the task definition `secrets` mapping.
 
 ## Implementation
 

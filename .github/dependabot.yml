@@ -9,7 +9,7 @@ updates:
       minor-and-patch:
         update-types: [minor, patch]
     labels:
-      - type: deps
+      - "type: deps"
     open-pull-requests-limit: 10
 
   - package-ecosystem: github-actions
@@ -17,4 +17,4 @@ updates:
     schedule:
       interval: monthly
     labels:
-      - type: infra
+      - "type: infra"
