@@ -278,18 +278,7 @@ export async function bulkUpdateFlags(req: AuthRequest, res: Response): Promise<
     }
   }
 
-  const flagUpdates = Object.entries(filtered).reduce(
-    (acc, [key, value]) => {
-      acc[`flags.${key}`] = value;
-      return acc;
-    },
-    {} as Record<string, boolean>,
-  );
-
-  const result = await Message.updateMany(
-    { _id: { $in: messageIds }, userId },
-    { $set: flagUpdates },
-  );
+  const result = await emailService.bulkUpdateMessageFlags(userId, messageIds, filtered);
 
   res.json({ data: { matched: result.matchedCount, modified: result.modifiedCount } });
 }
@@ -308,14 +297,7 @@ export async function bulkMoveMessages(req: AuthRequest, res: Response): Promise
     throw new BadRequestError('mailboxId is required');
   }
 
-  // Verify target mailbox belongs to user
-  const mailbox = await emailService.getMailboxById(userId, mailboxId);
-  if (!mailbox) throw new NotFoundError('Target mailbox not found');
-
-  const result = await Message.updateMany(
-    { _id: { $in: messageIds }, userId },
-    { $set: { mailboxId } },
-  );
+  const result = await emailService.bulkMoveMessages(userId, messageIds, mailboxId);
 
   res.json({ data: { matched: result.matchedCount, modified: result.modifiedCount } });
 }

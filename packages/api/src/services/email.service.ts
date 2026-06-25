@@ -607,6 +607,118 @@ class EmailService {
     return message.toJSON();
   }
 
+  async bulkUpdateMessageFlags(
+    userId: string,
+    messageIds: string[],
+    flags: Partial<IMessage['flags']>
+  ): Promise<{ matchedCount: number; modifiedCount: number }> {
+    const update: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(flags)) {
+      update[`flags.${key}`] = value;
+    }
+
+    const messages = await Message.find({ _id: { $in: messageIds }, userId })
+      .select('mailboxId flags.seen')
+      .lean();
+
+    const unseenDeltas = new Map<string, number>();
+    if ('seen' in flags) {
+      for (const message of messages) {
+        if (message.flags.seen === flags.seen) {
+          continue;
+        }
+        const mailboxId = message.mailboxId.toString();
+        const delta = flags.seen ? -1 : 1;
+        unseenDeltas.set(mailboxId, (unseenDeltas.get(mailboxId) ?? 0) + delta);
+      }
+    }
+
+    const result = await Message.updateMany(
+      { _id: { $in: messageIds }, userId },
+      { $set: update }
+    );
+
+    if (unseenDeltas.size > 0) {
+      await Mailbox.bulkWrite(
+        Array.from(unseenDeltas.entries()).map(([mailboxId, unseenMessages]) => ({
+          updateOne: {
+            filter: { _id: mailboxId, userId },
+            update: { $inc: { unseenMessages } },
+          },
+        }))
+      );
+    }
+
+    return { matchedCount: result.matchedCount, modifiedCount: result.modifiedCount };
+  }
+
+  async bulkMoveMessages(
+    userId: string,
+    messageIds: string[],
+    targetMailboxId: string
+  ): Promise<{ matchedCount: number; modifiedCount: number }> {
+    const [messages, targetMailbox] = await Promise.all([
+      Message.find({ _id: { $in: messageIds }, userId })
+        .select('mailboxId flags.seen size')
+        .lean(),
+      Mailbox.findOne({ _id: targetMailboxId, userId }),
+    ]);
+
+    if (!targetMailbox) throw new NotFoundError('Target mailbox not found');
+
+    const mailboxDeltas = new Map<
+      string,
+      { totalMessages: number; unseenMessages: number; size: number }
+    >();
+
+    const addDelta = (
+      mailboxId: string,
+      totalMessages: number,
+      unseenMessages: number,
+      size: number
+    ) => {
+      const current = mailboxDeltas.get(mailboxId) ?? {
+        totalMessages: 0,
+        unseenMessages: 0,
+        size: 0,
+      };
+      current.totalMessages += totalMessages;
+      current.unseenMessages += unseenMessages;
+      current.size += size;
+      mailboxDeltas.set(mailboxId, current);
+    };
+
+    const targetId = targetMailbox._id.toString();
+    for (const message of messages) {
+      const sourceId = message.mailboxId.toString();
+      if (sourceId === targetId) {
+        continue;
+      }
+
+      const unseenDelta = message.flags.seen ? 0 : 1;
+      addDelta(sourceId, -1, -unseenDelta, -message.size);
+      addDelta(targetId, 1, unseenDelta, message.size);
+    }
+
+    const result = await Message.updateMany(
+      { _id: { $in: messageIds }, userId },
+      { $set: { mailboxId: targetMailbox._id } }
+    );
+
+    if (mailboxDeltas.size > 0) {
+      await Mailbox.bulkWrite(
+        Array.from(mailboxDeltas.entries()).map(([mailboxId, delta]) => ({
+          updateOne: {
+            filter: { _id: mailboxId, userId },
+            update: { $inc: delta },
+          },
+        }))
+      );
+    }
+
+    return { matchedCount: result.matchedCount, modifiedCount: result.modifiedCount };
+  }
+
   async deleteMessage(userId: string, messageId: string, permanent: boolean = false): Promise<void> {
     const message = await Message.findOne({ _id: messageId, userId });
     if (!message) throw new NotFoundError('Message not found');

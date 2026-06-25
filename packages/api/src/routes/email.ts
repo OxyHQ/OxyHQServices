@@ -117,6 +117,13 @@ router.delete('/mailboxes/:mailboxId', validate({ params: mailboxIdParams }), as
 
 router.get('/messages', asyncHandler(listMessages));
 router.get('/messages/bundled', asyncHandler(listBundledMessages));
+// ─── Bulk Operations ─────────────────────────────────────────────
+// Register these before /messages/:messageId routes so "bulk" is not
+// captured as a messageId by Express' first-match routing.
+
+router.post('/messages/bulk/flags', validate({ body: bulkUpdateFlagsSchema }), asyncHandler(bulkUpdateFlags));
+router.post('/messages/bulk/move', validate({ body: bulkMoveMessagesSchema }), asyncHandler(bulkMoveMessages));
+
 router.get('/messages/:messageId', validate({ params: messageIdParams }), asyncHandler(getMessage));
 router.get('/messages/:messageId/thread', validate({ params: messageIdParams }), asyncHandler(getThread));
 router.get('/messages/:messageId/export', validate({ params: messageIdParams }), asyncHandler(exportMessage));
@@ -126,11 +133,6 @@ router.post('/messages/:messageId/move', validate({ params: messageIdParams, bod
 router.delete('/messages/:messageId', validate({ params: messageIdParams }), asyncHandler(deleteMessage));
 router.post('/messages/:messageId/snooze', validate({ params: messageIdParams, body: snoozeMessageSchema }), asyncHandler(snoozeMessage));
 router.post('/messages/:messageId/unsnooze', validate({ params: messageIdParams }), asyncHandler(unsnoozeMessage));
-
-// ─── Bulk Operations ─────────────────────────────────────────────
-
-router.post('/messages/bulk/flags', validate({ body: bulkUpdateFlagsSchema }), asyncHandler(bulkUpdateFlags));
-router.post('/messages/bulk/move', validate({ body: bulkMoveMessagesSchema }), asyncHandler(bulkMoveMessages));
 
 // ─── Labels ──────────────────────────────────────────────────────
 
