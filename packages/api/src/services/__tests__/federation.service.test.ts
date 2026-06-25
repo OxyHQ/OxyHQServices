@@ -395,6 +395,53 @@ describe('FederationService.resolveAndUpsert (fast + eventually-fresh)', () => {
     expect(result).toBe(created);
   });
 
+  it('ignores a WebFinger subject that does not resolve back to the same actor', async () => {
+    const requestedHandle = 'attacker@evil.example';
+    const spoofedHandle = 'victim@trusted.example';
+    const actorUri = 'https://evil.example/users/attacker';
+    const userId = 'evil-user-spoof';
+
+    webfingerSpy.mockImplementation(async (acct: string) => {
+      if (acct === requestedHandle) {
+        return { actorUri, subjectAcct: spoofedHandle };
+      }
+      if (acct === spoofedHandle) {
+        return { actorUri: 'https://trusted.example/users/victim', subjectAcct: spoofedHandle };
+      }
+      return null;
+    });
+    actorSpy.mockResolvedValue({
+      actorUri,
+      domain: 'evil.example',
+      username: requestedHandle,
+      displayName: 'Evil Attacker',
+      avatarUrl: undefined,
+      bio: 'not a trusted.example user',
+    });
+
+    mockFindOneReturning(null);
+    const created = { _id: { toString: () => userId }, username: requestedHandle, type: 'federated' };
+    const select = jest.fn().mockResolvedValue(created);
+    mockUserFindOneAndUpdate.mockReturnValueOnce({ select });
+
+    const result = await federationService.resolveAndUpsert(requestedHandle);
+
+    expect(webfingerSpy).toHaveBeenCalledWith(requestedHandle);
+    expect(webfingerSpy).toHaveBeenCalledWith(spoofedHandle);
+    expect(actorSpy).toHaveBeenCalledWith(actorUri, requestedHandle);
+    expect(mockUserFindOneAndUpdate).toHaveBeenCalledWith(
+      { 'federation.actorUri': actorUri },
+      expect.objectContaining({
+        $set: expect.objectContaining({
+          username: requestedHandle,
+          'federation.domain': 'evil.example',
+        }),
+      }),
+      expect.anything(),
+    );
+    expect(result).toBe(created);
+  });
+
   it('uses the WebFinger subject when the requested handle is a www alias', async () => {
     const requestedHandle = 'mosseri@www.threads.net';
     const canonicalHandle = 'mosseri@threads.net';

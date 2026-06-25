@@ -608,6 +608,43 @@ class FederationService {
   }
 
   /**
+   * Returns the acct that can be safely used as the canonical username for a
+   * WebFinger result. A remote WebFinger endpoint may advertise `subject` as a
+   * canonical alias (for example `user@www.example` -> `user@example`), but that
+   * claimed account is controlled by a different domain. Before storing it,
+   * resolve the claimed account through its own domain and require it to point
+   * back to the same actor URI.
+   */
+  private async verifiedAccountForResolution(
+    requestedAcct: string,
+    resolution: WebFingerResolution,
+  ): Promise<string> {
+    const requested = normalizeFediverseHandle(requestedAcct);
+    const subject = resolution.subjectAcct ? normalizeFediverseHandle(resolution.subjectAcct) : null;
+    if (!requested || !subject || subject === requested) {
+      return requested || requestedAcct.toLowerCase();
+    }
+
+    try {
+      const subjectResolution = await this.resolveWebFingerResource(subject);
+      if (subjectResolution?.actorUri === resolution.actorUri) {
+        return subject;
+      }
+
+      logger.warn(
+        `Ignoring unverified WebFinger subject ${subject} for ${requested}: `
+          + `expected actor ${resolution.actorUri}, got ${subjectResolution?.actorUri || 'none'}`,
+      );
+    } catch (err) {
+      logger.warn(
+        `Failed verifying WebFinger subject ${subject} for ${requested}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
+    return requested;
+  }
+
+  /**
    * Resolve a WebFinger acct to an ActivityPub actor URI.
    * @param acct - e.g. "alice@mastodon.social" or "@alice@mastodon.social"
    */
@@ -641,7 +678,11 @@ class FederationService {
         ? normalizeFediverseHandle(actor.webfinger)
         : null;
       const hintedAcct = acctHint ? normalizeFediverseHandle(acctHint) : null;
-      const acct = actorWebfinger || hintedAcct || `${username.toLowerCase()}@${actorHost}`;
+      // The handle used for storage must come from the WebFinger resource we
+      // resolved and verified before fetching this actor. Actor documents are
+      // attacker-controlled by the actor host, so their optional `webfinger`
+      // field is only a fallback when no trusted hint is available.
+      const acct = hintedAcct || actorWebfinger || `${username.toLowerCase()}@${actorHost}`;
       const domain = domainFromHandle(acct) || actorHost;
 
       return {
@@ -857,7 +898,8 @@ class FederationService {
     const webfinger = await this.resolveWebFingerResource(cleaned);
     if (!webfinger) return null;
 
-    const profile = await this.fetchActorProfile(webfinger.actorUri, webfinger.subjectAcct || cleaned);
+    const verifiedAcct = await this.verifiedAccountForResolution(cleaned, webfinger);
+    const profile = await this.fetchActorProfile(webfinger.actorUri, verifiedAcct);
     if (!profile) return null;
 
     const setFields: Record<string, unknown> = {
