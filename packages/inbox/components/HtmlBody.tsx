@@ -17,6 +17,31 @@ interface HtmlBodyProps {
   html: string;
 }
 
+const MIN_WEBVIEW_HEIGHT = 100;
+const MAX_WEBVIEW_HEIGHT = 10_000;
+
+function sanitizeEmailHtml(html: string): string {
+  return html
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+    .replace(/<\/?(?:iframe|object|embed|applet|form|input|button|textarea|select|meta|link)\b[^>]*>/gi, '')
+    .replace(/\s+on[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+    .replace(/\s+(?:href|src|xlink:href|formaction)\s*=\s*(["'])\s*javascript:[^"']*\1/gi, '')
+    .replace(/\s+(?:href|src|xlink:href|formaction)\s*=\s*javascript:[^\s>]*/gi, '');
+}
+
+function clampWebViewHeight(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return null;
+  }
+
+  const roundedHeight = Math.ceil(value);
+  if (roundedHeight <= 0) {
+    return null;
+  }
+
+  return Math.min(Math.max(roundedHeight, MIN_WEBVIEW_HEIGHT), MAX_WEBVIEW_HEIGHT);
+}
+
 /**
  * Wrap email HTML with styling and proxy external resources.
  *
@@ -48,7 +73,7 @@ function wrapHtml(html: string, isDark: boolean): string {
 
   // Transform external image/font URLs to go through our proxy
   const proxyBaseUrl = getProxyBaseUrl();
-  const proxiedHtml = proxyExternalImages(html, proxyBaseUrl);
+  const proxiedHtml = proxyExternalImages(sanitizeEmailHtml(html), proxyBaseUrl);
 
   return `
     <!DOCTYPE html>
@@ -207,8 +232,11 @@ if (Platform.OS !== 'web') {
     const handleMessage = useCallback((event: { nativeEvent: { data: string } }) => {
       try {
         const msg = JSON.parse(event.nativeEvent.data);
-        if (msg.type === 'height' && msg.value > 0) {
-          setHeight(msg.value);
+        if (msg.type === 'height') {
+          const nextHeight = clampWebViewHeight(msg.value);
+          if (nextHeight !== null) {
+            setHeight(nextHeight);
+          }
         }
       } catch {
         // ignore
@@ -231,9 +259,9 @@ if (Platform.OS !== 'web') {
 
     return (
       <WebView
-        originWhitelist={['*']}
+        originWhitelist={['about:blank']}
         source={{ html: wrappedHtml }}
-        style={[styles.webView, height ? { height } : { minHeight: 100 }]}
+        style={[styles.webView, height ? { height } : { minHeight: MIN_WEBVIEW_HEIGHT }]}
         scalesPageToFit={false}
         scrollEnabled={false}
         showsVerticalScrollIndicator={false}
