@@ -64,15 +64,12 @@ jest.mock('../../models/Application', () => ({
   default: { find: mockAppFind },
 }));
 
-// Pass-through cache: read methods delegate straight to the loader (the
-// uncached Mongo read driven by the FedCMClient mocks above) so approval
-// lookups behave exactly as before; only `invalidate` is asserted on.
+// Pass-through cache for non-authoritative list reads; approval decisions
+// bypass this cache and read the canonical registry directly.
 jest.mock('../../utils/approvedClientsCache', () => ({
   __esModule: true,
   default: {
     getApprovedOrigins: (loader: () => Promise<string[]>) => loader(),
-    isApproved: async (origin: string, loader: () => Promise<string[]>) =>
-      (await loader()).includes(origin),
     invalidate: mockCacheInvalidate,
   },
 }));
@@ -358,6 +355,23 @@ describe('FedCM exchangeIdToken (H9)', () => {
     expect('error' in result).toBe(false);
     if ('error' in result) return;
     expect(result.sessionId).toBe('sess-123');
+  });
+});
+
+describe('FedCM isClientApproved authorization', () => {
+  it('bypasses the list cache and rereads the registry after revocation', async () => {
+    mockAppFind
+      .mockReturnValueOnce(
+        leanQuery([{ name: 'Relying Party', redirectUris: [`${APPROVED_ORIGIN}/__oxy/sso-callback`] }])
+      )
+      .mockReturnValueOnce(leanQuery([]));
+
+    await expect(fedcmService.isClientApproved(APPROVED_ORIGIN)).resolves.toBe(true);
+    await expect(fedcmService.isClientApproved(APPROVED_ORIGIN)).resolves.toBe(false);
+
+    expect(mockAppFind).toHaveBeenCalledTimes(2);
+    expect(mockAppFind).toHaveBeenNthCalledWith(1, { status: 'active' });
+    expect(mockAppFind).toHaveBeenNthCalledWith(2, { status: 'active' });
   });
 });
 

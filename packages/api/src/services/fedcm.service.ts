@@ -254,13 +254,22 @@ class FedCMService {
   }
 
   /**
-   * Check if a client origin is approved (short-TTL cached membership test).
-   * Fail-closed: any unexpected throw resolves to `false`, and the cache loader
-   * itself returns `[]` on Mongo error so a DB hiccup denies rather than admits.
+   * Check if a client origin is currently approved.
+   *
+   * Authorization decisions intentionally bypass the in-process allow-list cache:
+   * oxy-api runs multiple ECS tasks, and a revoke handled by one task cannot
+   * synchronously clear another task's local memory. Reading the canonical
+   * registry on every approval check prevents a recently-revoked RP from being
+   * accepted by a stale task during the cache TTL window.
+   *
+   * Fail-closed: any unexpected throw resolves to `false`. The uncached loader
+   * itself returns the dev/native fallback on Mongo error, so unknown origins are
+   * denied while local/native development origins remain usable.
    */
   async isClientApproved(origin: string): Promise<boolean> {
     try {
-      return await approvedClientsCache.isApproved(origin, () => this.fetchApprovedClientOrigins());
+      const origins = await this.fetchApprovedClientOrigins();
+      return origins.includes(origin);
     } catch (error) {
       logger.error('Error checking FedCM client approval:', error);
       return false;
