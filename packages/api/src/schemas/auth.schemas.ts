@@ -64,7 +64,6 @@ export const recoverVerifySchema = z.object({
 
 // POST /auth/recover/reset
 export const recoverResetSchema = z.object({
-  recoveryToken: z.string().trim().min(1),
   password: z.string().min(8),
 });
 
