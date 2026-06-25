@@ -14,6 +14,8 @@
  *   resolve/mutate, federated users (`routes/federation.ts`, `PUT /users/resolve`)
  *   for federation/agent/automation flows. PRIVILEGED — see
  *   {@link PRIVILEGED_APPLICATION_SCOPES}; only Oxy platform staff may grant it.
+ * - `notifications:write` permits trusted services to create realtime
+ *   notifications for arbitrary recipients. PRIVILEGED — staff grant only.
  */
 export const APPLICATION_SCOPES = [
   'files:read',
@@ -25,6 +27,7 @@ export const APPLICATION_SCOPES = [
   'models:read',
   'federation:write',
   'signals:write',
+  'notifications:write',
 ] as const;
 
 export type ApplicationScope = (typeof APPLICATION_SCOPES)[number];
@@ -41,13 +44,19 @@ export type ApplicationScope = (typeof APPLICATION_SCOPES)[number];
  *   otherwise register an app with a victim domain's redirectUri and impersonate
  *   that domain's users.
  *
- * All other scopes in {@link APPLICATION_SCOPES} authorise an app only over its
- * OWN resources (files, models, webhooks, public user reads) and remain freely
+ * - `notifications:write` lets a service credential deliver realtime
+ *   notifications to arbitrary users and choose actor/entity metadata. A
+ *   self-granting owner could otherwise spoof system or user activity to
+ *   victims' connected clients.
+ *
+ * All non-privileged scopes in {@link APPLICATION_SCOPES} authorise an app only
+ * over its OWN resources (files, models, webhooks, public user reads) and remain freely
  * self-grantable. Keep this set CONSERVATIVE — add a scope here only when it
  * grants authority beyond the app's own tenant.
  */
 export const PRIVILEGED_APPLICATION_SCOPES = [
   'federation:write',
+  'notifications:write',
 ] as const satisfies readonly ApplicationScope[];
 
 const PRIVILEGED_APPLICATION_SCOPE_SET: ReadonlySet<ApplicationScope> = new Set<ApplicationScope>(

@@ -14,17 +14,45 @@ import {
   deleteNotification,
   getUnreadCount
 } from '../controllers/notification.controller';
-import { authMiddleware, type AuthRequest } from '../middleware/auth';
+import {
+  authMiddleware,
+  serviceAuthMiddleware,
+  type AuthRequest,
+  type ServiceAuthRequest,
+} from '../middleware/auth';
 import { asyncHandler } from '../utils/asyncHandler';
 import { validate } from '../middleware/validate';
 import { createNotificationSchema, notificationIdParams } from '../schemas/notifications.schemas';
 import { PushToken } from '../models/PushToken';
 import { logger } from '../utils/logger';
-import type { Response } from 'express';
+import type { NextFunction, Response } from 'express';
 
 const router = express.Router();
 
-// Apply authentication middleware to all routes
+const NOTIFICATIONS_WRITE_SCOPE = 'notifications:write';
+
+const requireNotificationsWriteScope = (req: ServiceAuthRequest, res: Response, next: NextFunction) => {
+  const scopes = req.serviceApp?.scopes ?? [];
+  if (!scopes.includes(NOTIFICATIONS_WRITE_SCOPE)) {
+    return res.status(403).json({
+      error: 'Forbidden',
+      message: `Missing required scope: ${NOTIFICATIONS_WRITE_SCOPE}`,
+    });
+  }
+
+  return next();
+};
+
+// Create a new notification
+router.post(
+  '/',
+  serviceAuthMiddleware,
+  requireNotificationsWriteScope,
+  validate({ body: createNotificationSchema }),
+  asyncHandler(createNotification)
+);
+
+// Apply authentication middleware to all user routes
 router.use(authMiddleware);
 
 // Get all notifications for the authenticated user
@@ -32,9 +60,6 @@ router.get('/', asyncHandler(getNotifications));
 
 // Get unread notification count
 router.get('/unread-count', asyncHandler(getUnreadCount));
-
-// Create a new notification
-router.post('/', validate({ body: createNotificationSchema }), asyncHandler(createNotification));
 
 // ─── Push Token Management ──────────────────────────────────────────
 
