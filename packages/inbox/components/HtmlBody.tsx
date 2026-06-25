@@ -17,6 +17,30 @@ interface HtmlBodyProps {
   html: string;
 }
 
+const ALLOWED_EXTERNAL_LINK_PROTOCOLS = new Set(['http:', 'https:', 'mailto:']);
+const CONTROL_OR_SPACE_BOUNDARY = /^[\u0000-\u0020]+|[\u0000-\u0020]+$/g;
+
+function getSafeExternalUrl(href: string | null | undefined): string | null {
+  const trimmedHref = href?.replace(CONTROL_OR_SPACE_BOUNDARY, '');
+  if (!trimmedHref || trimmedHref.startsWith('#')) return null;
+
+  try {
+    const url = new URL(trimmedHref);
+    if (!ALLOWED_EXTERNAL_LINK_PROTOCOLS.has(url.protocol.toLowerCase())) {
+      return null;
+    }
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+function isUserInitiatedNativeNavigation(request: { navigationType?: string; isTopFrame?: boolean }) {
+  // iOS provides navigationType; Android may omit it for WebView navigations.
+  // Only open links externally when the WebView identifies a real link click.
+  return request.isTopFrame !== false && request.navigationType === 'click';
+}
+
 /**
  * Wrap email HTML with styling and proxy external resources.
  *
@@ -56,7 +80,6 @@ function wrapHtml(html: string, isDark: boolean): string {
     <head>
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-      <base target="_blank">
       ${isDark ? '<meta name="color-scheme" content="dark">' : ''}
       <style>
         * { box-sizing: border-box; }
@@ -128,19 +151,17 @@ function HtmlBodyWeb({ html }: HtmlBodyProps) {
         }
       });
 
-      // Intercept link clicks — open in new tab instead of navigating the iframe.
-      // The <base target="_blank"> handles most links, but this catches edge cases
-      // (e.g. links with explicit target, javascript: hrefs, etc.)
+      // Intercept link clicks — validate and open safe external links from the parent.
+      // Email HTML is attacker-controlled, so never allow the sandbox to open popups directly.
       doc.addEventListener('click', (e: MouseEvent) => {
         const anchor = (e.target as HTMLElement).closest?.('a');
         if (!anchor) return;
-        const href = anchor.getAttribute('href');
-        if (!href || href.startsWith('#') || href.startsWith('javascript:')) {
-          e.preventDefault();
-          return;
-        }
+
         e.preventDefault();
-        window.open(href, '_blank', 'noopener,noreferrer');
+        const safeUrl = getSafeExternalUrl(anchor.getAttribute('href'));
+        if (!safeUrl) return;
+
+        window.open(safeUrl, '_blank', 'noopener,noreferrer');
       });
     };
 
@@ -163,7 +184,7 @@ function HtmlBodyWeb({ html }: HtmlBodyProps) {
         display: 'block',
         overflow: 'hidden',
       }}
-      sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+      sandbox="allow-same-origin"
       title="Email content"
       scrolling="no"
     />
@@ -215,16 +236,17 @@ if (Platform.OS !== 'web') {
       }
     }, []);
 
-    // Open links in the system browser instead of navigating the WebView
-    const handleNavigation = useCallback((request: { url: string }) => {
+    // Open user-clicked safe links in the system browser instead of navigating the WebView.
+    const handleNavigation = useCallback((request: { url: string; navigationType?: string; isTopFrame?: boolean }) => {
       const { url } = request;
       // Allow the initial HTML load (about:blank or data: URLs)
       if (url === 'about:blank' || url.startsWith('data:') || url.startsWith('about:')) {
         return true;
       }
-      // Open external links in system browser
-      if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('mailto:')) {
-        Linking.openURL(url);
+
+      const safeUrl = getSafeExternalUrl(url);
+      if (safeUrl && isUserInitiatedNativeNavigation(request)) {
+        Linking.openURL(safeUrl);
       }
       return false; // Block navigation inside WebView
     }, []);
