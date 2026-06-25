@@ -58,8 +58,9 @@ child.stderr.on('data', (data) => {
 
 child.on('exit', (code) => {
   if (!done) {
-    // Process exited on its own (no hang) — check if it succeeded
-    if (code === 0 || existsSync(distPath)) {
+    // Process exited on its own (no hang) — preserve the actual export result.
+    // Only timeout/hang paths may treat an existing dist as successful.
+    if (code === 0) {
       finish(0);
     } else {
       console.error(`\nExport failed with exit code ${code}`);
@@ -79,7 +80,7 @@ setTimeout(() => {
       console.log('\nExport timed out but dist exists. Exiting successfully.');
       finish(0);
     } else {
-      console.error('\nExport timed out after 4 minutes with no output.');
+      console.error('\nExport timed out after 8 minutes with no output.');
       finish(1);
     }
   }
