@@ -9,6 +9,7 @@ export const linkAuthMethodSchema = z.object({
   email: z.string().trim().email().optional(),
   password: z.string().min(8).optional(),
   providerId: z.string().trim().optional(),
+  providerToken: z.string().trim().optional(),
 });
 
 // DELETE /auth/link/:type

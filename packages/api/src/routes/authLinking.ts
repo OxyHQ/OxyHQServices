@@ -16,11 +16,34 @@ import type { AuthMethodType } from '../models/User.js';
 import { authMiddleware, AuthRequest } from '../middleware/auth.js';
 import SignatureService from '../services/signature.service.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
-import { BadRequestError, ConflictError } from '../utils/error.js';
+import { BadRequestError, ConflictError, UnauthorizedError } from '../utils/error.js';
 import { validate } from '../middleware/validate.js';
 import { linkAuthMethodSchema, unlinkTypeParams } from '../schemas/authLinking.schemas.js';
+import socialAuthService from '../services/socialAuth.service.js';
+import type { SocialProfile } from '../services/socialAuth.service.js';
 
 const router = Router();
+
+type SocialAuthMethodType = 'google' | 'apple' | 'github';
+
+async function verifySocialLinkToken(type: SocialAuthMethodType, providerToken: unknown): Promise<SocialProfile> {
+  if (typeof providerToken !== 'string' || !providerToken.trim()) {
+    throw new BadRequestError('providerToken is required for social auth linking');
+  }
+
+  const safeProviderToken = providerToken.trim();
+  const profile = type === 'google'
+    ? await socialAuthService.verifyGoogleToken(safeProviderToken)
+    : type === 'apple'
+      ? await socialAuthService.verifyAppleToken(safeProviderToken)
+      : await socialAuthService.verifyGitHubCode(safeProviderToken);
+
+  if (!profile) {
+    throw new UnauthorizedError(`Invalid ${type} provider token`);
+  }
+
+  return profile;
+}
 
 // All routes require authentication
 router.use(authMiddleware);
@@ -94,7 +117,7 @@ router.post('/link', validate({ body: linkAuthMethodSchema }), asyncHandler(asyn
     throw new BadRequestError('User not authenticated');
   }
 
-  const { type, publicKey, signature, timestamp, email, password, providerId } = req.body;
+  const { type, publicKey, signature, timestamp, email, password, providerId, providerToken } = req.body;
 
   // Validate type is a non-empty string to prevent NoSQL injection
   if (typeof type !== 'string' || !type.trim()) {
@@ -217,6 +240,11 @@ router.post('/link', validate({ body: linkAuthMethodSchema }), asyncHandler(asyn
         throw new BadRequestError('providerId must be a non-empty string');
       }
       const safeProviderId = providerId.trim();
+      const verifiedProfile = await verifySocialLinkToken(safeType as SocialAuthMethodType, providerToken);
+      if (verifiedProfile.providerId !== safeProviderId) {
+        throw new BadRequestError('providerId does not match verified provider token');
+      }
+      const verifiedEmail = verifiedProfile.email?.trim().toLowerCase();
 
       // Check if this social account is already linked to another user
       // Use literal type values instead of user-controlled type to prevent injection
@@ -238,7 +266,7 @@ router.post('/link', validate({ body: linkAuthMethodSchema }), asyncHandler(asyn
       if (!existingMethod) {
         user.authMethods.push(buildAuthMethod(safeType as AuthMethodType, {
           providerId: safeProviderId,
-          email: typeof email === 'string' ? email.trim() : undefined,
+          email: verifiedEmail,
         }));
       }
 
