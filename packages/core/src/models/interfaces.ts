@@ -113,6 +113,9 @@ export interface User {
    */
   name: UserNameResponse;
   bio?: string;
+  phone?: string;
+  address?: string;
+  birthday?: string;
   location?: string;
   website?: string;
   createdAt?: string;

@@ -95,6 +95,9 @@ export const userResponseSchema = z
         publicKey: z.string().optional(),
         username: z.string().optional(),
         email: z.string().optional(),
+        phone: z.string().optional(),
+        address: z.string().optional(),
+        birthday: z.string().optional(),
         /** Avatar file id (string) or null. */
         avatar: z.string().nullable().optional(),
         /** Named Bloom color preset (e.g. `"blue"`) or null. */
@@ -121,6 +124,9 @@ export const userProfileUpdateSchema = z
         color: z.string().nullable().optional(),
         bio: z.string().optional(),
         description: z.string().optional(),
+        phone: z.string().optional(),
+        address: z.string().optional(),
+        birthday: z.string().optional(),
         location: z.string().optional(),
         locations: z.array(z.unknown()).optional(),
         links: z.array(z.string()).optional(),

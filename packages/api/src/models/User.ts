@@ -162,6 +162,8 @@ export interface IUser extends Document {
   };
   bio?: string;
   description?: string;
+  address?: string;
+  birthday?: string;
   locations?: Array<{
     id: string;
     name: string;
@@ -448,6 +450,8 @@ const UserSchema: Schema = new Schema(
     },
     bio: { type: String },
     description: { type: String },
+    address: { type: String, trim: true },
+    birthday: { type: String, trim: true },
     locations: [{
       id: { type: String, required: true },
       name: { type: String, required: true },

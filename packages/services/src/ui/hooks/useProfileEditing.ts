@@ -29,6 +29,9 @@ export interface ProfileUpdateData {
     links?: string[];
     linksMetadata?: ProfileLinkMetadata[];
     avatar?: string;
+    phone?: string;
+    address?: string;
+    birthday?: string;
 }
 
 type ProfileFieldValue = string | ProfileLocation[] | ProfileLinkMetadata[];
@@ -81,6 +84,15 @@ export const useProfileEditing = () => {
         if (updates.avatar !== undefined) {
             updateData.avatar = updates.avatar;
         }
+        if (updates.phone !== undefined) {
+            updateData.phone = updates.phone;
+        }
+        if (updates.address !== undefined) {
+            updateData.address = updates.address;
+        }
+        if (updates.birthday !== undefined) {
+            updateData.birthday = updates.birthday;
+        }
 
         // Handle name field
         if (updates.firstName !== undefined || updates.lastName !== undefined) {
@@ -123,6 +135,18 @@ export const useProfileEditing = () => {
             case 'bio':
                 if (typeof value !== 'string') return false;
                 updates.bio = value;
+                break;
+            case 'phone':
+                if (typeof value !== 'string') return false;
+                updates.phone = value;
+                break;
+            case 'address':
+                if (typeof value !== 'string') return false;
+                updates.address = value;
+                break;
+            case 'birthday':
+                if (typeof value !== 'string') return false;
+                updates.birthday = value;
                 break;
             case 'location':
                 if (!isProfileLocationArray(value)) return false;

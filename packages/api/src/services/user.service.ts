@@ -123,7 +123,7 @@ export class UserService {
   async getCurrentUser(userId: string): Promise<IUser | null> {
     // `lean({ virtuals: true })` populates `name.full` from the User schema virtual.
     return await User.findById(userId)
-      .select('-password -refreshToken')
+      .select('-password -refreshToken +phone')
       .lean({ virtuals: true }) as IUser | null;
   }
 
@@ -145,6 +145,9 @@ export class UserService {
       'color',
       'bio',
       'description',
+      'phone',
+      'address',
+      'birthday',
       'links',
       'linksMetadata',
       'locations',
@@ -937,7 +940,11 @@ export class UserService {
   /**
    * Format user response with stats
    */
-  formatUserResponse(user: IUser | UserProfile, stats?: UserStatistics): PublicUserProfile {
+  formatUserResponse(
+    user: IUser | UserProfile,
+    stats?: UserStatistics,
+    options: { includePrivateFields?: boolean } = {}
+  ): PublicUserProfile {
     // Handle both IUser (Mongoose document) and UserData (plain object)
     // Use publicKey as id - publicKey is the primary identifier, fallback to _id
     const userAsIUser = user as IUser;
@@ -965,6 +972,12 @@ export class UserService {
       createdAt: userAny.createdAt as Date | undefined,
       updatedAt: userAny.updatedAt as Date | undefined,
     };
+
+    if (options.includePrivateFields) {
+      response.phone = userAny.phone as string | undefined;
+      response.address = userAny.address as string | undefined;
+      response.birthday = userAny.birthday as string | undefined;
+    }
 
     if (userAny.type) {
       response.type = userAny.type;
