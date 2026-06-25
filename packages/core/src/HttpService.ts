@@ -530,7 +530,7 @@ export class HttpService {
               const errBody = await clonedResponse.json() as { code?: string } | null;
               if (errBody?.code === 'CSRF_TOKEN_INVALID' || errBody?.code === 'CSRF_TOKEN_MISSING') {
                 this.tokenStore.clearCsrfToken();
-                return this.request<T>({ ...config, _isCsrfRetry: true, retry: false });
+                return this.request<T>({ ...config, _isCsrfRetry: true, retry: false, deduplicate: false });
               }
             } catch {
               // Failed to parse error body — not a CSRF error
