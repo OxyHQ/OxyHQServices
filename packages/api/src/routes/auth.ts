@@ -1461,6 +1461,17 @@ router.post('/session/create', validate({ body: authSessionCreateSchema }), asyn
     throw new ForbiddenError('Application is not available');
   }
 
+  // Public OAuth client IDs are routing identifiers, not authenticators. For
+  // trusted first-party/internal app identities, require a browser Origin that
+  // proves the caller is running on one of the app's registered redirect
+  // origins before showing official branding in the device consent UI.
+  if (appRequiresProvenOrigin(resolvedApp)) {
+    const origin = requestOrigin(req);
+    if (!origin || !applicationAllowsOrigin(resolvedApp, origin)) {
+      throw new ForbiddenError('Application origin is not allowed');
+    }
+  }
+
   // Check if session token already exists (generic error to prevent enumeration)
   const existing = await AuthSession.findOne({ sessionToken });
   if (existing) {
@@ -2003,6 +2014,37 @@ function isAllowedRedirectUri(app: { redirectUris?: string[] }, redirectUri: str
  * no usable credential exists. Mirrors the resolution in `/oauth/authorize`
  * and `/oauth/token`.
  */
+
+function originFromRedirectUri(redirectUri: string): string | null {
+  try {
+    return new URL(redirectUri).origin;
+  } catch {
+    return null;
+  }
+}
+
+function requestOrigin(req: express.Request): string | null {
+  const origin = req.headers.origin;
+  if (Array.isArray(origin)) {
+    return origin[0] ?? null;
+  }
+  return origin ?? null;
+}
+
+function applicationAllowsOrigin(app: Pick<IApplication, 'redirectUris'>, origin: string): boolean {
+  return (app.redirectUris ?? []).some((redirectUri) => originFromRedirectUri(redirectUri) === origin);
+}
+
+function appRequiresProvenOrigin(app: Pick<IApplication, 'isOfficial' | 'isInternal' | 'type'>): boolean {
+  return (
+    app.isOfficial ||
+    app.isInternal ||
+    app.type === 'first_party' ||
+    app.type === 'internal' ||
+    app.type === 'system'
+  );
+}
+
 async function resolveUsableCredential(clientId: string): Promise<IApplicationCredential | null> {
   const credential = await ApplicationCredential.findOne({
     publicKey: clientId,

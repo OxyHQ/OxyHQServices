@@ -278,6 +278,7 @@ function officialApp() {
     isInternal: false,
     scopes: ['user:read'],
     createdByUserId: { toString: () => 'staff-1' },
+    redirectUris: ['https://accounts.oxy.so/__oxy/sso-callback'],
   };
 }
 
@@ -339,6 +340,46 @@ describe('POST /auth/session/create — application resolution (#214)', () => {
     expect(mockApplicationFindById).toHaveBeenCalledWith(THIRD_PARTY_APP_ID);
     const created = mockAuthSessionCreate.mock.calls[0][0] as { applicationId: { toString: () => string } };
     expect(created.applicationId.toString()).toBe(THIRD_PARTY_APP_ID);
+  });
+
+  it('(b1) permits an official app only from a registered redirect origin', async () => {
+    mockApplicationCredentialFindOne.mockResolvedValueOnce(usableCredential(OFFICIAL_APP_ID));
+    mockApplicationFindById.mockResolvedValueOnce(officialApp());
+
+    const res = await requestJson(server, 'POST', '/auth/session/create', {
+      sessionToken: 'tok-create-official-ok',
+      clientId: 'oxy_dk_client',
+    }, { origin: 'https://accounts.oxy.so' });
+
+    expect(res.status).toBe(200);
+    const created = mockAuthSessionCreate.mock.calls[0][0] as { applicationId: { toString: () => string } };
+    expect(created.applicationId.toString()).toBe(OFFICIAL_APP_ID);
+  });
+
+  it('(b2) rejects an official app from an unregistered origin', async () => {
+    mockApplicationCredentialFindOne.mockResolvedValueOnce(usableCredential(OFFICIAL_APP_ID));
+    mockApplicationFindById.mockResolvedValueOnce(officialApp());
+
+    const res = await requestJson(server, 'POST', '/auth/session/create', {
+      sessionToken: 'tok-create-official-bad-origin',
+      clientId: 'oxy_dk_client',
+    }, { origin: 'https://evil.example' });
+
+    expect(res.status).toBe(403);
+    expect(mockAuthSessionCreate).not.toHaveBeenCalled();
+  });
+
+  it('(b3) rejects an official app when origin proof is absent', async () => {
+    mockApplicationCredentialFindOne.mockResolvedValueOnce(usableCredential(OFFICIAL_APP_ID));
+    mockApplicationFindById.mockResolvedValueOnce(officialApp());
+
+    const res = await requestJson(server, 'POST', '/auth/session/create', {
+      sessionToken: 'tok-create-official-no-origin',
+      clientId: 'oxy_dk_client',
+    });
+
+    expect(res.status).toBe(403);
+    expect(mockAuthSessionCreate).not.toHaveBeenCalled();
   });
 
   it('(c0) returns 400 when NEITHER clientId nor applicationId is supplied', async () => {
