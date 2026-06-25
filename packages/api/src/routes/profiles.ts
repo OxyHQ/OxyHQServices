@@ -29,6 +29,7 @@ import { usernameParams, profileSearchQuerySchema } from '../schemas/profiles.sc
 import { formatUserNameResponse, type NameParts } from '../utils/displayName';
 import { eligibleUserMatch, FEDERATED_RECOMMENDATION_MAX_AGE_MS } from '../utils/profileQuery';
 import { AppUserSignal } from '../models/AppUserSignal';
+import { ApplicationMember } from '../models/ApplicationMember';
 import { getRedisClient } from '../config/redis';
 import {
   resolveWeightProfile,
@@ -642,6 +643,43 @@ function followedIdToObjectId(value: unknown): Types.ObjectId | null {
 }
 
 /**
+ * Resolve whether a POST /profiles/recommendations caller may use app-scoped
+ * recommendation signals for the requested Application id. AppUserSignal rows
+ * are tenant-scoped; unauthenticated callers and unrelated apps/users must not
+ * be able to select an arbitrary `clientId` and infer curation/interest data.
+ */
+async function resolveAuthorizedRecommendationClientId(
+  req: OptionalUserOrServiceRequest,
+  requestedClientId?: string
+): Promise<string | undefined> {
+  if (!requestedClientId || !Types.ObjectId.isValid(requestedClientId)) {
+    return undefined;
+  }
+
+  const requestedAppId = new Types.ObjectId(requestedClientId).toHexString();
+  if (req.serviceApp?.appId && Types.ObjectId.isValid(req.serviceApp.appId)) {
+    return new Types.ObjectId(req.serviceApp.appId).toHexString() === requestedAppId
+      ? requestedAppId
+      : undefined;
+  }
+
+  const userId = req.user?._id;
+  if (!userId || !Types.ObjectId.isValid(userId)) {
+    return undefined;
+  }
+
+  const membership = await ApplicationMember.findOne({
+    applicationId: new Types.ObjectId(requestedAppId),
+    userId: new Types.ObjectId(userId),
+    status: 'active',
+  })
+    .select('_id')
+    .lean();
+
+  return membership ? requestedAppId : undefined;
+}
+
+/**
  * Popularity-ranked fallback used by the scored builder whenever the personalized
  * candidate union is empty — anonymous callers (no viewer → no graph/app/boost
  * candidates) and cold-start viewers (a viewer who follows accounts with no
@@ -1182,12 +1220,21 @@ router.post(
       clientId: body.clientId ?? null,
     });
 
+    const authorizedClientId = await resolveAuthorizedRecommendationClientId(req, body.clientId);
+
+    if (body.clientId && !authorizedClientId) {
+      logger.debug('POST /profiles/recommendations: ignoring unauthorized clientId', {
+        currentUserId: currentUserId ?? null,
+        serviceAppId: req.serviceApp?.appId ?? null,
+      });
+    }
+
     const recommendations = await buildRecommendations(currentUserId, {
       limit: parsedLimit,
       offset: parsedOffset,
       excludeTypes: body.excludeTypes ?? [],
       excludeIds: body.excludeIds ?? [],
-      clientId: body.clientId,
+      clientId: authorizedClientId,
       boosts: body.boosts,
       signalWeights: body.signalWeights,
     });
