@@ -81,6 +81,7 @@ interface CapturedSsoCode {
   };
 }
 let capturedSsoCode: CapturedSsoCode | undefined;
+let capturedGrantLookupCount = 0;
 // The opaque single-use code the stubbed `/sso/code` returns. Mutable so a test
 // can simulate the mint failing (no code → error bounce).
 const STUB_SSO_CODE = 'opaque-sso-code-123';
@@ -90,6 +91,7 @@ function installApiStub(): void {
   capturedNonceOrigin = undefined;
   capturedExchange = undefined;
   capturedSsoCode = undefined;
+  capturedGrantLookupCount = 0;
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = typeof input === 'string' ? input : input.toString();
     const headers = new Headers(init?.headers);
@@ -106,6 +108,7 @@ function installApiStub(): void {
     // The accounts endpoint resolves the user's granted RP origins to populate
     // the FedCM `approved_clients` array.
     if (url.includes('/fedcm/grants/')) {
+      capturedGrantLookupCount += 1;
       return new Response(
         JSON.stringify({ origins: stubbedGrantedOrigins }),
         { status: 200, headers: { 'content-type': 'application/json' } }
@@ -727,6 +730,12 @@ describe('GET /auth/silent (Safari/Firefox first-party restore)', () => {
     );
     expect(res.status).toBe(200);
     const { message, targetOrigin } = extractPostedMessage(await res.text());
+      if (url.includes('/fedcm/grants/')) {
+        return new Response(JSON.stringify({ origins: [RP_ORIGIN] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
     const msg = message as SilentMessage;
     expect(msg.session).toBeNull();
     // Never post to the unapproved origin; never '*'.
@@ -927,6 +936,33 @@ describe('GET /sso (central top-level-redirect cross-domain SSO)', () => {
         state: 'st-4b',
         prompt: 'none',
       }),
+  it('303-redirects with oxy_sso=none and mints no session when the user has not granted the approved client', async () => {
+    stubbedApprovedClients = [RP_ORIGIN];
+    stubbedGrantedOrigins = [];
+    installApiStub();
+
+    const res = await app.request(
+      ssoUrl({
+        client_id: RP_ORIGIN,
+        return_to: VALID_RETURN_TO,
+        state: 'st-no-grant',
+        prompt: 'none',
+      }),
+      { headers: { cookie: SESSION_COOKIE } }
+    );
+
+    expect(res.status).toBe(303);
+    const { location, frag } = parseSsoRedirect(res);
+    expect(location.startsWith(`${VALID_RETURN_TO}#`)).toBe(true);
+    expect(frag.get('oxy_sso')).toBe('none');
+    expect(frag.get('state')).toBe('st-no-grant');
+    expect(frag.get('code')).toBeNull();
+    expect(capturedGrantLookupCount).toBe(1);
+    expect(capturedNonceOrigin).toBeUndefined();
+    expect(capturedExchange).toBeUndefined();
+    expect(capturedSsoCode).toBeUndefined();
+  });
+
       { headers: { cookie: SESSION_COOKIE } }
     );
     expect(res.status).toBe(400);
@@ -983,6 +1019,12 @@ describe('GET /sso (central top-level-redirect cross-domain SSO)', () => {
     expect(capturedSsoCode?.session?.accessToken).toBe(STUB_ACCESS_TOKEN);
     expect(capturedSsoCode?.session?.user?.id).toBe(TEST_USER_ID);
 
+      if (url.includes('/fedcm/grants/')) {
+        return new Response(JSON.stringify({ origins: [RP_ORIGIN] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
     // CRITICAL contract: the session posted to /sso/code carries the STRUCTURED
     // name with a non-empty `displayName`. A plain-string `name` is rejected by
     // `@oxyhq/core`'s `exchangeSsoCode` (≥3.6.0) → every RP shows logged-out.

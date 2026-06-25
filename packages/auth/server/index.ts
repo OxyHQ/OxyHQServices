@@ -423,6 +423,22 @@ async function fetchApprovedClients(apiBaseUrl: string, userId: string): Promise
   }
 }
 
+/**
+ * Silent prompt=none SSO may only issue a session to an RP origin this specific
+ * user has already authorized. The global approved-clients catalog answers
+ * "is this RP registered?"; the per-user grants answer "may this RP silently
+ * receive this user's session?" Fail closed to a logged-out-style bounce when
+ * the grants lookup fails or the origin is absent.
+ */
+async function hasUserApprovedClientOrigin(
+  apiBaseUrl: string,
+  userId: string,
+  clientOrigin: string
+): Promise<boolean> {
+  const grantedOrigins = await fetchApprovedClients(apiBaseUrl, userId);
+  return grantedOrigins.some((origin) => normaliseOrigin(origin) === clientOrigin);
+}
+
 /** Validate that a session is still active via the API. */
 async function validateSession(apiBaseUrl: string, sessionId: string): Promise<boolean> {
   try {
@@ -1783,7 +1799,23 @@ app.get('/sso', async (c) => {
     return redirectToCallback(c, returnTo, buildSsoFragment('none', state));
   }
 
-  // 8. DURABLE-SESSION SECOND HOP. This bounce runs on the CENTRAL IdP host
+  // 8. Silent prompt=none is only allowed for returning RPs the user has
+  //    already authorized. A globally approved/registered RP is not enough:
+  //    without this per-user grant check, a compromised approved RP could drive
+  //    a logged-in user through /sso and receive a fresh session before the user
+  //    ever consented to that RP. Match FedCM's logged-out/no-session behavior
+  //    for first-visit or grants-lookup-failure cases; never mint or persist a
+  //    session in this branch.
+  const userGrantedClient = await hasUserApprovedClientOrigin(
+    config.apiBaseUrl,
+    user.id,
+    approvedOrigin
+  );
+  if (!userGrantedClient) {
+    return redirectToCallback(c, returnTo, buildSsoFragment('none', state));
+  }
+
+  // 9. DURABLE-SESSION SECOND HOP. This bounce runs on the CENTRAL IdP host
   //    (auth.oxy.so), which is THIRD-PARTY to a cross-registrable-domain RP
   //    (e.g. mention.earth) under Safari ITP / Firefox TCP. Minting the code
   //    here would work for THIS load, but the RP could never restore the
@@ -1820,7 +1852,7 @@ app.get('/sso', async (c) => {
     return c.redirect(establishUrl.toString(), 303);
   }
 
-  // 9. (*.oxy.so path) Mint a real Oxy session for the approved origin via the
+  // 10. (*.oxy.so path) Mint a real Oxy session for the approved origin via the
   //    full, already-audited FedCM nonce + exchange pipeline (server nonce born
   //    + burned inside this call). On any failure → error bounce (no leaks).
   const session = await mintSessionForClient(config, user, approvedOrigin);
@@ -1828,7 +1860,7 @@ app.get('/sso', async (c) => {
     return redirectToCallback(c, returnTo, buildSsoFragment('error', state));
   }
 
-  // 10. Wrap the session in an opaque, single-use, origin-bound code via the
+  // 11. Wrap the session in an opaque, single-use, origin-bound code via the
   //     internal `POST /sso/code` (X-Oxy-Internal secret). On failure → error
   //     bounce. The code — never the session — travels in the fragment.
   const code = await createSsoCode(config, approvedOrigin, session);
@@ -1836,7 +1868,7 @@ app.get('/sso', async (c) => {
     return redirectToCallback(c, returnTo, buildSsoFragment('error', state));
   }
 
-  // 11. Success: bounce back with `oxy_sso=ok`, the opaque `code`, and `state`
+  // 12. Success: bounce back with `oxy_sso=ok`, the opaque `code`, and `state`
   //     in the FRAGMENT. The RP callback redeems the code at /sso/exchange.
   return redirectToCallback(c, returnTo, buildSsoFragment('ok', state, code));
 });
