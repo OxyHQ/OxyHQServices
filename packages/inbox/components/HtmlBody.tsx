@@ -17,6 +17,17 @@ interface HtmlBodyProps {
   html: string;
 }
 
+const MIN_BODY_HEIGHT = 100;
+const MAX_BODY_HEIGHT = 5000;
+const HEIGHT_UPDATE_DEBOUNCE_MS = 100;
+
+function normalizeBodyHeight(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    return null;
+  }
+  return Math.max(MIN_BODY_HEIGHT, Math.min(Math.ceil(value), MAX_BODY_HEIGHT));
+}
+
 /**
  * Wrap email HTML with styling and proxy external resources.
  *
@@ -101,12 +112,25 @@ function HtmlBodyWeb({ html }: HtmlBodyProps) {
     if (!iframe) return;
 
     let observer: ResizeObserver | null = null;
+    let frameId: number | null = null;
+    let debounceId: ReturnType<typeof setTimeout> | null = null;
 
-    const updateHeight = () => {
+    const measureHeight = () => {
       const doc = iframe.contentDocument;
       if (!doc?.body) return;
-      const h = doc.body.scrollHeight;
-      if (h > 0) setHeight(h);
+      const nextHeight = normalizeBodyHeight(doc.body.scrollHeight);
+      if (nextHeight !== null) {
+        setHeight((currentHeight) => (currentHeight === nextHeight ? currentHeight : nextHeight));
+      }
+    };
+
+    const updateHeight = () => {
+      if (debounceId) {
+        clearTimeout(debounceId);
+      }
+      debounceId = setTimeout(() => {
+        frameId = window.requestAnimationFrame(measureHeight);
+      }, HEIGHT_UPDATE_DEBOUNCE_MS);
     };
 
     const handleLoad = () => {
@@ -148,6 +172,12 @@ function HtmlBodyWeb({ html }: HtmlBodyProps) {
     return () => {
       iframe.removeEventListener('load', handleLoad);
       observer?.disconnect();
+      if (debounceId) {
+        clearTimeout(debounceId);
+      }
+      if (frameId !== null) {
+        window.cancelAnimationFrame(frameId);
+      }
     };
   }, [wrappedHtml]);
 
@@ -159,13 +189,14 @@ function HtmlBodyWeb({ html }: HtmlBodyProps) {
         border: 'none',
         width: '100%',
         height: height ?? 'auto',
-        minHeight: height ? undefined : 100,
+        maxHeight: MAX_BODY_HEIGHT,
+        minHeight: height ? undefined : MIN_BODY_HEIGHT,
         display: 'block',
-        overflow: 'hidden',
+        overflow: 'auto',
       }}
       sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
       title="Email content"
-      scrolling="no"
+      scrolling="auto"
     />
   );
 }
@@ -175,7 +206,9 @@ const HEIGHT_SCRIPT = `
     (function() {
       function postHeight() {
         var h = document.body.scrollHeight;
-        if (h > 0) window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'height', value: h }));
+        if (Number.isFinite(h) && h > 0) {
+          window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'height', value: h }));
+        }
       }
       // Post height immediately and on load
       postHeight();
@@ -199,6 +232,7 @@ if (Platform.OS !== 'web') {
 
   HtmlBodyNative = function HtmlBodyNativeComponent({ html }: HtmlBodyProps) {
     const [height, setHeight] = useState<number | null>(null);
+    const heightUpdateTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const { mode } = useTheme();
     const isDark = mode === 'dark';
 
@@ -207,12 +241,28 @@ if (Platform.OS !== 'web') {
     const handleMessage = useCallback((event: { nativeEvent: { data: string } }) => {
       try {
         const msg = JSON.parse(event.nativeEvent.data);
-        if (msg.type === 'height' && msg.value > 0) {
-          setHeight(msg.value);
+        if (msg.type === 'height') {
+          const nextHeight = normalizeBodyHeight(msg.value);
+          if (nextHeight === null) return;
+          if (heightUpdateTimeoutRef.current) {
+            clearTimeout(heightUpdateTimeoutRef.current);
+          }
+          heightUpdateTimeoutRef.current = setTimeout(() => {
+            setHeight((currentHeight) => (currentHeight === nextHeight ? currentHeight : nextHeight));
+            heightUpdateTimeoutRef.current = null;
+          }, HEIGHT_UPDATE_DEBOUNCE_MS);
         }
       } catch {
         // ignore
       }
+    }, []);
+
+    useEffect(() => {
+      return () => {
+        if (heightUpdateTimeoutRef.current) {
+          clearTimeout(heightUpdateTimeoutRef.current);
+        }
+      };
     }, []);
 
     // Open links in the system browser instead of navigating the WebView
@@ -233,9 +283,14 @@ if (Platform.OS !== 'web') {
       <WebView
         originWhitelist={['*']}
         source={{ html: wrappedHtml }}
-        style={[styles.webView, height ? { height } : { minHeight: 100 }]}
+        style={[
+          styles.webView,
+          height
+            ? { height, maxHeight: MAX_BODY_HEIGHT }
+            : { minHeight: MIN_BODY_HEIGHT, maxHeight: MAX_BODY_HEIGHT },
+        ]}
         scalesPageToFit={false}
-        scrollEnabled={false}
+        scrollEnabled
         showsVerticalScrollIndicator={false}
         showsHorizontalScrollIndicator={false}
         onMessage={handleMessage}
