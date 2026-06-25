@@ -7,6 +7,27 @@ import {
   type TrustTier,
 } from "../utils/reputation.constants";
 
+export const USER_COLOR_PRESETS = [
+  'teal',
+  'blue',
+  'green',
+  'amber',
+  'red',
+  'purple',
+  'pink',
+  'sky',
+  'orange',
+  'mint',
+  'oxy',
+] as const;
+
+const LEGACY_HEX_COLOR_PATTERN = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
+
+export function isValidUserColor(value: unknown): boolean {
+  if (typeof value !== 'string') return false;
+  return (USER_COLOR_PRESETS as readonly string[]).includes(value) || LEGACY_HEX_COLOR_PATTERN.test(value);
+}
+
 /**
  * Represents an authentication method linked to a user account.
  * Users can have multiple auth methods (identity, password, social) linked to the same account.
@@ -436,9 +457,12 @@ const UserSchema: Schema = new Schema(
       type: String,
       trim: true,
       lowercase: true,
-      enum: ['teal', 'blue', 'green', 'amber', 'red', 'purple', 'pink', 'sky', 'orange', 'mint', 'oxy'],
+      validate: {
+        validator: isValidUserColor,
+        message: 'Color must be a known preset or legacy hex color',
+      },
       default: () => {
-        const colors = ['teal', 'blue', 'green', 'amber', 'red', 'purple', 'pink', 'sky', 'orange', 'mint'];
+        const colors = USER_COLOR_PRESETS.filter((color) => color !== 'oxy');
         return colors[Math.floor(Math.random() * colors.length)];
       },
     },
