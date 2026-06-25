@@ -98,3 +98,30 @@ describe('createPlatformStorage', () => {
     expect(await storage.getItem('two')).toBeNull();
   });
 });
+
+describe('clearSsoBounceState', () => {
+  const originalSessionStorageDescriptor = Object.getOwnPropertyDescriptor(
+    window,
+    'sessionStorage'
+  );
+
+  afterEach(() => {
+    if (originalSessionStorageDescriptor) {
+      Object.defineProperty(window, 'sessionStorage', originalSessionStorageDescriptor);
+    }
+    jest.resetModules();
+  });
+
+  it('no-ops when accessing sessionStorage throws', async () => {
+    Object.defineProperty(window, 'sessionStorage', {
+      configurable: true,
+      get() {
+        throw new DOMException('blocked', 'SecurityError');
+      },
+    });
+
+    const { clearSsoBounceState } = await import('../../src/ui/utils/activeAuthuser');
+
+    expect(() => clearSsoBounceState()).not.toThrow();
+  });
+});

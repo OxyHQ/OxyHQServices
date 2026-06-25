@@ -203,14 +203,16 @@ function silentSignInKey(oxyServices: OxyServices): string {
  * No-ops off-web and on any storage failure (best-effort).
  */
 function clearSsoBounceStateWeb(): void {
-  if (!isWebBrowser() || typeof window.sessionStorage === 'undefined') return;
-  const origin = window.location.origin;
+  if (!isWebBrowser()) return;
   try {
-    window.sessionStorage.removeItem(ssoAttemptedKey(origin));
-    window.sessionStorage.removeItem(ssoNoSessionKey(origin));
-    window.sessionStorage.removeItem(ssoGuardKey(origin));
-    window.sessionStorage.removeItem(ssoStateKey(origin));
-    window.sessionStorage.removeItem(ssoDestKey(origin));
+    const storage = window.sessionStorage;
+    if (!storage) return;
+    const origin = window.location.origin;
+    storage.removeItem(ssoAttemptedKey(origin));
+    storage.removeItem(ssoNoSessionKey(origin));
+    storage.removeItem(ssoGuardKey(origin));
+    storage.removeItem(ssoStateKey(origin));
+    storage.removeItem(ssoDestKey(origin));
   } catch {
     // Best-effort; swallow SecurityError (e.g. Safari private mode).
   }
