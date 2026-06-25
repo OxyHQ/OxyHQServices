@@ -7,6 +7,8 @@
  */
 
 import crypto from 'crypto';
+import dns from 'dns/promises';
+import net from 'net';
 import mongoose from 'mongoose';
 import User, { IUser } from '../models/User';
 import { AssetService } from './assetService';
@@ -63,6 +65,93 @@ const REFRESH_MIN_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 const AVATAR_REFRESH_MIN_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
 const FEDIVERSE_HANDLE_REGEX = /^@?[\w.-]+@[\w.-]+\.\w+$/;
+
+const MAX_FEDERATION_REDIRECTS = 3;
+
+function isPrivateIPv4(address: string): boolean {
+  const parts = address.split('.').map((part) => Number(part));
+  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) {
+    return true;
+  }
+
+  const [a, b] = parts;
+  return a === 0
+    || a === 10
+    || a === 127
+    || (a === 169 && b === 254)
+    || (a === 172 && b >= 16 && b <= 31)
+    || (a === 192 && b === 168)
+    || a >= 224;
+}
+
+function isPrivateIPv6(address: string): boolean {
+  const normalized = address.toLowerCase();
+  if (normalized === '::1' || normalized === '::') return true;
+
+  if (normalized.startsWith('::ffff:')) {
+    return isPrivateIPv4(normalized.slice('::ffff:'.length));
+  }
+
+  return normalized.startsWith('fc')
+    || normalized.startsWith('fd')
+    || normalized.startsWith('fe8')
+    || normalized.startsWith('fe9')
+    || normalized.startsWith('fea')
+    || normalized.startsWith('feb');
+}
+
+function isPrivateAddress(address: string): boolean {
+  const ipVersion = net.isIP(address);
+  if (ipVersion === 4) return isPrivateIPv4(address);
+  if (ipVersion === 6) return isPrivateIPv6(address);
+  return true;
+}
+
+async function assertPublicHttpsUrl(rawUrl: string): Promise<URL> {
+  const url = new URL(rawUrl);
+  if (url.protocol !== 'https:') {
+    throw new Error(`Federation URL must use https: ${rawUrl}`);
+  }
+  if (url.username || url.password) {
+    throw new Error(`Federation URL must not contain credentials: ${rawUrl}`);
+  }
+
+  const hostname = url.hostname.toLowerCase();
+  if (hostname === 'localhost' || hostname.endsWith('.localhost') || hostname.endsWith('.local')) {
+    throw new Error(`Federation URL host is not public: ${rawUrl}`);
+  }
+
+  if (net.isIP(hostname)) {
+    if (isPrivateAddress(hostname)) {
+      throw new Error(`Federation URL resolves to a non-public address: ${rawUrl}`);
+    }
+    return url;
+  }
+
+  const records = await dns.lookup(hostname, { all: true, verbatim: true });
+  if (records.length === 0 || records.some((record) => isPrivateAddress(record.address))) {
+    throw new Error(`Federation URL resolves to a non-public address: ${rawUrl}`);
+  }
+
+  return url;
+}
+
+async function safeFederationFetch(rawUrl: string, init: RequestInit = {}): Promise<Response> {
+  let url = await assertPublicHttpsUrl(rawUrl);
+
+  for (let redirects = 0; redirects <= MAX_FEDERATION_REDIRECTS; redirects += 1) {
+    const res = await fetch(url, { ...init, redirect: 'manual' });
+    if (![301, 302, 303, 307, 308].includes(res.status)) {
+      return res;
+    }
+
+    const location = res.headers.get('location');
+    if (!location) return res;
+    url = await assertPublicHttpsUrl(new URL(location, url).toString());
+  }
+
+  throw new Error(`Federation URL exceeded redirect limit: ${rawUrl}`);
+}
 
 // System user ID for federated avatar ownership
 const FEDERATION_SYSTEM_USER = '__federation__';
@@ -327,7 +416,7 @@ async function signedFetch(url: string, accept: string): Promise<Response> {
   const keyPair = await getInstanceKeyPair();
   const sigHeaders = signRequest(keyPair.privateKeyPem, keyPair.keyId, 'GET', url);
 
-  return fetch(url, {
+  return safeFederationFetch(url, {
     headers: {
       Accept: accept,
       'User-Agent': USER_AGENT,
@@ -577,7 +666,7 @@ class FederationService {
     const url = `https://${domain}/.well-known/webfinger?resource=${encodeURIComponent(resource)}`;
 
     try {
-      const res = await fetch(url, {
+      const res = await safeFederationFetch(url, {
         headers: { Accept: 'application/jrd+json, application/json' },
         signal: AbortSignal.timeout(10_000),
       });
@@ -633,9 +722,10 @@ class FederationService {
       if (!res.ok) return null;
 
       const actor = (await res.json()) as Record<string, unknown>;
-      if (!actor.id || !actor.inbox) return null;
+      if (!actor.id || !actor.inbox || typeof actor.id !== 'string') return null;
 
-      const actorHost = new URL(actor.id as string).hostname.toLowerCase();
+      const actorId = await assertPublicHttpsUrl(actor.id);
+      const actorHost = actorId.hostname.toLowerCase();
       const username = (actor.preferredUsername as string) || (actor.name as string) || 'unknown';
       const actorWebfinger = typeof actor.webfinger === 'string'
         ? normalizeFediverseHandle(actor.webfinger)
@@ -645,7 +735,7 @@ class FederationService {
       const domain = domainFromHandle(acct) || actorHost;
 
       return {
-        actorUri: actor.id as string,
+        actorUri: actor.id,
         domain,
         username: acct,
         displayName: decodeHtmlEntities((actor.name as string) || username),
@@ -690,7 +780,7 @@ class FederationService {
         requestHeaders['If-Modified-Since'] = conditional.lastModified;
       }
 
-      const res = await fetch(avatarUrl, {
+      const res = await safeFederationFetch(avatarUrl, {
         headers: requestHeaders,
         signal: AbortSignal.timeout(15_000),
       });
