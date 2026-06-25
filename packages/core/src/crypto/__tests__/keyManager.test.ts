@@ -33,10 +33,10 @@ jest.mock(
       __esModule: true,
       WHEN_UNLOCKED_THIS_DEVICE_ONLY: 'WHEN_UNLOCKED_THIS_DEVICE_ONLY',
       WHEN_UNLOCKED: 'WHEN_UNLOCKED',
-      setItemAsync: jest.fn(async (key: string, value: string) => {
+      setItemAsync: jest.fn(async (key: string, value: string, _options?: unknown) => {
         store.set(key, value);
       }),
-      getItemAsync: jest.fn(async (key: string) => store.get(key) ?? null),
+      getItemAsync: jest.fn(async (key: string, _options?: unknown) => store.get(key) ?? null),
       deleteItemAsync: jest.fn(async (key: string) => {
         store.delete(key);
       }),
@@ -144,6 +144,25 @@ describe('KeyManager safety invariants', () => {
       expect(m.get('oxy_identity_backup_private_key')).toBeTruthy();
       expect(m.get('oxy_identity_backup_public_key')).toBeTruthy();
       expect(m.get('oxy_identity_backup_timestamp')).toBeTruthy();
+    });
+
+    it('persists iOS shared identity keys with the documented keychain access group', async () => {
+      await KeyManager.createIdentity();
+
+      const store = (await import('expo-secure-store' as string)) as unknown as {
+        setItemAsync: jest.Mock;
+      };
+
+      expect(store.setItemAsync).toHaveBeenCalledWith(
+        'oxy_shared_identity_private_key',
+        expect.any(String),
+        expect.objectContaining({ keychainAccessGroup: 'group.so.oxy.shared' }),
+      );
+      expect(store.setItemAsync).toHaveBeenCalledWith(
+        'oxy_shared_identity_public_key',
+        expect.any(String),
+        expect.objectContaining({ keychainAccessGroup: 'group.so.oxy.shared' }),
+      );
     });
 
     it('refuses to overwrite an existing identity without explicit consent', async () => {

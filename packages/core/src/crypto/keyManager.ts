@@ -85,9 +85,9 @@ const STORAGE_KEYS = {
 /**
  * iOS Keychain Access Group for sharing identities across Oxy apps
  * All Oxy apps must have this access group enabled in their entitlements
- * Format: [Team ID].com.oxy.shared or group.com.oxy.shared
+ * Format: [Team ID].group.so.oxy.shared or group.so.oxy.shared
  */
-const IOS_KEYCHAIN_GROUP = 'group.com.oxy.shared';
+const IOS_KEYCHAIN_GROUP = 'group.so.oxy.shared';
 
 /**
  * Android Account Manager type for shared authentication
