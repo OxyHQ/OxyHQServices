@@ -1,23 +1,35 @@
 import type React from 'react';
-import { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
-import type { ReputationRule } from '@oxyhq/core';
+import { useEffect, useMemo, useState } from 'react';
+import { View, Text, ScrollView } from 'react-native';
+import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
+import { Chip } from '@oxyhq/bloom/chip';
+import { useTheme } from '@oxyhq/bloom/theme';
+import type { ReputationRule, ReputationCategory } from '@oxyhq/core';
 import type { BaseScreenProps } from '../../types/navigation';
 import Header from '../../components/Header';
+import LoadingState from '../../components/LoadingState';
 import { useI18n } from '../../hooks/useI18n';
-import { useTheme } from '@oxyhq/bloom/theme';
 import { useOxy } from '../../context/OxyContext';
 
-const TrustRulesScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
-    // Use useOxy() hook for OxyContext values
+/** Stable display order for rule category sections. */
+const CATEGORY_ORDER: ReputationCategory[] = [
+    'content',
+    'social',
+    'trust',
+    'moderation',
+    'physical',
+    'penalty',
+    'other',
+];
+
+const TrustRulesScreen: React.FC<BaseScreenProps> = ({ goBack }) => {
     const { oxyServices } = useOxy();
     const { t } = useI18n();
+    const bloomTheme = useTheme();
+
     const [rules, setRules] = useState<ReputationRule[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-
-    const bloomTheme = useTheme();
-    const primaryColor = bloomTheme.colors.primary;
 
     useEffect(() => {
         setIsLoading(true);
@@ -28,60 +40,76 @@ const TrustRulesScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
             .finally(() => setIsLoading(false));
     }, [oxyServices]);
 
+    // Group rules by category, preserving a stable section order. Categories
+    // with no rules are dropped; unknown categories fall back to "other".
+    const groupedRules = useMemo(() => {
+        const buckets = new Map<ReputationCategory, ReputationRule[]>();
+        for (const rule of rules) {
+            const category: ReputationCategory = CATEGORY_ORDER.includes(rule.category)
+                ? rule.category
+                : 'other';
+            const bucket = buckets.get(category);
+            if (bucket) {
+                bucket.push(rule);
+            } else {
+                buckets.set(category, [rule]);
+            }
+        }
+        return CATEGORY_ORDER
+            .filter((category) => buckets.has(category))
+            .map((category) => ({ category, items: buckets.get(category) ?? [] }));
+    }, [rules]);
+
     return (
-        <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
+        <View className="flex-1 bg-bg">
             <Header
                 title={t('trust.rules.title') || 'Trust Rules'}
                 subtitle={t('trust.rules.subtitle') || 'How to earn reputation'}
-
                 onBack={goBack}
                 elevation="subtle"
             />
             {isLoading ? (
-                <ActivityIndicator size="large" color={primaryColor} style={{ marginTop: 40 }} />
+                <LoadingState color={bloomTheme.colors.primary} />
             ) : error ? (
-                <Text style={[styles.error, { color: bloomTheme.colors.error }]}>{error}</Text>
+                <Text className="text-text-secondary text-base text-center px-screen-margin pt-space-40">
+                    {error}
+                </Text>
+            ) : rules.length === 0 ? (
+                <Text className="text-text-secondary text-base text-center px-screen-margin pt-space-40">
+                    {t('trust.rules.empty') || 'No rules found.'}
+                </Text>
             ) : (
-                <ScrollView contentContainerStyle={styles.listContainer}>
-                    {rules.length === 0 ? (
-                        <Text style={[styles.placeholder, { color: bloomTheme.colors.text }]}>{t('trust.rules.empty') || 'No rules found.'}</Text>
-                    ) : (
-                        rules.map((rule) => (
-                            <View key={rule.id} style={[styles.ruleRow, { borderColor: bloomTheme.colors.border }]}>
-                                <View style={styles.ruleTextColumn}>
-                                    <Text style={[styles.ruleDesc, { color: bloomTheme.colors.text }]}>{rule.description}</Text>
-                                    <Text style={[styles.ruleCategory, { color: bloomTheme.colors.textTertiary }]}>{rule.category}</Text>
-                                </View>
-                                <Text style={[styles.rulePoints, { color: rule.points >= 0 ? primaryColor : bloomTheme.colors.error }]}>
-                                    {rule.points > 0 ? '+' : ''}{rule.points}
-                                </Text>
-                            </View>
-                        ))
-                    )}
+                <ScrollView className="flex-1">
+                    <View className="px-screen-margin pb-space-24 pt-space-12">
+                        {groupedRules.map(({ category, items }) => (
+                            <SettingsListGroup
+                                key={category}
+                                title={t(`trust.rules.categories.${category}`) || category}
+                            >
+                                {items.map((rule) => (
+                                    <SettingsListItem
+                                        key={rule.id}
+                                        title={rule.description}
+                                        showChevron={false}
+                                        rightElement={
+                                            <Chip
+                                                variant="soft"
+                                                size="small"
+                                                color={rule.points > 0 ? 'success' : rule.points < 0 ? 'error' : 'default'}
+                                            >
+                                                {rule.points > 0 ? `+${rule.points}` : `${rule.points}`}
+                                            </Chip>
+                                        }
+                                        accessibilityLabel={`${rule.description}, ${rule.points > 0 ? '+' : ''}${rule.points} ${t('trust.center.balance') || 'reputation points'}`}
+                                    />
+                                ))}
+                            </SettingsListGroup>
+                        ))}
+                    </View>
                 </ScrollView>
             )}
         </View>
     );
 };
-
-const styles = StyleSheet.create({
-    container: { flex: 1 },
-    listContainer: { paddingBottom: 40, paddingTop: 20 },
-    ruleRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        paddingVertical: 14,
-        paddingHorizontal: 24,
-        borderBottomWidth: 1,
-        gap: 12,
-    },
-    ruleTextColumn: { flex: 1 },
-    ruleDesc: { fontSize: 16 },
-    ruleCategory: { fontSize: 12, marginTop: 2, textTransform: 'capitalize' },
-    rulePoints: { fontSize: 16, fontWeight: '700' },
-    placeholder: { fontSize: 16, textAlign: 'center', marginTop: 40 },
-    error: { fontSize: 16, textAlign: 'center', marginTop: 40 },
-});
 
 export default TrustRulesScreen;

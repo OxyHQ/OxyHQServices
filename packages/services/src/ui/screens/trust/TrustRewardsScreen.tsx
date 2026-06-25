@@ -1,40 +1,88 @@
 import type React from 'react';
 import { useMemo, useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Platform } from 'react-native';
+import { View, StyleSheet, ScrollView } from 'react-native';
 import type { BaseScreenProps } from '../../types/navigation';
 import Header from '../../components/Header';
 import { Ionicons } from '@expo/vector-icons';
-import { useI18n } from '../../hooks/useI18n';
 import { useTheme } from '@oxyhq/bloom/theme';
-import { normalizeColorScheme } from '@oxyhq/core';
-import { useColorScheme } from '../../hooks/useColorScheme';
-import { Colors } from '../../constants/theme';
+import { H1, H4, H5, Text } from '@oxyhq/bloom/typography';
+import { useI18n } from '../../hooks/useI18n';
 import { useOxy } from '../../context/OxyContext';
 import { darkenColor, lightenColor } from '../../utils/colorUtils';
+
+type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
 interface Achievement {
     id: string;
     name: string;
     description: string;
     category: 'milestone' | 'streak' | 'contribution' | 'special';
-    icon: string;
+    icon: IoniconName;
+    /** Identity tint for the unlocked badge — part of the achievement data model. */
     iconColor: string;
     unlocked: boolean;
     unlockedDate?: string;
     rarity: 'common' | 'rare' | 'epic' | 'legendary';
 }
 
-const TrustRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
+/**
+ * Per-achievement identity tints. Like the trust-tier palette in `trustTier.ts`,
+ * these are data, not theme surfaces — they brand each badge regardless of theme.
+ */
+const ACHIEVEMENT_TINT = {
+    gray: '#8E8E93',
+    green: '#34C759',
+    blue: '#007AFF',
+    orange: '#FF9500',
+    purple: '#AF52DE',
+    pink: '#FF2D55',
+    gold: '#FFD700',
+    red: '#FF3B30',
+    indigo: '#5E5CE6',
+} as const;
+
+/** Rarity-tier identity tints for the corner rarity accent. */
+const RARITY_TINT: Record<Achievement['rarity'], string> = {
+    legendary: ACHIEVEMENT_TINT.gold,
+    epic: ACHIEVEMENT_TINT.purple,
+    rare: ACHIEVEMENT_TINT.blue,
+    common: '',
+};
+
+/** Contrast-locked foreground for icons/value text painted over a colored badge fill. */
+const BADGE_ON_COLOR = '#FFFFFF';
+
+/** Reputation thresholds that unlock each milestone, and the value shown on its badge. */
+const ACHIEVEMENT_VALUE: Record<string, number> = {
+    'first-step': 1,
+    novice: 10,
+    contributor: 50,
+    'rising-star': 100,
+    'early-adopter': 200,
+    'community-hero': 500,
+    legend: 1000,
+    phoenix: 2500,
+    unstoppable: 5000,
+    helper: 10,
+    'streak-master': 7,
+};
+
+const BADGE_BORDER_WIDTH = 5;
+const BADGE_GLOW_OPACITY = 0.3;
+const BADGE_DARKEN = 0.45;
+const BADGE_LIGHTEN = 0.25;
+const RARITY_DARKEN = 0.4;
+const ACCENT_LIGHTEN = 0.1;
+const LOCKED_OPACITY = 0.5;
+
+const TrustRewardsScreen: React.FC<BaseScreenProps> = ({ goBack }) => {
     const { t } = useI18n();
     const { user, oxyServices, isAuthenticated } = useOxy();
     const [reputationTotal, setReputationTotal] = useState<number>(0);
-    const [isLoading, setIsLoading] = useState(true);
+    const [, setIsLoading] = useState(true);
 
     const bloomTheme = useTheme();
-    const colorScheme = useColorScheme();
-    const normalizedColorScheme = normalizeColorScheme(colorScheme);
-    const colors = Colors[normalizedColorScheme];
-    const primaryColor = bloomTheme.colors.primary;
+    const colors = bloomTheme.colors;
 
     useEffect(() => {
         if (!user || !isAuthenticated) {
@@ -59,7 +107,7 @@ const TrustRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
             description: t('trust.achievements.firstStepDesc') || 'Earned your first reputation point',
             category: 'milestone',
             icon: 'footsteps',
-            iconColor: '#8E8E93',
+            iconColor: ACHIEVEMENT_TINT.gray,
             unlocked: reputationTotal >= 1,
             rarity: 'common',
         },
@@ -69,7 +117,7 @@ const TrustRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
             description: t('trust.achievements.noviceDesc') || 'Reached 10 reputation points',
             category: 'milestone',
             icon: 'leaf',
-            iconColor: '#34C759',
+            iconColor: ACHIEVEMENT_TINT.green,
             unlocked: reputationTotal >= 10,
             rarity: 'common',
         },
@@ -78,8 +126,8 @@ const TrustRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
             name: t('trust.achievements.contributor') || 'Contributor',
             description: t('trust.achievements.contributorDesc') || 'Reached 50 reputation points',
             category: 'contribution',
-            icon: 'account-group',
-            iconColor: '#007AFF',
+            icon: 'people',
+            iconColor: ACHIEVEMENT_TINT.blue,
             unlocked: reputationTotal >= 50,
             rarity: 'common',
         },
@@ -89,7 +137,7 @@ const TrustRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
             description: t('trust.achievements.risingStarDesc') || 'Reached 100 reputation points',
             category: 'milestone',
             icon: 'star',
-            iconColor: '#FF9500',
+            iconColor: ACHIEVEMENT_TINT.orange,
             unlocked: reputationTotal >= 100,
             rarity: 'rare',
         },
@@ -99,7 +147,7 @@ const TrustRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
             description: t('trust.achievements.earlyAdopterDesc') || 'Been part of the community from the start',
             category: 'special',
             icon: 'rocket',
-            iconColor: '#AF52DE',
+            iconColor: ACHIEVEMENT_TINT.purple,
             unlocked: reputationTotal >= 200,
             rarity: 'rare',
         },
@@ -109,7 +157,7 @@ const TrustRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
             description: t('trust.achievements.communityHeroDesc') || 'Reached 500 reputation points',
             category: 'contribution',
             icon: 'shield',
-            iconColor: '#FF2D55',
+            iconColor: ACHIEVEMENT_TINT.pink,
             unlocked: reputationTotal >= 500,
             rarity: 'epic',
         },
@@ -119,7 +167,7 @@ const TrustRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
             description: t('trust.achievements.legendDesc') || 'Reached 1000 reputation points',
             category: 'milestone',
             icon: 'trophy',
-            iconColor: '#FFD700',
+            iconColor: ACHIEVEMENT_TINT.gold,
             unlocked: reputationTotal >= 1000,
             rarity: 'legendary',
         },
@@ -129,7 +177,7 @@ const TrustRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
             description: t('trust.achievements.phoenixDesc') || 'Reached 2500 reputation points',
             category: 'milestone',
             icon: 'flame',
-            iconColor: '#FF3B30',
+            iconColor: ACHIEVEMENT_TINT.red,
             unlocked: reputationTotal >= 2500,
             rarity: 'legendary',
         },
@@ -139,7 +187,7 @@ const TrustRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
             description: t('trust.achievements.unstoppableDesc') || 'Reached 5000 reputation points',
             category: 'milestone',
             icon: 'infinite',
-            iconColor: '#5E5CE6',
+            iconColor: ACHIEVEMENT_TINT.indigo,
             unlocked: reputationTotal >= 5000,
             rarity: 'legendary',
         },
@@ -149,7 +197,7 @@ const TrustRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
             description: t('trust.achievements.bugHunterDesc') || 'Reported helpful bugs',
             category: 'contribution',
             icon: 'bug',
-            iconColor: '#FF9500',
+            iconColor: ACHIEVEMENT_TINT.orange,
             unlocked: false,
             rarity: 'rare',
         },
@@ -159,7 +207,7 @@ const TrustRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
             description: t('trust.achievements.helperDesc') || 'Helped 10 users',
             category: 'contribution',
             icon: 'hand-left',
-            iconColor: '#34C759',
+            iconColor: ACHIEVEMENT_TINT.green,
             unlocked: false,
             rarity: 'common',
         },
@@ -169,67 +217,38 @@ const TrustRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
             description: t('trust.achievements.streakMasterDesc') || '7 day activity streak',
             category: 'streak',
             icon: 'flash',
-            iconColor: '#FFD700',
+            iconColor: ACHIEVEMENT_TINT.gold,
             unlocked: false,
             rarity: 'epic',
         },
-    ], [t, reputationTotal, colors]);
+    ], [t, reputationTotal]);
 
     const unlockedAchievements = achievements.filter(a => a.unlocked);
     const lockedAchievements = achievements.filter(a => !a.unlocked);
 
-    const getRarityColor = (rarity: Achievement['rarity']) => {
-        switch (rarity) {
-            case 'legendary':
-                return '#FFD700';
-            case 'epic':
-                return '#AF52DE';
-            case 'rare':
-                return '#007AFF';
-            default:
-                return bloomTheme.colors.textTertiary;
-        }
-    };
+    const getRarityColor = (rarity: Achievement['rarity']): string =>
+        RARITY_TINT[rarity] || colors.textTertiary;
 
-    const getAchievementValue = (achievement: Achievement): number | null => {
-        // Extract numeric value from achievement based on ID and unlocked state
-        const valueMap: Record<string, number> = {
-            'first-step': 1,
-            'novice': 10,
-            'contributor': 50,
-            'rising-star': 100,
-            'early-adopter': 200,
-            'community-hero': 500,
-            'legend': 1000,
-            'phoenix': 2500,
-            'unstoppable': 5000,
-            'helper': 10,
-            'streak-master': 7,
-        };
-        return valueMap[achievement.id] || null;
-    };
+    const getAchievementValue = (achievement: Achievement): number | null =>
+        ACHIEVEMENT_VALUE[achievement.id] ?? null;
 
     const renderAchievement = (achievement: Achievement) => {
         const rarityColor = getRarityColor(achievement.rarity);
         const isLocked = !achievement.unlocked;
         const achievementValue = getAchievementValue(achievement);
 
-        // Two-tone colors: darker for borders/shadow, lighter for highlights
-        // Use achievement iconColor for unlocked badges, gray for locked
-        const baseColor = isLocked ? bloomTheme.colors.textTertiary : (achievement.iconColor || bloomTheme.colors.textTertiary);
-        const darkTone = darkenColor(baseColor, 0.45); // Darker border/shadow (more contrast)
-        const lightTone = lightenColor(baseColor, 0.25); // Lighter highlight
-        const mediumTone = baseColor; // Base color
+        // Two-tone colors: darker for borders/shadow, lighter for highlights.
+        // Use the achievement identity tint for unlocked badges, neutral for locked.
+        const baseColor = isLocked ? colors.textTertiary : (achievement.iconColor || colors.textTertiary);
+        const darkTone = darkenColor(baseColor, BADGE_DARKEN);
+        const lightTone = lightenColor(baseColor, BADGE_LIGHTEN);
+        const mediumTone = baseColor;
 
         return (
             <View
                 key={achievement.id}
-                style={[
-                    styles.achievementCard,
-                    {
-                        backgroundColor: colors.card,
-                    },
-                ]}
+                className="bg-fill rounded-radius-20 items-center"
+                style={styles.achievementCard}
             >
                 <View style={styles.badgeContainer}>
                     {/* Outer glow effect - larger and softer */}
@@ -240,7 +259,7 @@ const TrustRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
                                 styles.badgeOrganic,
                                 {
                                     backgroundColor: darkTone,
-                                    opacity: 0.3,
+                                    opacity: BADGE_GLOW_OPACITY,
                                 },
                             ]}
                         />
@@ -252,9 +271,9 @@ const TrustRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
                             styles.badgeMain,
                             styles.badgeOrganic,
                             {
-                                backgroundColor: isLocked ? bloomTheme.colors.border : mediumTone,
+                                backgroundColor: isLocked ? colors.border : mediumTone,
                                 borderColor: darkTone,
-                                borderWidth: 5,
+                                borderWidth: BADGE_BORDER_WIDTH,
                                 shadowColor: darkTone,
                             },
                         ]}
@@ -265,18 +284,14 @@ const TrustRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
                                 <View
                                     style={[
                                         styles.badgeHighlight,
-                                        {
-                                            backgroundColor: lightTone,
-                                        },
+                                        { backgroundColor: lightTone },
                                     ]}
                                 />
                                 {/* Additional highlight for more depth */}
                                 <View
                                     style={[
                                         styles.badgeHighlightAccent,
-                                        {
-                                            backgroundColor: lightenColor(lightTone, 0.1),
-                                        },
+                                        { backgroundColor: lightenColor(lightTone, ACCENT_LIGHTEN) },
                                     ]}
                                 />
                             </>
@@ -285,9 +300,9 @@ const TrustRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
                         {/* Icon container - positioned in upper area */}
                         <View style={styles.badgeIconContainer}>
                             {isLocked ? (
-                                <Ionicons name="lock-closed" size={40} color={bloomTheme.colors.textTertiary} />
+                                <Ionicons name="lock-closed" size={40} color={colors.textTertiary} />
                             ) : (
-                                <Ionicons name={achievement.icon as React.ComponentProps<typeof Ionicons>['name']} size={40} color="#FFFFFF" />
+                                <Ionicons name={achievement.icon} size={40} color={BADGE_ON_COLOR} />
                             )}
                         </View>
 
@@ -311,16 +326,30 @@ const TrustRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
 
                     {/* Rarity badge - small accent in corner */}
                     {achievement.unlocked && (
-                        <View style={[styles.rarityBadge, { backgroundColor: rarityColor, borderColor: darkenColor(rarityColor, 0.4) }]}>
-                            <Text style={[styles.rarityText, { color: '#FFFFFF' }]}>{achievement.rarity[0].toUpperCase()}</Text>
+                        <View
+                            style={[
+                                styles.rarityBadge,
+                                { backgroundColor: rarityColor, borderColor: darkenColor(rarityColor, RARITY_DARKEN) },
+                            ]}
+                        >
+                            <Text style={[styles.rarityText, { color: BADGE_ON_COLOR }]}>
+                                {achievement.rarity[0].toUpperCase()}
+                            </Text>
                         </View>
                     )}
                 </View>
 
-                <Text style={[styles.achievementName, { color: bloomTheme.colors.text, opacity: isLocked ? 0.5 : 1 }]}>
+                <H5
+                    className="text-text text-center"
+                    style={isLocked ? styles.lockedDimmed : undefined}
+                    numberOfLines={2}
+                >
                     {achievement.name}
-                </Text>
-                <Text style={[styles.achievementDescription, { color: bloomTheme.colors.textTertiary, opacity: isLocked ? 0.5 : 1 }]}>
+                </H5>
+                <Text
+                    className="text-text-tertiary text-center text-xs mt-space-2"
+                    style={isLocked ? styles.lockedDimmed : undefined}
+                >
                     {achievement.description}
                 </Text>
             </View>
@@ -329,15 +358,15 @@ const TrustRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
 
     if (!isAuthenticated) {
         return (
-            <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
+            <View className="flex-1 bg-bg">
                 <Header
                     title={t('trust.rewards.title') || 'Trust Rewards'}
                     subtitle={t('trust.rewards.subtitle') || 'Unlock special features and recognition'}
                     onBack={goBack}
                     elevation="subtle"
                 />
-                <View style={styles.centerContent}>
-                    <Text style={[styles.message, { color: bloomTheme.colors.text }]}>
+                <View className="flex-1 items-center justify-center px-screen-margin">
+                    <Text className="text-text text-base text-center">
                         {t('common.status.notSignedIn') || 'Not signed in'}
                     </Text>
                 </View>
@@ -345,8 +374,12 @@ const TrustRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
         );
     }
 
+    const progressRatio = achievements.length > 0
+        ? unlockedAchievements.length / achievements.length
+        : 0;
+
     return (
-        <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
+        <View className="flex-1 bg-bg">
             <Header
                 title={t('trust.rewards.title') || 'Trust Rewards'}
                 subtitle={t('trust.rewards.subtitle') || 'Unlock special features and recognition'}
@@ -354,42 +387,47 @@ const TrustRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
                 elevation="subtle"
             />
             <ScrollView
-                contentContainerStyle={styles.contentContainer}
+                className="flex-1"
+                contentContainerClassName="px-screen-margin pt-space-20 pb-space-40"
                 showsVerticalScrollIndicator={false}
             >
                 {/* Stats Header */}
-                <View style={[styles.statsCard, { backgroundColor: colors.card }]}>
-                    <View style={styles.statsHeader}>
+                <View className="bg-fill rounded-radius-20 p-space-20 mb-space-24">
+                    <View className="flex-row justify-between items-center mb-space-16">
                         <View>
-                            <Text style={[styles.currentReputation, { color: primaryColor }]}>
+                            <H1 className="text-text" style={{ color: colors.primary }}>
                                 {reputationTotal}
-                            </Text>
-                            <Text style={[styles.reputationLabel, { color: bloomTheme.colors.textTertiary }]}>
+                            </H1>
+                            <Text className="text-text-tertiary text-sm">
                                 {t('trust.center.balance') || 'Reputation Points'}
                             </Text>
                         </View>
-                        <View style={styles.achievementStats}>
-                            <Text style={[styles.achievementCount, { color: primaryColor }]}>
+                        <View className="items-end">
+                            <H1 className="text-text" style={{ color: colors.primary }}>
                                 {unlockedAchievements.length}
-                            </Text>
-                            <Text style={[styles.achievementCountLabel, { color: bloomTheme.colors.textTertiary }]}>
+                            </H1>
+                            <Text className="text-text-tertiary text-sm">
                                 {t('trust.achievements.unlocked') || 'Achievements'}
                             </Text>
                         </View>
                     </View>
-                    <View style={styles.progressBarContainer}>
-                        <View style={[styles.progressBar, { backgroundColor: bloomTheme.colors.border }]}>
+                    <View className="mt-space-8">
+                        <View
+                            className="rounded-radius-full overflow-hidden mb-space-8"
+                            style={[styles.progressBar, { backgroundColor: colors.border }]}
+                        >
                             <View
+                                className="rounded-radius-full"
                                 style={[
                                     styles.progressBarFill,
                                     {
-                                        width: `${(unlockedAchievements.length / achievements.length) * 100}%`,
-                                        backgroundColor: primaryColor,
+                                        width: `${progressRatio * 100}%`,
+                                        backgroundColor: colors.primary,
                                     },
                                 ]}
                             />
                         </View>
-                        <Text style={[styles.progressText, { color: bloomTheme.colors.textTertiary }]}>
+                        <Text className="text-text-tertiary text-xs text-right">
                             {unlockedAchievements.length} / {achievements.length}
                         </Text>
                     </View>
@@ -398,9 +436,9 @@ const TrustRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
                 {/* Unlocked Achievements */}
                 {unlockedAchievements.length > 0 && (
                     <>
-                        <Text style={[styles.sectionTitle, { color: bloomTheme.colors.text }]}>
+                        <H4 className="text-text mt-space-8">
                             {t('trust.achievements.unlocked') || 'Unlocked Achievements'}
-                        </Text>
+                        </H4>
                         <View style={styles.achievementsGrid}>
                             {unlockedAchievements.map(achievement => renderAchievement(achievement))}
                         </View>
@@ -410,9 +448,9 @@ const TrustRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
                 {/* Locked Achievements */}
                 {lockedAchievements.length > 0 && (
                     <>
-                        <Text style={[styles.sectionTitle, { color: bloomTheme.colors.text }]}>
+                        <H4 className="text-text mt-space-8">
                             {t('trust.achievements.locked') || 'Locked Achievements'}
-                        </Text>
+                        </H4>
                         <View style={styles.achievementsGrid}>
                             {lockedAchievements.map(achievement => renderAchievement(achievement))}
                         </View>
@@ -423,73 +461,16 @@ const TrustRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
     );
 };
 
+// Measured/positioned layout only — no color, no theme surfaces.
 const styles = StyleSheet.create({
-    container: { flex: 1 },
-    contentContainer: {
-        paddingHorizontal: 24,
-        paddingTop: 20,
-        paddingBottom: 40,
-    },
-    centerContent: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    message: {
-        fontSize: 16,
-        textAlign: 'center',
-    },
-    statsCard: {
-        borderRadius: 18,
-        padding: 20,
-        marginBottom: 24,
-    },
-    statsHeader: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 16,
-    },
-    currentReputation: {
-        fontSize: 36,
-        fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
-        marginBottom: 4,
-    },
-    achievementStats: {
-        alignItems: 'flex-end',
-    },
-    achievementCount: {
-        fontSize: 36,
-        fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
-        marginBottom: 4,
-    },
-    achievementCountLabel: {
-        fontSize: 14,
-    },
-    reputationLabel: {
-        fontSize: 14,
-    },
-    progressBarContainer: {
-        marginTop: 8,
+    lockedDimmed: {
+        opacity: LOCKED_OPACITY,
     },
     progressBar: {
         height: 8,
-        borderRadius: 4,
-        overflow: 'hidden',
-        marginBottom: 8,
     },
     progressBarFill: {
         height: '100%',
-        borderRadius: 4,
-    },
-    progressText: {
-        fontSize: 12,
-        textAlign: 'right',
-    },
-    sectionTitle: {
-        fontSize: 20,
-        fontWeight: Platform.OS === 'web' ? '600' : undefined,
-        marginTop: 8,
     },
     achievementsGrid: {
         flexDirection: 'row',
@@ -501,10 +482,8 @@ const styles = StyleSheet.create({
     achievementCard: {
         width: '47%',
         minWidth: 140,
-        borderRadius: 20,
         padding: 20,
         paddingTop: 24,
-        alignItems: 'center',
     },
     badgeContainer: {
         alignItems: 'center',
@@ -607,18 +586,6 @@ const styles = StyleSheet.create({
     rarityText: {
         fontSize: 14,
         fontWeight: 'bold',
-    },
-    achievementName: {
-        fontSize: 15,
-        fontWeight: '700',
-        textAlign: 'center',
-        marginBottom: 6,
-        marginTop: 4,
-    },
-    achievementDescription: {
-        fontSize: 11,
-        textAlign: 'center',
-        lineHeight: 15,
     },
 });
 

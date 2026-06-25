@@ -1,100 +1,224 @@
 import type React from 'react';
-import { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity } from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+    View,
+    StyleSheet,
+    ActivityIndicator,
+    FlatList,
+    TouchableOpacity,
+} from 'react-native';
 import type { ReputationLeaderboardEntry } from '@oxyhq/core';
+import { getAccountDisplayName, logger } from '@oxyhq/core';
+import { useTheme } from '@oxyhq/bloom/theme';
+import { H6, Text } from '@oxyhq/bloom/typography';
+import { Chip } from '@oxyhq/bloom/chip';
+import { Button } from '@oxyhq/bloom/button';
+import { Ionicons } from '@expo/vector-icons';
 import type { BaseScreenProps } from '../../types/navigation';
 import Avatar from '../../components/Avatar';
 import Header from '../../components/Header';
 import { useI18n } from '../../hooks/useI18n';
-import { useTheme } from '@oxyhq/bloom/theme';
 import { useOxy } from '../../context/OxyContext';
 import { getTrustTierLabel } from './trustTier';
 
-const TrustLeaderboardScreen: React.FC<BaseScreenProps> = ({ goBack, theme, navigate }) => {
-    // Use useOxy() hook for OxyContext values
-    const { oxyServices } = useOxy();
-    const { t } = useI18n();
+const AVATAR_SIZE = 40;
+const EMPTY_ICON_SIZE = 64;
+const ERROR_ICON_SIZE = 48;
+/** Ranks within the podium (1–3) get a highlighted row surface. */
+const PODIUM_RANK = 3;
+
+const TrustLeaderboardScreen: React.FC<BaseScreenProps> = ({ goBack, navigate }) => {
+    const { oxyServices, user: currentUser } = useOxy();
+    const { t, locale } = useI18n();
+    const bloomTheme = useTheme();
+
     const [leaderboard, setLeaderboard] = useState<ReputationLeaderboardEntry[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    const bloomTheme = useTheme();
-    const primaryColor = bloomTheme.colors.primary;
+    const currentUserId = currentUser?.id ?? '';
 
-    useEffect(() => {
+    const loadLeaderboard = useCallback(() => {
         setIsLoading(true);
         setError(null);
-        oxyServices.getReputationLeaderboard()
+        oxyServices
+            .getReputationLeaderboard()
             .then((data) => setLeaderboard(Array.isArray(data) ? data : []))
-            .catch((err: unknown) => setError((err instanceof Error ? err.message : null) || 'Failed to load leaderboard'))
+            .catch((err: unknown) => {
+                logger.error(
+                    'Failed to load trust leaderboard',
+                    err instanceof Error ? err : new Error(String(err)),
+                    { component: 'TrustLeaderboardScreen' },
+                );
+                setError(err instanceof Error ? err.message : null);
+            })
             .finally(() => setIsLoading(false));
     }, [oxyServices]);
 
-    return (
-        <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
-            <Header
-                title={t('trust.leaderboard.title') || 'Trust Leaderboard'}
-                subtitle={t('trust.leaderboard.subtitle') || 'Top contributors in the community'}
+    useEffect(() => {
+        loadLeaderboard();
+    }, [loadLeaderboard]);
 
-                onBack={goBack}
-                elevation="subtle"
+    const title = t('trust.leaderboard.title') || 'Trust Leaderboard';
+    const subtitle = t('trust.leaderboard.subtitle') || 'Top contributors in the community';
+
+    const handleEntryPress = useCallback(
+        (entry: ReputationLeaderboardEntry) => {
+            navigate?.('Profile', { userId: entry.user.id, username: entry.user.username });
+        },
+        [navigate],
+    );
+
+    const renderEntry = useCallback(
+        ({ item }: { item: ReputationLeaderboardEntry }) => {
+            const displayName = getAccountDisplayName(item.user, locale);
+            const isViewer = currentUserId !== '' && item.user.id === currentUserId;
+            const isPodium = item.rank <= PODIUM_RANK;
+            // Viewer's own row and podium ranks get a subtle highlighted surface.
+            const highlightClass = isViewer || isPodium ? 'bg-fill-secondary' : '';
+
+            return (
+                <TouchableOpacity
+                    style={styles.row}
+                    className={`px-screen-margin py-space-12 gap-space-12 rounded-radius-12 ${highlightClass}`}
+                    onPress={() => handleEntryPress(item)}
+                    activeOpacity={0.7}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${displayName}, ${t('trust.leaderboard.rankLabel', { rank: item.rank }) || `rank ${item.rank}`}`}
+                >
+                    <Text
+                        className="text-text-secondary font-bold text-subtitle text-center"
+                        style={styles.rank}
+                        numberOfLines={1}
+                    >
+                        {item.rank}
+                    </Text>
+                    <Avatar
+                        uri={item.user.avatar ? oxyServices.getFileDownloadUrl(item.user.avatar, 'thumb') : undefined}
+                        name={displayName}
+                        size={AVATAR_SIZE}
+                    />
+                    <View style={styles.userColumn}>
+                        <Text className="text-text font-medium text-base" numberOfLines={1}>
+                            {displayName}
+                        </Text>
+                        <View style={styles.tierRow} className="mt-space-4">
+                            <Chip size="small" variant="soft" color={isPodium ? 'primary' : 'default'}>
+                                {getTrustTierLabel(item.trustTier, t)}
+                            </Chip>
+                        </View>
+                    </View>
+                    <Text className="text-text font-bold text-base" numberOfLines={1}>
+                        {item.total}
+                    </Text>
+                </TouchableOpacity>
+            );
+        },
+        [oxyServices, locale, currentUserId, handleEntryPress, t],
+    );
+
+    const keyExtractor = useCallback(
+        (item: ReputationLeaderboardEntry, index: number) => item.user.id || `entry-${index}`,
+        [],
+    );
+
+    const ItemSeparator = useMemo(
+        () => () => <View style={styles.separator} className="border-b border-border-image" />,
+        [],
+    );
+
+    if (isLoading) {
+        return (
+            <View className="flex-1 bg-bg">
+                <Header title={title} subtitle={subtitle} onBack={goBack} elevation="subtle" />
+                <View style={styles.center}>
+                    <ActivityIndicator size="large" color={bloomTheme.colors.primary} />
+                </View>
+            </View>
+        );
+    }
+
+    if (error) {
+        return (
+            <View className="flex-1 bg-bg">
+                <Header title={title} subtitle={subtitle} onBack={goBack} elevation="subtle" />
+                <View style={styles.center} className="px-space-32 gap-space-16">
+                    <Ionicons name="alert-circle" size={ERROR_ICON_SIZE} color={bloomTheme.colors.error} />
+                    <Text className="text-text-secondary text-base text-center">
+                        {error || t('trust.leaderboard.error') || 'Failed to load leaderboard'}
+                    </Text>
+                    <Button variant="primary" onPress={loadLeaderboard}>
+                        {t('common.retry') || 'Retry'}
+                    </Button>
+                </View>
+            </View>
+        );
+    }
+
+    return (
+        <View className="flex-1 bg-bg">
+            <Header title={title} subtitle={subtitle} onBack={goBack} elevation="subtle" />
+            <FlatList
+                data={leaderboard}
+                renderItem={renderEntry}
+                keyExtractor={keyExtractor}
+                contentContainerStyle={styles.listContent}
+                className="px-space-8 pt-space-12"
+                ItemSeparatorComponent={ItemSeparator}
+                ListEmptyComponent={
+                    <View style={styles.emptyContainer} className="px-space-32 gap-space-8">
+                        <Ionicons name="trophy-outline" size={EMPTY_ICON_SIZE} color={bloomTheme.colors.textSecondary} />
+                        <H6 className="text-text text-center mt-space-8">
+                            {t('trust.leaderboard.empty') || 'No leaderboard data'}
+                        </H6>
+                        <Text className="text-text-secondary text-sm text-center">
+                            {t('trust.leaderboard.emptyDesc') || 'Top contributors will appear here as the community grows.'}
+                        </Text>
+                    </View>
+                }
             />
-            {isLoading ? (
-                <ActivityIndicator size="large" color={primaryColor} style={{ marginTop: 40 }} />
-            ) : error ? (
-                <Text style={[styles.error, { color: bloomTheme.colors.error }]}>{error}</Text>
-            ) : (
-                <ScrollView contentContainerStyle={styles.listContainer}>
-                    {leaderboard.length === 0 ? (
-                        <Text style={[styles.placeholder, { color: bloomTheme.colors.text }]}>{t('trust.leaderboard.empty') || 'No leaderboard data.'}</Text>
-                    ) : (
-                        leaderboard.map((entry) => {
-                            const username = entry.user.username;
-                            const displayName = username || entry.user.id;
-                            return (
-                                <TouchableOpacity
-                                    key={entry.user.id}
-                                    style={[styles.row, { borderColor: bloomTheme.colors.border }, entry.rank <= 3 && { backgroundColor: bloomTheme.colors.primarySubtle }]}
-                                    onPress={() => navigate?.('Profile', { userId: entry.user.id, username })}
-                                    activeOpacity={0.7}
-                                >
-                                    <Text style={[styles.rank, { color: primaryColor }]}>{entry.rank}</Text>
-                                    <Avatar name={username || 'User'} size={40} style={styles.avatar} />
-                                    <View style={styles.userColumn}>
-                                        <Text style={[styles.username, { color: bloomTheme.colors.text }]} numberOfLines={1}>{displayName}</Text>
-                                        <Text style={[styles.tier, { color: bloomTheme.colors.textTertiary }]} numberOfLines={1}>
-                                            {getTrustTierLabel(entry.trustTier, t)}
-                                        </Text>
-                                    </View>
-                                    <Text style={[styles.reputation, { color: primaryColor }]}>{entry.total}</Text>
-                                </TouchableOpacity>
-                            );
-                        })
-                    )}
-                </ScrollView>
-            )}
         </View>
     );
 };
 
+// Layout-only styles: flex centering, measured rank column width, separator
+// inset, and row flex layout. Colors, spacing, radius, and typography roles
+// live on Bloom components + NativeWind token classes.
 const styles = StyleSheet.create({
-    container: { flex: 1 },
-    listContainer: { paddingBottom: 40, paddingTop: 20 },
+    center: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    listContent: {
+        flexGrow: 1,
+        paddingBottom: 40,
+    },
     row: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingVertical: 12,
-        paddingHorizontal: 20,
-        borderBottomWidth: 1,
     },
-    rank: { fontSize: 20, width: 32, textAlign: 'center', fontWeight: 'bold' },
-    avatar: { marginHorizontal: 8 },
-    userColumn: { flex: 1, marginLeft: 8 },
-    username: { fontSize: 16 },
-    tier: { fontSize: 12, marginTop: 1 },
-    reputation: { fontSize: 18, fontWeight: 'bold', marginLeft: 12 },
-    placeholder: { fontSize: 16, textAlign: 'center', marginTop: 40 },
-    error: { fontSize: 16, textAlign: 'center', marginTop: 40 },
+    rank: {
+        width: 28,
+    },
+    userColumn: {
+        flex: 1,
+    },
+    tierRow: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+    },
+    // Inset the hairline separator to align with the start of the entry's text
+    // content (rank column + avatar + screen margin + gaps).
+    separator: {
+        marginLeft: 80,
+    },
+    emptyContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingTop: 80,
+    },
 });
 
 export default TrustLeaderboardScreen;
