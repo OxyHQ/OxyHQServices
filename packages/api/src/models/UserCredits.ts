@@ -10,6 +10,7 @@ export interface IUserCredits extends Document<string> {
     paid: number;
   };
   stripeCustomerId?: string;
+  subscriptionCreditGrantKeys?: string[];
   createdAt: Date;
   updatedAt: Date;
   refreshCreditsIfNeeded(): Promise<void>;
@@ -27,6 +28,7 @@ const UserCreditsSchema = new Schema<IUserCredits>({
     paid: { type: Number, default: 0 },
   },
   stripeCustomerId: { type: String },
+  subscriptionCreditGrantKeys: { type: [String], default: [] },
 }, {
   timestamps: true,
 });

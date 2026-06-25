@@ -4,6 +4,7 @@ export interface IBillingTransaction extends Document {
   userId: string;
   stripeCustomerId?: string;
   stripePaymentIntentId?: string;
+  stripeCreditGrantKey?: string;
   type: 'credit_purchase' | 'subscription_payment' | 'refund';
   amount: number;
   currency: string;
@@ -24,6 +25,10 @@ const BillingTransactionSchema = new Schema<IBillingTransaction>({
     type: String,
   },
   stripePaymentIntentId: {
+    type: String,
+    sparse: true,
+  },
+  stripeCreditGrantKey: {
     type: String,
     sparse: true,
   },
@@ -57,6 +62,7 @@ const BillingTransactionSchema = new Schema<IBillingTransaction>({
 });
 
 BillingTransactionSchema.index({ userId: 1, createdAt: -1 });
+BillingTransactionSchema.index({ stripeCreditGrantKey: 1 }, { unique: true, sparse: true });
 
 const BillingTransaction = mongoose.model<IBillingTransaction>('BillingTransaction', BillingTransactionSchema);
 

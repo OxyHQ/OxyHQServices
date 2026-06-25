@@ -426,21 +426,50 @@ async function handleSubscriptionUpdate(stripeSubscription: Stripe.Subscription)
     { upsert: true, new: true }
   );
 
-  // Add credits on subscription renewal
+  // Add credits once per paid subscription period. Stripe may deliver the
+  // same subscription event more than once, and normal subscription.updated
+  // events can arrive immediately after signup while the period start is
+  // still recent. Keep the credit grant idempotency marker on UserCredits so
+  // the marker and credit increment happen in one atomic update.
   if (stripeSubscription.status === 'active') {
     const now = Date.now() / 1000;
     if (Math.abs(now - subscriptionItem.current_period_start) < 300) {
-      await userCredits.addCredits(plan.creditsPerMonth, 'paid');
-      await BillingTransaction.create({
-        userId: userCredits._id,
-        stripeCustomerId: customerId,
-        type: 'subscription_payment',
-        amount: plan.price,
-        currency: plan.currency,
-        credits: plan.creditsPerMonth,
-        status: 'completed',
-        description: `${plan.name} subscription credits`,
-      });
+      const creditGrantKey = `${stripeSubscription.id}:${subscriptionItem.current_period_start}`;
+      const creditedUser = await UserCredits.findOneAndUpdate(
+        { _id: userCredits._id, subscriptionCreditGrantKeys: { $ne: creditGrantKey } },
+        {
+          $inc: { 'credits.paid': plan.creditsPerMonth },
+          $addToSet: { subscriptionCreditGrantKeys: creditGrantKey },
+        },
+        { new: true }
+      );
+
+      if (!creditedUser) {
+        logger.info('Skipping duplicate subscription credit grant', {
+          creditGrantKey,
+          subscriptionId: stripeSubscription.id,
+          customerId,
+        });
+        return;
+      }
+
+      await BillingTransaction.updateOne(
+        { stripeCreditGrantKey: creditGrantKey },
+        {
+          $setOnInsert: {
+            userId: userCredits._id,
+            stripeCustomerId: customerId,
+            stripeCreditGrantKey: creditGrantKey,
+            type: 'subscription_payment',
+            amount: plan.price,
+            currency: plan.currency,
+            credits: plan.creditsPerMonth,
+            status: 'completed',
+            description: `${plan.name} subscription credits`,
+          },
+        },
+        { upsert: true }
+      );
     }
   }
 }
