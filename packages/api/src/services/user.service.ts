@@ -773,27 +773,47 @@ export class UserService {
     // ordered (filter candidateIds) so result ordering stays stable.
     const toRemoveIds = candidateIds.filter((id) => existingFollowedIds.has(id));
 
+    let actuallyRemovedIds: string[] = [];
+
     if (toRemoveIds.length > 0) {
-      await Follow.deleteMany({
-        followerUserId: currentUserId,
-        followType: FollowType.USER,
-        followedId: { $in: toRemoveIds },
-      });
+      // Delete each follow with an atomic find-and-delete so concurrent bulk
+      // unfollow requests only decrement counters for documents this call
+      // actually removed. A plain deleteMany() only reports an aggregate
+      // deletedCount, which is not enough to safely update each target's
+      // follower counter under races.
+      const deletedFollows = await Promise.all(
+        toRemoveIds.map((followedId) =>
+          Follow.findOneAndDelete({
+            followerUserId: currentUserId,
+            followType: FollowType.USER,
+            followedId,
+          })
+            .select('followedId')
+            .lean()
+        )
+      );
+
+      actuallyRemovedIds = deletedFollows
+        .map((follow) => follow?.followedId)
+        .filter((id): id is Types.ObjectId | string => id != null)
+        .map((id) => id.toString());
 
       // Decrement counts based ONLY on follows actually removed — the exact
       // symmetric inverse of bulkFollow's increment.
-      await Promise.all([
-        User.updateMany(
-          { _id: { $in: toRemoveIds } },
-          { $inc: { '_count.followers': -1 } }
-        ),
-        User.findByIdAndUpdate(currentUserId, {
-          $inc: { '_count.following': -toRemoveIds.length },
-        }),
-      ]);
+      if (actuallyRemovedIds.length > 0) {
+        await Promise.all([
+          User.updateMany(
+            { _id: { $in: actuallyRemovedIds } },
+            { $inc: { '_count.followers': -1 } }
+          ),
+          User.findByIdAndUpdate(currentUserId, {
+            $inc: { '_count.following': -actuallyRemovedIds.length },
+          }),
+        ]);
+      }
     }
 
-    const removedSet = new Set<string>(toRemoveIds);
+    const removedSet = new Set<string>(actuallyRemovedIds);
     const candidateSet = new Set<string>(candidateIds);
 
     // Build a result entry for EVERY deduped candidate id (including invalid
@@ -812,7 +832,7 @@ export class UserService {
 
     return {
       results,
-      unfollowedCount: toRemoveIds.length,
+      unfollowedCount: actuallyRemovedIds.length,
     };
   }
 
