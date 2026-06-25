@@ -11,6 +11,8 @@ interface SearchOptions {
   dateAfter?: string;
   dateBefore?: string;
   mailbox?: string;
+  starred?: boolean;
+  label?: string;
 }
 
 interface SearchResult {
@@ -29,7 +31,9 @@ export function useSearchMessages(options: SearchOptions) {
     options.hasAttachment ||
     options.dateAfter ||
     options.dateBefore ||
-    options.mailbox?.trim()
+    options.mailbox?.trim() ||
+    options.starred ||
+    options.label?.trim()
   );
 
   return useQuery<SearchResult>({

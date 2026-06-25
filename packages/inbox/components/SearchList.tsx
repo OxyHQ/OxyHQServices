@@ -163,7 +163,9 @@ export function SearchList({ replaceNavigation }: SearchListProps) {
     subject: nlParsedOptions?.subject || undefined,
     hasAttachment: nlParsedOptions?.hasAttachment || parsedQuery.hasAttachment || filterHasAttachment || undefined,
     mailbox: mailboxIdFromName,
-    // Note: starred/label/unread filters would need backend support
+    starred: nlParsedOptions?.starred || parsedQuery.starred || undefined,
+    label: parsedQuery.label || undefined,
+    // Note: unread filter would need backend support
   }), [nlParsedOptions, parsedQuery, filterFrom, filterHasAttachment, mailboxIdFromName]);
 
   const { data: searchResult, isLoading: searching } = useSearchMessages(searchOptions);

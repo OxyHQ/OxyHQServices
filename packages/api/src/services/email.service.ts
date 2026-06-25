@@ -1895,9 +1895,14 @@ class EmailService {
       hasAttachment?: boolean;
       dateAfter?: string;
       dateBefore?: string;
+      starred?: boolean;
+      label?: string;
     } = {}
   ): Promise<{ data: any[]; total: number; limit: number; offset: number }> {
-    const { limit = 50, offset = 0, mailboxId, from, to, subject, hasAttachment, dateAfter, dateBefore } = options;
+    const {
+      limit = 50, offset = 0, mailboxId, from, to, subject,
+      hasAttachment, dateAfter, dateBefore, starred, label,
+    } = options;
 
     const filter: Record<string, unknown> = {
       userId: new mongoose.Types.ObjectId(userId),
@@ -1920,6 +1925,12 @@ class EmailService {
     }
     if (hasAttachment) {
       filter['attachments.0'] = { $exists: true };
+    }
+    if (starred) {
+      filter['flags.starred'] = true;
+    }
+    if (label) {
+      filter.labels = label;
     }
     if (dateAfter || dateBefore) {
       const dateFilter: Record<string, Date> = {};

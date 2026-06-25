@@ -558,11 +558,16 @@ export async function searchMessages(req: AuthRequest, res: Response): Promise<v
   const hasAttachment = req.query.hasAttachment === 'true';
   const dateAfter = req.query.dateAfter as string | undefined;
   const dateBefore = req.query.dateBefore as string | undefined;
+  const starred = req.query.starred === 'true';
+  const label = req.query.label as string | undefined;
   const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
   const offset = parseInt(req.query.offset as string) || 0;
 
   // At least one search criterion required
-  if (!q && !from && !to && !subject && !hasAttachment && !dateAfter && !dateBefore) {
+  if (
+    !q && !from && !to && !subject && !hasAttachment &&
+    !dateAfter && !dateBefore && !mailboxId && !starred && !label
+  ) {
     throw new BadRequestError('At least one search parameter is required');
   }
 
@@ -570,6 +575,8 @@ export async function searchMessages(req: AuthRequest, res: Response): Promise<v
     limit, offset, mailboxId, from, to, subject,
     hasAttachment: hasAttachment || undefined,
     dateAfter, dateBefore,
+    starred: starred || undefined,
+    label,
   });
   res.json({
     data: result.data,
