@@ -1783,44 +1783,18 @@ app.get('/sso', async (c) => {
     return redirectToCallback(c, returnTo, buildSsoFragment('none', state));
   }
 
-  // 8. DURABLE-SESSION SECOND HOP. This bounce runs on the CENTRAL IdP host
-  //    (auth.oxy.so), which is THIRD-PARTY to a cross-registrable-domain RP
-  //    (e.g. mention.earth) under Safari ITP / Firefox TCP. Minting the code
-  //    here would work for THIS load, but the RP could never restore the
-  //    session on a reload without re-bouncing (the only refresh cookie lives
-  //    on a third-party origin). To make the session durable we route through
-  //    the RP's OWN per-apex IdP host (`auth.<rp-apex>`, CNAMEd to this worker
-  //    and FIRST-PARTY to the RP), which plants its own host-only fedcm_session
-  //    cookie. We carry the validated session there via a short-lived, signed,
-  //    audience+host-bound establish-token (no credential in the URL but that
-  //    token, which only ever sets a cookie — never returns a token to JS).
+  // 8. Mint a real Oxy session for the approved origin on the central IdP
+  //    and return only an opaque, single-use SSO code to the RP callback.
   //
-  //    For *.oxy.so clients (apex == oxy.so) `apexAuthHostForClient` returns
-  //    null — auth.oxy.so is ALREADY first-party to the client, so the central
-  //    bounce already carries the durable credential. Skip the hop and mint the
-  //    code directly (steps 9–10 below), exactly as before.
-  const apexAuthHost = apexAuthHostForClient(approvedOrigin);
-  if (apexAuthHost) {
-    const establishToken = await createEstablishToken(
-      config,
-      sessionId,
-      approvedOrigin,
-      apexAuthHost
-    );
-    if (!establishToken) {
-      return redirectToCallback(c, returnTo, buildSsoFragment('error', state));
-    }
-    const establishUrl = new URL(`https://${apexAuthHost}/sso/establish`);
-    establishUrl.searchParams.set('et', establishToken);
-    establishUrl.searchParams.set('return_to', returnTo);
-    establishUrl.searchParams.set('state', state);
-    // 303 forces a GET on the follow-up so the browser lands on /sso/establish
-    // top-level on auth.<rp-apex> — first-party to the RP — where the durable
-    // host-only cookie is planted.
-    return c.redirect(establishUrl.toString(), 303);
-  }
+  //    SECURITY: do NOT redirect through `auth.<rp-apex>` with an establish
+  //    credential. Third-party RP operators control their own apex DNS, so a
+  //    mechanically-derived per-apex host can be malicious or compromised.
+  //    Sending any bearer-equivalent session-establish credential in that URL
+  //    would expose it to RP-controlled infrastructure. The safe fallback is
+  //    the central bounce: it preserves SSO handoff without disclosing the
+  //    central `fedcm_session` or any reusable session material.
 
-  // 9. (*.oxy.so path) Mint a real Oxy session for the approved origin via the
+  // 9. Mint a real Oxy session for the approved origin via the
   //    full, already-audited FedCM nonce + exchange pipeline (server nonce born
   //    + burned inside this call). On any failure → error bounce (no leaks).
   const session = await mintSessionForClient(config, user, approvedOrigin);

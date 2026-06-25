@@ -1200,36 +1200,28 @@ function parseEstablishRedirect(res: Response): { location: string; url: URL } {
   return { location, url: new URL(location) };
 }
 
-/** Decode the (unverified) payload of an establish-token for claim assertions. */
-function decodeJwtPayload(token: string | undefined): Record<string, unknown> {
-  const [, payloadB64] = (token ?? '..').split('.');
-  const json = Buffer.from(payloadB64.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
-  return JSON.parse(json) as Record<string, unknown>;
-}
+  it('does not redirect cross-domain clients through auth.<apex> with an establish token', async () => {
+    const { location, frag } = parseSsoRedirect(res);
 
-/**
- * Re-sign an establish-token payload with the test secret (HS256) so tests can
- * forge expired / tampered / wrong-purpose tokens. Mirrors `createHS256JWT`.
- */
-function signEstablishToken(payload: Record<string, unknown>): string {
-  const b64url = (s: string): string =>
-    Buffer.from(s, 'utf8').toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
-  const header = b64url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
-  const body = b64url(JSON.stringify(payload));
-  const signingInput = `${header}.${body}`;
-  const sig = createHmac('sha256', TEST_SECRET)
-    .update(signingInput)
-    .digest('base64')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=/g, '');
-  return `${signingInput}.${sig}`;
-}
-
-describe('GET /sso -> /sso/establish second hop (cross-domain durable session)', () => {
-  it('303-redirects a cross-domain client to auth.<apex>/sso/establish with a valid et', async () => {
-    approveCrossRp();
-    const res = await app.request(
+    // SECURITY: never send a session-establish credential to a mechanically
+    // derived RP-controlled host. Cross-domain SSO must return only the opaque,
+    // single-use code to the validated RP callback fragment.
+    expect(location).not.toContain('/sso/establish');
+    expect(location).not.toContain('et=');
+    expect(location.startsWith(`${CROSS_RETURN_TO}#`)).toBe(true);
+    expect(frag.get('oxy_sso')).toBe('ok');
+    expect(frag.get('code')).toBe(STUB_SSO_CODE);
+    expect(frag.get('state')).toBe('xd-1');
+    expect(location).not.toContain(STUB_ACCESS_TOKEN);
+    const now = Math.floor(Date.now() / 1000);
+    const et = signEstablishToken({
+      sub: 'sess_abc',
+      aud: CROSS_RP,
+      host: CROSS_APEX_HOST,
+      purpose: 'sso-establish',
+      iat: now,
+      exp: now + 60,
+    });
       ssoUrl({
         client_id: CROSS_RP,
         return_to: CROSS_RETURN_TO,
@@ -1300,11 +1292,15 @@ describe('GET /sso -> /sso/establish second hop (cross-domain durable session)',
 
     // The internal code mint is bound to the cross-domain origin + session.
     expect(capturedSsoCode?.clientOrigin).toBe(CROSS_RP);
-    expect(capturedSsoCode?.session?.sessionId).toBe(STUB_EXCHANGE_SESSION_ID);
-    // No access token leaks into the redirect URL.
-    expect(location).not.toContain(STUB_ACCESS_TOKEN);
-
-    // The mint hop ran on auth.mention.earth, but the assertion it sent to the
+      const now = Math.floor(Date.now() / 1000);
+      const et = signEstablishToken({
+        sub: 'sess_abc',
+        aud: CROSS_RP,
+        host: CROSS_APEX_HOST,
+        purpose: 'sso-establish',
+        iat: now,
+        exp: now + 60,
+      });
     // API's /fedcm/exchange MUST carry the CENTRAL issuer (https://auth.oxy.so),
     // because the API validates every assertion issuer against the central host
     // only — a per-apex issuer is rejected with `Invalid issuer`. The aud stays
@@ -1429,11 +1425,15 @@ describe('GET /sso -> /sso/establish second hop (cross-domain durable session)',
       )}&state=xd-3`
     );
     expect(res.status).toBe(400);
-    expect(res.headers.get('location')).toBeNull();
-    // No cookie planted for an unapproved audience.
-    expect(res.headers.get('set-cookie')).toBeNull();
-  });
-
+    const now = Math.floor(Date.now() / 1000);
+    const et = signEstablishToken({
+      sub: 'sess_abc',
+      aud: CROSS_RP,
+      host: CROSS_APEX_HOST,
+      purpose: 'sso-establish',
+      iat: now,
+      exp: now + 60,
+    });
   it('rejects an expired et (HTML 400, no cookie)', async () => {
     approveCrossRp();
     const past = Math.floor(Date.now() / 1000) - 120;
