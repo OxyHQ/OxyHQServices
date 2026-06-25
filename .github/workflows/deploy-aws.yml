@@ -23,7 +23,11 @@ env:
 
 jobs:
   deploy:
+    # workflow_dispatch can be run against arbitrary refs; only production
+    # deploys from the protected main branch may assume the AWS deploy role.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04-arm
+    environment: production
     steps:
       - uses: actions/checkout@v4
 
