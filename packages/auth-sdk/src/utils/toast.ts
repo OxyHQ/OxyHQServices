@@ -13,9 +13,9 @@
  *   "toast" is not exported by "__vite-optional-peer-dep:sonner:@oxyhq/auth"
  *
  * tsc does NOT catch this — it only manifests in the consumer's bundler. The
- * fix is to never statically reference `sonner`. Instead we lazily resolve it
- * via a dynamic `import()` whose specifier is hidden behind a variable so no
- * bundler can statically resolve (or fail on) the missing optional peer.
+ * fix is to avoid a top-level static import. Instead we lazily resolve it
+ * via a dynamic `import('sonner')` so bundlers can include the optional peer
+ * when it is installed while still deferring absence to runtime.
  *
  * # Dual CJS + ESM constraint
  *
@@ -55,20 +55,12 @@ let cachedToast: SonnerToast | null = null;
 let loadStarted = false;
 let warnedUnavailable = false;
 
-/**
- * The specifier is held in a variable so static bundler analysis cannot
- * resolve (or fail on) the optional peer. The `import()` expression is a real
- * dynamic import: native in the ESM build, downleveled in the CJS build —
- * never a static `from 'sonner'` reference.
- */
-const SONNER_SPECIFIER = 'sonner';
-
 function ensureSonnerLoaded(): void {
   if (cachedToast || loadStarted) {
     return;
   }
   loadStarted = true;
-  import(/* @vite-ignore */ SONNER_SPECIFIER)
+  import('sonner')
     .then((mod: { toast?: SonnerToast }) => {
       if (mod?.toast) {
         cachedToast = mod.toast;
