@@ -41,6 +41,9 @@ import type { OxyServices } from '../OxyServices';
 interface OxyAuthedRequest extends Request {
   userId?: string | null;
   user?: { id?: string; _id?: string } | null;
+  sessionId?: string | null;
+  serviceApp?: { appId?: string } | null;
+  serviceActingAs?: { userId?: string } | null;
 }
 
 export interface OxyRateLimitOptions {
@@ -101,11 +104,39 @@ function ipKeyGenerator(ip: string): string {
   return ip.replace(/:/g, '_');
 }
 
-/** Resolve the rate-limit key: per authenticated user, else per (IPv6-safe) IP. */
-function resolveKey(req: OxyAuthedRequest): string {
+/**
+ * Resolve the trusted authenticated rate-limit key.
+ *
+ * `oxy.auth({ optional: true })` preserves legacy non-session user tokens by
+ * decoding their JWT claims locally. Those claims are not cryptographically
+ * verified and therefore MUST NOT influence abuse-control buckets. Only use
+ * identities that came from a server-validated session or a verified service
+ * token/delegation.
+ */
+function resolveTrustedAuthenticatedKey(req: OxyAuthedRequest): string | null {
   const userId = req.userId ?? req.user?.id ?? req.user?._id;
-  if (userId) {
+  if (userId && req.sessionId) {
     return `user:${userId}`;
+  }
+
+  const delegatedUserId = req.serviceActingAs?.userId;
+  if (delegatedUserId && req.serviceApp?.appId) {
+    return `user:${delegatedUserId}`;
+  }
+
+  const serviceAppId = req.serviceApp?.appId;
+  if (serviceAppId) {
+    return `service:${serviceAppId}`;
+  }
+
+  return null;
+}
+
+/** Resolve the rate-limit key: per trusted authenticated identity, else per (IPv6-safe) IP. */
+function resolveKey(req: OxyAuthedRequest): string {
+  const authenticatedKey = resolveTrustedAuthenticatedKey(req);
+  if (authenticatedKey) {
+    return authenticatedKey;
   }
   const ip = req.ip || req.socket.remoteAddress || 'unknown';
   return ipKeyGenerator(ip);
@@ -139,9 +170,9 @@ export function createOxyRateLimit(
     windowMs,
     ...(store ? { store } : {}),
     max: (req: Request): number => {
-      const authed = req as OxyAuthedRequest;
-      const userId = authed.userId ?? authed.user?.id ?? authed.user?._id;
-      return userId ? authenticatedMax : anonymousMax;
+      return resolveTrustedAuthenticatedKey(req as OxyAuthedRequest)
+        ? authenticatedMax
+        : anonymousMax;
     },
     keyGenerator: (req: Request): string => resolveKey(req as OxyAuthedRequest),
     message,
@@ -160,8 +191,8 @@ export function createOxyRateLimit(
     resolveSession(req, res, (err?: unknown) => {
       if (err) {
         // Optional auth never rejects; a token error just means "anonymous".
-        // Swallow the error and continue to limit as anonymous.
-        next();
+        // Swallow the error and continue through the anonymous limiter.
+        limiter(req, res, next);
         return;
       }
       limiter(req, res, next);
