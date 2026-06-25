@@ -14,6 +14,9 @@
  *   resolve/mutate, federated users (`routes/federation.ts`, `PUT /users/resolve`)
  *   for federation/agent/automation flows. PRIVILEGED — see
  *   {@link PRIVILEGED_APPLICATION_SCOPES}; only Oxy platform staff may grant it.
+ * - `reputation:write` permits service credentials to create reputation ledger
+ *   awards/penalties for arbitrary users. PRIVILEGED — only Oxy platform staff
+ *   may grant it.
  */
 export const APPLICATION_SCOPES = [
   'files:read',
@@ -25,6 +28,7 @@ export const APPLICATION_SCOPES = [
   'models:read',
   'federation:write',
   'signals:write',
+  'reputation:write',
 ] as const;
 
 export type ApplicationScope = (typeof APPLICATION_SCOPES)[number];
@@ -40,6 +44,9 @@ export type ApplicationScope = (typeof APPLICATION_SCOPES)[number];
  *   resolve/mutate, ARBITRARY federated users. A self-granting owner could
  *   otherwise register an app with a victim domain's redirectUri and impersonate
  *   that domain's users.
+ * - `reputation:write` lets a service credential mutate the global reputation
+ *   ledger for arbitrary users. A self-granting owner could otherwise inflate or
+ *   penalise trust tiers outside its own tenant.
  *
  * All other scopes in {@link APPLICATION_SCOPES} authorise an app only over its
  * OWN resources (files, models, webhooks, public user reads) and remain freely
@@ -48,6 +55,7 @@ export type ApplicationScope = (typeof APPLICATION_SCOPES)[number];
  */
 export const PRIVILEGED_APPLICATION_SCOPES = [
   'federation:write',
+  'reputation:write',
 ] as const satisfies readonly ApplicationScope[];
 
 const PRIVILEGED_APPLICATION_SCOPE_SET: ReadonlySet<ApplicationScope> = new Set<ApplicationScope>(
