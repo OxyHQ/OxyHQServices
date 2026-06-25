@@ -681,7 +681,14 @@ export async function issueAndSetRefreshCookie(
       const tokenHash = sha256Hex(raw);
       const row = await RefreshToken.findOne({ tokenHash });
       if (row) {
-        await revokeFamily(row.family, row.sessionId);
+        if (String(row.sessionId) === sessionId) {
+          await RefreshToken.updateMany(
+            { family: row.family, revokedAt: null },
+            { $set: { revokedAt: new Date() } }
+          );
+        } else {
+          await revokeFamily(row.family, row.sessionId);
+        }
         break;
       }
     }

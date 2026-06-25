@@ -225,6 +225,28 @@ describe('issueAndSetRefreshCookie — slot allocation', () => {
     expect(mockDeactivateSession).toHaveBeenCalledWith('sess-a');
   });
 
+  it('does not deactivate the current session when same-user slot reuse targets the reused session', async () => {
+    const existingRaw = 'SAME-SESSION-TOK';
+    stage(buildStored(existingRaw, {
+      sessionId: 'sess-reused',
+      family: 'fam-reused',
+      userId: { toString: () => 'u-same' },
+    }));
+    const { res, calls } = makeResponseStub();
+    const result = await issueAndSetRefreshCookie(res, 'sess-reused', 'u-same', {
+      cookieHeader: `oxy_rt_0=${existingRaw}`,
+    });
+
+    expect(result.authuser).toBe(0);
+    expect(calls[0].name).toBe('oxy_rt_0');
+    expect(mockTokenUpdateMany).toHaveBeenCalledWith(
+      { family: 'fam-reused', revokedAt: null },
+      { $set: { revokedAt: expect.any(Date) } }
+    );
+    expect(mockDeactivateSession).not.toHaveBeenCalled();
+    expect(mockGetAccessToken).toHaveBeenCalledWith('sess-reused');
+  });
+
   it('evicts the LRU slot when all MAX_DEVICE_ACCOUNTS are occupied by different users', async () => {
     // Fill slots 0..MAX-1 with distinct users; slot 3 is the LRU.
     const cookieParts: string[] = [];
