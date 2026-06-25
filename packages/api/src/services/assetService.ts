@@ -1,8 +1,7 @@
 import crypto from 'crypto';
-import { lookup } from 'dns/promises';
-import net from 'net';
 import { Readable, Transform } from 'stream';
 import mongoose from 'mongoose';
+import { safeFetch, SsrfRejection, UpstreamError } from '@oxyhq/core/server';
 import { File, IFile, IFileLink, IFileVariant, FileVisibility } from '../models/File';
 import { S3Service } from './s3Service';
 import {
@@ -125,62 +124,41 @@ export class AssetService {
     return file;
   }
 
-  private isPrivateIpAddress(address: string): boolean {
-    const ipVersion = net.isIP(address);
-    if (ipVersion === 4) {
-      const parts = address.split('.').map(Number);
-      const [a, b] = parts;
-      return (
-        a === 0 ||
-        a === 10 ||
-        a === 127 ||
-        (a === 100 && b >= 64 && b <= 127) ||
-        (a === 169 && b === 254) ||
-        (a === 172 && b >= 16 && b <= 31) ||
-        (a === 192 && b === 168) ||
-        (a === 198 && (b === 18 || b === 19)) ||
-        a >= 224
-      );
+  private async readFederationRepairImageBody(
+    response: AsyncIterable<Buffer | Uint8Array | string>,
+    url: string,
+  ): Promise<Buffer | null> {
+    const chunks: Buffer[] = [];
+    let totalBytes = 0;
+
+    for await (const chunk of response) {
+      const bufferChunk = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      totalBytes += bufferChunk.length;
+
+      if (totalBytes > FEDERATION_REPAIR_MAX_BYTES) {
+        logger.warn('Federation repair image exceeded byte limit while streaming', {
+          url,
+          size: totalBytes,
+        });
+        return null;
+      }
+
+      chunks.push(bufferChunk);
     }
 
-    if (ipVersion === 6) {
-      const normalized = address.toLowerCase();
-      return (
-        normalized === '::1' ||
-        normalized.startsWith('fc') ||
-        normalized.startsWith('fd') ||
-        normalized.startsWith('fe80:')
-      );
+    if (totalBytes === 0) {
+      logger.warn('Federation repair image is empty', { url });
+      return null;
     }
 
-    return false;
+    return Buffer.concat(chunks, totalBytes);
   }
 
-  private async validateFederationRepairUrl(url: URL): Promise<boolean> {
-    if (url.protocol !== 'https:') {
-      return false;
+  private getHeaderValue(header: string | string[] | undefined): string {
+    if (Array.isArray(header)) {
+      return header[0] || '';
     }
-
-    const hostname = url.hostname.toLowerCase();
-    if (
-      hostname === 'localhost' ||
-      hostname.endsWith('.localhost') ||
-      hostname.endsWith('.local') ||
-      this.isPrivateIpAddress(hostname)
-    ) {
-      return false;
-    }
-
-    try {
-      const addresses = await lookup(hostname, { all: true, verbatim: false });
-      return addresses.length > 0 && addresses.every(({ address }) => !this.isPrivateIpAddress(address));
-    } catch (error) {
-      logger.warn('Failed to resolve federation repair URL host', {
-        host: hostname,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return false;
-    }
+    return header || '';
   }
 
   private getFederationRepairRemoteUrl(file: IFile): string | null {
@@ -203,78 +181,84 @@ export class AssetService {
   }
 
   private async fetchFederationRepairImage(remoteUrl: string): Promise<{ buffer: Buffer; mime: string } | null> {
-    let currentUrl: URL;
+    let parsedUrl: URL;
     try {
-      currentUrl = new URL(remoteUrl);
+      parsedUrl = new URL(remoteUrl);
     } catch {
       return null;
     }
 
-    for (let redirects = 0; redirects <= FEDERATION_REPAIR_MAX_REDIRECTS; redirects += 1) {
-      if (!(await this.validateFederationRepairUrl(currentUrl))) {
-        logger.warn('Blocked unsafe federation repair URL', { url: currentUrl.toString() });
-        return null;
-      }
+    if (parsedUrl.protocol !== 'https:') {
+      logger.warn('Blocked non-HTTPS federation repair URL', { url: remoteUrl });
+      return null;
+    }
 
-      const response = await fetch(currentUrl, {
-        redirect: 'manual',
-        signal: AbortSignal.timeout(15_000),
+    let response: Awaited<ReturnType<typeof safeFetch>>['response'] | null = null;
+    try {
+      const result = await safeFetch(parsedUrl.toString(), {
+        maxRedirects: FEDERATION_REPAIR_MAX_REDIRECTS,
+        headersTimeoutMs: 15_000,
+        allowedProtocols: new Set(['https:']),
         headers: {
           Accept: 'image/avif,image/webp,image/png,image/jpeg,image/gif,image/*;q=0.8',
           'User-Agent': FEDERATION_REPAIR_USER_AGENT,
         },
       });
+      response = result.response;
+      const { status, headers, finalUrl } = result;
 
-      if (response.status >= 300 && response.status < 400) {
-        const location = response.headers.get('location');
-        if (!location) {
-          return null;
-        }
-        currentUrl = new URL(location, currentUrl);
-        continue;
-      }
-
-      if (!response.ok) {
+      if (status < 200 || status >= 300) {
         logger.warn('Federation repair download failed', {
-          url: currentUrl.toString(),
-          status: response.status,
+          url: finalUrl,
+          status,
         });
         return null;
       }
 
-      const rawContentType = response.headers.get('content-type') || '';
+      const rawContentType = this.getHeaderValue(headers['content-type']);
       const mime = rawContentType.split(';')[0].trim().toLowerCase();
       if (!mime.startsWith('image/') || !isAllowedCacheMime(mime)) {
         logger.warn('Federation repair rejected non-image content', {
-          url: currentUrl.toString(),
+          url: finalUrl,
           contentType: rawContentType,
         });
         return null;
       }
 
-      const declaredLength = Number(response.headers.get('content-length'));
+      const declaredLength = Number(this.getHeaderValue(headers['content-length']));
       if (Number.isFinite(declaredLength) && declaredLength > FEDERATION_REPAIR_MAX_BYTES) {
         logger.warn('Federation repair image is too large', {
-          url: currentUrl.toString(),
+          url: finalUrl,
           declaredLength,
         });
         return null;
       }
 
-      const buffer = Buffer.from(await response.arrayBuffer());
-      if (buffer.length === 0 || buffer.length > FEDERATION_REPAIR_MAX_BYTES) {
-        logger.warn('Federation repair image has invalid size', {
-          url: currentUrl.toString(),
-          size: buffer.length,
-        });
+      const buffer = await this.readFederationRepairImageBody(response, finalUrl);
+      if (!buffer) {
         return null;
       }
 
       return { buffer, mime };
+    } catch (error) {
+      if (error instanceof SsrfRejection) {
+        logger.warn('Blocked unsafe federation repair URL', {
+          url: parsedUrl.toString(),
+          reason: error.message,
+        });
+        return null;
+      }
+      if (error instanceof UpstreamError) {
+        logger.warn('Federation repair upstream error', {
+          url: parsedUrl.toString(),
+          error: error.message,
+        });
+        return null;
+      }
+      throw error;
+    } finally {
+      response?.destroy();
     }
-
-    logger.warn('Federation repair exceeded redirect limit', { url: remoteUrl });
-    return null;
   }
 
   private async restoreMissingDirectUploadContent(

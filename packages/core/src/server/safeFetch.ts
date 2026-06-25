@@ -277,7 +277,10 @@ export function isBlockedIp(rawIp: string): boolean {
  * Re-run this on EVERY redirect hop so a public hostname cannot redirect (or
  * DNS-rebind) into an internal address.
  */
-export async function assertSafePublicUrl(rawUrl: string): Promise<SsrfCheckResult> {
+export async function assertSafePublicUrl(
+  rawUrl: string,
+  allowedProtocols: ReadonlySet<string> = ALLOWED_PROTOCOLS,
+): Promise<SsrfCheckResult> {
   if (typeof rawUrl !== 'string' || rawUrl.length === 0) {
     return { ok: false, reason: 'missing url' };
   }
@@ -292,7 +295,7 @@ export async function assertSafePublicUrl(rawUrl: string): Promise<SsrfCheckResu
     return { ok: false, reason: 'malformed url' };
   }
 
-  if (!ALLOWED_PROTOCOLS.has(parsed.protocol)) {
+  if (!allowedProtocols.has(parsed.protocol)) {
     return { ok: false, reason: `disallowed protocol ${parsed.protocol}` };
   }
 
@@ -405,6 +408,8 @@ export interface SafeFetchOptions {
    * destroyed.
    */
   signal?: AbortSignal;
+  /** Protocols this call is allowed to contact. Defaults to http and https. */
+  allowedProtocols?: ReadonlySet<string>;
 }
 
 /** The validated, non-redirect response returned by {@link safeFetch}. */
@@ -509,6 +514,7 @@ export async function safeFetch(
     maxRedirects = MAX_REDIRECTS,
     headersTimeoutMs = UPSTREAM_HEADERS_TIMEOUT_MS,
     signal,
+    allowedProtocols = ALLOWED_PROTOCOLS,
   } = options;
 
   // Normalize a case-insensitive header map and ensure a User-Agent default.
@@ -530,7 +536,7 @@ export async function safeFetch(
       throw new UpstreamError('request aborted');
     }
 
-    const guard = await assertSafePublicUrl(currentUrl);
+    const guard = await assertSafePublicUrl(currentUrl, allowedProtocols);
     if (!guard.ok) {
       throw new SsrfRejection(guard.reason);
     }

@@ -105,6 +105,13 @@ describe('@oxyhq/core/server safeFetch — assertSafePublicUrl', () => {
     }
   });
 
+  it('honors per-call protocol restrictions', async () => {
+    const result = await assertSafePublicUrl('http://example.com/', new Set(['https:']));
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('disallowed protocol http:');
+    expect(mockDnsLookup).not.toHaveBeenCalled();
+  });
+
   it('rejects disallowed protocols, ports, credentials, and oversized URLs', async () => {
     expect((await assertSafePublicUrl('ftp://example.com/')).ok).toBe(false);
     expect((await assertSafePublicUrl('file:///etc/passwd')).ok).toBe(false);
