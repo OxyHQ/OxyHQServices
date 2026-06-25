@@ -773,10 +773,10 @@ router.post('/refresh', refreshLimiter, requireSameSiteOrigin, asyncHandler(asyn
   };
 
   if (classification.kind === 'used') {
-    // REUSE DETECTED. SECURITY: a lone used/revoked token with NO valid sibling
-    // in THIS slot is a theft signal. We revoke the whole family + deactivate
-    // the session for the affected slot ONLY — other indexed slots (other
-      // signed-in accounts on this device) stay untouched.
+    // REUSE DETECTED. SECURITY: a used/revoked token is a theft signal unless
+    // classification found a valid sibling from the SAME family+session in THIS
+    // slot. Revoke the affected family + deactivate that session only — other
+    // indexed slots (other signed-in accounts on this device) stay untouched.
     await revokeFamily(classification.family, classification.sessionId);
     clearThisSlot();
     logger.warn('[RefreshToken] Reuse detected — family revoked', {

@@ -436,10 +436,15 @@ describe('POST /auth/refresh', () => {
     const validCurrent = 'valid-current-token';
     const usedRow = buildStoredToken(usedStale, {
       _id: 'rt-used',
-      family: 'fam-used',
+      family: 'fam-shared',
+      sessionId: 'sess-shared',
       usedAt: new Date(Date.now() - 1000),
     });
-    const validRow = buildStoredToken(validCurrent, { _id: 'rt-valid', family: 'fam-valid' });
+    const validRow = buildStoredToken(validCurrent, {
+      _id: 'rt-valid',
+      family: 'fam-shared',
+      sessionId: 'sess-shared',
+    });
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
 
     stageToken(usedRow);
@@ -460,7 +465,7 @@ describe('POST /auth/refresh', () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ accessToken: 'access-jwt', expiresAt: expiresAt.toISOString(), authuser: 0 });
     // Access token minted off the VALID sibling's session.
-    expect(mockGetAccessToken).toHaveBeenCalledWith('sess-123');
+    expect(mockGetAccessToken).toHaveBeenCalledWith('sess-shared');
 
     // Rotated to a brand-new value, distinct from BOTH presented cookies.
     const rotated = extractRefreshCookieValue(res.setCookie);
@@ -476,10 +481,15 @@ describe('POST /auth/refresh', () => {
   it('rotates the VALID sibling when it is presented FIRST (valid FIRST)', async () => {
     const validCurrent = 'valid-current-token';
     const usedStale = 'used-stale-token';
-    const validRow = buildStoredToken(validCurrent, { _id: 'rt-valid', family: 'fam-valid' });
+    const validRow = buildStoredToken(validCurrent, {
+      _id: 'rt-valid',
+      family: 'fam-shared',
+      sessionId: 'sess-shared',
+    });
     const usedRow = buildStoredToken(usedStale, {
       _id: 'rt-used',
-      family: 'fam-used',
+      family: 'fam-shared',
+      sessionId: 'sess-shared',
       usedAt: new Date(Date.now() - 1000),
     });
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
@@ -506,9 +516,47 @@ describe('POST /auth/refresh', () => {
     expect(rotated).not.toBe(usedStale);
     expect(rotated).not.toBe(validCurrent);
 
-    // Still no reuse-detection — the used sibling is the same user's stale cookie.
     expect(mockUpdateMany).not.toHaveBeenCalled();
     expect(mockDeactivateSession).not.toHaveBeenCalled();
+  });
+
+  it('fires reuse-detection when a used duplicate belongs to a different family', async () => {
+    const usedStale = 'victim-used-token';
+    const validCurrent = 'attacker-valid-token';
+    const usedRow = buildStoredToken(usedStale, {
+      _id: 'rt-used',
+      family: 'fam-victim',
+      sessionId: 'sess-victim',
+      usedAt: new Date(Date.now() - 1000),
+    });
+    const validRow = buildStoredToken(validCurrent, {
+      _id: 'rt-valid',
+      family: 'fam-attacker',
+      sessionId: 'sess-attacker',
+    });
+
+    stageToken(usedRow);
+    stageToken(validRow);
+    mockUpdateMany.mockResolvedValueOnce({ modifiedCount: 2 });
+    mockDeactivateSession.mockResolvedValueOnce(true);
+
+    const res = await requestJson(
+      server,
+      'POST',
+      '/auth/refresh',
+      {},
+      `${REFRESH_COOKIE_SLOT_0}=${usedStale}; ${REFRESH_COOKIE_SLOT_0}=${validCurrent}`
+    );
+
+    expect(res.status).toBe(401);
+    expect(res.body).toEqual({ message: 'Invalid refresh token' });
+    expect(mockUpdateMany).toHaveBeenCalledWith(
+      { family: 'fam-victim', revokedAt: null },
+      { $set: { revokedAt: expect.any(Date) } }
+    );
+    expect(mockDeactivateSession).toHaveBeenCalledWith('sess-victim');
+    expect(mockFindOneAndUpdate).not.toHaveBeenCalled();
+    expect(mockGetAccessToken).not.toHaveBeenCalled();
   });
 
   it('fires reuse-detection for a LONE used token with no valid sibling', async () => {
