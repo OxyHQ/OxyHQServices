@@ -107,6 +107,17 @@ function isBulkWriteLikeError(error: unknown): error is BulkWriteLikeError {
   return Array.isArray(candidate.writeErrors) || typeof candidate.code === 'number';
 }
 
+/**
+ * Normalize a profile `color` value with the SAME canonicalization the User
+ * schema applies on save (`trim` + `lowercase`). Running the premium-name check
+ * against this normalized value closes a bypass where ` oxy ` / `OXY` would skip
+ * the premium gate yet still persist as the gated `oxy` preset. Non-string
+ * values are passed through untouched for the caller's own handling.
+ */
+function normalizeProfileColor(value: unknown): unknown {
+  return typeof value === 'string' ? value.trim().toLowerCase() : value;
+}
+
 export class UserService {
   /**
    * Get user by ID with proper serialization
@@ -173,8 +184,12 @@ export class UserService {
         continue;
       }
 
-      // Validate premium-exclusive colors
-      if (key === 'color' && value === 'oxy') {
+      const normalizedValue = key === 'color' ? normalizeProfileColor(value) : value;
+
+      // Validate premium-exclusive colors against the SAME normalized value the
+      // User schema will persist (trim + lowercase), so ' oxy '/'OXY' can't slip
+      // past the premium gate.
+      if (key === 'color' && normalizedValue === 'oxy') {
         const user = await User.findById(userId).select('username').lean();
         const isOxyUser = user?.username?.toLowerCase() === 'oxy';
         if (!isOxyUser) {
@@ -200,7 +215,7 @@ export class UserService {
       }
       
       // Assign other fields
-      (filteredUpdates as Record<string, unknown>)[key] = value;
+      (filteredUpdates as Record<string, unknown>)[key] = normalizedValue;
     }
 
     // Validate uniqueness constraints
@@ -776,27 +791,49 @@ export class UserService {
     // ordered (filter candidateIds) so result ordering stays stable.
     const toRemoveIds = candidateIds.filter((id) => existingFollowedIds.has(id));
 
+    let actuallyRemovedIds: string[] = [];
+
     if (toRemoveIds.length > 0) {
-      await Follow.deleteMany({
-        followerUserId: currentUserId,
-        followType: FollowType.USER,
-        followedId: { $in: toRemoveIds },
-      });
+      // Delete each follow with an atomic find-and-delete so concurrent bulk
+      // unfollow requests only decrement counters for documents THIS call
+      // actually removed. A plain deleteMany() reports only an aggregate
+      // deletedCount, which is not enough to safely update each target's
+      // follower counter under races (two callers could both observe the same
+      // follow as existing and both decrement). Mirrors bulkFollow, where
+      // counts derive from the ids actually inserted.
+      const deletedFollows = await Promise.all(
+        toRemoveIds.map((followedId) =>
+          Follow.findOneAndDelete({
+            followerUserId: currentUserId,
+            followType: FollowType.USER,
+            followedId,
+          })
+            .select('followedId')
+            .lean()
+        )
+      );
+
+      actuallyRemovedIds = deletedFollows
+        .map((follow) => follow?.followedId)
+        .filter((id): id is Types.ObjectId | string => id != null)
+        .map((id) => id.toString());
 
       // Decrement counts based ONLY on follows actually removed — the exact
       // symmetric inverse of bulkFollow's increment.
-      await Promise.all([
-        User.updateMany(
-          { _id: { $in: toRemoveIds } },
-          { $inc: { '_count.followers': -1 } }
-        ),
-        User.findByIdAndUpdate(currentUserId, {
-          $inc: { '_count.following': -toRemoveIds.length },
-        }),
-      ]);
+      if (actuallyRemovedIds.length > 0) {
+        await Promise.all([
+          User.updateMany(
+            { _id: { $in: actuallyRemovedIds } },
+            { $inc: { '_count.followers': -1 } }
+          ),
+          User.findByIdAndUpdate(currentUserId, {
+            $inc: { '_count.following': -actuallyRemovedIds.length },
+          }),
+        ]);
+      }
     }
 
-    const removedSet = new Set<string>(toRemoveIds);
+    const removedSet = new Set<string>(actuallyRemovedIds);
     const candidateSet = new Set<string>(candidateIds);
 
     // Build a result entry for EVERY deduped candidate id (including invalid
@@ -815,7 +852,7 @@ export class UserService {
 
     return {
       results,
-      unfollowedCount: toRemoveIds.length,
+      unfollowedCount: actuallyRemovedIds.length,
     };
   }
 

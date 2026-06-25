@@ -43,5 +43,8 @@ FollowSchema.index(
   { followerUserId: 1, followType: 1, followedId: 1 },
   { unique: true }
 );
+// Supports bounded public recommendations by scanning only a recent,
+// followType-filtered prefix before grouping popular followed users.
+FollowSchema.index({ followType: 1, createdAt: -1, _id: 1 });
 
 export default mongoose.model<IFollow>("Follow", FollowSchema);

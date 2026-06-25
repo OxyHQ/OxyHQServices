@@ -64,15 +64,14 @@ jest.mock('../../models/Application', () => ({
   default: { find: mockAppFind },
 }));
 
-// Pass-through cache: read methods delegate straight to the loader (the
-// uncached Mongo read driven by the FedCMClient mocks above) so approval
-// lookups behave exactly as before; only `invalidate` is asserted on.
+// Pass-through cache for non-authoritative list reads (the uncached Mongo read
+// driven by the Application/FedCMClient mocks above). Authorization decisions
+// (`isClientApproved`) bypass this cache and read the canonical registry
+// directly; only `getApprovedOrigins` (list reads) and `invalidate` are needed.
 jest.mock('../../utils/approvedClientsCache', () => ({
   __esModule: true,
   default: {
     getApprovedOrigins: (loader: () => Promise<string[]>) => loader(),
-    isApproved: async (origin: string, loader: () => Promise<string[]>) =>
-      (await loader()).includes(origin),
     invalidate: mockCacheInvalidate,
   },
 }));
@@ -282,6 +281,29 @@ describe('FedCM exchangeIdToken (H9)', () => {
     });
   });
 
+  it('accepts a first-party auth.<audience-apex> issuer for multi-domain FedCM', async () => {
+    // APPROVED_ORIGIN = https://relying.party.example → registrable apex
+    // `party.example` → the RP's first-party IdP CNAME is https://auth.party.example.
+    const token = mintToken({ iss: 'https://auth.party.example' });
+    const result = await fedcmService.exchangeIdToken(token, createReq(APPROVED_ORIGIN));
+
+    expect('error' in result).toBe(false);
+    if ('error' in result) return;
+    expect(result.sessionId).toBe('sess-123');
+    expect(mockCreateSession).toHaveBeenCalledWith('user-123', expect.anything(), {
+      deviceName: 'FedCM Sign-In',
+      stableDeviceKey: APPROVED_ORIGIN,
+    });
+  });
+
+  it('rejects a dynamic issuer that is not the auth sibling of the token audience', async () => {
+    const token = mintToken({ iss: 'https://auth.evil.example' });
+    const result = await fedcmService.exchangeIdToken(token, createReq(APPROVED_ORIGIN));
+
+    expect(result).toEqual({ error: 'invalid_issuer' });
+    expect(mockCreateSession).not.toHaveBeenCalled();
+  });
+
   it('returns the user with a structured name.displayName (canonical serializer), never a string name', async () => {
     // Contract: a session-establishing exchange MUST emit the structured
     // `UserNameResponse` so the SDK's `userResponseSchema` accepts it. A bare
@@ -357,6 +379,35 @@ describe('FedCM exchangeIdToken (H9)', () => {
     expect('error' in result).toBe(false);
     if ('error' in result) return;
     expect(result.sessionId).toBe('sess-123');
+  });
+});
+
+describe('FedCM isClientApproved authorization', () => {
+  // The canonical query the authorization read issues — the trusted-application
+  // filter, NOT a bare `{ status: 'active' }`. Authorization must read this live
+  // from the registry (no cache), so a revoke is honoured on the very next call.
+  const TRUSTED_FILTER = {
+    status: 'active',
+    $or: [
+      { isOfficial: true },
+      { isInternal: true },
+      { type: { $in: ['first_party', 'internal', 'system'] } },
+    ],
+  };
+
+  it('bypasses the list cache and rereads the registry after revocation', async () => {
+    mockAppFind
+      .mockReturnValueOnce(
+        leanQuery([{ name: 'Relying Party', redirectUris: [`${APPROVED_ORIGIN}/__oxy/sso-callback`] }])
+      )
+      .mockReturnValueOnce(leanQuery([]));
+
+    await expect(fedcmService.isClientApproved(APPROVED_ORIGIN)).resolves.toBe(true);
+    await expect(fedcmService.isClientApproved(APPROVED_ORIGIN)).resolves.toBe(false);
+
+    expect(mockAppFind).toHaveBeenCalledTimes(2);
+    expect(mockAppFind).toHaveBeenNthCalledWith(1, TRUSTED_FILTER);
+    expect(mockAppFind).toHaveBeenNthCalledWith(2, TRUSTED_FILTER);
   });
 });
 

@@ -27,6 +27,7 @@ import type { OxyServicesBase } from '../OxyServices.base';
 import type { SessionLoginResponse, MinimalUserData } from '../models/session';
 import type { UserNameResponse } from '@oxyhq/contracts';
 import { createDebugLogger } from '../shared/utils/debugUtils';
+import { ssoStateKey } from '../utils/ssoBounce';
 
 const debug = createDebugLogger('SSO');
 
@@ -67,6 +68,26 @@ export function generateSsoState(): string {
   throw new Error('No secure random source available for SSO state generation');
 }
 
+/**
+ * Read the SSO bounce state stored for the current browser origin, if any.
+ *
+ * Returns `null` outside a browser (no `window`/`sessionStorage`) or when no
+ * state is stored — in which case the caller cannot (and must not) enforce a
+ * state match, e.g. native flows or pre-hydration callbacks that already
+ * validated the state before this exchange.
+ */
+function getStoredSsoStateForCurrentOrigin(): string | null {
+  if (typeof window === 'undefined' || !window.location || !window.sessionStorage) {
+    return null;
+  }
+
+  try {
+    return window.sessionStorage.getItem(ssoStateKey(window.location.origin));
+  } catch {
+    return null;
+  }
+}
+
 export function OxyServicesSsoMixin<T extends typeof OxyServicesBase>(Base: T) {
   return class extends Base {
     constructor(...args: any[]) {
@@ -95,11 +116,19 @@ export function OxyServicesSsoMixin<T extends typeof OxyServicesBase>(Base: T) {
      * @param code - The opaque single-use code delivered in the SSO return
      *   fragment (see {@link parseSsoReturnFragment}). The central store burns
      *   it atomically on exchange.
+     * @param state - The state value returned alongside the code. In browsers,
+     *   when an SSO bounce state is still stored for the current origin, this
+     *   must match before any token-committing exchange is attempted.
      * @returns The resolved {@link SessionLoginResponse}.
      */
-    public async exchangeSsoCode(code: string): Promise<SessionLoginResponse> {
+    public async exchangeSsoCode(code: string, state?: string): Promise<SessionLoginResponse> {
       if (typeof code !== 'string' || code.length === 0) {
         throw this.handleError(new Error('exchangeSsoCode requires a non-empty code'));
+      }
+
+      const expectedState = getStoredSsoStateForCurrentOrigin();
+      if (expectedState !== null && (typeof state !== 'string' || state.length === 0 || state !== expectedState)) {
+        throw this.handleError(new Error('SSO exchange state mismatch'));
       }
 
       const url = `${this.getSessionBaseUrl().replace(/\/$/, '')}/sso/exchange`;

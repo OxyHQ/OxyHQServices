@@ -14,17 +14,53 @@ import {
   deleteNotification,
   getUnreadCount
 } from '../controllers/notification.controller';
-import { authMiddleware, type AuthRequest } from '../middleware/auth';
+import {
+  authMiddleware,
+  serviceAuthMiddleware,
+  type AuthRequest,
+  type ServiceAuthRequest,
+} from '../middleware/auth';
 import { asyncHandler } from '../utils/asyncHandler';
 import { validate } from '../middleware/validate';
 import { createNotificationSchema, notificationIdParams } from '../schemas/notifications.schemas';
 import { PushToken } from '../models/PushToken';
 import { logger } from '../utils/logger';
-import type { Response } from 'express';
+import type { NextFunction, Response } from 'express';
 
 const router = express.Router();
 
-// Apply authentication middleware to all routes
+const NOTIFICATIONS_WRITE_SCOPE = 'notifications:write';
+
+/**
+ * Gate notification creation behind the privileged `notifications:write` scope.
+ * Creating a notification lets the caller deliver realtime activity to ANY
+ * recipient and choose the actor/entity metadata, so it must be restricted to
+ * trusted services that staff explicitly granted the scope — never any
+ * session-authenticated end user.
+ */
+const requireNotificationsWriteScope = (req: ServiceAuthRequest, res: Response, next: NextFunction) => {
+  const scopes = req.serviceApp?.scopes ?? [];
+  if (!scopes.includes(NOTIFICATIONS_WRITE_SCOPE)) {
+    return res.status(403).json({
+      error: 'Forbidden',
+      message: `Missing required scope: ${NOTIFICATIONS_WRITE_SCOPE}`,
+    });
+  }
+
+  return next();
+};
+
+// Create a new notification — service-token + privileged scope only. Registered
+// BEFORE the user `authMiddleware` so a session token never reaches this route.
+router.post(
+  '/',
+  serviceAuthMiddleware,
+  requireNotificationsWriteScope,
+  validate({ body: createNotificationSchema }),
+  asyncHandler(createNotification)
+);
+
+// Apply user authentication middleware to all remaining routes
 router.use(authMiddleware);
 
 // Get all notifications for the authenticated user
@@ -32,9 +68,6 @@ router.get('/', asyncHandler(getNotifications));
 
 // Get unread notification count
 router.get('/unread-count', asyncHandler(getUnreadCount));
-
-// Create a new notification
-router.post('/', validate({ body: createNotificationSchema }), asyncHandler(createNotification));
 
 // ─── Push Token Management ──────────────────────────────────────────
 

@@ -498,6 +498,8 @@ export function createEmailApi(http: HttpService) {
         dateAfter?: string;
         dateBefore?: string;
         mailbox?: string;
+        starred?: boolean;
+        label?: string;
         limit?: number;
         offset?: number;
       } = {},
@@ -511,6 +513,8 @@ export function createEmailApi(http: HttpService) {
       if (options.dateAfter) params.dateAfter = options.dateAfter;
       if (options.dateBefore) params.dateBefore = options.dateBefore;
       if (options.mailbox) params.mailbox = options.mailbox;
+      if (options.starred) params.starred = 'true';
+      if (options.label) params.label = options.label;
       if (options.limit !== undefined) params.limit = String(options.limit);
       if (options.offset !== undefined) params.offset = String(options.offset);
 

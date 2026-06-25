@@ -19,6 +19,7 @@ import {
   runColdBoot,
   resolveCentralAuthUrl,
   autoDetectAuthWebUrl,
+  registrableApex,
   SSO_CALLBACK_PATH,
   ssoStateKey,
   ssoGuardKey,
@@ -361,12 +362,11 @@ function isSameSiteIdP(idpOrigin: string): boolean {
   const pageHostname = window.location.hostname;
   if (!idpHostname || !pageHostname) return false;
   if (idpHostname === pageHostname) return true;
-  const apexOf = (hostname: string): string => hostname.split('.').slice(-2).join('.');
-  const pageApex = apexOf(pageHostname);
-  // Require a real registrable apex (≥2 labels) AND an exact apex match AND that
-  // the IdP host is the page apex itself or a subdomain of it.
-  if (pageHostname.split('.').length < 2) return false;
-  if (apexOf(idpHostname) !== pageApex) return false;
+  const pageApex = registrableApex(pageHostname);
+  const idpApex = registrableApex(idpHostname);
+  // Require a real registrable apex (not a shared/public suffix) AND an exact
+  // apex match AND that the IdP host is the page apex itself or a subdomain of it.
+  if (!pageApex || idpApex !== pageApex) return false;
   return idpHostname === pageApex || idpHostname.endsWith(`.${pageApex}`);
 }
 

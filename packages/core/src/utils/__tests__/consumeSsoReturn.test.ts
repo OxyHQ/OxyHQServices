@@ -218,7 +218,7 @@ describe('consumeSsoReturn', () => {
     });
 
     expect(result).toEqual(SESSION);
-    expect(oxy.exchangeSsoCode).toHaveBeenCalledWith('opaque-code');
+    expect(oxy.exchangeSsoCode).toHaveBeenCalledWith('opaque-code', 's');
     expect(storage.map.has(ssoStateKey(ORIGIN))).toBe(false);
     expect(storage.map.has(ssoGuardKey(ORIGIN))).toBe(false);
     expect(storage.map.has(ssoNoSessionKey(ORIGIN))).toBe(false);

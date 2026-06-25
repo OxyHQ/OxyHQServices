@@ -38,7 +38,48 @@ import { pushService } from './push.service';
 import { assetService } from './assetServiceSingleton';
 import { simpleParser } from 'mailparser';
 
+const MAX_STRUCTURED_SEARCH_FILTER_LENGTH = 128;
+const EMAIL_SEARCH_MAX_TIME_MS = 5_000;
+
+/** Escape a user-supplied string so it is treated as a literal in a MongoDB $regex. */
+export function escapeRegexLiteral(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Normalize a structured search filter (from/to/subject):
+ *   - rejects overlong inputs before they ever reach MongoDB
+ *   - escapes regex metacharacters to neutralize ReDoS
+ */
+export function normalizeStructuredSearchFilter(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  if (value.length > MAX_STRUCTURED_SEARCH_FILTER_LENGTH) {
+    throw new BadRequestError(
+      `Search filters must be ${MAX_STRUCTURED_SEARCH_FILTER_LENGTH} characters or fewer`,
+    );
+  }
+  return escapeRegexLiteral(value);
+}
+
 class EmailService {
+  /**
+   * Compute the storage footprint of a message: UTF-8 body bytes plus the
+   * declared size of every attachment. Used so attachment bytes count toward
+   * the per-user storage quota on the send path (not just the body).
+   */
+  calculateMessageStorageSize(message: {
+    text?: string;
+    html?: string;
+    attachments?: Array<{ size: number }>;
+  }): number {
+    const bodySize = Buffer.byteLength((message.text || '') + (message.html || ''), 'utf8');
+    const attachmentSize = (message.attachments ?? []).reduce(
+      (sum, attachment) => sum + (attachment.size || 0),
+      0,
+    );
+    return bodySize + attachmentSize;
+  }
+
   // ─── Mailbox Management ───────────────────────────────────────────
 
   /**
@@ -1082,6 +1123,10 @@ class EmailService {
     const sentMailbox = await this.getMailboxBySpecialUse(userId, '\\Sent');
     if (!sentMailbox) throw new NotFoundError('Sent mailbox not found');
 
+    // Count body + attachment bytes toward the storage quota on the send path.
+    const size = this.calculateMessageStorageSize(messageData);
+    await this.enforceQuota(userId, size);
+
     const message = await Message.create({
       userId: new mongoose.Types.ObjectId(userId),
       mailboxId: sentMailbox._id,
@@ -1096,7 +1141,7 @@ class EmailService {
       headers: {},
       attachments: messageData.attachments ?? [],
       flags: { seen: true, starred: false, answered: false, forwarded: false, draft: false },
-      size: messageData.size,
+      size,
       inReplyTo: messageData.inReplyTo,
       references: messageData.references ?? [],
       date: new Date(),
@@ -1104,7 +1149,7 @@ class EmailService {
     });
 
     await Mailbox.findByIdAndUpdate(sentMailbox._id, {
-      $inc: { totalMessages: 1, size: messageData.size },
+      $inc: { totalMessages: 1, size },
     });
 
     return message.toJSON();
@@ -1233,10 +1278,9 @@ class EmailService {
     const sentMailbox = await this.getMailboxBySpecialUse(userId, '\\Sent');
     if (!sentMailbox) throw new NotFoundError('Sent mailbox not found');
 
-    const size = Buffer.byteLength(
-      (params.text || '') + (params.html || ''),
-      'utf8'
-    );
+    // Count body + attachment bytes toward the storage quota.
+    const size = this.calculateMessageStorageSize(params);
+    await this.enforceQuota(userId, size);
 
     const message = await Message.create({
       userId: new mongoose.Types.ObjectId(userId),
@@ -2027,9 +2071,11 @@ class EmailService {
       hasAttachment?: boolean;
       dateAfter?: string;
       dateBefore?: string;
+      starred?: boolean;
+      label?: string;
     } = {}
   ): Promise<{ data: any[]; total: number; limit: number; offset: number }> {
-    const { limit = 50, offset = 0, mailboxId, from, to, subject, hasAttachment, dateAfter, dateBefore } = options;
+    const { limit = 50, offset = 0, mailboxId, from, to, subject, hasAttachment, dateAfter, dateBefore, starred, label } = options;
 
     const filter: Record<string, unknown> = {
       userId: new mongoose.Types.ObjectId(userId),
@@ -2041,17 +2087,27 @@ class EmailService {
     if (mailboxId) {
       filter.mailboxId = new mongoose.Types.ObjectId(mailboxId);
     }
-    if (from) {
-      filter['from.address'] = { $regex: from, $options: 'i' };
+    const fromFilter = normalizeStructuredSearchFilter(from);
+    const toFilter = normalizeStructuredSearchFilter(to);
+    const subjectFilter = normalizeStructuredSearchFilter(subject);
+
+    if (fromFilter) {
+      filter['from.address'] = { $regex: fromFilter, $options: 'i' };
     }
-    if (to) {
-      filter['to.address'] = { $regex: to, $options: 'i' };
+    if (toFilter) {
+      filter['to.address'] = { $regex: toFilter, $options: 'i' };
     }
-    if (subject) {
-      filter.subject = { $regex: subject, $options: 'i' };
+    if (subjectFilter) {
+      filter.subject = { $regex: subjectFilter, $options: 'i' };
     }
     if (hasAttachment) {
       filter['attachments.0'] = { $exists: true };
+    }
+    if (starred) {
+      filter['flags.starred'] = true;
+    }
+    if (label) {
+      filter.labels = label;
     }
     if (dateAfter || dateBefore) {
       const dateFilter: Record<string, Date> = {};
@@ -2070,8 +2126,9 @@ class EmailService {
         .sort(sort)
         .skip(offset)
         .limit(limit)
+        .maxTimeMS(EMAIL_SEARCH_MAX_TIME_MS)
         .lean({ virtuals: true }),
-      Message.countDocuments(filter),
+      Message.countDocuments(filter).maxTimeMS(EMAIL_SEARCH_MAX_TIME_MS),
     ]);
 
     return { data, total, limit, offset };

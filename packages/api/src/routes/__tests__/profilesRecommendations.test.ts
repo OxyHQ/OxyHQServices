@@ -28,6 +28,8 @@ import { Types } from 'mongoose';
 const mockFollowFind = jest.fn();
 const mockFollowAggregate = jest.fn();
 const mockUserAggregate = jest.fn();
+const mockAppUserSignalFind = jest.fn();
+const mockApplicationMemberFindOne = jest.fn();
 
 // The dual-auth middleware is swappable per-test so we can run authenticated and
 // logged-out paths against the same mounted router. The mocked
@@ -107,6 +109,18 @@ jest.mock('../../models/User', () => ({
   __esModule: true,
   default: {
     aggregate: (...args: unknown[]) => mockUserAggregate(...args),
+  },
+}));
+
+jest.mock('../../models/AppUserSignal', () => ({
+  AppUserSignal: {
+    find: (...args: unknown[]) => mockAppUserSignalFind(...args),
+  },
+}));
+
+jest.mock('../../models/ApplicationMember', () => ({
+  ApplicationMember: {
+    findOne: (...args: unknown[]) => mockApplicationMemberFindOne(...args),
   },
 }));
 
@@ -294,6 +308,16 @@ beforeEach(() => {
   jest.clearAllMocks();
   currentUserId = undefined;
   currentServiceApp = undefined;
+  mockAppUserSignalFind.mockReturnValue({
+    select: jest.fn().mockReturnThis(),
+    sort: jest.fn().mockReturnThis(),
+    limit: jest.fn().mockReturnThis(),
+    lean: jest.fn().mockResolvedValue([]),
+  });
+  mockApplicationMemberFindOne.mockReturnValue({
+    select: jest.fn().mockReturnThis(),
+    lean: jest.fn().mockResolvedValue(null),
+  });
 });
 
 describe('GET /profiles/recommendations exclusion set', () => {
@@ -346,10 +370,11 @@ describe('GET /profiles/recommendations exclusion set', () => {
     expect(excludedIds).toEqual([userA.toString(), userB.toString(), userC.toString()].sort());
   });
 
-  it('returns 200 with public profiles for an unauthenticated caller', async () => {
+  it('returns 200 with public profiles for an unauthenticated caller from a bounded follow window', async () => {
     currentUserId = undefined;
 
-    // Public path: follower-ranked aggregation over the Follow collection.
+    // Public path: follower-ranked aggregation over a capped recent Follow
+    // window so unauthenticated callers cannot force whole-graph grouping.
     mockFollowAggregate.mockResolvedValue([
       { _id: userD, username: 'd', name: 'D', followersCount: 5, followingCount: 2, mutualCount: 0 },
     ]);
@@ -365,6 +390,16 @@ describe('GET /profiles/recommendations exclusion set', () => {
     expect(returnedIds).toContain(userD.toString());
     // The personalized following-set query is never issued without a caller.
     expect(mockFollowFind).not.toHaveBeenCalled();
+
+    const pipeline = mockFollowAggregate.mock.calls[0][0] as Array<Record<string, unknown>>;
+    expect(pipeline).toEqual(
+      expect.arrayContaining([
+        { $match: expect.objectContaining({ followType: 'user' }) },
+        { $sort: { createdAt: -1, _id: 1 } },
+        { $limit: 5000 },
+        { $group: { _id: '$followedId', followersCount: { $sum: 1 } } },
+      ])
+    );
   });
 
   it('rejects repeated excludeTypes query params instead of throwing a 500', async () => {
@@ -457,10 +492,11 @@ describe('GET /profiles/recommendations exclusion set', () => {
 describe('POST /profiles/recommendations dual-auth viewer resolution', () => {
   function postJson(
     server: http.Server,
-    headers: Record<string, string> = {}
+    headers: Record<string, string> = {},
+    body: Record<string, unknown> = { limit: 10 }
   ): Promise<JsonResponse> {
     const address = server.address() as AddressInfo;
-    const payload = JSON.stringify({ limit: 10 });
+    const payload = JSON.stringify(body);
     return new Promise((resolve, reject) => {
       const req = http.request(
         {
@@ -494,6 +530,69 @@ describe('POST /profiles/recommendations dual-auth viewer resolution', () => {
     const select = jest.fn().mockReturnValue({ limit, lean });
     mockFollowFind.mockReturnValue({ select });
   }
+
+  it('ignores an unauthenticated clientId and does not read app-scoped signals', async () => {
+    const victimAppId = new Types.ObjectId().toHexString();
+    currentServiceApp = undefined;
+    currentUserId = undefined;
+    mockFollowAggregate.mockResolvedValue([]);
+    mockUserAggregate.mockResolvedValue([]);
+
+    const res = await postJson(server, {}, { limit: 10, clientId: victimAppId });
+
+    expect(res.status).toBe(200);
+    expect(mockApplicationMemberFindOne).not.toHaveBeenCalled();
+    expect(mockAppUserSignalFind).not.toHaveBeenCalled();
+  });
+
+  it('only reads app-scoped signals when the service token belongs to the requested app', async () => {
+    const appId = new Types.ObjectId().toHexString();
+    currentServiceApp = { appId, scopes: ['user:read'] };
+    const signalLean = jest.fn().mockResolvedValue([
+      { userId: userD, endorsementScore: 10, interestScore: 1 },
+    ]);
+    const signalLimit = jest.fn().mockReturnValue({ lean: signalLean });
+    const signalSort = jest.fn().mockReturnValue({ limit: signalLimit });
+    const signalSelect = jest.fn().mockReturnValue({ sort: signalSort });
+    mockAppUserSignalFind.mockReturnValue({ select: signalSelect });
+    mockFollowAggregate.mockResolvedValue([]);
+    mockUserAggregate.mockImplementation((pipeline: unknown) => {
+      const stages = pipeline as Array<Record<string, unknown>>;
+      const isCountPass = stages.some(
+        (stage) => stage.$project && (stage.$project as Record<string, unknown>).followersCount
+      );
+      if (isCountPass) {
+        return Promise.resolve([{ _id: userD, followersCount: 1, followingCount: 0 }]);
+      }
+      return Promise.resolve([
+        {
+          _id: userD, username: 'd', name: { first: 'D' }, avatar: 'x', verified: false,
+          completenessScore: 1, verifiedScore: 0, repCandScore: 0.5,
+        },
+      ]);
+    });
+
+    const res = await postJson(server, {}, { limit: 10, clientId: appId });
+
+    expect(res.status).toBe(200);
+    const signalQuery = mockAppUserSignalFind.mock.calls[0][0] as { applicationId: Types.ObjectId };
+    expect(signalQuery.applicationId.toHexString()).toBe(appId);
+    const returnedIds = (res.body.data ?? []).map((profile) => String(profile.id));
+    expect(returnedIds).toEqual([userD.toString()]);
+  });
+
+  it('ignores a clientId that does not match the service-token application', async () => {
+    const ownAppId = new Types.ObjectId().toHexString();
+    const victimAppId = new Types.ObjectId().toHexString();
+    currentServiceApp = { appId: ownAppId, scopes: ['user:read'] };
+    mockFollowAggregate.mockResolvedValue([]);
+    mockUserAggregate.mockResolvedValue([]);
+
+    const res = await postJson(server, {}, { limit: 10, clientId: victimAppId });
+
+    expect(res.status).toBe(200);
+    expect(mockAppUserSignalFind).not.toHaveBeenCalled();
+  });
 
   it('service token + valid X-Oxy-User-Id (with user:read) personalizes for that viewer', async () => {
     currentServiceApp = { appId: 'app1', scopes: ['user:read', 'files:write'] };

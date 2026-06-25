@@ -6,6 +6,7 @@ import User from '../models/User';
 import { extractUsername } from '../config/email.config';
 
 const CACHE_TTL_DAYS = 7;
+const BIMI_DNS_TIMEOUT_MS = 1500;
 
 const BLOCKED_HOSTNAMES = new Set(['localhost', 'localhost.localdomain']);
 const PRIVATE_IPV4_RANGES: Array<[number, number]> = [
@@ -69,6 +70,21 @@ function isSafePublicHostname(hostname: string): boolean {
 }
 
 /**
+ * Race a promise against a timeout so a slow/hung resolver can never stall the
+ * caller. The losing branch is discarded and the timer is always cleared.
+ */
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error('BIMI DNS lookup timed out')), timeoutMs);
+  });
+
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+}
+
+/**
  * Look up BIMI DNS TXT record for a domain.
  * Returns the logo URL (l= tag) or null.
  *
@@ -79,7 +95,10 @@ async function lookupBimi(domain: string): Promise<string | null> {
   if (!isSafePublicHostname(domain)) return null;
 
   try {
-    const records = await dns.resolveTxt(`default._bimi.${domain}`);
+    const records = await withTimeout(
+      dns.resolveTxt(`default._bimi.${domain}`),
+      BIMI_DNS_TIMEOUT_MS,
+    );
     for (const parts of records) {
       const record = parts.join('');
       if (!record.toLowerCase().startsWith('v=bimi1')) continue;

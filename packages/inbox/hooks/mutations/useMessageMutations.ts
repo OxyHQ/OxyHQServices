@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient, type InfiniteData } from '@tanstack/react-query';
 import { toast } from '@oxyhq/bloom';
+import { useOxy } from '@oxyhq/services';
 import { useEmailStore } from '@/hooks/useEmail';
 import type { Message, Pagination } from '@/services/emailApi';
 
@@ -65,6 +66,8 @@ function flatMessages(data: MessagesInfinite | undefined): Message[] {
 export function useToggleStar() {
   const api = useEmailStore((s) => s._api);
   const queryClient = useQueryClient();
+  const { user } = useOxy();
+  const userId = user?.id ?? null;
 
   return useMutation({
     mutationFn: async ({ messageId, starred }: { messageId: string; starred: boolean }) => {
@@ -77,9 +80,10 @@ export function useToggleStar() {
       await queryClient.cancelQueries({ queryKey: ['message', messageId] });
       await queryClient.cancelQueries({ queryKey: ['thread'] });
 
-      // Snapshot for rollback
+      // Snapshot for rollback. The single-message cache is keyed by user id, so
+      // its read/write/restore use the scoped key.
       const prevMessages = queryClient.getQueriesData<MessagesInfinite>({ queryKey: ['messages'] });
-      const prevMessage = queryClient.getQueryData<Message | null>(['message', messageId]);
+      const prevMessage = queryClient.getQueryData<Message | null>(['message', messageId, userId]);
       const prevThreads = queryClient.getQueriesData<Message[]>({ queryKey: ['thread'] });
 
       // VIEW-AWARE UPDATE: If in starred view and unstarring, REMOVE from list
@@ -97,7 +101,7 @@ export function useToggleStar() {
       }
 
       // Update single message cache (always update flags)
-      queryClient.setQueryData<Message | null>(['message', messageId], (old) =>
+      queryClient.setQueryData<Message | null>(['message', messageId, userId], (old) =>
         old ? { ...old, flags: { ...old.flags, starred } } : old,
       );
 
@@ -112,7 +116,7 @@ export function useToggleStar() {
       // Rollback on error
       if (context) {
         context.prevMessages.forEach(([key, data]) => queryClient.setQueryData(key, data));
-        queryClient.setQueryData(['message', messageId], context.prevMessage);
+        queryClient.setQueryData(['message', messageId, userId], context.prevMessage);
         context.prevThreads.forEach(([key, data]) => queryClient.setQueryData(key, data));
       }
       toast.error('Failed to update star.');
@@ -121,7 +125,7 @@ export function useToggleStar() {
       // Sync flag fields from the server without replacing body/header fields that
       // the flag update endpoint intentionally omits from its response.
       if (updatedMessage) {
-        queryClient.setQueryData<Message | null>(['message', messageId], (old) =>
+        queryClient.setQueryData<Message | null>(['message', messageId, userId], (old) =>
           mergeMessageUpdate(old, updatedMessage),
         );
         // Don't restore message to list if it was removed from starred view
@@ -152,6 +156,8 @@ export function useToggleStar() {
 export function useToggleRead() {
   const api = useEmailStore((s) => s._api);
   const queryClient = useQueryClient();
+  const { user } = useOxy();
+  const userId = user?.id ?? null;
 
   return useMutation({
     mutationFn: async ({ messageId, seen }: { messageId: string; seen: boolean }) => {
@@ -164,16 +170,17 @@ export function useToggleRead() {
       await queryClient.cancelQueries({ queryKey: ['message', messageId] });
       await queryClient.cancelQueries({ queryKey: ['thread'] });
 
-      // Snapshot all caches for rollback
+      // Snapshot all caches for rollback. The single-message cache is keyed by
+      // user id, so its read/write/restore use the scoped key.
       const prevMessages = queryClient.getQueriesData<MessagesInfinite>({ queryKey: ['messages'] });
-      const prevMessage = queryClient.getQueryData<Message | null>(['message', messageId]);
+      const prevMessage = queryClient.getQueryData<Message | null>(['message', messageId, userId]);
       const prevThreads = queryClient.getQueriesData<Message[]>({ queryKey: ['thread'] });
 
       // Optimistically update all caches
       queryClient.setQueriesData<MessagesInfinite>({ queryKey: ['messages'] }, (old) =>
         updateMessageInPages(old, messageId, (m) => ({ ...m, flags: { ...m.flags, seen } })),
       );
-      queryClient.setQueryData<Message | null>(['message', messageId], (old) =>
+      queryClient.setQueryData<Message | null>(['message', messageId, userId], (old) =>
         old ? { ...old, flags: { ...old.flags, seen } } : old,
       );
       queryClient.setQueriesData<Message[]>({ queryKey: ['thread'] }, (old) =>
@@ -186,7 +193,7 @@ export function useToggleRead() {
       // Rollback all caches on error
       if (context) {
         context.prevMessages.forEach(([key, data]) => queryClient.setQueryData(key, data));
-        queryClient.setQueryData(['message', messageId], context.prevMessage);
+        queryClient.setQueryData(['message', messageId, userId], context.prevMessage);
         context.prevThreads.forEach(([key, data]) => queryClient.setQueryData(key, data));
       }
       toast.error('Failed to update read status.');
@@ -194,7 +201,7 @@ export function useToggleRead() {
     onSuccess: (updatedMessage, { messageId }) => {
       // Update caches with server response without dropping detail-only body/header fields.
       if (updatedMessage) {
-        queryClient.setQueryData<Message | null>(['message', messageId], (old) =>
+        queryClient.setQueryData<Message | null>(['message', messageId, userId], (old) =>
           mergeMessageUpdate(old, updatedMessage),
         );
         queryClient.setQueriesData<MessagesInfinite>({ queryKey: ['messages'] }, (old) =>
@@ -229,10 +236,16 @@ export function useArchiveMessage() {
     onMutate: async ({ messageId }) => {
       await queryClient.cancelQueries({ queryKey: ['messages'] });
 
-      // Auto-advance selected message
+      // Auto-advance selected message. The messages cache is keyed by
+      // [mailboxId, starred, label, userId], so match by the mailbox prefix and
+      // take the first populated variant instead of an exact-key lookup.
       const { selectedMessageId } = useEmailStore.getState();
       if (selectedMessageId === messageId) {
-        const data = queryClient.getQueryData<MessagesInfinite>(['messages', useEmailStore.getState().currentMailbox?._id]);
+        const data = queryClient
+          .getQueriesData<MessagesInfinite>({
+            queryKey: ['messages', useEmailStore.getState().currentMailbox?._id],
+          })
+          .find(([, cached]) => !!cached)?.[1];
         const messages = flatMessages(data);
         const idx = messages.findIndex((m) => m._id === messageId);
         const nextId = idx < messages.length - 1 ? messages[idx + 1]._id : idx > 0 ? messages[idx - 1]._id : null;
@@ -283,10 +296,16 @@ export function useDeleteMessage() {
     onMutate: async ({ messageId }) => {
       await queryClient.cancelQueries({ queryKey: ['messages'] });
 
-      // Auto-advance selected message
+      // Auto-advance selected message. The messages cache is keyed by
+      // [mailboxId, starred, label, userId], so match by the mailbox prefix and
+      // take the first populated variant instead of an exact-key lookup.
       const { selectedMessageId } = useEmailStore.getState();
       if (selectedMessageId === messageId) {
-        const data = queryClient.getQueryData<MessagesInfinite>(['messages', useEmailStore.getState().currentMailbox?._id]);
+        const data = queryClient
+          .getQueriesData<MessagesInfinite>({
+            queryKey: ['messages', useEmailStore.getState().currentMailbox?._id],
+          })
+          .find(([, cached]) => !!cached)?.[1];
         const messages = flatMessages(data);
         const idx = messages.findIndex((m) => m._id === messageId);
         const nextId = idx < messages.length - 1 ? messages[idx + 1]._id : idx > 0 ? messages[idx - 1]._id : null;
@@ -409,6 +428,8 @@ export function useSendMessageWithUndo() {
 export function useUpdateMessageLabels() {
   const api = useEmailStore((s) => s._api);
   const queryClient = useQueryClient();
+  const { user } = useOxy();
+  const userId = user?.id ?? null;
 
   return useMutation({
     mutationFn: async ({ messageId, add, remove }: { messageId: string; add: string[]; remove: string[] }) => {
@@ -417,7 +438,7 @@ export function useUpdateMessageLabels() {
     },
     onMutate: async ({ messageId, add, remove }) => {
       await queryClient.cancelQueries({ queryKey: ['message', messageId] });
-      queryClient.setQueryData<Message | null>(['message', messageId], (old) => {
+      queryClient.setQueryData<Message | null>(['message', messageId, userId], (old) => {
         if (!old) return old;
         const labels = [...old.labels.filter((l) => !remove.includes(l)), ...add.filter((l) => !old.labels.includes(l))];
         return { ...old, labels };

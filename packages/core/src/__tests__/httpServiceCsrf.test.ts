@@ -189,4 +189,47 @@ describe('HttpService CSRF behavior', () => {
     expect(calls[0].url).toBe('https://attacker.oxy.so/collect');
     expect(calls[0].init?.credentials).toBe('omit');
   });
+
+  it('bypasses request deduplication for the internal CSRF retry', async () => {
+    const calls: FetchCall[] = [];
+    let csrfFetches = 0;
+    let postFetches = 0;
+
+    globalThis.fetch = async (input, init) => {
+      const url = String(input);
+      calls.push({ url, init });
+
+      if (url.endsWith('/csrf-token')) {
+        csrfFetches += 1;
+        return new Response(JSON.stringify({ csrfToken: `csrf_${csrfFetches}` }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+
+      postFetches += 1;
+      if (postFetches === 1) {
+        return new Response(JSON.stringify({ code: 'CSRF_TOKEN_INVALID' }), {
+          status: 403,
+          statusText: 'Forbidden',
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+
+      return jsonResponse({ ok: true });
+    };
+
+    const http = new HttpService({ baseURL: 'https://api.mention.earth', enableRetry: false });
+
+    await expect(http.post('/posts', { text: 'hello' })).resolves.toEqual({ ok: true });
+    expect(calls.map((call) => call.url)).toEqual([
+      'https://api.mention.earth/csrf-token',
+      'https://api.mention.earth/posts',
+      'https://api.mention.earth/csrf-token',
+      'https://api.mention.earth/posts',
+    ]);
+
+    expect(readHeaders(calls[1].init)['X-CSRF-Token']).toBe('csrf_1');
+    expect(readHeaders(calls[3].init)['X-CSRF-Token']).toBe('csrf_2');
+  });
 });

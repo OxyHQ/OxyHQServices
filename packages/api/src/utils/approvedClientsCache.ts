@@ -10,22 +10,25 @@ const LOCAL_KEY = 'approved:origins';
 const LOG_COMPONENT = 'ApprovedClientsCache';
 
 /**
- * In-process cache for the FedCM approved-clients allow-list.
+ * In-process cache for NON-AUTHORITATIVE FedCM approved-client list reads.
  *
- * Collapses the 3-5 redundant `FedCMClient` reads per SSO/FedCM sign-in
- * (preflight + POST in `ssoExchangeCors`, `issueSsoCode`, `exchangeIdToken`,
- * and `getUserGrantedOrigins` on cold boot) into at most one Mongo read per
- * TTL window. The approved set is tiny and changes rarely (create / delete /
- * seed only), so the whole origin list is cached as a single entry.
+ * Collapses the redundant `FedCMClient`/`Application` reads per SSO/FedCM
+ * sign-in (e.g. `getUserGrantedOrigins` / `approved_clients` derivation on cold
+ * boot) into at most one Mongo read per TTL window. The approved set is tiny
+ * and changes rarely (create / delete / seed only), so the whole origin list is
+ * cached as a single entry.
  *
- * MULTI-TASK CAVEAT: oxy-api runs as multiple ECS Fargate tasks, so this
- * in-process Map is per-task. A revoke (`removeApprovedClient`) on task A
- * clears only task A's cache; other tasks serve the stale list until their own
- * 60s TTL expires. This is acceptable for a rarely-changing allow-list, and
- * revocation is ALSO enforced fail-closed elsewhere: the FedCM exchange
- * re-checks approval against this same list, and the SSO code exchange is
- * origin-bound + single-use. The TTL caps worst-case cross-task staleness at
- * 60s; the best-effort Redis tier shortens it further when Valkey is reachable.
+ * SECURITY BOUNDARY: this cache is safe ONLY for list/catalog-style callers
+ * that can tolerate a short refresh delay. Security-sensitive AUTHORIZATION
+ * checks (the FedCM token-exchange audience check via
+ * `fedcmService.isClientApproved`) must BYPASS this cache and read the canonical
+ * registry directly — oxy-api runs as multiple ECS Fargate tasks, so this
+ * in-process Map is per-task: a revoke (`removeApprovedClient`) on task A clears
+ * only task A's cache, and other tasks would otherwise serve the stale list
+ * until their own 60s TTL expires. Authorization reading the registry live
+ * closes that cross-task staleness window. The TTL still caps staleness for the
+ * non-authoritative readers at 60s; the best-effort Redis tier shortens it
+ * further when Valkey is reachable.
  */
 class ApprovedClientsCache {
   private local: Map<string, { origins: string[]; timestamp: number; ttl: number }> = new Map();
@@ -48,15 +51,6 @@ class ApprovedClientsCache {
     const origins = await loader();
     this.setLocal(origins);
     return origins;
-  }
-
-  /**
-   * Membership test against the cached approved-origins list. One source of
-   * truth — no separate per-origin cache to keep coherent.
-   */
-  async isApproved(origin: string, loader: () => Promise<string[]>): Promise<boolean> {
-    const origins = await this.getApprovedOrigins(loader);
-    return origins.includes(origin);
   }
 
   /**

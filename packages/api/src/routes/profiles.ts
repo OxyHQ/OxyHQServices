@@ -29,6 +29,7 @@ import { usernameParams, profileSearchQuerySchema } from '../schemas/profiles.sc
 import { formatUserNameResponse, type NameParts } from '../utils/displayName';
 import { eligibleUserMatch, FEDERATED_RECOMMENDATION_MAX_AGE_MS } from '../utils/profileQuery';
 import { AppUserSignal } from '../models/AppUserSignal';
+import { ApplicationMember } from '../models/ApplicationMember';
 import { getRedisClient } from '../config/redis';
 import {
   resolveWeightProfile,
@@ -86,6 +87,15 @@ const MAX_USERNAME_LENGTH = 30;
 // filter on the public recommendations path, so post-lookup filtering can't
 // shrink the page below the requested limit.
 const PUBLIC_FILTER_HEADROOM = 20;
+// Bound the unauthenticated popularity fallback so a public request cannot
+// aggregate the entire social graph. The sorted prefix is supported by
+// Follow's { followType, createdAt, _id } index and keeps work independent of the
+// total follows collection size.
+const PUBLIC_POPULAR_FOLLOW_WINDOW = 5000;
+// Bound attacker-selected co-follower fan-out before materializing IDs or
+// building the follow aggregation's $in clause. This keeps /similar stable for
+// high-follower targets while still sampling enough overlap for useful results.
+const SIMILAR_PROFILE_MAX_TARGET_FOLLOWERS = 5000;
 
 /**
  * Shared aggregation stages that look up follower and following counts
@@ -557,7 +567,11 @@ router.get(
       Follow.find({
         followedId: targetUserId,
         followType: FollowType.USER,
-      }).select('followerUserId').lean(),
+      })
+        .select('followerUserId')
+        .sort({ _id: 1 })
+        .limit(SIMILAR_PROFILE_MAX_TARGET_FOLLOWERS)
+        .lean(),
       Follow.find({
         followerUserId: currentUserId,
         followType: FollowType.USER,
@@ -626,6 +640,7 @@ router.get(
       currentUserId,
       targetUserId,
       similarCount: formattedSimilar.length,
+      sampledTargetFollowers: targetFollowerIds.length,
     });
 
     sendSuccess(res, formattedSimilar);
@@ -650,33 +665,70 @@ interface RecommendationOptions {
 /**
  * Authorize the caller-supplied recommendation `clientId` (an Application id used
  * to read that app's private per-user signals and weight profile) against the
- * authenticated principal, returning the id ONLY when the caller is entitled to
- * it — otherwise `undefined` (the request proceeds with no app context).
+ * authenticated principal, returning the normalized id ONLY when the caller is
+ * entitled to it — otherwise `undefined` (the request proceeds with no app
+ * context).
  *
  * A `clientId` selects an app's AppUserSignal data (endorsement/interest) and
  * per-app weight profile, so honoring an arbitrary caller-supplied id would let
  * any caller pull recommendations shaped by another tenant's private signals
  * (cross-tenant data exposure). Authorization rules:
- *  - SERVICE token: allowed only for its OWN application (`clientId === serviceApp.appId`).
- *  - USER session / anonymous: no owning application context → never authorized.
+ *  - SERVICE token: allowed only for its OWN application
+ *    (`clientId === serviceApp.appId`).
+ *  - USER session: allowed only when the user is an ACTIVE member of that
+ *    application (`ApplicationMember` with `status: 'active'`).
+ *  - Anonymous: no owning application context → never authorized (and no DB
+ *    lookup is performed).
  */
-function resolveAuthorizedRecommendationClientId(
+async function resolveAuthorizedRecommendationClientId(
   req: OptionalUserOrServiceRequest,
   suppliedClientId: string | undefined,
-): string | undefined {
-  if (!suppliedClientId) {
+): Promise<string | undefined> {
+  if (!suppliedClientId || !Types.ObjectId.isValid(suppliedClientId)) {
     return undefined;
   }
 
+  const requestedAppId = new Types.ObjectId(suppliedClientId).toHexString();
+
+  // SERVICE token: authorized only for its own application.
   const serviceAppId = req.serviceApp?.appId;
-  if (serviceAppId && suppliedClientId === serviceAppId) {
-    return suppliedClientId;
+  if (serviceAppId) {
+    const ownAppId = Types.ObjectId.isValid(serviceAppId)
+      ? new Types.ObjectId(serviceAppId).toHexString()
+      : serviceAppId;
+    if (ownAppId === requestedAppId) {
+      return requestedAppId;
+    }
+    logger.warn('recommendations: dropping unauthorized clientId', {
+      suppliedClientId,
+      serviceAppId,
+      hasUserSession: false,
+    });
+    return undefined;
+  }
+
+  // USER session: authorized only when an active member of the application.
+  const userId = req.user?._id;
+  if (!userId || !Types.ObjectId.isValid(userId)) {
+    return undefined;
+  }
+
+  const membership = await ApplicationMember.findOne({
+    applicationId: new Types.ObjectId(requestedAppId),
+    userId: new Types.ObjectId(userId),
+    status: 'active',
+  })
+    .select('_id')
+    .lean();
+
+  if (membership) {
+    return requestedAppId;
   }
 
   logger.warn('recommendations: dropping unauthorized clientId', {
     suppliedClientId,
-    serviceAppId: serviceAppId ?? null,
-    hasUserSession: !!req.user?._id,
+    serviceAppId: null,
+    hasUserSession: true,
   });
   return undefined;
 }
@@ -721,6 +773,8 @@ async function buildPopularFallback(
 
   const followerRanked = await Follow.aggregate<RecommendationRow>([
     { $match: { followType: FollowType.USER, followedId: { $nin: excludeIds } } },
+    { $sort: { createdAt: -1, _id: 1 } },
+    { $limit: PUBLIC_POPULAR_FOLLOW_WINDOW },
     { $group: { _id: '$followedId', followersCount: { $sum: 1 } } },
     { $sort: { followersCount: -1, _id: 1 } },
     { $skip: parsedOffset },
@@ -1222,8 +1276,9 @@ router.post(
     const parsedOffset = body.offset ?? 0;
 
     // Only honor a clientId the caller is actually entitled to (its own service
-    // application). An unauthorized clientId is dropped → no app context.
-    const authorizedClientId = resolveAuthorizedRecommendationClientId(req, body.clientId);
+    // application, or an application the user actively belongs to). An
+    // unauthorized clientId is dropped → no app context.
+    const authorizedClientId = await resolveAuthorizedRecommendationClientId(req, body.clientId);
 
     logger.debug('POST /profiles/recommendations', {
       currentUserId: currentUserId ?? null,

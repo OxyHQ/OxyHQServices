@@ -10,6 +10,7 @@ import sessionService from './session.service';
 import { Request } from 'express';
 import * as crypto from 'crypto';
 import { fedcmTokenPayloadSchema, type FedcmTokenPayload, type UserNameResponse } from '@oxyhq/contracts';
+import { registrableApex } from '@oxyhq/core';
 import { formatUserNameResponse } from '../utils/displayName';
 
 /**
@@ -68,6 +69,42 @@ function normaliseOriginOrThrow(value: string): string {
 
 // FedCM ID token issuer - must match auth server's NEXT_PUBLIC_OXY_AUTH_URL
 const FEDCM_ISSUER = (process.env.FEDCM_ISSUER || 'https://auth.oxy.so').replace(/\/+$/, '');
+
+/**
+ * FedCM assertions may be minted either by the central Oxy IdP
+ * (`https://auth.oxy.so`, or the explicit `FEDCM_ISSUER` override for
+ * local/test) or by an approved RP's first-party CNAME host
+ * (`https://auth.<rp-apex>`) in the multi-domain browser-native flow.
+ *
+ * Accept the configured central issuer, and otherwise require the dynamic
+ * issuer to be the HTTPS `auth.` sibling of the token audience's registrable
+ * apex. The apex is derived with the Public-Suffix-aware `registrableApex`
+ * helper from `@oxyhq/core` (the single PSL source of truth) so a multi-part
+ * public suffix (`co.uk`, `pages.dev`, …) can never be coerced into an
+ * attacker-controllable `auth.<suffix>` issuer.
+ */
+function isAllowedFedCMIssuer(issuer: string | undefined, audience: string): boolean {
+  if (!issuer) return false;
+
+  let normalizedIssuer: string;
+  try {
+    normalizedIssuer = normaliseOriginOrThrow(issuer);
+  } catch {
+    return false;
+  }
+  if (timingSafeStringEqual(normalizedIssuer, FEDCM_ISSUER)) return true;
+
+  let audienceHostname: string;
+  try {
+    audienceHostname = new URL(normaliseOriginOrThrow(audience)).hostname;
+  } catch {
+    return false;
+  }
+  const apex = registrableApex(audienceHostname);
+  if (!apex) return false;
+
+  return timingSafeStringEqual(normalizedIssuer, `https://auth.${apex}`);
+}
 
 // Shared secret for verifying FedCM tokens - must match auth.oxy.so
 // Validated lazily on first use so the module can be imported without crashing
@@ -261,13 +298,25 @@ class FedCMService {
   }
 
   /**
-   * Check if a client origin is approved (short-TTL cached membership test).
-   * Fail-closed: any unexpected throw resolves to `false`, and the cache loader
-   * itself returns `[]` on Mongo error so a DB hiccup denies rather than admits.
+   * Check if a client origin is currently approved.
+   *
+   * Authorization decisions intentionally BYPASS the in-process allow-list cache
+   * and read the canonical {@link Application} registry on every call: oxy-api
+   * runs multiple ECS tasks, so a revoke handled by one task cannot
+   * synchronously clear another task's local memory. Re-reading the registry
+   * here closes the cache-TTL window in which a recently-revoked RP could still
+   * be accepted by a stale task. The short-TTL list cache remains for
+   * non-authoritative callers (the "Connected apps" UI / `approved_clients`
+   * derivation) that can tolerate a brief refresh delay.
+   *
+   * Fail-closed: any unexpected throw resolves to `false`. The uncached loader
+   * itself returns the dev/native fallback on Mongo error, so unknown origins
+   * are denied while local/native development origins remain usable.
    */
   async isClientApproved(origin: string): Promise<boolean> {
     try {
-      return await approvedClientsCache.isApproved(origin, () => this.fetchApprovedClientOrigins());
+      const origins = await this.fetchApprovedClientOrigins();
+      return origins.includes(origin);
     } catch (error) {
       logger.error('Error checking FedCM client approval:', error);
       return false;
@@ -560,9 +609,16 @@ class FedCMService {
         return { error: 'missing_required_fields' };
       }
 
-      // Verify issuer (normalize trailing slashes for comparison)
-      if (tokenPayload.iss?.replace(/\/+$/, '') !== FEDCM_ISSUER) {
-        logger.warn('FedCM: Invalid issuer', { expected: FEDCM_ISSUER, got: tokenPayload.iss });
+      // Verify issuer. The browser-native multi-domain FedCM flow mints tokens
+      // from `https://auth.<rp-apex>` (the RP's first-party CNAME host), while
+      // server-side SSO assertions continue to use the configured central
+      // issuer. Both are accepted; everything else is rejected.
+      if (!isAllowedFedCMIssuer(tokenPayload.iss, tokenPayload.aud)) {
+        logger.warn('FedCM: Invalid issuer', {
+          expected: `${FEDCM_ISSUER} or https://auth.<audience-apex>`,
+          got: tokenPayload.iss,
+          aud: tokenPayload.aud,
+        });
         return { error: 'invalid_issuer' };
       }
 

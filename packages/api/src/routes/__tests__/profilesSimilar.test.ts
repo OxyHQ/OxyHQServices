@@ -244,12 +244,20 @@ beforeEach(() => {
   jest.clearAllMocks();
   currentUserId = caller.toHexString();
 
-  // The route loads targetFollowers + currentFollowing via two
-  // Follow.find(...).select(...).lean() chains, in that order.
+  // The route loads targetFollowers + currentFollowing in that order. The
+  // target-followers load is now bounded:
+  //   Follow.find(...).select('followerUserId').sort({ _id: 1 }).limit(N).lean()
+  // while the current-following load stays Follow.find(...).select(...).lean().
   const targetFollowersLean = jest.fn().mockResolvedValue([{ followerUserId: follower }]);
   const currentFollowingLean = jest.fn().mockResolvedValue([]);
   mockFollowFind
-    .mockReturnValueOnce({ select: jest.fn().mockReturnValue({ lean: targetFollowersLean }) })
+    .mockReturnValueOnce({
+      select: jest.fn().mockReturnValue({
+        sort: jest.fn().mockReturnValue({
+          limit: jest.fn().mockReturnValue({ lean: targetFollowersLean }),
+        }),
+      }),
+    })
     .mockReturnValueOnce({ select: jest.fn().mockReturnValue({ lean: currentFollowingLean }) });
 });
 

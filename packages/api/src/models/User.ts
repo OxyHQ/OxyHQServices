@@ -8,6 +8,43 @@ import {
 } from "../utils/reputation.constants";
 
 /**
+ * Canonical named color presets a user may pick. `oxy` is premium-gated at the
+ * service layer (`user.service.ts` premium check) — the schema permits it here
+ * so already-premium users can persist it.
+ */
+export const USER_COLOR_PRESETS = [
+  'teal',
+  'blue',
+  'green',
+  'amber',
+  'red',
+  'purple',
+  'pink',
+  'sky',
+  'orange',
+  'mint',
+  'oxy',
+] as const;
+
+// 3- or 6-digit hex. Legacy accounts stored raw hex colors before the named
+// presets existed; accept them so those users can still save unrelated profile
+// changes without being forced to re-pick a preset.
+const LEGACY_HEX_COLOR_PATTERN = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
+
+/**
+ * True when `value` is a known named preset OR a legacy hex color. Used as the
+ * `color` field validator so the strict preset enum no longer rejects existing
+ * users' legacy hex values on save.
+ */
+export function isValidUserColor(value: unknown): boolean {
+  if (typeof value !== 'string') return false;
+  return (
+    (USER_COLOR_PRESETS as readonly string[]).includes(value) ||
+    LEGACY_HEX_COLOR_PATTERN.test(value)
+  );
+}
+
+/**
  * Represents an authentication method linked to a user account.
  * Users can have multiple auth methods (identity, password, social) linked to the same account.
  */
@@ -445,9 +482,12 @@ const UserSchema: Schema = new Schema(
       type: String,
       trim: true,
       lowercase: true,
-      enum: ['teal', 'blue', 'green', 'amber', 'red', 'purple', 'pink', 'sky', 'orange', 'mint', 'oxy'],
+      validate: {
+        validator: isValidUserColor,
+        message: 'Color must be a known preset or legacy hex color',
+      },
       default: () => {
-        const colors = ['teal', 'blue', 'green', 'amber', 'red', 'purple', 'pink', 'sky', 'orange', 'mint'];
+        const colors = USER_COLOR_PRESETS.filter((color) => color !== 'oxy');
         return colors[Math.floor(Math.random() * colors.length)];
       },
     },

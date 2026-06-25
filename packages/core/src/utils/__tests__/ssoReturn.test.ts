@@ -188,7 +188,7 @@ describe('consumeSsoReturn pre-hydration callback bootstrap', () => {
     );
 
     expect(session).toBe(exchangedSession);
-    expect(exchangeSsoCode).toHaveBeenCalledWith('opaque-code');
+    expect(exchangeSsoCode).toHaveBeenCalledWith('opaque-code', 'state-ok');
     expect(replaceStateCalls).toEqual(['/', '/explore?tab=home#top']);
     expect(dispatchPopState).toHaveBeenCalledTimes(1);
     expect(hardRedirect).not.toHaveBeenCalled();

@@ -17,6 +17,12 @@
  * - `reputation:write` permits service credentials to create reputation ledger
  *   awards/penalties for arbitrary users. PRIVILEGED — only Oxy platform staff
  *   may grant it.
+ * - `signals:write` permits trusted services to write cross-app ranking signals
+ *   (endorsement/interest edges) that influence recommendation rankings and can
+ *   trigger reputation awards. PRIVILEGED — only Oxy platform staff may grant it.
+ * - `notifications:write` permits trusted services to create realtime
+ *   notifications for arbitrary recipients. PRIVILEGED — only Oxy platform staff
+ *   may grant it.
  */
 export const APPLICATION_SCOPES = [
   'files:read',
@@ -29,6 +35,7 @@ export const APPLICATION_SCOPES = [
   'federation:write',
   'signals:write',
   'reputation:write',
+  'notifications:write',
 ] as const;
 
 export type ApplicationScope = (typeof APPLICATION_SCOPES)[number];
@@ -47,15 +54,25 @@ export type ApplicationScope = (typeof APPLICATION_SCOPES)[number];
  * - `reputation:write` lets a service credential mutate the global reputation
  *   ledger for arbitrary users. A self-granting owner could otherwise inflate or
  *   penalise trust tiers outside its own tenant.
+ * - `signals:write` lets a service credential write cross-app ranking signals
+ *   and can trigger reputation awards for arbitrary Oxy users. A self-granting
+ *   owner could otherwise submit forged endorsement edges to inflate reputation
+ *   and recommendation rankings.
+ * - `notifications:write` lets a service credential deliver realtime
+ *   notifications to arbitrary users and choose actor/entity metadata. A
+ *   self-granting owner could otherwise spoof system or user activity to
+ *   victims' connected clients.
  *
- * All other scopes in {@link APPLICATION_SCOPES} authorise an app only over its
- * OWN resources (files, models, webhooks, public user reads) and remain freely
- * self-grantable. Keep this set CONSERVATIVE — add a scope here only when it
- * grants authority beyond the app's own tenant.
+ * All non-privileged scopes in {@link APPLICATION_SCOPES} authorise an app only
+ * over its OWN resources (files, models, webhooks, public user reads) and remain
+ * freely self-grantable. Keep this set CONSERVATIVE — add a scope here only when
+ * it grants authority beyond the app's own tenant.
  */
 export const PRIVILEGED_APPLICATION_SCOPES = [
   'federation:write',
   'reputation:write',
+  'signals:write',
+  'notifications:write',
 ] as const satisfies readonly ApplicationScope[];
 
 const PRIVILEGED_APPLICATION_SCOPE_SET: ReadonlySet<ApplicationScope> = new Set<ApplicationScope>(

@@ -8,6 +8,7 @@
 import React, { useCallback, useState, useRef } from 'react';
 import { View, Pressable, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
+import { useOxy } from '@oxyhq/services';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import { Text } from '@oxyhq/bloom/typography';
@@ -145,6 +146,8 @@ function MessageRowInner({
   const isUnread = !message.flags.seen;
   const [avatarHovered, setAvatarHovered] = useState(false);
   const queryClient = useQueryClient();
+  const { user } = useOxy();
+  const userId = user?.id ?? null;
   const prefetchedRef = useRef(false);
 
   const showCheckbox = isSelectionMode || (Platform.OS === 'web' && avatarHovered);
@@ -180,14 +183,14 @@ function MessageRowInner({
 
   // Prefetch message data on hover (web only, once per mount)
   const handleMouseEnter = useCallback(() => {
-    if (!prefetchedRef.current) {
+    if (!prefetchedRef.current && userId) {
       prefetchedRef.current = true;
       queryClient.prefetchQuery({
-        queryKey: ['message', message._id],
+        queryKey: ['message', message._id, userId],
         staleTime: 60_000,
       });
     }
-  }, [queryClient, message._id]);
+  }, [queryClient, message._id, userId]);
 
   const senderName = getSenderName(message);
   const preview = getPreview(message);

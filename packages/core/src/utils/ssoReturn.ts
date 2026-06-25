@@ -202,7 +202,7 @@ export interface ConsumeSsoReturnDeps {
  * @returns The exchanged session on success, otherwise `null`.
  */
 export async function consumeSsoReturn(
-  oxy: { exchangeSsoCode: (code: string) => Promise<SessionLoginResponse> },
+  oxy: { exchangeSsoCode: (code: string, state?: string) => Promise<SessionLoginResponse> },
   deps: ConsumeSsoReturnDeps = {},
 ): Promise<SessionLoginResponse | null> {
   const isWeb =
@@ -344,7 +344,7 @@ export async function consumeSsoReturn(
 
   let session: SessionLoginResponse | undefined;
   try {
-    session = await oxy.exchangeSsoCode(ret.code);
+    session = await oxy.exchangeSsoCode(ret.code, ret.state);
   } catch (error) {
     onExchangeError?.(error);
     markNoSession();

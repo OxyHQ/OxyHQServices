@@ -22,6 +22,17 @@ import { logger } from '../utils/logger';
 import type { RecipientInput, AttachmentInput } from '../schemas/email.schemas';
 
 /**
+ * Read an optional query-string param that MUST be a single string.
+ * Express parses repeated keys / bracketed keys into arrays or objects, which
+ * would otherwise let a caller smuggle a NoSQL operator object into a query.
+ */
+function getOptionalQueryString(value: unknown, name: string): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value === 'string') return value;
+  throw new BadRequestError(`${name} must be a single string value`);
+}
+
+/**
  * Resolve user-supplied { fileId, contentId?, isInline? } references into the
  * canonical IAttachment shape persisted on Message. Each fileId MUST:
  *   - exist
@@ -532,14 +543,16 @@ export async function saveDraft(req: AuthRequest, res: Response): Promise<void> 
 
 export async function searchMessages(req: AuthRequest, res: Response): Promise<void> {
   const userId = req.user!.id;
-  const q = req.query.q as string | undefined;
-  const mailboxId = req.query.mailbox as string | undefined;
-  const from = req.query.from as string | undefined;
-  const to = req.query.to as string | undefined;
-  const subject = req.query.subject as string | undefined;
+  const q = getOptionalQueryString(req.query.q, 'q');
+  const mailboxId = getOptionalQueryString(req.query.mailbox, 'mailbox');
+  const from = getOptionalQueryString(req.query.from, 'from');
+  const to = getOptionalQueryString(req.query.to, 'to');
+  const subject = getOptionalQueryString(req.query.subject, 'subject');
   const hasAttachment = req.query.hasAttachment === 'true';
-  const dateAfter = req.query.dateAfter as string | undefined;
-  const dateBefore = req.query.dateBefore as string | undefined;
+  const dateAfter = getOptionalQueryString(req.query.dateAfter, 'dateAfter');
+  const dateBefore = getOptionalQueryString(req.query.dateBefore, 'dateBefore');
+  const starred = req.query.starred === 'true';
+  const label = getOptionalQueryString(req.query.label, 'label');
   const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
   const offset = parseInt(req.query.offset as string) || 0;
 
@@ -552,7 +565,9 @@ export async function searchMessages(req: AuthRequest, res: Response): Promise<v
     !subject &&
     !hasAttachment &&
     !dateAfter &&
-    !dateBefore
+    !dateBefore &&
+    !starred &&
+    !label
   ) {
     throw new BadRequestError('At least one search parameter is required');
   }
@@ -561,6 +576,8 @@ export async function searchMessages(req: AuthRequest, res: Response): Promise<v
     limit, offset, mailboxId, from, to, subject,
     hasAttachment: hasAttachment || undefined,
     dateAfter, dateBefore,
+    starred: starred || undefined,
+    label,
   });
   res.json({
     data: result.data,

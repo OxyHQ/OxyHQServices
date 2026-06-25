@@ -11,6 +11,7 @@
 
 import { OxyServices } from '../../OxyServices';
 import { generateSsoState } from '../OxyServices.sso';
+import { ssoStateKey } from '../../utils/ssoBounce';
 
 interface FetchCall {
   url: string;
@@ -116,6 +117,36 @@ describe('OxyServices.exchangeSsoCode', () => {
 
     await expect(oxy.exchangeSsoCode('')).rejects.toThrow();
     expect(calls).toHaveLength(0);
+  });
+
+  it('rejects a browser SSO exchange when stored state is not echoed', async () => {
+    const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
+    const { calls } = mockFetchOnce(VALID_BODY);
+    const storage = new Map([[ssoStateKey('https://rp.example'), 'expected-state']]);
+    const previousWindow = (globalThis as unknown as { window?: unknown }).window;
+
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: {
+        location: { origin: 'https://rp.example' },
+        sessionStorage: {
+          getItem: (key: string) => storage.get(key) ?? null,
+        },
+      },
+    });
+
+    try {
+      await expect(oxy.exchangeSsoCode('opaque-code-123', 'attacker-state')).rejects.toThrow(
+        'SSO exchange state mismatch',
+      );
+      expect(calls).toHaveLength(0);
+      expect(oxy.hasValidToken()).toBe(false);
+    } finally {
+      Object.defineProperty(globalThis, 'window', {
+        configurable: true,
+        value: previousWindow,
+      });
+    }
   });
 
   it('throws and does not plant a token on a non-2xx response', async () => {
