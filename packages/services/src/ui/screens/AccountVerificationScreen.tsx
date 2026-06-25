@@ -143,9 +143,9 @@ const AccountVerificationScreen: React.FC<BaseScreenProps> = ({
                         disabled={isSubmitting || !reason.trim()}
                     >
                         {isSubmitting ? (
-                            <ActivityIndicator color={bloomTheme.colors.negativeForeground} />
+                            <ActivityIndicator color={bloomTheme.colors.primaryForeground} />
                         ) : (
-                            <Text style={[styles.submitButtonText, { color: bloomTheme.colors.negativeForeground }]}>
+                            <Text style={[styles.submitButtonText, { color: bloomTheme.colors.primaryForeground }]}>
                                 {t('accountVerification.submit') || 'Submit Request'}
                             </Text>
                         )}

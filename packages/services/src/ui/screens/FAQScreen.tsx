@@ -151,7 +151,7 @@ const FAQScreen: React.FC<BaseScreenProps> = ({
                     >
                         <Text style={[
                             styles.categoryChipText,
-                            { color: !selectedCategory ? bloomTheme.colors.negativeForeground : bloomTheme.colors.text }
+                            { color: !selectedCategory ? bloomTheme.colors.primaryForeground : bloomTheme.colors.text }
                         ]}>
                             {t('faq.allCategories') || 'All'}
                         </Text>
@@ -171,7 +171,7 @@ const FAQScreen: React.FC<BaseScreenProps> = ({
                         >
                             <Text style={[
                                 styles.categoryChipText,
-                                { color: selectedCategory === cat ? bloomTheme.colors.negativeForeground : bloomTheme.colors.text }
+                                { color: selectedCategory === cat ? bloomTheme.colors.primaryForeground : bloomTheme.colors.text }
                             ]}>
                                 {cat}
                             </Text>

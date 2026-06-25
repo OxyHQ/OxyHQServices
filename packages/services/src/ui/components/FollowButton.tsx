@@ -122,7 +122,7 @@ const FollowButtonInner = memo(function FollowButtonInner({
       {showLoadingState && isLoading ? (
         <ActivityIndicator
           size="small"
-          color={isFollowing ? colors.text : colors.negativeForeground}
+          color={isFollowing ? colors.text : colors.primaryForeground}
         />
       ) : (
         <Text
@@ -244,7 +244,7 @@ const FollowButtonMultiInner = memo(function FollowButtonMultiInner({
       {showLoadingState && isLoading ? (
         <ActivityIndicator
           size="small"
-          color={allFollowing ? colors.text : colors.negativeForeground}
+          color={allFollowing ? colors.text : colors.primaryForeground}
         />
       ) : (
         <Text

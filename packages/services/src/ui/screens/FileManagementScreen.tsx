@@ -1029,8 +1029,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
     const bloomTheme = useTheme();
     const { colors } = bloomTheme;
-    // FileManagementScreen uses a slightly different light background
-    const backgroundColor = bloomTheme.isDark ? colors.background : '#f2f2f2';
+    // FileManagementScreen uses a slightly elevated page background.
+    const backgroundColor = colors.backgroundSecondary;
     const borderColor = colors.border;
 
     const targetUserId = userId || user?.id;
@@ -1984,12 +1984,12 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         <Text style={[fileManagementStyles.fileName, { color: colors.text }]} numberOfLines={1}>
                             {file.filename}
                         </Text>
-                        <Text style={[fileManagementStyles.fileDetails, { color: bloomTheme.isDark ? '#BBBBBB' : '#666666' }]}>
+                        <Text style={[fileManagementStyles.fileDetails, { color: colors.textSecondary }]}>
                             {formatFileSize(file.length)} • {new Date(file.uploadDate).toLocaleDateString()}
                         </Text>
                         {file.metadata?.description && (
                             <Text
-                                style={[fileManagementStyles.fileDescription, { color: bloomTheme.isDark ? '#AAAAAA' : '#888888' }]}
+                                style={[fileManagementStyles.fileDescription, { color: colors.textTertiary }]}
                                 numberOfLines={2}
                             >
                                 {file.metadata.description}
@@ -2003,7 +2003,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         {/* Preview button for supported files */}
                         {hasPreview && (
                             <TouchableOpacity
-                                style={[fileManagementStyles.actionButton, { backgroundColor: bloomTheme.isDark ? '#333333' : '#F0F0F0' }]}
+                                style={[fileManagementStyles.actionButton, { backgroundColor: colors.backgroundSecondary }]}
                                 onPress={() => handleFileOpen(file)}
                             >
                                 <Ionicons name="eye" size={20} color={colors.primary} />
@@ -2011,7 +2011,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         )}
 
                         <TouchableOpacity
-                            style={[fileManagementStyles.actionButton, { backgroundColor: bloomTheme.isDark ? '#333333' : '#F0F0F0' }]}
+                            style={[fileManagementStyles.actionButton, { backgroundColor: colors.backgroundSecondary }]}
                             onPress={() => handleFileDownload(file.id, file.filename)}
                         >
                             <Ionicons name="download" size={20} color={colors.primary} />
@@ -2019,7 +2019,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
                         {/* Always show delete button for debugging */}
                         <TouchableOpacity
-                            style={[fileManagementStyles.actionButton, { backgroundColor: bloomTheme.isDark ? '#400000' : '#FFEBEE' }]}
+                            style={[fileManagementStyles.actionButton, { backgroundColor: colors.negativeSubtle }]}
                             onPress={() => confirmFileDelete(file.id, file.filename)}
                             disabled={deleting === file.id}
                         >
@@ -2119,20 +2119,20 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     <View style={fileManagementStyles.groupedActions}>
                         {(isImage || isVideo || file.contentType.includes('pdf')) && (
                             <TouchableOpacity
-                                style={[fileManagementStyles.groupedActionBtn, { backgroundColor: bloomTheme.isDark ? '#333333' : '#F0F0F0' }]}
+                                style={[fileManagementStyles.groupedActionBtn, { backgroundColor: colors.backgroundSecondary }]}
                                 onPress={() => handleFileOpen(file)}
                             >
                                 <Ionicons name="eye" size={18} color={colors.primary} />
                             </TouchableOpacity>
                         )}
                         <TouchableOpacity
-                            style={[fileManagementStyles.groupedActionBtn, { backgroundColor: bloomTheme.isDark ? '#333333' : '#F0F0F0' }]}
+                            style={[fileManagementStyles.groupedActionBtn, { backgroundColor: colors.backgroundSecondary }]}
                             onPress={() => handleFileDownload(file.id, file.filename)}
                         >
                             <Ionicons name="download" size={18} color={colors.primary} />
                         </TouchableOpacity>
                         <TouchableOpacity
-                            style={[fileManagementStyles.groupedActionBtn, { backgroundColor: bloomTheme.isDark ? '#400000' : '#FFEBEE' }]}
+                            style={[fileManagementStyles.groupedActionBtn, { backgroundColor: colors.negativeSubtle }]}
                             onPress={() => confirmFileDelete(file.id, file.filename)}
                             disabled={deleting === file.id}
                         >
@@ -2284,9 +2284,9 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         if (photos.length === 0) {
             return (
                 <View style={fileManagementStyles.emptyState}>
-                    <Ionicons name="images-outline" size={64} color={bloomTheme.isDark ? '#666666' : '#CCCCCC'} />
+                    <Ionicons name="images-outline" size={64} color={colors.textTertiary} />
                     <Text style={[fileManagementStyles.emptyStateTitle, { color: colors.text }]}>{t('fileManagement.emptyPhotos.title')}</Text>
-                    <Text style={[fileManagementStyles.emptyStateDescription, { color: bloomTheme.isDark ? '#BBBBBB' : '#666666' }]}> {
+                    <Text style={[fileManagementStyles.emptyStateDescription, { color: colors.textSecondary }]}> {
                         user?.id === targetUserId
                             ? t('fileManagement.emptyPhotos.ownDescription')
                             : t('fileManagement.emptyPhotos.otherDescription')
@@ -2338,7 +2338,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 {loadingDimensions && (
                     <View style={fileManagementStyles.dimensionsLoadingIndicator}>
                         <ActivityIndicator size="small" color={colors.primary} />
-                        <Text style={[fileManagementStyles.dimensionsLoadingText, { color: bloomTheme.isDark ? '#BBBBBB' : '#666666' }]}>{t('fileManagement.loadingPhotoLayout')}</Text>
+                        <Text style={[fileManagementStyles.dimensionsLoadingText, { color: colors.textSecondary }]}>{t('fileManagement.loadingPhotoLayout')}</Text>
                     </View>
                 )}
 
@@ -2378,9 +2378,9 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
     const renderEmptyState = () => (
         <View style={fileManagementStyles.emptyState}>
-            <Ionicons name="folder-open-outline" size={64} color={bloomTheme.isDark ? '#666666' : '#CCCCCC'} />
+            <Ionicons name="folder-open-outline" size={64} color={colors.textTertiary} />
             <Text style={[fileManagementStyles.emptyStateTitle, { color: colors.text }]}>{t('fileManagement.emptyFiles.title')}</Text>
-            <Text style={[fileManagementStyles.emptyStateDescription, { color: bloomTheme.isDark ? '#BBBBBB' : '#666666' }]}>
+            <Text style={[fileManagementStyles.emptyStateDescription, { color: colors.textSecondary }]}>
                 {user?.id === targetUserId
                     ? t('fileManagement.emptyFiles.ownDescription')
                     : t('fileManagement.emptyFiles.otherDescription')
@@ -2444,7 +2444,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                             width,
                             height,
                             borderRadius,
-                            backgroundColor: bloomTheme.isDark ? '#1E1E1E' : '#F5F5F5',
+                            backgroundColor: colors.backgroundSecondary,
                             overflow: 'hidden',
                             position: 'relative',
                         },
@@ -2459,7 +2459,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                             left: 0,
                             right: 0,
                             bottom: 0,
-                            backgroundColor: bloomTheme.isDark ? '#1E1E1E' : '#F5F5F5',
+                            backgroundColor: colors.backgroundSecondary,
                         }}
                     />
                     {/* Shimmer gradient effect */}
@@ -2500,7 +2500,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         alignItems: 'center',
                         paddingHorizontal: 16,
                         paddingVertical: 12,
-                        backgroundColor: bloomTheme.isDark ? '#121212' : '#FFFFFF',
+                        backgroundColor: colors.background,
                         borderBottomWidth: StyleSheet.hairlineWidth,
                         borderBottomColor: colors.border,
                     },
@@ -2965,9 +2965,9 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 >
                     {filteredFiles.length === 0 && searchQuery.length > 0 ? (
                         <View style={fileManagementStyles.emptyState}>
-                            <Ionicons name="search" size={64} color={bloomTheme.isDark ? '#666666' : '#CCCCCC'} />
+                            <Ionicons name="search" size={64} color={colors.textTertiary} />
                             <Text style={[fileManagementStyles.emptyStateTitle, { color: colors.text }]}>{t('fileManagement.noResults.title')}</Text>
-                            <Text style={[fileManagementStyles.emptyStateDescription, { color: bloomTheme.isDark ? '#BBBBBB' : '#666666' }]}>
+                            <Text style={[fileManagementStyles.emptyStateDescription, { color: colors.textSecondary }]}>
                                 {t('fileManagement.noResults.description', { query: searchQuery })}
                             </Text>
                             <TouchableOpacity

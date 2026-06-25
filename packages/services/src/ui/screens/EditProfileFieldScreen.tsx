@@ -496,7 +496,7 @@ const EditProfileFieldScreen: React.FC<EditProfileFieldScreenProps> = ({
                             onPress={handleAddItem}
                             disabled={!newItemValue.trim()}
                         >
-                            <Ionicons name="add" size={20} color={bloomTheme.colors.negativeForeground} />
+                            <Ionicons name="add" size={20} color={bloomTheme.colors.primaryForeground} />
                         </TouchableOpacity>
                     </View>
                 </View>

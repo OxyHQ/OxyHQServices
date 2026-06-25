@@ -8,8 +8,7 @@ import { useTheme } from '@oxyhq/bloom/theme';
 const TrustAboutScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
     const { t } = useI18n();
     const bloomTheme = useTheme();
-    // Override primaryColor for Oxy Trust screens (purple instead of blue)
-    const primaryColor = '#d169e5';
+    const primaryColor = bloomTheme.colors.primary;
 
     return (
         <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>

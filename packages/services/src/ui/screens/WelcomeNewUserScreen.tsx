@@ -266,7 +266,7 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
                                 style={styles.avatar}
                             />
                             <TouchableOpacity style={styles.changeAvatarButton} className="bg-primary" onPress={openAvatarPicker}>
-                                <Ionicons name="image-outline" size={18} color={bloomTheme.colors.negativeForeground} />
+                                <Ionicons name="image-outline" size={18} color={bloomTheme.colors.primaryForeground} />
                                 <Text style={styles.changeAvatarText}>{avatarUri ? (t('welcomeNew.avatar.change') || 'Change Avatar') : (t('welcomeNew.avatar.add') || 'Add Avatar')}</Text>
                             </TouchableOpacity>
                         </View>
@@ -351,7 +351,7 @@ const createStyles = (colors: ReturnType<typeof useTheme>['colors']) => {
             ...(Platform.OS === 'web' ? { boxShadow: 'none' } : null),
         },
         changeAvatarText: {
-            color: colors.negativeForeground,
+            color: colors.primaryForeground,
             fontSize: 15,
             fontWeight: '600',
         },

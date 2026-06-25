@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useCallback, useMemo, type ErrorInfo } from 'react';
-import { BackHandler, View, StyleSheet, Text, type StyleProp, type ViewStyle } from 'react-native';
+import { BackHandler, Platform, View, StyleSheet, Text, type StyleProp, type ViewStyle } from 'react-native';
 import { useStore } from 'zustand';
 import type { RouteName } from '../navigation/routes';
 import { getScreenComponent, getSheetConfig, isValidRoute } from '../navigation/routes';
@@ -115,6 +115,7 @@ const BottomSheetRouter: React.FC<BottomSheetRouterProps> = ({ onScreenChange, o
     // Android back button
     useEffect(() => {
         if (!isOpen) return;
+        if (Platform.OS !== 'android') return;
         const handler = BackHandler.addEventListener('hardwareBackPress', () => {
             handleGoBack();
             return true;

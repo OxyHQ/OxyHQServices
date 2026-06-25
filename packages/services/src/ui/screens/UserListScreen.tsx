@@ -253,7 +253,7 @@ const UserListScreen: React.FC<UserListScreenProps> = ({
           <Ionicons name="alert-circle" size={48} color={bloomTheme.colors.error} />
           <Text style={styles.errorText} className="text-destructive">{error}</Text>
           <TouchableOpacity style={styles.retryButton} className="bg-primary" onPress={() => fetchUsers(0)}>
-            <Text style={[styles.retryButtonText, { color: bloomTheme.colors.negativeForeground }]}>{t('common.retry') || 'Retry'}</Text>
+            <Text style={[styles.retryButtonText, { color: bloomTheme.colors.primaryForeground }]}>{t('common.retry') || 'Retry'}</Text>
           </TouchableOpacity>
         </View>
       </View>

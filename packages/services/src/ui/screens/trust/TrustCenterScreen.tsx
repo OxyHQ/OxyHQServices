@@ -39,8 +39,7 @@ const TrustCenterScreen: React.FC<BaseScreenProps> = ({
     const colorScheme = useColorScheme();
     const normalizedColorScheme = normalizeColorScheme(colorScheme);
     const themeColors = Colors[normalizedColorScheme];
-    // Override primaryColor for Oxy Trust screens (purple instead of blue)
-    const primaryColor = '#d169e5';
+    const primaryColor = bloomTheme.colors.primary;
     const dangerColor = bloomTheme.colors.error;
     const mutedTextColor = bloomTheme.colors.textTertiary;
 

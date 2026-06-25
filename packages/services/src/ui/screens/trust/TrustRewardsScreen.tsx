@@ -34,9 +34,7 @@ const TrustRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
     const colorScheme = useColorScheme();
     const normalizedColorScheme = normalizeColorScheme(colorScheme);
     const colors = Colors[normalizedColorScheme];
-    const themeStyles = useMemo(() => ({
-        primaryColor: '#d169e5',
-    }), []);
+    const primaryColor = bloomTheme.colors.primary;
 
     useEffect(() => {
         if (!user || !isAuthenticated) {
@@ -289,7 +287,7 @@ const TrustRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
                             {isLocked ? (
                                 <Ionicons name="lock-closed" size={40} color={bloomTheme.colors.textTertiary} />
                             ) : (
-                                <Ionicons name={achievement.icon as React.ComponentProps<typeof Ionicons>['name']} size={40} color={bloomTheme.colors.negativeForeground} />
+                                <Ionicons name={achievement.icon as React.ComponentProps<typeof Ionicons>['name']} size={40} color="#FFFFFF" />
                             )}
                         </View>
 
@@ -314,7 +312,7 @@ const TrustRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
                     {/* Rarity badge - small accent in corner */}
                     {achievement.unlocked && (
                         <View style={[styles.rarityBadge, { backgroundColor: rarityColor, borderColor: darkenColor(rarityColor, 0.4) }]}>
-                            <Text style={[styles.rarityText, { color: bloomTheme.colors.negativeForeground }]}>{achievement.rarity[0].toUpperCase()}</Text>
+                            <Text style={[styles.rarityText, { color: '#FFFFFF' }]}>{achievement.rarity[0].toUpperCase()}</Text>
                         </View>
                     )}
                 </View>
@@ -363,7 +361,7 @@ const TrustRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
                 <View style={[styles.statsCard, { backgroundColor: colors.card }]}>
                     <View style={styles.statsHeader}>
                         <View>
-                            <Text style={[styles.currentReputation, { color: themeStyles.primaryColor }]}>
+                            <Text style={[styles.currentReputation, { color: primaryColor }]}>
                                 {reputationTotal}
                             </Text>
                             <Text style={[styles.reputationLabel, { color: bloomTheme.colors.textTertiary }]}>
@@ -371,7 +369,7 @@ const TrustRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
                             </Text>
                         </View>
                         <View style={styles.achievementStats}>
-                            <Text style={[styles.achievementCount, { color: themeStyles.primaryColor }]}>
+                            <Text style={[styles.achievementCount, { color: primaryColor }]}>
                                 {unlockedAchievements.length}
                             </Text>
                             <Text style={[styles.achievementCountLabel, { color: bloomTheme.colors.textTertiary }]}>
@@ -386,7 +384,7 @@ const TrustRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
                                     styles.progressBarFill,
                                     {
                                         width: `${(unlockedAchievements.length / achievements.length) * 100}%`,
-                                        backgroundColor: themeStyles.primaryColor,
+                                        backgroundColor: primaryColor,
                                     },
                                 ]}
                             />

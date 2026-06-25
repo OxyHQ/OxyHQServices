@@ -123,8 +123,8 @@ const UploadPreviewContent: React.FC<{
                             style={fileManagementStyles.uploadPreviewConfirmButton}
                             onPress={onConfirm}
                         >
-                            <Ionicons name="cloud-upload" size={20} color={colors.negativeForeground} />
-                            <Text style={fileManagementStyles.uploadPreviewConfirmText}>Upload</Text>
+                            <Ionicons name="cloud-upload" size={20} color={colors.primaryForeground} />
+                            <Text style={[fileManagementStyles.uploadPreviewConfirmText, { color: colors.primaryForeground }]}>Upload</Text>
                         </TouchableOpacity>
                     </View>
                 )}

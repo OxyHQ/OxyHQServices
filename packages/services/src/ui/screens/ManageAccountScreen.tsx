@@ -358,10 +358,10 @@ const ManageAccountScreen: React.FC<BaseScreenProps> = ({
                         <View
                             style={[
                                 styles.avatarBadge,
-                                { backgroundColor: bloomTheme.colors.primary },
+                                { backgroundColor: bloomTheme.colors.primary, borderColor: bloomTheme.colors.card },
                             ]}
                         >
-                            <Ionicons name="camera" size={14} color={bloomTheme.colors.negativeForeground} />
+                            <Ionicons name="camera" size={14} color={bloomTheme.colors.primaryForeground} />
                         </View>
                     </TouchableOpacity>
                     <Text
@@ -1072,7 +1072,6 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         borderWidth: 2,
-        borderColor: '#fff',
     },
     displayName: {
         fontSize: 22,

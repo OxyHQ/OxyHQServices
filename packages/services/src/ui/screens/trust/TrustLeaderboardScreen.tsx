@@ -19,8 +19,7 @@ const TrustLeaderboardScreen: React.FC<BaseScreenProps> = ({ goBack, theme, navi
     const [error, setError] = useState<string | null>(null);
 
     const bloomTheme = useTheme();
-    // Override primaryColor for Oxy Trust screens (purple instead of blue)
-    const primaryColor = '#d169e5';
+    const primaryColor = bloomTheme.colors.primary;
 
     useEffect(() => {
         setIsLoading(true);

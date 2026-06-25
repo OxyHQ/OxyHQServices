@@ -266,8 +266,8 @@ export const FileViewer: React.FC<FileViewerProps> = ({
                             style={fileManagementStyles.downloadButtonLarge}
                             onPress={() => onDownload(file.id, file.filename)}
                         >
-                            <MaterialCommunityIcons name="download" size={18} color={colors.negativeForeground} />
-                            <Text style={fileManagementStyles.downloadButtonText}>Download PDF</Text>
+                            <MaterialCommunityIcons name="download" size={18} color={colors.primaryForeground} />
+                            <Text style={[fileManagementStyles.downloadButtonText, { color: colors.primaryForeground }]}>Download PDF</Text>
                         </TouchableOpacity>
                     </View>
                 ) : isVideo && fileContent ? (
@@ -289,8 +289,8 @@ export const FileViewer: React.FC<FileViewerProps> = ({
                             style={fileManagementStyles.downloadButtonLarge}
                             onPress={() => onDownload(file.id, file.filename)}
                         >
-                            <MaterialCommunityIcons name="download" size={18} color={colors.negativeForeground} />
-                            <Text style={fileManagementStyles.downloadButtonText}>Download Video</Text>
+                            <MaterialCommunityIcons name="download" size={18} color={colors.primaryForeground} />
+                            <Text style={[fileManagementStyles.downloadButtonText, { color: colors.primaryForeground }]}>Download Video</Text>
                         </TouchableOpacity>
                     </View>
                 ) : isAudio && fileContent ? (
@@ -312,8 +312,8 @@ export const FileViewer: React.FC<FileViewerProps> = ({
                             style={fileManagementStyles.downloadButtonLarge}
                             onPress={() => onDownload(file.id, file.filename)}
                         >
-                            <MaterialCommunityIcons name="download" size={18} color={colors.negativeForeground} />
-                            <Text style={fileManagementStyles.downloadButtonText}>Download Audio</Text>
+                            <MaterialCommunityIcons name="download" size={18} color={colors.primaryForeground} />
+                            <Text style={[fileManagementStyles.downloadButtonText, { color: colors.primaryForeground }]}>Download Audio</Text>
                         </TouchableOpacity>
                     </View>
                 ) : (
@@ -335,8 +335,8 @@ export const FileViewer: React.FC<FileViewerProps> = ({
                             style={fileManagementStyles.downloadButtonLarge}
                             onPress={() => onDownload(file.id, file.filename)}
                         >
-                            <MaterialCommunityIcons name="download" size={18} color={colors.negativeForeground} />
-                            <Text style={fileManagementStyles.downloadButtonText}>Download File</Text>
+                            <MaterialCommunityIcons name="download" size={18} color={colors.primaryForeground} />
+                            <Text style={[fileManagementStyles.downloadButtonText, { color: colors.primaryForeground }]}>Download File</Text>
                         </TouchableOpacity>
                     </View>
                 )}
@@ -387,7 +387,7 @@ export const FileViewer: React.FC<FileViewerProps> = ({
                                     }}
                                 >
                                     <MaterialCommunityIcons name="delete" size={16} color={colors.negativeForeground} />
-                                    <Text style={fileManagementStyles.fileDetailsActionText}>Delete</Text>
+                                    <Text style={[fileManagementStyles.fileDetailsActionText, { color: colors.negativeForeground }]}>Delete</Text>
                                 </TouchableOpacity>
                             </View>
                         )}

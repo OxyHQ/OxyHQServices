@@ -239,9 +239,9 @@ const CreateManagedAccountScreen: React.FC<BaseScreenProps> = ({
             activeOpacity={0.7}
           >
             {isCreating ? (
-              <ActivityIndicator size="small" color={bloomTheme.colors.negativeForeground} />
+              <ActivityIndicator size="small" color={bloomTheme.colors.primaryForeground} />
             ) : (
-              <Text style={[styles.createButtonText, { color: bloomTheme.colors.negativeForeground }]}>Create Identity</Text>
+              <Text style={[styles.createButtonText, { color: bloomTheme.colors.primaryForeground }]}>Create Identity</Text>
             )}
           </TouchableOpacity>
         </ScrollView>

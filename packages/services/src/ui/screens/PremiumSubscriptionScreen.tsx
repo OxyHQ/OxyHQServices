@@ -633,7 +633,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
 
     const renderBillingToggle = () => (
         <View style={styles.section}>
-            <View style={styles.billingToggle}>
+            <View style={[styles.billingToggle, { backgroundColor: bloomTheme.colors.backgroundSecondary }]}>
                 <TouchableOpacity
                     style={[
                         styles.billingOption,
@@ -643,7 +643,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                 >
                     <Text style={[
                         styles.billingOptionText,
-                        { color: billingInterval === 'month' ? bloomTheme.colors.negativeForeground : textColor }
+                        { color: billingInterval === 'month' ? bloomTheme.colors.primaryForeground : textColor }
                     ]}>
                         {t('premium.billing.monthly') || 'Monthly'}
                     </Text>
@@ -658,7 +658,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                 >
                     <Text style={[
                         styles.billingOptionText,
-                        { color: billingInterval === 'year' ? bloomTheme.colors.negativeForeground : textColor }
+                        { color: billingInterval === 'year' ? bloomTheme.colors.primaryForeground : textColor }
                     ]}>
                         {t('premium.billing.yearly') || 'Yearly'}
                     </Text>
@@ -783,11 +783,11 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                         disabled={processingPayment}
                     >
                         {processingPayment ? (
-                            <ActivityIndicator color={bloomTheme.colors.negativeForeground} size="small" />
+                            <ActivityIndicator color={bloomTheme.colors.primaryForeground} size="small" />
                         ) : (
                             <Text style={[
                                 styles.selectPlanText,
-                                { color: plan.isPopular ? bloomTheme.colors.negativeForeground : textColor }
+                                { color: plan.isPopular ? bloomTheme.colors.primaryForeground : textColor }
                             ]}>
                                 {t('premium.actions.subscribeTo', { name: plan.name }) || `Subscribe to ${plan.name}`}
                             </Text>
@@ -880,7 +880,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                 ]}
             >
                 <View style={styles.featureHeader}>
-                    <View style={styles.featureIconContainer}>
+                    <View style={[styles.featureIconContainer, { backgroundColor: bloomTheme.colors.backgroundSecondary }]}>
                         <Ionicons
                             name={getCategoryIcon(feature.category) as React.ComponentProps<typeof Ionicons>['name']}
                             size={24}
@@ -918,13 +918,13 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
 
                 {isIncludedInCurrentPlan ? (
                     <View style={[styles.includedInPlanButton, { backgroundColor: primaryColor }]}>
-                        <Ionicons name="checkmark-circle" size={16} color={bloomTheme.colors.negativeForeground} />
-                        <Text style={styles.includedInPlanText}>{t('premium.feature.includedInPlan') || 'Included in your plan'}</Text>
+                        <Ionicons name="checkmark-circle" size={16} color={bloomTheme.colors.primaryForeground} />
+                        <Text style={[styles.includedInPlanText, { color: bloomTheme.colors.primaryForeground }]}>{t('premium.feature.includedInPlan') || 'Included in your plan'}</Text>
                     </View>
                 ) : isSubscribed ? (
                     <View style={styles.featureActions}>
                         <View style={[styles.subscribedButton, { backgroundColor: successColor }]}>
-                            <Ionicons name="checkmark" size={16} color={bloomTheme.colors.negativeForeground} />
+                            <Ionicons name="checkmark" size={16} color="#FFFFFF" />
                             <Text style={styles.subscribedText}>{t('premium.feature.subscribed') || 'Subscribed'}</Text>
                         </View>
                         <TouchableOpacity
@@ -941,9 +941,9 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                         disabled={processingPayment}
                     >
                         {processingPayment ? (
-                            <ActivityIndicator color={bloomTheme.colors.negativeForeground} size="small" />
+                            <ActivityIndicator color={bloomTheme.colors.primaryForeground} size="small" />
                         ) : (
-                            <Text style={styles.subscribeFeatureText}>{t('premium.actions.subscribe') || 'Subscribe'}</Text>
+                            <Text style={[styles.subscribeFeatureText, { color: bloomTheme.colors.primaryForeground }]}>{t('premium.actions.subscribe') || 'Subscribe'}</Text>
                         )}
                     </TouchableOpacity>
                 ) : (
@@ -1015,7 +1015,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                             >
                                 <Text style={[
                                     styles.appSwitcherButtonText,
-                                    { color: currentAppPackage === app ? bloomTheme.colors.negativeForeground : textColor }
+                                    { color: currentAppPackage === app ? bloomTheme.colors.primaryForeground : textColor }
                                 ]}>
                                     {app}
                                 </Text>
@@ -1251,7 +1251,6 @@ const styles = StyleSheet.create({
     },
     billingToggle: {
         flexDirection: 'row',
-        backgroundColor: 'rgba(0, 0, 0, 0.05)',
         borderRadius: 8,
         padding: 4,
         marginBottom: 12,
@@ -1406,7 +1405,6 @@ const styles = StyleSheet.create({
         width: 40,
         height: 40,
         borderRadius: 20,
-        backgroundColor: 'rgba(0, 122, 255, 0.1)',
         justifyContent: 'center',
         alignItems: 'center',
         marginRight: 12,
