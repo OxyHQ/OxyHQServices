@@ -56,8 +56,8 @@ jest.mock('../../models/FedCMClient', () => ({
   },
 }));
 
-// The canonical Application registry — production RP origins are derived from
-// each active application's redirectUris.
+// The canonical Application registry — trusted production RP origins are derived
+// from active Applications whose staff-controlled trust fields approve them.
 jest.mock('../../models/Application', () => ({
   __esModule: true,
   Application: { find: mockAppFind },
@@ -156,11 +156,10 @@ function createReq(originHeader?: string | null): Request {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  // Default approval source: an ACTIVE Application whose redirectUri lives on
-  // APPROVED_ORIGIN — so the derived approved-origins set contains it. This is
-  // the new single source of truth (replaces the old hardcoded FedCMClient list).
+  // Default approval source: a staff-trusted ACTIVE Application whose redirectUri
+  // lives on APPROVED_ORIGIN — so the derived approved-origins set contains it.
   mockAppFind.mockReturnValue(
-    leanQuery([{ name: 'Relying Party', redirectUris: [`${APPROVED_ORIGIN}/__oxy/sso-callback`] }])
+    leanQuery([{ name: 'Relying Party', type: 'first_party', redirectUris: [`${APPROVED_ORIGIN}/__oxy/sso-callback`] }])
   );
   // Default nonce claim: succeeds for the expected origin.
   mockFindOneAndUpdate.mockResolvedValue({
@@ -397,27 +396,27 @@ describe('FedCM recordGrant', () => {
   });
 });
 
-describe('FedCM approved-origins derivation (Application registry = single source of truth)', () => {
+describe('FedCM approved-origins derivation (trusted Application registry + manual approvals)', () => {
   const DEV_NATIVE = ['http://localhost:3000', 'http://localhost:8081', 'astro://auth'];
 
-  it('derives every active application redirectUri origin (so a new app is auto-approved)', async () => {
-    // 12-app prod shape: registering an app with a /__oxy/sso-callback redirect
-    // auto-approves its SSO origin — the fix for console.oxy.so being rejected.
+  it('derives redirectUri origins only from active staff-trusted applications', async () => {
+    // 12-app prod shape: staff-controlled trust fields approve the official RP
+    // origins without letting arbitrary third-party apps self-approve.
     mockAppFind.mockReturnValueOnce(
       leanQuery([
-        { name: 'Oxy Website', redirectUris: ['https://oxy.so/__oxy/sso-callback', 'https://fairco.in/__oxy/sso-callback'] },
-        { name: 'Oxy Accounts', redirectUris: ['https://accounts.oxy.so/__oxy/sso-callback'] },
-        { name: 'Oxy Console', redirectUris: ['https://console.oxy.so/__oxy/sso-callback'] },
-        { name: 'Oxy Inbox', redirectUris: ['https://inbox.oxy.so/__oxy/sso-callback'] },
-        { name: 'Oxy Pay', redirectUris: ['https://pay.oxy.so/__oxy/sso-callback'] },
-        { name: 'Allo', redirectUris: ['https://allo.oxy.so/__oxy/sso-callback'] },
-        { name: 'Syra', redirectUris: ['https://syra.oxy.so/__oxy/sso-callback'] },
-        { name: 'Homiio', redirectUris: ['https://homiio.com/__oxy/sso-callback'] },
-        { name: 'Mention', redirectUris: ['https://mention.earth/__oxy/sso-callback'] },
-        { name: 'Alia', redirectUris: ['https://alia.onl/__oxy/sso-callback'] },
-        { name: 'TNP', redirectUris: ['https://tnp.network/__oxy/sso-callback'] },
+        { name: 'Oxy Website', isOfficial: true, redirectUris: ['https://oxy.so/__oxy/sso-callback', 'https://fairco.in/__oxy/sso-callback'] },
+        { name: 'Oxy Accounts', type: 'first_party', redirectUris: ['https://accounts.oxy.so/__oxy/sso-callback'] },
+        { name: 'Oxy Console', type: 'first_party', redirectUris: ['https://console.oxy.so/__oxy/sso-callback'] },
+        { name: 'Oxy Inbox', type: 'first_party', redirectUris: ['https://inbox.oxy.so/__oxy/sso-callback'] },
+        { name: 'Oxy Pay', isOfficial: true, redirectUris: ['https://pay.oxy.so/__oxy/sso-callback'] },
+        { name: 'Allo', isOfficial: true, redirectUris: ['https://allo.oxy.so/__oxy/sso-callback'] },
+        { name: 'Syra', isOfficial: true, redirectUris: ['https://syra.oxy.so/__oxy/sso-callback'] },
+        { name: 'Homiio', isOfficial: true, redirectUris: ['https://homiio.com/__oxy/sso-callback'] },
+        { name: 'Mention', isOfficial: true, redirectUris: ['https://mention.earth/__oxy/sso-callback'] },
+        { name: 'Alia', isOfficial: true, redirectUris: ['https://alia.onl/__oxy/sso-callback'] },
+        { name: 'TNP', isOfficial: true, redirectUris: ['https://tnp.network/__oxy/sso-callback'] },
         // An app with no redirectUris contributes no origin (Oxy Auth IdP).
-        { name: 'Oxy Auth', redirectUris: [] },
+        { name: 'Oxy Auth', type: 'system', redirectUris: [] },
       ])
     );
 
@@ -430,8 +429,15 @@ describe('FedCM approved-origins derivation (Application registry = single sourc
     ]) {
       expect(origins).toContain(expected);
     }
-    // The Application registry MUST be the source (not a hardcoded FedCMClient list).
-    expect(mockAppFind).toHaveBeenCalledWith({ status: 'active' });
+    // The trusted Application registry MUST be the source (not a hardcoded FedCMClient list).
+    expect(mockAppFind).toHaveBeenCalledWith({
+      status: 'active',
+      $or: [
+        { isOfficial: true },
+        { isInternal: true },
+        { type: { $in: ['first_party', 'internal', 'system'] } },
+      ],
+    });
   });
 
   it('always includes the dev/native origins (not modelled as Applications)', async () => {
@@ -446,19 +452,42 @@ describe('FedCM approved-origins derivation (Application registry = single sourc
     // The service only queries { status: 'active' }; a suspended app is never
     // returned by that query, so its origin must not appear.
     mockAppFind.mockReturnValueOnce(
-      leanQuery([{ name: 'Active App', redirectUris: ['https://active.example/__oxy/sso-callback'] }])
+      leanQuery([{ name: 'Active App', type: 'first_party', redirectUris: ['https://active.example/__oxy/sso-callback'] }])
     );
     const origins = await fedcmService.getApprovedClientOrigins();
 
     expect(origins).toContain('https://active.example');
     expect(origins).not.toContain('https://suspended.example');
     // Guard: the query filters to active only.
-    expect(mockAppFind).toHaveBeenCalledWith({ status: 'active' });
+    expect(mockAppFind).toHaveBeenCalledWith({
+      status: 'active',
+      $or: [
+        { isOfficial: true },
+        { isInternal: true },
+        { type: { $in: ['first_party', 'internal', 'system'] } },
+      ],
+    });
+  });
+
+  it('does NOT query user-created third_party apps as SSO-approved clients', async () => {
+    mockAppFind.mockReturnValueOnce(leanQuery([]));
+
+    const origins = await fedcmService.getApprovedClientOrigins();
+
+    expect(origins).not.toContain('https://attacker.example');
+    expect(mockAppFind).toHaveBeenCalledWith({
+      status: 'active',
+      $or: [
+        { isOfficial: true },
+        { isInternal: true },
+        { type: { $in: ['first_party', 'internal', 'system'] } },
+      ],
+    });
   });
 
   it('normalises derived origins (lowercases host, strips path/trailing slash)', async () => {
     mockAppFind.mockReturnValueOnce(
-      leanQuery([{ name: 'Mixed Case', redirectUris: ['HTTPS://Console.OXY.so/__oxy/sso-callback'] }])
+      leanQuery([{ name: 'Mixed Case', type: 'first_party', redirectUris: ['HTTPS://Console.OXY.so/__oxy/sso-callback'] }])
     );
     const origins = await fedcmService.getApprovedClientOrigins();
     expect(origins).toContain('https://console.oxy.so');
@@ -484,7 +513,7 @@ describe('FedCM approved-origins derivation (Application registry = single sourc
   });
 });
 
-describe('FedCM seedApprovedClients (dev/native only — prod origins derive from the registry)', () => {
+describe('FedCM seedApprovedClients (dev/native only — trusted prod origins derive from the registry)', () => {
   function seededOrigins(): string[] {
     return mockClientFindOneAndUpdate.mock.calls.map((call) => call[0].origin);
   }
@@ -497,7 +526,7 @@ describe('FedCM seedApprovedClients (dev/native only — prod origins derive fro
       expect.arrayContaining(['http://localhost:3000', 'http://localhost:8081', 'astro://auth'])
     );
     // The hardcoded prod app list is GONE — these must NOT be seeded as FedCMClient
-    // rows; they are derived from the Application registry instead.
+    // rows; they are derived from trusted Application records instead.
     for (const prod of ['https://console.oxy.so', 'https://mention.earth', 'https://oxy.so', 'https://fairco.in']) {
       expect(origins).not.toContain(prod);
     }
@@ -535,11 +564,11 @@ describe('FedCM seedApprovedClients (dev/native only — prod origins derive fro
   });
 });
 
-describe('FedCM getUserAuthorizedApps (display names from the Application registry)', () => {
+describe('FedCM getUserAuthorizedApps (display names from trusted Applications)', () => {
   it('labels a granted origin with its Application name + description', async () => {
     mockAppFind.mockReturnValue(
       leanQuery([
-        { name: 'Oxy Console', description: 'Developer console', redirectUris: ['https://console.oxy.so/__oxy/sso-callback'] },
+        { name: 'Oxy Console', description: 'Developer console', type: 'first_party', redirectUris: ['https://console.oxy.so/__oxy/sso-callback'] },
       ])
     );
     mockGrantFind.mockReturnValueOnce(

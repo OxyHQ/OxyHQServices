@@ -16,15 +16,24 @@ import { formatUserNameResponse } from '../utils/displayName';
  * Origins that must be approved as FedCM/SSO clients but are NOT represented by
  * a registered {@link Application} — local dev servers and the native app
  * callback scheme. These are intentionally a small, explicit constant: every
- * PRODUCTION RP origin is derived from the Application registry instead (see
- * `deriveApprovedOrigins`), so a newly-registered app is auto-approved and no
- * production origin is ever "forgotten" in a hand-maintained list.
+ * trusted PRODUCTION RP origin is derived from staff-approved Application
+ * metadata instead (see `fetchApprovedClientOrigins`), so user-created
+ * third-party apps cannot self-approve SSO origins.
  */
 const DEV_NATIVE_APPROVED_ORIGINS = [
   'http://localhost:3000',
   'http://localhost:8081',
   'astro://auth',
 ] as const;
+
+const TRUSTED_APPLICATION_FEDCM_FILTER = {
+  status: 'active',
+  $or: [
+    { isOfficial: true },
+    { isInternal: true },
+    { type: { $in: ['first_party', 'internal', 'system'] } },
+  ],
+};
 
 const NONCE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const NONCE_BYTES = 32;
@@ -156,13 +165,11 @@ class FedCMService {
   /**
    * Uncached read of all approved client origins straight from Mongo.
    *
-   * Single source of truth: the production RP origins are DERIVED from the
-   * canonical {@link Application} registry — for every `status: 'active'`
-   * application, each of its `redirectUris` contributes its origin
-   * (`new URL(uri).origin`, normalised). Registering an app with a
-   * `https://<app>/__oxy/sso-callback` redirect therefore auto-approves its SSO
-   * origin; nothing has to be added to a hand-maintained list, so no app is
-   * ever forgotten (the bug that rejected console.oxy.so).
+   * Single source of truth for production first-party RP origins: derive origins
+   * from the canonical {@link Application} registry, but only for active apps
+   * whose staff-controlled trust fields mark them as platform-approved. Normal
+   * user-created third-party apps are active too, so `status: 'active'` alone is
+   * not a trust boundary for FedCM/SSO session minting.
    *
    * Unioned with:
    *  - {@link DEV_NATIVE_APPROVED_ORIGINS} (localhost dev + native scheme — not
@@ -187,7 +194,7 @@ class FedCMService {
 
     try {
       const [apps, manualClients] = await Promise.all([
-        Application.find({ status: 'active' }).select('redirectUris').lean(),
+        Application.find(TRUSTED_APPLICATION_FEDCM_FILTER).select('redirectUris').lean(),
         // Manual/admin-approved escape-hatch entries (not Applications).
         FedCMClient.find({ approved: true }).select('origin').lean(),
       ]);
@@ -225,7 +232,7 @@ class FedCMService {
     const catalog = new Map<string, { name: string; description?: string }>();
     try {
       const [apps, manualClients] = await Promise.all([
-        Application.find({ status: 'active' }).select('name description redirectUris').lean(),
+        Application.find(TRUSTED_APPLICATION_FEDCM_FILTER).select('name description redirectUris').lean(),
         FedCMClient.find({ approved: true }).select('origin name description').lean(),
       ]);
 
@@ -270,8 +277,9 @@ class FedCMService {
   /**
    * Seed the dev/native FedCM clients (idempotent — run on startup).
    *
-   * PRODUCTION RP origins are NOT seeded here: they are derived live from the
-   * {@link Application} registry by {@link fetchApprovedClientOrigins}. This
+   * PRODUCTION RP origins are NOT seeded here: trusted first-party/internal
+   * origins are derived live from the {@link Application} registry by
+   * {@link fetchApprovedClientOrigins}. This
    * function only persists the small {@link DEV_NATIVE_APPROVED_ORIGINS} set
    * (localhost + native scheme) as {@link FedCMClient} rows so they survive in
    * the admin-visible collection and the `getUserAuthorizedApps` catalog.
@@ -318,7 +326,7 @@ class FedCMService {
         );
       }
 
-      logger.info(`Seeded ${devNativeClients.length} dev/native FedCM clients (production origins derive from the Application registry)`);
+      logger.info(`Seeded ${devNativeClients.length} dev/native FedCM clients (trusted production origins derive from the Application registry)`);
       // Drop any list cached before/during seeding so the first read after
       // boot reflects the freshly-seeded allow-list.
       approvedClientsCache.invalidate();
