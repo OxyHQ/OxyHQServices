@@ -7,11 +7,12 @@ import type {
  * Predicate: may this credential currently be used to authenticate?
  *
  * A credential is usable when:
- *  - it is `active`, OR it is `deprecated` (rotated within its grace window); AND
- *  - it has no `expiresAt`, or `expiresAt` is still in the future.
+ *  - it is `active` and has no `expiresAt` or a future `expiresAt`; OR
+ *  - it is `deprecated` and has a future `expiresAt` (rotation grace window).
  *
- * `revoked` credentials are NEVER usable. `deprecated` credentials remain usable
- * only until their grace `expiresAt` elapses (set during rotation). This is the
+ * `revoked` credentials are NEVER usable. `deprecated` credentials MUST have
+ * an explicit future grace `expiresAt` (set during rotation); a deprecated
+ * credential without an expiry is treated as disabled. This is the
  * single source of truth shared by every credential-resolution site (OAuth
  * authorize/token, service-token mint) — do not duplicate the predicate.
  *
@@ -24,13 +25,13 @@ export function isCredentialUsable(
   if (credential.status === 'revoked') {
     return false;
   }
-  if (credential.status !== 'active' && credential.status !== 'deprecated') {
-    return false;
+  if (credential.status === 'active') {
+    return !credential.expiresAt || credential.expiresAt.getTime() > Date.now();
   }
-  if (credential.expiresAt && credential.expiresAt.getTime() <= Date.now()) {
-    return false;
+  if (credential.status === 'deprecated') {
+    return Boolean(credential.expiresAt && credential.expiresAt.getTime() > Date.now());
   }
-  return true;
+  return false;
 }
 
 export type { IApplicationCredential };

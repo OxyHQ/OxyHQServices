@@ -327,6 +327,21 @@ describe('POST /auth/service-token — credential resolution + JWT claims (#215)
     expect(typeof res.body.data?.token).toBe('string');
   });
 
+  it('rejects a deprecated credential without an explicit grace expiry', async () => {
+    mockApplicationCredentialFindOne.mockResolvedValue(
+      stubCredential({
+        status: 'deprecated',
+      })
+    );
+
+    const res = await requestJson(server, 'POST', '/auth/service-token', {
+      apiKey: API_KEY,
+      apiSecret: PLAINTEXT_SECRET,
+    });
+
+    expect(res.status).toBe(401);
+  });
+
   it('rejects a deprecated credential whose grace window has expired', async () => {
     mockApplicationCredentialFindOne.mockResolvedValue(
       stubCredential({
