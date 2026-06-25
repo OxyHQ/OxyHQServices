@@ -287,8 +287,9 @@ export class OxyServicesBase {
 
     try {
       const decoded = jwtDecode<JwtPayload>(accessToken);
-      this._cachedUserId = decoded.userId || decoded.id || null;
-      return this._cachedUserId;
+      const userId = decoded.userId || decoded.id || null;
+      this._cachedUserId = userId;
+      return userId;
     } catch {
       this._cachedUserId = null;
       return null;
