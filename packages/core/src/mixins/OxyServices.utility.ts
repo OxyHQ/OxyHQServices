@@ -856,8 +856,8 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
             return next(new Error('Invalid token'));
           }
 
-          const userId = decoded.userId || decoded.id;
-          if (!userId) {
+          const claimedUserId = decoded.userId || decoded.id;
+          if (!claimedUserId) {
             return next(new Error('Invalid token payload'));
           }
 
@@ -866,24 +866,33 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
             return next(new Error('Token expired'));
           }
 
-          // Validate session if available
-          if (decoded.sessionId) {
-            try {
-              const result = await oxyInstance.validateSession(decoded.sessionId, {
-                useHeaderValidation: true,
-              });
-              if (!result || !result.valid) {
-                return next(new Error('Session invalid'));
-              }
-            } catch (validateErr) {
-              if (debug) {
-                logger.debug('[oxy.authSocket] Session validation failed', {
-                  component: 'auth',
-                  method: 'authSocket',
-                }, validateErr);
-              }
-              return next(new Error('Session validation failed'));
+          if (!decoded.sessionId) {
+            return next(new Error('Session required'));
+          }
+
+          let userId = claimedUserId;
+          try {
+            const result = await oxyInstance.validateSession(decoded.sessionId, {
+              useHeaderValidation: true,
+            });
+            if (!result || !result.valid || !result.user) {
+              return next(new Error('Session invalid'));
             }
+
+            const validatedUserId = getUserIdentityId(result.user);
+            if (!validatedUserId || validatedUserId !== claimedUserId) {
+              return next(new Error('Session user mismatch'));
+            }
+
+            userId = validatedUserId;
+          } catch (validateErr) {
+            if (debug) {
+              logger.debug('[oxy.authSocket] Session validation failed', {
+                component: 'auth',
+                method: 'authSocket',
+              }, validateErr);
+            }
+            return next(new Error('Session validation failed'));
           }
 
           // Attach user data to socket. We expose BOTH `socket.data.userId`
@@ -1051,6 +1060,12 @@ async function verifyServiceTokenSignature(token: string, secret: string): Promi
  * access token signed by the same shared secret could be replayed as a
  * service token because no claim binding existed.
  */
+
+function getUserIdentityId(user: User): string | null {
+  const candidate = (user as User & { _id?: unknown }).id ?? (user as User & { _id?: unknown })._id;
+  return typeof candidate === 'string' && candidate.length > 0 ? candidate : null;
+}
+
 function verifyServiceTokenClaims(
   decoded: JwtPayload,
   expected: { audience: string; issuer: string },
