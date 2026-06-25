@@ -1,19 +1,20 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
     View,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    StyleSheet,
-    ScrollView,
     Platform,
     Image,
+    StyleSheet,
+    ScrollView,
+    TouchableOpacity,
     type TextInputProps,
     KeyboardAvoidingView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { BaseScreenProps } from '../types/navigation';
 import { useTheme } from '@oxyhq/bloom/theme';
+import { H1, Text } from '@oxyhq/bloom/typography';
+import { Button } from '@oxyhq/bloom/button';
+import { TextField, TextFieldInput } from '@oxyhq/bloom/text-field';
 import { normalizeTheme } from '@oxyhq/core';
 import Header from '../components/Header';
 import { useI18n } from '../hooks/useI18n';
@@ -419,32 +420,28 @@ const EditProfileFieldScreen: React.FC<EditProfileFieldScreenProps> = ({
 
     // Render a single field input
     const renderField = (field: FieldConfig['fields'][0], index: number) => {
-        const isTextarea = field.type === 'textarea';
+        const error = fieldErrors[field.key];
 
         return (
-            <View key={field.key} style={styles.inputGroup}>
-                <Text style={[styles.label, { color: bloomTheme.colors.text }]}>
-                    {field.label}
-                </Text>
-                <TextInput
-                    style={[
-                        isTextarea ? styles.textArea : styles.input,
-                        {
-                            backgroundColor: bloomTheme.colors.card,
-                            color: bloomTheme.colors.text,
-                            borderColor: fieldErrors[field.key] ? bloomTheme.colors.error : bloomTheme.colors.border,
-                        },
-                    ]}
-                    value={fieldValues[field.key] || ''}
-                    onChangeText={(value) => handleFieldChange(field.key, value)}
-                    placeholder={field.placeholder}
-                    placeholderTextColor={bloomTheme.colors.textSecondary}
-                    autoFocus={index === 0}
-                    selectionColor={bloomTheme.colors.primary}
-                    {...field.inputProps}
-                />
-                {fieldErrors[field.key] && (
-                    <Text style={[styles.errorText, { color: bloomTheme.colors.error }]}>{fieldErrors[field.key]}</Text>
+            <View key={field.key} className="gap-space-8">
+                <TextField isInvalid={Boolean(error)}>
+                    <TextFieldInput
+                        floatingLabel
+                        label={field.label}
+                        value={fieldValues[field.key] || ''}
+                        onChangeText={(value) => handleFieldChange(field.key, value)}
+                        isInvalid={Boolean(error)}
+                        autoFocus={index === 0}
+                        {...field.inputProps}
+                    />
+                </TextField>
+                {error && (
+                    <Text
+                        className="text-caption px-space-4"
+                        style={{ color: bloomTheme.colors.negative }}
+                    >
+                        {error}
+                    </Text>
                 )}
             </View>
         );
@@ -455,83 +452,67 @@ const EditProfileFieldScreen: React.FC<EditProfileFieldScreenProps> = ({
         const addLabel = fieldType === 'locations'
             ? (t('editProfile.items.locations.add') || 'Add Location')
             : (t('editProfile.items.links.add') || 'Add Link');
-        const placeholder = fieldType === 'locations'
-            ? (t('editProfile.items.locations.placeholder') || 'Enter location name')
-            : (t('editProfile.items.links.placeholder') || 'Enter URL');
         const listTitle = fieldType === 'locations'
             ? (t('editProfile.items.locations.yourLocations') || 'Your Locations')
             : (t('editProfile.items.links.yourLinks') || 'Your Links');
 
         return (
             <>
-                <View style={styles.inputGroup}>
-                    <Text style={[styles.label, { color: bloomTheme.colors.text }]}>{addLabel}</Text>
-                    <View style={styles.addItemRow}>
-                        <TextInput
-                            style={[
-                                styles.input,
-                                {
-                                    backgroundColor: bloomTheme.colors.card,
-                                    color: bloomTheme.colors.text,
-                                    borderColor: bloomTheme.colors.border,
-                                    flex: 1,
-                                },
-                            ]}
-                            value={newItemValue}
-                            onChangeText={setNewItemValue}
-                            placeholder={placeholder}
-                            placeholderTextColor={bloomTheme.colors.textSecondary}
-                            selectionColor={bloomTheme.colors.primary}
-                            autoCapitalize="none"
-                            autoCorrect={false}
-                            onSubmitEditing={handleAddItem}
-                            returnKeyType="done"
-                            keyboardType={fieldType === 'links' ? 'url' : 'default'}
-                        />
-                        <TouchableOpacity
-                            style={[
-                                styles.addButton,
-                                { backgroundColor: newItemValue.trim() ? bloomTheme.colors.primary : bloomTheme.colors.border }
-                            ]}
-                            onPress={handleAddItem}
-                            disabled={!newItemValue.trim()}
-                        >
-                            <Ionicons name="add" size={20} color={bloomTheme.colors.primaryForeground} />
-                        </TouchableOpacity>
+                <View className="flex-row items-center gap-space-8">
+                    <View className="flex-1">
+                        <TextField>
+                            <TextFieldInput
+                                floatingLabel
+                                label={addLabel}
+                                value={newItemValue}
+                                onChangeText={setNewItemValue}
+                                autoCapitalize="none"
+                                autoCorrect={false}
+                                onSubmitEditing={handleAddItem}
+                                returnKeyType="done"
+                                keyboardType={fieldType === 'links' ? 'url' : 'default'}
+                            />
+                        </TextField>
                     </View>
+                    <Button
+                        variant="icon"
+                        onPress={handleAddItem}
+                        disabled={!newItemValue.trim()}
+                        accessibilityLabel={addLabel}
+                        icon={<Ionicons name="add" size={20} color={bloomTheme.colors.primaryForeground} />}
+                    />
                 </View>
 
                 {listItems.length > 0 && (
-                    <View style={styles.listSection}>
-                        <Text style={[styles.listTitle, { color: bloomTheme.colors.text }]}>
+                    <View className="mt-space-8 gap-space-12">
+                        <Text className="text-sectionTitle font-sectionTitle text-text">
                             {listTitle} ({listItems.length})
                         </Text>
                         {listItems.map((item) => (
                             <View
                                 key={item.id}
-                                style={[
-                                    styles.listItem,
-                                    { backgroundColor: bloomTheme.colors.card, borderColor: bloomTheme.colors.border }
-                                ]}
+                                className="flex-row items-center gap-space-12 p-space-16 rounded-radius-12 border-hairline border-border-image bg-fill"
                             >
                                 {fieldType === 'links' && item.image && (
                                     <Image source={{ uri: item.image }} style={styles.linkImage} />
                                 )}
-                                <View style={styles.listItemContent}>
-                                    <Text style={[styles.listItemTitle, { color: bloomTheme.colors.text }]} numberOfLines={1}>
+                                <View className="flex-1 gap-space-4">
+                                    <Text className="text-subtitle font-subtitle text-text" numberOfLines={1}>
                                         {fieldType === 'locations' ? item.name : (item.title || item.url)}
                                     </Text>
                                     {fieldType === 'links' && (
-                                        <Text style={[styles.listItemSubtitle, { color: bloomTheme.colors.textSecondary }]} numberOfLines={1}>
+                                        <Text className="text-bodySmall font-bodySmall text-text-secondary" numberOfLines={1}>
                                             {item.url}
                                         </Text>
                                     )}
                                 </View>
                                 <TouchableOpacity
                                     onPress={() => handleRemoveItem(item.id)}
-                                    style={styles.removeButton}
+                                    className="p-space-8"
+                                    accessibilityRole="button"
+                                    accessibilityLabel={t('common.remove') || 'Remove'}
                                 >
-                                    <Ionicons name="trash-outline" size={18} color={bloomTheme.colors.error} />
+                                    <Ionicons name="trash-outline" size={18} color={bloomTheme.colors.negative} />
                                 </TouchableOpacity>
                             </View>
                         ))}
@@ -543,7 +524,7 @@ const EditProfileFieldScreen: React.FC<EditProfileFieldScreenProps> = ({
 
     return (
         <KeyboardAvoidingView
-            style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}
+            className="flex-1 bg-bg"
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
             <Header
@@ -562,25 +543,25 @@ const EditProfileFieldScreen: React.FC<EditProfileFieldScreenProps> = ({
             />
 
             <ScrollView
-                style={styles.content}
-                contentContainerStyle={styles.contentContainer}
+                className="flex-1"
+                contentContainerClassName="px-screen-margin pt-space-24 pb-space-32 gap-space-24"
                 showsVerticalScrollIndicator={false}
                 keyboardShouldPersistTaps="handled"
             >
                 {/* Big Title */}
-                <View style={styles.titleContainer}>
-                    <Text style={[styles.bigTitle, { color: bloomTheme.colors.text }]}>
+                <View className="gap-space-8">
+                    <H1 className="text-headerBold font-headerBold text-text">
                         {fieldConfig.title}
-                    </Text>
+                    </H1>
                     {fieldConfig.subtitle && (
-                        <Text style={[styles.bigSubtitle, { color: bloomTheme.colors.textSecondary }]}>
+                        <Text className="text-body font-body text-text-secondary">
                             {fieldConfig.subtitle}
                         </Text>
                     )}
                 </View>
 
                 {/* Form Content */}
-                <View style={[styles.formCard, { backgroundColor: bloomTheme.colors.card }]}>
+                <View className="gap-space-16 p-space-16 rounded-radius-20 bg-fill">
                     {fieldConfig.isList ? renderListContent() : fieldConfig.fields.map(renderField)}
                 </View>
             </ScrollView>
@@ -589,110 +570,10 @@ const EditProfileFieldScreen: React.FC<EditProfileFieldScreenProps> = ({
 };
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-    },
-    content: {
-        flex: 1,
-    },
-    contentContainer: {
-        padding: 16,
-        paddingTop: 24,
-        paddingBottom: 40,
-    },
-    titleContainer: {
-        marginBottom: 24,
-    },
-    bigTitle: {
-        fontSize: 34,
-        fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
-        lineHeight: 40,
-        marginBottom: 8,
-        letterSpacing: -0.5,
-    },
-    bigSubtitle: {
-        fontSize: 16,
-        lineHeight: 22,
-        opacity: 0.7,
-        marginTop: 4,
-    },
-    formCard: {
-        borderRadius: 16,
-        padding: 16,
-        gap: 16,
-    },
-    inputGroup: {
-        gap: 8,
-    },
-    label: {
-        fontSize: 14,
-        fontWeight: '600',
-    },
-    input: {
-        borderWidth: StyleSheet.hairlineWidth,
-        borderRadius: 12,
-        padding: 16,
-        fontSize: 16,
-        minHeight: 52,
-    },
-    textArea: {
-        borderWidth: StyleSheet.hairlineWidth,
-        borderRadius: 12,
-        padding: 16,
-        fontSize: 16,
-        minHeight: 140,
-    },
-    errorText: {
-        fontSize: 12,
-        marginTop: 4,
-    },
-    addItemRow: {
-        flexDirection: 'row',
-        gap: 8,
-        alignItems: 'center',
-    },
-    addButton: {
-        width: 52,
-        height: 52,
-        borderRadius: 12,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    listSection: {
-        marginTop: 8,
-    },
-    listTitle: {
-        fontSize: 16,
-        fontWeight: '600',
-        marginBottom: 12,
-    },
-    listItem: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        padding: 16,
-        borderRadius: 12,
-        borderWidth: StyleSheet.hairlineWidth,
-        gap: 12,
-        marginBottom: 8,
-    },
-    listItemContent: {
-        flex: 1,
-        gap: 4,
-    },
-    listItemTitle: {
-        fontSize: 16,
-        fontWeight: '500',
-    },
-    listItemSubtitle: {
-        fontSize: 13,
-    },
     linkImage: {
         width: 40,
         height: 40,
         borderRadius: 8,
-    },
-    removeButton: {
-        padding: 8,
     },
 });
 

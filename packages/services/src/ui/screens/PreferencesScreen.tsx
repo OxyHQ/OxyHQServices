@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { AccessibilityInfo, Platform, StyleSheet, View, ScrollView } from 'react-native';
+import { AccessibilityInfo, Platform, View, ScrollView } from 'react-native';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 import { Switch } from '@oxyhq/bloom/switch';
 import { useTheme } from '@oxyhq/bloom/theme';
@@ -11,9 +11,6 @@ import { useI18n } from '../hooks/useI18n';
 import { useOxy } from '../context/OxyContext';
 import { useCurrentUser } from '../hooks/queries/useAccountQueries';
 import { useUpdateUserPreferences } from '../hooks/mutations/useAccountMutations';
-import { useColorScheme } from '../hooks/useColorScheme';
-import { Colors } from '../constants/theme';
-import { normalizeColorScheme, normalizeTheme } from '@oxyhq/core';
 
 type ThemePreference = 'light' | 'dark' | 'system';
 
@@ -41,17 +38,11 @@ const getDeviceTimezone = (): string => {
  */
 const PreferencesScreen: React.FC<BaseScreenProps> = ({
     onClose,
-    theme,
     goBack,
     navigate,
 }) => {
     const bloomTheme = useTheme();
     const { t, locale } = useI18n();
-    const colorScheme = useColorScheme();
-    const palette = useMemo(
-        () => Colors[normalizeColorScheme(colorScheme, normalizeTheme(theme))],
-        [colorScheme, theme],
-    );
     const { isAuthenticated } = useOxy();
     const { data: user } = useCurrentUser({ enabled: isAuthenticated });
     const updateMutation = useUpdateUserPreferences();
@@ -131,133 +122,122 @@ const PreferencesScreen: React.FC<BaseScreenProps> = ({
     const isSaving = updateMutation.isPending;
 
     return (
-        <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
+        <View className="flex-1 bg-bg">
             <Header
                 title={t('preferences.title') || 'Preferences'}
                 onBack={goBack || onClose}
                 variant="minimal"
                 elevation="subtle"
             />
-            <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
-                <SettingsListGroup
-                    title={t('preferences.sections.appearance') || 'Appearance'}
-                >
-                    <SettingsListItem
-                        icon={
-                            <SettingsIcon
-                                name="theme-light-dark"
-                                color={palette.iconData}
-                            />
-                        }
-                        title={t('preferences.items.theme.title') || 'Theme'}
-                        description={themeDisplay}
-                        onPress={() => handleThemeChange(nextTheme)}
-                        disabled={isSaving}
-                    />
-                    <SettingsListItem
-                        icon={
-                            <SettingsIcon
-                                name="motion"
-                                color={palette.iconPersonalInfo}
-                            />
-                        }
-                        title={
-                            t('preferences.items.reduceMotion.title') || 'Reduce motion'
-                        }
-                        description={
-                            systemReduceMotion
-                                ? (t('preferences.items.reduceMotion.systemOn')
-                                    || 'Following system: reduce motion is on')
-                                : (t('preferences.items.reduceMotion.subtitle')
-                                    || 'Minimise animations across Oxy apps')
-                        }
-                        rightElement={
-                            <Switch
-                                value={reduceMotionPref}
-                                onValueChange={handleReduceMotionToggle}
-                                disabled={isSaving}
-                            />
-                        }
-                        showChevron={false}
-                    />
-                </SettingsListGroup>
-
-                <SettingsListGroup
-                    title={t('preferences.sections.language') || 'Language'}
-                >
-                    <SettingsListItem
-                        icon={
-                            <SettingsIcon
-                                name="translate"
-                                color={palette.iconPersonalInfo}
-                            />
-                        }
-                        title={t('preferences.items.language.title') || 'Language'}
-                        description={languageDescription}
-                        onPress={() => navigate?.('LanguageSelector')}
-                    />
-                </SettingsListGroup>
-
-                <SettingsListGroup
-                    title={t('preferences.sections.region') || 'Region'}
-                >
-                    <SettingsListItem
-                        icon={
-                            <SettingsIcon
-                                name="clock-outline"
-                                color={palette.iconSecurity}
-                            />
-                        }
-                        title={t('preferences.items.timezone.title') || 'Timezone'}
-                        description={
-                            timezone
-                            || (t('preferences.items.timezone.unknown')
-                                || 'Unable to detect timezone')
-                        }
-                        onPress={prefs?.timezone ? handleResetTimezone : undefined}
-                        disabled={isSaving || !prefs?.timezone}
-                        showChevron={false}
-                    />
-                </SettingsListGroup>
-
-                {Platform.OS === 'web' ? null : (
-                    <SettingsListGroup>
+            <ScrollView className="flex-1">
+                <View className="px-screen-margin pb-space-24">
+                    <SettingsListGroup
+                        title={t('preferences.sections.appearance') || 'Appearance'}
+                    >
                         <SettingsListItem
                             icon={
                                 <SettingsIcon
-                                    name="information"
-                                    color={palette.iconHome}
+                                    name="theme-light-dark"
+                                    color={bloomTheme.colors.primary}
+                                />
+                            }
+                            title={t('preferences.items.theme.title') || 'Theme'}
+                            description={themeDisplay}
+                            onPress={() => handleThemeChange(nextTheme)}
+                            disabled={isSaving}
+                        />
+                        <SettingsListItem
+                            icon={
+                                <SettingsIcon
+                                    name="motion"
+                                    color={bloomTheme.colors.success}
                                 />
                             }
                             title={
-                                t('preferences.items.about.title')
-                                || 'About preferences'
+                                t('preferences.items.reduceMotion.title') || 'Reduce motion'
                             }
                             description={
-                                t('preferences.items.about.subtitle')
-                                || 'Preferences sync across every Oxy app you sign into'
+                                systemReduceMotion
+                                    ? (t('preferences.items.reduceMotion.systemOn')
+                                        || 'Following system: reduce motion is on')
+                                    : (t('preferences.items.reduceMotion.subtitle')
+                                        || 'Minimise animations across Oxy apps')
+                            }
+                            rightElement={
+                                <Switch
+                                    value={reduceMotionPref}
+                                    onValueChange={handleReduceMotionToggle}
+                                    disabled={isSaving}
+                                />
                             }
                             showChevron={false}
-                            disabled
                         />
                     </SettingsListGroup>
-                )}
+
+                    <SettingsListGroup
+                        title={t('preferences.sections.language') || 'Language'}
+                    >
+                        <SettingsListItem
+                            icon={
+                                <SettingsIcon
+                                    name="translate"
+                                    color={bloomTheme.colors.success}
+                                />
+                            }
+                            title={t('preferences.items.language.title') || 'Language'}
+                            description={languageDescription}
+                            onPress={() => navigate?.('LanguageSelector')}
+                        />
+                    </SettingsListGroup>
+
+                    <SettingsListGroup
+                        title={t('preferences.sections.region') || 'Region'}
+                    >
+                        <SettingsListItem
+                            icon={
+                                <SettingsIcon
+                                    name="clock-outline"
+                                    color={bloomTheme.colors.info}
+                                />
+                            }
+                            title={t('preferences.items.timezone.title') || 'Timezone'}
+                            description={
+                                timezone
+                                || (t('preferences.items.timezone.unknown')
+                                    || 'Unable to detect timezone')
+                            }
+                            onPress={prefs?.timezone ? handleResetTimezone : undefined}
+                            disabled={isSaving || !prefs?.timezone}
+                            showChevron={false}
+                        />
+                    </SettingsListGroup>
+
+                    {Platform.OS === 'web' ? null : (
+                        <SettingsListGroup>
+                            <SettingsListItem
+                                icon={
+                                    <SettingsIcon
+                                        name="information"
+                                        color={bloomTheme.colors.secondary}
+                                    />
+                                }
+                                title={
+                                    t('preferences.items.about.title')
+                                    || 'About preferences'
+                                }
+                                description={
+                                    t('preferences.items.about.subtitle')
+                                    || 'Preferences sync across every Oxy app you sign into'
+                                }
+                                showChevron={false}
+                                disabled
+                            />
+                        </SettingsListGroup>
+                    )}
+                </View>
             </ScrollView>
         </View>
     );
 };
-
-const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-    },
-    scroll: {
-        flex: 1,
-    },
-    scrollContent: {
-        paddingHorizontal: 16,
-        paddingBottom: 24,
-    },
-});
 
 export default React.memo(PreferencesScreen);
