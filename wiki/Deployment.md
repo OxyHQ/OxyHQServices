@@ -18,7 +18,7 @@ The Oxy API runs on **AWS ECS Fargate** in `eu-west-1`. Static frontends ship to
 Cloudflare DNS (DNS-only, grey cloud)
    |
    v
-ALB (oxy-alb-127633307.eu-west-1.elb.amazonaws.com)
+ALB (<alb-dns-name>)
    |  ACM multi-SAN cert, host-based target groups
    v
 ECS Fargate task (oxy-cluster / oxy-api)
@@ -26,7 +26,7 @@ ECS Fargate task (oxy-cluster / oxy-api)
    v
 +------------------+   +----------------------+
 | ElastiCache      |   | MongoDB EC2          |
-| Valkey           |   | (EIP 18.203.144.124) |
+| Valkey           |   | (EIP <mongo-public-ip>) |
 +------------------+   +----------------------+
 ```
 
@@ -36,10 +36,10 @@ No Caddy, no on-box SMTP, no NAT gateway. Outbound email goes through AWS SES; i
 
 `.github/workflows/deploy-aws.yml` runs on every push to `main`:
 
-1. Sync the relevant GitHub Actions secrets to SSM (`/oxy/oxy-api/*` and `/oxy/_shared/*`). See lines 36-46 of the workflow.
+1. Sync the relevant GitHub Actions secrets to SSM (`/oxy/oxy-api/*` and the shared parameter namespace). See lines 36-46 of the workflow.
 2. Authenticate to AWS via **GitHub OIDC** (no long-lived AWS keys in repo secrets) -> assume `oxy-github-deploy`.
 3. `docker buildx build --platform linux/arm64 ...`.
-4. Push to ECR (`237343248947.dkr.ecr.eu-west-1.amazonaws.com/oxy/oxy-api`).
+4. Push to ECR (`<aws-account-id>.dkr.ecr.eu-west-1.amazonaws.com/oxy/oxy-api`).
 5. `aws ecs update-service --cluster oxy-cluster --service oxy-api --force-new-deployment`.
 
 Task definitions are versioned (`oxy-oxy-api:N`). New revisions are registered with `aws ecs register-task-definition` whenever env / secret mappings change. Image-only updates reuse the existing task definition.
@@ -58,7 +58,7 @@ Task definitions are versioned (`oxy-oxy-api:N`). New revisions are registered w
 | `CLOUDFLARE_API_TOKEN` | Cloudflare Pages deploys + DNS-01 ACM validation |
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account |
 
-Shared secrets (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` for SES / app-level S3 usage, `REDIS_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`) are mirrored under `/oxy/_shared/*` for cross-service use.
+Shared secrets (AWS access-key variables for SES / app-level S3 usage, shared runtime variables) are mirrored under the shared parameter namespace for cross-service use.
 
 ### Docker files
 
@@ -92,7 +92,7 @@ CMD ["bun", "run", "packages/api/dist/server.js"]
 
 | Variable | Description | Example |
 |----------|-------------|---------|
-| `MONGODB_URI` | MongoDB cluster URI (no DB name -- apps pass `dbName`) | `mongodb://oxy-mongo.eu-west-1.compute:27017` |
+| `MONGODB_URI` | MongoDB cluster URI (no DB name -- apps pass `dbName`) | `mongodb://<private-mongo-host>:27017` |
 | `ACCESS_TOKEN_SECRET` | JWT signing secret for access tokens | 64+ hex |
 | `REFRESH_TOKEN_SECRET` | JWT signing secret for refresh tokens | 64+ hex |
 | `FEDCM_TOKEN_SECRET` | JWT secret for FedCM tokens | 64+ hex |
@@ -152,5 +152,5 @@ curl https://api.oxy.so/health
 
 - **Logs**: ECS task stdout/stderr -> CloudWatch Logs (`/ecs/oxy-api`). `aws logs tail /ecs/oxy-api --follow` (profile `oxy`) streams live output.
 - **Rollback**: re-run a prior successful deploy workflow, or `aws ecs update-service --task-definition oxy-oxy-api:<previous-rev>`.
-- **SSH-less ops**: MongoDB EC2 has no SSH keys. Use `aws ssm start-session --target i-0ce531a2b124b7c07`.
-- **Backups**: `s3://oxy-mongo-backups-237343248947/daily/`. Restore runbook: `~/Oxy/oxy-infra/docs/runbooks/10-mongo-restore.md`.
+- **SSH-less ops**: MongoDB EC2 has no SSH keys. Use `aws ssm start-session --target <mongo-instance-id>`.
+- **Backups**: `s3://<mongo-backup-bucket>/daily/`. Restore runbook: `~/Oxy/oxy-infra/docs/runbooks/10-mongo-restore.md`.

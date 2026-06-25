@@ -1,18 +1,18 @@
 # Infrastructure
 
-All Oxy production infrastructure runs on **AWS** in the **eu-west-1 (Ireland)** region under account `237343248947`. Terraform IaC lives in the `oxy-infra` repo (state in S3 `oxy-tf-state-237343248947`).
+All Oxy production infrastructure runs on **AWS** in the **eu-west-1 (Ireland)** region in the production AWS account. Terraform IaC lives in the `oxy-infra` repo (state in a private S3 backend).
 
 ## Resources Overview
 
 | Resource | Type | Identifier | Region | Purpose |
 |----------|------|------------|--------|---------|
 | `oxy-cluster` | ECS Fargate cluster | — | eu-west-1 | All 6 backend services as Fargate tasks (linux/arm64) |
-| `oxy-alb` | Application Load Balancer | `oxy-alb-127633307.eu-west-1.elb.amazonaws.com` | eu-west-1 | HTTPS termination (ACM multi-SAN cert) + host-based routing |
+| `oxy-alb` | Application Load Balancer | `<alb-dns-name>` | eu-west-1 | HTTPS termination (ACM multi-SAN cert) + host-based routing |
 | `oxy-valkey` | ElastiCache (Valkey) | — | eu-west-1 | Rate limiting + Socket.IO adapter |
-| `oxy-mongo` | EC2 (MongoDB 8 self-hosted) | `i-0ce531a2b124b7c07` (EIP `18.203.144.124`) | eu-west-1 | Shared MongoDB for all Oxy apps. `/data` on a 100 GB gp3 EBS volume |
-| `oxy-mongo-backups-237343248947` | S3 bucket | — | eu-west-1 | Daily `mongodump` archives under `daily/` (14-day retention) |
-| `oxy-tf-state-237343248947` | S3 bucket | — | eu-west-1 | Terraform remote state |
-| ECR | `237343248947.dkr.ecr.eu-west-1.amazonaws.com/oxy/<app>` | one per service | eu-west-1 | linux/arm64 images |
+| `oxy-mongo` | EC2 (MongoDB 8 self-hosted) | `<mongo-instance-id>` (EIP `<mongo-public-ip>`) | eu-west-1 | Shared MongoDB for all Oxy apps. `/data` on a 100 GB gp3 EBS volume |
+| `<mongo-backup-bucket>` | S3 bucket | — | eu-west-1 | Daily `mongodump` archives under `daily/` (14-day retention) |
+| `<terraform-state-bucket>` | S3 bucket | — | eu-west-1 | Terraform remote state |
+| ECR | `<aws-account-id>.dkr.ecr.eu-west-1.amazonaws.com/oxy/<app>` | one per service | eu-west-1 | linux/arm64 images |
 | `oxy-github-deploy` | IAM role | — | — | GitHub OIDC trust; no static AWS keys in repo secrets |
 | SES | — | — | eu-west-1 | Outbound email + inbound via Cloudflare Email Routing |
 | Cloudflare Pages | — | — | — | Static frontends (accounts, auth, console, inbox) |
@@ -34,7 +34,7 @@ All tasks run with `assign_public_ip = true` (no NAT gateway).
 
 | Resource | Where | Why |
 |----------|-------|-----|
-| LiveKit | DigitalOcean droplet `134.122.53.230` (`livekit.oxy.so`) | Migration to AWS pending |
+| LiveKit | external managed host | Migration to AWS pending |
 | Athina, FairCoin, TNP, OpenSearch (`genai-shark`) | DigitalOcean | Outside the Oxy ecosystem migration scope |
 
 ## Networking
@@ -51,11 +51,11 @@ All tasks run with `assign_public_ip = true` (no NAT gateway).
 Self-hosted rather than DocumentDB so we can use the full driver feature set (transactions, change streams, full text search).
 
 - Daily `mongodump --gzip --archive=…` cron job inside the instance.
-- Archives uploaded to `s3://oxy-mongo-backups-237343248947/daily/<date>.gz`.
+- Archives uploaded to `s3://<mongo-backup-bucket>/daily/<date>.gz`.
 - 14-day retention via the bucket lifecycle policy.
 - Restore runbook: `~/Oxy/oxy-infra/docs/runbooks/10-mongo-restore.md`.
 
-Admin credentials live in SSM (`/oxy/mongo/admin_user`, `/oxy/mongo/admin_password`). Read by deploy jobs and the backup cron. Never committed.
+Admin credentials live in SSM (private MongoDB admin parameters). Read by deploy jobs and the backup cron. Never committed.
 
 ### Database naming convention
 
@@ -80,13 +80,13 @@ mongoose.connect(process.env.MONGODB_URI, { dbName });
 
 ## Cache: ElastiCache Valkey
 
-See [[Redis & Valkey]] for client wiring. Connection URL lives in SSM as a shared parameter (`/oxy/_shared/REDIS_URL`) and is injected into every ECS task definition.
+See [[Redis & Valkey]] for client wiring. Connection URL lives in SSM as a shared parameter (the shared Redis URL parameter) and is injected into every ECS task definition.
 
 ## Secrets
 
-GitHub Actions repo secrets are the **source of truth**. `.github/workflows/deploy-aws.yml` mirrors them to AWS SSM under `/oxy/<app>/*` and `/oxy/_shared/*` on every run. ECS task definitions reference SSM parameters via `secrets` mappings, so the container only ever sees the resolved value at task launch.
+GitHub Actions repo secrets are the **source of truth**. `.github/workflows/deploy-aws.yml` mirrors them to AWS SSM under the per-app parameter namespace and the shared parameter namespace on every run. ECS task definitions reference SSM parameters via `secrets` mappings, so the container only ever sees the resolved value at task launch.
 
-`/oxy/_shared/*` covers `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` (for SES / app-level S3 usage where IAM roles aren't applied), `REDIS_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`.
+The shared parameter namespace covers AWS access-key variables (for SES / app-level S3 usage where IAM roles aren't applied), shared runtime variables.
 
 > Never commit secret values. Never put secret values in this wiki.
 
