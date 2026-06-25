@@ -371,6 +371,49 @@ describe('POST /fedcm/assertion', () => {
     expect(payload.iss).toBe('https://auth.oxy.so');
   });
 
+  it('rejects when client_id is not the actual requesting Origin', async () => {
+    const approvedButDifferentOrigin = 'https://console.oxy.so';
+    stubbedApprovedClients = [RP_ORIGIN, approvedButDifferentOrigin];
+
+    const res = await app.request('/fedcm/assertion', {
+      method: 'POST',
+      headers: {
+        ...WEBIDENTITY,
+        'content-type': 'application/x-www-form-urlencoded',
+        origin: RP_ORIGIN,
+        cookie: SESSION_COOKIE,
+      },
+      body: new URLSearchParams({
+        account_id: TEST_USER_ID,
+        client_id: approvedButDifferentOrigin,
+        nonce: 'rp-nonce-mismatch',
+      }).toString(),
+    });
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'invalid_client' });
+  });
+
+  it('rejects unapproved client_id values before minting a token', async () => {
+    const res = await app.request('/fedcm/assertion', {
+      method: 'POST',
+      headers: {
+        ...WEBIDENTITY,
+        'content-type': 'application/x-www-form-urlencoded',
+        origin: 'https://evil.example.com',
+        cookie: SESSION_COOKIE,
+      },
+      body: new URLSearchParams({
+        account_id: TEST_USER_ID,
+        client_id: 'https://evil.example.com',
+        nonce: 'rp-nonce-unapproved',
+      }).toString(),
+    });
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'invalid_client' });
+  });
+
   it('returns 401 with WWW-Authenticate when not logged in at the IdP', async () => {
     const res = await app.request('/fedcm/assertion', {
       method: 'POST',
@@ -569,6 +612,7 @@ describe('Multi-domain FAPI (Clerk-style CNAME)', () => {
   });
 
   it('mints an id_token whose iss matches the request host (per FedCM spec)', async () => {
+    stubbedApprovedClients = ['https://alia.onl'];
     const nonce = 'nonce-multi-domain';
     const res = await app.request('https://auth.alia.onl/fedcm/assertion', {
       method: 'POST',

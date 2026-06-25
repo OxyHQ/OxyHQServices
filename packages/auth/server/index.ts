@@ -1425,6 +1425,13 @@ app.post('/fedcm/assertion', async (c) => {
     return c.json({ error: 'invalid_request' }, 400);
   }
 
+  const requestOrigin = normaliseOrigin(c.req.header('origin') || '');
+  const approvedClientOrigin = await resolveApprovedClientOrigin(apiBaseUrl, clientId);
+  if (!requestOrigin || !approvedClientOrigin || requestOrigin !== approvedClientOrigin) {
+    return c.json({ error: 'invalid_client' }, 400);
+  }
+  clientId = approvedClientOrigin;
+
   // Verify the session is still valid and the account matches
   const user = await fetchUserFromAPI(apiBaseUrl, sessionId);
   if (!user || user.id !== accountId) {
