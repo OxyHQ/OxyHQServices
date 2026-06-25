@@ -2,43 +2,40 @@
  * `OxyServices.getFileDownloadUrl()` resolution tests.
  *
  * This is the single chokepoint every Oxy app uses to turn a stored asset id
- * into a `<img src>`-ready URL. It resolves to one of two forms:
- *
- *   - PUBLIC (no access token planted, no `expiresIn`) → the clean CDN form
- *     `${cloudURL}/<id>[?variant=...]` (default `https://cloud.oxy.so/<id>`),
- *     which CloudFront resolves against the public media origin.
- *   - SIGNED / PRIVATE (an access token is present OR `expiresIn` is passed) →
- *     the authenticated API origin form
- *     `${baseURL}/assets/<id>/stream?...&token=...` — private assets are not on
- *     the public CDN.
+ * into a `<img src>`-ready URL. Because a bare id does not carry visibility
+ * metadata, the synchronous helper must use the API stream endpoint. That route
+ * can serve direct-link `unlisted` assets and can redirect public CDN-backed
+ * assets to the CDN after the server has checked the file record.
  */
 
 import { OxyServices } from '../../OxyServices';
 
 describe('OxyServices.getFileDownloadUrl', () => {
-  describe('public assets (no token, no expiresIn) → CDN', () => {
-    it('returns the clean cloud.oxy.so URL for a bare file id', () => {
+  describe('asset stream URL generation', () => {
+    it('returns the API stream endpoint for a bare file id', () => {
       const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
 
-      expect(oxy.getFileDownloadUrl('file123')).toBe('https://cloud.oxy.so/file123');
-    });
-
-    it('appends only a variant query param (no token/fallback) for the thumb variant', () => {
-      const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
-
-      expect(oxy.getFileDownloadUrl('file123', 'thumb')).toBe(
-        'https://cloud.oxy.so/file123?variant=thumb',
+      expect(oxy.getFileDownloadUrl('file123')).toBe(
+        'https://api.oxy.so/assets/file123/stream?fallback=placeholderVisible',
       );
     });
 
-    it('uses the configured cloudURL when overridden', () => {
+    it('appends a variant query param for thumbnails', () => {
+      const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
+
+      expect(oxy.getFileDownloadUrl('file123', 'thumb')).toBe(
+        'https://api.oxy.so/assets/file123/stream?variant=thumb&fallback=placeholderVisible',
+      );
+    });
+
+    it('does not use cloudURL because visibility is unknown to the sync helper', () => {
       const oxy = new OxyServices({
         baseURL: 'https://api.oxy.so',
         cloudURL: 'https://cdn.example.test',
       });
 
       expect(oxy.getFileDownloadUrl('file123', 'thumb')).toBe(
-        'https://cdn.example.test/file123?variant=thumb',
+        'https://api.oxy.so/assets/file123/stream?variant=thumb&fallback=placeholderVisible',
       );
     });
 
@@ -46,13 +43,13 @@ describe('OxyServices.getFileDownloadUrl', () => {
       const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
 
       expect(oxy.getFileDownloadUrl('a/b c', 'large size')).toBe(
-        'https://cloud.oxy.so/a%2Fb%20c?variant=large%20size',
+        'https://api.oxy.so/assets/a%2Fb%20c/stream?variant=large+size&fallback=placeholderVisible',
       );
     });
   });
 
-  describe('signed / private assets → authenticated API origin', () => {
-    it('returns the stream endpoint with the token when an access token is present', () => {
+  describe('signed / expiring assets', () => {
+    it('includes the token when an access token is present', () => {
       const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
       oxy.setTokens('access-token-abc');
 
@@ -66,7 +63,7 @@ describe('OxyServices.getFileDownloadUrl', () => {
       expect(url).not.toContain('cloud.oxy.so');
     });
 
-    it('routes through the stream endpoint when expiresIn is requested even without a token', () => {
+    it('includes expiresIn when requested even without a token', () => {
       const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
 
       const url = oxy.getFileDownloadUrl('file123', 'thumb', 3600);
