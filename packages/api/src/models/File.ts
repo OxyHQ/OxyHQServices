@@ -88,8 +88,7 @@ const FileVariantSchema = new Schema<IFileVariant>({
 const FileSchema = new Schema<IFile>({
   sha256: { 
     type: String, 
-    required: true, 
-    unique: true,
+    required: true,
     index: true 
   },
   size: { type: Number, required: true },
@@ -139,6 +138,14 @@ FileSchema.index({ ownerUserId: 1, status: 1 });
 FileSchema.index({ ownerUserId: 1, visibility: 1, status: 1 });
 FileSchema.index({ visibility: 1, status: 1 }); // For public file queries
 FileSchema.index({ 'links.app': 1, 'links.entityType': 1, 'links.entityId': 1 });
+FileSchema.index(
+  { sha256: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { $or: [{ status: 'active' }, { status: 'trash' }] },
+    name: 'sha256_not_deleted_unique',
+  }
+);
 FileSchema.index({ sha256: 1, status: 1 });
 FileSchema.index({ purpose: 1, ownerUserId: 1, status: 1 }); // For cache-namespace lookups
 FileSchema.index({ createdAt: -1 });
