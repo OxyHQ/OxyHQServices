@@ -164,6 +164,37 @@ describe('AuthManager.switchAuthuser — concurrency lock', () => {
   });
 });
 
+describe('AuthManager default storage selection', () => {
+  const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+
+  afterEach(() => {
+    if (originalWindow) {
+      Object.defineProperty(globalThis, 'window', originalWindow);
+    } else {
+      Reflect.deleteProperty(globalThis, 'window');
+    }
+  });
+
+  it('falls back to memory storage when localStorage access throws', () => {
+    const blockedWindow = {};
+    Object.defineProperty(blockedWindow, 'localStorage', {
+      configurable: true,
+      get() {
+        throw new DOMException('Blocked localStorage', 'SecurityError');
+      },
+    });
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: blockedWindow,
+    });
+
+    expect(() => new AuthManager(makeMockServices() as unknown as OxyServices, {
+      autoRefresh: false,
+      crossTabSync: false,
+    })).not.toThrow();
+  });
+});
+
 describe('AuthManager.switchAuthuser — hydration of unknown slots', () => {
   it('hydrates a slot with no prior user metadata via getCurrentUser()', async () => {
     const services = makeMockServices();
