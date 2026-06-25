@@ -7,6 +7,8 @@
  */
 
 import crypto from 'crypto';
+import { promises as dns } from 'dns';
+import net from 'net';
 import mongoose from 'mongoose';
 import User, { IUser } from '../models/User';
 import { AssetService } from './assetService';
@@ -63,6 +65,134 @@ const REFRESH_MIN_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 const AVATAR_REFRESH_MIN_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
 const FEDIVERSE_HANDLE_REGEX = /^@?[\w.-]+@[\w.-]+\.\w+$/;
+
+const FEDERATION_FETCH_TIMEOUT_MS = 10_000;
+const FEDERATION_AVATAR_FETCH_TIMEOUT_MS = 15_000;
+const FEDERATION_MAX_REDIRECTS = 3;
+const FEDERATION_MAX_AVATAR_BYTES = 5 * 1024 * 1024;
+
+function isBlockedHostname(hostname: string): boolean {
+  const normalized = hostname.toLowerCase().replace(/\.$/, '');
+  return normalized === 'localhost' || normalized.endsWith('.localhost');
+}
+
+function isPrivateIPv4(address: string): boolean {
+  const parts = address.split('.').map((part) => Number(part));
+  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) {
+    return true;
+  }
+
+  const [a, b] = parts;
+  return a === 0
+    || a === 10
+    || a === 127
+    || (a === 100 && b >= 64 && b <= 127)
+    || (a === 169 && b === 254)
+    || (a === 172 && b >= 16 && b <= 31)
+    || (a === 192 && b === 168)
+    || (a === 198 && (b === 18 || b === 19))
+    || (a >= 224);
+}
+
+function isPrivateIPv6(address: string): boolean {
+  const normalized = address.toLowerCase();
+  const ipv4Mapped = normalized.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+  if (ipv4Mapped) return isPrivateIPv4(ipv4Mapped[1]);
+
+  return normalized === '::'
+    || normalized === '::1'
+    || normalized.startsWith('fc')
+    || normalized.startsWith('fd')
+    || normalized.startsWith('fe80:')
+    || normalized.startsWith('::ffff:0:')
+    || normalized.startsWith('64:ff9b:1:');
+}
+
+function isBlockedIp(address: string): boolean {
+  if (net.isIPv4(address)) return isPrivateIPv4(address);
+  if (net.isIPv6(address)) return isPrivateIPv6(address);
+  return true;
+}
+
+async function assertFederationUrlAllowed(rawUrl: string): Promise<URL | null> {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return null;
+  }
+
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return null;
+  if (!parsed.hostname || isBlockedHostname(parsed.hostname)) return null;
+
+  const literalFamily = net.isIP(parsed.hostname);
+  if (literalFamily !== 0) {
+    return isBlockedIp(parsed.hostname) ? null : parsed;
+  }
+
+  try {
+    const records = await dns.lookup(parsed.hostname, { all: true, verbatim: true });
+    if (records.length === 0 || records.some((record) => isBlockedIp(record.address))) {
+      return null;
+    }
+  } catch (err) {
+    logger.warn(`Federation URL rejected after DNS lookup failed for ${parsed.hostname}: ${err}`);
+    return null;
+  }
+
+  return parsed;
+}
+
+async function safeFederationFetch(
+  rawUrl: string,
+  init: RequestInit,
+  maxRedirects = FEDERATION_MAX_REDIRECTS,
+): Promise<Response | null> {
+  const parsed = await assertFederationUrlAllowed(rawUrl);
+  if (!parsed) {
+    logger.warn(`Federation URL rejected by SSRF guard: ${rawUrl}`);
+    return null;
+  }
+
+  const res = await fetch(parsed.toString(), {
+    ...init,
+    redirect: 'manual',
+  });
+
+  if (res.status >= 300 && res.status < 400) {
+    if (maxRedirects <= 0) return null;
+    const location = res.headers.get('location');
+    if (!location) return null;
+    const redirectUrl = new URL(location, parsed).toString();
+    return safeFederationFetch(redirectUrl, init, maxRedirects - 1);
+  }
+
+  return res;
+}
+
+async function readResponseBufferLimited(res: Response, maxBytes: number): Promise<Buffer | null> {
+  const contentLength = res.headers.get('content-length');
+  if (contentLength && Number(contentLength) > maxBytes) return null;
+  if (!res.body) return Buffer.from(await res.arrayBuffer());
+
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (!value) continue;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel();
+      return null;
+    }
+    chunks.push(value);
+  }
+
+  return Buffer.concat(chunks, total);
+}
 
 // System user ID for federated avatar ownership
 const FEDERATION_SYSTEM_USER = '__federation__';
@@ -323,17 +453,17 @@ function signRequest(
  * Fetch a URL with HTTP Signature authentication.
  * Required by servers that enforce authorized fetch (e.g., Threads).
  */
-async function signedFetch(url: string, accept: string): Promise<Response> {
+async function signedFetch(url: string, accept: string): Promise<Response | null> {
   const keyPair = await getInstanceKeyPair();
   const sigHeaders = signRequest(keyPair.privateKeyPem, keyPair.keyId, 'GET', url);
 
-  return fetch(url, {
+  return safeFederationFetch(url, {
     headers: {
       Accept: accept,
       'User-Agent': USER_AGENT,
       ...sigHeaders,
     },
-    signal: AbortSignal.timeout(10_000),
+    signal: AbortSignal.timeout(FEDERATION_FETCH_TIMEOUT_MS),
   });
 }
 
@@ -577,11 +707,11 @@ class FederationService {
     const url = `https://${domain}/.well-known/webfinger?resource=${encodeURIComponent(resource)}`;
 
     try {
-      const res = await fetch(url, {
+      const res = await safeFederationFetch(url, {
         headers: { Accept: 'application/jrd+json, application/json' },
-        signal: AbortSignal.timeout(10_000),
+        signal: AbortSignal.timeout(FEDERATION_FETCH_TIMEOUT_MS),
       });
-      if (!res.ok) return null;
+      if (!res?.ok) return null;
 
       const data = (await res.json()) as {
         subject?: string;
@@ -630,7 +760,7 @@ class FederationService {
   } | null> {
     try {
       const res = await signedFetch(actorUri, AP_ACCEPT_TYPES[0]);
-      if (!res.ok) return null;
+      if (!res?.ok) return null;
 
       const actor = (await res.json()) as Record<string, unknown>;
       if (!actor.id || !actor.inbox) return null;
@@ -690,10 +820,11 @@ class FederationService {
         requestHeaders['If-Modified-Since'] = conditional.lastModified;
       }
 
-      const res = await fetch(avatarUrl, {
+      const res = await safeFederationFetch(avatarUrl, {
         headers: requestHeaders,
-        signal: AbortSignal.timeout(15_000),
+        signal: AbortSignal.timeout(FEDERATION_AVATAR_FETCH_TIMEOUT_MS),
       });
+      if (!res) return { fileId: null, notModified: false };
 
       // 304: the host confirms the remote bytes are unchanged. This only means
       // our local copy is usable if the referenced asset still exists in S3.
@@ -740,9 +871,9 @@ class FederationService {
         return { fileId: null, etag, lastModified, notModified: false };
       }
 
-      const buffer = Buffer.from(await res.arrayBuffer());
-      if (buffer.length === 0 || buffer.length > 5 * 1024 * 1024) {
-        return { fileId: null, etag, lastModified, notModified: false }; // max 5MB
+      const buffer = await readResponseBufferLimited(res, FEDERATION_MAX_AVATAR_BYTES);
+      if (!buffer || buffer.length === 0) {
+        return { fileId: null, etag, lastModified, notModified: false };
       }
 
       // For application/octet-stream, infer MIME from URL extension or default to png

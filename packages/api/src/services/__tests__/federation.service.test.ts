@@ -32,6 +32,17 @@ process.env.AWS_S3_BUCKET ||= 'test-bucket';
 // federation.service registers a Mongoose model (FederationKeyPair) at import
 // time. Stub mongoose so that registration is a no-op and `mongoose.models`
 // exists — we never touch the key-pair collection in these tests.
+
+jest.mock('dns', () => ({
+  __esModule: true,
+  promises: {
+    lookup: jest.fn(async (hostname: string) => [{
+      address: hostname === 'private.example' ? '127.0.0.1' : '203.0.113.10',
+      family: 4,
+    }]),
+  },
+}));
+
 jest.mock('mongoose', () => {
   class Schema {}
   return {
@@ -643,6 +654,59 @@ describe('FederationService.scheduleAvatarRefresh (off request path)', () => {
     });
     expect(mockCacheInvalidate).toHaveBeenCalledWith(userId);
 
+    fetchSpy.mockRestore();
+  });
+});
+
+describe('FederationService SSRF guards', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    resetAssetMocks();
+  });
+
+  it('rejects WebFinger requests to private IP literals before fetch', async () => {
+    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue({ ok: true } as Response);
+
+    await expect(federationService.resolveWebFingerResource('alice@127.0.0.1')).resolves.toBeNull();
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
+  });
+
+  it('rejects avatar downloads that resolve to private addresses before fetch', async () => {
+    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue({ ok: true } as Response);
+
+    await expect(federationService.downloadAndStoreAvatar('https://private.example/avatar.png'))
+      .resolves.toEqual({ fileId: null, notModified: false });
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(mockAssetUploadFileDirect).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
+  });
+
+  it('rejects oversized avatars from content-length before buffering or public upload', async () => {
+    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: {
+        get: (name: string) => {
+          if (name.toLowerCase() === 'content-type') return 'image/png';
+          if (name.toLowerCase() === 'content-length') return String(6 * 1024 * 1024);
+          return null;
+        },
+      },
+      body: {
+        getReader: () => {
+          throw new Error('body should not be read');
+        },
+      },
+    } as unknown as Response);
+
+    await expect(federationService.downloadAndStoreAvatar('https://cdn.example/huge.png'))
+      .resolves.toEqual({ fileId: null, etag: undefined, lastModified: undefined, notModified: false });
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(mockAssetUploadFileDirect).not.toHaveBeenCalled();
     fetchSpy.mockRestore();
   });
 });
