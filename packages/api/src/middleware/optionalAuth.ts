@@ -8,6 +8,7 @@
 
 import { Response, NextFunction } from 'express';
 import { Types } from 'mongoose';
+import jwt from 'jsonwebtoken';
 import { logger } from '../utils/logger';
 import { authenticateRequestNonBlocking, AuthenticatedRequest, extractTokenFromRequest } from './authUtils';
 import { verifyServiceToken, type ServiceTokenPayload } from './auth';
@@ -46,6 +47,54 @@ export async function optionalAuthMiddleware(
  */
 export function getUserId(req: AuthenticatedRequest): string | undefined {
   return req.user?._id;
+}
+
+/**
+ * Resolve the viewer user id for a MEDIA stream/download request.
+ *
+ * A browser `<img src>` / `<a download>` cannot send an `Authorization` header,
+ * so the SDK embeds the access token in the URL query (`?token=`) for private
+ * assets (see `@oxyhq/core` `getFileDownloadUrl`). This resolves that query
+ * token to its owner user id so the OWNER can render their own private media.
+ *
+ * Important properties:
+ * - The token only IDENTIFIES the viewer. It grants no access by itself — the
+ *   caller still runs `canUserAccessFile` / `checkMediaAccess`, which is the
+ *   real authorization gate (ownership / privacy rules).
+ * - The signature is verified with `ACCESS_TOKEN_SECRET`, but expiration is
+ *   IGNORED: a cached `<img>` URL whose short-lived token already expired must
+ *   still let the owner see their own file. A forged/garbage token fails
+ *   signature verification and yields `undefined` (anonymous).
+ * - Header/session auth always wins; the query token is only a fallback when no
+ *   authenticated user is present on the request.
+ *
+ * Scope it to media stream/download routes only — never wire it into a global
+ * auth middleware (token-in-URL must not authenticate arbitrary endpoints).
+ */
+export function getMediaViewerUserId(req: AuthenticatedRequest): string | undefined {
+  const sessionUserId = getUserId(req);
+  if (sessionUserId) {
+    return sessionUserId;
+  }
+
+  const queryToken = typeof req.query?.token === 'string' ? req.query.token : undefined;
+  if (!queryToken || !process.env.ACCESS_TOKEN_SECRET) {
+    return undefined;
+  }
+
+  try {
+    const decoded = jwt.verify(queryToken, process.env.ACCESS_TOKEN_SECRET, {
+      ignoreExpiration: true,
+    }) as { userId?: string; id?: string; _id?: string };
+    return decoded.userId || decoded.id || decoded._id || undefined;
+  } catch (error) {
+    // Invalid signature / malformed token → treat as anonymous (the access
+    // check below still runs). Logged at debug for diagnostics only.
+    logger.debug('getMediaViewerUserId: query token did not verify', {
+      reason: error instanceof Error ? error.message : String(error),
+    });
+    return undefined;
+  }
 }
 
 /**

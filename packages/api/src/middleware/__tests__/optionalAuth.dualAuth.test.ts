@@ -20,6 +20,10 @@
 // The global mongoose mock (jest.setup.cjs) omits `Types`, which optionalAuth's
 // resolveViewerId uses (`Types.ObjectId.isValid`). Restore the REAL mongoose.
 jest.mock('mongoose', () => jest.requireActual('mongoose'));
+// jest.setup.cjs globally stubs jsonwebtoken (verify always returns a fixed
+// user and never throws). getMediaViewerUserId's whole contract is real
+// signature verification + ignoreExpiration, so restore the REAL jsonwebtoken.
+jest.mock('jsonwebtoken', () => jest.requireActual('jsonwebtoken'));
 import { Types } from 'mongoose';
 import type { Response } from 'express';
 
@@ -47,9 +51,11 @@ jest.mock('../../utils/logger', () => ({
   logger: { warn: jest.fn(), error: jest.fn(), info: jest.fn(), debug: jest.fn() },
 }));
 
+import jwt from 'jsonwebtoken';
 import {
   optionalUserOrServiceAuth,
   resolveViewerId,
+  getMediaViewerUserId,
   type OptionalUserOrServiceRequest,
 } from '../optionalAuth';
 
@@ -177,5 +183,79 @@ describe('resolveViewerId', () => {
 
   it('returns undefined when no principal is present', () => {
     expect(resolveViewerId(makeReq())).toBeUndefined();
+  });
+});
+
+/**
+ * getMediaViewerUserId — resolves the viewer for `<img src>`/`<a download>`
+ * media URLs that cannot carry an Authorization header but DO carry the
+ * SDK-issued access token in `?token=`. Uses the REAL `jsonwebtoken` (not
+ * mocked) signed with a test ACCESS_TOKEN_SECRET.
+ */
+describe('getMediaViewerUserId (private media owner-from-query-token)', () => {
+  const SECRET = 'test-access-secret';
+  let prevSecret: string | undefined;
+
+  function makeMediaReq(
+    query: Record<string, unknown>,
+    user?: { _id: string },
+  ): OptionalUserOrServiceRequest {
+    return { headers: {}, query, user } as unknown as OptionalUserOrServiceRequest;
+  }
+
+  beforeAll(() => {
+    prevSecret = process.env.ACCESS_TOKEN_SECRET;
+    process.env.ACCESS_TOKEN_SECRET = SECRET;
+  });
+
+  afterAll(() => {
+    if (prevSecret === undefined) {
+      delete process.env.ACCESS_TOKEN_SECRET;
+    } else {
+      process.env.ACCESS_TOKEN_SECRET = prevSecret;
+    }
+  });
+
+  it('prefers the authenticated session user and ignores the query token', () => {
+    const otherToken = jwt.sign({ userId: 'attacker' }, SECRET);
+    const req = makeMediaReq({ token: otherToken }, { _id: 'session-owner' });
+    expect(getMediaViewerUserId(req)).toBe('session-owner');
+  });
+
+  it('resolves the owner from a valid ?token= when no session user is present', () => {
+    const token = jwt.sign({ userId: 'owner-123', type: 'access' }, SECRET, { expiresIn: '15m' });
+    expect(getMediaViewerUserId(makeMediaReq({ token }))).toBe('owner-123');
+  });
+
+  it('still resolves the owner from an EXPIRED token (stale cached <img> URL)', () => {
+    // Signed 1h ago with a 15m TTL → already expired, but the owner must still
+    // be able to render their own private media from a cached URL.
+    const token = jwt.sign({ userId: 'owner-123', iat: Math.floor(1_700_000_000) }, SECRET, {
+      expiresIn: '15m',
+    });
+    // Re-sign as definitively expired.
+    const expired = jwt.sign({ userId: 'owner-123', exp: 1, iat: 1 }, SECRET);
+    expect(getMediaViewerUserId(makeMediaReq({ token: expired }))).toBe('owner-123');
+    expect(getMediaViewerUserId(makeMediaReq({ token }))).toBe('owner-123');
+  });
+
+  it('returns undefined for a token signed with the WRONG secret (forged)', () => {
+    const forged = jwt.sign({ userId: 'attacker' }, 'wrong-secret');
+    expect(getMediaViewerUserId(makeMediaReq({ token: forged }))).toBeUndefined();
+  });
+
+  it('returns undefined for a garbage / malformed token', () => {
+    expect(getMediaViewerUserId(makeMediaReq({ token: 'not-a-jwt' }))).toBeUndefined();
+  });
+
+  it('returns undefined when no token and no session user are present', () => {
+    expect(getMediaViewerUserId(makeMediaReq({}))).toBeUndefined();
+  });
+
+  it('returns undefined when ACCESS_TOKEN_SECRET is not configured', () => {
+    const token = jwt.sign({ userId: 'owner-123' }, SECRET);
+    delete process.env.ACCESS_TOKEN_SECRET;
+    expect(getMediaViewerUserId(makeMediaReq({ token }))).toBeUndefined();
+    process.env.ACCESS_TOKEN_SECRET = SECRET;
   });
 });
