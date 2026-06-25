@@ -144,6 +144,7 @@ function MessageDetailInner({ mode, messageId }: MessageDetailProps) {
   const [replyTargetId, setReplyTargetId] = useState<string | null>(null);
   const [expandedMessages, setExpandedMessages] = useState<Set<string>>(new Set([messageId]));
   const [messageMenuId, setMessageMenuId] = useState<string | null>(null);
+  const [threadSummaryRequested, setThreadSummaryRequested] = useState(false);
 
   const moreMenuControl = useDialogControl();
   const labelPickerControl = useDialogControl();
@@ -758,9 +759,30 @@ function MessageDetailInner({ mode, messageId }: MessageDetailProps) {
             </View>
           )}
 
-          {/* AI Thread Summary - shows for 4+ messages */}
+          {/* AI Thread Summary - requires explicit user action before sending thread content to Alia */}
           {sortedThread.length >= 4 && (
-            <ThreadSummary messages={sortedThread} minMessages={4} />
+            threadSummaryRequested ? (
+              <ThreadSummary messages={sortedThread} minMessages={4} />
+            ) : (
+              <TouchableOpacity
+                style={[
+                  styles.threadSummaryPrompt,
+                  { backgroundColor: colors.surfaceVariant, borderColor: colors.border },
+                ]}
+                onPress={() => setThreadSummaryRequested(true)}
+                activeOpacity={0.75}
+              >
+                <MaterialCommunityIcons name="robot-outline" size={18} color={colors.primary} />
+                <View style={styles.threadSummaryPromptText}>
+                  <Text style={[styles.threadSummaryPromptTitle, { color: colors.text }]}>
+                    Generate AI thread summary
+                  </Text>
+                  <Text style={[styles.threadSummaryPromptDescription, { color: colors.secondaryText }]}>
+                    Sends this conversation to Alia for summarization.
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            )
           )}
         </View>
 
@@ -1291,6 +1313,27 @@ const styles = StyleSheet.create({
   threadCountText: {
     fontSize: 12,
     fontWeight: '500',
+  },
+  threadSummaryPrompt: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    marginBottom: 16,
+  },
+  threadSummaryPromptText: {
+    flex: 1,
+    gap: 2,
+  },
+  threadSummaryPromptTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  threadSummaryPromptDescription: {
+    fontSize: 12,
   },
   collapsedMessage: {
     flexDirection: 'row',
