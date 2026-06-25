@@ -37,6 +37,23 @@ import { pushService } from './push.service';
 import { assetService } from './assetServiceSingleton';
 import { simpleParser } from 'mailparser';
 
+const MAX_STRUCTURED_SEARCH_FILTER_LENGTH = 128;
+const EMAIL_SEARCH_MAX_TIME_MS = 5_000;
+
+export function escapeRegexLiteral(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+export function normalizeStructuredSearchFilter(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  if (value.length > MAX_STRUCTURED_SEARCH_FILTER_LENGTH) {
+    throw new BadRequestError(
+      `Search filters must be ${MAX_STRUCTURED_SEARCH_FILTER_LENGTH} characters or fewer`,
+    );
+  }
+  return escapeRegexLiteral(value);
+}
+
 class EmailService {
   // ─── Mailbox Management ───────────────────────────────────────────
 
@@ -1908,14 +1925,18 @@ class EmailService {
     if (mailboxId) {
       filter.mailboxId = new mongoose.Types.ObjectId(mailboxId);
     }
-    if (from) {
-      filter['from.address'] = { $regex: from, $options: 'i' };
+    const fromFilter = normalizeStructuredSearchFilter(from);
+    const toFilter = normalizeStructuredSearchFilter(to);
+    const subjectFilter = normalizeStructuredSearchFilter(subject);
+
+    if (fromFilter) {
+      filter['from.address'] = { $regex: fromFilter, $options: 'i' };
     }
-    if (to) {
-      filter['to.address'] = { $regex: to, $options: 'i' };
+    if (toFilter) {
+      filter['to.address'] = { $regex: toFilter, $options: 'i' };
     }
-    if (subject) {
-      filter.subject = { $regex: subject, $options: 'i' };
+    if (subjectFilter) {
+      filter.subject = { $regex: subjectFilter, $options: 'i' };
     }
     if (hasAttachment) {
       filter['attachments.0'] = { $exists: true };
@@ -1937,8 +1958,9 @@ class EmailService {
         .sort(sort)
         .skip(offset)
         .limit(limit)
+        .maxTimeMS(EMAIL_SEARCH_MAX_TIME_MS)
         .lean({ virtuals: true }),
-      Message.countDocuments(filter),
+      Message.countDocuments(filter).maxTimeMS(EMAIL_SEARCH_MAX_TIME_MS),
     ]);
 
     return { data, total, limit, offset };
