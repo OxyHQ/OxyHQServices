@@ -90,6 +90,8 @@ class SmtpOutboundService {
 
   async send(message: OutboundMessage): Promise<{ messageId: string; queued: boolean }> {
     const messageId = `<${uuidv4()}@${EMAIL_DOMAIN}>`;
+    const size = emailService.calculateMessageStorageSize(message);
+    await emailService.enforceQuota(message.userId, size);
     const nmAttachments = await this.resolveAttachments(message.attachments || []);
 
     const mailOptions = {
@@ -113,7 +115,6 @@ class SmtpOutboundService {
     try {
       await this.transporter.sendMail(mailOptions);
 
-      const size = Buffer.byteLength((message.text || '') + (message.html || ''), 'utf8');
       await emailService.storeSentMessage(message.userId, {
         messageId,
         from: message.from,
@@ -358,6 +359,8 @@ class SmtpOutboundService {
     msg.attempts++;
 
     try {
+      const size = emailService.calculateMessageStorageSize(msg);
+      await emailService.enforceQuota(msg.userId, size);
       const nmAttachments = await this.resolveAttachments(msg.attachments || []);
       await this.transporter.sendMail({
         messageId: msg.messageId,
@@ -374,7 +377,6 @@ class SmtpOutboundService {
         ...SECURE_MAIL_CONTENT_OPTIONS,
       });
 
-      const size = Buffer.byteLength((msg.text || '') + (msg.html || ''), 'utf8');
       await emailService.storeSentMessage(msg.userId, {
         messageId: msg.messageId,
         from: msg.from,

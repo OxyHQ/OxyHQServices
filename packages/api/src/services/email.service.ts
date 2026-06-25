@@ -38,6 +38,12 @@ import { assetService } from './assetServiceSingleton';
 import { simpleParser } from 'mailparser';
 
 class EmailService {
+  calculateMessageStorageSize(message: { text?: string; html?: string; attachments?: Array<{ size: number }> }): number {
+    const bodySize = Buffer.byteLength((message.text || '') + (message.html || ''), 'utf8');
+    const attachmentSize = (message.attachments ?? []).reduce((sum, attachment) => sum + attachment.size, 0);
+    return bodySize + attachmentSize;
+  }
+
   // ─── Mailbox Management ───────────────────────────────────────────
 
   /**
@@ -971,6 +977,9 @@ class EmailService {
     const sentMailbox = await this.getMailboxBySpecialUse(userId, '\\Sent');
     if (!sentMailbox) throw new NotFoundError('Sent mailbox not found');
 
+    const size = this.calculateMessageStorageSize(messageData);
+    await this.enforceQuota(userId, size);
+
     const message = await Message.create({
       userId: new mongoose.Types.ObjectId(userId),
       mailboxId: sentMailbox._id,
@@ -985,7 +994,7 @@ class EmailService {
       headers: {},
       attachments: messageData.attachments ?? [],
       flags: { seen: true, starred: false, answered: false, forwarded: false, draft: false },
-      size: messageData.size,
+      size,
       inReplyTo: messageData.inReplyTo,
       references: messageData.references ?? [],
       date: new Date(),
@@ -993,7 +1002,7 @@ class EmailService {
     });
 
     await Mailbox.findByIdAndUpdate(sentMailbox._id, {
-      $inc: { totalMessages: 1, size: messageData.size },
+      $inc: { totalMessages: 1, size },
     });
 
     return message.toJSON();
@@ -1122,10 +1131,8 @@ class EmailService {
     const sentMailbox = await this.getMailboxBySpecialUse(userId, '\\Sent');
     if (!sentMailbox) throw new NotFoundError('Sent mailbox not found');
 
-    const size = Buffer.byteLength(
-      (params.text || '') + (params.html || ''),
-      'utf8'
-    );
+    const size = this.calculateMessageStorageSize(params);
+    await this.enforceQuota(userId, size);
 
     const message = await Message.create({
       userId: new mongoose.Types.ObjectId(userId),
