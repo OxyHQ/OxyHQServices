@@ -27,6 +27,12 @@ const options: swaggerJsdoc.Options = {
           bearerFormat: 'JWT',
           description: 'JWT access token obtained from /auth/login or /auth/verify',
         },
+        internalSecretAuth: {
+          type: 'apiKey',
+          in: 'header',
+          name: 'X-Oxy-Internal',
+          description: 'Internal shared secret for IdP/API server-to-server calls.',
+        },
       },
       schemas: {
         Error: {

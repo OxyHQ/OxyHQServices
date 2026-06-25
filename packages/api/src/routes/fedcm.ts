@@ -133,15 +133,17 @@ router.get('/clients/approved', getApprovedClients);
  *   get:
  *     tags:
  *       - Federation
- *     security: []
+ *     security:
+ *       - internalSecretAuth: []
  *     summary: List RP origins a user has granted via FedCM
  *     description: >
  *       Returns the relying-party origins the user has previously authorized
  *       through FedCM, intersected with the currently-approved client list.
  *       The IdP accounts endpoint (auth.oxy.so) calls this server-to-server to
  *       populate the FedCM `approved_clients` array, which lets Chrome treat
- *       the account as a returning account for those RPs (skips the disclosure
- *       UI and enables silent mediation). Carries no token material or PII.
+ *       the account as a returning account for those RPs. Requires the
+ *       X-Oxy-Internal shared secret because this per-user RP grant set is
+ *       private relationship/activity metadata.
  *     parameters:
  *       - name: userId
  *         in: path
@@ -149,6 +151,12 @@ router.get('/clients/approved', getApprovedClients);
  *         schema:
  *           type: string
  *         description: The user's id (24-char hex ObjectId).
+ *       - in: header
+ *         name: X-Oxy-Internal
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Shared secret equal to SSO_INTERNAL_SECRET.
  *     responses:
  *       200:
  *         description: Granted origins (possibly empty).
@@ -163,6 +171,8 @@ router.get('/clients/approved', getApprovedClients);
  *                     type: string
  *       400:
  *         description: Missing or malformed userId.
+ *       404:
+ *         description: Internal shared secret missing or invalid.
  */
 router.get('/grants/:userId', getUserGrants);
 
