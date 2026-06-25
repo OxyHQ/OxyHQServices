@@ -275,26 +275,15 @@ export const useAuthOperations = ({
     }
 
     try {
-      // Semantics intentionally diverge by platform to match user expectation:
-      //   - Web: "Sign out of all accounts" = sign out every device-local
-      //     account on THIS device. The cookie endpoint is the only path
-      //     that can `Set-Cookie` an immediate expiry on every
-      //     `oxy_rt_${n}` slots AND revoke every presented family server-side.
-      //     The bearer-protected
-      //     `logoutAllSessions(activeSessionId)` would only revoke the
-      //     active user's sessions across devices and leave sibling
-      //     accounts' cookies sitting on this device — wrong UX for the
-      //     chooser's "Sign out of all accounts".
-      //   - Native: there are no per-account cookies; "Sign out of all"
-      //     keeps its long-standing "revoke every session of THIS user"
-      //     meaning via the bearer endpoint.
-      // After clearing on web, also drop the persisted active-authuser so
-      // the next cold boot starts from a clean slate.
+      // Always invoke the bearer-protected global endpoint first: the public
+      // `logoutAll`/`signOutAll` contract means revoking this user's sessions
+      // across devices, not just clearing refresh cookies presented by the
+      // current browser. On web, follow up with the cookie endpoint so every
+      // device-local account slot is expired in the browser as well.
+      await oxyServices.logoutAllSessions(activeSessionId);
       if (isWebBrowser()) {
         await oxyServices.logoutAllSessionsViaCookie();
         clearActiveAuthuser();
-      } else {
-        await oxyServices.logoutAllSessions(activeSessionId);
       }
       // logoutAll is ALWAYS a full sign-out: clear the per-origin SSO bounce
       // state (web-guarded internally) so a fresh sign-in can re-probe.
