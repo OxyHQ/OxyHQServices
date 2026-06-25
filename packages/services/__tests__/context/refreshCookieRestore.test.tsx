@@ -144,6 +144,8 @@ describe('Cold-boot restore via secure refresh cookies (multi-account)', () => {
 
   it('CASE single account: signs the user in from the refresh-all snapshot, plants the token, and persists session id + authuser', async () => {
     const stub = baseStub();
+    window.localStorage.setItem(ACTIVE_SESSION_KEY, COOKIE_SESSION_ID);
+
     stub.refreshAllSessions = jest.fn(async () => ({
       accounts: [
         {
@@ -179,7 +181,31 @@ describe('Cold-boot restore via secure refresh cookies (multi-account)', () => {
     expect(ssoNavigateSpy).not.toHaveBeenCalled();
   });
 
+  it('CASE no durable local session: skips the ambient-cookie exchange and bounces to central SSO', async () => {
+    const stub = baseStub();
+    stub.refreshAllSessions = jest.fn(async () => ({
+      accounts: [
+        {
+          authuser: 0,
+          accessToken: COOKIE_ACCESS_TOKEN,
+          expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+          sessionId: COOKIE_SESSION_ID,
+          user: { id: COOKIE_USER_ID, username: 'tester', avatar: null, color: null },
+        },
+      ],
+    }));
+
+    renderProvider(stub);
+
+    await waitFor(() => expect(ssoNavigateSpy).toHaveBeenCalledTimes(1));
+
+    expect(stub.refreshAllSessions).not.toHaveBeenCalled();
+    expect(captured.isAuthenticated).toBe(false);
+    expect(setTokensSpy).not.toHaveBeenCalled();
+  });
+
   it('CASE empty: a `{accounts:[]}` snapshot leaves the user logged out, plants nothing, and bounces to central SSO', async () => {
+    window.localStorage.setItem(ACTIVE_SESSION_KEY, COOKIE_SESSION_ID);
     const stub = baseStub();
     // `refreshAllSessions` already defaults to `{accounts: []}` via baseStub.
 
@@ -205,6 +231,7 @@ describe('Cold-boot restore via secure refresh cookies (multi-account)', () => {
   });
 
   it('CASE network error: a refreshAllSessions rejection falls through unauthenticated, then bounces to central SSO', async () => {
+    window.localStorage.setItem(ACTIVE_SESSION_KEY, COOKIE_SESSION_ID);
     const stub = baseStub();
     stub.refreshAllSessions = jest.fn(async () => {
       throw new TypeError('Failed to fetch');

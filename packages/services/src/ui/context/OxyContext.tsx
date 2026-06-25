@@ -838,6 +838,27 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       return false;
     }
 
+    // Security boundary: never exchange an ambient, parent-domain refresh
+    // cookie for JavaScript-visible bearer tokens unless THIS origin already
+    // has durable proof that the SDK previously owned an Oxy session. This
+    // preserves normal reload restore for legitimate RP apps while preventing
+    // unrelated same-site origins (or cookie-tossing attackers) from turning a
+    // bare `oxy_rt_*` cookie into a full access token on first load.
+    let storedActiveSessionId: string | null = null;
+    try {
+      const readyStorage = await getReadyStorage();
+      storedActiveSessionId = await readyStorage.getItem(storageKeys.activeSessionId);
+    } catch (storageError) {
+      if (__DEV__) {
+        loggerUtil.debug('Refresh-all cookie restore skipped: durable session proof unavailable', { component: 'OxyContext', method: 'restoreViaRefreshCookie' }, storageError as unknown);
+      }
+      return false;
+    }
+
+    if (!storedActiveSessionId) {
+      return false;
+    }
+
     let snapshot;
     try {
       // Bound the refresh so a cross-domain/stalled call cannot hang the cold
@@ -859,10 +880,15 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     // account, otherwise the lowest authuser (deterministic). The server has
     // already sorted ascending so [0] is the lowest.
     const persistedAuthuser = readActiveAuthuser();
+    const durableSessionAccount = snapshot.accounts.find((a) => a.sessionId === storedActiveSessionId);
+    if (!durableSessionAccount) {
+      return false;
+    }
+
     const matched = persistedAuthuser !== null
-      ? snapshot.accounts.find((a) => a.authuser === persistedAuthuser)
+      ? snapshot.accounts.find((a) => a.authuser === persistedAuthuser && a.sessionId === storedActiveSessionId)
       : undefined;
-    const activeAccount = matched ?? snapshot.accounts[0];
+    const activeAccount = matched ?? durableSessionAccount;
 
     // Plant the active access token. Sibling accounts' access tokens stay in
     // the snapshot (the chooser can drive a per-account refresh via
@@ -911,7 +937,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     markAuthResolvedRef.current();
     onAuthStateChangeRef.current?.(fullUser);
     return true;
-  }, [oxyServices, persistSessionDurably]);
+  }, [getReadyStorage, oxyServices, persistSessionDurably, storageKeys.activeSessionId]);
 
   // Native (and offline) stored-session restore — the ONLY restore path that
   // runs on React Native, and the web fallback when no cross-domain step won.
