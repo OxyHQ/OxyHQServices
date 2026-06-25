@@ -530,7 +530,6 @@
         "expo-linear-gradient",
         "nativewind",
         "react-native-keyboard-controller",
-        "react-native-qrcode-svg",
       ],
     },
     "packages/test-app-expo": {
