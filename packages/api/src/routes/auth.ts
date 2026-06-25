@@ -79,6 +79,16 @@ const USERNAME_REGEX = /^[a-zA-Z0-9]{3,30}$/;
 // Password Authentication Routes
 // ============================================
 
+// Dedicated per-IP password login limit. The sign-in controller also enforces
+// per-identifier lockout, but this route-level limiter prevents spraying a few
+// guesses across many accounts from the same network.
+const loginLimiter = rateLimit({
+  prefix: 'rl:auth:login:',
+  windowMs: 15 * 60 * 1000,
+  max: process.env.NODE_ENV === 'development' ? 200 : 30,
+  message: 'Too many login attempts from this IP, please try again later.',
+});
+
 /**
  * @openapi
  * /auth/signup:
@@ -291,7 +301,7 @@ router.post('/signup', validate({ body: signupSchema }), SessionController.signU
  *       429:
  *         description: Too many failed login attempts. Try again later.
  */
-router.post('/login', validate({ body: loginSchema }), SessionController.signIn);
+router.post('/login', loginLimiter, validate({ body: loginSchema }), SessionController.signIn);
 
 /**
  * @openapi
