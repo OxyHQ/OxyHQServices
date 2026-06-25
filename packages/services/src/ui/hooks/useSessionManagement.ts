@@ -30,7 +30,7 @@ export interface UseSessionManagementResult {
   sessions: ClientSession[];
   activeSessionId: string | null;
   setActiveSessionId: (sessionId: string | null) => void;
-  updateSessions: (incoming: ClientSession[], options?: { merge?: boolean }) => void;
+  updateSessions: (incoming: ClientSession[], options?: { merge?: boolean; preserveSessionIds?: string[] }) => void;
   switchSession: (sessionId: string) => Promise<User>;
   refreshSessions: (activeUserId?: string) => Promise<void>;
   clearSessionState: () => Promise<void>;
@@ -95,14 +95,17 @@ export const useSessionManagement = ({
   );
 
   const updateSessions = useCallback(
-    (incoming: ClientSession[], options: { merge?: boolean } = {}): void => {
+    (incoming: ClientSession[], options: { merge?: boolean; preserveSessionIds?: string[] } = {}): void => {
       setSessions((prevSessions) => {
         const processed = options.merge
           ? mergeSessions(prevSessions, incoming, activeSessionIdRef.current, false)
           : normalizeAndSortSessions(incoming, activeSessionIdRef.current, false);
 
         if (storage) {
-          void saveSessionIds(processed.map((session) => session.sessionId));
+          void saveSessionIds([
+            ...processed.map((session) => session.sessionId),
+            ...(options.preserveSessionIds ?? []),
+          ]);
         }
 
         if (sessionsArraysEqual(prevSessions, processed)) {
