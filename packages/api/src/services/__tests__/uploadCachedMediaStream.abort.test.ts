@@ -381,6 +381,126 @@ describe('uploadCachedMediaStream — abort cleanup', () => {
 
     source.destroy();
   });
+  it('rejects durable federated dedupe against an ordinary private user file without mutating it', async () => {
+    let resolveUpload: ((info: FileInfo) => void) | undefined;
+    let capturedTempKey: string | undefined;
+
+    const uploadStream = jest.fn(
+      (key: string, _body: Readable): Promise<FileInfo> => {
+        capturedTempKey = key;
+        return new Promise<FileInfo>((resolve) => { resolveUpload = resolve; });
+      }
+    );
+    const deleteFile = jest.fn((): Promise<void> => Promise.resolve());
+    const { service } = buildAssetService({ uploadStream, deleteFile });
+
+    const existingFile = {
+      _id: { toString: () => '64c000000000000000000bad' },
+      sha256: 'private-sha',
+      storageKey: 'content/2026/06/pr/private-sha.png',
+      status: 'active',
+      ownerUserId: 'victim-user-id',
+      purpose: 'user',
+      visibility: 'private',
+      metadata: { ownerOnly: true },
+      save: jest.fn((): Promise<void> => Promise.resolve()),
+    };
+    mockFileFindOne.mockResolvedValueOnce(existingFile);
+
+    const source = new Readable({
+      read() {
+        this.push(Buffer.from('PNG!'));
+        this.push(null);
+      },
+    });
+
+    const promise = service.uploadFederatedMediaStream(
+      source,
+      'image/png',
+      'federated-post.png',
+      CACHE_MAX_BYTES,
+      'federated-owner-id',
+      { sourceUri: 'https://remote.example/media/1' }
+    );
+
+    await new Promise((resolve) => setImmediate(resolve));
+    resolveUpload?.({ key: capturedTempKey || 'federation/incoming/x', size: 4, contentType: 'image/png' } as FileInfo);
+
+    await expect(promise).rejects.toMatchObject({ statusCode: 409 });
+
+    expect(existingFile.ownerUserId).toBe('victim-user-id');
+    expect(existingFile.purpose).toBe('user');
+    expect(existingFile.visibility).toBe('private');
+    expect(existingFile.metadata).toEqual({ ownerOnly: true });
+    expect(existingFile.save).not.toHaveBeenCalled();
+    expect(deleteFile).toHaveBeenCalledWith(capturedTempKey);
+
+    source.destroy();
+  });
+
+  it('promotes a deduped federation cache record for durable federated media', async () => {
+    let resolveUpload: ((info: FileInfo) => void) | undefined;
+    let capturedTempKey: string | undefined;
+
+    const uploadStream = jest.fn(
+      (key: string, _body: Readable): Promise<FileInfo> => {
+        capturedTempKey = key;
+        return new Promise<FileInfo>((resolve) => { resolveUpload = resolve; });
+      }
+    );
+    const deleteFile = jest.fn((): Promise<void> => Promise.resolve());
+    const fileExists = jest.fn((): Promise<boolean> => Promise.resolve(true));
+    const { service } = buildAssetService({ uploadStream, deleteFile, fileExists });
+
+    const existingFile = {
+      _id: { toString: () => '64c000000000000000000ace' },
+      sha256: 'cache-sha',
+      storageKey: 'public/content/2026/06/ca/cache-sha.png',
+      status: 'active',
+      ownerUserId: '__federation_media_cache__',
+      purpose: 'federation-media-cache',
+      visibility: 'public',
+      metadata: { cached: true },
+      save: jest.fn((): Promise<void> => Promise.resolve()),
+    };
+    mockFileFindOne.mockResolvedValueOnce(existingFile);
+
+    const source = new Readable({
+      read() {
+        this.push(Buffer.from('PNG!'));
+        this.push(null);
+      },
+    });
+
+    const promise = service.uploadFederatedMediaStream(
+      source,
+      'image/png',
+      'federated-post.png',
+      CACHE_MAX_BYTES,
+      'federated-owner-id',
+      { sourceUri: 'https://remote.example/media/1' }
+    );
+
+    await new Promise((resolve) => setImmediate(resolve));
+    resolveUpload?.({ key: capturedTempKey || 'federation/incoming/x', size: 4, contentType: 'image/png' } as FileInfo);
+
+    await expect(promise).resolves.toBe(existingFile);
+
+    expect(existingFile.ownerUserId).toBe('federated-owner-id');
+    expect(existingFile.purpose).toBe('user');
+    expect(existingFile.visibility).toBe('public');
+    expect(existingFile.metadata).toEqual({
+      cached: true,
+      source: 'federation',
+      sourceUri: 'https://remote.example/media/1',
+      promotedFromFederationCache: true,
+    });
+    expect(existingFile.save).toHaveBeenCalledTimes(1);
+    expect(deleteFile).toHaveBeenCalledWith(capturedTempKey);
+
+    source.destroy();
+  });
+
 });
 
 describe('AssetService.uploadFileDirect — empty-file guard', () => {
