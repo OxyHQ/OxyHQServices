@@ -22,6 +22,11 @@ import { setPlatformOS } from '../../utils/platform';
 // specific (op, key) pair throw to simulate a keychain that fails mid-write or
 // is transiently locked.
 const failPlan: { failKey?: string; failOp?: 'set' | 'get' } = {};
+const setCalls: Array<{
+  key: string;
+  value: string;
+  options?: Record<string, unknown>;
+}> = [];
 
 jest.mock(
   'expo-secure-store',
@@ -36,8 +41,9 @@ jest.mock(
       __esModule: true,
       WHEN_UNLOCKED_THIS_DEVICE_ONLY: 'WHEN_UNLOCKED_THIS_DEVICE_ONLY',
       WHEN_UNLOCKED: 'WHEN_UNLOCKED',
-      setItemAsync: jest.fn(async (key: string, value: string) => {
+      setItemAsync: jest.fn(async (key: string, value: string, options?: Record<string, unknown>) => {
         maybeFail('set', key);
+        setCalls.push({ key, value, options });
         store.set(key, value);
       }),
       getItemAsync: jest.fn(async (key: string) => {
@@ -51,7 +57,9 @@ jest.mock(
         store.clear();
         failPlan.failKey = undefined;
         failPlan.failOp = undefined;
+        setCalls.length = 0;
       },
+      __getSetCalls__: () => setCalls,
       __getStore__: () => store,
       __failPlan__: failPlan,
     };
@@ -92,6 +100,11 @@ jest.mock('../../utils/platformCrypto', () => ({
 interface SecureStoreTestHandle {
   __resetStore__: () => void;
   __getStore__: () => Map<string, string>;
+  __getSetCalls__: () => Array<{
+    key: string;
+    value: string;
+    options?: Record<string, unknown>;
+  }>;
   __failPlan__: { failKey?: string; failOp?: 'set' | 'get' };
 }
 
@@ -117,6 +130,22 @@ describe('KeyManager atomicity & recoverability under flaky storage', () => {
     const km = await import('../keyManager');
     KeyManager = km.KeyManager;
     resetCaches();
+  });
+
+  it('uses the documented iOS keychain access group for shared identity writes', async () => {
+    await KeyManager.createSharedIdentity();
+    const ss = (await import('expo-secure-store' as string)) as unknown as SecureStoreTestHandle;
+
+    const sharedWrites = ss
+      .__getSetCalls__()
+      .filter(
+        (call) => call.key === 'oxy_shared_identity_private_key' || call.key === 'oxy_shared_identity_public_key',
+      );
+
+    expect(sharedWrites).toHaveLength(2);
+    expect(
+      sharedWrites.every((call) => call.options?.keychainAccessGroup === 'group.so.oxy.shared'),
+    ).toBe(true);
   });
 
   it('a failed OVERWRITE leaves the ORIGINAL identity intact and recoverable (no silent switch)', async () => {
