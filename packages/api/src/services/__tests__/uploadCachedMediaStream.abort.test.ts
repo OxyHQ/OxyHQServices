@@ -378,3 +378,35 @@ describe('uploadCachedMediaStream — abort cleanup', () => {
     source.destroy();
   });
 });
+
+describe('AssetService visibility relocation', () => {
+  it('deletes legacy backfilled public CDN copies when a non-public DB key is downgraded', async () => {
+    const existingKeys = new Set([
+      'content/2026/06/legacy-avatar.jpg',
+      'public/content/2026/06/legacy-avatar.jpg',
+    ]);
+    const deleteFile = jest.fn((key: string): Promise<void> => {
+      existingKeys.delete(key);
+      return Promise.resolve();
+    });
+    const fileExists = jest.fn((key: string): Promise<boolean> => Promise.resolve(existingKeys.has(key)));
+    const copyFile = jest.fn((): Promise<void> => Promise.resolve());
+    const { service } = buildAssetService({ deleteFile, fileExists, copyFile });
+
+    type RelocationHarness = {
+      relocateObjectForVisibility(key: string, visibility: 'private' | 'public' | 'unlisted'): Promise<string>;
+    };
+
+    const relocatedKey = await (service as unknown as RelocationHarness).relocateObjectForVisibility(
+      'content/2026/06/legacy-avatar.jpg',
+      'private'
+    );
+
+    expect(relocatedKey).toBe('content/2026/06/legacy-avatar.jpg');
+    expect(copyFile).not.toHaveBeenCalled();
+    expect(deleteFile).toHaveBeenCalledTimes(1);
+    expect(deleteFile).toHaveBeenCalledWith('public/content/2026/06/legacy-avatar.jpg');
+    expect(existingKeys.has('content/2026/06/legacy-avatar.jpg')).toBe(true);
+    expect(existingKeys.has('public/content/2026/06/legacy-avatar.jpg')).toBe(false);
+  });
+});

@@ -101,7 +101,7 @@ export type RecipientInput = z.infer<typeof recipientSchema>;
 // the Oxy File Manager. The server resolves the File record, mirrors its
 // originalName/mime/size into the Message subdocument, and creates a link
 // (app: 'oxy-mail') so the file isn't orphaned. Only the file owner may
-// reference their own files (enforced via assetService.canUserAccessFile).
+// reference their own files (enforced by the controller).
 const attachmentInputSchema = z.object({
   fileId: z.string().trim().min(1),
   contentId: z.string().trim().optional(),

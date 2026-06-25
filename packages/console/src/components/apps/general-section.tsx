@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
 import { getErrorMessage } from '@/lib/api-error';
+import { stripSensitiveImageUrlQueryParams } from '@/lib/image-upload';
 import {
   useUpdateApplication,
   useDeleteApplication,
@@ -93,9 +94,9 @@ export function GeneralSection({ application, access }: GeneralSectionProps) {
           name: name.trim(),
           description: description.trim() || undefined,
           websiteUrl: websiteUrl.trim() || undefined,
-          // Sent verbatim (empty string clears the logo) since the value comes
-          // from the upload widget, never free-text.
-          icon: icon.trim(),
+          // Empty string clears the logo. Strip credentials defensively before
+          // saving because application metadata can be exposed publicly.
+          icon: stripSensitiveImageUrlQueryParams(icon),
           redirectUris,
         },
       });

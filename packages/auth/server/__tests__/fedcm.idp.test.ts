@@ -371,6 +371,100 @@ describe('POST /fedcm/assertion', () => {
     expect(payload.iss).toBe('https://auth.oxy.so');
   });
 
+  it('rejects when the request Origin does not match the requested client_id (no credentialed CORS)', async () => {
+    // A malicious RP at evil.example posts asking for a token whose aud is an
+    // approved Oxy client (accounts.oxy.so). The browser sends the embedder's
+    // real Origin (evil.example). The assertion endpoint MUST refuse — and MUST
+    // NOT emit a credentialed CORS header (which would let evil read the token).
+    const res = await app.request('/fedcm/assertion', {
+      method: 'POST',
+      headers: {
+        ...WEBIDENTITY,
+        'content-type': 'application/x-www-form-urlencoded',
+        origin: 'https://evil.example',
+        cookie: SESSION_COOKIE,
+      },
+      body: new URLSearchParams({
+        account_id: TEST_USER_ID,
+        client_id: RP_ORIGIN,
+        nonce: 'rp-nonce-evil',
+      }).toString(),
+    });
+
+    expect(res.status).toBe(400);
+    // No reflected, credentialed CORS on the rejection — nothing leaks.
+    expect(res.headers.get('access-control-allow-origin')).toBeNull();
+    expect(res.headers.get('access-control-allow-credentials')).toBeNull();
+    const body = (await res.json()) as { error?: string; token?: string };
+    expect(body.error).toBe('invalid_client');
+    expect(body.token).toBeUndefined();
+  });
+
+  it('rejects an unapproved client_id even when Origin matches it (no token minted)', async () => {
+    // evil.example is the real embedder AND the requested client_id, so the
+    // Origin==client_id check passes — but evil.example is NOT on the approved-
+    // clients allow-list (defense-in-depth fold-in), so no token is minted.
+    stubbedApprovedClients = [RP_ORIGIN];
+    installApiStub();
+
+    const res = await app.request('/fedcm/assertion', {
+      method: 'POST',
+      headers: {
+        ...WEBIDENTITY,
+        'content-type': 'application/x-www-form-urlencoded',
+        origin: 'https://evil.example.com',
+        cookie: SESSION_COOKIE,
+      },
+      body: new URLSearchParams({
+        account_id: TEST_USER_ID,
+        client_id: 'https://evil.example.com',
+        nonce: 'rp-nonce-unapproved',
+      }).toString(),
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.headers.get('access-control-allow-origin')).toBeNull();
+    expect(res.headers.get('access-control-allow-credentials')).toBeNull();
+    const body = (await res.json()) as { error?: string; token?: string };
+    expect(body.error).toBe('invalid_client');
+    expect(body.token).toBeUndefined();
+  });
+
+  it('accepts a matching approved client and scopes credentialed CORS + aud to that single origin', async () => {
+    // Origin == client_id == an approved client. The response exposes
+    // credentialed CORS scoped to exactly that origin (never a blanket
+    // reflection), and the JWT aud is bound to the normalised origin.
+    const res = await app.request('/fedcm/assertion', {
+      method: 'POST',
+      headers: {
+        ...WEBIDENTITY,
+        'content-type': 'application/x-www-form-urlencoded',
+        // Trailing slash proves aud/CORS use the NORMALISED origin, not raw input.
+        origin: `${RP_ORIGIN}/`,
+        cookie: SESSION_COOKIE,
+      },
+      body: new URLSearchParams({
+        account_id: TEST_USER_ID,
+        client_id: `${RP_ORIGIN}/`,
+        nonce: 'rp-nonce-scoped',
+      }).toString(),
+    });
+
+    expect(res.status).toBe(200);
+    // CORS is scoped to the single validated origin, with credentials allowed.
+    expect(res.headers.get('access-control-allow-origin')).toBe(RP_ORIGIN);
+    expect(res.headers.get('access-control-allow-credentials')).toBe('true');
+    expect(res.headers.get('vary')).toContain('Origin');
+
+    const body = (await res.json()) as { token: string };
+    const [, payloadB64] = body.token.split('.');
+    const payload = JSON.parse(
+      Buffer.from(payloadB64.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf-8')
+    ) as { aud: string };
+    // aud is the normalised approved origin (no trailing slash), not raw input.
+    expect(payload.aud).toBe(RP_ORIGIN);
+  });
+
   it('returns 401 with WWW-Authenticate when not logged in at the IdP', async () => {
     const res = await app.request('/fedcm/assertion', {
       method: 'POST',
@@ -569,6 +663,11 @@ describe('Multi-domain FAPI (Clerk-style CNAME)', () => {
   });
 
   it('mints an id_token whose iss matches the request host (per FedCM spec)', async () => {
+    // The assertion endpoint now requires client_id to be an approved client
+    // AND to equal the request Origin, so approve alia.onl for this multi-domain
+    // case (the default stub only approves accounts.oxy.so).
+    stubbedApprovedClients = ['https://alia.onl'];
+    installApiStub();
     const nonce = 'nonce-multi-domain';
     const res = await app.request('https://auth.alia.onl/fedcm/assertion', {
       method: 'POST',
@@ -743,6 +842,50 @@ describe('GET /auth/silent (Safari/Firefox first-party restore)', () => {
     expect((message as SilentMessage).session).toBeNull();
     expect(targetOrigin).not.toBe('*');
     expect(capturedExchange).toBeUndefined();
+  });
+
+  it('posts a null session for an APPROVED client the user has NOT granted (first-time RP)', async () => {
+    // The client_id IS on the global approved-clients allow-list, the cookie is
+    // present, and the session is valid — but THIS user has never granted this
+    // RP via FedCM consent. Silent restore must NOT mint a token; the RP falls
+    // back to an interactive sign-in/consent flow.
+    stubbedApprovedClients = [RP_ORIGIN];
+    stubbedGrantedOrigins = []; // no per-user grant
+    installApiStub();
+
+    const res = await app.request(
+      `/auth/silent?client_id=${encodeURIComponent(RP_ORIGIN)}&nonce=rp-no-grant`,
+      { headers: { cookie: SESSION_COOKIE } }
+    );
+    expect(res.status).toBe(200);
+
+    const { message, targetOrigin } = extractPostedMessage(await res.text());
+    const msg = message as SilentMessage;
+    expect(msg.type).toBe('oxy_silent_auth');
+    expect(msg.session).toBeNull();
+    // We still post to the validated origin so the iframe resolves (never '*').
+    expect(targetOrigin).toBe(RP_ORIGIN);
+    // No token exchange attempted for an un-granted RP.
+    expect(capturedExchange).toBeUndefined();
+  });
+
+  it('mints a real session for an approved client the user HAS granted (returning RP)', async () => {
+    stubbedApprovedClients = [RP_ORIGIN];
+    stubbedGrantedOrigins = [RP_ORIGIN]; // user has consented
+    installApiStub();
+
+    const res = await app.request(
+      `/auth/silent?client_id=${encodeURIComponent(RP_ORIGIN)}&nonce=rp-with-grant`,
+      { headers: { cookie: SESSION_COOKIE } }
+    );
+    expect(res.status).toBe(200);
+
+    const { message, targetOrigin } = extractPostedMessage(await res.text());
+    const msg = message as SilentMessage;
+    expect(msg.session?.sessionId).toBe(STUB_EXCHANGE_SESSION_ID);
+    expect(msg.session?.accessToken).toBe(STUB_ACCESS_TOKEN);
+    expect(targetOrigin).toBe(RP_ORIGIN);
+    expect(capturedExchange?.origin).toBe(RP_ORIGIN);
   });
 
   it('clears a stale cookie and posts null when the session no longer validates', async () => {
@@ -995,6 +1138,31 @@ describe('GET /sso (central top-level-redirect cross-domain SSO)', () => {
     expect(location).not.toContain(STUB_ACCESS_TOKEN);
   });
 
+  it('303-redirects with oxy_sso=none (no code, no mint) for an approved RP the user has NOT granted', async () => {
+    // The client_id is globally approved and the IdP session is valid, but THIS
+    // user has never granted this RP. prompt=none silent SSO must bounce with
+    // oxy_sso=none (same as logged-out) so the RP falls back to interactive
+    // sign-in/consent — NEVER minting a session/code for an un-consented RP.
+    stubbedApprovedClients = [RP_ORIGIN];
+    stubbedGrantedOrigins = []; // no per-user grant
+    installApiStub();
+
+    const res = await app.request(
+      ssoUrl({ client_id: RP_ORIGIN, return_to: VALID_RETURN_TO, state: 'st-no-grant', prompt: 'none' }),
+      { headers: { cookie: SESSION_COOKIE } }
+    );
+
+    expect(res.status).toBe(303);
+    const { location, frag } = parseSsoRedirect(res);
+    expect(location.startsWith(`${VALID_RETURN_TO}#`)).toBe(true);
+    expect(frag.get('oxy_sso')).toBe('none');
+    expect(frag.get('state')).toBe('st-no-grant');
+    expect(frag.get('code')).toBeNull();
+    // No session minting and no code mint for an un-granted RP.
+    expect(capturedExchange).toBeUndefined();
+    expect(capturedSsoCode).toBeUndefined();
+  });
+
   it('still posts a STRUCTURED name.displayName even when the API returns a string name (older-API tolerance)', async () => {
     // Defence in depth: if an unpatched API deployment still emits a plain
     // string `name` on /fedcm/exchange, the worker MUST normalise it into the
@@ -1005,6 +1173,13 @@ describe('GET /sso (central top-level-redirect cross-domain SSO)', () => {
       const headers = new Headers(init?.headers);
       if (url.includes('/fedcm/clients/approved')) {
         return new Response(JSON.stringify({ success: true, clients: [RP_ORIGIN] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      // Per-user grant lookup — the user HAS granted this RP so silent SSO runs.
+      if (url.includes('/fedcm/grants/')) {
+        return new Response(JSON.stringify({ origins: [RP_ORIGIN] }), {
           status: 200,
           headers: { 'content-type': 'application/json' },
         });
@@ -1262,6 +1437,60 @@ describe('GET /sso -> /sso/establish second hop (cross-domain durable session)',
     expect(capturedSsoCode).toBeUndefined();
     // The session/access token never travels in the hop URL — only the et.
     expect(url.toString()).not.toContain(STUB_ACCESS_TOKEN);
+  });
+
+  it('does NOT create a cross-apex establish token for an approved RP the user has not granted', async () => {
+    // The cross-domain RP is globally approved but THIS user has never granted
+    // it. The central /sso gate runs BEFORE the establish hop, so no establish
+    // token is minted and the RP gets oxy_sso=none (interactive fallback).
+    stubbedApprovedClients = [RP_ORIGIN, CROSS_RP];
+    stubbedGrantedOrigins = [RP_ORIGIN]; // CROSS_RP not granted
+    installApiStub();
+
+    const res = await app.request(
+      ssoUrl({ client_id: CROSS_RP, return_to: CROSS_RETURN_TO, state: 'xd-no-grant', prompt: 'none' }),
+      { headers: { cookie: SESSION_COOKIE } }
+    );
+
+    expect(res.status).toBe(303);
+    const { location, frag } = parseSsoRedirect(res);
+    // Bounced straight back to the RP callback — NOT to /sso/establish.
+    expect(location.startsWith(`${CROSS_RETURN_TO}#`)).toBe(true);
+    expect(location).not.toContain('/sso/establish');
+    expect(frag.get('oxy_sso')).toBe('none');
+    expect(frag.get('state')).toBe('xd-no-grant');
+    expect(frag.get('code')).toBeNull();
+    expect(capturedSsoCode).toBeUndefined();
+  });
+
+  it('re-checks the per-user grant on /sso/establish and plants no cookie when revoked between hops', async () => {
+    // Obtain a real et from the central /sso bounce while the user still has the
+    // grant, then revoke the grant before following the per-apex establish hop.
+    approveCrossRp();
+    const hop = await app.request(
+      ssoUrl({ client_id: CROSS_RP, return_to: CROSS_RETURN_TO, state: 'xd-revoked', prompt: 'none' }),
+      { headers: { cookie: SESSION_COOKIE } }
+    );
+    const et = parseEstablishRedirect(hop).url.searchParams.get('et') as string;
+
+    // Grant revoked between the two hops — the establish re-check must catch it.
+    stubbedApprovedClients = [RP_ORIGIN, CROSS_RP];
+    stubbedGrantedOrigins = [RP_ORIGIN]; // CROSS_RP grant gone
+    installApiStub();
+
+    const res = await app.request(
+      `https://${CROSS_APEX_HOST}/sso/establish?et=${encodeURIComponent(et)}&return_to=${encodeURIComponent(
+        CROSS_RETURN_TO
+      )}&state=xd-revoked`
+    );
+    expect(res.status).toBe(303);
+    // NO durable cookie planted for an un-granted RP, and no code minted.
+    expect(res.headers.get('set-cookie')).toBeNull();
+    const { frag } = parseSsoRedirect(res);
+    expect(frag.get('oxy_sso')).toBe('none');
+    expect(frag.get('state')).toBe('xd-revoked');
+    expect(frag.get('code')).toBeNull();
+    expect(capturedSsoCode).toBeUndefined();
   });
 
   it('GET /sso/establish with a valid et sets the host-only fedcm_session cookie and returns oxy_sso=ok&code', async () => {

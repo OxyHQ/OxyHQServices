@@ -1,6 +1,11 @@
 import type { AccountStorageUsageResponse, AssetUploadInput, AssetUrlResponse, AssetVariant, RNFileDescriptor } from '../models/interfaces';
 import type { OxyServicesBase } from '../OxyServices.base';
 
+interface FileDownloadUrlOptions {
+  /** Omit bearer access tokens from generated URLs, even when authenticated. */
+  omitToken?: boolean;
+}
+
 export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T) {
   return class extends Base {
     constructor(...args: any[]) {
@@ -44,8 +49,13 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
      *
      * For a CDN-signed URL fetched from the API, use {@link getFileDownloadUrlAsync}.
      */
-    getFileDownloadUrl(fileId: string, variant?: string, expiresIn?: number): string {
-      const token = this.getClient().getAccessToken();
+    getFileDownloadUrl(
+      fileId: string,
+      variant?: string,
+      expiresIn?: number,
+      options: FileDownloadUrlOptions = {}
+    ): string {
+      const token = options.omitToken ? undefined : this.getClient().getAccessToken();
 
       // Public case: no auth token and no expiry requested → clean CDN URL.
       // CloudFront serves the public media origin under `${cloudURL}/<id>`.

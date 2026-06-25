@@ -116,23 +116,28 @@ export function isApplicationRole(value: string): value is ApplicationRole {
  * applications owned by that workspace.
  *
  * A workspace member gets implicit app access (no per-app ApplicationMember row
- * required) according to their workspace role:
- *  - owner / admin → full application permissions (manage everything);
- *  - member        → read + update the application;
- *  - viewer        → read-only.
+ * required) according to the app-management permissions carried by their
+ * workspace role:
+ *  - owner  → full application permissions (workspace owner authority);
+ *  - admin  → read, update, and delete workspace-owned applications;
+ *  - member → read-only access to workspace-owned applications;
+ *  - viewer → read-only access to workspace-owned applications.
  *
- * These are UNIONed with any explicit ApplicationMember permissions at the
- * route's RBAC site so the caller always receives the broader of the two.
+ * Workspace membership must not synthesize credential, application-member, or
+ * ownership-transfer permissions unless those operations are explicitly modeled
+ * by the workspace role. These permissions are UNIONed with any explicit
+ * ApplicationMember permissions at the route's RBAC site so per-app grants can
+ * still broaden access intentionally.
  */
 export function appPermissionsForWorkspaceRole(
   workspaceRole: 'owner' | 'admin' | 'member' | 'viewer'
 ): ApplicationPermission[] {
   switch (workspaceRole) {
     case 'owner':
-    case 'admin':
       return [...APPLICATION_PERMISSIONS];
+    case 'admin':
+      return ['app:read', 'app:update', 'app:delete'];
     case 'member':
-      return ['app:read', 'app:update'];
     case 'viewer':
       return ['app:read'];
   }

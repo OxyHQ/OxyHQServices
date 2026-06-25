@@ -37,7 +37,7 @@ import RefreshToken from '../models/RefreshToken';
 import Session from '../models/Session';
 import sessionService from './session.service';
 import { logger } from '../utils/logger';
-import { getEnvVar, isProduction } from '../config/env';
+import { isProduction } from '../config/env';
 import { sha256Hex, base64UrlEncode } from './oauthCode.service';
 
 /** Number of random bytes in a raw refresh token (256-bit). */
@@ -66,6 +66,7 @@ export const MAX_DEVICE_ACCOUNTS = 10;
  * (revoke it) — while still keeping it off every other route.
  */
 export const REFRESH_COOKIE_PATH = '/auth';
+const LEGACY_PARENT_REFRESH_COOKIE_DOMAIN = 'oxy.so';
 
 export interface IssueRefreshTokenOptions {
   sessionId: string;
@@ -307,7 +308,7 @@ export interface RefreshCookieOptions {
   httpOnly: true;
   secure: boolean;
   sameSite: 'lax';
-  domain: string;
+  domain?: string;
   path: string;
   maxAge: number;
 }
@@ -425,8 +426,9 @@ export async function selectActiveCandidate(
  *   local http dev so the flow is testable without TLS.
  * - `sameSite: 'lax'` — sent on top-level navigations (cold boot) yet not on
  *   cross-site sub-requests, blunting CSRF while preserving cold-boot replay.
- * - `domain` — defaults to `oxy.so` (configurable via REFRESH_COOKIE_DOMAIN) so
- *   the cookie is shared across `*.oxy.so` subdomains.
+ * - Host-only by default — no Domain attribute, so sibling subdomain servers
+ *   cannot receive this bearer-equivalent cookie. `REFRESH_COOKIE_DOMAIN` is
+ *   only an emergency override and is validated at startup.
  * - `path: /auth` — the browser sends it to the first-party session routes
  *   (`/auth/session`, `/auth/refresh`, `/auth/logout`) and nowhere else.
  * - `maxAge` — express `res.cookie` takes maxAge in MILLISECONDS and converts to
@@ -437,7 +439,9 @@ export function buildRefreshCookieOptions(): RefreshCookieOptions {
     httpOnly: true,
     secure: isProduction(),
     sameSite: 'lax',
-    domain: getEnvVar('REFRESH_COOKIE_DOMAIN', 'oxy.so'),
+    ...(process.env.REFRESH_COOKIE_DOMAIN
+      ? { domain: process.env.REFRESH_COOKIE_DOMAIN }
+      : {}),
     path: REFRESH_COOKIE_PATH,
     maxAge: REFRESH_TOKEN_TTL_MS,
   };
@@ -447,11 +451,19 @@ export function buildRefreshCookieOptions(): RefreshCookieOptions {
  * Set a refresh-token cookie on the response.
  *
  * Writes the indexed `oxy_rt_${authuser}` cookie at `Path=/auth` with HttpOnly,
- * Secure, SameSite=Lax, Domain, and Max-Age.
+ * Secure, SameSite=Lax, host-only default scope, and Max-Age.
  *
  * `authuser` is validated by `refreshCookieName`, which throws `RangeError`
  * for anything outside `[0, MAX_DEVICE_ACCOUNTS)`.
  */
+function clearLegacyParentRefreshCookie(res: Response, name: string): void {
+  res.cookie(name, '', {
+    ...buildRefreshCookieOptions(),
+    domain: LEGACY_PARENT_REFRESH_COOKIE_DOMAIN,
+    maxAge: 0,
+  });
+}
+
 export function setRefreshCookie(
   res: Response,
   token: string,
@@ -459,6 +471,9 @@ export function setRefreshCookie(
 ): void {
   const name = refreshCookieName(opts.authuser);
   res.cookie(name, token, buildRefreshCookieOptions());
+  // Delete any pre-hardening parent-domain cookie with the same indexed name so
+  // sibling `*.oxy.so` servers stop receiving the old bearer-equivalent value.
+  clearLegacyParentRefreshCookie(res, name);
 }
 
 /**
@@ -473,6 +488,7 @@ export function clearRefreshCookie(
 ): void {
   const name = refreshCookieName(opts.authuser);
   res.cookie(name, '', { ...buildRefreshCookieOptions(), maxAge: 0 });
+  clearLegacyParentRefreshCookie(res, name);
 }
 
 /**
@@ -498,7 +514,9 @@ export function clearAllRefreshCookies(
   const opts = { ...buildRefreshCookieOptions(), maxAge: 0 };
 
   for (const key of buckets.keys()) {
-    res.cookie(refreshCookieName(key), '', opts);
+    const name = refreshCookieName(key);
+    res.cookie(name, '', opts);
+    clearLegacyParentRefreshCookie(res, name);
   }
 }
 

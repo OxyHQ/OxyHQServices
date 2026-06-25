@@ -5,39 +5,71 @@
  * (middleware/originGuard.ts) so both layers enforce the exact same policy.
  *
  * Policy:
- *  - Exact first-party apex origins (https only).
- *  - One-level https subdomains of the first-party zones (lowercase
- *    RFC 1123-ish labels only — uppercase, unicode/homograph, ports, paths,
- *    and suffix-spoofing like `oxy.so.evil.com` all fail the anchored regex).
+ *  - Exact first-party apex origins and explicitly registered first-party app
+ *    origins (https only).
+ *  - No wildcard subdomain trust: same-site tenant/user subdomains must not be
+ *    able to make credentialed CORS requests to bearer-minting endpoints.
  *  - `http://localhost[:port]` / `http://127.0.0.1[:port]` ONLY outside
  *    production.
  *  - Optional emergency escape hatch via `OXY_EXTRA_ALLOWED_ORIGINS`
  *    (comma-separated `https://<hostname>` entries, each hostname validated
  *    with the same strict `isValidHostname` used for cookie domains).
+ *
+ * This is an EXPLICIT enumeration: every first-party frontend that calls
+ * api.oxy.so with credentials must be listed here. The previous wildcard
+ * `*.oxy.so` (etc.) trust let any same-site subdomain — including untrusted
+ * user/tenant subdomains — make credentialed CORS requests to bearer-minting
+ * endpoints, which is the exact CSRF/token-leak boundary we are closing. When
+ * onboarding a new first-party frontend, add its exact origin here (and to the
+ * application registry's redirectUris) rather than re-introducing a wildcard.
  */
 
 import { isValidHostname } from './env';
 import { logger } from '../utils/logger';
 
 const EXACT_ALLOWED_ORIGINS: ReadonlySet<string> = new Set([
+  // ── oxy.so first-party frontends (Cloudflare Pages) + apex + CDN ──
   'https://oxy.so',
+  'https://api.oxy.so',
+  'https://accounts.oxy.so',
+  'https://allo.oxy.so',
+  'https://auth.oxy.so',
+  'https://cloud.oxy.so',
+  'https://console.oxy.so',
+  'https://inbox.oxy.so',
+  'https://noted.oxy.so',
+  'https://os.oxy.so',
+  'https://pay.oxy.so',
+  'https://syra.oxy.so',
+  // ── Oxy Website FairCoin redirect ──
+  'https://fairco.in',
+  // ── Mention ──
   'https://mention.earth',
+  'https://api.mention.earth',
+  'https://auth.mention.earth',
+  // ── Homiio ──
   'https://homiio.com',
+  'https://app.homiio.com',
+  'https://auth.homiio.com',
+  // ── Alia ──
   'https://alia.onl',
+  'https://api.alia.onl',
+  'https://auth.alia.onl',
+  // ── Syra ──
   'https://syra.fm',
+  // ── Allo ──
+  'https://allo.you',
+  // ── TNP ──
+  'https://tnp.network',
+  // ── Moovo (storefront + first-party admin surfaces) ──
   'https://moovo.now',
+  'https://go.moovo.now',
+  'https://hub.moovo.now',
+  // ── Mercaria (storefront + dashboard + point-of-sale) ──
   'https://mercaria.co',
+  'https://dashboard.mercaria.co',
+  'https://pos.mercaria.co',
 ]);
-
-const ALLOWED_ORIGIN_PATTERNS: readonly RegExp[] = [
-  /^https:\/\/[a-z0-9-]+\.oxy\.so$/,
-  /^https:\/\/[a-z0-9-]+\.mention\.earth$/,
-  /^https:\/\/[a-z0-9-]+\.homiio\.com$/,
-  /^https:\/\/[a-z0-9-]+\.alia\.onl$/,
-  /^https:\/\/[a-z0-9-]+\.syra\.fm$/,
-  /^https:\/\/[a-z0-9-]+\.moovo\.now$/,
-  /^https:\/\/[a-z0-9-]+\.mercaria\.co$/,
-];
 
 const DEV_ORIGIN_PATTERN = /^http:\/\/(?:localhost|127\.0\.0\.1)(?::\d{1,5})?$/;
 
@@ -92,10 +124,6 @@ function getExtraAllowedOrigins(): ReadonlySet<string> {
  */
 export function isAllowedOrigin(origin: string): boolean {
   if (EXACT_ALLOWED_ORIGINS.has(origin)) {
-    return true;
-  }
-
-  if (ALLOWED_ORIGIN_PATTERNS.some((pattern) => pattern.test(origin))) {
     return true;
   }
 

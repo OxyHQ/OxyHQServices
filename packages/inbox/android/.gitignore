@@ -14,3 +14,7 @@ local.properties
 
 # Bundle artifacts
 *.jsbundle
+
+# Release signing secrets must be supplied via CI/local environment only.
+*.keystore
+*.jks

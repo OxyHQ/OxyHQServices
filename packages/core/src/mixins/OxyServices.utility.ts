@@ -856,8 +856,8 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
             return next(new Error('Invalid token'));
           }
 
-          const userId = decoded.userId || decoded.id;
-          if (!userId) {
+          const claimedUserId = decoded.userId || decoded.id;
+          if (!claimedUserId) {
             return next(new Error('Invalid token payload'));
           }
 
@@ -866,24 +866,39 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
             return next(new Error('Token expired'));
           }
 
-          // Validate session if available
-          if (decoded.sessionId) {
-            try {
-              const result = await oxyInstance.validateSession(decoded.sessionId, {
-                useHeaderValidation: true,
-              });
-              if (!result || !result.valid) {
-                return next(new Error('Session invalid'));
-              }
-            } catch (validateErr) {
-              if (debug) {
-                logger.debug('[oxy.authSocket] Session validation failed', {
-                  component: 'auth',
-                  method: 'authSocket',
-                }, validateErr);
-              }
-              return next(new Error('Session validation failed'));
+          // A server-validated session is mandatory. A bare decoded JWT proves
+          // nothing — the signature is not verified here, so without a session
+          // round-trip a forged token could claim any user id.
+          if (!decoded.sessionId) {
+            return next(new Error('Session required'));
+          }
+
+          let userId = claimedUserId;
+          try {
+            const result = await oxyInstance.validateSession(decoded.sessionId, {
+              useHeaderValidation: true,
+            });
+            if (!result || !result.valid || !result.user) {
+              return next(new Error('Session invalid'));
             }
+
+            // The session is the source of truth. The client-claimed user id
+            // must match the server-validated identity, otherwise a valid
+            // session could be paired with a forged user id.
+            const validatedUserId = getUserIdentityId(result.user);
+            if (!validatedUserId || validatedUserId !== claimedUserId) {
+              return next(new Error('Session user mismatch'));
+            }
+
+            userId = validatedUserId;
+          } catch (validateErr) {
+            if (debug) {
+              logger.debug('[oxy.authSocket] Session validation failed', {
+                component: 'auth',
+                method: 'authSocket',
+              }, validateErr);
+            }
+            return next(new Error('Session validation failed'));
           }
 
           // Attach user data to socket. We expose BOTH `socket.data.userId`
@@ -953,9 +968,9 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
      * Express.js middleware that enforces a specific service-token scope.
      *
      * Mount AFTER `auth()` / `serviceAuth()` — relies on `req.serviceApp` and
-     * (when delegation is in effect) `req.serviceActingAs.scopes`. The scope
-     * is granted if EITHER list contains it, mirroring the OAuth2 model where
-     * the app's app-level scopes and the per-user delegated scopes both count.
+     * (when delegation is in effect) `req.serviceActingAs.scopes`. App-only
+     * service requests require the app scope. Delegated user requests require
+     * BOTH the app scope and the per-user delegation scope.
      *
      * Requests authenticated as a regular user (no service token) are rejected
      * with 403 — scope-protected endpoints are service-to-service by design.
@@ -988,7 +1003,13 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
           return;
         }
 
-        if (appScopes.includes(scope) || delegatedScopes.includes(scope)) {
+        const appHasScope = appScopes.includes(scope);
+        const delegationHasScope = delegatedScopes.includes(scope);
+        const hasRequiredScope = req.serviceActingAs
+          ? appHasScope && delegationHasScope
+          : appHasScope;
+
+        if (hasRequiredScope) {
           next();
           return;
         }
@@ -1051,6 +1072,19 @@ async function verifyServiceTokenSignature(token: string, secret: string): Promi
  * access token signed by the same shared secret could be replayed as a
  * service token because no claim binding existed.
  */
+/**
+ * Resolve the canonical user id from a validated session's user object.
+ *
+ * The API serializer emits `id`, but some upstream shapes carry the raw Mongo
+ * `_id` instead. We accept either, but only a non-empty string — anything else
+ * means the validated identity is unusable and the caller must reject.
+ */
+function getUserIdentityId(user: User): string | null {
+  const candidate = (user as { id?: unknown; _id?: unknown }).id
+    ?? (user as { id?: unknown; _id?: unknown })._id;
+  return typeof candidate === 'string' && candidate.length > 0 ? candidate : null;
+}
+
 function verifyServiceTokenClaims(
   decoded: JwtPayload,
   expected: { audience: string; issuer: string },

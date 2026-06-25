@@ -90,7 +90,44 @@ jest.mock('../s3Service', () => ({
   createS3Service: jest.fn(() => ({})),
 }));
 
+// All outbound federation traffic now goes through @oxyhq/core/server's
+// DNS-pinned safeFetch. Mock it so tests drive the response (and assert the
+// SSRF guard rejects private/non-https targets) without real network I/O.
+const mockSafeFetch = jest.fn();
+class FakeSsrfRejection extends Error {
+  constructor(reason: string) {
+    super(reason);
+    this.name = 'SsrfRejection';
+  }
+}
+jest.mock('@oxyhq/core/server', () => ({
+  __esModule: true,
+  safeFetch: (...args: unknown[]) => mockSafeFetch(...args),
+  SsrfRejection: FakeSsrfRejection,
+}));
+
+import { Readable } from 'stream';
 import { federationService } from '../federation.service';
+
+/**
+ * Build a fake SafeFetchResult whose `.response` is a real Node Readable stream
+ * (what safeFetch yields), so the service's streaming/byte-cap readers run for
+ * real against controlled bytes.
+ */
+function makeSafeFetchResult(
+  status: number,
+  headers: Record<string, string>,
+  body: Buffer | string = Buffer.alloc(0),
+): {
+  status: number;
+  headers: Record<string, string>;
+  finalUrl: string;
+  response: Readable & { destroy: () => void };
+} {
+  const buffer = typeof body === 'string' ? Buffer.from(body) : body;
+  const stream = Readable.from([buffer]) as Readable & { destroy: () => void };
+  return { status, headers, finalUrl: 'https://cdn.example/final', response: stream };
+}
 
 const DOMAIN = 'mastodon.social';
 const NEW_AVATAR_URL = 'https://cdn.example/avatar-new.png';
@@ -395,6 +432,53 @@ describe('FederationService.resolveAndUpsert (fast + eventually-fresh)', () => {
     expect(result).toBe(created);
   });
 
+  it('ignores a WebFinger subject that does not resolve back to the same actor', async () => {
+    const requestedHandle = 'attacker@evil.example';
+    const spoofedHandle = 'victim@trusted.example';
+    const actorUri = 'https://evil.example/users/attacker';
+    const userId = 'evil-user-spoof';
+
+    webfingerSpy.mockImplementation(async (acct: string) => {
+      if (acct === requestedHandle) {
+        return { actorUri, subjectAcct: spoofedHandle };
+      }
+      if (acct === spoofedHandle) {
+        return { actorUri: 'https://trusted.example/users/victim', subjectAcct: spoofedHandle };
+      }
+      return null;
+    });
+    actorSpy.mockResolvedValue({
+      actorUri,
+      domain: 'evil.example',
+      username: requestedHandle,
+      displayName: 'Evil Attacker',
+      avatarUrl: undefined,
+      bio: 'not a trusted.example user',
+    });
+
+    mockFindOneReturning(null);
+    const created = { _id: { toString: () => userId }, username: requestedHandle, type: 'federated' };
+    const select = jest.fn().mockResolvedValue(created);
+    mockUserFindOneAndUpdate.mockReturnValueOnce({ select });
+
+    const result = await federationService.resolveAndUpsert(requestedHandle);
+
+    expect(webfingerSpy).toHaveBeenCalledWith(requestedHandle);
+    expect(webfingerSpy).toHaveBeenCalledWith(spoofedHandle);
+    expect(actorSpy).toHaveBeenCalledWith(actorUri, requestedHandle);
+    expect(mockUserFindOneAndUpdate).toHaveBeenCalledWith(
+      { 'federation.actorUri': actorUri },
+      expect.objectContaining({
+        $set: expect.objectContaining({
+          username: requestedHandle,
+          'federation.domain': 'evil.example',
+        }),
+      }),
+      expect.anything(),
+    );
+    expect(result).toBe(created);
+  });
+
   it('uses the WebFinger subject when the requested handle is a www alias', async () => {
     const requestedHandle = 'mosseri@www.threads.net';
     const canonicalHandle = 'mosseri@threads.net';
@@ -478,6 +562,7 @@ describe('FederationService.scheduleAvatarRefresh (off request path)', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockSafeFetch.mockReset();
     resetAssetMocks();
     mockUserUpdateOne.mockResolvedValue({ acknowledged: true });
   });
@@ -517,21 +602,13 @@ describe('FederationService.scheduleAvatarRefresh (off request path)', () => {
     const avatarUrl = 'https://cdn.example/avatar-304.png';
 
     // No spy on downloadAndStoreAvatar — exercise the REAL conditional-request
-    // logic against a mocked fetch that returns 304 for a conditional request.
-    const fetchSpy = jest.spyOn(global, 'fetch').mockImplementation(((
-      _url: string,
-      init?: { headers?: Record<string, string> },
-    ) => {
+    // logic against a mocked safeFetch that returns 304 for a conditional request.
+    mockSafeFetch.mockImplementation((_url: string, init?: { headers?: Record<string, string> }) => {
       // The stored validators must be replayed as conditional headers.
       expect(init?.headers?.['If-None-Match']).toBe('"etag-v1"');
       expect(init?.headers?.['If-Modified-Since']).toBe('Wed, 21 Oct 2025 07:28:00 GMT');
-      return Promise.resolve({
-        status: 304,
-        ok: false,
-        headers: { get: () => null },
-        arrayBuffer: () => Promise.resolve(new ArrayBuffer(0)),
-      });
-    }) as unknown as typeof fetch);
+      return Promise.resolve(makeSafeFetchResult(304, {}));
+    });
 
     // Stale by time so a forced refresh actually runs, but with stored validators.
     mockFindByIdReturning({
@@ -548,7 +625,7 @@ describe('FederationService.scheduleAvatarRefresh (off request path)', () => {
     await flushMicrotasks();
     await flushMicrotasks();
 
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(mockSafeFetch).toHaveBeenCalledTimes(1);
 
     // 304 → no avatar field change, but lastAvatarFetchedAt advances. The $set
     // key is a literal Mongoose dot-path string (not a nested object), so we
@@ -559,8 +636,6 @@ describe('FederationService.scheduleAvatarRefresh (off request path)', () => {
     expect(Object.keys(updateSet)).toContain('federation.lastAvatarFetchedAt');
     expect(Object.keys(updateSet)).not.toContain('avatar');
     expect(mockCacheInvalidate).toHaveBeenCalledWith(userId);
-
-    fetchSpy.mockRestore();
   });
 
   it('on 304 Not Modified with a missing local object: retries without validators and repairs the avatar file', async () => {
@@ -570,40 +645,27 @@ describe('FederationService.scheduleAvatarRefresh (off request path)', () => {
     mockAssetFileContentExists.mockResolvedValue(false);
     mockAssetUploadFileDirect.mockResolvedValue(mockUploadedFile('repaired-file-id'));
 
-    const fetchSpy = jest.spyOn(global, 'fetch')
-      .mockImplementationOnce(((
-        _url: string,
-        init?: { headers?: Record<string, string> },
-      ) => {
+    mockSafeFetch
+      .mockImplementationOnce((_url: string, init?: { headers?: Record<string, string> }) => {
         expect(init?.headers?.['If-None-Match']).toBe('"etag-v1"');
         expect(init?.headers?.['If-Modified-Since']).toBe('Wed, 21 Oct 2025 07:28:00 GMT');
-        return Promise.resolve({
-          status: 304,
-          ok: false,
-          headers: { get: () => null },
-          arrayBuffer: () => Promise.resolve(new ArrayBuffer(0)),
-        });
-      }) as unknown as typeof fetch)
-      .mockImplementationOnce(((
-        _url: string,
-        init?: { headers?: Record<string, string> },
-      ) => {
+        return Promise.resolve(makeSafeFetchResult(304, {}));
+      })
+      .mockImplementationOnce((_url: string, init?: { headers?: Record<string, string> }) => {
         expect(init?.headers?.['If-None-Match']).toBeUndefined();
         expect(init?.headers?.['If-Modified-Since']).toBeUndefined();
-        return Promise.resolve({
-          status: 200,
-          ok: true,
-          headers: {
-            get: (name: string) => {
-              if (name.toLowerCase() === 'content-type') return 'image/png';
-              if (name.toLowerCase() === 'etag') return '"etag-v2"';
-              if (name.toLowerCase() === 'last-modified') return 'Thu, 22 Oct 2025 07:28:00 GMT';
-              return null;
+        return Promise.resolve(
+          makeSafeFetchResult(
+            200,
+            {
+              'content-type': 'image/png',
+              etag: '"etag-v2"',
+              'last-modified': 'Thu, 22 Oct 2025 07:28:00 GMT',
             },
-          },
-          arrayBuffer: () => Promise.resolve(Buffer.from('png-bytes').buffer),
-        });
-      }) as unknown as typeof fetch);
+            Buffer.from('png-bytes'),
+          ),
+        );
+      });
 
     mockFindByIdReturning({
       _id: { toString: () => userId },
@@ -619,7 +681,7 @@ describe('FederationService.scheduleAvatarRefresh (off request path)', () => {
     await flushMicrotasks();
     await flushMicrotasks();
 
-    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(mockSafeFetch).toHaveBeenCalledTimes(2);
     expect(mockAssetFileContentExists).toHaveBeenCalledWith('stored-file-id');
     expect(mockAssetUploadFileDirect).toHaveBeenCalledWith(
       userId,
@@ -642,7 +704,75 @@ describe('FederationService.scheduleAvatarRefresh (off request path)', () => {
       'federation.avatarLastModified': 'Thu, 22 Oct 2025 07:28:00 GMT',
     });
     expect(mockCacheInvalidate).toHaveBeenCalledWith(userId);
+  });
+});
 
-    fetchSpy.mockRestore();
+describe('FederationService SSRF guards', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockSafeFetch.mockReset();
+    resetAssetMocks();
+  });
+
+  it('enforces https-only: an http avatar URL is rejected before reaching safeFetch', async () => {
+    const result = await federationService.downloadAndStoreAvatar('http://cdn.example/avatar.png');
+
+    expect(result).toEqual({ fileId: null, notModified: false });
+    expect(mockSafeFetch).not.toHaveBeenCalled();
+    expect(mockAssetUploadFileDirect).not.toHaveBeenCalled();
+  });
+
+  it('drops an avatar when safeFetch rejects the target as a private/blocked address', async () => {
+    mockSafeFetch.mockRejectedValue(new FakeSsrfRejection('hostname resolves to blocked range'));
+
+    const result = await federationService.downloadAndStoreAvatar('https://private.example/avatar.png');
+
+    expect(result).toEqual({ fileId: null, notModified: false });
+    expect(mockSafeFetch).toHaveBeenCalledTimes(1);
+    expect(mockAssetUploadFileDirect).not.toHaveBeenCalled();
+  });
+
+  it('returns null from WebFinger when safeFetch rejects the resource host as private', async () => {
+    mockSafeFetch.mockRejectedValue(new FakeSsrfRejection('literal ip in blocked range'));
+
+    await expect(federationService.resolveWebFingerResource('alice@trusted.example')).resolves.toBeNull();
+
+    expect(mockSafeFetch).toHaveBeenCalledTimes(1);
+    expect(mockAssetUploadFileDirect).not.toHaveBeenCalled();
+  });
+
+  it('rejects oversized avatars via the content-length pre-check before buffering or upload', async () => {
+    mockSafeFetch.mockResolvedValue(
+      makeSafeFetchResult(
+        200,
+        {
+          'content-type': 'image/png',
+          'content-length': String(6 * 1024 * 1024),
+        },
+        Buffer.alloc(64),
+      ),
+    );
+
+    const result = await federationService.downloadAndStoreAvatar('https://cdn.example/huge.png');
+
+    expect(result).toEqual({ fileId: null, etag: undefined, lastModified: undefined, notModified: false });
+    expect(mockSafeFetch).toHaveBeenCalledTimes(1);
+    expect(mockAssetUploadFileDirect).not.toHaveBeenCalled();
+  });
+
+  it('rejects avatars whose streamed body exceeds the byte cap even without content-length', async () => {
+    mockSafeFetch.mockResolvedValue(
+      makeSafeFetchResult(
+        200,
+        { 'content-type': 'image/png' },
+        Buffer.alloc(6 * 1024 * 1024),
+      ),
+    );
+
+    const result = await federationService.downloadAndStoreAvatar('https://cdn.example/streamed-huge.png');
+
+    expect(result).toEqual({ fileId: null, etag: undefined, lastModified: undefined, notModified: false });
+    expect(mockSafeFetch).toHaveBeenCalledTimes(1);
+    expect(mockAssetUploadFileDirect).not.toHaveBeenCalled();
   });
 });

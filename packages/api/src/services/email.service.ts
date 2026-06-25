@@ -8,6 +8,7 @@
  */
 
 import mongoose, { type SortOrder } from 'mongoose';
+import { safeFetch, SsrfRejection } from '@oxyhq/core/server';
 import { Mailbox, IMailbox } from '../models/Mailbox';
 import { Message, IMessage, IEmailAddress, IAttachment } from '../models/Message';
 import { Label } from '../models/Label';
@@ -2107,22 +2108,6 @@ class EmailService {
   ];
 
   /**
-   * SSRF protection: block requests to private/internal networks.
-   */
-  private static readonly PRIVATE_IP_PATTERNS = [
-    /^127\./,
-    /^0\./,
-    /^10\./,
-    /^172\.(1[6-9]|2[0-9]|3[01])\./,
-    /^192\.168\./,
-    /^169\.254\./,
-    /^fc00:/i,
-    /^fe80:/i,
-    /^::1$/,
-    /^localhost$/i,
-  ];
-
-  /**
    * Aggregate subscription senders: group messages by sender address,
    * detect newsletter characteristics, and return paginated results.
    */
@@ -2283,16 +2268,13 @@ class EmailService {
           // RFC 8058 One-Click Unsubscribe
           if (httpMatch && listUnsubPost) {
             try {
-              this.validateUnsubscribeUrl(httpMatch[1]);
-              const controller = new AbortController();
-              const timeout = setTimeout(() => controller.abort(), 10000);
-              await fetch(httpMatch[1], {
+              await this.fetchUnsubscribeUrl(httpMatch[1], {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: 'List-Unsubscribe=One-Click-Unsubscribe',
-                signal: controller.signal,
+                headers: {
+                  'Content-Type': 'application/x-www-form-urlencoded',
+                  'List-Unsubscribe': 'One-Click-Unsubscribe',
+                },
               });
-              clearTimeout(timeout);
               return { success: true, method: 'one-click' };
             } catch (err) {
               logger.warn('One-click unsubscribe failed, trying fallback', {
@@ -2305,11 +2287,7 @@ class EmailService {
           // HTTP GET fallback
           if (httpMatch) {
             try {
-              this.validateUnsubscribeUrl(httpMatch[1]);
-              const controller = new AbortController();
-              const timeout = setTimeout(() => controller.abort(), 10000);
-              await fetch(httpMatch[1], { signal: controller.signal });
-              clearTimeout(timeout);
+              await this.fetchUnsubscribeUrl(httpMatch[1], { method: 'GET' });
               return { success: true, method: 'http' };
             } catch (err) {
               logger.warn('HTTP unsubscribe failed, trying mailto', {
@@ -2428,16 +2406,54 @@ class EmailService {
   }
 
   /**
-   * Validate an unsubscribe URL against SSRF attacks.
-   * Only allows HTTPS URLs to non-private hosts.
+   * Fetch an unsubscribe URL through the SSRF-safe primitive.
+   *
+   * `safeFetch` (from `@oxyhq/core/server`) performs a DNS-pinned lookup that
+   * closes the DNS-rebind TOCTOU window the prior hand-rolled
+   * `lookup()` + `fetch()` check left open, denies private/metadata IP ranges,
+   * and re-validates every redirect hop. Redirects are disallowed here
+   * (`maxRedirects: 0`) so a 3xx is treated as a failure rather than followed.
+   * Restricted to https only — unsubscribe endpoints must be https.
+   *
+   * Throws on a non-https URL, an SSRF-blocked target, a network/timeout error,
+   * or a non-2xx response, so the caller can fall through to the next method.
    */
-  private validateUnsubscribeUrl(url: string): void {
-    const parsed = new URL(url);
-    if (parsed.protocol !== 'https:') {
+  private async fetchUnsubscribeUrl(
+    url: string,
+    options: { method: 'GET' | 'POST'; headers?: Record<string, string> },
+  ): Promise<void> {
+    let protocol: string;
+    try {
+      protocol = new URL(url).protocol;
+    } catch {
+      throw new Error('Malformed unsubscribe URL');
+    }
+    if (protocol !== 'https:') {
       throw new Error('Only HTTPS unsubscribe URLs are allowed');
     }
-    if (EmailService.PRIVATE_IP_PATTERNS.some((p) => p.test(parsed.hostname))) {
-      throw new Error('Private network URLs are not allowed');
+
+    let result;
+    try {
+      result = await safeFetch(url, {
+        method: options.method,
+        headers: options.headers,
+        maxRedirects: 0,
+        headersTimeoutMs: 10_000,
+        signal: AbortSignal.timeout(10_000),
+      });
+    } catch (err) {
+      if (err instanceof SsrfRejection) {
+        throw new Error(`Private network URLs are not allowed: ${err.message}`);
+      }
+      throw err;
+    }
+
+    // The caller does not consume the unsubscribe response body — destroy it so
+    // a large body cannot be streamed into the process.
+    result.response.destroy();
+
+    if (result.status < 200 || result.status >= 300) {
+      throw new Error(`Unsubscribe request failed with status ${result.status}`);
     }
   }
 

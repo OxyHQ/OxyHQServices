@@ -888,25 +888,53 @@ describe('workspace-membership grants application access', () => {
     expect(callerMembership?.role).toBe('owner');
   });
 
-  it('workspace owner/admin can update the app (full app permissions)', async () => {
+  it('workspace admin can update and delete the app without full app-owner permissions', async () => {
     seedApp();
     seedWorkspaceMember(WS_OWNER_ID, 'admin');
     actAs(WS_OWNER_ID);
 
-    const res = await requestJson(server, 'PATCH', `/applications/${APP_ID}`, { name: 'WS Rename' });
-    expect(res.status).toBe(200);
-    expect(res.body.application?.name).toBe('WS Rename');
+    const updateRes = await requestJson(server, 'PATCH', `/applications/${APP_ID}`, {
+      name: 'WS Rename',
+    });
+    expect(updateRes.status).toBe(200);
+    expect(updateRes.body.application?.name).toBe('WS Rename');
+
+    const deleteRes = await requestJson(server, 'DELETE', `/applications/${APP_ID}`);
+    expect(deleteRes.status).toBe(200);
   });
 
-  it('workspace member gets app:read + app:update but NOT app:delete', async () => {
+  it('workspace admin cannot manage credentials or transfer app ownership implicitly', async () => {
+    seedApp();
+    seedMember(DEVELOPER_ID, 'developer');
+    seedWorkspaceMember(WS_OWNER_ID, 'admin');
+    actAs(WS_OWNER_ID);
+
+    const credentialsRes = await requestJson(server, 'GET', `/applications/${APP_ID}/credentials`);
+    expect(credentialsRes.status).toBe(403);
+
+    const transferRes = await requestJson(
+      server,
+      'POST',
+      `/applications/${APP_ID}/transfer-ownership`,
+      {
+        userId: DEVELOPER_ID,
+      }
+    );
+    expect(transferRes.status).toBe(403);
+  });
+
+  it('workspace member gets app:read but NOT app:update or app:delete', async () => {
     seedApp();
     seedWorkspaceMember(WS_MEMBER_ID, 'member');
     actAs(WS_MEMBER_ID);
 
+    const readRes = await requestJson(server, 'GET', `/applications/${APP_ID}`);
+    expect(readRes.status).toBe(200);
+
     const updateRes = await requestJson(server, 'PATCH', `/applications/${APP_ID}`, {
       name: 'Member Rename',
     });
-    expect(updateRes.status).toBe(200);
+    expect(updateRes.status).toBe(403);
 
     const deleteRes = await requestJson(server, 'DELETE', `/applications/${APP_ID}`);
     expect(deleteRes.status).toBe(403);
@@ -1124,19 +1152,32 @@ describe('credentials lifecycle', () => {
     expect(stored.secretHash).not.toBe(res.body.secret);
   });
 
-  it('400 when a credential requests a scope the application does not hold', async () => {
-    // Seeded app has scopes []. A credential cannot exceed the app's authority,
-    // so requesting federation:write (or any ungranted scope) is rejected.
+  it('403 when creating a service credential for a non-internal application', async () => {
+    apps[0].isInternal = false;
+    apps[0].scopes = ['federation:write'];
     const res = await requestJson(server, 'POST', `/applications/${APP_ID}/credentials`, {
-      name: 'Over-scoped',
+      name: 'External service key',
       type: 'service',
       environment: 'production',
       scopes: ['federation:write'],
     });
+    expect(res.status).toBe(403);
+  });
+
+  it('400 when a credential requests a scope the application does not hold', async () => {
+    // Seeded app has scopes []. A credential cannot exceed the app's authority,
+    // so requesting user:read (or any ungranted scope) is rejected.
+    const res = await requestJson(server, 'POST', `/applications/${APP_ID}/credentials`, {
+      name: 'Over-scoped',
+      type: 'confidential',
+      environment: 'production',
+      scopes: ['user:read'],
+    });
     expect(res.status).toBe(400);
   });
 
-  it('creates a credential whose scopes are a subset of the app scopes', async () => {
+  it('creates a service credential whose scopes are a subset of an internal app scopes', async () => {
+    apps[0].isInternal = true;
     apps[0].scopes = ['user:read', 'files:write', 'federation:write'];
     const res = await requestJson(server, 'POST', `/applications/${APP_ID}/credentials`, {
       name: 'Federation key',

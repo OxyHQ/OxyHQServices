@@ -165,8 +165,11 @@ describe('issueAndSetRefreshCookie — slot allocation', () => {
 
     expect(result.authuser).toBe(0);
     expect(result.accessToken).toBe('minted-access');
-    expect(calls).toHaveLength(1);
-    expect(calls[0].name).toBe('oxy_rt_0');
+    // Exactly one cookie carries the token; the other write is the host-only
+    // hardening's parent-domain (`Domain=oxy.so`) Max-Age=0 deletion.
+    const tokenCookies = calls.filter((c) => c.value.length > 0);
+    expect(tokenCookies).toHaveLength(1);
+    expect(tokenCookies[0].name).toBe('oxy_rt_0');
   });
 
   it('writes oxy_rt_0 for the first multi-account login on a clean device', async () => {
@@ -176,15 +179,16 @@ describe('issueAndSetRefreshCookie — slot allocation', () => {
     });
 
     expect(result.authuser).toBe(0);
-    expect(calls[0].name).toBe('oxy_rt_0');
+    expect(calls.filter((c) => c.value.length > 0)[0].name).toBe('oxy_rt_0');
 
     const { res: res2, calls: calls2 } = makeResponseStub();
     const result2 = await issueAndSetRefreshCookie(res2, 'sess-new', 'u-new', {
       cookieHeader: 'theme=dark',
     });
     expect(result2.authuser).toBe(0);
-    expect(calls2).toHaveLength(1);
-    expect(calls2[0].name).toBe('oxy_rt_0');
+    const tokenCookies2 = calls2.filter((c) => c.value.length > 0);
+    expect(tokenCookies2).toHaveLength(1);
+    expect(tokenCookies2[0].name).toBe('oxy_rt_0');
   });
 
   it('writes oxy_rt_1 for a second different-user login when slot 0 is occupied', async () => {
@@ -199,8 +203,9 @@ describe('issueAndSetRefreshCookie — slot allocation', () => {
     });
 
     expect(result.authuser).toBe(1);
-    expect(calls).toHaveLength(1);
-    expect(calls[0].name).toBe('oxy_rt_1');
+    const tokenCookies = calls.filter((c) => c.value.length > 0);
+    expect(tokenCookies).toHaveLength(1);
+    expect(tokenCookies[0].name).toBe('oxy_rt_1');
     // The pre-existing family must NOT have been revoked.
     expect(mockTokenUpdateMany).not.toHaveBeenCalled();
   });

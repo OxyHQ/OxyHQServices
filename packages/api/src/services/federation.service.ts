@@ -7,7 +7,9 @@
  */
 
 import crypto from 'crypto';
+import type { IncomingMessage } from 'http';
 import mongoose from 'mongoose';
+import { safeFetch, SsrfRejection, type SafeFetchResult } from '@oxyhq/core/server';
 import User, { IUser } from '../models/User';
 import { AssetService } from './assetService';
 import { createS3Service } from './s3Service';
@@ -63,6 +65,114 @@ const REFRESH_MIN_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 const AVATAR_REFRESH_MIN_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
 const FEDIVERSE_HANDLE_REGEX = /^@?[\w.-]+@[\w.-]+\.\w+$/;
+
+/** Time-to-first-byte deadline for federation control-plane fetches (webfinger/actor). */
+const FEDERATION_FETCH_TIMEOUT_MS = 10_000;
+/** Time-to-first-byte deadline for avatar/media downloads. */
+const FEDERATION_AVATAR_FETCH_TIMEOUT_MS = 15_000;
+/** Hard cap on a remote avatar's body size (matches the historical 5MB limit). */
+const FEDERATION_MAX_AVATAR_BYTES = 5 * 1024 * 1024;
+/**
+ * Hard cap on a federation JSON document (WebFinger JRD / ActivityPub actor).
+ * Generous for legitimate actor objects, but bounds a hostile peer streaming an
+ * unbounded body to exhaust memory.
+ */
+const FEDERATION_MAX_JSON_BYTES = 2 * 1024 * 1024;
+
+/**
+ * SSRF-safe federation fetch. All outbound federation traffic is funnelled here
+ * so it inherits {@link safeFetch}'s DNS-pinned, redirect-revalidating,
+ * private/metadata-IP denylisting protection (closing the DNS-rebind TOCTOU).
+ * Restricted to https only — federation never legitimately targets http.
+ *
+ * Returns the validated, non-redirect {@link SafeFetchResult}, or `null` when the
+ * URL is not https, is rejected by the SSRF guard, or the request fails. The
+ * caller OWNS the returned `response` stream — read it via the bounded readers
+ * below, which always destroy the stream.
+ */
+async function safeFederationFetch(
+  rawUrl: string,
+  options: { headers?: Record<string, string>; timeoutMs?: number } = {},
+): Promise<SafeFetchResult | null> {
+  let protocol: string;
+  try {
+    protocol = new URL(rawUrl).protocol;
+  } catch {
+    logger.warn(`Federation URL rejected: malformed ${rawUrl}`);
+    return null;
+  }
+  if (protocol !== 'https:') {
+    logger.warn(`Federation URL rejected: non-https protocol for ${rawUrl}`);
+    return null;
+  }
+
+  try {
+    return await safeFetch(rawUrl, {
+      method: 'GET',
+      headers: options.headers,
+      headersTimeoutMs: options.timeoutMs ?? FEDERATION_FETCH_TIMEOUT_MS,
+      signal: AbortSignal.timeout(options.timeoutMs ?? FEDERATION_FETCH_TIMEOUT_MS),
+    });
+  } catch (err) {
+    if (err instanceof SsrfRejection) {
+      logger.warn(`Federation URL rejected by SSRF guard (${err.message}): ${rawUrl}`);
+      return null;
+    }
+    logger.warn(`Federation fetch failed for ${rawUrl}: ${err instanceof Error ? err.message : String(err)}`);
+    return null;
+  }
+}
+
+/**
+ * Read an {@link IncomingMessage} body into a Buffer, aborting (and destroying
+ * the stream) the moment it would exceed `maxBytes`. Returns `null` when the cap
+ * is exceeded. The caller should short-circuit on the advertised
+ * `content-length` (from the validated response headers) before calling this.
+ */
+function readBodyLimited(response: IncomingMessage, maxBytes: number): Promise<Buffer | null> {
+  return new Promise<Buffer | null>((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let total = 0;
+    let settled = false;
+
+    const finish = (value: Buffer | null): void => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
+
+    response.on('data', (chunk: Buffer) => {
+      total += chunk.length;
+      if (total > maxBytes) {
+        response.destroy();
+        finish(null);
+        return;
+      }
+      chunks.push(chunk);
+    });
+    response.on('end', () => finish(Buffer.concat(chunks, total)));
+    response.on('error', (err) => {
+      if (settled) return;
+      settled = true;
+      reject(err);
+    });
+    response.on('close', () => finish(null));
+  });
+}
+
+/**
+ * Read a bounded JSON document from an {@link IncomingMessage}. Returns `null`
+ * when the body exceeds {@link FEDERATION_MAX_JSON_BYTES} or is not valid JSON.
+ */
+async function readJsonLimited<T>(response: IncomingMessage): Promise<T | null> {
+  const buffer = await readBodyLimited(response, FEDERATION_MAX_JSON_BYTES);
+  if (!buffer || buffer.length === 0) return null;
+  try {
+    return JSON.parse(buffer.toString('utf-8')) as T;
+  } catch {
+    return null;
+  }
+}
 
 // System user ID for federated avatar ownership
 const FEDERATION_SYSTEM_USER = '__federation__';
@@ -323,17 +433,17 @@ function signRequest(
  * Fetch a URL with HTTP Signature authentication.
  * Required by servers that enforce authorized fetch (e.g., Threads).
  */
-async function signedFetch(url: string, accept: string): Promise<Response> {
+async function signedFetch(url: string, accept: string): Promise<SafeFetchResult | null> {
   const keyPair = await getInstanceKeyPair();
   const sigHeaders = signRequest(keyPair.privateKeyPem, keyPair.keyId, 'GET', url);
 
-  return fetch(url, {
+  return safeFederationFetch(url, {
     headers: {
       Accept: accept,
       'User-Agent': USER_AGENT,
       ...sigHeaders,
     },
-    signal: AbortSignal.timeout(10_000),
+    timeoutMs: FEDERATION_FETCH_TIMEOUT_MS,
   });
 }
 
@@ -577,16 +687,20 @@ class FederationService {
     const url = `https://${domain}/.well-known/webfinger?resource=${encodeURIComponent(resource)}`;
 
     try {
-      const res = await fetch(url, {
+      const res = await safeFederationFetch(url, {
         headers: { Accept: 'application/jrd+json, application/json' },
-        signal: AbortSignal.timeout(10_000),
+        timeoutMs: FEDERATION_FETCH_TIMEOUT_MS,
       });
-      if (!res.ok) return null;
+      if (!res || res.status < 200 || res.status >= 300) {
+        res?.response.destroy();
+        return null;
+      }
 
-      const data = (await res.json()) as {
+      const data = await readJsonLimited<{
         subject?: string;
         links?: Array<{ rel?: string; type?: string; href?: string }>;
-      };
+      }>(res.response);
+      if (!data) return null;
 
       const link = data.links?.find(
         (l) => l.rel === 'self' && l.type && AP_ACCEPT_TYPES.includes(l.type),
@@ -617,6 +731,44 @@ class FederationService {
   }
 
   /**
+   * Returns the acct that can be safely used as the canonical username for a
+   * WebFinger result. A remote WebFinger endpoint may advertise `subject` as a
+   * canonical alias (for example `user@www.example` -> `user@example`), but that
+   * claimed account is controlled by a different domain. Before storing it,
+   * resolve the claimed account through its own domain and require it to point
+   * back to the same actor URI — otherwise an attacker domain could spoof an
+   * identity on a trusted domain.
+   */
+  private async verifiedAccountForResolution(
+    requestedAcct: string,
+    resolution: WebFingerResolution,
+  ): Promise<string> {
+    const requested = normalizeFediverseHandle(requestedAcct);
+    const subject = resolution.subjectAcct ? normalizeFediverseHandle(resolution.subjectAcct) : null;
+    if (!requested || !subject || subject === requested) {
+      return requested || requestedAcct.toLowerCase();
+    }
+
+    try {
+      const subjectResolution = await this.resolveWebFingerResource(subject);
+      if (subjectResolution?.actorUri === resolution.actorUri) {
+        return subject;
+      }
+
+      logger.warn(
+        `Ignoring unverified WebFinger subject ${subject} for ${requested}: `
+          + `expected actor ${resolution.actorUri}, got ${subjectResolution?.actorUri || 'none'}`,
+      );
+    } catch (err) {
+      logger.warn(
+        `Failed verifying WebFinger subject ${subject} for ${requested}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
+    return requested;
+  }
+
+  /**
    * Fetch an ActivityPub actor by URI and extract user-profile fields.
    * Uses HTTP Signature for servers that enforce authorized fetch.
    */
@@ -630,22 +782,38 @@ class FederationService {
   } | null> {
     try {
       const res = await signedFetch(actorUri, AP_ACCEPT_TYPES[0]);
-      if (!res.ok) return null;
+      if (!res || res.status < 200 || res.status >= 300) {
+        res?.response.destroy();
+        return null;
+      }
 
-      const actor = (await res.json()) as Record<string, unknown>;
-      if (!actor.id || !actor.inbox) return null;
+      const actor = await readJsonLimited<Record<string, unknown>>(res.response);
+      if (!actor || typeof actor.id !== 'string' || !actor.inbox) return null;
 
-      const actorHost = new URL(actor.id as string).hostname.toLowerCase();
+      // The actor's `id` is attacker-controlled by the actor host; it must be a
+      // public https URL before we trust its host as the canonical domain.
+      let actorHost: string;
+      try {
+        const actorIdUrl = new URL(actor.id);
+        if (actorIdUrl.protocol !== 'https:') return null;
+        actorHost = actorIdUrl.hostname.toLowerCase();
+      } catch {
+        return null;
+      }
       const username = (actor.preferredUsername as string) || (actor.name as string) || 'unknown';
       const actorWebfinger = typeof actor.webfinger === 'string'
         ? normalizeFediverseHandle(actor.webfinger)
         : null;
       const hintedAcct = acctHint ? normalizeFediverseHandle(acctHint) : null;
-      const acct = actorWebfinger || hintedAcct || `${username.toLowerCase()}@${actorHost}`;
+      // The handle used for storage must come from the WebFinger resource we
+      // resolved and verified before fetching this actor. Actor documents are
+      // attacker-controlled by the actor host, so their optional `webfinger`
+      // field is only a fallback when no trusted hint is available.
+      const acct = hintedAcct || actorWebfinger || `${username.toLowerCase()}@${actorHost}`;
       const domain = domainFromHandle(acct) || actorHost;
 
       return {
-        actorUri: actor.id as string,
+        actorUri: actor.id,
         domain,
         username: acct,
         displayName: decodeHtmlEntities((actor.name as string) || username),
@@ -690,16 +858,20 @@ class FederationService {
         requestHeaders['If-Modified-Since'] = conditional.lastModified;
       }
 
-      const res = await fetch(avatarUrl, {
+      const res = await safeFederationFetch(avatarUrl, {
         headers: requestHeaders,
-        signal: AbortSignal.timeout(15_000),
+        timeoutMs: FEDERATION_AVATAR_FETCH_TIMEOUT_MS,
       });
+      if (!res) {
+        return { fileId: null, notModified: false };
+      }
 
       // 304: the host confirms the remote bytes are unchanged. This only means
       // our local copy is usable if the referenced asset still exists in S3.
       // If the DB record points to a missing object, retry without validators
       // so the remote sends the body and we can repair the stored file id.
       if (res.status === 304) {
+        res.response.destroy();
         if (await this.storedAvatarExists(existingAvatarFileId)) {
           return {
             fileId: null,
@@ -722,27 +894,44 @@ class FederationService {
         };
       }
 
-      if (!res.ok) {
+      if (res.status < 200 || res.status >= 300) {
+        res.response.destroy();
         logger.warn(`Avatar download failed: HTTP ${res.status} for ${avatarUrl}`);
         return { fileId: null, notModified: false };
       }
 
-      const etag = res.headers.get('etag') || undefined;
-      const lastModified = res.headers.get('last-modified') || undefined;
+      const headerValue = (name: string): string | undefined => {
+        const value = res.headers[name];
+        return Array.isArray(value) ? value[0] : value || undefined;
+      };
+      const etag = headerValue('etag');
+      const lastModified = headerValue('last-modified');
 
       // Sanitize content-type: strip parameters (e.g. "image/jpeg; charset=utf-8" → "image/jpeg")
-      const rawContentType = res.headers.get('content-type') || 'image/png';
+      const rawContentType = headerValue('content-type') || 'image/png';
       const contentType = rawContentType.split(';')[0].trim().toLowerCase();
 
       // Accept image/* and common binary types that CDNs return for images
       if (!contentType.startsWith('image/') && contentType !== 'application/octet-stream') {
+        res.response.destroy();
         logger.warn(`Avatar download skipped: non-image content-type "${rawContentType}" for ${avatarUrl}`);
         return { fileId: null, etag, lastModified, notModified: false };
       }
 
-      const buffer = Buffer.from(await res.arrayBuffer());
-      if (buffer.length === 0 || buffer.length > 5 * 1024 * 1024) {
-        return { fileId: null, etag, lastModified, notModified: false }; // max 5MB
+      // Enforce a hard byte cap; safeFetch does NOT bound the response body. A
+      // pre-check on the advertised content-length drops an oversized body
+      // before reading a single byte, and the streaming reader caps anything
+      // the header understated. An oversized body returns null and is dropped.
+      const advertisedLength = headerValue('content-length');
+      if (advertisedLength !== undefined && Number(advertisedLength) > FEDERATION_MAX_AVATAR_BYTES) {
+        res.response.destroy();
+        logger.warn(`Avatar download skipped: content-length ${advertisedLength} exceeds cap for ${avatarUrl}`);
+        return { fileId: null, etag, lastModified, notModified: false };
+      }
+
+      const buffer = await readBodyLimited(res.response, FEDERATION_MAX_AVATAR_BYTES);
+      if (!buffer || buffer.length === 0) {
+        return { fileId: null, etag, lastModified, notModified: false };
       }
 
       // For application/octet-stream, infer MIME from URL extension or default to png
@@ -857,7 +1046,8 @@ class FederationService {
     const webfinger = await this.resolveWebFingerResource(cleaned);
     if (!webfinger) return null;
 
-    const profile = await this.fetchActorProfile(webfinger.actorUri, webfinger.subjectAcct || cleaned);
+    const verifiedAcct = await this.verifiedAccountForResolution(cleaned, webfinger);
+    const profile = await this.fetchActorProfile(webfinger.actorUri, verifiedAcct);
     if (!profile) return null;
 
     const setFields: Record<string, unknown> = {

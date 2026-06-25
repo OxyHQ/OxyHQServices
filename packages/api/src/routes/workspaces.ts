@@ -24,6 +24,7 @@ import {
   generateUniqueWorkspaceSlug,
 } from '../utils/workspaceProvisioning';
 import { resolveUserByIdentifier } from '../utils/resolveUserIdentifier';
+import { stripSensitiveUrlQueryParams } from '../utils/sanitizeUrl';
 import {
   workspaceIdRouteParams,
   workspaceMemberParams,
@@ -217,7 +218,7 @@ router.post(
       slug,
       type: 'team',
       description: body.description,
-      icon: body.icon,
+      icon: body.icon ? stripSensitiveUrlQueryParams(body.icon) : body.icon,
       ownerId: new mongoose.Types.ObjectId(userId),
       status: 'active',
     });
@@ -293,7 +294,7 @@ router.patch(
       workspace.description = body.description ?? undefined;
     }
     if (body.icon !== undefined) {
-      workspace.icon = body.icon ?? undefined;
+      workspace.icon = body.icon ? stripSensitiveUrlQueryParams(body.icon) : undefined;
     }
 
     await workspace.save();

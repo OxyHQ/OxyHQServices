@@ -37,10 +37,12 @@ jobs:
 
   deploy-auth:
     needs: detect-changes
-    if: needs.detect-changes.outputs.auth == 'true' || github.event_name == 'workflow_dispatch'
+    if: needs.detect-changes.outputs.auth == 'true' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.14
@@ -92,10 +94,12 @@ jobs:
 
   deploy-accounts:
     needs: detect-changes
-    if: needs.detect-changes.outputs.accounts == 'true' || github.event_name == 'workflow_dispatch'
+    if: needs.detect-changes.outputs.accounts == 'true' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.14
@@ -112,10 +116,12 @@ jobs:
 
   deploy-inbox:
     needs: detect-changes
-    if: needs.detect-changes.outputs.inbox == 'true' || github.event_name == 'workflow_dispatch'
+    if: needs.detect-changes.outputs.inbox == 'true' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.14
@@ -132,10 +138,12 @@ jobs:
 
   deploy-console:
     needs: detect-changes
-    if: needs.detect-changes.outputs.console == 'true' || github.event_name == 'workflow_dispatch'
+    if: needs.detect-changes.outputs.console == 'true' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.14

@@ -28,6 +28,8 @@ import { logger } from '../utils/logger';
 import { ensurePersonalWorkspace } from '../utils/workspaceProvisioning';
 import credentialDomainCache from '../utils/credentialDomainCache';
 import approvedClientsCache from '../utils/approvedClientsCache';
+import { stripSensitiveUrlQueryParams } from '../utils/sanitizeUrl';
+import { isTrustedApplication } from '../utils/trustedApplication';
 import { resolveUserByIdentifier } from '../utils/resolveUserIdentifier';
 import {
   permissionsForRole,
@@ -665,7 +667,7 @@ router.post(
       name: body.name,
       description: body.description,
       websiteUrl: body.websiteUrl || undefined,
-      icon: body.icon,
+      icon: body.icon ? stripSensitiveUrlQueryParams(body.icon) : body.icon,
       redirectUris: resolveRedirectUris(body) ?? [],
       scopes,
       workspaceId: workspaceObjectId,
@@ -752,7 +754,7 @@ router.patch(
     if (body.name !== undefined) application.name = body.name;
     if (body.description !== undefined) application.description = body.description;
     if (body.websiteUrl !== undefined) application.websiteUrl = body.websiteUrl || undefined;
-    if (body.icon !== undefined) application.icon = body.icon;
+    if (body.icon !== undefined) application.icon = stripSensitiveUrlQueryParams(body.icon);
     if (body.scopes !== undefined) {
       // Privileged scopes (e.g. federation:write) are staff-only. A non-staff
       // caller may keep an already-granted privileged scope but may not add one.
@@ -1152,6 +1154,14 @@ router.post(
       environment: IApplicationCredential['environment'];
       scopes?: ApplicationScope[];
     };
+
+    // Service credentials mint bearer service tokens for Oxy-to-Oxy / internal
+    // routes. Only platform-trusted applications (first-party / internal /
+    // system / official — all staff-controlled) may hold them; a self-service
+    // third-party application must never be able to create one.
+    if (body.type === 'service' && !isTrustedApplication(application)) {
+      throw new ForbiddenError('Service credentials are only available to trusted applications');
+    }
 
     // A credential may never exceed its owning application's authority. Reject
     // an explicit request for any scope the app does not hold (rather than

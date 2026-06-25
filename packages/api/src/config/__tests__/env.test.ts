@@ -1,10 +1,10 @@
 /**
  * Environment configuration validation tests
  *
- * Focus: REFRESH_COOKIE_DOMAIN strict-hostname validation (MED-2). The value
- * is interpolated into a hand-built `Set-Cookie` header
- * (`appendLegacyRefreshCookieDeletion`), so anything beyond a bare hostname
- * (scheme, port, spaces, `;`, `,`, control chars) must fail fast at startup.
+ * Focus: REFRESH_COOKIE_DOMAIN strict validation (MED-2). Refresh cookies
+ * default to host-only scope. If the emergency Domain override is used, it must
+ * be exactly the API host so bearer-equivalent cookies never leak to sibling
+ * subdomain servers.
  */
 
 import {
@@ -85,15 +85,14 @@ describe('validateRequiredEnvVars — REFRESH_COOKIE_DOMAIN', () => {
     expect(() => validateRequiredEnvVars()).not.toThrow();
   });
 
-  it('passes for a valid bare hostname', () => {
-    process.env.REFRESH_COOKIE_DOMAIN = 'oxy.so';
-    expect(() => validateRequiredEnvVars()).not.toThrow();
-
+  it('passes for the exact API host emergency override', () => {
     process.env.REFRESH_COOKIE_DOMAIN = 'api.oxy.so';
     expect(() => validateRequiredEnvVars()).not.toThrow();
   });
 
   it.each([
+    'oxy.so',
+    'auth.oxy.so',
     'oxy.so; Secure',
     'oxy.so,evil.com',
     'http://oxy.so',

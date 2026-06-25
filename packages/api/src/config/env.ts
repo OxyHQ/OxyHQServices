@@ -236,14 +236,19 @@ export function validateRequiredEnvVars(): void {
     );
   }
 
-  // REFRESH_COOKIE_DOMAIN becomes a cookie Domain attribute, so a malformed
-  // value could alter cookie scope. Fail fast on anything that is not a bare
-  // hostname.
+  // REFRESH_COOKIE_DOMAIN becomes a cookie Domain attribute. Refresh cookies
+  // are bearer-equivalent, so the safe default is host-only (unset). If an
+  // operator uses the emergency override, fail fast unless it is the exact API
+  // host; parent-domain scopes such as `oxy.so` leak the cookie to sibling
+  // subdomain servers despite HttpOnly.
   const refreshCookieDomain = process.env.REFRESH_COOKIE_DOMAIN;
-  if (refreshCookieDomain && !isValidHostname(refreshCookieDomain)) {
+  if (
+    refreshCookieDomain &&
+    (!isValidHostname(refreshCookieDomain) || refreshCookieDomain !== 'api.oxy.so')
+  ) {
     missing.push(
-      'REFRESH_COOKIE_DOMAIN (invalid: must be a bare hostname like "oxy.so" — ' +
-      'no scheme, port, path, spaces, or ";"/"," characters)'
+      'REFRESH_COOKIE_DOMAIN (invalid: leave unset for host-only cookies, or set exactly "api.oxy.so"; ' +
+      'parent domains, schemes, ports, paths, spaces, and ";"/"," characters are forbidden)'
     );
   }
 

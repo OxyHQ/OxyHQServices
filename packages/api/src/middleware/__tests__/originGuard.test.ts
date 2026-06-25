@@ -1,8 +1,8 @@
 /**
  * Origin guard tests (MED-1 CSRF hardening, Phase A)
  *
- * `isAllowedOrigin`: strict allowlist — exact first-party origins, one-level
- * https subdomains, dev-only localhost, and validated
+ * `isAllowedOrigin`: strict allowlist — exact first-party app origins,
+ * dev-only localhost, and validated
  * `OXY_EXTRA_ALLOWED_ORIGINS` entries. Suffix-spoofing, case tricks, and
  * homograph hosts must all fail.
  *
@@ -63,7 +63,7 @@ describe('isAllowedOrigin', () => {
     'https://mercaria.co',
   ];
 
-  const SUBDOMAIN_ALLOWED = [
+  const APP_ORIGIN_ALLOWED = [
     'https://api.oxy.so',
     'https://accounts.oxy.so',
     'https://auth.oxy.so',
@@ -84,6 +84,7 @@ describe('isAllowedOrigin', () => {
     'https://oxy-so.example.com',
     'https://EVIL.oxy.so',
     'https://оxy.so',
+    'https://attacker.oxy.so',
     'https://a.b.oxy.so',
     'https://oxy.so:8443',
     'https://oxy.so/path',
@@ -99,7 +100,7 @@ describe('isAllowedOrigin', () => {
     expect(isAllowedOrigin(origin)).toBe(true);
   });
 
-  it.each(SUBDOMAIN_ALLOWED)('allows https subdomain %s', (origin) => {
+  it.each(APP_ORIGIN_ALLOWED)('allows registered app origin %s', (origin) => {
     expect(isAllowedOrigin(origin)).toBe(true);
   });
 
@@ -218,7 +219,7 @@ describe('requireSameSiteOrigin', () => {
     expect(res.body).toEqual({ ok: true });
   });
 
-  it('passes allowlisted subdomain origins', async () => {
+  it('passes registered app origins', async () => {
     const res = await request('POST', { origin: 'https://accounts.oxy.so' });
     expect(res.status).toBe(200);
   });

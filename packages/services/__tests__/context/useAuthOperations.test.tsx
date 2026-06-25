@@ -446,27 +446,22 @@ describe('useAuthOperations.logoutAll', () => {
   });
 
   // Under jest's jsdom env `isWebBrowser()` returns true, so `logoutAll`
-  // takes the web cookie-cleared branch. The bearer-protected
-  // `logoutAllSessions` is reserved for native and is NOT called on web —
-  // see the "Semantics intentionally diverge by platform" comment in
-  // `useAuthOperations.logoutAll` for why this is correct UX.
-  it('clears every device-local cookie + every session state on success (web)', async () => {
+  // must revoke the active user's sessions across devices first, then clear
+  // every device-local cookie slot from this browser.
+  it('revokes global sessions and clears every device-local cookie on success (web)', async () => {
     const helpers = setup({ activeSessionId: 'session-1' });
     await act(async () => {
       await helpers.result.current.logoutAll();
     });
+    expect(helpers.oxyServices.logoutAllSessions).toHaveBeenCalledWith('session-1');
     expect(helpers.oxyServices.logoutAllSessionsViaCookie).toHaveBeenCalledTimes(1);
-    // The bearer "revoke every session of this user across devices" endpoint
-    // is intentionally NOT called on web — the cookie endpoint covers the
-    // chooser's "Sign out of all accounts" semantics.
-    expect(helpers.oxyServices.logoutAllSessions).not.toHaveBeenCalled();
     expect(helpers.clearSessionState).toHaveBeenCalledTimes(1);
     // The persisted active-authuser slot is cleared so the next cold boot
     // starts from a clean slate.
     expect(window.localStorage.getItem('oxy_active_authuser')).toBeNull();
   });
 
-  it('re-throws and reports when the server fails (web cookie endpoint)', async () => {
+  it('re-throws and reports when the cookie cleanup fails after global revocation', async () => {
     const helpers = setup({
       activeSessionId: 'session-1',
       oxyServices: {
@@ -476,12 +471,21 @@ describe('useAuthOperations.logoutAll', () => {
       },
     });
 
-    await expect(
-      act(async () => {
+    // The global revoke now runs before the cookie cleanup, so the rejection
+    // arrives one microtask later than the legacy cookie-only flow. Capture the
+    // rejection inside `act` so the catch block's synchronous `onError` report
+    // is flushed within the same act scope before we assert on it.
+    let caught: unknown;
+    await act(async () => {
+      try {
         await helpers.result.current.logoutAll();
-      }),
-    ).rejects.toThrow('server down');
+      } catch (error) {
+        caught = error;
+      }
+    });
 
+    expect((caught as Error).message).toBe('server down');
+    expect(helpers.oxyServices.logoutAllSessions).toHaveBeenCalledWith('session-1');
     expect(helpers.onError).toHaveBeenCalledWith(expect.objectContaining({
       code: 'LOGOUT_ALL_ERROR',
     }));

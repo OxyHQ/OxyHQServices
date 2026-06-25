@@ -423,6 +423,28 @@ async function fetchApprovedClients(apiBaseUrl: string, userId: string): Promise
   }
 }
 
+/**
+ * Whether THIS user has previously granted FedCM consent to THIS exact RP
+ * origin. A globally-approved RP (an active `Application` whose redirect origin
+ * is on the approved-clients allow-list) is necessary but NOT sufficient for
+ * silent SSO: the spec's returning-account optimization (and our cross-domain
+ * silent-restore paths) must only restore a session for an RP the user has
+ * already consented to. First-time RPs get a no-session outcome so the RP falls
+ * back to an interactive sign-in/consent flow.
+ *
+ * Fails CLOSED: any failure in the per-user grant lookup yields an empty list
+ * (treated as "no grant"), so a transient API error blocks silent restore
+ * rather than handing a session to an un-consented RP.
+ */
+async function userHasGrantedClient(
+  apiBaseUrl: string,
+  userId: string,
+  clientOrigin: string
+): Promise<boolean> {
+  const grantedOrigins = await fetchApprovedClients(apiBaseUrl, userId);
+  return grantedOrigins.some((origin) => normaliseOrigin(origin) === clientOrigin);
+}
+
 /** Validate that a session is still active via the API. */
 async function validateSession(apiBaseUrl: string, sessionId: string): Promise<boolean> {
   try {
@@ -771,14 +793,15 @@ const CENTRAL_FEDCM_ISSUER = `https://auth.${CENTRAL_IDP_APEX}`;
 /**
  * Derive the per-apex first-party IdP host (`auth.<eTLD+1>`) for an approved
  * client origin, mirroring core `autoDetectAuthWebUrl`'s eTLD+1 logic
- * (last-two-labels with the multi-part-TLD guard).
+ * (Public Suffix List, private suffixes included).
  *
  * Returns `null` — meaning "no per-apex hop, use the central IdP directly" —
  * when:
  *   - the origin is unparseable,
  *   - the host is an IP literal (v4 or v6) or has fewer than two labels,
- *   - the trailing two labels form a known multi-part public suffix (the apex
- *     would be an attacker-registrable suffix), OR
+ *   - the host has no registrable domain under the Public Suffix List — a
+ *     multi-part public suffix (`co.uk`) or hosted suffix (`github.io`) where
+ *     the apex would be an attacker-registrable suffix, OR
  *   - the apex equals `CENTRAL_IDP_APEX` (`oxy.so`) — `auth.oxy.so` is already
  *     first-party to the client, so the central bounce already carries the
  *     durable credential and a second hop would be pure overhead.
@@ -796,8 +819,9 @@ function apexAuthHostForClient(clientOrigin: string): string | null {
   }
   // `registrableApex` (core SINGLE SOURCE OF TRUTH) applies the same guards the
   // old inline code did: empty host, IPv4 (`/^\d+\.\d+\.\d+\.\d+$/`) / IPv6
-  // (`[` / `:`) literals, `labels.length < 2`, and the `MULTIPART_TLDS`
-  // multi-part-public-suffix bail. Returns the bare eTLD+1 or `null`.
+  // (`[` / `:`) literals, and a Public Suffix List check (private suffixes
+  // included) so a multi-part public suffix (`co.uk`) or hosted suffix
+  // (`github.io`) yields no registrable apex. Returns the bare eTLD+1 or `null`.
   const apex = registrableApex(hostname);
   if (!apex) return null;
 
@@ -1180,6 +1204,33 @@ function applyAssertionCors(c: AppContext): void {
 }
 
 /**
+ * Emit credentialed CORS for `POST /fedcm/assertion` scoped to a SINGLE,
+ * validated origin — never a blanket reflection of the caller's `Origin`.
+ *
+ * The assertion response carries a signed id_token and is read by the RP via
+ * credentialed CORS, so the origin that receives the token MUST be exactly the
+ * origin baked into the JWT `aud` claim. `Sec-Fetch-Dest: webidentity` proves
+ * the browser used the FedCM API, but it does NOT bind the embedding RP origin
+ * to the caller-supplied `client_id`. Blanket `Access-Control-Allow-Origin:
+ * <Origin>` + `Allow-Credentials: true` would let a malicious RP request a
+ * token whose `aud` is an approved Oxy client and then read it cross-origin.
+ *
+ * This helper grants credentialed CORS ONLY when the request `Origin` exactly
+ * matches the already-validated, approved `clientOrigin`. Returns `true` when
+ * the headers were applied (caller may proceed), `false` otherwise (caller MUST
+ * reject WITHOUT emitting any credentialed CORS header).
+ */
+function applyAssertionCorsForClient(c: AppContext, clientOrigin: string): boolean {
+  const requestOrigin = normaliseOrigin(c.req.header('origin') || '');
+  if (!requestOrigin || requestOrigin !== clientOrigin) return false;
+
+  c.header('Access-Control-Allow-Origin', clientOrigin);
+  c.header('Access-Control-Allow-Credentials', 'true');
+  c.header('Vary', 'Origin');
+  return true;
+}
+
+/**
  * Preflight (OPTIONS) handler for the cross-origin credentialed POST
  * endpoints `/fedcm/assertion` and `/fedcm/disconnect`.
  *
@@ -1378,9 +1429,11 @@ app.get('/fedcm/accounts', async (c) => {
 app.options('/fedcm/assertion', (c) => preflightAssertionCors(c));
 
 app.post('/fedcm/assertion', async (c) => {
-  // The browser issues this cross-origin POST with credentials. Echo the RP
-  // origin so the browser accepts the token (required by the FedCM spec).
-  applyAssertionCors(c);
+  // NOTE: credentialed CORS is NOT emitted up-front. The assertion response is
+  // readable cross-origin and carries a signed id_token, so we scope CORS to a
+  // single validated origin (== the JWT `aud`) ONLY after the request `Origin`
+  // is proven to equal the approved `client_id`. Error paths emit NO
+  // credentialed CORS header at all (see the origin-binding gate below).
 
   // CSRF protection mandated by the FedCM spec.
   if (!hasWebIdentityDest(c)) {
@@ -1424,6 +1477,28 @@ app.post('/fedcm/assertion', async (c) => {
   if (!accountId || !clientId) {
     return c.json({ error: 'invalid_request' }, 400);
   }
+
+  // ORIGIN-BINDING GATE (no credentialed CORS on any failure path below).
+  //
+  // The browser issues this credentialed cross-origin POST FROM the embedding
+  // RP origin. The signed assertion may only be exposed to the origin baked
+  // into its `aud` claim, so we bind three values together before minting:
+  //
+  //   1. The request `Origin` MUST equal the requested `client_id` origin.
+  //   2. `client_id` MUST be an approved Oxy client (authoritative allow-list,
+  //      the SAME list `/fedcm/exchange` enforces) — defense-in-depth so a
+  //      caller cannot mint a token whose `aud` is an unregistered origin.
+  //   3. CORS is scoped to that single validated origin (never a blanket
+  //      reflection), and `aud` is set to the same normalised origin.
+  //
+  // A mismatch on (1) or a non-approved (2) → `invalid_client` with NO
+  // credentialed CORS header (the browser discards any response; nothing leaks).
+  const approvedClientOrigin = await resolveApprovedClientOrigin(apiBaseUrl, clientId);
+  if (!approvedClientOrigin || !applyAssertionCorsForClient(c, approvedClientOrigin)) {
+    return c.json({ error: 'invalid_client' }, 400);
+  }
+  // From here, `aud`/CORS use the normalised approved origin, not raw input.
+  clientId = approvedClientOrigin;
 
   // Verify the session is still valid and the account matches
   const user = await fetchUserFromAPI(apiBaseUrl, sessionId);
@@ -1664,8 +1739,18 @@ app.get('/auth/silent', async (c) => {
     return c.html(renderSilentHtml(approvedOrigin, null, nonce));
   }
 
-  // Mint a real Oxy access token for the validated, approved origin by reusing
-  // the existing FedCM nonce + exchange pipeline (api.oxy.so is the authority).
+  // Silent restore is only valid for RETURNING RPs. A globally approved
+  // client_id may embed this endpoint, but it must not receive a token unless
+  // THIS user has an existing FedCM grant for the exact RP origin. A first-time
+  // (un-granted) RP gets the same null-session result as a logged-out user, so
+  // it falls back to an interactive sign-in/consent flow.
+  if (!(await userHasGrantedClient(config.apiBaseUrl, user.id, approvedOrigin))) {
+    return c.html(renderSilentHtml(approvedOrigin, null, nonce));
+  }
+
+  // Mint a real Oxy access token for the validated, approved, previously
+  // granted origin by reusing the existing FedCM nonce + exchange pipeline
+  // (api.oxy.so is the authority).
   const session = await mintSessionForClient(config, user, approvedOrigin);
   return c.html(renderSilentHtml(approvedOrigin, session, nonce));
 });
@@ -1783,7 +1868,18 @@ app.get('/sso', async (c) => {
     return redirectToCallback(c, returnTo, buildSsoFragment('none', state));
   }
 
-  // 8. DURABLE-SESSION SECOND HOP. This bounce runs on the CENTRAL IdP host
+  // 8. Silent SSO (prompt=none) is only for RETURNING RPs. A globally approved
+  //    RP is allowed to START the protocol, but it must NOT receive a session
+  //    unless THIS user has previously granted that exact origin via FedCM
+  //    consent. A first-time RP gets the same no-session outcome as a logged-out
+  //    user so the RP falls back to an interactive sign-in/consent flow. This
+  //    gate runs BEFORE the establish hop so no cross-apex establish-token is
+  //    ever minted for an un-consented RP.
+  if (!(await userHasGrantedClient(config.apiBaseUrl, user.id, approvedOrigin))) {
+    return redirectToCallback(c, returnTo, buildSsoFragment('none', state));
+  }
+
+  // 9. DURABLE-SESSION SECOND HOP. This bounce runs on the CENTRAL IdP host
   //    (auth.oxy.so), which is THIRD-PARTY to a cross-registrable-domain RP
   //    (e.g. mention.earth) under Safari ITP / Firefox TCP. Minting the code
   //    here would work for THIS load, but the RP could never restore the
@@ -1798,7 +1894,7 @@ app.get('/sso', async (c) => {
   //    For *.oxy.so clients (apex == oxy.so) `apexAuthHostForClient` returns
   //    null — auth.oxy.so is ALREADY first-party to the client, so the central
   //    bounce already carries the durable credential. Skip the hop and mint the
-  //    code directly (steps 9–10 below), exactly as before.
+  //    code directly (steps 10–11 below), exactly as before.
   const apexAuthHost = apexAuthHostForClient(approvedOrigin);
   if (apexAuthHost) {
     const establishToken = await createEstablishToken(
@@ -1820,15 +1916,15 @@ app.get('/sso', async (c) => {
     return c.redirect(establishUrl.toString(), 303);
   }
 
-  // 9. (*.oxy.so path) Mint a real Oxy session for the approved origin via the
-  //    full, already-audited FedCM nonce + exchange pipeline (server nonce born
-  //    + burned inside this call). On any failure → error bounce (no leaks).
+  // 10. (*.oxy.so path) Mint a real Oxy session for the approved origin via the
+  //     full, already-audited FedCM nonce + exchange pipeline (server nonce born
+  //     + burned inside this call). On any failure → error bounce (no leaks).
   const session = await mintSessionForClient(config, user, approvedOrigin);
   if (!session) {
     return redirectToCallback(c, returnTo, buildSsoFragment('error', state));
   }
 
-  // 10. Wrap the session in an opaque, single-use, origin-bound code via the
+  // 11. Wrap the session in an opaque, single-use, origin-bound code via the
   //     internal `POST /sso/code` (X-Oxy-Internal secret). On failure → error
   //     bounce. The code — never the session — travels in the fragment.
   const code = await createSsoCode(config, approvedOrigin, session);
@@ -1836,7 +1932,7 @@ app.get('/sso', async (c) => {
     return redirectToCallback(c, returnTo, buildSsoFragment('error', state));
   }
 
-  // 11. Success: bounce back with `oxy_sso=ok`, the opaque `code`, and `state`
+  // 12. Success: bounce back with `oxy_sso=ok`, the opaque `code`, and `state`
   //     in the FRAGMENT. The RP callback redeems the code at /sso/exchange.
   return redirectToCallback(c, returnTo, buildSsoFragment('ok', state, code));
 });
@@ -1924,7 +2020,16 @@ app.get('/sso/establish', async (c) => {
     return redirectToCallback(c, returnTo, buildSsoFragment('error', state));
   }
 
-  // 6. PLANT THE DURABLE FIRST-PARTY CREDENTIAL. Set the host-only
+  // 6. RE-CHECK THE PER-USER FedCM GRANT. The central `/sso` hop verified this
+  //    user had granted the RP before minting `et`, but a grant can be revoked
+  //    between the two hops. Re-check here BEFORE planting the durable
+  //    first-party cookie or minting a session/code — an un-granted RP gets the
+  //    same no-session outcome as a logged-out user and NO cookie is planted.
+  if (!(await userHasGrantedClient(config.apiBaseUrl, user.id, approvedOrigin))) {
+    return redirectToCallback(c, returnTo, buildSsoFragment('none', state));
+  }
+
+  // 7. PLANT THE DURABLE FIRST-PARTY CREDENTIAL. Set the host-only
   //    `fedcm_session` cookie for THIS request host (auth.<rp-apex>) using the
   //    SAME options `/fedcm/set-session` uses (no Domain, Secure, HttpOnly,
   //    SameSite=None, 30d). The value is the validated central sessionId,
@@ -1937,7 +2042,7 @@ app.get('/sso/establish', async (c) => {
   });
   c.header('Set-Login', 'logged-in');
 
-  // 7. Complete the SSO handoff: mint a real Oxy session for the approved
+  // 8. Complete the SSO handoff: mint a real Oxy session for the approved
   //    origin via the full FedCM nonce + exchange pipeline (server nonce born +
   //    burned inside), then wrap it in an opaque, single-use, origin-bound code.
   //    Either failure → error bounce (the durable cookie is already set, so a
@@ -1959,7 +2064,7 @@ app.get('/sso/establish', async (c) => {
     return redirectToCallback(c, returnTo, buildSsoFragment('error', state));
   }
 
-  // 8. Success: bounce back to the RP callback with `oxy_sso=ok`, the opaque
+  // 9. Success: bounce back to the RP callback with `oxy_sso=ok`, the opaque
   //    `code`, and `state` in the FRAGMENT. The RP redeems the code at
   //    /sso/exchange; subsequent reloads restore via the cookie we just planted.
   return redirectToCallback(c, returnTo, buildSsoFragment('ok', state, code));

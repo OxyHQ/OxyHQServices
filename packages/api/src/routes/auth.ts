@@ -17,6 +17,7 @@ import { intersectScopes } from '../utils/applicationScopes';
 import { ApplicationCredential } from '../models/ApplicationCredential';
 import type { IApplicationCredential } from '../models/ApplicationCredential';
 import { isCredentialUsable } from '../utils/credentialUsability';
+import { isTrustedApplication } from '../utils/trustedApplication';
 import { authMiddleware, rejectQueryToken, type AuthRequest } from '../middleware/auth';
 import { requireSameSiteOrigin } from '../middleware/originGuard';
 import { rateLimit } from '../middleware/rateLimiter';
@@ -1461,6 +1462,20 @@ router.post('/session/create', validate({ body: authSessionCreateSchema }), asyn
     throw new ForbiddenError('Application is not available');
   }
 
+  // Public OAuth client IDs are routing identifiers, not authenticators. For
+  // trusted first-party/internal app identities, a browser caller must prove it
+  // is running on one of the app's registered redirect origins before the
+  // device-consent UI shows official branding. Native clients attach no Origin /
+  // Referer header (no browser context) and cannot prove an origin, so they are
+  // accepted as-is — the device-flow consent screen still authorises every
+  // session interactively.
+  if (isTrustedApplication(resolvedApp) && hasBrowserContext(req)) {
+    const origin = requestOrigin(req);
+    if (!origin || !applicationAllowsOrigin(resolvedApp, origin)) {
+      throw new ForbiddenError('Application origin is not allowed');
+    }
+  }
+
   // Check if session token already exists (generic error to prevent enumeration)
   const existing = await AuthSession.findOne({ sessionToken });
   if (existing) {
@@ -2014,6 +2029,43 @@ async function resolveUsableCredential(clientId: string): Promise<IApplicationCr
   return credential;
 }
 
+/** Parse the origin of a registered redirect URI, or null when malformed. */
+function originFromRedirectUri(redirectUri: string): string | null {
+  try {
+    return new URL(redirectUri).origin;
+  } catch {
+    return null;
+  }
+}
+
+/** First (or only) value of a possibly-array header, trimmed to a string. */
+function firstHeaderValue(value: string | string[] | undefined): string | null {
+  if (Array.isArray(value)) {
+    return value[0] ?? null;
+  }
+  return value ?? null;
+}
+
+/** The browser-attached `Origin` of the request, or null when absent. */
+function requestOrigin(req: express.Request): string | null {
+  return firstHeaderValue(req.headers.origin);
+}
+
+/**
+ * A browser/web context is detectable when the user agent attached an `Origin`
+ * or `Referer` header. Native clients (Expo `deviceFlowSignIn`) attach neither,
+ * so the absence of BOTH signals a genuine native sign-in that cannot prove an
+ * origin and must not be rejected for lacking one.
+ */
+function hasBrowserContext(req: express.Request): boolean {
+  return Boolean(requestOrigin(req) || firstHeaderValue(req.headers.referer));
+}
+
+/** True when `origin` is the origin of one of the app's registered redirect URIs. */
+function applicationAllowsOrigin(app: Pick<IApplication, 'redirectUris'>, origin: string): boolean {
+  return (app.redirectUris ?? []).some((redirectUri) => originFromRedirectUri(redirectUri) === origin);
+}
+
 /**
  * Best-effort owner display name for the consent UI. Only meaningful for
  * non-official apps. Never throws — a missing/deleted owner yields undefined so
@@ -2549,7 +2601,10 @@ router.post('/service-token', serviceTokenLimiter, validate({ body: serviceToken
     throw new UnauthorizedError('Invalid credentials');
   }
 
-  // The owning application must be active.
+  // The owning application must be active and part of the platform-trusted set.
+  // Service tokens are bearer credentials for Oxy-to-Oxy / internal routes;
+  // self-service third-party applications must not be able to mint them even if
+  // they somehow hold a historical `service` credential row.
   const app = await Application.findOne({ _id: credential.applicationId, status: 'active' });
   if (!app) {
     logger.warn('[ServiceToken] Application inactive for service credential', {
@@ -2557,6 +2612,14 @@ router.post('/service-token', serviceTokenLimiter, validate({ body: serviceToken
       applicationId: credential.applicationId.toString(),
     });
     throw new UnauthorizedError('Invalid credentials');
+  }
+
+  if (!isTrustedApplication(app)) {
+    logger.warn('[ServiceToken] Untrusted application attempted service token', {
+      credentialId: credential._id.toString(),
+      applicationId: credential.applicationId.toString(),
+    });
+    throw new ForbiddenError('Service tokens are only available to trusted applications');
   }
 
   // Generate stateless service JWT — embed granted scopes so downstream

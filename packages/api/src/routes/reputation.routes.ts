@@ -40,6 +40,7 @@ const router = express.Router();
 
 const WINDOW_15_MIN = 15 * 60 * 1000;
 const WINDOW_1_MIN = 60 * 1000;
+const REQUIRED_AWARD_SCOPE = 'reputation:write';
 
 /** Read limiter for public/auth read endpoints. */
 const readLimiter = rateLimit({
@@ -81,6 +82,13 @@ interface UserOrServiceRequest extends AuthRequest, ServiceAuthRequest {}
  * token resolves `req.serviceApp`; anything else falls through to the regular
  * user `authMiddleware`.
  */
+function requireReputationWriteScope(req: ServiceAuthRequest): void {
+  const scopes = req.serviceApp?.scopes ?? [];
+  if (!scopes.includes(REQUIRED_AWARD_SCOPE)) {
+    throw new ForbiddenError(`Missing required scope: ${REQUIRED_AWARD_SCOPE}`);
+  }
+}
+
 function authUserOrService(
   req: UserOrServiceRequest,
   res: Response,
@@ -268,8 +276,9 @@ router.post(
 /**
  * POST /reputation/award.
  *
- * Awarding is restricted to service tokens (the canonical path — a source app
- * reports an action) and platform staff. Regular users may NOT award reputation
+ * Awarding is restricted to service tokens with the privileged
+ * `reputation:write` scope (the canonical path — a source app reports an
+ * action) and platform staff. Regular users may NOT award reputation
  * (no self-award). When called with a service token the `applicationId` /
  * `credentialId` are resolved from `req.serviceApp` and any client-supplied
  * values for those fields are ignored.
@@ -288,6 +297,8 @@ router.post(
     let createdByUserId: string | undefined;
 
     if (serviceApp) {
+      requireReputationWriteScope(req);
+
       // Canonical service path — source app identity is the token's, not the
       // client body's.
       applicationId = serviceApp.appId;

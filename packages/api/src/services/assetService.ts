@@ -465,6 +465,7 @@ export class AssetService {
 
       if (existingFile) {
         const storageKey = existingFile.storageKey || this.generateStorageKey(expectedSha256, expectedMime);
+        let uploadUrl = '';
         if (existingFile.status === 'deleted') {
           existingFile.status = 'active';
           existingFile.ownerUserId = userId;
@@ -479,25 +480,35 @@ export class AssetService {
           fileCache.invalidate(existingFile._id.toString());
           fileCache.set(existingFile._id.toString(), existingFile);
         }
-        if (!(await this.s3Service.fileExists(storageKey))) {
+        const objectExists = await this.s3Service.fileExists(storageKey);
+        const requesterOwnsExisting = existingFile.ownerUserId?.toString() === userId;
+        if (!objectExists && requesterOwnsExisting) {
           logger.warn('Existing asset record has no storage object; returning upload URL for the existing key', {
             fileId: existingFile._id.toString(),
             sha256: expectedSha256,
             storageKey,
           });
+          // Only the file owner may receive a repair PUT URL for an existing
+          // record, and only when the object is missing. Signing a live
+          // deduplicated object's key would let any authenticated user who
+          // knows the SHA-256 overwrite another user's asset bytes.
+          uploadUrl = await this.s3Service.getPresignedUploadUrl(storageKey, {
+            contentType: expectedMime,
+            expiresIn: 3600
+          });
+        } else if (!objectExists) {
+          logger.warn('Existing asset record has no storage object; not returning repair URL to non-owner', {
+            fileId: existingFile._id.toString(),
+            sha256: expectedSha256,
+            storageKey,
+            requesterUserId: userId,
+            ownerUserId: existingFile.ownerUserId,
+          });
         }
 
-        logger.info('File already exists, returning existing', { 
-          sha256: expectedSha256, 
-          fileId: existingFile._id 
-        });
-        
-        // File already exists, return existing info
-        // We still need to provide an upload URL in case the client wants to verify or repair storage.
-        // Do not include metadata in the presigned URL signature; clients aren't required to send it
-        const uploadUrl = await this.s3Service.getPresignedUploadUrl(storageKey, {
-          contentType: expectedMime,
-          expiresIn: 3600
+        logger.info('File already exists, returning existing', {
+          sha256: expectedSha256,
+          fileId: existingFile._id
         });
 
         return {
@@ -1340,12 +1351,45 @@ export class AssetService {
   }
 
   /**
+   * Delete a legacy backfilled CDN copy for a non-public object key. Older
+   * public files may have DB keys outside `public/` while a backfill-created
+   * `public/<key>` copy exists for CDN serving; visibility downgrades and
+   * deletes must remove that deterministic public copy even when the stored key
+   * itself does not need relocation. Best-effort: a failure is logged, not
+   * thrown.
+   */
+  private async deleteBackfilledPublicCopy(key: string): Promise<void> {
+    if (isPublicKey(key)) {
+      return;
+    }
+
+    const publicKey = applyPublicPrefix(key);
+    if (!(await this.s3Service.fileExists(publicKey))) {
+      return;
+    }
+
+    try {
+      await this.s3Service.deleteFile(publicKey);
+    } catch (cleanupError) {
+      logger.warn('Failed to delete legacy public CDN copy after visibility downgrade', {
+        sourceKey: key,
+        publicKey,
+        error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+      });
+    }
+  }
+
+  /**
    * Relocate a single S3 object so its key prefix matches `visibility`. Returns
    * the (possibly unchanged) key. Idempotent and best-effort: a missing source
    * object is logged and the original key is returned unchanged.
    */
   private async relocateObjectForVisibility(key: string, visibility: FileVisibility): Promise<string> {
     const targetKey = this.targetKeyForVisibility(key, visibility);
+    if (visibility !== 'public') {
+      await this.deleteBackfilledPublicCopy(key);
+    }
+
     if (targetKey === key) {
       return key;
     }
@@ -1528,13 +1572,16 @@ export class AssetService {
         throw new Error('Cannot delete file with active links. Use force=true to override.');
       }
 
-      // Delete from storage
+      // Delete from storage, including any legacy CDN copy produced by the
+      // public-asset backfill while the DB key stayed non-public.
       await this.s3Service.deleteFile(file.storageKey);
+      await this.deleteBackfilledPublicCopy(file.storageKey);
 
       // Delete variants from storage
       for (const variant of file.variants) {
         try {
           await this.s3Service.deleteFile(variant.key);
+          await this.deleteBackfilledPublicCopy(variant.key);
         } catch (error) {
           logger.warn('Failed to delete variant', { variant: variant.key, error });
         }
