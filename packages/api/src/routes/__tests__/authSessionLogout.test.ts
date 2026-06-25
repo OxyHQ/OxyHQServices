@@ -238,6 +238,7 @@ jest.mock('../../models/FedCMGrant', () => ({
   default: { deleteMany: jest.fn(), deleteOne: jest.fn(), find: jest.fn(), findOneAndUpdate: jest.fn() },
 }));
 import authRouter from '../auth';
+import { SessionController } from '../../controllers/session.controller';
 import { errorHandler } from '../../middleware/errorHandler';
 import { REFRESH_COOKIE_PATH } from '../../services/refreshToken.service';
 // sha256Hex is the REAL implementation (the oauthCode mock spreads `...actual`),
@@ -731,6 +732,20 @@ describe('Origin guard on the cookie-credentialed auth endpoints (MED-1)', () =>
     expect(res.body).toEqual(BAD_ORIGIN_BODY);
     expect(mockFindOne).not.toHaveBeenCalled();
     expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it('POST /auth/recover/reset rejects a non-allowlisted Origin before resetting password', async () => {
+    const res = await requestJson(
+      server,
+      'POST',
+      '/auth/recover/reset',
+      { password: 'AttackerChosenPassword123!' },
+      { cookieHeader: 'oxy_recovery_token=recovery-jwt', origin: 'https://evil.oxy.so' }
+    );
+
+    expect(res.status).toBe(403);
+    expect(res.body).toEqual(BAD_ORIGIN_BODY);
+    expect(SessionController.resetPassword).not.toHaveBeenCalled();
   });
 
   it('POST /auth/refresh proceeds normally with an allowlisted Origin', async () => {
