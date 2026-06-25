@@ -33,7 +33,10 @@ import fedcmService from './services/fedcm.service';
 import reputationService from './services/reputation.service';
 import emailRoutes from './routes/email';
 import emailProxyRoutes from './routes/emailProxy';
-import emailInboundRoutes from './routes/emailInbound';
+import emailInboundRoutes, {
+  inboundRateLimit,
+  verifyEmailInboundWebhookSecret,
+} from './routes/emailInbound';
 import aliaRoutes from './routes/alia';
 import creditsRoutes from './routes/credits';
 import billingRoutes from './routes/billing';
@@ -122,8 +125,15 @@ function isCacheUploadRequest(req: express.Request): boolean {
 // Body parsing middleware - IMPORTANT: Add this before any routes
 // Stripe webhook needs raw body for signature verification (must be before express.json)
 app.use('/billing/webhook', express.raw({ type: 'application/json' }));
-// Email inbound webhook needs raw body for MIME parsing (must be before express.json)
-app.use('/email/inbound', express.raw({ type: '*/*', limit: '25mb' }));
+// Email inbound webhook needs raw body for MIME parsing (must be before express.json).
+// Authenticate and rate-limit before raw parsing so unauthenticated clients
+// cannot force 25 MiB body buffering or consume the Cloudflare Worker quota.
+app.use(
+  '/email/inbound',
+  verifyEmailInboundWebhookSecret,
+  inboundRateLimit,
+  express.raw({ type: '*/*', limit: '25mb' })
+);
 // Skip the global body parsers for the cache stream-upload so the raw request
 // reaches the route as an untouched readable stream.
 const jsonParser = express.json({ limit: '1mb' });
