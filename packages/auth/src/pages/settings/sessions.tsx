@@ -3,6 +3,7 @@ import { toast } from "sonner"
 import { Monitor, LogOut, Loader2 } from "lucide-react"
 import { buildApiUrl } from "@/lib/oxy-api-client"
 import { mintAccessTokenFromRefreshCookie } from "@/lib/session-auth"
+import { withCsrfHeader } from "@/lib/csrf"
 import { Button } from "@oxyhq/bloom/button"
 import { AuthFormHeader } from "@/components/auth-form-layout"
 
@@ -58,10 +59,10 @@ export function SessionsPage() {
 
             const res = await fetch(buildApiUrl(`/session/logout/${auth.sessionId}/${targetSessionId}`), {
                 method: "POST",
-                headers: {
+                headers: await withCsrfHeader({
                     "content-type": "application/json",
                     Authorization: `Bearer ${auth.accessToken}`,
-                },
+                }),
                 credentials: "include",
             })
             if (res.ok) {
@@ -86,10 +87,10 @@ export function SessionsPage() {
 
             const res = await fetch(buildApiUrl(`/session/logout-all/${auth.sessionId}`), {
                 method: "POST",
-                headers: {
+                headers: await withCsrfHeader({
                     "content-type": "application/json",
                     Authorization: `Bearer ${auth.accessToken}`,
-                },
+                }),
                 credentials: "include",
             })
             if (res.ok) {

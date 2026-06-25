@@ -5,6 +5,7 @@ import { ArrowLeft, ShieldAlert } from "lucide-react"
 import { OxyServices } from "@oxyhq/core"
 import { Avatar } from "@oxyhq/bloom/avatar"
 import { buildAuthUrl, buildApiUrl, getApiBaseUrl, getAvatarUrl } from "@/lib/oxy-api-client"
+import { withCsrfHeader } from "@/lib/csrf"
 import { setFedCMLoginStatus, registerFedCMSession, buildPostLoginRedirect, completeFedCMLogin } from "@/lib/auth-utils"
 import { setBasePreset } from "@/lib/bloom-css"
 import { useLayoutContext } from "@/lib/layout-context"
@@ -295,7 +296,7 @@ export function LoginForm({
             }
             const response = await fetch(buildAuthUrl("/login"), {
                 method: "POST",
-                headers: { "content-type": "application/json" },
+                headers: await withCsrfHeader({ "content-type": "application/json" }),
                 credentials: "include",
                 body: JSON.stringify(body),
             })
@@ -349,7 +350,7 @@ export function LoginForm({
             // Correct endpoint: /security/2fa/verify-login (creates session)
             const response = await fetch(buildApiUrl("/security/2fa/verify-login"), {
                 method: "POST",
-                headers: { "content-type": "application/json" },
+                headers: await withCsrfHeader({ "content-type": "application/json" }),
                 credentials: "include",
                 body: JSON.stringify(body),
             })
