@@ -71,7 +71,8 @@
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "@radix-ui/react-slot": "1.2.3",
-    "@oxyhq/bloom": "^0.20.0"
+    "@oxyhq/bloom": "^0.20.0",
+    "markdown-it": "12.3.2"
   },
   "dependencies": {
     "@expo/metro-runtime": "~56.0.11",
