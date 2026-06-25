@@ -105,6 +105,16 @@ function parseAuthuser(value: string | null): number | null {
   return Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
 }
 
+function parseRequestedScopes(
+  scopeValue: string | null,
+  fallbackScopes: string[] = []
+): string[] {
+  const rawScopes = scopeValue
+    ? scopeValue.split(/\s+/).filter(Boolean)
+    : fallbackScopes;
+  return Array.from(new Set(rawScopes));
+}
+
 export function AuthorizePage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -678,6 +688,7 @@ export function AuthorizePage() {
            unchanged IdP `handleDecision` flow. */
         <ConsentCard
           application={application}
+          requestedScopes={parseRequestedScopes(scope, application.scopes)}
           user={currentUser}
           showActions={showActions}
           error={pageError}

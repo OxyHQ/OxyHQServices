@@ -1,5 +1,11 @@
 import { Link } from "react-router-dom";
-import { KeyRound, RefreshCw, ShieldCheck } from "lucide-react";
+import {
+  BadgeCheck,
+  Globe,
+  KeyRound,
+  RefreshCw,
+  ShieldCheck,
+} from "lucide-react";
 import { getAccountDisplayName } from "@oxyhq/core";
 import type { PublicApplication } from "@oxyhq/core";
 
@@ -10,6 +16,7 @@ import { BenefitList, BenefitRow } from "@oxyhq/bloom/benefit-list";
 import { Logo } from "@/components/logo";
 import { useTranslation } from "@/lib/i18n/use-translation";
 import { getAvatarUrl } from "@/lib/oxy-api-client";
+import { labelForScope } from "@/lib/scope-labels";
 
 /** Minimal shape of the consenting user rendered in the identity badge. */
 export type ConsentUser = {
@@ -27,6 +34,8 @@ export type ConsentUser = {
 type ConsentCardProps = {
   /** The resolved requesting application (always present on this view). */
   application: PublicApplication;
+  /** OAuth scopes requested by the client, or its registered scope fallback. */
+  requestedScopes: string[];
   /** The account that will authorize the request, when known. */
   user: ConsentUser | null;
   /** Whether the approve/deny actions should be shown (pending + no error). */
@@ -59,6 +68,7 @@ type ConsentCardProps = {
  */
 export function ConsentCard({
   application,
+  requestedScopes,
   user,
   showActions,
   error,
@@ -71,6 +81,15 @@ export function ConsentCard({
   const appName = application.name;
   const displayName = user ? getAccountDisplayName(user) : null;
   const userEmail = user?.email;
+  const provenanceLabel = application.isOfficial
+    ? t("authorize.provenance.official")
+    : application.isInternal
+      ? t("authorize.provenance.internal")
+      : application.developerName
+        ? t("authorize.provenance.developer", {
+            developer: application.developerName,
+          })
+        : t("authorize.provenance.thirdParty");
 
   return (
     <div className="flex flex-col gap-space-24">
@@ -102,15 +121,47 @@ export function ConsentCard({
         </div>
       </div>
 
+      {/* App provenance and requested permissions */}
+      <BenefitList accessibilityLabel={t("authorize.provenance.title")}>
+        <BenefitRow
+          icon={<BadgeCheck className="size-4 text-fill-brand" aria-hidden />}
+          label={provenanceLabel}
+        />
+        {application.websiteUrl ? (
+          <BenefitRow
+            icon={<Globe className="size-4 text-fill-brand" aria-hidden />}
+            label={application.websiteUrl}
+          />
+        ) : null}
+      </BenefitList>
+
+      <div className="flex flex-col gap-space-8">
+        <div className="px-space-4 font-caption text-caption text-text-tertiary">
+          {t("authorize.permissions.title")}
+        </div>
+        <BenefitList accessibilityLabel={t("authorize.permissions.title")}>
+          {requestedScopes.length > 0 ? (
+            requestedScopes.map((scope) => (
+              <BenefitRow
+                key={scope}
+                icon={<KeyRound className="size-4 text-fill-brand" aria-hidden />}
+                label={labelForScope(scope)}
+              />
+            ))
+          ) : (
+            <BenefitRow
+              icon={<ShieldCheck className="size-4 text-fill-brand" aria-hidden />}
+              label={t("authorize.permissions.basic")}
+            />
+          )}
+        </BenefitList>
+      </div>
+
       {/* What authorizing means for an Oxy login */}
-      <BenefitList accessibilityLabel={t("authorize.title", { app: appName })}>
+      <BenefitList accessibilityLabel={t("authorize.benefits.title")}>
         <BenefitRow
           icon={<ShieldCheck className="size-4 text-fill-brand" aria-hidden />}
           label={t("authorize.benefits.secure")}
-        />
-        <BenefitRow
-          icon={<KeyRound className="size-4 text-fill-brand" aria-hidden />}
-          label={t("authorize.benefits.oneAccount")}
         />
         <BenefitRow
           icon={<RefreshCw className="size-4 text-fill-brand" aria-hidden />}
