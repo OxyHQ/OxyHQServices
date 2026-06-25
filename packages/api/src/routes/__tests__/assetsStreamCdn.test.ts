@@ -49,6 +49,10 @@ jest.mock('../../middleware/auth', () => ({
 jest.mock('../../middleware/optionalAuth', () => ({
   optionalAuthMiddleware: (_req: unknown, _res: unknown, next: () => void) => next(),
   getUserId: () => undefined,
+  // The stream/download routes resolve the viewer via getMediaViewerUserId
+  // (session user OR `?token=` owner). These CDN-redirect tests issue
+  // tokenless requests → anonymous viewer.
+  getMediaViewerUserId: () => undefined,
 }));
 
 jest.mock('../../middleware/mediaHeaders', () => ({

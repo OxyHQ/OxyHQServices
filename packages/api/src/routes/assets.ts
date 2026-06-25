@@ -2,7 +2,7 @@ import express from 'express';
 import multer from 'multer';
 import { assetService, s3Service } from '../services/assetServiceSingleton';
 import { authMiddleware, serviceAuthMiddleware, type ServiceAuthRequest } from '../middleware/auth';
-import { optionalAuthMiddleware, getUserId } from '../middleware/optionalAuth';
+import { optionalAuthMiddleware, getMediaViewerUserId } from '../middleware/optionalAuth';
 import { mediaHeadersMiddleware } from '../middleware/mediaHeaders';
 import { rateLimit } from '../middleware/rateLimiter';
 import { logger } from '../utils/logger';
@@ -1075,7 +1075,10 @@ router.get('/:id/exists', authMiddleware, validate({ params: assetIdParams }), a
  *         description: File not found (and no fallback requested).
  */
 router.get('/:id/stream', mediaHeadersMiddleware, validate({ params: assetIdParams }), optionalAuthMiddleware, asyncHandler(async (req: AuthenticatedRequest, res: express.Response) => {
-  const userId = getUserId(req);
+  // `<img src>` cannot send an Authorization header, so resolve the viewer from
+  // the `?token=` query (SDK-issued) when no session user is present, so owners
+  // can render their own private media. Access is still gated by canUserAccessFile.
+  const userId = getMediaViewerUserId(req);
   const { id: fileId } = req.params;
   const { variant } = req.query;
   const variantType = typeof variant === 'string' ? variant : undefined;
@@ -1282,7 +1285,10 @@ router.get('/:id/stream', mediaHeadersMiddleware, validate({ params: assetIdPara
  * @access Public (with optional authentication for private files)
  */
 router.get('/:id/download', validate({ params: assetIdParams }), optionalAuthMiddleware, asyncHandler(async (req: AuthenticatedRequest, res: express.Response) => {
-  const userId = getUserId(req);
+  // Resolve viewer from the `?token=` query for direct-download links that
+  // cannot carry an Authorization header (owners downloading their own private
+  // files). Access is still gated by canUserAccessFile below.
+  const userId = getMediaViewerUserId(req);
   const { id: fileId } = req.params;
   const { variant, expiresIn } = req.query;
 
