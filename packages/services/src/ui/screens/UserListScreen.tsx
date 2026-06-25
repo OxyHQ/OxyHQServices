@@ -2,7 +2,6 @@ import type React from 'react';
 import { useEffect, useState, useCallback } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
   ActivityIndicator,
   FlatList,
@@ -11,6 +10,9 @@ import {
 } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
 import { useTheme } from '@oxyhq/bloom/theme';
+import { H6, Text } from '@oxyhq/bloom/typography';
+import { Button } from '@oxyhq/bloom/button';
+import Header from '../components/Header';
 import Avatar from '../components/Avatar';
 import FollowButton from '../components/FollowButton';
 import { Ionicons } from '@expo/vector-icons';
@@ -28,12 +30,22 @@ interface UserListScreenProps extends BaseScreenProps {
 }
 
 const PAGE_SIZE = 20;
+const AVATAR_SIZE = 48;
+const EMPTY_ICON_SIZE = 64;
+const ERROR_ICON_SIZE = 48;
+
+/**
+ * Resolve a user's id from the canonical `id` field, falling back to the
+ * Mongo `_id` exposed via `User`'s index signature — narrowed with a `typeof`
+ * guard so we never reach for a cast.
+ */
+const resolveUserId = (user: User): string =>
+  user.id || (typeof user._id === 'string' ? user._id : '');
 
 const UserListScreen: React.FC<UserListScreenProps> = ({
   userId,
   mode,
   initialCount,
-  theme,
   goBack,
   navigate,
 }) => {
@@ -47,10 +59,9 @@ const UserListScreen: React.FC<UserListScreenProps> = ({
   const [hasMore, setHasMore] = useState(true);
 
   const bloomTheme = useTheme();
-  const styles = createStyles();
   const { t, locale } = useI18n();
 
-  const currentUserId = currentUser?.id || (currentUser?._id as string | undefined);
+  const currentUserId = currentUser ? resolveUserId(currentUser) : '';
 
   const fetchUsers = useCallback(
     async (offset = 0, isRefresh = false) => {
@@ -124,7 +135,7 @@ const UserListScreen: React.FC<UserListScreenProps> = ({
 
   const handleUserPress = useCallback(
     (user: User) => {
-      const targetUserId = user.id || (user._id as string | undefined);
+      const targetUserId = resolveUserId(user);
       if (targetUserId && navigate) {
         navigate('Profile', { userId: targetUserId });
       }
@@ -134,15 +145,20 @@ const UserListScreen: React.FC<UserListScreenProps> = ({
 
   const renderUser = useCallback(
     ({ item }: { item: User }) => {
-      const itemUserId = item.id || (item._id as string) || '';
+      const itemUserId = resolveUserId(item);
       const isCurrentUser = itemUserId === currentUserId;
       const description = typeof item.description === 'string' ? item.description : '';
+      const displayName = getAccountDisplayName(item, locale);
+      const handle = getAccountFallbackHandle(item);
 
       return (
         <TouchableOpacity
           style={styles.userItem}
+          className="px-screen-margin py-space-12 gap-space-12"
           onPress={() => handleUserPress(item)}
           activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel={displayName}
         >
           <Avatar
             uri={
@@ -150,87 +166,76 @@ const UserListScreen: React.FC<UserListScreenProps> = ({
                 ? oxyServices.getFileDownloadUrl(item.avatar, 'thumb')
                 : undefined
             }
-            name={getAccountDisplayName(item, locale)}
-            size={48}
+            name={displayName}
+            size={AVATAR_SIZE}
           />
           <View style={styles.userInfo}>
-            <Text style={styles.userName} className="text-foreground" numberOfLines={1}>
-              {getAccountDisplayName(item, locale)}
+            <Text className="text-text font-medium text-base" numberOfLines={1}>
+              {displayName}
             </Text>
-            {(() => {
-              const handle = getAccountFallbackHandle(item);
-              return handle ? (
-                <Text style={styles.userHandle} className="text-muted-foreground" numberOfLines={1}>
-                  {item.username ? `@${handle}` : handle}
-                </Text>
-              ) : null;
-            })()}
+            {handle ? (
+              <Text className="text-text-secondary text-sm mt-space-2" numberOfLines={1}>
+                {item.username ? `@${handle}` : handle}
+              </Text>
+            ) : null}
             {description ? (
-              <Text style={styles.userBio} className="text-foreground" numberOfLines={2}>
+              <Text className="text-text-secondary text-sm mt-space-4" numberOfLines={2}>
                 {description}
               </Text>
             ) : null}
           </View>
           {!isCurrentUser && itemUserId ? (
-            <View style={styles.followButtonWrapper}>
-              <FollowButton userId={itemUserId} size="small" />
-            </View>
+            <FollowButton userId={itemUserId} size="small" />
           ) : null}
         </TouchableOpacity>
       );
     },
-    [bloomTheme, styles, handleUserPress, currentUserId, oxyServices, locale]
+    [handleUserPress, currentUserId, oxyServices, locale]
   );
 
   const renderEmpty = useCallback(() => {
     if (isLoading) return null;
     return (
-      <View style={styles.emptyContainer}>
+      <View style={styles.emptyContainer} className="px-space-32 gap-space-8">
         <Ionicons
           name={mode === 'followers' ? 'people-outline' : 'heart-outline'}
-          size={64}
+          size={EMPTY_ICON_SIZE}
           color={bloomTheme.colors.textSecondary}
         />
-        <Text style={styles.emptyTitle} className="text-foreground">
+        <H6 className="text-text text-center mt-space-8">
           {mode === 'followers'
             ? t('userList.noFollowers') || 'No followers yet'
             : t('userList.noFollowing') || 'Not following anyone'}
-        </Text>
-        <Text style={styles.emptySubtitle} className="text-muted-foreground">
+        </H6>
+        <Text className="text-text-secondary text-sm text-center">
           {mode === 'followers'
             ? t('userList.noFollowersDesc') || 'When people follow this user, they will appear here.'
             : t('userList.noFollowingDesc') || 'When this user follows people, they will appear here.'}
         </Text>
       </View>
     );
-  }, [isLoading, mode, bloomTheme, styles, t]);
+  }, [isLoading, mode, bloomTheme, t]);
 
   const renderFooter = useCallback(() => {
     if (!isLoadingMore) return null;
     return (
-      <View style={styles.footerLoader}>
+      <View style={styles.footerLoader} className="py-space-16">
         <ActivityIndicator size="small" color={bloomTheme.colors.primary} />
       </View>
     );
-  }, [isLoadingMore, bloomTheme, styles]);
+  }, [isLoadingMore, bloomTheme]);
 
   const title = mode === 'followers'
     ? (t('userList.followers') || 'Followers')
     : (t('userList.following') || 'Following');
 
+  const headerSubtitle = total > 0 ? String(total) : undefined;
+
   if (isLoading && users.length === 0) {
     return (
-      <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
-        <View style={styles.header} className="border-border">
-          {goBack && (
-            <TouchableOpacity onPress={goBack} style={styles.backButton}>
-              <Ionicons name="arrow-back" size={24} color={bloomTheme.colors.text} />
-            </TouchableOpacity>
-          )}
-          <Text style={styles.headerTitle} className="text-foreground">{title}</Text>
-          <View style={styles.headerRight} />
-        </View>
-        <View style={styles.loadingContainer}>
+      <View className="flex-1 bg-bg">
+        <Header title={title} onBack={goBack} elevation="subtle" />
+        <View style={styles.center}>
           <ActivityIndicator size="large" color={bloomTheme.colors.primary} />
         </View>
       </View>
@@ -239,47 +244,30 @@ const UserListScreen: React.FC<UserListScreenProps> = ({
 
   if (error) {
     return (
-      <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
-        <View style={styles.header} className="border-border">
-          {goBack && (
-            <TouchableOpacity onPress={goBack} style={styles.backButton}>
-              <Ionicons name="arrow-back" size={24} color={bloomTheme.colors.text} />
-            </TouchableOpacity>
-          )}
-          <Text style={styles.headerTitle} className="text-foreground">{title}</Text>
-          <View style={styles.headerRight} />
-        </View>
-        <View style={styles.errorContainer}>
-          <Ionicons name="alert-circle" size={48} color={bloomTheme.colors.error} />
-          <Text style={styles.errorText} className="text-destructive">{error}</Text>
-          <TouchableOpacity style={styles.retryButton} className="bg-primary" onPress={() => fetchUsers(0)}>
-            <Text style={[styles.retryButtonText, { color: bloomTheme.colors.primaryForeground }]}>{t('common.retry') || 'Retry'}</Text>
-          </TouchableOpacity>
+      <View className="flex-1 bg-bg">
+        <Header title={title} onBack={goBack} elevation="subtle" />
+        <View style={styles.center} className="px-space-32 gap-space-16">
+          <Ionicons name="alert-circle" size={ERROR_ICON_SIZE} color={bloomTheme.colors.error} />
+          <Text className="text-text-secondary text-base text-center">{error}</Text>
+          <Button variant="primary" onPress={() => fetchUsers(0)}>
+            {t('common.retry') || 'Retry'}
+          </Button>
         </View>
       </View>
     );
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
-      <View style={styles.header} className="border-border">
-        {goBack && (
-          <TouchableOpacity onPress={goBack} style={styles.backButton}>
-            <Ionicons name="arrow-back" size={24} color={bloomTheme.colors.text} />
-          </TouchableOpacity>
-        )}
-        <View style={styles.headerTitleContainer}>
-          <Text style={styles.headerTitle} className="text-foreground">{title}</Text>
-          {total > 0 && <Text style={styles.headerCount} className="text-muted-foreground">{total}</Text>}
-        </View>
-        <View style={styles.headerRight} />
-      </View>
+    <View className="flex-1 bg-bg">
+      <Header title={title} subtitle={headerSubtitle} onBack={goBack} elevation="subtle" />
       <FlatList
         data={users}
         renderItem={renderUser}
-        keyExtractor={(item, index) => item.id || (item._id as string) || `user-${index}`}
+        keyExtractor={(item, index) => resolveUserId(item) || `user-${index}`}
         contentContainerStyle={styles.listContent}
-        ItemSeparatorComponent={() => <View style={styles.separator} className="bg-border" />}
+        ItemSeparatorComponent={() => (
+          <View style={styles.separator} className="border-b border-border" />
+        )}
         ListEmptyComponent={renderEmpty}
         ListFooterComponent={renderFooter}
         onEndReached={handleLoadMore}
@@ -297,120 +285,39 @@ const UserListScreen: React.FC<UserListScreenProps> = ({
   );
 };
 
-const createStyles = () =>
-  StyleSheet.create({
-    container: {
-      flex: 1,
-    },
-    header: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      paddingHorizontal: 16,
-      paddingVertical: 12,
-      borderBottomWidth: 1,
-    },
-    backButton: {
-      padding: 8,
-      marginRight: 8,
-    },
-    headerTitleContainer: {
-      flex: 1,
-      flexDirection: 'row',
-      alignItems: 'center',
-    },
-    headerTitle: {
-      fontSize: 18,
-      fontWeight: '600',
-    },
-    headerCount: {
-      fontSize: 16,
-      marginLeft: 8,
-    },
-    headerRight: {
-      width: 40,
-    },
-    loadingContainer: {
-      flex: 1,
-      justifyContent: 'center',
-      alignItems: 'center',
-    },
-    errorContainer: {
-      flex: 1,
-      justifyContent: 'center',
-      alignItems: 'center',
-      paddingHorizontal: 32,
-    },
-    errorText: {
-      fontSize: 16,
-      textAlign: 'center',
-      marginTop: 16,
-      marginBottom: 24,
-    },
-    retryButton: {
-      paddingHorizontal: 24,
-      paddingVertical: 12,
-      borderRadius: 8,
-    },
-    retryButtonText: {
-      fontSize: 16,
-      fontWeight: '600',
-    },
-    listContent: {
-      flexGrow: 1,
-    },
-    userItem: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      paddingHorizontal: 16,
-      paddingVertical: 12,
-    },
-    userInfo: {
-      flex: 1,
-      marginLeft: 12,
-      marginRight: 8,
-    },
-    userName: {
-      fontSize: 16,
-      fontWeight: '600',
-    },
-    userHandle: {
-      fontSize: 14,
-      marginTop: 2,
-    },
-    userBio: {
-      fontSize: 14,
-      marginTop: 4,
-      opacity: 0.8,
-    },
-    followButtonWrapper: {
-      marginLeft: 'auto',
-    },
-    separator: {
-      height: 1,
-      marginLeft: 76,
-    },
-    emptyContainer: {
-      flex: 1,
-      justifyContent: 'center',
-      alignItems: 'center',
-      paddingHorizontal: 32,
-      paddingTop: 80,
-    },
-    emptyTitle: {
-      fontSize: 18,
-      fontWeight: '600',
-      marginTop: 16,
-      textAlign: 'center',
-    },
-    emptySubtitle: {
-      fontSize: 14,
-      marginTop: 8,
-      textAlign: 'center',
-    },
-    footerLoader: {
-      paddingVertical: 16,
-      alignItems: 'center',
-    },
-  });
+// Layout-only styles: flex centering, measured separator inset, and the row
+// flex layout. Colors, spacing, radius, and typography roles live on Bloom
+// components + NativeWind token classes.
+const styles = StyleSheet.create({
+  center: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  listContent: {
+    flexGrow: 1,
+  },
+  userItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  userInfo: {
+    flex: 1,
+  },
+  // Inset the hairline separator to align with the start of the user's text
+  // content (avatar width + screen margin + gap).
+  separator: {
+    marginLeft: 76,
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingTop: 80,
+  },
+  footerLoader: {
+    alignItems: 'center',
+  },
+});
 
 export default UserListScreen;

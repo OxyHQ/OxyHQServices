@@ -1,5 +1,5 @@
 import type React from 'react';
-import { View, StyleSheet, ScrollView, Linking } from 'react-native';
+import { View, ScrollView, Linking } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
 import Header from '../components/Header';
 import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
@@ -39,39 +39,32 @@ const UserLinksScreen: React.FC<UserLinksScreenProps> = ({
     };
 
     return (
-        <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
+        <View className="flex-1 bg-bg">
             <Header
                 title={t('userLinks.title')}
                 subtitle={links.length !== 1 ? t('userLinks.linkCount_plural', { count: links.length }) : t('userLinks.linkCount', { count: links.length })}
                 onBack={goBack}
+                variant="minimal"
                 elevation="subtle"
             />
 
-            <ScrollView style={styles.content}>
-                <SettingsListGroup title={t('userLinks.title')}>
-                    {links.map((link) => (
-                        <SettingsListItem
-                            key={link.id}
-                            icon={<SettingsIcon name="link" color={bloomTheme.colors.success} />}
-                            title={link.title || link.url}
-                            description={link.description || link.url}
-                            onPress={() => handleLinkPress(link.url)}
-                        />
-                    ))}
-                </SettingsListGroup>
+            <ScrollView className="flex-1">
+                <View className="px-screen-margin pb-space-24">
+                    <SettingsListGroup title={t('userLinks.title')}>
+                        {links.map((link) => (
+                            <SettingsListItem
+                                key={link.id}
+                                icon={<SettingsIcon name="link" color={bloomTheme.colors.success} />}
+                                title={link.title || link.url}
+                                description={link.description || link.url}
+                                onPress={() => handleLinkPress(link.url)}
+                            />
+                        ))}
+                    </SettingsListGroup>
+                </View>
             </ScrollView>
         </View>
     );
 };
 
-const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-    },
-    content: {
-        flex: 1,
-        padding: 16,
-    },
-});
-
-export default UserLinksScreen; 
+export default UserLinksScreen;

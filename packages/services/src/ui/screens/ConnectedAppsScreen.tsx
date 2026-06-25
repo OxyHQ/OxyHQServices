@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, View } from 'react-native';
 import { Dialog, toast, useDialogControl } from '@oxyhq/bloom';
 import { useTheme } from '@oxyhq/bloom/theme';
@@ -7,15 +7,15 @@ import type { AuthorizedApp } from '@oxyhq/core';
 import { logger as loggerUtil } from '@oxyhq/core';
 import type { BaseScreenProps } from '../types/navigation';
 import Header from '../components/Header';
+import Avatar from '../components/Avatar';
 import EmptyState from '../components/EmptyState';
-import { SettingsIcon } from '../components/SettingsIcon';
+import LoadingState from '../components/LoadingState';
 import { useI18n } from '../hooks/useI18n';
 import { useOxy } from '../context/OxyContext';
 import { useAuthorizedApps } from '../hooks/queries/useAccountQueries';
 import { useRevokeAuthorizedApp } from '../hooks/mutations/useAccountMutations';
-import { useColorScheme } from '../hooks/useColorScheme';
-import { Colors } from '../constants/theme';
-import { normalizeColorScheme, normalizeTheme } from '@oxyhq/core';
+
+const APP_ICON_SIZE = 40;
 
 /**
  * Format an ISO-8601 timestamp as a human-readable relative time. Mirrors the
@@ -46,14 +46,9 @@ const formatRelative = (iso: string): string => {
  * :origin`. Each revoke invalidates the connected-apps query so the list
  * refreshes immediately.
  */
-const ConnectedAppsScreen: React.FC<BaseScreenProps> = ({ onClose, theme, goBack }) => {
+const ConnectedAppsScreen: React.FC<BaseScreenProps> = ({ onClose, goBack }) => {
     const bloomTheme = useTheme();
     const { t } = useI18n();
-    const colorScheme = useColorScheme();
-    const palette = useMemo(
-        () => Colors[normalizeColorScheme(colorScheme, normalizeTheme(theme))],
-        [colorScheme, theme],
-    );
     const { isAuthenticated } = useOxy();
     const {
         data: apps,
@@ -104,7 +99,7 @@ const ConnectedAppsScreen: React.FC<BaseScreenProps> = ({ onClose, theme, goBack
 
     const renderEmpty = useCallback(
         () => (
-            <View style={styles.emptyContainer}>
+            <View className="flex-1 items-center justify-center py-space-32">
                 <EmptyState
                     message={
                         t('connectedApps.empty.subtitle')
@@ -123,7 +118,7 @@ const ConnectedAppsScreen: React.FC<BaseScreenProps> = ({ onClose, theme, goBack
             return (
                 <SettingsListGroup>
                     <SettingsListItem
-                        icon={<SettingsIcon name="apps" color={palette.iconData} />}
+                        icon={<Avatar name={item.name} size={APP_ICON_SIZE} />}
                         title={item.name}
                         description={
                             t('connectedApps.item.lastUsed', {
@@ -147,11 +142,11 @@ const ConnectedAppsScreen: React.FC<BaseScreenProps> = ({ onClose, theme, goBack
                 </SettingsListGroup>
             );
         },
-        [bloomTheme.colors.error, confirmRevoke, palette.iconData, revokingOrigin, t],
+        [bloomTheme.colors.error, confirmRevoke, revokingOrigin, t],
     );
 
     return (
-        <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
+        <View className="flex-1 bg-bg">
             <Header
                 title={t('connectedApps.title') || 'Connected apps'}
                 onBack={goBack || onClose}
@@ -159,14 +154,13 @@ const ConnectedAppsScreen: React.FC<BaseScreenProps> = ({ onClose, theme, goBack
                 elevation="subtle"
             />
             {isLoading && !apps ? (
-                <View style={styles.center}>
-                    <ActivityIndicator color={bloomTheme.colors.primary} size="large" />
-                </View>
+                <LoadingState color={bloomTheme.colors.primary} />
             ) : (
                 <FlatList
                     data={apps ?? []}
                     keyExtractor={(item) => item.origin}
                     renderItem={renderItem}
+                    contentContainerClassName="px-screen-margin py-space-16"
                     contentContainerStyle={styles.listContent}
                     ListEmptyComponent={renderEmpty}
                     refreshControl={
@@ -200,25 +194,13 @@ const ConnectedAppsScreen: React.FC<BaseScreenProps> = ({ onClose, theme, goBack
     );
 };
 
+// Layout-only style: `flexGrow` lets the FlatList content fill the viewport so
+// the empty state centers vertically. Not expressible as a Bloom token class —
+// all colors, spacing, radius, and typography live on token classes + Bloom
+// components.
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-    },
-    center: {
-        flex: 1,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
     listContent: {
-        paddingHorizontal: 16,
-        paddingVertical: 16,
         flexGrow: 1,
-    },
-    emptyContainer: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        paddingVertical: 48,
     },
 });
 
