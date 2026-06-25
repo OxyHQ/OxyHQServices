@@ -41,6 +41,21 @@ function removeMessageFromPages(
   };
 }
 
+/** Merge a server flag-update response into an existing cached message without dropping
+ * detail-only fields (body, headers) that the update endpoint does not return.
+ */
+function mergeMessageUpdate(old: Message | null | undefined, updated: Message): Message {
+  if (!old) return updated;
+  return {
+    ...old,
+    ...updated,
+    text: updated.text ?? old.text,
+    html: updated.html ?? old.html,
+    headers: updated.headers ?? old.headers,
+    flags: { ...old.flags, ...updated.flags },
+  };
+}
+
 /** Get flat list of all messages from infinite query data */
 function flatMessages(data: MessagesInfinite | undefined): Message[] {
   if (!data) return [];
@@ -103,24 +118,32 @@ export function useToggleStar() {
       toast.error('Failed to update star.');
     },
     onSuccess: (updatedMessage, { messageId }) => {
-      // Sync with server response
+      // Sync flag fields from the server without replacing body/header fields that
+      // the flag update endpoint intentionally omits from its response.
       if (updatedMessage) {
-        queryClient.setQueryData<Message | null>(['message', messageId], updatedMessage);
+        queryClient.setQueryData<Message | null>(['message', messageId], (old) =>
+          mergeMessageUpdate(old, updatedMessage),
+        );
         // Don't restore message to list if it was removed from starred view
         const viewMode = useEmailStore.getState().viewMode;
         if (!(viewMode?.type === 'starred' && !updatedMessage.flags.starred)) {
           queryClient.setQueriesData<MessagesInfinite>({ queryKey: ['messages'] }, (old) =>
-            updateMessageInPages(old, messageId, () => updatedMessage),
+            updateMessageInPages(old, messageId, (message) =>
+              mergeMessageUpdate(message, updatedMessage),
+            ),
           );
         }
         queryClient.setQueriesData<Message[]>({ queryKey: ['thread'] }, (old) =>
-          old?.map((m) => (m._id === messageId ? updatedMessage : m)),
+          old?.map((m) =>
+            m._id === messageId ? mergeMessageUpdate(m, updatedMessage) : m,
+          ),
         );
       }
     },
     onSettled: () => {
-      // Only invalidate mailboxes (unseen counts may change).
-      // Message/thread caches are already synced from server response in onSuccess.
+      // Refetch/star-stale message queries so filtered caches (for example Starred)
+      // reconcile with the server after the optimistic update.
+      queryClient.invalidateQueries({ queryKey: ['messages'] });
       queryClient.invalidateQueries({ queryKey: ['mailboxes'] });
     },
   });
@@ -169,14 +192,20 @@ export function useToggleRead() {
       toast.error('Failed to update read status.');
     },
     onSuccess: (updatedMessage, { messageId }) => {
-      // Update caches with server response
+      // Update caches with server response without dropping detail-only body/header fields.
       if (updatedMessage) {
-        queryClient.setQueryData<Message | null>(['message', messageId], updatedMessage);
+        queryClient.setQueryData<Message | null>(['message', messageId], (old) =>
+          mergeMessageUpdate(old, updatedMessage),
+        );
         queryClient.setQueriesData<MessagesInfinite>({ queryKey: ['messages'] }, (old) =>
-          updateMessageInPages(old, messageId, () => updatedMessage),
+          updateMessageInPages(old, messageId, (message) =>
+            mergeMessageUpdate(message, updatedMessage),
+          ),
         );
         queryClient.setQueriesData<Message[]>({ queryKey: ['thread'] }, (old) =>
-          old?.map((m) => (m._id === messageId ? updatedMessage : m)),
+          old?.map((m) =>
+            m._id === messageId ? mergeMessageUpdate(m, updatedMessage) : m,
+          ),
         );
       }
     },
