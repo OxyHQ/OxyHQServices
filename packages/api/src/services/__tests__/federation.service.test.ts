@@ -24,6 +24,8 @@ const mockCacheInvalidate = jest.fn();
 const mockAssetFileContentExists = jest.fn();
 const mockAssetUploadFileDirect = jest.fn();
 const mockAssetDeleteFile = jest.fn();
+const mockKeyPairFindOne = jest.fn();
+const mockKeyPairCreate = jest.fn();
 
 process.env.AWS_ACCESS_KEY_ID ||= 'test-access-key';
 process.env.AWS_SECRET_ACCESS_KEY ||= 'test-secret-key';
@@ -34,16 +36,21 @@ process.env.AWS_S3_BUCKET ||= 'test-bucket';
 // exists — we never touch the key-pair collection in these tests.
 jest.mock('mongoose', () => {
   class Schema {}
+  const federationKeyPairModel = {
+    findOne: mockKeyPairFindOne,
+    create: mockKeyPairCreate,
+  };
+  const model = jest.fn(() => federationKeyPairModel);
   return {
     __esModule: true,
     default: {
       Schema,
       models: {},
-      model: jest.fn(() => ({})),
+      model,
     },
     Schema,
     models: {},
-    model: jest.fn(() => ({})),
+    model,
   };
 });
 
@@ -174,12 +181,42 @@ describe('FederationService.resolveAndUpsert (fast + eventually-fresh)', () => {
     avatarSpy = jest.spyOn(federationService, 'downloadAndStoreAvatar')
       .mockResolvedValue({ fileId: 'new-file-id', notModified: false });
     mockUserUpdateOne.mockResolvedValue({ acknowledged: true });
+    mockKeyPairFindOne.mockReturnValue({ lean: jest.fn().mockResolvedValue(null) });
+    mockKeyPairCreate.mockImplementation(async (doc) => doc);
   });
 
   afterEach(() => {
     webfingerSpy.mockRestore();
     actorSpy.mockRestore();
     avatarSpy.mockRestore();
+  });
+
+
+  it('sanitizes decoded federated display names and bios before returning actor profile fields', async () => {
+    actorSpy.mockRestore();
+    const originalFetch = global.fetch;
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        id: 'https://evil.example/users/alice',
+        inbox: 'https://evil.example/inbox',
+        preferredUsername: 'alice',
+        name: '&lt;svg onload=alert(document.domain)&gt; Alice &amp; Bob',
+        summary: '<p>&lt;img src=x onerror=alert(document.domain)&gt; Safe &amp; sound</p>',
+      }),
+    } as unknown as Response);
+
+    try {
+      const profile = await federationService.fetchActorProfile(
+        'https://evil.example/users/alice',
+        'alice@evil.example',
+      );
+
+      expect(profile?.displayName).toBe('&lt;svg onload=alert(document.domain)&gt; Alice &amp; Bob');
+      expect(profile?.bio).toBe(' Safe &amp; sound');
+    } finally {
+      global.fetch = originalFetch;
+    }
   });
 
   it('returns a fresh cached user immediately without any remote I/O', async () => {

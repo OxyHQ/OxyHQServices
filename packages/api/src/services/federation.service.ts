@@ -14,6 +14,7 @@ import { createS3Service } from './s3Service';
 import { logger } from '../utils/logger';
 import userCache from '../utils/userCache';
 import { composeDisplayName } from '../utils/displayName';
+import { sanitizeHtml } from '../utils/sanitize';
 
 /** Decode common HTML entities (&#39; &amp; &lt; &gt; &quot; and numeric). */
 function decodeHtmlEntities(text: string): string {
@@ -26,6 +27,20 @@ function decodeHtmlEntities(text: string): string {
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
     .replace(/&#39;|&apos;/g, "'");
+}
+
+/**
+ * Normalize untrusted ActivityPub profile text for storage in Oxy profile fields.
+ *
+ * Remote servers commonly entity-encode apostrophes and ampersands in plain text,
+ * so decode first for readability. Then strip any markup that was literal or was
+ * revealed by decoding, and finally HTML-escape the remaining text to preserve
+ * the profile-field storage invariant used by local profile updates.
+ */
+function sanitizeFederatedProfileText(text: string, options: { stripTags?: boolean } = {}): string {
+  const decoded = decodeHtmlEntities(text);
+  const withoutTags = options.stripTags ? decoded.replace(/<[^>]*>/g, '') : decoded;
+  return sanitizeHtml(withoutTags);
 }
 
 const AP_ACCEPT_TYPES = [
@@ -648,9 +663,9 @@ class FederationService {
         actorUri: actor.id as string,
         domain,
         username: acct,
-        displayName: decodeHtmlEntities((actor.name as string) || username),
+        displayName: sanitizeFederatedProfileText((actor.name as string) || username),
         avatarUrl: (actor.icon as Record<string, unknown>)?.url as string | undefined,
-        bio: decodeHtmlEntities((actor.summary as string)?.replace(/<[^>]*>/g, '') || ''),
+        bio: sanitizeFederatedProfileText((actor.summary as string) || '', { stripTags: true }),
       };
     } catch (err) {
       logger.warn(`Failed to fetch actor profile ${actorUri}: ${err}`);
