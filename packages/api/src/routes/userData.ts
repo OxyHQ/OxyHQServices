@@ -13,6 +13,7 @@
  *   - 64 KB serialized JSON per value (enforced by the schema).
  *   - 100 writes/minute/user across PUT and DELETE (rate-limit middleware
  *     keyed on the authenticated user ID).
+ *   - At most 128 keys per namespace and 1024 keys per user.
  *   - Namespace and key must match `[a-z0-9_-]{1,64}`.
  */
 
@@ -22,16 +23,43 @@ import { authMiddleware, type AuthRequest } from '../middleware/auth';
 import { rateLimit } from '../middleware/rateLimiter';
 import { validate } from '../middleware/validate';
 import { asyncHandler } from '../utils/asyncHandler';
-import { UnauthorizedError } from '../utils/error';
+import { ApiError, ConflictError, UnauthorizedError } from '../utils/error';
 import { logger } from '../utils/logger';
 import UserAppData from '../models/UserAppData';
 import {
   appDataKeyParamsSchema,
   appDataNamespaceParamsSchema,
   appDataValueBodySchema,
+  APP_DATA_MAX_NAMESPACE_KEYS,
+  APP_DATA_MAX_USER_KEYS,
 } from '../schemas/userData.schemas';
 
 const router = Router();
+
+async function enforceAppDataKeyQuotas(userId: string, namespace: string, key: string): Promise<void> {
+  const existing = await UserAppData.exists({ userId, namespace, key }).exec();
+  if (existing) {
+    return;
+  }
+
+  const [namespaceKeyCount, userKeyCount] = await Promise.all([
+    UserAppData.countDocuments({ userId, namespace }).exec(),
+    UserAppData.countDocuments({ userId }).exec(),
+  ]);
+
+  if (namespaceKeyCount >= APP_DATA_MAX_NAMESPACE_KEYS) {
+    throw new ConflictError('App-data namespace key quota exceeded', {
+      limit: APP_DATA_MAX_NAMESPACE_KEYS,
+      namespace,
+    });
+  }
+
+  if (userKeyCount >= APP_DATA_MAX_USER_KEYS) {
+    throw new ConflictError('App-data user key quota exceeded', {
+      limit: APP_DATA_MAX_USER_KEYS,
+    });
+  }
+}
 
 /**
  * Per-user write rate limiter: 100 writes (PUT + DELETE) per minute.
@@ -183,6 +211,8 @@ router.put(
     const { namespace, key } = req.params;
     const { value } = req.body as { value: unknown };
 
+    await enforceAppDataKeyQuotas(req.user.id, namespace, key);
+
     const now = new Date();
     const doc = await UserAppData.findOneAndUpdate(
       { userId: req.user.id, namespace, key },
@@ -246,9 +276,9 @@ router.delete(
  *     description: >
  *       Returns `{ entries }` where `entries` is a `key -> value` map of
  *       everything stored under `namespace` for the authenticated user. The
- *       response is bounded by the per-user write rate limit upstream and by
- *       the 64 KB cap per individual value; consumers should still expect to
- *       paginate large namespaces themselves.
+ *       response is bounded by the 128-key namespace quota and by the 64 KB
+ *       cap per individual value. If an older namespace exceeds the current
+ *       quota, the endpoint refuses to materialize it in one response.
  *     parameters:
  *       - in: path
  *         name: namespace
@@ -282,8 +312,18 @@ router.get(
       { userId: req.user.id, namespace },
       { key: 1, value: 1 },
     )
+      .limit(APP_DATA_MAX_NAMESPACE_KEYS + 1)
       .lean()
       .exec();
+
+    if (docs.length > APP_DATA_MAX_NAMESPACE_KEYS) {
+      throw new ApiError(
+        413,
+        'App-data namespace exceeds the maximum list response size',
+        'PAYLOAD_TOO_LARGE',
+        { limit: APP_DATA_MAX_NAMESPACE_KEYS, namespace },
+      );
+    }
 
     const entries: Record<string, unknown> = {};
     for (const doc of docs) {
