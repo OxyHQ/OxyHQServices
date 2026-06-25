@@ -1,11 +1,12 @@
 ##
-## Dockerfile for the Oxy API Server (with built-in email worker)
+## Dockerfile for the Oxy API Server
 ##
-## Runs the full Express API + SMTP inbound/outbound on a single process.
-## Set SMTP_ENABLED=true to activate the email server.
+## Runs the Express API. Inbound email is handled by Cloudflare Email
+## Routing -> Worker -> /email/inbound in production. Do not expose public
+## SMTP ports from this API container.
 ##
 ## Build:  docker build -t oxy-api .
-## Run:    docker run --env-file .env -p 8080:8080 -p 25:25 -p 587:587 oxy-api
+## Run:    docker run --env-file .env -p 8080:8080 oxy-api
 ##
 
 FROM node:20-alpine AS builder
@@ -72,8 +73,8 @@ COPY --from=builder /app/packages/api/scripts packages/api/scripts
 COPY --from=builder /app/packages/api/src packages/api/src
 COPY --from=builder /app/packages/core/src packages/core/src
 
-# Main API entry point (includes SMTP when SMTP_ENABLED=true)
+# Main API entry point
 CMD ["node", "packages/api/dist/server.js"]
 
-# HTTP API + SMTP ports
-EXPOSE 8080 25 587
+# HTTP API port
+EXPOSE 8080

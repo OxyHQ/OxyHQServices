@@ -1,11 +1,9 @@
 ##
-## Docker Compose — Oxy API + Email Server
+## Docker Compose — Oxy API
 ##
-## Runs everything on a single DigitalOcean Droplet:
-## - Oxy API (Express, port 8080 behind Caddy reverse proxy)
-## - SMTP inbound (port 25) + outbound
-## - Rspamd spam filtering
-## - Caddy reverse proxy (auto HTTPS with Let's Encrypt)
+## Runs the Express API behind Caddy. Production inbound mail should use
+## Cloudflare Email Routing -> Worker -> /email/inbound; public SMTP is not
+## exposed from this API container.
 ##
 ## Usage:
 ##   cp .env.example .env       # fill in your values
@@ -14,7 +12,7 @@
 ##
 
 services:
-  # ─── Oxy API + SMTP Server ──────────────────────────────────────
+  # ─── Oxy API ────────────────────────────────────────────────────
   api:
     build:
       context: .
@@ -27,23 +25,13 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
-    ports:
-      - "25:25"        # SMTP inbound (must be exposed directly, not through Caddy)
-      - "587:587"      # SMTP submission
     expose:
       - "8080"         # HTTP API (Caddy proxies to this)
     env_file:
       - .env
     environment:
       - PORT=8080
-      - SMTP_ENABLED=true
-      - RSPAMD_URL=http://rspamd:11333
-    volumes:
-      # Mount TLS certs for SMTP STARTTLS
-      - certs:/certs:ro
-    depends_on:
-      rspamd:
-        condition: service_started
+      - SMTP_ENABLED=false
     networks:
       - oxy-net
 
