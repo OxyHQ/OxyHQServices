@@ -87,9 +87,21 @@ const en: LocaleDict = {
     subtitle:
       'Use your Oxy account to sign in to {{app}}. Review what this connection means before you continue.',
     benefits: {
+      title: 'What this means',
       secure: 'Sign in securely with your Oxy account — no new password needed',
       oneAccount: 'One account across every Oxy app',
       youControl: 'You choose what you share, and you can revoke access anytime',
+    },
+    provenance: {
+      title: 'Who is requesting access',
+      official: 'Official Oxy application',
+      internal: 'Internal Oxy application',
+      developer: 'Published by {{developer}}',
+      thirdParty: 'Third-party application',
+    },
+    permissions: {
+      title: 'Permissions requested',
+      basic: 'Sign you in and read your basic profile',
     },
     continue: 'Continue to {{app}}',
     cancel: 'Cancel',

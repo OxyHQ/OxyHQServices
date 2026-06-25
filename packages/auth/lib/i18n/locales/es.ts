@@ -84,11 +84,23 @@ const es: LocaleDict = {
     subtitle:
       'Usa tu cuenta de Oxy para iniciar sesión en {{app}}. Revisa qué implica esta conexión antes de continuar.',
     benefits: {
+      title: 'Qué implica esto',
       secure:
         'Inicia sesión de forma segura con tu cuenta de Oxy, sin nuevas contraseñas',
       oneAccount: 'Una sola cuenta para todas las apps de Oxy',
       youControl:
         'Tú decides qué compartes y puedes revocar el acceso cuando quieras',
+    },
+    provenance: {
+      title: 'Quién solicita acceso',
+      official: 'Aplicación oficial de Oxy',
+      internal: 'Aplicación interna de Oxy',
+      developer: 'Publicada por {{developer}}',
+      thirdParty: 'Aplicación de terceros',
+    },
+    permissions: {
+      title: 'Permisos solicitados',
+      basic: 'Iniciar sesión y leer tu perfil básico',
     },
     continue: 'Continuar a {{app}}',
     cancel: 'Cancelar',
