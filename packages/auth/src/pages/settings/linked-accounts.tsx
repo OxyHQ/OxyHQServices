@@ -3,6 +3,7 @@ import { toast } from "sonner"
 import { KeyRound, Loader2, Trash2 } from "lucide-react"
 import { buildApiUrl } from "@/lib/oxy-api-client"
 import { mintAccessTokenFromRefreshCookie } from "@/lib/session-auth"
+import { withCsrfHeader } from "@/lib/csrf"
 import { Button } from "@oxyhq/bloom/button"
 import { AuthFormHeader } from "@/components/auth-form-layout"
 
@@ -68,10 +69,10 @@ export function LinkedAccountsPage() {
 
             const res = await fetch(buildApiUrl(`/auth/link/${type}`), {
                 method: "DELETE",
-                headers: {
+                headers: await withCsrfHeader({
                     "content-type": "application/json",
                     Authorization: `Bearer ${auth.accessToken}`,
-                },
+                }),
                 credentials: "include",
             })
             if (res.ok) {

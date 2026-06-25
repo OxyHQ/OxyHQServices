@@ -203,14 +203,16 @@ function silentSignInKey(oxyServices: OxyServices): string {
  * No-ops off-web and on any storage failure (best-effort).
  */
 function clearSsoBounceStateWeb(): void {
-  if (!isWebBrowser() || typeof window.sessionStorage === 'undefined') return;
-  const origin = window.location.origin;
+  if (!isWebBrowser()) return;
   try {
-    window.sessionStorage.removeItem(ssoAttemptedKey(origin));
-    window.sessionStorage.removeItem(ssoNoSessionKey(origin));
-    window.sessionStorage.removeItem(ssoGuardKey(origin));
-    window.sessionStorage.removeItem(ssoStateKey(origin));
-    window.sessionStorage.removeItem(ssoDestKey(origin));
+    const storage = window.sessionStorage;
+    if (!storage) return;
+    const origin = window.location.origin;
+    storage.removeItem(ssoAttemptedKey(origin));
+    storage.removeItem(ssoNoSessionKey(origin));
+    storage.removeItem(ssoGuardKey(origin));
+    storage.removeItem(ssoStateKey(origin));
+    storage.removeItem(ssoDestKey(origin));
   } catch {
     // Best-effort; swallow SecurityError (e.g. Safari private mode).
   }
@@ -421,6 +423,22 @@ export function WebOxyProvider({
   // on every render so the ref is populated before any effect fires.
   const handleAuthSuccessRef = useRef(handleAuthSuccess);
   handleAuthSuccessRef.current = handleAuthSuccess;
+
+  const committedSsoSessionsRef = useRef<WeakSet<SessionLoginResponse>>(new WeakSet());
+  const commitSsoSessionOnce = useCallback(async (session: SessionLoginResponse) => {
+    // The eager callback interceptor and cold-boot SSO step intentionally share
+    // one exchange promise, but both can observe its non-null session. Commit
+    // before awaiting so overlapping callers cannot both run the side-effectful
+    // post-login cookie restore/rotation path for the same SSO return.
+    if (committedSsoSessionsRef.current.has(session)) {
+      return;
+    }
+    committedSsoSessionsRef.current.add(session);
+    await handleAuthSuccessRef.current(session, 'credentials');
+  }, []);
+
+  const commitSsoSessionOnceRef = useRef(commitSsoSessionOnce);
+  commitSsoSessionOnceRef.current = commitSsoSessionOnce;
 
   const handleAuthError = useCallback((err: unknown) => {
     const errorMessage = err instanceof Error ? err.message : 'Authentication failed';
@@ -704,7 +722,11 @@ export function WebOxyProvider({
         case 'redirect':
         case 'fedcm':
         case 'sso':
-          await handleAuthSuccess(outcome.session.session, outcome.session.method === 'sso' ? 'credentials' : outcome.session.method);
+          if (outcome.session.method === 'sso') {
+            await commitSsoSessionOnceRef.current(outcome.session.session);
+          } else {
+            await handleAuthSuccess(outcome.session.session, outcome.session.method);
+          }
           return;
         case 'cookie': {
           syncAccountsFromManager();
@@ -763,7 +785,7 @@ export function WebOxyProvider({
       runSsoReturnRef.current()
         .then(async (session) => {
           if (session) {
-            await handleAuthSuccess(session.session, 'credentials');
+            await commitSsoSessionOnceRef.current(session.session);
             return;
           }
           // No SSO return to commit. Re-evaluate the bounce gate: if a session
@@ -819,7 +841,7 @@ export function WebOxyProvider({
     runSsoReturnRef.current()
       .then(async (session) => {
         if (session) {
-          await handleAuthSuccessRef.current(session.session, 'credentials');
+          await commitSsoSessionOnceRef.current(session.session);
         }
       })
       .catch((err) => {

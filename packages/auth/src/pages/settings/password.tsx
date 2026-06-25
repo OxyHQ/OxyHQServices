@@ -2,6 +2,7 @@ import { useState, useRef } from "react"
 import { toast } from "sonner"
 import { buildApiUrl } from "@/lib/oxy-api-client"
 import { mintAccessTokenFromRefreshCookie } from "@/lib/session-auth"
+import { withCsrfHeader } from "@/lib/csrf"
 import { Button } from "@oxyhq/bloom/button"
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { PasswordInput } from "@/components/password-input"
@@ -39,8 +40,10 @@ export function ChangePasswordPage() {
                 setIsSubmitting(false)
                 return
             }
-            const headers: Record<string, string> = { "content-type": "application/json" }
-            headers["Authorization"] = `Bearer ${auth.accessToken}`
+            const headers = await withCsrfHeader({
+                "content-type": "application/json",
+                Authorization: `Bearer ${auth.accessToken}`,
+            })
 
             const response = await fetch(buildApiUrl("/auth/change-password"), {
                 method: "POST",

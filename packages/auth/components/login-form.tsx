@@ -1,10 +1,11 @@
-import { useState, useRef, useMemo } from "react"
+import { useState, useRef, useMemo, useEffect } from "react"
 import { useNavigate, Link } from "react-router-dom"
 import { toast } from "sonner"
 import { ArrowLeft, ShieldAlert } from "lucide-react"
 import { OxyServices } from "@oxyhq/core"
 import { Avatar } from "@oxyhq/bloom/avatar"
 import { buildAuthUrl, buildApiUrl, getApiBaseUrl, getAvatarUrl } from "@/lib/oxy-api-client"
+import { withCsrfHeader } from "@/lib/csrf"
 import { setFedCMLoginStatus, registerFedCMSession, buildPostLoginRedirect, completeFedCMLogin } from "@/lib/auth-utils"
 import { setBasePreset } from "@/lib/bloom-css"
 import { useLayoutContext } from "@/lib/layout-context"
@@ -106,6 +107,12 @@ export function LoginForm({
         mountedRef.current = true
         setBasePreset("oxy")
     }
+
+    // Login-specific logo overrides must not leak into sibling auth routes
+    // that share AuthLayout (recover, signup, authorize).
+    useEffect(() => {
+        return () => setLogoSlot(null)
+    }, [setLogoSlot])
 
     // One-time toasts from URL params
     const noticeShownRef = useRef(false)
@@ -295,7 +302,7 @@ export function LoginForm({
             }
             const response = await fetch(buildAuthUrl("/login"), {
                 method: "POST",
-                headers: { "content-type": "application/json" },
+                headers: await withCsrfHeader({ "content-type": "application/json" }),
                 credentials: "include",
                 body: JSON.stringify(body),
             })
@@ -349,7 +356,7 @@ export function LoginForm({
             // Correct endpoint: /security/2fa/verify-login (creates session)
             const response = await fetch(buildApiUrl("/security/2fa/verify-login"), {
                 method: "POST",
-                headers: { "content-type": "application/json" },
+                headers: await withCsrfHeader({ "content-type": "application/json" }),
                 credentials: "include",
                 body: JSON.stringify(body),
             })

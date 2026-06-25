@@ -32,8 +32,13 @@ function hasLocalStorage(): boolean {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
 }
 
-function hasSessionStorage(): boolean {
-  return typeof window !== 'undefined' && typeof window.sessionStorage !== 'undefined';
+function getSessionStorage(): Storage | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    return window.sessionStorage ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -96,14 +101,15 @@ export function clearActiveAuthuser(): void {
  * No-ops on native and on any storage failure (best-effort).
  */
 export function clearSsoBounceState(): void {
-  if (!hasSessionStorage()) return;
-  const origin = window.location.origin;
+  const storage = getSessionStorage();
+  if (!storage) return;
   try {
-    window.sessionStorage.removeItem(ssoAttemptedKey(origin));
-    window.sessionStorage.removeItem(ssoNoSessionKey(origin));
-    window.sessionStorage.removeItem(ssoGuardKey(origin));
-    window.sessionStorage.removeItem(ssoStateKey(origin));
-    window.sessionStorage.removeItem(ssoDestKey(origin));
+    const origin = window.location.origin;
+    storage.removeItem(ssoAttemptedKey(origin));
+    storage.removeItem(ssoNoSessionKey(origin));
+    storage.removeItem(ssoGuardKey(origin));
+    storage.removeItem(ssoStateKey(origin));
+    storage.removeItem(ssoDestKey(origin));
   } catch {
     // Best-effort; swallow SecurityError (e.g. Safari private mode).
   }
