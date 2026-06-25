@@ -18,7 +18,12 @@ jest.mock('../../models/Session', () => ({ __esModule: true, default: {} }));
 jest.mock('../sessionCache', () => ({ __esModule: true, default: { invalidate: jest.fn() } }));
 jest.mock('../userTransform', () => ({ formatUserResponse: jest.fn() }));
 
-import { deriveStableDeviceId, deriveServiceDeviceId } from '../deviceUtils';
+import crypto from 'crypto';
+import {
+  deriveStableDeviceId,
+  deriveServiceDeviceId,
+  generateDeviceFingerprint,
+} from '../deviceUtils';
 
 const STRONG_SALT_A = 'a'.repeat(48);
 const STRONG_SALT_B = 'b'.repeat(48);
@@ -186,5 +191,43 @@ describe('deriveServiceDeviceId', () => {
   it('THROWS (fail-closed) when DEVICE_ID_SALT is empty', () => {
     process.env.DEVICE_ID_SALT = '';
     expect(() => deriveServiceDeviceId('user-1', RP_A)).toThrow(/DEVICE_ID_SALT/);
+  });
+});
+
+describe('generateDeviceFingerprint', () => {
+  it('preserves 64-character client fingerprint strings instead of hashing them as empty structured objects', () => {
+    const firstClientFingerprint = 'a'.repeat(64);
+    const secondClientFingerprint = 'b'.repeat(64);
+
+    expect(generateDeviceFingerprint(firstClientFingerprint)).toBe(
+      firstClientFingerprint
+    );
+    expect(generateDeviceFingerprint(secondClientFingerprint)).toBe(
+      secondClientFingerprint
+    );
+    expect(generateDeviceFingerprint(firstClientFingerprint)).not.toBe(
+      generateDeviceFingerprint(secondClientFingerprint)
+    );
+    expect(generateDeviceFingerprint(firstClientFingerprint)).not.toBe(
+      crypto.createHash('sha256').update('').digest('hex')
+    );
+  });
+
+  it('continues to hash structured device fingerprints', () => {
+    expect(
+      generateDeviceFingerprint({
+        userAgent: 'Mozilla/5.0',
+        platform: 'macOS',
+        language: 'en-US',
+        timezone: 'America/Los_Angeles',
+        screen: { width: 1440, height: 900, colorDepth: 24 },
+        ipAddress: '203.0.113.10',
+      })
+    ).toBe(
+      crypto
+        .createHash('sha256')
+        .update('Mozilla/5.0|macOS|en-US|America/Los_Angeles|1440x900x24')
+        .digest('hex')
+    );
   });
 });

@@ -4,8 +4,8 @@
  * Centralized type definitions for session-related operations.
  */
 
-import { ISession } from '../models/Session';
-import { DeviceFingerprint } from '../utils/deviceUtils';
+import type { ISession } from '../models/Session';
+import type { DeviceFingerprintInput } from '../utils/deviceUtils';
 
 export interface SessionValidationResult {
   session: ISession;
@@ -15,7 +15,7 @@ export interface SessionValidationResult {
 
 export interface SessionCreateOptions {
   deviceName?: string;
-  deviceFingerprint?: DeviceFingerprint;
+  deviceFingerprint?: DeviceFingerprintInput;
   /**
    * When set, the session's deviceId is derived deterministically from
    * (userId, stableDeviceKey) via `deriveServiceDeviceId` — used for
