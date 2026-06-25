@@ -33,7 +33,7 @@ import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persi
 import { isDev } from '@oxyhq/core';
 import type { StorageInterface } from '../utils/storageHelpers';
 
-const QUERY_CACHE_KEY = 'oxy_query_cache_v2';
+const QUERY_CACHE_KEY = 'oxy_query_cache_v3';
 const QUERY_CACHE_MAX_AGE = 30 * 24 * 60 * 60 * 1000; // 30 days
 const QUERY_PERSIST_THROTTLE_MS = 1_000;
 
@@ -50,7 +50,6 @@ const PERSISTED_QUERY_PREFIXES: ReadonlyArray<string> = [
   'sessions',
   'devices',
   'privacy',
-  'payments',
 ];
 
 /**
@@ -209,9 +208,10 @@ export const attachQueryPersistence = (
   return { unsubscribe, restored };
 };
 
-// Legacy v1 cache key — kept so we can opportunistically purge stale blobs
-// written by older builds. Safe to drop after a few releases.
-const LEGACY_QUERY_CACHE_KEYS: ReadonlyArray<string> = ['oxy_query_cache'];
+// Legacy cache keys — kept so we can opportunistically purge stale blobs
+// written by older builds. v2 may contain persisted payments data, so the
+// active key is bumped to v3 and old blobs are only removed during explicit clears.
+const LEGACY_QUERY_CACHE_KEYS: ReadonlyArray<string> = ['oxy_query_cache_v2', 'oxy_query_cache'];
 
 /**
  * Remove the persisted query+mutation cache (used on full sign-out / data

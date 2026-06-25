@@ -132,6 +132,7 @@ import {
   useUserWallet,
   useUserWalletTransactions,
 } from '../../src/ui/hooks/queries/usePaymentQueries';
+import { queryKeys } from '../../src/ui/hooks/queries/queryKeys';
 
 const makeWrapper = (queryClient: QueryClient) =>
   function Wrapper({ children }: { children: ReactNode }) {
@@ -186,6 +187,17 @@ describe('payment query hooks', () => {
 
     it('honours an explicit enabled: false override even when authenticated', () => {
       const { result } = renderHook(() => useUserSubscription({ enabled: false }), {
+        wrapper: makeWrapper(queryClient),
+      });
+
+      expect(result.current.fetchStatus).toBe('idle');
+      expect(mockState.oxyServices.getCurrentUserSubscription).not.toHaveBeenCalled();
+    });
+
+    it('does not call the SDK without a scoped current user id', () => {
+      mockState.user = null;
+
+      const { result } = renderHook(() => useUserSubscription(), {
         wrapper: makeWrapper(queryClient),
       });
 
@@ -257,5 +269,37 @@ describe('payment query hooks', () => {
       // Two distinct offsets => two independent fetches.
       expect(mockState.oxyServices.getCurrentUserWalletTransactions).toHaveBeenCalledTimes(2);
     });
+  });
+
+  it('scopes payment query keys by the authenticated user id', async () => {
+    const { result: firstResult } = renderHook(() => useUserWallet(), {
+      wrapper: makeWrapper(queryClient),
+    });
+
+    await waitFor(() => expect(firstResult.current.isSuccess).toBe(true));
+
+    const firstServices = mockState.oxyServices;
+    const secondWallet: Wallet = { userId: 'u2', balance: 7, address: null };
+    mockState = {
+      oxyServices: {
+        ...makeServices(),
+        getCurrentUserWallet: jest.fn(async () => secondWallet),
+      },
+      isAuthenticated: true,
+      activeSessionId: 'sess-2',
+      user: { id: 'u2' },
+    };
+
+    const { result: secondResult } = renderHook(() => useUserWallet(), {
+      wrapper: makeWrapper(queryClient),
+    });
+
+    await waitFor(() => expect(secondResult.current.isSuccess).toBe(true));
+
+    expect(firstServices.getCurrentUserWallet).toHaveBeenCalledTimes(1);
+    expect(mockState.oxyServices.getCurrentUserWallet).toHaveBeenCalledTimes(1);
+    expect(secondResult.current.data?.userId).toBe('u2');
+    expect(queryClient.getQueryData(queryKeys.payments.wallet('u1'))).toEqual(WALLET_FIXTURE);
+    expect(queryClient.getQueryData(queryKeys.payments.wallet('u2'))).toEqual(secondWallet);
   });
 });

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { ApiError, User } from '@oxyhq/core';
+import { isDev, type ApiError, type User } from '@oxyhq/core';
 import type { ClientSession } from '@oxyhq/core';
 import { mergeSessions, normalizeAndSortSessions, sessionsArraysEqual } from '@oxyhq/core';
 import { fetchSessionsWithFallback, validateSessionBatch } from '../utils/sessionHelpers';
@@ -30,7 +30,7 @@ export interface UseSessionManagementResult {
   sessions: ClientSession[];
   activeSessionId: string | null;
   setActiveSessionId: (sessionId: string | null) => void;
-  updateSessions: (incoming: ClientSession[], options?: { merge?: boolean }) => void;
+  updateSessions: (incoming: ClientSession[], options?: { merge?: boolean; preserveSessionIds?: string[] }) => void;
   switchSession: (sessionId: string) => Promise<User>;
   refreshSessions: (activeUserId?: string) => Promise<void>;
   clearSessionState: () => Promise<void>;
@@ -86,7 +86,7 @@ export const useSessionManagement = ({
       } catch (error) {
         if (logger) {
           logger(DEFAULT_SAVE_ERROR_MESSAGE, error);
-        } else if (__DEV__) {
+        } else if (isDev()) {
           console.warn('Failed to save session IDs:', error);
         }
       }
@@ -95,14 +95,17 @@ export const useSessionManagement = ({
   );
 
   const updateSessions = useCallback(
-    (incoming: ClientSession[], options: { merge?: boolean } = {}): void => {
+    (incoming: ClientSession[], options: { merge?: boolean; preserveSessionIds?: string[] } = {}): void => {
       setSessions((prevSessions) => {
         const processed = options.merge
           ? mergeSessions(prevSessions, incoming, activeSessionIdRef.current, false)
           : normalizeAndSortSessions(incoming, activeSessionIdRef.current, false);
 
         if (storage) {
-          void saveSessionIds(processed.map((session) => session.sessionId));
+          void saveSessionIds([
+            ...processed.map((session) => session.sessionId),
+            ...(options.preserveSessionIds ?? []),
+          ]);
         }
 
         if (sessionsArraysEqual(prevSessions, processed)) {
@@ -309,7 +312,7 @@ export const useSessionManagement = ({
           });
           updateSessions(deviceSessions, { merge: true });
         } catch (error) {
-          if (__DEV__) {
+          if (isDev()) {
             console.warn('Failed to synchronize sessions after switch:', error);
           }
         }

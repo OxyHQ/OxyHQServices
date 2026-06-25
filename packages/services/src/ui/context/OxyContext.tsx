@@ -265,13 +265,17 @@ const COOKIE_RESTORE_TIMEOUT = 3000;
 const COLD_BOOT_OVERALL_DEADLINE = 20000;
 
 /**
- * Per-session timeout (ms) for the parallel stored-session validation in
+ * Per-session soft timeout (ms) for the parallel stored-session validation in
  * `restoreStoredSession`. Each `validateSession` call races against this timer
  * so a single slow/offline session never blocks the whole startup validation
- * sweep — sessions that don't answer in time resolve to `null` (treated as
- * unvalidated) and the remaining sessions still settle.
+ * sweep. Sessions that don't answer in time are treated as unvalidated and kept
+ * in the persisted ID list; only explicit invalid-session responses are pruned.
  */
 const VALIDATION_TIMEOUT = 8000;
+const VALIDATION_TIMEOUT_RESULT = 'validation-timeout' as const;
+type StoredSessionValidationResult =
+  | { session: ClientSession | null; timedOut: false }
+  | { sessionId: string; timedOut: true };
 
 /**
  * Fallback client-session validity window (ms) — 7 days — applied when a
@@ -948,14 +952,15 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     ]));
 
     let validSessions: ClientSession[] = [];
+    let unvalidatedSessionIds: string[] = [];
 
     if (storedSessionIds.length > 0) {
       // Validate all sessions in parallel (with a per-session timeout) to avoid
       // sequential blocking that freezes the app on startup
       const results = await Promise.allSettled(
         storedSessionIds.map(async (sessionId) => {
-          const timeoutPromise = new Promise<null>((resolve) =>
-            setTimeout(() => resolve(null), VALIDATION_TIMEOUT),
+          const timeoutPromise = new Promise<typeof VALIDATION_TIMEOUT_RESULT>((resolve) =>
+            setTimeout(() => resolve(VALIDATION_TIMEOUT_RESULT), VALIDATION_TIMEOUT),
           );
           const validationPromise = oxyServices
             .validateSession(sessionId, { useHeaderValidation: true })
@@ -969,6 +974,9 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
             });
 
           return Promise.race([validationPromise, timeoutPromise]).then((validation) => {
+            if (validation === VALIDATION_TIMEOUT_RESULT) {
+              return { sessionId, timedOut: true as const };
+            }
             if (validation?.valid && validation.user) {
               const now = new Date();
               const clientSession: ClientSession = {
@@ -982,21 +990,31 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
               if (isWebBrowser() && sessionId === storedActiveSessionId && storedActiveAuthuser !== null) {
                 clientSession.authuser = storedActiveAuthuser;
               }
-              return clientSession;
+              return { session: clientSession, timedOut: false as const };
             }
-            return null;
+            return { session: null, timedOut: false as const };
           });
         }),
       );
 
-      validSessions = results
-        .filter((r): r is PromiseFulfilledResult<ClientSession | null> => r.status === 'fulfilled')
-        .map((r) => r.value)
-        .filter((s): s is ClientSession => s !== null);
+      for (const result of results) {
+        if (result.status !== 'fulfilled') continue;
+        const value: StoredSessionValidationResult = result.value;
+        if (value.timedOut) {
+          unvalidatedSessionIds.push(value.sessionId);
+        } else if (value.session) {
+          validSessions.push(value.session);
+        }
+      }
 
-      // Always persist validated sessions to storage (even empty list)
-      // to clear stale/expired session IDs that would cause 401 loops on restart
-      updateSessionsRef.current(validSessions, { merge: false });
+      // Persist validated sessions while preserving soft-timed-out IDs. This
+      // still clears sessions that were explicitly rejected as invalid, but
+      // avoids logging out valid secondary accounts solely because the API was
+      // slow during startup.
+      updateSessionsRef.current(validSessions, {
+        merge: false,
+        preserveSessionIds: unvalidatedSessionIds,
+      });
     }
 
     if (storedActiveSessionId) {
@@ -1014,7 +1032,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
           await storage.removeItem(storageKeys.activeSessionId);
           updateSessionsRef.current(
             validSessions.filter((session) => session.sessionId !== storedActiveSessionId),
-            { merge: false },
+            { merge: false, preserveSessionIds: unvalidatedSessionIds },
           );
           // Don't log expected session errors during restoration
         } else if (isTimeoutOrNetworkError(switchError)) {

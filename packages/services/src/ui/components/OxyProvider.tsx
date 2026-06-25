@@ -1,5 +1,7 @@
 import { lazy, Suspense, useEffect, useRef, useState, type ComponentType, type FC, type ReactNode } from 'react';
 import { AppState, Platform, StyleSheet, View } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import type { OxyProviderProps } from '../types/navigation';
 import { OxyContextProvider, type OxyContextProviderProps } from '../context/OxyContext';
 import { QueryClientProvider, focusManager, onlineManager } from '@tanstack/react-query';
@@ -27,6 +29,9 @@ import { createPlatformStorage, type StorageInterface } from '../utils/storageHe
 const BOOT_BG_COLOR = '#ffffff';
 
 const bootStyles = StyleSheet.create({
+    providerRoot: {
+        flex: 1,
+    },
     bootShell: {
         flex: 1,
         backgroundColor: BOOT_BG_COLOR,
@@ -69,8 +74,9 @@ const LazySignInModal = lazy((): Promise<{ default: ComponentType }> =>
  * OxyProvider - Universal provider for Expo apps (native + web)
  *
  * Provides authentication, session management, query client, and UI overlays.
- * Does NOT wrap in SafeAreaProvider or GestureHandlerRootView — those are the
- * consuming app's responsibility.
+ * Wraps its own overlay stack in SafeAreaProvider and GestureHandlerRootView so
+ * BottomSheetRouter and SignInModal can safely render even when a consuming app
+ * has not mounted those providers yet.
  *
  * Usage:
  * ```tsx
@@ -276,9 +282,13 @@ const OxyProvider: FC<OxyProviderProps> = ({
     // until children can mount under a real <QueryClientProvider>.
     if (!queryClient) {
         return (
-            <KeyboardWrapper>
-                <View style={bootStyles.bootShell} />
-            </KeyboardWrapper>
+            <GestureHandlerRootView style={bootStyles.providerRoot}>
+                <SafeAreaProvider>
+                    <KeyboardWrapper>
+                        <View style={bootStyles.bootShell} />
+                    </KeyboardWrapper>
+                </SafeAreaProvider>
+            </GestureHandlerRootView>
         );
     }
 
@@ -314,9 +324,13 @@ const OxyProvider: FC<OxyProviderProps> = ({
     );
 
     return (
-        <KeyboardWrapper>
-            {coreContent}
-        </KeyboardWrapper>
+        <GestureHandlerRootView style={bootStyles.providerRoot}>
+            <SafeAreaProvider>
+                <KeyboardWrapper>
+                    {coreContent}
+                </KeyboardWrapper>
+            </SafeAreaProvider>
+        </GestureHandlerRootView>
     );
 };
 

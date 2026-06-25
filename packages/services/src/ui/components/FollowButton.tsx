@@ -11,8 +11,10 @@ import {
 import { useOxy } from '../context/OxyContext';
 import { toast } from '@oxyhq/bloom';
 import { useFollow, useFollowForButton } from '../hooks/useFollow';
+import { useFollowStore } from '../stores/followStore';
 import { useTheme } from '@oxyhq/bloom/theme';
 import type { OxyServices, BulkFollowResult, BulkUnfollowResult } from '@oxyhq/core';
+import { useShallow } from 'zustand/react/shallow';
 
 const DEFAULT_FOLLOW_ALL_LABEL = 'Follow all';
 const DEFAULT_FOLLOWED_ALL_LABEL = 'Following';
@@ -138,6 +140,7 @@ const FollowButtonInner = memo(function FollowButtonInner({
 
 const FollowButtonMultiInner = memo(function FollowButtonMultiInner({
   userIds,
+  initiallyAllFollowing = false,
   size = 'medium',
   followAllLabel = DEFAULT_FOLLOW_ALL_LABEL,
   followedAllLabel = DEFAULT_FOLLOWED_ALL_LABEL,
@@ -156,11 +159,27 @@ const FollowButtonMultiInner = memo(function FollowButtonMultiInner({
   const unfollowAllUsers = 'unfollowAllUsers' in follow ? follow.unfollowAllUsers : undefined;
   const isAnyLoading = 'isAnyLoading' in follow ? follow.isAnyLoading : false;
 
+  const initialFollowStatuses = useFollowStore(
+    useShallow((state) => {
+      const statuses: Record<string, boolean | null> = {};
+      for (const uid of userIds) {
+        statuses[uid] = Object.prototype.hasOwnProperty.call(state.followingUsers, uid)
+          ? state.followingUsers[uid]
+          : null;
+      }
+      return statuses;
+    })
+  );
+
+  const hasKnownNotFollowing = userIds.some((uid) => initialFollowStatuses[uid] === false);
+
   // `allFollowing` is store-derived (LIVE aggregate of each target's follow
   // status) — it reacts in real time as individual members are followed or
-  // unfollowed elsewhere. Only `isSubmitting` is transient local state for the
-  // in-flight bulk call.
-  const allFollowing = 'allFollowing' in follow ? follow.allFollowing : false;
+  // unfollowed elsewhere. `initiallyAllFollowing` preserves the public initial
+  // state contract until the store learns that any member is not followed. Only
+  // `isSubmitting` is transient local state for the in-flight bulk call.
+  const storeAllFollowing = 'allFollowing' in follow ? follow.allFollowing : false;
+  const allFollowing = storeAllFollowing || (initiallyAllFollowing && !hasKnownNotFollowing);
   const fetchAllStatuses = 'fetchAllStatuses' in follow ? follow.fetchAllStatuses : undefined;
   const [isSubmitting, setIsSubmitting] = useState(false);
 

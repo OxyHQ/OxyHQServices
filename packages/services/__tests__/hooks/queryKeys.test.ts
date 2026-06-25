@@ -29,8 +29,9 @@ describe('queryKeys.accounts', () => {
     expect(queryKeys.accounts.detail('s1')).toEqual(['accounts', 'detail', 's1']);
   });
 
-  it('current() is a stable singleton key', () => {
+  it('current() is a stable singleton prefix and scopes by sessionId when supplied', () => {
     expect(queryKeys.accounts.current()).toEqual(['accounts', 'current']);
+    expect(queryKeys.accounts.current('s1')).toEqual(['accounts', 'current', 's1']);
   });
 });
 

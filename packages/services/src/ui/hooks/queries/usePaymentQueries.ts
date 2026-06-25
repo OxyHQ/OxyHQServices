@@ -34,10 +34,10 @@ import type {
  * API's `{ plan: 'basic' }` fallback when the user has never subscribed.
  */
 export const useUserSubscription = (options?: { enabled?: boolean }) => {
-  const { oxyServices, isAuthenticated, activeSessionId } = useOxy();
+  const { oxyServices, isAuthenticated, activeSessionId, user } = useOxy();
 
   return useQuery({
-    queryKey: queryKeys.payments.subscription(),
+    queryKey: queryKeys.payments.subscription(user?.id),
     queryFn: async () => {
       return authenticatedApiCall<Subscription>(
         oxyServices,
@@ -45,7 +45,7 @@ export const useUserSubscription = (options?: { enabled?: boolean }) => {
         () => oxyServices.getCurrentUserSubscription(),
       );
     },
-    enabled: (options?.enabled !== false) && isAuthenticated,
+    enabled: (options?.enabled !== false) && isAuthenticated && !!user?.id,
     // Subscription state changes rarely; tolerate a longer fresh window.
     staleTime: 5 * 60 * 1000, // 5 minutes
     gcTime: 30 * 60 * 1000, // 30 minutes
@@ -59,10 +59,10 @@ export const useUserSubscription = (options?: { enabled?: boolean }) => {
  * returns the user's `deposit` and `purchase` transactions newest-first.
  */
 export const useUserPayments = (options?: { enabled?: boolean }) => {
-  const { oxyServices, isAuthenticated, activeSessionId } = useOxy();
+  const { oxyServices, isAuthenticated, activeSessionId, user } = useOxy();
 
   return useQuery({
-    queryKey: queryKeys.payments.history(),
+    queryKey: queryKeys.payments.history(user?.id),
     queryFn: async () => {
       return authenticatedApiCall<Payment[]>(
         oxyServices,
@@ -70,7 +70,7 @@ export const useUserPayments = (options?: { enabled?: boolean }) => {
         () => oxyServices.getUserPayments(),
       );
     },
-    enabled: (options?.enabled !== false) && isAuthenticated,
+    enabled: (options?.enabled !== false) && isAuthenticated && !!user?.id,
     // Billing history is append-mostly; a short fresh window is fine.
     staleTime: 2 * 60 * 1000, // 2 minutes
     gcTime: 30 * 60 * 1000, // 30 minutes
@@ -84,10 +84,10 @@ export const useUserPayments = (options?: { enabled?: boolean }) => {
  * Balance changes frequently, so the fresh window is intentionally short.
  */
 export const useUserWallet = (options?: { enabled?: boolean }) => {
-  const { oxyServices, isAuthenticated, activeSessionId } = useOxy();
+  const { oxyServices, isAuthenticated, activeSessionId, user } = useOxy();
 
   return useQuery({
-    queryKey: queryKeys.payments.wallet(),
+    queryKey: queryKeys.payments.wallet(user?.id),
     queryFn: async () => {
       return authenticatedApiCall<Wallet>(
         oxyServices,
@@ -95,7 +95,7 @@ export const useUserWallet = (options?: { enabled?: boolean }) => {
         () => oxyServices.getCurrentUserWallet(),
       );
     },
-    enabled: (options?.enabled !== false) && isAuthenticated,
+    enabled: (options?.enabled !== false) && isAuthenticated && !!user?.id,
     staleTime: 60 * 1000, // 1 minute (balance moves often)
     gcTime: 10 * 60 * 1000, // 10 minutes
   });
@@ -116,12 +116,12 @@ export const useUserWalletTransactions = (
   params?: { limit?: number; offset?: number },
   options?: { enabled?: boolean },
 ) => {
-  const { oxyServices, isAuthenticated, activeSessionId } = useOxy();
+  const { oxyServices, isAuthenticated, activeSessionId, user } = useOxy();
   const limit = params?.limit;
   const offset = params?.offset;
 
   return useQuery({
-    queryKey: queryKeys.payments.walletTransactions(limit, offset),
+    queryKey: queryKeys.payments.walletTransactions(limit, offset, user?.id),
     queryFn: async () => {
       return authenticatedApiCall<WalletTransactionsResponse>(
         oxyServices,
@@ -129,7 +129,7 @@ export const useUserWalletTransactions = (
         () => oxyServices.getCurrentUserWalletTransactions({ limit, offset }),
       );
     },
-    enabled: (options?.enabled !== false) && isAuthenticated,
+    enabled: (options?.enabled !== false) && isAuthenticated && !!user?.id,
     staleTime: 60 * 1000, // 1 minute (ledger updates frequently)
     gcTime: 10 * 60 * 1000, // 10 minutes
   });

@@ -239,7 +239,10 @@ router.get(
     }
 
     logger.debug('GET /users/me', { userId: req.user.id });
-    sendSuccess(res, userService.formatUserResponse(user));
+    sendSuccess(
+      res,
+      userService.formatUserResponse(user, undefined, { includePrivateFields: true })
+    );
   })
 );
 
@@ -348,7 +351,10 @@ router.put(
         updatedFields: Object.keys(req.body),
       });
 
-      sendSuccess(res, userService.formatUserResponse(updatedUser));
+      sendSuccess(
+        res,
+        userService.formatUserResponse(updatedUser, undefined, { includePrivateFields: true })
+      );
     } catch (error) {
       // Handle known errors from service layer
       if (error instanceof Error) {

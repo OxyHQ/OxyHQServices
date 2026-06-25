@@ -52,7 +52,7 @@ export async function updateProfileWithAvatar(
   );
 
   // Update cache with server response
-  queryClient.setQueryData(queryKeys.accounts.current(), data);
+  queryClient.setQueryData(queryKeys.accounts.current(activeSessionId), data);
   if (activeSessionId) {
     queryClient.setQueryData(queryKeys.users.profile(activeSessionId), data);
   }

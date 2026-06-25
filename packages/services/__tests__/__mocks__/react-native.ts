@@ -1,3 +1,5 @@
+import React from 'react';
+
 /**
  * Lightweight React Native stub for the services jest environment (jsdom).
  *
@@ -40,3 +42,13 @@ export const Appearance = {
   getColorScheme: () => 'light',
   addChangeListener: () => ({ remove: () => undefined }),
 };
+
+
+export const TouchableOpacity = ({ children, onPress, disabled, ...props }: any) =>
+  React.createElement('button', { ...props, disabled, onClick: onPress }, children);
+
+export const Text = ({ children, ...props }: any) =>
+  React.createElement('span', props, children);
+
+export const ActivityIndicator = (props: any) =>
+  React.createElement('span', { ...props, role: 'status' });

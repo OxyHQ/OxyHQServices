@@ -17,12 +17,12 @@ export const useSwitchSession = () => {
     mutationFn: async (sessionId: string) => {
       return await switchSession(sessionId);
     },
-    onSuccess: (user) => {
+    onSuccess: (user, sessionId) => {
       // Invalidate all session queries
       invalidateSessionQueries(queryClient);
       
       // Update current user query
-      queryClient.setQueryData(queryKeys.accounts.current(), user);
+      queryClient.setQueryData(queryKeys.accounts.current(sessionId), user);
       
       // Invalidate account queries
       queryClient.invalidateQueries({ queryKey: queryKeys.accounts.all });

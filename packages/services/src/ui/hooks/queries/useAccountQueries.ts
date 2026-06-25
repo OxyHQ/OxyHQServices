@@ -65,7 +65,7 @@ export const useCurrentUser = (options?: { enabled?: boolean }) => {
   const queryClient = useQueryClient();
 
   const query = useQuery({
-    queryKey: queryKeys.accounts.current(),
+    queryKey: queryKeys.accounts.current(activeSessionId),
     queryFn: async () => {
       if (!activeSessionId) {
         throw new Error('No active session');
