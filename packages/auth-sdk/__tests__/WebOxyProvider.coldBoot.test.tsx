@@ -49,7 +49,7 @@ interface CoreStubs {
   handleRedirectCallback: jest.Mock<SessionLoginResponse | null, []>;
   isFedCMSupported: jest.Mock<boolean, []>;
   silentSignInWithFedCM: jest.Mock<Promise<SessionLoginResponse | null>, []>;
-  exchangeSsoCode: jest.Mock<Promise<SessionLoginResponse>, [string]>;
+  exchangeSsoCode: jest.Mock<Promise<SessionLoginResponse>, [string, string?]>;
   generateSsoState: jest.Mock<string, []>;
   managerInitialize: jest.Mock<Promise<User | null>, []>;
   getActiveAccount: jest.Mock<{ sessionId: string } | null, []>;
@@ -117,8 +117,8 @@ jest.mock('@oxyhq/core', () => {
       silentSignInWithFedCM(): Promise<SessionLoginResponse | null> {
         return stubs.silentSignInWithFedCM();
       }
-      exchangeSsoCode(code: string): Promise<SessionLoginResponse> {
-        return stubs.exchangeSsoCode(code);
+      exchangeSsoCode(code: string, state?: string): Promise<SessionLoginResponse> {
+        return stubs.exchangeSsoCode(code, state);
       }
       generateSsoState(): string {
         return stubs.generateSsoState();
@@ -266,7 +266,7 @@ describe('WebOxyProvider cold boot (central SSO)', () => {
     renderProvider(stubs.baseURL, (s) => { latest = s; });
 
     await waitFor(() => expect(latest.isAuthenticated).toBe(true));
-    expect(stubs.exchangeSsoCode).toHaveBeenCalledWith('opaque-2');
+    expect(stubs.exchangeSsoCode).toHaveBeenCalledWith('opaque-2', 'st-2');
     expect(latest.userId).toBe('u1');
     // The fragment is stripped and the real destination restored.
     expect(window.location.hash).toBe('');

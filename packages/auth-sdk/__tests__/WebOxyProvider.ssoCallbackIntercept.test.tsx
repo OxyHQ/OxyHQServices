@@ -32,7 +32,7 @@ interface CoreStubs {
   handleRedirectCallback: jest.Mock<SessionLoginResponse | null, []>;
   isFedCMSupported: jest.Mock<boolean, []>;
   silentSignInWithFedCM: jest.Mock<Promise<SessionLoginResponse | null>, []>;
-  exchangeSsoCode: jest.Mock<Promise<SessionLoginResponse>, [string]>;
+  exchangeSsoCode: jest.Mock<Promise<SessionLoginResponse>, [string, string?]>;
   generateSsoState: jest.Mock<string, []>;
   managerInitialize: jest.Mock<Promise<User | null>, []>;
   getActiveAccount: jest.Mock<{ sessionId: string } | null, []>;
@@ -95,8 +95,8 @@ jest.mock('@oxyhq/core', () => {
       silentSignInWithFedCM(): Promise<SessionLoginResponse | null> {
         return stubs.silentSignInWithFedCM();
       }
-      exchangeSsoCode(code: string): Promise<SessionLoginResponse> {
-        return stubs.exchangeSsoCode(code);
+      exchangeSsoCode(code: string, state?: string): Promise<SessionLoginResponse> {
+        return stubs.exchangeSsoCode(code, state);
       }
       generateSsoState(): string {
         return stubs.generateSsoState();
