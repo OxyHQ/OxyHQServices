@@ -2,7 +2,7 @@
  * AI Email Labeling Service
  *
  * Classifies incoming emails using the Alia AI API and applies matching labels.
- * Runs as fire-and-forget after message storage — never blocks email delivery.
+ * Runs through a bounded background queue after message storage — never blocks email delivery.
  */
 
 import axios from 'axios';
@@ -15,6 +15,69 @@ const ALIA_BASE_URL = 'https://api.alia.onl/v1';
 const ALIA_API_KEY = process.env.ALIA_API_KEY;
 
 class AiLabelingService {
+  private activeJobs = 0;
+  private readonly queue: Array<{ userId: string; messageId: string }> = [];
+  private processingScheduled = false;
+
+  /**
+   * Enqueue background AI labeling with bounded concurrency/backpressure.
+   * Returns false when labeling is disabled or the queue is full.
+   */
+  enqueueClassification(userId: string, messageId: string): boolean {
+    if (!AI_LABELING_CONFIG.enabled || !ALIA_API_KEY) {
+      return false;
+    }
+
+    if (this.queue.length >= AI_LABELING_CONFIG.maxQueueSize) {
+      logger.warn('AI labeling queue full; dropping classification job', {
+        messageId,
+        maxQueueSize: AI_LABELING_CONFIG.maxQueueSize,
+      });
+      return false;
+    }
+
+    this.queue.push({ userId, messageId });
+    this.scheduleProcessing();
+    return true;
+  }
+
+  private scheduleProcessing(): void {
+    if (this.processingScheduled) {
+      return;
+    }
+
+    this.processingScheduled = true;
+    queueMicrotask(() => {
+      this.processingScheduled = false;
+      this.processQueue();
+    });
+  }
+
+  private processQueue(): void {
+    while (
+      this.activeJobs < AI_LABELING_CONFIG.maxConcurrent &&
+      this.queue.length > 0
+    ) {
+      const job = this.queue.shift();
+      if (!job) {
+        return;
+      }
+
+      this.activeJobs += 1;
+      this.classifyAndLabel(job.userId, job.messageId)
+        .catch((error) => {
+          logger.warn('AI labeling failed', {
+            messageId: job.messageId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        })
+        .finally(() => {
+          this.activeJobs -= 1;
+          this.scheduleProcessing();
+        });
+    }
+  }
+
   /**
    * Classify a message and apply labels.
    * Fire-and-forget — failures are logged, never thrown.

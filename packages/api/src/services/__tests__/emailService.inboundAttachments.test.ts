@@ -67,7 +67,7 @@ jest.mock('../../models/EmailFilter', () => ({ EmailFilter: { find: jest.fn().mo
 
 jest.mock('../senderAvatar.service', () => ({ getAvatarPathsBatch: jest.fn() }));
 jest.mock('../aiLabeling.service', () => ({
-  aiLabelingService: { classifyAndLabel: jest.fn().mockResolvedValue(undefined) },
+  aiLabelingService: { enqueueClassification: jest.fn().mockReturnValue(true) },
 }));
 jest.mock('../cardExtraction.service', () => ({
   cardExtractionService: { extractAndUpdate: jest.fn().mockResolvedValue(undefined) },
