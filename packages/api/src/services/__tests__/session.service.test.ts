@@ -381,43 +381,6 @@ describe('Session Service', () => {
 
       expect(result).toBeNull();
     });
-    it('should reject a rotated-out access token for an active session', async () => {
-      const mockSession = createMockSession({ accessToken: 'new-access-token' });
-      mockFindOneResults.push(mockSession);
-
-      const result = await sessionService.validateSession('old-access-token');
-
-      expect(result).toBeNull();
-      expect(sessionCache.invalidate).toHaveBeenCalledWith('session-123');
-    });
-
-    it('accepts the immediately-previous access token within the rotation grace window', async () => {
-      const mockSession = createMockSession({
-        accessToken: 'new-access-token',
-        previousAccessToken: 'old-access-token',
-        tokenRotatedAt: new Date(),
-      });
-      mockFindOneResults.push(mockSession);
-
-      const result = await sessionService.validateSession('old-access-token');
-
-      expect(result).toBeDefined();
-      expect(result!.session.sessionId).toBe('session-123');
-    });
-
-    it('rejects the previous access token after the rotation grace window', async () => {
-      const mockSession = createMockSession({
-        accessToken: 'new-access-token',
-        previousAccessToken: 'old-access-token',
-        tokenRotatedAt: new Date(Date.now() - 60_000), // > 30s grace
-      });
-      mockFindOneResults.push(mockSession);
-
-      const result = await sessionService.validateSession('old-access-token');
-
-      expect(result).toBeNull();
-    });
-
   });
 
   describe('revokeSession', () => {

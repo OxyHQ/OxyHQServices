@@ -17,10 +17,9 @@ export interface ISession extends Document {
     fingerprint?: string; // Device fingerprint for identification
   };
   accessToken: string; // Current access token for this session
-  previousAccessToken?: string; // Previous access token kept for grace period after rotation
   refreshToken: string; // Refresh token for this session
   previousRefreshToken?: string; // Previous refresh token kept for grace period after rotation
-  tokenRotatedAt?: Date; // When the access/refresh tokens were last rotated
+  tokenRotatedAt?: Date; // When the refresh token was last rotated
   isActive: boolean;
   expiresAt: Date; // When this session expires
   lastRefresh: Date; // Last time tokens were refreshed
@@ -58,10 +57,6 @@ const SessionSchema: Schema = new Schema(
     accessToken: {
       type: String,
       required: true,
-    },
-    previousAccessToken: {
-      type: String,
-      default: null,
     },
     refreshToken: {
       type: String,

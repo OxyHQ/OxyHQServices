@@ -28,47 +28,6 @@ const REFRESH_TOKEN_EXPIRES_IN = '7d';
 const OBJECT_ID_LENGTH = 24; // MongoDB ObjectId hex string length
 const TOKEN_ROTATION_GRACE_PERIOD_MS = 30_000; // 30 seconds grace period for concurrent tab refreshes
 
-function timingSafeTokenEqual(provided: string, expected: unknown): boolean {
-  if (typeof expected !== 'string' || !provided || !expected) {
-    return false;
-  }
-
-  const providedBuffer = Buffer.from(provided);
-  const expectedBuffer = Buffer.from(expected);
-  if (providedBuffer.length !== expectedBuffer.length) {
-    return false;
-  }
-
-  return crypto.timingSafeEqual(providedBuffer, expectedBuffer);
-}
-
-/**
- * A presented access token is bound to the session's CURRENT token, but the
- * immediately-previous token is also accepted briefly after a rotation
- * (`TOKEN_ROTATION_GRACE_PERIOD_MS`). Without this grace, a concurrent tab, an
- * in-flight request, or a cross-app refresh race that rotated `accessToken`
- * would 401 a still-valid token and force a local sign-out. A token rotated out
- * longer ago than the grace window is rejected (preserves the security intent
- * of rejecting rotated-out tokens).
- */
-function isAccessTokenWithinRotationGrace(
-  accessToken: string,
-  session: { accessToken: string; previousAccessToken?: string | null; tokenRotatedAt?: Date | null }
-): boolean {
-  if (timingSafeTokenEqual(accessToken, session.accessToken)) {
-    return true;
-  }
-  if (
-    session.previousAccessToken &&
-    session.tokenRotatedAt &&
-    Date.now() - new Date(session.tokenRotatedAt).getTime() <= TOKEN_ROTATION_GRACE_PERIOD_MS &&
-    timingSafeTokenEqual(accessToken, session.previousAccessToken)
-  ) {
-    return true;
-  }
-  return false;
-}
-
 /**
  * Extract userId string from various possible formats (ObjectId, populated object, string)
  * Handles edge cases and corrupted cache entries gracefully
@@ -280,11 +239,6 @@ class SessionService {
       }
 
       const { session } = result;
-
-      if (!isAccessTokenWithinRotationGrace(accessToken, session)) {
-        sessionCache.invalidate(sessionId);
-        return null;
-      }
 
       if (sessionCache.shouldUpdateLastActive(sessionId)) {
         this.updateLastActivity(sessionId).catch(() => {
@@ -573,7 +527,6 @@ class SessionService {
         payload.deviceId || session.deviceId
       );
 
-      session.previousAccessToken = session.accessToken;
       session.previousRefreshToken = session.refreshToken;
       session.tokenRotatedAt = now;
       session.accessToken = newAccessToken;
