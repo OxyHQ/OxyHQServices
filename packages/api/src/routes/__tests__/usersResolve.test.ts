@@ -281,6 +281,38 @@ describe('PUT /users/resolve (C4)', () => {
     );
   });
 
+  it('sanitizes federated display name and bio before persistence', async () => {
+    const leanResult = jest.fn().mockResolvedValue(null);
+    const selectResult = jest.fn().mockReturnValue({ lean: leanResult });
+    mockUserFindOne.mockReturnValueOnce({ select: selectResult });
+
+    const newUserDoc = { _id: 'new-user', username: 'alice@mastodon.social', type: 'federated' };
+    const updateLean = jest.fn().mockResolvedValue(newUserDoc);
+    const updateSelect = jest.fn().mockReturnValue({ lean: updateLean });
+    mockUserFindOneAndUpdate.mockReturnValueOnce({ select: updateSelect });
+
+    const res = await requestJson(server, 'PUT', '/users/resolve', {
+      type: 'federated',
+      username: 'alice@mastodon.social',
+      actorUri: 'https://mastodon.social/users/alice',
+      domain: 'mastodon.social',
+      displayName: '<img src=x onerror=alert("fediverse-xss")>',
+      bio: '<script>alert("bio")</script>',
+    });
+
+    expect(res.status).toBe(200);
+    expect(mockUserFindOneAndUpdate).toHaveBeenCalledWith(
+      { 'federation.actorUri': 'https://mastodon.social/users/alice' },
+      expect.objectContaining({
+        $set: expect.objectContaining({
+          'name.first': '&lt;img src=x onerror=alert(&quot;fediverse-xss&quot;)&gt;',
+          bio: '&lt;script&gt;alert(&quot;bio&quot;)&lt;/script&gt;',
+        }),
+      }),
+      expect.anything(),
+    );
+  });
+
   it('allows actorUri on the www host while keeping the canonical federated username', async () => {
     const leanResult = jest.fn().mockResolvedValue(null);
     const selectResult = jest.fn().mockReturnValue({ lean: leanResult });

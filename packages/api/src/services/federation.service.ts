@@ -16,6 +16,7 @@ import { createS3Service } from './s3Service';
 import { logger } from '../utils/logger';
 import userCache from '../utils/userCache';
 import { composeDisplayName } from '../utils/displayName';
+import { sanitizeHtml } from '../utils/sanitize';
 
 /** Decode common HTML entities (&#39; &amp; &lt; &gt; &quot; and numeric). */
 function decodeHtmlEntities(text: string): string {
@@ -1093,15 +1094,15 @@ class FederationService {
     const setFields: Record<string, unknown> = {
       type: 'federated',
       username: profile.username,
-      'name.first': profile.displayName,
+      'name.first': sanitizeHtml(profile.displayName),
       'federation.actorUri': profile.actorUri,
       'federation.domain': profile.domain,
       'federation.lastResolvedAt': new Date(),
     };
 
     if (profile.bio) {
-      setFields.bio = profile.bio;
-      setFields.description = profile.bio;
+      setFields.bio = sanitizeHtml(profile.bio);
+      setFields.description = sanitizeHtml(profile.bio);
     }
 
     const user = await User.findOneAndUpdate(
@@ -1352,12 +1353,12 @@ class FederationService {
       const setFields: Record<string, unknown> = {};
 
       if (profile.displayName) {
-        setFields['name.first'] = profile.displayName;
+        setFields['name.first'] = sanitizeHtml(profile.displayName);
       }
       setFields['federation.lastResolvedAt'] = new Date();
       if (profile.bio) {
-        setFields.bio = profile.bio;
-        setFields.description = profile.bio;
+        setFields.bio = sanitizeHtml(profile.bio);
+        setFields.description = sanitizeHtml(profile.bio);
       }
 
       // Download the latest avatar and replace the old stored file, replaying any
