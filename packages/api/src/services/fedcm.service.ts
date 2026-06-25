@@ -28,6 +28,18 @@ const DEV_NATIVE_APPROVED_ORIGINS = [
 
 const NONCE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const NONCE_BYTES = 32;
+const MULTIPART_TLDS = new Set([
+  'co.uk',
+  'com.au',
+  'co.jp',
+  'co.nz',
+  'com.br',
+  'co.za',
+  'com.mx',
+  'co.in',
+  'co.kr',
+  'com.sg',
+]);
 
 /** SHA-256 hex digest helper — never persist or compare raw nonces. */
 function sha256Hex(value: string): string {
@@ -55,6 +67,47 @@ function normaliseOriginOrThrow(value: string): string {
     throw new TypeError(`Invalid URL: ${value}`);
   }
   return normalised;
+}
+
+function registrableApex(hostname: string): string | null {
+  const host = hostname.toLowerCase();
+  if (!host) return null;
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(host)) return null;
+  if (host.startsWith('[') || host.includes(':')) return null;
+  const labels = host.split('.');
+  if (labels.length < 2) return null;
+  const lastTwo = labels.slice(-2).join('.');
+  if (MULTIPART_TLDS.has(lastTwo)) return null;
+  return lastTwo;
+}
+
+/**
+ * FedCM assertions may be minted either by the central Oxy IdP
+ * (`https://auth.oxy.so`) or by an approved RP's first-party CNAME host
+ * (`https://auth.<rp-apex>`). Accept the explicit configured central issuer for
+ * local/test overrides, and otherwise require the dynamic issuer to be the
+ * HTTPS `auth.` sibling of the token audience's registrable apex.
+ */
+function isAllowedFedCMIssuer(issuer: string | undefined, audience: string): boolean {
+  if (!issuer) return false;
+  let normalizedIssuer: string;
+  try {
+    normalizedIssuer = normaliseOriginOrThrow(issuer);
+  } catch {
+    return false;
+  }
+  if (timingSafeStringEqual(normalizedIssuer, FEDCM_ISSUER)) return true;
+
+  let audienceOrigin: URL;
+  try {
+    audienceOrigin = new URL(normaliseOriginOrThrow(audience));
+  } catch {
+    return false;
+  }
+  const apex = registrableApex(audienceOrigin.hostname);
+  if (!apex) return false;
+  const expectedDynamicIssuer = `https://auth.${apex}`;
+  return timingSafeStringEqual(normalizedIssuer, expectedDynamicIssuer);
 }
 
 // FedCM ID token issuer - must match auth server's NEXT_PUBLIC_OXY_AUTH_URL
@@ -552,9 +605,15 @@ class FedCMService {
         return { error: 'missing_required_fields' };
       }
 
-      // Verify issuer (normalize trailing slashes for comparison)
-      if (tokenPayload.iss?.replace(/\/+$/, '') !== FEDCM_ISSUER) {
-        logger.warn('FedCM: Invalid issuer', { expected: FEDCM_ISSUER, got: tokenPayload.iss });
+      // Verify issuer. The browser-native multi-domain FedCM flow mints
+      // tokens from `https://auth.<rp-apex>`, while server-side SSO assertions
+      // continue to use the configured central issuer.
+      if (!isAllowedFedCMIssuer(tokenPayload.iss, tokenPayload.aud)) {
+        logger.warn('FedCM: Invalid issuer', {
+          expected: `${FEDCM_ISSUER} or https://auth.<audience-apex>`,
+          got: tokenPayload.iss,
+          aud: tokenPayload.aud,
+        });
         return { error: 'invalid_issuer' };
       }
 

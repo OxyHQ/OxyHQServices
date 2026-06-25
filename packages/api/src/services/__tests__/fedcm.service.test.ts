@@ -283,6 +283,27 @@ describe('FedCM exchangeIdToken (H9)', () => {
     });
   });
 
+  it('accepts a first-party auth.<audience-apex> issuer for multi-domain FedCM', async () => {
+    const token = mintToken({ iss: 'https://auth.party.example' });
+    const result = await fedcmService.exchangeIdToken(token, createReq(APPROVED_ORIGIN));
+
+    expect('error' in result).toBe(false);
+    if ('error' in result) return;
+    expect(result.sessionId).toBe('sess-123');
+    expect(mockCreateSession).toHaveBeenCalledWith('user-123', expect.anything(), {
+      deviceName: 'FedCM Sign-In',
+      stableDeviceKey: APPROVED_ORIGIN,
+    });
+  });
+
+  it('rejects a dynamic issuer that is not the auth sibling of the token audience', async () => {
+    const token = mintToken({ iss: 'https://auth.evil.example' });
+    const result = await fedcmService.exchangeIdToken(token, createReq(APPROVED_ORIGIN));
+
+    expect(result).toEqual({ error: 'invalid_issuer' });
+    expect(mockCreateSession).not.toHaveBeenCalled();
+  });
+
   it('returns the user with a structured name.displayName (canonical serializer), never a string name', async () => {
     // Contract: a session-establishing exchange MUST emit the structured
     // `UserNameResponse` so the SDK's `userResponseSchema` accepts it. A bare
