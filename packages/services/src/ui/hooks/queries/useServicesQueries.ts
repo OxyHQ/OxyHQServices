@@ -5,6 +5,9 @@ import { queryKeys } from './queryKeys';
 import { useOxy } from '../../context/OxyContext';
 import { fetchSessionsWithFallback, mapSessionsToClient } from '../../utils/sessionHelpers';
 
+const accountQueryScope = (activeSessionId: string | null, actingAs?: string | null): string =>
+  `${activeSessionId ?? 'no-session'}:${actingAs ?? 'self'}`;
+
 /**
  * Get all active sessions for the current user
  */
@@ -90,10 +93,10 @@ export const useDeviceSessions = (options?: { enabled?: boolean }) => {
  * Get user devices
  */
 export const useUserDevices = (options?: { enabled?: boolean }) => {
-  const { oxyServices, isAuthenticated, activeSessionId } = useOxy();
+  const { oxyServices, isAuthenticated, activeSessionId, actingAs } = useOxy();
 
   return useQuery({
-    queryKey: queryKeys.devices.list(),
+    queryKey: queryKeys.devices.list(accountQueryScope(activeSessionId, actingAs)),
     queryFn: async () => {
       return authenticatedApiCall(
         oxyServices,
@@ -101,7 +104,7 @@ export const useUserDevices = (options?: { enabled?: boolean }) => {
         () => oxyServices.getUserDevices()
       );
     },
-    enabled: (options?.enabled !== false) && isAuthenticated,
+    enabled: (options?.enabled !== false) && isAuthenticated && !!activeSessionId,
     staleTime: 5 * 60 * 1000,
     gcTime: 30 * 60 * 1000,
   });
@@ -132,10 +135,10 @@ export const useSecurityInfo = (options?: { enabled?: boolean }) => {
  * `useEffect` fetches.
  */
 export const useAccountStorageUsage = (options?: { enabled?: boolean }) => {
-  const { oxyServices, isAuthenticated, activeSessionId } = useOxy();
+  const { oxyServices, isAuthenticated, activeSessionId, actingAs } = useOxy();
 
   return useQuery<AccountStorageUsageResponse>({
-    queryKey: queryKeys.storage.usage(),
+    queryKey: queryKeys.storage.usage(accountQueryScope(activeSessionId, actingAs)),
     queryFn: async () => {
       return authenticatedApiCall(
         oxyServices,
@@ -143,7 +146,7 @@ export const useAccountStorageUsage = (options?: { enabled?: boolean }) => {
         () => oxyServices.getAccountStorageUsage()
       );
     },
-    enabled: (options?.enabled !== false) && isAuthenticated,
+    enabled: (options?.enabled !== false) && isAuthenticated && !!activeSessionId,
     staleTime: 5 * 60 * 1000,
     gcTime: 30 * 60 * 1000,
   });

@@ -46,7 +46,7 @@ export const queryKeys = {
   devices: {
     all: ['devices'] as const,
     lists: () => [...queryKeys.devices.all, 'list'] as const,
-    list: (userId?: string) => [...queryKeys.devices.lists(), userId] as const,
+    list: (accountScope?: string) => [...queryKeys.devices.lists(), accountScope] as const,
     details: () => [...queryKeys.devices.all, 'detail'] as const,
     detail: (deviceId: string) => [...queryKeys.devices.details(), deviceId] as const,
   },
@@ -71,7 +71,7 @@ export const queryKeys = {
   // Storage usage queries
   storage: {
     all: ['storage'] as const,
-    usage: () => [...queryKeys.storage.all, 'usage'] as const,
+    usage: (accountScope?: string) => [...queryKeys.storage.all, 'usage', accountScope] as const,
   },
 
   // Connected apps (FedCM grants the user has authorized)
