@@ -5,10 +5,10 @@
  *  - H5: constant-time username lookup. When the identifier resolves to
  *    no user, we must still execute a password verification call so the
  *    response timing is indistinguishable from the wrong-password branch.
- *  - H7: per-account lockout. After repeated failures we return 429 +
- *    Retry-After, but keep the same generic message body so the
- *    unauthenticated caller cannot tell account-locked from
- *    invalid-credentials.
+ *  - H7: per-account invalid-attempt throttling. After repeated failures we
+ *    return 429 + Retry-After for invalid credentials, but a correct
+ *    password still clears failures and signs in so attackers cannot lock
+ *    victims out of their accounts.
  */
 
 const mockUserFindOne = jest.fn();
@@ -177,16 +177,18 @@ describe('SessionController.signIn (H5)', () => {
     expect(res.json).toHaveBeenCalledWith({ message: 'Invalid credentials' });
   });
 
-  it('blocks the request when the account is already locked (pre-check)', async () => {
+  it('does not pre-check lockout before credential verification', async () => {
     mockIsLockedOut.mockResolvedValueOnce({ locked: true, retryAfterSeconds: 300, attempts: 5 });
+    mockUserFindOne.mockReturnValueOnce(makeQuery(null));
+    mockVerifyPassword.mockResolvedValueOnce(false);
 
     const res = createMockRes();
     await SessionController.signIn(createReq({ identifier: 'alice', password: 'whatever' }), res);
 
-    expect(mockUserFindOne).not.toHaveBeenCalled();
-    expect(mockVerifyPassword).not.toHaveBeenCalled();
-    expect(res.setHeader).toHaveBeenCalledWith('Retry-After', '300');
-    expect(res.status).toHaveBeenCalledWith(429);
+    expect(mockIsLockedOut).not.toHaveBeenCalled();
+    expect(mockUserFindOne).toHaveBeenCalled();
+    expect(mockVerifyPassword).toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(401);
     expect(res.json).toHaveBeenCalledWith({ message: 'Invalid credentials' });
   });
 
