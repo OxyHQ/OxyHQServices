@@ -32,6 +32,7 @@ import { mediaPrivacyService } from './mediaPrivacyService';
 import { MediaAccessContext } from '../types/mediaPrivacy.types';
 import fileCache from '../utils/fileCache';
 import { BadRequestError } from '../utils/error';
+import { isDeclaredImageContentValid } from '../utils/imageContentSignature';
 
 /**
  * A readable stream that may also emit the HTTP `'aborted'` event. Express
@@ -537,6 +538,13 @@ export class AssetService {
       // path's empty-buffer guard.
       if (size === 0) {
         throw new BadRequestError('Cannot store an empty file');
+      }
+
+      // Defense-in-depth: reject content declared as an image whose bytes are
+      // not actually an image (e.g. a serialized {uri} descriptor from a broken
+      // web client). Non-zero garbage slips past the 0-byte guard otherwise.
+      if (!isDeclaredImageContentValid(fileBuffer, mimeType)) {
+        throw new BadRequestError('Uploaded file content does not match the declared image type');
       }
 
       // Check if file already exists by SHA256 (active records only).
