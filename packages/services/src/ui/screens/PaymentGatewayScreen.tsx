@@ -2,7 +2,6 @@ import type React from 'react';
 import { useState, useRef, useMemo, useCallback } from 'react';
 import {
     View,
-    Text,
     ScrollView,
     Animated,
     Platform,
@@ -12,6 +11,8 @@ import type { BaseScreenProps } from '../types/navigation';
 import { useThemeColors } from '../styles/theme';
 import { normalizeTheme } from '@oxyhq/core';
 import { Button } from '@oxyhq/bloom/button';
+import { useTheme } from '@oxyhq/bloom/theme';
+import { H4 } from '@oxyhq/bloom/typography';
 import { Ionicons } from '@expo/vector-icons';
 import { useI18n } from '../hooks/useI18n';
 import QRCode from 'react-native-qrcode-svg';
@@ -22,7 +23,6 @@ import PaymentDetailsStep from '../components/payment/PaymentDetailsStep';
 import PaymentReviewStep from '../components/payment/PaymentReviewStep';
 import PaymentSuccessStep from '../components/payment/PaymentSuccessStep';
 import { PAYMENT_METHODS } from '../components/payment/constants';
-import { createPaymentStyles } from '../components/payment/paymentStyles';
 import type { PaymentItem, PaymentGatewayResult, CardDetails } from '../components/payment/types';
 
 export type { PaymentItem, PaymentGatewayResult };
@@ -77,9 +77,11 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
     const progressAnim = useRef(new Animated.Value(0.2)).current;
 
     const normalizedTheme = normalizeTheme(theme);
+    // `colors` (PaymentColors) is the contract the wizard step components consume.
     const colors = useThemeColors(normalizedTheme);
+    // Bloom theme drives screen-shell icon roles (no hardcoded hex).
+    const bloomTheme = useTheme();
     const { t } = useI18n();
-    const styles = useMemo(() => createPaymentStyles(colors), [colors]);
 
     // Determine if the payment is for a recurring item (subscription)
     const isRecurring = paymentItems.length > 0 && paymentItems[0].type === 'subscription';
@@ -181,8 +183,11 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
     // Validate amount
     if (!amount || Number.isNaN(Number(amount)) || Number(amount) <= 0) {
         return (
-            <View style={styles.errorContainer}>
-                <Text style={styles.errorText}>{t('payment.errors.invalidAmount')}</Text>
+            <View className="flex-1 bg-bg items-center justify-center px-screen-margin gap-space-24">
+                <Ionicons name="alert-circle-outline" size={48} color={bloomTheme.colors.error} />
+                <H4 className="text-text text-center">
+                    {t('payment.errors.invalidAmount')}
+                </H4>
                 <Button
                     variant="primary"
                     onPress={handleClose}
@@ -277,8 +282,12 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
     };
 
     return (
-        <View style={[styles.container, { backgroundColor: colors.background }]}>
-            <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        <View className="flex-1 bg-bg">
+            <ScrollView
+                className="flex-1"
+                contentContainerClassName="p-space-16"
+                showsVerticalScrollIndicator={false}
+            >
                 {renderCurrentStep()}
             </ScrollView>
         </View>

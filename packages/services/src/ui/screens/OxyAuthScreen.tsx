@@ -16,14 +16,18 @@
  */
 
 import type React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Linking } from 'react-native';
+import { View, Linking } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { Button } from '@oxyhq/bloom/button';
 import { Loading } from '@oxyhq/bloom/loading';
+import { H4, Text } from '@oxyhq/bloom/typography';
+import { IconCircle } from '@oxyhq/bloom/icon-circle';
+import * as Icons from '@oxyhq/bloom/icons';
 import { useOxy } from '../context/OxyContext';
 import OxyLogo from '../components/OxyLogo';
 import AnotherDeviceQR from '../components/AnotherDeviceQR';
+import LoadingState from '../components/LoadingState';
 import { useOxyAuthSession, OXY_ACCOUNTS_WEB_URL } from '../hooks/useOxyAuthSession';
 
 const OxyAuthScreen: React.FC<BaseScreenProps> = ({ goBack, onAuthenticated }) => {
@@ -39,20 +43,33 @@ const OxyAuthScreen: React.FC<BaseScreenProps> = ({ goBack, onAuthenticated }) =
 
   if (isLoading) {
     return (
-      <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
-        <Loading size="large" />
-        <Text style={styles.loadingText} className="text-muted-foreground">
-          Preparing sign in...
-        </Text>
+      <View className="flex-1 items-center justify-center bg-bg">
+        <LoadingState
+          size="large"
+          color={bloomTheme.colors.primary}
+          message="Preparing sign in..."
+        />
       </View>
     );
   }
 
   if (error) {
     return (
-      <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
-        <Text style={styles.errorText} className="text-destructive">{error}</Text>
-        <Button variant="primary" onPress={retry} style={styles.primaryButton}>
+      <View className="flex-1 items-center justify-center bg-bg px-screen-margin gap-space-16">
+        <IconCircle icon={Icons.Warning_Stroke2_Corner0_Rounded} />
+        <Text className="font-sans text-body text-text-secondary text-center">{error}</Text>
+        <Button
+          variant="primary"
+          fullWidth
+          className="w-full"
+          onPress={retry}
+          icon={
+            <Icons.ArrowRotateClockwise_Stroke2_Corner0_Rounded
+              size="sm"
+              style={{ color: bloomTheme.colors.primaryForeground }}
+            />
+          }
+        >
           Try Again
         </Button>
       </View>
@@ -60,12 +77,14 @@ const OxyAuthScreen: React.FC<BaseScreenProps> = ({ goBack, onAuthenticated }) =
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
+    <View className="flex-1 items-center justify-center bg-bg px-screen-margin">
       {/* Branded header */}
-      <View style={styles.header}>
-        <OxyLogo variant="icon" size={48} />
-        <Text style={styles.title} className="text-foreground">Sign in to Oxy</Text>
-        <Text style={styles.subtitle} className="text-muted-foreground">
+      <View className="items-center mb-space-24 gap-space-12">
+        <OxyLogo variant="icon" size={56} />
+        <H4 className="text-headerBold font-headerBold text-text text-center">
+          Sign in to Oxy
+        </H4>
+        <Text className="font-sans text-body text-text-secondary text-center">
           Continue with your Oxy identity to sign in securely
         </Text>
       </View>
@@ -73,124 +92,55 @@ const OxyAuthScreen: React.FC<BaseScreenProps> = ({ goBack, onAuthenticated }) =
       {/* Primary action — Continue with Oxy */}
       <Button
         variant="primary"
+        size="large"
+        fullWidth
+        className="w-full"
         onPress={openAuthApproval}
-        icon={<OxyLogo variant="icon" size={20} fillColor={bloomTheme.colors.primaryForeground} style={styles.buttonIcon} />}
-        style={styles.primaryButton}
+        icon={
+          <OxyLogo variant="icon" size={20} fillColor={bloomTheme.colors.primaryForeground} />
+        }
       >
         Continue with Oxy
       </Button>
 
       {/* Waiting status */}
       {isWaiting && (
-        <View style={styles.statusContainer}>
-          <Loading size="small" style={styles.statusSpinner} />
-          <Text style={styles.statusText} className="text-muted-foreground">
+        <View className="flex-row items-center mt-space-16 gap-space-8">
+          <Loading size="small" />
+          <Text className="font-sans text-body text-text-secondary">
             Waiting for authorization...
           </Text>
         </View>
       )}
 
       {/* Collapsed "sign in on another device" QR disclosure */}
-      <View style={styles.qrSection}>
+      <View className="w-full mt-space-24">
         <AnotherDeviceQR qrData={qrData} />
       </View>
 
       {/* Footer — create an account */}
-      <View style={styles.footer}>
-        <Text style={styles.footerText} className="text-muted-foreground">
-          Don't have an Oxy account?{' '}
+      <View className="flex-row flex-wrap justify-center items-center mt-space-24">
+        <Text className="font-sans text-body text-text-secondary">
+          Don't have an Oxy account?
         </Text>
-        <TouchableOpacity onPress={() => Linking.openURL(OXY_ACCOUNTS_WEB_URL)} accessibilityRole="link">
-          <Text style={styles.footerLink} className="text-primary">
-            Create one
-          </Text>
-        </TouchableOpacity>
+        <Button
+          variant="text"
+          size="small"
+          onPress={() => Linking.openURL(OXY_ACCOUNTS_WEB_URL)}
+          accessibilityLabel="Create an Oxy account"
+        >
+          Create one
+        </Button>
       </View>
 
       {/* Cancel */}
       {goBack && (
-        <TouchableOpacity style={styles.cancelButton} onPress={goBack} accessibilityRole="button">
-          <Text style={styles.cancelText} className="text-muted-foreground">Cancel</Text>
-        </TouchableOpacity>
+        <Button variant="text" onPress={goBack} className="mt-space-8" accessibilityLabel="Cancel">
+          Cancel
+        </Button>
       )}
     </View>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  header: {
-    alignItems: 'center',
-    marginBottom: 28,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginTop: 16,
-    textAlign: 'center',
-  },
-  subtitle: {
-    fontSize: 14,
-    marginTop: 8,
-    textAlign: 'center',
-  },
-  primaryButton: {
-    width: '100%',
-    borderRadius: 12,
-  },
-  buttonIcon: {
-    marginRight: 10,
-  },
-  statusContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 20,
-  },
-  statusSpinner: {
-    flex: undefined,
-  },
-  statusText: {
-    marginLeft: 8,
-    fontSize: 14,
-  },
-  qrSection: {
-    width: '100%',
-    marginTop: 24,
-  },
-  footer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    marginTop: 28,
-  },
-  footerText: {
-    fontSize: 14,
-  },
-  footerLink: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  cancelButton: {
-    marginTop: 16,
-    padding: 12,
-  },
-  cancelText: {
-    fontSize: 14,
-  },
-  loadingText: {
-    marginTop: 16,
-    fontSize: 14,
-  },
-  errorText: {
-    fontSize: 14,
-    textAlign: 'center',
-    marginBottom: 16,
-  },
-});
 
 export default OxyAuthScreen;
