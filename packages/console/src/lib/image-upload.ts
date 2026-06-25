@@ -9,9 +9,9 @@ import type { OxyServices } from '@oxyhq/core';
  *     `response.file.id`. The response does NOT contain a ready URL.
  *  3. We derive a public, directly-renderable URL with the synchronous helper
  *     `oxyServices.getFileDownloadUrl(id)`, which returns the
- *     `/assets/:id/stream` endpoint. For `public`-visibility assets that endpoint
- *     serves without a session token, so the URL renders in a plain `<img>` and
- *     on the public consent screen.
+ *     `/assets/:id/stream` endpoint. For `public`-visibility assets, we request
+ *     a token-free URL so persisted logo/avatar metadata cannot disclose a
+ *     user's bearer token.
  */
 
 /** Allowed image MIME types for logo / avatar uploads. */
@@ -30,6 +30,29 @@ export const MAX_IMAGE_UPLOAD_LABEL = '2 MB';
 
 /** Visibility used for uploaded logos/avatars — public so they render unauthenticated. */
 const PUBLIC_VISIBILITY = 'public' as const;
+
+const SENSITIVE_URL_QUERY_PARAMS = new Set(['token', 'access_token', 'authorization']);
+
+/**
+ * Strip credentials from URLs before persisting image metadata.
+ *
+ * Returns non-URL strings unchanged so callers can still clear fields with an
+ * empty string or preserve future asset-id based formats.
+ */
+export function stripSensitiveImageUrlQueryParams(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return trimmed;
+
+  try {
+    const url = new URL(trimmed);
+    for (const param of SENSITIVE_URL_QUERY_PARAMS) {
+      url.searchParams.delete(param);
+    }
+    return url.toString();
+  } catch {
+    return trimmed;
+  }
+}
 
 /** Shape of the `uploadRawFile` response that we depend on. */
 interface RawFileUploadResponse {
@@ -84,5 +107,9 @@ export async function uploadPublicImage(
   if (!isRawFileUploadResponse(response)) {
     throw new Error('Upload did not return a file id');
   }
-  return oxyServices.getFileDownloadUrl(response.file.id);
+  return stripSensitiveImageUrlQueryParams(
+    oxyServices.getFileDownloadUrl(response.file.id, undefined, undefined, {
+      omitToken: true,
+    })
+  );
 }

@@ -62,6 +62,7 @@ import {
   isUserNotFoundError,
   USER_NOT_FOUND_MESSAGE,
 } from '@/lib/api-error';
+import { stripSensitiveImageUrlQueryParams } from '@/lib/image-upload';
 
 export const Route = createFileRoute('/_layout/settings/workspace')({
   component: WorkspaceSettingsPage,
@@ -186,10 +187,11 @@ function WorkspaceSettingsPage() {
   // for team workspaces — personal workspaces inherit the user's account avatar
   // and expose no uploader.
   const handleAvatarChange = async (url: string) => {
-    setIcon(url);
+    const safeUrl = stripSensitiveImageUrlQueryParams(url);
+    setIcon(safeUrl);
     try {
-      await updateWorkspace(workspaceId, { icon: url || null });
-      toast.success(url ? 'Workspace avatar updated' : 'Workspace avatar removed');
+      await updateWorkspace(workspaceId, { icon: safeUrl || null });
+      toast.success(safeUrl ? 'Workspace avatar updated' : 'Workspace avatar removed');
     } catch (error) {
       // Revert the local preview to the persisted value on failure.
       setIcon(currentWorkspace.icon ?? '');

@@ -49,6 +49,19 @@ describe('OxyServices.getFileDownloadUrl', () => {
         'https://cloud.oxy.so/a%2Fb%20c?variant=large%20size',
       );
     });
+
+    it('can omit the token for persisted public image URLs while authenticated', () => {
+      const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
+      oxy.setTokens('access-token-abc');
+
+      const url = oxy.getFileDownloadUrl('file123', 'thumb', undefined, {
+        omitToken: true,
+      });
+
+      expect(url).toBe('https://cloud.oxy.so/file123?variant=thumb');
+      expect(url).not.toContain('access-token-abc');
+      expect(url).not.toContain('token=');
+    });
   });
 
   describe('signed / private assets → authenticated API origin', () => {

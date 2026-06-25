@@ -27,6 +27,7 @@ import {
 import { logger } from '../utils/logger';
 import { ensurePersonalWorkspace } from '../utils/workspaceProvisioning';
 import credentialDomainCache from '../utils/credentialDomainCache';
+import { stripSensitiveUrlQueryParams } from '../utils/sanitizeUrl';
 import { resolveUserByIdentifier } from '../utils/resolveUserIdentifier';
 import {
   permissionsForRole,
@@ -664,7 +665,7 @@ router.post(
       name: body.name,
       description: body.description,
       websiteUrl: body.websiteUrl || undefined,
-      icon: body.icon,
+      icon: body.icon ? stripSensitiveUrlQueryParams(body.icon) : body.icon,
       redirectUris: resolveRedirectUris(body) ?? [],
       scopes,
       workspaceId: workspaceObjectId,
@@ -744,7 +745,7 @@ router.patch(
     if (body.name !== undefined) application.name = body.name;
     if (body.description !== undefined) application.description = body.description;
     if (body.websiteUrl !== undefined) application.websiteUrl = body.websiteUrl || undefined;
-    if (body.icon !== undefined) application.icon = body.icon;
+    if (body.icon !== undefined) application.icon = stripSensitiveUrlQueryParams(body.icon);
     if (body.scopes !== undefined) {
       // Privileged scopes (e.g. federation:write) are staff-only. A non-staff
       // caller may keep an already-granted privileged scope but may not add one.
