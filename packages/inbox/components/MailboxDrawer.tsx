@@ -6,7 +6,8 @@
  * pill, Create folder) are hidden until the user is authenticated.
  */
 
-import React, { useMemo, useCallback, useState, useRef } from 'react';
+import React, { useMemo, useCallback, useState, useRef, useEffect } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   View,
   Text,
@@ -166,6 +167,7 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
   const colors = useColors();
   const { user, isAuthenticated } = useOxy();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const insets = useSafeAreaInsets();
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [accountMenuAnchor, setAccountMenuAnchor] = useState<AccountMenuAnchor | null>(null);
@@ -206,6 +208,14 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
     [],
   );
 
+  const resetInboxForAccountChange = useCallback(() => {
+    useEmailStore.getState().resetAccountScopedState();
+    queryClient.removeQueries({ queryKey: ['mailboxes'] });
+    queryClient.removeQueries({ queryKey: ['labels'] });
+    queryClient.removeQueries({ queryKey: ['messages'] });
+    queryClient.removeQueries({ queryKey: ['message'] });
+  }, [queryClient]);
+
   const handleCloseMenu = useCallback(() => {
     setAccountMenuOpen(false);
   }, []);
@@ -214,8 +224,9 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
     setAccountMenuOpen(false);
     // Open the sign-in modal to authenticate a new account.
     // OxyContext picks up the new session and AccountMenu reflects it.
+    resetInboxForAccountChange();
     showSignInModal();
-  }, []);
+  }, [resetInboxForAccountChange]);
 
   const handleNavigateManage = useCallback(() => {
     setAccountMenuOpen(false);
@@ -228,6 +239,17 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
   const toggleMore = useEmailStore((s) => s.toggleMore);
   const { data: mailboxes = [] } = useMailboxes();
   const { data: labels = [] } = useLabels();
+
+  const activeUserId = user?.id ?? user?._id ?? null;
+  const previousUserIdRef = useRef<string | null>(activeUserId);
+
+  useEffect(() => {
+    if (previousUserIdRef.current === activeUserId) {
+      return;
+    }
+    previousUserIdRef.current = activeUserId;
+    resetInboxForAccountChange();
+  }, [activeUserId, resetInboxForAccountChange]);
 
   // Determine active state from URL pathname.
   // Path shapes we care about here:
@@ -689,6 +711,7 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
           onNavigateManage={handleNavigateManage}
           onAddAccount={handleAddAccount}
           anchor={accountMenuAnchor}
+          onBeforeSessionChange={resetInboxForAccountChange}
         />
       )}
     </View>

@@ -408,8 +408,10 @@
     "activity": {
       "activityHistory": "Historial de actividad",
       "activityHistorySubtitle": "Consulta y gestiona tu historial de actividad",
+      "activityHistoryUnavailable": "La gestión del historial de actividad aún no está disponible.",
       "locationHistory": "Historial de ubicación",
       "locationHistorySubtitle": "Consulta y gestiona tus datos de ubicación",
+      "locationHistoryUnavailable": "La gestión del historial de ubicación aún no está disponible.",
       "clearActivityTitle": "Borrar historial de actividad",
       "clearLocationTitle": "Borrar historial de ubicación",
       "clearActivityMessage": "Esto eliminará permanentemente todo tu historial de actividad. Esta acción no se puede deshacer.",

@@ -5,12 +5,13 @@
  * Tapping a chip inserts the text into the reply composer.
  */
 
-import React from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   Platform,
+  TouchableOpacity,
 } from 'react-native';
 import { Loading } from '@oxyhq/bloom/loading';
 import { Chip } from '@oxyhq/bloom/chip';
@@ -30,9 +31,47 @@ interface SmartReplyChipsProps {
 
 export function SmartReplyChips({ message, onSelectReply }: SmartReplyChipsProps) {
   const colors = useColors();
-  const { replies, isLoading } = useSmartReplies(message);
+  const [hasRequestedReplies, setHasRequestedReplies] = useState(false);
+  const { replies, isLoading, refetch } = useSmartReplies(message);
 
-  // Don't render anything if no suggestions and not loading
+  const handleGenerateReplies = useCallback(() => {
+    setHasRequestedReplies(true);
+    void refetch();
+  }, [refetch]);
+
+  if (!hasRequestedReplies) {
+    return (
+      <View style={styles.container}>
+        <TouchableOpacity
+          accessibilityRole="button"
+          onPress={handleGenerateReplies}
+          style={[styles.generateButton, { borderColor: colors.border }]}
+        >
+          {Platform.OS === 'web' ? (
+            <HugeiconsIcon
+              icon={AiMail01Icon as unknown as IconSvgElement}
+              size={14}
+              color={colors.primary}
+            />
+          ) : (
+            <MaterialCommunityIcons
+              name="creation"
+              size={14}
+              color={colors.primary}
+            />
+          )}
+          <Text style={[styles.generateText, { color: colors.primary }]}>
+            Generate quick replies with AI
+          </Text>
+        </TouchableOpacity>
+        <Text style={[styles.privacyText, { color: colors.secondaryText }]}>
+          Sends this email to Alia after a sensitive-content check.
+        </Text>
+      </View>
+    );
+  }
+
+  // Don't render anything if no suggestions and not loading after an explicit request.
   if (!isLoading && replies.length === 0) {
     return null;
   }
@@ -100,6 +139,24 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 12,
     fontWeight: '500',
+  },
+  generateButton: {
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  generateText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  privacyText: {
+    fontSize: 11,
+    lineHeight: 14,
   },
   chips: {
     flexDirection: 'row',

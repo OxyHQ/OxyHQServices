@@ -408,8 +408,10 @@
     "activity": {
       "activityHistory": "Activity history",
       "activityHistorySubtitle": "View and manage your activity history",
+      "activityHistoryUnavailable": "Activity history management is not available yet.",
       "locationHistory": "Location history",
       "locationHistorySubtitle": "View and manage your location data",
+      "locationHistoryUnavailable": "Location history management is not available yet.",
       "clearActivityTitle": "Clear Activity History",
       "clearLocationTitle": "Clear Location History",
       "clearActivityMessage": "This will permanently delete all your activity history. This action cannot be undone.",

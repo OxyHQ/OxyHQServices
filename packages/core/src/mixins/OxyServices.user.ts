@@ -555,6 +555,7 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
           url: `/users/me/data`,
           params: { format },
           cache: false,
+          responseType: 'blob',
         });
         
         return result;
