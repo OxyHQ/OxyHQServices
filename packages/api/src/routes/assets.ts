@@ -560,13 +560,15 @@ const cacheDeleteLimiter = rateLimit({
  *       namespace. The raw bytes are sent as the request body (NOT multipart)
  *       so large video streams straight to S3 without buffering in RAM.
  *       Content-Type must be image/*, video/*, or audio/*.
- * @access Service token only (serviceAuthMiddleware)
+ * @access Service token only (requires files:write)
  */
 router.post(
   '/service/cache',
   serviceAuthMiddleware,
   cacheUploadLimiter,
   asyncHandler(async (req: ServiceAuthRequest, res: express.Response) => {
+    requireServiceScope(req, 'files:write');
+
     const mime = (req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
     if (!mime) {
       throw new BadRequestError('Content-Type header is required');
@@ -718,7 +720,7 @@ router.post(
  * @desc Evict a cached media asset by id. Rejects (403) anything that is not
  *       in the reserved cache namespace, so a service token can never delete
  *       user-owned media.
- * @access Service token only (serviceAuthMiddleware)
+ * @access Service token only (requires federation:write)
  */
 router.delete(
   '/service/cache/:id',
@@ -726,6 +728,8 @@ router.delete(
   cacheDeleteLimiter,
   validate({ params: assetIdParams }),
   asyncHandler(async (req: ServiceAuthRequest, res: express.Response) => {
+    requireServiceScope(req, 'federation:write');
+
     const { id: fileId } = req.params;
 
     const result = await assetService.deleteCachedMedia(fileId);

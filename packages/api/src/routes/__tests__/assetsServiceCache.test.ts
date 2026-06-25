@@ -182,7 +182,7 @@ beforeEach(() => {
         type: 'service',
         appId: 'mention-app',
         appName: 'mention',
-        scopes: ['files:write'],
+        scopes: ['files:write', 'federation:write'],
       };
       next();
     }
@@ -223,6 +223,31 @@ describe('POST /assets/service/cache', () => {
     expect(mockUploadCachedMediaStream).toHaveBeenCalledTimes(1);
     // authMiddleware must NOT have run for this service route.
     expect(mockAuthMiddleware).not.toHaveBeenCalled();
+  });
+
+  it('requires the files:write service scope', async () => {
+    mockServiceAuthMiddleware.mockImplementationOnce(
+      (req: { serviceApp?: unknown }, _res: unknown, next: () => void) => {
+        req.serviceApp = {
+          type: 'service',
+          appId: 'mention-app',
+          appName: 'mention',
+          scopes: ['federation:write'],
+        };
+        next();
+      }
+    );
+
+    const res = await requestRaw(
+      server,
+      'POST',
+      '/assets/service/cache',
+      { 'content-type': 'image/png', 'content-length': '4' },
+      Buffer.from('PNG!')
+    );
+
+    expect(res.status).toBe(403);
+    expect(mockUploadCachedMediaStream).not.toHaveBeenCalled();
   });
 
   it('rejects an unsupported content-type with 415 and never touches S3', async () => {
@@ -379,6 +404,30 @@ describe('DELETE /assets/service/cache/:id', () => {
     expect(res.status).toBe(200);
     expect(mockDeleteCachedMedia).toHaveBeenCalledWith(CACHE_FILE_ID);
     expect(mockAuthMiddleware).not.toHaveBeenCalled();
+  });
+
+  it('requires the federation:write service scope', async () => {
+    mockServiceAuthMiddleware.mockImplementationOnce(
+      (req: { serviceApp?: unknown }, _res: unknown, next: () => void) => {
+        req.serviceApp = {
+          type: 'service',
+          appId: 'mention-app',
+          appName: 'mention',
+          scopes: ['files:write'],
+        };
+        next();
+      }
+    );
+
+    const res = await requestRaw(
+      server,
+      'DELETE',
+      `/assets/service/cache/${CACHE_FILE_ID}`,
+      {}
+    );
+
+    expect(res.status).toBe(403);
+    expect(mockDeleteCachedMedia).not.toHaveBeenCalled();
   });
 
   it('refuses to delete a normal user-owned asset (out of scope) with 403', async () => {
