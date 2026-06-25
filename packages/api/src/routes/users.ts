@@ -1317,7 +1317,10 @@ router.put(
     // resolves the user fresh, honours the throttle + conditional requests, and
     // invalidates the cache again once the new file id is persisted. Never
     // awaited — must not delay the response.
-    if (remoteAvatarUrl) {
+    const hasExistingStoredAvatar = typeof existingAvatarFileId === 'string'
+      && existingAvatarFileId.length > 0
+      && !existingAvatarFileId.startsWith('http');
+    if (remoteAvatarUrl && (forceAvatarRefresh || !hasExistingStoredAvatar)) {
       federationService.scheduleAvatarRefresh(
         user._id.toString(),
         remoteAvatarUrl,
