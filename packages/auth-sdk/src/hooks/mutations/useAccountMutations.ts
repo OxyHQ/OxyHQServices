@@ -4,7 +4,7 @@ import type { PrivacySettings, User } from '@oxyhq/core';
 import type { UserProfileUpdate } from '@oxyhq/contracts';
 import { queryKeys, invalidateAccountQueries, invalidateUserQueries, invalidateSessionQueries } from '../queries/queryKeys';
 import { useWebOxy } from '../../WebOxyProvider';
-import { toast } from 'sonner';
+import { toast } from '../../utils/toast';
 import { refreshAvatarInStore } from '../../utils/avatarUtils';
 import { useAuthStore } from '../../stores/authStore';
 

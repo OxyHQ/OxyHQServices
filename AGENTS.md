@@ -194,10 +194,14 @@ Frontend RP apps use the SDK as the only session authority:
 - Private app calls wait for SDK readiness: `useAuth().canUsePrivateApi` / `useAuth().isPrivateApiPending` or equivalent `useOxy()` state.
 - App backend clients use `oxyServices.createLinkedClient({ baseURL })`. Do not add app-local token providers, Axios/fetch auth interceptors, manual `Authorization` header plumbing, refresh-cookie retries, or local invalidation.
 
-Backend APIs use `@oxyhq/core/server` for request identity:
+Backend APIs use `@oxyhq/core/server` for request identity and security:
 - Mount `createOxyRateLimit(oxy)` near the top of the Express app when Oxy-aware rate limiting is needed.
 - Use `createOptionalOxyAuth(oxy)` for optional identity, `createOxyAuthMiddleware(oxy)` / `requireOxyAuth` for private routes, and `getRequiredOxyUserId(req)` for required user identity.
-- Use `authSocket` for Socket.IO/WebSocket auth.
+- Use `authSocket` for Socket.IO/WebSocket auth. ALWAYS derive rooms from `socket.user.id` — never from client-supplied room IDs. Add ownership checks before joining session/conversation rooms.
+- Use `safeFetch(url, opts)` for any fetch of user-supplied URLs (SSRF prevention — DNS-pinned lookup, private-IP denylist, bounded redirects).
+- Use `createOxyCors({ appOrigins, allowCredentials })` for CORS (deny-by-default, auto-allows `*.oxy.so`; NEVER wildcard+credentials).
+- Use `verifySecret(provided, expected)` for secret/token equality (constant-time, never `!==`).
+- NEVER do `new Model(req.body)` or spread `req.body` into `findByIdAndUpdate` — resolve owner ids server-side via `getRequiredOxyUserId` and use an explicit field whitelist (mass-assignment IDOR).
 - Do not define local `AuthRequest`, `requireAuth`, `getUserId`, `getAuthenticatedUserId`, bearer parsers, or token-decoding auth middleware in apps. Missing shared behavior belongs in `@oxyhq/core/server`.
 - Bearer-authenticated writes do not fetch app-local CSRF tokens. CSRF remains for ambient cookie credentials and cookie-only writes.
 
@@ -212,14 +216,14 @@ Backend APIs use `@oxyhq/core/server` for request identity:
 - `packages/core/` and `packages/auth-sdk/` build with `tsc` (CJS + ESM + types -> `dist/`)
 - `packages/services/` builds with `react-native-builder-bob` (-> `lib/`)
 
-## @oxyhq/contracts — Contract-First API Schemas (2026-06-15)
+## @oxyhq/contracts — Contract-First API Schemas
 
-Package: `packages/contracts` → `@oxyhq/contracts` v0.1.1. SINGLE SOURCE OF TRUTH for API request/response contracts.
+Package: `packages/contracts` → `@oxyhq/contracts` **v0.2.1**. SINGLE SOURCE OF TRUTH for API request/response contracts.
 
 **What it contains:**
 - Zod schemas: `userNameSchema`, `userResponseSchema`, `userProfileUpdateSchema`, `refreshAllAccountSchema`, `refreshAllResponseSchema`, `currentUserResponseSchema`, `deviceSessionAccountSchema`, `deviceSessionsResponseSchema`
 - Helpers: `resolveUserId`, `safeParseContract`
-- Inferred types: `UserNameResponse`, `UserResponse`, `UserProfileUpdate`, `RefreshAllAccountResponse`, `RefreshAllResponseContract`, `CurrentUserResponseContract`, `DeviceSessionAccountResponse`, `DeviceSessionsResponseContract`
+- Inferred types: `UserNameResponse` (explicit `interface` with required `displayName: string` — fixed in 0.2.1; was a `z.infer` passthrough that degraded to `{}` under `moduleResolution: node`), `UserResponse`, `UserProfileUpdate`, `RefreshAllAccountResponse`, `RefreshAllResponseContract`, `CurrentUserResponseContract`, `DeviceSessionAccountResponse`, `DeviceSessionsResponseContract`
 
 **Build:** dual CJS+ESM+types via tsc (same pattern as core: `tsconfig.{cjs,esm,types}.json` + `scripts/fix-esm-imports.mjs`). Zero runtime deps except `zod ^3.25.64`.
 
@@ -248,6 +252,9 @@ Build-vs-source distinction: production/Docker consumes the built `dist/` (the D
 - `packages/core/src/server/index.ts` — public `@oxyhq/core/server` exports
 - `packages/core/src/server/auth.ts` — `createOptionalOxyAuth`, `createOxyAuthMiddleware`, `requireOxyAuth`, `getRequiredOxyUserId`
 - `packages/core/src/server/rateLimit.ts` — `createOxyRateLimit`
+- `packages/core/src/server/safeFetch.ts` — `safeFetch(url, opts)`, `assertSafePublicUrl` (SSRF-safe fetch; DNS-pinned, private-IP denylist, bounded redirects, Bun `{all:true}` lookup-array contract)
+- `packages/core/src/server/cors.ts` — `createOxyCors({ appOrigins, allowCredentials })` (deny-by-default allowlist, auto-allows `*.oxy.so`, NEVER wildcard+credentials)
+- `packages/core/src/server/verifySecret.ts` — `verifySecret(provided, expected)` (constant-time `crypto.timingSafeEqual` + length guard)
 - `packages/core/src/mixins/OxyServices.reputation.ts` — `reputation` mixin (14 methods, fully typed); 20 exported types (see "Oxy Trust" section)
 - `packages/auth-sdk/src/index.ts` — all public auth exports
 - `packages/auth-sdk/src/WebOxyProvider.tsx` — web auth context provider
@@ -583,48 +590,50 @@ Activated inside `FileManagementScreen` when `isImageOnlyPicker` is true. Apple 
 
 ## Published Package Versions
 
+All 8 external apps + OxyHQServices internal apps bumped this session (2026-06-25).
+
 | Package | Version | Notes |
 |---------|---------|-------|
-| `@oxyhq/core` | **3.8.0** | Current target. Includes `@oxyhq/core/server` (`createOxyAuthMiddleware`, `createOptionalOxyAuth`, `createOxyRateLimit`, `requireOxyAuth`, `getRequiredOxyUserId`) plus linked backend clients. 3.8.0: adds `oxyServices.getUsersByIds(ids: string[]): Promise<User[]>` — chunked (100/req), deduped, POSTs `/users/by-ids`, resilient per-chunk, no SDK cache; `User._count?:{followers?,following?}` already exposed. 3.7.1: `getFileDownloadUrl` emits `cloud.oxy.so` URLs for public assets. 3.6.0: `unfollowUsers`; 3.5.0: `followUsers`; 3.4.7: `createLinkedClient`; 3.4.5: `getSsoCallbackBootstrapScript`; 3.4.1: GET cache. 3.3.0: `reputation` mixin; karma removed. **GOTCHA: 3.3.0 and 3.4.0 broken for external consumers** (unpublished contracts dep). Pin to **^3.8.0**. |
-| `@oxyhq/auth` | **4.1.1** | 4.1.1: `WebOxyProvider` intercepts `/__oxy/sso-callback` before child apps render and peers on `@oxyhq/core ^3.4.5`. 4.1.0: optional `clientId` prop. 4.0.0: major bump (peer `^3.0.0`). 3.4.0: consumes core SSO helpers; deleted local `ssoBounce.ts`. 3.3.0: `/sso/establish` + per-apex cookie; central issuer fix. 3.2.0: consumes `runColdBoot` + `autoDetect`. |
-| `@oxyhq/services` | **10.3.3** | Current target. `OxyProvider` owns RP cold boot, `clientId`, callback interception, private API readiness, and invalidated-token sign-out. 10.3.3: UNFOLLOW-ALL multi-user FollowButton toggle. 10.3.1: fixed infinite-render-loop in multi-user FollowButton (zustand `useShallow` selector returning fresh nested object → `useSyncExternalStore` always-changed). 10.2.x includes Trust screen names; consumers must not call removed `Karma*` routes. 10.0.0 BREAKING: `appName` prop removed; use `clientId`; peer `@oxyhq/core ^3.4.17`. 8.0.0: `@tanstack/*` peerDeps; `ManageAccount` route. |
-| `@oxyhq/bloom` | **0.9.1** | Current target. `AvatarGroup` (`@oxyhq/bloom/avatar-group`) + `UserHoverCard` (`@oxyhq/bloom/user-hover-card`). Always pass Oxy file IDs to `source`, not `uri`. Retains 0.7.x web CSS-var fix and NW5 platform split; web consumers use `var(--x)`, not `hsl(var(--x))`, for Bloom base tokens. `BloomColorScope` emits scoped `--color-*` aliases (≥0.8.6). |
+| `@oxyhq/contracts` | **0.2.1** | `UserNameResponse` is now an explicit `interface` with required `displayName: string` (0.2.1 — was `z.infer` passthrough degrading to `{}` under `moduleResolution: node`). 0.2.0: added recommendation*/appEndorsement*/appInterest*/appUserSignal*/fedcmTokenPayload runtime exports. |
+| `@oxyhq/core` | **3.10.0** | **3.10.0:** Consumes contracts 0.2.1. New `@oxyhq/core/server` exports: `safeFetch` + `assertSafePublicUrl` (SSRF-safe fetch), `createOxyCors` (deny-by-default CORS allowlist), `verifySecret` (constant-time equality). **3.9.0:** All mixin writes sweep cache. `createLinkedClient` defaults to `enableCache:false`. `express-rate-limit` is a required peer for `@oxyhq/core/server` consumers. 3.8.0: `getUsersByIds(ids)`; `User._count?:{followers?,following?}`. 3.7.1: `getFileDownloadUrl` emits `cloud.oxy.so` URLs. 3.6.0: `unfollowUsers`; 3.5.0: `followUsers`; 3.4.7: `createLinkedClient`. **GOTCHA: 3.3.0 and 3.4.0 BROKEN** (unpublished contracts dep). Pin to **^3.10.0**. |
+| `@oxyhq/auth` | **5.0.1** | **5.0.0 (BREAKING):** `@tanstack/react-query`, `@tanstack/react-query-persist-client`, `@tanstack/query-sync-storage-persister`, `zustand` moved to `peerDependencies`; `sonner` optional peer. Consumers must declare all four. 4.1.1: `WebOxyProvider` intercepts `/__oxy/sso-callback`. 4.1.0: `clientId` prop. |
+| `@oxyhq/services` | **11.0.0** | **11.0.0 (BREAKING — packaging only, zero source/API changes):** `zustand`, `@react-native-async-storage/async-storage`, `socket.io-client`, `expo-font`, `expo-image`, `react-native-qrcode-svg` moved to `peerDependencies`; `react-native-keyboard-controller` optional peer; build tools to devDeps. All consumers must declare the moved peers. 10.3.3: UNFOLLOW-ALL multi-user `FollowButton` toggle. 10.0.0: `appName` removed; use `clientId`. 8.0.0: `@tanstack/*` peerDeps; `ManageAccount` route. |
+| `@oxyhq/bloom` | **0.19.1** | **0.19.1:** `ImageResolver` widened to `(id, variant?) => string|undefined`; `Avatar`/`AvatarGroup`/`UserHoverCard` accept `variant` prop. Register `ImageResolverProvider` at root with `oxyServices.getFileDownloadUrl`. **0.18.1:** `react-native-reanimated` + `react-native-gesture-handler` now required peers. **0.18.x:** 11 compound-component families → flat prefixed exports (clean cut). Six families stay namespaces. **0.16.x:** `Dialog`/`BottomSheet` only; `CenteredDialog`/`ResponsiveSheet` REMOVED. |
 
-**New oxy-api endpoint (commit a75ad928):** `POST /users/by-ids` — body `{ ids: string[] }` cap 100, returns `{ data: PublicUserProfile[] }` with `name.displayName` + `_count:{followers,following}` (reuses `formatUserResponse`; 3 queries total, no N+1). Auth: `optionalUserOrServiceAuth`.
+**CRITICAL — SSO helpers live ONLY in `@oxyhq/core`:** `consumeSsoReturn`, `buildSsoBounceUrl`, `isCentralIdPOrigin`, `guardActive`, `ssoNavigate`, all `sso*Key` constants, `getSsoCallbackBootstrapScript`, `SSO_CALLBACK_PATH`, `SSO_GUARD_TTL_MS`, `registrableApex`, `MULTIPART_TLDS`, `CENTRAL_IDP_APEX` — all defined once in `@oxyhq/core`, imported by auth-sdk, services, Expo root HTML, and the CF Worker. Do NOT add local copies in any consumer.
 
-**CRITICAL — SSO helpers live ONLY in `@oxyhq/core` (2026-06-19):** `consumeSsoReturn`, `buildSsoBounceUrl`, `isCentralIdPOrigin`, `guardActive`, `ssoNavigate`, `ssoStateKey`/`ssoGuardKey`/`ssoDestKey`/`ssoNoSessionKey`, `ssoCallbackBootstrapKey`, `getSsoCallbackBootstrapScript`, `SSO_CALLBACK_PATH`, `SSO_GUARD_TTL_MS`, `registrableApex`, `MULTIPART_TLDS`, `CENTRAL_IDP_APEX` — all defined once in `@oxyhq/core`, imported by auth-sdk, services, Expo root HTML, and the CF Worker. Do NOT add local copies in any consumer.
+**Consumer apps on latest (2026-06-25):** Target `@oxyhq/core ^3.10.0`, `@oxyhq/contracts ^0.2.1`, `@oxyhq/auth ^5.0.1` where used, `@oxyhq/services ^11.0.0` where used, `@oxyhq/bloom ^0.19.1` where used. Expo web apps inject `getSsoCallbackBootstrapScript()` in `app/+html.tsx`; app backend clients use `oxyServices.createLinkedClient({ baseURL })`.
 
-**Consumer apps on latest (2026-06-23):** All active RP apps should target `@oxyhq/core ^3.8.0`, `@oxyhq/contracts ^0.2.0`, `@oxyhq/auth 4.1.1` where used, `@oxyhq/services >=10.3.3` where used, and `@oxyhq/bloom 0.9.1` where used. Expo web apps that can receive `/__oxy/sso-callback` inject `getSsoCallbackBootstrapScript()` in `app/+html.tsx`; app backend clients use `oxyServices.createLinkedClient({ baseURL })`.
+### Breaking changes in `@oxyhq/services@11.0.0`
 
-### Breaking changes in `@oxyhq/services` 8.x
+Packaging-only — zero source or API changes. The following were moved from `dependencies` → `peerDependencies`. All consumers MUST declare them directly:
+- `zustand`
+- `@react-native-async-storage/async-storage`
+- `socket.io-client`
+- `expo-font`
+- `expo-image`
+- `react-native-qrcode-svg`
+- `react-native-keyboard-controller` (optional peer)
 
-**`@tanstack/*` moved from `dependencies` → `peerDependencies`** (commit `e3c0e8e9`). Consumers (RN/Expo apps) MUST add to their own `dependencies`:
+### Breaking changes in `@oxyhq/services@10.0.0`
 
+- `appName` prop REMOVED from `OxyProvider` — use `clientId`.
+
+### Breaking changes in `@oxyhq/services@8.0.0`
+
+`@tanstack/*` moved to `peerDependencies`. RN/Expo apps MUST add:
 - `@tanstack/react-query ^5.100.0`
 - `@tanstack/react-query-persist-client ^5.100.0`
 - `@tanstack/query-async-storage-persister ^5.100.0`
+- `@tanstack/query-sync-storage-persister ^5.100.0` (web only, optional)
 
-Web-only optional peer (declared in `peerDependenciesMeta`):
-
-- `@tanstack/query-sync-storage-persister ^5.100.0`
-
-**Reason**: an SDK that ships TanStack Query as a hard `dependency` creates a second `QueryClient` instance when the consumer app also imports `@tanstack/react-query`, breaking cache sharing. **Rule**: never declare in the SDK's `dependencies` any library where a duplicated instance would break the consumer (TanStack Query, OxyServices itself, React, etc.) — use peerDependencies.
-
-**`RouteName` union (BottomSheet routes)**: `'AccountSettings'` and `'AccountCenter'` were unified into a single `'ManageAccount'` route. The screen `ManageAccountScreen` replaces the old `AccountOverview` + `AccountSettings` pair. Migrate any consumer calls:
-
-```diff
-- showBottomSheet?.('AccountSettings')
-- showBottomSheet?.('AccountCenter')
-+ showBottomSheet?.('ManageAccount')
-```
+`RouteName` union: `'AccountSettings'` and `'AccountCenter'` → unified into `'ManageAccount'`.
 
 ### `expo-crypto` shim (services 8.0.1)
 
-The real Expo SDK 56 API is `randomUUID()`, NOT `getRandomUUID()`. Validated against `node_modules/expo-crypto/build/Crypto.d.ts:67` (`export declare function randomUUID(): string;`). The shim at `packages/services/src/types/expo-crypto.d.ts` previously declared the wrong name and was fixed in commit `34773e8c`.
+The real Expo SDK 56 API is `randomUUID()`, NOT `getRandomUUID()`. Validated against `node_modules/expo-crypto/build/Crypto.d.ts:67`. The shim at `packages/services/src/types/expo-crypto.d.ts` previously declared the wrong name (fixed commit `34773e8c`).
 
-**Rule**: whenever you author a `.d.ts` shim for a dynamic-imported module (`await import('<pkg>')`), validate every declared name against a real consumer's `node_modules/<pkg>/build/*.d.ts`. TypeScript will accept a wrong-named shim silently — the failure only shows up at runtime as `TypeError: undefined is not a function`.
-
-External consumers (Mention, Allo, Homiio, TNP) should bump to the versions above.
+**Rule**: when authoring a `.d.ts` shim for a dynamic-imported module, validate every declared name against the real consumer's `node_modules/<pkg>/build/*.d.ts`. TypeScript accepts a wrong-named shim silently — the failure only shows at runtime as `TypeError: undefined is not a function`.
 
 ## Terminology
 

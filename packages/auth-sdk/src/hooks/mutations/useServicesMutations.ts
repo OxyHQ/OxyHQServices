@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { queryKeys, invalidateSessionQueries } from '../queries/queryKeys';
 import { useWebOxy } from '../../WebOxyProvider';
-import { toast } from 'sonner';
+import { toast } from '../../utils/toast';
 
 type SessionRow = { sessionId: string };
 

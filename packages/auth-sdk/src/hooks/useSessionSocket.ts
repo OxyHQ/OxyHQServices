@@ -1,5 +1,5 @@
 import { useEffect, useRef, useMemo } from 'react';
-import { toast } from 'sonner';
+import { toast } from '../utils/toast';
 import { logger } from '@oxyhq/core';
 import { createDebugLogger } from '@oxyhq/core';
 import { useWebOxy } from '../WebOxyProvider';
