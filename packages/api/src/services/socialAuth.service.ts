@@ -5,6 +5,8 @@
  * Returns normalized user profile data for sign-in/sign-up flows.
  */
 
+import jwt, { type JwtHeader, type JwtPayload } from 'jsonwebtoken';
+import { createPublicKey, type KeyObject } from 'crypto';
 import { logger } from '../utils/logger';
 
 export interface SocialProfile {
@@ -15,7 +17,19 @@ export interface SocialProfile {
   username?: string;
 }
 
+type AppleJwk = { kid?: string; alg?: string; kty?: string; use?: string; [key: string]: unknown };
+
+type AppleJwksResponse = {
+  keys?: AppleJwk[];
+};
+
+const APPLE_ISSUER = 'https://appleid.apple.com';
+const APPLE_JWKS_URL = 'https://appleid.apple.com/auth/keys';
+const APPLE_JWKS_CACHE_TTL_MS = 60 * 60 * 1000;
+
 class SocialAuthService {
+  private appleJwksCache: { keys: AppleJwk[]; expiresAt: number } | null = null;
+
   /**
    * Verify a Google ID token using Google's tokeninfo endpoint.
    * Returns normalized profile data or null if verification fails.
@@ -61,42 +75,57 @@ class SocialAuthService {
   }
 
   /**
-   * Verify an Apple ID token (JWT).
-   * Decodes the JWT payload to extract sub and email.
-   * Apple tokens are signed by Apple's public keys; for production,
-   * full JWKS verification should be added.
+   * Verify an Apple ID token (JWT) against Apple's JWKS.
+   * Returns normalized profile data only after signature and claim validation.
    */
   async verifyAppleToken(idToken: string): Promise<SocialProfile | null> {
     try {
-      // Apple ID tokens are JWTs - decode the payload
-      const parts = idToken.split('.');
-      if (parts.length !== 3) {
+      const clientId = process.env.APPLE_CLIENT_ID;
+      if (!clientId) {
+        logger.error('[SocialAuth] APPLE_CLIENT_ID is not configured');
+        return null;
+      }
+
+      const decoded = jwt.decode(idToken, { complete: true });
+      if (!decoded || typeof decoded === 'string') {
         logger.warn('[SocialAuth] Apple token is not a valid JWT');
         return null;
       }
 
-      const payload = JSON.parse(
-        Buffer.from(parts[1], 'base64url').toString('utf-8')
-      );
-
-      // Validate issuer
-      if (payload.iss !== 'https://appleid.apple.com') {
-        logger.warn('[SocialAuth] Apple token issuer mismatch', { iss: payload.iss });
+      const header = decoded.header as JwtHeader;
+      if (header.alg !== 'RS256' || !header.kid) {
+        logger.warn('[SocialAuth] Apple token has unsupported header', { alg: header.alg });
         return null;
       }
 
-      // Validate audience matches our client ID
-      const clientId = process.env.APPLE_CLIENT_ID;
-      if (clientId && payload.aud !== clientId) {
-        logger.warn('[SocialAuth] Apple token audience mismatch');
+      const key = await this.getAppleSigningKey(header.kid);
+      if (!key) {
+        logger.warn('[SocialAuth] Apple signing key not found', { kid: header.kid });
         return null;
       }
 
-      // Check expiration
-      if (payload.exp && payload.exp * 1000 < Date.now()) {
-        logger.warn('[SocialAuth] Apple token expired');
-        return null;
-      }
+      const payload = await new Promise<JwtPayload>((resolve, reject) => {
+        jwt.verify(
+          idToken,
+          key,
+          {
+            algorithms: ['RS256'],
+            audience: clientId,
+            issuer: APPLE_ISSUER,
+          },
+          (error, verified) => {
+            if (error) {
+              reject(error);
+              return;
+            }
+            if (!verified || typeof verified === 'string') {
+              reject(new Error('Apple token payload is invalid'));
+              return;
+            }
+            resolve(verified);
+          },
+        );
+      });
 
       if (!payload.sub) {
         logger.warn('[SocialAuth] Apple token missing sub claim');
@@ -104,7 +133,7 @@ class SocialAuthService {
       }
 
       return {
-        email: payload.email || undefined,
+        email: typeof payload.email === 'string' ? payload.email : undefined,
         providerId: payload.sub,
         // Apple only sends name on first authorization; the client must forward it
       };
@@ -112,6 +141,36 @@ class SocialAuthService {
       logger.error('[SocialAuth] Apple token verification error', error instanceof Error ? error : new Error(String(error)));
       return null;
     }
+  }
+
+  private async getAppleSigningKey(kid: string): Promise<KeyObject | null> {
+    const keys = await this.getAppleJwks();
+    const jwk = keys.find((key) => key.kid === kid && key.kty === 'RSA' && (!key.use || key.use === 'sig'));
+    if (!jwk) {
+      return null;
+    }
+
+    return createPublicKey({ key: jwk as any, format: 'jwk' });
+  }
+
+  private async getAppleJwks(): Promise<AppleJwk[]> {
+    const now = Date.now();
+    if (this.appleJwksCache && this.appleJwksCache.expiresAt > now) {
+      return this.appleJwksCache.keys;
+    }
+
+    const res = await fetch(APPLE_JWKS_URL);
+    if (!res.ok) {
+      throw new Error(`Apple JWKS fetch failed with status ${res.status}`);
+    }
+
+    const data = (await res.json()) as AppleJwksResponse;
+    const keys = Array.isArray(data.keys) ? data.keys : [];
+    this.appleJwksCache = {
+      keys,
+      expiresAt: now + APPLE_JWKS_CACHE_TTL_MS,
+    };
+    return keys;
   }
 
   /**
