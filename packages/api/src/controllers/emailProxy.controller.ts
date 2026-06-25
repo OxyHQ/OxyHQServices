@@ -5,7 +5,9 @@
  * and provide tracking protection for users.
  */
 
-import { Request, Response } from 'express';
+import { Request, Response as ExpressResponse } from 'express';
+import { lookup } from 'dns/promises';
+import net from 'net';
 import { BadRequestError } from '../utils/error';
 import { logger } from '../utils/logger';
 import crypto from 'crypto';
@@ -14,6 +16,7 @@ import crypto from 'crypto';
 
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10 MB
 const FETCH_TIMEOUT = 10000; // 10 seconds
+const MAX_REDIRECTS = 3;
 const TRACKING_PIXEL_THRESHOLD = 100; // bytes
 const FONT_EXTENSIONS = /\.(ttf|otf|woff2?|eot)(\?|$)/i;
 const FONT_MIME: Record<string, string> = {
@@ -32,20 +35,39 @@ const TRANSPARENT_GIF = Buffer.from(
 
 // ─── SSRF Protection ──────────────────────────────────────────────
 
-const PRIVATE_IP_PATTERNS = [
-  /^127\./,                          // Loopback
-  /^0\./,                            // Current network
-  /^10\./,                           // Private Class A
-  /^172\.(1[6-9]|2[0-9]|3[01])\./,   // Private Class B
-  /^192\.168\./,                     // Private Class C
-  /^169\.254\./,                     // Link-local
-  /^fc00:/i,                         // IPv6 private
-  /^fe80:/i,                         // IPv6 link-local
-  /^::1$/,                           // IPv6 loopback
-  /^localhost$/i,
-];
+function isPrivateIpAddress(address: string): boolean {
+  const ipVersion = net.isIP(address);
 
-function validateProxyUrl(urlString: string): URL {
+  if (ipVersion === 4) {
+    const [a, b] = address.split('.').map(Number);
+    return (
+      a === 0 ||
+      a === 10 ||
+      a === 127 ||
+      (a === 100 && b >= 64 && b <= 127) ||
+      (a === 169 && b === 254) ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      (a === 198 && (b === 18 || b === 19)) ||
+      a >= 224
+    );
+  }
+
+  if (ipVersion === 6) {
+    const normalized = address.toLowerCase();
+    return (
+      normalized === '::1' ||
+      normalized === '::' ||
+      normalized.startsWith('fc') ||
+      normalized.startsWith('fd') ||
+      normalized.startsWith('fe80:')
+    );
+  }
+
+  return false;
+}
+
+async function validateProxyUrl(urlString: string): Promise<URL> {
   let url: URL;
   try {
     url = new URL(urlString);
@@ -57,7 +79,24 @@ function validateProxyUrl(urlString: string): URL {
     throw new BadRequestError('Only HTTP(S) URLs are allowed');
   }
 
-  if (PRIVATE_IP_PATTERNS.some((p) => p.test(url.hostname))) {
+  const hostname = url.hostname.toLowerCase();
+  if (
+    hostname === 'localhost' ||
+    hostname.endsWith('.localhost') ||
+    hostname.endsWith('.local') ||
+    isPrivateIpAddress(hostname)
+  ) {
+    throw new BadRequestError('Private network URLs are not allowed');
+  }
+
+  let addresses: Array<{ address: string }>;
+  try {
+    addresses = await lookup(hostname, { all: true, verbatim: false });
+  } catch {
+    throw new BadRequestError('Unable to resolve URL host');
+  }
+
+  if (addresses.length === 0 || addresses.some(({ address }) => isPrivateIpAddress(address))) {
     throw new BadRequestError('Private network URLs are not allowed');
   }
 
@@ -146,7 +185,7 @@ setInterval(() => {
 
 // ─── Response Helpers ─────────────────────────────────────────────
 
-function sendTransparentGif(res: Response, cacheTime = 86400): void {
+function sendTransparentGif(res: ExpressResponse, cacheTime = 86400): void {
   res.setHeader('Content-Type', 'image/gif');
   res.setHeader('Cache-Control', `public, max-age=${cacheTime}`);
   res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
@@ -154,7 +193,7 @@ function sendTransparentGif(res: Response, cacheTime = 86400): void {
 }
 
 function sendProxiedResponse(
-  res: Response,
+  res: ExpressResponse,
   buffer: Buffer,
   contentType: string,
   cacheHit: boolean
@@ -169,7 +208,7 @@ function sendProxiedResponse(
 
 // ─── Controller ───────────────────────────────────────────────────
 
-export async function proxyResource(req: Request, res: Response): Promise<void> {
+export async function proxyResource(req: Request, res: ExpressResponse): Promise<void> {
   const { url: encodedUrl } = req.query;
 
   if (!encodedUrl || typeof encodedUrl !== 'string') {
@@ -185,7 +224,7 @@ export async function proxyResource(req: Request, res: Response): Promise<void> 
     decodedUrl = decodeURIComponent(encodedUrl);
   }
 
-  const url = validateProxyUrl(decodedUrl);
+  const url = await validateProxyUrl(decodedUrl);
 
   // Block tracking URLs
   if (isTrackingUrl(url)) {
@@ -205,16 +244,37 @@ export async function proxyResource(req: Request, res: Response): Promise<void> 
   const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
 
   try {
-    const response = await fetch(url.href, {
-      signal: controller.signal,
-      headers: {
-        'User-Agent': 'OxyMail/1.0 (Image Proxy)',
-        Accept: 'image/*,font/*,*/*',
-      },
-      redirect: 'follow',
-    });
+    let currentUrl = url;
+    let response: globalThis.Response | undefined;
 
-    if (!response.ok) {
+    for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects += 1) {
+      response = await fetch(currentUrl.href, {
+        signal: controller.signal,
+        headers: {
+          'User-Agent': 'OxyMail/1.0 (Image Proxy)',
+          Accept: 'image/*,font/*,*/*',
+        },
+        redirect: 'manual',
+      });
+
+      if (![301, 302, 303, 307, 308].includes(response.status)) {
+        break;
+      }
+
+      const location = response.headers.get('location');
+      if (!location) {
+        break;
+      }
+
+      if (redirects === MAX_REDIRECTS) {
+        clearTimeout(timeoutId);
+        return sendTransparentGif(res, 3600);
+      }
+
+      currentUrl = await validateProxyUrl(new URL(location, currentUrl).href);
+    }
+
+    if (!response || !response.ok) {
       clearTimeout(timeoutId);
       return sendTransparentGif(res, 3600);
     }
@@ -224,7 +284,7 @@ export async function proxyResource(req: Request, res: Response): Promise<void> 
     // Validate content type — allow octet-stream for font files (many servers
     // serve .ttf/.woff as application/octet-stream instead of font/*)
     const isAllowedType = /^(image\/|font\/|application\/(font|x-font))/i.test(contentType);
-    const isFontByExtension = contentType === 'application/octet-stream' && FONT_EXTENSIONS.test(url.pathname);
+    const isFontByExtension = contentType === 'application/octet-stream' && FONT_EXTENSIONS.test(currentUrl.pathname);
     if (!isAllowedType && !isFontByExtension) {
       clearTimeout(timeoutId);
       throw new BadRequestError('Only images and fonts allowed');
@@ -247,7 +307,7 @@ export async function proxyResource(req: Request, res: Response): Promise<void> 
     // Use correct MIME when upstream sends generic octet-stream for fonts
     let resolvedType = contentType;
     if (isFontByExtension) {
-      const ext = url.pathname.match(/\.\w+/)?.[0]?.toLowerCase();
+      const ext = currentUrl.pathname.match(/\.\w+/)?.[0]?.toLowerCase();
       if (ext && FONT_MIME[ext]) resolvedType = FONT_MIME[ext];
     }
 
