@@ -3,13 +3,13 @@
  *
  * Every cross-app/device auth session is ALWAYS bound to a REAL registered
  * `Application` record. There is NO free-form `appId` label — the caller must
- * identify the app via `clientId` or `applicationId`. The API exposes sanitized
+ * authenticate with a service token for the app. The API exposes sanitized
  * public application metadata for the consent UI:
  *
- *  - POST /auth/session/create resolves `clientId` (→ ApplicationCredential →
- *    Application) OR `applicationId` (→ Application) and stores the canonical
- *    `applicationId` on the AuthSession. No app reference → 400; unknown refs →
- *    400; non-active apps (suspended/deleted/pending_review) → 403.
+ *  - POST /auth/session/create resolves the canonical `applicationId` from
+ *    the verified service token. Optional `clientId` is only a consistency
+ *    check and must belong to the authenticated app; raw body `applicationId`
+ *    is rejected by validation.
  *  - GET /auth/session/status/:sessionToken ALWAYS embeds a sanitized
  *    `application` object (null only if the app was hard-deleted) and NEVER an
  *    `appId`, without leaking secrets/owner internals.
@@ -34,7 +34,10 @@ const mockUserFindById = jest.fn();
 
 jest.mock('../../middleware/auth', () => ({
   authMiddleware: (_req: unknown, _res: unknown, next: () => void) => next(),
-  serviceAuthMiddleware: jest.fn(),
+  serviceAuthMiddleware: (req: { serviceApp?: { type: string; appId: string; appName: string; credentialId: string; scopes: string[] } }, _res: unknown, next: () => void) => {
+    req.serviceApp = { type: 'service', appId: '64f7c2a1b8e9d3f4a1c2b3ab', appName: 'Third Party App', credentialId: 'cred-1', scopes: ['auth:session:create'] };
+    next();
+  },
   rejectQueryToken: (_req: unknown, _res: unknown, next: () => void) => next(),
 }));
 
@@ -42,8 +45,7 @@ jest.mock('../../middleware/rateLimiter', () => ({
   rateLimit: () => (_req: unknown, _res: unknown, next: () => void) => next(),
 }));
 
-// Use the REAL validate middleware so the schema (one of clientId/applicationId
-// required) is actually exercised.
+// Use the REAL validate middleware so the strict create schema is exercised.
 jest.unmock('../../middleware/validate');
 
 jest.mock('../../models/AuthSession', () => ({
@@ -327,32 +329,32 @@ describe('POST /auth/session/create — application resolution (#214)', () => {
     expect(created.appId).toBeUndefined();
   });
 
-  it('(b) resolves a valid applicationId directly', async () => {
-    mockApplicationFindById.mockResolvedValueOnce(thirdPartyApp());
-
+  it('(b) rejects a caller-supplied raw applicationId', async () => {
     const res = await requestJson(server, 'POST', '/auth/session/create', {
       sessionToken: 'tok-create-2',
       applicationId: THIRD_PARTY_APP_ID,
     });
 
-    expect(res.status).toBe(200);
-    expect(mockApplicationFindById).toHaveBeenCalledWith(THIRD_PARTY_APP_ID);
-    const created = mockAuthSessionCreate.mock.calls[0][0] as { applicationId: { toString: () => string } };
-    expect(created.applicationId.toString()).toBe(THIRD_PARTY_APP_ID);
-  });
-
-  it('(c0) returns 400 when NEITHER clientId nor applicationId is supplied', async () => {
-    const res = await requestJson(server, 'POST', '/auth/session/create', {
-      sessionToken: 'tok-create-none',
-    });
-
     expect(res.status).toBe(400);
-    expect(mockApplicationCredentialFindOne).not.toHaveBeenCalled();
     expect(mockApplicationFindById).not.toHaveBeenCalled();
     expect(mockAuthSessionCreate).not.toHaveBeenCalled();
   });
 
-  it('(c1) returns 400 for an unknown clientId', async () => {
+  it('(c0) creates when no public app identifier is supplied because service auth is authoritative', async () => {
+    mockApplicationFindById.mockResolvedValueOnce(thirdPartyApp());
+
+    const res = await requestJson(server, 'POST', '/auth/session/create', {
+      sessionToken: 'tok-create-none',
+    });
+
+    expect(res.status).toBe(200);
+    expect(mockApplicationCredentialFindOne).not.toHaveBeenCalled();
+    expect(mockApplicationFindById).toHaveBeenCalledWith(THIRD_PARTY_APP_ID);
+    expect(mockAuthSessionCreate).toHaveBeenCalled();
+  });
+
+  it('(c1) returns 403 for an unknown clientId', async () => {
+    mockApplicationFindById.mockResolvedValueOnce(thirdPartyApp());
     mockApplicationCredentialFindOne.mockResolvedValueOnce(null);
 
     const res = await requestJson(server, 'POST', '/auth/session/create', {
@@ -360,11 +362,11 @@ describe('POST /auth/session/create — application resolution (#214)', () => {
       clientId: 'oxy_dk_missing',
     });
 
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(403);
     expect(mockAuthSessionCreate).not.toHaveBeenCalled();
   });
 
-  it('(c2) returns 400 for an unknown applicationId', async () => {
+  it('(c2) rejects unknown applicationId as an unknown strict body key', async () => {
     mockApplicationFindById.mockResolvedValueOnce(null);
 
     const res = await requestJson(server, 'POST', '/auth/session/create', {
@@ -376,7 +378,7 @@ describe('POST /auth/session/create — application resolution (#214)', () => {
     expect(mockAuthSessionCreate).not.toHaveBeenCalled();
   });
 
-  it('(c3) returns 400 for a malformed applicationId (invalid ObjectId, never queried)', async () => {
+  it('(c3) rejects malformed applicationId as an unknown strict body key', async () => {
     const res = await requestJson(server, 'POST', '/auth/session/create', {
       sessionToken: 'tok-create-5',
       applicationId: 'not-an-objectid',
@@ -405,7 +407,6 @@ describe('POST /auth/session/create — application resolution (#214)', () => {
 
     const res = await requestJson(server, 'POST', '/auth/session/create', {
       sessionToken: 'tok-create-7',
-      applicationId: THIRD_PARTY_APP_ID,
     });
 
     expect(res.status).toBe(403);
@@ -417,7 +418,6 @@ describe('POST /auth/session/create — application resolution (#214)', () => {
 
     const res = await requestJson(server, 'POST', '/auth/session/create', {
       sessionToken: 'tok-create-8',
-      applicationId: THIRD_PARTY_APP_ID,
     });
 
     expect(res.status).toBe(403);

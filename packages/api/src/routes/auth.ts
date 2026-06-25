@@ -17,7 +17,7 @@ import { intersectScopes } from '../utils/applicationScopes';
 import { ApplicationCredential } from '../models/ApplicationCredential';
 import type { IApplicationCredential } from '../models/ApplicationCredential';
 import { isCredentialUsable } from '../utils/credentialUsability';
-import { authMiddleware, rejectQueryToken, type AuthRequest } from '../middleware/auth';
+import { authMiddleware, rejectQueryToken, serviceAuthMiddleware, type AuthRequest, type ServiceAuthRequest } from '../middleware/auth';
 import { requireSameSiteOrigin } from '../middleware/originGuard';
 import { rateLimit } from '../middleware/rateLimiter';
 import { asyncHandler, sendSuccess } from '../utils/asyncHandler';
@@ -1415,19 +1415,20 @@ import AuthSession from '../models/AuthSession';
  *       403:
  *         description: Application is not available (suspended/deleted/pending review).
  */
-router.post('/session/create', validate({ body: authSessionCreateSchema }), asyncHandler(async (req, res) => {
-  const { sessionToken, expiresAt, clientId, applicationId } = req.body as {
+router.post('/session/create', serviceAuthMiddleware, validate({ body: authSessionCreateSchema }), asyncHandler(async (req: ServiceAuthRequest, res) => {
+  const { sessionToken, expiresAt, clientId } = req.body as {
     sessionToken: string;
     clientId?: string;
-    applicationId?: string;
     expiresAt?: string | number;
   };
 
   if (!sessionToken) {
     throw new BadRequestError('sessionToken is required');
   }
-  if (!clientId && !applicationId) {
-    throw new BadRequestError('Either clientId or applicationId is required');
+
+  const serviceAppId = req.serviceApp?.appId;
+  if (!serviceAppId || !isValidObjectId(serviceAppId)) {
+    throw new UnauthorizedError('Valid service application authentication is required');
   }
 
   const now = Date.now();
@@ -1438,22 +1439,21 @@ router.post('/session/create', validate({ body: authSessionCreateSchema }), asyn
     expiresAtDate = defaultExpiresAt;
   }
 
-  // Resolve the canonical Application. Every session is bound to a real,
-  // active registered Application — there is no free-form app label.
-  let resolvedApp: IApplication | null = null;
-  if (clientId) {
-    const credential = await resolveUsableCredential(clientId);
-    if (credential) {
-      resolvedApp = await Application.findById(credential.applicationId);
-    }
-  } else if (applicationId) {
-    if (isValidObjectId(applicationId)) {
-      resolvedApp = await Application.findById(applicationId);
-    }
-  }
+  // Resolve the canonical Application from the verified service principal, not
+  // from caller-supplied public identifiers. A public OAuth client_id or raw
+  // Mongo applicationId does not prove the requester controls that app.
+  const resolvedApp = await Application.findById(serviceAppId) as IApplication | null;
 
   if (!resolvedApp) {
     throw new BadRequestError('Invalid application');
+  }
+
+  if (clientId) {
+    const credential = await resolveUsableCredential(clientId);
+    const credentialAppId = credential?.applicationId?.toString();
+    if (!credential || credentialAppId !== resolvedApp._id.toString()) {
+      throw new ForbiddenError('Client does not belong to authenticated application');
+    }
   }
 
   if (resolvedApp.status !== 'active') {

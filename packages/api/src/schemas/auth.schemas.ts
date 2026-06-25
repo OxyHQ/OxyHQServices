@@ -90,20 +90,16 @@ export const getUserByPublicKeyParams = z.object({
 
 // POST /auth/session/create
 //
-// A cross-app auth session is ALWAYS bound to a registered Application. The
-// caller must identify it with exactly one of:
-//   - `clientId`      an ApplicationCredential.publicKey / OAuth client_id, or
-//   - `applicationId` an Application _id.
-// There is no free-form app label.
+// A cross-app auth session is bound to the registered Application proven by
+// the caller's service bearer token. `clientId` is accepted only as an optional
+// consistency check and must belong to that same Application; raw
+// `applicationId` is deliberately not accepted from the unauthenticated/public
+// request body because it is not proof of app control.
 export const authSessionCreateSchema = z.object({
   sessionToken: z.string().trim().min(1),
   clientId: z.string().trim().min(1).optional(),
-  applicationId: z.string().trim().min(1).optional(),
   expiresAt: z.union([z.string(), z.number()]).optional(),
-}).refine(
-  (data) => Boolean(data.clientId) || Boolean(data.applicationId),
-  { message: 'Either clientId or applicationId is required' }
-);
+}).strict();
 
 // GET /auth/session/status/:sessionToken
 export const authSessionTokenParams = z.object({
