@@ -33,7 +33,8 @@
     ".expo/types/**/*.ts",
     "expo-env.d.ts",
     "../services/src/**/*.ts",
-    "../services/src/**/*.tsx"
+    "../services/src/**/*.tsx",
+    "nativewind-env.d.ts"
   ],
   "extends": "expo/tsconfig.base"
 }

@@ -1,4 +1,5 @@
 const { getDefaultConfig } = require('expo/metro-config');
+const { withNativeWind } = require('nativewind/metro');
 const path = require('path');
 
 // Find the project and package directories
@@ -51,6 +52,7 @@ config.resolver.assetExts = [
   ...config.resolver.assetExts,
   'woff2',
   'woff',
+  'wasm',
 ];
 
 // 5. Extra module resolution for local packages
@@ -108,4 +110,12 @@ config.server = {
 // 9. Optimize cache for better hot reload performance
 config.cacheStores = config.cacheStores || [];
 
-module.exports = config;
+// 10. Wire NativeWind (Tailwind v4 token utilities → CSS at build/runtime).
+// `input` points NativeWind at the CSS entry (./global.css); `inlineVariables: false`
+// preserves CSS custom properties at runtime so BloomThemeProvider/applyFontFaces can
+// override the token vars after first paint instead of NativeWind inlining them.
+module.exports = withNativeWind(config, {
+  input: './global.css',
+  inlineRem: 16,
+  inlineVariables: false,
+});

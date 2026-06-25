@@ -1,0 +1,126 @@
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/preflight.css" layer(base);
+@import "tailwindcss/utilities.css";
+@import "nativewind/theme";
+
+@source "./app/**/*.{js,jsx,ts,tsx}";
+@source "./components/**/*.{js,jsx,ts,tsx}";
+@source "../../node_modules/@oxyhq/services/lib/**/*.{js,jsx}";
+@source "../services/src/**/*.{ts,tsx}";
+@source "../../node_modules/@oxyhq/bloom/lib/**/*.{js,jsx}";
+
+/* App base color tokens — registers the existing color KEYS so utilities like
+   `text-foreground` / `bg-background` emit at build time. BloomThemeProvider writes
+   the actual var values to document.documentElement at runtime. */
+@theme {
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-card: var(--card);
+}
+
+/* Oxy Unified Design Language — Bloom semantic token layer.
+   Body generated verbatim by bloomThemeBlock() from @oxyhq/bloom/design-tokens
+   (Bloom 0.20.0). Makes role utilities (bg-fill, text-text-tertiary,
+   rounded-radius-20, font-sectionTitle, p-space-16, shadow-s, …) emit. */
+@theme {
+  --color-bg: var(--background);
+  --color-fill: var(--card);
+  --color-fill-secondary: var(--muted);
+  --color-fill-hover: var(--accent);
+  --color-fill-brand: var(--primary);
+  --color-fill-brand-hover: var(--ring);
+  --color-fill-inverse: var(--foreground);
+  --color-fill-inverse-hover: var(--muted-foreground);
+  --color-fill-placeholder: var(--muted);
+  --color-text: var(--foreground);
+  --color-text-secondary: var(--muted-foreground);
+  --color-text-tertiary: var(--muted-foreground);
+  --color-text-inverse: var(--primary-foreground);
+  --color-text-fixed-light: var(--primary-foreground);
+  --color-text-placeholder: var(--muted-foreground);
+  --color-border-image: var(--border);
+  --color-border-secondary: var(--input);
+  --color-border-input: var(--input);
+  --color-border-input-active: var(--ring);
+  --spacing-space-2: 2px;
+  --spacing-space-4: 4px;
+  --spacing-space-8: 8px;
+  --spacing-space-12: 12px;
+  --spacing-space-16: 16px;
+  --spacing-space-20: 20px;
+  --spacing-space-24: 24px;
+  --spacing-space-32: 32px;
+  --spacing-screen-margin: 20px;
+  --radius-radius-8: 8px;
+  --radius-radius-12: 12px;
+  --radius-radius-20: 20px;
+  --radius-radius-28: 28px;
+  --radius-radius-max: 9999px;
+  --border-width-hairline: 0.5px;
+  --text-caption: 11px;
+  --text-caption--line-height: 14px;
+  --text-caption--font-weight: 400;
+  --font-caption: var(--bloom-font-sans);
+  --text-bodySmall: 13px;
+  --text-bodySmall--line-height: 18px;
+  --text-bodySmall--font-weight: 400;
+  --font-bodySmall: var(--bloom-font-sans);
+  --text-bodyTitleSmall: 13px;
+  --text-bodyTitleSmall--line-height: 18px;
+  --text-bodyTitleSmall--font-weight: 600;
+  --font-bodyTitleSmall: var(--bloom-font-sans);
+  --text-body: 15px;
+  --text-body--line-height: 22px;
+  --text-body--font-weight: 400;
+  --font-body: var(--bloom-font-sans);
+  --text-subtitle: 17px;
+  --text-subtitle--line-height: 24px;
+  --text-subtitle--font-weight: 500;
+  --font-subtitle: var(--bloom-font-sans);
+  --text-sectionTitle: 20px;
+  --text-sectionTitle--line-height: 26px;
+  --text-sectionTitle--font-weight: 600;
+  --font-sectionTitle: var(--bloom-font-sans);
+  --text-headerBold: 28px;
+  --text-headerBold--line-height: 34px;
+  --text-headerBold--font-weight: 700;
+  --font-headerBold: var(--bloom-font-display);
+  --text-buttonLarge: 17px;
+  --text-buttonLarge--line-height: 22px;
+  --text-buttonLarge--font-weight: 600;
+  --font-buttonLarge: var(--bloom-font-sans);
+  --font-bloom-sans: var(--bloom-font-sans);
+  --font-bloom-display: var(--bloom-font-display);
+  --font-bloom-mono: var(--bloom-font-mono);
+  --shadow-s: 0 1px 2px rgb(0 0 0 / 0.06), 0 1px 3px rgb(0 0 0 / 0.10);
+  --shadow-m: 0 4px 12px rgb(0 0 0 / 0.08), 0 2px 6px rgb(0 0 0 / 0.12);
+}
+
+/* :root fallbacks so the build's color vars are non-empty and fonts resolve.
+   BloomThemeProvider (colors) and applyFontFaces (fonts) override at runtime. */
+@layer base {
+  :root {
+    --background: #ffffff;
+    --foreground: #0b0b0c;
+    --card: #ffffff;
+    --primary: #5b3df5;
+    --primary-foreground: #ffffff;
+    --muted: #f2f2f5;
+    --muted-foreground: #6b6b72;
+    --accent: #eeeef2;
+    --ring: #5b3df5;
+    --input: #e4e4e9;
+    --border: #e4e4e9;
+    --bloom-font-sans: 'Inter', sans-serif;
+    --bloom-font-display: 'Inter', sans-serif;
+    --bloom-font-mono: monospace;
+  }
+}

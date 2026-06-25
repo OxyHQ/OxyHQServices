@@ -1,3 +1,4 @@
+import '../global.css';
 import * as Linking from 'expo-linking';
 import { Stack, ThemeProvider } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
