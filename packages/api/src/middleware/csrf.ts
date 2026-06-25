@@ -71,12 +71,15 @@ export function verifyCsrfToken(req: Request, res: Response, next: NextFunction)
     return next();
   }
 
-  // Skip CSRF for Bearer-authenticated requests. CSRF protects ambient cookie
-  // auth; Authorization is an explicit header that browsers do not attach
-  // cross-site on behalf of an attacker. Auth middleware still validates the
-  // token and rejects invalid or expired user/service tokens.
+  // Skip CSRF only for bearer-only requests. CSRF protects ambient cookie
+  // auth; when cookies are present, require the normal double-submit token even
+  // if an Authorization header is also present. This prevents a cross-origin
+  // browser request from adding an attacker-controlled bearer header to bypass
+  // CSRF while the victim's cookies are still attached. Auth middleware still
+  // validates bearer tokens on routes that require them.
   const authHeader = req.headers.authorization;
-  if (authHeader?.startsWith('Bearer ')) {
+  const hasAmbientCookies = Boolean(req.headers.cookie) || Object.keys(req.cookies ?? {}).length > 0;
+  if (authHeader?.startsWith('Bearer ') && !hasAmbientCookies) {
     return next();
   }
 
@@ -85,7 +88,7 @@ export function verifyCsrfToken(req: Request, res: Response, next: NextFunction)
 
   // Check if this is a native app request (React Native, mobile apps)
   // Native apps send X-Native-App: true because they can't persist cookies
-  const isNativeApp = req.headers[NATIVE_APP_HEADER] === 'true';
+  const isNativeApp = req.headers[NATIVE_APP_HEADER] === 'true' && !hasAmbientCookies;
 
   if (isNativeApp) {
     // Native app mode: Only require header token (no cookie matching)
@@ -158,7 +161,12 @@ export function verifyCsrfToken(req: Request, res: Response, next: NextFunction)
   }
 
   // Tokens must match (timing-safe comparison)
-  if (!crypto.timingSafeEqual(Buffer.from(cookieToken), Buffer.from(headerToken))) {
+  const cookieTokenBuffer = Buffer.from(cookieToken);
+  const headerTokenBuffer = Buffer.from(headerToken);
+  if (
+    cookieTokenBuffer.length !== headerTokenBuffer.length ||
+    !crypto.timingSafeEqual(cookieTokenBuffer, headerTokenBuffer)
+  ) {
     logger.warn('CSRF token mismatch', {
       method: req.method,
       path: req.path,

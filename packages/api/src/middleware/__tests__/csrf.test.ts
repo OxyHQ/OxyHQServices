@@ -53,18 +53,58 @@ describe('verifyCsrfToken', () => {
     mockWarn.mockClear();
   });
 
-  it('allows state-changing requests with an explicit bearer token and no CSRF header', () => {
+  it('allows bearer-only state-changing requests with no CSRF header', () => {
     const { res, next } = runVerify({
       headers: {
         authorization: 'Bearer user-session-token',
       },
-      cookies: {
-        csrf_token: 'cookie-token',
-      },
+      cookies: {},
     });
 
     expect(next).toHaveBeenCalledTimes(1);
     expect(res.status).not.toHaveBeenCalled();
+  });
+
+  it('rejects bearer requests that also carry ambient cookies without a CSRF header', () => {
+    const { res, next } = runVerify({
+      headers: {
+        authorization: 'Bearer forged-token',
+        cookie: 'csrf_token=cookie-token; session=victim-session',
+      },
+      cookies: {
+        csrf_token: 'cookie-token',
+        session: 'victim-session',
+      },
+    });
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.body).toEqual({
+      message: 'CSRF token missing',
+      code: 'CSRF_TOKEN_MISSING',
+    });
+  });
+
+  it('does not allow X-Native-App to bypass CSRF when ambient cookies are present', () => {
+    const { res, next } = runVerify({
+      headers: {
+        authorization: 'Bearer forged-token',
+        cookie: 'csrf_token=cookie-token; session=victim-session',
+        'x-native-app': 'true',
+        'x-csrf-token': 'attacker-controlled-token',
+      },
+      cookies: {
+        csrf_token: 'cookie-token',
+        session: 'victim-session',
+      },
+    });
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.body).toEqual({
+      message: 'Invalid CSRF token',
+      code: 'CSRF_TOKEN_INVALID',
+    });
   });
 
   it('still rejects cookie-authenticated state-changing requests without a CSRF header', () => {
