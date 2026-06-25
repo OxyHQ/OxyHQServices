@@ -14,21 +14,23 @@ RUN npm install -g bun
 
 WORKDIR /app
 
-# Copy workspace root and override workspaces to only include api + core + contracts.
-# `@oxyhq/api` depends on `@oxyhq/contracts` (workspace:*); core is retained for the
-# admin scripts that import packages/core/src/* at runtime.
-# Remove bun.lock since the workspace change invalidates it — bun will
-# resolve fresh dependencies (still deterministic from package.json versions).
-COPY package.json ./
-RUN node -e "const p=require('./package.json'); p.workspaces=['packages/core','packages/contracts','packages/api']; require('fs').writeFileSync('package.json', JSON.stringify(p, null, 2));"
-
-# Copy package.json files for dependency resolution
+# Copy workspace manifests without mutating package.json so the checked-in lockfile
+# remains authoritative for Docker builds. Frozen installs intentionally fail when
+# bun.lock is stale instead of resolving unreviewed semver-compatible versions.
+COPY package.json bun.lock ./
+COPY packages/accounts/package.json packages/accounts/
 COPY packages/api/package.json packages/api/
-COPY packages/core/package.json packages/core/
+COPY packages/auth-sdk/package.json packages/auth-sdk/
+COPY packages/auth/package.json packages/auth/
+COPY packages/console/package.json packages/console/
 COPY packages/contracts/package.json packages/contracts/
+COPY packages/core/package.json packages/core/
+COPY packages/inbox/package.json packages/inbox/
+COPY packages/services/package.json packages/services/
+COPY packages/test-app-expo/package.json packages/test-app-expo/
 
-# Install dependencies (no lockfile — workspace subset doesn't match the full monorepo lock)
-RUN bun install
+# Install dependencies exactly as recorded in bun.lock.
+RUN bun install --frozen-lockfile
 
 # Copy source code
 COPY packages/core/ packages/core/
@@ -49,15 +51,22 @@ RUN npm install -g bun
 
 WORKDIR /app
 
-# Copy workspace root and override workspaces
-COPY package.json ./
-RUN node -e "const p=require('./package.json'); p.workspaces=['packages/core','packages/contracts','packages/api']; require('fs').writeFileSync('package.json', JSON.stringify(p, null, 2));"
+# Copy workspace manifests without mutating package.json so the checked-in lockfile
+# remains authoritative for the runtime image as well.
+COPY package.json bun.lock ./
+COPY packages/accounts/package.json packages/accounts/
 COPY packages/api/package.json packages/api/
-COPY packages/core/package.json packages/core/
+COPY packages/auth-sdk/package.json packages/auth-sdk/
+COPY packages/auth/package.json packages/auth/
+COPY packages/console/package.json packages/console/
 COPY packages/contracts/package.json packages/contracts/
+COPY packages/core/package.json packages/core/
+COPY packages/inbox/package.json packages/inbox/
+COPY packages/services/package.json packages/services/
+COPY packages/test-app-expo/package.json packages/test-app-expo/
 
-# Install production dependencies
-RUN bun install --production
+# Install production dependencies exactly as recorded in bun.lock.
+RUN bun install --frozen-lockfile --production
 
 # Copy built artifacts
 COPY --from=builder /app/packages/api/dist packages/api/dist
