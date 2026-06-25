@@ -89,6 +89,13 @@ describe('autoDetectAuthWebUrl', () => {
     it('does not derive auth.com.au from a two-label com.au host', () => {
       expect(autoDetectAuthWebUrl(loc('shop.com.au'))).toBeUndefined();
     });
+
+    it.each(['pages.dev', 'github.io', 'appspot.com', 'vercel.app', 'netlify.app'])(
+      'does not derive an attacker-controllable auth.%s from a shared-hosting tenant',
+      (suffix) => {
+        expect(autoDetectAuthWebUrl(loc(`victim.${suffix}`))).toBeUndefined();
+      }
+    );
   });
 
   // Regression guard: the refactor to delegate host handling to `registrableApex`
@@ -106,6 +113,10 @@ describe('autoDetectAuthWebUrl', () => {
       ['intranet', undefined],
       ['', undefined],
       ['foo.co.uk', undefined],
+      ['victim.pages.dev', undefined],
+      ['victim.github.io', undefined],
+      ['victim.appspot.com', undefined],
+      ['victim.vercel.app', undefined],
     ];
     it.each(cases)('autoDetectAuthWebUrl(%s) === %s', (hostname, expected) => {
       const protocol = hostname === 'localhost' || hostname === '[::1]' ? 'http:' : 'https:';
@@ -131,6 +142,13 @@ describe('registrableApex', () => {
   it('returns null for a multi-part public suffix (foo.co.uk -> null)', () => {
     expect(registrableApex('foo.co.uk')).toBeNull();
     expect(registrableApex('shop.com.au')).toBeNull();
+  });
+
+  it('returns null for shared-hosting suffix tenants', () => {
+    expect(registrableApex('victim.pages.dev')).toBeNull();
+    expect(registrableApex('victim.github.io')).toBeNull();
+    expect(registrableApex('victim.appspot.com')).toBeNull();
+    expect(registrableApex('victim.vercel.app')).toBeNull();
   });
 
   it('returns null for IPv4 literals', () => {

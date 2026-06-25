@@ -462,7 +462,7 @@ export type { QuickAccount, DisplayNameUserShape } from './utils/accountUtils';
 // ---------------------------------------------------------------------------
 // Cross-domain SSO infrastructure
 // ---------------------------------------------------------------------------
-export { autoDetectAuthWebUrl, registrableApex, MULTIPART_TLDS } from './utils/fapiAutoDetect';
+export { autoDetectAuthWebUrl, registrableApex, MULTIPART_TLDS, SHARED_HOSTING_SUFFIXES } from './utils/fapiAutoDetect';
 
 // Central cross-domain SSO (opaque single-use code bounce via auth.oxy.so)
 export { CENTRAL_AUTH_URL, CENTRAL_IDP_APEX, resolveCentralAuthUrl } from './utils/authWebUrl';

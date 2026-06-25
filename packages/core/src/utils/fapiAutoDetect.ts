@@ -61,6 +61,26 @@ export const MULTIPART_TLDS: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * Shared / multi-tenant hosting suffixes where arbitrary tenants can register
+ * sibling subdomains. Auto-detecting `auth.<suffix>` for an app hosted at
+ * `<tenant>.<suffix>` would trust a host that the RP does not control (for
+ * example `victim.pages.dev` -> `auth.pages.dev`), so these suffixes are
+ * treated like public suffixes and require an explicit `authWebUrl`.
+ */
+export const SHARED_HOSTING_SUFFIXES: ReadonlySet<string> = new Set([
+  'pages.dev',
+  'github.io',
+  'appspot.com',
+  'vercel.app',
+  'netlify.app',
+  'herokuapp.com',
+  'firebaseapp.com',
+  'web.app',
+  'surge.sh',
+  'glitch.me',
+]);
+
+/**
  * Compute the bare registrable apex (eTLD+1) of a hostname, guarding against
  * multi-part public suffixes.
  *
@@ -92,7 +112,7 @@ export function registrableApex(hostname: string): string | null {
   const labels = host.split('.');
   if (labels.length < 2) return null;
   const lastTwo = labels.slice(-2).join('.');
-  if (MULTIPART_TLDS.has(lastTwo)) return null;
+  if (MULTIPART_TLDS.has(lastTwo) || SHARED_HOSTING_SUFFIXES.has(lastTwo)) return null;
   return lastTwo;
 }
 
