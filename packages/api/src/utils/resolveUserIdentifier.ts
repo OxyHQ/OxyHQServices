@@ -16,7 +16,9 @@
  *    case-insensitively against the `username` field. Usernames are stored
  *    trimmed but NOT lowercased, so an anchored case-insensitive regex is used
  *    for an exact (non-substring) match. The identifier is regex-escaped to
- *    avoid metacharacter injection.
+ *    avoid metacharacter injection. Because historical data may contain
+ *    case-colliding usernames, more than one match is treated as ambiguous and
+ *    not resolved to an arbitrary account.
  *
  * Returns the matching user, or `null` when none is found or the (trimmed)
  * identifier is empty.
@@ -25,8 +27,12 @@
 import { User, IUser } from '../models/User';
 
 /** Escape regex metacharacters so the identifier matches literally. */
-function escapeRegExp(value: string): string {
+export function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+export function exactCaseInsensitiveUsernameRegex(username: string): RegExp {
+  return new RegExp(`^${escapeRegExp(username)}$`, 'i');
 }
 
 /**
@@ -48,7 +54,15 @@ export async function resolveUserByIdentifier(identifier: string): Promise<IUser
   }
 
   // Username — stored trimmed but not lowercased; match exactly but
-  // case-insensitively via an anchored, escaped regex.
-  const exactCaseInsensitive = new RegExp(`^${escapeRegExp(trimmed)}$`, 'i');
-  return User.findOne({ username: exactCaseInsensitive });
+  // case-insensitively via an anchored, escaped regex. Limit to two matches so
+  // existing case-colliding usernames fail closed instead of selecting an
+  // arbitrary account for membership grants.
+  const exactCaseInsensitive = exactCaseInsensitiveUsernameRegex(trimmed);
+  const matches = await User.find({ username: exactCaseInsensitive }).limit(2);
+
+  if (matches.length !== 1) {
+    return null;
+  }
+
+  return matches[0];
 }

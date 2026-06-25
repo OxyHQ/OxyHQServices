@@ -27,6 +27,7 @@ import {
   clearAllRefreshCookies,
 } from '../services/refreshToken.service';
 import type { AuthRequest } from '../middleware/auth';
+import { exactCaseInsensitiveUsernameRegex } from '../utils/resolveUserIdentifier';
 
 /**
  * Constant-time dummy Argon2 hash used to keep login response timing
@@ -229,7 +230,7 @@ export class SessionController {
       }
 
       if (normalizedUsername) {
-        const existingUsername = await User.findOne({ username: normalizedUsername }).select('_id').lean();
+        const existingUsername = await User.findOne({ username: exactCaseInsensitiveUsernameRegex(normalizedUsername) }).select('_id').lean();
         if (existingUsername) {
           return res.status(409).json({ message: 'Username already taken' });
         }
@@ -345,7 +346,7 @@ export class SessionController {
         return res.status(409).json({ message: 'Email already registered' });
       }
 
-      const existingUsername = await User.findOne({ username: normalizedUsername }).select('_id').lean();
+      const existingUsername = await User.findOne({ username: exactCaseInsensitiveUsernameRegex(normalizedUsername) }).select('_id').lean();
       if (existingUsername) {
         return res.status(409).json({ message: 'Username already taken' });
       }
