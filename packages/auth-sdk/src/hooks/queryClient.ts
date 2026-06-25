@@ -166,4 +166,21 @@ export const clearQueryCache = async (
   }
 };
 
+export const clearBrowserQueryCache = async (
+  queryClient: QueryClient,
+): Promise<void> => {
+  queryClient.clear();
+
+  const localStorage = getBrowserLocalStorage();
+  if (!localStorage) return;
+
+  try {
+    localStorage.removeItem(QUERY_CACHE_KEY);
+  } catch (error) {
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn('[QueryClient] Failed to remove cache', error);
+    }
+  }
+};
+
 export type { PersistedClient };

@@ -45,7 +45,11 @@ import type {
   ColdBootOutcome,
 } from '@oxyhq/core';
 import { QueryClientProvider } from '@tanstack/react-query';
-import { attachQueryPersistence, createQueryClient } from './hooks/queryClient';
+import {
+  attachQueryPersistence,
+  clearBrowserQueryCache,
+  createQueryClient,
+} from './hooks/queryClient';
 import { isWebBrowser } from './hooks/useWebSSO';
 
 export interface WebAuthState {
@@ -911,6 +915,7 @@ export function WebOxyProvider({
       setUser(null);
       setActiveSessionId(null);
       syncAccountsFromManager();
+      await clearBrowserQueryCache(queryClient);
       // EXPLICIT user sign-out: clear the per-origin SSO bounce state so a fresh
       // deliberate sign-in can re-probe the central IdP. Never done on a
       // cold-boot failure path (that would reintroduce the redirect loop).
@@ -920,7 +925,7 @@ export function WebOxyProvider({
       setError(errorMessage);
       onError?.(err instanceof Error ? err : new Error(errorMessage));
     }
-  }, [authManager, onError, syncAccountsFromManager]);
+  }, [authManager, onError, queryClient, syncAccountsFromManager]);
 
   const switchAccount = useCallback(async (authuser: number) => {
     setError(null);
@@ -977,13 +982,20 @@ export function WebOxyProvider({
         // No slots left — fully signed out.
         setUser(null);
         setActiveSessionId(null);
+        await clearBrowserQueryCache(queryClient);
       }
       syncAccountsFromManager();
     } catch (err) {
       syncAccountsFromManager();
       handleAuthError(err);
     }
-  }, [authManager, oxyServices, syncAccountsFromManager, handleAuthError]);
+  }, [
+    authManager,
+    oxyServices,
+    queryClient,
+    syncAccountsFromManager,
+    handleAuthError,
+  ]);
 
   const signOutAll = useCallback(async () => {
     await signOut();
@@ -994,11 +1006,12 @@ export function WebOxyProvider({
     setUser(null);
     setActiveSessionId(null);
     syncAccountsFromManager();
+    await clearBrowserQueryCache(queryClient);
     // EXPLICIT user sign-out (this provider has no cold-boot path that calls
     // this): clear the per-origin SSO bounce state so a fresh deliberate
     // sign-in can re-probe the central IdP.
     clearSsoBounceStateWeb();
-  }, [authManager, syncAccountsFromManager]);
+  }, [authManager, queryClient, syncAccountsFromManager]);
 
   useEffect(() => {
     return () => { authManager.destroy(); };
