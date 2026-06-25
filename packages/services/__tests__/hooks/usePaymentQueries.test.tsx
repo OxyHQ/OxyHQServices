@@ -194,6 +194,37 @@ describe('payment query hooks', () => {
     });
   });
 
+  it('scopes payment cache entries by active user to prevent cross-account reuse', async () => {
+    mockState.oxyServices.getUserPayments
+      .mockResolvedValueOnce([{ ...PAYMENTS_FIXTURE[0], id: 'p-u1', userId: 'u1' }])
+      .mockResolvedValueOnce([
+        { ...PAYMENTS_FIXTURE[0], id: 'p-u2', userId: 'u2', amount: 19.99 },
+      ]);
+
+    const first = renderHook(() => useUserPayments(), {
+      wrapper: makeWrapper(queryClient),
+    });
+
+    await waitFor(() => expect(first.result.current.isSuccess).toBe(true));
+    expect(first.result.current.data?.[0]?.id).toBe('p-u1');
+
+    mockState = {
+      ...mockState,
+      activeSessionId: 'sess-2',
+      user: { id: 'u2' },
+    };
+
+    const second = renderHook(() => useUserPayments(), {
+      wrapper: makeWrapper(queryClient),
+    });
+
+    await waitFor(() => expect(second.result.current.isSuccess).toBe(true));
+
+    expect(mockState.oxyServices.getUserPayments).toHaveBeenCalledTimes(2);
+    expect(second.result.current.data?.[0]?.id).toBe('p-u2');
+    expect(second.result.current.data?.[0]?.userId).toBe('u2');
+  });
+
   describe('useUserPayments', () => {
     it('calls getUserPayments and returns the typed payment array', async () => {
       const { result } = renderHook(() => useUserPayments(), {
