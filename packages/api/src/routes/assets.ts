@@ -379,6 +379,12 @@ router.post('/:id/upload-direct', authMiddleware, validate({ params: assetIdPara
     throw new BadRequestError('Missing file');
   }
 
+  // Defense-in-depth: reject a present-but-empty upload so an empty object is
+  // never written to the predetermined storage key.
+  if (!req.file.buffer || req.file.buffer.length === 0) {
+    throw new BadRequestError('Empty file');
+  }
+
   const file = await assetService.getFile(fileId);
   if (!file) {
     throw new NotFoundError('File not found');
@@ -442,6 +448,13 @@ router.post('/upload', authMiddleware, upload.single('file'), asyncHandler(async
 
   if (!req.file) {
     throw new BadRequestError('Missing file');
+  }
+
+  // Defense-in-depth: reject a present-but-empty upload before any record is
+  // created. A 0-byte buffer would otherwise hash to the empty-content SHA-256
+  // and persist an empty asset.
+  if (!req.file.buffer || req.file.buffer.length === 0) {
+    throw new BadRequestError('Empty file');
   }
 
   const visibility = (req.body.visibility as FileVisibility) || 'private';

@@ -379,6 +379,40 @@ describe('uploadCachedMediaStream — abort cleanup', () => {
   });
 });
 
+describe('AssetService.uploadFileDirect — empty-file guard', () => {
+  beforeEach(() => {
+    mockFileFindOne.mockReset();
+    mockGenerateVariants.mockReset();
+    mockGenerateVariants.mockResolvedValue(undefined);
+  });
+
+  it('rejects a 0-byte buffer and creates NO File record or storage object', async () => {
+    const uploadBuffer = jest.fn((key: string, buffer: Buffer, options?: UploadOptions): Promise<FileInfo> => Promise.resolve({
+      key,
+      size: buffer.length,
+      contentType: options?.contentType || 'application/octet-stream',
+    } as FileInfo));
+    const deleteFile = jest.fn((): Promise<void> => Promise.resolve());
+    const { service } = buildAssetService({ deleteFile, uploadBuffer });
+
+    await expect(
+      service.uploadFileDirect(
+        'some-user',
+        Buffer.alloc(0),
+        'image/png',
+        'empty.png',
+        'private',
+      ),
+    ).rejects.toMatchObject({ statusCode: 400, message: 'Cannot store an empty file' });
+
+    // The guard short-circuits before ANY DB lookup, record creation, or S3
+    // write — no empty asset can be persisted.
+    expect(mockFileFindOne).not.toHaveBeenCalled();
+    expect(uploadBuffer).not.toHaveBeenCalled();
+    expect(mockGenerateVariants).not.toHaveBeenCalled();
+  });
+});
+
 describe('AssetService visibility relocation', () => {
   it('deletes legacy backfilled public CDN copies when a non-public DB key is downgraded', async () => {
     const existingKeys = new Set([

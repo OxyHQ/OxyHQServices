@@ -31,6 +31,7 @@ import {
 import { mediaPrivacyService } from './mediaPrivacyService';
 import { MediaAccessContext } from '../types/mediaPrivacy.types';
 import fileCache from '../utils/fileCache';
+import { BadRequestError } from '../utils/error';
 
 /**
  * A readable stream that may also emit the HTTP `'aborted'` event. Express
@@ -575,6 +576,13 @@ export class AssetService {
       // Calculate SHA256 hash on backend
       const sha256 = crypto.createHash('sha256').update(fileBuffer).digest('hex');
       const size = fileBuffer.length;
+
+      // Defense-in-depth: never persist a 0-byte asset. Protects every caller of
+      // uploadFileDirect, not just the route. Mirrors the federation stream
+      // path's empty-buffer guard.
+      if (size === 0) {
+        throw new BadRequestError('Cannot store an empty file');
+      }
 
       // Check if file already exists by SHA256
       const existingFile = await this.findFileBySha(sha256);
