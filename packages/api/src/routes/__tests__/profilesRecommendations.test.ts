@@ -367,6 +367,19 @@ describe('GET /profiles/recommendations exclusion set', () => {
     expect(mockFollowFind).not.toHaveBeenCalled();
   });
 
+  it('rejects repeated excludeTypes query params instead of throwing a 500', async () => {
+    const res = await requestJson(
+      server,
+      '/profiles/recommendations?excludeTypes=federated&excludeTypes=agent'
+    );
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('BAD_REQUEST');
+    expect(res.body.message).toBe('Invalid excludeTypes parameter. Must be a comma-separated string');
+    expect(mockFollowAggregate).not.toHaveBeenCalled();
+    expect(mockUserAggregate).not.toHaveBeenCalled();
+  });
+
   it('requires recently resolved federated users in recommendation pipelines', async () => {
     currentUserId = undefined;
     mockFollowAggregate.mockResolvedValue([]);
