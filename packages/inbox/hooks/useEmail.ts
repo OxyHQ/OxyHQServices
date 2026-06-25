@@ -28,6 +28,7 @@ interface EmailState {
   isSelectionMode: boolean;
   _api: EmailApiInstance | null;
   _initApi: (http: HttpService) => EmailApiInstance;
+  resetAccountScopedState: () => void;
   selectMailbox: (mailbox: Mailbox) => void;
   selectStarred: () => void;
   selectLabel: (labelId: string, labelName: string) => void;
@@ -61,6 +62,18 @@ export const useEmailStore = create<EmailState>((set, get) => ({
     const api = createEmailApi(http);
     set({ _api: api });
     return api;
+  },
+
+  resetAccountScopedState: () => {
+    set({
+      currentMailbox: null,
+      viewMode: null,
+      selectedMessageId: null,
+      expandedBundles: new Set<string>(),
+      selectedMessageIds: new Set<string>(),
+      isSelectionMode: false,
+      _api: null,
+    });
   },
 
   selectMailbox: (mailbox) => {

@@ -53,6 +53,8 @@ export interface AccountMenuProps {
     onAddAccount: () => void;
     /** Optional anchor (web only). Native ignores this and uses bottom-sheet style. */
     anchor?: AccountMenuAnchor | null;
+    /** Called before the active identity changes so apps can clear tenant-scoped state. */
+    onBeforeSessionChange?: () => void | Promise<void>;
 }
 
 const isWeb = Platform.OS === 'web';
@@ -76,6 +78,7 @@ const AccountMenu: React.FC<AccountMenuProps> = ({
     onNavigateManage,
     onAddAccount,
     anchor,
+    onBeforeSessionChange,
 }) => {
     const {
         activeSessionId,
@@ -131,6 +134,7 @@ const AccountMenu: React.FC<AccountMenuProps> = ({
         }
         setBusySessionId(sessionId);
         try {
+            await onBeforeSessionChange?.();
             await switchSession(sessionId);
             toast.success(t('accountSwitcher.toasts.switchSuccess') || 'Switched account');
             onClose();
@@ -142,7 +146,7 @@ const AccountMenu: React.FC<AccountMenuProps> = ({
         } finally {
             setBusySessionId(null);
         }
-    }, [activeSessionId, busySessionId, switchSession, t, onClose]);
+    }, [activeSessionId, busySessionId, switchSession, t, onClose, onBeforeSessionChange]);
 
     // Sign out a SPECIFIC inactive account from its per-row icon. `removeSession`
     // is the SDK's canonical per-session sign-out: it targets the given session
@@ -171,6 +175,7 @@ const AccountMenu: React.FC<AccountMenuProps> = ({
         }
         setSigningOut(true);
         try {
+            await onBeforeSessionChange?.();
             await logout();
             toast.success(t('common.actions.signedOut') || 'Signed out');
             onClose();
@@ -180,7 +185,7 @@ const AccountMenu: React.FC<AccountMenuProps> = ({
         } finally {
             setSigningOut(false);
         }
-    }, [signingOut, logout, t, onClose]);
+    }, [signingOut, logout, t, onClose, onBeforeSessionChange]);
 
     const performSignOutAll = useCallback(async () => {
         if (signingOutAll) {
@@ -188,6 +193,7 @@ const AccountMenu: React.FC<AccountMenuProps> = ({
         }
         setSigningOutAll(true);
         try {
+            await onBeforeSessionChange?.();
             await logoutAll();
             toast.success(t('accountSwitcher.toasts.signOutAllSuccess') || 'Signed out of all accounts');
             onClose();
@@ -197,7 +203,7 @@ const AccountMenu: React.FC<AccountMenuProps> = ({
         } finally {
             setSigningOutAll(false);
         }
-    }, [signingOutAll, logoutAll, t, onClose]);
+    }, [signingOutAll, logoutAll, t, onClose, onBeforeSessionChange]);
 
     // Escape-to-close + focus management (web only).
     useEffect(() => {
