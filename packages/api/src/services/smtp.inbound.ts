@@ -55,11 +55,13 @@ export function startSmtpInbound(): SMTPServer {
         ].join(':'),
       };
     } catch (err) {
-      logger.warn('SMTP TLS certs not found, starting without STARTTLS', {
+      const error = err instanceof Error ? err : new Error(String(err));
+      logger.error('SMTP TLS certs configured but could not be loaded; refusing to start without STARTTLS', {
         keyPath: SMTP_INBOUND_CONFIG.tls.key,
         certPath: SMTP_INBOUND_CONFIG.tls.cert,
-        error: err instanceof Error ? err.message : String(err),
+        error: error.message,
       });
+      throw error;
     }
   }
 
