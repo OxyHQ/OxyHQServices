@@ -201,37 +201,16 @@ export default function DataScreen() {
     },
   ], [colors, dataSharing, locationSharing, analyticsSharing, showActivity, handlePrivacyUpdate, pendingPrivacyKey, t]);
 
-  // Handle clear history
-  const handleClearHistory = useCallback(async (type: 'activity' | 'location') => {
-    const title = type === 'activity' ? t('data.activity.clearActivityTitle') : t('data.activity.clearLocationTitle');
+  // Handle clear history. Keep this as an informational action until the API
+  // exposes scoped deletion endpoints for activity and location history.
+  const handleClearHistory = useCallback((type: 'activity' | 'location') => {
+    const title = type === 'activity' ? t('data.activity.activityHistory') : t('data.activity.locationHistory');
     const message = type === 'activity'
-      ? t('data.activity.clearActivityMessage')
-      : t('data.activity.clearLocationMessage');
+      ? t('data.activity.activityHistoryUnavailable')
+      : t('data.activity.locationHistoryUnavailable');
 
-    alert(title, message, [
-      { text: t('common.cancel'), style: 'cancel' },
-      {
-        text: t('data.activity.clear'),
-        style: 'destructive',
-        onPress: async () => {
-          if (!oxyServices) return;
-          try {
-            await oxyServices.clearUserHistory();
-            const successMessage = type === 'activity'
-              ? t('data.activity.clearedActivity')
-              : t('data.activity.clearedLocation');
-            toast.success(successMessage);
-          } catch (error) {
-            const fallback = type === 'activity'
-              ? t('data.activity.clearFailedActivity')
-              : t('data.activity.clearFailedLocation');
-            const message = error instanceof Error ? error.message : fallback;
-            toast.error(message);
-          }
-        },
-      },
-    ]);
-  }, [alert, oxyServices, t]);
+    alert(title, message, [{ text: t('common.ok') }]);
+  }, [alert, t]);
 
   // Activity management section
   const activityItems = useMemo(() => [

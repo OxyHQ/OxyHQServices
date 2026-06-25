@@ -68,6 +68,7 @@ export interface RequestOptions {
   timeout?: number;
   signal?: AbortSignal;
   headers?: Record<string, string>;
+  responseType?: 'blob';
 }
 
 interface RequestConfig extends RequestOptions {
@@ -568,7 +569,9 @@ export class HttpService {
         const contentType = response.headers.get('content-type');
         let responseData: unknown;
         
-        if (contentType && contentType.includes('application/json')) {
+        if (config.responseType === 'blob') {
+          responseData = await response.blob();
+        } else if (contentType && contentType.includes('application/json')) {
           // Use response.json() directly for better performance
           try {
             responseData = await response.json();
