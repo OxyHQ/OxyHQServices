@@ -293,7 +293,9 @@ describe('uploadCachedMediaStream — abort cleanup', () => {
 
     const result = await service.uploadFileDirect(
       'fresh-owner',
-      Buffer.from('JPEG'),
+      // Valid JPEG magic (FF D8 FF E0) so the image-content guard accepts it and
+      // the test exercises the fresh-record path rather than a 400 rejection.
+      Buffer.from([0xff, 0xd8, 0xff, 0xe0]),
       'image/jpeg',
       'fresh-avatar.jpg',
       'public',
@@ -444,5 +446,42 @@ describe('AssetService visibility relocation', () => {
     expect(deleteFile).toHaveBeenCalledWith('public/content/2026/06/legacy-avatar.jpg');
     expect(existingKeys.has('content/2026/06/legacy-avatar.jpg')).toBe(true);
     expect(existingKeys.has('public/content/2026/06/legacy-avatar.jpg')).toBe(false);
+  });
+});
+
+describe('ensureOwnedAssetPublic — profile media is promoted to public', () => {
+  type MaybeFile = Awaited<ReturnType<AssetService['getFile']>>;
+  const asFile = (f: { ownerUserId: string; visibility: string }): MaybeFile =>
+    ({ _id: 'f1', ...f }) as unknown as MaybeFile;
+  const okVisibility = (): Awaited<ReturnType<AssetService['updateFileVisibility']>> =>
+    ({} as unknown as Awaited<ReturnType<AssetService['updateFileVisibility']>>);
+
+  it("promotes the owner's private asset to public", async () => {
+    const { service } = buildAssetService({});
+    jest.spyOn(service, 'getFile').mockResolvedValue(asFile({ ownerUserId: 'u1', visibility: 'private' }));
+    const updateVis = jest.spyOn(service, 'updateFileVisibility').mockResolvedValue(okVisibility());
+    await service.ensureOwnedAssetPublic('f1', 'u1');
+    expect(updateVis).toHaveBeenCalledWith('f1', 'public');
+  });
+
+  it('no-ops for non-owner / already-public / missing / temp id', async () => {
+    const { service } = buildAssetService({});
+    const getFile = jest.spyOn(service, 'getFile');
+    const updateVis = jest.spyOn(service, 'updateFileVisibility').mockResolvedValue(okVisibility());
+    getFile.mockResolvedValue(asFile({ ownerUserId: 'u2', visibility: 'private' })); // not owner
+    await service.ensureOwnedAssetPublic('f1', 'u1');
+    getFile.mockResolvedValue(asFile({ ownerUserId: 'u1', visibility: 'public' })); // already public
+    await service.ensureOwnedAssetPublic('f1', 'u1');
+    getFile.mockResolvedValue(null); // missing
+    await service.ensureOwnedAssetPublic('f2', 'u1');
+    await service.ensureOwnedAssetPublic('temp-x', 'u1'); // temp id (getFile never called)
+    expect(updateVis).not.toHaveBeenCalled();
+  });
+
+  it('never throws when the visibility update fails (best-effort)', async () => {
+    const { service } = buildAssetService({});
+    jest.spyOn(service, 'getFile').mockResolvedValue(asFile({ ownerUserId: 'u1', visibility: 'private' }));
+    jest.spyOn(service, 'updateFileVisibility').mockRejectedValue(new Error('boom'));
+    await expect(service.ensureOwnedAssetPublic('f1', 'u1')).resolves.toBeUndefined();
   });
 });

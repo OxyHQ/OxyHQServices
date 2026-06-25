@@ -23,6 +23,7 @@ import {
   BadRequestError,
 } from '../utils/error';
 import { userService } from '../services/user.service';
+import { assetService } from '../services/assetServiceSingleton';
 import { UsersController } from '../controllers/users.controller';
 import { resolveUserIdToObjectId } from '../utils/validation';
 import userCache from '../utils/userCache';
@@ -345,6 +346,17 @@ router.put(
         req.body,
         req
       );
+
+      // Profile media (avatar/banner) must be publicly viewable: an <img> can't
+      // send a bearer token, so a private asset renders as a 403 placeholder.
+      // Promote owned assets set as profile media to public (owner-gated,
+      // best-effort — never blocks the profile update).
+      for (const field of ['avatar', 'banner', 'coverPhoto'] as const) {
+        const mediaFileId = (req.body as Record<string, unknown>)[field];
+        if (typeof mediaFileId === 'string' && mediaFileId) {
+          await assetService.ensureOwnedAssetPublic(mediaFileId, req.user.id);
+        }
+      }
 
       logger.info('User profile updated', {
         userId: req.user.id,

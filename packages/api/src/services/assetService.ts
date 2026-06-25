@@ -1599,6 +1599,31 @@ export class AssetService {
   }
 
   /**
+   * Ensure an asset the user owns is public. Used when a file is set as a
+   * public-facing profile media field (avatar/banner) — those must render
+   * unauthenticated (an `<img>` can't send a bearer token, and private media is
+   * denied to anonymous viewers). Owner-gated and best-effort: it never throws,
+   * so a profile update is never blocked by a visibility flip.
+   */
+  async ensureOwnedAssetPublic(fileId: string, userId: string): Promise<void> {
+    try {
+      if (!fileId || fileId.startsWith('temp-')) return;
+      const file = await this.getFile(fileId);
+      if (!file) return;
+      if (file.ownerUserId?.toString() !== userId.toString()) return;
+      if (file.visibility === 'public') return;
+      await this.updateFileVisibility(fileId, 'public');
+      logger.info('Profile media asset promoted to public', { fileId, userId });
+    } catch (error) {
+      logger.warn('Failed to promote profile media asset to public', {
+        fileId,
+        userId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  /**
    * Update file visibility
    */
   async updateFileVisibility(fileId: string, visibility: FileVisibility): Promise<IFile> {
