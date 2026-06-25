@@ -7,11 +7,16 @@ import { searchQuerySchema } from '../schemas/search.schemas';
 
 const router = express.Router();
 
+type ValidatedSearchQuery = {
+  query?: string;
+  type?: 'all' | 'users';
+  page: number;
+  limit: number;
+};
+
 router.get("/", validate({ query: searchQuerySchema }), async (req: Request, res: Response) => {
   try {
-    const { query, type = "all" } = req.query;
-    const page = Math.max(1, parseInt(req.query.page as string) || 1);
-    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string) || 10));
+    const { query, type = "all", page, limit } = req.query as ValidatedSearchQuery;
     const skip = (page - 1) * limit;
 
     const sanitized = sanitizeSearchQuery((query as string) || '');
