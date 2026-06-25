@@ -34,7 +34,7 @@ function makeNext(): NextFunction & jest.Mock {
 }
 
 describe('@oxyhq/core/server createOxyCors', () => {
-  it('allows the Oxy apex family (apex + any subdomain) and echoes the exact origin', () => {
+  it('allows the HTTPS Oxy apex family (apex + one-level subdomains) and echoes the exact origin', () => {
     const mw = createOxyCors();
     for (const origin of [
       'https://oxy.so',
@@ -74,6 +74,10 @@ describe('@oxyhq/core/server createOxyCors', () => {
       'https://oxy.so.evil.com', // suffix attack
       'https://notoxy.so', // different apex
       'https://example.com',
+      'http://oxy.so',
+      'http://auth.oxy.so',
+      'https://deep.attacker-controlled.oxy.so',
+      'https://api.oxy.so:8443',
     ]) {
       const req = makeRequest('GET', origin);
       const res = makeResponse();

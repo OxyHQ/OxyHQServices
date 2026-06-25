@@ -11,10 +11,9 @@
  *
  * `createOxyCors` returns a self-contained Express middleware (no `cors`
  * package dependency) that:
- *   - allows the Oxy apex origin family (anything under `*.${CENTRAL_IDP_APEX}`,
- *     i.e. `oxy.so` — covering `auth.oxy.so`, `api.oxy.so`, `accounts.oxy.so`,
- *     `console.oxy.so`, `inbox.oxy.so`, the marketing site, …) reusing the
- *     central-origin constants already in core, NOT a fresh hardcoded list,
+ *   - allows the Oxy apex origin family over HTTPS only: the apex plus
+ *     one-label subdomains such as `auth.oxy.so`, `api.oxy.so`,
+ *     `accounts.oxy.so`, `console.oxy.so`, and `inbox.oxy.so`,
  *   - allows the caller's explicit `appOrigins`,
  *   - DENIES everything else (no reflection, never a wildcard with credentials),
  *   - echoes back the EXACT matched origin (so credentialed requests work) and
@@ -26,7 +25,6 @@
 
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import { CENTRAL_IDP_APEX } from '../utils/authWebUrl';
-import { registrableApex } from '../utils/fapiAutoDetect';
 
 /** Default HTTP methods allowed across origins. */
 const DEFAULT_ALLOWED_METHODS = ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'];
@@ -44,11 +42,16 @@ const DEFAULT_ALLOWED_HEADERS = [
 /** How long (seconds) a browser may cache a successful preflight. */
 const DEFAULT_MAX_AGE_SECONDS = 86_400;
 
+const OXY_ONE_LABEL_SUBDOMAIN_PATTERN = new RegExp(
+  `^[a-z0-9-]+\\.${CENTRAL_IDP_APEX.replace('.', '\\.')}$`,
+);
+
 export interface OxyCorsOptions {
   /**
    * Explicit additional allowed origins (exact-origin match, e.g.
    * `https://app.example.com`, `http://localhost:3000`). These are allowed IN
-   * ADDITION TO the Oxy apex origin family. Each is normalized via `new URL().origin`.
+   * ADDITION TO the built-in HTTPS Oxy apex origin family. Each is normalized
+   * via `new URL().origin`.
    */
   appOrigins?: string[];
   /**
@@ -68,25 +71,27 @@ export interface OxyCorsOptions {
 }
 
 /**
- * Whether `candidate` belongs to the Oxy apex origin family — i.e. its
- * registrable apex equals {@link CENTRAL_IDP_APEX} (`oxy.so`). This matches the
- * apex itself (`https://oxy.so`) and any subdomain (`https://auth.oxy.so`,
- * `https://api.oxy.so`, …) over http or https, ports allowed. Returns false on
- * any parse failure (fail closed).
+ * Whether `candidate` belongs to the built-in Oxy apex origin family. This
+ * intentionally mirrors the API allowlist shape: HTTPS only, no custom port,
+ * the apex itself (`https://oxy.so`), or exactly one lowercase subdomain label
+ * (`https://auth.oxy.so`, `https://api.oxy.so`, …).
+ *
+ * Arbitrary/multi-level subdomains and `http://*.oxy.so` are not implicitly
+ * trusted for credentialed CORS. If a service needs a non-standard development
+ * or tenant origin, it must opt in explicitly via `appOrigins`.
  */
 function isOxyFamilyOrigin(candidate: string): boolean {
-  let hostname: string;
-  let protocol: string;
   try {
     const url = new URL(candidate);
-    hostname = url.hostname.toLowerCase();
-    protocol = url.protocol;
+    if (url.protocol !== 'https:' || url.port !== '') return false;
+
+    const hostname = url.hostname;
+    if (hostname === CENTRAL_IDP_APEX) return true;
+
+    return OXY_ONE_LABEL_SUBDOMAIN_PATTERN.test(hostname);
   } catch {
     return false;
   }
-  if (protocol !== 'https:' && protocol !== 'http:') return false;
-  if (hostname === CENTRAL_IDP_APEX) return true;
-  return registrableApex(hostname) === CENTRAL_IDP_APEX;
 }
 
 /** Normalize a raw origin string to its canonical `scheme://host[:port]` form. */
@@ -99,8 +104,8 @@ function normalizeOrigin(raw: string): string | null {
 }
 
 /**
- * Build the origin-matching predicate: true iff `origin` is in the Oxy apex
- * family OR exactly matches one of the configured app origins.
+ * Build the origin-matching predicate: true iff `origin` is in the built-in
+ * HTTPS Oxy apex family OR exactly matches one of the configured app origins.
  */
 function buildOriginAllowed(appOrigins: string[]): (origin: string) => boolean {
   const explicit = new Set<string>();
