@@ -28,6 +28,34 @@ const REFRESH_TOKEN_EXPIRES_IN = '7d';
 const OBJECT_ID_LENGTH = 24; // MongoDB ObjectId hex string length
 const TOKEN_ROTATION_GRACE_PERIOD_MS = 30_000; // 30 seconds grace period for concurrent tab refreshes
 
+function timingSafeTokenEqual(a: string | undefined | null, b: string | undefined | null): boolean {
+  if (!a || !b) return false;
+
+  const aBuffer = Buffer.from(a);
+  const bBuffer = Buffer.from(b);
+  if (aBuffer.length !== bBuffer.length) {
+    return false;
+  }
+
+  return crypto.timingSafeEqual(aBuffer, bBuffer);
+}
+
+function isWithinTokenRotationGrace(rotatedAt: Date | undefined | null): boolean {
+  if (!rotatedAt) return false;
+  return Date.now() - rotatedAt.getTime() <= TOKEN_ROTATION_GRACE_PERIOD_MS;
+}
+
+function isAccessTokenAcceptedForSession(session: ISession, accessToken: string): boolean {
+  if (timingSafeTokenEqual(accessToken, session.accessToken)) {
+    return true;
+  }
+
+  return (
+    isWithinTokenRotationGrace(session.tokenRotatedAt) &&
+    timingSafeTokenEqual(accessToken, session.previousAccessToken)
+  );
+}
+
 /**
  * Extract userId string from various possible formats (ObjectId, populated object, string)
  * Handles edge cases and corrupted cache entries gracefully
@@ -240,6 +268,10 @@ class SessionService {
 
       const { session } = result;
 
+      if (!isAccessTokenAcceptedForSession(session, accessToken)) {
+        return null;
+      }
+
       if (sessionCache.shouldUpdateLastActive(sessionId)) {
         this.updateLastActivity(sessionId).catch(() => {
           // Silently fail - non-critical operation
@@ -367,7 +399,7 @@ class SessionService {
         deviceId: deviceInfo.deviceId,
         isActive: true,
         expiresAt: { $gt: new Date() }
-      }).select('_id sessionId deviceInfo').lean();
+      }).select('_id sessionId deviceInfo accessToken refreshToken').lean();
 
       if (existingSession) {
         const sessionId = existingSession.sessionId;
@@ -379,8 +411,11 @@ class SessionService {
           { _id: existingSession._id },
           {
             $set: {
+              previousAccessToken: existingSession.accessToken,
               accessToken,
+              previousRefreshToken: existingSession.refreshToken,
               refreshToken,
+              tokenRotatedAt: now,
               expiresAt,
               lastRefresh: now,
               'deviceInfo.lastActive': now,
@@ -527,6 +562,7 @@ class SessionService {
         payload.deviceId || session.deviceId
       );
 
+      session.previousAccessToken = session.accessToken;
       session.previousRefreshToken = session.refreshToken;
       session.tokenRotatedAt = now;
       session.accessToken = newAccessToken;

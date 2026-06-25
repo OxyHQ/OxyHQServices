@@ -17,6 +17,7 @@ export interface ISession extends Document {
     fingerprint?: string; // Device fingerprint for identification
   };
   accessToken: string; // Current access token for this session
+  previousAccessToken?: string; // Previous access token kept for grace period after rotation/re-issue
   refreshToken: string; // Refresh token for this session
   previousRefreshToken?: string; // Previous refresh token kept for grace period after rotation
   tokenRotatedAt?: Date; // When the refresh token was last rotated
@@ -58,6 +59,10 @@ const SessionSchema: Schema = new Schema(
       type: String,
       required: true,
     },
+    previousAccessToken: {
+      type: String,
+      default: null,
+    },
     refreshToken: {
       type: String,
       required: true,
@@ -96,6 +101,7 @@ SessionSchema.index({ userId: 1, isActive: 1, expiresAt: 1 }); // Active session
 SessionSchema.index({ deviceId: 1, isActive: 1, expiresAt: 1 }); // Optimized compound index for device sessions query
 SessionSchema.index({ accessToken: 1 }, { unique: true, sparse: true }); // Token-based lookups (sparse for performance)
 SessionSchema.index({ refreshToken: 1 }, { unique: true, sparse: true }); // Refresh token lookups (sparse for performance)
+SessionSchema.index({ previousAccessToken: 1, tokenRotatedAt: 1 }, { sparse: true }); // Access-token grace validation after rotation/re-issue
 SessionSchema.index({ previousRefreshToken: 1, tokenRotatedAt: 1 }, { sparse: true }); // Grace period lookups for concurrent tab refreshes
 SessionSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 }); // Auto-cleanup expired sessions
 SessionSchema.index({ 'deviceInfo.fingerprint': 1, isActive: 1, expiresAt: 1 }); // Optimized for findExistingDeviceId queries
