@@ -927,6 +927,29 @@ describe('GET /sso (central top-level-redirect cross-domain SSO)', () => {
         state: 'st-4b',
         prompt: 'none',
       }),
+  it('303-redirects with oxy_sso=none and no code for a first-time RP without a user grant', async () => {
+    stubbedApprovedClients = [RP_ORIGIN];
+    stubbedGrantedOrigins = [];
+    installApiStub();
+
+    const res = await app.request(
+      ssoUrl({
+        client_id: RP_ORIGIN,
+        return_to: VALID_RETURN_TO,
+        state: 'st-no-grant',
+        prompt: 'none',
+      }),
+      { headers: { cookie: SESSION_COOKIE } }
+    );
+
+    expect(res.status).toBe(303);
+    const { frag } = parseSsoRedirect(res);
+    expect(frag.get('oxy_sso')).toBe('none');
+    expect(frag.get('code')).toBeNull();
+    expect(capturedExchange).toBeUndefined();
+    expect(capturedSsoCode).toBeUndefined();
+  });
+
       { headers: { cookie: SESSION_COOKIE } }
     );
     expect(res.status).toBe(400);
@@ -1237,6 +1260,25 @@ describe('GET /sso -> /sso/establish second hop (cross-domain durable session)',
         prompt: 'none',
       }),
       { headers: { cookie: SESSION_COOKIE } }
+  it('does not create a cross-apex establish token for a first-time RP without a user grant', async () => {
+    stubbedApprovedClients = [RP_ORIGIN, CROSS_RP];
+    stubbedGrantedOrigins = [RP_ORIGIN];
+    installApiStub();
+
+    const res = await app.request(
+      ssoUrl({ client_id: CROSS_RP, return_to: CROSS_RETURN_TO, state: 'xd-no-grant', prompt: 'none' }),
+      { headers: { cookie: SESSION_COOKIE } }
+    );
+
+    expect(res.status).toBe(303);
+    const { location, frag } = parseSsoRedirect(res);
+    expect(location.startsWith(`${CROSS_RETURN_TO}#`)).toBe(true);
+    expect(location).not.toContain('/sso/establish');
+    expect(frag.get('oxy_sso')).toBe('none');
+    expect(frag.get('code')).toBeNull();
+    expect(capturedSsoCode).toBeUndefined();
+  });
+
     );
     expect(res.status).toBe(303);
     const { url } = parseEstablishRedirect(res);
@@ -1337,6 +1379,25 @@ describe('GET /sso -> /sso/establish second hop (cross-domain durable session)',
         `https://${CROSS_APEX_HOST}/sso/establish?et=${encodeURIComponent(et)}&return_to=${encodeURIComponent(
           CROSS_RETURN_TO
         )}&state=xd-iss`
+  it('GET /auth/silent posts a null session for an approved RP without a user grant', async () => {
+    stubbedApprovedClients = [RP_ORIGIN, CROSS_RP];
+    stubbedGrantedOrigins = [RP_ORIGIN];
+    installApiStub();
+
+    const res = await app.request(
+      `https://${CROSS_APEX_HOST}/auth/silent?client_id=${encodeURIComponent(CROSS_RP)}&nonce=rp-no-grant`,
+      { headers: { cookie: SESSION_COOKIE } }
+    );
+    expect(res.status).toBe(200);
+
+    const { message, targetOrigin } = extractPostedMessage(await res.text());
+    const msg = message as SilentMessage;
+    expect(msg.type).toBe('oxy_silent_auth');
+    expect(msg.session).toBeNull();
+    expect(targetOrigin).toBe(CROSS_RP);
+    expect(capturedExchange).toBeUndefined();
+  });
+
       );
       expect(res.status).toBe(303);
 
