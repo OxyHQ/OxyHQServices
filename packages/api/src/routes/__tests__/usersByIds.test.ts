@@ -54,6 +54,10 @@ jest.mock('../../services/email.service', () => ({
 jest.mock('../../services/federation.service', () => ({
   federationService: { scheduleAvatarRefresh: jest.fn() },
 }));
+jest.mock('../../services/assetServiceSingleton', () => ({
+  assetService: { ensureOwnedAssetPublic: jest.fn().mockResolvedValue(undefined) },
+  s3Service: {},
+}));
 jest.mock('../../services/user.service', () => ({
   userService: {
     getUsersByIds: mockGetUsersByIds,

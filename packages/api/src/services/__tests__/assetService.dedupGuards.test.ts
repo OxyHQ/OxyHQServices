@@ -104,7 +104,9 @@ describe('AssetService dedup excludes deleted tombstones (cross-tenant takeover 
 
     const result = await buildAssetService(fakeS3).uploadFileDirect(
       'attacker-user-id',
-      Buffer.from('victim content'),
+      // Valid PNG magic so the image-content guard accepts it and the test
+      // exercises the tombstone-exclusion path (not a 400 content rejection).
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
       'image/png',
       'avatar.png',
     );

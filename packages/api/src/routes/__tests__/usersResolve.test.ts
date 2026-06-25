@@ -40,6 +40,10 @@ jest.mock('../../services/email.service', () => ({
 jest.mock('../../services/federation.service', () => ({
   federationService: { scheduleAvatarRefresh: mockScheduleAvatarRefresh },
 }));
+jest.mock('../../services/assetServiceSingleton', () => ({
+  assetService: { ensureOwnedAssetPublic: jest.fn().mockResolvedValue(undefined) },
+  s3Service: {},
+}));
 jest.mock('../../services/user.service', () => ({
   userService: {},
 }));
