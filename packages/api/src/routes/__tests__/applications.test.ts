@@ -1124,19 +1124,32 @@ describe('credentials lifecycle', () => {
     expect(stored.secretHash).not.toBe(res.body.secret);
   });
 
-  it('400 when a credential requests a scope the application does not hold', async () => {
-    // Seeded app has scopes []. A credential cannot exceed the app's authority,
-    // so requesting federation:write (or any ungranted scope) is rejected.
+  it('403 when creating a service credential for a non-internal application', async () => {
+    apps[0].isInternal = false;
+    apps[0].scopes = ['federation:write'];
     const res = await requestJson(server, 'POST', `/applications/${APP_ID}/credentials`, {
-      name: 'Over-scoped',
+      name: 'External service key',
       type: 'service',
       environment: 'production',
       scopes: ['federation:write'],
     });
+    expect(res.status).toBe(403);
+  });
+
+  it('400 when a credential requests a scope the application does not hold', async () => {
+    // Seeded app has scopes []. A credential cannot exceed the app's authority,
+    // so requesting user:read (or any ungranted scope) is rejected.
+    const res = await requestJson(server, 'POST', `/applications/${APP_ID}/credentials`, {
+      name: 'Over-scoped',
+      type: 'confidential',
+      environment: 'production',
+      scopes: ['user:read'],
+    });
     expect(res.status).toBe(400);
   });
 
-  it('creates a credential whose scopes are a subset of the app scopes', async () => {
+  it('creates a service credential whose scopes are a subset of an internal app scopes', async () => {
+    apps[0].isInternal = true;
     apps[0].scopes = ['user:read', 'files:write', 'federation:write'];
     const res = await requestJson(server, 'POST', `/applications/${APP_ID}/credentials`, {
       name: 'Federation key',

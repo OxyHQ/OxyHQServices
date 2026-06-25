@@ -2549,7 +2549,10 @@ router.post('/service-token', serviceTokenLimiter, validate({ body: serviceToken
     throw new UnauthorizedError('Invalid credentials');
   }
 
-  // The owning application must be active.
+  // The owning application must be active and explicitly marked internal.
+  // Service credentials are bearer credentials for Oxy-to-Oxy/internal routes;
+  // self-service third-party applications must not be able to mint them even if
+  // they somehow hold a historical `service` credential row.
   const app = await Application.findOne({ _id: credential.applicationId, status: 'active' });
   if (!app) {
     logger.warn('[ServiceToken] Application inactive for service credential', {
@@ -2557,6 +2560,14 @@ router.post('/service-token', serviceTokenLimiter, validate({ body: serviceToken
       applicationId: credential.applicationId.toString(),
     });
     throw new UnauthorizedError('Invalid credentials');
+  }
+
+  if (!app.isInternal) {
+    logger.warn('[ServiceToken] Non-internal application attempted service token', {
+      credentialId: credential._id.toString(),
+      applicationId: credential.applicationId.toString(),
+    });
+    throw new ForbiddenError('Service tokens are only available to internal applications');
   }
 
   // Generate stateless service JWT — embed granted scopes so downstream

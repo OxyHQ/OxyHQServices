@@ -236,12 +236,20 @@ function stubCredential(overrides: Partial<StubCredential> = {}): StubCredential
   };
 }
 
-function stubApp(): { _id: { toString: () => string }; name: string; scopes: string[]; save: jest.Mock } {
+function stubApp(overrides: Partial<{ isInternal: boolean; scopes: string[] }> = {}): {
+  _id: { toString: () => string };
+  name: string;
+  isInternal: boolean;
+  scopes: string[];
+  save: jest.Mock;
+} {
   return {
     _id: { toString: () => APP_ID },
     name: 'Service App',
+    isInternal: true,
     scopes: ['user:read'],
     save: jest.fn().mockResolvedValue(undefined),
+    ...overrides,
   };
 }
 
@@ -396,6 +404,19 @@ describe('POST /auth/service-token — credential resolution + JWT claims (#215)
     expect(res.status).toBe(403);
   });
 
+
+  it('rejects service-token minting for a non-internal application', async () => {
+    mockApplicationCredentialFindOne.mockResolvedValue(stubCredential());
+    mockApplicationFindOne.mockResolvedValue(stubApp({ isInternal: false }));
+
+    const res = await requestJson(server, 'POST', '/auth/service-token', {
+      apiKey: API_KEY,
+      apiSecret: PLAINTEXT_SECRET,
+    });
+
+    expect(res.status).toBe(403);
+  });
+
   it('rejects when the owning application is inactive', async () => {
     mockApplicationCredentialFindOne.mockResolvedValue(stubCredential());
     mockApplicationFindOne.mockResolvedValue(null);
@@ -418,6 +439,7 @@ describe('POST /auth/service-token — credential resolution + JWT claims (#215)
     mockApplicationFindOne.mockResolvedValue({
       _id: { toString: () => APP_ID },
       name: 'Service App',
+      isInternal: true,
       scopes: ['user:read'],
       save: jest.fn().mockResolvedValue(undefined),
     });
@@ -442,6 +464,7 @@ describe('POST /auth/service-token — credential resolution + JWT claims (#215)
     mockApplicationFindOne.mockResolvedValue({
       _id: { toString: () => APP_ID },
       name: 'Mention',
+      isInternal: true,
       scopes: ['user:read', 'files:write', 'federation:write'],
       save: jest.fn().mockResolvedValue(undefined),
     });
@@ -461,6 +484,7 @@ describe('POST /auth/service-token — credential resolution + JWT claims (#215)
     mockApplicationFindOne.mockResolvedValue({
       _id: { toString: () => APP_ID },
       name: 'Service App',
+      isInternal: true,
       scopes: ['user:read', 'files:write'],
       save: jest.fn().mockResolvedValue(undefined),
     });

@@ -1137,6 +1137,10 @@ router.post(
     // an explicit request for any scope the app does not hold (rather than
     // silently dropping it) so the developer learns the credential won't carry
     // it; they must first have the scope granted on the application.
+    if (body.type === 'service' && !application.isInternal) {
+      throw new ForbiddenError('Service credentials are only available to internal applications');
+    }
+
     const requestedScopes = body.scopes ?? [];
     const grantableScopes = new Set(application.scopes);
     const ungrantable = requestedScopes.filter((scope) => !grantableScopes.has(scope));
