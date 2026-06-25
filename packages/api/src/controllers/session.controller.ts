@@ -19,7 +19,7 @@ import { formatUserResponse, type UserLike } from '../utils/userTransform';
 import { generateAlphanumericCode, hashPassword, verifyPassword, validatePasswordStrength } from '../utils/password';
 import securityActivityService from '../services/securityActivityService';
 import anomalyDetectionService from '../services/anomalyDetection.service';
-import { isLockedOut, recordFailure, clearFailures } from '../services/loginLockout.service';
+import { recordFailure, clearFailures } from '../services/loginLockout.service';
 import {
   issueAndSetRefreshCookie,
   revokeFamilyBySession,
@@ -625,11 +625,11 @@ export class SessionController {
    * milliseconds while a real password check costs tens of milliseconds,
    * leaking account existence.
    *
-   * Lockout (H7): we track per-identifier failed attempts. After the
-   * configured threshold the account returns the same generic
-   * "Invalid credentials" message plus a `Retry-After` header — we never
-   * tell the unauthenticated caller that the account is locked, because
-   * that itself is enumeration.
+   * Login throttling (H7): we track per-identifier failed attempts and add
+   * a `Retry-After` response to repeated invalid credentials. We do not
+   * reject before verifying the supplied password; a legitimate user with
+   * the correct password must be able to clear failures and sign in even if
+   * an attacker has filled the failure bucket for their identifier.
    */
   static async signIn(req: Request, res: Response) {
     try {
@@ -645,17 +645,12 @@ export class SessionController {
         return res.status(400).json({ message: 'Invalid identifier' });
       }
 
-      // Check lockout BEFORE the credential lookup. We always return the
-      // same generic 401-style message; only the Retry-After header differs.
+      // Do not check the lockout bucket before credential verification.
+      // This route is public; a pre-verification per-account lockout lets an
+      // unauthenticated attacker deny login to a known user by filling that
+      // user's failure bucket. Instead, verify credentials first and only use
+      // the bucket to throttle repeated invalid attempts.
       const lockoutKey = parsedIdentifier.value;
-      const lockState = await isLockedOut({
-        scope: LOGIN_LOCKOUT_SCOPE,
-        identifier: lockoutKey,
-      });
-      if (lockState.locked && typeof lockState.retryAfterSeconds === 'number') {
-        res.setHeader('Retry-After', String(lockState.retryAfterSeconds));
-        return res.status(429).json({ message: 'Invalid credentials' });
-      }
 
       const query = parsedIdentifier.field === 'email'
         ? { email: parsedIdentifier.value }

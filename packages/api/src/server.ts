@@ -33,7 +33,10 @@ import fedcmService from './services/fedcm.service';
 import reputationService from './services/reputation.service';
 import emailRoutes from './routes/email';
 import emailProxyRoutes from './routes/emailProxy';
-import emailInboundRoutes from './routes/emailInbound';
+import emailInboundRoutes, {
+  inboundRateLimit,
+  verifyEmailInboundWebhookSecret,
+} from './routes/emailInbound';
 import aliaRoutes from './routes/alia';
 import creditsRoutes from './routes/credits';
 import billingRoutes from './routes/billing';
@@ -58,6 +61,7 @@ import { csrfProtection, getCsrfToken } from './middleware/csrf';
 import { createCorsMiddleware, SOCKET_IO_CORS_CONFIG } from './config/cors';
 import { createAdapter } from '@socket.io/redis-adapter';
 import { getRedisClient, closeRedis } from './config/redis';
+import { initializeIO } from './utils/socket';
 import performanceMiddleware, { getMemoryStats, getConnectionPoolStats } from './middleware/performance';
 import { performanceMonitor } from './utils/performanceMonitor';
 import { waitForMongoConnection } from './utils/dbConnection';
@@ -122,8 +126,15 @@ function isCacheUploadRequest(req: express.Request): boolean {
 // Body parsing middleware - IMPORTANT: Add this before any routes
 // Stripe webhook needs raw body for signature verification (must be before express.json)
 app.use('/billing/webhook', express.raw({ type: 'application/json' }));
-// Email inbound webhook needs raw body for MIME parsing (must be before express.json)
-app.use('/email/inbound', express.raw({ type: '*/*', limit: '25mb' }));
+// Email inbound webhook needs raw body for MIME parsing (must be before express.json).
+// Authenticate and rate-limit before raw parsing so unauthenticated clients
+// cannot force 25 MiB body buffering or consume the Cloudflare Worker quota.
+app.use(
+  '/email/inbound',
+  verifyEmailInboundWebhookSecret,
+  inboundRateLimit,
+  express.raw({ type: '*/*', limit: '25mb' })
+);
 // Skip the global body parsers for the cache stream-upload so the raw request
 // reaches the route as an untouched readable stream.
 const jsonParser = express.json({ limit: '1mb' });
@@ -170,6 +181,7 @@ const server = http.createServer(app);
 const io = new SocketIOServer(server, {
   cors: SOCKET_IO_CORS_CONFIG,
 });
+initializeIO(io);
 
 // Attach Redis adapter for multi-instance broadcast (if Redis available)
 const redis = getRedisClient();
@@ -492,6 +504,10 @@ app.use('/email/proxy', emailProxyRoutes); // public, no auth — must be before
 app.use('/email/inbound', emailInboundRoutes); // Cloudflare Email Routing webhook — must be before /email
 app.use('/email', userRateLimiter, csrfProtection, emailRoutes);
 app.use('/alia', userRateLimiter, aliaRoutes);
+// Compatibility route for Alia SDK clients that append /v1/chat/completions
+// to their configured API origin. Keep authenticated browser traffic on the
+// Oxy-owned API; aliaRoutes forwards server-side with ALIA_API_KEY.
+app.use('/v1', userRateLimiter, aliaRoutes);
 app.use('/credits', userRateLimiter, csrfProtection, creditsRoutes);
 app.use('/billing', billingRoutes);
 app.use('/models', modelsStatsRoutes);

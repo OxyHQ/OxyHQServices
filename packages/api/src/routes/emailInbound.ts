@@ -14,7 +14,8 @@
  */
 
 import { Router } from 'express';
-import type { Request, Response } from 'express';
+import type { NextFunction, Request, Response } from 'express';
+import { timingSafeEqual } from 'node:crypto';
 import { simpleParser } from 'mailparser';
 import type { ParsedMail } from 'mailparser';
 import { rateLimit } from '../middleware/rateLimiter';
@@ -160,8 +161,10 @@ const router = Router();
 
 const INBOUND_WEBHOOK_SECRET = getEnvVar('EMAIL_INBOUND_WEBHOOK_SECRET', '');
 
-// Rate limit: 60 emails per minute (generous for inbound webhook)
-const inboundRateLimit = rateLimit({
+// Rate limit: 60 authenticated emails per minute (generous for inbound webhook).
+// Mounted in server.ts after shared-secret verification so unauthenticated
+// traffic cannot consume Cloudflare Email Routing's delivery quota.
+export const inboundRateLimit = rateLimit({
   prefix: 'rl:email:inbound:',
   windowMs: 60 * 1000,
   max: 60,
@@ -172,20 +175,31 @@ const inboundRateLimit = rateLimit({
 /**
  * Verify the webhook secret from the Authorization header.
  */
-function verifyWebhookSecret(req: Request, res: Response): boolean {
+function constantTimeEquals(provided: string, expected: string): boolean {
+  if (!provided || !expected) return false;
+
+  const providedBuffer = Buffer.from(provided, 'utf8');
+  const expectedBuffer = Buffer.from(expected, 'utf8');
+  if (providedBuffer.length !== expectedBuffer.length) return false;
+
+  return timingSafeEqual(providedBuffer, expectedBuffer);
+}
+
+export function verifyEmailInboundWebhookSecret(req: Request, res: Response, next: NextFunction): void {
   if (!INBOUND_WEBHOOK_SECRET) {
     logger.error('EMAIL_INBOUND_WEBHOOK_SECRET is not configured');
     res.status(500).json({ error: 'Webhook not configured' });
-    return false;
+    return;
   }
 
-  const authHeader = req.headers.authorization;
-  if (!authHeader || authHeader !== `Bearer ${INBOUND_WEBHOOK_SECRET}`) {
+  const authHeader = req.headers.authorization ?? '';
+  const providedSecret = authHeader.startsWith('Bearer ') ? authHeader.slice('Bearer '.length) : '';
+  if (!constantTimeEquals(providedSecret, INBOUND_WEBHOOK_SECRET)) {
     res.status(401).json({ error: 'Invalid webhook secret' });
-    return false;
+    return;
   }
 
-  return true;
+  next();
 }
 
 /**
@@ -201,10 +215,7 @@ function verifyWebhookSecret(req: Request, res: Response): boolean {
  */
 router.post(
   '/',
-  inboundRateLimit,
   asyncHandler(async (req: Request, res: Response) => {
-    if (!verifyWebhookSecret(req, res)) return;
-
     const rawMessage = req.body as Buffer;
     if (!rawMessage || rawMessage.length === 0) {
       return res.status(400).json({ error: 'Empty message body' });

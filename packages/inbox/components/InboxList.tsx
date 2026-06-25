@@ -92,6 +92,7 @@ interface DrawerNavigation {
  *   Compose bottom = insets.bottom + 16, Compose height ≈ 52, plus 24 gap.
  */
 const ALIA_FAB_BOTTOM_OFFSET = 16 + 52 + 24;
+const ALIA_PROXY_API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'https://api.oxy.so';
 
 export function InboxList({ replaceNavigation }: InboxListProps) {
   const router = useRouter();
@@ -705,7 +706,7 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
           </View>
           <AliaChatSheet
             ref={aliaChatRef}
-            apiUrl="https://api.alia.onl"
+            apiUrl={ALIA_PROXY_API_URL}
             clientContext="User is in the Inbox app viewing their email. Use oxy_inbox tools to access their emails."
             suggestions={[
               { label: 'Unread emails', icon: 'mail', prompt: 'What emails need my attention?' },

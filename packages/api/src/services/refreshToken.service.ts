@@ -252,30 +252,31 @@ export type CandidateClassification =
  * Classify a list of presented raw refresh-token candidates WITHOUT consuming
  * any of them (purely a lookup — no `usedAt` mutation, no rotation).
  *
- * SECURITY RATIONALE (load-bearing — do not weaken): a browser only ever sends
- * its OWN httpOnly cookies, so multiple candidates for one indexed slot can
- * only be that device's own duplicate values. Picking the VALID sibling and
- * ignoring a USED sibling is safe — it is the same user's slot, one already
- * rotated.
+ * SECURITY RATIONALE (load-bearing — do not weaken): Cookie headers are
+ * client-controlled, so duplicate values for one indexed slot are only safe to
+ * de-duplicate when every used/revoked candidate is a sibling of the selected
+ * valid token (same rotation family and session).
  *
- * A genuine theft replay is a LONE used token with NO valid sibling among the
- * candidates: that still classifies as `'used'`, so the caller fires
- * reuse-detection (revoke family + deactivate session). We never weaken that —
- * if ANY candidate is valid `'valid'` wins first, but with no valid sibling a
- * used/revoked token is treated exactly as before: theft.
+ * A used/revoked candidate from a DIFFERENT family/session remains a theft
+ * replay signal even if another presented cookie is valid. In that case the
+ * caller must revoke the replayed token's family instead of rotating the
+ * unrelated valid token.
  *
  * Order of resolution:
- *   1. First VALID candidate wins → `{ kind: 'valid' }` (returned immediately).
- *   2. Else, first candidate whose stored row is used OR revoked →
- *      `{ kind: 'used' }` (revoked is bucketed with used because it means the
- *      family was already nuked, and we want reuse-detection to re-assert it).
- *   3. Else → `{ kind: 'none' }` (unknown/expired/garbage only).
+ *   1. Collect the first VALID candidate and the first used/revoked candidate.
+ *   2. If a VALID candidate exists and every used/revoked candidate belongs to
+ *      that same family+session, return `{ kind: 'valid' }`.
+ *   3. Else, first used/revoked candidate → `{ kind: 'used' }` (revoked is
+ *      bucketed with used because it means the family was already nuked, and we
+ *      want reuse-detection to re-assert it).
+ *   4. Else → `{ kind: 'none' }` (unknown/expired/garbage only).
  */
 export async function classifyRefreshCandidates(
   rawCandidates: string[]
 ): Promise<CandidateClassification> {
   const now = new Date();
-  let firstUsed: { family: string; sessionId: string } | null = null;
+  let firstValid: { rawToken: string; family: string; sessionId: string } | null = null;
+  const usedCandidates: Array<{ family: string; sessionId: string }> = [];
 
   for (const rawToken of rawCandidates) {
     const tokenHash = sha256Hex(rawToken);
@@ -287,17 +288,35 @@ export async function classifyRefreshCandidates(
     const isValid =
       stored.usedAt == null && stored.revokedAt == null && stored.expiresAt > now;
     if (isValid) {
-      return { kind: 'valid', rawToken };
+      firstValid ??= { rawToken, family: stored.family, sessionId: stored.sessionId };
+      continue;
     }
 
-    // A used OR revoked row with no valid sibling is the reuse-detection signal.
-    // Remember the FIRST such row so the caller revokes the correct family.
-    if (firstUsed === null && (stored.usedAt != null || stored.revokedAt != null)) {
-      firstUsed = { family: stored.family, sessionId: stored.sessionId };
+    if (stored.usedAt != null || stored.revokedAt != null) {
+      usedCandidates.push({ family: stored.family, sessionId: stored.sessionId });
     }
   }
 
-  if (firstUsed !== null) {
+  if (firstValid !== null) {
+    const { family: validFamily, sessionId: validSessionId } = firstValid;
+    const unrelatedUsed = usedCandidates.find(
+      (candidate) =>
+        candidate.family !== validFamily || candidate.sessionId !== validSessionId
+    );
+
+    // A used/revoked token can only be ignored as a stale migration duplicate
+    // when it belongs to the same rotation family AND session as the valid
+    // candidate. Otherwise it is an unrelated replay attempt and must trigger
+    // reuse-detection containment.
+    if (unrelatedUsed === undefined) {
+      return { kind: 'valid', rawToken: firstValid.rawToken };
+    }
+
+    return { kind: 'used', family: unrelatedUsed.family, sessionId: unrelatedUsed.sessionId };
+  }
+
+  const firstUsed = usedCandidates[0];
+  if (firstUsed !== undefined) {
     return { kind: 'used', family: firstUsed.family, sessionId: firstUsed.sessionId };
   }
 
@@ -690,7 +709,9 @@ export async function issueAndSetRefreshCookie(
 
   // Same user already has a slot -> reuse it after revoking the old family
   // (a fresh sign-in for the same account must invalidate the prior token so
-  // a replay can't ride the same slot).
+  // a replay can't ride the same slot). FedCM/service sign-ins may intentionally
+  // reuse the same stable sessionId; in that case revoke the old token family
+  // without deactivating the still-current session.
   const existing = userIdToAuthuser.get(userIdStr);
   if (typeof existing === 'number') {
     const buckets = parseAllRefreshCookies(cookieHeader);
@@ -699,7 +720,8 @@ export async function issueAndSetRefreshCookie(
       const tokenHash = sha256Hex(raw);
       const row = await RefreshToken.findOne({ tokenHash });
       if (row) {
-        await revokeFamily(row.family, row.sessionId);
+        const sessionToDeactivate = row.sessionId === sessionId ? undefined : row.sessionId;
+        await revokeFamily(row.family, sessionToDeactivate);
         break;
       }
     }

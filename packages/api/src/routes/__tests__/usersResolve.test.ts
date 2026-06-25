@@ -400,7 +400,7 @@ describe('PUT /users/resolve (C4)', () => {
     expect(mockUserFindOneAndUpdate).toHaveBeenCalledTimes(1);
   });
 
-  it('no refresh flag: still schedules an avatar download with force=false (scheduler decides to skip)', async () => {
+  it('no refresh flag: skips scheduling when an existing stored avatar would make the worker a no-op', async () => {
     const newAvatarUrl = 'https://mastodon.social/avatars/alice.png';
 
     // First findOne: type-immutability check — no existing user found.
@@ -432,12 +432,45 @@ describe('PUT /users/resolve (C4)', () => {
     });
 
     expect(res.status).toBe(200);
-    // Scheduling is unconditional for http avatars; the scheduler (not the
-    // route) decides whether a stored file id makes the download a no-op.
+    expect(mockScheduleAvatarRefresh).not.toHaveBeenCalled();
+    expect(mockUserFindOneAndUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it('no refresh flag: schedules the initial avatar download when no stored avatar exists', async () => {
+    const newAvatarUrl = 'https://mastodon.social/avatars/alice.png';
+
+    // First findOne: type-immutability check — no existing user found.
+    const immutabilityLean = jest.fn().mockResolvedValue(null);
+    const immutabilitySelect = jest.fn().mockReturnValue({ lean: immutabilityLean });
+    // Second findOne: avatar lookup — no stored file id yet.
+    const avatarLean = jest.fn().mockResolvedValue({ avatar: undefined });
+    const avatarSelect = jest.fn().mockReturnValue({ lean: avatarLean });
+    mockUserFindOne
+      .mockReturnValueOnce({ select: immutabilitySelect })
+      .mockReturnValueOnce({ select: avatarSelect });
+
+    const newUserDoc = {
+      _id: 'new-user',
+      username: 'alice@mastodon.social',
+      type: 'federated',
+    };
+    const updateLean = jest.fn().mockResolvedValue(newUserDoc);
+    const updateSelect = jest.fn().mockReturnValue({ lean: updateLean });
+    mockUserFindOneAndUpdate.mockReturnValueOnce({ select: updateSelect });
+
+    const res = await requestJson(server, 'PUT', '/users/resolve', {
+      type: 'federated',
+      username: 'alice@mastodon.social',
+      actorUri: 'https://mastodon.social/users/alice',
+      domain: 'mastodon.social',
+      avatar: newAvatarUrl,
+    });
+
+    expect(res.status).toBe(200);
     expect(mockScheduleAvatarRefresh).toHaveBeenCalledWith(
       'new-user',
       newAvatarUrl,
-      'file-abc',
+      undefined,
       { force: false },
     );
     expect(mockUserFindOneAndUpdate).toHaveBeenCalledTimes(1);

@@ -6,11 +6,12 @@
  * Generates an RSA key pair for DKIM email signing and outputs:
  * 1. A private key file (dkim-private.pem)
  * 2. The DNS TXT record value to add to your domain
- * 3. The env var to set in your .env file
+ * 3. Safe env var setup instructions (without printing secret material by default)
  *
  * Usage:
  *   node packages/api/scripts/generate-dkim.js
  *   node packages/api/scripts/generate-dkim.js --selector=mail --domain=oxy.so --output=./keys
+ *   node packages/api/scripts/generate-dkim.js --print-private-key  # Explicitly print secret material
  */
 
 const crypto = require('crypto');
@@ -27,6 +28,8 @@ process.argv.slice(2).forEach((arg) => {
 const selector = args.selector || process.env.DKIM_SELECTOR || 'default';
 const domain = args.domain || process.env.EMAIL_DOMAIN || 'oxy.so';
 const outputDir = args.output || process.cwd();
+const shouldPrintPrivateKey =
+  args['print-private-key'] === true || args['print-private-key'] === 'true';
 
 console.log('');
 console.log('=== DKIM Key Generator for Oxy Email ===');
@@ -91,15 +94,24 @@ if (dnsRecord.length > 255) {
 
 console.log('=== Environment Variable ===');
 console.log('');
-console.log('Option A: Set directly (inline, escape newlines):');
+console.log('Set DKIM_PRIVATE_KEY from the generated private key file in your secret manager.');
 console.log('');
-const escaped = privateKey.replace(/\n/g, '\\n').replace(/\r/g, '');
-console.log(`  DKIM_PRIVATE_KEY="${escaped}"`);
-console.log('');
-console.log('Option B: Read from file in your startup script:');
+console.log('Example for local shells:');
 console.log('');
 console.log(`  export DKIM_PRIVATE_KEY=$(cat ${privateKeyPath})`);
 console.log('');
+if (shouldPrintPrivateKey) {
+  console.log('WARNING: --print-private-key prints secret DKIM signing material to stdout.');
+  console.log('Only use this in a trusted, non-logged terminal.');
+  console.log('');
+  const escaped = privateKey.replace(/\n/g, '\\n').replace(/\r/g, '');
+  console.log(`  DKIM_PRIVATE_KEY="${escaped}"`);
+  console.log('');
+} else {
+  console.log('Secret material was not printed. Re-run with --print-private-key only if you');
+  console.log('must copy the value manually and your terminal output is not logged.');
+  console.log('');
+}
 
 console.log('=== Other Required DNS Records ===');
 console.log('');

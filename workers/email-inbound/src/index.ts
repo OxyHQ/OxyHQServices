@@ -45,8 +45,14 @@ export default {
       if (!response.ok) {
         const text = await response.text();
         // If the API rejects the message (e.g. unknown recipient, spam),
-        // we don't retry — just log it
-        if (response.status >= 400 && response.status < 500) {
+        // we don't retry — just log it. Rate limiting and request timeouts are
+        // retryable delivery failures, not permanent message rejections.
+        if (
+          response.status >= 400 &&
+          response.status < 500 &&
+          response.status !== 408 &&
+          response.status !== 429
+        ) {
           console.log(`API rejected message: ${response.status} ${text}`);
           // Reject the message back to the sender so they get a bounce
           message.setReject(`Message rejected: ${text}`);

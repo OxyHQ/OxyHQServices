@@ -6,6 +6,33 @@ const router = Router();
 
 const ALIA_BASE_URL = 'https://api.alia.onl/v1';
 const ALIA_API_KEY = process.env.ALIA_API_KEY;
+const ALIA_PROXY_ERROR_MESSAGE = 'Failed to reach Alia API';
+
+const isReadableStream = (value: unknown): value is NodeJS.ReadableStream => {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as NodeJS.ReadableStream).pipe === 'function' &&
+    typeof (value as NodeJS.ReadableStream).on === 'function'
+  );
+};
+
+const toSafeErrorMessage = (data: unknown): unknown => {
+  if (data === undefined || data === null || isReadableStream(data)) {
+    return ALIA_PROXY_ERROR_MESSAGE;
+  }
+
+  if (typeof data !== 'object') {
+    return data;
+  }
+
+  try {
+    JSON.stringify(data);
+    return data;
+  } catch {
+    return ALIA_PROXY_ERROR_MESSAGE;
+  }
+};
 
 /**
  * POST /api/alia/chat/completions
@@ -40,7 +67,7 @@ router.post('/chat/completions', authMiddleware, async (req: Request, res: Respo
     }
   } catch (err: any) {
     const status = err.response?.status ?? 502;
-    const message = err.response?.data ?? 'Failed to reach Alia API';
+    const message = toSafeErrorMessage(err.response?.data);
     res.status(status).json({ error: 'ALIA_PROXY_ERROR', message });
   }
 });

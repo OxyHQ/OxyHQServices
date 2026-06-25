@@ -80,6 +80,16 @@ const USERNAME_REGEX = /^[a-zA-Z0-9]{3,30}$/;
 // Password Authentication Routes
 // ============================================
 
+// Dedicated per-IP password login limit. The sign-in controller also enforces
+// per-identifier lockout, but this route-level limiter prevents spraying a few
+// guesses across many accounts from the same network.
+const loginLimiter = rateLimit({
+  prefix: 'rl:auth:login:',
+  windowMs: 15 * 60 * 1000,
+  max: process.env.NODE_ENV === 'development' ? 200 : 30,
+  message: 'Too many login attempts from this IP, please try again later.',
+});
+
 /**
  * @openapi
  * /auth/signup:
@@ -292,7 +302,7 @@ router.post('/signup', validate({ body: signupSchema }), SessionController.signU
  *       429:
  *         description: Too many failed login attempts. Try again later.
  */
-router.post('/login', validate({ body: loginSchema }), SessionController.signIn);
+router.post('/login', loginLimiter, validate({ body: loginSchema }), SessionController.signIn);
 
 /**
  * @openapi
@@ -774,10 +784,10 @@ router.post('/refresh', refreshLimiter, requireSameSiteOrigin, asyncHandler(asyn
   };
 
   if (classification.kind === 'used') {
-    // REUSE DETECTED. SECURITY: a lone used/revoked token with NO valid sibling
-    // in THIS slot is a theft signal. We revoke the whole family + deactivate
-    // the session for the affected slot ONLY — other indexed slots (other
-      // signed-in accounts on this device) stay untouched.
+    // REUSE DETECTED. SECURITY: a used/revoked token is a theft signal unless
+    // classification found a valid sibling from the SAME family+session in THIS
+    // slot. Revoke the affected family + deactivate that session only — other
+    // indexed slots (other signed-in accounts on this device) stay untouched.
     await revokeFamily(classification.family, classification.sessionId);
     clearThisSlot();
     logger.warn('[RefreshToken] Reuse detected — family revoked', {

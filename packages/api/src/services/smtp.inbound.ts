@@ -38,10 +38,8 @@ export function startSmtpInbound(): SMTPServer {
           'ECDHE-RSA-AES128-GCM-SHA256',
           'DHE-RSA-AES256-GCM-SHA384',
           'DHE-RSA-AES128-GCM-SHA256',
-          'AES256-GCM-SHA384',
-          'AES128-GCM-SHA256',
         ].join(':'),
-        // Include rsa_pkcs1_sha1 for older MTAs still using TLSv1.2
+        // Keep STARTTLS on forward-secret TLS 1.2+ suites and SHA-256+ signatures.
         sigalgs: [
           'ecdsa_secp256r1_sha256',
           'ecdsa_secp384r1_sha384',
@@ -51,11 +49,10 @@ export function startSmtpInbound(): SMTPServer {
           'rsa_pkcs1_sha256',
           'rsa_pkcs1_sha384',
           'rsa_pkcs1_sha512',
-          'rsa_pkcs1_sha1',
         ].join(':'),
       };
     } catch (err) {
-      logger.warn('SMTP TLS certs not found, starting without STARTTLS', {
+      logger.error('SMTP TLS certs could not be loaded; refusing to start plaintext SMTP inbound', {
         keyPath: SMTP_INBOUND_CONFIG.tls.key,
         certPath: SMTP_INBOUND_CONFIG.tls.cert,
         error: err instanceof Error ? err.message : String(err),
@@ -63,21 +60,18 @@ export function startSmtpInbound(): SMTPServer {
     }
   }
 
-  // Disable STARTTLS when no certs are configured to prevent broken TLS
-  // handshakes that cause MTAs to reject delivery
-  const disabledCommands = ['AUTH'];
   if (!tlsOptions) {
-    disabledCommands.push('STARTTLS');
-    logger.info('No TLS certs configured, STARTTLS disabled — accepting plaintext only');
+    throw new Error('SMTP inbound requires readable SMTP_TLS_KEY and SMTP_TLS_CERT to advertise STARTTLS');
   }
 
   smtpServer = new SMTPServer({
     name: EMAIL_DOMAIN,
     banner: SMTP_INBOUND_CONFIG.banner,
     size: SMTP_INBOUND_CONFIG.maxMessageSize,
-    disabledCommands,
+    disabledCommands: ['AUTH'],
     authOptional: true,
-    ...(tlsOptions ? { secure: false, ...tlsOptions } : {}),
+    secure: false,
+    ...tlsOptions,
 
     /**
      * Validate RCPT TO addresses — reject if the user doesn't exist.
