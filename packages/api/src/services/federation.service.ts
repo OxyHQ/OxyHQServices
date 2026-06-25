@@ -7,6 +7,8 @@
  */
 
 import crypto from 'crypto';
+import dns from 'dns/promises';
+import net from 'net';
 import mongoose from 'mongoose';
 import User, { IUser } from '../models/User';
 import { AssetService } from './assetService';
@@ -61,6 +63,8 @@ const REFRESH_MIN_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
  * meaningfully change faster than the actor record it belongs to.
  */
 const AVATAR_REFRESH_MIN_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+const MAX_AVATAR_DOWNLOAD_BYTES = 5 * 1024 * 1024;
+const MAX_AVATAR_REDIRECTS = 3;
 
 const FEDIVERSE_HANDLE_REGEX = /^@?[\w.-]+@[\w.-]+\.\w+$/;
 
@@ -77,6 +81,118 @@ function normalizeFediverseHandle(handle: string): string | null {
   if (!localPart || !domain) return null;
 
   return `${localPart}@${domain}`;
+}
+
+function isBlockedIPv4(ip: string): boolean {
+  const parts = ip.split('.').map((part) => Number(part));
+  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) {
+    return true;
+  }
+
+  const [a, b] = parts;
+  return (
+    a === 0 ||
+    a === 10 ||
+    a === 127 ||
+    (a === 169 && b === 254) ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168) ||
+    (a === 100 && b >= 64 && b <= 127) ||
+    a >= 224
+  );
+}
+
+function isBlockedIPv6(ip: string): boolean {
+  const normalized = ip.toLowerCase();
+  const mappedIpv4 = normalized.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+  if (mappedIpv4) {
+    return isBlockedIPv4(mappedIpv4[1]);
+  }
+
+  return (
+    normalized === '::' ||
+    normalized === '::1' ||
+    normalized.startsWith('fc') ||
+    normalized.startsWith('fd') ||
+    normalized.startsWith('fe80:') ||
+    normalized.startsWith('::ffff:0:') ||
+    normalized.startsWith('64:ff9b:') ||
+    normalized.startsWith('2001:db8:') ||
+    normalized.startsWith('2001:2:') ||
+    normalized.startsWith('2001:10:') ||
+    normalized.startsWith('ff')
+  );
+}
+
+function isBlockedIpAddress(ip: string): boolean {
+  const family = net.isIP(ip);
+  if (family === 4) return isBlockedIPv4(ip);
+  if (family === 6) return isBlockedIPv6(ip);
+  return true;
+}
+
+async function assertSafeAvatarUrl(avatarUrl: string): Promise<URL> {
+  let parsed: URL;
+  try {
+    parsed = new URL(avatarUrl);
+  } catch {
+    throw new Error('Invalid avatar URL');
+  }
+
+  if (parsed.protocol !== 'https:') {
+    throw new Error('Avatar URL must use HTTPS');
+  }
+  if (parsed.username || parsed.password) {
+    throw new Error('Avatar URL credentials are not allowed');
+  }
+  if (parsed.port && parsed.port !== '443') {
+    throw new Error('Avatar URL custom ports are not allowed');
+  }
+
+  const hostname = parsed.hostname.replace(/^\[|\]$/g, '');
+  if (!hostname || hostname.toLowerCase() === 'localhost') {
+    throw new Error('Avatar URL hostname is not allowed');
+  }
+
+  if (net.isIP(hostname) !== 0) {
+    if (isBlockedIpAddress(hostname)) {
+      throw new Error('Avatar URL IP address is not allowed');
+    }
+    return parsed;
+  }
+
+  const addresses = await dns.lookup(hostname, { all: true, verbatim: true });
+  if (addresses.length === 0 || addresses.some(({ address }) => isBlockedIpAddress(address))) {
+    throw new Error('Avatar URL resolved to a blocked address');
+  }
+
+  return parsed;
+}
+
+async function fetchSafeAvatarUrl(
+  avatarUrl: string,
+  init: RequestInit,
+  redirectsRemaining = MAX_AVATAR_REDIRECTS,
+): Promise<Response> {
+  const parsed = await assertSafeAvatarUrl(avatarUrl);
+  const res = await fetch(parsed.toString(), {
+    ...init,
+    redirect: 'manual',
+  });
+
+  if ([301, 302, 303, 307, 308].includes(res.status)) {
+    if (redirectsRemaining <= 0) {
+      throw new Error('Avatar download exceeded redirect limit');
+    }
+    const location = res.headers.get('location');
+    if (!location) {
+      throw new Error('Avatar redirect missing Location header');
+    }
+    const redirectedUrl = new URL(location, parsed);
+    return fetchSafeAvatarUrl(redirectedUrl.toString(), init, redirectsRemaining - 1);
+  }
+
+  return res;
 }
 
 function domainFromHandle(handle: string): string | null {
@@ -690,7 +806,7 @@ class FederationService {
         requestHeaders['If-Modified-Since'] = conditional.lastModified;
       }
 
-      const res = await fetch(avatarUrl, {
+      const res = await fetchSafeAvatarUrl(avatarUrl, {
         headers: requestHeaders,
         signal: AbortSignal.timeout(15_000),
       });
@@ -729,6 +845,14 @@ class FederationService {
 
       const etag = res.headers.get('etag') || undefined;
       const lastModified = res.headers.get('last-modified') || undefined;
+      const contentLength = res.headers.get('content-length');
+      if (contentLength) {
+        const parsedLength = Number(contentLength);
+        if (!Number.isFinite(parsedLength) || parsedLength <= 0 || parsedLength > MAX_AVATAR_DOWNLOAD_BYTES) {
+          logger.warn(`Avatar download skipped: invalid content-length "${contentLength}" for ${avatarUrl}`);
+          return { fileId: null, etag, lastModified, notModified: false };
+        }
+      }
 
       // Sanitize content-type: strip parameters (e.g. "image/jpeg; charset=utf-8" → "image/jpeg")
       const rawContentType = res.headers.get('content-type') || 'image/png';
@@ -741,7 +865,7 @@ class FederationService {
       }
 
       const buffer = Buffer.from(await res.arrayBuffer());
-      if (buffer.length === 0 || buffer.length > 5 * 1024 * 1024) {
+      if (buffer.length === 0 || buffer.length > MAX_AVATAR_DOWNLOAD_BYTES) {
         return { fileId: null, etag, lastModified, notModified: false }; // max 5MB
       }
 

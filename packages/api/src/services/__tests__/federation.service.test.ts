@@ -24,6 +24,7 @@ const mockCacheInvalidate = jest.fn();
 const mockAssetFileContentExists = jest.fn();
 const mockAssetUploadFileDirect = jest.fn();
 const mockAssetDeleteFile = jest.fn();
+const mockDnsLookup = jest.fn();
 
 process.env.AWS_ACCESS_KEY_ID ||= 'test-access-key';
 process.env.AWS_SECRET_ACCESS_KEY ||= 'test-secret-key';
@@ -89,6 +90,11 @@ jest.mock('../s3Service', () => ({
   __esModule: true,
   createS3Service: jest.fn(() => ({})),
 }));
+jest.mock('dns/promises', () => ({
+  __esModule: true,
+  default: { lookup: mockDnsLookup },
+  lookup: mockDnsLookup,
+}));
 
 import { federationService } from '../federation.service';
 
@@ -153,6 +159,7 @@ function resetAssetMocks(): void {
   mockAssetFileContentExists.mockResolvedValue(true);
   mockAssetUploadFileDirect.mockResolvedValue(mockUploadedFile('uploaded-file-id'));
   mockAssetDeleteFile.mockResolvedValue(undefined);
+  mockDnsLookup.mockResolvedValue([{ address: '93.184.216.34', family: 4 }]);
 }
 
 /** Let any scheduled fire-and-forget background refresh settle. */
@@ -480,6 +487,48 @@ describe('FederationService.scheduleAvatarRefresh (off request path)', () => {
     jest.clearAllMocks();
     resetAssetMocks();
     mockUserUpdateOne.mockResolvedValue({ acknowledged: true });
+  });
+
+  it('blocks unsafe avatar URLs before fetch to prevent SSRF', async () => {
+    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue({
+      status: 200,
+      ok: true,
+      headers: { get: () => 'image/png' },
+      arrayBuffer: () => Promise.resolve(Buffer.from('png-bytes').buffer),
+    } as unknown as Response);
+
+    await expect(federationService.downloadAndStoreAvatar('http://127.0.0.1/avatar.png'))
+      .resolves.toMatchObject({ fileId: null, notModified: false });
+    expect(fetchSpy).not.toHaveBeenCalled();
+
+    mockDnsLookup.mockResolvedValueOnce([{ address: '10.0.0.5', family: 4 }]);
+    await expect(federationService.downloadAndStoreAvatar('https://metadata.example/avatar.png'))
+      .resolves.toMatchObject({ fileId: null, notModified: false });
+    expect(fetchSpy).not.toHaveBeenCalled();
+
+    fetchSpy.mockRestore();
+  });
+
+  it('rejects oversized avatars from Content-Length before buffering', async () => {
+    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue({
+      status: 200,
+      ok: true,
+      headers: {
+        get: (name: string) => {
+          if (name.toLowerCase() === 'content-length') return `${5 * 1024 * 1024 + 1}`;
+          if (name.toLowerCase() === 'content-type') return 'image/png';
+          return null;
+        },
+      },
+      arrayBuffer: jest.fn(),
+    } as unknown as Response);
+
+    await expect(federationService.downloadAndStoreAvatar('https://cdn.example/avatar.png'))
+      .resolves.toMatchObject({ fileId: null, notModified: false });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(mockAssetUploadFileDirect).not.toHaveBeenCalled();
+
+    fetchSpy.mockRestore();
   });
 
   it('skips the forced re-download when lastAvatarFetchedAt is within the throttle window', async () => {
