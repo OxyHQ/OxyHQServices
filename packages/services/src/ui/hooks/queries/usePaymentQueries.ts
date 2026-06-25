@@ -37,7 +37,7 @@ export const useUserSubscription = (options?: { enabled?: boolean }) => {
   const { oxyServices, isAuthenticated, activeSessionId } = useOxy();
 
   return useQuery({
-    queryKey: queryKeys.payments.subscription(),
+    queryKey: queryKeys.payments.subscription(activeSessionId ?? undefined),
     queryFn: async () => {
       return authenticatedApiCall<Subscription>(
         oxyServices,
@@ -62,7 +62,7 @@ export const useUserPayments = (options?: { enabled?: boolean }) => {
   const { oxyServices, isAuthenticated, activeSessionId } = useOxy();
 
   return useQuery({
-    queryKey: queryKeys.payments.history(),
+    queryKey: queryKeys.payments.history(activeSessionId ?? undefined),
     queryFn: async () => {
       return authenticatedApiCall<Payment[]>(
         oxyServices,
@@ -87,7 +87,7 @@ export const useUserWallet = (options?: { enabled?: boolean }) => {
   const { oxyServices, isAuthenticated, activeSessionId } = useOxy();
 
   return useQuery({
-    queryKey: queryKeys.payments.wallet(),
+    queryKey: queryKeys.payments.wallet(activeSessionId ?? undefined),
     queryFn: async () => {
       return authenticatedApiCall<Wallet>(
         oxyServices,
@@ -121,7 +121,11 @@ export const useUserWalletTransactions = (
   const offset = params?.offset;
 
   return useQuery({
-    queryKey: queryKeys.payments.walletTransactions(limit, offset),
+    queryKey: queryKeys.payments.walletTransactions(
+      limit,
+      offset,
+      activeSessionId ?? undefined,
+    ),
     queryFn: async () => {
       return authenticatedApiCall<WalletTransactionsResponse>(
         oxyServices,

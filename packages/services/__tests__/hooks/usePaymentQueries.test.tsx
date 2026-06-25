@@ -221,6 +221,32 @@ describe('payment query hooks', () => {
       expect(result.current.data?.balance).toBe(42.5);
       expect(result.current.data?.address).toBeNull();
     });
+
+    it('scopes wallet cache by active session so account switches refetch', async () => {
+      const { rerender, result } = renderHook(() => useUserWallet(), {
+        wrapper: makeWrapper(queryClient),
+      });
+
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+      expect(mockState.oxyServices.getCurrentUserWallet).toHaveBeenCalledTimes(1);
+
+      mockState = {
+        ...mockState,
+        activeSessionId: 'sess-2',
+        user: { id: 'u2' },
+      };
+      rerender();
+
+      await waitFor(() =>
+        expect(mockState.oxyServices.getCurrentUserWallet).toHaveBeenCalledTimes(2),
+      );
+      expect(queryClient.getQueryData(['payments', 'wallet', 'sess-1'])).toEqual(
+        WALLET_FIXTURE,
+      );
+      expect(queryClient.getQueryData(['payments', 'wallet', 'sess-2'])).toEqual(
+        WALLET_FIXTURE,
+      );
+    });
   });
 
   describe('useUserWalletTransactions', () => {

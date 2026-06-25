@@ -8,6 +8,7 @@ import { handleAuthError, isInvalidSessionError } from '../utils/errorHandlers';
 import type { OxyServices } from '@oxyhq/core';
 import type { QueryClient } from '@tanstack/react-query';
 import { clearQueryCache } from './queryClient';
+import { queryKeys } from './queries/queryKeys';
 import { isWebBrowser } from './useWebSSO';
 import { writeActiveAuthuser } from '../utils/activeAuthuser';
 
@@ -300,6 +301,7 @@ export const useSessionManagement = ({
         }
 
         const user = validation.user as User;
+        queryClient?.removeQueries({ queryKey: queryKeys.payments.all });
         await activateSession(sessionId, user);
 
         try {
@@ -353,6 +355,7 @@ export const useSessionManagement = ({
       logger,
       onError,
       oxyServices,
+      queryClient,
       setAuthError,
       updateSessions,
     ],

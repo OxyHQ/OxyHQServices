@@ -90,17 +90,19 @@ describe('queryKeys.payments', () => {
     expect(queryKeys.payments.all).toEqual(['payments']);
   });
 
-  it("subscription() resolves to 'current' when no userId is provided", () => {
+  it("subscription() resolves to 'current' when no session scope is provided", () => {
     expect(queryKeys.payments.subscription()).toEqual(['payments', 'subscription', 'current']);
-    expect(queryKeys.payments.subscription('u1')).toEqual(['payments', 'subscription', 'u1']);
+    expect(queryKeys.payments.subscription('sess-1')).toEqual(['payments', 'subscription', 'sess-1']);
   });
 
-  it('history() builds [payments, history, current]', () => {
+  it('history() includes the session scope when provided', () => {
     expect(queryKeys.payments.history()).toEqual(['payments', 'history', 'current']);
+    expect(queryKeys.payments.history('sess-1')).toEqual(['payments', 'history', 'sess-1']);
   });
 
-  it('wallet() builds [payments, wallet, current]', () => {
+  it('wallet() includes the session scope when provided', () => {
     expect(queryKeys.payments.wallet()).toEqual(['payments', 'wallet', 'current']);
+    expect(queryKeys.payments.wallet('sess-1')).toEqual(['payments', 'wallet', 'sess-1']);
   });
 
   it('walletTransactions() includes pagination in the leaf so pages cache independently', () => {
@@ -112,10 +114,10 @@ describe('queryKeys.payments', () => {
       5,
       0,
     ]);
-    expect(queryKeys.payments.walletTransactions(5, 5)).toEqual([
+    expect(queryKeys.payments.walletTransactions(5, 5, 'sess-2')).toEqual([
       'payments',
       'wallet',
-      'current',
+      'sess-2',
       'transactions',
       5,
       5,
