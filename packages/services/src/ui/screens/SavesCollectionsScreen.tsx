@@ -1,24 +1,22 @@
 import React, { useState, useEffect } from 'react';
-import {
-    View,
-    Text,
-    TouchableOpacity,
-    StyleSheet,
-    ScrollView,
-} from 'react-native';
+import { View, ScrollView } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
 import { toast } from '@oxyhq/bloom';
+import {
+    SegmentedControl,
+    SegmentedControlItem,
+    SegmentedControlItemText,
+} from '@oxyhq/bloom/segmented-control';
+import { useTheme } from '@oxyhq/bloom/theme';
+import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 import Header from '../components/Header';
 import LoadingState from '../components/LoadingState';
 import EmptyState from '../components/EmptyState';
-import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 import { SettingsIcon } from '../components/SettingsIcon';
 import { useI18n } from '../hooks/useI18n';
-import { useTheme } from '@oxyhq/bloom/theme';
-import { useColorScheme } from '../hooks/useColorScheme';
-import { Colors } from '../constants/theme';
-import { normalizeColorScheme } from '@oxyhq/core';
 import { useOxy } from '../context/OxyContext';
+
+type SavesTab = 'saves' | 'collections';
 
 interface SavedItem {
     id: string;
@@ -38,23 +36,16 @@ interface Collection {
 
 const SavesCollectionsScreen: React.FC<BaseScreenProps> = ({
     onClose,
-    theme,
     goBack,
 }) => {
     // Use useOxy() hook for OxyContext values
     const { oxyServices, user } = useOxy();
     const { t } = useI18n();
+    const bloomTheme = useTheme();
     const [savedItems, setSavedItems] = useState<SavedItem[]>([]);
     const [collections, setCollections] = useState<Collection[]>([]);
     const [isLoading, setIsLoading] = useState(true);
-    const [activeTab, setActiveTab] = useState<'saves' | 'collections'>('saves');
-
-    const bloomTheme = useTheme();
-    const colorScheme = useColorScheme();
-    const normalizedColorScheme = normalizeColorScheme(colorScheme);
-    const themeColors = Colors[normalizedColorScheme];
-    const tabActiveColor = themeColors.iconSecurity;
-    const tabInactiveColor = bloomTheme.colors.textTertiary;
+    const [activeTab, setActiveTab] = useState<SavesTab>('saves');
 
     // Load saved items and collections from API
     useEffect(() => {
@@ -95,7 +86,7 @@ const SavesCollectionsScreen: React.FC<BaseScreenProps> = ({
     };
 
     return (
-        <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
+        <View className="flex-1 bg-bg">
             <Header
                 title={t('saves.title') || 'Saves & Collections'}
                 onBack={goBack || onClose}
@@ -104,117 +95,79 @@ const SavesCollectionsScreen: React.FC<BaseScreenProps> = ({
             />
 
             {/* Tabs */}
-            <View style={[styles.tabs, { borderBottomColor: bloomTheme.colors.border }]}>
-                <TouchableOpacity
-                    style={[
-                        styles.tab,
-                        activeTab === 'saves' && { borderBottomColor: tabActiveColor },
-                    ]}
-                    onPress={() => setActiveTab('saves')}
+            <View className="px-screen-margin py-space-12 border-b border-border">
+                <SegmentedControl<SavesTab>
+                    label={t('saves.title') || 'Saves & Collections'}
+                    type="tabs"
+                    value={activeTab}
+                    onChange={setActiveTab}
                 >
-                    <Text
-                        style={[
-                            styles.tabText,
-                            {
-                                color: activeTab === 'saves' ? tabActiveColor : tabInactiveColor,
-                                fontWeight: activeTab === 'saves' ? '600' : '400',
-                            },
-                        ]}
-                    >
-                        {t('saves.tabs.saves') || 'Saves'}
-                    </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                    style={[
-                        styles.tab,
-                        activeTab === 'collections' && { borderBottomColor: tabActiveColor },
-                    ]}
-                    onPress={() => setActiveTab('collections')}
-                >
-                    <Text
-                        style={[
-                            styles.tabText,
-                            {
-                                color: activeTab === 'collections' ? tabActiveColor : tabInactiveColor,
-                                fontWeight: activeTab === 'collections' ? '600' : '400',
-                            },
-                        ]}
-                    >
-                        {t('saves.tabs.collections') || 'Collections'}
-                    </Text>
-                </TouchableOpacity>
+                    <SegmentedControlItem value="saves">
+                        <SegmentedControlItemText>
+                            {t('saves.tabs.saves') || 'Saves'}
+                        </SegmentedControlItemText>
+                    </SegmentedControlItem>
+                    <SegmentedControlItem value="collections">
+                        <SegmentedControlItemText>
+                            {t('saves.tabs.collections') || 'Collections'}
+                        </SegmentedControlItemText>
+                    </SegmentedControlItem>
+                </SegmentedControl>
             </View>
 
-            <ScrollView style={styles.content}>
-                {isLoading ? (
-                    <LoadingState
-                        message={t('saves.loading') || 'Loading...'}
-                        color={bloomTheme.colors.text}
-                    />
-                ) : activeTab === 'saves' ? (
-                    savedItems.length === 0 ? (
-                        <EmptyState
-                            message={t('saves.empty') || 'No saved items yet'}
-                            textColor={bloomTheme.colors.text}
+            <ScrollView className="flex-1">
+                <View className="px-screen-margin pb-space-24">
+                    {isLoading ? (
+                        <LoadingState
+                            message={t('saves.loading') || 'Loading...'}
+                            color={bloomTheme.colors.text}
                         />
+                    ) : activeTab === 'saves' ? (
+                        savedItems.length === 0 ? (
+                            <EmptyState
+                                message={t('saves.empty') || 'No saved items yet'}
+                                textColor={bloomTheme.colors.text}
+                            />
+                        ) : (
+                            <SettingsListGroup title={t('saves.savedItems') || 'Saved Items'}>
+                                {savedItems.map((item) => (
+                                    <SettingsListItem
+                                        key={item.id}
+                                        icon={
+                                            <SettingsIcon
+                                                name={item.type === 'post' ? 'file-document-outline' : 'folder'}
+                                                color={item.type === 'post' ? bloomTheme.colors.primary : bloomTheme.colors.info}
+                                            />
+                                        }
+                                        title={item.title}
+                                        description={formatDate(item.savedAt)}
+                                    />
+                                ))}
+                            </SettingsListGroup>
+                        )
                     ) : (
-                        <SettingsListGroup title={t('saves.savedItems') || 'Saved Items'}>
-                            {savedItems.map((item) => (
-                                <SettingsListItem
-                                    key={item.id}
-                                    icon={<SettingsIcon name={item.type === 'post' ? 'file-document-outline' : 'folder'} color={item.type === 'post' ? themeColors.iconSecurity : themeColors.iconStorage} />}
-                                    title={item.title}
-                                    description={formatDate(item.savedAt)}
-                                />
-                            ))}
-                        </SettingsListGroup>
-                    )
-                ) : (
-                    collections.length === 0 ? (
-                        <EmptyState
-                            message={t('saves.noCollections') || 'No collections yet'}
-                            textColor={bloomTheme.colors.text}
-                        />
-                    ) : (
-                        <SettingsListGroup title={t('saves.collections') || 'Collections'}>
-                            {collections.map((collection) => (
-                                <SettingsListItem
-                                    key={collection.id}
-                                    icon={<SettingsIcon name="folder" color={themeColors.iconStorage} />}
-                                    title={collection.name}
-                                    description={`${collection.itemCount || 0} items`}
-                                />
-                            ))}
-                        </SettingsListGroup>
-                    )
-                )}
+                        collections.length === 0 ? (
+                            <EmptyState
+                                message={t('saves.noCollections') || 'No collections yet'}
+                                textColor={bloomTheme.colors.text}
+                            />
+                        ) : (
+                            <SettingsListGroup title={t('saves.collections') || 'Collections'}>
+                                {collections.map((collection) => (
+                                    <SettingsListItem
+                                        key={collection.id}
+                                        icon={<SettingsIcon name="folder" color={bloomTheme.colors.info} />}
+                                        title={collection.name}
+                                        description={`${collection.itemCount || 0} items`}
+                                    />
+                                ))}
+                            </SettingsListGroup>
+                        )
+                    )}
+                </View>
             </ScrollView>
         </View>
     );
 };
-
-const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-    },
-    tabs: {
-        flexDirection: 'row',
-        borderBottomWidth: 1,
-    },
-    tab: {
-        flex: 1,
-        paddingVertical: 16,
-        alignItems: 'center',
-        borderBottomWidth: 2,
-        borderBottomColor: 'transparent',
-    },
-    tabText: {
-        fontSize: 16,
-    },
-    content: {
-        flex: 1,
-        padding: 16,
-    },
-});
 
 export default React.memo(SavesCollectionsScreen);
