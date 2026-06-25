@@ -21,7 +21,7 @@ import { setPlatformOS } from '../../utils/platform';
 // Fault-injectable in-memory secure store. `failPlan` lets a test make a
 // specific (op, key) pair throw to simulate a keychain that fails mid-write or
 // is transiently locked.
-const failPlan: { failKey?: string; failOp?: 'set' | 'get' } = {};
+const failPlan: { failKey?: string; failOp?: 'set' | 'get'; failTimes?: number } = {};
 
 jest.mock(
   'expo-secure-store',
@@ -29,6 +29,14 @@ jest.mock(
     const store = new Map<string, string>();
     const maybeFail = (op: 'set' | 'get', key: string) => {
       if (failPlan.failOp === op && failPlan.failKey === key) {
+        if (failPlan.failTimes !== undefined) {
+          failPlan.failTimes -= 1;
+          if (failPlan.failTimes <= 0) {
+            failPlan.failKey = undefined;
+            failPlan.failOp = undefined;
+            failPlan.failTimes = undefined;
+          }
+        }
         throw new Error(`Simulated ${op} failure for ${key}`);
       }
     };
@@ -51,6 +59,7 @@ jest.mock(
         store.clear();
         failPlan.failKey = undefined;
         failPlan.failOp = undefined;
+        failPlan.failTimes = undefined;
       },
       __getStore__: () => store,
       __failPlan__: failPlan,
@@ -92,7 +101,7 @@ jest.mock('../../utils/platformCrypto', () => ({
 interface SecureStoreTestHandle {
   __resetStore__: () => void;
   __getStore__: () => Map<string, string>;
-  __failPlan__: { failKey?: string; failOp?: 'set' | 'get' };
+  __failPlan__: { failKey?: string; failOp?: 'set' | 'get'; failTimes?: number };
 }
 
 describe('KeyManager atomicity & recoverability under flaky storage', () => {
@@ -145,6 +154,36 @@ describe('KeyManager atomicity & recoverability under flaky storage', () => {
     expect(m.get('oxy_identity_backup_private_key')).toBe(originalPriv);
     expect(m.get('oxy_identity_backup_public_key')).toBe(originalPublic);
   });
+
+  it('a failed final backup refresh rejects and rolls back instead of succeeding with a stale backup', async () => {
+    const originalPublic = await KeyManager.createIdentity();
+    const ss = (await import('expo-secure-store' as string)) as unknown as SecureStoreTestHandle;
+    const originalPriv = ss.__getStore__().get('oxy_identity_private_key');
+    resetCaches();
+
+    // Let the new primary write and verify, then fail exactly once while
+    // refreshing the backup to the new identity. This used to return success
+    // with primary=B and backup=A, enabling a later absent-primary restore to
+    // silently switch back to A.
+    ss.__failPlan__.failOp = 'set';
+    ss.__failPlan__.failKey = 'oxy_identity_backup_public_key';
+    ss.__failPlan__.failTimes = 1;
+    await expect(KeyManager.createIdentity({ overwrite: true })).rejects.toBeDefined();
+
+    resetCaches();
+
+    // The operation failed atomically: primary and backup both still identify
+    // the original account, so callers cannot observe success with a stale
+    // cross-account backup.
+    expect(await KeyManager.hasIdentity()).toBe(true);
+    expect(await KeyManager.getPublicKey()).toBe(originalPublic);
+    const m = ss.__getStore__();
+    expect(m.get('oxy_identity_private_key')).toBe(originalPriv);
+    expect(m.get('oxy_identity_public_key')).toBe(originalPublic);
+    expect(m.get('oxy_identity_backup_private_key')).toBe(originalPriv);
+    expect(m.get('oxy_identity_backup_public_key')).toBe(originalPublic);
+  });
+
 
   it('restoreIdentityFromBackup does NOT clobber a healthy primary that is only transiently unreadable', async () => {
     const original = await KeyManager.createIdentity();
