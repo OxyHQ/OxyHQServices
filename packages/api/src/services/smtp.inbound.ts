@@ -55,7 +55,7 @@ export function startSmtpInbound(): SMTPServer {
         ].join(':'),
       };
     } catch (err) {
-      logger.warn('SMTP TLS certs not found, starting without STARTTLS', {
+      logger.error('SMTP TLS certs could not be loaded; refusing to start plaintext SMTP inbound', {
         keyPath: SMTP_INBOUND_CONFIG.tls.key,
         certPath: SMTP_INBOUND_CONFIG.tls.cert,
         error: err instanceof Error ? err.message : String(err),
@@ -63,21 +63,18 @@ export function startSmtpInbound(): SMTPServer {
     }
   }
 
-  // Disable STARTTLS when no certs are configured to prevent broken TLS
-  // handshakes that cause MTAs to reject delivery
-  const disabledCommands = ['AUTH'];
   if (!tlsOptions) {
-    disabledCommands.push('STARTTLS');
-    logger.info('No TLS certs configured, STARTTLS disabled — accepting plaintext only');
+    throw new Error('SMTP inbound requires readable SMTP_TLS_KEY and SMTP_TLS_CERT to advertise STARTTLS');
   }
 
   smtpServer = new SMTPServer({
     name: EMAIL_DOMAIN,
     banner: SMTP_INBOUND_CONFIG.banner,
     size: SMTP_INBOUND_CONFIG.maxMessageSize,
-    disabledCommands,
+    disabledCommands: ['AUTH'],
     authOptional: true,
-    ...(tlsOptions ? { secure: false, ...tlsOptions } : {}),
+    secure: false,
+    ...tlsOptions,
 
     /**
      * Validate RCPT TO addresses — reject if the user doesn't exist.
