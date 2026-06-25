@@ -6,8 +6,8 @@
  * one subdomain over.
  *
  * Ported verbatim from packages/auth-sdk/__tests__/utils/fapiAutoDetect.test.ts
- * plus multi-part-TLD bail-out cases that are unique to the core copy's
- * MULTIPART_TLDS guard.
+ * plus Public Suffix List regression cases that are unique to the core
+ * implementation's registrable-apex guard.
  */
 
 import { autoDetectAuthWebUrl, registrableApex } from '../fapiAutoDetect';
@@ -81,13 +81,28 @@ describe('autoDetectAuthWebUrl', () => {
     });
   });
 
-  describe('bails out on multi-part public suffixes (would derive an attacker-registrable apex)', () => {
-    it('does not derive auth.co.uk from a two-label co.uk host', () => {
-      expect(autoDetectAuthWebUrl(loc('foo.co.uk'))).toBeUndefined();
+  describe('uses the Public Suffix List for registrable apex detection', () => {
+    it('derives from the registrable domain under multi-part public suffixes', () => {
+      expect(autoDetectAuthWebUrl(loc('foo.co.uk'))).toBe('https://auth.foo.co.uk');
+      expect(autoDetectAuthWebUrl(loc('shop.com.au'))).toBe('https://auth.shop.com.au');
+      expect(autoDetectAuthWebUrl(loc('shop.victim.com.tr'))).toBe('https://auth.victim.com.tr');
     });
 
-    it('does not derive auth.com.au from a two-label com.au host', () => {
-      expect(autoDetectAuthWebUrl(loc('shop.com.au'))).toBeUndefined();
+    it('derives from the registrable domain under private hosted suffixes', () => {
+      expect(autoDetectAuthWebUrl(loc('honest.github.io'))).toBe('https://auth.honest.github.io');
+      expect(autoDetectAuthWebUrl(loc('app.victim.pages.dev'))).toBe(
+        'https://auth.victim.pages.dev'
+      );
+      expect(autoDetectAuthWebUrl(loc('site.victim.netlify.app'))).toBe(
+        'https://auth.victim.netlify.app'
+      );
+    });
+
+    it('returns undefined for bare public and private suffixes', () => {
+      expect(autoDetectAuthWebUrl(loc('co.uk'))).toBeUndefined();
+      expect(autoDetectAuthWebUrl(loc('github.io'))).toBeUndefined();
+      expect(autoDetectAuthWebUrl(loc('pages.dev'))).toBeUndefined();
+      expect(autoDetectAuthWebUrl(loc('netlify.app'))).toBeUndefined();
     });
   });
 
@@ -105,7 +120,7 @@ describe('autoDetectAuthWebUrl', () => {
       ['[::1]', undefined],
       ['intranet', undefined],
       ['', undefined],
-      ['foo.co.uk', undefined],
+      ['foo.co.uk', 'https://auth.foo.co.uk'],
     ];
     it.each(cases)('autoDetectAuthWebUrl(%s) === %s', (hostname, expected) => {
       const protocol = hostname === 'localhost' || hostname === '[::1]' ? 'http:' : 'https:';
@@ -128,9 +143,23 @@ describe('registrableApex', () => {
     expect(registrableApex('WWW.Mention.EARTH')).toBe('mention.earth');
   });
 
-  it('returns null for a multi-part public suffix (foo.co.uk -> null)', () => {
-    expect(registrableApex('foo.co.uk')).toBeNull();
-    expect(registrableApex('shop.com.au')).toBeNull();
+  it('returns the eTLD+1 for hosts under multi-part public suffixes', () => {
+    expect(registrableApex('foo.co.uk')).toBe('foo.co.uk');
+    expect(registrableApex('www.foo.co.uk')).toBe('foo.co.uk');
+    expect(registrableApex('shop.victim.com.tr')).toBe('victim.com.tr');
+  });
+
+  it('returns the eTLD+1 for hosts under private hosted suffixes', () => {
+    expect(registrableApex('honest.github.io')).toBe('honest.github.io');
+    expect(registrableApex('app.victim.pages.dev')).toBe('victim.pages.dev');
+    expect(registrableApex('site.victim.netlify.app')).toBe('victim.netlify.app');
+  });
+
+  it('returns null for bare public and private suffixes', () => {
+    expect(registrableApex('co.uk')).toBeNull();
+    expect(registrableApex('github.io')).toBeNull();
+    expect(registrableApex('pages.dev')).toBeNull();
+    expect(registrableApex('netlify.app')).toBeNull();
   });
 
   it('returns null for IPv4 literals', () => {
