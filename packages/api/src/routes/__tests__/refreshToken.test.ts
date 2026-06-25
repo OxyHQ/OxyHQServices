@@ -626,7 +626,8 @@ describe('clearRefreshCookie', () => {
 
     clearRefreshCookie(res, { authuser: 0 });
 
-    // The real cookie clear targets Path=/auth with Max-Age=0.
+    // The real cookie clear targets Path=/auth with Max-Age=0 and also
+    // expires the pre-hardening parent-domain cookie.
     const primaryClear = cookies.find(
       (c) =>
         c.startsWith(`${REFRESH_COOKIE_SLOT_0}=`) &&
@@ -634,5 +635,8 @@ describe('clearRefreshCookie', () => {
         /Max-Age=0/.test(c)
     );
     expect(primaryClear).toBeDefined();
+    expect(
+      cookies.some((c) => c.includes('Domain=oxy.so') && /Max-Age=0/.test(c))
+    ).toBe(true);
   });
 });
