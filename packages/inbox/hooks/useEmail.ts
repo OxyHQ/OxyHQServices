@@ -8,6 +8,7 @@
 import { create } from 'zustand';
 import { createEmailApi, type EmailApiInstance, type Mailbox } from '@/services/emailApi';
 import type { OxyServices } from '@oxyhq/core';
+import { queryClient } from '@/hooks/queries/queryClient';
 
 type HttpService = OxyServices['httpService'];
 
@@ -124,3 +125,22 @@ export const useEmailStore = create<EmailState>((set, get) => ({
     set({ selectedMessageIds: new Set(ids), isSelectionMode: ids.length > 0 });
   },
 }));
+
+/** Reset all inbox-specific state before switching or signing out accounts. */
+export function resetInboxState() {
+  useEmailStore.setState({
+    currentMailbox: null,
+    viewMode: null,
+    selectedMessageId: null,
+    moreExpanded: false,
+    bundleView: false,
+    expandedBundles: new Set<string>(),
+    selectedMessageIds: new Set<string>(),
+    isSelectionMode: false,
+    _api: null,
+  });
+
+  // Clear all React Query caches so stale data from one account cannot be
+  // rendered for the next active account while query results are still fresh.
+  queryClient.clear();
+}

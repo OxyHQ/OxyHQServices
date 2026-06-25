@@ -34,6 +34,7 @@ import { toast } from '@oxyhq/bloom';
 
 import { useColors } from '@/constants/theme';
 import { useSettings, useUpdateSettings } from '@/hooks/queries/useSettings';
+import { resetInboxState } from '@/hooks/useEmail';
 import type { EmailSettings } from '@/services/emailApi';
 import { SectionHeader } from '@/components/settings/SectionHeader';
 
@@ -151,6 +152,7 @@ export function AccountSection() {
 
   const handleSignOut = useCallback(async () => {
     try {
+      resetInboxState();
       await logout();
       toast.success('Signed out.');
     } catch (err) {
