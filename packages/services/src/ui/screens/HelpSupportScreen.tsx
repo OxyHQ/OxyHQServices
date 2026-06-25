@@ -1,32 +1,20 @@
 import React, { useMemo } from 'react';
-import {
-    View,
-    StyleSheet,
-    ScrollView,
-    Linking,
-} from 'react-native';
+import { View, ScrollView, Linking } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
 import { toast } from '@oxyhq/bloom';
+import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
+import { useTheme } from '@oxyhq/bloom/theme';
 import Header from '../components/Header';
 import { SettingsIcon } from '../components/SettingsIcon';
 import { useI18n } from '../hooks/useI18n';
-import { useTheme } from '@oxyhq/bloom/theme';
-import { useColorScheme } from '../hooks/useColorScheme';
-import { Colors } from '../constants/theme';
-import { normalizeColorScheme } from '@oxyhq/core';
-import { SettingsListGroup, SettingsListItem } from '@oxyhq/bloom/settings-list';
 
 const HelpSupportScreen: React.FC<BaseScreenProps> = ({
     onClose,
-    theme,
     goBack,
     navigate,
 }) => {
     const { t } = useI18n();
     const bloomTheme = useTheme();
-    const colorScheme = useColorScheme();
-    const normalizedColorScheme = normalizeColorScheme(colorScheme);
-    const themeColors = Colors[normalizedColorScheme];
 
     const handleContactSupport = useMemo(() => () => {
         Linking.openURL('mailto:support@oxy.so?subject=Support Request').catch(() => {
@@ -48,85 +36,82 @@ const HelpSupportScreen: React.FC<BaseScreenProps> = ({
         });
     }, [t]);
 
+    const handleDocumentation = useMemo(() => () => {
+        Linking.openURL('https://developer.oxy.so/docs').catch(() => {
+            toast.error(t('help.linkError') || 'Failed to open link');
+        });
+    }, [t]);
+
+    const handleCommunity = useMemo(() => () => {
+        Linking.openURL('https://community.oxy.so').catch(() => {
+            toast.error(t('help.linkError') || 'Failed to open link');
+        });
+    }, [t]);
+
+    const handleDevelopersPortal = useMemo(() => () => {
+        Linking.openURL('https://developer.oxy.so').catch(() => {
+            toast.error(t('help.linkError') || 'Failed to open link');
+        });
+    }, [t]);
+
     return (
-        <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
+        <View className="flex-1 bg-bg">
             <Header
                 title={t('help.title') || 'Help & Support'}
-
                 onBack={goBack || onClose}
                 variant="minimal"
                 elevation="subtle"
             />
 
-            <ScrollView style={styles.content}>
-                {/* Help Options */}
-                <SettingsListGroup title={t('help.options') || 'Get Help'}>
-                    <SettingsListItem
-                        icon={<SettingsIcon name="help-circle" color={themeColors.iconSecurity} />}
-                        title={t('help.faq.title') || 'Frequently Asked Questions'}
-                        description={t('help.faq.subtitle') || 'Find answers to common questions'}
-                        onPress={handleFAQ}
-                    />
-                    <SettingsListItem
-                        icon={<SettingsIcon name="email" color={themeColors.iconPersonalInfo} />}
-                        title={t('help.contact.title') || 'Contact Support'}
-                        description={t('help.contact.subtitle') || 'Get help from our support team'}
-                        onPress={handleContactSupport}
-                    />
-                    <SettingsListItem
-                        icon={<SettingsIcon name="bug" color={themeColors.iconStorage} />}
-                        title={t('help.reportBug.title') || 'Report a Bug'}
-                        description={t('help.reportBug.subtitle') || 'Help us improve by reporting issues'}
-                        onPress={handleReportBug}
-                    />
-                </SettingsListGroup>
+            <ScrollView className="flex-1">
+                <View className="px-screen-margin pb-space-24">
+                    {/* Help Options */}
+                    <SettingsListGroup title={t('help.options') || 'Get Help'}>
+                        <SettingsListItem
+                            icon={<SettingsIcon name="help-circle" color={bloomTheme.colors.info} />}
+                            title={t('help.faq.title') || 'Frequently Asked Questions'}
+                            description={t('help.faq.subtitle') || 'Find answers to common questions'}
+                            onPress={handleFAQ}
+                        />
+                        <SettingsListItem
+                            icon={<SettingsIcon name="email" color={bloomTheme.colors.success} />}
+                            title={t('help.contact.title') || 'Contact Support'}
+                            description={t('help.contact.subtitle') || 'Get help from our support team'}
+                            onPress={handleContactSupport}
+                        />
+                        <SettingsListItem
+                            icon={<SettingsIcon name="bug" color={bloomTheme.colors.warning} />}
+                            title={t('help.reportBug.title') || 'Report a Bug'}
+                            description={t('help.reportBug.subtitle') || 'Help us improve by reporting issues'}
+                            onPress={handleReportBug}
+                        />
+                    </SettingsListGroup>
 
-                {/* Resources */}
-                <SettingsListGroup title={t('help.resources') || 'Resources'}>
-                    <SettingsListItem
-                        icon={<SettingsIcon name="file-document" color={bloomTheme.colors.textTertiary} />}
-                        title={t('help.documentation.title') || 'Documentation'}
-                        description={t('help.documentation.subtitle') || 'User guides and tutorials'}
-                        onPress={() => {
-                            Linking.openURL('https://developer.oxy.so/docs').catch(() => {
-                                toast.error(t('help.linkError') || 'Failed to open link');
-                            });
-                        }}
-                    />
-                    <SettingsListItem
-                        icon={<SettingsIcon name="account-group" color={themeColors.iconData} />}
-                        title={t('help.community.title') || 'Community'}
-                        description={t('help.community.subtitle') || 'Join our community'}
-                        onPress={() => {
-                            Linking.openURL('https://community.oxy.so').catch(() => {
-                                toast.error(t('help.linkError') || 'Failed to open link');
-                            });
-                        }}
-                    />
-                    <SettingsListItem
-                        icon={<SettingsIcon name="code-tags" color={themeColors.iconSharing} />}
-                        title={t('help.developersPortal.title') || 'Developers Portal'}
-                        description={t('help.developersPortal.subtitle') || 'API documentation and developer resources'}
-                        onPress={() => {
-                            Linking.openURL('https://developer.oxy.so').catch(() => {
-                                toast.error(t('help.linkError') || 'Failed to open link');
-                            });
-                        }}
-                    />
-                </SettingsListGroup>
+                    {/* Resources */}
+                    <SettingsListGroup title={t('help.resources') || 'Resources'}>
+                        <SettingsListItem
+                            icon={<SettingsIcon name="file-document" color={bloomTheme.colors.textTertiary} />}
+                            title={t('help.documentation.title') || 'Documentation'}
+                            description={t('help.documentation.subtitle') || 'User guides and tutorials'}
+                            onPress={handleDocumentation}
+                        />
+                        <SettingsListItem
+                            icon={<SettingsIcon name="account-group" color={bloomTheme.colors.secondary} />}
+                            title={t('help.community.title') || 'Community'}
+                            description={t('help.community.subtitle') || 'Join our community'}
+                            onPress={handleCommunity}
+                        />
+                        <SettingsListItem
+                            icon={<SettingsIcon name="code-tags" color={bloomTheme.colors.error} />}
+                            title={t('help.developersPortal.title') || 'Developers Portal'}
+                            description={t('help.developersPortal.subtitle') || 'API documentation and developer resources'}
+                            onPress={handleDevelopersPortal}
+                        />
+                    </SettingsListGroup>
+                </View>
             </ScrollView>
         </View>
     );
 };
-
-const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-    },
-    content: {
-        flex: 1,
-        padding: 16,
-    },
-});
 
 export default React.memo(HelpSupportScreen);

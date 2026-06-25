@@ -1,22 +1,23 @@
 import type React from 'react';
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import {
-    View,
-    Text,
-    TouchableOpacity,
-    StyleSheet,
-    ScrollView,
-    TextInput,
-    Platform,
-} from 'react-native';
+import { View, ScrollView, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import type { BaseScreenProps } from '../types/navigation';
 import { toast } from '@oxyhq/bloom';
+import { useTheme } from '@oxyhq/bloom/theme';
+import { SearchInput } from '@oxyhq/bloom/search-input';
+import { Button } from '@oxyhq/bloom/button';
+import {
+    Accordion,
+    AccordionItem,
+    AccordionTrigger,
+    AccordionContent,
+} from '@oxyhq/bloom/accordion';
+import { Text } from '@oxyhq/bloom/typography';
+import type { BaseScreenProps } from '../types/navigation';
 import Header from '../components/Header';
 import LoadingState from '../components/LoadingState';
 import EmptyState from '../components/EmptyState';
 import { useI18n } from '../hooks/useI18n';
-import { useTheme } from '@oxyhq/bloom/theme';
 import { useOxy } from '../context/OxyContext';
 
 interface FAQ {
@@ -28,7 +29,6 @@ interface FAQ {
 
 const FAQScreen: React.FC<BaseScreenProps> = ({
     onClose,
-    theme,
     goBack,
 }) => {
     const { oxyServices } = useOxy();
@@ -38,7 +38,7 @@ const FAQScreen: React.FC<BaseScreenProps> = ({
     const [faqs, setFaqs] = useState<FAQ[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
-    const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+    const [expandedIds, setExpandedIds] = useState<string[]>([]);
     const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
 
     // Load FAQs from API
@@ -48,7 +48,7 @@ const FAQScreen: React.FC<BaseScreenProps> = ({
                 setIsLoading(true);
                 const data = await oxyServices.getFAQs();
                 setFaqs(data);
-            } catch (error) {
+            } catch {
                 toast.error(t('faq.loadError') || 'Failed to load FAQs');
             } finally {
                 setIsLoading(false);
@@ -83,22 +83,21 @@ const FAQScreen: React.FC<BaseScreenProps> = ({
         return result;
     }, [faqs, searchQuery, selectedCategory]);
 
-    const toggleExpanded = useCallback((id: string) => {
-        setExpandedIds(prev => {
-            const next = new Set(prev);
-            if (next.has(id)) {
-                next.delete(id);
+    const handleAccordionChange = useCallback(
+        (value: string | string[] | undefined) => {
+            if (Array.isArray(value)) {
+                setExpandedIds(value);
+            } else if (value == null) {
+                setExpandedIds([]);
             } else {
-                next.add(id);
+                setExpandedIds([value]);
             }
-            return next;
-        });
-    }, []);
-
-    const styles = useMemo(() => createStyles(), []);
+        },
+        [],
+    );
 
     return (
-        <View style={[styles.container, { backgroundColor: bloomTheme.colors.background }]}>
+        <View className="flex-1 bg-bg">
             <Header
                 title={t('faq.title') || 'FAQ'}
                 onBack={goBack || onClose}
@@ -107,27 +106,14 @@ const FAQScreen: React.FC<BaseScreenProps> = ({
             />
 
             {/* Search bar */}
-            <View style={styles.searchContainer}>
-                <View style={[styles.searchInputWrapper, { backgroundColor: bloomTheme.colors.backgroundSecondary, borderColor: bloomTheme.colors.border }]}>
-                    <Ionicons name="search" size={20} color={bloomTheme.colors.textSecondary} style={styles.searchIcon} />
-                    <TextInput
-                        style={[styles.searchInput, { color: bloomTheme.colors.text }]}
-                        placeholder={t('faq.searchPlaceholder') || 'Search FAQs...'}
-                        placeholderTextColor={bloomTheme.colors.textSecondary}
-                        value={searchQuery}
-                        onChangeText={setSearchQuery}
-                        accessibilityLabel="Search FAQs"
-                    />
-                    {searchQuery.length > 0 && (
-                        <TouchableOpacity
-                            onPress={() => setSearchQuery('')}
-                            accessibilityRole="button"
-                            accessibilityLabel="Clear search"
-                        >
-                            <Ionicons name="close-circle" size={20} color={bloomTheme.colors.textSecondary} />
-                        </TouchableOpacity>
-                    )}
-                </View>
+            <View className="px-screen-margin py-space-12">
+                <SearchInput
+                    label={t('faq.searchPlaceholder') || 'Search FAQs...'}
+                    value={searchQuery}
+                    onChangeText={setSearchQuery}
+                    onClearText={() => setSearchQuery('')}
+                    accessibilityLabel="Search FAQs"
+                />
             </View>
 
             {/* Category filters */}
@@ -135,52 +121,34 @@ const FAQScreen: React.FC<BaseScreenProps> = ({
                 <ScrollView
                     horizontal
                     showsHorizontalScrollIndicator={false}
-                    style={styles.categoriesContainer}
-                    contentContainerStyle={styles.categoriesContent}
+                    style={styles.categoriesScroll}
+                    contentContainerClassName="px-screen-margin gap-space-8"
                 >
-                    <TouchableOpacity
-                        style={[
-                            styles.categoryChip,
-                            !selectedCategory && styles.categoryChipActive,
-                            { backgroundColor: !selectedCategory ? bloomTheme.colors.primary : bloomTheme.colors.backgroundSecondary }
-                        ]}
+                    <Button
+                        variant={!selectedCategory ? 'primary' : 'secondary'}
+                        size="small"
                         onPress={() => setSelectedCategory(null)}
-                        accessibilityRole="button"
                         accessibilityLabel="Show all categories"
-                        accessibilityState={{ selected: !selectedCategory }}
+                        accessibilityHint="Filter to show all FAQ categories"
                     >
-                        <Text style={[
-                            styles.categoryChipText,
-                            { color: !selectedCategory ? bloomTheme.colors.primaryForeground : bloomTheme.colors.text }
-                        ]}>
-                            {t('faq.allCategories') || 'All'}
-                        </Text>
-                    </TouchableOpacity>
+                        {t('faq.allCategories') || 'All'}
+                    </Button>
                     {categories.map(cat => (
-                        <TouchableOpacity
+                        <Button
                             key={cat}
-                            style={[
-                                styles.categoryChip,
-                                selectedCategory === cat && styles.categoryChipActive,
-                                { backgroundColor: selectedCategory === cat ? bloomTheme.colors.primary : bloomTheme.colors.backgroundSecondary }
-                            ]}
+                            variant={selectedCategory === cat ? 'primary' : 'secondary'}
+                            size="small"
                             onPress={() => setSelectedCategory(cat)}
-                            accessibilityRole="button"
                             accessibilityLabel={`Filter by ${cat}`}
-                            accessibilityState={{ selected: selectedCategory === cat }}
+                            accessibilityHint={`Show FAQs in the ${cat} category`}
                         >
-                            <Text style={[
-                                styles.categoryChipText,
-                                { color: selectedCategory === cat ? bloomTheme.colors.primaryForeground : bloomTheme.colors.text }
-                            ]}>
-                                {cat}
-                            </Text>
-                        </TouchableOpacity>
+                            {cat}
+                        </Button>
                     ))}
                 </ScrollView>
             )}
 
-            <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+            <ScrollView className="flex-1 px-screen-margin" showsVerticalScrollIndicator={false}>
                 {isLoading ? (
                     <LoadingState
                         message={t('faq.loading') || 'Loading FAQs...'}
@@ -192,144 +160,45 @@ const FAQScreen: React.FC<BaseScreenProps> = ({
                         textColor={bloomTheme.colors.text}
                     />
                 ) : (
-                    filteredFaqs.map((faq, index) => {
-                        const isExpanded = expandedIds.has(faq.id);
-                        return (
-                            <View
-                                key={faq.id}
-                                style={[
-                                    styles.faqItem,
-                                    { backgroundColor: bloomTheme.colors.backgroundSecondary, borderColor: bloomTheme.colors.border },
-                                    index === 0 && styles.faqItemFirst,
-                                ]}
-                            >
-                                <TouchableOpacity
-                                    style={styles.faqQuestion}
-                                    onPress={() => toggleExpanded(faq.id)}
-                                    accessibilityRole="button"
-                                    accessibilityLabel={faq.question}
-                                    accessibilityHint={isExpanded ? 'Collapse answer' : 'Expand answer'}
-                                    accessibilityState={{ expanded: isExpanded }}
-                                >
-                                    <Text style={[styles.faqQuestionText, { color: bloomTheme.colors.text }]}>
-                                        {faq.question}
+                    <Accordion
+                        type="multiple"
+                        value={expandedIds}
+                        onValueChange={handleAccordionChange}
+                    >
+                        {filteredFaqs.map(faq => (
+                            <AccordionItem key={faq.id} value={faq.id}>
+                                <AccordionTrigger>
+                                    {faq.question}
+                                </AccordionTrigger>
+                                <AccordionContent>
+                                    <Text className="font-sans text-bodyMedium text-text-secondary">
+                                        {faq.answer}
                                     </Text>
-                                    <Ionicons
-                                        name={isExpanded ? 'chevron-up' : 'chevron-down'}
-                                        size={20}
-                                        color={bloomTheme.colors.textSecondary}
-                                    />
-                                </TouchableOpacity>
-                                {isExpanded && (
-                                    <View style={[styles.faqAnswer, { borderTopColor: bloomTheme.colors.border }]}>
-                                        <Text style={[styles.faqAnswerText, { color: bloomTheme.colors.textSecondary }]}>
-                                            {faq.answer}
+                                    <View className="flex-row items-center mt-space-12 gap-space-4">
+                                        <Ionicons
+                                            name="pricetag-outline"
+                                            size={14}
+                                            color={bloomTheme.colors.primary}
+                                        />
+                                        <Text className="font-sans text-caption text-primary">
+                                            {faq.category}
                                         </Text>
-                                        <View style={styles.faqCategory}>
-                                            <Ionicons name="pricetag-outline" size={14} color={bloomTheme.colors.primary} />
-                                            <Text style={[styles.faqCategoryText, { color: bloomTheme.colors.primary }]}>
-                                                {faq.category}
-                                            </Text>
-                                        </View>
                                     </View>
-                                )}
-                            </View>
-                        );
-                    })
+                                </AccordionContent>
+                            </AccordionItem>
+                        ))}
+                    </Accordion>
                 )}
             </ScrollView>
         </View>
     );
 };
 
-const createStyles = () => StyleSheet.create({
-    container: {
-        flex: 1,
-    },
-    searchContainer: {
-        paddingHorizontal: 16,
-        paddingVertical: 12,
-    },
-    searchInputWrapper: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        borderRadius: 12,
-        borderWidth: 1,
-        paddingHorizontal: 12,
-        height: 44,
-    },
-    searchIcon: {
-        marginRight: 8,
-    },
-    searchInput: {
-        flex: 1,
-        fontSize: 16,
-        ...Platform.select({
-            // outlineStyle: 'none' is a valid web CSS property not in React Native's TextStyle definition
-            web: { outlineStyle: 'none' as unknown as import('react-native').TextStyle['outlineStyle'] },
-        }),
-    },
-    categoriesContainer: {
+// Measured layout only (no color): cap the horizontal category row height so
+// the filter pills do not stretch the scroll viewport vertically.
+const styles = StyleSheet.create({
+    categoriesScroll: {
         maxHeight: 50,
-    },
-    categoriesContent: {
-        paddingHorizontal: 16,
-        gap: 8,
-    },
-    categoryChip: {
-        paddingHorizontal: 16,
-        paddingVertical: 8,
-        borderRadius: 20,
-        marginRight: 8,
-    },
-    categoryChipActive: {},
-    categoryChipText: {
-        fontSize: 14,
-        fontWeight: '500',
-    },
-    content: {
-        flex: 1,
-        padding: 16,
-    },
-    faqItem: {
-        borderRadius: 12,
-        borderWidth: 1,
-        marginBottom: 12,
-        overflow: 'hidden',
-    },
-    faqItemFirst: {
-        marginTop: 0,
-    },
-    faqQuestion: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: 16,
-    },
-    faqQuestionText: {
-        flex: 1,
-        fontSize: 16,
-        fontWeight: '600',
-        marginRight: 12,
-    },
-    faqAnswer: {
-        padding: 16,
-        paddingTop: 12,
-        borderTopWidth: 1,
-    },
-    faqAnswerText: {
-        fontSize: 14,
-        lineHeight: 22,
-    },
-    faqCategory: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginTop: 12,
-    },
-    faqCategoryText: {
-        fontSize: 12,
-        marginLeft: 6,
-        fontWeight: '500',
     },
 });
 
