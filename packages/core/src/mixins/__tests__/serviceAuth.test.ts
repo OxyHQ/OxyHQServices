@@ -672,9 +672,9 @@ describe('requireScope() middleware', () => {
     expect(res.headersSent).toBe(false);
   });
 
-  it('allows requests where the delegation grant carries the required scope', () => {
+  it('allows delegated requests only when both app and delegation carry the required scope', () => {
     const req = makeReq();
-    req.serviceApp = { appId: 'a', appName: 'svc', credentialId: 'cred-1', scopes: [] };
+    req.serviceApp = { appId: 'a', appName: 'svc', credentialId: 'cred-1', scopes: ['user:read'] };
     req.serviceActingAs = { userId: 'u-1', scopes: ['user:read'] };
     const res = makeRes();
     const next = jest.fn();
@@ -682,6 +682,34 @@ describe('requireScope() middleware', () => {
     oxy.requireScope('user:read')(req as unknown as never, res as unknown as never, next as unknown as never);
 
     expect(next).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects delegated requests when only the app carries the required scope', () => {
+    const req = makeReq();
+    req.serviceApp = { appId: 'a', appName: 'svc', credentialId: 'cred-1', scopes: ['files:write'] };
+    req.serviceActingAs = { userId: 'u-1', scopes: ['profile:read'] };
+    const res = makeRes();
+    const next = jest.fn();
+
+    oxy.requireScope('files:write')(req as unknown as never, res as unknown as never, next as unknown as never);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(403);
+    expect(res.body).toMatchObject({ code: 'INSUFFICIENT_SCOPE' });
+  });
+
+  it('rejects delegated requests when only the delegation carries the required scope', () => {
+    const req = makeReq();
+    req.serviceApp = { appId: 'a', appName: 'svc', credentialId: 'cred-1', scopes: ['profile:read'] };
+    req.serviceActingAs = { userId: 'u-1', scopes: ['files:write'] };
+    const res = makeRes();
+    const next = jest.fn();
+
+    oxy.requireScope('files:write')(req as unknown as never, res as unknown as never, next as unknown as never);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(403);
+    expect(res.body).toMatchObject({ code: 'INSUFFICIENT_SCOPE' });
   });
 
   it('rejects requests missing the required scope with 403', () => {

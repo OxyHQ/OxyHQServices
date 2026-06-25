@@ -953,9 +953,9 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
      * Express.js middleware that enforces a specific service-token scope.
      *
      * Mount AFTER `auth()` / `serviceAuth()` — relies on `req.serviceApp` and
-     * (when delegation is in effect) `req.serviceActingAs.scopes`. The scope
-     * is granted if EITHER list contains it, mirroring the OAuth2 model where
-     * the app's app-level scopes and the per-user delegated scopes both count.
+     * (when delegation is in effect) `req.serviceActingAs.scopes`. App-only
+     * service requests require the app scope. Delegated user requests require
+     * BOTH the app scope and the per-user delegation scope.
      *
      * Requests authenticated as a regular user (no service token) are rejected
      * with 403 — scope-protected endpoints are service-to-service by design.
@@ -988,7 +988,13 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
           return;
         }
 
-        if (appScopes.includes(scope) || delegatedScopes.includes(scope)) {
+        const appHasScope = appScopes.includes(scope);
+        const delegationHasScope = delegatedScopes.includes(scope);
+        const hasRequiredScope = req.serviceActingAs
+          ? appHasScope && delegationHasScope
+          : appHasScope;
+
+        if (hasRequiredScope) {
           next();
           return;
         }
