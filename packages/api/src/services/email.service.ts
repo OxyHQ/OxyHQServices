@@ -8,6 +8,8 @@
  */
 
 import mongoose, { type SortOrder } from 'mongoose';
+import { lookup } from 'dns/promises';
+import net from 'net';
 import { Mailbox, IMailbox } from '../models/Mailbox';
 import { Message, IMessage, IEmailAddress, IAttachment } from '../models/Message';
 import { Label } from '../models/Label';
@@ -2283,16 +2285,23 @@ class EmailService {
           // RFC 8058 One-Click Unsubscribe
           if (httpMatch && listUnsubPost) {
             try {
-              this.validateUnsubscribeUrl(httpMatch[1]);
+              await this.validateUnsubscribeUrl(httpMatch[1]);
               const controller = new AbortController();
               const timeout = setTimeout(() => controller.abort(), 10000);
-              await fetch(httpMatch[1], {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: 'List-Unsubscribe=One-Click-Unsubscribe',
-                signal: controller.signal,
-              });
-              clearTimeout(timeout);
+              try {
+                const response = await fetch(httpMatch[1], {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                  body: 'List-Unsubscribe=One-Click-Unsubscribe',
+                  redirect: 'manual',
+                  signal: controller.signal,
+                });
+                if (response.status >= 300 && response.status < 400) {
+                  throw new Error('Unsubscribe redirects are not allowed');
+                }
+              } finally {
+                clearTimeout(timeout);
+              }
               return { success: true, method: 'one-click' };
             } catch (err) {
               logger.warn('One-click unsubscribe failed, trying fallback', {
@@ -2305,11 +2314,20 @@ class EmailService {
           // HTTP GET fallback
           if (httpMatch) {
             try {
-              this.validateUnsubscribeUrl(httpMatch[1]);
+              await this.validateUnsubscribeUrl(httpMatch[1]);
               const controller = new AbortController();
               const timeout = setTimeout(() => controller.abort(), 10000);
-              await fetch(httpMatch[1], { signal: controller.signal });
-              clearTimeout(timeout);
+              try {
+                const response = await fetch(httpMatch[1], {
+                  redirect: 'manual',
+                  signal: controller.signal,
+                });
+                if (response.status >= 300 && response.status < 400) {
+                  throw new Error('Unsubscribe redirects are not allowed');
+                }
+              } finally {
+                clearTimeout(timeout);
+              }
               return { success: true, method: 'http' };
             } catch (err) {
               logger.warn('HTTP unsubscribe failed, trying mailto', {
@@ -2427,16 +2445,59 @@ class EmailService {
     return { success: true, method: 'blocked' };
   }
 
+  private isPrivateIpAddress(address: string): boolean {
+    const ipVersion = net.isIP(address);
+    if (ipVersion === 4) {
+      const [a, b] = address.split('.').map(Number);
+      return (
+        a === 0 ||
+        a === 10 ||
+        a === 127 ||
+        (a === 100 && b >= 64 && b <= 127) ||
+        (a === 169 && b === 254) ||
+        (a === 172 && b >= 16 && b <= 31) ||
+        (a === 192 && b === 168) ||
+        (a === 198 && (b === 18 || b === 19)) ||
+        a >= 224
+      );
+    }
+
+    if (ipVersion === 6) {
+      const normalized = address.toLowerCase();
+      return (
+        normalized === '::1' ||
+        normalized.startsWith('fc') ||
+        normalized.startsWith('fd') ||
+        normalized.startsWith('fe80:')
+      );
+    }
+
+    return false;
+  }
+
   /**
    * Validate an unsubscribe URL against SSRF attacks.
-   * Only allows HTTPS URLs to non-private hosts.
+   * Only allows HTTPS URLs whose literal host and DNS results are public.
    */
-  private validateUnsubscribeUrl(url: string): void {
+  private async validateUnsubscribeUrl(url: string): Promise<void> {
     const parsed = new URL(url);
     if (parsed.protocol !== 'https:') {
       throw new Error('Only HTTPS unsubscribe URLs are allowed');
     }
-    if (EmailService.PRIVATE_IP_PATTERNS.some((p) => p.test(parsed.hostname))) {
+
+    const hostname = parsed.hostname.toLowerCase();
+    if (
+      hostname === 'localhost' ||
+      hostname.endsWith('.localhost') ||
+      hostname.endsWith('.local') ||
+      EmailService.PRIVATE_IP_PATTERNS.some((p) => p.test(hostname)) ||
+      this.isPrivateIpAddress(hostname)
+    ) {
+      throw new Error('Private network URLs are not allowed');
+    }
+
+    const addresses = await lookup(hostname, { all: true, verbatim: false });
+    if (addresses.length === 0 || addresses.some(({ address }) => this.isPrivateIpAddress(address))) {
       throw new Error('Private network URLs are not allowed');
     }
   }
