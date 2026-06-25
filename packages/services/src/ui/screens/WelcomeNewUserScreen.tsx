@@ -10,7 +10,7 @@ import { useAuthStore } from '../stores/authStore';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { Button } from '@oxyhq/bloom/button';
 import { H1, Text } from '@oxyhq/bloom/typography';
-import { TextField, TextFieldInput, TextFieldLabel } from '@oxyhq/bloom/text-field';
+import { TextField, TextFieldInput } from '@oxyhq/bloom/text-field';
 import { useI18n } from '../hooks/useI18n';
 import { useOxy } from '../context/OxyContext';
 import { useUpdateProfile } from '../hooks/mutations/useAccountMutations';
@@ -316,11 +316,10 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
                     {step.showNameForm && (
                         <View style={[styles.nameForm, styles.sectionSpacing]}>
                             <View style={styles.nameField}>
-                                <TextFieldLabel>{t('welcomeNew.name.firstLabel') || 'First name'}</TextFieldLabel>
                                 <TextField>
                                     <TextFieldInput
+                                        floatingLabel
                                         label={t('welcomeNew.name.firstLabel') || 'First name'}
-                                        placeholder={t('welcomeNew.name.firstPlaceholder') || 'Your first name'}
                                         value={firstName}
                                         onChangeText={setFirstName}
                                         autoFocus
@@ -329,11 +328,10 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
                                 </TextField>
                             </View>
                             <View style={styles.nameField}>
-                                <TextFieldLabel>{t('welcomeNew.name.lastLabel') || 'Last name'}</TextFieldLabel>
                                 <TextField>
                                     <TextFieldInput
+                                        floatingLabel
                                         label={t('welcomeNew.name.lastLabel') || 'Last name'}
-                                        placeholder={t('welcomeNew.name.lastPlaceholder') || 'Your last name'}
                                         value={lastName}
                                         onChangeText={setLastName}
                                         autoCapitalize="words"
