@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo } from "react"
+import { useState, useRef, useMemo, useEffect } from "react"
 import { useNavigate, Link } from "react-router-dom"
 import { toast } from "sonner"
 import { ArrowLeft, ShieldAlert } from "lucide-react"
@@ -106,6 +106,12 @@ export function LoginForm({
         mountedRef.current = true
         setBasePreset("oxy")
     }
+
+    // Login-specific logo overrides must not leak into sibling auth routes
+    // that share AuthLayout (recover, signup, authorize).
+    useEffect(() => {
+        return () => setLogoSlot(null)
+    }, [setLogoSlot])
 
     // One-time toasts from URL params
     const noticeShownRef = useRef(false)
