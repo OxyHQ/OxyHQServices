@@ -442,4 +442,35 @@ describe('PUT /users/resolve (C4)', () => {
     );
     expect(mockUserFindOneAndUpdate).toHaveBeenCalledTimes(1);
   });
+
+  it('escapes HTML in displayName/bio before persisting (stored-XSS regression)', async () => {
+    // Type-immutability check: no existing user.
+    const leanResult = jest.fn().mockResolvedValue(null);
+    const selectResult = jest.fn().mockReturnValue({ lean: leanResult });
+    mockUserFindOne.mockReturnValueOnce({ select: selectResult });
+
+    const newUserDoc = { _id: 'xss-user', username: 'mallory@evil.example', type: 'federated' };
+    const updateLean = jest.fn().mockResolvedValue(newUserDoc);
+    const updateSelect = jest.fn().mockReturnValue({ lean: updateLean });
+    mockUserFindOneAndUpdate.mockReturnValueOnce({ select: updateSelect });
+
+    const res = await requestJson(server, 'PUT', '/users/resolve', {
+      type: 'federated',
+      username: 'mallory@evil.example',
+      actorUri: 'https://evil.example/users/mallory',
+      domain: 'evil.example',
+      displayName: '<img src=x onerror=alert(1)>',
+      bio: 'hi <script>steal()</script> & "friends"',
+    });
+
+    expect(res.status).toBe(200);
+    expect(mockUserFindOneAndUpdate).toHaveBeenCalledTimes(1);
+    const [, update] = mockUserFindOneAndUpdate.mock.calls[0];
+    const setFields = (update as { $set: Record<string, unknown> }).$set;
+    // Raw HTML must NOT be persisted — every metacharacter is entity-escaped.
+    expect(setFields['name.first']).toBe('&lt;img src=x onerror=alert(1)&gt;');
+    expect(setFields.bio).toBe('hi &lt;script&gt;steal()&lt;/script&gt; &amp; &quot;friends&quot;');
+    expect(String(setFields['name.first'])).not.toContain('<');
+    expect(String(setFields.bio)).not.toContain('<script>');
+  });
 });

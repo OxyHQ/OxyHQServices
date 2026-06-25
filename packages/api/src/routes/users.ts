@@ -38,6 +38,7 @@ import {
   updatePrivacyBodySchema,
   usersByIdsBodySchema,
 } from '../schemas/users.schemas';
+import { sanitizeHtml } from '../utils/sanitize';
 
 // Types
 interface AuthRequest extends Request {
@@ -1269,11 +1270,15 @@ router.put(
     // immutability invariant above already rejected mismatched updates.
     const setOnInsert: Record<string, unknown> = { type };
 
+    // Escape HTML in free-text fields sourced from untrusted remote actors
+    // (federated/agent/automated) before persisting — these render as the
+    // profile display name and bio in client apps, so raw input is a stored-XSS
+    // vector.
     if (typeof displayName === 'string') {
-      setFields['name.first'] = displayName;
+      setFields['name.first'] = sanitizeHtml(displayName);
     }
     if (typeof bio === 'string') {
-      setFields.bio = bio;
+      setFields.bio = sanitizeHtml(bio);
     }
 
     // Avatar handling splits two ways:

@@ -27,10 +27,20 @@ jest.mock('../../utils/logger', () => ({
 // path under test rejects in `uploadStream` BEFORE any File model access, so we
 // stub the model module purely to make the import side-effect succeed.
 const mockFileFindOne = jest.fn();
-jest.mock('../../models/File', () => ({
-  File: { findOne: (...args: unknown[]) => mockFileFindOne(...args), findById: jest.fn() },
-  FileVisibility: {},
-}));
+const mockFileConstruct = jest.fn();
+const mockNewFileSave = jest.fn();
+jest.mock('../../models/File', () => {
+  function File(this: Record<string, unknown>, doc: Record<string, unknown>) {
+    mockFileConstruct(doc);
+    Object.assign(this, doc);
+    this._id = { toString: () => 'new-inserted-id' };
+    this.save = mockNewFileSave;
+  }
+  (File as unknown as { findOne: (...a: unknown[]) => unknown }).findOne = (...args: unknown[]) =>
+    mockFileFindOne(...args);
+  (File as unknown as { findById: jest.Mock }).findById = jest.fn();
+  return { File, FileVisibility: {} };
+});
 
 // VariantService pulls in sharp/ffmpeg at import; stub it so these storage
 // tests stay focused on AssetService's dedupe/repair contract.
@@ -86,6 +96,9 @@ function buildAssetService(input: FakeS3Input): { service: AssetService; fake: F
 describe('uploadCachedMediaStream — abort cleanup', () => {
   beforeEach(() => {
     mockFileFindOne.mockReset();
+    mockFileConstruct.mockReset();
+    mockNewFileSave.mockReset();
+    mockNewFileSave.mockResolvedValue(undefined);
     mockGenerateVariants.mockReset();
     mockGenerateVariants.mockResolvedValue(undefined);
   });
@@ -259,7 +272,12 @@ describe('uploadCachedMediaStream — abort cleanup', () => {
     source.destroy();
   });
 
-  it('revives a deleted direct-upload record and restores its missing storage', async () => {
+  it('does NOT revive a deleted direct-upload tombstone — inserts a fresh owner-scoped record', async () => {
+    // SECURITY: a deleted record is a tombstone, never a reusable asset. The
+    // dedup lookup excludes `status:'deleted'`, so a fresh upload whose SHA-256
+    // collides with a victim's deleted file must NOT revive/reassign that record
+    // (cross-tenant ownership takeover). findActiveFileBySha resolves to null and
+    // a brand-new record owned by the uploader is created instead.
     const deleteFile = jest.fn((): Promise<void> => Promise.resolve());
     const fileExists = jest.fn((): Promise<boolean> => Promise.resolve(false));
     const uploadBuffer = jest.fn((key: string, buffer: Buffer, options?: UploadOptions): Promise<FileInfo> => Promise.resolve({
@@ -269,24 +287,9 @@ describe('uploadCachedMediaStream — abort cleanup', () => {
     } as FileInfo));
     const { service } = buildAssetService({ deleteFile, fileExists, uploadBuffer });
 
-    const existingFile = {
-      _id: { toString: () => '64c000000000000000000fed' },
-      sha256: 'deduped-sha',
-      storageKey: 'content/2026/06/de/deduped-sha.jpg',
-      status: 'deleted',
-      ownerUserId: '__federation__',
-      purpose: 'user',
-      size: 4,
-      mime: 'image/jpeg',
-      ext: '.jpg',
-      originalName: 'old-avatar.jpg',
-      visibility: 'public',
-      metadata: { old: true },
-      links: [{ app: 'old', entityType: 'profile', entityId: 'old', createdBy: 'old', createdAt: new Date() }],
-      variants: [{ type: 'thumb', key: 'variants/old/thumb.webp', readyAt: new Date() }],
-      save: jest.fn((): Promise<void> => Promise.resolve()),
-    };
-    mockFileFindOne.mockResolvedValueOnce(existingFile);
+    // The deleted tombstone is excluded by the `status: { $ne: 'deleted' }`
+    // filter, so the dedup lookup resolves to null.
+    mockFileFindOne.mockResolvedValue(null);
 
     const result = await service.uploadFileDirect(
       'fresh-owner',
@@ -297,20 +300,29 @@ describe('uploadCachedMediaStream — abort cleanup', () => {
       { source: 'federation-avatar' }
     );
 
-    expect(result).toBe(existingFile);
-    expect(fileExists).toHaveBeenCalledWith(existingFile.storageKey);
-    expect(uploadBuffer).toHaveBeenCalledWith(existingFile.storageKey, Buffer.from('JPEG'), { contentType: 'image/jpeg' });
-    expect(existingFile.status).toBe('active');
-    expect(existingFile.ownerUserId).toBe('fresh-owner');
-    expect(existingFile.originalName).toBe('fresh-avatar.jpg');
-    expect(existingFile.metadata).toEqual({ source: 'federation-avatar' });
-    expect(existingFile.links).toEqual([]);
-    expect(existingFile.variants).toEqual([]);
-    expect(existingFile.save).toHaveBeenCalledTimes(1);
-    expect(mockGenerateVariants).toHaveBeenCalledWith(existingFile._id.toString());
+    // The dedup query scoped to non-deleted records.
+    expect(mockFileFindOne).toHaveBeenCalledWith(
+      expect.objectContaining({ status: { $ne: 'deleted' } }),
+    );
+    // A brand-new File was constructed and owned by the UPLOADER — never a
+    // revived tombstone reassigned away from its original owner.
+    expect(mockFileConstruct).toHaveBeenCalledTimes(1);
+    expect(mockFileConstruct).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ownerUserId: 'fresh-owner',
+        status: 'active',
+        originalName: 'fresh-avatar.jpg',
+        visibility: 'public',
+        metadata: { source: 'federation-avatar' },
+      }),
+    );
+    expect(result).toEqual(expect.objectContaining({ ownerUserId: 'fresh-owner', status: 'active' }));
+    expect(uploadBuffer).toHaveBeenCalled();
+    expect(mockGenerateVariants).toHaveBeenCalledWith('new-inserted-id');
   });
 
-  it('revives a deleted cached-media record after deduplicating streamed media', async () => {
+  it('does NOT revive a deleted cached-media tombstone — promotes a fresh record', async () => {
+    // SECURITY: same tombstone-exclusion guarantee for the streamed-media path.
     let resolveUpload: ((info: FileInfo) => void) | undefined;
     let capturedTempKey: string | undefined;
 
@@ -325,24 +337,9 @@ describe('uploadCachedMediaStream — abort cleanup', () => {
     const copyFile = jest.fn((): Promise<void> => Promise.resolve());
     const { service } = buildAssetService({ uploadStream, deleteFile, fileExists, copyFile });
 
-    const existingFile = {
-      _id: { toString: () => '64c000000000000000000cab' },
-      sha256: 'deleted-cache-sha',
-      storageKey: 'content/2026/06/de/deleted-cache-sha.png',
-      status: 'deleted',
-      ownerUserId: '__federation__',
-      purpose: 'federation-media-cache',
-      size: 4,
-      mime: 'image/png',
-      ext: '.png',
-      originalName: 'old-cache.png',
-      visibility: 'public',
-      metadata: { old: true },
-      links: [{ app: 'mention', entityType: 'post', entityId: 'old', createdBy: 'old', createdAt: new Date() }],
-      variants: [{ type: 'thumb', key: 'variants/old/thumb.webp', readyAt: new Date() }],
-      save: jest.fn((): Promise<void> => Promise.resolve()),
-    };
-    mockFileFindOne.mockResolvedValueOnce(existingFile);
+    // A deleted tombstone with the same SHA exists, but the dedup lookup excludes
+    // it → resolves to null → a fresh record is promoted.
+    mockFileFindOne.mockResolvedValue(null);
 
     const source = new Readable({
       read() {
@@ -361,19 +358,24 @@ describe('uploadCachedMediaStream — abort cleanup', () => {
     await new Promise((resolve) => setImmediate(resolve));
     resolveUpload?.({ key: capturedTempKey || 'cache/incoming/x', size: 4, contentType: 'image/png' } as FileInfo);
 
-    await expect(promise).resolves.toBe(existingFile);
+    const result = await promise;
 
-    expect(fileExists).toHaveBeenCalledWith(existingFile.storageKey);
-    expect(copyFile).toHaveBeenCalledWith(capturedTempKey, existingFile.storageKey);
-    expect(deleteFile).toHaveBeenCalledWith(capturedTempKey);
-    expect(existingFile.status).toBe('active');
-    expect(existingFile.ownerUserId).toBe('__federation_media_cache__');
-    expect(existingFile.purpose).toBe('federation-media-cache');
-    expect(existingFile.metadata).toEqual({});
-    expect(existingFile.links).toEqual([]);
-    expect(existingFile.variants).toEqual([]);
-    expect(existingFile.save).toHaveBeenCalledTimes(1);
-    expect(mockGenerateVariants).toHaveBeenCalledWith(existingFile._id.toString());
+    // Dedup query scoped to non-deleted; the temp object is promoted to the
+    // content-addressed key and a fresh cache-owned record is created.
+    expect(mockFileFindOne).toHaveBeenCalledWith(
+      expect.objectContaining({ status: { $ne: 'deleted' } }),
+    );
+    expect(copyFile).toHaveBeenCalled();
+    expect(mockFileConstruct).toHaveBeenCalledTimes(1);
+    expect(mockFileConstruct).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ownerUserId: '__federation_media_cache__',
+        purpose: 'federation-media-cache',
+        status: 'active',
+        visibility: 'public',
+      }),
+    );
+    expect(result).toEqual(expect.objectContaining({ ownerUserId: '__federation_media_cache__' }));
 
     source.destroy();
   });

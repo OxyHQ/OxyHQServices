@@ -647,6 +647,40 @@ interface RecommendationOptions {
   signalWeights?: Partial<Record<RecommendationSignal, number>>;
 }
 
+/**
+ * Authorize the caller-supplied recommendation `clientId` (an Application id used
+ * to read that app's private per-user signals and weight profile) against the
+ * authenticated principal, returning the id ONLY when the caller is entitled to
+ * it — otherwise `undefined` (the request proceeds with no app context).
+ *
+ * A `clientId` selects an app's AppUserSignal data (endorsement/interest) and
+ * per-app weight profile, so honoring an arbitrary caller-supplied id would let
+ * any caller pull recommendations shaped by another tenant's private signals
+ * (cross-tenant data exposure). Authorization rules:
+ *  - SERVICE token: allowed only for its OWN application (`clientId === serviceApp.appId`).
+ *  - USER session / anonymous: no owning application context → never authorized.
+ */
+function resolveAuthorizedRecommendationClientId(
+  req: OptionalUserOrServiceRequest,
+  suppliedClientId: string | undefined,
+): string | undefined {
+  if (!suppliedClientId) {
+    return undefined;
+  }
+
+  const serviceAppId = req.serviceApp?.appId;
+  if (serviceAppId && suppliedClientId === serviceAppId) {
+    return suppliedClientId;
+  }
+
+  logger.warn('recommendations: dropping unauthorized clientId', {
+    suppliedClientId,
+    serviceAppId: serviceAppId ?? null,
+    hasUserSession: !!req.user?._id,
+  });
+  return undefined;
+}
+
 /** Coerce a Follow.followedId (ObjectId | string) to an ObjectId, or null. */
 function followedIdToObjectId(value: unknown): Types.ObjectId | null {
   if (value instanceof Types.ObjectId) return value;
@@ -1187,12 +1221,16 @@ router.post(
     const parsedLimit = body.limit ?? PAGINATION.DEFAULT_LIMIT;
     const parsedOffset = body.offset ?? 0;
 
+    // Only honor a clientId the caller is actually entitled to (its own service
+    // application). An unauthorized clientId is dropped → no app context.
+    const authorizedClientId = resolveAuthorizedRecommendationClientId(req, body.clientId);
+
     logger.debug('POST /profiles/recommendations', {
       currentUserId: currentUserId ?? null,
       authenticated: !!currentUserId,
       limit: parsedLimit,
       offset: parsedOffset,
-      clientId: body.clientId ?? null,
+      clientId: authorizedClientId ?? null,
     });
 
     const recommendations = await buildRecommendations(currentUserId, {
@@ -1200,7 +1238,7 @@ router.post(
       offset: parsedOffset,
       excludeTypes: body.excludeTypes ?? [],
       excludeIds: body.excludeIds ?? [],
-      clientId: body.clientId,
+      clientId: authorizedClientId,
       boosts: body.boosts,
       signalWeights: body.signalWeights,
     });
