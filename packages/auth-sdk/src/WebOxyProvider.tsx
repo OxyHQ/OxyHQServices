@@ -45,7 +45,7 @@ import type {
   ColdBootOutcome,
 } from '@oxyhq/core';
 import { QueryClientProvider } from '@tanstack/react-query';
-import { attachQueryPersistence, createQueryClient } from './hooks/queryClient';
+import { attachQueryPersistence, clearQueryCache, createQueryClient } from './hooks/queryClient';
 import { isWebBrowser } from './hooks/useWebSSO';
 
 export interface WebAuthState {
@@ -911,6 +911,12 @@ export function WebOxyProvider({
       setUser(null);
       setActiveSessionId(null);
       syncAccountsFromManager();
+      // EXPLICIT full sign-out (no slot remains): wipe the React Query cache —
+      // BOTH the in-memory store AND the persisted `oxy_auth_query_cache_v2`
+      // localStorage blob — so a prior user's cached profile/sessions/accounts
+      // cannot flash on a shared browser before the network reconfirms. Runs
+      // AFTER session teardown; no-ops safely off-web / when storage is blocked.
+      clearQueryCache(queryClient);
       // EXPLICIT user sign-out: clear the per-origin SSO bounce state so a fresh
       // deliberate sign-in can re-probe the central IdP. Never done on a
       // cold-boot failure path (that would reintroduce the redirect loop).
@@ -920,7 +926,7 @@ export function WebOxyProvider({
       setError(errorMessage);
       onError?.(err instanceof Error ? err : new Error(errorMessage));
     }
-  }, [authManager, onError, syncAccountsFromManager]);
+  }, [authManager, onError, syncAccountsFromManager, queryClient]);
 
   const switchAccount = useCallback(async (authuser: number) => {
     setError(null);
@@ -974,16 +980,21 @@ export function WebOxyProvider({
           // AuthManager's auto-refresh will kick in shortly.
         }
       } else {
-        // No slots left — fully signed out.
+        // No slots left — fully signed out. This is the only `signOutAccount`
+        // branch that wipes the React Query cache (in-memory + persisted blob):
+        // when another slot is promoted active above, the remaining accounts'
+        // cached data MUST be preserved, so the clear is scoped strictly to the
+        // true full-sign-out case.
         setUser(null);
         setActiveSessionId(null);
+        clearQueryCache(queryClient);
       }
       syncAccountsFromManager();
     } catch (err) {
       syncAccountsFromManager();
       handleAuthError(err);
     }
-  }, [authManager, oxyServices, syncAccountsFromManager, handleAuthError]);
+  }, [authManager, oxyServices, syncAccountsFromManager, handleAuthError, queryClient]);
 
   const signOutAll = useCallback(async () => {
     await signOut();
@@ -994,11 +1005,14 @@ export function WebOxyProvider({
     setUser(null);
     setActiveSessionId(null);
     syncAccountsFromManager();
+    // EXPLICIT full sign-out: wipe the React Query cache (in-memory + persisted
+    // blob) so no prior identity data survives. Same rationale as `signOut`.
+    clearQueryCache(queryClient);
     // EXPLICIT user sign-out (this provider has no cold-boot path that calls
     // this): clear the per-origin SSO bounce state so a fresh deliberate
     // sign-in can re-probe the central IdP.
     clearSsoBounceStateWeb();
-  }, [authManager, syncAccountsFromManager]);
+  }, [authManager, syncAccountsFromManager, queryClient]);
 
   useEffect(() => {
     return () => { authManager.destroy(); };

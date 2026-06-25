@@ -154,14 +154,39 @@ export const attachQueryPersistence = (
   return { unsubscribe, restored };
 };
 
-export const clearQueryCache = async (
-  storage: StorageInterface,
-): Promise<void> => {
+/**
+ * Wipe the entire query cache — BOTH the in-memory React Query store AND the
+ * persisted `oxy_auth_query_cache_v2` localStorage blob.
+ *
+ * Called on EXPLICIT, full sign-out (no device-local session remaining) so a
+ * prior user's cached profile/sessions/accounts/auth data cannot flash on a
+ * shared browser before the network reconfirms. It is NOT called on
+ * account-switch or on a partial sign-out that leaves another slot active —
+ * those must preserve the remaining accounts' cached data.
+ *
+ * Both layers are cleared because the persister continuously dehydrates the
+ * in-memory cache to localStorage on a throttle; clearing only one layer would
+ * let the persister re-write the stale blob (in-memory only) or let the next
+ * restore rehydrate the wiped cache (localStorage only). The in-memory store is
+ * cleared first, then the persisted blob is removed directly.
+ *
+ * No-ops safely off-web (SSR / React Native): `queryClient.clear()` is always
+ * safe, and the localStorage removal is gated behind `getBrowserLocalStorage()`
+ * so missing/blocked storage never throws.
+ */
+export const clearQueryCache = (queryClient: QueryClient): void => {
+  queryClient.clear();
+
+  const localStorage = getBrowserLocalStorage();
+  if (!localStorage) return;
   try {
-    await storage.removeItem(QUERY_CACHE_KEY);
+    localStorage.removeItem(QUERY_CACHE_KEY);
   } catch (error) {
+    // Storage access can be blocked (Safari private mode, sandboxed iframe).
+    // The in-memory clear above already removed the live cache; the persisted
+    // blob removal is best-effort.
     if (process.env.NODE_ENV !== 'production') {
-      console.warn('[QueryClient] Failed to remove cache', error);
+      console.warn('[QueryClient] Failed to remove persisted cache', error);
     }
   }
 };
