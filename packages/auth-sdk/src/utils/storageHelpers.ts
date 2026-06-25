@@ -115,9 +115,9 @@ const createNativeStorage = async (): Promise<StorageInterface> => {
   }
 
   try {
-    // Variable indirection prevents bundlers (Vite, webpack) from statically resolving this
-    const moduleName = '@react-native-async-storage/async-storage';
-    const asyncStorageModule = (await import(moduleName)) as { default?: unknown };
+    const asyncStorageModule = (await import('@react-native-async-storage/async-storage')) as {
+      default?: unknown;
+    };
     const candidate = asyncStorageModule.default;
     if (!isAsyncStorageLike(candidate)) {
       throw new Error('AsyncStorage default export does not match expected API');
