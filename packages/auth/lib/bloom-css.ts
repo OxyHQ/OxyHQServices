@@ -27,7 +27,7 @@ function styleIdFor(scope: string): string {
 
 function presetToCSS(vars: Record<string, string>): string {
     return Object.entries(vars)
-        .map(([key, value]) => `  ${key}: hsl(${value});`)
+        .map(([key, value]) => `  ${key}: rgb(${value});`)
         .join("\n")
 }
 

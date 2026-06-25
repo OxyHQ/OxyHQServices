@@ -31,6 +31,12 @@ describe("bloom-css", () => {
         expect(css).toContain("--primary:")
     })
 
+    test("getBloomThemeCSS emits Bloom RGB token values as rgb() colors", () => {
+        const css = getBloomThemeCSS("oxy")
+        expect(css).toContain("--primary: rgb(")
+        expect(css).not.toContain("--primary: hsl(")
+    })
+
     test("applyColorPreset injects a scoped <style> element", () => {
         applyColorPreset("blue", "chooser-hover")
         const el = styleEl("chooser-hover")
