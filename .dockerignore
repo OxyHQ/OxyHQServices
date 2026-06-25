@@ -49,24 +49,16 @@ dkim-private.pem
 **/.eslintcache
 
 # Other apps in the monorepo that the API image does not build.
-# Keep their sources out of the image context, but allow package manifests so
-# Docker can run a full-workspace frozen Bun install against the committed lock.
-packages/accounts/*
-!packages/accounts/package.json
-packages/auth/*
-!packages/auth/package.json
-packages/auth-sdk/*
-!packages/auth-sdk/package.json
-packages/console/*
-!packages/console/package.json
-packages/inbox/*
-!packages/inbox/package.json
-packages/services/*
-!packages/services/package.json
-packages/test-app-expo/*
-!packages/test-app-expo/package.json
-packages/test-app-vite/*
-!packages/test-app-vite/package.json
+# The Dockerfile only copies packages/core and packages/api, but
+# excluding the rest keeps the build context lean.
+packages/accounts
+packages/auth
+packages/auth-sdk
+packages/console
+packages/inbox
+packages/services
+packages/test-app-expo
+packages/test-app-vite
 
 # Local Docker artifacts
 Dockerfile

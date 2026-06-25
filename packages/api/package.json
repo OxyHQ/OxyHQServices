@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node dist/server.js",
     "dev": "bun --watch src/server.ts",
-    "build": "bun run --filter @oxyhq/contracts build && tsc",
+    "build": "bun run --filter @oxyhq/contracts build && bun run --filter @oxyhq/core build && tsc",
     "clean": "rm -rf dist",
     "migrate:locations": "bun run src/utils/migrateLocations.ts",
     "test": "jest",

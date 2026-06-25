@@ -15,24 +15,21 @@ RUN npm install -g bun
 
 WORKDIR /app
 
-# Copy the full workspace manifest set and committed lockfile before installing.
-# Keeping the root workspaces unchanged lets `bun install --frozen-lockfile` use
-# the reviewed, integrity-pinned versions from bun.lock instead of resolving
-# mutable semver ranges during production Docker builds.
-COPY package.json bun.lock ./
-COPY packages/api/package.json packages/api/
-COPY packages/auth/package.json packages/auth/
-COPY packages/auth-sdk/package.json packages/auth-sdk/
-COPY packages/accounts/package.json packages/accounts/
-COPY packages/console/package.json packages/console/
-COPY packages/contracts/package.json packages/contracts/
-COPY packages/core/package.json packages/core/
-COPY packages/inbox/package.json packages/inbox/
-COPY packages/services/package.json packages/services/
-COPY packages/test-app-expo/package.json packages/test-app-expo/
+# Copy workspace root and override workspaces to only include api + core + contracts.
+# `@oxyhq/api` depends on `@oxyhq/contracts` (workspace:*); core is retained for the
+# admin scripts that import packages/core/src/* at runtime.
+# Remove bun.lock since the workspace change invalidates it — bun will
+# resolve fresh dependencies (still deterministic from package.json versions).
+COPY package.json ./
+RUN node -e "const p=require('./package.json'); p.workspaces=['packages/core','packages/contracts','packages/api']; require('fs').writeFileSync('package.json', JSON.stringify(p, null, 2));"
 
-# Install dependencies from the committed lockfile.
-RUN bun install --frozen-lockfile
+# Copy package.json files for dependency resolution
+COPY packages/api/package.json packages/api/
+COPY packages/core/package.json packages/core/
+COPY packages/contracts/package.json packages/contracts/
+
+# Install dependencies (no lockfile — workspace subset doesn't match the full monorepo lock)
+RUN bun install
 
 # Copy source code
 COPY packages/core/ packages/core/
@@ -40,9 +37,9 @@ COPY packages/contracts/ packages/contracts/
 COPY packages/api/ packages/api/
 
 # Build contracts first (api depends on it at runtime via dist/cjs), then core
-# (admin scripts), then api.
+# (api imports @oxyhq/core/server — safeFetch etc.), then api.
 RUN bun run --filter @oxyhq/contracts build
-RUN bun run --filter @oxyhq/core build 2>/dev/null || true
+RUN bun run --filter @oxyhq/core build
 RUN bun run --filter @oxyhq/api build
 
 # ── Production image ──────────────────────────────────────────────
@@ -53,21 +50,15 @@ RUN npm install -g bun
 
 WORKDIR /app
 
-# Copy the full workspace manifest set and committed lockfile before installing.
-COPY package.json bun.lock ./
+# Copy workspace root and override workspaces
+COPY package.json ./
+RUN node -e "const p=require('./package.json'); p.workspaces=['packages/core','packages/contracts','packages/api']; require('fs').writeFileSync('package.json', JSON.stringify(p, null, 2));"
 COPY packages/api/package.json packages/api/
-COPY packages/auth/package.json packages/auth/
-COPY packages/auth-sdk/package.json packages/auth-sdk/
-COPY packages/accounts/package.json packages/accounts/
-COPY packages/console/package.json packages/console/
-COPY packages/contracts/package.json packages/contracts/
 COPY packages/core/package.json packages/core/
-COPY packages/inbox/package.json packages/inbox/
-COPY packages/services/package.json packages/services/
-COPY packages/test-app-expo/package.json packages/test-app-expo/
+COPY packages/contracts/package.json packages/contracts/
 
-# Install production dependencies from the committed lockfile.
-RUN bun install --production --frozen-lockfile
+# Install production dependencies
+RUN bun install --production
 
 # Copy built artifacts
 COPY --from=builder /app/packages/api/dist packages/api/dist

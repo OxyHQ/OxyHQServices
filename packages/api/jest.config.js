@@ -10,6 +10,12 @@ module.exports = {
     // regex below; the contracts source only imports `zod`, which resolves
     // normally from node_modules.
     '^@oxyhq/contracts$': '<rootDir>/../contracts/src/index.ts',
+    // Same rationale for @oxyhq/core/server (safeFetch/SsrfRejection, imported by
+    // federation.service.ts + email.service.ts): the core dist is absent in the CI
+    // `api-test` job (which runs tests without building workspace deps). Resolve it
+    // from source so the import — and the `jest.mock('@oxyhq/core/server', ...)`
+    // factories that replace it — resolve without a prior core build.
+    '^@oxyhq/core/server$': '<rootDir>/../core/src/server/index.ts',
     // NodeNext source uses `.js` extensions on relative imports of TS files
     // (e.g. `import { Topic } from '../models/Topic.js'`). ts-jest resolves
     // these inside source, but jest's own resolver (used by `jest.mock(...)`
