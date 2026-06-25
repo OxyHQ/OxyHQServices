@@ -132,10 +132,7 @@ export function LocaleProvider({ children }: LocaleProviderProps) {
   // Keep RN layout direction in sync with the active locale. `forceRTL`
   // only takes effect after a JS bundle reload, so we set it eagerly here.
   useEffect(() => {
-    const wantRTL = isRTLLocale(locale);
-    if (I18nManager.isRTL !== wantRTL) {
-      I18nManager.forceRTL(wantRTL);
-    }
+    I18nManager.forceRTL(isRTLLocale(locale));
   }, [locale]);
 
   const value = useMemo<LocaleContextValue>(

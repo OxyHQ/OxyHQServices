@@ -136,10 +136,7 @@ export function LocaleProvider({ children }: LocaleProviderProps) {
   // typical UX is "change language -> brief sync indicator -> next session
   // shows RTL". This is the same pattern React Native docs recommend.
   useEffect(() => {
-    const wantRTL = isRTLLocale(locale);
-    if (I18nManager.isRTL !== wantRTL) {
-      I18nManager.forceRTL(wantRTL);
-    }
+    I18nManager.forceRTL(isRTLLocale(locale));
   }, [locale]);
 
   const value = useMemo<LocaleContextValue>(
