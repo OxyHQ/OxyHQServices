@@ -42,6 +42,8 @@ const privacySettingsSchema = z.object({
   sensitiveContent: z.boolean().optional(),
   autoFilter: z.boolean().optional(),
   muteKeywords: z.boolean().optional(),
+  discoverableByEmail: z.boolean().optional(),
+  discoverableByPhone: z.boolean().optional(),
 });
 
 // Get privacy settings (own settings only)
