@@ -81,20 +81,20 @@ export function createProfileMutation<TVariables>(
 
     onMutate: async (variables) => {
       // Cancel queries that might conflict
-      await queryClient.cancelQueries({ queryKey: queryKeys.accounts.current() });
+      await queryClient.cancelQueries({ queryKey: queryKeys.accounts.current(activeSessionId) });
       for (const key of cancelQueryKeys) {
         await queryClient.cancelQueries({ queryKey: key });
       }
 
       // Snapshot previous user data
-      const previousUser = queryClient.getQueryData<User>(queryKeys.accounts.current());
+      const previousUser = queryClient.getQueryData<User>(queryKeys.accounts.current(activeSessionId));
 
       // Apply optimistic update if provided
       if (previousUser && optimisticUpdate) {
         const updates = optimisticUpdate(previousUser, variables);
         const optimisticUser = { ...previousUser, ...updates };
 
-        queryClient.setQueryData<User>(queryKeys.accounts.current(), optimisticUser);
+        queryClient.setQueryData<User>(queryKeys.accounts.current(activeSessionId), optimisticUser);
 
         if (activeSessionId) {
           queryClient.setQueryData<User>(queryKeys.users.profile(activeSessionId), optimisticUser);
@@ -107,7 +107,7 @@ export function createProfileMutation<TVariables>(
     onError: (error, _variables, context) => {
       // Rollback optimistic update
       if (context?.previousUser) {
-        queryClient.setQueryData(queryKeys.accounts.current(), context.previousUser);
+        queryClient.setQueryData(queryKeys.accounts.current(activeSessionId), context.previousUser);
         if (activeSessionId) {
           queryClient.setQueryData(queryKeys.users.profile(activeSessionId), context.previousUser);
         }
@@ -122,7 +122,7 @@ export function createProfileMutation<TVariables>(
 
     onSuccess: (data, variables) => {
       // Update cache with server response
-      queryClient.setQueryData(queryKeys.accounts.current(), data);
+      queryClient.setQueryData(queryKeys.accounts.current(activeSessionId), data);
       if (activeSessionId) {
         queryClient.setQueryData(queryKeys.users.profile(activeSessionId), data);
       }

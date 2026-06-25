@@ -40,10 +40,10 @@ export const useUpdateProfile = () => {
     // Optimistic update
     onMutate: async (updates) => {
       // Cancel outgoing refetches
-      await queryClient.cancelQueries({ queryKey: queryKeys.accounts.current() });
+      await queryClient.cancelQueries({ queryKey: queryKeys.accounts.current(activeSessionId) });
 
       // Snapshot previous value
-      const previousUser = queryClient.getQueryData<User>(queryKeys.accounts.current());
+      const previousUser = queryClient.getQueryData<User>(queryKeys.accounts.current(activeSessionId));
 
       // Optimistically update
       if (previousUser) {
@@ -54,7 +54,7 @@ export const useUpdateProfile = () => {
             ? { ...previousUser.name, ...updates.name }
             : previousUser.name,
         };
-        queryClient.setQueryData<User>(queryKeys.accounts.current(), optimisticUser);
+        queryClient.setQueryData<User>(queryKeys.accounts.current(activeSessionId), optimisticUser);
 
         // Also update profile query if sessionId is available
         if (activeSessionId) {
@@ -74,9 +74,9 @@ export const useUpdateProfile = () => {
           return acc;
         }, {});
 
-        const current = queryClient.getQueryData<User>(queryKeys.accounts.current());
+        const current = queryClient.getQueryData<User>(queryKeys.accounts.current(activeSessionId));
         if (current) {
-          queryClient.setQueryData<User>(queryKeys.accounts.current(), {
+          queryClient.setQueryData<User>(queryKeys.accounts.current(activeSessionId), {
             ...current,
             ...partialRollback,
           });
@@ -96,7 +96,7 @@ export const useUpdateProfile = () => {
     // On success, invalidate and refetch
     onSuccess: (data, updates) => {
       // Update cache with server response
-      queryClient.setQueryData(queryKeys.accounts.current(), data);
+      queryClient.setQueryData(queryKeys.accounts.current(activeSessionId), data);
       if (activeSessionId) {
         queryClient.setQueryData(queryKeys.users.profile(activeSessionId), data);
       }
@@ -143,8 +143,8 @@ export const useUploadAvatar = () => {
       });
     },
     onMutate: async (file) => {
-      await queryClient.cancelQueries({ queryKey: queryKeys.accounts.current() });
-      const previousUser = queryClient.getQueryData<User>(queryKeys.accounts.current());
+      await queryClient.cancelQueries({ queryKey: queryKeys.accounts.current(activeSessionId) });
+      const previousUser = queryClient.getQueryData<User>(queryKeys.accounts.current(activeSessionId));
 
       // Optimistically set a temporary avatar (using file URI as placeholder)
       if (previousUser) {
@@ -152,7 +152,7 @@ export const useUploadAvatar = () => {
           ...previousUser,
           avatar: file.uri, // Temporary, will be replaced with fileId
         };
-        queryClient.setQueryData<User>(queryKeys.accounts.current(), optimisticUser);
+        queryClient.setQueryData<User>(queryKeys.accounts.current(activeSessionId), optimisticUser);
         if (activeSessionId) {
           queryClient.setQueryData<User>(queryKeys.users.profile(activeSessionId), optimisticUser);
         }
@@ -164,9 +164,9 @@ export const useUploadAvatar = () => {
       // Avatar upload only mutates the `avatar` field — restore only that key
       if (context?.previousUser) {
         const previousAvatar = context.previousUser.avatar;
-        const current = queryClient.getQueryData<User>(queryKeys.accounts.current());
+        const current = queryClient.getQueryData<User>(queryKeys.accounts.current(activeSessionId));
         if (current) {
-          queryClient.setQueryData<User>(queryKeys.accounts.current(), {
+          queryClient.setQueryData<User>(queryKeys.accounts.current(activeSessionId), {
             ...current,
             avatar: previousAvatar,
           });
@@ -184,7 +184,7 @@ export const useUploadAvatar = () => {
       toast.error(error instanceof Error ? error.message : 'Failed to upload avatar');
     },
     onSuccess: (data) => {
-      queryClient.setQueryData(queryKeys.accounts.current(), data);
+      queryClient.setQueryData(queryKeys.accounts.current(activeSessionId), data);
       if (activeSessionId) {
         queryClient.setQueryData(queryKeys.users.profile(activeSessionId), data);
       }
@@ -270,10 +270,10 @@ export const useUpdateAccountSettings = () => {
     },
     onMutate: async ({ updates }) => {
       await queryClient.cancelQueries({ queryKey: queryKeys.accounts.settings() });
-      const previousUser = queryClient.getQueryData<User>(queryKeys.accounts.current());
+      const previousUser = queryClient.getQueryData<User>(queryKeys.accounts.current(activeSessionId));
 
       if (previousUser) {
-        queryClient.setQueryData<User>(queryKeys.accounts.current(), {
+        queryClient.setQueryData<User>(queryKeys.accounts.current(activeSessionId), {
           ...previousUser,
           privacySettings: {
             ...previousUser.privacySettings,
@@ -294,9 +294,9 @@ export const useUpdateAccountSettings = () => {
           return acc;
         }, {});
 
-        const current = queryClient.getQueryData<User>(queryKeys.accounts.current());
+        const current = queryClient.getQueryData<User>(queryKeys.accounts.current(activeSessionId));
         if (current) {
-          queryClient.setQueryData<User>(queryKeys.accounts.current(), {
+          queryClient.setQueryData<User>(queryKeys.accounts.current(activeSessionId), {
             ...current,
             privacySettings: {
               ...(current.privacySettings ?? {}),
@@ -308,7 +308,7 @@ export const useUpdateAccountSettings = () => {
       toast.error(error instanceof Error ? error.message : 'Failed to update settings');
     },
     onSuccess: (data) => {
-      queryClient.setQueryData(queryKeys.accounts.current(), data);
+      queryClient.setQueryData(queryKeys.accounts.current(activeSessionId), data);
 
       // Update authStore so frontend components see the changes immediately
       useAuthStore.getState().setUser(data);
@@ -328,7 +328,7 @@ export const useUpdateAccountSettings = () => {
   return {
     ...mutation,
     mutate: (updates: Partial<PrivacySettings>): void => {
-      const currentUser = user ?? queryClient.getQueryData<User>(queryKeys.accounts.current());
+      const currentUser = user ?? queryClient.getQueryData<User>(queryKeys.accounts.current(activeSessionId));
       if (!currentUser) {
         toast.error('Cannot update account settings: no current user');
         return;
@@ -336,7 +336,7 @@ export const useUpdateAccountSettings = () => {
       mutation.mutate({ updates, currentUser });
     },
     mutateAsync: async (updates: Partial<PrivacySettings>): Promise<User> => {
-      const currentUser = user ?? queryClient.getQueryData<User>(queryKeys.accounts.current());
+      const currentUser = user ?? queryClient.getQueryData<User>(queryKeys.accounts.current(activeSessionId));
       if (!currentUser) {
         throw new Error('Cannot update account settings: no current user');
       }
@@ -373,11 +373,11 @@ export const useUpdatePrivacySettings = () => {
 
       // Cancel outgoing refetches
       await queryClient.cancelQueries({ queryKey: queryKeys.privacy.settings(targetUserId) });
-      await queryClient.cancelQueries({ queryKey: queryKeys.accounts.current() });
+      await queryClient.cancelQueries({ queryKey: queryKeys.accounts.current(activeSessionId) });
 
       // Snapshot previous values
       const previousPrivacySettings = queryClient.getQueryData(queryKeys.privacy.settings(targetUserId));
-      const previousUser = queryClient.getQueryData<User>(queryKeys.accounts.current());
+      const previousUser = queryClient.getQueryData<User>(queryKeys.accounts.current(activeSessionId));
 
       // Optimistically update privacy settings
       if (previousPrivacySettings) {
@@ -389,7 +389,7 @@ export const useUpdatePrivacySettings = () => {
 
       // Also update user query if available
       if (previousUser) {
-        queryClient.setQueryData<User>(queryKeys.accounts.current(), {
+        queryClient.setQueryData<User>(queryKeys.accounts.current(activeSessionId), {
           ...previousUser,
           privacySettings: {
             ...previousUser.privacySettings,
@@ -431,9 +431,9 @@ export const useUpdatePrivacySettings = () => {
           (acc as Record<string, unknown>)[key as string] = previousPrivacy[key as string];
           return acc;
         }, {});
-        const current = queryClient.getQueryData<User>(queryKeys.accounts.current());
+        const current = queryClient.getQueryData<User>(queryKeys.accounts.current(activeSessionId));
         if (current) {
-          queryClient.setQueryData<User>(queryKeys.accounts.current(), {
+          queryClient.setQueryData<User>(queryKeys.accounts.current(activeSessionId), {
             ...current,
             privacySettings: {
               ...(current.privacySettings ?? {}),
@@ -479,7 +479,7 @@ export const useUpdatePrivacySettings = () => {
         }),
       );
 
-      const currentUser = queryClient.getQueryData<User>(queryKeys.accounts.current());
+      const currentUser = queryClient.getQueryData<User>(queryKeys.accounts.current(activeSessionId));
       if (currentUser) {
         const updatedUser: User = {
           ...currentUser,
@@ -489,7 +489,7 @@ export const useUpdatePrivacySettings = () => {
             ...incoming,
           },
         };
-        queryClient.setQueryData<User>(queryKeys.accounts.current(), updatedUser);
+        queryClient.setQueryData<User>(queryKeys.accounts.current(activeSessionId), updatedUser);
         useAuthStore.getState().setUser(updatedUser);
       }
       // Deliberately NOT invalidating any queries here. invalidateAccountQueries
@@ -538,11 +538,11 @@ export const useUpdateNotificationPreferences = () => {
       );
     },
     onMutate: async (preferences) => {
-      await queryClient.cancelQueries({ queryKey: queryKeys.accounts.current() });
-      const previousUser = queryClient.getQueryData<User>(queryKeys.accounts.current());
+      await queryClient.cancelQueries({ queryKey: queryKeys.accounts.current(activeSessionId) });
+      const previousUser = queryClient.getQueryData<User>(queryKeys.accounts.current(activeSessionId));
 
       if (previousUser) {
-        queryClient.setQueryData<User>(queryKeys.accounts.current(), {
+        queryClient.setQueryData<User>(queryKeys.accounts.current(activeSessionId), {
           ...previousUser,
           notificationPreferences: {
             ...previousUser.notificationPreferences,
@@ -555,9 +555,9 @@ export const useUpdateNotificationPreferences = () => {
     },
     onError: (error, _preferences, context) => {
       if (context?.previousUser) {
-        const current = queryClient.getQueryData<User>(queryKeys.accounts.current());
+        const current = queryClient.getQueryData<User>(queryKeys.accounts.current(activeSessionId));
         if (current) {
-          queryClient.setQueryData<User>(queryKeys.accounts.current(), {
+          queryClient.setQueryData<User>(queryKeys.accounts.current(activeSessionId), {
             ...current,
             notificationPreferences: context.previousUser.notificationPreferences,
           });
@@ -570,7 +570,7 @@ export const useUpdateNotificationPreferences = () => {
       );
     },
     onSuccess: (data) => {
-      queryClient.setQueryData(queryKeys.accounts.current(), data);
+      queryClient.setQueryData(queryKeys.accounts.current(activeSessionId), data);
       useAuthStore.getState().setUser(data);
       invalidateAccountQueries(queryClient);
     },
@@ -596,11 +596,11 @@ export const useUpdateUserPreferences = () => {
       );
     },
     onMutate: async (preferences) => {
-      await queryClient.cancelQueries({ queryKey: queryKeys.accounts.current() });
-      const previousUser = queryClient.getQueryData<User>(queryKeys.accounts.current());
+      await queryClient.cancelQueries({ queryKey: queryKeys.accounts.current(activeSessionId) });
+      const previousUser = queryClient.getQueryData<User>(queryKeys.accounts.current(activeSessionId));
 
       if (previousUser) {
-        queryClient.setQueryData<User>(queryKeys.accounts.current(), {
+        queryClient.setQueryData<User>(queryKeys.accounts.current(activeSessionId), {
           ...previousUser,
           userPreferences: {
             ...previousUser.userPreferences,
@@ -613,9 +613,9 @@ export const useUpdateUserPreferences = () => {
     },
     onError: (error, _preferences, context) => {
       if (context?.previousUser) {
-        const current = queryClient.getQueryData<User>(queryKeys.accounts.current());
+        const current = queryClient.getQueryData<User>(queryKeys.accounts.current(activeSessionId));
         if (current) {
-          queryClient.setQueryData<User>(queryKeys.accounts.current(), {
+          queryClient.setQueryData<User>(queryKeys.accounts.current(activeSessionId), {
             ...current,
             userPreferences: context.previousUser.userPreferences,
           });
@@ -624,7 +624,7 @@ export const useUpdateUserPreferences = () => {
       toast.error(error instanceof Error ? error.message : 'Failed to update preferences');
     },
     onSuccess: (data) => {
-      queryClient.setQueryData(queryKeys.accounts.current(), data);
+      queryClient.setQueryData(queryKeys.accounts.current(activeSessionId), data);
       useAuthStore.getState().setUser(data);
       invalidateAccountQueries(queryClient);
     },

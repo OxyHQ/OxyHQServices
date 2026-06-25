@@ -17,7 +17,10 @@ export const queryKeys = {
     list: (sessionIds: string[]) => [...queryKeys.accounts.lists(), sessionIds] as const,
     details: () => [...queryKeys.accounts.all, 'detail'] as const,
     detail: (sessionId: string) => [...queryKeys.accounts.details(), sessionId] as const,
-    current: () => [...queryKeys.accounts.all, 'current'] as const,
+    current: (sessionId?: string | null) =>
+      sessionId
+        ? ([...queryKeys.accounts.all, 'current', sessionId] as const)
+        : ([...queryKeys.accounts.all, 'current'] as const),
     settings: () => [...queryKeys.accounts.all, 'settings'] as const,
   },
 
