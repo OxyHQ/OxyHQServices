@@ -1,5 +1,6 @@
 import express, { Request, Response } from 'express';
 import { authMiddleware } from '../middleware/auth';
+import { requireStaff } from '../middleware/requireStaff';
 import { topicService } from '../services/TopicService.js';
 import { Topic, TopicType } from '../models/Topic.js';
 
@@ -100,7 +101,7 @@ router.use(authMiddleware);
  * Batch resolve names to topics (upsert).
  * Body: { names: Array<{ name: string; type: TopicType }> }
  */
-router.post('/resolve', async (req: Request, res: Response) => {
+router.post('/resolve', requireStaff, async (req: Request, res: Response) => {
   try {
     const { names } = req.body;
     if (!Array.isArray(names) || names.length === 0) {
@@ -120,7 +121,7 @@ router.post('/resolve', async (req: Request, res: Response) => {
  * PATCH /:slug
  * Update topic metadata (description, translations, icon, image, aliases).
  */
-router.patch('/:slug', async (req: Request, res: Response) => {
+router.patch('/:slug', requireStaff, async (req: Request, res: Response) => {
   try {
     const { slug } = req.params;
     const allowedFields = ['description', 'translations', 'icon', 'image', 'aliases', 'displayName'];
