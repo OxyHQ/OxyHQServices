@@ -24,6 +24,34 @@ const FONT_MIME: Record<string, string> = {
   '.eot': 'application/vnd.ms-fontobject',
 };
 
+function getFontExtension(pathname: string): string | undefined {
+  return pathname.match(/\.\w+$/)?.[0]?.toLowerCase();
+}
+
+function isFontBuffer(buffer: Buffer, ext: string): boolean {
+  switch (ext) {
+    case '.woff':
+      return buffer.subarray(0, 4).toString('ascii') === 'wOFF';
+    case '.woff2':
+      return buffer.subarray(0, 4).toString('ascii') === 'wOF2';
+    case '.otf':
+      return buffer.subarray(0, 4).toString('ascii') === 'OTTO';
+    case '.ttf': {
+      const signature = buffer.subarray(0, 4);
+      return (
+        signature.equals(Buffer.from([0x00, 0x01, 0x00, 0x00])) ||
+        signature.toString('ascii') === 'true' ||
+        signature.toString('ascii') === 'typ1'
+      );
+    }
+    case '.eot':
+      // Embedded OpenType files contain the ASCII "LP" magic at bytes 34-35.
+      return buffer.length >= 36 && buffer.subarray(34, 36).toString('ascii') === 'LP';
+    default:
+      return false;
+  }
+}
+
 // Transparent 1x1 GIF for blocked tracking pixels
 const TRANSPARENT_GIF = Buffer.from(
   'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7',
@@ -220,11 +248,14 @@ export async function proxyResource(req: Request, res: Response): Promise<void> 
     }
 
     const contentType = response.headers.get('content-type') || 'application/octet-stream';
+    const normalizedContentType = contentType.split(';', 1)[0]?.trim().toLowerCase() || 'application/octet-stream';
+    const fontExtension = getFontExtension(url.pathname);
 
     // Validate content type — allow octet-stream for font files (many servers
-    // serve .ttf/.woff as application/octet-stream instead of font/*)
+    // serve .ttf/.woff as application/octet-stream instead of font/*), but
+    // only after verifying the body has a real font signature.
     const isAllowedType = /^(image\/|font\/|application\/(font|x-font))/i.test(contentType);
-    const isFontByExtension = contentType === 'application/octet-stream' && FONT_EXTENSIONS.test(url.pathname);
+    const isFontByExtension = normalizedContentType === 'application/octet-stream' && FONT_EXTENSIONS.test(url.pathname);
     if (!isAllowedType && !isFontByExtension) {
       clearTimeout(timeoutId);
       throw new BadRequestError('Only images and fonts allowed');
@@ -238,6 +269,10 @@ export async function proxyResource(req: Request, res: Response): Promise<void> 
       throw new BadRequestError('Resource too large');
     }
 
+    if (isFontByExtension && (!fontExtension || !isFontBuffer(buffer, fontExtension))) {
+      throw new BadRequestError('Invalid font resource');
+    }
+
     // Block tracking pixels (very small images)
     if (buffer.length < TRACKING_PIXEL_THRESHOLD) {
       logger.debug('Blocked tracking pixel', { url: decodedUrl, size: buffer.length });
@@ -247,8 +282,7 @@ export async function proxyResource(req: Request, res: Response): Promise<void> 
     // Use correct MIME when upstream sends generic octet-stream for fonts
     let resolvedType = contentType;
     if (isFontByExtension) {
-      const ext = url.pathname.match(/\.\w+/)?.[0]?.toLowerCase();
-      if (ext && FONT_MIME[ext]) resolvedType = FONT_MIME[ext];
+      if (fontExtension && FONT_MIME[fontExtension]) resolvedType = FONT_MIME[fontExtension];
     }
 
     addToCache(cacheKey, buffer, resolvedType);
