@@ -445,8 +445,14 @@ export class AuthManager {
    * Get default storage based on environment.
    */
   private getDefaultStorage(): StorageAdapter {
-    if (typeof window !== 'undefined' && window.localStorage) {
-      return new LocalStorageAdapter();
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        return new LocalStorageAdapter();
+      }
+    } catch {
+      // Accessing window.localStorage can throw in opaque-origin/sandboxed
+      // browser contexts or when storage is disabled. Fall back to memory so
+      // AuthManager construction remains safe during provider render.
     }
     return new MemoryStorage();
   }

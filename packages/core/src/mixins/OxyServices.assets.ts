@@ -486,11 +486,26 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
     public async fetchAssetContent(url: string, type: 'text'): Promise<string>;
     public async fetchAssetContent(url: string, type: 'blob'): Promise<Blob>;
     public async fetchAssetContent(url: string, type: 'text' | 'blob') {
-      const response = await fetch(url, { credentials: 'include' });
+      const response = await fetch(url, {
+        credentials: shouldSendAssetCredentials(url, this.getBaseURL()) ? 'include' : 'omit',
+      });
       if (!response?.ok) {
         throw new Error(`Failed to fetch asset content (status ${response?.status})`);
       }
       return type === 'text' ? response.text() : response.blob();
     }
   };
+}
+
+/**
+ * Only send ambient credentials (cookies) when the asset URL is same-origin with
+ * the configured API base. Caller-supplied cross-origin asset URLs must not leak
+ * the user's cookies to arbitrary hosts.
+ */
+function shouldSendAssetCredentials(url: string, baseURL: string): boolean {
+  try {
+    return new URL(url).origin === new URL(baseURL).origin;
+  } catch {
+    return false;
+  }
 }

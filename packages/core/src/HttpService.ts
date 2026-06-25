@@ -496,13 +496,21 @@ export class HttpService {
         const useXhrForUpload = isFormData && isReactNative() && typeof XMLHttpRequest !== 'undefined';
 
         const response = useXhrForUpload
-          ? await this.uploadViaXHR(fullUrl, method, headers, bodyValue as FormData, controller.signal, timeout)
+          ? await this.uploadViaXHR(
+              fullUrl,
+              method,
+              headers,
+              bodyValue as FormData,
+              controller.signal,
+              timeout,
+              this.shouldSendCredentials(fullUrl),
+            )
           : await fetch(fullUrl, {
               method,
               headers,
               body: bodyValue as BodyInit | null | undefined,
               signal: controller.signal,
-              credentials: 'include', // Include cookies for cross-origin requests (CSRF, session)
+              credentials: this.getCredentialsMode(fullUrl),
             });
 
         if (timeoutId) clearTimeout(timeoutId);
@@ -694,13 +702,15 @@ export class HttpService {
     body: FormData,
     abortSignal: AbortSignal,
     timeout: number,
+    withCredentials: boolean,
   ): Promise<Response> {
     return new Promise<Response>((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       xhr.open(method, url, true);
-      // withCredentials mirrors fetch's `credentials: 'include'` so the
-      // session cookie and CSRF cookie continue to flow.
-      xhr.withCredentials = true;
+      // Only send ambient cookies to the configured API origin. Absolute
+      // caller-supplied URLs can target arbitrary origins, so they must not
+      // receive credential-bearing requests by default.
+      xhr.withCredentials = withCredentials;
 
       // Forward headers but skip Content-Type — XHR sets the multipart
       // boundary automatically and overriding it breaks the upload.
@@ -874,6 +884,18 @@ export class HttpService {
     return queryString ? `${base}${base.includes('?') ? '&' : '?'}${queryString}` : base;
   }
 
+  private getCredentialsMode(url: string): RequestCredentials {
+    return this.shouldSendCredentials(url) ? 'include' : 'omit';
+  }
+
+  private shouldSendCredentials(url: string): boolean {
+    try {
+      return new URL(url).origin === new URL(this.baseURL).origin;
+    } catch {
+      return false;
+    }
+  }
+
   /**
    * Fetch CSRF token from server (with deduplication)
    * Required for state-changing requests (POST, PUT, PATCH, DELETE)
@@ -915,8 +937,11 @@ export class HttpService {
 
           if (response.ok) {
             const data = await response.json() as { csrfToken?: string };
-            this.logger.debug('CSRF response data:', data);
             const token = data.csrfToken || null;
+            this.logger.debug('CSRF response data:', {
+              hasCsrfToken: typeof token === 'string' && token.length > 0,
+              csrfTokenLength: token?.length,
+            });
             this.tokenStore.setCsrfToken(token);
             this.logger.debug('CSRF token fetched');
             return token;

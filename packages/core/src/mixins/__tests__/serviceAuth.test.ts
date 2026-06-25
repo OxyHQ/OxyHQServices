@@ -312,6 +312,25 @@ describe('H1: getServiceToken per-credential cache + secret verification', () =>
     );
   });
 
+  it('does not poison the cache when initial token fetch fails for an apiKey', async () => {
+    makeRequestSpy
+      .mockRejectedValueOnce(new Error('invalid service credentials'))
+      .mockResolvedValueOnce({
+        token: 'token-A',
+        expiresIn: 3600,
+        appName: 'tenant-A',
+      });
+
+    await expect(oxy.getServiceToken('key-A', 'attacker-secret')).rejects.toThrow(
+      'invalid service credentials',
+    );
+
+    const token = await oxy.getServiceToken('key-A', 'secret-A');
+
+    expect(token).toBe('token-A');
+    expect(makeRequestSpy).toHaveBeenCalledTimes(2);
+  });
+
   it('refreshes the cached token when it expires (using the correct stored secret)', async () => {
     // First token already past its buffer window.
     makeRequestSpy.mockResolvedValueOnce({

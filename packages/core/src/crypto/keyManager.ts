@@ -85,9 +85,9 @@ const STORAGE_KEYS = {
 /**
  * iOS Keychain Access Group for sharing identities across Oxy apps
  * All Oxy apps must have this access group enabled in their entitlements
- * Format: [Team ID].com.oxy.shared or group.com.oxy.shared
+ * Format: [Team ID].so.oxy.shared or group.so.oxy.shared
  */
-const IOS_KEYCHAIN_GROUP = 'group.com.oxy.shared';
+const IOS_KEYCHAIN_GROUP = 'group.so.oxy.shared';
 
 /**
  * Android Account Manager type for shared authentication
@@ -795,11 +795,25 @@ export class KeyManager {
     }
 
     // Step 3: The new primary is durable and functional. NOW it is safe to
-    // refresh the backup to the new key. If this final backup write fails the
-    // user still has a fully working primary, and the backup still holds the
-    // PREVIOUS good identity — so we log and continue rather than failing the
-    // whole operation (failing here would be strictly worse: a working
-    // primary would be reported as an error to the caller).
+    // refresh the backup to the new key. This is part of the successful write
+    // contract: returning success while the backup still belongs to the
+    // previous identity would allow a later restore with an absent primary to
+    // silently switch the device back to the previous account. Snapshot the
+    // backup first so a partial backup refresh can be rolled back along with
+    // the primary before surfacing the failure.
+    let priorBackupPrivate: string | null;
+    let priorBackupPublic: string | null;
+    let priorBackupTimestamp: string | null;
+    try {
+      priorBackupPrivate = await store.getItemAsync(STORAGE_KEYS.BACKUP_PRIVATE_KEY);
+      priorBackupPublic = await store.getItemAsync(STORAGE_KEYS.BACKUP_PUBLIC_KEY);
+      priorBackupTimestamp = await store.getItemAsync(STORAGE_KEYS.BACKUP_TIMESTAMP);
+    } catch (error) {
+      logger.error('Failed to snapshot identity backup before refresh', error, { component: 'KeyManager' });
+      await KeyManager._rollbackPrimary(store, priorPrivate, priorPublic);
+      throw new IdentityPersistError('Failed to snapshot identity backup before refresh', error);
+    }
+
     try {
       await store.setItemAsync(STORAGE_KEYS.BACKUP_PRIVATE_KEY, canonicalPrivate, {
         keychainAccessible: store.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
@@ -807,16 +821,52 @@ export class KeyManager {
       await store.setItemAsync(STORAGE_KEYS.BACKUP_PUBLIC_KEY, canonicalPublic);
       await store.setItemAsync(STORAGE_KEYS.BACKUP_TIMESTAMP, Date.now().toString());
     } catch (error) {
-      logger.warn(
-        'Primary identity persisted successfully but refreshing the backup failed; primary is usable, backup may be stale',
-        { component: 'KeyManager' },
-        error,
-      );
+      logger.error('Failed to refresh identity backup after primary write', error, { component: 'KeyManager' });
+      await KeyManager._rollbackBackup(store, priorBackupPrivate, priorBackupPublic, priorBackupTimestamp);
+      await KeyManager._rollbackPrimary(store, priorPrivate, priorPublic);
+      throw new IdentityPersistError('Failed to refresh identity backup after primary write', error);
     }
 
     // Update cache only after we are certain the identity is durable.
     KeyManager.cachedPublicKey = canonicalPublic;
     KeyManager.cachedHasIdentity = true;
+  }
+
+  /**
+   * Restore the backup slot to a previously-snapshotted state. Best-effort so
+   * the original persistence error remains the one surfaced to the caller.
+   *
+   * @internal
+   */
+  private static async _rollbackBackup(
+    store: Awaited<ReturnType<typeof initSecureStore>>,
+    priorBackupPrivate: string | null,
+    priorBackupPublic: string | null,
+    priorBackupTimestamp: string | null,
+  ): Promise<void> {
+    try {
+      if (priorBackupPrivate) {
+        await store.setItemAsync(STORAGE_KEYS.BACKUP_PRIVATE_KEY, priorBackupPrivate, {
+          keychainAccessible: store.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+        });
+      } else {
+        try { await store.deleteItemAsync(STORAGE_KEYS.BACKUP_PRIVATE_KEY); } catch { /* best effort */ }
+      }
+
+      if (priorBackupPublic) {
+        await store.setItemAsync(STORAGE_KEYS.BACKUP_PUBLIC_KEY, priorBackupPublic);
+      } else {
+        try { await store.deleteItemAsync(STORAGE_KEYS.BACKUP_PUBLIC_KEY); } catch { /* best effort */ }
+      }
+
+      if (priorBackupTimestamp) {
+        await store.setItemAsync(STORAGE_KEYS.BACKUP_TIMESTAMP, priorBackupTimestamp);
+      } else {
+        try { await store.deleteItemAsync(STORAGE_KEYS.BACKUP_TIMESTAMP); } catch { /* best effort */ }
+      }
+    } catch (rollbackError) {
+      logger.error('Failed to roll back identity backup after a failed refresh', rollbackError, { component: 'KeyManager' });
+    }
   }
 
   /**

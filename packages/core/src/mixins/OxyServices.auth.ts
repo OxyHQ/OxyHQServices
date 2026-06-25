@@ -247,11 +247,24 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
       entry.pending = pending;
       try {
         return await pending;
+      } catch (error) {
+        // Do not retain unauthenticated cache entries. If the initial
+        // /auth/service-token request fails (for example, wrong apiSecret),
+        // leaving the pre-seeded empty entry would cause later calls with the
+        // real secret for the same apiKey to fail locally as a credential
+        // mismatch without ever contacting the server. Keep previously-issued
+        // stale tokens on refresh failures, but remove never-authenticated
+        // entries.
+        const failed = this._serviceTokenCache.get(cacheKey);
+        if (failed?.pending === pending && !failed.token) {
+          this._serviceTokenCache.delete(cacheKey);
+        }
+        throw error;
       } finally {
         // Clear the in-flight slot; the entry itself (with fresh token / expiry)
         // is updated inside _doFetchServiceToken before we land here.
         const settled = this._serviceTokenCache.get(cacheKey);
-        if (settled) {
+        if (settled?.pending === pending) {
           settled.pending = null;
         }
       }
