@@ -19,7 +19,7 @@ import { useTheme } from '@oxyhq/bloom/theme';
 import Avatar from './Avatar';
 import { useOxy } from '../context/OxyContext';
 import { useI18n } from '../hooks/useI18n';
-import { logger as loggerUtil } from '@oxyhq/core';
+import { isDev, logger as loggerUtil } from '@oxyhq/core';
 import { buildAccountRows, type AccountRow } from './accountMenuRows';
 import { useDeviceAccounts } from '../hooks/useDeviceAccounts';
 
@@ -135,7 +135,7 @@ const AccountMenu: React.FC<AccountMenuProps> = ({
             toast.success(t('accountSwitcher.toasts.switchSuccess') || 'Switched account');
             onClose();
         } catch (error) {
-            if (!__DEV__) {
+            if (!isDev()) {
                 loggerUtil.warn('Switch account failed', { component: 'AccountMenu' }, error as unknown);
             }
             toast.error(t('accountSwitcher.toasts.switchFailed') || 'Failed to switch account');

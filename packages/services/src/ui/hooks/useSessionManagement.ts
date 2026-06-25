@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { ApiError, User } from '@oxyhq/core';
+import { isDev, type ApiError, type User } from '@oxyhq/core';
 import type { ClientSession } from '@oxyhq/core';
 import { mergeSessions, normalizeAndSortSessions, sessionsArraysEqual } from '@oxyhq/core';
 import { fetchSessionsWithFallback, validateSessionBatch } from '../utils/sessionHelpers';
@@ -86,7 +86,7 @@ export const useSessionManagement = ({
       } catch (error) {
         if (logger) {
           logger(DEFAULT_SAVE_ERROR_MESSAGE, error);
-        } else if (__DEV__) {
+        } else if (isDev()) {
           console.warn('Failed to save session IDs:', error);
         }
       }
@@ -309,7 +309,7 @@ export const useSessionManagement = ({
           });
           updateSessions(deviceSessions, { merge: true });
         } catch (error) {
-          if (__DEV__) {
+          if (isDev()) {
             console.warn('Failed to synchronize sessions after switch:', error);
           }
         }
