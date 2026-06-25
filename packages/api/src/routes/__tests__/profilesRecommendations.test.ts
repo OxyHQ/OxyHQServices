@@ -346,10 +346,11 @@ describe('GET /profiles/recommendations exclusion set', () => {
     expect(excludedIds).toEqual([userA.toString(), userB.toString(), userC.toString()].sort());
   });
 
-  it('returns 200 with public profiles for an unauthenticated caller', async () => {
+  it('returns 200 with public profiles for an unauthenticated caller from a bounded follow window', async () => {
     currentUserId = undefined;
 
-    // Public path: follower-ranked aggregation over the Follow collection.
+    // Public path: follower-ranked aggregation over a capped recent Follow
+    // window so unauthenticated callers cannot force whole-graph grouping.
     mockFollowAggregate.mockResolvedValue([
       { _id: userD, username: 'd', name: 'D', followersCount: 5, followingCount: 2, mutualCount: 0 },
     ]);
@@ -365,6 +366,16 @@ describe('GET /profiles/recommendations exclusion set', () => {
     expect(returnedIds).toContain(userD.toString());
     // The personalized following-set query is never issued without a caller.
     expect(mockFollowFind).not.toHaveBeenCalled();
+
+    const pipeline = mockFollowAggregate.mock.calls[0][0] as Array<Record<string, unknown>>;
+    expect(pipeline).toEqual(
+      expect.arrayContaining([
+        { $match: expect.objectContaining({ followType: 'user' }) },
+        { $sort: { createdAt: -1, _id: 1 } },
+        { $limit: 5000 },
+        { $group: { _id: '$followedId', followersCount: { $sum: 1 } } },
+      ])
+    );
   });
 
   it('requires recently resolved federated users in recommendation pipelines', async () => {

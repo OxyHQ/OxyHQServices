@@ -86,6 +86,11 @@ const MAX_USERNAME_LENGTH = 30;
 // filter on the public recommendations path, so post-lookup filtering can't
 // shrink the page below the requested limit.
 const PUBLIC_FILTER_HEADROOM = 20;
+// Bound the unauthenticated popularity fallback so a public request cannot
+// aggregate the entire social graph. The sorted prefix is supported by
+// Follow's { followType, createdAt, _id } index and keeps work independent of the
+// total follows collection size.
+const PUBLIC_POPULAR_FOLLOW_WINDOW = 5000;
 
 /**
  * Shared aggregation stages that look up follower and following counts
@@ -672,6 +677,8 @@ async function buildPopularFallback(
 
   const followerRanked = await Follow.aggregate<RecommendationRow>([
     { $match: { followType: FollowType.USER, followedId: { $nin: excludeIds } } },
+    { $sort: { createdAt: -1, _id: 1 } },
+    { $limit: PUBLIC_POPULAR_FOLLOW_WINDOW },
     { $group: { _id: '$followedId', followersCount: { $sum: 1 } } },
     { $sort: { followersCount: -1, _id: 1 } },
     { $skip: parsedOffset },
