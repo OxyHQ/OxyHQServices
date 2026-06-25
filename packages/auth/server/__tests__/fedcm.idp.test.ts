@@ -968,6 +968,36 @@ describe('GET /sso (central top-level-redirect cross-domain SSO)', () => {
     const { location, frag } = parseSsoRedirect(res);
     expect(location.startsWith(`${VALID_RETURN_TO}#`)).toBe(true);
     expect(frag.get('oxy_sso')).toBe('ok');
+  it('303-redirects with oxy_sso=none and mints no code when the user has not granted the RP', async () => {
+    stubbedGrantedOrigins = [];
+    installApiStub();
+
+    const res = await app.request(
+      ssoUrl({
+        client_id: RP_ORIGIN,
+        return_to: VALID_RETURN_TO,
+        state: 'st-no-grant',
+        prompt: 'none',
+      }),
+      { headers: { cookie: SESSION_COOKIE } }
+    );
+
+    expect(res.status).toBe(303);
+    const { location, frag } = parseSsoRedirect(res);
+    expect(location.startsWith(`${VALID_RETURN_TO}#`)).toBe(true);
+    expect(frag.get('oxy_sso')).toBe('none');
+    expect(frag.get('state')).toBe('st-no-grant');
+    expect(frag.get('code')).toBeNull();
+    expect(capturedExchange).toBeUndefined();
+    expect(capturedSsoCode).toBeUndefined();
+  });
+
+      if (url.includes('/fedcm/grants/')) {
+        return new Response(JSON.stringify({ origins: [RP_ORIGIN] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
     expect(frag.get('code')).toBe(STUB_SSO_CODE);
     expect(frag.get('state')).toBe('st-6');
 

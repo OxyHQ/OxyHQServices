@@ -423,6 +423,16 @@ async function fetchApprovedClients(apiBaseUrl: string, userId: string): Promise
   }
 }
 
+/**
+ * Check whether a user has previously granted this RP origin via an explicit
+ * FedCM sign-in. Silent prompt=none SSO may only mint for returning RPs; a
+ * brand-new RP must fall back to an interactive FedCM chooser/consent flow.
+ */
+async function hasApprovedClientGrant(apiBaseUrl: string, userId: string, clientOrigin: string): Promise<boolean> {
+  const approvedClients = await fetchApprovedClients(apiBaseUrl, userId);
+  return approvedClients.includes(clientOrigin);
+}
+
 /** Validate that a session is still active via the API. */
 async function validateSession(apiBaseUrl: string, sessionId: string): Promise<boolean> {
   try {
@@ -1664,6 +1674,13 @@ app.get('/auth/silent', async (c) => {
     return c.html(renderSilentHtml(approvedOrigin, null, nonce));
   }
 
+  // Silent restore may only mint for an RP the user already consented to via
+  // FedCM. If the grant was revoked (or never existed), return no session so
+  // the RP can fall back to its interactive sign-in path.
+  if (!(await hasApprovedClientGrant(config.apiBaseUrl, user.id, approvedOrigin))) {
+    return c.html(renderSilentHtml(approvedOrigin, null, nonce));
+  }
+
   // Mint a real Oxy access token for the validated, approved origin by reusing
   // the existing FedCM nonce + exchange pipeline (api.oxy.so is the authority).
   const session = await mintSessionForClient(config, user, approvedOrigin);
@@ -1783,7 +1800,15 @@ app.get('/sso', async (c) => {
     return redirectToCallback(c, returnTo, buildSsoFragment('none', state));
   }
 
-  // 8. DURABLE-SESSION SECOND HOP. This bounce runs on the CENTRAL IdP host
+  // 8. Silent prompt=none SSO is only valid for returning RPs: the user must
+  //    have an existing per-origin FedCM grant. Without that grant, bounce a
+  //    token-less "none" result so the RP falls back to an interactive chooser
+  //    instead of receiving a bearer token without consent.
+  if (!(await hasApprovedClientGrant(config.apiBaseUrl, user.id, approvedOrigin))) {
+    return redirectToCallback(c, returnTo, buildSsoFragment('none', state));
+  }
+
+  // 9. DURABLE-SESSION SECOND HOP. This bounce runs on the CENTRAL IdP host
   //    (auth.oxy.so), which is THIRD-PARTY to a cross-registrable-domain RP
   //    (e.g. mention.earth) under Safari ITP / Firefox TCP. Minting the code
   //    here would work for THIS load, but the RP could never restore the
@@ -1820,7 +1845,7 @@ app.get('/sso', async (c) => {
     return c.redirect(establishUrl.toString(), 303);
   }
 
-  // 9. (*.oxy.so path) Mint a real Oxy session for the approved origin via the
+  // 10. (*.oxy.so path) Mint a real Oxy session for the approved origin via the
   //    full, already-audited FedCM nonce + exchange pipeline (server nonce born
   //    + burned inside this call). On any failure → error bounce (no leaks).
   const session = await mintSessionForClient(config, user, approvedOrigin);
@@ -1828,7 +1853,7 @@ app.get('/sso', async (c) => {
     return redirectToCallback(c, returnTo, buildSsoFragment('error', state));
   }
 
-  // 10. Wrap the session in an opaque, single-use, origin-bound code via the
+  // 11. Wrap the session in an opaque, single-use, origin-bound code via the
   //     internal `POST /sso/code` (X-Oxy-Internal secret). On failure → error
   //     bounce. The code — never the session — travels in the fragment.
   const code = await createSsoCode(config, approvedOrigin, session);
@@ -1836,7 +1861,7 @@ app.get('/sso', async (c) => {
     return redirectToCallback(c, returnTo, buildSsoFragment('error', state));
   }
 
-  // 11. Success: bounce back with `oxy_sso=ok`, the opaque `code`, and `state`
+  // 12. Success: bounce back with `oxy_sso=ok`, the opaque `code`, and `state`
   //     in the FRAGMENT. The RP callback redeems the code at /sso/exchange.
   return redirectToCallback(c, returnTo, buildSsoFragment('ok', state, code));
 });
@@ -1922,6 +1947,10 @@ app.get('/sso/establish', async (c) => {
   const user = await fetchUserFromAPI(config.apiBaseUrl, claims.sessionId);
   if (!user) {
     return redirectToCallback(c, returnTo, buildSsoFragment('error', state));
+  }
+
+  if (!(await hasApprovedClientGrant(config.apiBaseUrl, user.id, approvedOrigin))) {
+    return redirectToCallback(c, returnTo, buildSsoFragment('none', state));
   }
 
   // 6. PLANT THE DURABLE FIRST-PARTY CREDENTIAL. Set the host-only
