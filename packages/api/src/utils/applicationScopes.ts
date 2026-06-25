@@ -40,6 +40,10 @@ export type ApplicationScope = (typeof APPLICATION_SCOPES)[number];
  *   resolve/mutate, ARBITRARY federated users. A self-granting owner could
  *   otherwise register an app with a victim domain's redirectUri and impersonate
  *   that domain's users.
+ * - `signals:write` lets a service credential write cross-app ranking signals
+ *   and can trigger reputation awards for arbitrary Oxy users. A self-granting
+ *   owner could otherwise submit forged endorsement edges to inflate reputation
+ *   and recommendation rankings.
  *
  * All other scopes in {@link APPLICATION_SCOPES} authorise an app only over its
  * OWN resources (files, models, webhooks, public user reads) and remain freely
@@ -48,6 +52,7 @@ export type ApplicationScope = (typeof APPLICATION_SCOPES)[number];
  */
 export const PRIVILEGED_APPLICATION_SCOPES = [
   'federation:write',
+  'signals:write',
 ] as const satisfies readonly ApplicationScope[];
 
 const PRIVILEGED_APPLICATION_SCOPE_SET: ReadonlySet<ApplicationScope> = new Set<ApplicationScope>(

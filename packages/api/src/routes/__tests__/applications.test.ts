@@ -748,15 +748,18 @@ describe('POST /applications — create', () => {
     expect(res.status).toBe(403);
   });
 
-  it('403 when a non-staff creator tries to self-grant a privileged scope (federation:write)', async () => {
-    const res = await requestJson(server, 'POST', '/applications', {
-      workspaceId: WORKSPACE_ID,
-      name: 'Escalation App',
-      redirectUris: ['https://mention.earth/__oxy/sso-callback'],
-      scopes: ['user:read', 'federation:write'],
-    });
-    expect(res.status).toBe(403);
-  });
+  it.each(['federation:write', 'signals:write'])(
+    '403 when a non-staff creator tries to self-grant a privileged scope (%s)',
+    async (scope) => {
+      const res = await requestJson(server, 'POST', '/applications', {
+        workspaceId: WORKSPACE_ID,
+        name: 'Escalation App',
+        redirectUris: ['https://mention.earth/__oxy/sso-callback'],
+        scopes: ['user:read', scope],
+      });
+      expect(res.status).toBe(403);
+    }
+  );
 
   it('allows a non-staff creator to grant ordinary (non-privileged) scopes', async () => {
     const res = await requestJson(server, 'POST', '/applications', {
@@ -768,15 +771,19 @@ describe('POST /applications — create', () => {
     expect(res.body.application?.scopes).toEqual(['user:read', 'files:write']);
   });
 
-  it('allows a STAFF creator to grant a privileged scope', async () => {
+  it('allows a STAFF creator to grant privileged scopes', async () => {
     actAs(OWNER_ID, true);
     const res = await requestJson(server, 'POST', '/applications', {
       workspaceId: WORKSPACE_ID,
       name: 'Federated App',
-      scopes: ['user:read', 'federation:write'],
+      scopes: ['user:read', 'federation:write', 'signals:write'],
     });
     expect(res.status).toBe(201);
-    expect(res.body.application?.scopes).toEqual(['user:read', 'federation:write']);
+    expect(res.body.application?.scopes).toEqual([
+      'user:read',
+      'federation:write',
+      'signals:write',
+    ]);
   });
 });
 
@@ -1065,12 +1072,15 @@ describe('PATCH /applications/:appId', () => {
     expect(res.body.application?.type).toBe('internal');
   });
 
-  it('403 when a non-staff owner tries to ADD a privileged scope via update', async () => {
-    const res = await requestJson(server, 'PATCH', `/applications/${APP_ID}`, {
-      scopes: ['user:read', 'federation:write'],
-    });
-    expect(res.status).toBe(403);
-  });
+  it.each(['federation:write', 'signals:write'])(
+    '403 when a non-staff owner tries to ADD a privileged scope via update (%s)',
+    async (scope) => {
+      const res = await requestJson(server, 'PATCH', `/applications/${APP_ID}`, {
+        scopes: ['user:read', scope],
+      });
+      expect(res.status).toBe(403);
+    }
+  );
 
   it('lets a non-staff owner keep an already-granted privileged scope (no re-grant)', async () => {
     // Staff previously elevated this app; a routine non-staff edit that re-sends
@@ -1086,13 +1096,17 @@ describe('PATCH /applications/:appId', () => {
     expect(res.body.application?.scopes).toEqual(['user:read', 'federation:write']);
   });
 
-  it('lets a STAFF owner add a privileged scope via update', async () => {
+  it('lets a STAFF owner add privileged scopes via update', async () => {
     actAs(OWNER_ID, true);
     const res = await requestJson(server, 'PATCH', `/applications/${APP_ID}`, {
-      scopes: ['user:read', 'federation:write'],
+      scopes: ['user:read', 'federation:write', 'signals:write'],
     });
     expect(res.status).toBe(200);
-    expect(res.body.application?.scopes).toEqual(['user:read', 'federation:write']);
+    expect(res.body.application?.scopes).toEqual([
+      'user:read',
+      'federation:write',
+      'signals:write',
+    ]);
   });
 });
 
