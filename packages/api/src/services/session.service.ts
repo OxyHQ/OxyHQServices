@@ -43,6 +43,33 @@ function timingSafeTokenEqual(provided: string, expected: unknown): boolean {
 }
 
 /**
+ * A presented access token is bound to the session's CURRENT token, but the
+ * immediately-previous token is also accepted briefly after a rotation
+ * (`TOKEN_ROTATION_GRACE_PERIOD_MS`). Without this grace, a concurrent tab, an
+ * in-flight request, or a cross-app refresh race that rotated `accessToken`
+ * would 401 a still-valid token and force a local sign-out. A token rotated out
+ * longer ago than the grace window is rejected (preserves the security intent
+ * of rejecting rotated-out tokens).
+ */
+function isAccessTokenWithinRotationGrace(
+  accessToken: string,
+  session: { accessToken: string; previousAccessToken?: string | null; tokenRotatedAt?: Date | null }
+): boolean {
+  if (timingSafeTokenEqual(accessToken, session.accessToken)) {
+    return true;
+  }
+  if (
+    session.previousAccessToken &&
+    session.tokenRotatedAt &&
+    Date.now() - new Date(session.tokenRotatedAt).getTime() <= TOKEN_ROTATION_GRACE_PERIOD_MS &&
+    timingSafeTokenEqual(accessToken, session.previousAccessToken)
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/**
  * Extract userId string from various possible formats (ObjectId, populated object, string)
  * Handles edge cases and corrupted cache entries gracefully
  * 
@@ -254,7 +281,7 @@ class SessionService {
 
       const { session } = result;
 
-      if (!timingSafeTokenEqual(accessToken, session.accessToken)) {
+      if (!isAccessTokenWithinRotationGrace(accessToken, session)) {
         sessionCache.invalidate(sessionId);
         return null;
       }
@@ -546,6 +573,7 @@ class SessionService {
         payload.deviceId || session.deviceId
       );
 
+      session.previousAccessToken = session.accessToken;
       session.previousRefreshToken = session.refreshToken;
       session.tokenRotatedAt = now;
       session.accessToken = newAccessToken;
