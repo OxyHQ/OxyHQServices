@@ -687,6 +687,26 @@ describe('GET /auth/silent (Safari/Firefox first-party restore)', () => {
     // The worker must drive the api `/fedcm/nonce` + `/fedcm/exchange` calls
     // with Origin == the approved client origin, or the API rejects them
     // (origin_aud_mismatch / nonce_origin_mismatch).
+  it('REFUSES to mint a token for an approved client_id without a per-user grant', async () => {
+    // The RP is globally approved, but this user has not previously granted it.
+    // Silent restore must preserve the FedCM consent boundary and return null.
+    stubbedApprovedClients = [RP_ORIGIN];
+    stubbedGrantedOrigins = [];
+    installApiStub();
+
+    const res = await app.request(
+      `/auth/silent?client_id=${encodeURIComponent(RP_ORIGIN)}&nonce=rp-nonce-grant`,
+      { headers: { cookie: SESSION_COOKIE } }
+    );
+
+    expect(res.status).toBe(200);
+    const { message, targetOrigin } = extractPostedMessage(await res.text());
+    expect((message as SilentMessage).session).toBeNull();
+    expect(targetOrigin).toBe(RP_ORIGIN);
+    expect(capturedNonceOrigin).toBeUndefined();
+    expect(capturedExchange).toBeUndefined();
+  });
+
     expect(capturedNonceOrigin).toBe(RP_ORIGIN);
     expect(capturedExchange?.origin).toBe(RP_ORIGIN);
     expect(typeof capturedExchange?.idToken).toBe('string');

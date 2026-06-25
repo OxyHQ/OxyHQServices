@@ -423,6 +423,10 @@ async function fetchApprovedClients(apiBaseUrl: string, userId: string): Promise
   }
 }
 
+function hasGrantedClientOrigin(grantedOrigins: string[], clientOrigin: string): boolean {
+  return grantedOrigins.some((origin) => normaliseOrigin(origin) === clientOrigin);
+}
+
 /** Validate that a session is still active via the API. */
 async function validateSession(apiBaseUrl: string, sessionId: string): Promise<boolean> {
   try {
@@ -1664,8 +1668,18 @@ app.get('/auth/silent', async (c) => {
     return c.html(renderSilentHtml(approvedOrigin, null, nonce));
   }
 
-  // Mint a real Oxy access token for the validated, approved origin by reusing
-  // the existing FedCM nonce + exchange pipeline (api.oxy.so is the authority).
+  // Silent token issuance is allowed only for RPs this user has already
+  // authorized. The global approved-client list says an origin may use FedCM at
+  // all; the per-user grant list is the consent boundary that prevents any
+  // approved/compromised RP from minting tokens for every visiting IdP user.
+  const grantedOrigins = await fetchApprovedClients(config.apiBaseUrl, user.id);
+  if (!hasGrantedClientOrigin(grantedOrigins, approvedOrigin)) {
+    return c.html(renderSilentHtml(approvedOrigin, null, nonce));
+  }
+
+  // Mint a real Oxy access token for the validated, approved AND user-granted
+  // origin by reusing the existing FedCM nonce + exchange pipeline
+  // (api.oxy.so is the authority).
   const session = await mintSessionForClient(config, user, approvedOrigin);
   return c.html(renderSilentHtml(approvedOrigin, session, nonce));
 });
