@@ -915,8 +915,11 @@ export class HttpService {
 
           if (response.ok) {
             const data = await response.json() as { csrfToken?: string };
-            this.logger.debug('CSRF response data:', data);
             const token = data.csrfToken || null;
+            this.logger.debug('CSRF response data:', {
+              hasCsrfToken: typeof token === 'string' && token.length > 0,
+              csrfTokenLength: token?.length,
+            });
             this.tokenStore.setCsrfToken(token);
             this.logger.debug('CSRF token fetched');
             return token;

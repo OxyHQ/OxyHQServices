@@ -157,4 +157,38 @@ describe('HttpService CSRF behavior', () => {
     expect(headers.Authorization).toBeUndefined();
     expect(headers['X-CSRF-Token']).toBe('csrf_1');
   });
+
+  it('does not log raw csrf-token response values when debug logging is enabled', async () => {
+    const csrfToken = 'csrf_secret_value_that_must_not_be_logged';
+    globalThis.fetch = async (input) => {
+      const url = String(input);
+      if (url.endsWith('/csrf-token')) {
+        return new Response(JSON.stringify({ csrfToken }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      return jsonResponse({ ok: true });
+    };
+    const consoleLogSpy = jest.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    const http = new HttpService({
+      baseURL: 'https://api.mention.earth',
+      enableRetry: false,
+      enableLogging: true,
+      logLevel: 'debug',
+    });
+
+    await http.post('/posts', { text: 'hello' });
+
+    const logs = consoleLogSpy.mock.calls
+      .map((call) =>
+        call.map((arg) => (typeof arg === 'object' ? JSON.stringify(arg) : String(arg))).join(' ')
+      )
+      .join('\n');
+    expect(logs).not.toContain(csrfToken);
+    expect(logs).toContain('hasCsrfToken');
+    expect(logs).toContain(String(csrfToken.length));
+  });
+
 });
