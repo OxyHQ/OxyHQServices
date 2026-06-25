@@ -25,8 +25,10 @@ export class MediaPrivacyService {
         return { allowed: true, reason: 'owner' };
       }
 
-      // Public files without a specific entity context are always accessible
-      if (file.visibility === 'public' && !context) {
+      // Public files without a specific entity context are accessible without authentication.
+      // Authenticated viewers still pass through the block check below so social
+      // privacy controls apply before public media is served.
+      if (file.visibility === 'public' && !context && !viewerUserId) {
         return { allowed: true, isPublic: true };
       }
 
@@ -71,6 +73,10 @@ export class MediaPrivacyService {
         if (!entityAccess.allowed) {
           return { allowed: false, reason: 'entity_access_denied' };
         }
+      }
+
+      if (file.visibility === 'public' && !context) {
+        return { allowed: true, isPublic: true };
       }
 
       return { allowed: true };
