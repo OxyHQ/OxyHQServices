@@ -81,6 +81,35 @@ const en: LocaleDict = {
       signedOut: 'Signed out',
     },
   },
+
+  authorize: {
+    title: 'Continue to {{app}}',
+    subtitle:
+      'Use your Oxy account to sign in to {{app}}. Review what this connection means before you continue.',
+    benefits: {
+      secure: 'Sign in securely with your Oxy account — no new password needed',
+      oneAccount: 'One account across every Oxy app',
+      youControl: 'You choose what you share, and you can revoke access anytime',
+    },
+    continue: 'Continue to {{app}}',
+    cancel: 'Cancel',
+    notYou: 'Not you?',
+    switchAccount: 'Use a different account',
+    disclaimer:
+      'By continuing, {{app}} will be able to sign in with your Oxy account. You can manage connected apps anytime in your Oxy account settings.',
+    expiresAt: 'Request expires at {{time}}.',
+    requestTitle: 'Authorization request',
+    requestUnavailable: "We couldn't load the details of this request.",
+    completeTitle: 'Authorization complete',
+    deniedTitle: 'Authorization denied',
+    completeChild: 'This window will close automatically.',
+    completeDesc: 'You can close this window.',
+    deniedDesc: 'The request was denied. You can close this window.',
+    noRequestTitle: 'No authorization request',
+    noRequestDesc:
+      'Open the app you want to sign in to and try again. The authorization request starts there.',
+    goToSignIn: 'Go to sign in',
+  },
 };
 
 export default en;

@@ -1,11 +1,8 @@
 import { useEffect, useState } from "react";
 import { useSearchParams, Link, useNavigate, Navigate } from "react-router-dom";
-import { getAccountDisplayName } from "@oxyhq/core";
 import type { PublicApplication } from "@oxyhq/core";
 
 import { Button } from "@oxyhq/bloom/button";
-import { FieldDescription } from "@/components/ui/field";
-import { Avatar } from "@oxyhq/bloom/avatar";
 import {
   AuthFormLayout,
   AuthFormHeader,
@@ -14,12 +11,12 @@ import {
   tryCloseChildWindow,
 } from "@/components/auth-form-layout";
 import { AccountChooser } from "@/components/account-chooser";
-import { AppIdentityCard } from "@/components/app-identity-card";
+import { ConsentCard } from "@/components/consent-card";
 import { useDeviceAccounts } from "@/lib/use-device-accounts";
+import { useTranslation } from "@/lib/i18n/use-translation";
 import { sessionStatusSchema, safeParse } from "@/lib/schemas";
 import type { DeviceAccount } from "@/lib/types";
 import {
-  getAvatarUrl,
   buildRelativeUrl,
   buildAuthUrl,
   buildApiUrl,
@@ -111,6 +108,7 @@ function parseAuthuser(value: string | null): number | null {
 export function AuthorizePage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const token = searchParams.get("token");
   const redirectUri = searchParams.get("redirect_uri");
   const state = searchParams.get("state");
@@ -587,11 +585,11 @@ export function AuthorizePage() {
     return (
       <AuthFormLayout>
         <AuthFormHeader
-          title="No authorization request"
-          description="Open the app you want to sign in to and try again. The authorization request starts there."
+          title={t("authorize.noRequestTitle")}
+          description={t("authorize.noRequestDesc")}
         />
         <Button asChild size="lg">
-          <Link to="/login">Go to sign in</Link>
+          <Link to="/login">{t("authorize.goToSignIn")}</Link>
         </Button>
       </AuthFormLayout>
     );
@@ -620,17 +618,8 @@ export function AuthorizePage() {
   const application = data.application;
   const expiresAt = data.expiresAt;
   const currentUser = data.user;
-  const displayName = currentUser ? getAccountDisplayName(currentUser) : null;
-  const userEmail = currentUser?.email;
   const showActions =
     !pageError && (!effectiveStatus || effectiveStatus === "pending");
-
-  // OAuth code flow: prefer the explicitly requested `scope` URL param (space-
-  // separated) over the application's full configured scope list. Empty for the
-  // device flow, where the card falls back to base permissions.
-  const requestedScopes = scope
-    ? scope.split(/\s+/).filter((s) => s.length > 0)
-    : [];
 
   const loginUrl = buildRelativeUrl("/login", {
     token: token || undefined,
@@ -667,105 +656,47 @@ export function AuthorizePage() {
       effectiveStatus === "denied" ? (
         <>
           <AuthFormHeader
-            title={effectiveStatus === "approved"
-              ? "Authorization complete"
-              : "Authorization denied"}
+            title={
+              effectiveStatus === "approved"
+                ? t("authorize.completeTitle")
+                : t("authorize.deniedTitle")
+            }
             description={
               isChildWindow()
-                ? "This window will close automatically."
+                ? t("authorize.completeChild")
                 : effectiveStatus === "approved"
-                  ? "You can close this window."
-                  : "The request was denied. You can close this window."
+                  ? t("authorize.completeDesc")
+                  : t("authorize.deniedDesc")
             }
           />
         </>
+      ) : application ? (
+        /* Resolved requesting-application identity → redesigned consent card.
+           Rendered only when the application resolved — there is no generic
+           "This app" fallback. An unresolved request surfaces as the error
+           view below instead. The card delegates every decision back to the
+           unchanged IdP `handleDecision` flow. */
+        <ConsentCard
+          application={application}
+          user={currentUser}
+          showActions={showActions}
+          error={pageError}
+          expiresAt={expiresAt}
+          submitting={submitting}
+          onDecision={handleDecision}
+          loginUrl={loginUrl}
+        />
       ) : (
         <>
-          {/* User identity badge */}
-          {currentUser ? (
-            <div className="flex items-center gap-3 rounded-lg border bg-muted/50 p-3">
-              <Avatar
-                source={
-                  currentUser.avatar
-                    ? getAvatarUrl(currentUser.avatar)
-                    : undefined
-                }
-                size={40}
-              />
-              <div className="flex-1 min-w-0">
-                <div className="font-medium text-sm truncate">
-                  {displayName}
-                </div>
-                {userEmail && (
-                  <div className="text-xs text-muted-foreground truncate">
-                    {userEmail}
-                  </div>
-                )}
-              </div>
-              <Link
-                to={loginUrl}
-                className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 shrink-0"
-              >
-                Not you?
-              </Link>
-            </div>
-          ) : null}
-
-          {/* Resolved requesting-application identity + requested scopes.
-              Rendered only when the application resolved — there is no generic
-              "This app" fallback. An unresolved request surfaces as the error
-              box below instead. */}
-          {application ? (
-            <AppIdentityCard
-              app={application}
-              requestedScopes={requestedScopes}
-            />
-          ) : (
-            <AuthFormHeader
-              title="Authorization request"
-              description="We couldn't load the details of this request."
-            />
-          )}
-
-          {/* Error state */}
+          <AuthFormHeader
+            title={t("authorize.requestTitle")}
+            description={t("authorize.requestUnavailable")}
+          />
           {pageError && (
-            <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
+            <div className="rounded-radius-12 border border-destructive/50 bg-destructive/10 p-space-12 font-bodySmall text-bodySmall text-destructive">
               {pageError}
             </div>
           )}
-
-          {/* Action section */}
-          {showActions ? (
-            <>
-              {expiresAt ? (
-                <FieldDescription className="text-xs">
-                  Request expires at {expiresAt}.
-                </FieldDescription>
-              ) : null}
-
-              {/* Action buttons — side by side pills, stack on tiny screens */}
-              <div className="flex flex-col sm:flex-row gap-3">
-                <Button
-                  variant="outline"
-                  size="lg"
-                  className="flex-1"
-                  disabled={submitting}
-                  onClick={() => handleDecision("deny")}
-                >
-                  Deny
-                </Button>
-                <Button
-                  size="lg"
-                  className="flex-1"
-                  disabled={submitting}
-                  loading={submitting}
-                  onClick={() => handleDecision("approve")}
-                >
-                  Allow
-                </Button>
-              </div>
-            </>
-          ) : null}
         </>
       )}
     </AuthFormLayout>

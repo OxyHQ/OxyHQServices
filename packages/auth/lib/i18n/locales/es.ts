@@ -78,6 +78,37 @@ const es: LocaleDict = {
       signedOut: 'Sesión cerrada',
     },
   },
+
+  authorize: {
+    title: 'Continuar a {{app}}',
+    subtitle:
+      'Usa tu cuenta de Oxy para iniciar sesión en {{app}}. Revisa qué implica esta conexión antes de continuar.',
+    benefits: {
+      secure:
+        'Inicia sesión de forma segura con tu cuenta de Oxy, sin nuevas contraseñas',
+      oneAccount: 'Una sola cuenta para todas las apps de Oxy',
+      youControl:
+        'Tú decides qué compartes y puedes revocar el acceso cuando quieras',
+    },
+    continue: 'Continuar a {{app}}',
+    cancel: 'Cancelar',
+    notYou: '¿No eres tú?',
+    switchAccount: 'Usar otra cuenta',
+    disclaimer:
+      'Al continuar, {{app}} podrá iniciar sesión con tu cuenta de Oxy. Puedes gestionar las apps conectadas cuando quieras en los ajustes de tu cuenta de Oxy.',
+    expiresAt: 'La solicitud caduca a las {{time}}.',
+    requestTitle: 'Solicitud de autorización',
+    requestUnavailable: 'No pudimos cargar los detalles de esta solicitud.',
+    completeTitle: 'Autorización completada',
+    deniedTitle: 'Autorización denegada',
+    completeChild: 'Esta ventana se cerrará automáticamente.',
+    completeDesc: 'Puedes cerrar esta ventana.',
+    deniedDesc: 'La solicitud fue denegada. Puedes cerrar esta ventana.',
+    noRequestTitle: 'Sin solicitud de autorización',
+    noRequestDesc:
+      'Abre la app en la que quieres iniciar sesión e inténtalo de nuevo. La solicitud de autorización empieza ahí.',
+    goToSignIn: 'Ir a iniciar sesión',
+  },
 };
 
 export default es;
