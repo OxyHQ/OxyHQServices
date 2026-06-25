@@ -422,6 +422,22 @@ export function WebOxyProvider({
   const handleAuthSuccessRef = useRef(handleAuthSuccess);
   handleAuthSuccessRef.current = handleAuthSuccess;
 
+  const committedSsoSessionsRef = useRef<WeakSet<SessionLoginResponse>>(new WeakSet());
+  const commitSsoSessionOnce = useCallback(async (session: SessionLoginResponse) => {
+    // The eager callback interceptor and cold-boot SSO step intentionally share
+    // one exchange promise, but both can observe its non-null session. Commit
+    // before awaiting so overlapping callers cannot both run the side-effectful
+    // post-login cookie restore/rotation path for the same SSO return.
+    if (committedSsoSessionsRef.current.has(session)) {
+      return;
+    }
+    committedSsoSessionsRef.current.add(session);
+    await handleAuthSuccessRef.current(session, 'credentials');
+  }, []);
+
+  const commitSsoSessionOnceRef = useRef(commitSsoSessionOnce);
+  commitSsoSessionOnceRef.current = commitSsoSessionOnce;
+
   const handleAuthError = useCallback((err: unknown) => {
     const errorMessage = err instanceof Error ? err.message : 'Authentication failed';
     setError(errorMessage);
@@ -704,7 +720,11 @@ export function WebOxyProvider({
         case 'redirect':
         case 'fedcm':
         case 'sso':
-          await handleAuthSuccess(outcome.session.session, outcome.session.method === 'sso' ? 'credentials' : outcome.session.method);
+          if (outcome.session.method === 'sso') {
+            await commitSsoSessionOnceRef.current(outcome.session.session);
+          } else {
+            await handleAuthSuccess(outcome.session.session, outcome.session.method);
+          }
           return;
         case 'cookie': {
           syncAccountsFromManager();
@@ -763,7 +783,7 @@ export function WebOxyProvider({
       runSsoReturnRef.current()
         .then(async (session) => {
           if (session) {
-            await handleAuthSuccess(session.session, 'credentials');
+            await commitSsoSessionOnceRef.current(session.session);
             return;
           }
           // No SSO return to commit. Re-evaluate the bounce gate: if a session
@@ -819,7 +839,7 @@ export function WebOxyProvider({
     runSsoReturnRef.current()
       .then(async (session) => {
         if (session) {
-          await handleAuthSuccessRef.current(session.session, 'credentials');
+          await commitSsoSessionOnceRef.current(session.session);
         }
       })
       .catch((err) => {

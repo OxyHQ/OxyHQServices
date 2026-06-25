@@ -35,6 +35,8 @@ interface CoreStubs {
   exchangeSsoCode: jest.Mock<Promise<SessionLoginResponse>, [string]>;
   generateSsoState: jest.Mock<string, []>;
   managerInitialize: jest.Mock<Promise<User | null>, []>;
+  managerHandleAuthSuccess: jest.Mock<Promise<void>, [SessionLoginResponse, 'fedcm' | 'redirect' | 'credentials']>;
+  managerRestoreFromCookies: jest.Mock<Promise<void>, []>;
   getActiveAccount: jest.Mock<{ sessionId: string } | null, []>;
   baseURL: string;
 }
@@ -47,6 +49,8 @@ const stubs: CoreStubs = {
   exchangeSsoCode: jest.fn(async () => ({}) as SessionLoginResponse),
   generateSsoState: jest.fn(() => 'state-fixed'),
   managerInitialize: jest.fn(async () => null),
+  managerHandleAuthSuccess: jest.fn(async () => undefined),
+  managerRestoreFromCookies: jest.fn(async () => undefined),
   getActiveAccount: jest.fn(() => null),
   baseURL: 'https://api.oxy.so',
 };
@@ -59,6 +63,8 @@ function resetStubs(baseURL: string): void {
   stubs.exchangeSsoCode = jest.fn(async () => ({}) as SessionLoginResponse);
   stubs.generateSsoState = jest.fn(() => 'state-fixed');
   stubs.managerInitialize = jest.fn(async () => null);
+  stubs.managerHandleAuthSuccess = jest.fn(async () => undefined);
+  stubs.managerRestoreFromCookies = jest.fn(async () => undefined);
   stubs.getActiveAccount = jest.fn(() => null);
   stubs.baseURL = baseURL;
 }
@@ -113,12 +119,13 @@ jest.mock('@oxyhq/core', () => {
       getActiveAccount: () => stubs.getActiveAccount(),
       getAccounts: () => [],
       getActiveAuthuser: () => null,
-      handleAuthSuccess: jest.fn(async () => undefined),
-      restoreFromCookies: jest.fn(async () => undefined),
+      handleAuthSuccess: (session: SessionLoginResponse, method: 'fedcm' | 'redirect' | 'credentials') => stubs.managerHandleAuthSuccess(session, method),
+      restoreFromCookies: () => stubs.managerRestoreFromCookies(),
       signOutAllViaCookies: jest.fn(async () => undefined),
       destroy: jest.fn(),
     }),
   };
+
 });
 
 import { WebOxyProvider, useAuth } from '../src/WebOxyProvider';
@@ -206,4 +213,29 @@ describe('WebOxyProvider eager SSO callback interception', () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(bounced()).toBe(false);
   });
+
+  it('ok: eagerly shares callback exchange but commits the SSO session only once', async () => {
+    resetStubs('https://api.intercept-ok');
+    window.sessionStorage.setItem(ssoStateKey(ORIGIN), 's');
+    window.sessionStorage.setItem(ssoDestKey(ORIGIN), `${ORIGIN}${DEST_PATH}`);
+    setLocation(`${ORIGIN}${SSO_CALLBACK_PATH}#oxy_sso=ok&code=code-1&state=s`);
+
+    const user = { id: 'user-1', username: 'u1', name: { displayName: 'User One' } } as User;
+    stubs.exchangeSsoCode = jest.fn(async () => ({
+      user,
+      sessionId: 'session-1',
+      token: 'token-1',
+    }) as SessionLoginResponse);
+
+    let latest: ProbeState = { isAuthenticated: false, userId: null, isLoading: true };
+    renderProvider(stubs.baseURL, (state) => { latest = state; });
+
+    await waitFor(() => expect(latest.userId).toBe('user-1'));
+
+    expect(stubs.exchangeSsoCode).toHaveBeenCalledTimes(1);
+    expect(stubs.managerHandleAuthSuccess).toHaveBeenCalledTimes(1);
+    expect(stubs.managerRestoreFromCookies).toHaveBeenCalledTimes(1);
+    expect(latest.isAuthenticated).toBe(true);
+  });
+
 });
