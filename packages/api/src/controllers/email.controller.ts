@@ -562,7 +562,16 @@ export async function searchMessages(req: AuthRequest, res: Response): Promise<v
   const offset = parseInt(req.query.offset as string) || 0;
 
   // At least one search criterion required
-  if (!q && !from && !to && !subject && !hasAttachment && !dateAfter && !dateBefore) {
+  if (
+    !q &&
+    !mailboxId &&
+    !from &&
+    !to &&
+    !subject &&
+    !hasAttachment &&
+    !dateAfter &&
+    !dateBefore
+  ) {
     throw new BadRequestError('At least one search parameter is required');
   }
 
