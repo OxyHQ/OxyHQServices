@@ -5,11 +5,12 @@
  * All routes require authentication via authMiddleware.
  */
 
-import { Router } from 'express';
+import { Router, type NextFunction, type Request, type Response } from 'express';
 import multer from 'multer';
 import { authMiddleware } from '../middleware/auth';
 import { asyncHandler } from '../utils/asyncHandler';
 import { validate } from '../middleware/validate';
+import { BadRequestError } from '../utils/error';
 import {
   createMailboxSchema,
   mailboxIdParams,
@@ -96,13 +97,42 @@ import {
 
 const router = Router();
 
-// Multer for .eml uploads on POST /import (in-memory, max 50 MB / file).
+const IMPORT_MAX_FILES = 5;
+const IMPORT_MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024;
+
+// Multer for .eml uploads on POST /import (in-memory, max 25 MB / file).
 // Attachment uploads no longer flow through this route — clients upload files
 // to the Oxy file manager (/assets) and reference them by fileId on send.
-const upload = multer({
+const importUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 50 * 1024 * 1024 },
+  limits: {
+    fileSize: IMPORT_MAX_FILE_SIZE_BYTES,
+    files: IMPORT_MAX_FILES,
+    fields: 0,
+    parts: IMPORT_MAX_FILES,
+  },
+  fileFilter: (_req, file, cb) => {
+    if (!file.originalname.toLowerCase().endsWith('.eml')) {
+      cb(
+        new BadRequestError(
+          `Invalid file type: ${file.originalname}. Only .eml files are accepted.`,
+        ),
+      );
+      return;
+    }
+    cb(null, true);
+  },
 });
+
+const importUploadMiddleware = (req: Request, res: Response, next: NextFunction) => {
+  importUpload.array('files', IMPORT_MAX_FILES)(req, res, (err) => {
+    if (err instanceof multer.MulterError) {
+      next(new BadRequestError(err.message));
+      return;
+    }
+    next(err);
+  });
+};
 
 // All email routes require authentication
 router.use(authMiddleware);
@@ -165,7 +195,7 @@ router.get('/quota', asyncHandler(getQuota));
 // .eml are extracted server-side and persisted via the Oxy file manager
 // (assetService.uploadFileDirect), exactly like inbound MIME from Cloudflare.
 
-router.post('/import', upload.array('files', 50), asyncHandler(importMessages));
+router.post('/import', importUploadMiddleware, asyncHandler(importMessages));
 
 // ─── Subscriptions ───────────────────────────────────────────
 

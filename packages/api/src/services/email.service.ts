@@ -1752,10 +1752,16 @@ class EmailService {
 
     await this.ensureMailboxes(userId);
     await this.ensureDefaultLabels(userId);
+    await this.enforceQuota(
+      userId,
+      files.reduce((total, file) => total + file.buffer.length, 0),
+    );
 
     const inbox = await this.getMailboxBySpecialUse(userId, '\\Inbox');
     if (!inbox) throw new NotFoundError('Inbox not found');
 
+    const tier = await this.getUserTier(userId);
+    const maxAttachmentSize = EMAIL_QUOTAS[tier].maxAttachmentSize;
     let imported = 0;
 
     for (const file of files) {
@@ -1785,8 +1791,25 @@ class EmailService {
         // Upload attachments to the Oxy file manager
         const storedAttachments: IAttachment[] = [];
         const importedFileIds: string[] = [];
+        const parsedAttachments = parsed.attachments || [];
+        const attachmentBytes = parsedAttachments.reduce(
+          (sum, att) => sum + (att.size || att.content.length),
+          0,
+        );
+        for (const att of parsedAttachments) {
+          const attachmentSize = att.size || att.content.length;
+          if (attachmentSize > maxAttachmentSize) {
+            throw new BadRequestError(
+              `Attachment ${att.filename || 'attachment'} exceeds the ${maxAttachmentSize} byte limit for your plan.`,
+            );
+          }
+        }
+
+        const totalSize = rawSize + attachmentBytes;
+        await this.enforceQuota(userId, totalSize);
+
         if (parsed.attachments?.length) {
-          for (const att of parsed.attachments) {
+          for (const att of parsedAttachments) {
             const uploadedFile = await assetService.uploadFileDirect(
               userId,
               att.content,
@@ -1806,8 +1829,6 @@ class EmailService {
             importedFileIds.push(uploadedFile._id.toString());
           }
         }
-
-        const totalSize = rawSize + storedAttachments.reduce((sum, a) => sum + a.size, 0);
 
         const message = await Message.create({
           userId: new mongoose.Types.ObjectId(userId),
@@ -1868,6 +1889,9 @@ class EmailService {
 
         imported++;
       } catch (err) {
+        if (err instanceof BadRequestError) {
+          throw err;
+        }
         logger.warn('Failed to import .eml file', {
           filename: file.originalname,
           error: err instanceof Error ? err.message : String(err),
