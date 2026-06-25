@@ -73,7 +73,7 @@ jobs:
           NODE_ENV: test
 
       - name: Upload coverage reports
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v7
         with:
           files: ./packages/api/coverage/lcov.info
           flags: api
