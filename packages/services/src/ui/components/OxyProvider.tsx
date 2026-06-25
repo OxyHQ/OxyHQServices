@@ -4,6 +4,7 @@ import type { OxyProviderProps } from '../types/navigation';
 import { OxyContextProvider, type OxyContextProviderProps } from '../context/OxyContext';
 import { QueryClientProvider, focusManager, onlineManager } from '@tanstack/react-query';
 import { BloomDialogProvider } from '@oxyhq/bloom';
+import { BloomThemeProvider, useTheme as useBloomTheme } from '@oxyhq/bloom/theme';
 import { ToastOutlet } from '@oxyhq/bloom/toast';
 import { logger as loggerUtil } from '@oxyhq/core';
 import { setupFonts } from './FontLoader';
@@ -25,6 +26,15 @@ import { createPlatformStorage, type StorageInterface } from '../utils/storageHe
  * jarring than `null` (transparent) on either theme.
  */
 const BOOT_BG_COLOR = '#ffffff';
+
+const BloomThemeFallback: FC<{ children: ReactNode }> = ({ children }) => {
+    try {
+        useBloomTheme();
+        return <>{children}</>;
+    } catch {
+        return <BloomThemeProvider mode="system">{children}</BloomThemeProvider>;
+    }
+};
 
 const bootStyles = StyleSheet.create({
     bootShell: {
@@ -284,32 +294,34 @@ const OxyProvider: FC<OxyProviderProps> = ({
 
     // Core content: QueryClient + OxyContext + UI overlays.
     //
-    // Theming is owned by `@oxyhq/bloom`. Consumers must mount their own
-    // `<BloomThemeProvider>` in their app root and configure it directly
+    // Theming is owned by `@oxyhq/bloom`. Consumers should mount their own
+    // `<BloomThemeProvider>` in the app root to configure it directly
     // (defaultColorPreset, defaultMode, persistKey, storage, fonts, etc.).
-    // OxyProvider does NOT wrap a BloomThemeProvider — that would create a
-    // duplicate scope that silently shadows the consumer's configuration.
+    // For backwards compatibility with documented OxyProvider-only usage,
+    // install a default Bloom provider only when no upstream provider exists.
     const coreContent = (
         <QueryClientProvider client={queryClient}>
-            <BloomDialogProvider>
-                <OxyContextProvider
-                    oxyServices={oxyServices as OxyContextProviderProps['oxyServices']}
-                    baseURL={baseURL}
-                    authWebUrl={authWebUrl}
-                    authRedirectUri={authRedirectUri}
-                    storageKeyPrefix={storageKeyPrefix}
-                    clientId={clientId}
-                    disableAutoSso={disableAutoSso}
-                    onAuthStateChange={onAuthStateChange as OxyContextProviderProps['onAuthStateChange']}
-                >
-                    {children}
-                    <Suspense fallback={null}>
-                        <LazyBottomSheetRouter />
-                        <LazySignInModal />
-                    </Suspense>
-                    <ToastOutlet />
-                </OxyContextProvider>
-            </BloomDialogProvider>
+            <BloomThemeFallback>
+                <BloomDialogProvider>
+                    <OxyContextProvider
+                        oxyServices={oxyServices as OxyContextProviderProps['oxyServices']}
+                        baseURL={baseURL}
+                        authWebUrl={authWebUrl}
+                        authRedirectUri={authRedirectUri}
+                        storageKeyPrefix={storageKeyPrefix}
+                        clientId={clientId}
+                        disableAutoSso={disableAutoSso}
+                        onAuthStateChange={onAuthStateChange as OxyContextProviderProps['onAuthStateChange']}
+                    >
+                        {children}
+                        <Suspense fallback={null}>
+                            <LazyBottomSheetRouter />
+                            <LazySignInModal />
+                        </Suspense>
+                        <ToastOutlet />
+                    </OxyContextProvider>
+                </BloomDialogProvider>
+            </BloomThemeFallback>
         </QueryClientProvider>
     );
 
