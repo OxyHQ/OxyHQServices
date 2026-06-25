@@ -157,4 +157,36 @@ describe('HttpService CSRF behavior', () => {
     expect(headers.Authorization).toBeUndefined();
     expect(headers['X-CSRF-Token']).toBe('csrf_1');
   });
+
+  it('includes credentials for configured API origin requests', async () => {
+    const calls: FetchCall[] = [];
+    globalThis.fetch = async (input, init) => {
+      calls.push({ url: String(input), init });
+      return jsonResponse({ ok: true });
+    };
+
+    const http = new HttpService({ baseURL: 'https://api.oxy.so', enableRetry: false });
+
+    await http.get('/users/me');
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].url).toBe('https://api.oxy.so/users/me');
+    expect(calls[0].init?.credentials).toBe('include');
+  });
+
+  it('omits credentials for caller-supplied absolute URLs outside the configured API origin', async () => {
+    const calls: FetchCall[] = [];
+    globalThis.fetch = async (input, init) => {
+      calls.push({ url: String(input), init });
+      return jsonResponse({ ok: true });
+    };
+
+    const http = new HttpService({ baseURL: 'https://api.oxy.so', enableRetry: false });
+
+    await http.get('https://attacker.oxy.so/collect');
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].url).toBe('https://attacker.oxy.so/collect');
+    expect(calls[0].init?.credentials).toBe('omit');
+  });
 });

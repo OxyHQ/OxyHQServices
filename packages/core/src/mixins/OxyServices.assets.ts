@@ -452,11 +452,21 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
     public async fetchAssetContent(url: string, type: 'text'): Promise<string>;
     public async fetchAssetContent(url: string, type: 'blob'): Promise<Blob>;
     public async fetchAssetContent(url: string, type: 'text' | 'blob') {
-      const response = await fetch(url, { credentials: 'include' });
+      const response = await fetch(url, {
+        credentials: this.shouldSendAssetCredentials(url) ? 'include' : 'omit',
+      });
       if (!response?.ok) {
         throw new Error(`Failed to fetch asset content (status ${response?.status})`);
       }
       return type === 'text' ? response.text() : response.blob();
+    }
+
+    private shouldSendAssetCredentials(url: string): boolean {
+      try {
+        return new URL(url).origin === new URL(this.getBaseURL()).origin;
+      } catch {
+        return false;
+      }
     }
   };
 }
