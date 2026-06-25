@@ -122,16 +122,25 @@ export class OxyServicesBase {
   }
 
   /**
-   * Create an app/backend HTTP client linked to this Oxy session.
+   * Create an HTTP client with an independent base URL/cache/queue.
    *
-   * Use this when an app has its own API origin (for example
-   * `https://api.syra.fm`) but authentication is owned by the canonical
-   * OxyServices instance mounted in OxyProvider. The returned client has its own
-   * base URL, cache and request queue, but its bearer token is kept in lockstep
-   * with this session and its 401 refresh path delegates back to this session.
+   * Oxy session bearer tokens are only linked when the new client targets the
+   * same origin as this Oxy API client. For any other origin, the client remains
+   * unauthenticated so first-party Oxy session tokens are never disclosed to an
+   * app/backend origin.
    */
   public createLinkedClient(config: OxyConfig): LinkedHttpClient {
     const client = new HttpService(config);
+    const shouldShareOxySessionToken = this.isSameOrigin(config.baseURL, this.getBaseURL());
+
+    if (!shouldShareOxySessionToken) {
+      return {
+        client,
+        dispose: () => {
+          client.clearTokens();
+        },
+      };
+    }
 
     const syncToken = (accessToken: string | null): void => {
       const currentAccessToken = client.getAccessToken();
@@ -169,6 +178,14 @@ export class OxyServicesBase {
         client.clearTokens();
       },
     };
+  }
+
+  private isSameOrigin(candidateUrl: string, trustedUrl: string): boolean {
+    try {
+      return new URL(candidateUrl).origin === new URL(trustedUrl).origin;
+    } catch {
+      return false;
+    }
   }
 
   /**

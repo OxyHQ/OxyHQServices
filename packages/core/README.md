@@ -76,9 +76,9 @@ getNormalizedUserHandle({ username: 'alice', isFederated: true, instance: 'examp
 
 ## Linked App API Clients
 
-Apps that call their own backend should derive API clients from the active SDK
-instance instead of re-implementing auth headers, session restore, CSRF fetches,
-or user forwarding.
+Apps that call their own backend can derive API clients from the active SDK
+instance to reuse base URL handling, caching, request queues, retry behavior, and
+CSRF handling without re-implementing HTTP plumbing.
 
 ```ts
 import { OxyServices } from '@oxyhq/core';
@@ -86,11 +86,12 @@ import { OxyServices } from '@oxyhq/core';
 const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
 const mentionApi = oxy.createLinkedClient({ baseURL: 'https://api.mention.earth' });
 
-await mentionApi.post('/posts', { content: 'Hello from Oxy' });
+await mentionApi.client.post('/posts', { content: 'Hello from Oxy' });
 ```
 
-Linked clients send the current Oxy bearer token for authenticated requests.
-State-changing bearer requests do not fetch app-local CSRF tokens; cookie-only
+Linked clients only share the current Oxy bearer token with same-origin Oxy API
+clients. Different app/backend origins are left unauthenticated so first-party
+Oxy session tokens are not disclosed to relying-party backends. Cookie-only
 writes still use CSRF.
 
 ## Backend Auth Middleware

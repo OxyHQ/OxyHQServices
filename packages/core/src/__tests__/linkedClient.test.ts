@@ -45,7 +45,7 @@ describe('OxyServices.createLinkedClient', () => {
 
   it('mirrors token changes from the session owner', () => {
     const oxy = createServices();
-    const linked = oxy.createLinkedClient({ baseURL: 'https://api.syra.fm' });
+    const linked = oxy.createLinkedClient({ baseURL: 'https://api.oxy.so' });
 
     expect(linked.client.getAccessToken()).toBeNull();
 
@@ -65,7 +65,7 @@ describe('OxyServices.createLinkedClient', () => {
     const oxy = createServices();
     oxy.setTokens('existing_access');
 
-    const linked = oxy.createLinkedClient({ baseURL: 'https://api.syra.fm' });
+    const linked = oxy.createLinkedClient({ baseURL: 'https://api.oxy.so' });
 
     expect(linked.client.getAccessToken()).toBe('existing_access');
 
@@ -74,7 +74,7 @@ describe('OxyServices.createLinkedClient', () => {
 
   it('delegates token refresh to the session owner', async () => {
     const oxy = createServices();
-    const linked = oxy.createLinkedClient({ baseURL: 'https://api.syra.fm' });
+    const linked = oxy.createLinkedClient({ baseURL: 'https://api.oxy.so' });
 
     oxy.getClient().setAuthRefreshHandler(async () => 'refreshed_access');
 
@@ -90,7 +90,7 @@ describe('OxyServices.createLinkedClient', () => {
   it('keeps the session owner intact when a linked response 401 cannot refresh', async () => {
     const oxy = createServices();
     oxy.setTokens('stale_access');
-    const linked = oxy.createLinkedClient({ baseURL: 'https://api.syra.fm' });
+    const linked = oxy.createLinkedClient({ baseURL: 'https://api.oxy.so' });
 
     const refreshed = await linked.client.refreshAccessToken('response-401');
 
@@ -136,7 +136,7 @@ describe('OxyServices.createLinkedClient', () => {
     });
     oxy.setTokens(accessToken);
     oxy.getClient().setAuthRefreshHandler(async () => null);
-    const linked = oxy.createLinkedClient({ baseURL: 'https://api.syra.fm' });
+    const linked = oxy.createLinkedClient({ baseURL: 'https://api.oxy.so' });
 
     await expect(linked.client.put('/api/queue/current', { trackId: 'track_1' }, { retry: false })).rejects.toMatchObject({
       message: 'MISSING_TOKEN',
@@ -149,8 +149,8 @@ describe('OxyServices.createLinkedClient', () => {
     await linked.client.put('/api/queue/current', { trackId: 'track_2' });
 
     expect(calls.map((call) => call.url)).toEqual([
-      'https://api.syra.fm/api/queue/current',
-      'https://api.syra.fm/api/queue/current',
+      'https://api.oxy.so/api/queue/current',
+      'https://api.oxy.so/api/queue/current',
     ]);
     expect(linked.client.getAccessToken()).toBe(accessToken);
 
@@ -168,7 +168,7 @@ describe('OxyServices.createLinkedClient', () => {
   it('keeps the session owner intact when linked preflight refresh cannot refresh', async () => {
     const oxy = createServices();
     oxy.setTokens('existing_access');
-    const linked = oxy.createLinkedClient({ baseURL: 'https://api.syra.fm' });
+    const linked = oxy.createLinkedClient({ baseURL: 'https://api.oxy.so' });
 
     const refreshed = await linked.client.refreshAccessToken('preflight');
 
@@ -181,7 +181,7 @@ describe('OxyServices.createLinkedClient', () => {
 
   it('stops mirroring after dispose', () => {
     const oxy = createServices();
-    const linked = oxy.createLinkedClient({ baseURL: 'https://api.syra.fm' });
+    const linked = oxy.createLinkedClient({ baseURL: 'https://api.oxy.so' });
 
     oxy.setTokens('before_dispose');
     expect(linked.client.getAccessToken()).toBe('before_dispose');
@@ -190,6 +190,31 @@ describe('OxyServices.createLinkedClient', () => {
     oxy.setTokens('after_dispose');
 
     expect(linked.client.getAccessToken()).toBeNull();
+  });
+
+  it('does not send Oxy bearer tokens to a different linked origin', async () => {
+    const fetchMock = jest.fn(async () => jsonResponse({ ok: true }));
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+
+    const oxy = createServices();
+    oxy.setTokens(createJwt({
+      userId: 'user_1',
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    }));
+
+    const linked = oxy.createLinkedClient({ baseURL: 'https://api.syra.fm' });
+
+    expect(linked.client.getAccessToken()).toBeNull();
+
+    await linked.client.get('/private');
+
+    const headers = readHeaders(fetchMock.mock.calls[0]?.[1]);
+    expect(headers.Authorization).toBeUndefined();
+
+    oxy.setTokens('later_access');
+    expect(linked.client.getAccessToken()).toBeNull();
+
+    linked.dispose();
   });
 
   it('joins linked base URLs with relative paths that omit the leading slash', async () => {
