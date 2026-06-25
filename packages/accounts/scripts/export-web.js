@@ -10,13 +10,10 @@
  */
 
 const { spawn } = require('child_process');
-const { existsSync } = require('fs');
 const path = require('path');
 
 const EXPORT_TIMEOUT_MS = 8 * 60 * 1000; // 8 minutes hard limit (DO build instances are slow)
 const projectRoot = path.resolve(__dirname, '..');
-const distPath = path.join(projectRoot, 'dist', 'index.html');
-
 const child = spawn('bun', ['x', 'expo', 'export', '--platform', 'web'], {
   cwd: projectRoot,
   stdio: ['inherit', 'pipe', 'pipe'],
@@ -53,8 +50,8 @@ child.stderr.on('data', (data) => {
 
 child.on('exit', (code) => {
   if (!done) {
-    // Process exited on its own (no hang) — check if it succeeded
-    if (code === 0 || existsSync(distPath)) {
+    // Process exited on its own (no hang) — rely on Expo's exit status.
+    if (code === 0) {
       finish(0);
     } else {
       console.error(`\nExport failed with exit code ${code}`);
@@ -70,12 +67,7 @@ child.on('error', (err) => {
 
 setTimeout(() => {
   if (!done) {
-    if (existsSync(distPath)) {
-      console.log('\nExport timed out but dist exists. Exiting successfully.');
-      finish(0);
-    } else {
-      console.error('\nExport timed out after 4 minutes with no output.');
-      finish(1);
-    }
+    console.error('\nExport timed out after 8 minutes.');
+    finish(1);
   }
 }, EXPORT_TIMEOUT_MS);
