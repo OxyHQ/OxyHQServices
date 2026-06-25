@@ -20,6 +20,7 @@ import {
   useCreateSubscriptionCheckout,
   useTransactions,
 } from '@/hooks/use-billing';
+import { getErrorMessage } from '@/lib/api-error';
 import { toast } from 'sonner';
 
 export const Route = createFileRoute('/_layout/billing')({
@@ -47,8 +48,8 @@ function BillingPage() {
       if (result.url) {
         window.location.href = result.url;
       }
-    } catch (error: any) {
-      toast.error(error?.response?.data?.error || 'Failed to create checkout session');
+    } catch (error: unknown) {
+      toast.error(getErrorMessage(error, 'Failed to create checkout session'));
     }
   };
 
@@ -62,8 +63,8 @@ function BillingPage() {
       if (result.url) {
         window.location.href = result.url;
       }
-    } catch (error: any) {
-      toast.error(error?.response?.data?.error || 'Failed to create subscription checkout');
+    } catch (error: unknown) {
+      toast.error(getErrorMessage(error, 'Failed to create subscription checkout'));
     }
   };
 

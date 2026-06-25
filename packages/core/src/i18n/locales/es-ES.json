@@ -849,6 +849,15 @@
       "title": "Reputación = Confianza y crecimiento",
       "body": "Oxy Trust es un sistema de reputación que reacciona a lo que haces. Las acciones útiles, respetuosas y constructivas la aumentan. Las acciones dañinas o de poco esfuerzo la reducen. Más reputación puede desbloquear beneficios; poca reputación puede limitar funciones. Mantiene la justicia y recompensa la contribución real."
     },
+    "name": {
+      "title": "¿Cuál es tu nombre?",
+      "body": "Añade tu nombre para que la gente sepa quién eres.",
+      "firstLabel": "Nombre",
+      "firstPlaceholder": "Tu nombre",
+      "lastLabel": "Apellidos",
+      "lastPlaceholder": "Tus apellidos",
+      "saveFailed": "No se pudo guardar tu nombre"
+    },
     "avatar": {
       "title": "Hazlo tuyo",
       "body": "Añade un avatar para que te reconozcan. Se mostrará donde aparezcas aquí. Puedes omitirlo — puedes añadirlo más tarde.",

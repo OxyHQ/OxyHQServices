@@ -17,7 +17,7 @@
   },
   "dependencies": {
     "@hono/node-server": "^1.14.3",
-    "@oxyhq/bloom": "^0.18.0",
+    "@oxyhq/bloom": "^0.19.1",
     "@oxyhq/contracts": "workspace:*",
     "@oxyhq/core": "workspace:*",
     "@base-ui/react": "^1.1.0",

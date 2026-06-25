@@ -319,7 +319,7 @@ export function useSendMessageWithUndo() {
 
   const sendWithUndo = async (
     params: Parameters<NonNullable<typeof api>['sendMessage']>[0],
-    options?: { onSuccess?: () => void; onError?: (err: any) => void },
+    options?: { onSuccess?: () => void; onError?: (err: unknown) => void },
   ) => {
     if (!api) {
       options?.onError?.(new Error('Email API not initialized'));
@@ -361,8 +361,9 @@ export function useSendMessageWithUndo() {
         queryClient.invalidateQueries({ queryKey: ['messages'] });
         queryClient.invalidateQueries({ queryKey: ['mailboxes'] });
         options?.onSuccess?.();
-      } catch (err: any) {
-        toast.error(err.message || 'Failed to send message.');
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Failed to send message.';
+        toast.error(message);
         options?.onError?.(err);
       } finally {
         stateRef.current.pending = false;

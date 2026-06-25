@@ -3,7 +3,7 @@ import { useOxy } from '@oxyhq/services';
 
 /** Minimal shape needed to resolve an avatar download URL. */
 interface AvatarUserShape {
-  avatar?: string;
+  avatar?: string | null;
 }
 
 /**

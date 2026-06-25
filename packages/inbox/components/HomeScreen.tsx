@@ -170,10 +170,13 @@ export function HomeScreen() {
     [allMessages, toggleStar],
   );
 
-  const firstName = user?.name?.first || user?.username || '';
+  // Greeting name: render the API's canonical `name.displayName` directly — do
+  // not recompose from `name.first` / `name.last` / `username` (display-name
+  // contract). Empty string when signed-out / not yet loaded.
+  const greetingName = user?.name.displayName ?? '';
 
   // AI daily brief — uses messages from selected date
-  const { briefText, isStreaming: briefStreaming, isLoading: briefLoading, error: briefError, regenerate } = useDailyBrief(dayMessages, firstName);
+  const { briefText, isStreaming: briefStreaming, isLoading: briefLoading, error: briefError, regenerate } = useDailyBrief(dayMessages, greetingName);
 
   // AI-powered sections: emails needing response and follow-up
   const { messages: needsResponseMessages, count: needsResponseCount } = useNeedsResponse(allMessages, 5);
@@ -181,7 +184,7 @@ export function HomeScreen() {
 
   // Greeting respects empty user (signed-out / not loaded yet) — no dangling comma.
   const greetingBase = getGreeting();
-  const greetingLine = firstName ? `${greetingBase}, ${firstName}` : greetingBase;
+  const greetingLine = greetingName ? `${greetingBase}, ${greetingName}` : greetingBase;
   // Long-form, locale-aware date — "May 24, 2026" — used as the single header
   // above the week strip. Computed via Intl.DateTimeFormat so it follows the
   // user's system locale conventions rather than a hard-coded MONTHS array.

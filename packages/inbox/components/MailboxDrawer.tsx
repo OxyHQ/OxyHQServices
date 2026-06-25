@@ -323,9 +323,10 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
   // Real email from the active session's user. Never synthesize `username@oxy.so`.
   // When the user has no email on record, fall back to the `@username` handle.
   const emailAddress = user?.email || (user?.username ? `@${user.username}` : '');
-  const displayName = user?.name?.first
-    ? `${user.name.first}${user.name.last ? ` ${user.name.last}` : ''}`
-    : user?.username || 'Account';
+  // Render the API's canonical `name.displayName` directly; only fall back to a
+  // neutral default for the signed-out / not-yet-loaded case (display-name
+  // contract — no recomposition from `username`).
+  const displayName = user?.name.displayName ?? 'Account';
 
   // Check if a mailbox route is active
   const isMailboxActive = useCallback(
@@ -628,7 +629,7 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
               accessibilityLabel={`Switch account, signed in as ${displayName}`}
               accessibilityRole="button"
             >
-              <Avatar name={user?.name?.first || user?.username || '?'} size={32} />
+              <Avatar name={displayName} size={32} />
               <View style={styles.accountInfo}>
                 <Text style={[styles.accountName, { color: colors.text }]} numberOfLines={1}>
                   {displayName}
@@ -673,7 +674,7 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
             accessibilityLabel={`Switch account, signed in as ${displayName}`}
             accessibilityRole="button"
           >
-            <Avatar name={user?.name?.first || user?.username || '?'} size={32} />
+            <Avatar name={displayName} size={32} />
           </TouchableOpacity>
         </View>
       )}

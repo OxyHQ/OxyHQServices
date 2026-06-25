@@ -34,3 +34,33 @@ export type {
 } from './auth';
 export { createOxyRateLimit } from './rateLimit';
 export type { OxyRateLimitOptions } from './rateLimit';
+
+// SSRF-safe upstream fetch + URL validation (Node-only).
+export {
+  assertSafePublicUrl,
+  isBlockedIp,
+  safeFetch,
+  SsrfRejection,
+  UpstreamError,
+  ALLOWED_PORTS,
+  ALLOWED_PROTOCOLS,
+  BLOCKED_HOSTNAMES,
+  DEFAULT_USER_AGENT,
+  MAX_REDIRECTS,
+  MAX_URL_LENGTH,
+  UPSTREAM_HEADERS_TIMEOUT_MS,
+} from './safeFetch';
+export type {
+  SafeFetchOptions,
+  SafeFetchResult,
+  SsrfCheckFail,
+  SsrfCheckOk,
+  SsrfCheckResult,
+} from './safeFetch';
+
+// Strict CORS allowlist (Oxy apex family + explicit app origins).
+export { createOxyCors } from './cors';
+export type { OxyCorsOptions } from './cors';
+
+// Constant-time secret comparison.
+export { verifySecret } from './verifySecret';

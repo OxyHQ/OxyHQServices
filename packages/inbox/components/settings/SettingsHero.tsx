@@ -23,7 +23,7 @@ export function SettingsHero() {
   const router = useRouter();
   const colors = useColors();
   const theme = useTheme();
-  const { user, isAuthenticated, oxyServices } = useOxy();
+  const { user, isAuthenticated } = useOxy();
 
   const handlePress = useCallback(() => {
     router.push('/settings/account');
@@ -48,12 +48,8 @@ export function SettingsHero() {
     );
   }
 
-  const fullName = user.name?.full?.trim()
-    || [user.name?.first, user.name?.last].filter(Boolean).join(' ').trim()
-    || user.username
-    || 'Account';
+  const fullName = user.name.displayName;
   const emailHandle = user.email || `${user.username}@oxy.so`;
-  const avatarUri = user.avatar ? oxyServices.getFileDownloadUrl(user.avatar, 'thumb') : undefined;
 
   return (
     <Pressable
@@ -67,7 +63,8 @@ export function SettingsHero() {
       ]}
     >
       <Avatar
-        uri={avatarUri}
+        source={user.avatar}
+        variant="thumb"
         name={fullName}
         size={56}
       />

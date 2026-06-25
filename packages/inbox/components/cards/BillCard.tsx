@@ -4,9 +4,10 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Card, CardHeader, CardBody } from '@oxyhq/bloom/card';
 import { Text } from '@oxyhq/bloom/typography';
 import { useColors } from '@/constants/theme';
+import type { CardData } from '@/services/emailApi';
 
 interface BillCardProps {
-  data: Record<string, any>;
+  data: CardData;
 }
 
 export function BillCard({ data }: BillCardProps) {

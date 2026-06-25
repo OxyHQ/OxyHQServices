@@ -156,6 +156,32 @@ export default function HomeScreen() {
           </Pressable>
         </ThemedView>
 
+        {/* Authentication Screens — available regardless of auth state for testing */}
+        <Section title="Authentication">
+          <GroupedSection
+            items={[
+              {
+                id: 'oxy-auth',
+                icon: 'qr-code',
+                iconColor: colors.iconSecurity,
+                title: 'Sign in with Oxy',
+                subtitle: 'QR code authentication flow',
+                onPress: () => handleOpenScreen('OxyAuth'),
+                showChevron: true,
+              },
+              {
+                id: 'welcome-new-user',
+                icon: 'hand-left-outline',
+                iconColor: colors.iconSecurity,
+                title: 'Welcome New User',
+                subtitle: 'New user welcome',
+                onPress: () => handleOpenScreen('WelcomeNewUser'),
+                showChevron: true,
+              },
+            ]}
+          />
+        </Section>
+
         {isAuthenticated && (
           <>
             <ThemedView style={styles.authenticatedState}>
@@ -186,32 +212,6 @@ export default function HomeScreen() {
                     title: 'Manage your Oxy Account',
                     subtitle: 'Profile, sessions, security and more',
                     onPress: () => handleOpenScreen('ManageAccount'),
-                    showChevron: true,
-                  },
-                ]}
-              />
-            </Section>
-
-            {/* Authentication Screens */}
-            <Section title="Authentication">
-              <GroupedSection
-                items={[
-                  {
-                    id: 'oxy-auth',
-                    icon: 'qr-code',
-                    iconColor: colors.iconSecurity,
-                    title: 'Sign in with Oxy',
-                    subtitle: 'QR code authentication flow',
-                    onPress: () => handleOpenScreen('OxyAuth'),
-                    showChevron: true,
-                  },
-                  {
-                    id: 'welcome-new-user',
-                    icon: 'hand-left-outline',
-                    iconColor: colors.iconSecurity,
-                    title: 'Welcome New User',
-                    subtitle: 'New user welcome',
-                    onPress: () => handleOpenScreen('WelcomeNewUser'),
                     showChevron: true,
                   },
                 ]}

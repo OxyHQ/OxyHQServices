@@ -7,7 +7,7 @@
  * to bottom.
  */
 
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -97,7 +97,7 @@ function useDirtySettings(settingsData: EmailSettings | undefined) {
 export function AccountSection() {
   const colors = useColors();
   const theme = useTheme();
-  const { user, oxyServices, logout } = useOxy();
+  const { user, logout } = useOxy();
   const { data: settingsData } = useSettings();
   const updateSettings = useUpdateSettings();
 
@@ -145,17 +145,9 @@ export function AccountSection() {
 
   const signOutDialog = useDialogControl();
 
-  const fullName = useMemo(() => {
-    return (
-      user?.name?.full?.trim()
-      || [user?.name?.first, user?.name?.last].filter(Boolean).join(' ').trim()
-      || user?.username
-      || 'Account'
-    );
-  }, [user]);
+  const fullName = user?.name.displayName ?? 'Account';
 
   const emailAddress = user?.email || (user ? `${user.username}@oxy.so` : '');
-  const avatarUri = user?.avatar ? oxyServices.getFileDownloadUrl(user.avatar, 'thumb') : undefined;
 
   const handleSignOut = useCallback(async () => {
     try {
@@ -180,7 +172,7 @@ export function AccountSection() {
     >
       {/* Profile hero */}
       <View style={styles.hero}>
-        <Avatar uri={avatarUri} name={fullName} size={64} />
+        <Avatar source={user?.avatar} variant="thumb" name={fullName} size={64} />
         <View style={styles.heroText}>
           <Text style={[styles.heroName, { color: colors.text }]} numberOfLines={1}>
             {fullName}

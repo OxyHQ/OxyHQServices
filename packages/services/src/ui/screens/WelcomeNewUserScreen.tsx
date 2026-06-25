@@ -1,6 +1,6 @@
 import type React from 'react';
 import { useCallback, useMemo, useRef, useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform, Animated } from 'react-native';
+import { View, StyleSheet, Platform, Animated } from 'react-native';
 import AnimatedReanimated, { useSharedValue, useAnimatedStyle, withTiming } from 'react-native-reanimated';
 import type { BaseScreenProps } from '../types/navigation';
 import Avatar from '../components/Avatar';
@@ -9,6 +9,8 @@ import { toast } from '@oxyhq/bloom';
 import { useAuthStore } from '../stores/authStore';
 import { useTheme } from '@oxyhq/bloom/theme';
 import { Button } from '@oxyhq/bloom/button';
+import { H1, Text } from '@oxyhq/bloom/typography';
+import { TextField, TextFieldInput, TextFieldLabel } from '@oxyhq/bloom/text-field';
 import { useI18n } from '../hooks/useI18n';
 import { useOxy } from '../context/OxyContext';
 import { useUpdateProfile } from '../hooks/mutations/useAccountMutations';
@@ -80,6 +82,11 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
     const [currentStep, setCurrentStep] = useState(0);
     // Track avatar separately to ensure it updates immediately after selection
     const [selectedAvatarId, setSelectedAvatarId] = useState<string | undefined>(currentUser?.avatar);
+    // Name form state for the conditional "set your name" step. Lazy initializers
+    // seed from the current user once; no useEffect prop→state sync.
+    const [firstName, setFirstName] = useState(() => (currentUser?.name?.first ?? '').trim());
+    const [lastName, setLastName] = useState(() => (currentUser?.name?.last ?? '').trim());
+    const [savingName, setSavingName] = useState(false);
 
     // Update selectedAvatarId when user changes
     useEffect(() => {
@@ -98,7 +105,10 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
     const welcomeTitle = currentUser
         ? (t('welcomeNew.welcome.titleWithName', { username: welcomeName }) || `Welcome, ${welcomeName} 👋`)
         : (t('welcomeNew.welcome.title') || 'Welcome 👋');
-    const steps: Array<{ key: string; title: string; bullets?: string[]; body?: string; showAvatar?: boolean; }> = [
+    // Only ask the user for their name during onboarding when they don't have a
+    // first name yet. publicKey-only / minimal accounts surface this step.
+    const needsName = !!currentUser && !(currentUser.name?.first ?? '').trim();
+    const steps: Array<{ key: string; title: string; bullets?: string[]; body?: string; showAvatar?: boolean; showNameForm?: boolean; }> = [
         { key: 'welcome', title: welcomeTitle, body: t('welcomeNew.welcome.body') || "You just created an account in a calm, ethical space. A few quick things — then you're in." },
         {
             key: 'account', title: t('welcomeNew.account.title') || 'One Account. Simple.', bullets: [
@@ -119,8 +129,25 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
         { key: 'avatar', title: t('welcomeNew.avatar.title') || 'Make It Yours', body: t('welcomeNew.avatar.body') || 'Add an avatar so people recognize you. It will show anywhere you show up here. Skip if you want — you can add it later.', showAvatar: true },
         { key: 'ready', title: t('welcomeNew.ready.title') || "You're Ready", body: t('welcomeNew.ready.body') || 'Explore. Contribute. Earn reputation. Stay in control.' }
     ];
+    if (needsName) {
+        // Inject the required name step immediately BEFORE the avatar step:
+        // …trust, name, avatar, ready.
+        const insertAt = steps.findIndex(s => s.showAvatar);
+        const nameStep = {
+            key: 'name',
+            title: t('welcomeNew.name.title') || "What's your name?",
+            body: t('welcomeNew.name.body') || 'Add your name so people know who you are.',
+            showNameForm: true,
+        };
+        if (insertAt >= 0) {
+            steps.splice(insertAt, 0, nameStep);
+        } else {
+            steps.push(nameStep);
+        }
+    }
     const totalSteps = steps.length;
     const avatarStepIndex = steps.findIndex(s => s.showAvatar);
+    const nameStepIndex = steps.findIndex(s => s.showNameForm);
 
     const animateToStepCallback = useCallback((next: number) => {
         Animated.timing(fadeAnim, { toValue: 0, duration: 180, useNativeDriver: Platform.OS !== 'web' }).start(() => {
@@ -135,8 +162,27 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
 
     const nextStep = useCallback(() => { if (currentStep < totalSteps - 1) animateToStepCallback(currentStep + 1); }, [currentStep, totalSteps, animateToStepCallback]);
     const prevStep = useCallback(() => { if (currentStep > 0) animateToStepCallback(currentStep - 1); }, [currentStep, animateToStepCallback]);
-    const skipToAvatar = useCallback(() => { if (avatarStepIndex >= 0) animateToStepCallback(avatarStepIndex); }, [avatarStepIndex, animateToStepCallback]);
+    // Skip from the intro step lands on the FIRST personalization step that
+    // exists — the required name step when present, otherwise the avatar step —
+    // so the required name step can never be bypassed.
+    const skipToAvatar = useCallback(() => {
+        const personalizeIndex = nameStepIndex >= 0 ? nameStepIndex : avatarStepIndex;
+        if (personalizeIndex >= 0) animateToStepCallback(personalizeIndex);
+    }, [nameStepIndex, avatarStepIndex, animateToStepCallback]);
     const finish = useCallback(() => { if (onAuthenticated && currentUser) onAuthenticated(currentUser); }, [onAuthenticated, currentUser]);
+    const submitName = useCallback(async () => {
+        const f = firstName.trim();
+        if (!f) return;
+        setSavingName(true);
+        try {
+            await updateProfileMutation.mutateAsync({ name: { first: f, last: lastName.trim() } });
+            animateToStepCallback(currentStep + 1);
+        } catch (e: unknown) {
+            toast.error((e instanceof Error ? e.message : null) || t('welcomeNew.name.saveFailed') || 'Could not save your name');
+        } finally {
+            setSavingName(false);
+        }
+    }, [firstName, lastName, updateProfileMutation, animateToStepCallback, currentStep, t]);
     const openAvatarPicker = useCallback(() => {
         // Ensure we're on the avatar step before opening picker
         if (avatarStepIndex >= 0 && currentStep !== avatarStepIndex) {
@@ -180,10 +226,10 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
         if (currentStep === totalSteps - 1) {
             return (
                 <View style={{ flexDirection: 'row', gap: 8, justifyContent: 'flex-end' }}>
-                    <Button variant="secondary" onPress={prevStep} size="small" icon={<Ionicons name="arrow-back" size={16} />}>
+                    <Button variant="secondary" onPress={prevStep} size="small">
                         {t('welcomeNew.actions.back') || 'Back'}
                     </Button>
-                    <Button variant="primary" onPress={finish} size="small" icon={<Ionicons name="log-in-outline" size={16} />} iconPosition="right">
+                    <Button variant="primary" onPress={finish} size="small">
                         {t('welcomeNew.actions.enter') || 'Enter'}
                     </Button>
                 </View>
@@ -193,12 +239,24 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
             return (
                 <View style={{ flexDirection: 'row', gap: 8, justifyContent: 'flex-end' }}>
                     {avatarStepIndex > 0 && (
-                        <Button variant="secondary" onPress={skipToAvatar} size="small" icon={<Ionicons name="play-skip-forward" size={16} />}>
+                        <Button variant="secondary" onPress={skipToAvatar} size="small">
                             {t('welcomeNew.actions.skip') || 'Skip'}
                         </Button>
                     )}
-                    <Button variant="primary" onPress={nextStep} size="small" icon={<Ionicons name="arrow-forward" size={16} />} iconPosition="right">
+                    <Button variant="primary" onPress={nextStep} size="small">
                         {t('welcomeNew.actions.next') || 'Next'}
+                    </Button>
+                </View>
+            );
+        }
+        if (nameStepIndex >= 0 && currentStep === nameStepIndex) {
+            return (
+                <View style={{ flexDirection: 'row', gap: 8, justifyContent: 'flex-end' }}>
+                    <Button variant="secondary" onPress={prevStep} size="small">
+                        {t('welcomeNew.actions.back') || 'Back'}
+                    </Button>
+                    <Button variant="primary" onPress={submitName} size="small" disabled={!firstName.trim() || savingName} loading={savingName}>
+                        {t('welcomeNew.actions.continue') || 'Continue'}
                     </Button>
                 </View>
             );
@@ -206,10 +264,10 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
         if (step.showAvatar) {
             return (
                 <View style={{ flexDirection: 'row', gap: 8, justifyContent: 'flex-end' }}>
-                    <Button variant="secondary" onPress={prevStep} size="small" icon={<Ionicons name="arrow-back" size={16} />}>
+                    <Button variant="secondary" onPress={prevStep} size="small">
                         {t('welcomeNew.actions.back') || 'Back'}
                     </Button>
-                    <Button variant="primary" onPress={nextStep} size="small" icon={<Ionicons name="arrow-forward" size={16} />} iconPosition="right">
+                    <Button variant="primary" onPress={nextStep} size="small">
                         {avatarUri ? (t('welcomeNew.actions.continue') || 'Continue') : (t('welcomeNew.actions.skip') || 'Skip')}
                     </Button>
                 </View>
@@ -217,15 +275,15 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
         }
         return (
             <View style={{ flexDirection: 'row', gap: 8, justifyContent: 'flex-end' }}>
-                <Button variant="secondary" onPress={prevStep} size="small" icon={<Ionicons name="arrow-back" size={16} />}>
+                <Button variant="secondary" onPress={prevStep} size="small">
                     {t('welcomeNew.actions.back') || 'Back'}
                 </Button>
-                <Button variant="primary" onPress={nextStep} size="small" icon={<Ionicons name="arrow-forward" size={16} />} iconPosition="right">
+                <Button variant="primary" onPress={nextStep} size="small">
                     {t('welcomeNew.actions.next') || 'Next'}
                 </Button>
             </View>
         );
-    }, [currentStep, totalSteps, prevStep, nextStep, finish, skipToAvatar, avatarStepIndex, step.showAvatar, avatarUri, t]);
+    }, [currentStep, totalSteps, prevStep, nextStep, finish, skipToAvatar, avatarStepIndex, nameStepIndex, submitName, firstName, savingName, step.showAvatar, avatarUri, t]);
 
     return (
         <View style={styles.container}>
@@ -242,7 +300,7 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
             <Animated.View style={{ opacity: fadeAnim, transform: [{ translateX: slideAnim }] }}>
                 <View style={[styles.scrollInner, styles.contentContainer]}>
                     <View style={[styles.header, styles.sectionSpacing]}>
-                        <Text style={styles.title} className="text-foreground">{step.title}</Text>
+                        <H1 style={styles.title} className="text-foreground">{step.title}</H1>
                         {step.body && <Text style={styles.body} className="text-muted-foreground">{step.body}</Text>}
                     </View>
                     {Array.isArray(step.bullets) && step.bullets.length > 0 && (
@@ -255,6 +313,35 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
                             ))}
                         </View>
                     )}
+                    {step.showNameForm && (
+                        <View style={[styles.nameForm, styles.sectionSpacing]}>
+                            <View style={styles.nameField}>
+                                <TextFieldLabel>{t('welcomeNew.name.firstLabel') || 'First name'}</TextFieldLabel>
+                                <TextField>
+                                    <TextFieldInput
+                                        label={t('welcomeNew.name.firstLabel') || 'First name'}
+                                        placeholder={t('welcomeNew.name.firstPlaceholder') || 'Your first name'}
+                                        value={firstName}
+                                        onChangeText={setFirstName}
+                                        autoFocus
+                                        autoCapitalize="words"
+                                    />
+                                </TextField>
+                            </View>
+                            <View style={styles.nameField}>
+                                <TextFieldLabel>{t('welcomeNew.name.lastLabel') || 'Last name'}</TextFieldLabel>
+                                <TextField>
+                                    <TextFieldInput
+                                        label={t('welcomeNew.name.lastLabel') || 'Last name'}
+                                        placeholder={t('welcomeNew.name.lastPlaceholder') || 'Your last name'}
+                                        value={lastName}
+                                        onChangeText={setLastName}
+                                        autoCapitalize="words"
+                                    />
+                                </TextField>
+                            </View>
+                        </View>
+                    )}
                     {step.showAvatar && (
                         <View style={[styles.avatarSection, styles.sectionSpacing]}>
                             <Avatar
@@ -265,10 +352,9 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
                                 backgroundColor={`${colors.primary}20`}
                                 style={styles.avatar}
                             />
-                            <TouchableOpacity style={styles.changeAvatarButton} className="bg-primary" onPress={openAvatarPicker}>
-                                <Ionicons name="image-outline" size={18} color={bloomTheme.colors.primaryForeground} />
-                                <Text style={styles.changeAvatarText}>{avatarUri ? (t('welcomeNew.avatar.change') || 'Change Avatar') : (t('welcomeNew.avatar.add') || 'Add Avatar')}</Text>
-                            </TouchableOpacity>
+                            <Button variant="primary" size="small" onPress={openAvatarPicker}>
+                                {avatarUri ? (t('welcomeNew.avatar.change') || 'Change Avatar') : (t('welcomeNew.avatar.add') || 'Add Avatar')}
+                            </Button>
                         </View>
                     )}
                     <View style={styles.sectionSpacing}>
@@ -305,7 +391,6 @@ const createStyles = (colors: ReturnType<typeof useTheme>['colors']) => {
         },
         title: {
             fontSize: 42,
-            fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
             letterSpacing: -1,
             textAlign: 'left',
         },
@@ -330,30 +415,20 @@ const createStyles = (colors: ReturnType<typeof useTheme>['colors']) => {
             fontSize: 15,
             lineHeight: 20,
         },
+        nameForm: {
+            width: '100%',
+            gap: GAP,
+        },
+        nameField: {
+            width: '100%',
+            gap: INNER_GAP / 2,
+        },
         avatarSection: {
             width: '100%',
             alignItems: 'center',
         },
         avatar: {
             marginBottom: INNER_GAP,
-        },
-        changeAvatarButton: {
-            flexDirection: 'row',
-            alignItems: 'center',
-            paddingHorizontal: 18,
-            paddingVertical: 10,
-            borderRadius: 28,
-            gap: 8,
-            shadowOpacity: 0,
-            shadowRadius: 0,
-            shadowOffset: { width: 0, height: 0 },
-            elevation: 0,
-            ...(Platform.OS === 'web' ? { boxShadow: 'none' } : null),
-        },
-        changeAvatarText: {
-            color: colors.primaryForeground,
-            fontSize: 15,
-            fontWeight: '600',
         },
         progressContainer: {
             flexDirection: 'row',

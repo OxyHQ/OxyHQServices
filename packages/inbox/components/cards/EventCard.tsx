@@ -4,9 +4,10 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Card, CardHeader, CardBody } from '@oxyhq/bloom/card';
 import { Text } from '@oxyhq/bloom/typography';
 import { useColors } from '@/constants/theme';
+import type { CardData } from '@/services/emailApi';
 
 interface EventCardProps {
-  data: Record<string, any>;
+  data: CardData;
 }
 
 /**
@@ -20,7 +21,7 @@ function toIcsDate(date: Date): string {
 /**
  * Generate an iCalendar (.ics) file content string from event data.
  */
-function generateIcs(data: Record<string, any>): string {
+function generateIcs(data: CardData): string {
   const start = data.startTime ? new Date(data.startTime) : new Date();
   // Default to 1 hour duration if no end time
   const end = data.endTime
@@ -58,7 +59,7 @@ function generateIcs(data: Record<string, any>): string {
 /**
  * Build a Google Calendar "Add Event" URL from event data.
  */
-function buildGoogleCalendarUrl(data: Record<string, any>): string {
+function buildGoogleCalendarUrl(data: CardData): string {
   const start = data.startTime ? new Date(data.startTime) : new Date();
   const end = data.endTime
     ? new Date(data.endTime)

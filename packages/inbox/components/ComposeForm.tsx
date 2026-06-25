@@ -268,9 +268,10 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
       },
       {
         onSuccess: () => router.back(),
-        onError: (err: any) => {
+        onError: (err: unknown) => {
           sentRef.current = false;
-          toast.error(err.message || 'Unable to send email. Please try again.');
+          const message = err instanceof Error ? err.message : 'Unable to send email. Please try again.';
+          toast.error(message);
         },
       },
     );
@@ -390,7 +391,7 @@ export function ComposeForm({ mode, replyTo, forward, to: initialTo, cc: initial
           toast.success(`Email scheduled for ${timeStr}`);
           router.back();
         },
-        onError: (err: any) => {
+        onError: (err: Error) => {
           sentRef.current = false;
           toast.error(err.message || 'Failed to schedule email. Please try again.');
         },

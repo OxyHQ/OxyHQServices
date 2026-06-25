@@ -38,9 +38,55 @@ export const MessageFlagsSchema = z.object({
 
 export const CardTypeSchema = z.enum(['trip', 'purchase', 'event', 'bill', 'package']);
 
+/**
+ * Loosely-structured payload extracted from a message for a smart card.
+ *
+ * Fields are the superset of every card variant (trip/purchase/event/bill/
+ * package); all are optional because extraction is best-effort. `.passthrough()`
+ * preserves any additional keys the backend extractor emits so cards are never
+ * dropped on a schema mismatch — it only adds typing for the keys the UI reads.
+ */
+export const CardDataSchema = z
+  .object({
+    // Trip
+    airline: z.string().optional(),
+    flightNumber: z.string().optional(),
+    departure: z.string().optional(),
+    arrival: z.string().optional(),
+    departureTime: z.string().optional(),
+    arrivalTime: z.string().optional(),
+    confirmationCode: z.string().optional(),
+    hotel: z.string().optional(),
+    checkIn: z.string().optional(),
+    checkOut: z.string().optional(),
+    // Purchase
+    merchant: z.string().optional(),
+    amount: z.number().optional(),
+    currency: z.string().optional(),
+    orderNumber: z.string().optional(),
+    items: z.array(z.string()).optional(),
+    // Event
+    title: z.string().optional(),
+    location: z.string().optional(),
+    description: z.string().optional(),
+    organizer: z.string().optional(),
+    startTime: z.string().optional(),
+    endTime: z.string().optional(),
+    // Bill
+    biller: z.string().optional(),
+    dueDate: z.string().optional(),
+    accountNumber: z.string().optional(),
+    // Package
+    carrier: z.string().optional(),
+    estimatedDelivery: z.string().optional(),
+    status: z.string().optional(),
+    trackingNumber: z.string().optional(),
+  })
+  .passthrough();
+
 export const MessageCardSchema = z.object({
   type: CardTypeSchema,
-  data: z.record(z.string(), z.any()),
+  data: CardDataSchema,
   confidence: z.number(),
   extractedAt: z.string(),
 });
@@ -231,6 +277,7 @@ export type EmailAddress = z.infer<typeof EmailAddressSchema>;
 export type Attachment = z.infer<typeof AttachmentSchema>;
 export type MessageFlags = z.infer<typeof MessageFlagsSchema>;
 export type CardType = z.infer<typeof CardTypeSchema>;
+export type CardData = z.infer<typeof CardDataSchema>;
 export type MessageCard = z.infer<typeof MessageCardSchema>;
 export type Highlight = z.infer<typeof HighlightSchema>;
 export type Message = z.infer<typeof MessageSchema>;

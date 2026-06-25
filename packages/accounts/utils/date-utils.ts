@@ -43,29 +43,3 @@ export const getDisplayName = (
   user: DisplayNameUserShape | null | undefined,
   locale?: string,
 ): string => coreGetAccountDisplayName(user, locale);
-
-/**
- * Gets a short display name (first name or username).
- *
- * Falls back to the canonical helper for publicKey/unnamed cases.
- */
-export const getShortDisplayName = (
-  user: DisplayNameUserShape | null | undefined,
-  locale?: string,
-): string => {
-  if (!user) return coreGetAccountDisplayName(user, locale);
-
-  const name = user.name;
-  if (name && typeof name === 'object') {
-    const first = typeof name.first === 'string' ? name.first.trim() : '';
-    if (first) return first;
-    const full = typeof name.full === 'string' ? name.full.trim() : '';
-    if (full) return full.split(' ')[0];
-  } else if (typeof name === 'string' && name.trim()) {
-    return name.trim().split(' ')[0];
-  }
-
-  if (typeof user.username === 'string' && user.username.trim()) return user.username.trim();
-
-  return coreGetAccountDisplayName(user, locale);
-};

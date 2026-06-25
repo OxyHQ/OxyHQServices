@@ -24,6 +24,20 @@ export interface ActionItem {
   deadline?: string;
 }
 
+/** Raw shape of the JSON the model is prompted to emit. Every field is
+ *  untrusted (the model can omit or null any of them), so all are optional. */
+interface ParsedThreadSummary {
+  summary?: string;
+  keyPoints?: string[];
+  actionItems?: ParsedActionItem[];
+}
+
+interface ParsedActionItem {
+  text?: string;
+  owner?: string | null;
+  deadline?: string | null;
+}
+
 const THREAD_SUMMARY_SYSTEM_PROMPT = `You are an AI email assistant. Analyze this email thread and provide a structured summary.
 
 Output a JSON object with these fields:
@@ -97,13 +111,13 @@ async function fetchThreadSummary(messages: Message[], token: string): Promise<T
       ? trimmed.replace(/```json?\n?/g, '').replace(/```/g, '').trim()
       : trimmed;
 
-    const parsed = JSON.parse(jsonStr);
+    const parsed = JSON.parse(jsonStr) as ParsedThreadSummary;
 
     return {
       summary: parsed.summary || '',
       keyPoints: Array.isArray(parsed.keyPoints) ? parsed.keyPoints : [],
       actionItems: Array.isArray(parsed.actionItems)
-        ? parsed.actionItems.map((item: any) => ({
+        ? parsed.actionItems.map((item: ParsedActionItem) => ({
             text: item.text || '',
             owner: item.owner || undefined,
             deadline: item.deadline || undefined,

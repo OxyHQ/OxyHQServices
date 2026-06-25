@@ -170,8 +170,8 @@ export function InlineReply({ message, mode, onClose, onSent }: InlineReplyProps
           onSent?.();
           onClose();
         },
-        onError: (err: any) =>
-          toast.error(err.message || 'Unable to send email. Please try again.'),
+        onError: (err: unknown) =>
+          toast.error(err instanceof Error ? err.message : 'Unable to send email. Please try again.'),
       },
     );
   }, [to, cc, bcc, body, quotedText, initialSubject, message, mode, sendWithUndo, onClose, onSent]);

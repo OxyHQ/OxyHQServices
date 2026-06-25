@@ -129,6 +129,15 @@
       "title": "Reputation = Trust & Growth",
       "body": "Oxy Trust is a reputation system that reacts to what you do. Helpful, respectful, constructive actions earn it. Harmful or low‑effort stuff chips it away. More reputation can unlock benefits; low reputation can limit features. It keeps things fair and rewards real contribution."
     },
+    "name": {
+      "title": "What's your name?",
+      "body": "Add your name so people know who you are.",
+      "firstLabel": "First name",
+      "firstPlaceholder": "Your first name",
+      "lastLabel": "Last name",
+      "lastPlaceholder": "Your last name",
+      "saveFailed": "Could not save your name"
+    },
     "avatar": {
       "title": "Make It Yours",
       "body": "Add an avatar so people recognize you. It will show anywhere you show up here. Skip if you want — you can add it later.",

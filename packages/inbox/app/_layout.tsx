@@ -2,12 +2,15 @@ import { Stack, ThemeProvider } from 'expo-router';
 import Head from 'expo-router/head';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { useEffect } from 'react';
+import { useCallback, useEffect } from 'react';
+import type { ReactNode } from 'react';
 import { Platform } from 'react-native';
 import 'react-native-reanimated';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
-import { OxyProvider } from '@oxyhq/services';
+import { OxyProvider, useOxy } from '@oxyhq/services';
 import { toast } from '@oxyhq/bloom';
+import { ImageResolverProvider } from '@oxyhq/bloom/image-resolver';
+import type { ImageResolver } from '@oxyhq/bloom/image-resolver';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { BloomThemeProvider, useNavigationTheme } from '@oxyhq/bloom/theme';
 import type { ThemeMode } from '@oxyhq/bloom/theme';
@@ -81,32 +84,50 @@ function RootLayoutContent() {
           locale accordingly. Persisted overrides flow through AsyncStorage.
         */}
         <OxyProvider baseURL={API_URL} clientId={OXY_CLIENT_ID}>
-          <LocaleProvider>
-            <SafeAreaProvider>
-              <PortalProvider>
-                <ThemeProvider value={navTheme}>
-                  <RootEffects />
-                  <Stack>
-                    <Stack.Screen name="(drawer)" options={{ headerShown: false }} />
-                    <Stack.Screen name="+not-found" options={{ headerShown: false }} />
-                  </Stack>
-                  <StatusBar style="auto" />
-                  {/*
-                    Global, non-dismissible auth gate. Renders ABOVE the entire
-                    app tree whenever the user is signed-out (after the initial
-                    auth restore completes). Unmounts cleanly the moment auth
-                    flips to true, leaving the user wherever they were.
-                  */}
-                  <AuthGate />
-                </ThemeProvider>
-                <PortalOutlet />
-              </PortalProvider>
-            </SafeAreaProvider>
-          </LocaleProvider>
+          <BloomImageResolver>
+            <LocaleProvider>
+              <SafeAreaProvider>
+                <PortalProvider>
+                  <ThemeProvider value={navTheme}>
+                    <RootEffects />
+                    <Stack>
+                      <Stack.Screen name="(drawer)" options={{ headerShown: false }} />
+                      <Stack.Screen name="+not-found" options={{ headerShown: false }} />
+                    </Stack>
+                    <StatusBar style="auto" />
+                    {/*
+                      Global, non-dismissible auth gate. Renders ABOVE the entire
+                      app tree whenever the user is signed-out (after the initial
+                      auth restore completes). Unmounts cleanly the moment auth
+                      flips to true, leaving the user wherever they were.
+                    */}
+                    <AuthGate />
+                  </ThemeProvider>
+                  <PortalOutlet />
+                </PortalProvider>
+              </SafeAreaProvider>
+            </LocaleProvider>
+          </BloomImageResolver>
         </OxyProvider>
       </KeyboardProvider>
     </QueryClientProvider>
   );
+}
+
+/**
+ * Registers the single Bloom `ImageResolver` for the app. Bloom `Avatar`s
+ * (and any other Bloom media surface) that receive a bare Oxy file ID in
+ * `source` resolve it through `oxyServices.getFileDownloadUrl(id, variant)` —
+ * the one chokepoint where the canonical `cloud.oxy.so`/signed URL is built.
+ * Lives inside `OxyProvider` so `useOxy()` is available.
+ */
+function BloomImageResolver({ children }: { children: ReactNode }) {
+  const { oxyServices } = useOxy();
+  const resolve = useCallback<ImageResolver>(
+    (id, variant) => oxyServices.getFileDownloadUrl(id, variant),
+    [oxyServices],
+  );
+  return <ImageResolverProvider value={resolve}>{children}</ImageResolverProvider>;
 }
 
 /**

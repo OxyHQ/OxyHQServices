@@ -1,4 +1,4 @@
-import { formatDate, getDisplayName, getShortDisplayName } from '@/utils/date-utils';
+import { formatDate, getDisplayName } from '@/utils/date-utils';
 
 describe('formatDate', () => {
   it('returns empty string for undefined input', () => {
@@ -67,33 +67,5 @@ describe('getDisplayName', () => {
     expect(
       getDisplayName({ name: { full: 'J. Doe', first: 'Jane', last: 'Doe' } }),
     ).toBe('J. Doe');
-  });
-});
-
-describe('getShortDisplayName', () => {
-  it('returns translated "Unnamed" for null', () => {
-    expect(getShortDisplayName(null)).toBe('Unnamed');
-  });
-
-  it('returns first name when present', () => {
-    expect(getShortDisplayName({ name: { first: 'Jane' } })).toBe('Jane');
-  });
-
-  it('extracts first word from full when first name is missing', () => {
-    expect(getShortDisplayName({ name: { full: 'Jane Doe' } })).toBe('Jane');
-  });
-
-  it('falls back to username when name fields are absent', () => {
-    expect(getShortDisplayName({ username: 'janed' })).toBe('janed');
-  });
-
-  it('falls back to truncated publicKey when only publicKey is present', () => {
-    expect(
-      getShortDisplayName({ publicKey: '0xabcdef1234567890deadbeef' }),
-    ).toBe('Account 0xabcdef12…');
-  });
-
-  it('returns translated "Unnamed" when nothing is present', () => {
-    expect(getShortDisplayName({})).toBe('Unnamed');
   });
 });

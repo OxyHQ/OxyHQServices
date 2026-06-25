@@ -41,10 +41,28 @@ import { z } from 'zod';
  *   virtuals or the serializer composed it.
  * - `displayName` is the required canonical app-facing display string.
  *
- * `.passthrough()` is intentional: it tolerates additive name fields without a
- * coordinated contract bump, while the three known keys stay strongly typed.
+ * This is declared as an explicit `interface` rather than being inferred from
+ * the runtime schema via `z.infer<typeof userNameSchema>`. Inferring it produced
+ * a `z.objectOutputType<…, "passthrough">` in the emitted `.d.ts`, whose
+ * resolution to the named fields depends on zod's deep conditional-type
+ * machinery (`objectUtil.addQuestionMarks` / `flatten` / `PassthroughType`).
+ * Under a consumer's `moduleResolution: "node"` (node10), that chain does not
+ * always resolve, so `name.displayName` silently widened to `{}` and broke the
+ * "render `name.displayName` directly" contract at the type level. An explicit
+ * interface emits `displayName: string` literally and survives BOTH `node` and
+ * `bundler` resolution. The index signature preserves the passthrough behaviour
+ * (additive name fields are tolerated without a coordinated contract bump).
  */
-export const userNameSchema = z
+export interface UserNameResponse {
+    first?: string;
+    last?: string;
+    full?: string;
+    /** Required canonical display string — render this directly. */
+    displayName: string;
+    [key: string]: unknown;
+}
+
+export const userNameSchema: z.ZodType<UserNameResponse> = z
     .object({
         first: z.string().optional(),
         last: z.string().optional(),
@@ -52,8 +70,6 @@ export const userNameSchema = z
         displayName: z.string(),
     })
     .passthrough();
-
-export type UserNameResponse = z.infer<typeof userNameSchema>;
 
 /**
  * The canonical user object emitted by `formatUserResponse`.

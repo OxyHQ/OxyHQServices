@@ -15,6 +15,7 @@ import type { User } from '@oxyhq/core';
 import { getAccountDisplayName, getAccountFallbackHandle } from '@oxyhq/core';
 import { useColors } from '@/hooks/useColors';
 import { useTranslation } from '@/lib/i18n';
+import { useAvatarUrl } from '@/hooks/useAvatarUrl';
 
 interface ContactMatch {
   /** Resolved Oxy profile (already fetched by the parent). */
@@ -52,6 +53,7 @@ function ContactMatchRowComponent({ match }: { match: ContactMatch }) {
   // fallback chain (name → username → publicKey → "Unnamed") matches the rest
   // of the app.
   const displayName = match.localDisplayName?.trim() || getAccountDisplayName(match.user, locale);
+  const avatarUrl = useAvatarUrl(match.user);
 
   const fallbackHandle = getAccountFallbackHandle(match.user);
   const handle = fallbackHandle
@@ -62,7 +64,7 @@ function ContactMatchRowComponent({ match }: { match: ContactMatch }) {
     <View style={[styles.row, { borderBottomColor: colors.border }]}>
       <Avatar
         name={displayName}
-        uri={match.user.avatar}
+        uri={avatarUrl}
         size={40}
       />
       <View style={styles.identity}>
