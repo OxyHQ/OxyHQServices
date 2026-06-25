@@ -1,8 +1,8 @@
 import crypto from 'crypto';
-import { IncomingMessage } from 'http';
+import { lookup } from 'dns/promises';
+import net from 'net';
 import { Readable, Transform } from 'stream';
 import mongoose from 'mongoose';
-import { safeFetch, SsrfRejection, type SafeFetchResult } from '@oxyhq/core/server';
 import { File, IFile, IFileLink, IFileVariant, FileVisibility } from '../models/File';
 import { S3Service } from './s3Service';
 import {
@@ -70,18 +70,118 @@ export class AssetService {
     return err?.code === 11000 || Boolean(err?.message?.includes('E11000'));
   }
 
-  /**
-   * Content-addressed dedup lookup. Deliberately excludes `deleted` tombstones:
-   * a deleted record is a deletion intent, not a reusable asset. Matching a
-   * tombstone and reassigning its ownership to the next uploader was a
-   * cross-tenant ownership-takeover vector (any user who can produce content
-   * whose SHA-256 collides with a victim's deleted file could revive that
-   * record under their own ownership). With the `status: { $ne: 'deleted' }`
-   * filter a fresh upload whose content matches only a tombstone simply inserts
-   * a brand-new record owned by the uploader.
-   */
-  private async findActiveFileBySha(sha256: string): Promise<IFile | null> {
-    return File.findOne({ sha256, status: { $ne: 'deleted' } });
+  private async findFileBySha(sha256: string): Promise<IFile | null> {
+    return File.findOne({ sha256 });
+  }
+
+  private async reviveDeletedDirectUploadFile(
+    file: IFile,
+    userId: string,
+    size: number,
+    mimeType: string,
+    originalName: string,
+    visibility?: FileVisibility,
+    metadata?: Record<string, any>
+  ): Promise<IFile> {
+    file.status = 'active';
+    file.ownerUserId = userId;
+    file.purpose = 'user';
+    file.size = size;
+    file.mime = mimeType;
+    file.ext = this.getExtensionFromMime(mimeType);
+    file.originalName = originalName;
+    file.visibility = visibility || 'private';
+    file.metadata = metadata || {};
+    file.links = [];
+    file.variants = [];
+
+    await file.save();
+    fileCache.invalidate(file._id.toString());
+    fileCache.set(file._id.toString(), file);
+    return file;
+  }
+
+  private async reviveDeletedStreamedMediaFile(
+    file: IFile,
+    size: number,
+    mimeType: string,
+    originalName: string,
+    options: StreamedMediaOptions
+  ): Promise<IFile> {
+    file.status = 'active';
+    file.ownerUserId = options.ownerUserId;
+    file.purpose = options.purpose;
+    file.size = size;
+    file.mime = mimeType;
+    file.ext = this.getExtensionFromMime(mimeType);
+    file.originalName = originalName;
+    file.visibility = options.visibility;
+    file.metadata = options.metadata;
+    file.links = [];
+    file.variants = [];
+
+    await file.save();
+    fileCache.invalidate(file._id.toString());
+    fileCache.set(file._id.toString(), file);
+    return file;
+  }
+
+  private isPrivateIpAddress(address: string): boolean {
+    const ipVersion = net.isIP(address);
+    if (ipVersion === 4) {
+      const parts = address.split('.').map(Number);
+      const [a, b] = parts;
+      return (
+        a === 0 ||
+        a === 10 ||
+        a === 127 ||
+        (a === 100 && b >= 64 && b <= 127) ||
+        (a === 169 && b === 254) ||
+        (a === 172 && b >= 16 && b <= 31) ||
+        (a === 192 && b === 168) ||
+        (a === 198 && (b === 18 || b === 19)) ||
+        a >= 224
+      );
+    }
+
+    if (ipVersion === 6) {
+      const normalized = address.toLowerCase();
+      return (
+        normalized === '::1' ||
+        normalized.startsWith('fc') ||
+        normalized.startsWith('fd') ||
+        normalized.startsWith('fe80:')
+      );
+    }
+
+    return false;
+  }
+
+  private async validateFederationRepairUrl(url: URL): Promise<boolean> {
+    if (url.protocol !== 'https:') {
+      return false;
+    }
+
+    const hostname = url.hostname.toLowerCase();
+    if (
+      hostname === 'localhost' ||
+      hostname.endsWith('.localhost') ||
+      hostname.endsWith('.local') ||
+      this.isPrivateIpAddress(hostname)
+    ) {
+      return false;
+    }
+
+    try {
+      const addresses = await lookup(hostname, { all: true, verbatim: false });
+      return addresses.length > 0 && addresses.every(({ address }) => !this.isPrivateIpAddress(address));
+    } catch (error) {
+      logger.warn('Failed to resolve federation repair URL host', {
+        host: hostname,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return false;
+    }
   }
 
   private getFederationRepairRemoteUrl(file: IFile): string | null {
@@ -103,146 +203,79 @@ export class AssetService {
     return isFederationAvatar || isFederationCache || isFederationMedia ? remoteUrl : null;
   }
 
-  /**
-   * Read an {@link IncomingMessage} body into a Buffer, aborting (and destroying
-   * the stream) the moment it would exceed `maxBytes`. Returns `null` when the
-   * cap is exceeded. The caller short-circuits on the advertised
-   * `content-length` before calling this; this is the streaming backstop for a
-   * server that understated (or omitted) its length.
-   */
-  private readBodyLimited(response: IncomingMessage, maxBytes: number): Promise<Buffer | null> {
-    return new Promise<Buffer | null>((resolve, reject) => {
-      const chunks: Buffer[] = [];
-      let total = 0;
-      let settled = false;
-
-      const finish = (value: Buffer | null): void => {
-        if (settled) return;
-        settled = true;
-        resolve(value);
-      };
-
-      response.on('data', (chunk: Buffer) => {
-        total += chunk.length;
-        if (total > maxBytes) {
-          response.destroy();
-          finish(null);
-          return;
-        }
-        chunks.push(chunk);
-      });
-      response.on('end', () => finish(Buffer.concat(chunks, total)));
-      response.on('error', (err) => {
-        if (settled) return;
-        settled = true;
-        reject(err);
-      });
-      response.on('close', () => finish(null));
-    });
-  }
-
-  /**
-   * Fetch a remote federation image for storage repair through the shared,
-   * DNS-pinned {@link safeFetch} (`@oxyhq/core/server`). safeFetch resolves the
-   * host once, connects to the validated IP, re-validates every redirect hop,
-   * and denies private/loopback/link-local/metadata IPs — closing the
-   * DNS-rebinding TOCTOU window that a separate validate-then-`fetch` left open.
-   * safeFetch does NOT bound the body, so we enforce the byte cap here.
-   */
   private async fetchFederationRepairImage(remoteUrl: string): Promise<{ buffer: Buffer; mime: string } | null> {
-    let protocol: string;
+    let currentUrl: URL;
     try {
-      protocol = new URL(remoteUrl).protocol;
+      currentUrl = new URL(remoteUrl);
     } catch {
       return null;
     }
-    if (protocol !== 'https:') {
-      logger.warn('Federation repair URL rejected: non-https protocol', { url: remoteUrl });
-      return null;
-    }
 
-    let result: SafeFetchResult;
-    try {
-      result = await safeFetch(remoteUrl, {
-        method: 'GET',
-        maxRedirects: FEDERATION_REPAIR_MAX_REDIRECTS,
-        headersTimeoutMs: 15_000,
+    for (let redirects = 0; redirects <= FEDERATION_REPAIR_MAX_REDIRECTS; redirects += 1) {
+      if (!(await this.validateFederationRepairUrl(currentUrl))) {
+        logger.warn('Blocked unsafe federation repair URL', { url: currentUrl.toString() });
+        return null;
+      }
+
+      const response = await fetch(currentUrl, {
+        redirect: 'manual',
         signal: AbortSignal.timeout(15_000),
         headers: {
           Accept: 'image/avif,image/webp,image/png,image/jpeg,image/gif,image/*;q=0.8',
           'User-Agent': FEDERATION_REPAIR_USER_AGENT,
         },
       });
-    } catch (error) {
-      if (error instanceof SsrfRejection) {
-        logger.warn('Blocked unsafe federation repair URL', {
-          url: remoteUrl,
-          reason: error.message,
-        });
-        return null;
-      }
-      logger.warn('Federation repair download failed', {
-        url: remoteUrl,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return null;
-    }
 
-    try {
-      if (result.status < 200 || result.status >= 300) {
-        result.response.destroy();
+      if (response.status >= 300 && response.status < 400) {
+        const location = response.headers.get('location');
+        if (!location) {
+          return null;
+        }
+        currentUrl = new URL(location, currentUrl);
+        continue;
+      }
+
+      if (!response.ok) {
         logger.warn('Federation repair download failed', {
-          url: result.finalUrl,
-          status: result.status,
+          url: currentUrl.toString(),
+          status: response.status,
         });
         return null;
       }
 
-      const rawContentTypeHeader = result.headers['content-type'];
-      const rawContentType = Array.isArray(rawContentTypeHeader)
-        ? rawContentTypeHeader[0] ?? ''
-        : rawContentTypeHeader ?? '';
+      const rawContentType = response.headers.get('content-type') || '';
       const mime = rawContentType.split(';')[0].trim().toLowerCase();
       if (!mime.startsWith('image/') || !isAllowedCacheMime(mime)) {
-        result.response.destroy();
         logger.warn('Federation repair rejected non-image content', {
-          url: result.finalUrl,
+          url: currentUrl.toString(),
           contentType: rawContentType,
         });
         return null;
       }
 
-      const declaredLengthHeader = result.headers['content-length'];
-      const declaredLength = Number(
-        Array.isArray(declaredLengthHeader) ? declaredLengthHeader[0] : declaredLengthHeader
-      );
+      const declaredLength = Number(response.headers.get('content-length'));
       if (Number.isFinite(declaredLength) && declaredLength > FEDERATION_REPAIR_MAX_BYTES) {
-        result.response.destroy();
         logger.warn('Federation repair image is too large', {
-          url: result.finalUrl,
+          url: currentUrl.toString(),
           declaredLength,
         });
         return null;
       }
 
-      const buffer = await this.readBodyLimited(result.response, FEDERATION_REPAIR_MAX_BYTES);
-      if (!buffer || buffer.length === 0) {
+      const buffer = Buffer.from(await response.arrayBuffer());
+      if (buffer.length === 0 || buffer.length > FEDERATION_REPAIR_MAX_BYTES) {
         logger.warn('Federation repair image has invalid size', {
-          url: result.finalUrl,
-          size: buffer?.length ?? 0,
+          url: currentUrl.toString(),
+          size: buffer.length,
         });
         return null;
       }
 
       return { buffer, mime };
-    } catch (error) {
-      result.response.destroy();
-      logger.warn('Federation repair download failed while reading body', {
-        url: result.finalUrl,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return null;
     }
+
+    logger.warn('Federation repair exceeded redirect limit', { url: remoteUrl });
+    return null;
   }
 
   private async restoreMissingDirectUploadContent(
@@ -428,14 +461,26 @@ export class AssetService {
     expectedMime: string
   ): Promise<AssetInitResponse> {
     try {
-      // Check if file already exists by SHA256 (active records only — deleted
-      // tombstones are never deduplicated/revived, so a fresh upload matching a
-      // tombstone falls through to a brand-new record below).
-      const existingFile = await this.findActiveFileBySha(expectedSha256);
+      // Check if file already exists by SHA256
+      const existingFile = await this.findFileBySha(expectedSha256);
 
       if (existingFile) {
         const storageKey = existingFile.storageKey || this.generateStorageKey(expectedSha256, expectedMime);
         let uploadUrl = '';
+        if (existingFile.status === 'deleted') {
+          existingFile.status = 'active';
+          existingFile.ownerUserId = userId;
+          existingFile.purpose = 'user';
+          existingFile.size = expectedSize;
+          existingFile.mime = expectedMime;
+          existingFile.ext = this.getExtensionFromMime(expectedMime);
+          existingFile.visibility = 'private';
+          existingFile.links = [];
+          existingFile.variants = [];
+          await existingFile.save();
+          fileCache.invalidate(existingFile._id.toString());
+          fileCache.set(existingFile._id.toString(), existingFile);
+        }
         const objectExists = await this.s3Service.fileExists(storageKey);
         const requesterOwnsExisting = existingFile.ownerUserId?.toString() === userId;
         if (!objectExists && requesterOwnsExisting) {
@@ -539,8 +584,8 @@ export class AssetService {
         throw new BadRequestError('Cannot store an empty file');
       }
 
-      // Check if file already exists by SHA256 (active records only).
-      const existingFile = await this.findActiveFileBySha(sha256);
+      // Check if file already exists by SHA256
+      const existingFile = await this.findFileBySha(sha256);
 
       if (existingFile) {
         const restored = await this.restoreMissingDirectUploadContent(
@@ -549,20 +594,31 @@ export class AssetService {
           mimeType,
           'direct upload',
         );
-        const preparedFile = await this.prepareExistingDirectUploadFile(
-          existingFile,
-          userId,
-          visibility,
-          metadata,
-        );
-        if (restored) {
+        const wasDeleted = existingFile.status === 'deleted';
+        const preparedFile = wasDeleted
+          ? await this.reviveDeletedDirectUploadFile(
+            existingFile,
+            userId,
+            size,
+            mimeType,
+            originalName,
+            visibility,
+            metadata,
+          )
+          : await this.prepareExistingDirectUploadFile(
+            existingFile,
+            userId,
+            visibility,
+            metadata,
+          );
+        if (restored || wasDeleted) {
           this.queueVariantGeneration(preparedFile);
         }
-        logger.info('File already exists, returning existing', {
-          sha256,
+        logger.info('File already exists, returning existing', { 
+          sha256, 
           fileId: preparedFile._id
         });
-
+        
         // File already exists, return existing file
         return preparedFile;
       }
@@ -591,7 +647,7 @@ export class AssetService {
         await file.save();
       } catch (error) {
         if (this.isDuplicateKeyError(error)) {
-          const racedFile = await this.findActiveFileBySha(sha256);
+          const racedFile = await this.findFileBySha(sha256);
           if (racedFile) {
             const restored = await this.restoreMissingDirectUploadContent(
               racedFile,
@@ -599,13 +655,24 @@ export class AssetService {
               mimeType,
               'direct upload duplicate race',
             );
-            const preparedFile = await this.prepareExistingDirectUploadFile(
-              racedFile,
-              userId,
-              visibility,
-              metadata,
-            );
-            if (restored) {
+            const wasDeleted = racedFile.status === 'deleted';
+            const preparedFile = wasDeleted
+              ? await this.reviveDeletedDirectUploadFile(
+                racedFile,
+                userId,
+                size,
+                mimeType,
+                originalName,
+                visibility,
+                metadata,
+              )
+              : await this.prepareExistingDirectUploadFile(
+                racedFile,
+                userId,
+                visibility,
+                metadata,
+              );
+            if (restored || wasDeleted) {
               this.queueVariantGeneration(preparedFile);
             }
             logger.info('File already exists after concurrent upload, returning existing', {
@@ -786,9 +853,8 @@ export class AssetService {
     const sha256 = hash.digest('hex');
 
     // Dedup: if this exact content already exists (cache or otherwise), reuse
-    // it and drop the temp object. Active records only — deleted tombstones are
-    // never revived.
-    const existingFile = await this.findActiveFileBySha(sha256);
+    // it and drop the temp object.
+    const existingFile = await this.findFileBySha(sha256);
     if (existingFile) {
       let restored = false;
       try {
@@ -800,8 +866,17 @@ export class AssetService {
       } finally {
         await deleteTempKey(`Failed to clean up deduplicated ${options.logLabel.toLowerCase()} upload`);
       }
-      const preparedFile = await this.prepareExistingStreamedMediaFile(existingFile, options);
-      if (restored) {
+      const wasDeleted = existingFile.status === 'deleted';
+      const preparedFile = wasDeleted
+        ? await this.reviveDeletedStreamedMediaFile(
+          existingFile,
+          size,
+          mimeType,
+          originalName,
+          options,
+        )
+        : await this.prepareExistingStreamedMediaFile(existingFile, options);
+      if (restored || wasDeleted) {
         this.queueVariantGeneration(preparedFile);
       }
       logger.info(`${options.logLabel} already exists, returning existing`, {
@@ -847,7 +922,7 @@ export class AssetService {
       await file.save();
     } catch (error) {
       if (this.isDuplicateKeyError(error)) {
-        const racedFile = await this.findActiveFileBySha(sha256);
+        const racedFile = await this.findFileBySha(sha256);
         if (racedFile) {
           let restored = false;
           try {
@@ -868,8 +943,17 @@ export class AssetService {
               }
             }
           }
-          const preparedFile = await this.prepareExistingStreamedMediaFile(racedFile, options);
-          if (restored) {
+          const wasDeleted = racedFile.status === 'deleted';
+          const preparedFile = wasDeleted
+            ? await this.reviveDeletedStreamedMediaFile(
+              racedFile,
+              size,
+              mimeType,
+              originalName,
+              options,
+            )
+            : await this.prepareExistingStreamedMediaFile(racedFile, options);
+          if (restored || wasDeleted) {
             this.queueVariantGeneration(preparedFile);
           }
           logger.info(`${options.logLabel} already exists after concurrent upload, returning existing`, {
@@ -1390,10 +1474,7 @@ export class AssetService {
    * No client URL produced here is ever an `amazonaws.com` URL.
    */
   async getPublicCdnUrl(file: IFile, variant?: string): Promise<string | null> {
-    // A trashed/deleted asset must never be reachable via the public CDN, even
-    // if its visibility is still `public`. Gate on active status first so a
-    // soft-deleted or trashed object can't continue serving from cloud.oxy.so.
-    if (file.status !== 'active' || file.visibility !== 'public') {
+    if (file.visibility !== 'public') {
       return null;
     }
 

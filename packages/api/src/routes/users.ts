@@ -38,7 +38,6 @@ import {
   updatePrivacyBodySchema,
   usersByIdsBodySchema,
 } from '../schemas/users.schemas';
-import { sanitizeHtml } from '../utils/sanitize';
 
 // Types
 interface AuthRequest extends Request {
