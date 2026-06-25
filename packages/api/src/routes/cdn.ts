@@ -9,8 +9,8 @@
  *
  * Hard contract: this path serves ONLY public, CDN-backed assets. It has NO
  * auth and NO CSRF (it is a public CDN origin). It NEVER streams raw bytes and
- * NEVER exposes a private/unlisted asset — anything that is not a public file
- * with a CDN-reachable (`public/`-prefixed) copy resolves to a 404. The actual
+ * NEVER exposes a private/unlisted asset — anything that is not an active, public
+ * file with a CDN-reachable (`public/`-prefixed) copy resolves to a 404. The actual
  * "resolve public file id → cloud CDN url (or null)" decision is owned by
  * `assetService.getPublicCdnUrl`, the SAME probe used by `GET /assets/:id/stream`
  * (no duplicated visibility/placement logic here).
@@ -34,7 +34,7 @@ const router = express.Router();
  *     description: >
  *       Public CDN origin endpoint (no auth). Redirects to the `cloud.oxy.so`
  *       CDN URL for a PUBLIC, CDN-backed asset. Private/unlisted assets, files
- *       with no public copy, and unknown ids all return 404 — this path never
+ *       that are not active, files with no public copy, and unknown ids all return 404 — this path never
  *       streams bytes and never exposes a non-public asset.
  *     tags: [Assets]
  *     parameters:
@@ -62,6 +62,10 @@ router.get(
 
     const file = await assetService.getFile(fileId);
     if (!file) {
+      return res.status(404).json({ error: 'NOT_FOUND', message: 'Resource not found' });
+    }
+
+    if (file.status !== 'active') {
       return res.status(404).json({ error: 'NOT_FOUND', message: 'Resource not found' });
     }
 
