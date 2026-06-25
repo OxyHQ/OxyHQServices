@@ -38,10 +38,8 @@ export function startSmtpInbound(): SMTPServer {
           'ECDHE-RSA-AES128-GCM-SHA256',
           'DHE-RSA-AES256-GCM-SHA384',
           'DHE-RSA-AES128-GCM-SHA256',
-          'AES256-GCM-SHA384',
-          'AES128-GCM-SHA256',
         ].join(':'),
-        // Include rsa_pkcs1_sha1 for older MTAs still using TLSv1.2
+        // Keep STARTTLS on forward-secret TLS 1.2+ suites and SHA-256+ signatures.
         sigalgs: [
           'ecdsa_secp256r1_sha256',
           'ecdsa_secp384r1_sha384',
@@ -51,7 +49,6 @@ export function startSmtpInbound(): SMTPServer {
           'rsa_pkcs1_sha256',
           'rsa_pkcs1_sha384',
           'rsa_pkcs1_sha512',
-          'rsa_pkcs1_sha1',
         ].join(':'),
       };
     } catch (err) {
