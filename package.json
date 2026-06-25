@@ -18,6 +18,7 @@
   "scripts": {
     "build:all": "turbo run build",
     "build:workspaces": "bun run build --filter '*'",
+    "heroku-postbuild": "bun run api:build",
     "start": "cd packages/api && node dist/server.js",
     "dev": "turbo run dev",
     "test": "turbo run test",
